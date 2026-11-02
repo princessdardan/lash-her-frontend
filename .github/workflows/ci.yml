@@ -1,10 +1,176 @@
 name: CI
 on:
   push:
-    branches: [main, staging, codex/p1-02-staging-release, codex/p1-02-retention-admin-fix]
+    branches: [main, staging]
   pull_request:
-    branches: [main]
+    branches: [main, staging]
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  frontend-operator-migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Enable the containerd image store for attested local builds
+        uses: docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5
+        with:
+          version: v29.4.0
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - name: Build the immutable frontend migration image without publishing
+        id: build-frontend-migration
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: ops/platform/Dockerfile.frontend-migration
+          build-args: FRONTEND_SOURCE_COMMIT=${{ github.sha }}
+          push: false
+          load: true
+          tags: lash-her-frontend-migration:ci
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha,scope=frontend-migration
+          cache-to: type=gha,scope=frontend-migration,mode=max
+      - name: Verify migration-only image boundaries offline
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --entrypoint node lash-her-frontend-migration:ci ops/platform/frontend-image.mjs --manifest-only
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --entrypoint node lash-her-frontend-migration:ci -e '
+              const fs=require("node:fs");if(process.getuid()===0)process.exit(1);
+              for(const p of ["/app/src/app","/app/tests","/app/node_modules/next","/app/node_modules/sanity","/app/.env","/bin/sh"])
+                if(fs.existsSync(p))process.exit(1);
+            '
+      - name: Build owned frontend PostgreSQL 18 fixture
+        run: >-
+          docker build --builder "$(docker context show)" -f ops/platform/Dockerfile.frontend-migration-test
+          --build-arg MIGRATION_IMAGE=lash-her-frontend-migration:ci
+          -t lash-her-frontend-migration:postgres18-test ops/platform
+      - name: Exercise the operator CLI without provider access
+        run: |
+          umask 077
+          mkdir -m 700 "$RUNNER_TEMP/frontend-schema"
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 1g --pids-limit 256 --shm-size 256m --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \
+            --env FRONTEND_MIGRATION_EXPORT_SCHEMA=true --env FRONTEND_MIGRATION_IMAGE_DIGEST \
+            --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly" \
+            --mount "type=bind,src=$PWD/drizzle,dst=/source/drizzle,readonly" \
+            --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
+            --mount "type=bind,src=$PWD/src/lib/private-db/migration-lineage.ts,dst=/source/src/lib/private-db/migration-lineage.ts,readonly" \
+            --mount "type=bind,src=$PWD/contracts/api-integration/v1/manifest.json,dst=/source/contracts/api-integration/v1/manifest.json,readonly" \
+            lash-her-frontend-migration:postgres18-test > "$RUNNER_TEMP/frontend-schema/postgres18.json"
+          node --input-type=module -e '
+            import {readFileSync,writeFileSync} from "node:fs";
+            const {schemaBaseline,...summary}=JSON.parse(readFileSync(process.env.FRONTEND_FIXTURE_RESULTS,"utf8"));
+            if(summary.status!=="FRONTEND_MIGRATION_OWNED_POSTGRES_PASS"||summary.postgresMajor!==18||!schemaBaseline)process.exit(1);
+            writeFileSync(process.env.FRONTEND_FIXTURE_SUMMARY,JSON.stringify(summary)+"\n",{flag:"wx",mode:0o600});
+          '
+        env:
+          FRONTEND_MIGRATION_IMAGE_DIGEST: ${{ steps.build-frontend-migration.outputs.digest }}
+          FRONTEND_FIXTURE_RESULTS: ${{ runner.temp }}/frontend-schema/postgres18.json
+          FRONTEND_FIXTURE_SUMMARY: ${{ runner.temp }}/frontend-schema-summary.json
+      - name: Verify initial Course logins on owned PostgreSQL 18
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 512m --pids-limit 128 --tmpfs /tmp:rw,nosuid,nodev,size=256m,mode=1777 \
+            --env COURSE_INITIAL_LOGINS_LOCAL_TEST=true \
+            --mount "type=bind,src=$PWD/ops/staging,dst=/source/ops/staging,readonly" \
+            --mount "type=bind,src=$PWD/package.json,dst=/source/package.json,readonly" \
+            --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
+            --workdir /source --entrypoint node lash-her-frontend-migration:postgres18-test \
+            ops/staging/tests/course-initial-logins.integration.mjs
+      - name: Verify Community runtime credential handoff on owned PostgreSQL 18
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 512m --pids-limit 128 --tmpfs /tmp:rw,nosuid,nodev,size=256m,mode=1777 \
+            --env COMMUNITY_RUNTIME_CREDENTIAL_LOCAL_TEST=true \
+            --mount "type=bind,src=$PWD/ops/staging,dst=/source/ops/staging,readonly" \
+            --mount "type=bind,src=$PWD/package.json,dst=/source/package.json,readonly" \
+            --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
+            --workdir /source --entrypoint node lash-her-frontend-migration:postgres18-test \
+            ops/staging/tests/community-runtime-login.integration.mjs
+      - name: Retain source-bound digest summary without private schema definitions
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: frontend-operator-schema-summary
+          path: ${{ runner.temp }}/frontend-schema-summary.json
+          if-no-files-found: error
+          retention-days: 10
+      - name: Scan frontend migration image
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          version: v0.76.1
+          image-ref: lash-her-frontend-migration:ci
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+  gateway-and-platform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ops/gateway/package-lock.json
+      - name: Enable the containerd image store for attested local builds
+        uses: docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5
+        with:
+          version: v29.4.0
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
+      - run: npm ci
+      - run: npm ci --ignore-scripts --prefix ops/gateway
+      - run: node --test ops/gateway/*.test.mjs ops/platform/*.test.mjs
+      - run: python3 -m unittest discover -s ops/platform/host -p '*_test.py'
+      - name: Rehearse host forwarding rules in an isolated network namespace
+        run: |
+          docker build -f ops/platform/host/Dockerfile.test -t lash-her-firewall-test:ci ops/platform/host
+          docker run --rm --network none --read-only --cap-drop ALL --cap-add NET_ADMIN \
+            --security-opt no-new-privileges --tmpfs /tmp:size=32m --tmpfs /run:size=1m lash-her-firewall-test:ci
+      - run: npm audit --audit-level=moderate --prefix ops/gateway
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - name: Build gateway and private TLS artifact
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: ops/gateway
+          push: false
+          load: true
+          tags: lash-her-gateway:ci
+          sbom: true
+          provenance: mode=max
+      - name: Refuse privileged or writable gateway image defaults
+        run: >-
+          docker run --rm --network none --read-only --cap-drop ALL
+          --security-opt no-new-privileges --entrypoint node lash-her-gateway:ci
+          -e "if(process.getuid()===0)process.exit(1);for(const f of ['server.mjs','private-tls.mjs','routes.json'])require('node:fs').accessSync(f)"
+      - name: Scan gateway image
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          version: v0.76.1
+          image-ref: lash-her-gateway:ci
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
   quality-and-unit:
     runs-on: ubuntu-latest
     steps:
@@ -670,7 +836,7 @@ jobs:
   # or the database job's service, so they can run alongside those jobs.
   browser:
     runs-on: ubuntu-latest
-    needs: [quality-and-unit, database, build, browser-tests]
+    needs: [frontend-operator-migrations, gateway-and-platform, quality-and-unit, database, audit, build, browser-tests]
     if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@v4
@@ -712,50 +878,4 @@ jobs:
         if: ${{ !cancelled() }}
         run: test "$DEPENDENCIES_PASSED" = "true"
         env:
-          DEPENDENCIES_PASSED: ${{ needs.quality-and-unit.result == 'success' && needs.database.result == 'success' && needs.build.result == 'success' && needs.browser-tests.result == 'success' }}
-
-  staging-migration:
-    name: protected staging frontend migration
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/codex/p1-02-staging-release')
-    needs: [quality-and-unit, database, audit, build, browser]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    environment: staging-migrations
-    concurrency:
-      group: frontend-staging-database-release
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - name: Verify migration job refusal cases
-        run: node --import tsx --test ops/staging/tests/migrate-frontend.test.ts
-      - name: Record immutable migration source artifact
-        run: |
-          git archive --format=tar HEAD drizzle scripts/migrate-private-db.ts src/lib/private-db/migration-lineage.ts ops/staging/migrate-frontend.ts package.json package-lock.json > staging-migration-source.tar
-          sha256sum staging-migration-source.tar > staging-migration-source.sha256
-      - name: Apply and verify the approved staging migration chain
-        run: node --import tsx ops/staging/migrate-frontend.ts
-        env:
-          STAGING_MIGRATION_EXPECTED_COMMIT: ${{ vars.STAGING_MIGRATION_EXPECTED_COMMIT }}
-          STAGING_MIGRATION_RECOVERY_REFERENCE: ${{ vars.STAGING_MIGRATION_RECOVERY_REFERENCE }}
-          STAGING_MIGRATION_DATABASE_URL: ${{ secrets.STAGING_MIGRATION_DATABASE_URL }}
-      - name: Preserve sanitized release evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: staging-migration-${{ github.sha }}
-          path: |
-            staging-migration-source.tar
-            staging-migration-source.sha256
-            staging-migration-receipt.json
-          if-no-files-found: error
-          retention-days: 30
+          DEPENDENCIES_PASSED: ${{ needs.frontend-operator-migrations.result == 'success' && needs.gateway-and-platform.result == 'success' && needs.audit.result == 'success' && needs.quality-and-unit.result == 'success' && needs.database.result == 'success' && needs.build.result == 'success' && needs.browser-tests.result == 'success' }}

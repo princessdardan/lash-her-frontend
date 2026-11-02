@@ -1,0 +1,72 @@
+{
+  "runId": "6127f946-5a45-49ce-b518-8e6231a67ea2",
+  "images": {
+    "gateway": "sha256:4a59970da1cf5f173f442bd52fef8c2634df2ec68ab89312f7d9f901baed555d",
+    "course-runtime": "sha256:0f7179beaaf16ff91ac805a273de273b9e8d5f66dbca417101a5d1433e41cd8e",
+    "course-migration": "sha256:a31cfe80278c01dcd101edf1062b8e1d23f9eb355ee9be5c070a064b9a8d042d",
+    "community-runtime": "sha256:f54e577a1990a9b4d6b0e2a13d6ece412b68aba57f5ddee4ba070221e4310bb1",
+    "community-migration": "sha256:47bb91c75faafc12ce6de833506f2725d3a07a4dda15bb3dfe4df0d8b8ec02e2"
+  },
+  "records": [
+    {
+      "name": "frontend-sdk-oidc-catalog-tls",
+      "passed": true
+    },
+    {
+      "name": "public-tls-missing-workload-denied",
+      "passed": true
+    },
+    {
+      "name": "public-metrics-hidden",
+      "passed": true
+    },
+    {
+      "name": "private-course-tls-catalog",
+      "passed": true
+    },
+    {
+      "name": "private-application-credential-required",
+      "passed": true
+    },
+    {
+      "name": "private-community-peer-denied",
+      "passed": true
+    },
+    {
+      "name": "signed-project-and-public-route-boundaries",
+      "passed": true
+    },
+    {
+      "name": "authenticated-idempotent-enrollment",
+      "passed": true
+    },
+    {
+      "name": "private-peer-spoofing-and-direct-backend-denial",
+      "passed": true
+    },
+    {
+      "name": "signed-mux-only-exception",
+      "passed": true
+    },
+    {
+      "name": "publisher-projection-and-worker-loop",
+      "passed": true
+    },
+    {
+      "name": "actual-community-authority-client",
+      "passed": true
+    },
+    {
+      "name": "worker-restart-requested",
+      "passed": true
+    },
+    {
+      "name": "worker-recovered-after-restart",
+      "passed": true
+    },
+    {
+      "name": "maintenance-holds-application-writes",
+      "passed": true
+    }
+  ]
+}

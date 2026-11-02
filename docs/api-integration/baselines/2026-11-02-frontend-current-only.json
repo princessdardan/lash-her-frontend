@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "date": "2026-11-02",
+  "scope": "Read-only verification of an already-current frontend database before API migrations",
+  "reason": "Read-only staging preflight found all 80 frontend source migrations already applied. Unconditional frontend suspension is unnecessary for a database stage that issues no writes.",
+  "behavior": {
+    "selection": "Reviewed approvedPendingTags is empty; actual complete lineage must independently agree",
+    "connectionSetting": "default_transaction_read_only=on",
+    "verified": ["same TLS-authenticated session", "complete current migration lineage", "exact schema catalog", "runtime role and default grants", "read-only setting before and after verification"],
+    "hostOrdering": "Require matching successful database and terminal read-only receipts before either API database migration",
+    "appliedMigrations": [],
+    "frontendSuspensionClaimed": false,
+    "pendingFrontendSqlRequiresQuiescence": true,
+    "gatewayTrafficAuthorized": false
+  },
+  "verification": {
+    "frontendUnitTests": {"passed": 12, "command": "node --test ops/platform/frontend-migration.test.mjs"},
+    "hostTests": {"passed": 69, "command": "python3 -m unittest discover -s ops/platform/host -p '*_test.py'"},
+    "focusedEslint": "passed",
+    "ownedPostgres18": {
+      "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+      "network": "none; new owned loopback cluster only",
+      "migrations": 80,
+      "checksPassed": 12,
+      "newChecks": ["server-enforced-current-only-read-session", "current-only-refuses-real-pending-migrations-without-applying"],
+      "packagedCliVerified": false,
+      "sourceFixture": "Clean synthetic Git copy of changed source; existing PostgreSQL fixture image supplies Node24 and PostgreSQL18",
+      "providerTouched": false
+    },
+    "publishedPredecessor": {
+      "sourceCommit": "18450dac2d89bcea8ef31c4e5c99f7f7c4f99de1",
+      "ciRunId": 41501210862,
+      "allTenJobs": "success",
+      "courseInitialLoginIntegrationStep": "success"
+    }
+  },
+  "boundaries": {
+    "newPackagedImageQualificationRequired": true,
+    "liveDatabaseMutationPerformed": false,
+    "liveFrontendQuiescenceVerified": false,
+    "providerDeploymentPerformed": false,
+    "fullReleaseCoordinatorComplete": false,
+    "p1Complete": false
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "version": 2,
+  "releaseId": "p1-staging-candidate",
+  "environment": "staging",
+  "sources": {
+    "frontend": {
+      "repository": "https://github.com/princessdardan/lash-her-frontend.git",
+      "commit": null,
+      "requiredChecks": "pending"
+    },
+    "course": {
+      "repository": "https://github.com/princessdardan/lash-her-course-api.git",
+      "commit": null,
+      "requiredChecks": "pending"
+    },
+    "community": {
+      "repository": "https://github.com/princessdardan/lash-her-community-api.git",
+      "commit": null,
+      "requiredChecks": "pending"
+    }
+  },
+  "contractManifestSha256": null,
+  "sourceApproval": {
+    "mode": "single-operator-dispatch",
+    "state": "pending"
+  },
+  "artifacts": {},
+  "approval": {
+    "state": "pending",
+    "operator": "Dardan",
+    "environment": "staging",
+    "releaseId": "p1-staging-candidate",
+    "approvedAt": null
+  },
+  "migrations": {
+    "course": {
+      "state": "held"
+    },
+    "community": {
+      "state": "held"
+    }
+  },
+  "recovery": {
+    "state": "pending"
+  },
+  "workload": {
+    "environment": "production",
+    "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM"
+  },
+  "scheduler": {
+    "state": "pending",
+    "cancellation": "pending"
+  },
+  "monitoring": {
+    "state": "deferred",
+    "resume": "after-current-plan-completion",
+    "decisionRef": "docs/api-integration/decisions/2026-10-29-sole-operator-and-monitoring-deferral.md"
+  },
+  "operator": {
+    "name": "Dardan",
+    "mode": "sole-operator",
+    "accessInputs": "runtime credential handoff pending",
+    "sourceProtection": "operator dispatch, exact source revisions and passing CI; native branch protection optional"
+  },
+  "affordability": {
+    "approach": "lowest-practical-operating-overhead",
+    "operator": "Dardan",
+    "operatorManagedMonthlyTargetUsd": 50,
+    "releaseGate": false,
+    "billingAccessRequired": false,
+    "decisionRef": "docs/api-integration/decisions/2026-11-01-affordability-without-billing-gates.md"
+  },
+  "staging": {
+    "state": "pending"
+  }
+}

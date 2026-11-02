@@ -1,0 +1,66 @@
+# Deferred until after the current integration plan. Never included by default.
+x-runtime: &monitoring-runtime
+  init: true
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 128
+  stop_grace_period: 30s
+  tmpfs: ["/tmp:size=32m,mode=1777"]
+  logging:
+    driver: local
+    options: {max-size: 10m, max-file: "3"}
+
+services:
+  collector:
+    <<: *monitoring-runtime
+    image: ${PROMETHEUS_IMAGE:?require reviewed collector digest}
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=48h
+      - --storage.tsdb.retention.size=512MB
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - ${RELEASE_DIR}/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ${RELEASE_DIR}/alerts:/etc/prometheus/alerts:ro
+      - ${RELEASE_DIR}/tls/ca.pem:/tls/ca.pem:ro
+      - collector_data:/prometheus
+    mem_limit: 256m
+    cpus: 0.2
+    networks:
+      mesh: {ipv4_address: 172.29.10.60}
+      collector_egress: {}
+
+  node-exporter:
+    <<: *monitoring-runtime
+    image: ${NODE_EXPORTER_IMAGE:?require reviewed host exporter digest}
+    user: "65534:65534"
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.meminfo
+      - --collector.filesystem
+      - --collector.diskstats
+      - --collector.loadavg
+      - --collector.time
+      - --collector.uname
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+    mem_limit: 64m
+    cpus: 0.1
+    networks:
+      mesh: {ipv4_address: 172.29.10.61}
+
+networks:
+  collector_egress: {}
+
+volumes:
+  collector_data: {}

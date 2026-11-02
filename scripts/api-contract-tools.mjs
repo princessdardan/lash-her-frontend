@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readFile, realpath } from "node:fs/promises";
+import { resolve, relative } from "node:path";
 import { execFileSync } from "node:child_process";
 
 export const contractDirectory = resolve(
@@ -26,7 +26,8 @@ export async function readContractBundle(directory = contractDirectory) {
   );
   if (
     manifest.version !== 1 ||
-    !["candidate", "released"].includes(manifest.status)
+    !["candidate", "released"].includes(manifest.status) ||
+    !/^[0-9a-f]{40}$/.test(manifest.frontendBaseRevision)
   ) {
     throw new Error("Unsupported integration manifest");
   }
@@ -52,7 +53,41 @@ export async function readContractBundle(directory = contractDirectory) {
   if (sha256(boundaries) !== manifest.boundarySha256)
     throw new Error("Boundary contract hash mismatch");
   documents.boundaries = JSON.parse(boundaries);
+  if (manifest.status === "released" || manifest.readmeSha256 !== undefined) {
+    const readme = await readFile(resolve(directory, "README.md"));
+    if (
+      !/^[0-9a-f]{64}$/.test(manifest.readmeSha256) ||
+      sha256(readme) !== manifest.readmeSha256
+    )
+      throw new Error("Normative README hash mismatch");
+  }
   return { manifest, documents };
+}
+
+// A label or a mutable directory is insufficient release evidence. Bind every
+// normative bundle byte (including prose) to an explicitly selected Git commit.
+export async function verifyBundleRevision(directory, manifest, revision) {
+  if (!/^[0-9a-f]{40}$/.test(revision ?? ""))
+    throw new Error("Bundle revision must be a full immutable commit SHA");
+  directory = await realpath(directory);
+  const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+    cwd: directory,
+    encoding: "utf8",
+  }).trim();
+  const prefix = relative(root, directory).replaceAll("\\", "/");
+  for (const file of [
+    "manifest.json",
+    "README.md",
+    "boundary-contracts.json",
+    ...Object.values(manifest.artifacts).map((pin) => pin.file),
+  ]) {
+    const path = prefix ? `${prefix}/${file}` : file;
+    const committed = execFileSync("git", ["show", `${revision}:${path}`], {
+      cwd: root,
+    });
+    if (sha256(committed) !== sha256(await readFile(resolve(directory, file))))
+      throw new Error(`Bundle differs from immutable commit: ${file}`);
+  }
 }
 
 export function verifySources(manifest, repositoryDirectory) {

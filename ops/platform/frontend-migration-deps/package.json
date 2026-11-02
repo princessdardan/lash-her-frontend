@@ -1,0 +1,11 @@
+{
+  "name": "lash-her-frontend-migration",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "24.x" },
+  "dependencies": {
+    "drizzle-orm": "0.45.2",
+    "pg": "8.20.0"
+  }
+}

@@ -54,7 +54,8 @@
     "contracts:sources": "node scripts/check-api-contracts.mjs --sources ..",
     "contracts:release-check": "node scripts/check-api-contracts.mjs --release",
     "contracts:test": "node --test scripts/api-contract-tools.test.mjs",
-    "test:staging-release": "node --import tsx --test ops/staging/tests/migrate-frontend.test.ts ops/staging/tests/import-release-secrets.test.mjs"
+    "test:staging-release": "node --import tsx --test ops/staging/tests/migrate-frontend.test.ts ops/staging/tests/import-release-secrets.test.mjs",
+    "postinstall": "npm ci --ignore-scripts --prefix tools/api-contract-toolchain"
   },
   "dependencies": {
     "@icons-pack/react-simple-icons": "13.11.1",
@@ -90,7 +91,7 @@
     "lucide-react": "^0.577.0",
     "motion": "^12.36.0",
     "nanoid": "^3.3.11",
-    "next": "16.4.2",
+    "next": "16.4.3",
     "next-auth": "5.0.0-beta.32",
     "next-sanity": "^11.6.12",
     "parse5": "7.3.0",
@@ -104,7 +105,8 @@
     "sanity-plugin-mux-input": "^3.0.5",
     "server-only": "^0.0.1",
     "styled-components": "^6.1.18",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "@vercel/oidc": "4.0.5"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -134,7 +136,7 @@
     "dotenv": "^16.6.1",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "16.4.2",
+    "eslint-config-next": "16.4.3",
     "groq-js": "^1.30.3",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
@@ -142,7 +144,9 @@
     "tailwindcss": "^4.2.1",
     "tsx": "^4.23.4",
     "tw-animate-css": "^1.4.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "esbuild": "0.28.2",
+    "yaml": "2.8.4"
   },
   "overrides": {
     "@babel/core": "7.29.7",
@@ -160,18 +164,6 @@
     "form-data": "4.0.6",
     "load-yaml-file": "$load-yaml-file",
     "markdown-it": "15.0.3",
-    "minimatch@3": {
-      "brace-expansion": "1.1.21"
-    },
-    "minimatch@5": {
-      "brace-expansion": "2.1.7"
-    },
-    "minimatch@9": {
-      "brace-expansion": "2.1.7"
-    },
-    "minimatch@10": {
-      "brace-expansion": "5.0.12"
-    },
     "postcss": "8.5.31",
     "protobufjs": "7.6.5",
     "sharp": "0.35.5",
@@ -184,7 +176,14 @@
       "postcss-selector-parser": "7.1.7"
     },
     "braces": "$braces",
-    "zod": "4.6.6"
+    "zod": "4.6.6",
+    "minimatch": "11.0.1",
+    "systeminformation": "5.33.19",
+    "qs": "6.17.1",
+    "glob@>=9 <15": "14.0.2",
+    "rimraf@>=4": {
+      "glob": "14.0.2"
+    }
   },
   "allowScripts": {
     "esbuild@0.25.12": true,
@@ -193,6 +192,7 @@
     "fsevents@2.3.3": true,
     "fsevents@2.3.2": true,
     "protobufjs@7.6.5": true,
-    "unrs-resolver@1.11.1": true
+    "unrs-resolver@1.11.1": true,
+    "esbuild@0.28.2": true
   }
 }

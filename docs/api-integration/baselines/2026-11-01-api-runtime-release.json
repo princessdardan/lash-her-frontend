@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "date": "2026-11-01",
+  "status": "API_COORDINATOR_IMPLEMENTED_AND_LOCALLY_VERIFIED",
+  "operator": "Dardan",
+  "previousSourceFreeze": "2026-11-01-source-freeze.json",
+  "entrypoint": "ops/platform/host/release.py",
+  "runbook": "docs/api-integration/operator-runtime-release.md",
+  "controls": [
+    "Plan mode reads no runtime credentials and executes no processes. Apply requires explicit environment/release confirmation and the selected Linux AMD64 root host/local engine.",
+    "Immutable Compose/private peer policies and runtime-role/database/TLS bindings; owned private snapshots; eight network-disabled config/TLS preflights before database writes.",
+    "Shared release/watchdog flock spans durable database verification and dependency-ordered runtime startup/probes/identity checks.",
+    "Raw secret values are merged privately with fixed environment overrides; serialized Compose environment interpolation is not reused. Cloud/migration/loader/TLS overrides are refused in runtime files.",
+    "Startup or probe/receipt failure suspends runtime writers under the lock; migration success remains independently recorded. No automatic retry, database down operation, source build or frontend activation.",
+    "Maintenance mode requires gateway application writes to remain HTTP503/Retry-After until the remaining acceptance coordinator admits traffic. Workload-authenticated read probes and signed Mux callbacks remain available.",
+    "Production uses separate workload-project configuration while preserving exact staging-tested sources/images.",
+    "Complete atomic exclusive receipt writes; failed directory sync removes this invocation's success inode instead of leaving a success result."
+  ],
+  "verification": {
+    "hostTests": {
+      "passed": 35,
+      "failed": 0,
+      "scope": "mocked Docker coordinator ordering/isolation/failure/lock and atomic-record tests plus existing host tests"
+    },
+    "gatewayAndPlatformTests": {
+      "passed": 50,
+      "failed": 0
+    },
+    "eslint": "passed changed gateway/platform/harness JavaScript",
+    "actionlint": "passed frontend CI/artifact workflow",
+    "ownedProductionConfigPreflight": {
+      "status": "OWNED_RUNTIME_PREFLIGHT_PASS",
+      "productionConfigChecks": 8,
+      "network": "none",
+      "literalValuesPreserved": true,
+      "providerTouched": false,
+      "deploymentPerformed": false,
+      "user": 501
+    },
+    "ownedConfigTestScope": "Eight actual local image config/TLS checks with no network, synthetic URLs/keys and nonroot UID501 for local file access. Pulls bypassed only in the owned test adapter; all runtime imports/certificate construction executed. This is not selected-host/root validation.",
+    "integration": {
+      "runId": "6127f946-5a45-49ce-b518-8e6231a67ea2",
+      "images": {
+        "gateway": "sha256:4a59970da1cf5f173f442bd52fef8c2634df2ec68ab89312f7d9f901baed555d",
+        "course-runtime": "sha256:0f7179beaaf16ff91ac805a273de273b9e8d5f66dbca417101a5d1433e41cd8e",
+        "course-migration": "sha256:a31cfe80278c01dcd101edf1062b8e1d23f9eb355ee9be5c070a064b9a8d042d",
+        "community-runtime": "sha256:f54e577a1990a9b4d6b0e2a13d6ece412b68aba57f5ddee4ba070221e4310bb1",
+        "community-migration": "sha256:47bb91c75faafc12ce6de833506f2725d3a07a4dda15bb3dfe4df0d8b8ec02e2"
+      },
+      "records": [
+        {
+          "name": "frontend-sdk-oidc-catalog-tls",
+          "passed": true
+        },
+        {
+          "name": "public-tls-missing-workload-denied",
+          "passed": true
+        },
+        {
+          "name": "public-metrics-hidden",
+          "passed": true
+        },
+        {
+          "name": "private-course-tls-catalog",
+          "passed": true
+        },
+        {
+          "name": "private-application-credential-required",
+          "passed": true
+        },
+        {
+          "name": "private-community-peer-denied",
+          "passed": true
+        },
+        {
+          "name": "signed-project-and-public-route-boundaries",
+          "passed": true
+        },
+        {
+          "name": "authenticated-idempotent-enrollment",
+          "passed": true
+        },
+        {
+          "name": "private-peer-spoofing-and-direct-backend-denial",
+          "passed": true
+        },
+        {
+          "name": "signed-mux-only-exception",
+          "passed": true
+        },
+        {
+          "name": "publisher-projection-and-worker-loop",
+          "passed": true
+        },
+        {
+          "name": "actual-community-authority-client",
+          "passed": true
+        },
+        {
+          "name": "worker-restart-requested",
+          "passed": true
+        },
+        {
+          "name": "worker-recovered-after-restart",
+          "passed": true
+        },
+        {
+          "name": "maintenance-holds-application-writes",
+          "passed": true
+        }
+      ]
+    },
+    "gatewayScan": {
+      "highCritical": 0,
+      "imageIndexId": "sha256:4a59970da1cf5f173f442bd52fef8c2634df2ec68ab89312f7d9f901baed555d",
+      "reportSha256": "fca1bce2b378ea4a74a159134637f7c4a397086a861887f1d63d821870c5bbac",
+      "archiveSha256": "daa0ccdd25a3cb8a7ce62f0f7a5b90cb547fd71dbcf4ad505be99de0f1499b7f"
+    },
+    "logSha256": {
+      "p1-runtime-host-tests-final.log": "5021100330fb8ce47322d1ae30fda3c79039a955e264efd54658ff9e48ad2b98",
+      "p1-runtime-node-tests-final.log": "ddaf39b65e2d25e45f3bc2b5a85ebd3837e61471084f0df2ae71c7b48e359322",
+      "p1-runtime-eslint-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "p1-owned-runtime-preflight-final.log": "061503dc9a17a5d746cb64baf98588ba53b5d1faed4d12bfb61eadc05ca9267b",
+      "p1-runtime-harness-final.log": "b5a4ddd4d62e21007577eb01c57f40eb25800754fd266a3f3773d6669f6b25f7",
+      "p1-runtime-gateway-build.log": "8e174c993a4e347234ece7a74bb3b71e649543103d70acc0a5494ea60f41d8a9",
+      "p1-runtime-gateway-final-scan.log": "ed7806f95ce6dddb4543c683b491d2a4963fc9ff601c99699bb31c80bb70e93f"
+    },
+    "sourceFileSha256": {
+      "docs/api-integration/operator-migrations.md": "b713da28637c4daccd326e2987eba676dfbd9163c7f909dca17c475094de0541",
+      "docs/api-integration/release-policy.md": "c68ad8843ca2f503c9c5058be3a0a3733511062655ae3ce28e521a1ce8c0a299",
+      "ops/gateway/Dockerfile": "ed3a4500d618971daa35897e906a466675205f8af217bf0451b0b9a6dbbbe04b",
+      "ops/gateway/policy.mjs": "d46741d06aae3df8a6148372bd904230984199860d5bcbf039126fb6c769c9a6",
+      "ops/gateway/server.mjs": "9bc1d572a9563e81d9db44f621072f06794c72b48ee065e0f310b035bcd359fd",
+      "ops/gateway/server.test.mjs": "2a77820f1aaf120833905204f5166c5fa97c3cb82a6163878c503f6b4d90786f",
+      "ops/platform/README.md": "a1ef327cb1d0c84ba32f70f9a9aa3d205ad6137d7468e4b1d1af61f5b007a0bf",
+      "ops/platform/artifact-candidate.mjs": "9d29538e49699756a7d660991290d01759b3818ecd7034c160267d22e314724a",
+      "ops/platform/artifact-candidate.test.mjs": "307709b99f3d0f39bdad0184f9421d0077db232e3cedb06227fd924fa360d55a",
+      "ops/platform/compose.yaml": "dae128191c0237ddc69ab9974465d3fd9ad21908fdb0ec6ec8b3578e40f7142d",
+      "ops/platform/harness/driver.mjs": "3bdf0864bc40ee78e6b018570b16a68a2d92e921db8a83703d5f239dc8878a84",
+      "ops/platform/host/migrate.py": "3bc029f669e72597c13b31e523351ac7d8bc4e01c5d1f9910b06e57632929fd7",
+      "ops/platform/prepare-migrations.mjs": "5882f3b8f0ea6d8ade0eefd67aeab66bdcbc99eaaaaeddce9b7761138576de01",
+      "ops/platform/prepare-migrations.test.mjs": "2d2a46cd6551d357e7d0ff241b69c56c40f8e7c182ba4fcad0127dd86dd9c748",
+      "ops/platform/source-checkout.test.mjs": "180024c0eaa7aaa0ba0d2170355779415754119a2a8323da27e55dbae1845a6c",
+      "docs/api-integration/baselines/2026-11-01-runtime-release/harness.json": "d45c020eb60462004666d289b3d096454714624db7a7a6326427ab2d4876b43e",
+      "docs/api-integration/operator-runtime-release.md": "4a4b4e738efb42fe1bcf4f5b234f46e06cbadd6b2910e13c1cfb6452227cfbd7",
+      "ops/gateway/release-probe.mjs": "fc1935b552a0d2a3af3138a366fdd402abe8590e84488c8c0a5b6ed1a8b81bf8",
+      "ops/gateway/release-probe.test.mjs": "80b2af5b31de89eda6cdaf84230db9d2aaf7dc2895d996a24535a014ca1133b5",
+      "ops/platform/host/release.py": "2dc9ed75340f85c173d422e836176cfd58dd95cebb3d9c028a7773be2ed733ae",
+      "ops/platform/host/release_test.py": "c079556f3180d427a291c80ecd9e81ce63c38aa5f98c28e94a27a20f78f0fd97"
+    }
+  },
+  "limitations": [
+    "No provider, real credential, live migration, host provisioning, delivery or production activation.",
+    "Actual Linux AMD64 host ownership/Compose health/cancellation and reboot/recreation remain unverified. Local image and integration evidence are ARM64.",
+    "Frontend migration/Vercel deployment coordination and final gateway write admission remain implementation work. This command never enables writes or authorizes frontend/production traffic.",
+    "Real Vercel-issued request/scheduled OIDC, external IPv4/IPv6 boundaries, scheduler behavior, live recovery and compatible rollback remain required.",
+    "Remote source CI and immutable private AMD64 image publication are unqualified. Source/runtime/migration credential handoff remains deferred.",
+    "Billing evidence is excluded; P1-08 monitoring/alerting remains deferred."
+  ]
+}

@@ -1,5 +1,17 @@
 # P1-02 — Environment configuration and resource inventory
 
+Current status: **P1-02 is DONE**, accepted October 29. The dated inventory below
+is retained as historical provider evidence, not a current blocking checklist.
+The [single-operator release policy](release-policy.md),
+[affordability decision](decisions/2026-11-01-affordability-without-billing-gates.md)
+and [monitoring deferral](decisions/2026-10-29-sole-operator-and-monitoring-deferral.md)
+supersede its billing-access/cost-worksheet gates, external executor/App/reviewer
+setup and monitoring requirements. Dardan has subsequently supplied the hostname,
+SSH key/network and credential handoff. Those supplied inputs must be verified at
+their consumers; they must not be requested again merely because this older
+inventory lists them as pending. Actual host, provider and release qualification
+remain later P1 implementation work.
+
 Prepared 2026-10-04; updated 2026-10-22. Status: Lightsail/OIDC planning baseline
 selected; [authenticated inventory and local guards](baselines/2026-10-22-p1-02-progress.md)
 are recorded. The [staging project setup](baselines/2026-10-22-p1-02-setup.md)

@@ -1,0 +1,7 @@
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends iptables python3 \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY bootstrap.py packages.lock.json firewall_check.py ./
+CMD ["python3", "/app/firewall_check.py"]

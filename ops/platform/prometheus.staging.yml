@@ -1,0 +1,33 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels: {environment: staging, platform: lash-her}
+
+rule_files: [/etc/prometheus/alerts/platform.yml]
+
+# An independently hosted Alertmanager must be configured at release time.
+# Keeping this empty prevents accidental sends while preparing the platform.
+alerting:
+  alertmanagers: []
+
+scrape_configs:
+  - job_name: lash-her-course-api
+    scheme: https
+    tls_config: {ca_file: /tls/ca.pem}
+    static_configs: [{targets: ["course-tls:8443"], labels: {environment: staging}}]
+  - job_name: lash-her-community-api
+    scheme: https
+    tls_config: {ca_file: /tls/ca.pem}
+    static_configs: [{targets: ["community-tls:8443"], labels: {environment: staging}}]
+  - job_name: lash-her-course-publisher
+    static_configs: [{targets: ["course-publisher:4001"], labels: {environment: staging}}]
+  - job_name: lash-her-course-snapshot
+    static_configs: [{targets: ["course-snapshot:4002"], labels: {environment: staging}}]
+  - job_name: lash-her-community-worker
+    static_configs: [{targets: ["community-worker:4101"], labels: {environment: staging}}]
+  - job_name: lash-her-gateway
+    static_configs: [{targets: ["gateway:9100"], labels: {environment: staging}}]
+  - job_name: lash-her-private-tls
+    static_configs: [{targets: ["course-tls:9100", "community-tls:9100"], labels: {environment: staging}}]
+  - job_name: lash-her-host
+    static_configs: [{targets: ["node-exporter:9100"], labels: {environment: staging}}]

@@ -1,0 +1,26 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "staging"
+  },
+  {
+    "ParameterKey": "AvailabilityZone",
+    "ParameterValue": "us-east-1a"
+  },
+  {
+    "ParameterKey": "BundleId",
+    "ParameterValue": "medium_3_0"
+  },
+  {
+    "ParameterKey": "OperatorIpv4Cidr",
+    "ParameterValue": "99.239.200.211/32"
+  },
+  {
+    "ParameterKey": "KeyPairName",
+    "ParameterValue": "Dardan"
+  },
+  {
+    "ParameterKey": "HostOperator",
+    "ParameterValue": "dardan"
+  }
+]

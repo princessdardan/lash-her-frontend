@@ -1,0 +1,228 @@
+{
+  "version": 1,
+  "date": "2026-11-01",
+  "status": "LOCAL_INTEGRATION_AND_ARTIFACT_VERIFIED_NOT_DEPLOYED",
+  "sourcePreparationRef": "2026-11-01-source-preparation.json",
+  "operator": "Dardan",
+  "architecture": "linux/arm64",
+  "changes": [
+    "Shared immutable image resolver uses runnable Docker index IDs, independently matches an immutable registry digest and refuses missing/ambiguous IDs. This fixes Docker29 platform-manifest IDs being mistaken for runnable image IDs.",
+    "Candidate collection and the integration harness share the resolver; neither falls back to deploying a mutable tag.",
+    "The publication tracker reflects the accepted P1 scope and current release-policy amendments."
+  ],
+  "verification": {
+    "gatewayAndPlatformTests": 47,
+    "opsEslint": "passed",
+    "database": {
+      "frontend": 188,
+      "course": 17,
+      "community": 22,
+      "cleanMigrations": "passed all three",
+      "apiMigrationRoundTrips": "passed both",
+      "courseBrowser": {
+        "passed": 28,
+        "projects": [
+          "chromium",
+          "mobile"
+        ]
+      }
+    },
+    "integration": {
+      "runId": "7e28ca45-7e57-427d-9147-e1cfe83cfb41",
+      "images": {
+        "gateway": "sha256:dbfa425cd8e5024a5a4975ab13e8b3e42cc45bbd2767d7516d31a5ad78e204bf",
+        "course-runtime": "sha256:0f7179beaaf16ff91ac805a273de273b9e8d5f66dbca417101a5d1433e41cd8e",
+        "course-migration": "sha256:a31cfe80278c01dcd101edf1062b8e1d23f9eb355ee9be5c070a064b9a8d042d",
+        "community-runtime": "sha256:f54e577a1990a9b4d6b0e2a13d6ece412b68aba57f5ddee4ba070221e4310bb1",
+        "community-migration": "sha256:47bb91c75faafc12ce6de833506f2725d3a07a4dda15bb3dfe4df0d8b8ec02e2"
+      },
+      "records": [
+        {
+          "name": "frontend-sdk-oidc-catalog-tls",
+          "passed": true
+        },
+        {
+          "name": "signed-project-and-public-route-boundaries",
+          "passed": true
+        },
+        {
+          "name": "authenticated-idempotent-enrollment",
+          "passed": true
+        },
+        {
+          "name": "private-peer-spoofing-and-direct-backend-denial",
+          "passed": true
+        },
+        {
+          "name": "signed-mux-only-exception",
+          "passed": true
+        },
+        {
+          "name": "publisher-projection-and-worker-loop",
+          "passed": true
+        },
+        {
+          "name": "actual-community-authority-client",
+          "passed": true
+        },
+        {
+          "name": "worker-restart-requested",
+          "passed": true
+        },
+        {
+          "name": "worker-recovered-after-restart",
+          "passed": true
+        }
+      ]
+    },
+    "runtimeMigrationBoundaries": {
+      "course-runtime": {
+        "status": "RUNTIME_ARTIFACT_BOUNDARY_PASS"
+      },
+      "course-migration": {
+        "status": "MIGRATION_ARTIFACT_BOUNDARY_PASS",
+        "migrations": 17,
+        "explicitOperatorEntrypoint": true,
+        "defaultReadOnly": true
+      },
+      "community-runtime": {
+        "status": "RUNTIME_ARTIFACT_BOUNDARY_PASS"
+      },
+      "community-migration": {
+        "status": "MIGRATION_ARTIFACT_BOUNDARY_PASS",
+        "migrations": 10,
+        "explicitOperatorEntrypoint": true,
+        "defaultReadOnly": true
+      }
+    },
+    "packagedPostgres18": {
+      "course": {
+        "status": "OPERATOR_MIGRATION_OWNED_POSTGRES_PASS",
+        "service": "lash-her-course-api",
+        "postgresMajor": 18,
+        "migrations": 17,
+        "checks": [
+          "forward-apply",
+          "data-bearing-upgrade",
+          "lock-contention",
+          "already-current",
+          "wrong-ca",
+          "wrong-role",
+          "changed-lineage",
+          "schema-drift",
+          "runtime-ddl-journal-isolation",
+          "production-artifact-promotion"
+        ],
+        "providerTouched": false,
+        "privateSchemaExportSha256": "37ade8ed26c00ba515c9c91bc9f8e8fecadd7d757adef8777833af4523926c36",
+        "artifactSha256": "4dcfa96588280c6107898657e69b5ed4a1d9f4ffb288e7061dd5023d2e07a4f9"
+      },
+      "community": {
+        "status": "OPERATOR_MIGRATION_OWNED_POSTGRES_PASS",
+        "service": "lash-her-community-api",
+        "postgresMajor": 18,
+        "migrations": 10,
+        "checks": [
+          "forward-apply",
+          "data-bearing-upgrade",
+          "lock-contention",
+          "already-current",
+          "wrong-ca",
+          "wrong-role",
+          "changed-lineage",
+          "schema-drift",
+          "runtime-ddl-journal-isolation",
+          "production-artifact-promotion"
+        ],
+        "providerTouched": false,
+        "privateSchemaExportSha256": "eb99b6f154081c16cc950470a1ac368f35b4ec68a869aa61537cc45d43b37149",
+        "artifactSha256": "a834003d07b860efacdad12731d1e10cb29aac7a835af3553731f8318963adee"
+      }
+    },
+    "scans": {
+      "gateway": {
+        "highCritical": 0,
+        "indexImageId": "sha256:dbfa425cd8e5024a5a4975ab13e8b3e42cc45bbd2767d7516d31a5ad78e204bf",
+        "platformManifestId": "sha256:83181a9de275bdbc24ebcb0f94544d854e5f442052fc6a6e27a831f6faeaf2bf",
+        "archiveSha256": "15321e5c3fdde68a9aee89d7d2b4b8a617ad1e571b3de32479b7ffb1973ddcda",
+        "reportSha256": "8bbe84a21c6d2e3091db66a1161eb24316886ce297e87d245729782c2249f040",
+        "dbMetadata": {
+          "Version": 2,
+          "NextUpdate": "2026-11-03T01:14:05.64063672Z",
+          "UpdatedAt": "2026-11-02T01:14:05.640637121Z",
+          "DownloadedAt": "2026-11-02T02:40:51.831886716Z"
+        }
+      },
+      "course-runtime": {
+        "highCritical": 0,
+        "indexImageId": "sha256:0f7179beaaf16ff91ac805a273de273b9e8d5f66dbca417101a5d1433e41cd8e",
+        "platformManifestId": "sha256:72e3f6950814f9ed5e0d28de548b712e52f0c14213a1402f122c1877a9dcbda1",
+        "archiveSha256": "5f0ff00bc5dddad1dbea1116312786ccb77a1668f8e5f751d13121e9495e9864",
+        "reportSha256": "c7ff1fc77258889fddd85d20408de8ffbc8de68a72454729848789ea4813bcaf",
+        "dbMetadata": {
+          "Version": 2,
+          "NextUpdate": "2026-11-03T01:14:05.64063672Z",
+          "UpdatedAt": "2026-11-02T01:14:05.640637121Z",
+          "DownloadedAt": "2026-11-02T02:40:51.831886716Z"
+        }
+      },
+      "course-migration": {
+        "highCritical": 0,
+        "indexImageId": "sha256:a31cfe80278c01dcd101edf1062b8e1d23f9eb355ee9be5c070a064b9a8d042d",
+        "platformManifestId": "sha256:3db6f60f22e4ddc9fae45871ef8c46c6ed64dc7a2733150ef154f65d7d0fa47d",
+        "archiveSha256": "385cf317fccbbfc6a0648761b8f5901ab8e9d6a3c0d1701eb7d47fabf287e943",
+        "reportSha256": "c0b4cbe433a877752a2fe0686c7ce4fb8b3c2439e06ebbb60bfe2a102087ef0e",
+        "dbMetadata": {
+          "Version": 2,
+          "NextUpdate": "2026-11-03T01:14:05.64063672Z",
+          "UpdatedAt": "2026-11-02T01:14:05.640637121Z",
+          "DownloadedAt": "2026-11-02T02:40:51.831886716Z"
+        }
+      },
+      "community-runtime": {
+        "highCritical": 0,
+        "indexImageId": "sha256:f54e577a1990a9b4d6b0e2a13d6ece412b68aba57f5ddee4ba070221e4310bb1",
+        "platformManifestId": "sha256:2f7c6eae56c5fde8e2f11985d0be401632927d9efa3aa0e422fb0ed6f7a38f6a",
+        "archiveSha256": "03874758492d84b92064c37a565fbbbf51635ce26365775081f837f1f1442fc7",
+        "reportSha256": "107cb3fdf9667454849bde9692cff6afa5f5155f37d6055f5e3ba8ef94c9c5c6",
+        "dbMetadata": {
+          "Version": 2,
+          "NextUpdate": "2026-11-03T01:14:05.64063672Z",
+          "UpdatedAt": "2026-11-02T01:14:05.640637121Z",
+          "DownloadedAt": "2026-11-02T02:40:51.831886716Z"
+        }
+      },
+      "community-migration": {
+        "highCritical": 0,
+        "indexImageId": "sha256:47bb91c75faafc12ce6de833506f2725d3a07a4dda15bb3dfe4df0d8b8ec02e2",
+        "platformManifestId": "sha256:15d028969d33011d199afefe4db001edaab72586c53640258394e146e355f557",
+        "archiveSha256": "7f515fda492cc64e862d41ef85ba35bcee355c3d59a1ba5f4e9878426385e28f",
+        "reportSha256": "16c420f25fc70fcfe7ae719800876a1a9a4e80e11e4bcf4cc1999c74e10b4a12",
+        "dbMetadata": {
+          "Version": 2,
+          "NextUpdate": "2026-11-03T01:14:05.64063672Z",
+          "UpdatedAt": "2026-11-02T01:14:05.640637121Z",
+          "DownloadedAt": "2026-11-02T02:40:51.831886716Z"
+        }
+      }
+    },
+    "sourceHash": {
+      "ops/platform/local-images.mjs": "9a84a5aa7272f030637841aaf2ca2884653c2dbb55f6f3af11ed01645acf5e9a",
+      "ops/platform/local-images.test.mjs": "565e6dd62667cec7d49c9925e050a9b6e84cf1fea5afc36539c1a423f8f66de6",
+      "ops/platform/local-harness.mjs": "af146cfa314fecfd0bef8ec35f9e44e7f380c7fbc827d009d968b056344a35a9",
+      "ops/platform/artifact-candidate.mjs": "cde2b07d31a566605d36570fccc0f6e4b0e0319c5086de1626efecdd18225ecc"
+    },
+    "logSha256": {
+      "p1-publication-platform-current.log": "88456b760cac49c255df288dd10fa2bc16be2afceea11ea3c997c2807d5b774b",
+      "p1-publication-ops-current-lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "p1-publication-database-browser.log": "5642fdec247b589eacc41b6077e22f83e01cd9d1b22465e52d924aaa0b286ad5",
+      "p1-publication-integration-harness-2.log": "167042af6d22636d057dcb547eac8e2f94cafa797de6e070d23609e7289920e3"
+    }
+  },
+  "limitations": [
+    "No cloud/resource/secret mutation, live migration, delivery or deployment.",
+    "Local fixture OIDC/JWKS and Linux ARM64 containers do not prove real Vercel-issued tokens, public IPv4/IPv6 ingress, AMD64 publication, actual host restart/recreation, scheduler or provider recovery.",
+    "Exact remote CI, immutable private registry publication, runtime release coordination and live staging acceptance remain open.",
+    "The fine-grained source credential and private runtime/migration credential handoff remain deferred; no billing or monitoring input is requested."
+  ]
+}

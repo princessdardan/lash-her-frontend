@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "date": "2026-11-02",
+  "scope": "Trusted parent continuation after verified API startup under the existing host release lock",
+  "implementation": "ops/platform/host/release.py:execute(after_runtime_ready=...)",
+  "behavior": [
+    "No standalone CLI flag, executable-path input or serialized success receipt enables a continuation",
+    "A configured continuation must be callable before private configuration reads",
+    "All database stages, API readiness and boundary checks complete and retain durable receipts before the continuation",
+    "The same release/watchdog flock remains held throughout the continuation",
+    "The parent receives private snapshot/attempt paths and copies of release/API outcome values",
+    "Callback return values do not authorize traffic or qualify the API receipt as release acceptance",
+    "Continuation failure stops API runtime under the lock and retains separate failure evidence without erasing prior database/API receipts"
+  ],
+  "verification": {
+    "runtimeCoordinatorTestsPassed": 18,
+    "allHostTestsPassed": 73,
+    "newCases": [
+      "After durable runtime success, callback observes the held lock, full runtime and all three database receipts; mutations of callback copies do not alter returned result",
+      "Callback failure stops runtime and preserves independent database/API success plus separate failure evidence",
+      "Invalid callback refused before private reads",
+      "Failed API boundary verification never invokes callback"
+    ],
+    "scope": "Mocked Docker/provider operations with actual filesystem receipts and flock contention",
+    "providerTouched": false
+  },
+  "boundaries": {
+    "realFrontendVerificationImplemented": false,
+    "fullParentCoordinatorImplemented": false,
+    "providerPromotionPerformed": false,
+    "trafficAuthorized": false,
+    "liveDeploymentOrMigrationPerformed": false,
+    "p1Complete": false
+  }
+}

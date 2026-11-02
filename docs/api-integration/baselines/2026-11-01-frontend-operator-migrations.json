@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "date": "2026-11-01",
+  "scope": "Frontend operator migration component and release-policy command alignment; isolated publication checkout only",
+  "parentCommit": "9741093b0cf306890708ce0cc8ffe185d39fbc69",
+  "sourceHashes": {
+    "ops/platform/frontend-migration.mjs": "b677cf2202e700263502453bbcd9894074443bc06e1a3858af85f6b22a97f157",
+    "ops/platform/frontend-schema.mjs": "0515dd205c2e355275010724d574136e3bc33a1cf3fbfa18bd57fa9161e513d8",
+    "ops/platform/test-frontend-migration-local.mjs": "d34c5e23455cb105d6194da88adf55a987ac73ff0acb2e1b7d8a98ce2d7a3081",
+    "ops/platform/frontend-migration.test.mjs": "ae509d1a3ac492f56d5187f2e41e94c2ffa5128a7869f233aef1524ecdc15c16",
+    "ops/platform/prepare-migrations.mjs": "04aef7b37c33bc2a2b3097a831fd86a6acc871ce3cccf446384304a3ddffc719",
+    "ops/platform/prepare-migrations.test.mjs": "f8360ee9eb16e93ab7960433fe487b6eef956f3fcc92c0b625a0ce9b1671d7c2",
+    "ops/platform/artifact-candidate.mjs": "dfd92351e21d974711711f1385783703e49b1a876d0be5e6d91991ed8641f5a4",
+    "ops/platform/source-policy.mjs": "385a9adde3355b1d7e94b74f6e28c34dfae4326e30149d13b61af9608acea8d5",
+    ".github/workflows/ci.yml": "28c0d0d04aeccaaac0116047f2c43a224620c5eb39dcc4f5cad075b1f3b21c31",
+    ".github/workflows/platform-artifacts.yml": "b55891357b28da6bae8376be3cdf70ce211c973093f394c6ad6beba50f109b5e",
+    "scripts/migrate-private-db.ts": "b89f0b30d5bf3874c46141c1d0f076ff403a1507730708bd1c15b5a61ab3d404",
+    "ops/staging/migrate-frontend.ts": "539d0a72c4f9ac57c56756761758f1c9e6f8448177560b5aa4a0c6bfc71bf5b1"
+  },
+  "verification": {
+    "platformGatewayTests": 62,
+    "targetedPolicyTestsPassed": true,
+    "historicalStagingGuardTests": 17,
+    "targetedEslint": "passed",
+    "typescript": "passed",
+    "workflowActionlint": "passed",
+    "ownedPostgres": [
+      {
+        "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+        "postgresMajor": 16,
+        "migrations": 80,
+        "checks": [
+          "fresh-apply",
+          "already-current",
+          "data-bearing-upgrade",
+          "lock-contention",
+          "pending-chain-refusal",
+          "lineage-refusal",
+          "schema-refusal",
+          "runtime-privilege-refusal",
+          "tls-certificate-refusal",
+          "exact-artifact-production-promotion"
+        ],
+        "providerTouched": false,
+        "sqlArtifactSha256": "775201b5352db56e2fe0402f5e9f9232e19cff131e38a71dca51dd1c72e77b3c",
+        "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+        "schemaBaselineSha256": "aa0dde73d73135fe922affee4e76a90ccdad2bde64e3277a3eccd39391132fb6"
+      },
+      {
+        "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+        "postgresMajor": 18,
+        "migrations": 80,
+        "checks": [
+          "fresh-apply",
+          "already-current",
+          "data-bearing-upgrade",
+          "lock-contention",
+          "pending-chain-refusal",
+          "lineage-refusal",
+          "schema-refusal",
+          "runtime-privilege-refusal",
+          "tls-certificate-refusal",
+          "exact-artifact-production-promotion"
+        ],
+        "providerTouched": false,
+        "sqlArtifactSha256": "775201b5352db56e2fe0402f5e9f9232e19cff131e38a71dca51dd1c72e77b3c",
+        "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+        "schemaBaselineSha256": "b6b8f15ba8a8e503763920085c290bb4aaeb637c5f41875939974a1276f79276"
+      }
+    ]
+  },
+  "liveActions": {
+    "providerTouched": false,
+    "credentialsAcquired": false,
+    "sourcePushed": false,
+    "imagesPublished": false,
+    "sharedDatabaseMigrated": false,
+    "deployed": false,
+    "trafficAdmitted": false
+  },
+  "limitations": [
+    "Owned clusters and synthetic source/promotion receipts are not actual staging acceptance.",
+    "Remote CI and release-qualified AMD64 artifacts are pending.",
+    "Frontend deployment/promotion and final admission are not yet joined to the host release lock.",
+    "Runtime/release credential handoff remains deferred.",
+    "Billing evidence is excluded; monitoring is deferred."
+  ]
+}

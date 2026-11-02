@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "date": "2026-11-02",
+  "scope": "Initial credential provisioning for existing Course staging NOLOGIN roles",
+  "operatorStatement": "Dardan confirmed dedicated Course migration/runtime credentials are not provisioned.",
+  "readOnlyProviderEligibility": {
+    "host": "ep-sparkling-moon-b4htlczb.c-6.us-east-2.aws.neon.tech",
+    "database": "neondb",
+    "serverMajor": 18,
+    "publicApplicationTables": 0,
+    "roles": {
+      "lash_her_course_staging_migration": {
+        "loginEnabled": false,
+        "operatorAdminOption": true
+      },
+      "lash_her_course_staging_runtime": {
+        "loginEnabled": false,
+        "operatorAdminOption": true
+      }
+    },
+    "passwordHashesRead": false,
+    "providerMutationPerformed": false
+  },
+  "implementation": "ops/staging/provision-course-logins.mjs",
+  "runbook": "docs/api-integration/operator-course-initial-logins.md",
+  "privateBindingsRequired": [
+    "COURSE_STAGING_ADMIN_DATABASE_URL",
+    "COURSE_STAGING_DATABASE_URL",
+    "COURSE_STAGING_RUNTIME_DATABASE_URL"
+  ],
+  "verification": {
+    "status": "COURSE_INITIAL_LOGIN_OWNED_POSTGRES18_PASS",
+    "fixture": "ops/staging/tests/course-initial-logins.integration.mjs",
+    "postgresMajor": 18,
+    "network": "none; owned loopback TLS/SCRAM cluster only",
+    "checks": [
+      "wrong-target-refused-before-connect",
+      "shared-password-refused-before-connect",
+      "unverified-tls-refused-before-role-changes",
+      "contended-role-lock-refused",
+      "populated-target-refused-without-login-changes",
+      "runtime-privilege-drift-refused",
+      "second-role-failure-rolls-back-both",
+      "both-distinct-scram-logins-verified-over-tls",
+      "second-activation-refused-without-password-rotation",
+      "wrong-runtime-password-denied",
+      "application-schema-unchanged"
+    ],
+    "exactHardenedCiCommandVerified": true,
+    "defaultPlanReadsCredentials": false,
+    "remoteCi": {
+      "sourceCommit": "18450dac2d89bcea8ef31c4e5c99f7f7c4f99de1",
+      "runId": 41501210862,
+      "allTenJobs": "success",
+      "initialLoginIntegrationStep": "success"
+    }
+  },
+  "boundaries": {
+    "liveActivationPerformed": false,
+    "storedCredentialsChanged": false,
+    "providerMigrationPerformed": false,
+    "liveDeploymentPerformed": false,
+    "newDatabaseOrSchemaGrants": false,
+    "credentialValuesOrScramVerifiersDisplayed": false,
+    "automaticRetryOrRotation": false,
+    "p1Complete": false
+  },
+  "remaining": [
+    "Dardan prepares three private bindings in existing 1Password Environment",
+    "Explicit initial activation followed by both fresh credential authentication checks",
+    "Remaining parent release coordinator and actual staging qualification"
+  ]
+}

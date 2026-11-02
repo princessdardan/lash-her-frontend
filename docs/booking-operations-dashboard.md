@@ -112,16 +112,9 @@ Redis/KV still stores short-lived OAuth state and coordination locks. The protec
 1. Back up the target database and verify PITR/restore readiness.
 2. Inspect migration lineage, apply reviewed migrations with explicit target guards, then confirm the target is current before deploying code:
 
-   ```bash
-   npm run db:check -- --env-file <protected-env-file>
-   DOTENV_CONFIG_PATH=<protected-env-file> \
-   PRIVATE_DB_MIGRATION_TARGET=TARGET_NAME \
-   PRIVATE_DB_MIGRATION_HOST=EXACT_DATABASE_HOST \
-   npm run db:migrate
-   npm run db:check -- --env-file <protected-env-file>
-   ```
+   Follow the [frontend operator migration procedure](api-integration/operator-frontend-migrations.md) for release-target writes; `npm run db:migrate` is restricted to isolated loopback local databases.
 
-   Replace `<protected-env-file>`, `TARGET_NAME`, and `EXACT_DATABASE_HOST` with the reviewed target values. A pre-apply exit code of 1 is expected when the only finding is the reviewed pending migration set. Production also requires `PRIVATE_DB_MIGRATION_CONFIRM=production` on the migration command. The migration runner commits each journal entry independently. PostgreSQL requires this when a later migration uses an enum value introduced by an earlier migration. Follow `docs/private-database-migration-runbook.md`; do not rely on whichever `DATABASE_URL` happens to be present in a default `.env` file.
+   The preflight must show only the reviewed pending migration range. Each journal entry commits independently for PostgreSQL enum compatibility. The operator command binds the exact source/SQL/schema and target, without loading a default `.env` file.
 
 3. Deploy current environments with `SERVICE_BOOKING_MODEL_MODE=operational`. Do not switch an already-operational environment back to `dual` for routine deployment.
 4. Sign in at `/admin` with the configured bootstrap owner Google account.

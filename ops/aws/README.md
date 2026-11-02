@@ -1,5 +1,7 @@
 # P1-02 Lightsail provisioning
 
+**Current status, November 2:** The approved staging stack `lash-her-api-staging` is created with host `lash-her-api-staging-host` and attached static IPv4 `184.196.129.231`. Docker 29.9.2, Compose 5.6.1, restricted SSH/UFW and both forwarding hooks are verified on the actual AMD64 host, including reboot recovery. The first cloud-init script failed because Lightsail runs its prefixed initialization under `/bin/sh`; the Bash-only `pipefail` option was incompatible. The host was repaired with the equivalent POSIX script. The corrected template and a shell regression test pass; Dardan approved its non-replacing CloudFormation update, which completed successfully and matches the stored template. The actual Ubuntu shell reproduces the old failure and accepts the corrected header. Original cloud-init failure history is preserved. No API container, migration, gateway DNS/TLS or application release has run. [Live provisioning evidence](../../docs/api-integration/baselines/2026-11-02-staging-host-provisioning.json) records the exact operation and remaining qualification.
+
 Prepared 2026-10-22. Configuration only: no Lightsail stack, host, address, DNS
 record, key pair, credential, database or deployment was created. The existing
 application deployment role remains unchanged.

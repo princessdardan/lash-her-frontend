@@ -1,0 +1,15 @@
+[Unit]
+Description=Bounded recovery for unhealthy Lash Her processes
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/lash-her/ops/platform/host/watchdog.py lash-her-staging /var/lib/lash-her/watchdog.json --apply
+TimeoutStartSec=240
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/lash-her /run/lock
+PrivateTmp=true

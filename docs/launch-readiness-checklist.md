@@ -49,8 +49,8 @@ Use `docs/private-database-migration-runbook.md` for the complete migration proc
 - [ ] Migration approver is assigned and aware of the migration window.
 - [ ] Migration evidence template is ready for recording the run.
 - [ ] Run `npm run db:check` against staging and production before migration. If migrations are pending, its non-zero `PENDING` result must list only the reviewed range; any `LINEAGE PROBLEM`, unknown hash, duplicate timestamp, or required gap is a stop condition. After migration, run it again and require exit zero through the final journal entry. A timestamp-only query is insufficient.
-- [ ] Staging migration uses `PRIVATE_DB_MIGRATION_TARGET=staging` and an exact `PRIVATE_DB_MIGRATION_HOST=<verified-staging-host>` with `npm run db:migrate`.
-- [ ] Production migration uses `PRIVATE_DB_MIGRATION_TARGET=production`, exact `PRIVATE_DB_MIGRATION_HOST=<verified-production-host>`, and `PRIVATE_DB_MIGRATION_CONFIRM=production` with `npm run db:migrate`. The command is not run until backup/PITR and approver checks pass.
+- [ ] Staging migration uses the [frontend operator migration procedure](api-integration/operator-frontend-migrations.md) with exact source/SQL/schema, target, reviewed pending chain and privately delivered staging migration credential.
+- [ ] Production operator migration matches successful staging source/SQL/schema, current production recovery evidence and exact target. Dardan explicitly selects production.
 - [ ] CI passed both zero-to-latest and data-bearing 0033-to-latest migration jobs, including legacy duplicate Helcim-identity quarantine assertions.
 - [ ] Staging smoke tests pass with the latest database schema.
 - [ ] Retention and redaction owner is identified.

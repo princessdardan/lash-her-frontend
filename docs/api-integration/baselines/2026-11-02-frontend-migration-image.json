@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "date": "2026-11-02",
+  "scope": "Locally verified frontend migration image and three-database host protocol; full frontend release is unfinished",
+  "sourceParentCommit": "34ce5f09c72029bd577257f01f55ab61de894dfe",
+  "sourceHashes": {
+    "ops/platform/frontend-migration.mjs": "65c8b07911847bfab62eb1526ce302c90d4ae5bf5b418c1b647378fb47ffce01",
+    "ops/platform/frontend-image.mjs": "2a44f8b33211a73020f6b4c9d22d52ddd784f2b0046251b635b9e36c7a545452",
+    "ops/platform/frontend-image-source.mjs": "1a50179bbda7ad09c45b67ce9edb7a9762333a7bcacfe7d1cae4f60985bbf754",
+    "ops/platform/frontend-schema.mjs": "0515dd205c2e355275010724d574136e3bc33a1cf3fbfa18bd57fa9161e513d8",
+    "ops/platform/frontend-migration-deps/package.json": "5c0b0e1bb1819a1667a31e2a877c8bcaea3253f761199d97c0700bdbcb7782a4",
+    "ops/platform/frontend-migration-deps/package-lock.json": "bbb5350b86516f401d7509d6d2f5f86d77ed4916a09bea569c27ea041f648624",
+    "ops/platform/Dockerfile.frontend-migration": "d3f506e0e4331a193e33abded4ef27a13d8512205b89722e66dc9418561bf6d4",
+    "ops/platform/Dockerfile.frontend-migration.dockerignore": "6493144a20ed8ed2d37312a6a2cd4f99bea156ee6e8575dd58f39e6199fe7e25",
+    "ops/platform/Dockerfile.frontend-migration-test": "be1e451233dd9e2395aacf12fcd430bf33a879a15e070fd02e1d7c945530c570",
+    "ops/platform/test-frontend-migration-local.mjs": "f383d7ded8a9a3d3290f412b8e87f2ed22bfe15f72d296e4ac6f51a8d67f7ab3",
+    "ops/platform/host/migrate.py": "2338677289e4130e5ccb4cef7bd7a57a4fd0aadaea2c64842f655e391bf0cf06",
+    "ops/platform/host/release.py": "864889676f90ff216e133ac791215a85a1dc79d5eae26c649e54fa6a9b348ddb",
+    ".github/workflows/ci.yml": "23ad80dfe26ef7f4f46c7a3563d12c67ced0d89c262a595d336d7b9db72f9c1a",
+    ".github/workflows/platform-artifacts.yml": "cbcbdcdde540cf2d7d0a8b885f9e5e8a7fbeceeca8a8ebcb40233b6a29a4837a",
+    "ops/platform/artifact-candidate.mjs": "29c8f309bd0ad7740f3e76967e366b42c4ab7b102787604076c83e6c71c63d34"
+  },
+  "verification": {
+    "gatewayPlatformTests": 66,
+    "hostProtocolTests": 41,
+    "eslint": "passed",
+    "workflowActionlint": "passed",
+    "ownedPostgres": [
+      {
+        "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+        "postgresMajor": 18,
+        "migrations": 80,
+        "checks": [
+          "fresh-apply",
+          "already-current",
+          "data-bearing-upgrade",
+          "lock-contention",
+          "pending-chain-refusal",
+          "lineage-refusal",
+          "schema-refusal",
+          "runtime-privilege-refusal",
+          "tls-certificate-refusal",
+          "exact-artifact-production-promotion"
+        ],
+        "providerTouched": false,
+        "sourceCommit": "1111111111111111111111111111111111111111",
+        "migrationImageDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "packagedCliVerified": true,
+        "sqlArtifactSha256": "775201b5352db56e2fe0402f5e9f9232e19cff131e38a71dca51dd1c72e77b3c",
+        "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+        "schemaBaselineSha256": "b6b8f15ba8a8e503763920085c290bb4aaeb637c5f41875939974a1276f79276"
+      },
+      {
+        "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+        "postgresMajor": 16,
+        "migrations": 80,
+        "checks": [
+          "fresh-apply",
+          "already-current",
+          "data-bearing-upgrade",
+          "lock-contention",
+          "pending-chain-refusal",
+          "lineage-refusal",
+          "schema-refusal",
+          "runtime-privilege-refusal",
+          "tls-certificate-refusal",
+          "exact-artifact-production-promotion"
+        ],
+        "providerTouched": false,
+        "sourceCommit": "6f6d28efe54e5af17ce437b8523aa5139da584a0",
+        "migrationImageDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "packagedCliVerified": false,
+        "sqlArtifactSha256": "775201b5352db56e2fe0402f5e9f9232e19cff131e38a71dca51dd1c72e77b3c",
+        "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+        "schemaBaselineSha256": "aa0dde73d73135fe922affee4e76a90ccdad2bde64e3277a3eccd39391132fb6"
+      }
+    ],
+    "imageBoundary": {
+      "uid": 65532,
+      "networkDisabled": true,
+      "rootFilesystemReadOnly": true,
+      "manifestEntries": 80,
+      "applicationServerAbsent": true,
+      "nextSanityDependenciesAbsent": true,
+      "shellAbsent": true,
+      "defaultIsManifestOnly": true
+    },
+    "scan": {
+      "architecture": "arm64",
+      "highCritical": 0,
+      "reportSha256": "4e7120dfaa6d913523f5f0c7cb1e6d566bf59701f2da6634a626b031bf13da5c",
+      "archiveSha256": "01dff378051d39d54de74c04479594965e00e6706f9394c2bd89f8b01fe5684b"
+    }
+  },
+  "protocol": {
+    "allSelectedImagesCheckedBeforeAnyCredentials": true,
+    "allThreeCredentialsCheckedBeforeAnyDatabaseWrite": true,
+    "selectedCredentialOnlyInEachContainer": true,
+    "frontendMigrationAndRuntimeContinuationShareHostLock": true,
+    "offHostQuiescenceCallbackRequired": true,
+    "standaloneFullBundleApplyRefusesWithoutCoordinator": true,
+    "noJsonOrEnvironmentQuiescenceBypass": true,
+    "receiptProviderFieldsWhitelisted": true
+  },
+  "limitations": [
+    "Local image uses an explicitly synthetic source commit and digest for owned rehearsal; it is not a qualified release candidate.",
+    "AMD64 release builds, registry publication and complete host execution remain unverified.",
+    "Frontend writer/scheduler suspension, Vercel deployment/promotion and final admission coordinator remain unfinished.",
+    "Real staging host/OIDC/native scheduling/recreation/recovery verification and deferred credential handoff remain open."
+  ],
+  "remoteBaseline": {
+    "frontendCommit": "34ce5f09c72029bd577257f01f55ab61de894dfe",
+    "runId": 41392838652,
+    "conclusion": "success",
+    "allThreeBrowsers": "success",
+    "scope": "predecessor foundation source, not the newer migration-image changes"
+  },
+  "liveActions": {
+    "cloudMutation": false,
+    "credentialsAcquired": false,
+    "liveMigration": false,
+    "deployed": false,
+    "trafficAdmitted": false
+  },
+  "p1Complete": false,
+  "billingEvidenceRequired": false,
+  "monitoringDeferred": true
+}

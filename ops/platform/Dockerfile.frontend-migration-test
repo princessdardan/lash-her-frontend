@@ -1,0 +1,16 @@
+# Owned compatibility fixture only. Sources and installed pure-JS PG/Drizzle
+# dependencies are mounted read-only; no cloud credential or external URL input.
+ARG MIGRATION_IMAGE=lash-her-frontend-migration:p1-local
+FROM ${MIGRATION_IMAGE} AS candidate
+FROM postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
+COPY --from=candidate /nodejs/bin/node /usr/local/bin/node
+COPY --from=candidate /app /candidate
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+ENV FRONTEND_MIGRATION_LOCAL_TEST=true
+ENV FRONTEND_MIGRATION_POSTGRES18_LOCAL_TEST=true
+ENV PG_BIN=/usr/lib/postgresql/18/bin
+ENV FRONTEND_PACKAGED_MIGRATION_ROOT=/candidate
+WORKDIR /source
+USER postgres
+ENTRYPOINT []
+CMD ["node", "ops/platform/test-frontend-migration-local.mjs"]

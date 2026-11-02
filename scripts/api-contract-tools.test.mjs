@@ -1,26 +1,42 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, cp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, cp, readFile, writeFile, mkdir, copyFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, resolve } from "node:path";
-import { execFileSync, spawnSync } from "node:child_process";
+import { resolve, dirname } from "node:path";
+import { spawnSync, execFileSync } from "node:child_process";
 import {
   assertCompatible,
   readContractBundle,
   contractDirectory,
+  sha256,
+  verifyBundleRevision,
+  verifySources,
 } from "./api-contract-tools.mjs";
 
-test("the candidate bundle has immutable revision/hash pins", async () => {
+test("the bundle has immutable revision/hash pins; candidate release checks fail closed", async () => {
   const { manifest, documents } = await readContractBundle();
-  assert.equal(manifest.status, "candidate");
+  assert.ok(["candidate", "released"].includes(manifest.status));
   assert.ok(documents.course.paths["/v1/courses"]);
-  const release = spawnSync(
-    process.execPath,
-    ["scripts/check-api-contracts.mjs", "--release"],
-    { encoding: "utf8" },
-  );
-  assert.notEqual(release.status, 0);
-  assert.match(release.stderr, /Candidate contracts cannot certify a release/);
+  const directory = await mkdtemp(resolve(tmpdir(), "lash-her-candidate-"));
+  try {
+    await cp(contractDirectory, directory, { recursive: true });
+    await writeFile(
+      resolve(directory, "manifest.json"),
+      JSON.stringify({ ...manifest, status: "candidate" }),
+    );
+    const release = spawnSync(
+      process.execPath,
+      ["scripts/check-api-contracts.mjs", "--bundle", directory, "--release"],
+      { encoding: "utf8" },
+    );
+    assert.notEqual(release.status, 0);
+    assert.match(
+      release.stderr,
+      /Candidate contracts cannot certify a release/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("changed vendored bytes fail integrity checking", async () => {
@@ -35,33 +51,60 @@ test("changed vendored bytes fail integrity checking", async () => {
 });
 
 test("released checks require source verification and an explicit baseline", async () => {
-  const directory = await mkdtemp(
+  const fixtureDirectory = await mkdtemp(
     resolve(tmpdir(), "lash-her-release-contract-"),
   );
+  const directory = resolve(fixtureDirectory, "bundle");
+  const sources = resolve(fixtureDirectory, "sources");
   try {
     await cp(contractDirectory, directory, { recursive: true });
     const file = resolve(directory, "manifest.json");
     const manifest = JSON.parse(await readFile(file, "utf8"));
     manifest.status = "released"; // Test-only initial approved-baseline fixture.
-    // Unit tests own their source repositories; CI has no private sibling clones.
-    const sources = resolve(directory, "sources");
-    const repositories = new Set(Object.values(manifest.artifacts).map(pin => pin.repository));
-    for (const repository of repositories) {
-      const root = resolve(sources, repository);
-      await mkdir(root, { recursive: true });
-      const git = (...args) => execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "user.name=Contract fixture", "-c", "user.email=contract@example.test", ...args], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-      git("init", "--quiet");
-      for (const pin of Object.values(manifest.artifacts).filter(pin => pin.repository === repository)) {
-        const target = resolve(root, pin.sourcePath);
-        await mkdir(dirname(target), { recursive: true });
-        await cp(resolve(directory, pin.file), target);
-      }
-      git("add", ".");
-      git("commit", "--quiet", "-m", "Create isolated contract source fixture");
-      const revision = git("rev-parse", "HEAD").trim();
-      for (const pin of Object.values(manifest.artifacts).filter(pin => pin.repository === repository)) pin.revision = revision;
+    manifest.readmeSha256 = sha256(
+      await readFile(resolve(directory, "README.md")),
+    );
+    // Unit tests own their immutable source repositories. They must not depend
+    // on a developer's sibling checkouts or private repository credentials.
+    const sourceGit = (cwd, ...args) => execFileSync("git", [
+      "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
+      "-c", "user.name=Contract Tests", "-c", "user.email=contracts@example.test",
+      ...args,
+    ], { cwd, encoding: "utf8" });
+    for (const pin of Object.values(manifest.artifacts)) {
+      const target = resolve(sources, pin.repository, pin.sourcePath);
+      await mkdir(dirname(target), { recursive: true });
+      await copyFile(resolve(directory, pin.file), target);
     }
+    for (const repository of new Set(Object.values(manifest.artifacts).map((pin) => pin.repository))) {
+      const cwd = resolve(sources, repository);
+      sourceGit(cwd, "init", "--quiet"); sourceGit(cwd, "add", ".");
+      sourceGit(cwd, "commit", "--quiet", "-m", "Owned contract source fixture");
+      const revision = sourceGit(cwd, "rev-parse", "HEAD").trim();
+      for (const pin of Object.values(manifest.artifacts)) if (pin.repository === repository) pin.revision = revision;
+    }
+    const changedSource = structuredClone(manifest);
+    Object.values(changedSource.artifacts)[0].sha256 = "0".repeat(64);
+    assert.throws(() => verifySources(changedSource, sources), /Pinned source mismatch/);
     await writeFile(file, JSON.stringify(manifest));
+    const git = (...args) =>
+      execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], {
+        cwd: directory,
+        encoding: "utf8",
+      });
+    git("init", "--quiet");
+    git("add", ".");
+    git(
+      "-c",
+      "user.name=Contract Tests",
+      "-c",
+      "user.email=contracts@example.test",
+      "commit",
+      "--quiet",
+      "-m",
+      "test approved baseline",
+    );
+    const revision = git("rev-parse", "HEAD").trim();
     const check = (...args) =>
       spawnSync(
         process.execPath,
@@ -74,14 +117,85 @@ test("released checks require source verification and an explicit baseline", asy
         ],
         { encoding: "utf8" },
       );
-    const missingSources = check();
+    const missingRevision = check();
+    assert.notEqual(missingRevision.status, 0);
+    assert.match(missingRevision.stderr, /requires --release-revision/);
+    const pinned = (...args) => check("--release-revision", revision, ...args);
+    const missingSources = pinned();
     assert.notEqual(missingSources.status, 0);
     assert.match(missingSources.stderr, /requires --sources/);
-    const missingBaseline = check("--sources", sources);
+    const missingBaseline = pinned("--sources", sources);
     assert.notEqual(missingBaseline.status, 0);
     assert.match(missingBaseline.stderr, /requires an explicit --baseline/);
-    const initialBaseline = check("--sources", sources, "--baseline", directory);
+    const missingBaselineRevision = pinned(
+      "--sources",
+      sources,
+      "--baseline",
+      directory,
+    );
+    assert.notEqual(missingBaselineRevision.status, 0);
+    assert.match(
+      missingBaselineRevision.stderr,
+      /requires --baseline-revision/,
+    );
+    const initialBaseline = pinned(
+      "--sources",
+      sources,
+      "--baseline",
+      directory,
+      "--baseline-revision",
+      revision,
+    );
     assert.equal(initialBaseline.status, 0, initialBaseline.stderr);
+    await assert.rejects(
+      verifyBundleRevision(directory, manifest, "main"),
+      /full immutable/,
+    );
+    await writeFile(
+      resolve(directory, "README.md"),
+      "Changed lifecycle semantics\n",
+    );
+    await assert.rejects(
+      verifyBundleRevision(directory, manifest, revision),
+      /differs from immutable commit/,
+    );
+    await assert.rejects(readContractBundle(directory), /README hash mismatch/);
+  } finally {
+    await rm(fixtureDirectory, { recursive: true, force: true });
+  }
+});
+
+test("generation is deterministic and rejects edited generated files", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "lash-her-generated-"));
+  try {
+    const generate = (...args) =>
+      spawnSync(
+        process.execPath,
+        ["scripts/generate-api-contracts.mjs", "--output", directory, ...args],
+        { encoding: "utf8" },
+      );
+    const first = generate();
+    assert.equal(first.status, 0, first.stderr);
+    const before = await Promise.all(
+      ["course", "community", "boundaries"].map((name) =>
+        readFile(resolve(directory, `${name}.d.ts`), "utf8"),
+      ),
+    );
+    assert.equal(generate().status, 0);
+    const after = await Promise.all(
+      ["course", "community", "boundaries"].map((name) =>
+        readFile(resolve(directory, `${name}.d.ts`), "utf8"),
+      ),
+    );
+    assert.deepEqual(after, before);
+    assert.equal(generate("--check").status, 0);
+    await writeFile(
+      resolve(directory, "course.d.ts"),
+      before[0] + "// drift\n",
+    );
+    const drift = generate("--check");
+    assert.notEqual(drift.status, 0);
+    assert.match(drift.stderr, /Generated contract drift: course/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -1,0 +1,64 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdtempSync, mkdirSync, cpSync, copyFileSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import { writePackagedFrontendSource, verifyPackagedFrontendSource } from "./frontend-image-source.mjs";
+import { frontendMigrationArtifact } from "./frontend-migration.mjs";
+
+const source = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+function fixture() {
+  const root = mkdtempSync(join(tmpdir(), "frontend-image-source-"));
+  for (const directory of ["ops/platform", "src/lib/private-db", "contracts/api-integration/v1"]) mkdirSync(join(root, directory), { recursive: true });
+  for (const name of ["frontend-migration", "frontend-schema", "frontend-image", "frontend-image-source", "source-checkout", "release-inputs", "source-policy", "release"])
+    copyFileSync(join(source, `ops/platform/${name}.mjs`), join(root, `ops/platform/${name}.mjs`));
+  for (const name of ["package.json", "package-lock.json"]) copyFileSync(join(source, "ops/platform/frontend-migration-deps", name), join(root, name));
+  for (const name of ["src/lib/private-db/migration-lineage.ts", "contracts/api-integration/v1/manifest.json"]) copyFileSync(join(source, name), join(root, name));
+  cpSync(join(source, "drizzle"), join(root, "drizzle"), { recursive: true });
+  return root;
+}
+
+test("packaged source binds the migration executable, SQL, lineage and minimal dependencies", () => {
+  const root = fixture();
+  try {
+    const manifest = writePackagedFrontendSource("a".repeat(40), root);
+    assert.equal(verifyPackagedFrontendSource(root, "a".repeat(40)).commit, manifest.commit);
+    assert.ok(manifest.files["ops/platform/frontend-migration.mjs"]);
+    assert.ok(manifest.files["src/lib/private-db/migration-lineage.ts"]);
+    assert.ok(manifest.files["package-lock.json"]);
+    assert.throws(() => verifyPackagedFrontendSource(root, "b".repeat(40)));
+    assert.throws(() => writePackagedFrontendSource("a".repeat(40), root));
+    writeFileSync(join(root, "ops/platform/frontend-migration.mjs"), "changed");
+    assert.throws(() => verifyPackagedFrontendSource(root));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("extra SQL or omitted source cannot silently enter a packaged image", () => {
+  for (const mode of ["extra", "omitted"]) {
+    const root = fixture();
+    try {
+      writePackagedFrontendSource("a".repeat(40), root);
+      if (mode === "extra") writeFileSync(join(root, "drizzle/9999_unapproved.sql"), "select 1;");
+      else rmSync(join(root, "src/lib/private-db/migration-lineage.ts"));
+      assert.throws(() => verifyPackagedFrontendSource(root));
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
+});
+
+test("minimal image dependencies stay aligned with the application lock", () => {
+  const isolated = JSON.parse(readFileSync(join(source, "ops/platform/frontend-migration-deps/package-lock.json")));
+  const app = JSON.parse(readFileSync(join(source, "package-lock.json")));
+  for (const name of ["pg", "drizzle-orm"]) assert.equal(isolated.packages[`node_modules/${name}`].version, app.packages[`node_modules/${name}`].version);
+  assert.deepEqual(Object.keys(isolated.packages[""].dependencies).sort(), ["drizzle-orm", "pg"]);
+  assert.ok(frontendMigrationArtifact().migrations.length > 0);
+});
+
+test("image entrypoint never offers checkout or environment source-verification bypasses", () => {
+  // The real entrypoint refuses outside an image before inspecting job inputs.
+  const result = spawnSync(process.execPath, ["ops/platform/frontend-image.mjs", "--manifest-only"], {
+    cwd: source, encoding: "utf8", timeout: 10_000, env: { PATH: process.env.PATH },
+  });
+  assert.equal(result.status, 1); assert.match(result.stderr, /FRONTEND_PACKAGED_SOURCE_REFUSED/u);
+});

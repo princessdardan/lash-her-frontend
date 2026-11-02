@@ -1,0 +1,24 @@
+modules:
+  gateway_rejects_unauthenticated:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      valid_status_codes: [401]
+      follow_redirects: false
+      fail_if_not_ssl: true
+      preferred_ip_protocol: ip4
+      tls_config:
+        insecure_skip_verify: false
+  gateway_rejects_unauthenticated_ipv6:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      valid_status_codes: [401]
+      follow_redirects: false
+      fail_if_not_ssl: true
+      preferred_ip_protocol: ip6
+      ip_protocol_fallback: false
+      tls_config:
+        insecure_skip_verify: false

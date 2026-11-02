@@ -1,0 +1,21 @@
+FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS build
+WORKDIR /app
+COPY ops/platform/frontend-migration-deps/package.json ops/platform/frontend-migration-deps/package-lock.json ./
+RUN npm ci --omit=dev --omit=optional --ignore-scripts && npm cache clean --force
+COPY ops/platform/frontend-migration.mjs ops/platform/frontend-schema.mjs ops/platform/frontend-image.mjs ops/platform/frontend-image-source.mjs ops/platform/source-checkout.mjs ops/platform/release-inputs.mjs ops/platform/source-policy.mjs ops/platform/release.mjs ./ops/platform/
+COPY src/lib/private-db/migration-lineage.ts ./src/lib/private-db/
+COPY contracts/api-integration/v1/manifest.json ./contracts/api-integration/v1/
+COPY drizzle/*.sql ./drizzle/
+COPY drizzle/meta/_journal.json ./drizzle/meta/
+ARG FRONTEND_SOURCE_COMMIT
+RUN node ops/platform/frontend-image-source.mjs --write "$FRONTEND_SOURCE_COMMIT"
+RUN node ops/platform/frontend-image.mjs --manifest-only
+
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:a6c34457f6da4295807e051411c7783739c65b997a324fed14e4fa292615ae91
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PATH=/nodejs/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+COPY --from=build /app /app
+USER nonroot:nonroot
+ENTRYPOINT []
+CMD ["node", "ops/platform/frontend-image.mjs", "--manifest-only"]

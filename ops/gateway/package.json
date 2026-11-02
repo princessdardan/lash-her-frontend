@@ -1,0 +1,9 @@
+{
+  "name": "lash-her-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "24.x" },
+  "scripts": { "test": "node --test *.test.mjs", "start": "node server.mjs" },
+  "dependencies": { "jose": "6.2.3" }
+}
