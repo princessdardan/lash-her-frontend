@@ -24,15 +24,49 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Enable the containerd image store for attested local builds
+        uses: docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5
+        with:
+          version: v29.4.0
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - name: Build the immutable frontend migration image without publishing
+        id: build-frontend-migration
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: ops/platform/Dockerfile.frontend-migration
+          build-args: FRONTEND_SOURCE_COMMIT=${{ github.sha }}
+          push: false
+          load: true
+          tags: lash-her-frontend-migration:ci
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha,scope=frontend-migration
+          cache-to: type=gha,scope=frontend-migration,mode=max
+      - name: Verify migration-only image boundaries offline
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --entrypoint node lash-her-frontend-migration:ci ops/platform/frontend-image.mjs --manifest-only
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --entrypoint node lash-her-frontend-migration:ci -e '
+              const fs=require("node:fs");if(process.getuid()===0)process.exit(1);
+              for(const p of ["/app/src/app","/app/tests","/app/node_modules/next","/app/node_modules/sanity","/app/.env","/bin/sh"])
+                if(fs.existsSync(p))process.exit(1);
+            '
       - name: Build owned frontend PostgreSQL 18 fixture
-        run: docker build -f ops/platform/Dockerfile.frontend-migration-test -t lash-her-frontend-migration:postgres18-test ops/platform
+        run: >-
+          docker build --builder "$(docker context show)" -f ops/platform/Dockerfile.frontend-migration-test
+          --build-arg MIGRATION_IMAGE=lash-her-frontend-migration:ci
+          -t lash-her-frontend-migration:postgres18-test ops/platform
       - name: Exercise the operator CLI without provider access
         run: |
           umask 077
           mkdir -m 700 "$RUNNER_TEMP/frontend-schema"
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             --memory 1g --pids-limit 256 --shm-size 256m --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \
-            --env FRONTEND_MIGRATION_EXPORT_SCHEMA=true \
+            --env FRONTEND_MIGRATION_EXPORT_SCHEMA=true --env FRONTEND_MIGRATION_IMAGE_DIGEST \
             --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly" \
             --mount "type=bind,src=$PWD/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
@@ -46,6 +80,7 @@ jobs:
             writeFileSync(process.env.FRONTEND_FIXTURE_SUMMARY,JSON.stringify(summary)+"\n",{flag:"wx",mode:0o600});
           '
         env:
+          FRONTEND_MIGRATION_IMAGE_DIGEST: ${{ steps.build-frontend-migration.outputs.digest }}
           FRONTEND_FIXTURE_RESULTS: ${{ runner.temp }}/frontend-schema/postgres18.json
           FRONTEND_FIXTURE_SUMMARY: ${{ runner.temp }}/frontend-schema-summary.json
       - name: Retain source-bound digest summary without private schema definitions
@@ -55,6 +90,14 @@ jobs:
           path: ${{ runner.temp }}/frontend-schema-summary.json
           if-no-files-found: error
           retention-days: 10
+      - name: Scan frontend migration image
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          version: v0.76.1
+          image-ref: lash-her-frontend-migration:ci
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
   gateway-and-platform:
     runs-on: ubuntu-latest
     timeout-minutes: 15

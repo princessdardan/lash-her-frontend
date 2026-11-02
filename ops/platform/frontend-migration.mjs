@@ -76,6 +76,9 @@ export function prepareFrontendMigration(candidate, job, baseline, artifact = fr
     job.contractManifestSha256 === candidate.contractManifestSha256 && job.contractManifestSha256 === artifact.contractManifestSha256, "FRONTEND_RELEASE_BINDING_REFUSED");
   demand(candidate.frontendMigration?.sourceCommit === job.sourceCommit && candidate.frontendMigration.sqlArtifactSha256 === artifact.sqlArtifactSha256 &&
     candidate.frontendMigration.contractManifestSha256 === job.contractManifestSha256, "CANDIDATE_FRONTEND_SQL_BINDING_REQUIRED");
+  demand(/^sha256:[a-f0-9]{64}$/u.test(job.migrationImageDigest ?? "") && !/^sha256:0+$/u.test(job.migrationImageDigest) &&
+    candidate.artifacts?.frontendMigration?.image === `ghcr.io/princessdardan/lash-her-platform-frontend-migration@${job.migrationImageDigest}`,
+  "FRONTEND_MIGRATION_IMAGE_BINDING_REQUIRED");
   const target = job.target;
   demand(typeof target?.host === "string" && /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/u.test(target.host) && !target.host.includes("-pooler") &&
     safeName(target.database) && safeName(target.user) && safeName(target.runtimeRole) && target.user !== target.runtimeRole &&
@@ -92,9 +95,10 @@ export function prepareFrontendMigration(candidate, job, baseline, artifact = fr
     demand(prior?.database?.status === "DATABASE_VERIFIED" && prior.database.environment === "staging" && prior.database.service === "frontend" &&
       prior.terminal?.status === "DATABASE_VERIFIED" && prior.database.sourceCommit === job.sourceCommit &&
       prior.database.sqlArtifactSha256 === job.sqlArtifactSha256 && prior.database.contractManifestSha256 === job.contractManifestSha256 &&
+      prior.database.migrationImageDigest === job.migrationImageDigest &&
       prior.database.schemaVerified === true && prior.database.runtimeRoleVerified === true &&
       prior.database.schemaBaselineSha256 === job.schemaBaselineSha256 &&
-      ["version", "service", "environment", "releaseId", "sourceCommit", "sqlArtifactSha256", "contractManifestSha256", "schemaBaselineSha256", "target"]
+      ["version", "service", "environment", "releaseId", "sourceCommit", "migrationImageDigest", "sqlArtifactSha256", "contractManifestSha256", "schemaBaselineSha256", "target"]
         .every((key) => prior.database[key] !== undefined && isDeepStrictEqual(prior.database[key], prior.terminal[key])) &&
       prior.database.failureCode === undefined && prior.terminal.failureCode === undefined,
     "EXACT_STAGING_FRONTEND_MIGRATION_REQUIRED");
@@ -110,6 +114,7 @@ export function prepareFrontendMigrationJob(candidate, settings, schemaExport, s
   const baseline = structuredClone(schemaExport.schemaBaseline);
   const job = { version: 1, operator: "Dardan", releaseId: candidate.releaseId, environment: candidate.environment,
     sourceCommit: candidate.sources?.frontend?.commit, contractManifestSha256: candidate.contractManifestSha256,
+    migrationImageDigest: candidate.artifacts?.frontendMigration?.image?.split("@")[1],
     sqlArtifactSha256: candidate.frontendMigration?.sqlArtifactSha256, schemaBaselineSha256: hash(JSON.stringify(baseline)),
     recoveryRef: settings.recoveryRef,
     target: Object.fromEntries(["host", "port", "database", "user", "runtimeRole", "serverMajor", "allowEmptyBootstrap", "approvedPendingTags"].map((key) => [key, settings[key]])),
@@ -164,6 +169,7 @@ export async function runFrontendMigration(prepared, dependencies) {
   const { job, artifact, baseline } = prepared, target = job.target;
   demand(dependencies.confirmation === `${job.environment}/${job.releaseId}`, "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED");
   const receiptBase = { version: 1, service: "frontend", environment: job.environment, releaseId: job.releaseId, sourceCommit: job.sourceCommit,
+    migrationImageDigest: job.migrationImageDigest,
     sqlArtifactSha256: job.sqlArtifactSha256, schemaBaselineSha256: job.schemaBaselineSha256, contractManifestSha256: job.contractManifestSha256,
     operator: "Dardan", target: { host: target.host, port: target.port, database: target.database, user: target.user, serverMajor: target.serverMajor },
     recoveryRef: job.recoveryRef, trafficAuthorized: false };
@@ -226,18 +232,19 @@ export async function runFrontendMigration(prepared, dependencies) {
   return outcome;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+export async function frontendMigrationCli(argv, options = {}) {
   let receipts;
   try {
     demand(process.versions.node.split(".")[0] === "24", "NODE24_REQUIRED");
-    const [mode, candidateFile, jobFile, schemaFile, flag, confirmation, output] = process.argv.slice(2);
+    const [mode, candidateFile, jobFile, schemaFile, flag, confirmation, output] = argv;
     if (mode === "--manifest-only") {
-      demand(process.argv.length === 3, "ARGUMENTS_REFUSED"); const artifact = frontendMigrationArtifact();
+      demand(argv.length === 1, "ARGUMENTS_REFUSED"); const artifact = frontendMigrationArtifact();
       console.log(JSON.stringify({ ...artifact.manifest, sqlArtifactSha256: artifact.sqlArtifactSha256, contractManifestSha256: artifact.contractManifestSha256 }));
     }
     else {
-      demand((mode === "--check" && process.argv.length === 6) || (mode === "--execute" && process.argv.length === 9 && flag === "--confirm"), "ARGUMENTS_REFUSED");
+      demand((mode === "--check" && argv.length === 4) || (mode === "--execute" && argv.length === 7 && flag === "--confirm"), "ARGUMENTS_REFUSED");
       const prepared = prepareFrontendMigration(JSON.parse(read(candidateFile)), JSON.parse(read(jobFile)), JSON.parse(read(schemaFile)));
+      if (options.assertSource) options.assertSource(root, prepared.job.sourceCommit);
       if (mode === "--check") console.log(JSON.stringify({ status: "FRONTEND_INPUTS_CHECKED", credentialsRead: false, migrationAuthorized: false, sqlArtifactSha256: prepared.artifact.sqlArtifactSha256 }));
       else {
         demand(confirmation === `${prepared.job.environment}/${prepared.job.releaseId}`, "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED");
@@ -249,7 +256,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         const deadline = setTimeout(stop, 20 * 60_000);
         process.once("SIGTERM", stop); process.once("SIGINT", stop);
         try {
-          await runFrontendMigration(prepared, { confirmation, getUrl: () => process.env[prepared.job.environment === "staging" ? "FRONTEND_STAGING_MIGRATION_DATABASE_URL" : "FRONTEND_PROD_MIGRATION_DATABASE_URL"],
+          await runFrontendMigration(prepared, { confirmation, ...(options.assertSource ? { assertSource: options.assertSource } : {}),
+            getUrl: () => process.env[prepared.job.environment === "staging" ? "FRONTEND_STAGING_MIGRATION_DATABASE_URL" : "FRONTEND_PROD_MIGRATION_DATABASE_URL"],
             record: (name, value) => writeFrontendReceipt(receipts, name, value) });
           console.log('{"status":"DATABASE_VERIFIED","trafficAuthorized":false}');
         } finally { clearTimeout(deadline); process.removeListener("SIGTERM", stop); process.removeListener("SIGINT", stop); }
@@ -259,3 +267,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     console.error('{"status":"FRONTEND_MIGRATION_REFUSED","reviewRequired":true,"trafficAuthorized":false}'); process.exitCode = 1;
   }
 }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await frontendMigrationCli(process.argv.slice(2));

@@ -169,6 +169,30 @@ class RuntimeReleaseTests(unittest.TestCase):
         with self.patches(), self.assertRaises(FileExistsError):
             self.execute()
 
+    def test_frontend_migration_precedes_runtime_startup_under_the_same_lock(self):
+        self.fixture.add_frontend()
+        def quiesce(selected, attempt):
+            with (self.root / "release.lock").open() as stream:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.assertFalse(any("--execute" in args for args in self.calls))
+            return {"status": "FRONTEND_PRODUCERS_SUSPENDED", "environment": "staging", "projectId": "prj_fixture"}
+        with self.patches(), patch.dict(os.environ, {"FRONTEND_STAGING_MIGRATION_DATABASE_URL": "owned-frontend-url"}):
+            result = release.execute(self.bundle, self.configuration, self.results, self.compose, True, "staging/test-release",
+                                     self.root / "release.lock", before_frontend_migration=quiesce)
+        self.assertEqual(result["status"], "API_RUNTIME_READY")
+        frontend_apply = next(i for i, args in enumerate(self.calls) if "--execute" in args and "ops/platform/frontend-image.mjs" in args)
+        self.assertLess(frontend_apply, min(i for i, args in enumerate(self.calls) if "up" in args))
+        self.assertTrue((self.results / "test-release/frontend/database-receipt.json").exists())
+        self.assertFalse(result["frontendPromotionAuthorized"])
+
+    def test_frontend_quiescence_is_required_before_any_database_write(self):
+        self.fixture.add_frontend()
+        with self.patches(), patch.dict(os.environ, {"FRONTEND_STAGING_MIGRATION_DATABASE_URL": "owned-frontend-url"}):
+            with self.assertRaisesRegex(ValueError, "FRONTEND_QUIESCENCE_COORDINATOR_REQUIRED"):
+                self.execute()
+        self.assertFalse(any("--execute" in args or "up" in args for args in self.calls))
+
     def test_credential_or_config_preflight_failure_does_not_migrate_or_stop_existing_runtime(self):
         original = self.docker
         self.running.add("gateway")

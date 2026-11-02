@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { frontendMigrationArtifact, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
 import { readMigrationCatalog } from "./frontend-schema.mjs";
+import { verifyPackagedFrontendSource } from "./frontend-image-source.mjs";
 
 const source = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
@@ -22,7 +23,8 @@ async function main() {
   assert.match(run(join(binaries, "postgres"), ["--version"]), new RegExp(`PostgreSQL\\) ${major}\\.`, "u"));
   const probe = createServer(); await new Promise((resolve, reject) => { probe.once("error", reject); probe.listen(0, "127.0.0.1", resolve); });
   const port = probe.address().port; await new Promise((resolve) => probe.close(resolve));
-  const directory = mkdtempSync(join(tmpdir(), "frontend-migration-owned-")), data = join(directory, "data"), app = join(directory, "app");
+  const directory = mkdtempSync(join(tmpdir(), "frontend-migration-owned-")), data = join(directory, "data");
+  let app = join(directory, "app");
   const password = `owned-${randomUUID()}`, connections = []; let running = false;
   const records = [];
   try {
@@ -50,19 +52,31 @@ async function main() {
       await owner.query("alter default privileges for role frontend_migration in schema public grant usage,select on sequences to frontend_runtime");
     }
     phase = "source-fixture";
-    mkdirSync(app); mkdirSync(join(app, "ops/platform"), { recursive: true }); mkdirSync(join(app, "src/lib/private-db"), { recursive: true });
-    mkdirSync(join(app, "contracts/api-integration/v1"), { recursive: true });
-    for (const name of ["frontend-migration.mjs", "frontend-schema.mjs", "source-checkout.mjs", "source-policy.mjs", "release-inputs.mjs", "release.mjs"])
-      copyFileSync(join(source, "ops/platform", name), join(app, "ops/platform", name));
-    copyFileSync(join(source, "src/lib/private-db/migration-lineage.ts"), join(app, "src/lib/private-db/migration-lineage.ts"));
-    copyFileSync(join(source, "contracts/api-integration/v1/manifest.json"), join(app, "contracts/api-integration/v1/manifest.json"));
-    cpSync(join(source, "drizzle"), join(app, "drizzle"), { recursive: true });
-    symlinkSync(join(source, "node_modules"), join(app, "node_modules"), "dir");
-    writeFileSync(join(app, "package.json"), '{"type":"module","private":true}\n'); writeFileSync(join(app, ".gitignore"), "node_modules/\n");
+    let commit, cli = "ops/platform/frontend-migration.mjs";
     const cleanEnv = Object.fromEntries(["PATH", "HOME", "LANG", "TMPDIR"].filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]]));
-    Object.assign(cleanEnv, { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" });
-    const git = (...args) => run("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "user.name=Owned Fixture", "-c", "user.email=fixture@example.invalid", ...args], { cwd: app, env: cleanEnv });
-    git("init", "--quiet"); git("add", "."); git("commit", "--quiet", "-m", "Owned migration fixture"); const commit = git("rev-parse", "HEAD").trim();
+    if (process.env.FRONTEND_PACKAGED_MIGRATION_ROOT) {
+      app = process.env.FRONTEND_PACKAGED_MIGRATION_ROOT; assert.ok(app.startsWith("/"));
+      const packaged = verifyPackagedFrontendSource(app); commit = packaged.commit;
+      for (const [file, expected] of Object.entries(packaged.files)) {
+        const original = ["package.json", "package-lock.json"].includes(file) ? join(source, "ops/platform/frontend-migration-deps", file) : join(source, file);
+        assert.equal(hash(readFileSync(original)), expected, "Packaged CLI differs from the source under test");
+      }
+      cli = "ops/platform/frontend-image.mjs";
+    } else {
+      mkdirSync(app); mkdirSync(join(app, "ops/platform"), { recursive: true }); mkdirSync(join(app, "src/lib/private-db"), { recursive: true });
+      mkdirSync(join(app, "contracts/api-integration/v1"), { recursive: true });
+      for (const name of ["frontend-migration.mjs", "frontend-schema.mjs", "source-checkout.mjs", "source-policy.mjs", "release-inputs.mjs", "release.mjs"])
+        copyFileSync(join(source, "ops/platform", name), join(app, "ops/platform", name));
+      copyFileSync(join(source, "src/lib/private-db/migration-lineage.ts"), join(app, "src/lib/private-db/migration-lineage.ts"));
+      copyFileSync(join(source, "contracts/api-integration/v1/manifest.json"), join(app, "contracts/api-integration/v1/manifest.json"));
+      cpSync(join(source, "drizzle"), join(app, "drizzle"), { recursive: true });
+      symlinkSync(join(source, "node_modules"), join(app, "node_modules"), "dir");
+      writeFileSync(join(app, "package.json"), '{"type":"module","private":true}\n'); writeFileSync(join(app, ".gitignore"), "node_modules/\n");
+      Object.assign(cleanEnv, { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" });
+      const git = (...args) => run("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "user.name=Owned Fixture", "-c", "user.email=fixture@example.invalid", ...args], { cwd: app, env: cleanEnv });
+      git("init", "--quiet"); git("add", "."); git("commit", "--quiet", "-m", "Owned migration fixture"); commit = git("rev-parse", "HEAD").trim();
+
+    }
     const artifact = frontendMigrationArtifact(app);
     const applyPrefix = async (client, migrations) => {
       await client.query("create schema drizzle"); await client.query("create table drizzle.__drizzle_migrations(id serial primary key,hash text not null,created_at bigint)");
@@ -78,9 +92,11 @@ async function main() {
     const baseline = { version: 1, serverMajor: major, sqlArtifactSha256: artifact.sqlArtifactSha256, catalog: await readMigrationCatalog(baselineClient) };
     await baselineClient.query("rollback"); const schemaFile = join(directory, "schema.json"); writeFileSync(schemaFile, JSON.stringify(baseline), { mode: 0o600 });
     const candidate = { version: 2, environment: "staging", releaseId: "frontend-owned", integration: { state: "passed" },
+      artifacts: { frontendMigration: { image: `ghcr.io/princessdardan/lash-her-platform-frontend-migration@${process.env.FRONTEND_MIGRATION_IMAGE_DIGEST ?? `sha256:${"b".repeat(64)}`}` } },
       sourceApproval: { mode: "single-operator-dispatch", operatorGithubUserId: "8996309" }, contractManifestSha256: artifact.contractManifestSha256,
       sources: { frontend: { repository: "https://github.com/princessdardan/lash-her-frontend.git", commit, requiredChecks: "passed" } } };
     const job = { version: 1, operator: "Dardan", releaseId: candidate.releaseId, environment: "staging", sourceCommit: commit,
+      migrationImageDigest: candidate.artifacts.frontendMigration.image.split("@")[1],
       contractManifestSha256: artifact.contractManifestSha256, sqlArtifactSha256: artifact.sqlArtifactSha256, schemaBaselineSha256: hash(JSON.stringify(baseline)), recoveryRef: "owned/recreation",
       target: { host: "127.0.0.1", port, database: "frontend_apply", user: "frontend_migration", runtimeRole: "frontend_runtime", serverMajor: major,
         allowEmptyBootstrap: true, approvedPendingTags: artifact.migrations.map(({ tag }) => tag) } };
@@ -91,7 +107,7 @@ async function main() {
       writeFileSync(jobFile, JSON.stringify(selected)); writeFileSync(candidateFile, JSON.stringify(selectedCandidate));
       const named = selected.environment === "staging" ? "FRONTEND_STAGING_MIGRATION_DATABASE_URL" : "FRONTEND_PROD_MIGRATION_DATABASE_URL";
       const env = { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, [named]: `postgresql://${selected.target.user}:${password}@127.0.0.1:${port}/${selected.target.database}?sslmode=verify-full`, ...options.env };
-      const result = spawnSync(process.execPath, ["ops/platform/frontend-migration.mjs", "--execute", candidateFile, jobFile, schemaFile,
+      const result = spawnSync(process.execPath, [cli, "--execute", candidateFile, jobFile, schemaFile,
         "--confirm", `${selected.environment}/${selected.releaseId}`, output], { cwd: app, env, encoding: "utf8", timeout: 300_000 });
       return { result, output };
     };
@@ -123,6 +139,7 @@ async function main() {
     production.stagingVerification={database:receipt,terminal:JSON.parse(readFileSync(join(fresh.output,"job-outcome.json"),"utf8"))};
     success("exact-artifact-production-promotion",invoke("promotion",production,{...candidate,environment:"production"}));
     const result={status:"FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",postgresMajor:major,migrations:artifact.migrations.length,checks:records,providerTouched:false,
+      sourceCommit:commit,migrationImageDigest:job.migrationImageDigest,packagedCliVerified:cli.endsWith("frontend-image.mjs"),
       sqlArtifactSha256:artifact.sqlArtifactSha256,contractManifestSha256:artifact.contractManifestSha256,schemaBaselineSha256:hash(JSON.stringify(baseline))};
     if(process.env.FRONTEND_MIGRATION_EXPORT_SCHEMA==="true")result.schemaBaseline=baseline;
     console.log(JSON.stringify(result));

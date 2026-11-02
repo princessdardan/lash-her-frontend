@@ -87,6 +87,8 @@ test("real bundle CLI includes optional frontend bindings and refuses a substitu
   const root = mkdtempSync(join(tmpdir(), "frontend-bundle-test-"));
   try {
     const f = fixture(), artifact = frontendMigrationArtifact();
+    f.candidate.artifacts.frontendMigration = { image: `ghcr.io/princessdardan/lash-her-platform-frontend-migration@sha256:${"b".repeat(64)}`,
+      scan: "passed", sbomSha256: `sha256:${"d".repeat(64)}`, provenanceSha256: `sha256:${"e".repeat(64)}` };
     const baseline = { version: 1, serverMajor: 18, sqlArtifactSha256: artifact.sqlArtifactSha256,
       catalog: Object.fromEntries(["relations", "columns", "constraints", "indexes", "triggers", "functions", "enums", "sequences", "policies"].map((key) => [key, []])) };
     f.candidate.contractManifestSha256 = artifact.contractManifestSha256;

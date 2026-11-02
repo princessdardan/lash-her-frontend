@@ -49,12 +49,37 @@ class MigrationDriverTests(unittest.TestCase):
     def execute(self, confirmation="staging/test-release"):
         return migrate.execute(self.bundle, self.results, True, confirmation, self.root / "release.lock")
 
+    def add_frontend(self):
+        baseline = {"version": 1, "serverMajor": 18, "sqlArtifactSha256": "f" * 64, "catalog": {}}
+        schema_hash = hashlib.sha256(json.dumps(baseline, separators=(",", ":")).encode()).hexdigest()
+        self.release["artifacts"]["frontendMigration"] = {"image": "ghcr.io/princessdardan/lash-her-platform-frontend-migration@sha256:" + "b" * 64,
+            "scan": "passed", "sbomSha256": "sha256:" + "d" * 64, "provenanceSha256": "sha256:" + "e" * 64}
+        self.release["frontendMigration"] = {"sourceCommit": "a" * 40, "sqlArtifactSha256": "f" * 64,
+            "contractManifestSha256": self.release["contractManifestSha256"], "schemaBaselines": {"18": schema_hash}}
+        self.release["workload"] = {"projectId": "prj_fixture"}
+        self.jobs["frontend"] = {"version": 1, "operator": "Dardan", "releaseId": "test-release", "environment": "staging", "sourceCommit": "a" * 40,
+            "migrationImageDigest": "sha256:" + "b" * 64, "sqlArtifactSha256": "f" * 64, "schemaBaselineSha256": schema_hash,
+            "contractManifestSha256": self.release["contractManifestSha256"], "recoveryRef": "owned/recovery",
+            "target": {"host": "frontend.example.invalid", "port": 5432, "database": "frontend_test", "user": "migration_role", "runtimeRole": "runtime_role",
+                       "serverMajor": 18, "allowEmptyBootstrap": True, "approvedPendingTags": ["0000_test"]}}
+        (self.bundle / "schema/frontend.json").write_text(json.dumps(baseline, indent=2))
+        self.save()
+
     def fake_docker(self, args, **kwargs):
         env = kwargs.get("env", {})
         self.assertNotIn("AWS_SECRET_ACCESS_KEY", env)
         self.assertNotIn("COMMUNITY_STAGING_DATABASE_URL", env)
         self.assertNotIn("COURSE_STAGING_DATABASE_URL", env)
         if "--execute" in args:
+            if "ops/platform/frontend-image.mjs" in args:
+                self.assertNotIn("DATABASE_TARGET", env); self.assertNotIn("STAGING_DATABASE_URL", env)
+                self.assertEqual(env.get("FRONTEND_STAGING_MIGRATION_DATABASE_URL"), "owned-frontend-url")
+                mount = next(value for value in args if isinstance(value, str) and value.endswith("dst=/run/release-receipts"))
+                receipts = Path(mount.split(",src=")[1].split(",dst=")[0])
+                receipt = {**self.jobs["frontend"], "service": "frontend", "status": "DATABASE_VERIFIED", "schemaVerified": True, "runtimeRoleVerified": True}
+                for file in ("database-receipt.json", "job-outcome.json"):
+                    (receipts / file).write_text(json.dumps(receipt))
+                return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
             self.assertEqual(env.get("DATABASE_TARGET"), "staging")
             self.assertEqual(env.get("STAGING_DATABASE_URL"), "owned-fixture-url")
             self.assertNotIn("PROD_DATABASE_URL", env)
@@ -68,6 +93,58 @@ class MigrationDriverTests(unittest.TestCase):
         else:
             self.assertNotIn("STAGING_DATABASE_URL", env)
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    def test_three_databases_share_preflight_credential_checks_and_the_release_lock(self):
+        self.add_frontend()
+        def continuation(attempt, selected, result):
+            with (self.root / "release.lock").open() as lock:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.assertEqual(set(result["databaseReceiptSha256"]), {"course", "community", "frontend"})
+            return result
+        with patch.dict(os.environ, {"COURSE_STAGING_DATABASE_URL": "owned-fixture-url", "COMMUNITY_STAGING_DATABASE_URL": "owned-fixture-url",
+                                   "FRONTEND_STAGING_MIGRATION_DATABASE_URL": "owned-frontend-url"}), patch.object(subprocess, "run", side_effect=self.fake_docker) as commands:
+            result = migrate.execute(self.bundle, self.results, True, "staging/test-release", self.root / "release.lock", after_migrations=continuation,
+                                     before_frontend_migration=lambda selected, attempt: {"status": "FRONTEND_PRODUCERS_SUSPENDED", "environment": "staging", "projectId": "prj_fixture"})
+        self.assertEqual(result["status"], "DATABASES_VERIFIED")
+        calls = [call.args[0] for call in commands.call_args_list]
+        self.assertLess(max(i for i, args in enumerate(calls) if "--check" in args), min(i for i, args in enumerate(calls) if "--execute" in args))
+        frontend = next(args for args in calls if "--execute" in args and "ops/platform/frontend-image.mjs" in args)
+        self.assertIn("/run/release-input/candidate.json", frontend)
+
+    def test_missing_frontend_credential_stops_every_database_before_suspension(self):
+        self.add_frontend()
+        with patch.dict(os.environ, {"COURSE_STAGING_DATABASE_URL": "owned-fixture-url", "COMMUNITY_STAGING_DATABASE_URL": "owned-fixture-url"}, clear=True), \
+             patch.object(subprocess, "run", side_effect=self.fake_docker) as commands:
+            with self.assertRaisesRegex(ValueError, "NAMED_MIGRATION_CREDENTIAL_REQUIRED"):
+                self.execute()
+        self.assertFalse(any("--execute" in call.args[0] or "ps" in call.args[0] for call in commands.call_args_list))
+
+    def test_frontend_manifest_schema_and_terminal_mismatch_refuse(self):
+        self.add_frontend()
+        self.jobs["frontend"]["sourceCommit"] = "b" * 40; self.save()
+        with self.assertRaisesRegex(ValueError, "FRONTEND_JOB_CANDIDATE_MISMATCH"):
+            migrate.make_plan(self.bundle)
+        self.jobs["frontend"]["sourceCommit"] = "a" * 40; self.save()
+        def mismatch(args, **kwargs):
+            result = self.fake_docker(args, **kwargs)
+            if "--execute" in args and "ops/platform/frontend-image.mjs" in args:
+                file = self.results / "test-release/frontend/job-outcome.json"
+                value = json.loads(file.read_text()); value["migrationImageDigest"] = "sha256:" + "c" * 64; file.write_text(json.dumps(value))
+            return result
+        with patch.dict(os.environ, {"COURSE_STAGING_DATABASE_URL": "owned-fixture-url", "COMMUNITY_STAGING_DATABASE_URL": "owned-fixture-url",
+                                   "FRONTEND_STAGING_MIGRATION_DATABASE_URL": "owned-frontend-url"}), patch.object(subprocess, "run", side_effect=mismatch):
+            with self.assertRaisesRegex(ValueError, "FRONTEND_TERMINAL_BINDING_REFUSED"):
+                migrate.execute(self.bundle, self.results, True, "staging/test-release", self.root / "release.lock",
+                                before_frontend_migration=lambda selected, attempt: {"status": "FRONTEND_PRODUCERS_SUSPENDED", "environment": "staging", "projectId": "prj_fixture"})
+
+    def test_full_bundle_cannot_migrate_without_the_frontend_quiescence_coordinator(self):
+        self.add_frontend()
+        with patch.dict(os.environ, {"COURSE_STAGING_DATABASE_URL": "owned-fixture-url", "COMMUNITY_STAGING_DATABASE_URL": "owned-fixture-url",
+                                   "FRONTEND_STAGING_MIGRATION_DATABASE_URL": "owned-frontend-url"}), patch.object(subprocess, "run", side_effect=self.fake_docker) as commands:
+            with self.assertRaisesRegex(ValueError, "FRONTEND_QUIESCENCE_COORDINATOR_REQUIRED"):
+                self.execute()
+        self.assertFalse(any("--execute" in call.args[0] or "ps" in call.args[0] for call in commands.call_args_list))
 
     def test_plan_reads_no_credentials_and_executes_no_commands(self):
         with patch.object(subprocess, "run", side_effect=AssertionError("Plan executed")):

@@ -159,14 +159,16 @@ def make_plan(bundle):
             for key in ("sourceCommit", "migrationImageDigest", "runtimeImageDigest", "contractSha256"):
                 demand(previous.get(key) == staging.get(key) == job.get(key), "STAGING_ARTIFACT_MISMATCH")
             demand(previous.get("artifactSha256") == staging.get("artifactSha256") == target.get("artifactSha256"), "STAGING_SQL_ARTIFACT_MISMATCH")
-        jobs[name] = {"job": job, "schema": schema, "image": images["migration"]}
+        jobs[name] = {"job": job, "schema": schema, "image": images["migration"], "service": service}
+    if "frontendMigration" in release.get("artifacts", {}) or (bundle / "jobs/frontend.json").exists():
+        jobs["frontend"] = frontend_plan(bundle, release)
     if environment == "production":
         acceptance = read_json(bundle, "staging/acceptance.json")
         demand(acceptance.get("status") == "STAGING_VERIFIED" and acceptance.get("environment") == "staging"
                and acceptance.get("contractManifestSha256") == release["contractManifestSha256"], "STAGING_ACCEPTANCE_REQUIRED")
         for name in ("frontend", "course", "community"):
             demand(acceptance.get("sources", {}).get(name, {}).get("commit") == release["sources"][name]["commit"], "STAGING_SOURCE_MISMATCH")
-        for key in ("gateway", "courseMigration", "courseRuntime", "communityMigration", "communityRuntime"):
+        for key in ("gateway", "courseMigration", "courseRuntime", "communityMigration", "communityRuntime", *(("frontendMigration",) if "frontend" in jobs else ())):
             demand(acceptance.get("artifacts", {}).get(key, {}).get("image") == release.get("artifacts", {}).get(key, {}).get("image")
                    and isinstance(release.get("artifacts", {}).get(key, {}).get("image"), str), "STAGING_IMAGE_MISMATCH")
         demand(all(acceptance.get("checks", {}).get(name) == "passed" for name in
@@ -181,16 +183,59 @@ def make_plan(bundle):
     return release, jobs
 
 
-def docker_arguments(image, input_directory, receipt_directory, environment, release_id, user, name, checking=False):
+def frontend_plan(bundle, release):
+    job = read_json(bundle, "jobs/frontend.json")
+    artifact = release["artifacts"].get("frontendMigration", {})
+    image, prefix = artifact.get("image", ""), "ghcr.io/princessdardan/lash-her-platform-frontend-migration@"
+    demand(isinstance(image, str) and image.startswith(prefix) and digest(image[len(prefix):])
+           and artifact.get("scan") == "passed" and digest(artifact.get("sbomSha256")) and digest(artifact.get("provenanceSha256")), "VERIFIED_FRONTEND_IMAGE_REQUIRED")
+    target, source = job.get("target", {}), release.get("frontendMigration", {})
+    demand(job.get("version") == 1 and job.get("operator") == "Dardan" and job.get("environment") == release["environment"]
+           and job.get("releaseId") == release["releaseId"] and job.get("sourceCommit") == source.get("sourceCommit") == release["sources"]["frontend"]["commit"]
+           and job.get("migrationImageDigest") == image.split("@")[1] and job.get("contractManifestSha256") == source.get("contractManifestSha256") == release["contractManifestSha256"]
+           and isinstance(job.get("sqlArtifactSha256"), str) and re.fullmatch(r"[a-f0-9]{64}", job["sqlArtifactSha256"])
+           and job["sqlArtifactSha256"] == source.get("sqlArtifactSha256"), "FRONTEND_JOB_CANDIDATE_MISMATCH")
+    demand(isinstance(target.get("host"), str) and re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+", target["host"]) and "-pooler" not in target["host"]
+           and all(isinstance(target.get(key), str) and re.fullmatch(r"[A-Za-z0-9_-]{1,63}", target[key]) for key in ("database", "user", "runtimeRole"))
+           and target["user"] != target["runtimeRole"] and target.get("serverMajor") in (16, 18)
+           and isinstance(target.get("port"), int) and 0 < target["port"] < 65536
+           and isinstance(target.get("allowEmptyBootstrap"), bool) and isinstance(target.get("approvedPendingTags"), list)
+           and all(isinstance(tag, str) and re.fullmatch(r"[0-9]{4}_[a-z0-9_]+", tag) for tag in target["approvedPendingTags"]), "FRONTEND_TARGET_MISMATCH")
+    schema = read_input(bundle, "schema/frontend.json")
+    baseline = json.loads(schema)
+    canonical = json.dumps(baseline, separators=(",", ":"), ensure_ascii=False).encode("utf8")
+    demand(file_hash(canonical) == job.get("schemaBaselineSha256") == source.get("schemaBaselines", {}).get(str(target["serverMajor"]))
+           and baseline.get("version") == 1 and baseline.get("serverMajor") == target["serverMajor"]
+           and baseline.get("sqlArtifactSha256") == job["sqlArtifactSha256"], "FRONTEND_SCHEMA_BINDING_REFUSED")
+    # The packaged CLI independently checks the full schema and production
+    # receipt bindings during network-disabled preflight before any credential.
+    return {"job": job, "schema": schema, "image": image, "service": "frontend", "frontend": True}
+
+
+def credential_names(name, environment):
+    if name == "frontend":
+        key = "FRONTEND_STAGING_MIGRATION_DATABASE_URL" if environment == "staging" else "FRONTEND_PROD_MIGRATION_DATABASE_URL"
+        return key, key
+    key = "STAGING_DATABASE_URL" if environment == "staging" else "PROD_DATABASE_URL"
+    return f"{name.upper()}_{key}", key
+
+
+def docker_arguments(image, input_directory, receipt_directory, environment, release_id, user, name, checking=False, frontend=False):
     args = ["docker", "run", "--rm", "--name", name, "--network", "none" if checking else "bridge",
             "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--user", user,
             "--memory", "256m", "--cpus", "0.5", "--pids-limit", "128", "--tmpfs", "/tmp:size=32m,mode=1777",
             "--mount", f"type=bind,src={input_directory},dst=/run/release-input,readonly"]
-    args += ["--entrypoint", "node", image, "dist-migration/scripts/run-operator-migration.js"] if checking else [
-        "--mount", f"type=bind,src={receipt_directory},dst=/run/release-receipts",
-        "--env", "DATABASE_TARGET", "--env", "STAGING_DATABASE_URL" if environment == "staging" else "PROD_DATABASE_URL",
-        "--entrypoint", "node", image, "dist-migration/scripts/run-operator-migration.js"]
-    args += ["--check" if checking else "--execute", "/run/release-input/job.json", "/run/release-input/schema.json"]
+    if not checking:
+        args += ["--mount", f"type=bind,src={receipt_directory},dst=/run/release-receipts"]
+        if frontend:
+            args += ["--env", credential_names("frontend", environment)[1]]
+        else:
+            args += ["--env", "DATABASE_TARGET", "--env", credential_names("course", environment)[1]]
+    args += ["--entrypoint", "node", image, "ops/platform/frontend-image.mjs" if frontend else "dist-migration/scripts/run-operator-migration.js",
+             "--check" if checking else "--execute"]
+    if frontend:
+        args += ["/run/release-input/candidate.json"]
+    args += ["/run/release-input/job.json", "/run/release-input/schema.json"]
     if not checking:
         args += ["--confirm", f"{environment}/{release_id}", "/run/release-receipts"]
     return args
@@ -217,7 +262,7 @@ def suspend_runtime(environment, env):
     return ids
 
 
-def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), after_migrations=None, docker_env=None):
+def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), after_migrations=None, docker_env=None, before_frontend_migration=None):
     release, jobs = make_plan(bundle)
     environment, release_id = release["environment"], release["releaseId"]
     plan = {"releaseId": release_id, "environment": environment, "operator": "Dardan", "operation": "migrations-only",
@@ -250,6 +295,8 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 inputs, receipts = attempt / f"{name}-input", attempt / name
                 inputs.mkdir(mode=0o700); receipts.mkdir(mode=0o700)
                 write_json(inputs, "job.json", info["job"])
+                if info.get("frontend"):
+                    write_json(inputs, "candidate.json", release)
                 (inputs / "schema.json").write_bytes(info["schema"])
                 for file in inputs.iterdir():
                     file.chmod(0o400)
@@ -259,21 +306,35 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                     os.chown(inputs, uid, gid); os.chown(receipts, uid, gid)
                 prepared.append((name, info, inputs, receipts))
                 subprocess.run(["docker", "pull", info["image"]], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=180)
-                args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", f"lash-check-{name}-{release_id}", True)
+                args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", f"lash-check-{name}-{release_id}", True, info.get("frontend", False))
                 subprocess.run(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=30)
             # Validate every job in its exact migration image before database credentials are read.
             outcome["phase"] = "credential-validation"
-            key = "STAGING_DATABASE_URL" if environment == "staging" else "PROD_DATABASE_URL"
-            credentials = {name: os.environ.get(f"{name.upper()}_{key}") for name in jobs}
+            credentials = {name: os.environ.get(credential_names(name, environment)[0]) for name in jobs}
             demand(all(credentials.values()), "NAMED_MIGRATION_CREDENTIAL_REQUIRED")
+            if "frontend" in jobs:
+                outcome["phase"] = "frontend-producer-suspension"
+                # Vercel writers/schedules are outside Docker. Only the reviewed
+                # full release coordinator can suspend/drain and verify them;
+                # no JSON flag, shell hook or standalone CLI can assert this.
+                demand(before_frontend_migration is not None, "FRONTEND_QUIESCENCE_COORDINATOR_REQUIRED")
+                quiescence = before_frontend_migration(release, attempt)
+                demand(isinstance(quiescence, dict) and quiescence.get("status") == "FRONTEND_PRODUCERS_SUSPENDED"
+                       and quiescence.get("environment") == environment
+                       and isinstance(release.get("workload", {}).get("projectId"), str)
+                       and re.fullmatch(r"prj_[A-Za-z0-9]+", release["workload"]["projectId"])
+                       and quiescence.get("projectId") == release.get("workload", {}).get("projectId"), "FRONTEND_QUIESCENCE_IDENTITY_REFUSED")
+                # Keep provider responses/credentials out of the common receipt.
+                write_json(attempt, "frontend-quiescence.json", {key: quiescence[key] for key in ("status", "environment", "projectId")})
             outcome["phase"] = "suspend-runtime"
             outcome["stoppedRuntimeContainers"] = suspend_runtime(environment, base_env)
             outcome["runtimeResumed"] = False
             for name, info, inputs, receipts in prepared:
                 outcome["phase"] = f"apply-{name}"
-                env = {**base_env, "DATABASE_TARGET": environment, key: credentials[name]}
+                env = {**base_env, credential_names(name, environment)[1]: credentials[name],
+                       **({} if info.get("frontend") else {"DATABASE_TARGET": environment})}
                 container_name = f"lash-migrate-{name}-{release_id}"
-                args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", container_name)
+                args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", container_name, frontend=info.get("frontend", False))
                 log_fd = os.open(receipts / "container.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 try:
                     subprocess.run(args, check=True, stdout=log_fd, stderr=log_fd, env=env, timeout=1260)
@@ -288,9 +349,17 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 terminal = read_json(receipts, "job-outcome.json")
                 demand(receipt.get("status") == "DATABASE_VERIFIED" and terminal.get("status") == "DATABASE_VERIFIED"
                        and receipt.get("environment") == environment and receipt.get("releaseId") == release_id
-                       and receipt.get("service") == SERVICES[name][0] and receipt.get("failureCode") is None, "MIGRATION_OUTCOME_REFUSED")
-                for field in ("sourceCommit", "migrationImageDigest", "runtimeImageDigest", "contractSha256", "schemaBaselineSha256"):
+                       and receipt.get("service") == info["service"] and receipt.get("failureCode") is None and terminal.get("failureCode") is None, "MIGRATION_OUTCOME_REFUSED")
+                fields = ("sourceCommit", "migrationImageDigest", "sqlArtifactSha256", "contractManifestSha256", "schemaBaselineSha256") if info.get("frontend") else (
+                    "sourceCommit", "migrationImageDigest", "runtimeImageDigest", "contractSha256", "schemaBaselineSha256")
+                for field in fields:
                     demand(receipt.get(field) == info["job"].get(field), "MIGRATION_RECEIPT_BINDING_REFUSED")
+                    if info.get("frontend"):
+                        demand(terminal.get(field) == receipt.get(field), "FRONTEND_TERMINAL_BINDING_REFUSED")
+                if info.get("frontend"):
+                    demand(receipt.get("schemaVerified") is True and receipt.get("runtimeRoleVerified") is True
+                           and terminal.get("environment") == environment and terminal.get("releaseId") == release_id
+                           and terminal.get("service") == "frontend" and terminal.get("target") == receipt.get("target"), "FRONTEND_POSTFLIGHT_REQUIRED")
             outcome["status"] = "DATABASES_VERIFIED"
             outcome["phase"] = "completed"
             outcome["candidateSha256"] = file_hash(read_input(attempt, "candidate.json"))

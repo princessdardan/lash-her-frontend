@@ -12,6 +12,7 @@ import { frontendMigrationArtifact } from "./frontend-migration.mjs";
 
 export const ARTIFACT_COMPONENTS = Object.freeze([
   { key: "gateway", env: "GATEWAY", source: "frontend", image: "lash-her-platform-gateway", local: "gateway" },
+  { key: "frontendMigration", env: "FRONTEND_MIGRATION", source: "frontend", image: "lash-her-platform-frontend-migration", local: "frontend-migration" },
   { key: "courseRuntime", env: "COURSE_RUNTIME", source: "course", image: "lash-her-platform-course-runtime", local: "course-runtime" },
   { key: "courseMigration", env: "COURSE_MIGRATION", source: "course", image: "lash-her-platform-course-migration", local: "course-migration" },
   { key: "communityRuntime", env: "COMMUNITY_RUNTIME", source: "community", image: "lash-her-platform-community-runtime", local: "community-runtime" },
@@ -19,10 +20,11 @@ export const ARTIFACT_COMPONENTS = Object.freeze([
 ]);
 const hash = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 
-export function verifyFrontendSchemaSummary(summary, artifact) {
+export function verifyFrontendSchemaSummary(summary, artifact, sourceCommit) {
   const required = ["fresh-apply", "already-current", "data-bearing-upgrade", "lock-contention", "pending-chain-refusal",
     "lineage-refusal", "schema-refusal", "runtime-privilege-refusal", "tls-certificate-refusal", "exact-artifact-production-promotion"];
   if (summary?.status !== "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS" || summary.postgresMajor !== 18 || summary.providerTouched !== false ||
+      !/^[a-f0-9]{40}$/u.test(sourceCommit ?? "") || summary.sourceCommit !== sourceCommit || summary.packagedCliVerified !== true ||
       summary.sqlArtifactSha256 !== artifact.sqlArtifactSha256 || summary.contractManifestSha256 !== artifact.contractManifestSha256 ||
       !/^[a-f0-9]{64}$/u.test(summary.schemaBaselineSha256 ?? "") || /^0+$/u.test(summary.schemaBaselineSha256) ||
       !Array.isArray(summary.checks) || !required.every((name) => summary.checks.includes(name))) throw new Error("Exact frontend CI schema summary required");
@@ -112,7 +114,7 @@ export function collectArtifactCandidate(directory, sourceRoot, environment = pr
     "--name", "frontend-operator-schema-summary", "--dir", frontendEvidence]);
   const frontendSummary = readFileSync(join(frontendEvidence, "frontend-schema-summary.json"));
   if (frontendSummary.length > 2_000_000) throw new Error("Frontend CI summary exceeds bound");
-  const schemaHash = verifyFrontendSchemaSummary(JSON.parse(frontendSummary), frontend);
+  const schemaHash = verifyFrontendSchemaSummary(JSON.parse(frontendSummary), frontend, proof.sources.frontend.commit);
   candidate.frontendMigration = { sourceCommit: proof.sources.frontend.commit, sqlArtifactSha256: frontend.sqlArtifactSha256,
     contractManifestSha256: frontend.contractManifestSha256, schemaBaselines: { 18: schemaHash }, ciSummarySha256: hash(frontendSummary) };
   candidate.buildWorkflow = { repository: SOURCE_REPOSITORIES.frontend, commit: proof.workflowSha, ref: proof.workflowRef,
@@ -155,17 +157,21 @@ export function collectArtifactCandidate(directory, sourceRoot, environment = pr
   return candidate;
 }
 
-export function qualifyHarness(candidate, report, reportBytes = JSON.stringify(report)) {
+export function qualifyHarness(candidate, report, reportBytes = JSON.stringify(report), frontendReport = undefined) {
   const required = ["frontend-sdk-oidc-catalog-tls", "signed-project-and-public-route-boundaries", "authenticated-idempotent-enrollment",
     "private-peer-spoofing-and-direct-backend-denial", "signed-mux-only-exception", "publisher-projection-and-worker-loop",
     "actual-community-authority-client", "worker-restart-requested", "worker-recovered-after-restart",
     "public-tls-missing-workload-denied", "public-metrics-hidden", "private-course-tls-catalog",
     "private-application-credential-required", "private-community-peer-denied", "maintenance-holds-application-writes"];
   if (!Array.isArray(report?.records) || !required.every((name) => report.records.some((item) => item.name === name && item.passed === true)) ||
-      !report.records.every((item) => item.passed === true) || !ARTIFACT_COMPONENTS.every((component) =>
+      !report.records.every((item) => item.passed === true) || !ARTIFACT_COMPONENTS.filter((component) => component.key !== "frontendMigration").every((component) =>
         /^sha256:[0-9a-f]{64}$/u.test(candidate?.artifacts?.[component.key]?.localImageId ?? "") &&
         candidate.artifacts[component.key].localImageId === report.images?.[component.local])) throw new Error("Exact candidate harness evidence required");
+  const schema = verifyFrontendSchemaSummary(frontendReport, candidate.frontendMigration, candidate.sources?.frontend?.commit);
+  if (frontendReport.migrationImageDigest !== candidate.artifacts?.frontendMigration?.image?.split("@")[1] ||
+      schema !== candidate.frontendMigration?.schemaBaselines?.[18]) throw new Error("Exact candidate frontend migration rehearsal required");
   return { ...candidate, integration: { state: "passed", reportSha256: hash(reportBytes),
+    frontendMigrationRehearsalSha256: hash(JSON.stringify(frontendReport)),
     workloadProof: "signed-fixture", realVercelOidcVerified: false } };
 }
 
@@ -182,7 +188,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           JSON.stringify(candidate.sources) !== JSON.stringify(finalProof.sources)) throw new Error("Candidate source changed after harness");
       const reportBytes = readFileSync(join(directory, "container-harness.json"));
       const report = JSON.parse(reportBytes.toString("utf8"));
-      writeFileSync(join(directory, "release.candidate.json"), JSON.stringify(qualifyHarness({ ...candidate, sourceApproval: approval }, report, reportBytes), null, 2) + "\n", { mode: 0o600 });
+      const frontendReport = JSON.parse(readFileSync(join(directory, "frontend-migration-rehearsal.json"), "utf8"));
+      writeFileSync(join(directory, "release.candidate.json"), JSON.stringify(qualifyHarness({ ...candidate, sourceApproval: approval }, report, reportBytes, frontendReport), null, 2) + "\n", { mode: 0o600 });
     } else {
       if (process.argv.length !== 4) throw new Error("Usage");
       collectArtifactCandidate(resolve(process.argv[2]), resolve(process.argv[3]));

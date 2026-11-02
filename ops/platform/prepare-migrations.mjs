@@ -92,11 +92,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         evidence[`staging/${name}/${file}`] = read(join(stagingDirectory, name, file));
     }
     let frontend;
+    demand(!candidate.artifacts?.frontendMigration || settings.frontend);
     if (settings.frontend) {
       const exported = read(join(schemaDirectory, "frontend", `operator-schema-postgres${settings.frontend.serverMajor}.json`));
       const prior = stagingDirectory ? { database: read(join(stagingDirectory, "frontend/database-receipt.json")),
         terminal: read(join(stagingDirectory, "frontend/job-outcome.json")) } : undefined;
       frontend = prepareFrontendMigrationJob(release, settings.frontend, exported, prior);
+      if (prior) {
+        evidence["staging/frontend/database-receipt.json"] = prior.database;
+        evidence["staging/frontend/job-outcome.json"] = prior.terminal;
+      }
     }
     const output = resolve(outputDirectory);
     // Private API schema exports must not become files in a public checkout.
@@ -105,7 +110,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       if (parent === dirname(parent)) break;
     }
     mkdirSync(output, { mode: 0o700 }); created = output;
-    for (const directory of ["jobs", "schema", ...(stagingDirectory ? ["staging", "staging/course", "staging/community"] : [])]) mkdirSync(join(output, directory), { mode: 0o700 });
+    for (const directory of ["jobs", "schema", ...(stagingDirectory ? ["staging", "staging/course", "staging/community", ...(frontend ? ["staging/frontend"] : [])] : [])]) mkdirSync(join(output, directory), { mode: 0o700 });
     const save = (file, value) => writeFileSync(join(output, file), JSON.stringify(value, null, 2) + "\n", { flag: "wx", mode: 0o600 });
     save("release.candidate.json", release); save("build.candidate.json", candidate);
     for (const name of Object.keys(services)) {

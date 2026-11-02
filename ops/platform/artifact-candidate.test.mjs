@@ -4,15 +4,14 @@ import { assertBuilderSource, assertSbom, qualifyHarness, assertCandidateSourceA
 import { verifyReleaseInputs } from "./release-inputs.mjs";
 import { sourceFixture } from "./release-inputs.fixture.mjs";
 import { readFileSync } from "node:fs";
+import { frontendRehearsalFixture } from "./frontend-rehearsal.fixture.mjs";
 
 test("frontend CI schema evidence must match source SQL, contracts and the full owned rehearsal", () => {
-  const artifact = { sqlArtifactSha256: "a".repeat(64), contractManifestSha256: `sha256:${"b".repeat(64)}` };
-  const summary = { ...artifact, status: "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS", postgresMajor: 18, providerTouched: false,
-    schemaBaselineSha256: "c".repeat(64), checks: ["fresh-apply", "already-current", "data-bearing-upgrade", "lock-contention", "pending-chain-refusal",
-      "lineage-refusal", "schema-refusal", "runtime-privilege-refusal", "tls-certificate-refusal", "exact-artifact-production-promotion"] };
-  assert.equal(verifyFrontendSchemaSummary(summary, artifact), summary.schemaBaselineSha256);
-  for (const change of [{ sqlArtifactSha256: "d".repeat(64) }, { postgresMajor: 16 }, { checks: [] }, { providerTouched: true }]) {
-    assert.throws(() => verifyFrontendSchemaSummary({ ...summary, ...change }, artifact));
+  const candidate = {}, summary = frontendRehearsalFixture(candidate), artifact = candidate.frontendMigration;
+  assert.equal(verifyFrontendSchemaSummary(summary, artifact, "a".repeat(40)), summary.schemaBaselineSha256);
+  for (const change of [{ sqlArtifactSha256: "d".repeat(64) }, { postgresMajor: 16 }, { checks: [] }, { providerTouched: true },
+    { sourceCommit: "b".repeat(40) }, { packagedCliVerified: false }]) {
+    assert.throws(() => verifyFrontendSchemaSummary({ ...summary, ...change }, artifact, "a".repeat(40)));
   }
 });
 
@@ -34,12 +33,16 @@ test("empty or unrelated attestation metadata cannot stand in for an SBOM", () =
 test("harness qualification requires the exact candidate bytes and never asserts real OIDC or approval", () => {
   const report = JSON.parse(readFileSync(new URL("../../docs/api-integration/baselines/2026-11-01-runtime-release/harness.json", import.meta.url), "utf8"));
   const candidate = { approval: { state: "pending" }, artifacts: Object.fromEntries(ARTIFACT_COMPONENTS.map((component) => [component.key, { localImageId: report.images[component.local] }])) };
-  const qualified = qualifyHarness(candidate, report);
+  const frontend = frontendRehearsalFixture(candidate);
+  const qualify = (value = report, migration = frontend) => qualifyHarness(candidate, value, JSON.stringify(value), migration);
+  const qualified = qualify();
   assert.equal(qualified.approval.state, "pending");
   assert.equal(qualified.integration.realVercelOidcVerified, false);
-  assert.throws(() => qualifyHarness(candidate, { ...report, records: report.records.slice(1) }));
-  assert.throws(() => qualifyHarness(candidate, { ...report, images: { ...report.images, gateway: `sha256:${"0".repeat(64)}` } }));
-  assert.throws(() => qualifyHarness(candidate, { ...report, records: [...report.records, { name: "extra", passed: false }] }));
+  assert.throws(() => qualify({ ...report, records: report.records.slice(1) }));
+  assert.throws(() => qualify({ ...report, images: { ...report.images, gateway: `sha256:${"0".repeat(64)}` } }));
+  assert.throws(() => qualify({ ...report, records: [...report.records, { name: "extra", passed: false }] }));
+  assert.throws(() => qualify(report, { ...frontend, migrationImageDigest: `sha256:${"e".repeat(64)}` }));
+  assert.throws(() => qualifyHarness(candidate, report));
 });
 
 test("candidate collection and final qualification bind the operator dispatch, source and CI receipt", async () => {

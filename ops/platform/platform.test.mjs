@@ -99,6 +99,7 @@ test("release completeness needs no billing access, forecast or verified spendin
       communityRuntime: artifact("community-runtime", "3"),
       communityMigration: artifact("community-migration", "4"),
       gateway: artifact("gateway", "5"),
+      frontendMigration: artifact("frontend-migration", "6"),
     },
     approval: { state: "approved", operator: "Dardan", environment: "staging", releaseId: "staging-fixture", approvedAt: "2026-11-01T11:30:00Z" },
     migrations: { frontend: { state: "verified" }, course: { state: "verified" }, community: { state: "verified" } },
@@ -160,7 +161,7 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   assert.ok(crossContractIndex > verifyIndex && crossContractIndex < steps.indexOf(builds[0]));
   assert.match(steps[crossContractIndex].run, /--release/u);
   assert.equal(steps.find((step) => step.with?.path === "sources/lash-her-community-api").with["fetch-depth"], 0);
-  assert.equal(builds.length, 5);
+  assert.equal(builds.length, 6);
   for (const build of builds) {
     assert.ok(steps.indexOf(build) > verifyIndex);
     assert.match(build.with.context, /^https:\/\/github\.com\/princessdardan\/lash-her-/u);
@@ -170,7 +171,7 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
     assert.equal(build["continue-on-error"], undefined);
   }
   const scans = steps.filter((step) => step.uses?.startsWith("aquasecurity/trivy-action@"));
-  assert.equal(scans.length, 5);
+  assert.equal(scans.length, 6);
   for (const scan of scans) {
     assert.ok(scan.with["image-ref"].includes("@${{"));
     assert.equal(scan.with["exit-code"], "1");

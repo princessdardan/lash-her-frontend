@@ -11,11 +11,13 @@ function fixture() {
   const artifact = frontendMigrationArtifact();
   const candidate = { version: 2, environment: "staging", releaseId: "frontend-fixture", integration: { state: "passed" },
     sourceApproval: { mode: "single-operator-dispatch", operatorGithubUserId: "8996309" },
+    artifacts: { frontendMigration: { image: `ghcr.io/princessdardan/lash-her-platform-frontend-migration@sha256:${"b".repeat(64)}` } },
     contractManifestSha256: artifact.contractManifestSha256,
     sources: { frontend: { repository: "https://github.com/princessdardan/lash-her-frontend.git", commit: "a".repeat(40), requiredChecks: "passed" } } };
   const baseline = { version: 1, serverMajor: 18, sqlArtifactSha256: artifact.sqlArtifactSha256,
     catalog: Object.fromEntries(["relations", "columns", "constraints", "indexes", "triggers", "functions", "enums", "sequences", "policies"].map((name) => [name, []])) };
   const job = { version: 1, operator: "Dardan", environment: "staging", releaseId: candidate.releaseId, sourceCommit: "a".repeat(40),
+    migrationImageDigest: `sha256:${"b".repeat(64)}`,
     contractManifestSha256: candidate.contractManifestSha256, sqlArtifactSha256: artifact.sqlArtifactSha256,
     schemaBaselineSha256: createHash("sha256").update(JSON.stringify(baseline)).digest("hex"), recoveryRef: "owned/recovery",
     target: { host: "127.0.0.1", port: 5432, database: "frontend_owned", user: "frontend_migration", runtimeRole: "frontend_runtime", serverMajor: 18,
@@ -134,6 +136,7 @@ test("frontend production refuses missing or failed staging migration evidence",
   const f = fixture(); f.candidate.environment = f.job.environment = "production";
   assert.throws(() => prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact));
   const binding = { version: 1, service: "frontend", environment: "staging", releaseId: "prior-staging", sourceCommit: f.job.sourceCommit,
+    migrationImageDigest: f.job.migrationImageDigest,
     target: { host: "staging.example.invalid", database: "staging" }, sqlArtifactSha256: f.job.sqlArtifactSha256,
     contractManifestSha256: f.job.contractManifestSha256, schemaBaselineSha256: f.job.schemaBaselineSha256 };
   f.job.stagingVerification = { database: { ...binding, status: "DATABASE_VERIFIED", schemaVerified: true, runtimeRoleVerified: true },

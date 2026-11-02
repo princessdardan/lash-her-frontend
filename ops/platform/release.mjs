@@ -7,7 +7,7 @@ const REPOSITORIES = {
   course: "https://github.com/princessdardan/lash-her-course-api.git",
   community: "https://github.com/princessdardan/lash-her-community-api.git",
 };
-const ARTIFACTS = ["courseRuntime", "courseMigration", "communityRuntime", "communityMigration", "gateway"];
+const ARTIFACTS = ["courseRuntime", "courseMigration", "communityRuntime", "communityMigration", "gateway", "frontendMigration"];
 
 export function validatePlatformRelease(value, now = new Date()) {
   const failures = [];

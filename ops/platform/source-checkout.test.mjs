@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { assertSourceCheckout, verifySourceCheckouts } from "./source-checkout.mjs";
 import { ARTIFACT_COMPONENTS } from "./artifact-candidate.mjs";
+import { frontendRehearsalFixture } from "./frontend-rehearsal.fixture.mjs";
 import { contractManifestHash } from "./release.mjs";
 import { SOURCE_REPOSITORY_IDS } from "./source-policy.mjs";
 import { fileURLToPath } from "node:url";
@@ -89,8 +90,10 @@ test("final CLI requires source/dispatch evidence, qualifies exact fixture image
   const path = join(output, "release.candidate.json");
   const checkedAt = new Date().toISOString();
   const sourceApproval = { mode: "single-operator-dispatch", operatorGithubUserId: "8996309", runId: "9001", runAttempt: 1, verifiedAt: checkedAt };
-  writeFileSync(path, JSON.stringify({ sources, sourceApproval, approval: { state: "pending" },
-    artifacts: Object.fromEntries(ARTIFACT_COMPONENTS.map((component) => [component.key, { localImageId: report.images[component.local] }])) }));
+  const candidate = { sources, sourceApproval, approval: { state: "pending" },
+    artifacts: Object.fromEntries(ARTIFACT_COMPONENTS.map((component) => [component.key, { localImageId: report.images[component.local] }])) };
+  writeFileSync(join(output, "frontend-migration-rehearsal.json"), JSON.stringify(frontendRehearsalFixture(candidate, commit)));
+  writeFileSync(path, JSON.stringify(candidate));
   writeFileSync(join(output, "container-harness.json"), JSON.stringify(report));
   const command = [fileURLToPath(new URL("./artifact-candidate.mjs", import.meta.url)), "--harness", output, directory];
   const env = { PATH: process.env.PATH, GITHUB_REPOSITORY: "princessdardan/lash-her-frontend", GITHUB_REPOSITORY_ID: "1114139712",

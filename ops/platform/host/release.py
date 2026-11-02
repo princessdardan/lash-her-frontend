@@ -240,7 +240,7 @@ def check_containers(release, snapshot):
     return metadata
 
 
-def execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock")):
+def execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None):
     release, jobs, plan, compose = make_plan(bundle, configuration, compose_file)
     if not apply:
         return plan
@@ -298,7 +298,8 @@ def execute(bundle, configuration, results, compose_file, apply=False, confirmat
         demand(checked_release == release and checked_jobs == jobs and checked_plan == plan, "RUNTIME_CONFIGURATION_CHANGED")
         preflight(release, snapshot, jobs)
         outcome["phase"] = "migrations"
-        return migrate.execute(immutable_bundle, results, True, confirmation, lock_path, after_migrations=start_runtime, docker_env=SAFE_ENV)
+        return migrate.execute(immutable_bundle, results, True, confirmation, lock_path, after_migrations=start_runtime, docker_env=SAFE_ENV,
+                               before_frontend_migration=before_frontend_migration)
     except BaseException as error:
         outcome["status"] = "FAILED_REQUIRES_REVIEW"
         code = str(error)
