@@ -1,0 +1,172 @@
+{
+  "date": "2026-11-02",
+  "status": "STAGING_HOST_BOOTSTRAP_REBOOT_AND_TEMPLATE_CORRECTION_VERIFIED",
+  "accountId": "691588646557",
+  "region": "us-east-1",
+  "operator": "Dardan",
+  "callerArn": "arn:aws:iam::691588646557:user/Dardan",
+  "awsCliVersion": "2.38.3",
+  "awsMcpStatus": "unavailable: documentation and run_script report Unknown tool",
+  "stackName": "lash-her-api-staging",
+  "stackId": "arn:aws:cloudformation:us-east-1:691588646557:stack/lash-her-api-staging/43564e90-d6f4-11f1-825b-12ffd9c5e733",
+  "changeSetArn": "arn:aws:cloudformation:us-east-1:691588646557:changeSet/p1-staging-host-20261102-78c6f7c/d42a0d45-5b24-4417-8a98-08ff8b2ff4ef",
+  "changeSetStatus": "CREATE_COMPLETE",
+  "executionStatus": "EXECUTE_COMPLETE",
+  "resourceChanges": [
+    {
+      "action": "Add",
+      "logicalId": "ApiHost",
+      "type": "AWS::Lightsail::Instance"
+    },
+    {
+      "action": "Add",
+      "logicalId": "GatewayAddress",
+      "type": "AWS::Lightsail::StaticIp"
+    }
+  ],
+  "templateSha256": "cddefeb51ba26ad4bf13f5ff8f695f39500cc556caa80691265fbe53f11992db",
+  "guardSha256": "f15e00e147b8a23e71a12f97d1bc2783dd3a5410c2786e70652ba2b31b1ae645",
+  "sourceCommit": "78c6f7cc92b3e5a2adc0ef60720899db7c902af2",
+  "parametersFile": "ops/aws/lightsail-staging.parameters.json",
+  "selectedBundle": {
+    "id": "medium_3_0",
+    "ramGb": 4,
+    "vcpu": 2,
+    "diskGb": 80,
+    "listedMonthlyComputeUsd": 24,
+    "capacityQualified": false
+  },
+  "operatorIpv4Cidr": "99.239.200.211/32",
+  "currentNetworkRechecked": true,
+  "keyPairName": "Dardan",
+  "keyPairExistenceVerified": true,
+  "gatewayDomain": "api-staging.lashher.com",
+  "validation": {
+    "parameterConstraints": "passed",
+    "renderedUserDataPrintf": "correct newlines",
+    "cfnLint": {
+      "version": "1.58.0",
+      "result": "passed using existing cached packages; no installation"
+    },
+    "cfnGuard": {
+      "version": "3.2.1",
+      "result": "reuse October 22 three-rule/four-negative-fixture result; template and rules unchanged since 2390ff32c4156bf861cbce32406f5e4ad18583ab"
+    },
+    "awsValidateTemplate": "passed",
+    "accountAwareChangeSet": "CREATE_COMPLETE; describe-events contains no VALIDATION_ERROR"
+  },
+  "audit": {
+    "cloudFormationEventHistoryVerified": true,
+    "configuredTrailCount": 0,
+    "retention": "default 90-day event history only; no durable trail configured or created"
+  },
+  "approval": {
+    "state": "approved",
+    "source": "Dardan explicitly replied Provision staging host to the exact change-set execution request"
+  },
+  "applicationDeploymentPerformed": false,
+  "databaseMigrationPerformed": false,
+  "dnsChanged": false,
+  "monitoringDeferred": true,
+  "billingAccessRequired": false,
+  "p1Complete": false,
+  "stackStatus": "UPDATE_COMPLETE",
+  "instanceName": "lash-her-api-staging-host",
+  "instanceArn": "arn:aws:lightsail:us-east-1:691588646557:Instance/2e608d2c-a88f-416f-a23f-209d20e042f4",
+  "staticIpName": "lash-her-api-staging-gateway",
+  "gatewayIpv4": "184.196.129.231",
+  "staticIpAttachmentVerified": true,
+  "hostArchitecture": "x86_64",
+  "os": "ubuntu-24.04",
+  "publicInterface": "ens5",
+  "sshPrivateKeyReadIntoContext": false,
+  "sshHostKeyVerification": "First-use pin in dedicated known_hosts; provider hostKeys metadata was empty; subsequent SSH required the pinned key",
+  "initialCloudInit": {
+    "status": "error",
+    "cause": "Lightsail prepends /bin/sh initialization; inner Bash shebang ignored; set -o pipefail failed before setup",
+    "originalHistoryPreserved": true,
+    "correctedSource": "POSIX sh header and set -eu",
+    "repairApplied": true,
+    "rootPreparationMarkerVerified": true,
+    "storedCloudFormationTemplateUpdatePending": false
+  },
+  "sshSettings": {
+    "permitrootlogin": "no",
+    "passwordauthentication": "no",
+    "kbdinteractiveauthentication": "no"
+  },
+  "ufw": {
+    "active": true,
+    "incoming": "deny",
+    "outgoing": "allow",
+    "ipv4Rules": [
+      "tcp 22 from 99.239.200.211/32",
+      "tcp 443 from 0.0.0.0/0"
+    ],
+    "ipv6IngressRules": []
+  },
+  "dockerBootstrap": {
+    "status": "verified",
+    "scriptSha256": "a1328a42649ca4ccb0dca53f9cccca00d94fd3d0facaa8666a28c1243725625a",
+    "packageLockSha256": "174463ee83aae5544aa1f6a3f882b54f85a6d8d6d6c4fbd38e78fa50fa7e566c",
+    "forwardingSha256": "4e6214c7f8ebce5c766da938e6eda8710073da7efd97a64b1dc9c28049c344cd",
+    "docker": "29.9.2",
+    "compose": "5.6.1",
+    "serviceActive": true,
+    "serviceEnabled": true,
+    "ipv4FirstHook": "DOCKER-USER -> LASH-HER-INGRESS",
+    "ipv6FirstHook": "FORWARD -> LASH-HER-INGRESS",
+    "bootIdBeforeReboot": "f9fec174-dc41-4eec-ace0-5be973136f8d",
+    "runningContainerCount": 0,
+    "applicationDeployed": false,
+    "externalBoundaryVerified": false,
+    "reboot": {
+      "status": "STAGING_HOST_REBOOT_VERIFIED",
+      "operationId": "8a0dd3b2-6707-4669-aa68-4298808eb53e",
+      "bootIdAfter": "b832b03e-b62c-4052-9dc0-154769d5ea48",
+      "bootIdentityChanged": true,
+      "dockerActive": true,
+      "ipv4HookFirst": true,
+      "ipv6HookFirst": true,
+      "ufwActive": true,
+      "sshHardeningRetained": true,
+      "runningContainerCount": 0
+    }
+  },
+  "existingOperatorSshKeyUsed": true,
+  "correctiveTemplate": {
+    "sha256": "98144a7b4d91c577d3242612b9d8d66cc2b101a8ed35186866c8470ff40bd31e",
+    "changeSetArn": "arn:aws:cloudformation:us-east-1:691588646557:changeSet/p1-staging-posix-userdata-20261102/33f52551-0a1d-487d-a5c8-eea85984cfbf",
+    "status": "CREATE_COMPLETE",
+    "executionStatus": "EXECUTE_COMPLETE",
+    "validationErrors": [],
+    "replacement": false,
+    "changedAttributes": [
+      "ApiHost.Metadata",
+      "ApiHost.UserData"
+    ],
+    "approval": "Dardan explicitly approved Apply initialization fix",
+    "cfnLint": "1.58.0 passed",
+    "focusedPlatformTests": 8,
+    "shellHeaderAndSshPrintf": "passed with actual POSIX shell",
+    "guardCoveredProperties": "unchanged; prior policy result reused",
+    "stackStatus": "UPDATE_COMPLETE",
+    "storedTemplateMatchesCorrectedSource": true,
+    "instanceIdentityRetained": true,
+    "staticIpRetained": true,
+    "actualUbuntuShellRegression": {
+      "oldExitCode": 2,
+      "correctedExitCode": 0,
+      "mutationPerformed": false
+    },
+    "ownedLinuxFocusedTests": "8 passed; newer fixture shell supports pipefail, so regression also rejects the known incompatible option explicitly"
+  },
+  "remaining": [
+    "fresh host recreation with corrected source",
+    "qualify and publish immutable application artifacts",
+    "gateway DNS and real TLS certificate",
+    "runtime configuration, locked migrations and application deployment",
+    "actual external ingress and frontend workload/scheduler tests",
+    "worker recovery and compatible rollback"
+  ]
+}

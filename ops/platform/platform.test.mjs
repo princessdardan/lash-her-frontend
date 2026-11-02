@@ -1,11 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { parse } from "yaml";
 import { validatePlatformRelease } from "./release.mjs";
 import { privateTlsPolicies, databaseConnectionBudgets } from "./configuration.mjs";
 
 const model = parse(readFileSync(new URL("./compose.yaml", import.meta.url), "utf8"), { merge: true });
+
+test("Lightsail-prefixed user data runs its header under POSIX sh and emits valid SSH lines", () => {
+  const template = JSON.parse(readFileSync(new URL("../aws/lightsail-host.cfn.json", import.meta.url), "utf8"));
+  const lines = template.Resources.ApiHost.Properties.UserData["Fn::Join"][1];
+  const rendered = lines.map((line) => typeof line === "string" ? line : line["Fn::Sub"].replaceAll("${OperatorIpv4Cidr}", "192.0.2.1/32")).join("\n");
+  // Some development /bin/sh implementations accept this extension, unlike
+  // the actual Ubuntu 24.04 host. Keep the known incompatible option out even
+  // when the test runner's newer shell happens to support it.
+  assert.doesNotMatch(rendered, /^\s*set[^\n]*\bpipefail\b/mu);
+  assert.equal(spawnSync("sh", ["-n"], { input: rendered, encoding: "utf8" }).status, 0);
+  // Actual Lightsail prepends its initialization under /bin/sh. An inner Bash
+  // shebang cannot select Bash, and `set -o pipefail` fails before any setup.
+  const header = spawnSync("sh", ["-c", `true\n${lines.slice(0, 3).join("\n")}\nprintf ready`], { encoding: "utf8" });
+  assert.equal(header.status, 0, header.stderr);
+  assert.equal(header.stdout, "ready");
+  const sshCommand = lines.find((line) => typeof line === "string" && line.includes("PasswordAuthentication no"));
+  const print = spawnSync("sh", ["-c", sshCommand.split(" > ")[0]], { encoding: "utf8" });
+  assert.equal(print.status, 0, print.stderr);
+  assert.equal(print.stdout, "PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\n");
+});
 
 test("monitoring is deferred outside the default runtime and release gate", () => {
   assert.equal(model.services.collector, undefined);

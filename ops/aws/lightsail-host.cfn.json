@@ -58,7 +58,8 @@
             "Only IPv4 gateway HTTPS and operator /32 SSH are publicly permitted; IPv6 ingress is closed.",
             "Do not publish API, database, worker, metrics or internal TLS ports.",
             "P1-04 must enforce Docker forwarding rules; UFW alone does not restrict Docker port publishing.",
-            "Deletion destroys the root disk. Keep recoverable release configuration and secrets off-host."
+            "Deletion destroys the root disk. Keep recoverable release configuration and secrets off-host.",
+            "User data must use POSIX sh: Lightsail prepends its own /bin/sh initialization, so an inner Bash shebang does not select Bash."
           ],
           "mutable": "review-required"
         }
@@ -82,8 +83,8 @@
           { "Key": "ManagedBy", "Value": "cloudformation" }
         ],
         "UserData": { "Fn::Join": ["\n", [
-          "#!/bin/bash",
-          "set -euo pipefail",
+          "#!/bin/sh",
+          "set -eu",
           "export DEBIAN_FRONTEND=noninteractive",
           "apt-get update",
           "apt-get install -y ufw unattended-upgrades ca-certificates curl",
