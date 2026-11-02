@@ -21,6 +21,7 @@ import type {
   TProductsPage,
   TProductsGroupedCatalog,
   TPolicyPage,
+  TLandingPage,
   TPromotionCode,
   TService,
   TServiceEditorial,
@@ -533,6 +534,46 @@ async function getProductsPageData(): Promise<TProductsPage | null> {
     "productsPage",
     "productCollection",
   ]);
+}
+
+async function getLandingPageBySlug(
+  slug: string,
+  options: SanityFetchOptions = {},
+): Promise<TLandingPage | null> {
+  const query = groq`*[_type == "landingPage" && slug.current == $slug][0]{
+    _id, title, "slug": slug.current, eyebrow, heading, description,
+    heroImage{ asset, hotspot, crop, alt },
+    body[]{ ..., _key },
+    signup{ heading, description, submitLabel, successMessage, "privacyPolicySlug": privacyPolicy->slug.current },
+    seo{ title, description, noIndex }
+  }`;
+  return sanityFetch<TLandingPage | null>(
+    query,
+    { slug },
+    ["landingPage", "policyPage"],
+    options,
+  );
+}
+
+async function getAllLandingPageSlugs(): Promise<Array<{ slug: string }>> {
+  const query = groq`*[_type == "landingPage" && defined(slug.current)]{ "slug": slug.current }`;
+  return sanityFetch<Array<{ slug: string }>>(query, {}, ["landingPage"], {
+    stega: false,
+  });
+}
+
+// Signup admission must not use a cached page that has since been unpublished
+// or renamed, and must never resolve a Studio draft.
+async function getLandingPageSignupDetails(
+  slug: string,
+): Promise<Pick<TLandingPage, "_id" | "title" | "slug"> | null> {
+  return client
+    .withConfig({ useCdn: false, perspective: "published" })
+    .fetch(
+      groq`*[_type == "landingPage" && slug.current == $slug][0]{ _id, title, "slug": slug.current }`,
+      { slug },
+      { cache: "no-store" },
+    );
 }
 
 async function getPolicyPageBySlug(
@@ -1157,6 +1198,9 @@ async function getShortCourseContent(
 }
 
 export const loaders = {
+  getLandingPageBySlug,
+  getAllLandingPageSlugs,
+  getLandingPageSignupDetails,
   getShortCourseSummary,
   getShortCourseSignupDetails,
   getShortCourseContent,

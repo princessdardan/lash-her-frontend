@@ -1113,9 +1113,9 @@ function CheckoutContent({
                       >
                         Online shipping checkout is temporarily unavailable.
                         Please try again later or{" "}
-                        <a href="/contact" className="underline">
+                        <Link href="/contact" className="underline">
                           contact us
-                        </a>{" "}
+                        </Link>{" "}
                         to place your order.
                       </p>
                     ) : (

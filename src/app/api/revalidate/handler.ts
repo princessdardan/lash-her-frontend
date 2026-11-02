@@ -17,6 +17,7 @@ const TYPE_TAG_MAP: Record<string, string> = {
   productCollection: "productCollection",
   promotionCode: "promotionCode",
   policyPage: "policyPage",
+  landingPage: "landingPage",
   product: "product",
   service: "service",
   globalSettings: "global",

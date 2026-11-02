@@ -104,6 +104,7 @@ export interface RecordTrainingContactInput extends MarketingContactIdentity {
 }
 
 export interface RecordContactPopupInput extends MarketingContactIdentity {
+  landingPage?: { id: string; title: string };
   consentText?: string;
   signupOffer?: ContactPopupSignupOfferSnapshot;
   sourceDocument?: SourceDocumentReference;
@@ -340,6 +341,7 @@ export function createMarketingContactStore(
         marketingConsent: input.marketingConsent === true,
         payload: {
           offerPromotionId: input.signupOffer?.promotionId,
+          ...(input.landingPage ? { landingPage: input.landingPage } : {}),
           instagram: cleanOptionalText(input.instagram),
           sourcePath: cleanOptionalText(input.sourcePath),
           variant: input.variant,

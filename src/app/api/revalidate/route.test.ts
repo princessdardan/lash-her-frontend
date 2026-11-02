@@ -63,6 +63,17 @@ test("Sanity revalidate route revalidates mapped tags for a valid signature", ()
   `);
 });
 
+test("landing page publication and deletion invalidate landing page data and slug lists", () => {
+  runRouteScenario(`
+    const { handler, revalidatedTags } = runScenario({
+      body: { _type: "landingPage" }, isValidSignature: true,
+    });
+    const response = await handler(createRequest());
+    assert.equal(response.status, 200);
+    assert.deepEqual(revalidatedTags, [{ tag: "landingPage", profile: { expire: 0 } }]);
+  `);
+});
+
 test("Mux asset updates invalidate cached course playback metadata", () => {
   runRouteScenario(`
     const { handler, revalidatedTags, syncedStockIds } = runScenario({

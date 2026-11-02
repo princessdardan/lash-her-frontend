@@ -16,9 +16,13 @@ import type { TContactPopupSettings } from "@/types";
 
 interface ContactPopupProps {
   settings?: TContactPopupSettings;
+  excludedPaths?: string[];
 }
 
-export function ContactPopup({ settings }: ContactPopupProps) {
+export function ContactPopup({
+  settings,
+  excludedPaths = [],
+}: ContactPopupProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [isSubmitted, setIsSubmitted] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -27,6 +31,7 @@ export function ContactPopup({ settings }: ContactPopupProps) {
   const pathname = usePathname();
   const isCoursePage =
     pathname === "/courses" || pathname.startsWith("/courses/");
+  const isExcludedPage = isCoursePage || excludedPaths.includes(pathname);
 
   const enabled = settings?.enabled ?? false;
   const variant = settings?.variant ?? "fullContact";
@@ -44,7 +49,7 @@ export function ContactPopup({ settings }: ContactPopupProps) {
   const safePrivacyLinkHref = getSafePrivacyLinkHref(privacyLinkHref);
 
   React.useEffect(() => {
-    if (!enabled || isCoursePage) return;
+    if (!enabled || isExcludedPage) return;
 
     const hasDismissed = document.cookie.includes(
       "lh_contact_popup_dismissed=true",
@@ -55,7 +60,7 @@ export function ContactPopup({ settings }: ContactPopupProps) {
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [enabled, isCoursePage]);
+  }, [enabled, isExcludedPage]);
 
   const setDismissCookie = () => {
     const safeExpiryDays = Math.max(1, cookieExpiryDays);
@@ -116,7 +121,7 @@ export function ContactPopup({ settings }: ContactPopupProps) {
     setIsSubmitting(false);
   };
 
-  if (!enabled || isCoursePage) return null;
+  if (!enabled || isExcludedPage) return null;
 
   return (
     <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>

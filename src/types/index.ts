@@ -416,6 +416,25 @@ export interface TTrainingProgramsPage {
   trainingPrograms: TTrainingProgram[];
 }
 
+export interface TLandingPage {
+  _id: string;
+  title: string;
+  slug: string;
+  eyebrow?: string;
+  heading: string;
+  description: string;
+  heroImage?: TSanityImage;
+  body?: TPortableTextBlock[];
+  signup?: {
+    heading?: string;
+    description?: string;
+    submitLabel?: string;
+    successMessage?: string;
+    privacyPolicySlug?: string;
+  };
+  seo?: { title?: string; description?: string; noIndex?: boolean };
+}
+
 export type TPolicyPageType =
   | "privacy"
   | "cookie"
