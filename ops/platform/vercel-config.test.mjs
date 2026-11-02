@@ -9,7 +9,7 @@ const qualification = () => ({ LASH_RELEASE_SCHEDULER_QUALIFICATION: "true", APP
   APP_VERCEL_TEAM_ID: ids.teamId, VERCEL_GIT_COMMIT_SHA: "a".repeat(40),
   LASH_RELEASE_PROBE_EXPIRES_AT: String(now + 60_000) });
 
-test("ordinary builds preserve all nine business schedules and publication branch deployment suppression", () => {
+test("ordinary builds preserve business schedules and require explicit releases from main and staging", () => {
   const config = createVercelConfiguration({});
   assert.deepEqual(config.crons, [
     { path: "/api/admin/private-data-retention", schedule: "17 8 * * *" },
@@ -22,7 +22,7 @@ test("ordinary builds preserve all nine business schedules and publication branc
     { path: "/api/cron/shipping-rate-cache-refresh", schedule: "30 7 * * 1" },
     { path: "/api/cron/highlevel-sync", schedule: "* * * * *" },
   ]);
-  assert.deepEqual(config.git, { deploymentEnabled: { "codex/p1-platform-foundation-20261101": false } });
+  assert.deepEqual(config.git, { deploymentEnabled: { main: false, staging: false, "codex/p1-platform-foundation-20261101": false } });
   assert.deepEqual(createVercelConfiguration({ LASH_RELEASE_SCHEDULER_QUALIFICATION: "false" }), config);
   config.crons.pop();
   assert.equal(createVercelConfiguration({}).crons.length, 9);

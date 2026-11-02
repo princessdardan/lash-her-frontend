@@ -32,5 +32,11 @@ export function createVercelConfiguration(env, now = Date.now()) {
     }
     crons = [{ path: "/api/internal/release-scheduler-probe", schedule: "* * * * *" }];
   }
-  return { crons, git: { deploymentEnabled: { "codex/p1-platform-foundation-20261101": false } } };
+  // Release branches advance source independently of the explicit release action.
+  // This controls Git push events; reviewed API/CLI deployments remain explicit.
+  return { crons, git: { deploymentEnabled: {
+    main: false,
+    staging: false,
+    "codex/p1-platform-foundation-20261101": false,
+  } } };
 }
