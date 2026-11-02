@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """One operator action for API migrations and runtime startup; plan by default."""
 import argparse
+import copy
 import json
 import os
 from pathlib import Path
@@ -240,11 +241,12 @@ def check_containers(release, snapshot):
     return metadata
 
 
-def execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None):
+def execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None):
     release, jobs, plan, compose = make_plan(bundle, configuration, compose_file)
     if not apply:
         return plan
     demand(confirmation == f'{release["environment"]}/{release["releaseId"]}', "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED")
+    demand(after_runtime_ready is None or callable(after_runtime_ready), "RUNTIME_CONTINUATION_REQUIRED")
     assert_host(plan)
     migrate.private_directory(results)
     for directory in (results.resolve(), configuration.resolve(), bundle.resolve()):
@@ -278,6 +280,15 @@ def execute(bundle, configuration, results, compose_file, apply=False, confirmat
             outcome["candidateSha256"] = database_outcome["candidateSha256"]
             outcome["phase"], outcome["status"] = "completed", "API_RUNTIME_READY"
             migrate.write_json(attempt, "runtime-outcome.json", outcome)
+            if after_runtime_ready is not None:
+                # The reviewed parent owns provider coordination, real workload
+                # verification and its separate release outcome. Stay inside
+                # migrate.execute's flock for that entire continuation. The API
+                # receipt remains an API-only result, never release acceptance.
+                outcome["phase"] = "frontend-coordination"
+                after_runtime_ready(attempt, migration_attempt, snapshot,
+                                    copy.deepcopy(verified_release), copy.deepcopy(outcome))
+                outcome["phase"] = "completed"
             return outcome
         except BaseException:
             if outcome["phase"] == "completed":

@@ -193,6 +193,71 @@ class RuntimeReleaseTests(unittest.TestCase):
                 self.execute()
         self.assertFalse(any("--execute" in args or "up" in args for args in self.calls))
 
+    def test_parent_continuation_runs_after_durable_runtime_success_under_the_same_lock(self):
+        self.fixture.add_frontend()
+        self.fixture.jobs["frontend"]["target"]["approvedPendingTags"] = []
+        self.fixture.save()
+        observed = []
+        def coordinate(attempt, migration_attempt, snapshot, selected, runtime):
+            with (self.root / "release.lock").open() as stream:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.assertEqual(self.running, set(release.SERVICES))
+            self.assertEqual(json.loads((attempt / "runtime-outcome.json").read_text())["status"], "API_RUNTIME_READY")
+            self.assertEqual(json.loads((migration_attempt / "migration-outcome.json").read_text())["status"], "DATABASES_VERIFIED")
+            self.assertTrue(json.loads((migration_attempt / "frontend/job-outcome.json").read_text())["readOnlyVerified"])
+            self.assertTrue(json.loads((snapshot / "gateway.json").read_text())["maintenance"])
+            self.assertEqual(selected, self.fixture.release)
+            self.assertEqual(runtime["status"], "API_RUNTIME_READY")
+            self.assertFalse(runtime["releaseAccepted"])
+            observed.append(True)
+            # Callback values cannot alter the retained/returned API receipt.
+            runtime["trafficAuthorized"] = True
+            selected["environment"] = "changed"
+        with self.patches(), patch.dict(os.environ, {"FRONTEND_STAGING_MIGRATION_DATABASE_URL": "owned-frontend-url"}):
+            result = release.execute(self.bundle, self.configuration, self.results, self.compose, True, "staging/test-release",
+                                     self.root / "release.lock", after_runtime_ready=coordinate)
+        self.assertEqual(observed, [True])
+        self.assertEqual(result["phase"], "completed")
+        self.assertFalse(result["trafficAuthorized"])
+        self.assertFalse(result["releaseAccepted"])
+
+    def test_parent_continuation_failure_stops_runtime_and_keeps_database_success_for_review(self):
+        def fail(*_args):
+            raise ValueError("FRONTEND_VERIFICATION_FAILED")
+        with self.patches(), self.assertRaisesRegex(ValueError, "FRONTEND_VERIFICATION_FAILED"):
+            release.execute(self.bundle, self.configuration, self.results, self.compose, True, "staging/test-release",
+                            self.root / "release.lock", after_runtime_ready=fail)
+        self.assertFalse(self.running)
+        retained = json.loads((self.results / "runtime-test-release/runtime-outcome.json").read_text())
+        self.assertEqual(retained["status"], "API_RUNTIME_READY")
+        failure = json.loads((self.results / "runtime-test-release/runtime-failure.json").read_text())
+        self.assertEqual(failure["phase"], "frontend-coordination")
+        self.assertEqual(failure["status"], "FAILED_REQUIRES_REVIEW")
+        self.assertTrue(failure["runtimeStopped"])
+        self.assertFalse(failure["trafficAuthorized"])
+        self.assertFalse(failure["releaseAccepted"])
+        self.assertEqual(json.loads((self.results / "test-release/migration-outcome.json").read_text())["status"], "DATABASES_VERIFIED")
+
+    def test_invalid_parent_continuation_is_refused_before_private_reads(self):
+        with patch.object(release, "assert_host", side_effect=AssertionError("Host checked")), self.assertRaisesRegex(ValueError, "RUNTIME_CONTINUATION_REQUIRED"):
+            release.execute(self.bundle, self.configuration, self.results, self.compose, True, "staging/test-release",
+                            self.root / "release.lock", after_runtime_ready={"status": "pretend-success"})
+        self.assertEqual(list(self.results.iterdir()), [])
+
+    def test_parent_continuation_is_not_called_when_runtime_verification_fails(self):
+        original = self.docker
+        def fail(args, **kwargs):
+            if "exec" in args and "release-probe.mjs" in args:
+                return subprocess.CompletedProcess(args, 0, stdout='{"status":"API_RUNTIME_BOUNDARIES_PASS","checks":[]}', stderr="")
+            return original(args, **kwargs)
+        def must_not_run(*_args):
+            self.fail("Parent continuation ran before verified API runtime")
+        with self.patches(), patch.object(subprocess, "run", side_effect=fail), self.assertRaisesRegex(ValueError, "RUNTIME_BOUNDARY"):
+            release.execute(self.bundle, self.configuration, self.results, self.compose, True, "staging/test-release",
+                            self.root / "release.lock", after_runtime_ready=must_not_run)
+        self.assertFalse(self.running)
+
     def test_credential_or_config_preflight_failure_does_not_migrate_or_stop_existing_runtime(self):
         original = self.docker
         self.running.add("gateway")
