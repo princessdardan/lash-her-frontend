@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "date": "2026-11-02",
+  "scope": "P1 frontend provider-control component, not release acceptance",
+  "operator": "Dardan",
+  "files": [
+    "ops/platform/host/vercel.py",
+    "ops/platform/host/vercel_test.py",
+    "docs/api-integration/operator-frontend-release.md"
+  ],
+  "verification": {
+    "hostTests": 55,
+    "providerTests": 14,
+    "transport": "owned loopback HTTPS server, fixture CA and synthetic credentials",
+    "liveProviderMutations": 0,
+    "loopbackSandboxExceptionUsed": true
+  },
+  "predecessorRemoteCi": {
+    "head": "1e4b8d2ae1b43e451cc0c023097ea855eb0dfb80",
+    "runId": 41395492538,
+    "jobs": [
+      {
+        "id": 125115803887,
+        "name": "quality-and-unit",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125115803995,
+        "name": "browser (chromium)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125115804028,
+        "name": "database",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125115804045,
+        "name": "browser (webkit)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125115804089,
+        "name": "gateway-and-platform",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125115804097,
+        "name": "frontend-operator-migrations",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125115804098,
+        "name": "build",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125115804140,
+        "name": "browser (firefox)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125115804144,
+        "name": "audit",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125119140465,
+        "name": "browser",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "newSourceQualification": false
+  },
+  "coverage": [
+    "fixed team/project/Git repository and source identity",
+    "native schedule disable plus readback without claiming writer drain",
+    "production-target remote Git build with autoAssignCustomDomains false",
+    "unchanged production deployment and disabled schedule checks during build",
+    "exclusive durable intent, immediate deployment handle and sanitized terminal record",
+    "TLS certificate refusal, redirect refusal, bounded responses and error redaction",
+    "ambiguous creation never retried; observation timeout preserves existing handle"
+  ],
+  "limits": [
+    "no frontend quiescence, promotion or traffic-admission coordinator is implemented by this component",
+    "not wired to the host CLI; existing frontend apply hold remains enforced",
+    "provider responses are controlled fixtures, not Vercel qualification",
+    "deferred runtime/release credential handoff remains in effect",
+    "no live database, provider settings, deployment, notification or infrastructure mutation",
+    "monitoring deferred and billing evidence excluded"
+  ],
+  "fileSha256": {
+    "docs/api-integration/release-policy.md": "ec392a9c295a472e54d4d461073c2efee9cb593841601633bdaddc0746fb5e3b",
+    "docs/api-integration/migration-policy.md": "7214c0eb1e91900a3a88c7a793af3a89cecd108ca46b082a369c369a7e072833",
+    "ops/platform/README.md": "959de57852784bd927e25a19acdbf4d108371e4f50492ab93be13c2a0b094e74",
+    "docs/api-integration/operator-runtime-release.md": "66991d21a7609fd03803ee9fc77657cb27131b988ce496d99960c77b5a2caff8",
+    "ops/platform/source-gate.md": "832f2ec41b5d48853adf103a1b884cc66e96d1ff39950e9c8a51bf04f7248207",
+    "ops/platform/host/vercel.py": "e27b2799cd9a06217c2f8dcb0463b86818ec983fe83491d386ec544b0e6a63ed",
+    "ops/platform/host/vercel_test.py": "bbd4a94737b8778a39d85a62ac2ed5652fc78581075e89b9cac97768b24d26e7",
+    "docs/api-integration/operator-frontend-release.md": "7255b21223b29f8a673491ba1ffc645038b4fbbdf526bc1275bc867379df9299"
+  }
+}

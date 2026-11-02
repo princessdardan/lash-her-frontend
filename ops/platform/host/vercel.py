@@ -1,0 +1,179 @@
+"""Private provider operations for the reviewed parent release coordinator.
+
+No CLI or ambient credentials: the parent supplies its private runtime token.
+Staging a build never authorizes traffic, promotion or database migration.
+"""
+import json
+import re
+import ssl
+import time
+import urllib.error
+import urllib.request
+
+import migrate
+
+TEAM = "team_2Hrn5eMZyZxfAWdmYvyKi9t3"
+PROJECTS = {"staging": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM", "production": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy"}
+REPOSITORY_ID = "1114139712"
+API_ORIGIN = "https://api.vercel.com"
+MAX_RESPONSE = 2_000_000
+demand = migrate.demand
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, new_url):
+        return None
+
+
+class Client:
+    def __init__(self, token):
+        demand(isinstance(token, str) and 0 < len(token) <= 8192 and all(32 < ord(c) < 127 for c in token), "VERCEL_PRIVATE_TOKEN_REQUIRED")
+        self._token = token
+        # No ambient proxy, alternate API URL, disabled TLS or redirect can
+        # forward this token to a different host. Never serialize this object.
+        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect(),
+                                                  urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+
+    def request(self, method, path, body=None):
+        demand(method in ("GET", "POST", "PATCH") and isinstance(path, str)
+               and re.fullmatch(r"/v[0-9]+/[A-Za-z0-9_/?=&.-]+", path), "VERCEL_REQUEST_REFUSED")
+        separator = "&" if "?" in path else "?"
+        data = None if body is None else json.dumps(body, separators=(",", ":")).encode()
+        request = urllib.request.Request(API_ORIGIN + path + separator + "teamId=" + TEAM, data=data, method=method,
+                    headers={"Authorization": "Bearer " + self._token, "Content-Type": "application/json"})
+        try:
+            with self._opener.open(request, timeout=30) as response:
+                demand(200 <= response.status < 300, "VERCEL_RESPONSE_REFUSED")
+                raw = response.read(MAX_RESPONSE + 1)
+                demand(len(raw) <= MAX_RESPONSE, "VERCEL_RESPONSE_TOO_LARGE")
+                value = json.loads(raw)
+                demand(isinstance(value, dict), "VERCEL_RESPONSE_REFUSED")
+                return value
+        except urllib.error.HTTPError as error:
+            error.close()
+            raise ValueError("VERCEL_REQUEST_FAILED_REQUIRES_REVIEW") from None
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            # Provider error bodies, URLs and exception strings can contain
+            # credentials. Do not include them in common receipts or logs.
+            raise ValueError("VERCEL_REQUEST_FAILED_REQUIRES_REVIEW") from None
+
+
+def release_identity(release):
+    environment = release.get("environment")
+    demand(environment in PROJECTS and release.get("version") == 2
+           and release.get("workload", {}).get("projectId") == PROJECTS[environment]
+           and release.get("workload", {}).get("environment") == "production", "VERCEL_RELEASE_TARGET_REFUSED")
+    source = release.get("sources", {}).get("frontend", {})
+    commit = source.get("commit", "")
+    demand(source.get("repository") == "https://github.com/princessdardan/lash-her-frontend.git"
+           and source.get("requiredChecks") == "passed" and isinstance(commit, str)
+           and re.fullmatch(r"[a-f0-9]{40}", commit) and commit != "0" * 40
+           and isinstance(release.get("releaseId"), str)
+           and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", release["releaseId"]), "VERCEL_RELEASE_SOURCE_REFUSED")
+    return environment, PROJECTS[environment], commit
+
+
+def project_state(client, project_id):
+    demand(project_id in PROJECTS.values(), "VERCEL_PROJECT_REFUSED")
+    value = client.request("GET", f"/v9/projects/{project_id}")
+    link = value.get("link") or {}
+    demand(value.get("id") == project_id and value.get("accountId") == TEAM
+           and isinstance(link, dict) and link.get("type") == "github" and str(link.get("repoId")) == REPOSITORY_ID,
+           "VERCEL_PROJECT_IDENTITY_REFUSED")
+    targets = value.get("targets") or {}
+    demand(isinstance(targets, dict), "VERCEL_PRODUCTION_TARGET_REFUSED")
+    current = targets.get("production")
+    demand(current is None or isinstance(current, dict), "VERCEL_PRODUCTION_TARGET_REFUSED")
+    current_id = None if current is None else current.get("id")
+    demand(current_id is None or isinstance(current_id, str) and re.fullmatch(r"dpl_[A-Za-z0-9]+", current_id), "VERCEL_PRODUCTION_TARGET_REFUSED")
+    cron = value.get("crons")
+    demand(cron is None or isinstance(cron, dict), "VERCEL_CRON_STATE_REFUSED")
+    disabled = None if cron is None else cron.get("disabledAt")
+    demand(disabled is None or type(disabled) is int and disabled > 0, "VERCEL_CRON_STATE_REFUSED")
+    # Deliberately omit env, protection bypasses, git credentials and provider
+    # metadata from the returned state. No API response is written to disk.
+    return {"projectId": project_id, "productionDeploymentId": current_id, "cronsEnabled": disabled is None}
+
+
+def disable_schedules(client, release):
+    environment, project_id, _commit = release_identity(release)
+    before = project_state(client, project_id)
+    if before["cronsEnabled"]:
+        client.request("PATCH", f"/v1/projects/{project_id}/crons", {"enabled": False})
+    after = project_state(client, project_id)
+    demand(after["cronsEnabled"] is False and after["productionDeploymentId"] == before["productionDeploymentId"],
+           "VERCEL_CRON_DISABLE_UNVERIFIED")
+    # Cancelling future schedules does not establish termination/draining of
+    # running invocations, callbacks, old deployment URLs or other writers.
+    return {"status": "NATIVE_SCHEDULES_DISABLED", "environment": environment, "projectId": project_id,
+            "previouslyEnabled": before["cronsEnabled"], "frontendQuiescenceVerified": False}
+
+
+def deployment_state(client, deployment_id, project_id, commit, release_id):
+    demand(isinstance(deployment_id, str) and re.fullmatch(r"dpl_[A-Za-z0-9]+", deployment_id), "VERCEL_DEPLOYMENT_ID_REFUSED")
+    value = client.request("GET", f"/v13/deployments/{deployment_id}?withGitRepoInfo=true")
+    source = value.get("gitSource") or {}
+    meta = value.get("meta") or {}
+    url = value.get("url")
+    demand(value.get("id") == deployment_id and value.get("projectId") == project_id
+           and value.get("target") == "production" and isinstance(source, dict) and source.get("type") == "github"
+           and str(source.get("repoId")) == REPOSITORY_ID and source.get("sha") == commit
+           and isinstance(meta, dict) and meta.get("lashReleaseId") == release_id
+           and isinstance(url, str) and re.fullmatch(r"[a-z0-9][a-z0-9-]*\.vercel\.app", url), "VERCEL_DEPLOYMENT_BINDING_REFUSED")
+    state = value.get("readyState")
+    demand(state in ("QUEUED", "INITIALIZING", "BUILDING", "READY", "ERROR", "CANCELED"), "VERCEL_DEPLOYMENT_STATE_REFUSED")
+    return {"deploymentId": deployment_id, "projectId": project_id, "sourceCommit": commit,
+            "url": "https://" + url, "readyState": state}
+
+
+def stage_frontend(client, release, attempt, timeout=900):
+    """Remote build from pinned Git source; preserve the current production target.
+
+    Call only after the parent's locked migrations/runtime checks. This is an
+    in-process component, not an independently approved deployment entrypoint.
+    A failed or ambiguous POST is never automatically repeated.
+    """
+    environment, project_id, commit = release_identity(release)
+    demand(type(timeout) is int and 1 <= timeout <= 1800, "VERCEL_BUILD_TIMEOUT_REFUSED")
+    migrate.private_directory(attempt)
+    before = project_state(client, project_id)
+    demand(before["cronsEnabled"] is False, "VERCEL_SCHEDULE_SUSPENSION_REQUIRED")
+    intent = {"environment": environment, "projectId": project_id, "sourceCommit": commit,
+              "releaseId": release["releaseId"], "previousDeploymentId": before["productionDeploymentId"],
+              "trafficAuthorized": False, "promotionAuthorized": False}
+    # Exclusive durable intent precedes the network mutation. A timeout or
+    # lost POST response requires inventory/reconciliation, not another build.
+    migrate.write_json(attempt, "frontend-build-started.json", intent)
+    outcome = {**intent, "status": "FRONTEND_BUILD_FAILED_REQUIRES_REVIEW", "phase": "create"}
+    try:
+        created = client.request("POST", "/v13/deployments", {
+            "name": "lash-her-frontend-staging" if environment == "staging" else "lash-her-frontend",
+            "project": project_id, "target": "production", "autoAssignCustomDomains": False,
+            "gitSource": {"type": "github", "repoId": REPOSITORY_ID, "ref": commit, "sha": commit},
+            "meta": {"lashReleaseId": release["releaseId"]},
+        })
+        deployment_id = created.get("id")
+        demand(isinstance(deployment_id, str) and re.fullmatch(r"dpl_[A-Za-z0-9]+", deployment_id), "VERCEL_DEPLOYMENT_ID_REFUSED")
+        outcome["deploymentId"] = deployment_id
+        migrate.write_json(attempt, "frontend-build-created.json", {**intent, "deploymentId": deployment_id})
+        deadline = time.monotonic() + timeout
+        outcome["phase"] = "build"
+        while True:
+            state = deployment_state(client, deployment_id, project_id, commit, release["releaseId"])
+            demand(state["readyState"] not in ("ERROR", "CANCELED"), "VERCEL_BUILD_FAILED_REQUIRES_REVIEW")
+            # Detect provider drift or an unrelated promotion before declaring
+            # this build staged. Never silently roll back somebody else's work.
+            current = project_state(client, project_id)
+            demand(current == {**before, "cronsEnabled": False}, "VERCEL_PROJECT_CHANGED_DURING_BUILD")
+            if state["readyState"] == "READY":
+                outcome.update(state)
+                outcome["status"], outcome["phase"] = "FRONTEND_STAGED", "completed"
+                return outcome
+            demand(time.monotonic() < deadline, "VERCEL_BUILD_OBSERVATION_TIMED_OUT")
+            time.sleep(min(2, max(0, deadline - time.monotonic())))
+    except BaseException as error:
+        code = str(error)
+        outcome["failureCode"] = code if isinstance(error, ValueError) and re.fullmatch(r"[A-Z_]{1,80}", code) else "VERCEL_BUILD_FAILURE"
+        raise ValueError(outcome["failureCode"]) from None
+    finally:
+        migrate.write_json(attempt, "frontend-build-outcome.json", outcome)

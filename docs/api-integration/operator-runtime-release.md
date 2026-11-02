@@ -2,6 +2,8 @@
 
 `ops/platform/host/release.py` coordinates selected migrations and API runtime startup in one explicit operator action. It is implemented locally; it has not run on a Lightsail host. The [release policy](release-policy.md) remains authoritative. This command does not deploy the frontend, change feature flags or certify staging/production acceptance. Full bundles now include the frontend migration image and share the lock across all three databases. The standalone CLI refuses their apply until a reviewed frontend coordinator suspends/drains off-host writers and native schedules; that coordinator is still unfinished.
 
+The [frontend provider component](operator-frontend-release.md) now implements native schedule disabling with readback and exact-source remote build staging without changing production domains. It is exercised against owned HTTPS fixtures and is not connected to this CLI. Schedule disabling alone cannot satisfy the frontend writer-quiescence callback, and no promotion/admission path is exposed by that component.
+
 ## Maintained inputs
 
 Use the qualified candidate and private migration bundle from [operator migrations](operator-migrations.md). Candidate collection automatically records the selected Compose hash and private TLS peer/route policies. An older candidate without those bindings must be rebuilt. Production preparation additionally needs `workload: {environment: "production", projectId: "prj_..."}` in its target settings, using the separate production Vercel project. This changes environment configuration while preserving the staging-tested source and image pins.
