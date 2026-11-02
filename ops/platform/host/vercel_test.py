@@ -46,6 +46,10 @@ class VercelControlTests(unittest.TestCase):
                     self.send_error(500)
                     return
                 status, body, headers = owner.responses.pop(0)
+                # Match the provider: promotion-job metadata is opt-in.
+                if (self.path.startswith("/v9/projects/") and "rollbackInfo=true" not in self.path
+                        and isinstance(body, dict)):
+                    body = {key: value for key, value in body.items() if key != "lastAliasRequest"}
                 self.send_response(status)
                 for key, value in headers.items():
                     self.send_header(key, value)
@@ -239,7 +243,8 @@ class VercelControlTests(unittest.TestCase):
     def test_promotion_waits_for_exact_alias_job_and_target_after_live_verification(self):
         self.staged()
         self.enqueue(self.promotion_project(), self.deployment(), self.promotion_project())
-        self.responses.append((201, {}, {}))
+        # The provider acknowledges promotion without a JSON response body.
+        self.responses.append((201, b"", {}))
         self.enqueue(self.deployment(), self.promotion_project("in-progress"),
                      self.deployment(), self.promotion_project("succeeded", deployment="dpl_fixture"))
         verified_calls = []
@@ -260,9 +265,46 @@ class VercelControlTests(unittest.TestCase):
         self.assertEqual(len(writes), 1)
         self.assertIn("/promote/dpl_fixture?", writes[0]["path"])
         self.assertEqual(writes[0]["body"], {})
+        project_reads = [c for c in self.calls if c["path"].startswith("/v9/projects/")]
+        self.assertTrue(project_reads)
+        self.assertTrue(all("rollbackInfo=true" in c["path"] for c in project_reads))
         receipts = "".join(p.read_text() for p in self.attempt.iterdir())
         for secret in ("fixture-private-token", "provider-secret-must-not-escape", "private-provider-bypass"):
             self.assertNotIn(secret, receipts)
+
+    def test_queued_empty_promotion_response_still_requires_observed_completion(self):
+        self.staged()
+        self.enqueue(self.promotion_project(), self.deployment(), self.promotion_project())
+        self.responses.append((202, b"", {}))
+        self.enqueue(self.deployment(), self.promotion_project("pending"))
+        with patch.object(vercel.time, "monotonic", side_effect=[0, 2]):
+            with self.assertRaisesRegex(ValueError, "VERCEL_PROMOTION_OBSERVATION_TIMED_OUT"):
+                vercel.promote_frontend(self.client, self.release, self.attempt, self.verified, timeout=1)
+        outcome = json.loads((self.attempt / "frontend-promotion-outcome.json").read_text())
+        self.assertIsNone(outcome["frontendDomainsPromoted"])
+        self.assertEqual(sum(c["method"] == "POST" for c in self.calls), 1)
+        self.enqueue(self.deployment(), self.promotion_project("succeeded", deployment="dpl_fixture"))
+        observed = vercel.observe_frontend_promotion(self.client, self.release, self.attempt)
+        self.assertTrue(observed["frontendDomainsPromoted"])
+        self.assertEqual(sum(c["method"] == "POST" for c in self.calls), 1)
+
+    def test_empty_response_exception_is_limited_to_documented_promotion_acknowledgements(self):
+        promotion = f"/v10/projects/{vercel.PROJECTS['staging']}/promote/dpl_fixture"
+        cases = [
+            ("GET", promotion, 201, b""),
+            ("PATCH", promotion, 201, b""),
+            ("POST", "/v13/deployments", 201, b""),
+            ("POST", "/v10/projects/prj_unreviewed/promote/dpl_fixture", 201, b""),
+            ("POST", promotion, 200, b""),
+            ("POST", promotion, 204, b""),
+            ("POST", promotion, 201, b"provider-secret-must-not-escape"),
+            ("POST", promotion, 202, []),
+        ]
+        for method, path, status, body in cases:
+            with self.subTest(method=method, path=path, status=status, body=body):
+                self.responses.append((status, body, {}))
+                with self.assertRaisesRegex(ValueError, "^VERCEL_REQUEST_FAILED_REQUIRES_REVIEW$"):
+                    self.client.request(method, path, {} if method != "GET" else None)
 
     def test_missing_or_wrong_live_verification_never_promotes(self):
         with self.assertRaisesRegex(ValueError, "FRONTEND_LIVE_VERIFICATION_REQUIRED"):
@@ -365,7 +407,7 @@ class VercelControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "VERCEL_PROMOTION_FAILED_REQUIRES_REVIEW"):
             vercel.observe_frontend_promotion(self.client, self.release, self.attempt)
         self.assertEqual(sum(c["method"] != "GET" for c in self.calls), 1)
-        self.assertTrue(all("rollback" not in c["path"] and "/crons" not in c["path"] for c in self.calls))
+        self.assertTrue(all("rollback" not in c["path"].split("?", 1)[0] and "/crons" not in c["path"] for c in self.calls))
 
     def test_unrelated_alias_job_and_reenabled_schedules_stop_observation(self):
         self.staged()

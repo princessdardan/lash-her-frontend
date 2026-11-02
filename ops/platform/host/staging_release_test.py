@@ -220,7 +220,7 @@ class StagingReleaseTests(unittest.TestCase):
         self.assertEqual(self.runtime.running, set())
         calls = self.probe.fixture.calls
         self.assertEqual(len([c for c in calls if "/promote/" in c["path"]]), 1)
-        self.assertFalse(any("rollback" in c["path"] for c in calls))
+        self.assertFalse(any("rollback" in c["path"].split("?", 1)[0] for c in calls))
         outcome = (self.runtime.results / "runtime-test-release/frontend/staging-outcome.json").read_text()
         self.assertIsNone(json.loads(outcome)["frontendDomainsPromoted"])
         self.assertNotIn("private-provider-credential", outcome)
