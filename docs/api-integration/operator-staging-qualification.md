@@ -2,7 +2,7 @@
 
 `ops/platform/host/staging_release.py` joins three-database verification/migration, API runtime startup, frontend probe configuration, pinned frontend build, real HTTP workload verification and staging domain promotion under the existing release/watchdog lock. It is preparation for the remaining initial live qualification. It keeps gateway writes in maintenance and native schedules disabled; success is not P1 acceptance.
 
-Use the qualified immutable candidate, private three-database bundle and runtime configuration from [operator migrations](operator-migrations.md) and [API runtime release](operator-runtime-release.md). Source CI and owned rehearsals do not supply a qualified registry candidate or a deployment host. Private credentials must be verified before a live run; the outstanding Course setup remains a separate prerequisite.
+Use the qualified immutable candidate, private three-database bundle and runtime configuration from [operator migrations](operator-migrations.md) and [API runtime release](operator-runtime-release.md). Source CI and owned rehearsals do not supply a qualified registry candidate or a deployment host. Verify the selected runtime and migration bindings before a live run; the build-only workflow receives no live database credentials.
 
 ## Inspect and execute
 
@@ -25,11 +25,14 @@ Inject the existing `VERCEL_TOKEN` and the three named staging migration variabl
 Before database work, the command verifies provider project/protection access and refuses active alias jobs or unsupported rolling release state. It then calls the API coordinator. Inside the locked continuation, after durable database/API readiness:
 
 1. Recheck provider state and disable native schedules with readback; retain their previous enablement state. Probe preparation selects the expiring staging qualification configuration: that frontend build contains only the dedicated native smoke definition, with business cron definitions excluded. It does not enable the scheduler.
-2. Configure the [automatic expiring probe](operator-frontend-workload-probe.md) in the existing staging project.
-3. Build the exact frontend Git revision as a Production-target deployment without assigning domains.
-4. Verify the deployed server-to-gateway path through the real HTTP callback, then promote that retained deployment and verify native promotion completion.
+2. Bind the existing `STAGING_RELEASE_COMMIT` and `STAGING_MIGRATION_VERIFIED_COMMIT` build guards to the selected frontend source only after checking the durable, matching current-only database and terminal receipts. Read back both nonsecret pins. A missing, failed or mismatched proof prevents these provider writes.
+3. Configure the [automatic expiring probe](operator-frontend-workload-probe.md) in the existing staging project.
+4. Build the exact frontend Git revision as a Production-target deployment without assigning domains. The provider request retains `ref: staging` alongside its exact `sha`, preserving the branch guard while pinning the built source.
+5. Verify the deployed server-to-gateway path through the real HTTP callback, then promote that retained deployment and verify native promotion completion.
 
 No second approval is requested between these stages.
+
+Install and verify the [staging certificate maintenance](operator-certificate-maintenance.md) timer through the initial release preparation. Its source and owned tests do not establish live renewal or host recreation evidence.
 
 ## Outcomes and remaining checks
 

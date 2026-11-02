@@ -54,6 +54,10 @@ class StagingReleaseTests(unittest.TestCase):
         f.enqueue(p.project(enabled=True), p.project(enabled=True))
         # Locked state check, native schedule disable/readback and final check.
         f.enqueue(p.project(enabled=True), p.project(enabled=True), {}, p.project(), p.project())
+        # Existing build guards receive the exact completed frontend source pin.
+        keys = ("STAGING_RELEASE_COMMIT", "STAGING_MIGRATION_VERIFIED_COMMIT")
+        variables = [{"key": key, "value": "a" * 40, "target": ["production"], "type": "plain"} for key in keys]
+        f.enqueue(*({"created": item, "failed": []} for item in variables), {"envs": variables})
         # Expiring probe preparation and exact-source staged remote build.
         p.prepared_responses()
         f.enqueue(p.project(), {"id": "dpl_fixture"}, d(), p.project())
@@ -84,6 +88,60 @@ class StagingReleaseTests(unittest.TestCase):
         self.assertFalse(plan["frontendProducerSuspensionRequired"])
         self.assertFalse(plan["releaseAccepted"])
         self.assertEqual(list(self.runtime.results.iterdir()), [])
+
+    def source_pin_receipts(self, label):
+        parent = self.runtime.root / ("source-pins-" + label)
+        parent.mkdir(mode=0o700)
+        (parent / "frontend").mkdir(mode=0o700)
+        job = self.runtime.fixture.jobs["frontend"]
+        database = {**copy.deepcopy(job), "service": "frontend", "status": "DATABASE_VERIFIED", "schemaVerified": True,
+                    "runtimeRoleVerified": True, "migrationMode": "verify-current-only", "readOnlyVerified": True, "applied": []}
+        terminal = {**copy.deepcopy(database)}
+        return parent, database, terminal
+
+    def write_source_pin_receipts(self, parent, database, terminal):
+        from migrate import write_json, file_hash, read_input
+        write_json(parent / "frontend", "database-receipt.json", database)
+        write_json(parent / "frontend", "job-outcome.json", terminal)
+        write_json(parent, "migration-outcome.json", {"status": "DATABASES_VERIFIED", "environment": "staging", "releaseId": "test-release",
+                   "databaseReceiptSha256": {"frontend": file_hash(read_input(parent / "frontend", "database-receipt.json"))}})
+
+    def test_source_pin_gate_rejects_incomplete_stale_or_mismatched_database_proof_before_provider_calls(self):
+        cases = [
+            ("wrong-source", lambda db, end: db.update(sourceCommit="b" * 40)),
+            ("wrong-image", lambda db, end: db.update(migrationImageDigest="sha256:" + "c" * 64)),
+            ("missing-read-only", lambda db, end: db.update(readOnlyVerified=False)),
+            ("missing-schema", lambda db, end: db.update(schemaVerified=False)),
+            ("missing-role", lambda db, end: db.update(runtimeRoleVerified=False)),
+            ("terminal-failure", lambda db, end: end.update(status="FAILED_REQUIRES_REVIEW")),
+            ("applied-sql", lambda db, end: db.update(applied=["unexpected-sql"])),
+            ("wrong-target", lambda db, end: db["target"].update(host="different.example.invalid")),
+        ]
+        for label, change in cases:
+            with self.subTest(label=label):
+                parent, database, terminal = self.source_pin_receipts(label)
+                change(database, terminal)
+                self.write_source_pin_receipts(parent, database, terminal)
+                attempt = parent / "attempt"; attempt.mkdir(mode=0o700)
+                with patch.object(self.probe.client, "request", side_effect=AssertionError("Provider called")):
+                    with self.assertRaises(ValueError):
+                        staging_release.configure_source_pins(self.probe.client, self.runtime.fixture.release,
+                            {name: {"job": job} for name, job in self.runtime.fixture.jobs.items()}, parent, attempt)
+                self.assertEqual(list(attempt.iterdir()), [])
+
+    def test_source_pin_readback_mismatch_retains_failure_and_never_marks_configured(self):
+        parent, database, terminal = self.source_pin_receipts("readback")
+        self.write_source_pin_receipts(parent, database, terminal)
+        attempt = parent / "attempt"; attempt.mkdir(mode=0o700)
+        variables = [{"key": key, "value": "b" * 40, "type": "plain", "target": ["production"]}
+                     for key in ("STAGING_RELEASE_COMMIT", "STAGING_MIGRATION_VERIFIED_COMMIT")]
+        self.probe.fixture.enqueue(*({"created": item, "failed": []} for item in variables), {"envs": variables})
+        with self.assertRaisesRegex(ValueError, "SOURCE_PIN_READBACK_UNVERIFIED"):
+            staging_release.configure_source_pins(self.probe.client, self.runtime.fixture.release,
+                {name: {"job": job} for name, job in self.runtime.fixture.jobs.items()}, parent, attempt)
+        result = json.loads((attempt / "source-pins-outcome.json").read_text())
+        self.assertEqual(result["status"], "SOURCE_PINS_FAILED_REQUIRES_REVIEW")
+        self.assertEqual(len([call for call in self.probe.fixture.calls if call["method"] == "POST"]), 2)
 
     def test_confirmation_pending_frontend_and_production_are_refused_before_credentials(self):
         with patch.object(vercel, "Client", side_effect=AssertionError("Credential read")), patch.object(staging_release.runtime, "assert_host", side_effect=AssertionError("Host checked")):

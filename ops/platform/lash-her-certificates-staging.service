@@ -1,0 +1,21 @@
+[Unit]
+Description=Renew Lash Her staging public and private TLS certificates
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/lash-her/ops/platform/host/certificates.py /etc/lash-her/certificates-staging.json --apply --confirm staging/certificate-renewal
+TimeoutStartSec=900
+TimeoutStopSec=360
+MemoryMax=256M
+TasksMax=64
+CPUQuota=50%
+LimitNOFILE=256
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/lash-her /run/lock
+PrivateTmp=true
