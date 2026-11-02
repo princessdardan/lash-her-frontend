@@ -3,6 +3,8 @@ import {
   readContractBundle,
   verifySources,
   assertCompatible,
+  contractDirectory,
+  verifyBundleRevision,
 } from "./api-contract-tools.mjs";
 
 const bundleIndex = process.argv.indexOf("--bundle");
@@ -20,6 +22,18 @@ const { manifest, documents } = await readContractBundle(
 if (process.argv.includes("--release") && manifest.status !== "released") {
   throw new Error(
     "Candidate contracts cannot certify a release; review and pin a released manifest first",
+  );
+}
+const releaseRevisionIndex = process.argv.indexOf("--release-revision");
+if (process.argv.includes("--release")) {
+  if (releaseRevisionIndex < 0)
+    throw new Error(
+      "Release verification requires --release-revision with the frontend bundle commit",
+    );
+  await verifyBundleRevision(
+    bundleDirectory ? resolve(bundleDirectory) : contractDirectory,
+    manifest,
+    process.argv[releaseRevisionIndex + 1],
   );
 }
 const sourcesIndex = process.argv.indexOf("--sources");
@@ -42,6 +56,17 @@ if (baselineIndex >= 0) {
   const baseline = await readContractBundle(resolve(directory));
   if (baseline.manifest.status !== "released")
     throw new Error("Compatibility baseline must be released");
+  const baselineRevisionIndex = process.argv.indexOf("--baseline-revision");
+  if (process.argv.includes("--release") && baselineRevisionIndex < 0)
+    throw new Error(
+      "Release verification requires --baseline-revision with the approved baseline commit",
+    );
+  if (baselineRevisionIndex >= 0)
+    await verifyBundleRevision(
+      resolve(directory),
+      baseline.manifest,
+      process.argv[baselineRevisionIndex + 1],
+    );
   for (const name of ["course", "community"])
     assertCompatible(baseline.documents[name], documents[name]);
   // Closed versioned identity/event contracts require coordinated version review.

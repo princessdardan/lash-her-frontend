@@ -1,0 +1,48 @@
+{
+  "runId": "4dcd8040-ce51-4e54-9d46-319414a98a31",
+  "images": {
+    "gateway": "sha256:21b263db8a8e59fe8e52c5141247ef3c5d9b6e1db8b083e757642498abe2a402",
+    "course-runtime": "sha256:bdd90ccbdb2374ef33c253d2190f769520638ab6aa8a31680754d9bc0157216c",
+    "course-migration": "sha256:b1441ca6586455ca7512f61f8f65d8cf7fbf303b7996fab729002a609ca1099f",
+    "community-runtime": "sha256:4e087798b1c911949810e094e28369b2ad6f7d80a6432c7204d0b4e336d47009",
+    "community-migration": "sha256:61bb39e79cdc613846bbb1d6dc54e7b065d024872e95cc37c2d4cc3517dabc36"
+  },
+  "records": [
+    {
+      "name": "frontend-sdk-oidc-catalog-tls",
+      "passed": true
+    },
+    {
+      "name": "signed-project-and-public-route-boundaries",
+      "passed": true
+    },
+    {
+      "name": "authenticated-idempotent-enrollment",
+      "passed": true
+    },
+    {
+      "name": "private-peer-spoofing-and-direct-backend-denial",
+      "passed": true
+    },
+    {
+      "name": "signed-mux-only-exception",
+      "passed": true
+    },
+    {
+      "name": "publisher-projection-and-worker-loop",
+      "passed": true
+    },
+    {
+      "name": "actual-community-authority-client",
+      "passed": true
+    },
+    {
+      "name": "worker-restart-requested",
+      "passed": true
+    },
+    {
+      "name": "worker-recovered-after-restart",
+      "passed": true
+    }
+  ]
+}

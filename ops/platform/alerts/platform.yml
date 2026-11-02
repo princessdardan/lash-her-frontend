@@ -1,0 +1,45 @@
+groups:
+  - name: lash-her-platform
+    rules:
+      - alert: LashHerProcessUnavailable
+        expr: up{job=~"lash-her-.*"} == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: A Lash Her process cannot be scraped
+      - alert: LashHerGatewayRejectionBurst
+        expr: increase(lash_gateway_rejected_total[5m]) > 30
+        for: 1m
+        labels: {severity: high}
+        annotations:
+          summary: Gateway rejects an elevated number of requests
+      - alert: LashHerGatewayUpstreamUnavailable
+        expr: increase(lash_gateway_upstream_failures_total[5m]) > 5
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: Gateway cannot reach its private upstream
+      - alert: LashHerCommunityWorkerStalled
+        expr: time() - community_worker_last_successful_iteration_timestamp_seconds > 300
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: Community worker has not completed an iteration in five minutes
+      - alert: LashHerCertificateExpiring
+        expr: lash_gateway_tls_not_after_seconds - time() < 14 * 24 * 3600
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: A gateway or private TLS certificate expires within fourteen days
+      - alert: LashHerHostMemoryPressure
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.15
+        for: 5m
+        labels: {severity: high}
+        annotations:
+          summary: Host available memory is below fifteen percent
+      - alert: LashHerHostDiskPressure
+        expr: node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes < 0.15
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: Host available disk is below fifteen percent

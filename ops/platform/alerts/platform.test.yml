@@ -1,0 +1,29 @@
+rule_files: [platform.yml]
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: up{job="lash-her-course-api",environment="staging"}
+        values: "1 0 0 0"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LashHerProcessUnavailable
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: LashHerProcessUnavailable
+        exp_alerts:
+          - exp_labels: {job: lash-her-course-api, environment: staging, severity: critical}
+            exp_annotations: {summary: A Lash Her process cannot be scraped}
+  - interval: 1m
+    input_series:
+      - series: community_worker_last_successful_iteration_timestamp_seconds{job="lash-her-community-worker"}
+        values: "0 0 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: LashHerCommunityWorkerStalled
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LashHerCommunityWorkerStalled
+        exp_alerts:
+          - exp_labels: {job: lash-her-community-worker, severity: critical}
+            exp_annotations: {summary: Community worker has not completed an iteration in five minutes}

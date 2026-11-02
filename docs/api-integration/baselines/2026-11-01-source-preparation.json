@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "date": "2026-11-01",
+  "status": "LOCAL_SOURCE_PREPARATION_VERIFIED_NOT_PUBLISHED",
+  "operator": "Dardan",
+  "publicationRoot": "/private/tmp/lash-p1-publication-15ljvf2t",
+  "branch": "codex/p1-platform-foundation-20261101",
+  "sourceBases": {
+    "lash-her-frontend": "b5f7e08c5d264b66286062c60691f4d28d924294",
+    "lash-her-course-api": "4a45e68518e8244a1ce61cd6975ac8b6db5552f7",
+    "lash-her-community-api": "eb855b1fd0eeca823ba9cec6a401a823a4cfd3eb"
+  },
+  "scope": [
+    "Isolated worktrees preserve unrelated original frontend edits and its newer staging security fixes.",
+    "Frontend staging or main coordinates the existing API main branches; no extra API staging branches required.",
+    "Course publication omits the retired signed/native bootstrap prototype and its tests; the active locked core and operator command remain.",
+    "Both API core/lineage documentation entrypoints describe the current operator path.",
+    "Security fixes resolved through npm and lockfile reconciliation; no audit gate weakened."
+  ],
+  "verification": {
+    "node": "24.18.0",
+    "gatewayPlatformTests": 44,
+    "hostTests": 23,
+    "courseVerify": {
+      "status": "passed",
+      "tests": 453,
+      "files": 30
+    },
+    "communityVerify": {
+      "status": "passed",
+      "tests": 225,
+      "files": 22
+    },
+    "frontendUnitTests": {
+      "passed": 2060,
+      "failed": 0,
+      "sourceDefault": 1845,
+      "sourceServerOnly": 170,
+      "script": 31,
+      "securityCompatibility": 14
+    },
+    "frontendTypes": "passed",
+    "frontendLint": "passed",
+    "contractsCheckAndSiblingSourceCheck": "passed",
+    "frontendBuild": "passed with public staging configuration and an explicit non-secret draft-mode placeholder; no protected drafts accessed and output not deployed",
+    "workflowActionlint": "passed for API CI, frontend CI and artifact workflow",
+    "diffCheck": "passed in all original and publication trees"
+  },
+  "audit": {
+    "lash-her-frontend": {
+      "info": 0,
+      "low": 1,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 1
+    },
+    "lash-her-course-api": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    },
+    "lash-her-community-api": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    }
+  },
+  "logSha256": {
+    "p1-publication-platform-final.log": "b73d4e95616ea192bf315f0df9ee0b1f35aa8889cd682206bae9814872ee1e40",
+    "p1-publication-host-final.log": "46163b0de49ce98d3231e865ddb5113f0f3da137c71b739fb0411e2d861b8f10",
+    "p1-publication-course-final-verify.log": "c73d3124ed06c88c090a78dd1b83092fe43ce46bb3613472ba2a68dccbd46dee",
+    "p1-publication-community-final-verify.log": "dc959438bca198e549015798221e60a3502dff0c0f28b492767ceec7af744f61",
+    "p1-publication-frontend-final-units.log": "26b64480e11f2b4485993be49dbca809b6936cc63a6604bc1e1ada4a9cca4585",
+    "p1-publication-frontend-final-lint.log": "b42de6b713e7818479d726443bed3d1be31206bfffb815b1df91fbb08ca5da60",
+    "p1-publication-frontend-final-types.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "p1-publication-contracts-final.log": "238ab8886e064027dc73b4d5be9ad8da0043285e24f164b5211836ad1e8ca465",
+    "p1-publication-frontend-final-build-placeholder.log": "8f4238855d571a91d5c51be5e89c1eee3898f045a5416caff22fd3f0a6096f16"
+  },
+  "sourceFileSha256": {
+    "lash-her-frontend/ops/platform/source-policy.mjs": "6c2484805edc8207761b1d9510c32d581a3fa1deb48e52a04407877d5f77c778",
+    "lash-her-frontend/ops/platform/release-inputs.mjs": "43361556db4f8b0429c89325033ad420b5239d7f8968d317ed3db1390be6cf8d",
+    "lash-her-frontend/ops/platform/release-inputs.test.mjs": "f8ab0a933946836ee3ace4edc51181f59bed590692e3178891cf3df473708fb1",
+    "lash-her-frontend/ops/platform/artifact-candidate.mjs": "9c3a5a2fff742dc62a8d3db4d03fbbbc8530f2c72d833876fbc4b4ccd2e40d21",
+    "lash-her-frontend/.github/workflows/platform-artifacts.yml": "c41cb40dd8159c61ea462dc3b7b325bd9a8e0106fc47989a3986672d5d6c69b5",
+    "lash-her-frontend/.github/workflows/ci.yml": "9c54620bcc189d548a5525f7cb660b6beb8e32f5855acbc7c5f2d3b42e47bb42",
+    "lash-her-frontend/ops/platform/source-gate.md": "f02ce6e575a01b83ebe929d60984419296d2467da78dbca449c7667a976282ed",
+    "lash-her-frontend/docs/api-integration/release-policy.md": "cc6cfdaac72f6933f57e1aeac20d7ac0200ca24d6ba9ca41c30c5b16dee45505",
+    "lash-her-frontend/package.json": "9480b83d72bd25037f1d4b98c12ccb9f5cc4a6ea53d841b7bb2fb9bf4f170f3c",
+    "lash-her-frontend/package-lock.json": "797605065847a24761babb8b541a63a31356c0d5163b8983e497abec2189ebe1",
+    "lash-her-course-api/package.json": "51c70cce1cdc888bc290d8adf03037f3a59943eb9313d273d2e0349dd2476b8a",
+    "lash-her-course-api/package-lock.json": "0153a941a3e767889cc356b1d3cc72823b03a7d46f97fd07f66b7e53f3e8c8fa",
+    "lash-her-course-api/docs/migration-release-core.md": "a481f62064eec1937e7530ccd2db3954071a2f44c0b23e0a93accdc11bf1bb53",
+    "lash-her-course-api/docs/migration-lineage-preflight.md": "dc1c48624c66af8da206b95fea0d04b2d5aec85caf378ef7b014dbafd900be4c",
+    "lash-her-community-api/package.json": "f83831a5d696bf8101923ffe90c3c8fe6b2794728b7d06e2379859b0477ec514",
+    "lash-her-community-api/package-lock.json": "03e332482b3f4d4f1a572a8ba00d79a0e7d9a27497e67973103fbdc2833e4bfe",
+    "lash-her-community-api/docs/migration-release-core.md": "a481f62064eec1937e7530ccd2db3954071a2f44c0b23e0a93accdc11bf1bb53",
+    "lash-her-community-api/docs/migration-lineage-preflight.md": "7a7a234f40a5717535014795e5fd0651820ff4241f54795aea0da5a804ddcb79"
+  },
+  "limitations": [
+    "Sources are not committed, pushed, merged or qualified by remote CI.",
+    "Patched publication dependency graphs have not been rebuilt/scanned into newly published immutable images. Earlier local image evidence remains tied to its original snapshot.",
+    "No live credentials, secrets, provider mutations, migrations, notification deliveries or deployment activation.",
+    "No production approval; real staging OIDC/TLS/authorization, host maintenance/recreation, scheduler, worker and recovery checks remain.",
+    "Source-read token and runtime/migration credential handoff remain deferred. Billing access/evidence is excluded; P1-08 monitoring is deferred.",
+    "Frontend browser and database suites were not rerun for the isolated publication graph in this checkpoint."
+  ]
+}

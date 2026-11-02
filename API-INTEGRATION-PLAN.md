@@ -2,6 +2,12 @@
 
 Build one account-based learning platform in `lash-her-frontend`, backed by the Course API for education and access, and the Community API for course-linked discussion.
 
+Current operator decision (October 29, 2026): **Dardan is the sole operator; protected credential/release handoff proceeds through the operator checklist. Operational monitoring and alerting are deferred until after this integration plan is complete and do not gate the current release.** P1-08 is DEFERRED. Existing readiness, safe diagnostics/audit, capacity tests, recovery and protected release requirements remain. See the [scope decision](/Users/dardan/workspace/lash-her-frontend/docs/api-integration/decisions/2026-10-29-sole-operator-and-monitoring-deferral.md).
+
+Current affordability decision (November 1, 2026): **Billing access, private cost/spend reports, headroom calculations and verified spending-cap/forecast controls are not prerequisites anywhere in this plan.** Use the lowest practical operating overhead consistent with security, reliability and measured capacity. Dardan manages the US$50 monthly target; it is not a release gate or invoice guarantee. See the [scope decision](/Users/dardan/workspace/lash-her-frontend/docs/api-integration/decisions/2026-11-01-affordability-without-billing-gates.md).
+
+Current release-policy decision (November 1, 2026): **Use one single-operator release procedure for staging and production.** Dardan explicitly starts each environment release; exact source revisions, passing CI, immutable artifacts, target/lineage/locking and recovery remain required. Production promotes staging-tested artifacts with production target/backup confirmation. External signing keys, identity enrollment, per-run permits, mandatory approval environments/Apps, separate external executors and paid branch-protection upgrades are removed. See the [current policy](/Users/dardan/workspace/lash-her-frontend/docs/api-integration/release-policy.md).
+
 The agreed launch scope is:
 
 - Unified free and paid courses, replacing the current Sanity short-course implementation.
@@ -19,6 +25,24 @@ Work is grouped by implementation owner below. The category order is not the del
 **Live execution tracker:** [API-INTEGRATION-EXECUTION.md](/Users/dardan/workspace/lash-her-frontend/API-INTEGRATION-EXECUTION.md) is the shared source for task order, dependencies, current status, completion evidence, and the next action. Read it before starting integration work and update it after each completed item, failed verification, blocker, or dependency change. Keep execution status in that single frontend-owned document rather than separate repository copies.
 
 This plan defines implementation scope. Keep its copies in the frontend, Course API, and Community API repositories synchronized when scope changes; update the tracker's task mapping and dependencies in the same change.
+
+## P1-02 acceptance and downstream implementation — 2026-10-29
+
+P1-02 is complete within the explicitly accepted environment/inventory scope.
+A03, A04, A05, R01, R02 and R03 are evidence-only for P1-02; R04 is mandatory
+implementation work carried through the applicable later stages. None is a
+remaining P1-02 blocker. Evidence, unresolved findings and applicable release
+checks are retained, without claiming live acceptance or operational readiness.
+The [canonical decision](/Users/dardan/workspace/lash-her-frontend/docs/api-integration/decisions/2026-10-29-p1-02-evidence-only-and-r04-handoff.md)
+and execution tracker define the handoff: A05 to scheduled operations
+and recovery (monitoring deferred by the later October 29 decision); R01 to protected artifacts/migrations/provenance; R02 to host,
+capacity and affordable operation without billing-access gates; R04 to provider
+isolation, scheduler/callback transitions and consumer-aware credential retirement.
+Implement these controls as their integrations and operating stages are reached;
+verify each before its affected operation, rather than requiring all of them to
+close the inventory task. The later sole-operator decision defers P1-08 monitoring; other downstream controls remain.
+Sends, deployments, credential rotation and delivery activation remain prohibited;
+Course live execution remains disabled. Reclassification authorizes no live action.
 
 ## 1. Community API related work
 
@@ -52,7 +76,7 @@ This plan defines implementation scope. Keep its copies in the frontend, Course 
 
 - Course owns final access decisions and publishes transactional enrollment transitions for purchases, free enrollments, imports, and administrator changes. Active course enrollment includes access to that course’s enabled community.
 - Frontend owns sign-in, token issuance, community screens, and same-origin request handlers.
-- Infrastructure deploys the Community API, repair/reconciliation worker, media worker, private S3 storage, and monitoring. Category 4 defines deployed acceptance and recovery evidence.
+- Infrastructure deploys the Community API, repair/reconciliation worker, media worker, private S3 storage. Operational monitoring follows after this plan. Category 4 defines deployed acceptance and recovery evidence.
 
 ## 2. Course API related work
 
@@ -114,7 +138,7 @@ This plan defines implementation scope. Keep its copies in the frontend, Course 
 
 - Frontend owns customer identity, free-enrollment UI, authoring UI, payment collection, and payment-to-entitlement delivery. Course handles the corresponding authenticated API operations and access decisions.
 - Community consumes Course enrollment events and performs online authority checks. Course’s Community enrollment publisher remains separate from the frontend entitlement outbox.
-- Infrastructure deploys the API, enrollment publisher, snapshot worker, migration jobs, and media recovery scheduling. Follow the protected migration policy resolved in P0-02 before production CD.
+- Infrastructure deploys the API, enrollment publisher, snapshot worker, migration jobs, and media recovery scheduling. Follow the current single-operator migration policy before production CD.
 
 ## 3. Frontend related work
 
@@ -211,7 +235,7 @@ This plan defines implementation scope. Keep its copies in the frontend, Course 
 | Frontend      | Auth.js administrator login, Square commerce, operational PostgreSQL, Sanity free courses                                                      | Add customer identity, API adapters, learner/community interfaces, course commerce, and entitlement delivery             |
 | Free courses  | Sanity content, public video assets, signed browser access cookies, local-storage progress                                                     | Migrate content and introduce account-based enrollment and server-stored progress                                        |
 | CI            | Static checks, tests, migration checks, API container builds, cross-repository contract checks                                                 | Add coordinated artifact publication, deployment, integration certification, promotion, and rollback                     |
-| Operations    | API health/metrics, enrollment runbooks, frontend scheduled jobs                                                                               | Connect production monitoring, verify recovery, and complete backup restoration tooling                                  |
+| Operations    | API health/metrics, enrollment runbooks, frontend scheduled jobs                                                                               | Verify recovery and complete backup restoration tooling; monitoring deferred until after this plan                                  |
 
 The [Course API contract](/Users/dardan/workspace/lash-her-course-api/openapi/course-api.json), [Community API overview](/Users/dardan/workspace/lash-her-community-api/README.md), and [current short-course behavior](/Users/dardan/workspace/lash-her-frontend/docs/short-courses.md) establish these boundaries.
 
@@ -265,7 +289,7 @@ P1 work.
 | Community repair/reconciliation worker | Separate private worker container              |
 | Community media worker                 | Separate private worker container when P5-03 lands |
 | API ingress                            | HTTPS gateway container with OIDC verification |
-| Metrics collector                      | Private collector container; off-host alerts   |
+| Metrics collector                      | Deferred until after the current plan   |
 | Periodic maintenance and migrations     | Bounded one-shot containers with recorded outcomes |
 
 - Use one production VM for the API stack. Use a separate staging VM on demand,
@@ -298,11 +322,11 @@ P1 work.
 - Preserve private HTTPS with validated CA trust and existing source restrictions
   for actual gateway/private container peers. Verify the receiver's effective
   source and trusted proxy hops; do not allow all addresses or depend on Vercel's
-  public egress IPs. Implement TLS/certificate lifecycle in P1-03/P1-04 and budget
-  any required TLS proxy containers.
+  public egress IPs. Implement TLS/certificate lifecycle in P1-03/P1-04 and account
+  for required TLS proxy containers in measured host capacity.
 - Bound unauthenticated requests, connections, bodies and JWKS refresh; retain
   per-principal application quotas and separate webhook limits. The gateway is
-  internet-reachable and needs abuse monitoring and fail-closed negative tests.
+  internet-reachable and needs bounded quotas, safe rejection diagnostics and fail-closed negative tests. Operational abuse monitoring is deferred.
 - Replace the shared 120/minute source-IP application quota with explicit aggregate
   and verified-principal limits. Initial local defaults are 1,200 ordinary requests
   per minute per API process, 120 per verified Course learner/admin profile and
@@ -333,55 +357,61 @@ P1 work.
   credentials by environment/service. Retain external PostgreSQL with combined
   API/worker pool budgets and separate migration credentials.
 - Set per-container resource limits, restart/readiness/heartbeat behavior, log
-  rotation and bounded media concurrency. Monitor host capacity and burst balance.
-  A single VM is a shared outage/compromise boundary; require off-host alerts,
-  patch ownership and a rehearsed replacement-host recovery procedure.
-- Start sizing tests at the Lightsail 2-vCPU/4-GB Linux public-IPv4 bundle
-  (US$24/month listed 2026-10-17); evaluate 8 GB (US$44/month) if measured load,
-  media processing or deployment overlap requires it. These are compute-only
-  candidates, not a certified size or approved total. Include temporary staging,
-  snapshots, transfer, databases/PITR, monitoring, Vercel and provider usage in
-  the budget. No paid static-egress, load-balancer or NAT-gateway dependency is
-  introduced. [Lightsail pricing](https://aws.amazon.com/lightsail/pricing/)
+  rotation and bounded media concurrency. Measure host capacity and burst balance during certification.
+  A single VM is a shared outage/compromise boundary; retain patch ownership and
+  a rehearsed replacement-host recovery procedure. Operational monitoring and alerts are deferred.
+- Start sizing tests at the Lightsail 2-vCPU/4-GB Linux public-IPv4 candidate;
+  increase only if measured load, media processing or deployment overlap requires it.
+  Prefer the smallest adequate bundle, reuse existing databases/providers, keep
+  staging temporary and clean up disposable resources through approved teardown.
+  This requires capacity evidence, not private billing access or a numeric forecast.
+  No paid static-egress, load-balancer or NAT-gateway dependency is introduced.
 
 ### CI requirements
 
 Retain existing checks and add:
 
 - Node.js 24 and reproducible npm versions across local development, Actions, and containers.
-- Required PR checks on every deployable branch, including frontend staging.
+- Passing CI on every deployable branch, including frontend staging. Verify exact reviewed commits and current successful CI before candidate publication. Use native branch/check protection where available; unavailable protection does not require an upgrade or custom signing service. Record actual protection state.
 - Type checking, lint, unit tests, dependency scanning, OpenAPI drift checks, and generated-client drift checks.
-- PostgreSQL 16 integration tests, clean-install migrations, data-bearing upgrade tests, schema drift, and safe migration rollback tests.
+- PostgreSQL 16 integration tests, clean-install migrations, data-bearing upgrade tests, schema drift, and safe migration rollback tests. Exercise the packaged operator migration CLI on isolated PostgreSQL18 for the current API staging major and retain private schema-baseline exports; never test against a provider database.
 - Container startup/readiness tests for every process, not just image builds or entrypoint existence.
 - A cross-repository integration suite that starts all three applications, the gateway and required workers against isolated databases, exercising the selected TLS and authentication boundaries.
-- A release manifest containing the three commit SHAs, image digests, contract hashes, and migration versions.
+- One release manifest/receipt containing the three commit SHAs, image digests, contract hashes, migration versions, operator, environment and CI/build evidence. Authenticated manual dispatch approves the source build; an explicit operator release action approves deployment. No external source/migration signing ceremony, identity enrollment or detached permit is required.
 - Candidate-versus-released contract compatibility tests. Use explicitly pinned revisions rather than assuming another repository’s moving `main` is compatible.
-- Short-lived GitHub App credentials for cross-repository access where needed, narrowly scoped deployment credentials, immutable image tags, image scanning, SBOMs, and provenance.
+- One narrowly scoped read-only cross-repository credential where needed; a fine-grained token is sufficient and an App is optional. Keep deployment and migration credentials separate from CI source access. Retain immutable images, automatic scans, SBOMs and native provenance.
 
 ### CD and promotion
 
 1. Publish verified API images to GHCR by immutable digest.
 2. Build separate migration images containing migration files and tooling; current runtime images do not contain the complete migration toolchain.
 3. Recreate the isolated Lightsail staging stack from Compose/bootstrap configuration and a pinned release manifest.
-4. Run each database’s migration image as a protected one-shot container once, under an environment lock, before dependent application code.
+4. Run each database’s migration image once through the operator release command, holding environment/database locks across target/lineage preflight, apply and verification, before dependent code.
 5. Deploy compatible receiver/read APIs, workers, frontend, and feature flags in dependency order.
 6. Execute deployed browser, provider, network-boundary, and recovery tests.
-7. Deploy the same API/worker/gateway image digests to the production Lightsail Compose stack through a protected release workflow; reserve measured update headroom or use a documented maintenance window.
+7. Explicitly promote the staging-tested API/worker/gateway/migration digests to production with production target and current backup confirmation in the same operator release command; reserve measured update headroom or use a documented maintenance window.
 8. Build the frontend with production configuration as a staged production deployment; test it before assigning production domains. Do not promote a staging-configured build as though its configuration were interchangeable. [Vercel deployment promotion](https://vercel.com/docs/deployments/promoting-a-deployment)
 
 Retain previous image digests, Compose configuration and release manifests off-host for compatible rollback and VM recreation. Protect host deployment credentials and verify readiness before routing traffic; a single VM does not guarantee zero-downtime updates.
 
-Follow the [protected release-job migration policy](/Users/dardan/workspace/lash-her-frontend/docs/api-integration/migration-policy.md), resolved by [P0-02 / D-02](/Users/dardan/workspace/lash-her-frontend/docs/api-integration/decisions/2026-10-01-p0-02.md). Implement and verify its approval, artifact, target, lineage, locking, staging, and recovery gates before production CD. Production forward migrations are release-job-only; test, seed, and destructive round-trip guards remain mandatory. Documentation resolution is not production migration authorization.
+Follow the [single-operator migration policy](/Users/dardan/workspace/lash-her-frontend/docs/api-integration/migration-policy.md), which supersedes P0-02’s former external signed-executor procedure. Implement/test one reviewed operator-invoked entrypoint with artifact, target, lineage, locking, staging and recovery checks. It may run on Dardan’s authenticated Mac or the deployment host; no separately hosted executor or extra signature is required. Direct/ad hoc production migration, application-startup migration, tests, seeds and destructive round trips remain prohibited. Policy simplification does not activate a live migration path.
 
 ### Monitoring and recovery
 
-- Scrape each API and worker separately over private listeners. Track availability, latency, connection saturation, worker heartbeats, queue age, retries, dead letters, reconciliation drift, playback denial, media failures, and tax-recording backlog. Add host memory/CPU/burst capacity, disk/log growth and certificate expiry; use off-host alerts and an external heartbeat to detect complete VM loss.
-- Preserve safe correlation IDs across frontend, APIs, jobs, and provider events. Exclude tokens, raw identities, payment details, and private content from logs and metric labels.
-- Use these launch objectives: payment-to-course access P95 under 60 seconds and P99 under five minutes; Course-to-Community propagation at the existing equivalent targets.
-- Alert immediately on authorization-boundary failures and dead letters; alert on sustained queue age, reconciliation drift, missing workers, and provider failures.
-- Complete a real backup/restore runner. The frontend’s current backup-validation endpoint is only a scaffold.
-- Require point-in-time recovery, encrypted backups, and a successful isolated restore of all three databases. Initial recovery targets: RPO at most 15 minutes and RTO at most four hours.
-- Document secret rotation, payment-without-access recovery, disputed/refunded orders, Mux failures, moderation incidents, worker restart, host patching/recreation, certificate renewal, restore, and application rollback. Rehearse total VM loss and lease/job resumption; host snapshots do not replace database PITR.
+Operational monitoring and alerting are deferred by the October 29 sole-operator decision until after the current integration plan is complete. They do not gate G1 or the current release. Keep the prepared collector/exporter and alert definitions inactive; choose the off-host service, recipient and delivery tests in the later follow-up.
+
+Deferred monitoring work:
+
+- Scrape each API and worker privately. Track availability, latency, connection saturation, worker heartbeats, queue age, retries, dead letters, reconciliation drift, playback denial, media failures, tax-recording backlog, host RAM/CPU/burst/disk and certificate expiry.
+- Establish off-host alerts/logs, complete-host-loss checks and authorized operator delivery for worker, authorization, queue and provider failures.
+
+Current recovery, diagnostics and certification work:
+
+- Preserve safe correlation IDs across frontend, APIs, jobs and provider events. Exclude tokens, raw identities, payment details and private content from logs and metric labels.
+- Verify payment-to-course access P95 under 60 seconds and P99 under five minutes, with equivalent Course-to-Community propagation targets, through controlled acceptance/load evidence.
+- Complete the real backup/restore runner; the frontend backup-validation endpoint is a scaffold.
+- Require point-in-time recovery, encrypted backups and a successful isolated restore of all three databases. Initial recovery targets: RPO at most 15 minutes and RTO at most four hours.
+- Document secret rotation, payment-without-access recovery, disputed/refunded orders, Mux failures, moderation incidents, worker restart, host patching/recreation, certificate renewal, restore and application rollback. Rehearse VM loss and lease/job resumption; host snapshots do not replace database PITR.
 
 ### Growth beyond one Lightsail VPS
 

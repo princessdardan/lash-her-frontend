@@ -1,0 +1,351 @@
+# Manual candidate publication only; no cloud or live database credentials.
+name: Platform artifact candidate
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: Frontend coordinator branch; private APIs release from main
+        type: choice
+        options:
+          - staging
+          - main
+        default: main
+        required: true
+      frontend_revision:
+        description: Exact coordinator/frontend commit (40 lowercase hex characters)
+        type: string
+        required: true
+      course_revision:
+        description: Exact Course commit (40 lowercase hex characters)
+        type: string
+        required: true
+      community_revision:
+        description: Exact Community commit (40 lowercase hex characters)
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: platform-artifacts-${{ inputs.source_branch }}
+  cancel-in-progress: false
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'princessdardan/lash-her-frontend' &&
+      github.repository_id == '1114139712' &&
+      github.repository_owner_id == '8996309' &&
+      github.actor_id == '8996309' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check selected source branch
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+        run: |-
+          test "$GITHUB_REF" = "refs/heads/$SOURCE_BRANCH"
+      - name: Check out trusted coordinator
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.18.0
+      - name: Verify operator dispatch, source revisions and CI before building
+        env:
+          SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          FRONTEND_REVISION: ${{ inputs.frontend_revision }}
+          COURSE_REVISION: ${{ inputs.course_revision }}
+          COMMUNITY_REVISION: ${{ inputs.community_revision }}
+        run: |-
+          mkdir -m 700 "$RUNNER_TEMP/platform-evidence"
+          node control/ops/platform/release-inputs.mjs "$RUNNER_TEMP/platform-evidence/source-checks.json"
+      - name: Check out pinned frontend
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: princessdardan/lash-her-frontend
+          ref: ${{ inputs.frontend_revision }}
+          path: sources/lash-her-frontend
+          token: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - name: Check out pinned course
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: princessdardan/lash-her-course-api
+          ref: ${{ inputs.course_revision }}
+          path: sources/lash-her-course-api
+          token: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - name: Check out pinned community
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: princessdardan/lash-her-community-api
+          ref: ${{ inputs.community_revision }}
+          path: sources/lash-her-community-api
+          token: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - name: Install isolated harness dependencies
+        run: |-
+          npm ci --prefix sources/lash-her-frontend
+          npm ci --ignore-scripts --prefix sources/lash-her-frontend/ops/gateway
+          npm ci --prefix sources/lash-her-course-api
+          npm ci --prefix sources/lash-her-community-api
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - name: Log in to coordinator-owned candidate registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish unqualified gateway candidate
+        id: build-gateway
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: https://github.com/princessdardan/lash-her-frontend.git#${{ inputs.frontend_revision }}:ops/gateway
+          platforms: linux/amd64
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: ghcr.io/princessdardan/lash-her-platform-gateway:p1-${{ github.run_id }}-${{ github.run_attempt }}
+          secrets: GIT_AUTH_TOKEN=${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          labels: |-
+            org.opencontainers.image.source=https://github.com/princessdardan/lash-her-frontend
+            com.lashher.source.repository=https://github.com/princessdardan/lash-her-frontend.git
+            com.lashher.source.revision=${{ inputs.frontend_revision }}
+          cache-from: type=gha,scope=platform-gateway
+          cache-to: type=gha,scope=platform-gateway,mode=max
+      - name: Scan exact gateway digest
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          version: v0.76.1
+          image-ref: ghcr.io/princessdardan/lash-her-platform-gateway@${{ steps.build-gateway.outputs.digest }}
+          format: json
+          output: ${{ runner.temp }}/platform-evidence/gateway-scan.json
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Attest gateway digest
+        id: attest-gateway
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-name: ghcr.io/princessdardan/lash-her-platform-gateway
+          subject-digest: ${{ steps.build-gateway.outputs.digest }}
+          push-to-registry: true
+      - name: Publish unqualified course-runtime candidate
+        id: build-course-runtime
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: https://github.com/princessdardan/lash-her-course-api.git#${{ inputs.course_revision }}
+          platforms: linux/amd64
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: ghcr.io/princessdardan/lash-her-platform-course-runtime:p1-${{ github.run_id }}-${{ github.run_attempt }}
+          secrets: GIT_AUTH_TOKEN=${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          labels: |-
+            org.opencontainers.image.source=https://github.com/princessdardan/lash-her-frontend
+            com.lashher.source.repository=https://github.com/princessdardan/lash-her-course-api.git
+            com.lashher.source.revision=${{ inputs.course_revision }}
+          cache-from: type=gha,scope=platform-course-runtime
+          cache-to: type=gha,scope=platform-course-runtime,mode=max
+          target: runtime
+      - name: Scan exact course-runtime digest
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          version: v0.76.1
+          image-ref: ghcr.io/princessdardan/lash-her-platform-course-runtime@${{ steps.build-course-runtime.outputs.digest }}
+          format: json
+          output: ${{ runner.temp }}/platform-evidence/course-runtime-scan.json
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Attest course-runtime digest
+        id: attest-course-runtime
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-name: ghcr.io/princessdardan/lash-her-platform-course-runtime
+          subject-digest: ${{ steps.build-course-runtime.outputs.digest }}
+          push-to-registry: true
+      - name: Publish unqualified course-migration candidate
+        id: build-course-migration
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: https://github.com/princessdardan/lash-her-course-api.git#${{ inputs.course_revision }}
+          platforms: linux/amd64
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: ghcr.io/princessdardan/lash-her-platform-course-migration:p1-${{ github.run_id }}-${{ github.run_attempt }}
+          secrets: GIT_AUTH_TOKEN=${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          labels: |-
+            org.opencontainers.image.source=https://github.com/princessdardan/lash-her-frontend
+            com.lashher.source.repository=https://github.com/princessdardan/lash-her-course-api.git
+            com.lashher.source.revision=${{ inputs.course_revision }}
+          cache-from: type=gha,scope=platform-course-migration
+          cache-to: type=gha,scope=platform-course-migration,mode=max
+          target: migration
+      - name: Scan exact course-migration digest
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          version: v0.76.1
+          image-ref: ghcr.io/princessdardan/lash-her-platform-course-migration@${{ steps.build-course-migration.outputs.digest }}
+          format: json
+          output: ${{ runner.temp }}/platform-evidence/course-migration-scan.json
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Attest course-migration digest
+        id: attest-course-migration
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-name: ghcr.io/princessdardan/lash-her-platform-course-migration
+          subject-digest: ${{ steps.build-course-migration.outputs.digest }}
+          push-to-registry: true
+      - name: Publish unqualified community-runtime candidate
+        id: build-community-runtime
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: https://github.com/princessdardan/lash-her-community-api.git#${{ inputs.community_revision }}
+          platforms: linux/amd64
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: ghcr.io/princessdardan/lash-her-platform-community-runtime:p1-${{ github.run_id }}-${{ github.run_attempt }}
+          secrets: GIT_AUTH_TOKEN=${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          labels: |-
+            org.opencontainers.image.source=https://github.com/princessdardan/lash-her-frontend
+            com.lashher.source.repository=https://github.com/princessdardan/lash-her-community-api.git
+            com.lashher.source.revision=${{ inputs.community_revision }}
+          cache-from: type=gha,scope=platform-community-runtime
+          cache-to: type=gha,scope=platform-community-runtime,mode=max
+          target: runtime
+      - name: Scan exact community-runtime digest
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          version: v0.76.1
+          image-ref: ghcr.io/princessdardan/lash-her-platform-community-runtime@${{ steps.build-community-runtime.outputs.digest
+            }}
+          format: json
+          output: ${{ runner.temp }}/platform-evidence/community-runtime-scan.json
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Attest community-runtime digest
+        id: attest-community-runtime
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-name: ghcr.io/princessdardan/lash-her-platform-community-runtime
+          subject-digest: ${{ steps.build-community-runtime.outputs.digest }}
+          push-to-registry: true
+      - name: Publish unqualified community-migration candidate
+        id: build-community-migration
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: https://github.com/princessdardan/lash-her-community-api.git#${{ inputs.community_revision }}
+          platforms: linux/amd64
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: ghcr.io/princessdardan/lash-her-platform-community-migration:p1-${{ github.run_id }}-${{ github.run_attempt }}
+          secrets: GIT_AUTH_TOKEN=${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          labels: |-
+            org.opencontainers.image.source=https://github.com/princessdardan/lash-her-frontend
+            com.lashher.source.repository=https://github.com/princessdardan/lash-her-community-api.git
+            com.lashher.source.revision=${{ inputs.community_revision }}
+          cache-from: type=gha,scope=platform-community-migration
+          cache-to: type=gha,scope=platform-community-migration,mode=max
+          target: migration
+      - name: Scan exact community-migration digest
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          version: v0.76.1
+          image-ref: ghcr.io/princessdardan/lash-her-platform-community-migration@${{
+            steps.build-community-migration.outputs.digest }}
+          format: json
+          output: ${{ runner.temp }}/platform-evidence/community-migration-scan.json
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Attest community-migration digest
+        id: attest-community-migration
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-name: ghcr.io/princessdardan/lash-her-platform-community-migration
+          subject-digest: ${{ steps.build-community-migration.outputs.digest }}
+          push-to-registry: true
+      - name: Verify signatures, source materials and SBOMs; pull exact candidates
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GATEWAY_DIGEST: ${{ steps.build-gateway.outputs.digest }}
+          GATEWAY_BUNDLE: ${{ steps.attest-gateway.outputs.bundle-path }}
+          COURSE_RUNTIME_DIGEST: ${{ steps.build-course-runtime.outputs.digest }}
+          COURSE_RUNTIME_BUNDLE: ${{ steps.attest-course-runtime.outputs.bundle-path }}
+          COURSE_MIGRATION_DIGEST: ${{ steps.build-course-migration.outputs.digest }}
+          COURSE_MIGRATION_BUNDLE: ${{ steps.attest-course-migration.outputs.bundle-path }}
+          COMMUNITY_RUNTIME_DIGEST: ${{ steps.build-community-runtime.outputs.digest }}
+          COMMUNITY_RUNTIME_BUNDLE: ${{ steps.attest-community-runtime.outputs.bundle-path }}
+          COMMUNITY_MIGRATION_DIGEST: ${{ steps.build-community-migration.outputs.digest }}
+          COMMUNITY_MIGRATION_BUNDLE: ${{ steps.attest-community-migration.outputs.bundle-path }}
+        run: node control/ops/platform/artifact-candidate.mjs "$RUNNER_TEMP/platform-evidence" "$GITHUB_WORKSPACE/sources"
+      - name: Exercise the exact candidate images with isolated databases
+        run: |-
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node \
+            lash-her-course-migration:p1-local dist-migration/scripts/check-migration-lineage.js --manifest-only
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node \
+            lash-her-community-migration:p1-local dist-migration/scripts/check-migration-lineage.js --manifest-only
+          node sources/lash-her-frontend/ops/platform/local-harness.mjs > "$RUNNER_TEMP/platform-evidence/container-harness.json"
+      - name: Recheck source revisions and CI after the harness
+        env:
+          SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          FRONTEND_REVISION: ${{ inputs.frontend_revision }}
+          COURSE_REVISION: ${{ inputs.course_revision }}
+          COMMUNITY_REVISION: ${{ inputs.community_revision }}
+        run: node control/ops/platform/release-inputs.mjs "$RUNNER_TEMP/platform-evidence/source-checks.final.json"
+      - name: Qualify the exact candidate after fresh source verification
+        run: |-
+          node control/ops/platform/artifact-candidate.mjs --harness "$RUNNER_TEMP/platform-evidence" "$GITHUB_WORKSPACE/sources"
+      - name: Attest three-revision candidate manifest
+        id: manifest-attestation
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: ${{ runner.temp }}/platform-evidence/release.candidate.json
+      - name: Verify manifest attestation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MANIFEST_BUNDLE: ${{ steps.manifest-attestation.outputs.bundle-path }}
+        run: |-
+          gh attestation verify "$RUNNER_TEMP/platform-evidence/release.candidate.json" \
+            --repo princessdardan/lash-her-frontend \
+            --signer-workflow princessdardan/lash-her-frontend/.github/workflows/platform-artifacts.yml \
+            --signer-digest "$GITHUB_SHA" --source-digest "$GITHUB_SHA" --source-ref "$GITHUB_REF" \
+            --deny-self-hosted-runners --bundle "$MANIFEST_BUNDLE" --format json \
+            > "$RUNNER_TEMP/platform-evidence/manifest-verification.json"
+          cp "$MANIFEST_BUNDLE" "$RUNNER_TEMP/platform-evidence/manifest-bundle.json"
+      - name: Preserve candidate evidence; no runtime deployment
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: platform-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/platform-evidence
+          if-no-files-found: error
+          retention-days: 10

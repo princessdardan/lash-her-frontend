@@ -1,0 +1,209 @@
+name: lash-her-${APP_ENV:?select staging or production}
+
+x-runtime: &runtime
+  init: true
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 128
+  stop_grace_period: 30s
+  tmpfs: ["/tmp:size=32m,mode=1777"]
+  logging:
+    driver: local
+    options: {max-size: 10m, max-file: "3"}
+
+x-api-health: &api-health
+  test: [CMD, node, -e, "fetch('http://'+(process.env.HTTP_BIND_ADDRESS||'127.0.0.1')+':'+process.env.PORT+'/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+  interval: 30s
+  timeout: 4s
+  retries: 3
+  start_period: 30s
+
+services:
+  gateway:
+    <<: *runtime
+    image: ${GATEWAY_IMAGE:?require reviewed gateway digest}
+    ports: ["0.0.0.0:443:8443"]
+    mem_limit: 192m
+    cpus: 0.35
+    environment: {GATEWAY_CONFIG_FILE: /config/gateway.json, NODE_OPTIONS: --max-old-space-size=128}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:9100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    volumes:
+      - ${RELEASE_DIR:?select protected release directory}/gateway.json:/config/gateway.json:ro
+      - ${RELEASE_DIR}/tls/gateway:/tls:ro
+    networks:
+      mesh: {ipv4_address: 172.29.10.10}
+      gateway_egress: {}
+    depends_on:
+      course-tls: {condition: service_started}
+
+  course-api:
+    <<: *runtime
+    image: ${COURSE_RUNTIME_IMAGE:?require reviewed Course runtime digest}
+    command: [node, dist/server.js]
+    env_file: ["${RELEASE_DIR}/course-api.env"]
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      HTTP_BIND_ADDRESS: 172.29.20.10
+      NODE_OPTIONS: --max-old-space-size=384
+      INTERNAL_SERVICE_TRUSTED_PROXY_CIDRS: 172.29.20.11/32
+      INTERNAL_SERVICE_ALLOWED_IPS: 172.29.10.10/32
+      COURSE_COMMUNITY_READ_ALLOWED_IPS: 172.29.10.31/32,172.29.10.32/32
+    mem_limit: 512m
+    cpus: 0.6
+    healthcheck: *api-health
+    networks:
+      course_backend: {ipv4_address: 172.29.20.10}
+      course_api_egress: {}
+
+  course-tls:
+    <<: *runtime
+    image: ${GATEWAY_IMAGE}
+    command: [node, private-tls.mjs]
+    mem_limit: 96m
+    cpus: 0.15
+    environment: {PRIVATE_TLS_CONFIG_FILE: /config/course-tls.json, NODE_OPTIONS: --max-old-space-size=64}
+    volumes:
+      - ${RELEASE_DIR}/course-tls.json:/config/course-tls.json:ro
+      - ${RELEASE_DIR}/tls/course:/tls:ro
+    networks:
+      mesh: {ipv4_address: 172.29.10.20}
+      course_backend: {ipv4_address: 172.29.20.11}
+    depends_on:
+      course-api: {condition: service_healthy}
+
+  course-publisher:
+    <<: *runtime
+    image: ${COURSE_RUNTIME_IMAGE}
+    command: [node, dist/community-enrollment-publisher.js]
+    env_file: ["${RELEASE_DIR}/course-publisher.env"]
+    environment:
+      NODE_ENV: production
+      PORT: "4001"
+      NODE_OPTIONS: --max-old-space-size=192
+      NODE_EXTRA_CA_CERTS: /tls/ca.pem
+      COMMUNITY_ENROLLMENT_EVENTS_URL: https://community-tls:8443/v1/internal/course/enrollment-events
+      COMMUNITY_ENROLLMENT_PUBLISHER_CONCURRENCY: "2"
+    volumes: ["${RELEASE_DIR}/tls/ca.pem:/tls/ca.pem:ro"]
+    mem_limit: 256m
+    cpus: 0.3
+    healthcheck: *api-health
+    networks:
+      mesh: {ipv4_address: 172.29.10.22}
+      publisher_egress: {}
+    depends_on:
+      community-tls: {condition: service_started}
+
+  course-snapshot:
+    <<: *runtime
+    image: ${COURSE_RUNTIME_IMAGE}
+    command: [node, dist/community-snapshot-worker.js]
+    env_file: ["${RELEASE_DIR}/course-snapshot.env"]
+    environment: {NODE_ENV: production, PORT: "4002", NODE_OPTIONS: --max-old-space-size=192}
+    mem_limit: 256m
+    cpus: 0.3
+    healthcheck: *api-health
+    networks:
+      mesh: {ipv4_address: 172.29.10.23}
+      snapshot_egress: {}
+
+  community-api:
+    <<: *runtime
+    image: ${COMMUNITY_RUNTIME_IMAGE:?require reviewed Community runtime digest}
+    command: [node, dist/server.js]
+    env_file: ["${RELEASE_DIR}/community-api.env"]
+    environment:
+      NODE_ENV: production
+      PORT: "4100"
+      HTTP_BIND_ADDRESS: 172.29.30.10
+      NODE_OPTIONS: --max-old-space-size=384
+      NODE_EXTRA_CA_CERTS: /tls/ca.pem
+      INTERNAL_TRUSTED_PROXY_CIDRS: 172.29.30.11/32
+      COURSE_PUBLISHER_ALLOWED_IPS: 172.29.10.22/32
+      COURSE_API_BASE_URL: https://course-tls:8443
+    volumes: ["${RELEASE_DIR}/tls/ca.pem:/tls/ca.pem:ro"]
+    mem_limit: 512m
+    cpus: 0.6
+    healthcheck: *api-health
+    networks:
+      mesh: {ipv4_address: 172.29.10.31}
+      community_backend: {ipv4_address: 172.29.30.10}
+      community_api_egress: {}
+
+  community-tls:
+    <<: *runtime
+    image: ${GATEWAY_IMAGE}
+    command: [node, private-tls.mjs]
+    mem_limit: 96m
+    cpus: 0.15
+    environment: {PRIVATE_TLS_CONFIG_FILE: /config/community-tls.json, NODE_OPTIONS: --max-old-space-size=64}
+    volumes:
+      - ${RELEASE_DIR}/community-tls.json:/config/community-tls.json:ro
+      - ${RELEASE_DIR}/tls/community:/tls:ro
+    networks:
+      mesh: {ipv4_address: 172.29.10.40}
+      community_backend: {ipv4_address: 172.29.30.11}
+    depends_on:
+      community-api: {condition: service_healthy}
+
+  community-worker:
+    <<: *runtime
+    image: ${COMMUNITY_RUNTIME_IMAGE}
+    command: [node, dist/worker.js]
+    env_file: ["${RELEASE_DIR}/community-worker.env"]
+    environment:
+      NODE_ENV: production
+      WORKER_PORT: "4101"
+      PORT: "4101"
+      NODE_OPTIONS: --max-old-space-size=256
+      NODE_EXTRA_CA_CERTS: /tls/ca.pem
+      COURSE_API_BASE_URL: https://course-tls:8443
+      WORKER_CONCURRENCY: "2"
+      WORKER_REPLICA_COUNT: "1"
+    volumes: ["${RELEASE_DIR}/tls/ca.pem:/tls/ca.pem:ro"]
+    mem_limit: 384m
+    cpus: 0.4
+    healthcheck: *api-health
+    networks:
+      mesh: {ipv4_address: 172.29.10.32}
+      community_worker_egress: {}
+    depends_on:
+      course-tls: {condition: service_started}
+
+  course-migration:
+    <<: *runtime
+    image: ${COURSE_MIGRATION_IMAGE:?require separate reviewed Course migration digest}
+    profiles: [migration-inspection]
+    restart: "no"
+    command: [node, dist-migration/scripts/check-migration-lineage.js, --manifest-only]
+    mem_limit: 256m
+    cpus: 0.5
+    networks: [migration_inspection]
+
+  community-migration:
+    <<: *runtime
+    image: ${COMMUNITY_MIGRATION_IMAGE:?require separate reviewed Community migration digest}
+    profiles: [migration-inspection]
+    restart: "no"
+    command: [node, dist-migration/scripts/check-migration-lineage.js, --manifest-only]
+    mem_limit: 256m
+    cpus: 0.5
+    networks: [migration_inspection]
+
+networks:
+  mesh: {internal: true, ipam: {config: [{subnet: 172.29.10.0/24}]}}
+  course_backend: {internal: true, ipam: {config: [{subnet: 172.29.20.0/24}]}}
+  community_backend: {internal: true, ipam: {config: [{subnet: 172.29.30.0/24}]}}
+  migration_inspection: {internal: true}
+  gateway_egress: {}
+  course_api_egress: {}
+  publisher_egress: {}
+  snapshot_egress: {}
+  community_api_egress: {}
+  community_worker_egress: {}
