@@ -83,6 +83,16 @@ jobs:
           FRONTEND_MIGRATION_IMAGE_DIGEST: ${{ steps.build-frontend-migration.outputs.digest }}
           FRONTEND_FIXTURE_RESULTS: ${{ runner.temp }}/frontend-schema/postgres18.json
           FRONTEND_FIXTURE_SUMMARY: ${{ runner.temp }}/frontend-schema-summary.json
+      - name: Verify initial Course logins on owned PostgreSQL 18
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 512m --pids-limit 128 --tmpfs /tmp:rw,nosuid,nodev,size=256m,mode=1777 \
+            --env COURSE_INITIAL_LOGINS_LOCAL_TEST=true \
+            --mount "type=bind,src=$PWD/ops/staging,dst=/source/ops/staging,readonly" \
+            --mount "type=bind,src=$PWD/package.json,dst=/source/package.json,readonly" \
+            --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
+            --workdir /source --entrypoint node lash-her-frontend-migration:postgres18-test \
+            ops/staging/tests/course-initial-logins.integration.mjs
       - name: Retain source-bound digest summary without private schema definitions
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
