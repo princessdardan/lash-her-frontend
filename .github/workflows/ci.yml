@@ -69,6 +69,12 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             ops/gateway/package-lock.json
+      - name: Enable the containerd image store for attested local builds
+        uses: docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5
+        with:
+          version: v29.4.0
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
       - run: npm ci
       - run: npm ci --ignore-scripts --prefix ops/gateway
       - run: node --test ops/gateway/*.test.mjs ops/platform/*.test.mjs
