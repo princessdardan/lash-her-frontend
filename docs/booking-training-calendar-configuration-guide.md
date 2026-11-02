@@ -22,7 +22,7 @@ npm install
 npm run db:check -- --env-file <protected-env-file>
 ```
 
-Do not run a bare `npm run db:migrate`. Apply changes only with the exact target/host/env-file guards in `docs/private-database-migration-runbook.md`; production additionally requires `PRIVATE_DB_MIGRATION_CONFIRM=production`. Rerun `db:check` after the guarded migration.
+Staging/production writes use the [frontend operator migration procedure](api-integration/operator-frontend-migrations.md). `npm run db:migrate` is local only. Rerun read-only `db:check` after migration.
 
 Configure the server-only database, Auth.js identity, Calendar OAuth, Calendar credential encryption, Upstash, Square, reconciliation, and email variables from `.env.local.example`. For a fully cut-over deployment, set:
 

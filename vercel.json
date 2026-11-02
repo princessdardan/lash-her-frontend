@@ -36,5 +36,10 @@
       "path": "/api/cron/highlevel-sync",
       "schedule": "* * * * *"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "codex/p1-platform-foundation-20261101": false
+    }
+  }
 }

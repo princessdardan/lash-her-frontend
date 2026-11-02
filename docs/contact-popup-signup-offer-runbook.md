@@ -54,16 +54,11 @@ Verify the target and committed migration lineage before and after migration:
 npm run db:check -- --env-file .env.production
 ```
 
-Apply migrations only after backup/PITR and change approval. The migrator requires the exact database host and target. Production also requires the explicit production confirmation:
+Apply migrations through Dardan's explicit operator release after staging acceptance and current production recovery checks.
 
-```sh
-PRIVATE_DB_MIGRATION_TARGET=production \
-PRIVATE_DB_MIGRATION_HOST=<verified-database-host> \
-PRIVATE_DB_MIGRATION_CONFIRM=production \
-npm run db:migrate
-```
+Follow the [frontend operator migration procedure](api-integration/operator-frontend-migrations.md) for release-target writes; `npm run db:migrate` is restricted to isolated loopback local databases.
 
-Use `PRIVATE_DB_MIGRATION_TARGET=local` or `staging` for those environments and omit the production confirmation. `npm run db:check` is read-only; `npm run db:migrate` writes and enforces migration lineage and target guards.
+`npm run db:check` remains read-only. The operator component verifies the exact source, SQL/schema, target and locked lineage before release-target writes.
 
 Migration `0076` creates a unique outbox index and validates a new check constraint. Both operations can briefly block writes while PostgreSQL scans the table. Check the production `customer_email_outbox` row count and schedule an approved maintenance window if the table is nontrivial; do not apply this migration during an unreviewed traffic window.
 

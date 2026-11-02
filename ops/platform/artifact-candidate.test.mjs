@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertBuilderSource, assertSbom, qualifyHarness, assertCandidateSourceApproval, ARTIFACT_COMPONENTS } from "./artifact-candidate.mjs";
+import { assertBuilderSource, assertSbom, qualifyHarness, assertCandidateSourceApproval, ARTIFACT_COMPONENTS, verifyFrontendSchemaSummary } from "./artifact-candidate.mjs";
 import { verifyReleaseInputs } from "./release-inputs.mjs";
 import { sourceFixture } from "./release-inputs.fixture.mjs";
 import { readFileSync } from "node:fs";
+
+test("frontend CI schema evidence must match source SQL, contracts and the full owned rehearsal", () => {
+  const artifact = { sqlArtifactSha256: "a".repeat(64), contractManifestSha256: `sha256:${"b".repeat(64)}` };
+  const summary = { ...artifact, status: "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS", postgresMajor: 18, providerTouched: false,
+    schemaBaselineSha256: "c".repeat(64), checks: ["fresh-apply", "already-current", "data-bearing-upgrade", "lock-contention", "pending-chain-refusal",
+      "lineage-refusal", "schema-refusal", "runtime-privilege-refusal", "tls-certificate-refusal", "exact-artifact-production-promotion"] };
+  assert.equal(verifyFrontendSchemaSummary(summary, artifact), summary.schemaBaselineSha256);
+  for (const change of [{ sqlArtifactSha256: "d".repeat(64) }, { postgresMajor: 16 }, { checks: [] }, { providerTouched: true }]) {
+    assert.throws(() => verifyFrontendSchemaSummary({ ...summary, ...change }, artifact));
+  }
+});
 
 test("builder evidence requires the exact repository and source revision", () => {
   const sha = "a".repeat(40), repository = "https://github.com/princessdardan/lash-her-course-api.git";

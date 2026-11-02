@@ -50,6 +50,7 @@ export function validatePlatformRelease(value, now = new Date()) {
       "Production requires the exact staging-tested source and artifact digests");
   }
   require(value.migrations?.course?.state === "verified" && value.migrations?.community?.state === "verified", "Locked migration/lineage receipts required");
+  require(value.migrations?.frontend?.state === "verified", "Frontend migration/lineage receipt required");
   require(value.recovery?.state === "verified", "Compatible recovery/rollback evidence required");
   // Dardan's November 1 scope decision removes billing/spending evidence from
   // release acceptance. Affordability metadata is advisory, not authorization.

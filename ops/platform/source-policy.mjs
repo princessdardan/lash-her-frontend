@@ -7,7 +7,7 @@ export const SOURCE_REPOSITORY_IDS = Object.freeze({ frontend: "1114139712", cou
 export const SOURCE_OPERATOR_ID = "8996309";
 export const SOURCE_WORKFLOW = ".github/workflows/platform-artifacts.yml";
 export const REQUIRED_SOURCE_JOBS = Object.freeze({
-  frontend: ["gateway-and-platform", "quality-and-unit", "database", "audit", "build", "browser", "browser (chromium)", "browser (firefox)", "browser (webkit)"],
+  frontend: ["frontend-operator-migrations", "gateway-and-platform", "quality-and-unit", "database", "audit", "build", "browser", "browser (chromium)", "browser (firefox)", "browser (webkit)"],
   course: ["quality", "postgres", "containers"],
   community: ["quality", "postgres", "containers"],
 });

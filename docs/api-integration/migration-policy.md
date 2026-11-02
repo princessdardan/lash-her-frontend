@@ -19,7 +19,7 @@ The command must:
 
 | Repository | Staging | Production | Existing enforcement |
 | --- | --- | --- | --- |
-| Frontend | `DATABASE_URL`, `PRIVATE_DB_MIGRATION_TARGET=staging`, exact `PRIVATE_DB_MIGRATION_HOST` | `DATABASE_URL`, `PRIVATE_DB_MIGRATION_TARGET=production`, exact host and `PRIVATE_DB_MIGRATION_CONFIRM=production` | `db:check` / `db:migrate` check host, target, confirmation and lineage. Release serialization/backup remain release-job responsibilities. |
+| Frontend | `FRONTEND_STAGING_MIGRATION_DATABASE_URL` | `FRONTEND_PROD_MIGRATION_DATABASE_URL` | [Operator frontend CLI](operator-frontend-migrations.md): exact source/SQL/schema/target, TLS, complete lineage, one locked session and separate database/terminal receipts. `db:migrate` is local only. |
 | Course | `DATABASE_TARGET=staging`, `STAGING_DATABASE_URL` | `DATABASE_TARGET=prod`, `PROD_DATABASE_URL` | Locked core, separate image and operator entrypoint implemented/tested locally; live staging verification pending. Direct Drizzle release writes remain refused. |
 | Community | `DATABASE_TARGET=staging`, `STAGING_DATABASE_URL` | `DATABASE_TARGET=production`, `PROD_DATABASE_URL` | Same operator/core/image status; live staging verification pending. Direct Drizzle release writes remain refused. |
 
@@ -33,6 +33,6 @@ Keep PostgreSQL-version compatibility tests and data-bearing upgrade coverage fo
 
 ## What remains to implement
 
-The [operator migration command](operator-migrations.md) now reuses both API locked cores, with locally tested CLIs/images, private credential isolation, bundle preparation and the host release lock. PostgreSQL16/18 owned rehearsals pass; actual host maintenance, artifact publication and provider staging verification remain. Coordinate the frontend's existing migrator in the full deployment procedure. Production integration migrations remain blocked until actual staging acceptance and current production target/recovery checks exist; no signing-key or external-executor setup is needed.
+The [operator migration command](operator-migrations.md) now reuses both API locked cores, with locally tested CLIs/images, private credential isolation, bundle preparation and the host release lock. PostgreSQL16/18 owned rehearsals pass; actual host maintenance, artifact publication and provider staging verification remain. The [frontend operator component](operator-frontend-migrations.md) is now locally verified on PostgreSQL16/18, with its CI SQL/schema digest binding. Joining it to frontend deployment/promotion and final admission under the release lock remains open. Production integration migrations remain blocked until actual staging acceptance and current production target/recovery checks exist; no signing-key or external-executor setup is needed.
 
 The old Course signed-bootstrap workflow/compiled guards remain disabled as a retired prototype. Do not enroll its root or bypass it. Its historical synthetic evidence is not evidence that the replacement has run. This policy authorizes a simpler design, not a live migration or credential change. See [the current release policy](release-policy.md) for production promotion and credential boundaries.

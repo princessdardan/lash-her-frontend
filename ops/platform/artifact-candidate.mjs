@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { SOURCE_REPOSITORIES, sourceContextFromEnvironment } from "./release-inputs.mjs";
@@ -8,6 +8,7 @@ import { SOURCE_APPROVAL_MODE, SOURCE_OPERATOR_ID, SOURCE_REPOSITORY_IDS, assert
 import { verifySourceCheckouts } from "./source-checkout.mjs";
 import { localImageId } from "./local-images.mjs";
 import { privateTlsPolicies } from "./configuration.mjs";
+import { frontendMigrationArtifact } from "./frontend-migration.mjs";
 
 export const ARTIFACT_COMPONENTS = Object.freeze([
   { key: "gateway", env: "GATEWAY", source: "frontend", image: "lash-her-platform-gateway", local: "gateway" },
@@ -17,6 +18,16 @@ export const ARTIFACT_COMPONENTS = Object.freeze([
   { key: "communityMigration", env: "COMMUNITY_MIGRATION", source: "community", image: "lash-her-platform-community-migration", local: "community-migration" },
 ]);
 const hash = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
+
+export function verifyFrontendSchemaSummary(summary, artifact) {
+  const required = ["fresh-apply", "already-current", "data-bearing-upgrade", "lock-contention", "pending-chain-refusal",
+    "lineage-refusal", "schema-refusal", "runtime-privilege-refusal", "tls-certificate-refusal", "exact-artifact-production-promotion"];
+  if (summary?.status !== "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS" || summary.postgresMajor !== 18 || summary.providerTouched !== false ||
+      summary.sqlArtifactSha256 !== artifact.sqlArtifactSha256 || summary.contractManifestSha256 !== artifact.contractManifestSha256 ||
+      !/^[a-f0-9]{64}$/u.test(summary.schemaBaselineSha256 ?? "") || /^0+$/u.test(summary.schemaBaselineSha256) ||
+      !Array.isArray(summary.checks) || !required.every((name) => summary.checks.includes(name))) throw new Error("Exact frontend CI schema summary required");
+  return summary.schemaBaselineSha256;
+}
 
 export function assertBuilderSource(provenance, repository, commit) {
   const entries = [];
@@ -95,6 +106,15 @@ export function collectArtifactCandidate(directory, sourceRoot, environment = pr
   candidate.contractManifestSha256 = hash(readFileSync(join(sourceRoot, "lash-her-frontend/contracts/api-integration/v1/manifest.json")));
   candidate.runtime = { composeSha256: hash(readFileSync(join(sourceRoot, "lash-her-frontend/ops/platform/compose.yaml"))),
     privateTlsPolicies: privateTlsPolicies() };
+  const frontend = frontendMigrationArtifact(join(sourceRoot, "lash-her-frontend"));
+  const frontendEvidence = join(directory, "frontend-schema-evidence"); mkdirSync(frontendEvidence, { mode: 0o700 });
+  command("gh", ["run", "download", proof.sources.frontend.ciRunId, "--repo", SOURCE_REPOSITORIES.frontend,
+    "--name", "frontend-operator-schema-summary", "--dir", frontendEvidence]);
+  const frontendSummary = readFileSync(join(frontendEvidence, "frontend-schema-summary.json"));
+  if (frontendSummary.length > 2_000_000) throw new Error("Frontend CI summary exceeds bound");
+  const schemaHash = verifyFrontendSchemaSummary(JSON.parse(frontendSummary), frontend);
+  candidate.frontendMigration = { sourceCommit: proof.sources.frontend.commit, sqlArtifactSha256: frontend.sqlArtifactSha256,
+    contractManifestSha256: frontend.contractManifestSha256, schemaBaselines: { 18: schemaHash }, ciSummarySha256: hash(frontendSummary) };
   candidate.buildWorkflow = { repository: SOURCE_REPOSITORIES.frontend, commit: proof.workflowSha, ref: proof.workflowRef,
     runId: environment.GITHUB_RUN_ID, attempt: environment.GITHUB_RUN_ATTEMPT };
   for (const component of ARTIFACT_COMPONENTS) {

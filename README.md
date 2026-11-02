@@ -130,7 +130,7 @@ Then open:
 | `npm run test:report`       | Opens the last Playwright HTML report.                                              |
 | `npm run db:generate`       | Generates Drizzle migrations from schema changes.                                   |
 | `npm run db:check`          | Performs a read-only migration lineage, hash, sequence, and pending-state check.    |
-| `npm run db:migrate`        | Applies migrations with explicit target and exact-host guards.                      |
+| `npm run db:migrate`        | Applies migrations to explicitly selected isolated loopback local databases.                      |
 | `npm run git:verify-remote` | Verifies the `origin` git remote points at the canonical repository.                |
 | `npm run git:push-staging`  | Verifies the remote, then pushes the `staging` branch to `origin`.                  |
 
@@ -184,7 +184,7 @@ Owners and administrators connect business calendars at `/admin/calendar-connect
 
 ### Operational PostgreSQL database
 
-Set `DATABASE_URL` to the Neon/PostgreSQL database used for operational booking configuration and private records. Migrations live in `drizzle/`. Run `npm run db:check` before and after applying them. `npm run db:migrate` fails closed unless `PRIVATE_DB_MIGRATION_TARGET` and an exact `PRIVATE_DB_MIGRATION_HOST` match the intended target; production also requires `PRIVATE_DB_MIGRATION_CONFIRM=production`.
+Set `DATABASE_URL` to the Neon/PostgreSQL database used for operational booking configuration and private records. Migrations live in `drizzle/`. Run `npm run db:check` before and after applying them. `npm run db:migrate` requires `PRIVATE_DB_MIGRATION_TARGET=local` and an exact loopback `PRIVATE_DB_MIGRATION_HOST`. Staging/production use the [operator migration component](docs/api-integration/operator-frontend-migrations.md), which binds source, SQL/schema, target and staging evidence; it is still awaiting integration with frontend deployment and final admission.
 
 ### Scheduled jobs, backups, and telemetry
 
@@ -254,7 +254,7 @@ Chit Chats provides live insured tracked product-shipping rates, staff label pur
 
 `CHITCHATS_REGION` identifies the region selected in the matching Chit Chats account; it is not a provider branch ID and is not added to API shipment requests. The configured environment, client ID, and region must match exactly. Shipping readiness is source-controlled in `src/lib/shipping/product-shipping-config.ts` and `src/lib/commerce/product-tax-policy.ts`; there is no runtime owner-attestation record or `CHITCHATS_BRANCH_ID` gate.
 
-`CHITCHATS_CHECKOUT_ENABLED` must remain false until `npm run db:migrate` has applied every entry in `drizzle/meta/_journal.json` (not only the original `0032`/`0033` shipping migrations), quarantined upgrade conflicts have been reconciled, package profiles are reviewed, each purchasable Sanity product/variant has complete shipping metadata, and the source-controlled shipping/tax config (`src/lib/shipping/product-shipping-config.ts`, `src/lib/commerce/product-tax-policy.ts`) is populated and business-confirmed. `CHITCHATS_SHIPPING_ENABLED` keeps worker/admin processing active for existing shipments. U.S. shipping and manual product checkout have independent fail-closed flags; disabling one must not be treated as permission to disable processing for already-paid orders.
+`CHITCHATS_CHECKOUT_ENABLED` must remain false until the reviewed operator migration has applied every entry in `drizzle/meta/_journal.json` (not only the original `0032`/`0033` shipping migrations), quarantined upgrade conflicts have been reconciled, package profiles are reviewed, each purchasable Sanity product/variant has complete shipping metadata, and the source-controlled shipping/tax config (`src/lib/shipping/product-shipping-config.ts`, `src/lib/commerce/product-tax-policy.ts`) is populated and business-confirmed. `CHITCHATS_SHIPPING_ENABLED` keeps worker/admin processing active for existing shipments. U.S. shipping and manual product checkout have independent fail-closed flags; disabling one must not be treated as permission to disable processing for already-paid orders.
 
 ## Sanity CMS workflow
 

@@ -12,6 +12,49 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  frontend-operator-migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build owned frontend PostgreSQL 18 fixture
+        run: docker build -f ops/platform/Dockerfile.frontend-migration-test -t lash-her-frontend-migration:postgres18-test ops/platform
+      - name: Exercise the operator CLI without provider access
+        run: |
+          umask 077
+          mkdir -m 700 "$RUNNER_TEMP/frontend-schema"
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 1g --pids-limit 256 --shm-size 256m --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \
+            --env FRONTEND_MIGRATION_EXPORT_SCHEMA=true \
+            --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly" \
+            --mount "type=bind,src=$PWD/drizzle,dst=/source/drizzle,readonly" \
+            --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
+            --mount "type=bind,src=$PWD/src/lib/private-db/migration-lineage.ts,dst=/source/src/lib/private-db/migration-lineage.ts,readonly" \
+            --mount "type=bind,src=$PWD/contracts/api-integration/v1/manifest.json,dst=/source/contracts/api-integration/v1/manifest.json,readonly" \
+            lash-her-frontend-migration:postgres18-test > "$RUNNER_TEMP/frontend-schema/postgres18.json"
+          node --input-type=module -e '
+            import {readFileSync,writeFileSync} from "node:fs";
+            const {schemaBaseline,...summary}=JSON.parse(readFileSync(process.env.FRONTEND_FIXTURE_RESULTS,"utf8"));
+            if(summary.status!=="FRONTEND_MIGRATION_OWNED_POSTGRES_PASS"||summary.postgresMajor!==18||!schemaBaseline)process.exit(1);
+            writeFileSync(process.env.FRONTEND_FIXTURE_SUMMARY,JSON.stringify(summary)+"\n",{flag:"wx",mode:0o600});
+          '
+        env:
+          FRONTEND_FIXTURE_RESULTS: ${{ runner.temp }}/frontend-schema/postgres18.json
+          FRONTEND_FIXTURE_SUMMARY: ${{ runner.temp }}/frontend-schema-summary.json
+      - name: Retain source-bound digest summary without private schema definitions
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: frontend-operator-schema-summary
+          path: ${{ runner.temp }}/frontend-schema-summary.json
+          if-no-files-found: error
+          retention-days: 10
   gateway-and-platform:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -724,7 +767,7 @@ jobs:
   # or the database job's service, so they can run alongside those jobs.
   browser:
     runs-on: ubuntu-latest
-    needs: [gateway-and-platform, quality-and-unit, database, audit, build, browser-tests]
+    needs: [frontend-operator-migrations, gateway-and-platform, quality-and-unit, database, audit, build, browser-tests]
     if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@v4
@@ -766,4 +809,4 @@ jobs:
         if: ${{ !cancelled() }}
         run: test "$DEPENDENCIES_PASSED" = "true"
         env:
-          DEPENDENCIES_PASSED: ${{ needs.gateway-and-platform.result == 'success' && needs.audit.result == 'success' && needs.quality-and-unit.result == 'success' && needs.database.result == 'success' && needs.build.result == 'success' && needs.browser-tests.result == 'success' }}
+          DEPENDENCIES_PASSED: ${{ needs.frontend-operator-migrations.result == 'success' && needs.gateway-and-platform.result == 'success' && needs.audit.result == 'success' && needs.quality-and-unit.result == 'success' && needs.database.result == 'success' && needs.build.result == 'success' && needs.browser-tests.result == 'success' }}

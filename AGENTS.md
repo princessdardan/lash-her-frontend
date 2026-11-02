@@ -14,7 +14,7 @@
 - Lint app code with `npm run lint`; Markdown files are ignored by the ESLint config.
 - All Playwright E2E: `npm test`; focused browser test: `npx playwright test tests/<file>.spec.ts --project=chromium`.
 - Unit tests use Node's runner through `tsx`: `npm run test:unit` runs DB-disabled source tests plus script tests, `npm run test:unit:db` runs DB-dependent source tests against `TEST_DATABASE_URL`, and `npm run test:unit:all` runs both scopes.
-- DB migrations: generate with `npm run db:generate`; inspect target lineage with `npm run db:check`; apply with `npm run db:migrate` only after setting `PRIVATE_DB_MIGRATION_TARGET` and the exact `PRIVATE_DB_MIGRATION_HOST` for the current `DATABASE_URL`. Production also requires `PRIVATE_DB_MIGRATION_CONFIRM=production`.
+- DB migrations: generate with `npm run db:generate`; inspect target lineage with `npm run db:check`; `npm run db:migrate` applies only to isolated loopback databases with `PRIVATE_DB_MIGRATION_TARGET=local` and exact `PRIVATE_DB_MIGRATION_HOST`. Staging/production use the reviewed operator release and `ops/platform/frontend-migration.mjs`; see `docs/api-integration/operator-frontend-migrations.md`.
 - Sanity schema deploys are source-driven: edit `src/sanity/schemas/**`, then run `npx sanity schema deploy`.
 
 ## Environment and deploy gotchas

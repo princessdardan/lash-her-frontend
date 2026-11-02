@@ -155,9 +155,7 @@ Verify production-scoped values in Vercel/provider dashboards. Record presence, 
 
 - [ ] `DATABASE_URL` targets the verified production private DB.
 - [ ] The runtime URL is the verified production endpoint. A transaction pooler is preferred for serverless runtime use; direct endpoints are also supported by the bounded database client.
-- [ ] `PRIVATE_DB_MIGRATION_TARGET=production` for migration command only.
-- [ ] `PRIVATE_DB_MIGRATION_HOST=<verified-production-host>` for migration command only.
-- [ ] `PRIVATE_DB_MIGRATION_CONFIRM=production` for migration command only.
+- [ ] Production source/SQL/schema, exact target, named migration credential and staging evidence match the [frontend operator migration procedure](api-integration/operator-frontend-migrations.md).
 - [ ] `BACKUP_RETENTION_DAYS` matches the approved retention window.
 
 ### Scheduled Jobs
@@ -242,7 +240,7 @@ Use `docs/private-database-migration-runbook.md` as the detailed source of truth
 - [ ] Confirm staging already ran the same migration set successfully.
 - [ ] Confirm production `DATABASE_URL` host matches `<verified-production-host>` without exposing the full URL.
 - [ ] Run `npm run db:check -- --env-file <protected-production-env-file>` and review every pending migration or lineage finding before writing.
-- [ ] Apply needed migrations only with the production guard variables.
+- [ ] Apply reviewed migrations through the operator release with explicit production confirmation.
 - [ ] Rerun `npm run db:check -- --env-file <protected-production-env-file>` and confirm no required migration is pending and no unknown/gapped/hash-mismatched row exists.
 - [ ] Record sanitized command result, timestamp, migration files, operator, verifier, and backup/PITR status.
 - [ ] Stop if migrations are missing, unapplied, fail, or DB identity cannot be verified.
@@ -252,15 +250,9 @@ cd /Users/dardan/workspace/lash-her-frontend
 ls drizzle
 ```
 
-```bash
-DOTENV_CONFIG_PATH=<protected-production-env-file> \
-PRIVATE_DB_MIGRATION_TARGET=production \
-PRIVATE_DB_MIGRATION_HOST=<verified-production-host> \
-PRIVATE_DB_MIGRATION_CONFIRM=production \
-npm run db:migrate
-```
+Follow the [frontend operator migration procedure](api-integration/operator-frontend-migrations.md) for release-target writes; `npm run db:migrate` is restricted to isolated loopback local databases.
 
-`scripts/migrate-private-db.ts` uses `dotenv/config`, which defaults to `.env`; it does not automatically load Next.js `.env.local`. Use the explicit protected file above or an already-exported environment. Never run DB-backed tests against production: provision and migrate an isolated `TEST_DATABASE_URL`, then run `npm run test:unit:db` there.
+The operator migration command loads no dotenv file and accepts only its named production migration credential, privately resolved at runtime. Never run DB-backed tests against production: provision and migrate an isolated `TEST_DATABASE_URL`, then run `npm run test:unit:db` there.
 
 ## Phase 4: Production Provider Dashboard Setup
 

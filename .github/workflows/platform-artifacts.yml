@@ -306,7 +306,7 @@ jobs:
           COMMUNITY_RUNTIME_BUNDLE: ${{ steps.attest-community-runtime.outputs.bundle-path }}
           COMMUNITY_MIGRATION_DIGEST: ${{ steps.build-community-migration.outputs.digest }}
           COMMUNITY_MIGRATION_BUNDLE: ${{ steps.attest-community-migration.outputs.bundle-path }}
-        run: node control/ops/platform/artifact-candidate.mjs "$RUNNER_TEMP/platform-evidence" "$GITHUB_WORKSPACE/sources"
+        run: node sources/lash-her-frontend/ops/platform/artifact-candidate.mjs "$RUNNER_TEMP/platform-evidence" "$GITHUB_WORKSPACE/sources"
       - name: Exercise the exact candidate images with isolated databases
         run: |-
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node \
@@ -324,7 +324,7 @@ jobs:
         run: node control/ops/platform/release-inputs.mjs "$RUNNER_TEMP/platform-evidence/source-checks.final.json"
       - name: Qualify the exact candidate after fresh source verification
         run: |-
-          node control/ops/platform/artifact-candidate.mjs --harness "$RUNNER_TEMP/platform-evidence" "$GITHUB_WORKSPACE/sources"
+          node sources/lash-her-frontend/ops/platform/artifact-candidate.mjs --harness "$RUNNER_TEMP/platform-evidence" "$GITHUB_WORKSPACE/sources"
       - name: Attest three-revision candidate manifest
         id: manifest-attestation
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a

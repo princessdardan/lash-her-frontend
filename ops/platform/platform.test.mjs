@@ -101,12 +101,14 @@ test("release completeness needs no billing access, forecast or verified spendin
       gateway: artifact("gateway", "5"),
     },
     approval: { state: "approved", operator: "Dardan", environment: "staging", releaseId: "staging-fixture", approvedAt: "2026-11-01T11:30:00Z" },
-    migrations: { course: { state: "verified" }, community: { state: "verified" } },
+    migrations: { frontend: { state: "verified" }, course: { state: "verified" }, community: { state: "verified" } },
     recovery: { state: "verified" },
     workload: { environment: "production", projectId: "prj_fixture" },
     scheduler: { state: "verified", cancellation: "verified" },
   };
   assert.deepEqual(validatePlatformRelease(release, now), []);
+  const missingFrontend = structuredClone(release); delete missingFrontend.migrations.frontend;
+  assert.ok(validatePlatformRelease(missingFrontend, now).includes("Frontend migration/lineage receipt required"));
   const production = { ...structuredClone(release), environment: "production",
     approval: { ...release.approval, environment: "production" },
     staging: { state: "passed", releaseId: release.releaseId, verifiedAt: "2026-11-01T11:45:00Z", receiptRef: "staging/run-1",
@@ -172,6 +174,9 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
     assert.equal(scan.with.version, "v0.76.1");
   }
   assert.ok(steps.some((step) => step.run?.includes("artifact-candidate.mjs --harness")));
+  const collectors = steps.filter((step) => step.run?.includes("artifact-candidate.mjs"));
+  assert.equal(collectors.length, 2);
+  for (const step of collectors) assert.match(step.run, /^node sources\/lash-her-frontend\/ops\/platform\/artifact-candidate\.mjs/u);
   const harnessIndex = steps.findIndex((step) => step.run?.includes("local-harness.mjs"));
   const finalCheckIndex = steps.findIndex((step) => step.run?.includes("source-checks.final.json"));
   const qualificationIndex = steps.findIndex((step) => step.run?.includes("artifact-candidate.mjs --harness"));

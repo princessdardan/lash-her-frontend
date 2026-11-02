@@ -61,7 +61,7 @@ Run migration commands from the repository root. Verify the intended database wi
 npm run db:check -- --env-file <protected-env-file>
 ```
 
-Do not run a bare `npm run db:migrate`. Follow the exact guarded invocation in `docs/private-database-migration-runbook.md`: `PRIVATE_DB_MIGRATION_TARGET` and `PRIVATE_DB_MIGRATION_HOST` must match the verified target, `DOTENV_CONFIG_PATH` must explicitly select a non-default protected env file, and production also requires `PRIVATE_DB_MIGRATION_CONFIRM=production`. Rerun the read-only `db:check` command after the guarded migration.
+Staging/production writes use the [frontend operator migration procedure](api-integration/operator-frontend-migrations.md) with reviewed source, target, pending SQL and production staging/recovery checks. `npm run db:migrate` is local only. Rerun read-only `db:check` after migration.
 
 The migration runbook also covers staging, production, backups, and roll-forward recovery. The complete migration journal is authoritative; do not select migrations from an old booking milestone list.
 

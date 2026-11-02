@@ -189,8 +189,15 @@ function assertMigrationTarget(databaseUrl: string): void {
     );
   }
 
+  if (target !== "local") {
+    throw new Error("Release targets require the reviewed operator frontend migration command: ops/platform/frontend-migration.mjs");
+  }
+
   const parsedUrl = parseDatabaseUrl(databaseUrl);
   const host = parsedUrl.hostname.toLowerCase();
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(host)) {
+    throw new Error("Local migrations require an isolated loopback database; remote targets use the operator release command");
+  }
   const expectedHost =
     process.env.PRIVATE_DB_MIGRATION_HOST?.trim().toLowerCase();
 
@@ -203,15 +210,6 @@ function assertMigrationTarget(databaseUrl: string): void {
   if (host !== expectedHost) {
     throw new Error(
       `DATABASE_URL host mismatch: expected ${expectedHost}, received ${host}.`,
-    );
-  }
-
-  if (
-    target === "production" &&
-    process.env.PRIVATE_DB_MIGRATION_CONFIRM !== "production"
-  ) {
-    throw new Error(
-      "Production migrations require PRIVATE_DB_MIGRATION_CONFIRM=production after backup/PITR and approval checks.",
     );
   }
 }

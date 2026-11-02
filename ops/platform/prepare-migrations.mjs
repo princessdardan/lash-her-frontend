@@ -3,6 +3,7 @@ import { closeSync, constants, fstatSync, existsSync, mkdirSync, openSync, readS
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { SOURCE_REPOSITORIES, isRevision } from "./source-policy.mjs";
+import { prepareFrontendMigrationJob } from "./frontend-migration.mjs";
 
 const services = { course: "lash-her-course-api", community: "lash-her-community-api" };
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -90,6 +91,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       for (const name of Object.keys(services)) for (const file of ["database-receipt.json", "job-outcome.json"])
         evidence[`staging/${name}/${file}`] = read(join(stagingDirectory, name, file));
     }
+    let frontend;
+    if (settings.frontend) {
+      const exported = read(join(schemaDirectory, "frontend", `operator-schema-postgres${settings.frontend.serverMajor}.json`));
+      const prior = stagingDirectory ? { database: read(join(stagingDirectory, "frontend/database-receipt.json")),
+        terminal: read(join(stagingDirectory, "frontend/job-outcome.json")) } : undefined;
+      frontend = prepareFrontendMigrationJob(release, settings.frontend, exported, prior);
+    }
     const output = resolve(outputDirectory);
     // Private API schema exports must not become files in a public checkout.
     for (let parent = dirname(output); ; parent = dirname(parent)) {
@@ -103,6 +111,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     for (const name of Object.keys(services)) {
       save(`jobs/${name}.json`, jobs[name]);
       writeFileSync(join(output, `schema/${name}.json`), baselines[name], { flag: "wx", mode: 0o600 });
+    }
+    if (frontend) {
+      save("jobs/frontend.json", frontend.job);
+      save("schema/frontend.json", frontend.baseline);
     }
     for (const [file, value] of Object.entries(evidence)) save(file, value);
     process.stdout.write("Migration bundle prepared; run the read-only host plan before explicit execution\n");
