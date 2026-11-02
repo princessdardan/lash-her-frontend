@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "date": "2026-11-02",
+  "scope": "Frontend provider promotion and read-only continuation component",
+  "sourceParentCommit": "97463db7cb4a5d30dae3ab491e2cc96afe340957",
+  "implementation": "ops/platform/host/vercel.py",
+  "verification": {
+    "command": "python3 -m unittest discover -s ops/platform/host -p '*_test.py'",
+    "result": "passed",
+    "hostTests": 67,
+    "ownedHttpsProviderTests": 26,
+    "credentials": "synthetic fixture values only"
+  },
+  "covered": [
+    "exact staged Production-target source/project/release identity",
+    "parent live-verification callback before mutation",
+    "post-verification provider drift refusal",
+    "durable exclusive promotion intent before one POST",
+    "matching newer successful alias job and production target",
+    "HTTP 201/202 acceptance without claiming completion",
+    "active/unrelated/failed/skipped or stale alias-job refusal",
+    "rolling-release refusal",
+    "uncertain POST retained for read-only observation",
+    "observation timeout retains exact deployment handle",
+    "separate durable observations preserve original outcome",
+    "callback/provider error redaction and selected-only receipts",
+    "no cron enablement, automatic rollback or gateway write admission"
+  ],
+  "readOnlyStagingProviderEvidence": {
+    "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+    "repositoryId": "1114139712",
+    "injectedTokenProjectReadStatus": 200,
+    "expectedProjectTeamRepositoryVerified": true,
+    "oidcEnabled": true,
+    "cronsEnabled": true,
+    "paused": false,
+    "rollingReleaseAbsent": true,
+    "lastAliasRequestPresent": false,
+    "productionDeploymentId": "dpl_BhcXzshZsXQ6nzqAkbKsn1BPDsZX",
+    "decryptedEnvironmentValuesRead": false,
+    "fullProviderResponseDisplayed": false,
+    "mutationPermissionsVerified": false
+  },
+  "providerReferences": [
+    "https://vercel.com/docs/rest-api/projects/point-production-traffic-to-a-given-deployment",
+    "https://vercel.com/docs/rest-api/projects/find-a-project-by-id-or-name",
+    "https://github.com/vercel/vercel/blob/vercel%4050.0.0/packages/cli/src/commands/promote/status.ts"
+  ],
+  "boundaries": {
+    "standaloneReleaseEntrypoint": false,
+    "parentCoordinatorComplete": false,
+    "realFrontendVerificationCallbackImplemented": false,
+    "frontendQuiescenceVerified": false,
+    "livePromotionPerformed": false,
+    "liveDeploymentPerformed": false,
+    "liveMigrationPerformed": false,
+    "liveProviderMutationPerformed": false,
+    "gatewayTrafficAdmitted": false,
+    "p1Complete": false,
+    "billingEvidenceRequired": false,
+    "monitoringDeferred": true
+  },
+  "remaining": [
+    "Establish actual frontend writer/scheduler suspension",
+    "Connect parent locked migration/runtime/build/verification/promotion/admission coordinator",
+    "Verify supplied credentials at remaining consumers",
+    "Qualify immutable registry artifacts and actual staging host/OIDC/scheduler/recreation/rollback behavior"
+  ]
+}

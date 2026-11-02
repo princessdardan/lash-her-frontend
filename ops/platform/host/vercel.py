@@ -73,7 +73,7 @@ def release_identity(release):
     return environment, PROJECTS[environment], commit
 
 
-def project_state(client, project_id):
+def _project(client, project_id):
     demand(project_id in PROJECTS.values(), "VERCEL_PROJECT_REFUSED")
     value = client.request("GET", f"/v9/projects/{project_id}")
     link = value.get("link") or {}
@@ -90,9 +90,17 @@ def project_state(client, project_id):
     demand(cron is None or isinstance(cron, dict), "VERCEL_CRON_STATE_REFUSED")
     disabled = None if cron is None else cron.get("disabledAt")
     demand(disabled is None or type(disabled) is int and disabled > 0, "VERCEL_CRON_STATE_REFUSED")
+    return value
+
+
+def project_state(client, project_id):
+    value = _project(client, project_id)
+    current = (value.get("targets") or {}).get("production")
+    disabled = (value.get("crons") or {}).get("disabledAt")
     # Deliberately omit env, protection bypasses, git credentials and provider
     # metadata from the returned state. No API response is written to disk.
-    return {"projectId": project_id, "productionDeploymentId": current_id, "cronsEnabled": disabled is None}
+    return {"projectId": project_id, "productionDeploymentId": None if current is None else current.get("id"),
+            "cronsEnabled": disabled is None}
 
 
 def disable_schedules(client, release):
@@ -177,3 +185,131 @@ def stage_frontend(client, release, attempt, timeout=900):
         raise ValueError(outcome["failureCode"]) from None
     finally:
         migrate.write_json(attempt, "frontend-build-outcome.json", outcome)
+
+
+def promotion_state(client, project_id):
+    """Selected provider job state; never return raw project/environment data."""
+    value = _project(client, project_id)
+    rolling = value.get("rollingRelease")
+    demand(rolling is None or isinstance(rolling, dict) and rolling.get("enabled") is False,
+           "VERCEL_ROLLING_RELEASE_REQUIRES_REVIEW")
+    job = value.get("lastAliasRequest")
+    demand(job is None or isinstance(job, dict), "VERCEL_ALIAS_JOB_REFUSED")
+    if job is not None:
+        demand(job.get("jobStatus") in ("pending", "in-progress", "succeeded", "failed", "skipped")
+               and type(job.get("requestedAt")) is int and job["requestedAt"] > 0
+               and isinstance(job.get("toDeploymentId"), str)
+               and re.fullmatch(r"dpl_[A-Za-z0-9]+", job["toDeploymentId"])
+               and job.get("type") in ("promote", "rollback"), "VERCEL_ALIAS_JOB_REFUSED")
+    current = (value.get("targets") or {}).get("production")
+    return {"projectId": project_id, "productionDeploymentId": None if current is None else current.get("id"),
+            "cronsEnabled": (value.get("crons") or {}).get("disabledAt") is None,
+            "aliasJob": None if job is None else {key: job[key] for key in ("jobStatus", "requestedAt", "toDeploymentId", "type")}}
+
+
+def _staged_identity(release, attempt):
+    environment, project_id, commit = release_identity(release)
+    staged = migrate.read_json(attempt, "frontend-build-outcome.json")
+    demand(isinstance(staged, dict) and staged.get("status") == "FRONTEND_STAGED" and staged.get("readyState") == "READY"
+           and staged.get("environment") == environment and staged.get("projectId") == project_id
+           and staged.get("sourceCommit") == commit and staged.get("releaseId") == release["releaseId"]
+           and staged.get("trafficAuthorized") is False and staged.get("promotionAuthorized") is False
+           and isinstance(staged.get("deploymentId"), str)
+           and re.fullmatch(r"dpl_[A-Za-z0-9]+", staged["deploymentId"])
+           and (staged.get("previousDeploymentId") is None or isinstance(staged["previousDeploymentId"], str)
+                and re.fullmatch(r"dpl_[A-Za-z0-9]+", staged["previousDeploymentId"]))
+           and staged["deploymentId"] != staged.get("previousDeploymentId"), "VERCEL_STAGED_BUILD_REQUIRED")
+    return {key: staged.get(key) for key in ("environment", "projectId", "sourceCommit", "releaseId", "deploymentId", "previousDeploymentId")}
+
+
+def _observe_promotion(client, release, attempt, intent, timeout):
+    outcome = {**intent, "status": "FRONTEND_PROMOTION_REQUIRES_REVIEW", "phase": "observe",
+               "trafficAuthorized": False, "gatewayTrafficAuthorized": False, "frontendDomainsPromoted": None}
+    try:
+        deadline = time.monotonic() + timeout
+        while True:
+            deployment = deployment_state(client, intent["deploymentId"], intent["projectId"], intent["sourceCommit"], intent["releaseId"])
+            demand(deployment["readyState"] == "READY", "VERCEL_PROMOTION_DEPLOYMENT_NOT_READY")
+            current = promotion_state(client, intent["projectId"])
+            demand(current["cronsEnabled"] is False, "VERCEL_SCHEDULE_SUSPENSION_REQUIRED")
+            demand(current["productionDeploymentId"] in (intent["previousDeploymentId"], intent["deploymentId"]),
+                   "VERCEL_PROJECT_CHANGED_DURING_PROMOTION")
+            job = current["aliasJob"]
+            if job is not None and job["requestedAt"] > intent["previousAliasRequestedAt"]:
+                demand(job["type"] == "promote" and job["toDeploymentId"] == intent["deploymentId"],
+                       "VERCEL_UNRELATED_ALIAS_JOB")
+                demand(job["jobStatus"] not in ("failed", "skipped"), "VERCEL_PROMOTION_FAILED_REQUIRES_REVIEW")
+                if job["jobStatus"] == "succeeded" and current["productionDeploymentId"] == intent["deploymentId"]:
+                    outcome.update(status="FRONTEND_DOMAINS_PROMOTED", phase="completed", frontendDomainsPromoted=True,
+                                   aliasRequestedAt=job["requestedAt"])
+                    return outcome
+            demand(time.monotonic() < deadline, "VERCEL_PROMOTION_OBSERVATION_TIMED_OUT")
+            time.sleep(min(2, max(0, deadline - time.monotonic())))
+    except BaseException as error:
+        code = str(error)
+        outcome["failureCode"] = code if isinstance(error, ValueError) and re.fullmatch(r"[A-Z_]{1,80}", code) else "VERCEL_PROMOTION_FAILURE"
+        raise ValueError(outcome["failureCode"]) from None
+    finally:
+        # Each observation is retained separately; resuming never overwrites
+        # the original mutation outcome or repeats the promotion request.
+        sequence = 0
+        while (attempt / f"frontend-promotion-observation-{sequence}.json").exists():
+            sequence += 1
+        migrate.write_json(attempt, f"frontend-promotion-observation-{sequence}.json", outcome)
+
+
+def observe_frontend_promotion(client, release, attempt, timeout=180):
+    """Read-only continuation after a timeout or uncertain promotion response."""
+    demand(type(timeout) is int and 1 <= timeout <= 1800, "VERCEL_PROMOTION_TIMEOUT_REFUSED")
+    migrate.private_directory(attempt)
+    identity = _staged_identity(release, attempt)
+    stored = migrate.read_json(attempt, "frontend-promotion-started.json")
+    demand(isinstance(stored, dict) and all(stored.get(key) == value for key, value in identity.items())
+           and type(stored.get("previousAliasRequestedAt")) is int and stored["previousAliasRequestedAt"] >= 0,
+           "VERCEL_PROMOTION_INTENT_REFUSED")
+    intent = {**identity, "previousAliasRequestedAt": stored["previousAliasRequestedAt"]}
+    return _observe_promotion(client, release, attempt, intent, timeout)
+
+
+def promote_frontend(client, release, attempt, verify_frontend, timeout=180):
+    """Promote the staged Production build after the parent's live verification.
+
+    The full coordinator retains the release lock, producer suspension and
+    gateway maintenance throughout this operation. No standalone CLI, automatic
+    rollback, cron enabling or gateway write admission is provided here.
+    """
+    demand(type(timeout) is int and 1 <= timeout <= 1800, "VERCEL_PROMOTION_TIMEOUT_REFUSED")
+    demand(callable(verify_frontend), "FRONTEND_LIVE_VERIFICATION_REQUIRED")
+    migrate.private_directory(attempt)
+    identity = _staged_identity(release, attempt)
+    before = promotion_state(client, identity["projectId"])
+    demand(before["cronsEnabled"] is False, "VERCEL_SCHEDULE_SUSPENSION_REQUIRED")
+    demand(before["productionDeploymentId"] == identity["previousDeploymentId"], "VERCEL_PROJECT_CHANGED_BEFORE_PROMOTION")
+    prior = before["aliasJob"]
+    demand(prior is None or prior["jobStatus"] in ("succeeded", "failed", "skipped"), "VERCEL_ALIAS_JOB_ALREADY_ACTIVE")
+    deployment = deployment_state(client, identity["deploymentId"], identity["projectId"], identity["sourceCommit"], identity["releaseId"])
+    demand(deployment["readyState"] == "READY", "VERCEL_PROMOTION_DEPLOYMENT_NOT_READY")
+    try:
+        verified = verify_frontend(release, deployment)
+    except BaseException:
+        raise ValueError("FRONTEND_LIVE_VERIFICATION_FAILED") from None
+    demand(isinstance(verified, dict) and verified.get("status") == "FRONTEND_VERIFIED"
+           and all(verified.get(key) == identity[key] for key in ("environment", "projectId", "sourceCommit", "releaseId", "deploymentId")),
+           "FRONTEND_LIVE_VERIFICATION_REQUIRED")
+    # Verification may take time. Refuse provider drift before the only POST.
+    demand(promotion_state(client, identity["projectId"]) == before, "VERCEL_PROJECT_CHANGED_BEFORE_PROMOTION")
+    intent = {**identity, "previousAliasRequestedAt": 0 if prior is None else prior["requestedAt"]}
+    migrate.write_json(attempt, "frontend-promotion-started.json", intent)
+    outcome = {**intent, "status": "FRONTEND_PROMOTION_REQUIRES_REVIEW", "phase": "request",
+               "trafficAuthorized": False, "gatewayTrafficAuthorized": False, "frontendDomainsPromoted": None}
+    try:
+        client.request("POST", f"/v10/projects/{identity['projectId']}/promote/{identity['deploymentId']}", {})
+        outcome["phase"] = "observe"
+        outcome = _observe_promotion(client, release, attempt, intent, timeout)
+        return outcome
+    except BaseException as error:
+        code = str(error)
+        outcome["failureCode"] = code if isinstance(error, ValueError) and re.fullmatch(r"[A-Z_]{1,80}", code) else "VERCEL_PROMOTION_FAILURE"
+        raise ValueError(outcome["failureCode"]) from None
+    finally:
+        migrate.write_json(attempt, "frontend-promotion-outcome.json", outcome)

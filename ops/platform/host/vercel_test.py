@@ -98,6 +98,24 @@ class VercelControlTests(unittest.TestCase):
     def enqueue(self, *bodies):
         self.responses.extend((200, body, {}) for body in bodies)
 
+    def staged(self):
+        value = {"status": "FRONTEND_STAGED", "readyState": "READY", "environment": "staging",
+                 "projectId": vercel.PROJECTS["staging"], "sourceCommit": "a" * 40,
+                 "releaseId": "staging-fixture", "deploymentId": "dpl_fixture", "previousDeploymentId": "dpl_previous",
+                 "trafficAuthorized": False, "promotionAuthorized": False}
+        vercel.migrate.write_json(self.attempt, "frontend-build-outcome.json", value)
+        return value
+
+    def verified(self, release, deployment):
+        return {"status": "FRONTEND_VERIFIED", "environment": release["environment"], "releaseId": release["releaseId"],
+                **{key: deployment[key] for key in ("projectId", "sourceCommit", "deploymentId")}}
+
+    def promotion_project(self, status=None, deployment="dpl_previous", requested=456, to="dpl_fixture"):
+        value = self.project(deployment=deployment)
+        if status is not None:
+            value["lastAliasRequest"] = {"jobStatus": status, "requestedAt": requested, "toDeploymentId": to, "type": "promote"}
+        return value
+
     def test_real_https_build_stages_exact_source_without_changing_production(self):
         self.enqueue(self.project(), {"id": "dpl_fixture"}, self.deployment("BUILDING"), self.project(), self.deployment(), self.project())
         with patch.object(vercel.time, "sleep"):
@@ -216,6 +234,173 @@ class VercelControlTests(unittest.TestCase):
             self.responses.append((200, value, {}))
             with self.assertRaisesRegex(ValueError, "VERCEL_REQUEST_FAILED_REQUIRES_REVIEW"):
                 self.client.request("GET", "/v9/projects/test")
+
+    def test_promotion_waits_for_exact_alias_job_and_target_after_live_verification(self):
+        self.staged()
+        self.enqueue(self.promotion_project(), self.deployment(), self.promotion_project())
+        self.responses.append((201, {}, {}))
+        self.enqueue(self.deployment(), self.promotion_project("in-progress"),
+                     self.deployment(), self.promotion_project("succeeded", deployment="dpl_fixture"))
+        verified_calls = []
+
+        def verify(release, deployment):
+            verified_calls.append((release["releaseId"], deployment["deploymentId"]))
+            self.assertTrue(all(c["method"] == "GET" for c in self.calls))
+            return self.verified(release, deployment)
+
+        with patch.object(vercel.time, "sleep"):
+            result = vercel.promote_frontend(self.client, self.release, self.attempt, verify)
+        self.assertEqual(verified_calls, [("staging-fixture", "dpl_fixture")])
+        self.assertEqual(result["status"], "FRONTEND_DOMAINS_PROMOTED")
+        self.assertTrue(result["frontendDomainsPromoted"])
+        self.assertFalse(result["gatewayTrafficAuthorized"])
+        self.assertFalse(result["trafficAuthorized"])
+        writes = [c for c in self.calls if c["method"] != "GET"]
+        self.assertEqual(len(writes), 1)
+        self.assertIn("/promote/dpl_fixture?", writes[0]["path"])
+        self.assertEqual(writes[0]["body"], {})
+        receipts = "".join(p.read_text() for p in self.attempt.iterdir())
+        for secret in ("fixture-private-token", "provider-secret-must-not-escape", "private-provider-bypass"):
+            self.assertNotIn(secret, receipts)
+
+    def test_missing_or_wrong_live_verification_never_promotes(self):
+        with self.assertRaisesRegex(ValueError, "FRONTEND_LIVE_VERIFICATION_REQUIRED"):
+            vercel.promote_frontend(self.client, self.release, self.attempt, None)
+        self.assertEqual(self.calls, [])
+        self.staged()
+        self.enqueue(self.promotion_project(), self.deployment())
+        with self.assertRaisesRegex(ValueError, "FRONTEND_LIVE_VERIFICATION_REQUIRED"):
+            vercel.promote_frontend(self.client, self.release, self.attempt, lambda *_: {"status": "FRONTEND_VERIFIED"})
+        self.assertTrue(all(c["method"] == "GET" for c in self.calls))
+        self.assertFalse((self.attempt / "frontend-promotion-started.json").exists())
+
+    def test_changed_project_or_active_alias_job_refuses_before_promotion(self):
+        self.staged()
+        for value, code in ((self.promotion_project(deployment="dpl_unrelated"), "VERCEL_PROJECT_CHANGED_BEFORE_PROMOTION"),
+                            (self.promotion_project("pending"), "VERCEL_ALIAS_JOB_ALREADY_ACTIVE")):
+            with self.subTest(code=code):
+                self.enqueue(value)
+                with self.assertRaisesRegex(ValueError, code):
+                    vercel.promote_frontend(self.client, self.release, self.attempt, self.verified)
+        self.enqueue(self.promotion_project(), self.deployment(), self.promotion_project(deployment="dpl_unrelated"))
+        with self.assertRaisesRegex(ValueError, "VERCEL_PROJECT_CHANGED_BEFORE_PROMOTION"):
+            vercel.promote_frontend(self.client, self.release, self.attempt, self.verified)
+        self.assertTrue(all(c["method"] == "GET" for c in self.calls))
+
+    def test_live_verification_failure_is_sanitized_before_promotion(self):
+        self.staged()
+        self.enqueue(self.promotion_project(), self.deployment())
+
+        def fail(*_):
+            raise RuntimeError("fixture-private-token provider-secret-must-not-escape")
+
+        with self.assertRaisesRegex(ValueError, "^FRONTEND_LIVE_VERIFICATION_FAILED$"):
+            vercel.promote_frontend(self.client, self.release, self.attempt, fail)
+        self.assertTrue(all(c["method"] == "GET" for c in self.calls))
+        self.assertFalse((self.attempt / "frontend-promotion-started.json").exists())
+
+    def test_rolling_release_is_not_silently_accepted_as_full_promotion(self):
+        self.staged()
+        value = self.promotion_project()
+        value["rollingRelease"] = {"enabled": True}
+        self.enqueue(value)
+        with self.assertRaisesRegex(ValueError, "VERCEL_ROLLING_RELEASE_REQUIRES_REVIEW"):
+            vercel.promote_frontend(self.client, self.release, self.attempt, self.verified)
+        self.assertTrue(all(c["method"] == "GET" for c in self.calls))
+
+    def test_wrong_or_unready_deployment_refuses_promotion(self):
+        self.staged()
+        for value, code in ((self.deployment("BUILDING"), "VERCEL_PROMOTION_DEPLOYMENT_NOT_READY"),
+                            ({**self.deployment(), "target": "preview"}, "VERCEL_DEPLOYMENT_BINDING_REFUSED")):
+            with self.subTest(code=code):
+                self.enqueue(self.promotion_project(), value)
+                with self.assertRaisesRegex(ValueError, code):
+                    vercel.promote_frontend(self.client, self.release, self.attempt, self.verified)
+        self.assertTrue(all(c["method"] == "GET" for c in self.calls))
+
+    def test_ambiguous_promotion_is_not_retried_and_can_be_observed_read_only(self):
+        self.staged()
+        self.enqueue(self.promotion_project(), self.deployment(), self.promotion_project())
+        self.responses.append((503, {"error": "fixture-private-token provider-secret-must-not-escape"}, {}))
+        with self.assertRaisesRegex(ValueError, "VERCEL_REQUEST_FAILED_REQUIRES_REVIEW"):
+            vercel.promote_frontend(self.client, self.release, self.attempt, self.verified)
+        failed = json.loads((self.attempt / "frontend-promotion-outcome.json").read_text())
+        self.assertIsNone(failed["frontendDomainsPromoted"])
+        self.enqueue(self.promotion_project(), self.deployment(), self.promotion_project())
+        with self.assertRaises(FileExistsError):
+            vercel.promote_frontend(self.client, self.release, self.attempt, self.verified)
+        self.enqueue(self.deployment(), self.promotion_project("succeeded", deployment="dpl_fixture"))
+        result = vercel.observe_frontend_promotion(self.client, self.release, self.attempt)
+        self.assertEqual(result["status"], "FRONTEND_DOMAINS_PROMOTED")
+        self.assertEqual(sum(c["method"] == "POST" for c in self.calls), 1)
+        self.assertEqual(json.loads((self.attempt / "frontend-promotion-outcome.json").read_text()), failed)
+
+    def test_queued_promotion_timeout_retains_handle_and_continues_without_post(self):
+        self.staged()
+        self.enqueue(self.promotion_project("succeeded", requested=100, to="dpl_previous"), self.deployment(),
+                     self.promotion_project("succeeded", requested=100, to="dpl_previous"))
+        self.responses.append((202, {}, {}))
+        # An old successful alias job, even with the target updated, is not
+        # evidence that the new promotion completed.
+        self.enqueue(self.deployment(), self.promotion_project("succeeded", deployment="dpl_fixture", requested=100))
+        with patch.object(vercel.time, "monotonic", side_effect=[0, 2]):
+            with self.assertRaisesRegex(ValueError, "VERCEL_PROMOTION_OBSERVATION_TIMED_OUT"):
+                vercel.promote_frontend(self.client, self.release, self.attempt, self.verified, timeout=1)
+        self.enqueue(self.deployment(), self.promotion_project("succeeded", deployment="dpl_fixture", requested=456))
+        result = vercel.observe_frontend_promotion(self.client, self.release, self.attempt)
+        self.assertEqual(result["deploymentId"], "dpl_fixture")
+        self.assertEqual(sum(c["method"] == "POST" for c in self.calls), 1)
+        observations = sorted(self.attempt.glob("frontend-promotion-observation-*.json"))
+        self.assertEqual(len(observations), 2)
+        self.assertEqual(json.loads(observations[0].read_text())["failureCode"], "VERCEL_PROMOTION_OBSERVATION_TIMED_OUT")
+
+    def test_failed_alias_mapping_never_rolls_back_or_resumes_producers(self):
+        self.staged()
+        self.enqueue(self.promotion_project(), self.deployment(), self.promotion_project(), {},
+                     self.deployment(), self.promotion_project("failed"))
+        with self.assertRaisesRegex(ValueError, "VERCEL_PROMOTION_FAILED_REQUIRES_REVIEW"):
+            vercel.promote_frontend(self.client, self.release, self.attempt, self.verified)
+        self.enqueue(self.deployment(), self.promotion_project("skipped"))
+        with self.assertRaisesRegex(ValueError, "VERCEL_PROMOTION_FAILED_REQUIRES_REVIEW"):
+            vercel.observe_frontend_promotion(self.client, self.release, self.attempt)
+        self.assertEqual(sum(c["method"] != "GET" for c in self.calls), 1)
+        self.assertTrue(all("rollback" not in c["path"] and "/crons" not in c["path"] for c in self.calls))
+
+    def test_unrelated_alias_job_and_reenabled_schedules_stop_observation(self):
+        self.staged()
+        intent = {key: value for key, value in self.staged_value().items()}
+        vercel.migrate.write_json(self.attempt, "frontend-promotion-started.json", {**intent, "previousAliasRequestedAt": 0})
+        unrelated = self.promotion_project("succeeded", to="dpl_unrelated")
+        enabled = self.promotion_project("succeeded", deployment="dpl_fixture")
+        enabled["crons"]["disabledAt"] = None
+        for value, code in ((unrelated, "VERCEL_UNRELATED_ALIAS_JOB"), (enabled, "VERCEL_SCHEDULE_SUSPENSION_REQUIRED")):
+            with self.subTest(code=code):
+                self.enqueue(self.deployment(), value)
+                with self.assertRaisesRegex(ValueError, code):
+                    vercel.observe_frontend_promotion(self.client, self.release, self.attempt)
+        self.assertTrue(all(c["method"] == "GET" for c in self.calls))
+
+    def staged_value(self):
+        return {key: value for key, value in json.loads((self.attempt / "frontend-build-outcome.json").read_text()).items()
+                if key in ("environment", "projectId", "sourceCommit", "releaseId", "deploymentId", "previousDeploymentId")}
+
+    def test_observation_refuses_substituted_intent_without_network(self):
+        self.staged()
+        intent = {**self.staged_value(), "deploymentId": "dpl_unrelated", "previousAliasRequestedAt": 0}
+        vercel.migrate.write_json(self.attempt, "frontend-promotion-started.json", intent)
+        with self.assertRaisesRegex(ValueError, "VERCEL_PROMOTION_INTENT_REFUSED"):
+            vercel.observe_frontend_promotion(self.client, self.release, self.attempt)
+        self.assertEqual(self.calls, [])
+
+    def test_read_only_observation_does_not_copy_unselected_intent_fields(self):
+        self.staged()
+        intent = {**self.staged_value(), "previousAliasRequestedAt": 0, "private": "provider-secret-must-not-escape"}
+        vercel.migrate.write_json(self.attempt, "frontend-promotion-started.json", intent)
+        self.enqueue(self.deployment(), self.promotion_project("succeeded", deployment="dpl_fixture"))
+        result = vercel.observe_frontend_promotion(self.client, self.release, self.attempt)
+        self.assertNotIn("private", result)
+        self.assertNotIn("provider-secret-must-not-escape", (self.attempt / "frontend-promotion-observation-0.json").read_text())
+        self.assertTrue(all(c["method"] == "GET" for c in self.calls))
 
 
 if __name__ == "__main__":
