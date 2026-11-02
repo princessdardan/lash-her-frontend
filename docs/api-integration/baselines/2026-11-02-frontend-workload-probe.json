@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "date": "2026-11-02",
+  "scope": "Release-only frontend SDK workload probe and private HTTPS promotion callback",
+  "implementation": ["src/app/api/internal/release-probe", "ops/platform/host/frontend_probe.py"],
+  "configuration": {
+    "credential": "Automatically generated 256-bit value in existing selected Vercel project; sensitive Production-target variable",
+    "maximumLifetimeMs": 3600000,
+    "operatorCredentialHandoffAdded": false,
+    "cronSecretReadOrReplaced": false,
+    "permanentScheduledMonitorAdded": false,
+    "privateConfigurationKeptOutsideGit": true
+  },
+  "verification": {
+    "newHandlerTests": 4,
+    "focusedSourceTestsPassed": 14,
+    "hostProbeTestsPassed": 14,
+    "allHostTestsPassed": 94,
+    "focusedEslint": "passed",
+    "typecheck": "passed",
+    "hostFixtureScope": "Actual owned HTTPS provider/deployment exchanges with fixture CA and synthetic credentials; no live Vercel function",
+    "covered": [
+      "staging and production project/variable scoping",
+      "durable private input before single-attempt environment mutations",
+      "missing/expired/malformed configuration and unauthorized calls do not trigger gateway work",
+      "deployed-response challenge, environment, project, source and exact gateway-origin binding",
+      "secret expires during request",
+      "unready/substituted deployment and provider production-target drift",
+      "missing protection access and forbidden credential forwarding",
+      "TLS, redirect, HTTP-error, HTML/login, cacheable, oversized and malformed responses",
+      "private values and provider diagnostics excluded from common outcomes"
+    ]
+  },
+  "boundaries": {
+    "providerTouched": false,
+    "liveVercelOidcVerified": false,
+    "nativeSchedulerVerified": false,
+    "initialStagingParentConnected": true,
+    "finalAdmissionImplemented": false,
+    "productionOrchestrationComplete": false,
+    "trafficAuthorized": false,
+    "p1Complete": false
+  }
+}

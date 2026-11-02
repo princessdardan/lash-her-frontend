@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "date": "2026-11-02",
+  "scope": "Initial staging preparation with connected database/API/frontend stages under one host lock",
+  "implementation": "ops/platform/host/staging_release.py",
+  "runbook": "docs/api-integration/operator-staging-qualification.md",
+  "stages": [
+    "Explicit plan/confirmation and selected Linux AMD64 root host",
+    "Private provider/protection read preflight before database commands",
+    "Current frontend schema/lineage/grants verification before API migrations",
+    "Both API migrations and dependency-ordered runtime readiness",
+    "Native schedules disabled with retained prior state and readback",
+    "Automatic sensitive expiring probe and reviewed gateway origin configuration",
+    "Pinned Production-target Git build without initial domain assignment",
+    "Actual HTTPS frontend workload callback before promotion request",
+    "Verified native staging domain promotion with gateway maintenance preserved"
+  ],
+  "verification": {
+    "connectedCoordinatorTestsPassed": 7,
+    "allHostTestsPassed": 94,
+    "focusedSourceTestsPassed": 14,
+    "typecheck": "passed",
+    "focusedEslint": "passed",
+    "fixtureScope": "Real filesystem receipts/flock, simulated Docker and owned HTTPS provider/deployment servers with synthetic credentials",
+    "cases": [
+      "plan reads no runtime secret files, contacts no provider and executes no process",
+      "confirmation, pending frontend SQL and production target refuse before credentials",
+      "missing provider token refuses before API/database commands",
+      "all three databases, API startup and provider mutations retain the same actual lock",
+      "deployed-probe failure prevents promotion and stops APIs while preserving database success",
+      "uncertain promotion is not retried or rolled back; uncertainty and API suspension retained",
+      "provider drift after preflight stops before provider mutation"
+    ],
+    "publishedPredecessor": {
+      "sourceCommit": "427e068004ebe12fae051dddb181bcf949d68099",
+      "ciRunId": 41504256377,
+      "allTenJobs": "success"
+    }
+  },
+  "boundaries": {
+    "providerTouched": false,
+    "liveMigrationOrDeploymentPerformed": false,
+    "realVercelOidcVerified": false,
+    "nativeSchedulerVerified": false,
+    "externalIngressVerified": false,
+    "gatewayTrafficAuthorized": false,
+    "fullReleaseAccepted": false,
+    "productionApplyAllowedByThisCommand": false,
+    "pendingFrontendSqlAllowedWithoutQuiescence": false,
+    "p1Complete": false
+  }
+}
