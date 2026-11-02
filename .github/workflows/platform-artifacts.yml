@@ -1,0 +1,36 @@
+# Register manual dispatch on the default branch. The reviewed staging branch
+# owns the complete coordinator. This entry refuses builds and consumes no secrets.
+name: Platform artifact candidate
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: Frontend coordinator branch; private APIs release from main
+        type: choice
+        options:
+          - staging
+          - main
+        default: main
+        required: true
+      frontend_revision:
+        description: Exact coordinator/frontend commit (40 lowercase hex characters)
+        type: string
+        required: true
+      course_revision:
+        description: Exact Course commit (40 lowercase hex characters)
+        type: string
+        required: true
+      community_revision:
+        description: Exact Community commit (40 lowercase hex characters)
+        type: string
+        required: true
+permissions: {}
+jobs:
+  select-reviewed-coordinator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require the reviewed staging coordinator
+        run: |-
+          echo "::error::This main-branch entry only registers manual dispatch. Select the reviewed staging branch and its exact source revisions to publish a candidate."
+          exit 1
