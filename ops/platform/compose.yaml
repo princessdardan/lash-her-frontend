@@ -46,7 +46,7 @@ services:
     <<: *runtime
     image: ${COURSE_RUNTIME_IMAGE:?require reviewed Course runtime digest}
     command: [node, dist/server.js]
-    env_file: ["${RELEASE_DIR}/course-api.env"]
+    env_file: [{path: "${RELEASE_DIR}/course-api.env", format: raw}]
     environment:
       NODE_ENV: production
       PORT: "4000"
@@ -82,7 +82,7 @@ services:
     <<: *runtime
     image: ${COURSE_RUNTIME_IMAGE}
     command: [node, dist/community-enrollment-publisher.js]
-    env_file: ["${RELEASE_DIR}/course-publisher.env"]
+    env_file: [{path: "${RELEASE_DIR}/course-publisher.env", format: raw}]
     environment:
       NODE_ENV: production
       PORT: "4001"
@@ -104,7 +104,7 @@ services:
     <<: *runtime
     image: ${COURSE_RUNTIME_IMAGE}
     command: [node, dist/community-snapshot-worker.js]
-    env_file: ["${RELEASE_DIR}/course-snapshot.env"]
+    env_file: [{path: "${RELEASE_DIR}/course-snapshot.env", format: raw}]
     environment: {NODE_ENV: production, PORT: "4002", NODE_OPTIONS: --max-old-space-size=192}
     mem_limit: 256m
     cpus: 0.3
@@ -117,7 +117,7 @@ services:
     <<: *runtime
     image: ${COMMUNITY_RUNTIME_IMAGE:?require reviewed Community runtime digest}
     command: [node, dist/server.js]
-    env_file: ["${RELEASE_DIR}/community-api.env"]
+    env_file: [{path: "${RELEASE_DIR}/community-api.env", format: raw}]
     environment:
       NODE_ENV: production
       PORT: "4100"
@@ -156,7 +156,7 @@ services:
     <<: *runtime
     image: ${COMMUNITY_RUNTIME_IMAGE}
     command: [node, dist/worker.js]
-    env_file: ["${RELEASE_DIR}/community-worker.env"]
+    env_file: [{path: "${RELEASE_DIR}/community-worker.env", format: raw}]
     environment:
       NODE_ENV: production
       WORKER_PORT: "4101"

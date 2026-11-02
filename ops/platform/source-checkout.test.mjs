@@ -83,7 +83,7 @@ test("final CLI requires source/dispatch evidence, qualifies exact fixture image
     repositoryId: SOURCE_REPOSITORY_IDS[name], branch: "main", branchProtected: false,
     ciRunId: "100", ciAttempt: 1, ciWorkflowSha256: `sha256:${"a".repeat(64)}`,
   });
-  const report = JSON.parse(readFileSync(new URL("../../docs/api-integration/baselines/2026-10-29-p1-platform/harness.json", import.meta.url), "utf8"));
+  const report = JSON.parse(readFileSync(new URL("../../docs/api-integration/baselines/2026-11-01-runtime-release/harness.json", import.meta.url), "utf8"));
   const output = join(directory, "candidate-evidence");
   mkdirSync(output);
   const path = join(output, "release.candidate.json");

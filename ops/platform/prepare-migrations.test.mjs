@@ -49,11 +49,16 @@ test("wrong schema service/version, mutable images and a URL in the hostname ref
 
 test("production preparation requires staging receipts later and binds exact artifact identities", () => {
   const f = fixture(); f.settings.environment = "production";
+  assert.throws(() => prepareMigrationBundle(f.candidate, f.settings, f.schemas));
+  f.settings.workload = { environment: "production", projectId: "prj_productionFixture" };
   const prepared = prepareMigrationBundle(f.candidate, f.settings, f.schemas);
   assert.equal(prepared.release.environment, "production");
   assert.equal(prepared.jobs.course.stagingVerification.receiptRef, "staging/course");
   assert.equal(prepared.jobs.course.stagingVerification.migrationImageDigest, prepared.jobs.course.migrationImageDigest);
   assert.equal(prepared.release.approval.state, "pending");
+  assert.equal(prepared.release.workload.projectId, "prj_productionFixture");
+  f.settings.workload.projectId = f.candidate.workload.projectId;
+  assert.throws(() => prepareMigrationBundle(f.candidate, f.settings, f.schemas));
 });
 
 test("real preparation CLI creates a private bundle accepted by the read-only host plan and never overwrites", () => {

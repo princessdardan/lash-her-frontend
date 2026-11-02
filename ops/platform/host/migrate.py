@@ -73,20 +73,39 @@ def private_directory(directory):
 
 
 def write_json(directory, name, value):
-    fd = os.open(directory / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    # Publish only complete, fsynced bytes and retain exclusive/no-overwrite
+    # semantics. A failed directory sync must not leave our success file visible.
+    fd, temporary = tempfile.mkstemp(prefix=f".{name}.", dir=directory)
+    temporary = Path(temporary)
+    linked = False
     try:
         with os.fdopen(fd, "w", closefd=False) as output:
             json.dump(value, output)
             output.write("\n")
             output.flush()
             os.fsync(fd)
+        os.link(temporary, directory / name, follow_symlinks=False)
+        linked = True
+        directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except BaseException:
+        if linked:
+            # Only remove this invocation's inode, never a pre-existing record.
+            try:
+                if (directory / name).lstat().st_ino == os.fstat(fd).st_ino:
+                    (directory / name).unlink()
+            except OSError:
+                pass
+        raise
     finally:
         os.close(fd)
-    directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    try:
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass  # A private temporary-file cleanup failure cannot revoke durable output.
 
 
 def make_plan(bundle):
@@ -198,7 +217,7 @@ def suspend_runtime(environment, env):
     return ids
 
 
-def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock")):
+def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), after_migrations=None, docker_env=None):
     release, jobs = make_plan(bundle)
     environment, release_id = release["environment"], release["releaseId"]
     plan = {"releaseId": release_id, "environment": environment, "operator": "Dardan", "operation": "migrations-only",
@@ -221,7 +240,8 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
         write_json(attempt, "started.json", plan)
         write_json(attempt, "candidate.json", release)
         outcome = {"status": "FAILED_REQUIRES_REVIEW", "releaseId": release_id, "environment": environment, "trafficAuthorized": False}
-        base_env = {key: os.environ[key] for key in ("PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG") if key in os.environ}
+        base_env = dict(docker_env) if docker_env is not None else {
+            key: os.environ[key] for key in ("PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG") if key in os.environ}
         uid, gid = (65532, 65532) if os.getuid() == 0 else (os.getuid(), os.getgid())
         prepared = []
         try:
@@ -275,7 +295,6 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
             outcome["phase"] = "completed"
             outcome["candidateSha256"] = file_hash(read_input(attempt, "candidate.json"))
             outcome["databaseReceiptSha256"] = {name: file_hash(read_input(receipts, "database-receipt.json")) for name, _info, _inputs, receipts in prepared}
-            return outcome
         except BaseException as error:
             outcome["status"] = "FAILED_REQUIRES_REVIEW"
             code = str(error)
@@ -283,6 +302,12 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
             raise
         finally:
             write_json(attempt, "migration-outcome.json", outcome)
+        # A reviewed in-process runtime coordinator may continue only after the
+        # database stage's terminal receipt is durable, while this flock remains
+        # held. There is no command/JSON/environment hook or CLI bypass.
+        if after_migrations is not None:
+            return after_migrations(attempt, release, outcome)
+        return outcome
     finally:
         os.close(lock_fd)
 

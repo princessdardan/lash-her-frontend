@@ -7,6 +7,7 @@ import { SOURCE_REPOSITORIES, sourceContextFromEnvironment } from "./release-inp
 import { SOURCE_APPROVAL_MODE, SOURCE_OPERATOR_ID, SOURCE_REPOSITORY_IDS, assertSourceContext, sourceBranchFor } from "./source-policy.mjs";
 import { verifySourceCheckouts } from "./source-checkout.mjs";
 import { localImageId } from "./local-images.mjs";
+import { privateTlsPolicies } from "./configuration.mjs";
 
 export const ARTIFACT_COMPONENTS = Object.freeze([
   { key: "gateway", env: "GATEWAY", source: "frontend", image: "lash-her-platform-gateway", local: "gateway" },
@@ -92,6 +93,8 @@ export function collectArtifactCandidate(directory, sourceRoot, environment = pr
   candidate.sources = proof.sources;
   candidate.sourceApproval = sourceApproval;
   candidate.contractManifestSha256 = hash(readFileSync(join(sourceRoot, "lash-her-frontend/contracts/api-integration/v1/manifest.json")));
+  candidate.runtime = { composeSha256: hash(readFileSync(join(sourceRoot, "lash-her-frontend/ops/platform/compose.yaml"))),
+    privateTlsPolicies: privateTlsPolicies() };
   candidate.buildWorkflow = { repository: SOURCE_REPOSITORIES.frontend, commit: proof.workflowSha, ref: proof.workflowRef,
     runId: environment.GITHUB_RUN_ID, attempt: environment.GITHUB_RUN_ATTEMPT };
   for (const component of ARTIFACT_COMPONENTS) {
@@ -135,7 +138,9 @@ export function collectArtifactCandidate(directory, sourceRoot, environment = pr
 export function qualifyHarness(candidate, report, reportBytes = JSON.stringify(report)) {
   const required = ["frontend-sdk-oidc-catalog-tls", "signed-project-and-public-route-boundaries", "authenticated-idempotent-enrollment",
     "private-peer-spoofing-and-direct-backend-denial", "signed-mux-only-exception", "publisher-projection-and-worker-loop",
-    "actual-community-authority-client", "worker-restart-requested", "worker-recovered-after-restart"];
+    "actual-community-authority-client", "worker-restart-requested", "worker-recovered-after-restart",
+    "public-tls-missing-workload-denied", "public-metrics-hidden", "private-course-tls-catalog",
+    "private-application-credential-required", "private-community-peer-denied", "maintenance-holds-application-writes"];
   if (!Array.isArray(report?.records) || !required.every((name) => report.records.some((item) => item.name === name && item.passed === true)) ||
       !report.records.every((item) => item.passed === true) || !ARTIFACT_COMPONENTS.every((component) =>
         /^sha256:[0-9a-f]{64}$/u.test(candidate?.artifacts?.[component.key]?.localImageId ?? "") &&

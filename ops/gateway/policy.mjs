@@ -13,6 +13,7 @@ export function matchRoute(method, target) {
 
 export function validateConfig(config) {
   if (config === null || typeof config !== "object") throw new Error("Gateway configuration required");
+  if (config.maintenance !== undefined && typeof config.maintenance !== "boolean") throw new Error("Invalid gateway maintenance mode");
   const { issuer, audience, subject, ownerId, projectId, environment, publicHost, courseOrigin } = config;
   if (typeof issuer !== "string" || !/^https:\/\/oidc\.vercel\.com(?:\/[a-z0-9-]+)?$/u.test(issuer) ||
       typeof audience !== "string" || !/^https:\/\/vercel\.com\/[a-z0-9-]+$/u.test(audience) ||

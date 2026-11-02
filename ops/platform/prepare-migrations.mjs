@@ -29,7 +29,10 @@ export function prepareMigrationBundle(candidate, settings, schemas) {
     demand(candidate.sources?.[name]?.repository === `https://github.com/${repository}.git` &&
       isRevision(candidate.sources[name].commit) && candidate.sources[name].requiredChecks === "passed");
   }
+  if (settings.environment === "production") demand(settings.workload?.environment === "production" &&
+    /^prj_[A-Za-z0-9]+$/u.test(settings.workload?.projectId ?? "") && settings.workload.projectId !== candidate.workload?.projectId);
   const release = { ...structuredClone(candidate), environment: settings.environment,
+    ...(settings.environment === "production" ? { workload: { environment: "production", projectId: settings.workload.projectId } } : {}),
     approval: { state: "pending", operator: "Dardan", releaseId: candidate.releaseId, environment: settings.environment, approvedAt: null } };
   const jobs = {}, baselines = {};
   for (const [name, service] of Object.entries(services)) {

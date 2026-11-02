@@ -64,6 +64,9 @@ export function createGateway(input, options = {}) {
         const retry = budgets.consume(route.path.startsWith("/v1/internal/") ? "service" : "workload");
         if (retry) return refuse(429, "rate_limit_exceeded", retry);
       }
+      if (config.maintenance === true && req.method !== "GET" && route.auth !== "webhook") {
+        return refuse(503, "release_maintenance", 30);
+      }
       // Raw bytes are buffered only within a fixed bound; Mux signs these bytes.
       const chunks = [];
       let bytes = 0;

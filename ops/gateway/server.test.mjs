@@ -86,6 +86,16 @@ test("missing workload, OIDC-only protected requests, wrong host and duplicate c
   assert.equal(calls, 0);
 });
 
+test("maintenance holds application writes while read probes and signed callback forwarding remain available", async (t) => {
+  const calls = [];
+  const f = await fixture(t, (req, res) => { calls.push(req.url); res.end('{}'); }, { maintenance: true });
+  const result = await f.send({ path: "/course/v1/internal/entitlements/grants", method: "POST", headers: { authorization: "Bearer app" } });
+  assert.equal(result.status, 503); assert.equal(result.headers["retry-after"], "30");
+  assert.equal((await f.send()).status, 200);
+  assert.equal((await f.send({ path: "/course/v1/webhooks/mux", method: "POST", headers: { "mux-signature": "fixture-signed" }, body: '{}' })).status, 200);
+  assert.deepEqual(calls, ["/v1/courses", "/v1/webhooks/mux"]);
+});
+
 test("exact Mux exception preserves raw bytes/signature; other webhook methods are denied", async (t) => {
   const body = '{ "type": "video.test", "data": {"id":"fixture"} }\n';
   let received, signature;

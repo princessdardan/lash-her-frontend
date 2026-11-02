@@ -21,7 +21,7 @@ test("empty or unrelated attestation metadata cannot stand in for an SBOM", () =
 });
 
 test("harness qualification requires the exact candidate bytes and never asserts real OIDC or approval", () => {
-  const report = JSON.parse(readFileSync(new URL("../../docs/api-integration/baselines/2026-10-29-p1-platform/harness.json", import.meta.url), "utf8"));
+  const report = JSON.parse(readFileSync(new URL("../../docs/api-integration/baselines/2026-11-01-runtime-release/harness.json", import.meta.url), "utf8"));
   const candidate = { approval: { state: "pending" }, artifacts: Object.fromEntries(ARTIFACT_COMPONENTS.map((component) => [component.key, { localImageId: report.images[component.local] }])) };
   const qualified = qualifyHarness(candidate, report);
   assert.equal(qualified.approval.state, "pending");

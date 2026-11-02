@@ -1,6 +1,6 @@
 # API platform operation
 
-The local gateway, API-container topology, harness and host-bootstrap preparation are implemented and exercised against disposable fixtures. They have not been deployed to Lightsail. The [validation record](../../docs/api-integration/baselines/2026-10-29-p1-platform.md) identifies tested working trees, image IDs and the remaining live requirements. P1-01 and P1-02 remain completed within their accepted scopes.
+The local gateway, API-container topology, harness and host-bootstrap preparation are implemented and exercised against disposable fixtures. They have not been deployed to Lightsail. The [validation record](../../docs/api-integration/baselines/2026-11-01-source-integration-validation.json) identifies tested working trees, image IDs and the remaining live requirements. P1-01 and P1-02 remain completed within their accepted scopes.
 
 Dardan is the sole operator; operator authentication and primary host inputs are supplied, while protected runtime/release credentials remain pending. [Operational monitoring and alerting are deferred](../../docs/api-integration/decisions/2026-10-29-sole-operator-and-monitoring-deferral.md) until after the current integration plan. P1-08 and monitor/alert delivery evidence do not gate this release.
 
@@ -20,7 +20,7 @@ Runtime images and separate migration images use pinned nonroot distroless bases
 
 ## Repeat local verification
 
-Use Node.js 24 and a running Docker engine. Install all three repositories at the sibling paths used by `local-harness.mjs`. A normal frontend `npm ci` also installs the separately locked contract generator. If lifecycle scripts are disabled, run `npm ci --ignore-scripts --prefix tools/api-contract-toolchain` explicitly. This keeps the released OpenAPI generator on TypeScript 5 while the application and current Sanity toolchain use TypeScript 6.
+Use Node.js 24 and a running Docker engine. Install all three repositories at the sibling paths used by `local-harness.mjs`. A normal frontend `npm ci` also installs the separately locked contract generator. If lifecycle scripts are disabled, run `npm ci --ignore-scripts --prefix tools/api-contract-toolchain` explicitly. This pins the released OpenAPI generator independently of the application toolchain.
 
 ```sh
 npm ci
@@ -69,7 +69,7 @@ The manual `.github/workflows/platform-artifacts.yml` uses one read-only `PLATFO
 
 Candidate collection and qualification require clean checkouts at the recorded commits. Modified, untracked or unexpected ignored source/dotenv files refuse qualification; only known locked dependency directories and Python bytecode caches are permitted. The local harness may exercise working trees, but those results cannot alone qualify a released candidate.
 
-The [operator migration CLI, bundle preparer and host wrapper](../../docs/api-integration/operator-migrations.md) are implemented/tested locally using the existing locks/lineage cores. The full runtime deployment coordinator and real staging verification remain open. The old Course signed-bootstrap workflow/compiled guards remain disabled as a retired prototype; they need no enrollment or activation. Ordinary target/lineage/TLS/seed/test guards remain. No host, image publication or live migration is authorized or performed by this documentation change.
+The [operator migration CLI, bundle preparer and host wrapper](../../docs/api-integration/operator-migrations.md) are implemented/tested locally using the existing locks/lineage cores. The [API runtime coordinator](../../docs/api-integration/operator-runtime-release.md) now joins migration and dependency-ordered runtime startup under the same lock, with configuration/role/TLS checks and failure suspension. Frontend release coordination and real staging verification remain open. The old Course signed-bootstrap workflow/compiled guards remain disabled as a retired prototype; they need no enrollment or activation. Ordinary target/lineage/TLS/seed/test guards remain. No host, image publication or live migration is authorized or performed by this documentation change.
 
 ## Smoke and operational acceptance
 

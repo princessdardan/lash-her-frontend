@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { randomUUID, createHmac } from "node:crypto";
+import { request as freshRequest } from "node:https";
 import { createGateway } from "/app/server.mjs";
+import { checkRuntime } from "/app/release-probe.mjs";
 import { createWorkloadVerifier } from "/app/oidc.mjs";
 import { SignJWT, importPKCS8 } from "/app/node_modules/jose/dist/webapi/index.js";
 import { createGatewayTransport, runGatewaySmoke } from "/test/transport.mjs";
@@ -26,11 +28,28 @@ async function raw(path, options = {}) {
   return fetch(`https://gateway.test:8443${path}`, { ...options, redirect: "manual", signal: AbortSignal.timeout(5000) });
 }
 
+// The maintenance phase deliberately restarts the fixture's HTTPS listener.
+// A fresh connection avoids reusing a pooled socket from the closed listener.
+function freshRaw(path, options = {}) {
+  return new Promise((resolve, reject) => {
+    const call = freshRequest(new URL(`https://gateway.test:8443${path}`), {
+      method: options.method ?? "GET", headers: options.headers, agent: false, signal: AbortSignal.timeout(5000),
+    }, (response) => {
+      response.resume();
+      response.once("end", () => resolve({ status: response.statusCode, retryAfter: response.headers["retry-after"] }));
+      response.once("error", reject);
+    });
+    call.once("error", reject); call.end(options.body);
+  });
+}
+
 try {
   ({ server } = createGateway(config, { verify: createWorkloadVerifier(config, { fetch: async () => Response.json(jwks) }) }));
   await new Promise((resolve) => server.listen(8443, "0.0.0.0", resolve));
   const transport = createGatewayTransport({ origin: "https://gateway.test:8443" });
   await waitFor("frontend-sdk-oidc-catalog-tls", async () => (await runGatewaySmoke(transport)).ok);
+  const startup = await checkRuntime(config);
+  for (const name of startup.checks) records.push({ name, passed: true });
   assert.equal((await raw("/course/v1/courses")).status, 401);
   assert.equal((await raw("/course/metrics", { headers: { "x-lash-workload-token": proof } })).status, 404);
   assert.equal((await raw("/course/v1/internal/community/entitlements/check", { method: "POST", headers: { "x-lash-workload-token": proof } })).status, 404);
@@ -86,8 +105,18 @@ try {
     const result = await (await fetch("http://observer:8080/status", { signal: AbortSignal.timeout(5000) })).json();
     return result.workerAge >= 0 && result.workerAge < 15;
   });
+  server.closeAllConnections();
+  await new Promise((resolve) => server.close(resolve));
+  ({ server } = createGateway({ ...config, maintenance: true }, { verify: createWorkloadVerifier(config, { fetch: async () => Response.json(jwks) }) }));
+  await new Promise((resolve) => server.listen(8443, "0.0.0.0", resolve));
+  const held = await freshRaw("/course/v1/internal/entitlements/grants", { method: "POST",
+    headers: { "x-lash-workload-token": proof, authorization: `Bearer ${applicationToken}`, "content-type": "application/json" }, body: JSON.stringify(command) });
+  assert.equal(held.status, 503); assert.equal(held.retryAfter, "30");
+  assert.equal((await freshRaw("/course/v1/courses", { headers: { "x-lash-workload-token": proof } })).status, 200);
+  records.push({ name: "maintenance-holds-application-writes", passed: true });
 } catch (error) {
-  records.push({ name: "harness", passed: false, reason: error instanceof Error && /^(?:Timed out:|Grant status |Mux status )/u.test(error.message) ? error.message : "Boundary assertion failed" });
+  records.push({ name: "harness", passed: false, reason: error instanceof Error && /^(?:Timed out:|Grant status |Mux status )/u.test(error.message) ? error.message :
+    typeof error?.actual === "number" && typeof error?.expected === "number" ? `Boundary status mismatch: ${error.actual}/${error.expected}` : "Boundary assertion failed" });
   process.exitCode = 1;
 } finally {
   writeFileSync("/test/out/results.json", JSON.stringify({ records }, null, 2));
