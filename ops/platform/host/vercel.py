@@ -157,7 +157,7 @@ def stage_frontend(client, release, attempt, timeout=900):
         created = client.request("POST", "/v13/deployments", {
             "name": "lash-her-frontend-staging" if environment == "staging" else "lash-her-frontend",
             "project": project_id, "target": "production", "autoAssignCustomDomains": False,
-            "gitSource": {"type": "github", "repoId": REPOSITORY_ID, "ref": commit, "sha": commit},
+            "gitSource": {"type": "github", "repoId": REPOSITORY_ID, "ref": "staging" if environment == "staging" else "main", "sha": commit},
             "meta": {"lashReleaseId": release["releaseId"]},
         })
         deployment_id = created.get("id")

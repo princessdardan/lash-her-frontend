@@ -17,6 +17,62 @@ import vercel
 demand = migrate.demand
 
 
+def configure_source_pins(client, selected, jobs, migration_attempt, attempt):
+    """Bind existing staging build guards only to the completed database stage."""
+    environment, project_id, commit = vercel.release_identity(selected)
+    demand(environment == "staging", "SOURCE_PINS_REQUIRE_STAGING")
+    job = jobs["frontend"]["job"]
+    database_raw = migrate.read_input(migration_attempt / "frontend", "database-receipt.json")
+    database = json.loads(database_raw)
+    terminal = migrate.read_json(migration_attempt / "frontend", "job-outcome.json")
+    migration = migrate.read_json(migration_attempt, "migration-outcome.json")
+    demand(migration.get("status") == "DATABASES_VERIFIED" and migration.get("environment") == environment
+           and migration.get("releaseId") == selected["releaseId"]
+           and migration.get("databaseReceiptSha256", {}).get("frontend") == migrate.file_hash(database_raw),
+           "DURABLE_FRONTEND_DATABASE_BINDING_REQUIRED")
+    common = ("environment", "releaseId", "sourceCommit", "migrationImageDigest", "sqlArtifactSha256",
+              "contractManifestSha256", "schemaBaselineSha256")
+    demand(job.get("sourceCommit") == commit and job["target"]["approvedPendingTags"] == []
+           and all(database.get(key) == terminal.get(key) == job.get(key) for key in common)
+           and all(database.get(key) is not None for key in common)
+           and database.get("status") == terminal.get("status") == "DATABASE_VERIFIED"
+           and database.get("service") == terminal.get("service") == "frontend"
+           and database.get("migrationMode") == terminal.get("migrationMode") == "verify-current-only"
+           and database.get("readOnlyVerified") is True and terminal.get("readOnlyVerified") is True
+           and database.get("schemaVerified") is True and database.get("runtimeRoleVerified") is True
+           and database.get("applied") == [] and not database.get("failureCode") and not terminal.get("failureCode")
+           and database.get("target") == terminal.get("target")
+           and all(database.get("target", {}).get(key) == job["target"].get(key)
+                   for key in ("host", "port", "database", "user", "serverMajor")),
+           "VERIFIED_CURRENT_FRONTEND_SOURCE_REQUIRED")
+    keys = ("STAGING_RELEASE_COMMIT", "STAGING_MIGRATION_VERIFIED_COMMIT")
+    outcome = {"status": "SOURCE_PINS_FAILED_REQUIRES_REVIEW", "projectId": project_id, "sourceCommit": commit,
+               "releaseId": selected["releaseId"], "configuredKeys": [], "trafficAuthorized": False}
+    migrate.write_json(attempt, "source-pins-started.json", outcome)
+    try:
+        for key in keys:
+            value = client.request("POST", f"/v10/projects/{project_id}/env?upsert=true", {
+                "key": key, "value": commit, "type": "plain", "target": ["production"],
+                "gitBranch": None, "customEnvironmentIds": [], "comment": "Verified staging release " + selected["releaseId"],
+            })
+            created = value.get("created")
+            demand(value.get("failed") == [] and isinstance(created, dict) and created.get("key") == key
+                   and created.get("target") == ["production"] and created.get("type") == "plain"
+                   and not created.get("gitBranch") and not created.get("customEnvironmentIds"), "SOURCE_PIN_WRITE_UNVERIFIED")
+        readback = client.request("GET", f"/v10/projects/{project_id}/env?decrypt=false")
+        variables = readback.get("envs")
+        demand(isinstance(variables, list), "SOURCE_PIN_READBACK_UNVERIFIED")
+        for key in keys:
+            matches = [item for item in variables if item.get("key") == key and "production" in item.get("target", [])
+                       and not item.get("gitBranch") and not item.get("customEnvironmentIds")]
+            demand(len(matches) == 1 and matches[0].get("type") == "plain" and matches[0].get("value") == commit,
+                   "SOURCE_PIN_READBACK_UNVERIFIED")
+        outcome.update(status="SOURCE_PINS_CONFIGURED", configuredKeys=list(keys))
+        return outcome
+    finally:
+        migrate.write_json(attempt, "source-pins-outcome.json", outcome)
+
+
 def make_plan(bundle, configuration, compose_file):
     selected, jobs, api_plan, _compose = runtime.make_plan(bundle, configuration, compose_file)
     environment, project_id, commit = vercel.release_identity(selected)
@@ -24,7 +80,7 @@ def make_plan(bundle, configuration, compose_file):
     demand("frontend" in jobs, "THREE_DATABASE_STAGING_BUNDLE_REQUIRED")
     plan = {**api_plan, "operation": "initial-staging-qualification", "frontendProjectId": project_id, "frontendSourceCommit": commit,
             "frontendProducerSuspensionRequired": jobs["frontend"]["job"]["target"]["approvedPendingTags"] != [],
-            "frontendStages": ["disable-native-schedules", "configure-expiring-probe", "build-pinned-frontend", "verify-server-workload", "promote-staging-domains"],
+            "frontendStages": ["disable-native-schedules", "bind-verified-source-pins", "configure-expiring-probe", "build-pinned-frontend", "verify-server-workload", "promote-staging-domains"],
             "nativeSchedulerVerified": False, "releaseAccepted": False, "gatewayTrafficAuthorized": False}
     return selected, jobs, plan
 
@@ -72,6 +128,8 @@ def execute(bundle, configuration, results, compose_file, apply=False, confirmat
             schedules = vercel.disable_schedules(client, selected)
             migrate.write_json(attempt, "native-schedules.json", schedules)
             demand(vercel.project_state(client, plan["frontendProjectId"]) == {**expected, "cronsEnabled": False}, "VERCEL_PROJECT_CHANGED_BEFORE_STAGING")
+            outcome["phase"] = "verified-source-pins"
+            configure_source_pins(client, selected, jobs, migration_attempt, attempt)
             outcome["phase"] = "probe-configuration"
             frontend_probe.prepare(client, selected, snapshot, attempt, plan["publicHost"], scheduler_qualification=True)
             outcome["phase"] = "frontend-build"
