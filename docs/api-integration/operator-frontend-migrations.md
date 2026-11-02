@@ -18,7 +18,11 @@ This is the frontend database component of the [single-operator release](release
 
 ## Apply within the operator release
 
-Keep affected producers suspended and hold the environment's release lock across this component and dependent deployment. The database advisory lock independently prevents concurrent migration from another machine. The host coordinator now validates and executes all three migration images under that lock, then starts the API runtime. A full bundle cannot apply through the standalone host CLI yet: it requires the reviewed in-process frontend coordinator to suspend/drain off-host writers and native schedules. No input flag or successful-looking JSON receipt bypasses that hold. That live frontend coordination remains unfinished; running the checkout command separately cannot establish it.
+Hold the environment's release lock across this component and dependent deployment. The database advisory lock independently prevents concurrent migration from another machine. The host coordinator validates and executes all three migration images under that lock, then starts the API runtime.
+
+When the reviewed `approvedPendingTags` is empty, the frontend runner sets PostgreSQL's `default_transaction_read_only=on` in its connection options and verifies that setting on the same TLS-authenticated connection. It issues no schema/journal writes, verifies the complete current lineage, schema and runtime grants, and records `migrationMode: "verify-current-only"`, `readOnlyVerified: true` and no applied migrations. The host runs this verification before either API migration and requires both database and terminal receipts. A mistaken empty list, drift or missing read-only proof stops execution before API database changes. This path does not require frontend producer suspension and does not claim that producers or native schedules have stopped.
+
+Pending frontend SQL still requires the reviewed in-process coordinator to suspend/drain affected off-host writers and native schedules before database writes. The standalone host CLI refuses that case; no input flag or successful-looking JSON receipt bypasses the hold. Frontend deployment, workload verification, promotion and final admission remain unfinished even when the database is already current. A migration receipt alone cannot qualify a release.
 
 Create a new private mode0700 result directory outside Git. Resolve the named URL privately at runtime, then execute the exact prepared inputs with Node24:
 

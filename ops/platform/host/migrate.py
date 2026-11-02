@@ -265,10 +265,14 @@ def suspend_runtime(environment, env):
 def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), after_migrations=None, docker_env=None, before_frontend_migration=None):
     release, jobs = make_plan(bundle)
     environment, release_id = release["environment"], release["releaseId"]
+    frontend_read_only = "frontend" in jobs and jobs["frontend"]["job"]["target"]["approvedPendingTags"] == []
     plan = {"releaseId": release_id, "environment": environment, "operator": "Dardan", "operation": "migrations-only",
             "targets": {name: {"host": info["job"]["target"].get("host"), "database": info["job"]["target"].get("database"),
                                "pendingTags": info["job"]["target"].get("approvedPendingTags"), "image": info["image"]} for name, info in jobs.items()},
             "trafficAuthorized": False, "credentialsRead": False, "maintenanceRequired": True}
+    if "frontend" in jobs:
+        plan.update(frontendMigrationMode="verify-current-only" if frontend_read_only else "apply-forward",
+                    frontendProducerSuspensionRequired=not frontend_read_only)
     if not apply:
         return plan
     demand(confirmation == f"{environment}/{release_id}", "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED")
@@ -312,7 +316,7 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
             outcome["phase"] = "credential-validation"
             credentials = {name: os.environ.get(credential_names(name, environment)[0]) for name in jobs}
             demand(all(credentials.values()), "NAMED_MIGRATION_CREDENTIAL_REQUIRED")
-            if "frontend" in jobs:
+            if "frontend" in jobs and (not frontend_read_only or before_frontend_migration is not None):
                 outcome["phase"] = "frontend-producer-suspension"
                 # Vercel writers/schedules are outside Docker. Only the reviewed
                 # full release coordinator can suspend/drain and verify them;
@@ -326,6 +330,11 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                        and quiescence.get("projectId") == release.get("workload", {}).get("projectId"), "FRONTEND_QUIESCENCE_IDENTITY_REFUSED")
                 # Keep provider responses/credentials out of the common receipt.
                 write_json(attempt, "frontend-quiescence.json", {key: quiescence[key] for key in ("status", "environment", "projectId")})
+            if frontend_read_only:
+                # A current frontend must prove schema/lineage/roles through its
+                # read-only image session before any API database is changed.
+                # An empty reviewed list alone never establishes a no-op.
+                prepared.sort(key=lambda item: item[0] != "frontend")
             outcome["phase"] = "suspend-runtime"
             outcome["stoppedRuntimeContainers"] = suspend_runtime(environment, base_env)
             outcome["runtimeResumed"] = False
@@ -360,6 +369,12 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                     demand(receipt.get("schemaVerified") is True and receipt.get("runtimeRoleVerified") is True
                            and terminal.get("environment") == environment and terminal.get("releaseId") == release_id
                            and terminal.get("service") == "frontend" and terminal.get("target") == receipt.get("target"), "FRONTEND_POSTFLIGHT_REQUIRED")
+                    if frontend_read_only:
+                        demand(receipt.get("migrationMode") == terminal.get("migrationMode") == "verify-current-only"
+                               and receipt.get("readOnlyVerified") is True and terminal.get("readOnlyVerified") is True
+                               and receipt.get("applied") == [], "FRONTEND_READ_ONLY_VERIFICATION_REQUIRED")
+                        outcome["frontendMigrationMode"] = "verify-current-only"
+                        outcome["frontendReadOnlyVerified"] = True
             outcome["status"] = "DATABASES_VERIFIED"
             outcome["phase"] = "completed"
             outcome["candidateSha256"] = file_hash(read_input(attempt, "candidate.json"))

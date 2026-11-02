@@ -77,6 +77,8 @@ class MigrationDriverTests(unittest.TestCase):
                 mount = next(value for value in args if isinstance(value, str) and value.endswith("dst=/run/release-receipts"))
                 receipts = Path(mount.split(",src=")[1].split(",dst=")[0])
                 receipt = {**self.jobs["frontend"], "service": "frontend", "status": "DATABASE_VERIFIED", "schemaVerified": True, "runtimeRoleVerified": True}
+                if self.jobs["frontend"]["target"]["approvedPendingTags"] == []:
+                    receipt.update(migrationMode="verify-current-only", readOnlyVerified=True, applied=[])
                 for file in ("database-receipt.json", "job-outcome.json"):
                     (receipts / file).write_text(json.dumps(receipt))
                 return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
@@ -145,6 +147,36 @@ class MigrationDriverTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "FRONTEND_QUIESCENCE_COORDINATOR_REQUIRED"):
                 self.execute()
         self.assertFalse(any("--execute" in call.args[0] or "ps" in call.args[0] for call in commands.call_args_list))
+
+    def test_current_frontend_is_verified_read_only_before_any_api_database_apply(self):
+        self.add_frontend(); self.jobs["frontend"]["target"]["approvedPendingTags"] = []; self.save()
+        plan = migrate.execute(self.bundle, self.results)
+        self.assertEqual(plan["frontendMigrationMode"], "verify-current-only")
+        self.assertFalse(plan["frontendProducerSuspensionRequired"])
+        with patch.dict(os.environ, {"COURSE_STAGING_DATABASE_URL": "owned-fixture-url", "COMMUNITY_STAGING_DATABASE_URL": "owned-fixture-url",
+                                   "FRONTEND_STAGING_MIGRATION_DATABASE_URL": "owned-frontend-url"}), patch.object(subprocess, "run", side_effect=self.fake_docker) as commands:
+            result = self.execute()
+        executions = [call.args[0] for call in commands.call_args_list if "--execute" in call.args[0]]
+        self.assertEqual(len(executions), 3)
+        self.assertIn("ops/platform/frontend-image.mjs", executions[0])
+        self.assertTrue(result["frontendReadOnlyVerified"])
+        self.assertFalse((self.results / "test-release/frontend-quiescence.json").exists())
+
+    def test_current_frontend_missing_read_only_proof_stops_all_api_database_changes(self):
+        self.add_frontend(); self.jobs["frontend"]["target"]["approvedPendingTags"] = []; self.save()
+        def unverified(args, **kwargs):
+            result = self.fake_docker(args, **kwargs)
+            if "--execute" in args and "ops/platform/frontend-image.mjs" in args:
+                file = self.results / "test-release/frontend/job-outcome.json"
+                value = json.loads(file.read_text()); value["readOnlyVerified"] = False; file.write_text(json.dumps(value))
+            return result
+        with patch.dict(os.environ, {"COURSE_STAGING_DATABASE_URL": "owned-fixture-url", "COMMUNITY_STAGING_DATABASE_URL": "owned-fixture-url",
+                                   "FRONTEND_STAGING_MIGRATION_DATABASE_URL": "owned-frontend-url"}), patch.object(subprocess, "run", side_effect=unverified) as commands:
+            with self.assertRaisesRegex(ValueError, "FRONTEND_READ_ONLY_VERIFICATION_REQUIRED"):
+                self.execute()
+        executions = [call.args[0] for call in commands.call_args_list if "--execute" in call.args[0]]
+        self.assertEqual(len(executions), 1)
+        self.assertIn("ops/platform/frontend-image.mjs", executions[0])
 
     def test_plan_reads_no_credentials_and_executes_no_commands(self):
         with patch.object(subprocess, "run", side_effect=AssertionError("Plan executed")):

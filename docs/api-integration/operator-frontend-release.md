@@ -1,6 +1,6 @@
 # Frontend provider release component
 
-`ops/platform/host/vercel.py` implements provider operations for the unfinished parent frontend/API release coordinator. It has no standalone command or automatic activation. The [single-operator release policy](release-policy.md) remains authoritative; this component does not bypass the existing frontend quiescence hold or qualify a release.
+`ops/platform/host/vercel.py` implements provider operations for the unfinished parent frontend/API release coordinator. It has no standalone command or automatic activation. The [single-operator release policy](release-policy.md) remains authoritative; this component does not bypass required frontend suspension or qualify a release.
 
 ## Implemented operations
 
@@ -14,9 +14,9 @@ The parent supplies its scoped provider credential privately at runtime. The cli
 
 ## Integration still required
 
-The parent must verify the candidate, hold the shared release lock, establish actual frontend writer/scheduler suspension, complete the three migrations and start/verify the API runtime before staging the frontend build. After staging, its real verification callback must verify frontend workload authentication and affected behavior before invoking the promotion component. It must then restore eligible producers/schedules and explicitly admit gateway writes. The parent, real verification callback, producer restoration and final admission remain unfinished. Native scheduler execution/cancellation and all remaining initial P1 live evidence are still required. A build returning `FRONTEND_STAGED` always has `trafficAuthorized=false` and `promotionAuthorized=false`.
+The parent must verify the candidate, hold the shared release lock, complete the three database stages and start/verify the API runtime before staging the frontend build. Pending frontend SQL requires actual writer/scheduler suspension. An already-current frontend instead passes the migration image's read-only lineage/schema/grant verification before either API migration; that verification does not prove producer suspension. After staging, the parent's real verification callback must verify frontend workload authentication and affected behavior before invoking the promotion component. It must then restore eligible producers/schedules and explicitly admit gateway writes. The parent, real verification callback, producer restoration and final admission remain unfinished. Native scheduler execution/cancellation and all remaining initial P1 live evidence are still required. A build returning `FRONTEND_STAGED` always has `trafficAuthorized=false` and `promotionAuthorized=false`.
 
-The existing host full-bundle CLI still refuses apply without the reviewed quiescence coordinator. Do not wire `disable_schedules` directly into that callback: future schedule cancellation alone cannot prove suspension of all writers. Project pausing is also insufficient evidence of in-flight or historical-deployment drain.
+The existing host full-bundle CLI refuses pending frontend SQL without the reviewed quiescence coordinator. Its already-current read-only path still leaves frontend deployment and acceptance unfinished. Do not wire `disable_schedules` directly into the quiescence callback: future schedule cancellation alone cannot prove suspension of all writers. Project pausing is also insufficient evidence of in-flight or historical-deployment drain.
 
 ## Verification and provider references
 

@@ -47,7 +47,13 @@
       "application-schema-unchanged"
     ],
     "exactHardenedCiCommandVerified": true,
-    "defaultPlanReadsCredentials": false
+    "defaultPlanReadsCredentials": false,
+    "remoteCi": {
+      "sourceCommit": "18450dac2d89bcea8ef31c4e5c99f7f7c4f99de1",
+      "runId": 41501210862,
+      "allTenJobs": "success",
+      "initialLoginIntegrationStep": "success"
+    }
   },
   "boundaries": {
     "liveActivationPerformed": false,
@@ -61,7 +67,6 @@
   },
   "remaining": [
     "Dardan prepares three private bindings in existing 1Password Environment",
-    "Observe exact-source remote CI for this new setup command",
     "Explicit initial activation followed by both fresh credential authentication checks",
     "Remaining parent release coordinator and actual staging qualification"
   ]

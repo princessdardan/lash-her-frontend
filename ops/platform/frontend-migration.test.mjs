@@ -102,6 +102,44 @@ test("frontend apply uses one locked session, records before unlock and separate
   assert.equal(r.calls.filter((sql) => sql === "begin").length, f.artifact.migrations.length);
 });
 
+test("current frontend uses a server-enforced read-only session and issues no schema or journal writes", async () => {
+  const f = fixture(); f.job.target.approvedPendingTags = []; f.job.target.allowEmptyBootstrap = false;
+  let selectedOptions;
+  const r = runner(f), query = r.client.query;
+  r.dependencies.createClient = (options) => { selectedOptions = options; r.state.created = true; return r.client; };
+  r.client.query = async (sql) => {
+    if (sql.startsWith("select to_regclass")) return { rows: [{ present: true }] };
+    const result = await query(sql);
+    if (sql.startsWith("select pg_backend_pid")) result.rows[0].default_read_only = "on";
+    assert.ok(!/^\s*(create|alter|drop|insert|update|delete|truncate)\b/iu.test(sql));
+    return result;
+  };
+  const result = await r.run();
+  assert.equal(selectedOptions.options, "-c default_transaction_read_only=on");
+  assert.equal(result.migrationMode, "verify-current-only"); assert.equal(result.readOnlyVerified, true);
+  assert.deepEqual(r.records[0].value.applied, []); assert.equal(r.records[0].value.schemaVerified, true);
+  assert.equal(r.records[0].value.runtimeRoleVerified, true);
+});
+
+test("current-only mode refuses an unenforced or changed read-only setting and actual pending SQL", async () => {
+  for (const mode of ["unrestricted", "changed", "pending"]) {
+    const f = fixture(); f.job.target.approvedPendingTags = []; const r = runner(f), query = r.client.query;
+    let identities = 0;
+    r.client.query = async (sql) => {
+      if (sql.startsWith("select to_regclass")) return { rows: [{ present: mode !== "pending" }] };
+      const result = await query(sql);
+      if (sql.startsWith("select pg_backend_pid")) {
+        identities++;
+        result.rows[0].default_read_only = mode === "unrestricted" || mode === "changed" && identities > 1 ? "off" : "on";
+      }
+      return result;
+    };
+    await assert.rejects(r.run());
+    assert.equal(r.records.some((record) => record.name === "database-receipt.json"), false);
+    assert.equal(r.calls.some((sql) => /^\s*(create|alter|insert|update|delete)\b/iu.test(sql)), false);
+  }
+});
+
 test("frontend lock contention, pending mismatch and apply errors stop without successful database receipt", async () => {
   for (const mode of ["contention", "pending", "apply"]) {
     const f = fixture(); if (mode === "pending") f.job.target.approvedPendingTags = [];

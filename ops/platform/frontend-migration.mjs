@@ -130,6 +130,7 @@ export function frontendConnectionOptions(value, target) {
     [...url.searchParams].length === 1 && url.searchParams.get("sslmode") === "verify-full", "FRONTEND_CREDENTIAL_TARGET_REFUSED");
   return { host: target.host, port: target.port, database: target.database, user: target.user, password: decodeURIComponent(url.password),
     ssl: { rejectUnauthorized: true }, enableChannelBinding: true, connectionTimeoutMillis: 15_000,
+    options: target.approvedPendingTags?.length === 0 ? "-c default_transaction_read_only=on" : "",
     statement_timeout: 120_000, lock_timeout: 15_000, application_name: "lash-her-operator-frontend-migration" };
 }
 
@@ -167,11 +168,13 @@ async function verifyRuntime(client, target, withTables) {
 
 export async function runFrontendMigration(prepared, dependencies) {
   const { job, artifact, baseline } = prepared, target = job.target;
+  const readOnlyExpected = target.approvedPendingTags.length === 0;
   demand(dependencies.confirmation === `${job.environment}/${job.releaseId}`, "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED");
   const receiptBase = { version: 1, service: "frontend", environment: job.environment, releaseId: job.releaseId, sourceCommit: job.sourceCommit,
     migrationImageDigest: job.migrationImageDigest,
     sqlArtifactSha256: job.sqlArtifactSha256, schemaBaselineSha256: job.schemaBaselineSha256, contractManifestSha256: job.contractManifestSha256,
-    operator: "Dardan", target: { host: target.host, port: target.port, database: target.database, user: target.user, serverMajor: target.serverMajor },
+    operator: "Dardan", migrationMode: readOnlyExpected ? "verify-current-only" : "apply-forward",
+    target: { host: target.host, port: target.port, database: target.database, user: target.user, serverMajor: target.serverMajor },
     recoveryRef: job.recoveryRef, trafficAuthorized: false };
   let client, locked = false, databaseResult, failure, phase = "source-check";
   try {
@@ -180,8 +183,9 @@ export async function runFrontendMigration(prepared, dependencies) {
     client = (dependencies.createClient ?? ((options) => new Client(options)))(frontendConnectionOptions(await dependencies.getUrl(), target));
     phase = "connect-and-target"; await client.connect();
     demand(client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true, "FRONTEND_VERIFIED_TLS_REQUIRED");
-    const identity = (await client.query("select pg_backend_pid() as pid,current_user,current_database() as database,current_setting('server_version_num')::int/10000 as major")).rows[0];
+    const identity = (await client.query("select pg_backend_pid() as pid,current_user,current_database() as database,current_setting('server_version_num')::int/10000 as major,current_setting('default_transaction_read_only') as default_read_only")).rows[0];
     demand(identity.current_user === target.user && identity.database === target.database && identity.major === target.serverMajor, "FRONTEND_DATABASE_IDENTITY_REFUSED");
+    demand(!readOnlyExpected || identity.default_read_only === "on", "FRONTEND_READ_ONLY_SESSION_REQUIRED");
     phase = "database-lock";
     locked = (await client.query("select pg_try_advisory_lock(hashtext($1)) as locked", [FRONTEND_MIGRATION_LOCK])).rows[0].locked;
     demand(locked, "FRONTEND_RELEASE_LOCK_CONTENDED");
@@ -196,8 +200,10 @@ export async function runFrontendMigration(prepared, dependencies) {
     }
     await verifyRuntime(client, target, false);
     phase = "forward-apply";
-    await client.query("create schema if not exists drizzle");
-    await client.query("create table if not exists drizzle.__drizzle_migrations(id serial primary key,hash text not null,created_at bigint)");
+    if (pending.length) {
+      await client.query("create schema if not exists drizzle");
+      await client.query("create table if not exists drizzle.__drizzle_migrations(id serial primary key,hash text not null,created_at bigint)");
+    }
     for (const migration of pending) {
       await client.query("begin");
       try {
@@ -209,14 +215,16 @@ export async function runFrontendMigration(prepared, dependencies) {
     phase = "postflight";
     await client.query("begin read only");
     try {
-      const same = (await client.query("select pg_backend_pid() as pid,current_user,current_database() as database")).rows[0];
+      const same = (await client.query("select pg_backend_pid() as pid,current_user,current_database() as database,current_setting('default_transaction_read_only') as default_read_only")).rows[0];
       demand(same.pid === identity.pid && same.current_user === target.user && same.database === target.database, "FRONTEND_SESSION_CHANGED");
+      demand(!readOnlyExpected || same.default_read_only === "on", "FRONTEND_READ_ONLY_SESSION_CHANGED");
       const after = await journal(client);
       demand(assertAppliedMigrationLineage(artifact.expected, after) === artifact.migrations.at(-1).folderMillis, "FRONTEND_POST_LINEAGE_REFUSED");
       demand(isDeepStrictEqual(await readMigrationCatalog(client), baseline.catalog), "FRONTEND_SCHEMA_DRIFT");
       await verifyRuntime(client, target, true);
       demand(frontendMigrationArtifact().sqlArtifactSha256 === artifact.sqlArtifactSha256, "FRONTEND_SOURCE_CHANGED");
-      databaseResult = { ...receiptBase, status: "DATABASE_VERIFIED", before, after, applied: pending.map(({ tag, hash }) => ({ tag, hash })), schemaVerified: true, runtimeRoleVerified: true };
+      databaseResult = { ...receiptBase, status: "DATABASE_VERIFIED", before, after, applied: pending.map(({ tag, hash }) => ({ tag, hash })),
+        schemaVerified: true, runtimeRoleVerified: true, readOnlyVerified: readOnlyExpected && same.default_read_only === "on" };
     } finally { await client.query("rollback"); }
     phase = "database-receipt"; await dependencies.record("database-receipt.json", databaseResult);
   } catch (error) { failure = error; }
@@ -226,6 +234,7 @@ export async function runFrontendMigration(prepared, dependencies) {
     try { if (client) await client.end(); } catch { failure ??= new Error("FRONTEND_DISCONNECT_UNVERIFIED"); }
   }
   const outcome = { ...receiptBase, status: failure ? "FAILED_REQUIRES_REVIEW" : "DATABASE_VERIFIED", phase,
+    readOnlyVerified: !failure && databaseResult?.readOnlyVerified === true,
     ...(failure ? { failureCode: "FRONTEND_MIGRATION_OR_CLEANUP_FAILED" } : {}) };
   await dependencies.record("job-outcome.json", outcome);
   if (failure) throw new Error("FRONTEND_MIGRATION_FAILED_REVIEW_REQUIRED");
