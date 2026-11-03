@@ -26,10 +26,18 @@ def main():
     if not re.fullmatch(r"sha256:[a-f0-9]{64}", args.image_id) or args.output.exists():
         raise ValueError("Fresh output and immutable cached image ID required")
     environment = {key: os.environ[key] for key in ("PATH", "HOME") if key in os.environ}
-    environment["DOCKER_CONTEXT"] = "default"
+    # setup-docker-action exposes its isolated daemon through DOCKER_HOST.
+    # Keep that selection only for a local Unix socket, never a remote engine.
+    selected_endpoint = os.environ.get("DOCKER_HOST")
+    if selected_endpoint is not None:
+        if not re.fullmatch(r"unix:///[^\s\x00]+", selected_endpoint):
+            raise ValueError("Local Docker Unix socket required")
+        environment["DOCKER_HOST"] = selected_endpoint
+    else:
+        environment["DOCKER_CONTEXT"] = "default"
     def command(values, timeout=20):
         return subprocess.run(["docker", *values], env=environment, capture_output=True, text=True, check=True, timeout=timeout).stdout.strip()
-    endpoint = command(["context", "inspect", "default", "--format", '{{(index .Endpoints "docker").Host}}'])
+    endpoint = selected_endpoint or command(["context", "inspect", "default", "--format", '{{(index .Endpoints "docker").Host}}'])
     if not endpoint.startswith("unix://"):
         raise ValueError("Local Docker engine required")
     command(["image", "inspect", "--platform", "linux/amd64", args.image_id, "--format", "{{.Id}}"])
