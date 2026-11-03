@@ -76,6 +76,45 @@ The [operator migration CLI, bundle preparer and host wrapper](../../docs/api-in
 
 ## Smoke and operational acceptance
 
+### Independent integration rollout controls
+
+`src/lib/api-integration/rollout-flags.ts` provides six server-only controls. Every
+control defaults off; only the literal environment value `true` enables it.
+
+| Capability | Environment binding |
+| --- | --- |
+| New customer account access | `INTEGRATION_CUSTOMER_ACCESS_ENABLED` |
+| Course-backed reads | `INTEGRATION_COURSE_READS_ENABLED` |
+| New Course checkout | `INTEGRATION_CHECKOUT_ENABLED` |
+| Entitlement delivery/recovery | `INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED` |
+| Community reads | `INTEGRATION_COMMUNITY_READS_ENABLED` |
+| Community writes | `INTEGRATION_COMMUNITY_WRITES_ENABLED` |
+
+Feature entrypoints introduced in P2–P4 must call
+`withIntegrationFeature(capability, operation)` before obtaining credentials or
+starting network/database work. Keep existing authentication, authorization,
+request validation and operational readiness checks inside that operation.
+The Course-read test exercises this gate with the existing workload-authenticated
+gateway transport and confirms that enabling reads cannot bypass application
+authorization. The controls are a foundation for those feature adapters; they do
+not add customer routes or activate unfinished features.
+
+Flags are independent. Closing customer access or new Course checkout must not
+implicitly close separately enabled entitlement recovery. Community reads and
+writes are separate. These controls do not switch existing product checkout,
+in-person training, Square reconciliation or private API worker processes.
+Enabling the Course-checkout flag is not proof that delivery/reconciliation jobs
+are operational; the future checkout handler must verify those prerequisites.
+
+The guard reads the server process environment for every new operation and does
+not cancel work already admitted. On Vercel, environment edits require a reviewed
+redeployment before they affect deployed functions. No remote flag service or
+browser-visible `NEXT_PUBLIC_` flag is needed. Leave all six disabled until the
+corresponding feature is implemented and qualified. The existing gateway smoke
+switch remains separate so platform qualification can run while customer features
+are disabled. The current live frontend remains pinned to its existing qualified
+source; adding these controls does not deploy or change that candidate.
+
 The same-origin admin smoke route requires `settings:manage`; the scheduled route requires the constant-time checked cron bearer. Both are disabled unless `API_GATEWAY_SMOKE_ENABLED=true`. Select the exact staging or production gateway origin through the matching server-only environment variable. Enabling these handlers does not configure a native scheduler.
 
 Qualify the selected native scheduler, callback transport, cancellation, standby eligibility, configuration provenance and bounded request/time limits before activation. Private account spending or monetary allowance evidence is not required. The R04 handoff remains mandatory; this implementation does not approve its historical proposed allowances or amendments.

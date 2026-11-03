@@ -6,6 +6,7 @@ import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/api-integration/gateway-transport.test.ts",
+  "src/lib/api-integration/rollout-flags.test.ts",
   "src/app/api/admin/shipping/label-handler.test.ts",
   "src/lib/api-integration/response-validation.test.ts",
   "src/lib/env/application-environment.test.ts",

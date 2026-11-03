@@ -1,0 +1,36 @@
+{
+  "status": "INDEPENDENT_INTEGRATION_ROLLOUT_CONTROLS_LOCALLY_VERIFIED",
+  "checkedAt": "2026-11-03T06:13:54.604596+00:00",
+  "baseCommit": "aebc848c282b5d4925102a6e5c66be6ecfca6ef8",
+  "sourceSha256": {
+    "src/lib/api-integration/rollout-flags.ts": "046abeffa8282445447b9482483d6bd48ffd9f8cc47e920c856445e0d0710c9a",
+    "src/lib/api-integration/rollout-flags.test.ts": "96ea2af0895e47e129cb830537463513b3b10fc4cbaf8ed21716df69ae599820",
+    "scripts/run-source-unit-tests.mjs": "9f42c2f49f8502b8c17312f13c1355d6737677d5a7e802091464d4cbe8248fb5",
+    ".env.local.example": "6ca50ce68f31d30d819fffdfc1c29bcc8f1dbcee141f76745ab467126fd6a39e",
+    "ops/platform/README.md": "6b63c8a880bd054b54802a2bff9e404550a64ff0d6bce8d8449baafc87577346"
+  },
+  "controls": [
+    "customerAccess",
+    "courseReads",
+    "checkout",
+    "entitlementRecovery",
+    "communityReads",
+    "communityWrites"
+  ],
+  "defaultEnabled": false,
+  "browserPublicFlags": false,
+  "existingStorefrontBehaviorChanged": false,
+  "liveFlagsConfiguredOrEnabled": false,
+  "selectedLiveFrontendSourceUnchanged": "74ca26736e5834fce639407278b4575bf4d05670",
+  "tests": {
+    "focusedRolloutAndGatewayTransport": {
+      "passed": 9,
+      "failed": 0
+    },
+    "typecheck": "passed",
+    "focusedEslint": "passed"
+  },
+  "scope": "Server-only flag definitions and lazy gate for later integration feature entrypoints; no feature routes or live activation. Flags are not authorization, job readiness or P1 acceptance.",
+  "remoteCiVerified": false,
+  "releaseAccepted": false
+}
