@@ -3,6 +3,7 @@
 import argparse
 import fcntl
 import json
+import docker_inspect
 import math
 import os
 from pathlib import Path
@@ -74,7 +75,7 @@ def recover(project, history_path, execute=False):
         raise ValueError("Unexpected project container inventory")
     containers = []
     for item in ids:
-        labels, health = command(["docker", "inspect", "--format", '{{json .Config.Labels}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}', item]).rsplit("|", 1)
+        labels, health = command(["docker", "inspect", "--format", docker_inspect.WATCHDOG_FIELDS, item]).rsplit("|", 1)
         containers.append({"id": item, "service": json.loads(labels).get("com.docker.compose.service"), "health": health})
     now = time.time()
     for item in recovery_actions(containers, history, now):

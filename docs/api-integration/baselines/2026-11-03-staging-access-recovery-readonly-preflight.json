@@ -1,0 +1,41 @@
+{
+  "status": "ACCESS_RECOVERY_READ_ONLY_PREFLIGHT_PASS",
+  "observedAt": "2026-11-03T17:22:46.642Z",
+  "providerMutationsPerformed": false,
+  "checks": [
+    {
+      "name": "frontend-producers",
+      "value": {
+        "status": "ACCESS_RECOVERY_FRONTEND_PRODUCERS_VERIFIED",
+        "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+        "deploymentId": "dpl_CdhFqwVANweysVe9cCTNpmHfduiy",
+        "schedulesEnabled": false,
+        "disabledAt": 1793672291235,
+        "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+        "providerMutationsPerformed": false
+      }
+    },
+    {
+      "name": "initial-infrastructure",
+      "value": {
+        "status": "STAGING_INFRASTRUCTURE_STATE_VERIFIED",
+        "state": "attached",
+        "stackId": "arn:aws:cloudformation:us-east-1:691588646557:stack/lash-her-api-staging/43564e90-d6f4-11f1-825b-12ffd9c5e733",
+        "addressArn": "arn:aws:lightsail:us-east-1:691588646557:StaticIp/dfdce3fc-150b-47c0-87df-2bffeb81e963",
+        "address": "184.196.129.231",
+        "templateSha256": "abd88272b43f6ca3f34b51f96aee56bf29631ca0492f90f1421997ce2fd41c8b",
+        "instanceArn": "arn:aws:lightsail:us-east-1:691588646557:Instance/2e608d2c-a88f-416f-a23f-209d20e042f4",
+        "instanceCreatedAt": "2026-11-02T14:35:09.318000-05:00",
+        "instanceIpv6Addresses": [
+          "2600:1f18:142d:3d00:d5d8:14c7:329b:7c12"
+        ],
+        "allocationPreserved": true,
+        "infrastructureChanged": false,
+        "accessRecoveryPhase": "initial",
+        "instanceState": "running",
+        "operatorIpv4Cidr": "99.239.200.211/32",
+        "browserSshEnabled": false
+      }
+    }
+  ]
+}

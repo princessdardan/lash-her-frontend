@@ -17,6 +17,7 @@ import time
 import frontend_probe
 import migrate
 import release as runtime
+import docker_inspect
 import vercel
 
 demand = migrate.demand
@@ -122,7 +123,7 @@ def wait_stage(stage, by_service):
     while True:
         healthy = True
         for service in stage:
-            fields = '{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}'
+            fields = docker_inspect.RECOVERY_FIELDS
             value = runtime.command(["docker", "inspect", "--format", fields, by_service[service]], runtime.SAFE_ENV, 5)
             demand(value.startswith("true|"), "RECOVERY_CONTAINER_EXITED")
             healthy = healthy and value == ("true|none" if service.endswith("-tls") else "true|healthy")

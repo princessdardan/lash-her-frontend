@@ -43,3 +43,13 @@ test("an empty execute acknowledgement is accepted once; arbitrary errors stay s
   const failing = operatorAwsCli({ binary: "/opt/homebrew/bin/aws", execute: async () => { throw new Error("private-error-payload"); } });
   await assert.rejects(failing({ service: "sts", operation: "GetCallerIdentity", region: "us-east-1", params: {} }), /^Error: AWS_OPERATOR_OPERATION_REFUSED$/u);
 });
+
+test("access recovery cannot force-stop another host or snapshot into an unreviewed name/scope",async()=> {
+  const calls=[],aws=operatorAwsCli({binary:"/opt/homebrew/bin/aws",execute:async(...args)=>{calls.push(args);return {stdout:'{"operations":[]}'};}});
+  await aws({service:"lightsail",operation:"StopInstance",region:"us-east-1",params:{instanceName:"lash-her-api-staging-host"}});
+  assert.equal(calls.length,1);
+  for(const params of [{instanceName:"other"},{instanceName:"lash-her-api-staging-host",force:true}])
+    await assert.rejects(aws({service:"lightsail",operation:"StopInstance",region:"us-east-1",params}));
+  await assert.rejects(aws({service:"lightsail",operation:"CreateInstanceSnapshot",region:"us-east-1",params:{instanceName:"lash-her-api-staging-host",instanceSnapshotName:"other",tags:[]}}));
+  assert.equal(calls.length,1);
+});

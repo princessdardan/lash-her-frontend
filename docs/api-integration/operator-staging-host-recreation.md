@@ -1,5 +1,7 @@
 # Staging host recreation
 
+**Held November 3:** The operator's public address changed while both original SSH firewalls still permit the old address. Do not execute this original-host coordinator. First review the separate [operator-access recovery](operator-staging-access-recovery.md), which retains authenticated browser recovery access and restores the current runtime without claiming P1 qualification. Subsequent live qualification needs the new machine's actual receipts and access policy; this original proposal cannot be reused unchanged.
+
 Preparation only. The original host remains at `184.196.129.231`. Gateway application writes and business schedules remain suspended. No rollback, host retirement or replacement is authorized by this document. This exercise qualifies the initial P1 foundation; routine releases do not repeat it.
 
 ## Current validation

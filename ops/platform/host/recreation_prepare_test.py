@@ -33,6 +33,15 @@ class FreshPreparationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "NEW_MACHINE"):
                 prepare.bootstrap_fresh(prepare.ORIGINAL_MACHINE, Path("/unused"), "a" * 64)
 
+    def test_fresh_machine_identity_does_not_require_a_preinstalled_docker_engine(self):
+        with patch.object(prepare.sys, "platform", "linux"), patch.object(prepare.platform, "machine", return_value="x86_64"), \
+                patch.object(prepare.os, "geteuid", return_value=0), \
+                patch.object(prepare.staging_restore, "host_file", return_value=("2" * 32 + "\n").encode()), \
+                patch.object(prepare.runtime, "command", side_effect=AssertionError("Docker before install")):
+            prepare.assert_fresh_machine("2" * 32)
+            with self.assertRaisesRegex(ValueError, "MACHINE_MISMATCH"):
+                prepare.assert_fresh_machine("3" * 32)
+
     def test_fresh_bootstrap_records_exact_package_lock_before_invoking_existing_executor(self):
         with tempfile.TemporaryDirectory() as temp:
             output = Path(temp); output.chmod(0o700)
@@ -42,7 +51,7 @@ class FreshPreparationTests(unittest.TestCase):
                 self.assertEqual(started["lockSha256"], digest)
                 self.assertEqual(reviewed, digest)
                 return {"lockSha256": digest, "applicationDeployed": False, "forwardingSha256": plan["forwardingSha256"]}
-            with patch.object(prepare.runtime, "assert_host"), patch.object(prepare, "initialization", return_value={"status": "owned"}), \
+            with patch.object(prepare, "assert_fresh_machine"), patch.object(prepare, "initialization", return_value={"status": "owned"}), \
                     patch.object(prepare.runtime, "command", return_value='[{"dev":"ens5"}]'), \
                     patch.object(prepare.bootstrap, "apply", side_effect=apply):
                 result = prepare.bootstrap_fresh("2" * 32, output, digest)
@@ -56,7 +65,7 @@ class FreshPreparationTests(unittest.TestCase):
             value = {"version": 1, "environment": "staging", "operation": "bootstrap", "action": action,
                      "expectedMachineId": "2" * 32, "confirmation": "staging/" + action + "/bootstrap", "packageLockSha256": "a" * 64}
             with patch.object(prepare.recreation_files, "ROOT", root), patch.object(prepare.os, "geteuid", return_value=0), \
-                    patch.object(prepare.sys, "platform", "linux"), patch.object(prepare.runtime, "assert_host"), \
+                    patch.object(prepare.sys, "platform", "linux"), patch.object(prepare, "assert_fresh_machine"), \
                     patch.object(prepare, "bootstrap_fresh", side_effect=ValueError("OWNED_BOOTSTRAP_INTERRUPTED")) as apply:
                 with self.assertRaisesRegex(ValueError, "OWNED_BOOTSTRAP_INTERRUPTED"):
                     prepare.execute(value, root / "release.lock")

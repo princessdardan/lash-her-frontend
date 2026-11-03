@@ -25,8 +25,9 @@ export function stagingInfrastructureSpec(templateBody, reviewedTemplateSha256, 
   return { ...scope, parameters: { ...parameters }, templateSha256: reviewedTemplateSha256, addressArn };
 }
 
-export function inspectInfrastructureState(raw, spec, expectedState) {
+export function inspectInfrastructureState(raw, spec, expectedState, expectedInstanceState = "running") {
   assert.ok(["attached", "detached", "absent"].includes(expectedState));
+  assert.ok(["running", "stopped"].includes(expectedInstanceState));
   assert.equal(raw.identity.Account, spec.accountId);
   assert.equal(raw.stacks.NextToken, undefined);
   assert.equal(raw.stacks.Stacks?.length, 1);
@@ -67,7 +68,7 @@ export function inspectInfrastructureState(raw, spec, expectedState) {
   if (host) {
     assert.equal(host.bundleId, spec.parameters.BundleId); assert.equal(host.blueprintId, "ubuntu_24_04");
     assert.equal(host.sshKeyName, spec.parameters.KeyPairName); assert.equal(host.location?.availabilityZone, spec.parameters.AvailabilityZone);
-    assert.equal(host.location?.regionName, spec.region); assert.equal(host.state?.name, "running");
+    assert.equal(host.location?.regionName, spec.region); assert.equal(host.state?.name, expectedInstanceState);
     assert.match(host.arn, /^arn:aws:lightsail:us-east-1:691588646557:Instance\/[a-f0-9-]{36}$/u);
     assert.equal(outputs.InstanceArn, host.arn); assert.equal(outputs.InstanceName, spec.instanceName);
     if (legacy || expectedState === "detached") assert.equal(host.arn, spec.originalInstanceArn);
@@ -75,7 +76,8 @@ export function inspectInfrastructureState(raw, spec, expectedState) {
     const ports = (raw.ports.portStates ?? []).map(port => ({ protocol: port.protocol, fromPort: port.fromPort,
       toPort: port.toPort, state: port.state, cidrs: [...(port.cidrs ?? [])].sort(), ipv6Cidrs: port.ipv6Cidrs ?? [], cidrListAliases: port.cidrListAliases ?? [] }));
     assert.deepEqual(ports.sort((a, b) => a.fromPort - b.fromPort), [
-      { protocol: "tcp", fromPort: 22, toPort: 22, state: "open", cidrs: [spec.parameters.OperatorIpv4Cidr], ipv6Cidrs: [], cidrListAliases: [] },
+      { protocol: "tcp", fromPort: 22, toPort: 22, state: "open", cidrs: [spec.parameters.OperatorIpv4Cidr], ipv6Cidrs: [],
+        cidrListAliases: spec.parameters.BrowserSshAccess === "true" ? ["lightsail-connect"] : [] },
       { protocol: "tcp", fromPort: 443, toPort: 443, state: "open", cidrs: ["0.0.0.0/0"], ipv6Cidrs: [], cidrListAliases: [] },
     ]);
   }

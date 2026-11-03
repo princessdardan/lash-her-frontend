@@ -158,6 +158,11 @@ jobs:
           --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly"
           --entrypoint python3 lash-her-firewall-test:ci
           -B /source/ops/platform/harness/owned-recreation-controls.py
+      - name: Verify actual Docker inspection with optional healthchecks
+        run: >-
+          python3 ops/platform/harness/owned-docker-inspection.py
+          --image-id "$(docker image ls --quiet --no-trunc lash-her-firewall-test:ci)"
+          --output "$RUNNER_TEMP/lash-owned-docker-inspection.json"
       - run: npm audit --audit-level=moderate --prefix ops/gateway
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build gateway and private TLS artifact

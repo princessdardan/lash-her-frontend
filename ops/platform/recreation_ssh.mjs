@@ -151,5 +151,12 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
       assert.ok(["install","activate"].includes(payload.operation));
       return run(["sudo","-n","/usr/bin/python3",`/opt/lash-her/operators/${commit}/ops/platform/host/recreation_maintenance.py`],payload,600_000);
     },
+    coldRestore:(commit,payload)=> {
+      assert.match(commit,/^[a-f0-9]{40}$/u);
+      assert.equal(payload.operation,"cold-restore");
+      assert.match(payload.action,/^p1-recreate-access-[a-z0-9-]{1,20}$/u);
+      return run(["sudo","-n","/usr/bin/python3",`/opt/lash-her/operators/${commit}/ops/platform/host/cold_restore.py`,
+        "--apply","--confirm",`staging/p1-41541683416-1/cold-restore-${payload.action}`],payload,1_800_000);
+    },
   };
 }

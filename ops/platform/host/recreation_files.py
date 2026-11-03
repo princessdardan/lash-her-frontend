@@ -29,6 +29,9 @@ INPUT_FIXED = {"compose.yaml", "inventory/mux-inventory.json", "compatibility/co
     *("database-receipts/" + name + "/" + file for name in ("frontend", "course", "community")
       for file in ("database-receipt.json", "job-outcome.json"))}
 RECEIPTS = {
+    "cold-restore": ("cold-restore-started.json", "cold-restore-outcome.json", "runtime-outcome.json", "configuration-binding.json", "runtime-binding.json",
+        "database-current/current-databases-outcome.json",
+        *("database-current/" + name + "/database-receipt.json" for name in ("frontend", "course", "community"))),
     "prepare-bootstrap": ("preparation-outcome.json", "bootstrap-started.json"),
     "prepare-cache-compatible": ("preparation-outcome.json", "image-cache-outcome.json"),
     "prepare-cache-current": ("preparation-outcome.json", "image-cache-outcome.json"),

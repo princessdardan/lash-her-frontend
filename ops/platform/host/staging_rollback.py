@@ -193,7 +193,7 @@ def execute(bundle, configuration, database_receipts, runtime_receipts, compose_
                 client=client, lock_path=lock_path, before_stop=prepare_first, lock_handle=lock)
             demand(retired.get("status") == "STAGING_RUNTIME_QUIESCED_FOR_RECREATION", "ROLLBACK_ACTUAL_INITIAL_RETIREMENT_REQUIRED")
             outcome["phase"] = "start-compatible-previous"
-            previous, previous_configuration, previous_operator = start_round(selected, previous_execution, jobs, configuration, compose, bundle,
+            previous, _previous_configuration, previous_operator = start_round(selected, previous_execution, jobs, configuration, compose, bundle,
                 output / "compatible-previous", first["retained"], first["baseline"], private_fingerprint_key,
                 programs_directory, programs, credentials, checker_sha256, provider)
             migrate.write_json(output / "compatible-previous", "compatible-runtime-outcome.json", {**previous,
@@ -208,7 +208,10 @@ def execute(bundle, configuration, database_receipts, runtime_receipts, compose_
             demand(len(stopped) == 8 and not runtime.command(["docker", "ps", "--quiet"], runtime.SAFE_ENV), "ROLLBACK_ZERO_OVERLAPPING_PROCESSES_REQUIRED")
             migrate.write_json(output / "compatible-previous", "graceful-stop.json", {"processes": stopped})
             outcome["phase"] = "restore-current-runtime"
-            current, snapshot, _operator = start_round(selected, selected, jobs, previous_configuration, compose, bundle,
+            # Runtime TLS copies belong to the non-root containers. Reuse the
+            # unchanged root-owned input for the next round; do not weaken the
+            # configuration-owner check or modify a retained runtime snapshot.
+            current, snapshot, _operator = start_round(selected, selected, jobs, configuration, compose, bundle,
                 output / "restored-current", second, baseline, private_fingerprint_key,
                 programs_directory, programs, credentials, checker_sha256, provider)
             ready = {**current, "status": "API_RUNTIME_RESTORED_FOR_QUALIFICATION", "hostMachineId": plan["originalHostMachineId"],

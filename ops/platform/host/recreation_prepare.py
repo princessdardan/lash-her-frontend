@@ -5,6 +5,7 @@ authentication is confined to a temporary private Docker configuration and stdin
 """
 import json
 import os
+import platform
 from pathlib import Path
 import re
 import signal
@@ -21,6 +22,7 @@ import runtime_actions
 import staging_rollback
 import staging_restore
 import staging_state
+import ssh_access
 
 demand = migrate.demand
 ORIGINAL_MACHINE = "ec265c34b9fbf4d051aecfa185362c0a"
@@ -29,7 +31,16 @@ SSH_POLICY = b"PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermi
 CURRENT_IMAGE_KEYS = {"gateway", "courseRuntime", "communityRuntime", "frontendMigration", "courseMigration", "communityMigration"}
 
 
-def initialization(command=runtime.command, read_file=staging_restore.host_file):
+def assert_fresh_machine(machine):
+    # Docker is intentionally absent at this point. Do not use the runtime
+    # host assertion, which also requires an already-installed Docker engine.
+    demand(sys.platform == "linux" and platform.machine() in ("x86_64", "amd64") and os.geteuid() == 0,
+           "RECREATION_BOOTSTRAP_ROOT_AMD64_LINUX_REQUIRED")
+    demand(staging_restore.host_file("/etc/machine-id").decode().strip() == machine,
+           "RECREATION_BOOTSTRAP_MACHINE_MISMATCH")
+
+
+def initialization(command=runtime.command, read_file=staging_restore.host_file, ssh_access_policy="operator-ip-v1"):
     command(["cloud-init", "status", "--wait"], runtime.SAFE_ENV, 600)
     demand(read_file("/opt/lash-her/host-prepared") == MARKER
            and read_file("/etc/ssh/sshd_config.d/00-lash-her.conf") == SSH_POLICY, "RECREATION_EXACT_INITIALIZATION_REQUIRED")
@@ -37,6 +48,11 @@ def initialization(command=runtime.command, read_file=staging_restore.host_file)
     demand(all(ssh.get(key) == "no" for key in ("passwordauthentication", "kbdinteractiveauthentication", "permitrootlogin")),
            "RECREATION_EFFECTIVE_SSH_POLICY_REQUIRED")
     firewall = command(["ufw", "status", "numbered"], runtime.SAFE_ENV)
+    if ssh_access_policy == ssh_access.POLICY:
+        policy = ssh_access.verify_firewall(firewall)
+        return {"status": "RECREATION_INITIALIZATION_VERIFIED", "passwordAuthentication": False,
+                "rootLogin": False, **policy}
+    demand(ssh_access_policy == "operator-ip-v1", "RECOVERY_REVIEWED_SSH_POLICY_REQUIRED")
     rules = [re.sub(r"\s+", " ", match.group(1)).strip() for line in firewall.splitlines()
              if (match := re.fullmatch(r"\[\s*\d+\]\s+(.+)", line.strip()))]
     demand(firewall.startswith("Status: active\n") and len(rules) == 2
@@ -45,10 +61,10 @@ def initialization(command=runtime.command, read_file=staging_restore.host_file)
             "rootLogin": False, "sshIpv4Source": "99.239.200.211/32", "ipv6IngressAllowed": False}
 
 
-def bootstrap_fresh(machine, output, reviewed_lock_sha256):
+def bootstrap_fresh(machine, output, reviewed_lock_sha256, ssh_access_policy="operator-ip-v1"):
     demand(machine != ORIGINAL_MACHINE, "RECREATION_BOOTSTRAP_REQUIRES_NEW_MACHINE")
-    runtime.assert_host({"hostMachineId": machine})
-    result = initialization()
+    assert_fresh_machine(machine)
+    result = initialization(ssh_access_policy=ssh_access_policy)
     lock, actual_sha = bootstrap.load_lock(Path(__file__).with_name("packages.lock.json"))
     demand(actual_sha == reviewed_lock_sha256, "RECREATION_REVIEWED_PACKAGE_LOCK_REQUIRED")
     routes = json.loads(runtime.command(["ip", "-json", "route", "show", "default"], runtime.SAFE_ENV))
@@ -156,7 +172,10 @@ def execute(value, lock_path=Path("/run/lock/lash-her-release.lock")):
     demand(machine != ORIGINAL_MACHINE if value["operation"] in ("bootstrap", "cache-current") else machine == ORIGINAL_MACHINE,
            "RECREATION_PREPARATION_PHASE_MACHINE_MISMATCH")
     demand(os.geteuid() == 0 and sys.platform == "linux", "RECREATION_PREPARATION_ROOT_LINUX_REQUIRED")
-    runtime.assert_host({"hostMachineId": machine})
+    if value["operation"] == "bootstrap":
+        assert_fresh_machine(machine)
+    else:
+        runtime.assert_host({"hostMachineId": machine})
     staging_state.outside_checkout(root)
     output = root / ("prepare-" + value["operation"])
     demand(not output.exists(), "RECREATION_PREPARATION_EXCLUSIVE_OUTPUT_REQUIRED")
@@ -167,7 +186,7 @@ def execute(value, lock_path=Path("/run/lock/lash-her-release.lock")):
                    "hostMachineId": machine, "applicationStarted": False, "migrationsExecuted": False}
         try:
             if value["operation"] == "bootstrap":
-                result = bootstrap_fresh(machine, output, value["packageLockSha256"])
+                result = bootstrap_fresh(machine, output, value["packageLockSha256"], value.get("sshAccessPolicy", "operator-ip-v1"))
             else:
                 paths = root / "inputs"
                 compatibility = value["operation"] == "cache-compatible"

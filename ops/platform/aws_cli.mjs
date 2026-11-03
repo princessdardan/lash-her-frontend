@@ -15,6 +15,10 @@ const operations = new Map([
   ["cloudformation/ExecuteChangeSet", ["execute-change-set", ["StackName", "ChangeSetName", "ClientRequestToken", "DisableRollback"]]],
   ["lightsail/GetStaticIp", ["get-static-ip", ["staticIpName"]]],
   ["lightsail/GetInstances", ["get-instances", []]],
+  ["lightsail/GetInstanceSnapshots", ["get-instance-snapshots", []]],
+  ["lightsail/StopInstance", ["stop-instance", ["instanceName", "force"]]],
+  ["lightsail/CreateInstanceSnapshot", ["create-instance-snapshot", ["instanceName", "instanceSnapshotName", "tags"]]],
+  ["lightsail/GetInstanceSnapshot", ["get-instance-snapshot", ["instanceSnapshotName"]]],
   ["lightsail/GetInstancePortStates", ["get-instance-port-states", ["instanceName"]]],
   ["lightsail/GetInstanceAccessDetails", ["get-instance-access-details", ["instanceName", "protocol"]]],
 ]);
@@ -34,6 +38,10 @@ export function operatorAwsCli({ binary, environment = process.env, execute = pr
       "arn:aws:cloudformation:us-east-1:691588646557:stack/lash-her-api-staging/43564e90-d6f4-11f1-825b-12ffd9c5e733");
     if (params.staticIpName !== undefined) assert.equal(params.staticIpName, "lash-her-api-staging-gateway");
     if (params.instanceName !== undefined) assert.equal(params.instanceName, "lash-her-api-staging-host");
+    if (request.operation === "StopInstance") assert.ok(params.force === undefined || params.force === false, "Forced stop refused");
+    if (params.instanceSnapshotName !== undefined) assert.match(params.instanceSnapshotName, /^p1-recreate-access-[a-z0-9-]{1,20}-original$/u);
+    if (request.operation === "CreateInstanceSnapshot") assert.deepEqual(params.tags,
+      [{key:"Project",value:"lash-her"},{key:"Environment",value:"staging"},{key:"Purpose",value:"operator-access-recovery"}]);
     if (request.operation === "ExecuteChangeSet") assert.equal(params.DisableRollback, true);
     if (request.operation === "CreateChangeSet") assert.equal(params.ChangeSetType, "UPDATE");
     const args = ["--profile", "Dardan (Lash Her)", "--region", "us-east-1", "--output", "json", request.service, command,

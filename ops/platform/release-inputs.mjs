@@ -86,7 +86,7 @@ export async function verifyReleaseInputs({ context, token, fetch = globalThis.f
       runId: context.runId, runAttempt: Number(context.runAttempt), verifiedAt: checkedAt } };
 }
 
-async function readBoundedJson(response, maximum = 2 * 1024 * 1024) {
+export async function readBoundedJson(response, maximum = 2 * 1024 * 1024) {
   if (!response.ok || !response.body) throw new Error("Bounded JSON response required");
   const reader = response.body.getReader(); let length = 0; const chunks = [];
   try {

@@ -38,7 +38,7 @@ export function validateRecreationSettings(settings) {
   return settings;
 }
 
-async function privateParents(target) {
+export async function privateParents(target) {
   const missing=[];let path=target;
   for(;;) {
     try {assert.equal((await lstat(path)).isSymbolicLink(),false);break;}
@@ -48,7 +48,7 @@ async function privateParents(target) {
   const info=await lstat(target);assert.ok(info.isDirectory()&&info.uid===process.getuid()&&(info.mode&0o077)===0);
 }
 
-async function privateJson(path) {
+export async function privateJson(path) {
   const info=await lstat(path);
   assert.ok(info.isFile()&&!info.isSymbolicLink()&&info.uid===process.getuid()&&(info.mode&0o077)===0&&info.size<=100_000);
   return JSON.parse(await readFile(path,"utf8"));
@@ -70,7 +70,7 @@ export async function prepareRecreation(settings) {
   return {committed,programs,inputs,templateBody,spec,packageLockSha256};
 }
 
-async function releaseBindings() {
+export async function releaseBindings() {
   // The operator's existing 1Password Environment may prompt on this read.
   // Only selected bindings leave this function; no dotenv value is printed.
   const values=parseEnv(await readFile("/Users/dardan/workspace/lash-her-frontend/.env","utf8"));
@@ -80,7 +80,7 @@ async function releaseBindings() {
   return Object.fromEntries(names.map(name=>[name,values[name]]));
 }
 
-async function freshInventory(action,phase,signal) {
+export async function freshInventory(action,phase,signal) {
   const path=join(privateParent,"incoming/mux-inventory.json");let announced=false;
   for(;;) {
     if(signal.aborted)throw Error("STAGING_RECREATION_STOP_REQUESTED");

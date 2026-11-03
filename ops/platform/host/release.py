@@ -14,6 +14,7 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 from uuid import uuid4
 
 import migrate
+import docker_inspect
 
 STAGES = [("community-api", "course-api"), ("community-tls", "course-tls"),
           ("course-snapshot", "community-worker"), ("course-publisher",), ("gateway",)]
@@ -238,7 +239,7 @@ def check_containers(release, snapshot):
         demand(len(ids) == 1 and re.fullmatch(r"[a-f0-9]{12,64}", ids[0]), "EXACT_RUNTIME_REPLICA_REQUIRED")
         identity = release["artifacts"][IMAGE_KEYS[service]]["image"]
         local = command(["docker", "image", "inspect", "--platform", "linux/amd64", "--format", "{{.Id}}", identity], SAFE_ENV)
-        fields = '{{.Image}}|{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}'
+        fields = docker_inspect.RUNTIME_FIELDS
         actual = command(["docker", "inspect", "--format", fields, ids[0]], SAFE_ENV).split("|")
         demand(len(actual) == 5 and actual[0] in (local, identity.split("@")[1]) and actual[1] == "true"
                and actual[2] == ("none" if service.endswith("-tls") else "healthy")

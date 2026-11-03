@@ -1,0 +1,223 @@
+{
+  "status": "STAGING_ACCESS_RECOVERY_COMPONENT_VALIDATION_PASS",
+  "observedAt": "2026-11-03T17:27:33.080140+00:00",
+  "node": {
+    "version": "24.18.0",
+    "tests": 161,
+    "passed": 161,
+    "failed": 0,
+    "loopbackSocketsUsed": true
+  },
+  "ubuntuHostTests": {
+    "os": "Ubuntu 24.04",
+    "architecture": "amd64",
+    "tests": 259,
+    "passed": 259,
+    "failed": 0,
+    "network": "none",
+    "privateApplicationCredentialsUsed": false,
+    "sourceMountedReadOnly": true,
+    "filesystemCapabilities": [
+      "CHOWN",
+      "FOWNER",
+      "DAC_OVERRIDE"
+    ]
+  },
+  "focusedEslint": "passed",
+  "gitDiffCheck": "passed",
+  "posixInitializationTemplatesTested": [
+    "lightsail-host.cfn.json",
+    "lightsail-access-recovery.cfn.json"
+  ],
+  "guard": {
+    "status": "ACCESS_RECOVERY_TEMPLATE_GUARD_PASS",
+    "version": "cfn-guard 3.2.1",
+    "templateSha256": "7b07bb8edc8ba806bc88b85b32210f2490b14f258a66628d96520d41a6f7ab8a",
+    "rulesSha256": "0d94dd30278003741e95759fc54de9a020e3e1c7d0f296a23eedda4b1fba42bd",
+    "binarySha256": "09601e53649b8ca352800d0578e1c810a322a38d8c75fa7b8cbdbfb0c7e32be3",
+    "rulesPassed": [
+      "address_belongs_to_this_host",
+      "dedicated_stateless_host",
+      "only_gateway_https_and_restricted_ssh",
+      "staging_only_managed_browser_access"
+    ],
+    "negativeCases": [
+      {
+        "case": "broad-ssh",
+        "rejected": true
+      },
+      {
+        "case": "ipv6-ingress",
+        "rejected": true
+      },
+      {
+        "case": "backend-port-publication",
+        "rejected": true
+      },
+      {
+        "case": "allocation-conditioned-away",
+        "rejected": true
+      },
+      {
+        "case": "unconditional-compute",
+        "rejected": true
+      },
+      {
+        "case": "wrong-attachment",
+        "rejected": true
+      },
+      {
+        "case": "default-retirement",
+        "rejected": true
+      },
+      {
+        "case": "unconditional-host-output",
+        "rejected": true
+      },
+      {
+        "case": "conditional-address-output",
+        "rejected": true
+      },
+      {
+        "case": "literal-key-default",
+        "rejected": true
+      },
+      {
+        "case": "production-recovery",
+        "rejected": true
+      },
+      {
+        "case": "browser-alias-left-on-by-default",
+        "rejected": true
+      },
+      {
+        "case": "uncontrolled-browser-alias",
+        "rejected": true
+      },
+      {
+        "case": "https-browser-alias",
+        "rejected": true
+      }
+    ],
+    "infrastructureChanged": false
+  },
+  "ownedOfflineControls": {
+    "status": "OWNED_RECREATION_CONTROLS_PASS",
+    "checks": [
+      "fresh-public-source-installed",
+      "identical-public-source-reused-read-only",
+      "changed-source-refused-without-overwrite",
+      "unreviewed-source-refused",
+      "owned-python-cache-permitted",
+      "source-symlink-refused",
+      "writable-source-directory-refused",
+      "four-systemd-units-verified-with-owned-docker-dependency"
+    ],
+    "passed": 8,
+    "publicReceiverSha256": "22670efd0d6e3ab1e08012001cdea907c7068297fb9711c0964ecbcaab98ff37",
+    "providerContacted": false,
+    "actualStagingChanged": false,
+    "ownedDockerDependencyFixture": true
+  },
+  "actualDockerInspection": {
+    "status": "OWNED_DOCKER_OPTIONAL_HEALTH_INSPECTION_PASS",
+    "imageId": "sha256:a3825436cdf37b10721b047592061a15ae78fc63e7ad3237c39715ea91701af1",
+    "checks": [
+      {
+        "reader": "runtime",
+        "healthcheckPresent": false,
+        "health": "none",
+        "passed": true
+      },
+      {
+        "reader": "recovery",
+        "healthcheckPresent": false,
+        "health": "none",
+        "passed": true
+      },
+      {
+        "reader": "watchdog",
+        "healthcheckPresent": false,
+        "health": "none",
+        "passed": true
+      },
+      {
+        "reader": "runtime",
+        "healthcheckPresent": true,
+        "health": "healthy",
+        "passed": true
+      },
+      {
+        "reader": "recovery",
+        "healthcheckPresent": true,
+        "health": "healthy",
+        "passed": true
+      },
+      {
+        "reader": "watchdog",
+        "healthcheckPresent": true,
+        "health": "healthy",
+        "passed": true
+      }
+    ],
+    "cleanupPassed": true,
+    "network": "none",
+    "applicationCredentialsUsed": false,
+    "awsContacted": false,
+    "actualStagingChanged": false
+  },
+  "awsValidateTemplate": {
+    "status": "passed",
+    "templateSha256": "7b07bb8edc8ba806bc88b85b32210f2490b14f258a66628d96520d41a6f7ab8a",
+    "connectedRoleDenied": true,
+    "existingOperatorProfileFallback": "Dardan (Lash Her)",
+    "capabilities": []
+  },
+  "defectsCorrected": [
+    "fresh bootstrap must not require Docker before installing it",
+    "optional Docker Health map field must use safe index access",
+    "rollback must reuse retained root-owned input instead of a container-owned TLS snapshot"
+  ],
+  "sourceSha256": {
+    ".github/workflows/ci.yml": "0ff78421e2221ca9a690f262b32bd3e2893c73810b6800ae977937e90c1dceda",
+    "ops/aws/README.md": "41b0714eee2be75b14f4474069b02ce7847dcb5dec3410a1568ec15a2e432662",
+    "ops/aws/lightsail-access-recovery.cfn.json": "7b07bb8edc8ba806bc88b85b32210f2490b14f258a66628d96520d41a6f7ab8a",
+    "ops/aws/lightsail-access-recovery.guard": "0d94dd30278003741e95759fc54de9a020e3e1c7d0f296a23eedda4b1fba42bd",
+    "ops/aws/validate-access-recovery-policy.py": "961a951a370d6e012778c98664e453b0b67a4afa8431a7858fd007ffc907ebd4",
+    "ops/platform/access_recovery.mjs": "1760d9c49de4658d84932a2160a2b6875d5da6a44788eb6b92ffd9a0e29cb47e",
+    "ops/platform/access_recovery.test.mjs": "25172c97f6677db17be4b2b29b116c7e3f7ced28c4a357c851d209d358d42b27",
+    "ops/platform/access_recovery_controller.mjs": "40a634f6a5224c6eee79086bbf4c2748cee18ab8435b7f817a7247d9d45999d3",
+    "ops/platform/access_recovery_controller.test.mjs": "86075dec84aedfd3f3d11579183abe74faf00b3baf6018b5ad72863cc7eca591",
+    "ops/platform/access_recovery_producers.mjs": "e4d061f4c90f42d104255ec4d31e4badccd14cc31bcc6f4518dd1f62cacdc4d7",
+    "ops/platform/access_recovery_producers.test.mjs": "f9c2780e877ead2ecf5041b33faf7f1bf490adf83c3bd5fd63b0d96fdec5f373",
+    "ops/platform/aws_cli.mjs": "824695b0136c76e955b5beab1ad86b5ca39dfd4934edf4c054ca52f2a5a7d77c",
+    "ops/platform/aws_cli.test.mjs": "457d2bf9456d69681ed6a3a85b45feb887161e51df9e87d65b2fecf97456adc6",
+    "ops/platform/browser_ssh_trust.mjs": "8376d167aae9cd7070cd750dbe5ca3aec55252c8e16c9f22f724af0ca6731f74",
+    "ops/platform/browser_ssh_trust.test.mjs": "821bbde83f436f8412b3bfb50b152985cbfc2a40f1f00cadd914e69334d725bf",
+    "ops/platform/cold-recover-staging.mjs": "187193fd00bb487efcb14e79233ee5b430a91db6dcfaaa7967ad0fc0beb15bf6",
+    "ops/platform/cold-recover-staging.test.mjs": "57cee4d11beb6f9bf51dda56b9121c138a60a3a03cb3f9abbeba831c963d018d",
+    "ops/platform/harness/owned-docker-inspection.py": "39c896f697e5f9e439bc342b489c4e18183c55bb662d350ca6af323b15fd9d7d",
+    "ops/platform/host/cold_restore.py": "3a05defdbd68e2222b6860823f0458dd3f8dead73656b9618bdd76ebdd0c6ed8",
+    "ops/platform/host/cold_restore_test.py": "7213078bb46aad9654acc26ee9075b04e79af61597a05e3f931d4f03c88eccc3",
+    "ops/platform/host/docker_inspect.py": "677894097d7831f1fb056bcb87f8a08d0d352931eb435ec2c63616b1e7f8bcde",
+    "ops/platform/host/recreation_files.py": "07b60b5ae1290423b3bc9d097894bc20ccb934e48ad504649f48e41598736cb5",
+    "ops/platform/host/recreation_prepare.py": "66713bd1970c71e6887d46d76878278832e1442a843db098435802cf37a44f8a",
+    "ops/platform/host/recreation_prepare_test.py": "0f1e55cded73d084e44f0395ae4afa4fe9982e9440781e1563d2e5b849f94529",
+    "ops/platform/host/release.py": "c593f74f06929e5f63508e088af648c5514bb0acc18bd4d0f889b1a82b4f8f5b",
+    "ops/platform/host/ssh_access.py": "dbfa666819628f00f140abce233c824d6ad506d254cbf783d796dd87b9bcd492",
+    "ops/platform/host/ssh_access_test.py": "410300bca0f0a88f1bc91e05dfe7c7984ff9486cecbd5fe80aed46c34db71ad3",
+    "ops/platform/host/staging_recovery.py": "ef9786475eafcb21dff83e0212c4bb6f65abe8b1b82cb14d2830a9fbb4aded5e",
+    "ops/platform/host/staging_rollback.py": "c22a0208206aec57d7c48f7d727ee625f2928df33f31cb7baae7841d09f2f653",
+    "ops/platform/host/watchdog.py": "9bdc6ad2d7c82a2f43e1d87d5dd1ec6ff7ef9cbaacf6a90e1b1a9dd9e0fbcdb4",
+    "ops/platform/infrastructure.mjs": "ce3a3a31cca5892f2861838dc90396e127c6bcb5b24f2a5060e7b8a4f7fa3063",
+    "ops/platform/platform.test.mjs": "b333bb54b3cc57237f1bb63ee8465ce610c9ea7aa1b479a1a627a0100e7704ca",
+    "ops/platform/recreate-staging.mjs": "b336f84b9fb80035694bad6675415516eaec708585890390b2d5c044c011e72d",
+    "ops/platform/recreation_ssh.mjs": "a7fbf7e8bf8376a73ebe5f9b86251720de536dd4a6e662d6dc0a027e47bce913",
+    "ops/platform/release-inputs.mjs": "90be5fdf0dc49a4b2aec52e713ac6069eda327dc77c339ef160f2db0d155851b"
+  },
+  "actualStagingChanged": false,
+  "liveRecoveryExecuted": false,
+  "liveRollbackQualified": false,
+  "p1RecreationQualified": false,
+  "releaseAccepted": false
+}
