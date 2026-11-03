@@ -25,6 +25,29 @@ SCHEDULE = "* * * * *"
 demand = migrate.demand
 
 
+def acquire_release_lock(lock, clock=time):
+    """Wait for brief watchdog work before any provider access or action intent."""
+    deadline = clock.monotonic() + 30
+    while True:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            remaining = deadline - clock.monotonic()
+            demand(remaining > 0, "NATIVE_RELEASE_LOCK_BUSY")
+            clock.sleep(min(0.25, remaining))
+
+
+def safe_failure(error):
+    """Retain useful preflight errors without arbitrary exception payloads."""
+    known = {"ValueError", "BlockingIOError", "FileExistsError", "PermissionError",
+             "TimeoutError", "KeyboardInterrupt", "SystemExit"}
+    code = str(error)
+    return {"errorClass": type(error).__name__ if type(error).__name__ in known else "Exception",
+            "failureCode": code if isinstance(error, ValueError) and re.fullmatch(r"[A-Z_]{1,80}", code)
+            else "NATIVE_QUALIFICATION_EXECUTION_FAILED"}
+
+
 def cron_binding(client, selected):
     environment, project, _commit = vercel.release_identity(selected)
     demand(environment == "staging", "NATIVE_QUALIFICATION_REQUIRES_STAGING")
@@ -163,7 +186,7 @@ def execute(prior, database_attempt, output, expected_deployment, apply=False, c
     client = client or vercel.Client(os.environ.get("VERCEL_TOKEN"))
     outcome = {**plan, "status": "FRONTEND_NATIVE_QUALIFICATION_REQUIRES_REVIEW", "phase": "preflight"}
     with lock_path.open("a+") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        acquire_release_lock(lock, clock)
         current = vercel.project_state(client, plan["frontendProjectId"])
         demand(current == {"projectId": plan["frontendProjectId"], "productionDeploymentId": expected_deployment, "cronsEnabled": False},
                "NATIVE_CURRENT_PROJECT_CHANGED")
@@ -219,8 +242,9 @@ def main():
         signal.signal(sig, interrupted)
     try:
         print(json.dumps(execute(args.prior, args.database_attempt, args.output, args.expected_deployment, args.apply, args.confirm)))
-    except BaseException:
-        print('{"status":"FRONTEND_NATIVE_QUALIFICATION_REFUSED","reviewRequired":true}', file=sys.stderr)
+    except BaseException as error:
+        print(json.dumps({"status": "FRONTEND_NATIVE_QUALIFICATION_REFUSED", "reviewRequired": True,
+                          **safe_failure(error)}), file=sys.stderr)
         raise SystemExit(1) from None
 
 

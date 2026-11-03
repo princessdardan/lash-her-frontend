@@ -1,5 +1,7 @@
 # Fresh staging native-scheduler qualification
 
+Execution note: Dardan approved this first action. It stopped during preflight before the remote action directory or any provider mutation. The [retained refusal](baselines/2026-11-02-native-qualification-preflight-refusal.json) and [corrected retry](operator-native-scheduler-qualification-retry.md) preserve the failure and the next reviewable action.
+
 The original staging server-to-gateway check passed, but its one-hour probe expired before native scheduling was qualified. Recovery restored all eight original containers. This action refreshes only the frontend qualification deployment, using the already-qualified frontend source and current API images/database state.
 
 ## Exact scope
@@ -50,4 +52,4 @@ After Dardan explicitly starts this reviewed action, use:
 python3 /private/tmp/lash-p1-apply-reviewed-native-qualification.py
 ```
 
-The wrapper verifies the exact inactive tool hashes and passes only the existing Vercel token over pinned SSH. It has been compiled but has not executed. The action does not authorize source merges, VM deletion/replacement or final traffic admission.
+The wrapper verifies the exact inactive tool hashes and passes only the existing Vercel token over pinned SSH. It executed once and stopped during preflight; the original local intent/outcome remain preserved. The action does not authorize source merges, VM deletion/replacement or final traffic admission.

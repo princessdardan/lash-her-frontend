@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "status": "NATIVE_QUALIFICATION_RETRY_PREPARED_FOR_OPERATOR_REVIEW",
+  "action": "native-qualification-p1-41541683416-1-2",
+  "releaseId": "p1-41541683416-1",
+  "precedingAttemptEvidence": "2026-11-02-native-qualification-preflight-refusal.json",
+  "existingFrontendSource": "74ca26736e5834fce639407278b4575bf4d05670",
+  "toolSha256": {
+    "vercel.py": "014ec41e1f86155c24d1d23fcc0da10112cfda7d07403f0d22612eccdef66c77",
+    "staging_recovery.py": "015628111f84b67d43e98518ad9651f923cbfe26cc04de8a08fa2e3cff9180c0",
+    "native_qualification.py": "4dca67800f3949d9eed8cf50c5b137533cca7920bb54b8fe9e1334b95065c72d"
+  },
+  "wrapper": "/private/tmp/lash-p1-apply-reviewed-native-qualification-2.py",
+  "wrapperSha256": "f8f8320a3c595b8bacb45766f5e06987355250bf3e80658aaf6053dfbe44157c",
+  "wrapperCompiled": true,
+  "wrapperExecuted": false,
+  "actualReadOnlyPreflight": {
+    "status": "NATIVE_QUALIFICATION_ACTUAL_READ_ONLY_PREFLIGHT_PASS",
+    "plan": {
+      "operation": "frontend-only-native-qualification",
+      "releaseId": "p1-41541683416-1",
+      "environment": "staging",
+      "hostMachineId": "ec265c34b9fbf4d051aecfa185362c0a",
+      "frontendSourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+      "frontendProjectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "expectedCurrentDeploymentId": "dpl_HnN7FbtaRP2mBsQPg9QeZiSuupP8",
+      "candidateSha256": "b086558ed575cbdd0ceea8a3267e178e7ac390b77db9d2361cb721f750792900",
+      "migrationOutcomeSha256": "500707409055bc6787cc756eb26f663aeeb4be1405591692e7942f05473187a9",
+      "nativeWindowSeconds": 180,
+      "migrationsExecuted": false,
+      "apiContainersReplaced": false,
+      "gatewayWritesEnabled": false,
+      "businessSchedulesEnabled": false,
+      "nativeSchedulerVerified": false,
+      "releaseAccepted": false,
+      "existingCronSecretScope": "restrict existing sensitive binding to staging project's Production target; omit value"
+    },
+    "healthyOriginalContainers": 8,
+    "sourcePinsVerified": true,
+    "sensitiveCronBindingVerifiedWithoutDecryption": true,
+    "cronBindingCurrentTargets": [
+      "preview",
+      "production"
+    ],
+    "proposedCronBindingTargets": [
+      "production"
+    ],
+    "cronBindingScopeChangeApprovalRequired": true,
+    "cronCredentialValueChangeRequested": false,
+    "automationAccessAvailable": true,
+    "toolSha256": {
+      "vercel.py": "014ec41e1f86155c24d1d23fcc0da10112cfda7d07403f0d22612eccdef66c77",
+      "staging_recovery.py": "015628111f84b67d43e98518ad9651f923cbfe26cc04de8a08fa2e3cff9180c0",
+      "native_qualification.py": "4dca67800f3949d9eed8cf50c5b137533cca7920bb54b8fe9e1334b95065c72d"
+    },
+    "providerMutations": false,
+    "nativeSchedulesEnabled": false,
+    "applicationWrites": false,
+    "outputCreated": false
+  },
+  "fullHostTestsPassed": 154,
+  "focusedNativeTestsPassed": 24,
+  "newLockAndDiagnosticTestsPassed": 5,
+  "releaseLockMaximumWaitSeconds": 30,
+  "nativeWindowSeconds": 180,
+  "drainSeconds": 16,
+  "cancellationObservationSeconds": 60,
+  "operatorApproved": false,
+  "requiredSourceCi": "required at the exact committed operator revision before apply",
+  "nativeSchedulerVerified": false,
+  "releaseAccepted": false,
+  "migrationsRepeated": false,
+  "apiContainersReplaced": false,
+  "stagingChangedByPreparation": false,
+  "productionChanged": false,
+  "vmDeletedOrReplaced": false,
+  "p1Complete": false
+}

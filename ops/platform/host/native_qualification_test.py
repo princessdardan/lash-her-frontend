@@ -3,6 +3,9 @@ import time
 import unittest
 from unittest.mock import patch
 import fcntl
+import tempfile
+from pathlib import Path
+import threading
 
 import frontend_probe
 import migrate
@@ -25,6 +28,50 @@ class Clock:
     def sleep(self, seconds):
         self.sleeps.append(seconds)
         self.elapsed += seconds
+
+
+class ReleaseLockTests(unittest.TestCase):
+    def test_real_brief_contention_waits_and_acquires_without_provider_access(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "release.lock"
+            with path.open("a+") as owner, path.open("a+") as contender:
+                fcntl.flock(owner.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                release_owner = threading.Timer(0.05, lambda: fcntl.flock(owner.fileno(), fcntl.LOCK_UN))
+                release_owner.start()
+                try:
+                    native.acquire_release_lock(contender)
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(owner.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                finally:
+                    release_owner.join()
+
+    def test_permanent_contention_is_bounded_and_classified(self):
+        clock = Clock()
+        with tempfile.TemporaryFile() as lock, patch.object(native.fcntl, "flock", side_effect=BlockingIOError):
+            with self.assertRaisesRegex(ValueError, "NATIVE_RELEASE_LOCK_BUSY"):
+                native.acquire_release_lock(lock, clock)
+        self.assertEqual(clock.elapsed, 30)
+        self.assertTrue(all(0 < value <= 0.25 for value in clock.sleeps))
+
+    def test_permission_failure_and_interruption_are_not_retried(self):
+        with tempfile.TemporaryFile() as lock, patch.object(native.fcntl, "flock", side_effect=PermissionError) as flock:
+            with self.assertRaises(PermissionError):
+                native.acquire_release_lock(lock, Clock())
+            self.assertEqual(flock.call_count, 1)
+        clock = Clock()
+        with tempfile.TemporaryFile() as lock, patch.object(native.fcntl, "flock", side_effect=BlockingIOError), \
+                patch.object(clock, "sleep", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                native.acquire_release_lock(lock, clock)
+
+    def test_safe_failure_classifies_without_exception_payloads(self):
+        self.assertEqual(native.safe_failure(ValueError("NATIVE_RELEASE_LOCK_BUSY")),
+                         {"errorClass": "ValueError", "failureCode": "NATIVE_RELEASE_LOCK_BUSY"})
+        for error in [ValueError("postgresql://private-user:private-password@private-host/db"),
+                      RuntimeError("provider-token-private"), FileExistsError("private-path")]:
+            result = native.safe_failure(error)
+            self.assertEqual(result["failureCode"], "NATIVE_QUALIFICATION_EXECUTION_FAILED")
+            self.assertNotIn("private", json.dumps(result))
 
 
 class NativeWindowTests(unittest.TestCase):
@@ -304,6 +351,14 @@ class FrontendQualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "NATIVE_CURRENT_PROJECT_CHANGED"):
             self.execute()
         self.assertEqual(len(self.provider.calls), 1)
+        self.assertFalse(self.output.exists())
+
+    def test_busy_lock_times_out_before_action_intent_or_provider_access(self):
+        with patch.object(native.fcntl, "flock", side_effect=BlockingIOError):
+            with self.assertRaisesRegex(ValueError, "NATIVE_RELEASE_LOCK_BUSY"):
+                self.execute()
+        self.assertEqual(self.clock.elapsed, 30)
+        self.assertEqual(self.provider.calls, [])
         self.assertFalse(self.output.exists())
 
 
