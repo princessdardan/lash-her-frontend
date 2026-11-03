@@ -109,7 +109,7 @@ def install(inputs, machine, source_ops, output):
         demand(state["ActiveState"] == "inactive"
                and state["UnitFileState"] in ("disabled", "static"), "RECREATION_MAINTENANCE_MUST_REMAIN_DISABLED")
     return {"status": "RECREATION_MAINTENANCE_INSTALLED_DISABLED", "hostMachineId": machine,
-            "sourceCommit": source_root.name, "existingAcmeFilesRestored": 8, "newAccountCreated": False,
+            "sourceCommit": source_root.name, "existingAcmeFilesRestored": len(acme), "newAccountCreated": False,
             "legoVersion": LEGO_VERSION, "timersEnabled": False, "privateValuesDisplayed": False}
 
 

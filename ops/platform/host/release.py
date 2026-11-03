@@ -142,6 +142,8 @@ def snapshot_configuration(source, destination, release, jobs, compose):
     demand((destination / "tls/ca.pem").read_bytes() == (destination / "tls/gateway/ca.pem").read_bytes(), "SHARED_PRIVATE_CA_REQUIRED")
     (destination / "compose.yaml").write_bytes(compose)
     (destination / "compose.yaml").chmod(0o600)
+    # Directory binding exposes atomic host admission changes without restart.
+    (destination / "admission").mkdir(mode=0o755)
     # Each container receives only its own TLS directory/config. Env files are
     # read by the host Compose process, never mounted into other services.
     for path in [*(destination / "tls").rglob("*"), *(destination / name for name in CONFIG_FILES)]:

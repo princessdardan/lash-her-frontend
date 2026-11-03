@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { createWorkloadVerifier } from "./oidc.mjs";
 import { matchRoute, MinuteBudget, validateConfig } from "./policy.mjs";
 import { createOperationsServer } from "./operations.mjs";
+import { admissionClass, readAdmission } from "./admission.mjs";
 
 const MAX_BODY = 1024 * 1024;
 const MAX_RESPONSE = 8 * 1024 * 1024;
@@ -22,6 +23,8 @@ export function createGateway(input, options = {}) {
     keepAlive: true, maxSockets: 32, maxFreeSockets: 4,
   });
   let active = 0;
+  const admitted = { newWork: 0, recovery: 0 };
+  const uncertain = { newWork: 0, recovery: 0 };
   const counters = { requests: 0, rejected: 0, upstream_failures: 0 };
   const server = createServer({
     key: readFileSync(config.tlsKeyFile), cert: readFileSync(config.tlsCertFile),
@@ -29,6 +32,13 @@ export function createGateway(input, options = {}) {
     headersTimeout: 5000, requestTimeout: 10_000, connectionsCheckingInterval: 1000,
   }, (req, res) => {
     const requestId = randomUUID();
+    let admissionCategory, uncertaintyRecorded = false;
+    const markUncertain = () => {
+      if (admissionCategory && !uncertaintyRecorded) {
+        uncertain[admissionCategory]++;
+        uncertaintyRecorded = true;
+      }
+    };
     res.setHeader("x-request-id", requestId);
     res.setHeader("cache-control", "no-store");
     counters.requests++;
@@ -64,7 +74,21 @@ export function createGateway(input, options = {}) {
         const retry = budgets.consume(route.path.startsWith("/v1/internal/") ? "service" : "workload");
         if (retry) return refuse(429, "rate_limit_exceeded", retry);
       }
-      if (config.maintenance === true && req.method !== "GET" && route.auth !== "webhook") {
+      const category = admissionClass(route);
+      if (category && config.admission !== undefined) {
+        if (!readAdmission(config)[category]) return refuse(503, "release_maintenance", 30);
+        // No await between reading the fence and accounting for admission.
+        // The 12s request bound includes body upload and upstream work.
+        admitted[category]++;
+        admissionCategory = category;
+        res.once("close", () => {
+          admitted[category]--;
+          // A dropped response does not prove the upstream transaction stopped.
+          // Preserve that uncertainty; an empty transport count cannot certify
+          // business drain after a canceled or timed-out mutation.
+          if (!res.writableFinished) markUncertain();
+        });
+      } else if (config.admission === undefined && config.maintenance === true && req.method !== "GET" && route.auth !== "webhook") {
         return refuse(503, "release_maintenance", 30);
       }
       // Raw bytes are buffered only within a fixed bound; Mux signs these bytes.
@@ -118,6 +142,7 @@ export function createGateway(input, options = {}) {
         call.once("error", failed);
         call.end(body);
         function failed() {
+          markUncertain();
           counters.upstream_failures++;
           if (!res.destroyed && !res.headersSent) refuse(502, "upstream_unavailable");
           resolve();
@@ -131,16 +156,20 @@ export function createGateway(input, options = {}) {
   server.on("checkContinue", (_req, res) => { res.writeHead(417, { connection: "close" }); res.end(); });
   server.on("upgrade", (_req, socket) => socket.destroy());
   server.on("close", () => agent.destroy());
-  return { server, counters };
+  return { server, counters, admissionState: () => ({
+    ...(config.admission === undefined ? { valid: false, newWork: false, recovery: false } : readAdmission(config)),
+    active: { ...admitted },
+    uncertain: { ...uncertain },
+  }) };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const configPath = process.env.GATEWAY_CONFIG_FILE;
   if (!configPath) throw new Error("GATEWAY_CONFIG_FILE is required");
   const config = JSON.parse(readFileSync(configPath, "utf8"));
-  const { server, counters } = createGateway(config);
+  const { server, counters, admissionState } = createGateway(config);
   const certificate = new X509Certificate(readFileSync(config.tlsCertFile));
-  const operations = createOperationsServer(counters, { tls_not_after_seconds: Date.parse(certificate.validTo) / 1000 });
+  const operations = createOperationsServer(counters, { tls_not_after_seconds: Date.parse(certificate.validTo) / 1000 }, admissionState);
   operations.listen(9100, "0.0.0.0");
   server.listen(8443, "0.0.0.0");
   for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => {

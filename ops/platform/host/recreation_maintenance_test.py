@@ -74,6 +74,7 @@ class MaintenanceRecoveryTests(unittest.TestCase):
         with self.patches():
             result = maintenance.install(self.inputs, "2" * 32, self.source, self.output)
         self.assertEqual(result["status"], "RECREATION_MAINTENANCE_INSTALLED_DISABLED")
+        self.assertEqual(result["existingAcmeFilesRestored"], 7)
         self.assertFalse(result["newAccountCreated"])
         self.assertFalse(result["timersEnabled"])
         self.assertEqual(json.loads(self.config_path.read_text())["hostMachineId"], "2" * 32)

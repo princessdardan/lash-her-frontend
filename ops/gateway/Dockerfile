@@ -7,7 +7,7 @@ FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:a6c34457f6da4295807e0514
 WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY package.json package-lock.json ./
-COPY server.mjs oidc.mjs policy.mjs private-tls.mjs operations.mjs routes.json release-probe.mjs ./
+COPY server.mjs oidc.mjs policy.mjs admission.mjs private-tls.mjs operations.mjs routes.json release-probe.mjs ./
 ENV NODE_ENV=production
 ENV PATH=/nodejs/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 USER nonroot:nonroot
