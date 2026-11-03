@@ -26,20 +26,24 @@ def main():
     if not re.fullmatch(r"sha256:[a-f0-9]{64}", args.image_id) or args.output.exists():
         raise ValueError("Fresh output and immutable cached image ID required")
     environment = {key: os.environ[key] for key in ("PATH", "HOME") if key in os.environ}
-    # setup-docker-action exposes its isolated daemon through DOCKER_HOST.
-    # Keep that selection only for a local Unix socket, never a remote engine.
+    # Preserve the caller's daemon selection, whether it uses DOCKER_HOST or
+    # a named current context (setup-docker-action uses the latter). Resolve
+    # context metadata locally, then refuse every non-Unix endpoint.
     selected_endpoint = os.environ.get("DOCKER_HOST")
     if selected_endpoint is not None:
         if not re.fullmatch(r"unix:///[^\s\x00]+", selected_endpoint):
             raise ValueError("Local Docker Unix socket required")
         environment["DOCKER_HOST"] = selected_endpoint
-    else:
-        environment["DOCKER_CONTEXT"] = "default"
+    elif "DOCKER_CONTEXT" in os.environ:
+        environment["DOCKER_CONTEXT"] = os.environ["DOCKER_CONTEXT"]
     def command(values, timeout=20):
         return subprocess.run(["docker", *values], env=environment, capture_output=True, text=True, check=True, timeout=timeout).stdout.strip()
-    endpoint = selected_endpoint or command(["context", "inspect", "default", "--format", '{{(index .Endpoints "docker").Host}}'])
-    if not endpoint.startswith("unix://"):
+    selected_context = None if selected_endpoint else command(["context", "show"])
+    endpoint = selected_endpoint or command(["context", "inspect", selected_context, "--format", '{{(index .Endpoints "docker").Host}}'])
+    if not re.fullmatch(r"unix:///[^\s\x00]+", endpoint):
         raise ValueError("Local Docker engine required")
+    environment.pop("DOCKER_CONTEXT", None)
+    environment["DOCKER_HOST"] = endpoint
     command(["image", "inspect", "--platform", "linux/amd64", args.image_id, "--format", "{{.Id}}"])
     nonce, records = uuid4().hex, []
     label = "lash-her.owned-inspection=" + nonce

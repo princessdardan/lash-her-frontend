@@ -1,6 +1,6 @@
 {
   "status": "STAGING_ACCESS_RECOVERY_COMPONENT_VALIDATION_PASS",
-  "observedAt": "2026-11-03T17:32:43.351625+00:00",
+  "observedAt": "2026-11-03T17:38:18.067358+00:00",
   "node": {
     "version": "24.18.0",
     "tests": 161,
@@ -196,7 +196,7 @@
     "ops/platform/browser_ssh_trust.test.mjs": "821bbde83f436f8412b3bfb50b152985cbfc2a40f1f00cadd914e69334d725bf",
     "ops/platform/cold-recover-staging.mjs": "187193fd00bb487efcb14e79233ee5b430a91db6dcfaaa7967ad0fc0beb15bf6",
     "ops/platform/cold-recover-staging.test.mjs": "57cee4d11beb6f9bf51dda56b9121c138a60a3a03cb3f9abbeba831c963d018d",
-    "ops/platform/harness/owned-docker-inspection.py": "783b55f7fd0b40d72a781406e0e9d9b7f69fbd2dd5011d24279da4d4ffd6aa0a",
+    "ops/platform/harness/owned-docker-inspection.py": "b51a308d1896901391e8a4677478e8962449f37255b08d3b7f7f1ad9e8bae5e5",
     "ops/platform/host/cold_restore.py": "3a05defdbd68e2222b6860823f0458dd3f8dead73656b9618bdd76ebdd0c6ed8",
     "ops/platform/host/cold_restore_test.py": "7213078bb46aad9654acc26ee9075b04e79af61597a05e3f931d4f03c88eccc3",
     "ops/platform/host/docker_inspect.py": "677894097d7831f1fb056bcb87f8a08d0d352931eb435ec2c63616b1e7f8bcde",
@@ -271,8 +271,107 @@
     "failedRun": "41684582488",
     "failedSource": "e1904955f4992286bd78d31a4520480e6dc74ff3",
     "cause": "fixture built on setup-docker-action Unix daemon, inspection selected default daemon",
-    "fix": "preserve explicitly selected DOCKER_HOST only when it is a local Unix socket",
+    "fix": "resolve explicit DOCKER_HOST or the actual selected named context to a local Unix endpoint; never force the default context",
     "remoteTcpEndpointRefusedBeforeDockerContact": true,
-    "newExactSourceCiRequired": true
+    "newExactSourceCiRequired": true,
+    "secondFailedRun": "41685302155",
+    "secondFailedSource": "7f7594b4e629a80df875119535ed3d97f7684d3f",
+    "namedContextSelectionActuallyVerified": true,
+    "temporaryNamedContextRemoved": true,
+    "globalCurrentContextChanged": false
+  },
+  "actualDockerInspectionCurrentContext": {
+    "status": "OWNED_DOCKER_OPTIONAL_HEALTH_INSPECTION_PASS",
+    "imageId": "sha256:a3825436cdf37b10721b047592061a15ae78fc63e7ad3237c39715ea91701af1",
+    "checks": [
+      {
+        "reader": "runtime",
+        "healthcheckPresent": false,
+        "health": "none",
+        "passed": true
+      },
+      {
+        "reader": "recovery",
+        "healthcheckPresent": false,
+        "health": "none",
+        "passed": true
+      },
+      {
+        "reader": "watchdog",
+        "healthcheckPresent": false,
+        "health": "none",
+        "passed": true
+      },
+      {
+        "reader": "runtime",
+        "healthcheckPresent": true,
+        "health": "healthy",
+        "passed": true
+      },
+      {
+        "reader": "recovery",
+        "healthcheckPresent": true,
+        "health": "healthy",
+        "passed": true
+      },
+      {
+        "reader": "watchdog",
+        "healthcheckPresent": true,
+        "health": "healthy",
+        "passed": true
+      }
+    ],
+    "cleanupPassed": true,
+    "network": "none",
+    "applicationCredentialsUsed": false,
+    "awsContacted": false,
+    "actualStagingChanged": false
+  },
+  "actualDockerInspectionNamedContext": {
+    "status": "OWNED_DOCKER_OPTIONAL_HEALTH_INSPECTION_PASS",
+    "imageId": "sha256:a3825436cdf37b10721b047592061a15ae78fc63e7ad3237c39715ea91701af1",
+    "checks": [
+      {
+        "reader": "runtime",
+        "healthcheckPresent": false,
+        "health": "none",
+        "passed": true
+      },
+      {
+        "reader": "recovery",
+        "healthcheckPresent": false,
+        "health": "none",
+        "passed": true
+      },
+      {
+        "reader": "watchdog",
+        "healthcheckPresent": false,
+        "health": "none",
+        "passed": true
+      },
+      {
+        "reader": "runtime",
+        "healthcheckPresent": true,
+        "health": "healthy",
+        "passed": true
+      },
+      {
+        "reader": "recovery",
+        "healthcheckPresent": true,
+        "health": "healthy",
+        "passed": true
+      },
+      {
+        "reader": "watchdog",
+        "healthcheckPresent": true,
+        "health": "healthy",
+        "passed": true
+      }
+    ],
+    "cleanupPassed": true,
+    "network": "none",
+    "applicationCredentialsUsed": false,
+    "awsContacted": false,
+    "actualStagingChanged": false
   }
 }
