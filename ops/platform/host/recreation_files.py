@@ -79,8 +79,8 @@ def private_parents(path):
         directory.mkdir(mode=0o700)
 
 
-def stage(value):
-    root = action_root(value["action"])
+def validate_inputs(value):
+    """Validate privately in memory, without creating an action or input file."""
     files = value.get("files")
     demand(isinstance(files, list) and 1 <= len(files) <= 100, "RECREATION_FILES_BOUNDED_INPUTS_REQUIRED")
     verified, seen, total, acme = [], set(), 0, 0
@@ -98,13 +98,20 @@ def stage(value):
     manifest = {item["path"]: item["sha256"] for item in files}
     canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
     demand(hashlib.sha256(canonical).hexdigest() == value.get("manifestSha256"), "RECREATION_FILES_REVIEWED_MANIFEST_REQUIRED")
+    return verified
+
+
+def stage(value):
+    root = action_root(value["action"])
+    verified = validate_inputs(value)
     destination = root / "inputs"
     demand(not root.exists(), "RECREATION_FILES_EXCLUSIVE_ACTION_REQUIRED")
     # Validate the full payload before creating anything. An interrupted copy
     # leaves its exclusive directory for review, never automatic overwrite.
+    private_parents(root)
     root.mkdir(mode=0o700)
     destination.mkdir(mode=0o700)
-    migrate.write_json(root, "handoff-started.json", {"manifestSha256": value["manifestSha256"], "files": len(files), "credentialsDisplayed": False})
+    migrate.write_json(root, "handoff-started.json", {"manifestSha256": value["manifestSha256"], "files": len(verified), "credentialsDisplayed": False})
     for name, raw in verified:
         target = destination / name
         private_parents(target)

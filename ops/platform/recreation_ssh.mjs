@@ -13,6 +13,15 @@ machine=pathlib.Path('/etc/machine-id').read_text().strip()
 if len(machine)!=32: raise ValueError('MACHINE_ID_REQUIRED')
 print(json.dumps({'status':'SSH_MACHINE_ID_OBSERVED','machineId':machine}))
 `;
+const bareRuntime = header + `
+import shutil
+if os.geteuid()!=0: raise ValueError('ROOT_REQUIRED')
+root=pathlib.Path('/var/lib/lash-her/releases/staging')
+old=root/'p1-recreate-access-20261103-c2'
+new=root/'p1-recreate-access-20261103-c3'
+if any(p.exists() or p.is_symlink() for p in (old,new)) or shutil.which('docker') is not None: raise ValueError('BARE_RUNTIME_RESTORE_REQUIRED')
+print(json.dumps({'status':'BARE_RUNTIME_RESTORE_VERIFIED','hostMachineId':pathlib.Path('/etc/machine-id').read_text().strip(),'failedActionInputsPresent':False,'newActionPresent':False,'dockerInstalled':False,'readOnly':True}))
+`;
 const sourceInstall = header + `
 import base64,hashlib
 if os.geteuid()!=0: raise ValueError('ROOT_REQUIRED')
@@ -129,6 +138,7 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
   }
   return {
     machine:()=>run(["sudo","-n","/usr/bin/python3","-c",inspect]),
+    bareRuntime:()=>run(["sudo","-n","/usr/bin/python3","-c",bareRuntime]),
     installSource:payload=>run(["sudo","-n","/usr/bin/python3","-c",sourceInstall],payload),
     phase:(commit,payload)=> {
       assert.match(commit,/^[a-f0-9]{40}$/u);

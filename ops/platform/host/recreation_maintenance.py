@@ -41,30 +41,38 @@ def save(path, raw, mode=0o600):
         stream.write(raw)
 
 
+def validate_recovery_material(config, ca, key, values, runtime_ca, runtime_certificate, runtime_key, machine):
+    """Validate retained recovery bytes without filesystem or provider writes."""
+    certificates.plan(config)
+    demand(config["hostMachineId"] == recreation_prepare.ORIGINAL_MACHINE, "RECREATION_ORIGINAL_CERTIFICATE_BINDING_REQUIRED")
+    demand(ca == runtime_ca, "RECREATION_RECOVERY_CA_MISMATCH")
+    demand(len(values) == 7 and all(Path(name).suffix in (".key", ".crt", ".json", ".pem") for name in values)
+           and any(Path(name).suffix == ".json" and "accounts" in Path(name).parts for name in values),
+           "RECREATION_EXISTING_ACME_ACCOUNT_STATE_REQUIRED")
+    for ending, raw in ((".crt", runtime_certificate), (".key", runtime_key)):
+        demand(values.get("certificates/" + certificates.HOST + ending) == raw,
+               "RECREATION_ACME_AND_RUNTIME_PAIR_MISMATCH")
+    updated = {**config, "hostMachineId": machine}
+    certificates.plan(updated)
+    return updated, ca, key, values
+
+
 def recovery_material(inputs, machine):
     directory = inputs / "maintenance"
     config = migrate.read_json(directory, "certificates-staging.json")
-    certificates.plan(config)
-    demand(config["hostMachineId"] == recreation_prepare.ORIGINAL_MACHINE, "RECREATION_ORIGINAL_CERTIFICATE_BINDING_REQUIRED")
     ca = migrate.read_input(directory / "private-ca", "ca.pem", 65_536)
-    demand(ca == migrate.read_input(inputs / "configuration", "tls/ca.pem", 65_536), "RECREATION_RECOVERY_CA_MISMATCH")
     key = migrate.read_input(directory / "private-ca", "ca.key", 65_536)
     acme = directory / "acme-staging"
     staging_state.outside_checkout(acme)
     paths = list(acme.rglob("*"))
     demand(not any(p.is_symlink() for p in paths), "RECREATION_ACME_SYMLINK_REFUSED")
     files = [p for p in paths if p.is_file()]
-    demand(len(files) == 8 and any(p.suffix == ".json" and "accounts" in p.relative_to(acme).parts for p in files),
-           "RECREATION_EXISTING_ACME_ACCOUNT_STATE_REQUIRED")
+    demand(len(files) == 7, "RECREATION_EXISTING_ACME_ACCOUNT_STATE_REQUIRED")
     values = {str(p.relative_to(acme)): migrate.read_input(acme, str(p.relative_to(acme)), 65_536) for p in files}
-    # The backup's public leaf/key must be exactly the qualified runtime pair.
-    for ending, runtime_name in ((".crt", "cert.pem"), (".key", "key.pem")):
-        name = "certificates/" + certificates.HOST + ending
-        demand(values.get(name) == migrate.read_input(inputs / "configuration", "tls/gateway/" + runtime_name, 65_536),
-               "RECREATION_ACME_AND_RUNTIME_PAIR_MISMATCH")
-    updated = {**config, "hostMachineId": machine}
-    certificates.plan(updated)
-    return updated, ca, key, values
+    return validate_recovery_material(config, ca, key, values,
+        migrate.read_input(inputs / "configuration", "tls/ca.pem", 65_536),
+        migrate.read_input(inputs / "configuration", "tls/gateway/cert.pem", 65_536),
+        migrate.read_input(inputs / "configuration", "tls/gateway/key.pem", 65_536), machine)
 
 
 def install(inputs, machine, source_ops, output):

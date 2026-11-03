@@ -30,7 +30,7 @@ class MaintenanceRecoveryTests(unittest.TestCase):
         self.save(acme + "certificates/" + maintenance.certificates.HOST + ".crt", b"owned-public-server-certificate")
         self.save(acme + "certificates/" + maintenance.certificates.HOST + ".key", b"owned-private-server-fixture")
         for name in ("accounts/test/account.json", "accounts/test/keys/account.key", "accounts/test/registration.json",
-                     "certificates/extra.crt", "certificates/extra.json", "certificates/issuer.crt"):
+                     "certificates/extra.crt", "certificates/extra.json"):
             self.save(acme + name, b"owned-existing-account-or-certificate-state")
         self.output = self.root / "output"; self.output.mkdir(mode=0o700)
         self.data = self.root / "data"

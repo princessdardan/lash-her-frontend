@@ -1,0 +1,10 @@
+{
+  "status": "ACTUAL_PRIVATE_PAYLOAD_VALIDATED_IN_MEMORY",
+  "files": 50,
+  "acmeFiles": 7,
+  "manifestSha256": "f5b1a5faad65d47219e89c4de4abae24be8f299a4dedfbb5a5b034b7bc5dae51",
+  "privateCopiesWritten": false,
+  "providerWrites": false,
+  "hostWrites": false,
+  "observedAt": "2026-11-03T19:51:12.902Z"
+}

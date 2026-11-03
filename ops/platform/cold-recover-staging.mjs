@@ -7,7 +7,7 @@ import {fileURLToPath,pathToFileURL} from "node:url";
 import {prepareRecreation,releaseBindings,freshInventory,privateParents,privateJson} from "./recreate-staging.mjs";
 import {durablePrivateFile} from "./recreation_controller.mjs";
 import {operatorAwsCli} from "./aws_cli.mjs";
-import {accessRecoveryPlan} from "./access_recovery.mjs";
+import {accessRecoveryPlan,accessRecoverySpec,readAccessRecoveryState,inspectRecoverySnapshot} from "./access_recovery.mjs";
 import {accessRecoveryController} from "./access_recovery_controller.mjs";
 import {readRecoveryProducers,verifyRecoveryMux} from "./access_recovery_producers.mjs";
 import {verifiedBrowserSshProof} from "./browser_ssh_trust.mjs";
@@ -17,6 +17,7 @@ import {verifyOperatorCi} from "./recreation_source.mjs";
 import {githubSourceApi} from "./release-inputs.mjs";
 import {CONTINUATION,continuationParentReceipts,continuationPlan} from "./access_recovery_continuation.mjs";
 import {DETACHED_CONTINUATION,detachedParentReceipts,detachedContinuationPlan} from "./detached_recovery_continuation.mjs";
+import {EXISTING_RUNTIME,runtimeParentReceipts,runtimeContinuationPlan,retainedRuntimeBrowserTrust} from "./existing_runtime_continuation.mjs";
 
 const source=resolve(dirname(fileURLToPath(import.meta.url)),"../..");
 const parent="/Users/dardan/.local/share/lash-her/recreations/staging";
@@ -26,11 +27,12 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
 export function recoverySettings(value) {
   assert.ok(value&&typeof value==="object"&&!Array.isArray(value));
-  assert.ok([1,2,3].includes(value.version));
+  assert.ok([1,2,3,4].includes(value.version));
   assert.deepEqual(Object.keys(value).sort(),value.version===1?["action","operatorIpv4Cidr","sourceCommit","version"]:
     ["action","continuationOf","operatorIpv4Cidr","sourceCommit","version"]);
   if(value.version===2){assert.equal(value.action,CONTINUATION.action);assert.equal(value.continuationOf,CONTINUATION.parentAction);}
   if(value.version===3){assert.equal(value.action,DETACHED_CONTINUATION.action);assert.equal(value.continuationOf,DETACHED_CONTINUATION.parentAction);}
+  if(value.version===4){assert.equal(value.action,EXISTING_RUNTIME.action);assert.equal(value.continuationOf,EXISTING_RUNTIME.parentAction);}
   assert.match(value.action,/^p1-recreate-access-[a-z0-9-]{1,20}$/u);
   assert.match(value.sourceCommit,/^[a-f0-9]{40}$/u);return value;
 }
@@ -54,13 +56,13 @@ export async function runAccessRecovery(settings,{apply=false,confirmation}={}) 
     currentCidr:settings.operatorIpv4Cidr,candidateSha256:prepared.inputs.candidateSha256,inputManifestSha256:prepared.inputs.manifestSha256});
   let continuation=null;
   if(settings.version>=2) {
-    const fixed=settings.version===2?CONTINUATION:DETACHED_CONTINUATION;
+    const fixed=settings.version===2?CONTINUATION:settings.version===3?DETACHED_CONTINUATION:EXISTING_RUNTIME;
     const files={};
     for(const name of Object.keys(fixed.receiptsSha256)) {
       const path=join(parent,fixed.parentAction,name);await privateJson(path);files[name]=await readFile(path);
     }
-    continuation=settings.version===2?continuationParentReceipts(files):detachedParentReceipts(files);
-    plan=settings.version===2?continuationPlan(plan,continuation):detachedContinuationPlan(plan,continuation);
+    continuation=settings.version===2?continuationParentReceipts(files):settings.version===3?detachedParentReceipts(files):runtimeParentReceipts(files);
+    plan=settings.version===2?continuationPlan(plan,continuation):settings.version===3?detachedContinuationPlan(plan,continuation):runtimeContinuationPlan(plan,continuation,prepared.inputs.files.length);
   }
   if(!apply)return {...plan,review:prepared.inputs.review,inputFiles:prepared.inputs.files.length,
     privateReceiptDirectory:join(parent,settings.action),sourceCiVerified:false,startRequiresExactSourceCi:true};
@@ -101,10 +103,24 @@ export async function runAccessRecovery(settings,{apply=false,confirmation}={}) 
     const current=await fetch("https://checkip.amazonaws.com/",{redirect:"error",signal:AbortSignal.timeout(15000)});
     assert.equal(current.status,200);assert.equal((await current.text()).trim()+"/32",settings.operatorIpv4Cidr,"Operator address changed before recovery");
     const baseAws=operatorAwsCli({binary:"/Users/dardan/.local/bin/aws"});
-    const controller=accessRecoveryController({templateBody,addressArn,currentCidr:settings.operatorIpv4Cidr,action:settings.action,
+    const controller=settings.version===4?null:accessRecoveryController({templateBody,addressArn,currentCidr:settings.operatorIpv4Cidr,action:settings.action,
       aws:request=>{guard();return baseAws(request);},record,verifyProducers:producers,confirmation,signal:abort.signal});
-    await producers();let originalStop,recoverySnapshot;
-    if(settings.version===3) {
+    const readOnlyOperations=new Set(["GetCallerIdentity","DescribeStacks","ListStackResources","GetTemplate","GetStaticIp","GetInstances","GetInstancePortStates","GetInstanceSnapshot"]);
+    const readOnlyAws=request=>{guard();assert.ok(readOnlyOperations.has(request.operation));return baseAws(request);};
+    const currentRuntimeState=async()=> {
+      const spec=accessRecoverySpec(templateBody,addressArn,settings.operatorIpv4Cidr,"ready");
+      const state=await readAccessRecoveryState(readOnlyAws,spec,"ready");
+      const raw=await readOnlyAws({service:"lightsail",operation:"GetInstanceSnapshot",region:spec.region,params:{instanceSnapshotName:continuation.snapshot.snapshotName}});
+      assert.deepEqual(inspectRecoverySnapshot(raw,spec,"p1-recreate-access-20261103",1793729257262),continuation.snapshot);
+      return state;
+    };
+    await producers();let originalStop,recoverySnapshot,instance,browser;
+    if(settings.version===4) {
+      await progress("verify-existing-pinned-host");instance=await currentRuntimeState();
+      browser=retainedRuntimeBrowserTrust(continuation,instance);
+      originalStop=continuation.stop;recoverySnapshot=continuation.snapshot;
+      await record("existing-runtime-infrastructure",instance);await record("retained-browser-trust-reused",{...browser,knownHosts:undefined});
+    } else if(settings.version===3) {
       await progress("verify-and-stop-detached-provider-started-original");
       ({originalStop,recoverySnapshot}=await controller.adoptDetachedSnapshot(continuation));
       await record("original-infrastructure",await controller.state());
@@ -117,21 +133,28 @@ export async function runAccessRecovery(settings,{apply=false,confirmation}={}) 
       await progress("stop-original");originalStop=await controller.stopOriginal();
       await progress("snapshot-original");recoverySnapshot=await controller.snapshotOriginal();
     }
-    for(const step of settings.version===3?["absent","verify-key"]:["detached","absent","verify-key"]) {await progress("infrastructure-"+step);await controller.step(step);}
-    const instance=await controller.state(),proofPath=join(parent,"incoming/browser-ssh-"+settings.action+".json");
-    await progress("independent-browser-ssh-verification");
-    print({status:"WAITING_FOR_AUTHENTICATED_AWS_BROWSER_SSH_PROOF",action:settings.action,accountId:"691588646557",
-      instanceArn:instance.instanceArn,address:instance.address,proofPath,
-      commands:["cat /etc/machine-id","cat /etc/ssh/ssh_host_ed25519_key.pub","ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256"]});
-    let proof;
-    for(;;) {guard();try {proof=await privateJson(proofPath);break;}catch(error){if(error.code!=="ENOENT")throw error;}await sleep(1000);}
-    const browser=verifiedBrowserSshProof(proof,instance,settings.action,prepared.spec.originalMachineId);
+    if(settings.version!==4) {
+      for(const step of settings.version===3?["absent","verify-key"]:["detached","absent","verify-key"]) {await progress("infrastructure-"+step);await controller.step(step);}
+      instance=await controller.state();const proofPath=join(parent,"incoming/browser-ssh-"+settings.action+".json");
+      await progress("independent-browser-ssh-verification");
+      print({status:"WAITING_FOR_AUTHENTICATED_AWS_BROWSER_SSH_PROOF",action:settings.action,accountId:"691588646557",
+        instanceArn:instance.instanceArn,address:instance.address,proofPath,
+        commands:["cat /etc/machine-id","cat /etc/ssh/ssh_host_ed25519_key.pub","ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256"]});
+      let proof;
+      for(;;) {guard();try {proof=await privateJson(proofPath);break;}catch(error){if(error.code!=="ENOENT")throw error;}await sleep(1000);}
+      browser=verifiedBrowserSshProof(proof,instance,settings.action,prepared.spec.originalMachineId);
+    }
     const knownHosts=join(directory,"new-host-known_hosts");await durablePrivateFile(knownHosts,Buffer.from(browser.knownHosts));
     const trust={...browser,knownHosts:undefined};await record("browser-ssh-trust",trust);
     const diagnostics=join(directory,"ssh");await mkdir(diagnostics,{mode:0o700});
     newSsh=await recreationSsh({knownHosts,keyFile:"/Users/dardan/.ssh/Dardan.pem",diagnostics,signal:abort.signal});
     const machine=await newSsh.machine();assert.equal(machine.machineId,browser.hostMachineId);
-    await progress("verify-steady-state-access");const infrastructure=await controller.step("ready",trust);
+    if(settings.version===4) {
+      const bare=await newSsh.bareRuntime();assert.equal(bare.status,"BARE_RUNTIME_RESTORE_VERIFIED");assert.equal(bare.hostMachineId,EXISTING_RUNTIME.machineId);
+      await record("bare-runtime-preflight",bare);
+    }
+    await progress("verify-steady-state-access");const infrastructure=settings.version===4?await currentRuntimeState():await controller.step("ready",trust);
+    if(settings.version===4)assert.equal(infrastructure.instanceArn,EXISTING_RUNTIME.instanceArn);
     await progress("install-exact-public-source");await newSsh.installSource({commit:settings.sourceCommit,files:prepared.committed.files});
     await progress("restore-reviewed-private-inputs");
     await newSsh.privateFiles(settings.sourceCommit,{version:1,operation:"stage",action:settings.action,
@@ -160,7 +183,7 @@ export async function runAccessRecovery(settings,{apply=false,confirmation}={}) 
     assert.equal(ready.candidateSha256,prepared.inputs.candidateSha256);assert.equal(ready.containers.length,8);
     const binding=JSON.parse(receipts.get("configuration-binding.json"));
     assert.equal(sha256(receipts.get("runtime-binding.json")),binding.restoredSha256["runtime.json"]);
-    await producers();await record("final-infrastructure",await controller.state());
+    await producers();await record("final-infrastructure",settings.version===4?await currentRuntimeState():await controller.state());
     outcome.status="STAGING_OPERATOR_ACCESS_AND_RUNTIME_RECOVERED_AWAITING_P1_QUALIFICATION";
     Object.assign(outcome,{newInstanceArn:instance.instanceArn,newHostMachineId:machine.machineId,snapshotArn:recoverySnapshot.snapshotArn,
       currentRuntimeReceiptSha256:sha256(receipts.get("runtime-outcome.json")),nativeSchedulesEnabled:false,

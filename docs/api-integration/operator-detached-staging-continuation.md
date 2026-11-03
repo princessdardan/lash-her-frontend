@@ -1,6 +1,8 @@
 # Continue from the completed detach update
 
-Prepared action `p1-recreate-access-20261103-c2`. This is a deliberate failure continuation, not an automatic retry or P1 acceptance.
+**Historical action, executed and failed:** C2 completed replacement and independent SSH verification, then the receiver rejected the ACME issuance log before private files were persisted. The current replacement remains running and attached to the static IP, with Docker/applications absent. See [failure reconciliation](baselines/2026-11-03-c2-runtime-handoff-failure.json). The pre-execution state below is historical; do not rerun this action.
+
+Prepared action `p1-recreate-access-20261103-c2`, exact source `738546802fd56517b4ecd1279666cd267fe2a2cd`, [draft PR64](https://github.com/princessdardan/lash-her-frontend/pull/64). All ten [CI41698228049](https://github.com/princessdardan/lash-her-frontend/actions/runs/41698228049) jobs pass. The [exact-source verifier](baselines/2026-11-03-detached-continuation-exact-source-ci.json) confirms a clean checkout, current canonical branch head, repository/actor and workflow bytes. The [committed-source plan](baselines/2026-11-03-detached-continuation-plan.json) passes all 51 unchanged input hashes and six exact parent receipt hashes. This is a deliberate failure continuation, not an automatic retry or P1 acceptance.
 
 ## Actual state and cause
 
@@ -31,7 +33,7 @@ Settings are public-only JSON, saved outside Git with mode 600:
   "version": 3,
   "action": "p1-recreate-access-20261103-c2",
   "continuationOf": "p1-recreate-access-20261103-c1",
-  "sourceCommit": "REPLACE_WITH_REVIEWED_40_CHARACTER_SOURCE_COMMIT",
+  "sourceCommit": "738546802fd56517b4ecd1279666cd267fe2a2cd",
   "operatorIpv4Cidr": "99.239.187.88/32"
 }
 ```
@@ -39,3 +41,5 @@ Settings are public-only JSON, saved outside Git with mode 600:
 Run `node ops/platform/cold-recover-staging.mjs plan /absolute/private/settings.json` from the exact clean correction checkout. After all ten exact-source CI jobs pass and Dardan explicitly starts this reviewed continuation, run `node ops/platform/cold-recover-staging.mjs apply /absolute/private/settings.json --confirm staging/p1-recreate-access-20261103-c2` once. A new failure stops for review.
 
 The [accepted release policy](release-policy.md) states: “Dardan reviews failures before a deliberate retry.” The additional normal stop and changed source were absent from C1's approved continuation, so C1's start does not authorize C2. No arbitrary approval expiry or new credential requirement is introduced.
+
+The [bounded publication observation](baselines/2026-11-03-detached-continuation-publication.json) finds zero correction-branch deployments in either Vercel project. Dardan explicitly selected “Run reviewed continuation C2” for this exact source and scope. Execution ended at the private-file receiver; no runtime recovery or P1 completion is claimed.

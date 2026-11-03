@@ -79,11 +79,17 @@ export async function collectPrivateInputs({releaseRoot,source,compatibilityCand
       const absolute=join(path,entry.name);
       assert.equal(entry.isSymbolicLink(),false,"Existing ACME recovery symlink refused");
       if(entry.isDirectory())await walk(absolute);
-      else {assert.ok(entry.isFile());await add("maintenance/acme-staging/"+relative(acmeRoot,absolute),absolute);}
+      else {
+        assert.ok(entry.isFile());
+        // Issuance diagnostics are retained in the original private backup,
+        // but are not account/key/certificate recovery material.
+        if(relative(acmeRoot,absolute)==="initial-issuance.log")continue;
+        await add("maintenance/acme-staging/"+relative(acmeRoot,absolute),absolute);
+      }
     }
   }
   await walk(acmeRoot);
-  assert.equal(files.filter(f=>f.path.startsWith("maintenance/acme-staging/")).length,8);
+  assert.equal(files.filter(f=>f.path.startsWith("maintenance/acme-staging/")).length,7);
   files.push(...programs.files);
   assert.equal(new Set(files.map(f=>f.path)).size,files.length,"Duplicate handoff input refused");
   const bytes=name=>Buffer.from(files.find(f=>f.path===name).data,"base64");

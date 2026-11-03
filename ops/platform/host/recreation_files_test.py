@@ -60,6 +60,21 @@ class RecreationPrivateFiles(unittest.TestCase):
             files.stage(self.value)
         self.assertFalse(self.root.joinpath(self.action).exists())
 
+    def test_fresh_host_missing_release_parents_are_created_privately_only_after_validation(self):
+        missing = self.root / "fresh" / "releases" / "staging"
+        self.add("maintenance/acme-staging/initial-issuance.log", b"owned diagnostic log")
+        with patch.object(files, "ROOT", missing):
+            with self.assertRaisesRegex(ValueError, "ACME_SCOPE"):
+                files.stage(self.value)
+            self.assertFalse(missing.parent.parent.exists())
+            self.value["files"].pop(); self.manifest()
+            files.validate_inputs(self.value)
+            self.assertFalse(missing.parent.parent.exists())
+            files.stage(self.value)
+            for path in [missing.parent.parent, missing.parent, missing, missing / self.action]:
+                self.assertEqual(path.stat().st_mode & 0o777, 0o700)
+            self.assertTrue((missing / self.action / "inputs/configuration/course-api.env").is_file())
+
     def test_existing_action_symlink_cannot_redirect_private_configuration(self):
         alias = self.root / self.action; alias.symlink_to(self.root, target_is_directory=True)
         with self.assertRaisesRegex(ValueError, "SYMLINK"):

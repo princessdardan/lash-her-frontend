@@ -25,3 +25,9 @@ test("detached continuation settings require the second failure and its fixed ne
   assert.equal(recoverySettings(v),v);
   for(const bad of [{...v,continuationOf:"p1-recreate-access-20261103"},{...v,action:v.continuationOf},{...v,stop:false}])assert.throws(()=>recoverySettings(bad));
 });
+
+test("existing-host settings bind the C2 file-validation failure and cannot choose another host",()=> {
+  const v={version:4,action:"p1-recreate-access-20261103-c3",continuationOf:"p1-recreate-access-20261103-c2",sourceCommit:"a".repeat(40),operatorIpv4Cidr:"99.239.187.88/32"};
+  assert.equal(recoverySettings(v),v);
+  for(const bad of [{...v,continuationOf:"p1-recreate-access-20261103-c1"},{...v,instanceArn:"another"},{...v,action:v.continuationOf}])assert.throws(()=>recoverySettings(bad));
+});

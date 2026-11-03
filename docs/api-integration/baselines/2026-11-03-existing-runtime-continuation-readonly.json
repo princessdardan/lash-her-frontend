@@ -1,0 +1,65 @@
+{
+  "status": "EXISTING_RUNTIME_CONTINUATION_READ_ONLY_PREFLIGHT_PASS",
+  "observedAt": "2026-11-03T19:51:48.446Z",
+  "parentReceiptsSha256": {
+    "action-outcome.json": "09d93ad762b4a8f25ff0f804eba281c3ad00b25b7c90aea14396918d5cfc70c3",
+    "browser-ssh-trust.json": "a3718b9a8a6a5569d2fa0d3af081a792519c3362a14e9eaa3d01db93ef50953e",
+    "p1-recreate-access-20261103-c2-browser-trust-verified.json": "d20f9e52ee76bda87281698775a2c4c2a9015f6b65eb0e1b024f0d95e4e3e786",
+    "original-stop-completed.json": "970fbf61d029b11ade0c6e679f1a0ee27432dbddce6ed6b0d4502a3d28796f98",
+    "original-snapshot-completed.json": "e2066bddefef42e0acb72447382992856c7bcc960d54718bfcb22e67080156d8",
+    "reviewed-plan.json": "a85edfa912c027bc350bfd3438b54140615c103e7030bc1d80b080b173a677ff",
+    "ssh/003-private-stderr.bin": "9c4351bdd5872b2a98dced1b89f22147c19430376625db644f7768f46a0d485f"
+  },
+  "infrastructure": {
+    "status": "STAGING_INFRASTRUCTURE_STATE_VERIFIED",
+    "state": "attached",
+    "stackId": "arn:aws:cloudformation:us-east-1:691588646557:stack/lash-her-api-staging/43564e90-d6f4-11f1-825b-12ffd9c5e733",
+    "addressArn": "arn:aws:lightsail:us-east-1:691588646557:StaticIp/dfdce3fc-150b-47c0-87df-2bffeb81e963",
+    "address": "184.196.129.231",
+    "templateSha256": "813a3f3fa1d6532b9d75dcd3889582df7ea4afff097068fba0da261458982fa6",
+    "instanceArn": "arn:aws:lightsail:us-east-1:691588646557:Instance/c88deb32-5f4f-42df-85b4-232609b0d23e",
+    "instanceCreatedAt": "2026-11-03T14:35:08.122000-05:00",
+    "instanceIpv6Addresses": [
+      "2600:1f18:142d:3d00:43ef:7ae6:7caf:bc80"
+    ],
+    "allocationPreserved": true,
+    "infrastructureChanged": false,
+    "accessRecoveryPhase": "ready",
+    "instanceState": "running",
+    "operatorIpv4Cidr": "99.239.187.88/32",
+    "browserSshEnabled": true
+  },
+  "snapshot": {
+    "status": "STAGING_STOPPED_HOST_RECOVERY_SNAPSHOT_AVAILABLE",
+    "snapshotArn": "arn:aws:lightsail:us-east-1:691588646557:InstanceSnapshot/a9d51e18-1494-4b6a-ab98-d8936f40c33d",
+    "snapshotName": "p1-recreate-access-20261103-original",
+    "fromInstanceArn": "arn:aws:lightsail:us-east-1:691588646557:Instance/2e608d2c-a88f-416f-a23f-209d20e042f4",
+    "createdAt": "2026-11-03T13:07:38.143000-05:00",
+    "privateRootDiskIncluded": true,
+    "snapshotContentsFetched": false,
+    "cleanupRequiresSuccessfulRecovery": true
+  },
+  "host": {
+    "status": "BARE_RUNTIME_RESTORE_VERIFIED",
+    "hostMachineId": "ec2146be041cf26fda0a7986db4be3b6",
+    "failedActionInputsPresent": false,
+    "newActionPresent": false,
+    "dockerInstalled": false,
+    "readOnly": true
+  },
+  "retainedTrustFingerprint": "SHA256:OUKp422OkgJ7bR/CuJxCecL+mqxdhPmy23Wqw+cWXGc",
+  "retainedBrowserProofReusedFrom": "p1-recreate-access-20261103-c2",
+  "readOnlyCalls": [
+    "GetCallerIdentity",
+    "DescribeStacks",
+    "ListStackResources",
+    "GetTemplate",
+    "GetStaticIp",
+    "GetInstances",
+    "GetInstancePortStates",
+    "GetInstanceSnapshot"
+  ],
+  "providerMutationsPerformed": false,
+  "hostMutationsPerformed": false,
+  "privateConfigurationTransferred": false
+}
