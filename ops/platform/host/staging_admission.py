@@ -17,6 +17,7 @@ import release as runtime
 import staging_retire
 import staging_state
 import vercel
+import certificate_invocation
 
 # This finite inventory refines C01-C06, not later customer/commerce gates.
 # Each check references original evidence bytes with an explicit applicability
@@ -116,7 +117,8 @@ def make_plan(bundle, configuration, compose_file, evidence):
     return selected, {"operation": "final-p1-staging-admission", "actionId": value["actionId"], "binding": binding,
                       "operatorSourceSha256": {name: migrate.file_hash(migrate.read_input(Path(__file__).parent, name))
                           for name in ("staging_admission.py", "release.py", "migrate.py", "staging_state.py", "staging_retire.py",
-                                       "staging_restore.py", "native_qualification.py", "vercel.py", "certificates.py", "recreation_maintenance.py")},
+                                       "staging_restore.py", "native_qualification.py", "vercel.py", "certificates.py", "recreation_maintenance.py",
+                                       "certificate_invocation.py")},
                       "criteria": references, "acceptanceInputSha256": migrate.file_hash(migrate.read_input(evidence, "acceptance.json")),
                       "producers": expected_producers, "features": value["features"], "admission": value["admission"],
                       "maintenanceInvocationId": value["maintenanceInvocationId"], "drainSeconds": DRAIN_SECONDS,
@@ -188,13 +190,8 @@ class Host:
             require(installed == migrate.read_input(Path(__file__).parents[1], name, 65_536), "MAINTENANCE_UNIT_SOURCE_MISMATCH")
             state = staging_retire.unit_state(name)
             require(state["ActiveState"] == "inactive" and state["UnitFileState"] in ("disabled", "static"), "MAINTENANCE_MUST_BE_IDLE_DISABLED")
-        fields = runtime.command(["systemctl", "show", "--property=InvocationID,Result,ExecMainStatus", "lash-her-certificates-staging.service"], runtime.SAFE_ENV)
-        actual = dict(line.split("=", 1) for line in fields.splitlines() if "=" in line)
-        require(actual == {"InvocationID": plan["maintenanceInvocationId"], "Result": "success", "ExecMainStatus": "0"}, "ACTUAL_CERTIFICATE_UNIT_REQUIRED")
-        logs = runtime.command(["journalctl", "--no-pager", "--output=cat", "_SYSTEMD_INVOCATION_ID=" + actual["InvocationID"]], runtime.SAFE_ENV)
-        result = json.loads(logs)
-        require(result.get("status") == "TLS_CERTIFICATES_CURRENT" and result.get("renewed") == [] and result.get("servicesStopped") is False,
-                "ACTUAL_CURRENT_CERTIFICATE_NOOP_REQUIRED")
+        certificate_invocation.read(lambda args: runtime.command(args, runtime.SAFE_ENV),
+                                    expected_id=plan["maintenanceInvocationId"])
         runtime.command(["systemd-analyze", "verify", *(str(recreation_maintenance.UNITS / name)
             for name in (*staging_retire.TIMERS, *staging_retire.SERVICES))], runtime.SAFE_ENV, 60)
 

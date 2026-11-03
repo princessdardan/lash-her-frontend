@@ -22,6 +22,8 @@ Gateway mutations are admitted and counted synchronously before reading the body
 
 The shared host release/watchdog lock remains held throughout host checks, fencing, maintenance changes, final evidence recheck and durable receipt publication. The existing lock acquisition waits at most 30 seconds. The certificate no-op invocation must have completed separately before this action; starting it while this lock is held would report busy and cannot qualify maintenance.
 
+Completed oneshot units may be unloaded after becoming inactive, clearing their live `InvocationID` and process timestamps. The verifier therefore correlates the latest manager start/completed job and the certificate process result by trusted journal boot/invocation IDs and monotonic ordering. It requires a successful completed start job and exactly one current-certificate no-op result; stale, failed, incomplete, foreign-boot/unit, busy or renewed results refuse. This behavior was observed on the recreated host; the original wrapper failure and later read-only reconciliation remain separate evidence. See the systemd [trusted journal fields](https://www.freedesktop.org/software/systemd/man/257/systemd.journal-fields.html) and [unit/process property lifecycle](https://freedesktop.org/software/systemd/man/latest/org.freedesktop.systemd1.html).
+
 ## Candidate configuration
 
 The gateway config keeps `maintenance: true` and adds:

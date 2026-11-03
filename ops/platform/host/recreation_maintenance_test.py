@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import migrate
 import recreation_maintenance as maintenance
+import certificate_invocation_test
 
 
 class MaintenanceRecoveryTests(unittest.TestCase):
@@ -145,9 +146,11 @@ class MaintenanceActivationTests(unittest.TestCase):
         if args[:3] == ["systemctl", "show", "--value"]:
             return "d" * 32
         if args[:2] == ["systemctl", "show"]:
-            return "InvocationID=" + self.invocation + "\nResult=success\nExecMainStatus=0"
+            return "Result=success\nExecMainStatus=0\nActiveState=inactive"
         if args[0] == "journalctl":
-            return json.dumps({"status": self.certificate_status, "renewed": [], "servicesStopped": False})
+            records = certificate_invocation_test.fixture(self.invocation, 40 if self.invocation == "d" * 32 else 100)
+            records[1]["MESSAGE"] = json.dumps({"status": self.certificate_status, "renewed": [], "servicesStopped": False})
+            return "\n".join(map(json.dumps, records))
         if args[:3] == ["systemctl", "enable", "--now"]:
             if self.fail_second_timer and len(self.timer_states) == 1:
                 raise ValueError("OWNED_ENABLE_AMBIGUOUS")
@@ -165,6 +168,8 @@ class MaintenanceActivationTests(unittest.TestCase):
         stack.enter_context(patch.object(maintenance.certificates, "plan"))
         stack.enter_context(patch.object(maintenance, "current_certificate_check"))
         stack.enter_context(patch.object(maintenance.runtime, "command", side_effect=self.command))
+        stack.enter_context(patch.object(maintenance.time, "monotonic_ns", return_value=50_000))
+        stack.enter_context(patch.object(maintenance.certificate_invocation, "current_boot_id", return_value=certificate_invocation_test.BOOT))
         stack.enter_context(patch.object(maintenance.staging_retire, "unit_state", side_effect=lambda name:
             {"ActiveState": "active" if self.timer_states.get(name) else "inactive", "UnitFileState": "enabled" if self.timer_states.get(name) else "disabled"}))
         return stack

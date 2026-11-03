@@ -13,6 +13,7 @@ import sys
 import time
 
 import certificates
+import certificate_invocation
 import migrate
 import native_qualification
 import recreation_files
@@ -160,18 +161,10 @@ def activate(inputs, machine, root, output, client):
     try:
         # The caller deliberately holds no release lock here: the actual
         # systemd invocation must acquire that same lock and cannot report busy.
-        previous_invocation = runtime.command(["systemctl", "show", "--value", "--property=InvocationID",
-            "lash-her-certificates-staging.service"], runtime.SAFE_ENV)
+        minimum_started_usec = time.monotonic_ns() // 1000
         runtime.command(["systemctl", "start", "lash-her-certificates-staging.service"], runtime.SAFE_ENV, 120)
-        state = dict(line.split("=", 1) for line in runtime.command(["systemctl", "show", "--property=InvocationID,Result,ExecMainStatus",
-            "lash-her-certificates-staging.service"], runtime.SAFE_ENV).splitlines() if "=" in line)
-        demand(state.get("Result") == "success" and state.get("ExecMainStatus") == "0"
-               and re.fullmatch(r"[a-f0-9]{32}", state.get("InvocationID", ""))
-               and state["InvocationID"] != previous_invocation, "RECREATION_ACTUAL_CERTIFICATE_UNIT_REQUIRED")
-        logs = runtime.command(["journalctl", "--no-pager", "--output=cat", "_SYSTEMD_INVOCATION_ID=" + state["InvocationID"]], runtime.SAFE_ENV)
-        result = json.loads(logs)
-        demand(result.get("status") == "TLS_CERTIFICATES_CURRENT" and result.get("renewed") == []
-               and result.get("servicesStopped") is False, "RECREATION_ACTUAL_CURRENT_CERTIFICATE_NOOP_REQUIRED")
+        result = certificate_invocation.read(lambda args: runtime.command(args, runtime.SAFE_ENV),
+                                             minimum_started_usec=minimum_started_usec)
         for timer in staging_retire.TIMERS:
             enabled.append(timer)
             runtime.command(["systemctl", "enable", "--now", timer], runtime.SAFE_ENV)
@@ -180,7 +173,7 @@ def activate(inputs, machine, root, output, client):
         demand(runtime.check_containers(selected, restored / "configuration") == ready["containers"], "RECREATION_MAINTENANCE_RUNTIME_CHANGED")
         staging_restore.check_provider(client, selected, {"frontendDeploymentId": qualification["frontendDeploymentId"]})
         return {"status": "RECREATION_MAINTENANCE_ACTIVE", "hostMachineId": machine, "timersEnabled": enabled,
-                "certificateUnitInvocationId": state["InvocationID"], "certificateStatus": result["status"],
+                "certificateUnitInvocationId": result["invocationId"], "certificateStatus": result["status"],
                 "renewalPerformed": False, "newAccountCreated": False, "trafficAuthorized": False, "releaseAccepted": False}
     except BaseException:
         for timer in reversed(enabled):
