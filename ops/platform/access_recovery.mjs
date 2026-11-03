@@ -28,7 +28,7 @@ export function accessRecoverySpec(templateBody,addressArn,currentCidr,phase) {
   return spec;
 }
 
-export async function readAccessRecoveryState(aws,spec,phase,originalState="running") {
+export async function readAccessRecoveryState(aws,spec,phase,originalState=phase==="detached"?"stopped":"running") {
   assert.ok(RECOVERY_PHASES.includes(phase));assert.ok(["running","stopped"].includes(originalState));
   const api=(service,operation,params)=>aws({service,operation,region:spec.region,params});
   const identity=await api("sts","GetCallerIdentity",{});
@@ -40,7 +40,7 @@ export async function readAccessRecoveryState(aws,spec,phase,originalState="runn
     api("lightsail","GetStaticIp",{staticIpName:spec.addressName}),api("lightsail","GetInstances",{}),
   ]);
   const ports=phase==="absent"?{}:await api("lightsail","GetInstancePortStates",{instanceName:spec.instanceName});
-  const expectedState=phase==="detached"?"stopped":phase==="initial"?originalState:"running";
+  const expectedState=["initial","detached"].includes(phase)?originalState:"running";
   const state=inspectInfrastructureState({identity,stacks,resources,template,address,instances,ports},spec,hostState(phase),expectedState);
   if(phase==="initial")assert.equal(state.instanceArn,spec.originalInstanceArn);
   if(["verify-key","ready"].includes(phase))assert.notEqual(state.instanceArn,spec.originalInstanceArn);

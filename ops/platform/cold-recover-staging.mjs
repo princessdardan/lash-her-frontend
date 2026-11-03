@@ -16,6 +16,7 @@ import {decodePrivateReceipts,sha256} from "./recreation_inputs.mjs";
 import {verifyOperatorCi} from "./recreation_source.mjs";
 import {githubSourceApi} from "./release-inputs.mjs";
 import {CONTINUATION,continuationParentReceipts,continuationPlan} from "./access_recovery_continuation.mjs";
+import {DETACHED_CONTINUATION,detachedParentReceipts,detachedContinuationPlan} from "./detached_recovery_continuation.mjs";
 
 const source=resolve(dirname(fileURLToPath(import.meta.url)),"../..");
 const parent="/Users/dardan/.local/share/lash-her/recreations/staging";
@@ -25,10 +26,11 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
 export function recoverySettings(value) {
   assert.ok(value&&typeof value==="object"&&!Array.isArray(value));
-  assert.ok([1,2].includes(value.version));
+  assert.ok([1,2,3].includes(value.version));
   assert.deepEqual(Object.keys(value).sort(),value.version===1?["action","operatorIpv4Cidr","sourceCommit","version"]:
     ["action","continuationOf","operatorIpv4Cidr","sourceCommit","version"]);
   if(value.version===2){assert.equal(value.action,CONTINUATION.action);assert.equal(value.continuationOf,CONTINUATION.parentAction);}
+  if(value.version===3){assert.equal(value.action,DETACHED_CONTINUATION.action);assert.equal(value.continuationOf,DETACHED_CONTINUATION.parentAction);}
   assert.match(value.action,/^p1-recreate-access-[a-z0-9-]{1,20}$/u);
   assert.match(value.sourceCommit,/^[a-f0-9]{40}$/u);return value;
 }
@@ -51,12 +53,14 @@ export async function runAccessRecovery(settings,{apply=false,confirmation}={}) 
   let plan=accessRecoveryPlan({action:settings.action,sourceCommit:settings.sourceCommit,templateBody,addressArn,
     currentCidr:settings.operatorIpv4Cidr,candidateSha256:prepared.inputs.candidateSha256,inputManifestSha256:prepared.inputs.manifestSha256});
   let continuation=null;
-  if(settings.version===2) {
+  if(settings.version>=2) {
+    const fixed=settings.version===2?CONTINUATION:DETACHED_CONTINUATION;
     const files={};
-    for(const name of Object.keys(CONTINUATION.receiptsSha256)) {
-      const path=join(parent,CONTINUATION.parentAction,name);await privateJson(path);files[name]=await readFile(path);
+    for(const name of Object.keys(fixed.receiptsSha256)) {
+      const path=join(parent,fixed.parentAction,name);await privateJson(path);files[name]=await readFile(path);
     }
-    continuation=continuationParentReceipts(files);plan=continuationPlan(plan,continuation);
+    continuation=settings.version===2?continuationParentReceipts(files):detachedParentReceipts(files);
+    plan=settings.version===2?continuationPlan(plan,continuation):detachedContinuationPlan(plan,continuation);
   }
   if(!apply)return {...plan,review:prepared.inputs.review,inputFiles:prepared.inputs.files.length,
     privateReceiptDirectory:join(parent,settings.action),sourceCiVerified:false,startRequiresExactSourceCi:true};
@@ -100,7 +104,11 @@ export async function runAccessRecovery(settings,{apply=false,confirmation}={}) 
     const controller=accessRecoveryController({templateBody,addressArn,currentCidr:settings.operatorIpv4Cidr,action:settings.action,
       aws:request=>{guard();return baseAws(request);},record,verifyProducers:producers,confirmation,signal:abort.signal});
     await producers();let originalStop,recoverySnapshot;
-    if(continuation) {
+    if(settings.version===3) {
+      await progress("verify-and-stop-detached-provider-started-original");
+      ({originalStop,recoverySnapshot}=await controller.adoptDetachedSnapshot(continuation));
+      await record("original-infrastructure",await controller.state());
+    } else if(continuation) {
       await progress("verify-existing-stopped-snapshot");
       ({originalStop,recoverySnapshot}=await controller.adoptStoppedSnapshot(continuation));
       await record("original-infrastructure",await controller.state());
@@ -109,7 +117,7 @@ export async function runAccessRecovery(settings,{apply=false,confirmation}={}) 
       await progress("stop-original");originalStop=await controller.stopOriginal();
       await progress("snapshot-original");recoverySnapshot=await controller.snapshotOriginal();
     }
-    for(const step of ["detached","absent","verify-key"]) {await progress("infrastructure-"+step);await controller.step(step);}
+    for(const step of settings.version===3?["absent","verify-key"]:["detached","absent","verify-key"]) {await progress("infrastructure-"+step);await controller.step(step);}
     const instance=await controller.state(),proofPath=join(parent,"incoming/browser-ssh-"+settings.action+".json");
     await progress("independent-browser-ssh-verification");
     print({status:"WAITING_FOR_AUTHENTICATED_AWS_BROWSER_SSH_PROOF",action:settings.action,accountId:"691588646557",

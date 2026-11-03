@@ -19,3 +19,9 @@ test("continuation settings bind only the recorded stopped-snapshot failure and 
   assert.equal(recoverySettings(v),v);
   for(const bad of [{...v,continuationOf:"another-action"},{...v,action:v.continuationOf},{...v,snapshotName:"arbitrary"}])assert.throws(()=>recoverySettings(bad));
 });
+
+test("detached continuation settings require the second failure and its fixed new action",()=> {
+  const v={version:3,action:"p1-recreate-access-20261103-c2",continuationOf:"p1-recreate-access-20261103-c1",sourceCommit:"a".repeat(40),operatorIpv4Cidr:"99.239.187.88/32"};
+  assert.equal(recoverySettings(v),v);
+  for(const bad of [{...v,continuationOf:"p1-recreate-access-20261103"},{...v,action:v.continuationOf},{...v,stop:false}])assert.throws(()=>recoverySettings(bad));
+});

@@ -1,0 +1,72 @@
+{
+  "status": "DETACHED_CONTINUATION_FAILURE_RECONCILED_READ_ONLY",
+  "observedAt": "2026-11-03T18:53:37.510679+00:00",
+  "action": "p1-recreate-access-20261103-c1",
+  "sourceCommit": "0a53a074b03791caba80f61e2aa9f0060dd8afed",
+  "outcome": {
+    "status": "STAGING_ACCESS_RECOVERY_REQUIRES_REVIEW",
+    "action": "p1-recreate-access-20261103-c1",
+    "sourceCommit": "0a53a074b03791caba80f61e2aa9f0060dd8afed",
+    "startedAt": 1793731442725,
+    "productionChanged": false,
+    "migrationsExecuted": false,
+    "trafficAuthorized": false,
+    "releaseAccepted": false,
+    "liveRollbackQualified": false,
+    "p1RecreationQualified": false,
+    "failureCode": "REVIEWED_STATE_ASSERTION_FAILED",
+    "phase": "infrastructure-detached",
+    "completedAt": 1793731524074
+  },
+  "cloudFormationStackStatus": "UPDATE_COMPLETE",
+  "completedTransition": "attached-to-detached",
+  "staticIpAllocationPreserved": true,
+  "staticIpAttached": false,
+  "originalHostState": "running",
+  "originalTemporaryPublicIpv4": "98.92.183.230",
+  "originalInstanceStillPresent": true,
+  "hostDeletedOrReplaced": false,
+  "privateConfigurationTransferred": false,
+  "workerAndContainerStateInspected": false,
+  "snapshotAvailable": true,
+  "snapshotArn": "arn:aws:lightsail:us-east-1:691588646557:InstanceSnapshot/a9d51e18-1494-4b6a-ab98-d8936f40c33d",
+  "actualAssertion": {
+    "status": "DETACHED_STATE_ASSERTION_REPRODUCED_READ_ONLY",
+    "code": "ERR_ASSERTION",
+    "operator": "strictEqual",
+    "actual": "running",
+    "expected": "stopped",
+    "sourceLocation": "at inspectInfrastructureState (file:///private/tmp/lash-p1-access-recovery-continuation-20261103/ops/platform/infrastructure.mjs:71:66)",
+    "observedAt": "2026-11-03T18:46:47.901Z",
+    "calls": [
+      "GetCallerIdentity",
+      "DescribeStacks",
+      "ListStackResources",
+      "GetTemplate",
+      "GetStaticIp",
+      "GetInstances",
+      "GetInstancePortStates"
+    ],
+    "providerMutationsPerformed": false
+  },
+  "providerStartEvidence": {
+    "status": "STAGING_DETACH_START_EVENT_READ_ONLY_LOOKUP",
+    "observedAt": "2026-11-03T18:48:17.986728+00:00",
+    "events": [
+      {
+        "eventTime": "2026-11-03T18:45:05Z",
+        "eventSource": "lightsail.amazonaws.com",
+        "eventName": "StartInstance",
+        "userAgent": "cloudformation.amazonaws.com",
+        "errorCode": null,
+        "instanceName": "lash-her-api-staging-host",
+        "invokedBy": "cloudformation.amazonaws.com",
+        "identityType": "IAMUser"
+      }
+    ],
+    "nextTokenPresent": false,
+    "providerMutationsPerformed": false
+  },
+  "cause": "CloudFormation completed detach and started the original instance; local postcondition expected stopped",
+  "newActionExecuted": false
+}

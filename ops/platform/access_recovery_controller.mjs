@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {accessRecoverySpec,inspectAccessRecoveryChangeSet,inspectRecoverySnapshot,readAccessRecoveryState,stoppedOriginal} from "./access_recovery.mjs";
 import {inspectValidationEvents} from "./infrastructure.mjs";
 import {CONTINUATION,validateContinuationParent} from "./access_recovery_continuation.mjs";
+import {DETACHED_CONTINUATION,validateDetachedParent} from "./detached_recovery_continuation.mjs";
 
 export function accessRecoveryController({templateBody,addressArn,currentCidr,action,aws,record,verifyProducers,
   confirmation,now=Date.now,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),signal,observe=readAccessRecoveryState}) {
@@ -86,6 +87,40 @@ export function accessRecoveryController({templateBody,addressArn,currentCidr,ac
       parentReceiptsSha256:evidence.receiptsSha256,snapshotArn:snapshot.snapshotArn,mutationsPerformed:false});
     return {originalStop:structuredClone(stop),recoverySnapshot:structuredClone(snapshot)};
   }
+  async function verifyDetachedSnapshot(evidence) {
+    assert.equal(action,DETACHED_CONTINUATION.action);assert.equal(phase,"initial");assert.equal(stop,null);assert.equal(snapshot,null);
+    validateDetachedParent(evidence);await verifyProducers();
+    const before=await observe(aws,spec("detached"),"detached","running");
+    assert.equal(before.instanceArn,base.originalInstanceArn);assert.equal(before.state,"detached");
+    const raw=await api("lightsail","GetInstanceSnapshot",{instanceSnapshotName:DETACHED_CONTINUATION.snapshotName});
+    const retained=inspectRecoverySnapshot(raw,base,CONTINUATION.parentAction,DETACHED_CONTINUATION.snapshotStartedAt);
+    assert.deepEqual(retained,evidence.snapshot,"Exact retained snapshot metadata required");
+    return {before,recoverySnapshot:retained};
+  }
+  async function adoptDetachedSnapshot(evidence) {
+    once("adopt-detached-snapshot");const verified=await verifyDetachedSnapshot(evidence);
+    await recordIntent("detached-original-stop-started",{instanceArn:base.originalInstanceArn,forcedStop:false,
+      before:verified.before,snapshotArn:verified.recoverySnapshot.snapshotArn});
+    await observedOperation("detached-original-stop-operation-observed",await api("lightsail","StopInstance",{instanceName:base.instanceName}),
+      {[base.instanceName]:"Instance"},"StopInstance");
+    const deadline=now()+600_000;let stopped=false;
+    while(now()<deadline) {
+      const raw=await api("lightsail","GetInstances",{});assert.equal(raw.nextPageToken,undefined);
+      const hosts=raw.instances?.filter(h=>h.name===base.instanceName);assert.equal(hosts?.length,1);
+      assert.equal(hosts[0].arn,base.originalInstanceArn);
+      if(hosts[0].state?.name==="stopped"){stopped=true;break;}
+      assert.ok(["running","stopping"].includes(hosts[0].state?.name));await sleep(2000);
+    }
+    assert.equal(stopped,true,"DETACHED_ORIGINAL_STOP_OBSERVATION_TIMEOUT");
+    const actual=await observe(aws,spec("detached"),"detached","stopped");assert.equal(actual.instanceArn,base.originalInstanceArn);
+    await record("detached-original-stop-completed",{...actual,forcedStop:false,perContainerGracefulExitObserved:false});
+    stop=Object.freeze(structuredClone(evidence.stop));snapshot=Object.freeze(verified.recoverySnapshot);phase="detached";
+    await record("original-stop-completed",stop);await record("original-snapshot-completed",snapshot);
+    await record("existing-detached-source-adopted",{parentAction:DETACHED_CONTINUATION.parentAction,
+      parentReceiptsSha256:evidence.receiptsSha256,existingDetachChangeSetId:DETACHED_CONTINUATION.changeSetId,
+      snapshotArn:snapshot.snapshotArn,normalStopPerformed:true,snapshotCreationPerformed:false,detachUpdateRepeated:false});
+    return {originalStop:structuredClone(stop),recoverySnapshot:structuredClone(snapshot)};
+  }
   async function step(to,browserTrust) {
     assert.ok(stop&&snapshot,"Stopped source and verified snapshot required before compute removal");
     assert.equal(to,{initial:"detached",detached:"absent",absent:"verify-key","verify-key":"ready"}[phase],"Ordered recovery transitions required");
@@ -137,5 +172,5 @@ export function accessRecoveryController({templateBody,addressArn,currentCidr,ac
     const after=await observe(aws,target,to,"stopped");
     phase=to;await record(name+"-completed",after);return after;
   }
-  return {state,stopOriginal,snapshotOriginal,adoptStoppedSnapshot,step};
+  return {state,stopOriginal,snapshotOriginal,adoptStoppedSnapshot,verifyDetachedSnapshot,adoptDetachedSnapshot,step};
 }

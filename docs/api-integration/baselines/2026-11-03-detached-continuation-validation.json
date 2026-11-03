@@ -1,0 +1,32 @@
+{
+  "status": "DETACHED_CONTINUATION_COMPONENT_VALIDATION_PASS",
+  "observedAt": "2026-11-03T18:53:37.510679+00:00",
+  "parentSourceCommit": "0a53a074b03791caba80f61e2aa9f0060dd8afed",
+  "node": {
+    "version": "24.18.0",
+    "tests": 170,
+    "passed": 170,
+    "failed": 0,
+    "command": "node --test ops/gateway/*.test.mjs ops/platform/*.test.mjs"
+  },
+  "focusedTests": {
+    "tests": 20,
+    "passed": 20
+  },
+  "focusedEslint": "passed",
+  "gitDiffCheck": "passed",
+  "actualReadOnlyPreflight": "2026-11-03-detached-continuation-readonly.json",
+  "retainedParentReceiptHashesVerified": 6,
+  "templateAndPythonHostSubtreeChanged": false,
+  "sourceSha256": {
+    "ops/platform/access_recovery.mjs": "9dc54fe29b82520a0ce91c9d54b1867d3494e5f7a61d65675944f78287c1f666",
+    "ops/platform/access_recovery_controller.mjs": "a5b964ba5c5848cc71639a8e20856ceb5f87cfeafb7510bf08c7e7f9d656f9e4",
+    "ops/platform/access_recovery_controller.test.mjs": "fff0f9c4aef4f14426db63f4fd176a3550a627288acadc3da9fe00f238c6a022",
+    "ops/platform/detached_recovery_continuation.mjs": "c7ad0690c873b4fe92ab972ce2f225127f17f658b1423a9f83005f5788b6255c",
+    "ops/platform/cold-recover-staging.mjs": "b76df592ae5a84bebb0205337a12a5ea000c36db5992f29be16df8271acfbe4d",
+    "ops/platform/cold-recover-staging.test.mjs": "12d65b883b40b809188e8d95d5a80b9046eb0eca8a05577ed73e9e7a8859fffd"
+  },
+  "liveContinuationExecuted": false,
+  "providerMutationsPerformedDuringValidation": false,
+  "p1QualificationComplete": false
+}
