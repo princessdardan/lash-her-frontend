@@ -18,6 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
@@ -37,7 +38,7 @@ jobs:
         with:
           context: .
           file: ops/platform/Dockerfile.frontend-migration
-          build-args: FRONTEND_SOURCE_COMMIT=${{ github.sha }}
+          build-args: FRONTEND_SOURCE_COMMIT=${{ github.event.pull_request.head.sha || github.sha }}
           push: false
           load: true
           tags: lash-her-frontend-migration:ci
@@ -124,6 +125,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
@@ -147,6 +149,15 @@ jobs:
           docker build -f ops/platform/host/Dockerfile.test -t lash-her-firewall-test:ci ops/platform/host
           docker run --rm --network none --read-only --cap-drop ALL --cap-add NET_ADMIN \
             --security-opt no-new-privileges --tmpfs /tmp:size=32m --tmpfs /run:size=1m lash-her-firewall-test:ci
+      - name: Verify recreation source receiver and maintenance units offline
+        run: >-
+          docker run --rm --network none --read-only --cap-drop ALL
+          --security-opt no-new-privileges
+          --tmpfs /tmp:rw,nosuid,nodev,size=64m,mode=1777
+          --tmpfs /opt/lash-her:rw,nosuid,nodev,size=32m,mode=0700
+          --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly"
+          --entrypoint python3 lash-her-firewall-test:ci
+          -B /source/ops/platform/harness/owned-recreation-controls.py
       - run: npm audit --audit-level=moderate --prefix ops/gateway
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build gateway and private TLS artifact
@@ -174,7 +185,10 @@ jobs:
   quality-and-unit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -211,7 +225,10 @@ jobs:
       NEXT_PUBLIC_SANITY_DATASET: staging-2026-05-10
       NEXT_PUBLIC_SANITY_API_VERSION: 2026-03-24
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -730,7 +747,10 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -742,7 +762,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -792,7 +815,10 @@ jobs:
       PRIVATE_DB_MIGRATION_HOST: 127.0.0.1
       NEXT_PUBLIC_SANITY_DATASET: staging-2026-05-10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -839,7 +865,10 @@ jobs:
     needs: [frontend-operator-migrations, gateway-and-platform, quality-and-unit, database, audit, build, browser-tests]
     if: ${{ !cancelled() }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc

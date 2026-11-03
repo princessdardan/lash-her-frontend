@@ -1,0 +1,839 @@
+{
+  "status": "PUBLISHED_APPLICATION_ROLLBACK_AND_DURABLE_RECOVERY_PASS",
+  "runId": "168a1828-9292-44e0-8b71-c10dc45cec52",
+  "currentRelease": "p1-41541683416-1",
+  "rollbackRelease": "p1-41534715856-1",
+  "images": {
+    "gateway": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126",
+    "frontendMigration": "ghcr.io/princessdardan/lash-her-platform-frontend-migration@sha256:cff3897ee7c246c05d6c79c83b7c69694683624a9cefb20be265f4e65964b473",
+    "courseRuntime": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d",
+    "courseMigration": "ghcr.io/princessdardan/lash-her-platform-course-migration@sha256:c96917e08e8209bd0851cd136cfbb023f48a462188a924af34866ac1e52fc319",
+    "communityRuntime": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4",
+    "communityMigration": "ghcr.io/princessdardan/lash-her-platform-community-migration@sha256:d8d6d96f51e70af55c0b0d3322ad039c50ccfdfa47e4a3c7d66390a31a799718"
+  },
+  "rollbackImages": {
+    "gateway": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:1c54efc7c20bbef69ab98f096a45f99a8aeb1617c6284d25dec4f902519170e6",
+    "frontendMigration": "ghcr.io/princessdardan/lash-her-platform-frontend-migration@sha256:2bae2f077f59b7ea2526c8ed4902d6049f506392d07c291778b79c4a339baa3e",
+    "courseRuntime": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:edc4cfc671cbe05d9cbf694e010923943dafbde7194a6f1db739ec7d52943159",
+    "courseMigration": "ghcr.io/princessdardan/lash-her-platform-course-migration@sha256:b5f8c06f25bb90c9d3b4d76727709609f16c5f17f344ef7e606d979bc9cc983a",
+    "communityRuntime": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:028b31e0aee57cc74958bd81f531d279ad6d85e1626cc7697dac6d3c5c18d525",
+    "communityMigration": "ghcr.io/princessdardan/lash-her-platform-community-migration@sha256:6b5c14c0941738df22938b815bc57fc5699f1d008a076a5f1f9606071fa729ae"
+  },
+  "rounds": [
+    {
+      "phase": "current",
+      "releaseId": "p1-41541683416-1",
+      "records": [
+        {
+          "name": "frontend-sdk-oidc-catalog-tls",
+          "passed": true
+        },
+        {
+          "name": "public-tls-missing-workload-denied",
+          "passed": true
+        },
+        {
+          "name": "public-metrics-hidden",
+          "passed": true
+        },
+        {
+          "name": "private-course-tls-catalog",
+          "passed": true
+        },
+        {
+          "name": "private-application-credential-required",
+          "passed": true
+        },
+        {
+          "name": "private-community-peer-denied",
+          "passed": true
+        },
+        {
+          "name": "signed-project-and-public-route-boundaries",
+          "passed": true
+        },
+        {
+          "name": "authenticated-idempotent-enrollment",
+          "passed": true
+        },
+        {
+          "name": "private-peer-spoofing-and-direct-backend-denial",
+          "passed": true
+        },
+        {
+          "name": "signed-mux-only-exception",
+          "passed": true
+        },
+        {
+          "name": "publisher-projection-and-worker-loop",
+          "passed": true
+        },
+        {
+          "name": "actual-community-authority-client",
+          "passed": true
+        },
+        {
+          "name": "worker-restart-requested",
+          "passed": true
+        },
+        {
+          "name": "worker-recovered-after-restart",
+          "passed": true
+        },
+        {
+          "name": "maintenance-holds-application-writes",
+          "passed": true
+        }
+      ],
+      "runningImages": [
+        {
+          "service": "gateway",
+          "containerId": "a9e1af04911b78852ded727e1faf48a8f5cd46e70ece47cc5d8125234ab37a92",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126",
+          "localImageId": "sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126"
+        },
+        {
+          "service": "course-api",
+          "containerId": "a453f5a575a2cec5764686959c5868ee2270d8f2bb10d26c4736ecf19fc5e6e0",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d",
+          "localImageId": "sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d"
+        },
+        {
+          "service": "course-tls",
+          "containerId": "4a905a6c103ea8d3dda84a37e3975676c416846a63e89748e2327c840bc84393",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126",
+          "localImageId": "sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126"
+        },
+        {
+          "service": "course-publisher",
+          "containerId": "5b47dd3d342d08b55e331dd8bca69cd74b6b5ee23a8cf6a7aa73270227aa2683",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d",
+          "localImageId": "sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d"
+        },
+        {
+          "service": "course-snapshot",
+          "containerId": "d3ccd8e9b572f71e2950c055231f9cf103340ebd85f2637b3c5081d5933c8758",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d",
+          "localImageId": "sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d"
+        },
+        {
+          "service": "community-api",
+          "containerId": "13ed058d6fc5475be59ccbf58b243457c1f7524c3782da2f18edef12829fdc7b",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4",
+          "localImageId": "sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4"
+        },
+        {
+          "service": "community-tls",
+          "containerId": "22bc15863a96cbbd6fd532582ae14e15e5912903f2aca95dbe5c49208da66628",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126",
+          "localImageId": "sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126"
+        },
+        {
+          "service": "community-worker",
+          "containerId": "6f6c9cccc3ec053bbf254eeab7576887213b9db6e86d2b6c7e3cde3e66547e56",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4",
+          "localImageId": "sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4"
+        }
+      ],
+      "initialPublication": {
+        "inboxApplied": 1,
+        "sourceOutboxDelivered": 1
+      },
+      "preservedPriorBusinessRows": true,
+      "dataSha256": "07342252ffaff0a08a27f0111aebfc216ffca8db9eb3f83416bedc248ffb1ae7",
+      "recoveredPendingEvents": 0,
+      "ordinaryAdminFixture": {
+        "actionId": "recovery-fixture-owned-6e6af967-4298-430a-8a77-7dde7d86e4fa",
+        "environment": "staging",
+        "publicGatewayWritesAdmitted": false,
+        "migrationsExecuted": false,
+        "applicationAuthorizationVerifiedBy": "existing-course-api",
+        "status": "STAGING_FIXTURE_TWO_GRANTS_CREATED",
+        "courseId": "25a1bdf8-96b1-4818-a6d8-0ed52c63e59c",
+        "courseSlug": "p1-recovery-1a82f2ae106e4ff7b2318c7755287b81",
+        "grants": [
+          {
+            "userId": "935c687f-0054-4308-ad01-67684e3cbad2",
+            "commandId": "660ecbaf-5047-43ea-a26e-475a888455f7",
+            "grantId": "06f3e60a-b602-4c87-b160-913ef3d5f797",
+            "idempotencyKey": "recovery-fixture-owned-6e6af967-4298-430a-8a77-7dde7d86e4fa-1a82f2ae106e4ff7b2318c7755287b81-grant-1"
+          },
+          {
+            "userId": "b97db8a4-9b1c-42e7-a104-951b5092aebc",
+            "commandId": "8a2c0016-8fc4-48e4-a6f1-68ef5c5a1756",
+            "grantId": "5a93d053-1907-4b2d-b148-eb708ec699f1",
+            "idempotencyKey": "recovery-fixture-owned-6e6af967-4298-430a-8a77-7dde7d86e4fa-1a82f2ae106e4ff7b2318c7755287b81-grant-2"
+          }
+        ],
+        "syntheticIdentitiesOnly": true,
+        "coursePublished": false,
+        "publicRoutesAdded": false,
+        "outboxDelivered": 2,
+        "inboxApplied": 2,
+        "preservedDataSha256": "e47f7604874fcea26515ec68e7999c9a648aa09bffadd6e3745f757bccd9517a"
+      },
+      "gracefulStop": {
+        "durationMs": 1863,
+        "processes": [
+          {
+            "service": "gateway",
+            "containerId": "0bb2f07cc783a5b7f5ce2409a1ced779d07b87f4acefdbe9694520173c2e59c4",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:32:19.375704254Z",
+            "finishedAt": "2026-11-03T03:32:28.8673998Z"
+          },
+          {
+            "service": "course-api",
+            "containerId": "a453f5a575a2cec5764686959c5868ee2270d8f2bb10d26c4736ecf19fc5e6e0",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:31:17.49364317Z",
+            "finishedAt": "2026-11-03T03:32:29.684618134Z"
+          },
+          {
+            "service": "course-tls",
+            "containerId": "4a905a6c103ea8d3dda84a37e3975676c416846a63e89748e2327c840bc84393",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:31:24.130906339Z",
+            "finishedAt": "2026-11-03T03:32:29.4057058Z"
+          },
+          {
+            "service": "course-publisher",
+            "containerId": "5b47dd3d342d08b55e331dd8bca69cd74b6b5ee23a8cf6a7aa73270227aa2683",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:32:03.536010552Z",
+            "finishedAt": "2026-11-03T03:32:14.696052377Z"
+          },
+          {
+            "service": "course-snapshot",
+            "containerId": "d3ccd8e9b572f71e2950c055231f9cf103340ebd85f2637b3c5081d5933c8758",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:31:17.495842211Z",
+            "finishedAt": "2026-11-03T03:32:28.991246425Z"
+          },
+          {
+            "service": "community-api",
+            "containerId": "13ed058d6fc5475be59ccbf58b243457c1f7524c3782da2f18edef12829fdc7b",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:31:17.494968586Z",
+            "finishedAt": "2026-11-03T03:32:29.211945259Z"
+          },
+          {
+            "service": "community-tls",
+            "containerId": "22bc15863a96cbbd6fd532582ae14e15e5912903f2aca95dbe5c49208da66628",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:31:24.132617381Z",
+            "finishedAt": "2026-11-03T03:32:28.90978705Z"
+          },
+          {
+            "service": "community-worker",
+            "containerId": "6f6c9cccc3ec053bbf254eeab7576887213b9db6e86d2b6c7e3cde3e66547e56",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:32:15.057298793Z",
+            "finishedAt": "2026-11-03T03:32:28.871007467Z"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "compatible-rollback",
+      "releaseId": "p1-41534715856-1",
+      "records": [
+        {
+          "name": "frontend-sdk-oidc-catalog-tls",
+          "passed": true
+        },
+        {
+          "name": "public-tls-missing-workload-denied",
+          "passed": true
+        },
+        {
+          "name": "public-metrics-hidden",
+          "passed": true
+        },
+        {
+          "name": "private-course-tls-catalog",
+          "passed": true
+        },
+        {
+          "name": "private-application-credential-required",
+          "passed": true
+        },
+        {
+          "name": "private-community-peer-denied",
+          "passed": true
+        },
+        {
+          "name": "signed-project-and-public-route-boundaries",
+          "passed": true
+        },
+        {
+          "name": "authenticated-idempotent-enrollment",
+          "passed": true
+        },
+        {
+          "name": "private-peer-spoofing-and-direct-backend-denial",
+          "passed": true
+        },
+        {
+          "name": "signed-mux-only-exception",
+          "passed": true
+        },
+        {
+          "name": "publisher-projection-and-worker-loop",
+          "passed": true
+        },
+        {
+          "name": "actual-community-authority-client",
+          "passed": true
+        },
+        {
+          "name": "worker-restart-requested",
+          "passed": true
+        },
+        {
+          "name": "worker-recovered-after-restart",
+          "passed": true
+        },
+        {
+          "name": "maintenance-holds-application-writes",
+          "passed": true
+        }
+      ],
+      "runningImages": [
+        {
+          "service": "gateway",
+          "containerId": "a5527a9ab43f90a8c9145389d248c4fcd51caa6dd8eaddbe51deb773879746c7",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:1c54efc7c20bbef69ab98f096a45f99a8aeb1617c6284d25dec4f902519170e6",
+          "localImageId": "sha256:1c54efc7c20bbef69ab98f096a45f99a8aeb1617c6284d25dec4f902519170e6"
+        },
+        {
+          "service": "course-api",
+          "containerId": "c18567404b5df31592bbd634c3a13d45ff020a0f2ca89d72ab88e795f67a42e5",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:edc4cfc671cbe05d9cbf694e010923943dafbde7194a6f1db739ec7d52943159",
+          "localImageId": "sha256:edc4cfc671cbe05d9cbf694e010923943dafbde7194a6f1db739ec7d52943159"
+        },
+        {
+          "service": "course-tls",
+          "containerId": "e8915780ed1496b4511aca88ea577f1588b81bc808fa88f6b2fa723c0aa84601",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:1c54efc7c20bbef69ab98f096a45f99a8aeb1617c6284d25dec4f902519170e6",
+          "localImageId": "sha256:1c54efc7c20bbef69ab98f096a45f99a8aeb1617c6284d25dec4f902519170e6"
+        },
+        {
+          "service": "course-publisher",
+          "containerId": "aa37341db9acf543f36b193a97c1853cc3232519cd5fcff50a9ad9ec85919a0d",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:edc4cfc671cbe05d9cbf694e010923943dafbde7194a6f1db739ec7d52943159",
+          "localImageId": "sha256:edc4cfc671cbe05d9cbf694e010923943dafbde7194a6f1db739ec7d52943159"
+        },
+        {
+          "service": "course-snapshot",
+          "containerId": "370dca52ad9994f306e87bfa359e2da8a7c8734b1d993aa09282e1dd57909e3f",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:edc4cfc671cbe05d9cbf694e010923943dafbde7194a6f1db739ec7d52943159",
+          "localImageId": "sha256:edc4cfc671cbe05d9cbf694e010923943dafbde7194a6f1db739ec7d52943159"
+        },
+        {
+          "service": "community-api",
+          "containerId": "b6a3a6ebb7af5a159225f486205fb541fdb8ae0f88bf3357d42829d48e79cbe8",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:028b31e0aee57cc74958bd81f531d279ad6d85e1626cc7697dac6d3c5c18d525",
+          "localImageId": "sha256:028b31e0aee57cc74958bd81f531d279ad6d85e1626cc7697dac6d3c5c18d525"
+        },
+        {
+          "service": "community-tls",
+          "containerId": "e2855ba79113501acce6b67bf751a302d3b86a5460713fadba5119aefcd102d9",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:1c54efc7c20bbef69ab98f096a45f99a8aeb1617c6284d25dec4f902519170e6",
+          "localImageId": "sha256:1c54efc7c20bbef69ab98f096a45f99a8aeb1617c6284d25dec4f902519170e6"
+        },
+        {
+          "service": "community-worker",
+          "containerId": "12d243167d33575e42408e99b3aadca3941fd78bbab7b33a65423f34e59774da",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:028b31e0aee57cc74958bd81f531d279ad6d85e1626cc7697dac6d3c5c18d525",
+          "localImageId": "sha256:028b31e0aee57cc74958bd81f531d279ad6d85e1626cc7697dac6d3c5c18d525"
+        }
+      ],
+      "initialPublication": {
+        "inboxApplied": 1,
+        "sourceOutboxDelivered": 1
+      },
+      "preservedPriorBusinessRows": true,
+      "dataSha256": "1f42fbe6603240dfd9dea615620a7cf4feb90d176a59109e2eeb2d02d7f9c7df",
+      "recoveredPendingEvents": 2,
+      "gracefulStop": {
+        "durationMs": 1870,
+        "processes": [
+          {
+            "service": "gateway",
+            "containerId": "39b57797651848d2982b67dba9675da2d49ba4482ca53362a273c34af379095c",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:33:26.284028382Z",
+            "finishedAt": "2026-11-03T03:33:38.413605471Z"
+          },
+          {
+            "service": "course-api",
+            "containerId": "c18567404b5df31592bbd634c3a13d45ff020a0f2ca89d72ab88e795f67a42e5",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:32:32.089075593Z",
+            "finishedAt": "2026-11-03T03:33:39.22950718Z"
+          },
+          {
+            "service": "course-tls",
+            "containerId": "e8915780ed1496b4511aca88ea577f1588b81bc808fa88f6b2fa723c0aa84601",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:32:38.726507013Z",
+            "finishedAt": "2026-11-03T03:33:38.947013763Z"
+          },
+          {
+            "service": "course-publisher",
+            "containerId": "aa37341db9acf543f36b193a97c1853cc3232519cd5fcff50a9ad9ec85919a0d",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:32:38.822741555Z",
+            "finishedAt": "2026-11-03T03:33:19.621814421Z"
+          },
+          {
+            "service": "course-snapshot",
+            "containerId": "370dca52ad9994f306e87bfa359e2da8a7c8734b1d993aa09282e1dd57909e3f",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:32:32.08717826Z",
+            "finishedAt": "2026-11-03T03:33:38.419809096Z"
+          },
+          {
+            "service": "community-api",
+            "containerId": "b6a3a6ebb7af5a159225f486205fb541fdb8ae0f88bf3357d42829d48e79cbe8",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:32:32.09304276Z",
+            "finishedAt": "2026-11-03T03:33:38.833561388Z"
+          },
+          {
+            "service": "community-tls",
+            "containerId": "e2855ba79113501acce6b67bf751a302d3b86a5460713fadba5119aefcd102d9",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:32:38.726502346Z",
+            "finishedAt": "2026-11-03T03:33:38.445747971Z"
+          },
+          {
+            "service": "community-worker",
+            "containerId": "12d243167d33575e42408e99b3aadca3941fd78bbab7b33a65423f34e59774da",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:33:00.064150301Z",
+            "finishedAt": "2026-11-03T03:33:38.423681013Z"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "restore-current",
+      "releaseId": "p1-41541683416-1",
+      "records": [
+        {
+          "name": "frontend-sdk-oidc-catalog-tls",
+          "passed": true
+        },
+        {
+          "name": "public-tls-missing-workload-denied",
+          "passed": true
+        },
+        {
+          "name": "public-metrics-hidden",
+          "passed": true
+        },
+        {
+          "name": "private-course-tls-catalog",
+          "passed": true
+        },
+        {
+          "name": "private-application-credential-required",
+          "passed": true
+        },
+        {
+          "name": "private-community-peer-denied",
+          "passed": true
+        },
+        {
+          "name": "signed-project-and-public-route-boundaries",
+          "passed": true
+        },
+        {
+          "name": "authenticated-idempotent-enrollment",
+          "passed": true
+        },
+        {
+          "name": "private-peer-spoofing-and-direct-backend-denial",
+          "passed": true
+        },
+        {
+          "name": "signed-mux-only-exception",
+          "passed": true
+        },
+        {
+          "name": "publisher-projection-and-worker-loop",
+          "passed": true
+        },
+        {
+          "name": "actual-community-authority-client",
+          "passed": true
+        },
+        {
+          "name": "worker-restart-requested",
+          "passed": true
+        },
+        {
+          "name": "worker-recovered-after-restart",
+          "passed": true
+        },
+        {
+          "name": "maintenance-holds-application-writes",
+          "passed": true
+        }
+      ],
+      "runningImages": [
+        {
+          "service": "gateway",
+          "containerId": "649bc57de8b3bedf52fce85f28764ea0c6cdb41bce8778888b1fbf2e18321c6a",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126",
+          "localImageId": "sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126"
+        },
+        {
+          "service": "course-api",
+          "containerId": "78b36548f441148ce53933e081f2afb19dfefb986c1fa70a1e6c8524cfd7845c",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d",
+          "localImageId": "sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d"
+        },
+        {
+          "service": "course-tls",
+          "containerId": "18c21d8d019fd50e6ec66b35a6bbf6908ce959998961e34cf3f4ce2dca4762d2",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126",
+          "localImageId": "sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126"
+        },
+        {
+          "service": "course-publisher",
+          "containerId": "a6ef524fd033aeebe2461b1658ead4cc866a99b6314c3c3a2e61183a4b09aeb3",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d",
+          "localImageId": "sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d"
+        },
+        {
+          "service": "course-snapshot",
+          "containerId": "35ddffcebf50fa5a49ec062f9696fbbb13e50f143086baf8903cd57a461be1e5",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d",
+          "localImageId": "sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d"
+        },
+        {
+          "service": "community-api",
+          "containerId": "57d2d1a97a38adea2ae94d5a8fb8386e3d7d242e3c3c6a11a9d7ba89d7bfb765",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4",
+          "localImageId": "sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4"
+        },
+        {
+          "service": "community-tls",
+          "containerId": "9d2d04be7989c301c0a2765d0df0f11760a3d94a57ddd839998ea32ca6b82a51",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126",
+          "localImageId": "sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126"
+        },
+        {
+          "service": "community-worker",
+          "containerId": "320a92d44fe574689db0748697fd9edcf1d01af7e3d1f95114bcc8cd85074131",
+          "reference": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4",
+          "localImageId": "sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4"
+        }
+      ],
+      "initialPublication": {
+        "inboxApplied": 1,
+        "sourceOutboxDelivered": 1
+      },
+      "preservedPriorBusinessRows": true,
+      "dataSha256": "b0e2fd63a21ca0f60abd46837a135528589f365b9109963ff1d0c1843f816495",
+      "recoveredPendingEvents": 2,
+      "gracefulStop": {
+        "durationMs": 2054,
+        "processes": [
+          {
+            "service": "gateway",
+            "containerId": "18423e1f3db1058b21fda9220c3bfa51c51d35720846a2f3ec5b44c8694b52a4",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:34:12.136386084Z",
+            "finishedAt": "2026-11-03T03:34:22.074888755Z"
+          },
+          {
+            "service": "course-api",
+            "containerId": "78b36548f441148ce53933e081f2afb19dfefb986c1fa70a1e6c8524cfd7845c",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:33:41.603491417Z",
+            "finishedAt": "2026-11-03T03:34:22.922323131Z"
+          },
+          {
+            "service": "course-tls",
+            "containerId": "18c21d8d019fd50e6ec66b35a6bbf6908ce959998961e34cf3f4ce2dca4762d2",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:33:48.237754712Z",
+            "finishedAt": "2026-11-03T03:34:22.614599505Z"
+          },
+          {
+            "service": "course-publisher",
+            "containerId": "a6ef524fd033aeebe2461b1658ead4cc866a99b6314c3c3a2e61183a4b09aeb3",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:33:48.345486295Z",
+            "finishedAt": "2026-11-03T03:34:22.079438172Z"
+          },
+          {
+            "service": "course-snapshot",
+            "containerId": "35ddffcebf50fa5a49ec062f9696fbbb13e50f143086baf8903cd57a461be1e5",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:33:41.607922709Z",
+            "finishedAt": "2026-11-03T03:34:22.207797005Z"
+          },
+          {
+            "service": "community-api",
+            "containerId": "57d2d1a97a38adea2ae94d5a8fb8386e3d7d242e3c3c6a11a9d7ba89d7bfb765",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:33:41.602601417Z",
+            "finishedAt": "2026-11-03T03:34:22.873425881Z"
+          },
+          {
+            "service": "community-tls",
+            "containerId": "9d2d04be7989c301c0a2765d0df0f11760a3d94a57ddd839998ea32ca6b82a51",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:33:48.251944628Z",
+            "finishedAt": "2026-11-03T03:34:22.58805438Z"
+          },
+          {
+            "service": "community-worker",
+            "containerId": "320a92d44fe574689db0748697fd9edcf1d01af7e3d1f95114bcc8cd85074131",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T03:34:05.177509136Z",
+            "finishedAt": "2026-11-03T03:34:22.079166714Z"
+          }
+        ]
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "fromRelease": "p1-41541683416-1",
+      "pendingState": {
+        "status": "OWNED_LEASE_AND_RETRY_RETAINED",
+        "ownerProcessExitsWithoutReleasingLease": true,
+        "events": [
+          {
+            "eventId": "f856c8f7-4c04-4eaa-a2bd-1d4c3d9535c7",
+            "canonicalDigest": "5c362f367e497adf0d272ba4466c4ebbb70bc848633ae02e3dd06e71cc4691fc",
+            "kind": "expired-lease",
+            "notBefore": "2026-11-03T03:32:48.952Z"
+          },
+          {
+            "eventId": "3618a539-8c1a-4634-92d4-0ce4a3bd29d6",
+            "canonicalDigest": "72b0a5ccb7a41a027cc10eecdcc7e63189a6027ae2588995db5140fb32c06bd8",
+            "kind": "scheduled-retry",
+            "notBefore": "2026-11-03T03:32:33.952Z"
+          }
+        ]
+      }
+    },
+    {
+      "fromRelease": "p1-41534715856-1",
+      "pendingState": {
+        "status": "OWNED_LEASE_AND_RETRY_RETAINED",
+        "ownerProcessExitsWithoutReleasingLease": true,
+        "events": [
+          {
+            "eventId": "41b016b7-8683-432d-912f-1200b86acacb",
+            "canonicalDigest": "0f2d8a6e4d5b8f4e827a8baa919a75f6114b930b9fb4d322f3cb085ac94543a4",
+            "kind": "expired-lease",
+            "notBefore": "2026-11-03T03:33:55.859Z"
+          },
+          {
+            "eventId": "3a0b811f-cde0-4679-a9e0-745302f2f13b",
+            "canonicalDigest": "0af8f9fccc97cde6a43e669e24cd1cfcee2f5a0ab90091687720dc7ad8d5a726",
+            "kind": "scheduled-retry",
+            "notBefore": "2026-11-03T03:33:40.859Z"
+          }
+        ]
+      }
+    }
+  ],
+  "ownedMigrations": [
+    {
+      "status": "OWNED_PUBLISHED_SQL_APPLIED_ONCE",
+      "database": "lash_her_course_p1_test",
+      "applied": 17,
+      "migrations": [
+        {
+          "tag": "0000_eminent_thunderbolt_ross",
+          "sha256": "66a51f78abf3bd10fc93a808f4553777dca59513e3ca31de4370c4722376d76a"
+        },
+        {
+          "tag": "0001_tough_sentinels",
+          "sha256": "d1fc292e26aa876a74b96211011266b9da05c885a5800936b1ee375523da0a6e"
+        },
+        {
+          "tag": "0002_polite_maggott",
+          "sha256": "a012479823f012748e7298915a760b79453d48b95ae3ead5ccb0c782f2d0e5ae"
+        },
+        {
+          "tag": "0003_amused_human_cannonball",
+          "sha256": "54f32241434282e165f5f38093e7fc177e694d3b23dc9203c01a8050e414dd0d"
+        },
+        {
+          "tag": "0004_course_api_target_schema",
+          "sha256": "280ec32b1c6a7ead2683a7c0ce3b9192ea56a32cbe8cb15987666368d6df4aa9"
+        },
+        {
+          "tag": "0005_add_lesson_preview",
+          "sha256": "f0eb99fa087f9b1376d44a43a4df44715da7716e0b912ddfb0e5cceeebae958a"
+        },
+        {
+          "tag": "0006_add_entitlement_revocation_ledger",
+          "sha256": "03190485b73c2a32ced3a8d5c765f7c3ff4659fef4bab8716b78cb52dd7496e6"
+        },
+        {
+          "tag": "0007_optional_entitlement_provider",
+          "sha256": "79d6ba1dd7d140a2be1d67fed7d7d081913e20b46af2e73cd8cd8bb4d67922f1"
+        },
+        {
+          "tag": "0008_add_admin_inspection_indexes",
+          "sha256": "8bd3d0a039f302a16676c3ca398fb0414fb5594418aa888e0f78954cd9c1a8ae"
+        },
+        {
+          "tag": "0009_add_admin_entitlement_audit",
+          "sha256": "b67b0675ebac12a8e404a505e86a56bf86a1ec31654b67ac0e0521e9877170eb"
+        },
+        {
+          "tag": "0010_harden_entitlement_audit",
+          "sha256": "af5e984da68de2b27679cb957c1a5ecd93f1b47f9282fc47a31be7d44e312b9d"
+        },
+        {
+          "tag": "0011_enforce_global_idempotency_references",
+          "sha256": "02b37449a0bcc0dad47f95a6887f025ec2fa54d9f752bd9dd0ab184521d99cc9"
+        },
+        {
+          "tag": "0012_seal_admin_entitlement_effects",
+          "sha256": "e846e15f42af6c1d9a288c4914206503493fe7b45e6bc6aa7f9034d42ce966e1"
+        },
+        {
+          "tag": "0013_retain_entitlement_grants",
+          "sha256": "5516f91c708740873040eed31d2a4c620f15fd6a3f5249f1ab6e84ecc9c3ce8e"
+        },
+        {
+          "tag": "0014_course_community_enrollment_integration",
+          "sha256": "3d25cf03adfaea40c87293c0329ade3ea275bd6e267b6e1db601887a987558e9"
+        },
+        {
+          "tag": "0015_shared_rate_limit_buckets",
+          "sha256": "cf8212026106f66c84cb0ec3a4da8fd37bb5a30bd4670b7c40a665311f01c637"
+        },
+        {
+          "tag": "0016_audit_read_only_enrollment_operations",
+          "sha256": "c5b65009a238f40dee8dc649c0b66ca0d69356928ed954fc10488f9f1aeeec68"
+        }
+      ]
+    },
+    {
+      "status": "OWNED_PUBLISHED_SQL_APPLIED_ONCE",
+      "database": "lash_her_community_p1_test",
+      "applied": 10,
+      "migrations": [
+        {
+          "tag": "0000_initial_community_enrollment_projection",
+          "sha256": "06dad3175c4a6c87083783e5768ee06e587255d35338de3f2e62f25bcfcf791e"
+        },
+        {
+          "tag": "0001_add_operator_audit",
+          "sha256": "ede96bfcfe7fa889126093332cedee4d0a40abfc135d8b326d29eb39c9b696bb"
+        },
+        {
+          "tag": "0002_add_reconciliation_baseline_and_inspection_audit",
+          "sha256": "51eca3ccb286d559595d1545bf754d17c47174ee69c1a230478f2fe1a8bacfec"
+        },
+        {
+          "tag": "0003_add_reconciliation_resume_cursor",
+          "sha256": "0b2375b01a474bd400eb7a8941e4afd6dfcdde97c754454a005547c217a7d4a9"
+        },
+        {
+          "tag": "0004_add_reconciliation_baseline_cutoff",
+          "sha256": "a0b7f75b35da4f904a1b0f559ace06c74d12a625752bcac90541dfe2052a92b1"
+        },
+        {
+          "tag": "0005_add_reconciliation_baseline_materialized_marker",
+          "sha256": "354f8acec33b5de1e4ac50042999eae39dbc284e9be8bd1d16e8dcce5895410f"
+        },
+        {
+          "tag": "0006_enforce_reconciliation_baseline_immutability",
+          "sha256": "c40914bd56fb3df47ef352f693d7d066b34c01614d7384d039de1a8ca56b7a3d"
+        },
+        {
+          "tag": "0007_require_reconciliation_baseline_cutoff",
+          "sha256": "98d590ca4506301923885fb6ab96ad27ccb375c7d3ff362b1f0f25a58bad04bf"
+        },
+        {
+          "tag": "0008_integrity_staging_and_dedup",
+          "sha256": "533b3fd84845fcc6bd8e8f0991551354dbf8226bcdc6f023aa0759296850d261"
+        },
+        {
+          "tag": "0009_shared_http_rate_limits",
+          "sha256": "c0cb15b2f56857d5b695355b4af4bdd82f5e41c826391dd8cc2025d0f3890047"
+        }
+      ]
+    }
+  ],
+  "applicationVersionOverlapped": false,
+  "strategy": "maintenance window: stop all current processes before replacing images",
+  "frontendSource": "74ca26736e5834fce639407278b4575bf4d05670",
+  "actualStagingChanged": false,
+  "productionChanged": false,
+  "vmRecreationVerified": false,
+  "nativeSchedulerVerified": false,
+  "cleanupPassed": true,
+  "fixtureDirectory": "/var/folders/vw/_t7ccnf11cv7y67dmm4d40_80000gn/T/lash-p1-168a1828-9292-44e0-8b71-c10dc45cec52-PSzPRe",
+  "fixtureHashes": {
+    "owned-image-migrate": "4bdf10007220bdfe0e18eda94c9005f7046bf3af04ceb719060993c423460aeb",
+    "owned-grant-seed": "2fea67201596a91e718cd07e971259e48e265ac51169b4beb2445a05555ff13f",
+    "owned-publisher-leases": "8fff1620ec224116ef2f28d21d90ad4b45aacace6dbeb9a2d0db70b1dfb171f6",
+    "owned-admin-fixture": "1dda6ba2d60f7b631c6e80b70bca968cd38e1d45efc77f281eb51b6cf059e234"
+  },
+  "stagingFixtureSha256": "2689aa8a22355ab3710451ae6faf946035e4801b6d6eaf08b24bf60db76736fd",
+  "runnerSha256": "5dbc90764a3fe53f29d3082879bfeb1639ef58b0a9ff15add3af765652f233e5"
+}

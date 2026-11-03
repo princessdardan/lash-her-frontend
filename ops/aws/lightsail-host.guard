@@ -37,5 +37,12 @@ rule only_gateway_https_and_restricted_ssh {
 }
 
 rule address_belongs_to_this_host {
-  %addresses.Properties.AttachedTo.Ref == 'ApiHost'
+  Resources.ApiHost.Condition == 'HostPresent'
+  Resources.GatewayAddress.Condition not exists
+  %addresses.Properties.AttachedTo.'Fn::If' == ['GatewayAttached', {'Ref': 'ApiHost'}, {'Ref': 'AWS::NoValue'}]
+  Parameters.HostState.Default == 'attached'
+  Parameters.HostState.AllowedValues == ['attached', 'detached', 'absent']
+  Outputs.InstanceName.Condition == 'HostPresent'
+  Outputs.InstanceArn.Condition == 'HostPresent'
+  Outputs.GatewayIpv4.Condition not exists
 }

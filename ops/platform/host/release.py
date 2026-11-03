@@ -189,10 +189,16 @@ def configuration_container(arguments):
         demand(not remaining, "CONFIGURATION_CONTAINER_CLEANUP_UNVERIFIED")
 
 
-def preflight(release, snapshot, jobs):
+def preflight(release, snapshot, jobs, pull=True):
+    demand(type(pull) is bool, "EXPLICIT_IMAGE_PREFLIGHT_MODE_REQUIRED")
     env = runtime_environment(release, snapshot)
     for key in ("gateway", "courseRuntime", "communityRuntime"):
-        command(["docker", "pull", release["artifacts"][key]["image"]], SAFE_ENV, 180)
+        image = release["artifacts"][key]["image"]
+        if pull:
+            command(["docker", "pull", image], SAFE_ENV, 180)
+        else:
+            identity = command(["docker", "image", "inspect", "--platform", "linux/amd64", "--format", "{{.Id}}", image], SAFE_ENV)
+            demand(re.fullmatch(r"sha256:[a-f0-9]{64}", identity), "CACHED_RUNTIME_IMAGE_REQUIRED")
     # Avoid serialized/interpolation-escaped secret values from `compose config`.
     # Merge each already-validated raw file with its pinned public overrides.
     model = json.loads(command([*compose_command(snapshot, release["environment"]), "config", "--no-env-resolution", "--format", "json"], env))

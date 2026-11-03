@@ -1,0 +1,141 @@
+{
+  "status": "PUBLISHED_RECOVERY_HARNESS_FAILED",
+  "runId": "cfb6899d-8c09-484f-8fd9-393d47b00ea1",
+  "currentRelease": "p1-41541683416-1",
+  "rollbackRelease": "p1-41534715856-1",
+  "rounds": [],
+  "transitions": [],
+  "ownedMigrations": [
+    {
+      "status": "OWNED_PUBLISHED_SQL_APPLIED_ONCE",
+      "database": "lash_her_course_p1_test",
+      "applied": 17,
+      "migrations": [
+        {
+          "tag": "0000_eminent_thunderbolt_ross",
+          "sha256": "66a51f78abf3bd10fc93a808f4553777dca59513e3ca31de4370c4722376d76a"
+        },
+        {
+          "tag": "0001_tough_sentinels",
+          "sha256": "d1fc292e26aa876a74b96211011266b9da05c885a5800936b1ee375523da0a6e"
+        },
+        {
+          "tag": "0002_polite_maggott",
+          "sha256": "a012479823f012748e7298915a760b79453d48b95ae3ead5ccb0c782f2d0e5ae"
+        },
+        {
+          "tag": "0003_amused_human_cannonball",
+          "sha256": "54f32241434282e165f5f38093e7fc177e694d3b23dc9203c01a8050e414dd0d"
+        },
+        {
+          "tag": "0004_course_api_target_schema",
+          "sha256": "280ec32b1c6a7ead2683a7c0ce3b9192ea56a32cbe8cb15987666368d6df4aa9"
+        },
+        {
+          "tag": "0005_add_lesson_preview",
+          "sha256": "f0eb99fa087f9b1376d44a43a4df44715da7716e0b912ddfb0e5cceeebae958a"
+        },
+        {
+          "tag": "0006_add_entitlement_revocation_ledger",
+          "sha256": "03190485b73c2a32ced3a8d5c765f7c3ff4659fef4bab8716b78cb52dd7496e6"
+        },
+        {
+          "tag": "0007_optional_entitlement_provider",
+          "sha256": "79d6ba1dd7d140a2be1d67fed7d7d081913e20b46af2e73cd8cd8bb4d67922f1"
+        },
+        {
+          "tag": "0008_add_admin_inspection_indexes",
+          "sha256": "8bd3d0a039f302a16676c3ca398fb0414fb5594418aa888e0f78954cd9c1a8ae"
+        },
+        {
+          "tag": "0009_add_admin_entitlement_audit",
+          "sha256": "b67b0675ebac12a8e404a505e86a56bf86a1ec31654b67ac0e0521e9877170eb"
+        },
+        {
+          "tag": "0010_harden_entitlement_audit",
+          "sha256": "af5e984da68de2b27679cb957c1a5ecd93f1b47f9282fc47a31be7d44e312b9d"
+        },
+        {
+          "tag": "0011_enforce_global_idempotency_references",
+          "sha256": "02b37449a0bcc0dad47f95a6887f025ec2fa54d9f752bd9dd0ab184521d99cc9"
+        },
+        {
+          "tag": "0012_seal_admin_entitlement_effects",
+          "sha256": "e846e15f42af6c1d9a288c4914206503493fe7b45e6bc6aa7f9034d42ce966e1"
+        },
+        {
+          "tag": "0013_retain_entitlement_grants",
+          "sha256": "5516f91c708740873040eed31d2a4c620f15fd6a3f5249f1ab6e84ecc9c3ce8e"
+        },
+        {
+          "tag": "0014_course_community_enrollment_integration",
+          "sha256": "3d25cf03adfaea40c87293c0329ade3ea275bd6e267b6e1db601887a987558e9"
+        },
+        {
+          "tag": "0015_shared_rate_limit_buckets",
+          "sha256": "cf8212026106f66c84cb0ec3a4da8fd37bb5a30bd4670b7c40a665311f01c637"
+        },
+        {
+          "tag": "0016_audit_read_only_enrollment_operations",
+          "sha256": "c5b65009a238f40dee8dc649c0b66ca0d69356928ed954fc10488f9f1aeeec68"
+        }
+      ]
+    },
+    {
+      "status": "OWNED_PUBLISHED_SQL_APPLIED_ONCE",
+      "database": "lash_her_community_p1_test",
+      "applied": 10,
+      "migrations": [
+        {
+          "tag": "0000_initial_community_enrollment_projection",
+          "sha256": "06dad3175c4a6c87083783e5768ee06e587255d35338de3f2e62f25bcfcf791e"
+        },
+        {
+          "tag": "0001_add_operator_audit",
+          "sha256": "ede96bfcfe7fa889126093332cedee4d0a40abfc135d8b326d29eb39c9b696bb"
+        },
+        {
+          "tag": "0002_add_reconciliation_baseline_and_inspection_audit",
+          "sha256": "51eca3ccb286d559595d1545bf754d17c47174ee69c1a230478f2fe1a8bacfec"
+        },
+        {
+          "tag": "0003_add_reconciliation_resume_cursor",
+          "sha256": "0b2375b01a474bd400eb7a8941e4afd6dfcdde97c754454a005547c217a7d4a9"
+        },
+        {
+          "tag": "0004_add_reconciliation_baseline_cutoff",
+          "sha256": "a0b7f75b35da4f904a1b0f559ace06c74d12a625752bcac90541dfe2052a92b1"
+        },
+        {
+          "tag": "0005_add_reconciliation_baseline_materialized_marker",
+          "sha256": "354f8acec33b5de1e4ac50042999eae39dbc284e9be8bd1d16e8dcce5895410f"
+        },
+        {
+          "tag": "0006_enforce_reconciliation_baseline_immutability",
+          "sha256": "c40914bd56fb3df47ef352f693d7d066b34c01614d7384d039de1a8ca56b7a3d"
+        },
+        {
+          "tag": "0007_require_reconciliation_baseline_cutoff",
+          "sha256": "98d590ca4506301923885fb6ab96ad27ccb375c7d3ff362b1f0f25a58bad04bf"
+        },
+        {
+          "tag": "0008_integrity_staging_and_dedup",
+          "sha256": "533b3fd84845fcc6bd8e8f0991551354dbf8226bcdc6f023aa0759296850d261"
+        },
+        {
+          "tag": "0009_shared_http_rate_limits",
+          "sha256": "c0cb15b2f56857d5b695355b4af4bdd82f5e41c826391dd8cc2025d0f3890047"
+        }
+      ]
+    }
+  ],
+  "reason": "Harness failed before restart readiness",
+  "cleanupPassed": true,
+  "fixtureDirectory": "/var/folders/vw/_t7ccnf11cv7y67dmm4d40_80000gn/T/lash-p1-cfb6899d-8c09-484f-8fd9-393d47b00ea1-K2yaMx",
+  "fixtureHashes": {
+    "owned-image-migrate": "4bdf10007220bdfe0e18eda94c9005f7046bf3af04ceb719060993c423460aeb",
+    "owned-grant-seed": "2fea67201596a91e718cd07e971259e48e265ac51169b4beb2445a05555ff13f",
+    "owned-publisher-leases": "8fff1620ec224116ef2f28d21d90ad4b45aacace6dbeb9a2d0db70b1dfb171f6"
+  },
+  "runnerSha256": "c875eea008166d25084641aea64b8146c808f86f7ea851e5e5490e1617861b9f"
+}

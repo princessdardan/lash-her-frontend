@@ -19,6 +19,10 @@
       "Type": "String", "Default": "staging", "AllowedValues": ["staging", "production"],
       "Description": "One environment per stack. Never place staging workloads on the production host."
     },
+    "HostState": {
+      "Type": "String", "Default": "attached", "AllowedValues": ["attached", "detached", "absent"],
+      "Description": "Staging recreation lifecycle: detach the address, remove compute, then recreate and attach. Production requires attached."
+    },
     "AvailabilityZone": {
       "Type": "String", "Default": "us-east-1a",
       "AllowedValues": ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1e", "us-east-1f"],
@@ -45,9 +49,25 @@
       "Description": "Assigned operations owner identifier for patching, certificates and host recovery; no personal contact details."
     }
   },
+  "Rules": {
+    "ProductionHostRequired": {
+      "Assertions": [{
+        "Assert": { "Fn::Or": [
+          { "Fn::Equals": [{ "Ref": "Environment" }, "staging"] },
+          { "Fn::Equals": [{ "Ref": "HostState" }, "attached"] }
+        ] },
+        "AssertDescription": "Only staging may detach or remove compute through this lifecycle."
+      }]
+    }
+  },
+  "Conditions": {
+    "HostPresent": { "Fn::Not": [{ "Fn::Equals": [{ "Ref": "HostState" }, "absent"] }] },
+    "GatewayAttached": { "Fn::Equals": [{ "Ref": "HostState" }, "attached"] }
+  },
   "Resources": {
     "ApiHost": {
       "Type": "AWS::Lightsail::Instance",
+      "Condition": "HostPresent",
       "DeletionPolicy": "Delete",
       "UpdateReplacePolicy": "Delete",
       "Metadata": {
@@ -59,6 +79,7 @@
             "Do not publish API, database, worker, metrics or internal TLS ports.",
             "P1-04 must enforce Docker forwarding rules; UFW alone does not restrict Docker port publishing.",
             "Deletion destroys the root disk. Keep recoverable release configuration and secrets off-host.",
+            "Staging recreation uses attached -> detached -> absent -> attached updates; suspend producers and verify address detachment before removing compute.",
             "User data must use POSIX sh: Lightsail prepends its own /bin/sh initialization, so an inner Bash shebang does not select Bash."
           ],
           "mutable": "review-required"
@@ -110,23 +131,24 @@
       "UpdateReplacePolicy": "Delete",
       "Metadata": {
         "com.aws.cloudformation.Context": {
-          "why": "A stable public IPv4 supports gateway DNS across host stop/start and planned replacement. Delete with temporary staging to avoid unattached-address charges.",
+          "why": "A stable public IPv4 survives the staged compute lifecycle without changing DNS. The allocation stays managed while detached or compute is absent; whole-stack deletion still releases it.",
           "must": [
             "Attach only to this environment's host; no shared staging/production address.",
-            "Record DNS separately after verifying the allocated address; this template does not alter DNS."
+            "Record DNS separately after verifying the allocated address; this template does not alter DNS.",
+            "Never condition or replace this allocation during compute recreation. Detach and verify before deleting the host; retain the same static IPv4 when reattaching."
           ],
           "mutable": "review-required"
         }
       },
       "Properties": {
         "StaticIpName": { "Fn::Sub": "${AWS::StackName}-gateway" },
-        "AttachedTo": { "Ref": "ApiHost" }
+        "AttachedTo": { "Fn::If": ["GatewayAttached", { "Ref": "ApiHost" }, { "Ref": "AWS::NoValue" }] }
       }
     }
   },
   "Outputs": {
-    "InstanceName": { "Description": "Environment-specific host name for scoped deployment operations.", "Value": { "Ref": "ApiHost" } },
-    "InstanceArn": { "Description": "Provisioned host ARN.", "Value": { "Fn::GetAtt": ["ApiHost", "InstanceArn"] } },
+    "InstanceName": { "Condition": "HostPresent", "Description": "Environment-specific host name for scoped deployment operations.", "Value": { "Ref": "ApiHost" } },
+    "InstanceArn": { "Condition": "HostPresent", "Description": "Provisioned host ARN.", "Value": { "Fn::GetAtt": ["ApiHost", "InstanceArn"] } },
     "GatewayIpv4": { "Description": "Allocated IPv4; verify before assigning gateway DNS.", "Value": { "Fn::GetAtt": ["GatewayAddress", "IpAddress"] } },
     "ApplicationEnvironment": { "Description": "Business environment assigned to this host.", "Value": { "Ref": "Environment" } }
   }

@@ -1,0 +1,645 @@
+{
+  "status": "PUBLISHED_APPLICATION_ROLLBACK_AND_DURABLE_RECOVERY_PASS",
+  "runId": "0d41b2b4-6040-48f5-a49c-0cb020db41c2",
+  "currentRelease": "p1-41541683416-1",
+  "rollbackRelease": "p1-41534715856-1",
+  "images": {
+    "gateway": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126",
+    "frontendMigration": "ghcr.io/princessdardan/lash-her-platform-frontend-migration@sha256:cff3897ee7c246c05d6c79c83b7c69694683624a9cefb20be265f4e65964b473",
+    "courseRuntime": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d",
+    "courseMigration": "ghcr.io/princessdardan/lash-her-platform-course-migration@sha256:c96917e08e8209bd0851cd136cfbb023f48a462188a924af34866ac1e52fc319",
+    "communityRuntime": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4",
+    "communityMigration": "ghcr.io/princessdardan/lash-her-platform-community-migration@sha256:d8d6d96f51e70af55c0b0d3322ad039c50ccfdfa47e4a3c7d66390a31a799718"
+  },
+  "rollbackImages": {
+    "gateway": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:1c54efc7c20bbef69ab98f096a45f99a8aeb1617c6284d25dec4f902519170e6",
+    "frontendMigration": "ghcr.io/princessdardan/lash-her-platform-frontend-migration@sha256:2bae2f077f59b7ea2526c8ed4902d6049f506392d07c291778b79c4a339baa3e",
+    "courseRuntime": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:edc4cfc671cbe05d9cbf694e010923943dafbde7194a6f1db739ec7d52943159",
+    "courseMigration": "ghcr.io/princessdardan/lash-her-platform-course-migration@sha256:b5f8c06f25bb90c9d3b4d76727709609f16c5f17f344ef7e606d979bc9cc983a",
+    "communityRuntime": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:028b31e0aee57cc74958bd81f531d279ad6d85e1626cc7697dac6d3c5c18d525",
+    "communityMigration": "ghcr.io/princessdardan/lash-her-platform-community-migration@sha256:6b5c14c0941738df22938b815bc57fc5699f1d008a076a5f1f9606071fa729ae"
+  },
+  "rounds": [
+    {
+      "phase": "current",
+      "releaseId": "p1-41541683416-1",
+      "records": [
+        {
+          "name": "frontend-sdk-oidc-catalog-tls",
+          "passed": true
+        },
+        {
+          "name": "public-tls-missing-workload-denied",
+          "passed": true
+        },
+        {
+          "name": "public-metrics-hidden",
+          "passed": true
+        },
+        {
+          "name": "private-course-tls-catalog",
+          "passed": true
+        },
+        {
+          "name": "private-application-credential-required",
+          "passed": true
+        },
+        {
+          "name": "private-community-peer-denied",
+          "passed": true
+        },
+        {
+          "name": "signed-project-and-public-route-boundaries",
+          "passed": true
+        },
+        {
+          "name": "authenticated-idempotent-enrollment",
+          "passed": true
+        },
+        {
+          "name": "private-peer-spoofing-and-direct-backend-denial",
+          "passed": true
+        },
+        {
+          "name": "signed-mux-only-exception",
+          "passed": true
+        },
+        {
+          "name": "publisher-projection-and-worker-loop",
+          "passed": true
+        },
+        {
+          "name": "actual-community-authority-client",
+          "passed": true
+        },
+        {
+          "name": "worker-restart-requested",
+          "passed": true
+        },
+        {
+          "name": "worker-recovered-after-restart",
+          "passed": true
+        },
+        {
+          "name": "maintenance-holds-application-writes",
+          "passed": true
+        }
+      ],
+      "preservedPriorBusinessRows": true,
+      "dataSha256": "78fb1ecb158c126399a7c20018d665a26953fa03ad998199e6de33b11b3f0d96",
+      "recoveredPendingEvents": 0,
+      "gracefulStop": {
+        "durationMs": 1862,
+        "processes": [
+          {
+            "service": "gateway",
+            "containerId": "28ec82b2cc5af0138233f916cacbfa975c34df98a3b30532176dd9cc8708b553",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:08:30.461593088Z",
+            "finishedAt": "2026-11-03T02:08:40.273267176Z"
+          },
+          {
+            "service": "course-api",
+            "containerId": "d3dd55cbaed72a8224757ef697e2b6f3249629826a11278b49cb548e5bd59449",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:07:51.840019626Z",
+            "finishedAt": "2026-11-03T02:08:41.022326301Z"
+          },
+          {
+            "service": "course-tls",
+            "containerId": "d25c78e25c7a663fcd6a5d01b069f77d811a4049ceeaf342e665b64386e4edc6",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:07:58.481189337Z",
+            "finishedAt": "2026-11-03T02:08:40.752314718Z"
+          },
+          {
+            "service": "course-publisher",
+            "containerId": "ec904baf89b8faa61fad3357580badf03bcbbf6408ff289197a0eaac42f9e7aa",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:07:58.571856337Z",
+            "finishedAt": "2026-11-03T02:08:24.288167168Z"
+          },
+          {
+            "service": "course-snapshot",
+            "containerId": "2807b6e17b56f4657324fe9d08133d79ebb63bf364d934def87ff7d2094a5313",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:07:51.835239751Z",
+            "finishedAt": "2026-11-03T02:08:40.277953509Z"
+          },
+          {
+            "service": "community-api",
+            "containerId": "3bc1545ec4005aea9f7b14dbb1a51cfba3cd22b1c03803f4ddded7f4bff564f8",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:07:51.840092334Z",
+            "finishedAt": "2026-11-03T02:08:40.659522885Z"
+          },
+          {
+            "service": "community-tls",
+            "containerId": "d056da94c91c36cf7df692c3b3ca8474ad2339b2df937938fafc9cdb219e0b94",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:07:58.488533587Z",
+            "finishedAt": "2026-11-03T02:08:40.353377926Z"
+          },
+          {
+            "service": "community-worker",
+            "containerId": "3a3d920c0b963bd1e379da63d5a3e0b9a817070f07c86628a25c44fcf268d3c6",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:08:06.103543341Z",
+            "finishedAt": "2026-11-03T02:08:40.279103134Z"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "compatible-rollback",
+      "releaseId": "p1-41534715856-1",
+      "records": [
+        {
+          "name": "frontend-sdk-oidc-catalog-tls",
+          "passed": true
+        },
+        {
+          "name": "public-tls-missing-workload-denied",
+          "passed": true
+        },
+        {
+          "name": "public-metrics-hidden",
+          "passed": true
+        },
+        {
+          "name": "private-course-tls-catalog",
+          "passed": true
+        },
+        {
+          "name": "private-application-credential-required",
+          "passed": true
+        },
+        {
+          "name": "private-community-peer-denied",
+          "passed": true
+        },
+        {
+          "name": "signed-project-and-public-route-boundaries",
+          "passed": true
+        },
+        {
+          "name": "authenticated-idempotent-enrollment",
+          "passed": true
+        },
+        {
+          "name": "private-peer-spoofing-and-direct-backend-denial",
+          "passed": true
+        },
+        {
+          "name": "signed-mux-only-exception",
+          "passed": true
+        },
+        {
+          "name": "publisher-projection-and-worker-loop",
+          "passed": true
+        },
+        {
+          "name": "actual-community-authority-client",
+          "passed": true
+        },
+        {
+          "name": "worker-restart-requested",
+          "passed": true
+        },
+        {
+          "name": "worker-recovered-after-restart",
+          "passed": true
+        },
+        {
+          "name": "maintenance-holds-application-writes",
+          "passed": true
+        }
+      ],
+      "preservedPriorBusinessRows": true,
+      "dataSha256": "31c3108db8c7082667329e13035c1d61cc1da9c8cc39f58d9626529ad45334bc",
+      "recoveredPendingEvents": 2,
+      "gracefulStop": {
+        "durationMs": 1805,
+        "processes": [
+          {
+            "service": "gateway",
+            "containerId": "b3869d666015c5cf7f80e6dfb70930cfc827690912d2de968272710c686e1cf2",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:09:22.500972793Z",
+            "finishedAt": "2026-11-03T02:09:34.583641798Z"
+          },
+          {
+            "service": "course-api",
+            "containerId": "88f154441d97e07e7759c4518ec963e927db37191f0f271da0ceb05118029860",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:08:43.401249053Z",
+            "finishedAt": "2026-11-03T02:09:35.321249549Z"
+          },
+          {
+            "service": "course-tls",
+            "containerId": "cd9720e63c13bb76a8d651184eb78b74d5e003e3dc5f674d0f60d78b975306b5",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:08:50.0267735Z",
+            "finishedAt": "2026-11-03T02:09:35.091428465Z"
+          },
+          {
+            "service": "course-publisher",
+            "containerId": "0660e0c4911418c6183efefc0cd175bf5bc1f8967dbd8b1211c5918365d4624b",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:08:50.132109208Z",
+            "finishedAt": "2026-11-03T02:09:16.934427179Z"
+          },
+          {
+            "service": "course-snapshot",
+            "containerId": "fc28e7dcdc18de8d7c7349ee5d08f4d7c1d79ec78d7846793d5718c7493f300c",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:08:43.399195303Z",
+            "finishedAt": "2026-11-03T02:09:34.590645423Z"
+          },
+          {
+            "service": "community-api",
+            "containerId": "5203087e3ca19b91cbb545f7fda2c1acfa48c33534dc23b940ed70eca232ea2d",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:08:43.396795303Z",
+            "finishedAt": "2026-11-03T02:09:34.967945424Z"
+          },
+          {
+            "service": "community-tls",
+            "containerId": "8a193143ba09d3d062eace10b9445dccf9a6c44457a012d6b7998957105d7daa",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:08:50.033157208Z",
+            "finishedAt": "2026-11-03T02:09:34.591854298Z"
+          },
+          {
+            "service": "community-worker",
+            "containerId": "772e6bfe3a8112473d339450d2e98b6c53e20471ae7ece13daa19a4b45bd9fcd",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:08:57.530801087Z",
+            "finishedAt": "2026-11-03T02:09:34.58945684Z"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "restore-current",
+      "releaseId": "p1-41541683416-1",
+      "records": [
+        {
+          "name": "frontend-sdk-oidc-catalog-tls",
+          "passed": true
+        },
+        {
+          "name": "public-tls-missing-workload-denied",
+          "passed": true
+        },
+        {
+          "name": "public-metrics-hidden",
+          "passed": true
+        },
+        {
+          "name": "private-course-tls-catalog",
+          "passed": true
+        },
+        {
+          "name": "private-application-credential-required",
+          "passed": true
+        },
+        {
+          "name": "private-community-peer-denied",
+          "passed": true
+        },
+        {
+          "name": "signed-project-and-public-route-boundaries",
+          "passed": true
+        },
+        {
+          "name": "authenticated-idempotent-enrollment",
+          "passed": true
+        },
+        {
+          "name": "private-peer-spoofing-and-direct-backend-denial",
+          "passed": true
+        },
+        {
+          "name": "signed-mux-only-exception",
+          "passed": true
+        },
+        {
+          "name": "publisher-projection-and-worker-loop",
+          "passed": true
+        },
+        {
+          "name": "actual-community-authority-client",
+          "passed": true
+        },
+        {
+          "name": "worker-restart-requested",
+          "passed": true
+        },
+        {
+          "name": "worker-recovered-after-restart",
+          "passed": true
+        },
+        {
+          "name": "maintenance-holds-application-writes",
+          "passed": true
+        }
+      ],
+      "preservedPriorBusinessRows": true,
+      "dataSha256": "e7c29db6f1bd0c8cca84ea0dc2c5dba1c95232020e225940566378c899cab10f",
+      "recoveredPendingEvents": 2,
+      "gracefulStop": {
+        "durationMs": 1938,
+        "processes": [
+          {
+            "service": "gateway",
+            "containerId": "b422ab41a410679efef975f9ff9713aabd3bc937c90633021792244ffe6a2b42",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:09:59.078265629Z",
+            "finishedAt": "2026-11-03T02:10:11.385434552Z"
+          },
+          {
+            "service": "course-api",
+            "containerId": "97657d1263ecd8eeb93090c3a740025bfbc2555b15a175101ae61c74c5a09071",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:09:37.659738466Z",
+            "finishedAt": "2026-11-03T02:10:12.11447601Z"
+          },
+          {
+            "service": "course-tls",
+            "containerId": "ba02a4e35d0c578d692a4e0ab4fd1c84249071fae332151843a192c8bbc8793f",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:09:44.289117886Z",
+            "finishedAt": "2026-11-03T02:10:11.872961094Z"
+          },
+          {
+            "service": "course-publisher",
+            "containerId": "e5fa3fdd80e98bf3842d63ea8f67510458fc708a6a2c9f6275d9feb01093f484",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:09:44.379302053Z",
+            "finishedAt": "2026-11-03T02:10:11.389301385Z"
+          },
+          {
+            "service": "course-snapshot",
+            "containerId": "ae457e4da4e6cece5843ef0463e8a6aa261b69ea7c217153bc8a7866b4cdd46d",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:09:37.6643028Z",
+            "finishedAt": "2026-11-03T02:10:11.387083968Z"
+          },
+          {
+            "service": "community-api",
+            "containerId": "5293bfaff6ab4f06e9ede2280f79e214a2f534fde5bb44133da6671d89f6254c",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:09:37.662989383Z",
+            "finishedAt": "2026-11-03T02:10:12.135878969Z"
+          },
+          {
+            "service": "community-tls",
+            "containerId": "d4c18d818538228d5504d1813965861e507361ed0fc52290cf4f8762ba46d932",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:09:44.299201511Z",
+            "finishedAt": "2026-11-03T02:10:11.90273376Z"
+          },
+          {
+            "service": "community-worker",
+            "containerId": "7e0711d6c611db570816b4e0720b0569250d0fb3f2703f98bf5213bbf12f85d8",
+            "running": false,
+            "exitCode": 0,
+            "oomKilled": false,
+            "startedAt": "2026-11-03T02:09:52.359954709Z",
+            "finishedAt": "2026-11-03T02:10:11.391983218Z"
+          }
+        ]
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "fromRelease": "p1-41541683416-1",
+      "pendingState": {
+        "status": "OWNED_LEASE_AND_RETRY_RETAINED",
+        "ownerProcessExitsWithoutReleasingLease": true,
+        "events": [
+          {
+            "eventId": "fd55697b-2b7a-4080-b981-e8947f53007e",
+            "canonicalDigest": "c61d2e39916dd685a9fbd5b92aa410f803587460b32384ed7c5ac0ee9d53b4ba",
+            "kind": "expired-lease",
+            "notBefore": "2026-11-03T02:09:00.039Z"
+          },
+          {
+            "eventId": "eab73dcb-6514-43be-b54d-8c105bc56062",
+            "canonicalDigest": "cdb854e67c5e00206b038eb4b2fdce7009a7b6ffaf7ac19d51d65cb6ac523b34",
+            "kind": "scheduled-retry",
+            "notBefore": "2026-11-03T02:08:45.039Z"
+          }
+        ]
+      }
+    },
+    {
+      "fromRelease": "p1-41534715856-1",
+      "pendingState": {
+        "status": "OWNED_LEASE_AND_RETRY_RETAINED",
+        "ownerProcessExitsWithoutReleasingLease": true,
+        "events": [
+          {
+            "eventId": "1bb6ae2e-19b3-462f-a46d-c5d701f7cd50",
+            "canonicalDigest": "6366f5f2a1d5490739fe15d6d15240b2d97044570438766b3c50b230f4c8778a",
+            "kind": "expired-lease",
+            "notBefore": "2026-11-03T02:09:52.028Z"
+          },
+          {
+            "eventId": "2a34f69e-356b-4940-8140-fbfcfe84be58",
+            "canonicalDigest": "be42e6c66de080b7df46eb8a9c71568d0efb6e15b2723300dd991a48a7f0c9f6",
+            "kind": "scheduled-retry",
+            "notBefore": "2026-11-03T02:09:37.028Z"
+          }
+        ]
+      }
+    }
+  ],
+  "ownedMigrations": [
+    {
+      "status": "OWNED_PUBLISHED_SQL_APPLIED_ONCE",
+      "database": "lash_her_course_p1_test",
+      "applied": 17,
+      "migrations": [
+        {
+          "tag": "0000_eminent_thunderbolt_ross",
+          "sha256": "66a51f78abf3bd10fc93a808f4553777dca59513e3ca31de4370c4722376d76a"
+        },
+        {
+          "tag": "0001_tough_sentinels",
+          "sha256": "d1fc292e26aa876a74b96211011266b9da05c885a5800936b1ee375523da0a6e"
+        },
+        {
+          "tag": "0002_polite_maggott",
+          "sha256": "a012479823f012748e7298915a760b79453d48b95ae3ead5ccb0c782f2d0e5ae"
+        },
+        {
+          "tag": "0003_amused_human_cannonball",
+          "sha256": "54f32241434282e165f5f38093e7fc177e694d3b23dc9203c01a8050e414dd0d"
+        },
+        {
+          "tag": "0004_course_api_target_schema",
+          "sha256": "280ec32b1c6a7ead2683a7c0ce3b9192ea56a32cbe8cb15987666368d6df4aa9"
+        },
+        {
+          "tag": "0005_add_lesson_preview",
+          "sha256": "f0eb99fa087f9b1376d44a43a4df44715da7716e0b912ddfb0e5cceeebae958a"
+        },
+        {
+          "tag": "0006_add_entitlement_revocation_ledger",
+          "sha256": "03190485b73c2a32ced3a8d5c765f7c3ff4659fef4bab8716b78cb52dd7496e6"
+        },
+        {
+          "tag": "0007_optional_entitlement_provider",
+          "sha256": "79d6ba1dd7d140a2be1d67fed7d7d081913e20b46af2e73cd8cd8bb4d67922f1"
+        },
+        {
+          "tag": "0008_add_admin_inspection_indexes",
+          "sha256": "8bd3d0a039f302a16676c3ca398fb0414fb5594418aa888e0f78954cd9c1a8ae"
+        },
+        {
+          "tag": "0009_add_admin_entitlement_audit",
+          "sha256": "b67b0675ebac12a8e404a505e86a56bf86a1ec31654b67ac0e0521e9877170eb"
+        },
+        {
+          "tag": "0010_harden_entitlement_audit",
+          "sha256": "af5e984da68de2b27679cb957c1a5ecd93f1b47f9282fc47a31be7d44e312b9d"
+        },
+        {
+          "tag": "0011_enforce_global_idempotency_references",
+          "sha256": "02b37449a0bcc0dad47f95a6887f025ec2fa54d9f752bd9dd0ab184521d99cc9"
+        },
+        {
+          "tag": "0012_seal_admin_entitlement_effects",
+          "sha256": "e846e15f42af6c1d9a288c4914206503493fe7b45e6bc6aa7f9034d42ce966e1"
+        },
+        {
+          "tag": "0013_retain_entitlement_grants",
+          "sha256": "5516f91c708740873040eed31d2a4c620f15fd6a3f5249f1ab6e84ecc9c3ce8e"
+        },
+        {
+          "tag": "0014_course_community_enrollment_integration",
+          "sha256": "3d25cf03adfaea40c87293c0329ade3ea275bd6e267b6e1db601887a987558e9"
+        },
+        {
+          "tag": "0015_shared_rate_limit_buckets",
+          "sha256": "cf8212026106f66c84cb0ec3a4da8fd37bb5a30bd4670b7c40a665311f01c637"
+        },
+        {
+          "tag": "0016_audit_read_only_enrollment_operations",
+          "sha256": "c5b65009a238f40dee8dc649c0b66ca0d69356928ed954fc10488f9f1aeeec68"
+        }
+      ]
+    },
+    {
+      "status": "OWNED_PUBLISHED_SQL_APPLIED_ONCE",
+      "database": "lash_her_community_p1_test",
+      "applied": 10,
+      "migrations": [
+        {
+          "tag": "0000_initial_community_enrollment_projection",
+          "sha256": "06dad3175c4a6c87083783e5768ee06e587255d35338de3f2e62f25bcfcf791e"
+        },
+        {
+          "tag": "0001_add_operator_audit",
+          "sha256": "ede96bfcfe7fa889126093332cedee4d0a40abfc135d8b326d29eb39c9b696bb"
+        },
+        {
+          "tag": "0002_add_reconciliation_baseline_and_inspection_audit",
+          "sha256": "51eca3ccb286d559595d1545bf754d17c47174ee69c1a230478f2fe1a8bacfec"
+        },
+        {
+          "tag": "0003_add_reconciliation_resume_cursor",
+          "sha256": "0b2375b01a474bd400eb7a8941e4afd6dfcdde97c754454a005547c217a7d4a9"
+        },
+        {
+          "tag": "0004_add_reconciliation_baseline_cutoff",
+          "sha256": "a0b7f75b35da4f904a1b0f559ace06c74d12a625752bcac90541dfe2052a92b1"
+        },
+        {
+          "tag": "0005_add_reconciliation_baseline_materialized_marker",
+          "sha256": "354f8acec33b5de1e4ac50042999eae39dbc284e9be8bd1d16e8dcce5895410f"
+        },
+        {
+          "tag": "0006_enforce_reconciliation_baseline_immutability",
+          "sha256": "c40914bd56fb3df47ef352f693d7d066b34c01614d7384d039de1a8ca56b7a3d"
+        },
+        {
+          "tag": "0007_require_reconciliation_baseline_cutoff",
+          "sha256": "98d590ca4506301923885fb6ab96ad27ccb375c7d3ff362b1f0f25a58bad04bf"
+        },
+        {
+          "tag": "0008_integrity_staging_and_dedup",
+          "sha256": "533b3fd84845fcc6bd8e8f0991551354dbf8226bcdc6f023aa0759296850d261"
+        },
+        {
+          "tag": "0009_shared_http_rate_limits",
+          "sha256": "c0cb15b2f56857d5b695355b4af4bdd82f5e41c826391dd8cc2025d0f3890047"
+        }
+      ]
+    }
+  ],
+  "applicationVersionOverlapped": false,
+  "strategy": "maintenance window: stop all current processes before replacing images",
+  "frontendSource": "74ca26736e5834fce639407278b4575bf4d05670",
+  "actualStagingChanged": false,
+  "productionChanged": false,
+  "vmRecreationVerified": false,
+  "nativeSchedulerVerified": false,
+  "cleanupPassed": true,
+  "fixtureDirectory": "/var/folders/vw/_t7ccnf11cv7y67dmm4d40_80000gn/T/lash-p1-0d41b2b4-6040-48f5-a49c-0cb020db41c2-7xmFNC",
+  "fixtureHashes": {
+    "owned-image-migrate": "4bdf10007220bdfe0e18eda94c9005f7046bf3af04ceb719060993c423460aeb",
+    "owned-grant-seed": "2fea67201596a91e718cd07e971259e48e265ac51169b4beb2445a05555ff13f",
+    "owned-publisher-leases": "8fff1620ec224116ef2f28d21d90ad4b45aacace6dbeb9a2d0db70b1dfb171f6"
+  },
+  "runnerSha256": "5c30f6f746804bd785cd732a56fc1b36b492a6c69ad24f2dbc04a1394bf0d2a1"
+}

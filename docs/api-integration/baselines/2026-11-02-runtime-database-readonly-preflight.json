@@ -1,0 +1,45 @@
+{
+  "status": "STAGING_RUNTIME_DATABASE_READ_ONLY_PREFLIGHT_PASS",
+  "hostMachineId": "ec265c34b9fbf4d051aecfa185362c0a",
+  "codeSha256": "5d401b81675b74510662fd5bae91bb7ac47a768e95e0ea180eba057fc0ce1c57",
+  "checks": [
+    {
+      "containerId": "697698c1fb52e1ccc12947a69104a37080e64870c0592d2babc1d78315437781",
+      "image": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d",
+      "result": {
+        "status": "STAGING_RUNTIME_DATABASE_READ_ONLY_VERIFIED",
+        "service": "course",
+        "target": {
+          "host": "ep-sparkling-moon-b4htlczb.c-6.us-east-2.aws.neon.tech",
+          "port": 5432,
+          "database": "neondb",
+          "serverMajor": 18,
+          "user": "lash_her_course_staging_runtime"
+        },
+        "authenticatedTls": true,
+        "readOnly": true,
+        "migrationsExecuted": false
+      }
+    },
+    {
+      "containerId": "82a5f7295125f4861c780eeb3d1830b4f41d07570836a7f8e7254d9783549b95",
+      "image": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4",
+      "result": {
+        "status": "STAGING_RUNTIME_DATABASE_READ_ONLY_VERIFIED",
+        "service": "community",
+        "target": {
+          "host": "ep-fancy-glitter-b81a2g6r.c-14.us-east-1.aws.neon.tech",
+          "port": 5432,
+          "database": "neondb",
+          "serverMajor": 18,
+          "user": "lash_her_community_staging_runtime"
+        },
+        "authenticatedTls": true,
+        "readOnly": true,
+        "migrationsExecuted": false
+      }
+    }
+  ],
+  "migrationsExecuted": false,
+  "applicationContainersReplaced": false
+}

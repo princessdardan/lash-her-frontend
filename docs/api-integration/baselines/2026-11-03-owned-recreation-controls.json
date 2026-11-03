@@ -1,0 +1,31 @@
+{
+  "status": "OWNED_RECREATION_CONTROLS_PASS",
+  "checks": [
+    "fresh-public-source-installed",
+    "identical-public-source-reused-read-only",
+    "changed-source-refused-without-overwrite",
+    "unreviewed-source-refused",
+    "owned-python-cache-permitted",
+    "source-symlink-refused",
+    "writable-source-directory-refused",
+    "four-systemd-units-verified-with-owned-docker-dependency"
+  ],
+  "passed": 8,
+  "publicReceiverSha256": "22670efd0d6e3ab1e08012001cdea907c7068297fb9711c0964ecbcaab98ff37",
+  "providerContacted": false,
+  "actualStagingChanged": false,
+  "ownedDockerDependencyFixture": true,
+  "checkedAt": "2026-11-03T05:48:12.373096+00:00",
+  "testImageIndex": "sha256:a3825436cdf37b10721b047592061a15ae78fc63e7ad3237c39715ea91701af1",
+  "testImageConfig": "sha256:f40e884cf8f8f21badce98e494b859afeada94d2d5da9e5fea0215f395700c55",
+  "initialAttempt": "refused at systemd check because the original owned fixture image lacked systemd-analyze; fixture image corrected without weakening the check",
+  "sourceSha256": {
+    "ops/platform/harness/owned-recreation-controls.py": "150eaabd97cbe6aa8db23d739fdb250ffd544411223bcdd378c3a541a929dbd7",
+    "ops/platform/recreation_ssh.mjs": "335ab7e9a5471b73047e08c35bf4c25622882b85b8a7b7b6534043fb6f1c7952",
+    "ops/platform/lash-her-watchdog.service": "1d1f1996ec57eca8dcbd511cc62dda213e289842c731bd469300d5abfbeddd06",
+    "ops/platform/lash-her-watchdog.timer": "7bae505f5a4b4e1f0457fb7e437cefab71b04cef2e62a731439fcb2a6f99bb3b",
+    "ops/platform/lash-her-certificates-staging.service": "e746eff5a6d7744ef8bb88b1af18a44e715fa8ae08e50f36e97eecec5d83f819",
+    "ops/platform/lash-her-certificates-staging.timer": "991372ee47a5886c7b21ae080c61f9681b621f57955058d3a2ec63da9b9a65f4",
+    "ops/platform/host/Dockerfile.test": "17d4169e70dce2722fe06b80f55b73f9732aa76786ff7ab3d8d539bcab4446ed"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "status": "EXACT_IMAGE_CACHE_READ_ONLY_PREFLIGHT_PASS",
+  "images": [
+    {
+      "name": "gateway",
+      "present": true,
+      "imageId": "sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126"
+    },
+    {
+      "name": "frontendMigration",
+      "present": true,
+      "imageId": "sha256:cff3897ee7c246c05d6c79c83b7c69694683624a9cefb20be265f4e65964b473"
+    },
+    {
+      "name": "courseRuntime",
+      "present": true,
+      "imageId": "sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d"
+    },
+    {
+      "name": "courseMigration",
+      "present": true,
+      "imageId": "sha256:c96917e08e8209bd0851cd136cfbb023f48a462188a924af34866ac1e52fc319"
+    },
+    {
+      "name": "communityRuntime",
+      "present": true,
+      "imageId": "sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4"
+    },
+    {
+      "name": "communityMigration",
+      "present": true,
+      "imageId": "sha256:d8d6d96f51e70af55c0b0d3322ad039c50ccfdfa47e4a3c7d66390a31a799718"
+    },
+    {
+      "name": "previous-gateway",
+      "present": true,
+      "imageId": "sha256:1c54efc7c20bbef69ab98f096a45f99a8aeb1617c6284d25dec4f902519170e6"
+    },
+    {
+      "name": "previous-courseRuntime",
+      "present": true,
+      "imageId": "sha256:edc4cfc671cbe05d9cbf694e010923943dafbde7194a6f1db739ec7d52943159"
+    },
+    {
+      "name": "previous-communityRuntime",
+      "present": true,
+      "imageId": "sha256:028b31e0aee57cc74958bd81f531d279ad6d85e1626cc7697dac6d3c5c18d525"
+    }
+  ],
+  "imagesPulled": false,
+  "registryAuthenticationUsed": false,
+  "hostChanged": false
+}
