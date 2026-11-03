@@ -94,6 +94,13 @@ def main():
                 if actual != expected:
                     raise ValueError("Optional health status not preserved")
                 records.append({"reader": name, "healthcheckPresent": health, "health": actual, "passed": True})
+            if health:
+                # Modern Docker emits a --time deprecation warning to stdout,
+                # which must not be mistaken for an exact stop acknowledgment.
+                stopped = command(["stop", "--timeout", "1", identity])
+                if stopped != identity:
+                    raise ValueError("Owned Docker stop acknowledgment was not the exact container ID")
+                records.append({"reader": "stop-acknowledgment", "timeoutFlag": "--timeout", "passed": True})
     finally:
         for identity in ids():
             if not re.fullmatch(r"[a-f0-9]{64}", identity):

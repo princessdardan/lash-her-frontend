@@ -160,7 +160,7 @@ class RuntimeOperator:
         for service in services:
             demand(service in self.containers, "STAGING_OPERATOR_REVIEWED_SERVICE_REQUIRED")
             container = self.containers[service]
-            demand(runtime.command(["docker", "stop", "--time", "90", container["containerId"]], runtime.SAFE_ENV, 110)
+            demand(runtime.command(["docker", "stop", "--timeout", "90", container["containerId"]], runtime.SAFE_ENV, 110)
                    == container["containerId"], "STAGING_OPERATOR_EXACT_STOP_ACK_REQUIRED")
             stopped.append(staging_retire.stopped_container(container))
         return stopped

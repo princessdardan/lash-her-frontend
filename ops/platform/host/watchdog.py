@@ -84,7 +84,7 @@ def recover(project, history_path, execute=False):
             # A timed-out restart is ambiguous. Commit intent first so a later
             # timer cannot repeat an uncounted operation after a process crash.
             persist_intent(history_path, history)
-            command(["docker", "restart", "--time", "30", item["id"]], timeout=40)
+            command(["docker", "restart", "--timeout", "30", item["id"]], timeout=40)
         print(("restarted" if execute else "proposed") + " " + item["service"])
 
 

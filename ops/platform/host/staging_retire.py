@@ -138,7 +138,7 @@ def execute(bundle, configuration, database_receipts, runtime_receipts, compose_
             for stage in reversed(runtime.STAGES):
                 for service in stage:
                     container = by_service[service]
-                    returned = runtime.command(["docker", "stop", "--time", "90", container["containerId"]], runtime.SAFE_ENV, 110)
+                    returned = runtime.command(["docker", "stop", "--timeout", "90", container["containerId"]], runtime.SAFE_ENV, 110)
                     demand(returned == container["containerId"], "RETIRE_EXACT_STOP_ACK_REQUIRED")
                     stopped.append(stopped_container(container))
             demand(not runtime.command(["docker", "ps", "--quiet"], runtime.SAFE_ENV), "RETIRE_ZERO_RUNNING_CONTAINERS_REQUIRED")
