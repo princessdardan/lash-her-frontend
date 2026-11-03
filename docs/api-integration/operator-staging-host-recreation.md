@@ -28,7 +28,7 @@ The action performs these steps once, retaining actual outcomes between them:
 
 ## Operator inputs and commands
 
-No new credentials are requested. Apply uses the existing 1Password-mounted frontend Environment bindings: `PLATFORM_SOURCE_READ_TOKEN`, `VERCEL_TOKEN`, `GHCR_USERNAME`, `GHCR_READ_TOKEN`, `FRONTEND_STAGING_MIGRATION_DATABASE_URL`, `COURSE_STAGING_DATABASE_URL` and `COMMUNITY_STAGING_DATABASE_URL`. Values go only to scoped child processes/private SSH stdin. Database owner credentials and the value of `CRON_SECRET` are not needed.
+No new credentials are requested. Apply uses the existing 1Password-mounted frontend Environment bindings: `PLATFORM_SOURCE_READ_TOKEN`, `VERCEL_TOKEN`, `GHCR_USERNAME`, `GHCR_READ_TOKEN`, `FRONTEND_STAGING_MIGRATION_DATABASE_URL`, `COURSE_STAGING_DATABASE_URL` and `COMMUNITY_STAGING_DATABASE_URL`. Values go only to scoped child processes/private SSH stdin. The Course/Community administrator URLs and the value of `CRON_SECRET` are not needed. The existing frontend migration binding is used only for its server-enforced read-only verification.
 
 1. Publish and verify the complete operator source before execution review. Use a clean checkout at the reviewed 40-character commit, with the repository's Node 24 runtime and installed dependencies.
 2. Prepare a mode-600 JSON settings file outside Git:
