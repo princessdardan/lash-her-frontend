@@ -9,13 +9,17 @@ export const businessQueries = Object.freeze({
     courses: "SELECT id,slug,status FROM courses ORDER BY id LIMIT 2001",
     enrollments: "SELECT id,user_id,course_id,status,source FROM enrollments ORDER BY id LIMIT 2001",
     grants: "SELECT * FROM entitlement_grants ORDER BY id LIMIT 2001",
+    commands: "SELECT * FROM admin_entitlement_commands ORDER BY id LIMIT 2001",
+    effects: "SELECT * FROM admin_entitlement_command_effects ORDER BY id LIMIT 2001",
+    idempotency: "SELECT * FROM entitlement_idempotency_keys ORDER BY idempotency_key LIMIT 2001",
   },
   community: {
     projections: "SELECT stream_id,user_id,course_id,state,applied_version,highest_observed_version,status FROM course_enrollment_projections ORDER BY stream_id LIMIT 2001",
     inbox: "SELECT event_id,canonical_digest,status FROM course_enrollment_inbox ORDER BY event_id LIMIT 2001",
   },
 });
-const keyFields = { users: "id", courses: "id", enrollments: "id", grants: "id", projections: "stream_id", inbox: "event_id" };
+const keyFields = { users: "id", courses: "id", enrollments: "id", grants: "id", commands: "id", effects: "id",
+  idempotency: "idempotency_key", projections: "stream_id", inbox: "event_id" };
 const canonical = value => value instanceof Date ? value.toISOString() : Array.isArray(value) ? value.map(canonical)
   : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 

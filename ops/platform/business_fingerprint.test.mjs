@@ -4,13 +4,16 @@ import { businessFingerprint, businessQueries, verifyBusinessPreserved } from ".
 
 const key = "1".repeat(64);
 const rows = () => ({ users: [{ id: "owned-user" }], courses: [{ id: "owned-course", slug: "owned-slug", status: "draft" }],
-  enrollments: [{ id: "owned-enrollment", user_id: "owned-user" }], grants: [{ id: "owned-grant", privateReason: "must-not-export", createdAt: new Date("2026-11-03T00:00:00Z") }] });
+  enrollments: [{ id: "owned-enrollment", user_id: "owned-user" }], grants: [{ id: "owned-grant", privateReason: "must-not-export", createdAt: new Date("2026-11-03T00:00:00Z") }],
+  commands: [{ id: "owned-command", actor_user_id: "private-actor", reason: "private-audit-reason" }],
+  effects: [{ id: "owned-effect", command_id: "owned-command", resulting_status: "active" }],
+  idempotency: [{ idempotency_key: "private-idempotency-key", request_hash: "private-request-hash" }] });
 
 test("business evidence exports private-key HMACs and counts without rows, identities or reasons", () => {
   const result = businessFingerprint("course", rows(), key), serialized = JSON.stringify(result);
   assert.equal(result.status, "STAGING_BUSINESS_FINGERPRINT_READ_ONLY");
   assert.equal(result.tables.users.count, 1);
-  for (const value of ["owned-user", "owned-course", "must-not-export", key]) assert.ok(!serialized.includes(value));
+  for (const value of ["owned-user", "owned-course", "must-not-export", "private-actor", "private-audit-reason", "private-idempotency-key", "private-request-hash", key]) assert.ok(!serialized.includes(value));
   assert.equal(result.rawRowsExported, false); assert.equal(result.privateKeyExported, false);
 });
 
@@ -23,8 +26,10 @@ test("canonical key order and PostgreSQL Date serialization produce stable evide
 
 test("new rows are allowed but changed or removed baseline rows and changed keys refuse", () => {
   const before = businessFingerprint("course", rows(), key), added = rows(); added.users.push({ id: "new-owned-user" });
-  assert.equal(verifyBusinessPreserved(before, businessFingerprint("course", added, key)).preservedRows, 4);
-  for (const mutate of [value => { value.courses[0].status = "published"; }, value => { value.users = []; }]) {
+  assert.equal(verifyBusinessPreserved(before, businessFingerprint("course", added, key)).preservedRows, 7);
+  for (const mutate of [value => { value.courses[0].status = "published"; }, value => { value.users = []; },
+    value => { value.commands[0].reason = "changed-audit-reason"; }, value => { value.effects = []; },
+    value => { value.idempotency[0].request_hash = "changed-hash"; }]) {
     const changed = rows(); mutate(changed);
     assert.throws(() => verifyBusinessPreserved(before, businessFingerprint("course", changed, key)), /BUSINESS_ROWS_CHANGED/u);
   }
