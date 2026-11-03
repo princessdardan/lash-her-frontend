@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import test from "node:test";
 import {accessRecoveryController} from "./access_recovery_controller.mjs";
+import {accessRecoverySpec,stoppedOriginal} from "./access_recovery.mjs";
+import {CONTINUATION,continuationParentReceipts,continuationPlan,validateContinuationParent} from "./access_recovery_continuation.mjs";
 
 const body=readFileSync(new URL("../aws/lightsail-access-recovery.cfn.json",import.meta.url),"utf8");
-const action="p1-recreate-access-owned",addressArn="arn:aws:lightsail:us-east-1:691588646557:StaticIp/dfdce3fc-150b-47c0-87df-2bffeb81e963";
+const addressArn="arn:aws:lightsail:us-east-1:691588646557:StaticIp/dfdce3fc-150b-47c0-87df-2bffeb81e963";
 const original="arn:aws:lightsail:us-east-1:691588646557:Instance/2e608d2c-a88f-416f-a23f-209d20e042f4";
 const fresh=original.replace("2e608d2c-a88f-416f-a23f-209d20e042f4","22222222-2222-4222-8222-222222222222");
 const stack="arn:aws:cloudformation:us-east-1:691588646557:stack/lash-her-api-staging/43564e90-d6f4-11f1-825b-12ffd9c5e733";
@@ -12,7 +14,8 @@ const modify=(name,property)=>({Type:"Resource",ResourceChange:{LogicalResourceI
   Action:"Modify",Replacement:"False",Scope:["Properties"],Details:[{Target:{Attribute:"Properties",Name:property,RequiresRecreation:"Never"}}]}});
 
 function owned(options={}) {
-  let current="initial",instanceState="running",change,clock=Date.parse("2026-11-03T00:00:00Z");
+  const action=options.continuation?CONTINUATION.action:"p1-recreate-access-owned";
+  let current="initial",instanceState=options.continuation?"stopped":"running",change,clock=Date.parse("2026-11-03T00:00:00Z");
   const calls=[],records=[],observations=[];
   const observe=async (_aws,spec,phase,expected)=> {
     observations.push({phase,expected});assert.ok(phase===current||phase==="ready"&&current==="verify-key");
@@ -27,18 +30,23 @@ function owned(options={}) {
     if(request.operation==="StopInstance") {
       assert.equal(records.at(-1)[0],"original-stop-started");assert.equal(p.force,undefined);
       if(options.uncertainStop)throw Error("uncertain");instanceState="stopped";
-      return {operations:[{resourceName:"lash-her-api-staging-host",operationType:"StopInstance",status:"Started"}]};
+      return {operations:[{resourceName:"lash-her-api-staging-host",resourceType:"Instance",operationType:"StopInstance",status:"Started"}]};
     }
     if(request.operation==="GetInstances")return {instances:[{name:"lash-her-api-staging-host",arn:original,state:{name:instanceState}}]};
     if(request.operation==="GetInstanceSnapshots")return {instanceSnapshots:[]};
     if(request.operation==="CreateInstanceSnapshot") {
       assert.equal(records.at(-1)[0],"original-snapshot-started");
-      return {operations:[{resourceName:action+"-original",operationType:"CreateInstanceSnapshot",status:"Started"}]};
+      const operations=[{resourceName:action+"-original",resourceType:"InstanceSnapshot",operationType:"CreateInstanceSnapshot",status:"Started"},
+        {resourceName:"lash-her-api-staging-host",resourceType:"Instance",operationType:"CreateInstanceSnapshot",status:"Started"}];
+      if(options.badSnapshotOperation)operations[1].resourceName="unreviewed-host";
+      if(options.duplicateSnapshotOperation)operations[1]={...operations[0]};
+      if(options.failedSnapshotOperation)operations[1].status="Failed";
+      return {operations};
     }
-    if(request.operation==="GetInstanceSnapshot")return {instanceSnapshot:{name:action+"-original",state:options.badSnapshot?"error":"available",
-      arn:"arn:aws:lightsail:us-east-1:691588646557:InstanceSnapshot/33333333-3333-4333-8333-333333333333",
+    if(request.operation==="GetInstanceSnapshot")return {instanceSnapshot:{name:options.continuation?CONTINUATION.snapshotName:action+"-original",state:options.badSnapshot?"error":"available",
+      arn:options.continuation&&!options.wrongSnapshotArn?CONTINUATION.snapshotArn:"arn:aws:lightsail:us-east-1:691588646557:InstanceSnapshot/33333333-3333-4333-8333-333333333333",
       fromInstanceArn:original,fromInstanceName:"lash-her-api-staging-host",fromBundleId:"medium_3_0",fromBlueprintId:"ubuntu_24_04",
-      location:{regionName:"us-east-1",availabilityZone:"us-east-1a"},resourceType:"InstanceSnapshot",isFromAutoSnapshot:false,
+      location:{regionName:"us-east-1",availabilityZone:"all"},resourceType:"InstanceSnapshot",isFromAutoSnapshot:false,
       createdAt:clock/1000,tags:[{key:"Project",value:"lash-her"},{key:"Environment",value:"staging"},{key:"Purpose",value:"operator-access-recovery"}]}};
     if(request.operation==="CreateChangeSet") {
       assert.ok(records.some(r=>r[0]==="original-snapshot-completed"));assert.ok(records.at(-1)[0].endsWith("-create-started"));
@@ -65,7 +73,7 @@ function owned(options={}) {
   const controller=accessRecoveryController({templateBody:body,addressArn,currentCidr:"99.239.187.88/32",action,aws,
     record:async(...r)=>records.push(r),verifyProducers:async()=>{if(options.badProducers)throw Error("Producer drift");},
     confirmation:"staging/"+action,now:()=>clock,sleep:async ms=>{clock+=ms;},observe});
-  return {controller,calls,records,observations};
+  return {controller,calls,records,observations,observe,clock};
 }
 
 test("recovery requires stopped source and available snapshot before any CloudFormation mutation",async()=> {
@@ -99,4 +107,51 @@ test("producer drift or snapshot failure cannot delete compute",async()=> {
   const f=owned({badProducers:true});await assert.rejects(f.controller.stopOriginal());assert.equal(f.calls.length,0);
   const g=owned({badSnapshot:true});await g.controller.stopOriginal();await assert.rejects(g.controller.snapshotOriginal());
   await assert.rejects(g.controller.step("detached"));assert.ok(!g.calls.some(c=>c.operation==="CreateChangeSet"));
+});
+
+test("the documented paired snapshot operations are retained and any wrong, duplicate or failed source operation prevents removal",async()=> {
+  const good=owned();await good.controller.stopOriginal();await good.controller.snapshotOriginal();
+  assert.equal(good.records.find(r=>r[0]==="original-snapshot-operation-observed")[1].operations.length,2);
+  for(const options of [{badSnapshotOperation:true},{duplicateSnapshotOperation:true},{failedSnapshotOperation:true}]) {
+    const f=owned(options);await f.controller.stopOriginal();await assert.rejects(f.controller.snapshotOriginal());
+    await assert.rejects(f.controller.step("detached"));assert.ok(!f.calls.some(c=>c.operation==="CreateChangeSet"));
+    assert.equal(f.calls.filter(c=>c.operation==="CreateInstanceSnapshot").length,1);
+  }
+});
+
+async function parentEvidence(f) {
+  const spec=accessRecoverySpec(body,addressArn,"99.239.187.88/32","initial");
+  return {parentAction:CONTINUATION.parentAction,receiptsSha256:{...CONTINUATION.receiptsSha256},
+    stop:stoppedOriginal(await f.observe(null,spec,"initial","stopped"),spec),
+    started:{action:CONTINUATION.parentAction,instanceArn:original,snapshotName:CONTINUATION.snapshotName,startedAt:f.clock-1000},
+    outcome:{action:CONTINUATION.parentAction,sourceCommit:CONTINUATION.parentSourceCommit,status:"STAGING_ACCESS_RECOVERY_REQUIRES_REVIEW",
+      phase:"snapshot-original",startedAt:f.clock-2000,completedAt:f.clock,productionChanged:false,migrationsExecuted:false,trafficAuthorized:false,releaseAccepted:false}};
+}
+
+test("deliberate continuation reads the exact stopped source and existing regional snapshot without another stop or snapshot creation",async()=> {
+  const f=owned({continuation:true}),evidence=await parentEvidence(f);
+  const retained=await f.controller.adoptStoppedSnapshot(evidence);assert.equal(retained.recoverySnapshot.snapshotArn,CONTINUATION.snapshotArn);
+  assert.deepEqual(f.calls.map(c=>c.operation),["GetInstanceSnapshot"]);
+  await assert.rejects(f.controller.stopOriginal());await assert.rejects(f.controller.snapshotOriginal());await assert.rejects(f.controller.adoptStoppedSnapshot(evidence));
+  for(const step of ["detached","absent","verify-key"])await f.controller.step(step);
+  assert.ok(!f.calls.some(c=>["StopInstance","CreateInstanceSnapshot"].includes(c.operation)));
+});
+
+test("changed parent receipts, a different failure phase or wrong existing snapshot refuse before compute mutation",async()=> {
+  for(const mutate of [e=>{e.receiptsSha256["action-outcome.json"]="0".repeat(64);},e=>{e.outcome.phase="infrastructure-detached";},
+    e=>{e.outcome.sourceCommit="0".repeat(40);},e=>{e.started.startedAt=e.outcome.completedAt+1;}]) {
+    const f=owned({continuation:true}),e=await parentEvidence(f);mutate(e);
+    await assert.rejects(f.controller.adoptStoppedSnapshot(e));assert.equal(f.calls.length,0);
+  }
+  const f=owned({continuation:true,wrongSnapshotArn:true});await assert.rejects(f.controller.adoptStoppedSnapshot(await parentEvidence(f)));
+  assert.ok(!f.calls.some(c=>c.operation==="CreateChangeSet"));
+});
+
+test("parent input requires all exact recorded bytes and continuation plans remove stop and snapshot creation",async()=> {
+  assert.throws(()=>continuationParentReceipts({}));
+  assert.throws(()=>continuationParentReceipts(Object.fromEntries(Object.keys(CONTINUATION.receiptsSha256).map(k=>[k,Buffer.from("{}")]))));
+  const f=owned({continuation:true}),e=await parentEvidence(f);assert.equal(validateContinuationParent(e),e);
+  const plan=continuationPlan({action:CONTINUATION.action,steps:["stop-original-without-force","snapshot-stopped-original","detach-static-address","delete-original-compute"]},e);
+  assert.equal(plan.stopRequestIncluded,false);assert.equal(plan.snapshotCreationIncluded,false);
+  assert.equal(plan.originalHostSnapshotName,CONTINUATION.snapshotName);assert.ok(!plan.steps.includes("snapshot-stopped-original"));
 });

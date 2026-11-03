@@ -49,10 +49,11 @@ test("snapshot must be a fresh manual snapshot of the exact stopped source ident
   const snapshot={instanceSnapshot:{name:action+"-original",arn:"arn:aws:lightsail:us-east-1:691588646557:InstanceSnapshot/11111111-1111-4111-8111-111111111111",
     state:"available",fromInstanceArn:s.originalInstanceArn,fromInstanceName:s.instanceName,fromBundleId:s.parameters.BundleId,
     fromBlueprintId:"ubuntu_24_04",resourceType:"InstanceSnapshot",isFromAutoSnapshot:false,createdAt:"2026-11-03T00:00:01Z",
-    location:{regionName:s.region,availabilityZone:s.parameters.AvailabilityZone},
+    location:{regionName:s.region,availabilityZone:"all"},
     tags:[{key:"Project",value:"lash-her"},{key:"Environment",value:"staging"},{key:"Purpose",value:"operator-access-recovery"}]}};
   assert.equal(inspectRecoverySnapshot(snapshot,s,action,started).snapshotContentsFetched,false);
-  for(const mutate of [v=>{v.instanceSnapshot.state="pending";},v=>{v.instanceSnapshot.fromInstanceArn+="other";},v=>{v.instanceSnapshot.createdAt="2026-11-02T00:00:00Z";},v=>{v.instanceSnapshot.isFromAutoSnapshot=true;}]){
+  for(const mutate of [v=>{v.instanceSnapshot.state="pending";},v=>{v.instanceSnapshot.fromInstanceArn+="other";},v=>{v.instanceSnapshot.createdAt="2026-11-02T00:00:00Z";},v=>{v.instanceSnapshot.isFromAutoSnapshot=true;},
+    v=>{v.instanceSnapshot.location.regionName="us-west-2";},v=>{v.instanceSnapshot.location.availabilityZone="us-east-1a";}]){
     const v=structuredClone(snapshot);mutate(v);assert.throws(()=>inspectRecoverySnapshot(v,s,action,started));
   }
 });

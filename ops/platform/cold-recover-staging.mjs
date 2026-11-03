@@ -15,6 +15,7 @@ import {recreationSsh} from "./recreation_ssh.mjs";
 import {decodePrivateReceipts,sha256} from "./recreation_inputs.mjs";
 import {verifyOperatorCi} from "./recreation_source.mjs";
 import {githubSourceApi} from "./release-inputs.mjs";
+import {CONTINUATION,continuationParentReceipts,continuationPlan} from "./access_recovery_continuation.mjs";
 
 const source=resolve(dirname(fileURLToPath(import.meta.url)),"../..");
 const parent="/Users/dardan/.local/share/lash-her/recreations/staging";
@@ -24,8 +25,11 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
 export function recoverySettings(value) {
   assert.ok(value&&typeof value==="object"&&!Array.isArray(value));
-  assert.deepEqual(Object.keys(value).sort(),["action","operatorIpv4Cidr","sourceCommit","version"]);
-  assert.equal(value.version,1);assert.match(value.action,/^p1-recreate-access-[a-z0-9-]{1,20}$/u);
+  assert.ok([1,2].includes(value.version));
+  assert.deepEqual(Object.keys(value).sort(),value.version===1?["action","operatorIpv4Cidr","sourceCommit","version"]:
+    ["action","continuationOf","operatorIpv4Cidr","sourceCommit","version"]);
+  if(value.version===2){assert.equal(value.action,CONTINUATION.action);assert.equal(value.continuationOf,CONTINUATION.parentAction);}
+  assert.match(value.action,/^p1-recreate-access-[a-z0-9-]{1,20}$/u);
   assert.match(value.sourceCommit,/^[a-f0-9]{40}$/u);return value;
 }
 
@@ -44,8 +48,16 @@ export async function runAccessRecovery(settings,{apply=false,confirmation}={}) 
   if(apply)assert.equal(confirmation,"staging/"+settings.action,"Explicit reviewed access recovery required");
   const prepared=await prepareRecreation({version:1,action:settings.action,sourceCommit:settings.sourceCommit,trustMode:"provider-browser"});
   const templateBody=await readFile(join(source,"ops/aws/lightsail-access-recovery.cfn.json"),"utf8");
-  const plan=accessRecoveryPlan({action:settings.action,sourceCommit:settings.sourceCommit,templateBody,addressArn,
+  let plan=accessRecoveryPlan({action:settings.action,sourceCommit:settings.sourceCommit,templateBody,addressArn,
     currentCidr:settings.operatorIpv4Cidr,candidateSha256:prepared.inputs.candidateSha256,inputManifestSha256:prepared.inputs.manifestSha256});
+  let continuation=null;
+  if(settings.version===2) {
+    const files={};
+    for(const name of Object.keys(CONTINUATION.receiptsSha256)) {
+      const path=join(parent,CONTINUATION.parentAction,name);await privateJson(path);files[name]=await readFile(path);
+    }
+    continuation=continuationParentReceipts(files);plan=continuationPlan(plan,continuation);
+  }
   if(!apply)return {...plan,review:prepared.inputs.review,inputFiles:prepared.inputs.files.length,
     privateReceiptDirectory:join(parent,settings.action),sourceCiVerified:false,startRequiresExactSourceCi:true};
   const bindings=await releaseBindings();databaseBindings(bindings,prepared.inputs.review);
@@ -87,9 +99,16 @@ export async function runAccessRecovery(settings,{apply=false,confirmation}={}) 
     const baseAws=operatorAwsCli({binary:"/Users/dardan/.local/bin/aws"});
     const controller=accessRecoveryController({templateBody,addressArn,currentCidr:settings.operatorIpv4Cidr,action:settings.action,
       aws:request=>{guard();return baseAws(request);},record,verifyProducers:producers,confirmation,signal:abort.signal});
-    await producers();await record("original-infrastructure",await controller.state());
-    await progress("stop-original");const originalStop=await controller.stopOriginal();
-    await progress("snapshot-original");const recoverySnapshot=await controller.snapshotOriginal();
+    await producers();let originalStop,recoverySnapshot;
+    if(continuation) {
+      await progress("verify-existing-stopped-snapshot");
+      ({originalStop,recoverySnapshot}=await controller.adoptStoppedSnapshot(continuation));
+      await record("original-infrastructure",await controller.state());
+    } else {
+      await record("original-infrastructure",await controller.state());
+      await progress("stop-original");originalStop=await controller.stopOriginal();
+      await progress("snapshot-original");recoverySnapshot=await controller.snapshotOriginal();
+    }
     for(const step of ["detached","absent","verify-key"]) {await progress("infrastructure-"+step);await controller.step(step);}
     const instance=await controller.state(),proofPath=join(parent,"incoming/browser-ssh-"+settings.action+".json");
     await progress("independent-browser-ssh-verification");
@@ -140,7 +159,8 @@ export async function runAccessRecovery(settings,{apply=false,confirmation}={}) 
       maintenanceUnitsInstalledButDisabled:true,frontendDeploymentId:plan.currentFrontendDeployment,
       authenticatedBrowserSshRetained:true,actualContainerCount:8});
     return outcome;
-  } catch {
+  } catch(error) {
+    outcome.failureCode=error?.code==="ERR_ASSERTION"?"REVIEWED_STATE_ASSERTION_FAILED":"ACTION_PHASE_FAILED";
     if(newSsh&&activeReceipt)try {
       const files=await retain(activeReceipt);outcome.remoteReceiptsRetained=true;
       const terminal=activeReceipt==="cold-restore"?"cold-restore-outcome.json":activeReceipt.startsWith("maintenance-")?"maintenance-outcome.json":"preparation-outcome.json";

@@ -13,3 +13,9 @@ test("settings carry only reviewed public identities; invalid CLI arguments refu
   assert.equal(r.status,1);assert.match(r.stderr,/STAGING_ACCESS_RECOVERY_REFUSED_OR_REQUIRES_REVIEW/u);
   assert.equal(r.stdout,"");
 });
+
+test("continuation settings bind only the recorded stopped-snapshot failure and a fresh action",()=> {
+  const v={version:2,action:"p1-recreate-access-20261103-c1",continuationOf:"p1-recreate-access-20261103",sourceCommit:"a".repeat(40),operatorIpv4Cidr:"99.239.187.88/32"};
+  assert.equal(recoverySettings(v),v);
+  for(const bad of [{...v,continuationOf:"another-action"},{...v,action:v.continuationOf},{...v,snapshotName:"arbitrary"}])assert.throws(()=>recoverySettings(bad));
+});

@@ -68,7 +68,9 @@ export function inspectRecoverySnapshot(value,spec,action,startedAt) {
   assert.equal(s.name,action+"-original");assert.equal(s.state,"available");
   assert.equal(s.fromInstanceArn,spec.originalInstanceArn);assert.equal(s.fromInstanceName,spec.instanceName);
   assert.equal(s.fromBundleId,spec.parameters.BundleId);assert.equal(s.fromBlueprintId,"ubuntu_24_04");
-  assert.equal(s.location?.regionName,spec.region);assert.equal(s.location?.availabilityZone,spec.parameters.AvailabilityZone);
+  // Lightsail instance snapshots are regional. AWS reports their zone as
+  // "all", while the source instance remains bound to the reviewed AZ.
+  assert.equal(s.location?.regionName,spec.region);assert.equal(s.location?.availabilityZone,"all");
   assert.equal(s.resourceType,"InstanceSnapshot");assert.equal(s.isFromAutoSnapshot,false);
   assert.match(s.arn,/^arn:aws:lightsail:us-east-1:691588646557:InstanceSnapshot\/[a-f0-9-]{36}$/u);
   const created=typeof s.createdAt==="number"?s.createdAt*1000:Date.parse(s.createdAt);

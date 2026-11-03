@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {accessRecoverySpec,inspectAccessRecoveryChangeSet,inspectRecoverySnapshot,readAccessRecoveryState,stoppedOriginal} from "./access_recovery.mjs";
 import {inspectValidationEvents} from "./infrastructure.mjs";
+import {CONTINUATION,validateContinuationParent} from "./access_recovery_continuation.mjs";
 
 export function accessRecoveryController({templateBody,addressArn,currentCidr,action,aws,record,verifyProducers,
   confirmation,now=Date.now,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),signal,observe=readAccessRecoveryState}) {
@@ -15,19 +16,28 @@ export function accessRecoveryController({templateBody,addressArn,currentCidr,ac
   const state=()=>observe(apiRequest=>{abort();return aws(apiRequest);},spec(phase),phase,stop?"stopped":"running");
   function once(name) {assert.ok(!attempts.has(name),"Recovery mutation already attempted; deliberate failure review required");attempts.add(name);}
   async function recordIntent(name,detail) {abort();await record(name,{action,...detail});}
-  function operations(value,resourceName,operationType) {
-    assert.ok(Array.isArray(value.operations)&&value.operations.length>0);
+  function operations(value,resources,operationType) {
+    assert.ok(Array.isArray(value.operations)&&value.operations.length===Object.keys(resources).length);
+    const seen=new Set();
     for(const op of value.operations) {
-      assert.equal(op.resourceName,resourceName);assert.equal(op.operationType,operationType);
-      assert.ok(op.status!=="Failed"&&!op.errorCode&&!op.errorDetails);
+      assert.ok(Object.hasOwn(resources,op.resourceName)&&!seen.has(op.resourceName));seen.add(op.resourceName);
+      assert.equal(op.resourceType,resources[op.resourceName]);assert.equal(op.operationType,operationType);
+      assert.ok(["Started","Succeeded","Completed"].includes(op.status)&&!op.errorCode&&!op.errorDetails);
     }
+  }
+  async function observedOperation(name,response,resources,operationType) {
+    // Preserve bounded technical fields before validating an uncertain result.
+    const observed=Array.isArray(response.operations)?response.operations.slice(0,10).map(op=>Object.fromEntries(
+      ["id","resourceName","resourceType","operationType","status","isTerminal","createdAt","errorCode"].filter(k=>op[k]!==undefined).map(k=>[k,op[k]]))):[];
+    await record(name,{operations:observed});operations(response,resources,operationType);
   }
   async function stopOriginal() {
     assert.equal(phase,"initial");assert.equal(stop,null);
     const before=await state();await verifyProducers();
     once("stop");
     await recordIntent("original-stop-started",{instanceArn:base.originalInstanceArn,forcedStop:false,before});
-    operations(await api("lightsail","StopInstance",{instanceName:base.instanceName}),base.instanceName,"StopInstance");
+    await observedOperation("original-stop-operation-observed",await api("lightsail","StopInstance",{instanceName:base.instanceName}),
+      {[base.instanceName]:"Instance"},"StopInstance");
     const deadline=now()+600_000;let stopped=false;
     while(now()<deadline) {
       const raw=await api("lightsail","GetInstances",{});assert.equal(raw.nextPageToken,undefined);
@@ -48,9 +58,9 @@ export function accessRecoveryController({templateBody,addressArn,currentCidr,ac
     const listed=await api("lightsail","GetInstanceSnapshots",{});assert.equal(listed.nextPageToken,undefined);
     assert.ok(Array.isArray(listed.instanceSnapshots)&&!listed.instanceSnapshots.some(s=>s.name===action+"-original"),"Fresh snapshot name required");
     const startedAt=now();await recordIntent("original-snapshot-started",{instanceArn:base.originalInstanceArn,snapshotName:action+"-original",startedAt});
-    operations(await api("lightsail","CreateInstanceSnapshot",{instanceName:base.instanceName,instanceSnapshotName:action+"-original",
+    await observedOperation("original-snapshot-operation-observed",await api("lightsail","CreateInstanceSnapshot",{instanceName:base.instanceName,instanceSnapshotName:action+"-original",
       tags:[{key:"Project",value:"lash-her"},{key:"Environment",value:"staging"},{key:"Purpose",value:"operator-access-recovery"}]}),
-      action+"-original","CreateInstanceSnapshot");
+      {[action+"-original"]:"InstanceSnapshot",[base.instanceName]:"Instance"},"CreateInstanceSnapshot");
     const deadline=now()+900_000;
     while(now()<deadline) {
       const raw=await api("lightsail","GetInstanceSnapshot",{instanceSnapshotName:action+"-original"});
@@ -61,6 +71,20 @@ export function accessRecoveryController({templateBody,addressArn,currentCidr,ac
       assert.equal(raw.instanceSnapshot?.state,"pending");await sleep(3000);
     }
     throw Error("ACCESS_RECOVERY_SNAPSHOT_OBSERVATION_TIMEOUT");
+  }
+  async function adoptStoppedSnapshot(evidence) {
+    assert.equal(action,CONTINUATION.action);assert.equal(phase,"initial");assert.equal(stop,null);assert.equal(snapshot,null);
+    validateContinuationParent(evidence);once("adopt-existing-snapshot");await verifyProducers();
+    const actual=stoppedOriginal(await observe(aws,base,"initial","stopped"),base);
+    assert.deepEqual(actual,evidence.stop,"Original stopped host evidence changed");
+    const raw=await api("lightsail","GetInstanceSnapshot",{instanceSnapshotName:CONTINUATION.snapshotName});
+    const retained=inspectRecoverySnapshot(raw,base,CONTINUATION.parentAction,evidence.started.startedAt);
+    assert.equal(retained.snapshotArn,CONTINUATION.snapshotArn,"Exact existing snapshot required");
+    stop=Object.freeze(actual);snapshot=Object.freeze(retained);
+    await record("original-stop-completed",stop);await record("original-snapshot-completed",snapshot);
+    await record("existing-stopped-snapshot-adopted",{parentAction:CONTINUATION.parentAction,
+      parentReceiptsSha256:evidence.receiptsSha256,snapshotArn:snapshot.snapshotArn,mutationsPerformed:false});
+    return {originalStop:structuredClone(stop),recoverySnapshot:structuredClone(snapshot)};
   }
   async function step(to,browserTrust) {
     assert.ok(stop&&snapshot,"Stopped source and verified snapshot required before compute removal");
@@ -113,5 +137,5 @@ export function accessRecoveryController({templateBody,addressArn,currentCidr,ac
     const after=await observe(aws,target,to,"stopped");
     phase=to;await record(name+"-completed",after);return after;
   }
-  return {state,stopOriginal,snapshotOriginal,step};
+  return {state,stopOriginal,snapshotOriginal,adoptStoppedSnapshot,step};
 }
