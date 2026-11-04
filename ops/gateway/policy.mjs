@@ -14,6 +14,10 @@ export function matchRoute(method, target) {
 export function validateConfig(config) {
   if (config === null || typeof config !== "object") throw new Error("Gateway configuration required");
   if (config.maintenance !== undefined && typeof config.maintenance !== "boolean") throw new Error("Invalid gateway maintenance mode");
+  if (config.admission !== undefined && (config.admission === null ||
+      typeof config.admission.file !== "string" || !config.admission.file.startsWith("/") ||
+      !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(config.admission.releaseId ?? "") ||
+      !/^[a-f0-9]{64}$/u.test(config.admission.candidateSha256 ?? ""))) throw new Error("Invalid gateway admission binding");
   const { issuer, audience, subject, ownerId, projectId, environment, publicHost, courseOrigin } = config;
   if (typeof issuer !== "string" || !/^https:\/\/oidc\.vercel\.com(?:\/[a-z0-9-]+)?$/u.test(issuer) ||
       typeof audience !== "string" || !/^https:\/\/vercel\.com\/[a-z0-9-]+$/u.test(audience) ||

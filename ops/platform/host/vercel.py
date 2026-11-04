@@ -46,6 +46,13 @@ class Client:
                 demand(200 <= response.status < 300, "VERCEL_RESPONSE_REFUSED")
                 raw = response.read(MAX_RESPONSE + 1)
                 demand(len(raw) <= MAX_RESPONSE, "VERCEL_RESPONSE_TOO_LARGE")
+                # Promotion's documented 201/202 acknowledgement has no body.
+                # It only starts observation; it is never proof of promotion.
+                # All other responses still require a bounded JSON object.
+                if (not raw and method == "POST" and response.status in (201, 202)
+                        and any(re.fullmatch(rf"/v10/projects/{project}/promote/dpl_[A-Za-z0-9]+", path)
+                                for project in PROJECTS.values())):
+                    return {}
                 value = json.loads(raw)
                 demand(isinstance(value, dict), "VERCEL_RESPONSE_REFUSED")
                 return value
@@ -73,9 +80,10 @@ def release_identity(release):
     return environment, PROJECTS[environment], commit
 
 
-def _project(client, project_id):
+def _project(client, project_id, rollback_info=False):
     demand(project_id in PROJECTS.values(), "VERCEL_PROJECT_REFUSED")
-    value = client.request("GET", f"/v9/projects/{project_id}")
+    suffix = "?rollbackInfo=true" if rollback_info else ""
+    value = client.request("GET", f"/v9/projects/{project_id}{suffix}")
     link = value.get("link") or {}
     demand(value.get("id") == project_id and value.get("accountId") == TEAM
            and isinstance(link, dict) and link.get("type") == "github" and str(link.get("repoId")) == REPOSITORY_ID,
@@ -189,7 +197,8 @@ def stage_frontend(client, release, attempt, timeout=900):
 
 def promotion_state(client, project_id):
     """Selected provider job state; never return raw project/environment data."""
-    value = _project(client, project_id)
+    # The provider omits lastAliasRequest unless rollbackInfo is requested.
+    value = _project(client, project_id, rollback_info=True)
     rolling = value.get("rollingRelease")
     demand(rolling is None or isinstance(rolling, dict) and rolling.get("enabled") is False,
            "VERCEL_ROLLING_RELEASE_REQUIRES_REVIEW")

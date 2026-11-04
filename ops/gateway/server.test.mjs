@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, renameSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -32,7 +32,7 @@ async function fixture(t, handler, overrides = {}, options = {}) {
     courseOrigin: `https://127.0.0.1:${upstream.address().port}`,
     tlsKeyFile: keyFile, tlsCertFile: certFile, upstreamCaFile: certFile, ...overrides,
   };
-  const { server, counters } = createGateway(config, {
+  const { server, counters, admissionState } = createGateway(config, {
     verify: async (proof) => { if (proof !== "synthetic-valid-proof") throw new Error("invalid"); return { projectId: config.projectId }; },
     ...options,
   });
@@ -41,7 +41,7 @@ async function fixture(t, handler, overrides = {}, options = {}) {
     await Promise.all([server, upstream].map((item) => new Promise((resolve) => { item.close(resolve); item.closeAllConnections(); })));
   });
   return {
-    counters,
+    counters, admissionState,
     send: ({ path = "/course/v1/courses", method = "GET", headers = {}, body, servername = "localhost.localdomain", rawHeaders } = {}) => new Promise((resolve, reject) => {
       const call = request({ host: "127.0.0.1", port: server.address().port, path, method, servername, ca: cert,
         headers: rawHeaders ?? { host: config.publicHost, "x-lash-workload-token": "synthetic-valid-proof", ...headers } }, (reply) => {
@@ -70,6 +70,78 @@ test("private TLS upstream receives only selected headers, original query and ap
   for (const name of ["x-lash-workload-token", "x-forwarded-for", "x-real-ip", "x-user-id", "forwarded", "cookie", "x-vercel-oidc-token", "mux-signature"]) assert.equal(received.headers[name], undefined, name);
   assert.match(received.headers["x-request-id"], /^[a-f0-9-]{36}$/u);
   assert.equal(result.headers["cache-control"], "no-store");
+});
+
+test("host fence changes immediately for historical callers while recovery remains independent", async (t) => {
+  const file = join(folder, "admission.json");
+  const binding = { file, candidateSha256: "a".repeat(64), releaseId: "fixture" };
+  const state = { version: 1, environment: "staging", candidateSha256: binding.candidateSha256,
+    releaseId: "fixture", actionId: "p1-admit-fixture", newWork: false, recovery: false };
+  const save = (value) => { writeFileSync(file + ".next", JSON.stringify(value)); renameSync(file + ".next", file); };
+  const calls = [];
+  const f = await fixture(t, (req, res) => { calls.push(req.url); res.end('{}'); }, { maintenance: true, admission: binding });
+  const recovery = { path: "/course/v1/internal/entitlements/reconcile", method: "POST", headers: { authorization: "Bearer service" } };
+  const authoring = { path: "/course/v1/admin/courses", method: "POST", headers: { authorization: "Bearer admin" } };
+  assert.equal((await f.send(recovery)).status, 503); // missing file
+  save(state);
+  assert.equal((await f.send(recovery)).status, 503);
+  save({ ...state, recovery: true });
+  assert.equal((await f.send(recovery)).status, 200);
+  assert.equal((await f.send(authoring)).status, 503);
+  assert.equal((await f.send({ path: "/course/v1/webhooks/mux", method: "POST", body: '{}' })).status, 200);
+  assert.equal((await f.send()).status, 200);
+  save({ ...state, newWork: true });
+  assert.equal((await f.send(authoring)).status, 200);
+  assert.equal((await f.send(recovery)).status, 503);
+  assert.equal((await f.send({ path: "/course/admission" })).status, 404);
+  assert.equal(f.admissionState().valid, true);
+  assert.equal(calls.length, 4);
+  for (const value of [{ ...state, candidateSha256: "b".repeat(64), recovery: true },
+    { ...state, environment: "production", recovery: true }, { ...state, newWork: "false", recovery: true },
+    { ...state, releaseId: "other", recovery: true }]) {
+    save(value);
+    assert.equal((await f.send(recovery)).status, 503);
+  }
+  writeFileSync(file, '{');
+  assert.equal((await f.send(recovery)).status, 503);
+  rmSync(file); symlinkSync(certFile, file);
+  assert.equal((await f.send(recovery)).status, 503);
+  rmSync(file);
+});
+
+test("fencing accounts for admitted delayed work before reporting drained", async (t) => {
+  const file = join(folder, "delayed-admission.json");
+  const binding = { file, candidateSha256: "a".repeat(64), releaseId: "fixture" };
+  const state = { version: 1, environment: "staging", candidateSha256: binding.candidateSha256,
+    releaseId: "fixture", actionId: "p1-admit-fixture", newWork: true, recovery: true };
+  writeFileSync(file, JSON.stringify(state));
+  let releaseReply, reached;
+  const entered = new Promise(resolve => { reached = resolve; });
+  const f = await fixture(t, (_req, res) => { releaseReply = () => res.end('{}'); reached(); }, { admission: binding });
+  const operation = { path: "/course/v1/admin/courses", method: "POST", headers: { authorization: "Bearer admin" } };
+  const pending = f.send(operation);
+  await entered;
+  assert.deepEqual(f.admissionState().active, { newWork: 1, recovery: 0 });
+  writeFileSync(file, JSON.stringify({ ...state, newWork: false }));
+  assert.equal((await f.send(operation)).status, 503);
+  assert.equal(f.admissionState().active.newWork, 1);
+  releaseReply();
+  assert.equal((await pending).status, 200);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.admissionState().active.newWork, 0);
+});
+
+test("an upstream disconnect preserves mutation uncertainty even after transport drain", async (t) => {
+  const file = join(folder, "uncertain-admission.json");
+  const binding = { file, candidateSha256: "a".repeat(64), releaseId: "fixture" };
+  writeFileSync(file, JSON.stringify({ version: 1, environment: "staging", candidateSha256: binding.candidateSha256,
+    releaseId: "fixture", actionId: "p1-admit-fixture", newWork: true, recovery: true }));
+  const f = await fixture(t, (req) => req.socket.destroy(), { admission: binding });
+  assert.equal((await f.send({ path: "/course/v1/admin/courses", method: "POST", headers: { authorization: "Bearer admin" } })).status, 502);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.admissionState().active.newWork, 0);
+  assert.equal(f.admissionState().uncertain.newWork, 1);
+  assert.equal(f.admissionState().uncertain.recovery, 0);
 });
 
 test("missing workload, OIDC-only protected requests, wrong host and duplicate credentials never reach upstream", async (t) => {

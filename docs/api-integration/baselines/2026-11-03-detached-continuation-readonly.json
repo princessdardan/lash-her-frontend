@@ -1,0 +1,69 @@
+{
+  "status": "DETACHED_SOURCE_CONTINUATION_READ_ONLY_PREFLIGHT_PASS",
+  "observedAt": "2026-11-03T18:52:12.585Z",
+  "parentAction": "p1-recreate-access-20261103-c1",
+  "parentReceiptsSha256": {
+    "action-outcome.json": "4c0fb6adfb82c8cd9febdc492998e9a1cf3b9b8f4ce2ca8ff68db802a40aca8d",
+    "original-stop-completed.json": "970fbf61d029b11ade0c6e679f1a0ee27432dbddce6ed6b0d4502a3d28796f98",
+    "original-snapshot-completed.json": "e2066bddefef42e0acb72447382992856c7bcc960d54718bfcb22e67080156d8",
+    "p1-recreate-access-20261103-c1-detached-review.json": "17002a84e6b748014c24da8b182c61863b9d59b71fc8154c73da7b44198acc0f",
+    "p1-recreate-access-20261103-c1-detached-execute-started.json": "5dd62fcd4fb184b724d9d0c9da542ce0fce91cbe4c955f7142bcf9aa02a9d2b2",
+    "existing-stopped-snapshot-adopted.json": "47cbd54469be7f678855322d09dbda020512528236376f4185ab0bc7b8f0bdf1"
+  },
+  "originalStopHistorical": {
+    "status": "STAGING_ORIGINAL_INSTANCE_STOPPED_FOR_ACCESS_RECOVERY",
+    "environment": "staging",
+    "accountId": "691588646557",
+    "region": "us-east-1",
+    "stackId": "arn:aws:cloudformation:us-east-1:691588646557:stack/lash-her-api-staging/43564e90-d6f4-11f1-825b-12ffd9c5e733",
+    "instanceArn": "arn:aws:lightsail:us-east-1:691588646557:Instance/2e608d2c-a88f-416f-a23f-209d20e042f4",
+    "hostMachineId": "ec265c34b9fbf4d051aecfa185362c0a",
+    "instanceName": "lash-her-api-staging-host",
+    "address": "184.196.129.231",
+    "instanceState": "stopped",
+    "perContainerGracefulExitObserved": false,
+    "forcedStop": false
+  },
+  "snapshot": {
+    "status": "STAGING_STOPPED_HOST_RECOVERY_SNAPSHOT_AVAILABLE",
+    "snapshotArn": "arn:aws:lightsail:us-east-1:691588646557:InstanceSnapshot/a9d51e18-1494-4b6a-ab98-d8936f40c33d",
+    "snapshotName": "p1-recreate-access-20261103-original",
+    "fromInstanceArn": "arn:aws:lightsail:us-east-1:691588646557:Instance/2e608d2c-a88f-416f-a23f-209d20e042f4",
+    "createdAt": "2026-11-03T13:07:38.143000-05:00",
+    "privateRootDiskIncluded": true,
+    "snapshotContentsFetched": false,
+    "cleanupRequiresSuccessfulRecovery": true
+  },
+  "infrastructure": {
+    "status": "STAGING_INFRASTRUCTURE_STATE_VERIFIED",
+    "state": "detached",
+    "stackId": "arn:aws:cloudformation:us-east-1:691588646557:stack/lash-her-api-staging/43564e90-d6f4-11f1-825b-12ffd9c5e733",
+    "addressArn": "arn:aws:lightsail:us-east-1:691588646557:StaticIp/dfdce3fc-150b-47c0-87df-2bffeb81e963",
+    "address": "184.196.129.231",
+    "templateSha256": "813a3f3fa1d6532b9d75dcd3889582df7ea4afff097068fba0da261458982fa6",
+    "instanceArn": "arn:aws:lightsail:us-east-1:691588646557:Instance/2e608d2c-a88f-416f-a23f-209d20e042f4",
+    "instanceCreatedAt": "2026-11-02T14:35:09.318000-05:00",
+    "instanceIpv6Addresses": [
+      "2600:1f18:142d:3d00:d5d8:14c7:329b:7c12"
+    ],
+    "allocationPreserved": true,
+    "infrastructureChanged": false,
+    "accessRecoveryPhase": "detached",
+    "instanceState": "running",
+    "operatorIpv4Cidr": "99.239.200.211/32",
+    "browserSshEnabled": false
+  },
+  "readOnlyCalls": [
+    "GetCallerIdentity",
+    "DescribeStacks",
+    "ListStackResources",
+    "GetTemplate",
+    "GetStaticIp",
+    "GetInstances",
+    "GetInstancePortStates",
+    "GetInstanceSnapshot"
+  ],
+  "providerMutationsPerformed": false,
+  "stopOrSnapshotRetried": false,
+  "privateConfigurationTransferred": false
+}

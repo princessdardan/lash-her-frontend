@@ -8,8 +8,9 @@ import { privateTlsPolicies, databaseConnectionBudgets } from "./configuration.m
 
 const model = parse(readFileSync(new URL("./compose.yaml", import.meta.url), "utf8"), { merge: true });
 
-test("Lightsail-prefixed user data runs its header under POSIX sh and emits valid SSH lines", () => {
-  const template = JSON.parse(readFileSync(new URL("../aws/lightsail-host.cfn.json", import.meta.url), "utf8"));
+for (const templateName of ["lightsail-host", "lightsail-access-recovery"]) {
+test(`${templateName}: Lightsail-prefixed user data runs under POSIX sh and emits valid SSH lines`, () => {
+  const template = JSON.parse(readFileSync(new URL(`../aws/${templateName}.cfn.json`, import.meta.url), "utf8"));
   const lines = template.Resources.ApiHost.Properties.UserData["Fn::Join"][1];
   const rendered = lines.map((line) => typeof line === "string" ? line : line["Fn::Sub"].replaceAll("${OperatorIpv4Cidr}", "192.0.2.1/32")).join("\n");
   // Some development /bin/sh implementations accept this extension, unlike
@@ -27,6 +28,7 @@ test("Lightsail-prefixed user data runs its header under POSIX sh and emits vali
   assert.equal(print.status, 0, print.stderr);
   assert.equal(print.stdout, "PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\n");
 });
+}
 
 test("monitoring is deferred outside the default runtime and release gate", () => {
   assert.equal(model.services.collector, undefined);

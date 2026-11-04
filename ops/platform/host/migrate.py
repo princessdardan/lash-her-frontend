@@ -255,7 +255,7 @@ def suspend_runtime(environment, env):
         demand(len(parts) == 2 and re.fullmatch(r"[a-f0-9]{12,64}", parts[0]) and parts[1] in allowed, "RUNTIME_INVENTORY_REFUSED")
         ids.append(parts[0])
     if ids:
-        subprocess.run(["docker", "stop", "--time", "30", *ids], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, timeout=60)
+        subprocess.run(["docker", "stop", "--timeout", "30", *ids], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, timeout=60)
     remaining = subprocess.run(["docker", "ps", "-q", "--filter", f"label=com.docker.compose.project={project}"],
                                check=True, capture_output=True, text=True, env=env, timeout=30)
     demand(not remaining.stdout.strip(), "WRITERS_NOT_SUSPENDED")

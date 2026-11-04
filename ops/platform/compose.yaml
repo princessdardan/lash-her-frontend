@@ -35,6 +35,7 @@ services:
       retries: 3
     volumes:
       - ${RELEASE_DIR:?select protected release directory}/gateway.json:/config/gateway.json:ro
+      - ${RELEASE_DIR}/admission:/admission:ro
       - ${RELEASE_DIR}/tls/gateway:/tls:ro
     networks:
       mesh: {ipv4_address: 172.29.10.10}

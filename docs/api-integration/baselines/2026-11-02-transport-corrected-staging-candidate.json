@@ -1,0 +1,482 @@
+{
+  "schemaVersion": 1,
+  "status": "RUNTIME_RECOVERED_FOR_QUALIFICATION",
+  "releaseId": "p1-41541683416-1",
+  "runId": 41541683416,
+  "attempt": 1,
+  "candidateConclusion": "success",
+  "candidateUrl": "https://github.com/princessdardan/lash-her-frontend/actions/runs/41541683416",
+  "sources": {
+    "frontend": "74ca26736e5834fce639407278b4575bf4d05670",
+    "course": "2ba96d5a8db46ef3470bb9759c6e9d4f84e7ed2b",
+    "community": "537a074e82c14d105c10b70fcecb2f9005753c9f"
+  },
+  "sourceCi": {
+    "frontend": 41532819613,
+    "course": 41541119343,
+    "community": 41541052940,
+    "allRequiredConclusions": "success"
+  },
+  "artifact": {
+    "id": 13187471860,
+    "archiveSha256": "f7536243c5af13905f58acce72497dc301f0bb6680d761a281d37952c79de9ec",
+    "archiveBytes": 1159486,
+    "entries": 46,
+    "archiveVerified": true
+  },
+  "images": {
+    "gateway": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126",
+    "frontendMigration": "ghcr.io/princessdardan/lash-her-platform-frontend-migration@sha256:cff3897ee7c246c05d6c79c83b7c69694683624a9cefb20be265f4e65964b473",
+    "courseRuntime": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d",
+    "courseMigration": "ghcr.io/princessdardan/lash-her-platform-course-migration@sha256:c96917e08e8209bd0851cd136cfbb023f48a462188a924af34866ac1e52fc319",
+    "communityRuntime": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4",
+    "communityMigration": "ghcr.io/princessdardan/lash-her-platform-community-migration@sha256:d8d6d96f51e70af55c0b0d3322ad039c50ccfdfa47e4a3c7d66390a31a799718"
+  },
+  "nativeManifestAttestationIndependentlyVerified": true,
+  "imageScansHighCriticalFindings": 0,
+  "integration": {
+    "state": "passed",
+    "reportSha256": "sha256:53b1099c2e709441f7300a5529b971535e4ee9ce46fbbbd5fb06c816756ac6b0",
+    "frontendMigrationRehearsalSha256": "sha256:ebd16e2d44477cabba51d901fded9d88d69c285c02b6600860cd6f36865281e4",
+    "workloadProof": "signed-fixture",
+    "realVercelOidcVerified": false
+  },
+  "isolatedHarnessPassedChecks": [
+    "frontend-sdk-oidc-catalog-tls",
+    "public-tls-missing-workload-denied",
+    "public-metrics-hidden",
+    "private-course-tls-catalog",
+    "private-application-credential-required",
+    "private-community-peer-denied",
+    "signed-project-and-public-route-boundaries",
+    "authenticated-idempotent-enrollment",
+    "private-peer-spoofing-and-direct-backend-denial",
+    "signed-mux-only-exception",
+    "publisher-projection-and-worker-loop",
+    "actual-community-authority-client",
+    "worker-restart-requested",
+    "worker-recovered-after-restart",
+    "maintenance-holds-application-writes"
+  ],
+  "localPrivateConfiguration": {
+    "status": "ACTUAL_PRIVATE_RUNTIME_CONFIGURATION_PREFLIGHT_PASS",
+    "releaseId": "p1-41541683416-1",
+    "checks": 8,
+    "platform": "linux/amd64",
+    "network": "none",
+    "databaseAccess": false,
+    "hostRuntimeStarted": false,
+    "localUid": 501,
+    "registryCredentialConsumed": true,
+    "notLiveHostProof": true
+  },
+  "linuxHostPrivateConfiguration": {
+    "status": "ACTUAL_LINUX_HOST_PRIVATE_CONFIGURATION_PREFLIGHT_PASS",
+    "releaseId": "p1-41541683416-1",
+    "checks": 8,
+    "hostMachineId": "ec265c34b9fbf4d051aecfa185362c0a",
+    "platform": "linux/amd64",
+    "network": "none",
+    "databaseAccess": false,
+    "stagingApplicationContainersRunning": 0,
+    "hostUid": 0,
+    "containerUid": 65532,
+    "registryCredentialConsumed": true,
+    "runtimeCapacityQualified": false,
+    "registryAuthRemoved": true
+  },
+  "hostReadOnlyPlan": {
+    "status": "CORRECTED_CANDIDATE_HOST_HANDOFF_AND_READ_ONLY_PLAN_PASS",
+    "releaseId": "p1-41541683416-1",
+    "verifiedFiles": 32,
+    "hostMachineId": "ec265c34b9fbf4d051aecfa185362c0a",
+    "applicationsStarted": false,
+    "databaseAccess": false,
+    "plan": {
+      "operation": "initial-staging-qualification",
+      "environment": "staging",
+      "releaseId": "p1-41541683416-1",
+      "operator": "Dardan",
+      "hostMachineId": "ec265c34b9fbf4d051aecfa185362c0a",
+      "publicHost": "api-staging.lashher.com",
+      "images": {
+        "gateway": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126",
+        "courseRuntime": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d",
+        "communityRuntime": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4"
+      },
+      "databaseTargets": {
+        "course": {
+          "host": "ep-sparkling-moon-b4htlczb.c-6.us-east-2.aws.neon.tech",
+          "database": "neondb",
+          "approvedPendingTags": [
+            "0000_eminent_thunderbolt_ross",
+            "0001_tough_sentinels",
+            "0002_polite_maggott",
+            "0003_amused_human_cannonball",
+            "0004_course_api_target_schema",
+            "0005_add_lesson_preview",
+            "0006_add_entitlement_revocation_ledger",
+            "0007_optional_entitlement_provider",
+            "0008_add_admin_inspection_indexes",
+            "0009_add_admin_entitlement_audit",
+            "0010_harden_entitlement_audit",
+            "0011_enforce_global_idempotency_references",
+            "0012_seal_admin_entitlement_effects",
+            "0013_retain_entitlement_grants",
+            "0014_course_community_enrollment_integration",
+            "0015_shared_rate_limit_buckets",
+            "0016_audit_read_only_enrollment_operations"
+          ]
+        },
+        "community": {
+          "host": "ep-fancy-glitter-b81a2g6r.c-14.us-east-1.aws.neon.tech",
+          "database": "neondb",
+          "approvedPendingTags": [
+            "0000_initial_community_enrollment_projection",
+            "0001_add_operator_audit",
+            "0002_add_reconciliation_baseline_and_inspection_audit",
+            "0003_add_reconciliation_resume_cursor",
+            "0004_add_reconciliation_baseline_cutoff",
+            "0005_add_reconciliation_baseline_materialized_marker",
+            "0006_enforce_reconciliation_baseline_immutability",
+            "0007_require_reconciliation_baseline_cutoff",
+            "0008_integrity_staging_and_dedup",
+            "0009_shared_http_rate_limits"
+          ]
+        },
+        "frontend": {
+          "host": "ep-plain-field-b7yma047.c-13.us-east-1.aws.neon.tech",
+          "database": "neondb",
+          "approvedPendingTags": []
+        }
+      },
+      "previousReleaseRef": "initial/none",
+      "maintenanceRef": "operator/initial-staging-qualification",
+      "stages": [
+        [
+          "community-api",
+          "course-api"
+        ],
+        [
+          "community-tls",
+          "course-tls"
+        ],
+        [
+          "course-snapshot",
+          "community-worker"
+        ],
+        [
+          "course-publisher"
+        ],
+        [
+          "gateway"
+        ]
+      ],
+      "credentialsRead": false,
+      "trafficAuthorized": false,
+      "frontendPromotionAuthorized": false,
+      "frontendProjectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "frontendSourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+      "frontendProducerSuspensionRequired": false,
+      "frontendStages": [
+        "disable-native-schedules",
+        "bind-verified-source-pins",
+        "configure-expiring-probe",
+        "build-pinned-frontend",
+        "verify-server-workload",
+        "promote-staging-domains"
+      ],
+      "nativeSchedulerVerified": false,
+      "releaseAccepted": false,
+      "gatewayTrafficAuthorized": false
+    }
+  },
+  "privateRetention": {
+    "status": "NEW_PRIVATE_RELEASE_PERMISSIONS_VERIFIED",
+    "releaseId": "p1-41541683416-1",
+    "files": 127,
+    "directories": 20,
+    "groupOrOtherAccess": false,
+    "symlinks": false,
+    "registryAuthRetained": false
+  },
+  "readOnlyReleasePlan": {
+    "operation": "initial-staging-qualification",
+    "environment": "staging",
+    "releaseId": "p1-41541683416-1",
+    "operator": "Dardan",
+    "hostMachineId": "ec265c34b9fbf4d051aecfa185362c0a",
+    "publicHost": "api-staging.lashher.com",
+    "images": {
+      "gateway": "ghcr.io/princessdardan/lash-her-platform-gateway@sha256:6f8cc88a9d6b1c5c346c3d9292f89261a6e75622ec2fa0c276957f3f69ef3126",
+      "courseRuntime": "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:30d0fe31c3f1a969fd05c97a9b6d158ac6f73d9927dbaf676d2d5532766ed28d",
+      "communityRuntime": "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:f2fbb94dab8ac26085979e10829ce12d6fe0e2186940aeea49d41fecd3b208d4"
+    },
+    "databaseTargets": {
+      "course": {
+        "host": "ep-sparkling-moon-b4htlczb.c-6.us-east-2.aws.neon.tech",
+        "database": "neondb",
+        "approvedPendingTags": [
+          "0000_eminent_thunderbolt_ross",
+          "0001_tough_sentinels",
+          "0002_polite_maggott",
+          "0003_amused_human_cannonball",
+          "0004_course_api_target_schema",
+          "0005_add_lesson_preview",
+          "0006_add_entitlement_revocation_ledger",
+          "0007_optional_entitlement_provider",
+          "0008_add_admin_inspection_indexes",
+          "0009_add_admin_entitlement_audit",
+          "0010_harden_entitlement_audit",
+          "0011_enforce_global_idempotency_references",
+          "0012_seal_admin_entitlement_effects",
+          "0013_retain_entitlement_grants",
+          "0014_course_community_enrollment_integration",
+          "0015_shared_rate_limit_buckets",
+          "0016_audit_read_only_enrollment_operations"
+        ]
+      },
+      "community": {
+        "host": "ep-fancy-glitter-b81a2g6r.c-14.us-east-1.aws.neon.tech",
+        "database": "neondb",
+        "approvedPendingTags": [
+          "0000_initial_community_enrollment_projection",
+          "0001_add_operator_audit",
+          "0002_add_reconciliation_baseline_and_inspection_audit",
+          "0003_add_reconciliation_resume_cursor",
+          "0004_add_reconciliation_baseline_cutoff",
+          "0005_add_reconciliation_baseline_materialized_marker",
+          "0006_enforce_reconciliation_baseline_immutability",
+          "0007_require_reconciliation_baseline_cutoff",
+          "0008_integrity_staging_and_dedup",
+          "0009_shared_http_rate_limits"
+        ]
+      },
+      "frontend": {
+        "host": "ep-plain-field-b7yma047.c-13.us-east-1.aws.neon.tech",
+        "database": "neondb",
+        "approvedPendingTags": []
+      }
+    },
+    "previousReleaseRef": "initial/none",
+    "maintenanceRef": "operator/initial-staging-qualification",
+    "stages": [
+      [
+        "community-api",
+        "course-api"
+      ],
+      [
+        "community-tls",
+        "course-tls"
+      ],
+      [
+        "course-snapshot",
+        "community-worker"
+      ],
+      [
+        "course-publisher"
+      ],
+      [
+        "gateway"
+      ]
+    ],
+    "credentialsRead": false,
+    "trafficAuthorized": false,
+    "frontendPromotionAuthorized": false,
+    "frontendProjectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "frontendSourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+    "frontendProducerSuspensionRequired": false,
+    "frontendStages": [
+      "disable-native-schedules",
+      "bind-verified-source-pins",
+      "configure-expiring-probe",
+      "build-pinned-frontend",
+      "verify-server-workload",
+      "promote-staging-domains"
+    ],
+    "nativeSchedulerVerified": false,
+    "releaseAccepted": false,
+    "gatewayTrafficAuthorized": false
+  },
+  "communityMigrationRole": "lash_her_community_staging_migration",
+  "communityRoleSetupExecuted": true,
+  "requiredBindings": [
+    "COMMUNITY_STAGING_ADMIN_DATABASE_URL",
+    "COMMUNITY_STAGING_DATABASE_URL"
+  ],
+  "existingRuntimeBindingUnchanged": "COMMUNITY_STAGING_RUNTIME_DATABASE_URL",
+  "communitySetupApprovalRequested": true,
+  "communitySetupApprovalGranted": true,
+  "applicationDeployed": true,
+  "apiMigrationsApplied": 27,
+  "liveReleaseApproved": true,
+  "failedAttemptRetried": false,
+  "priorFailedRelease": "p1-41534715856-1",
+  "p1Complete": false,
+  "remaining": [
+    "Fresh explicitly started bounded frontend qualification build/native scheduling and cancellation, because the original probe expired",
+    "Remaining authenticated ENV-01e cases and applicable runtime capacity/recovery and compatible rollback",
+    "Separately reviewed VM recreation and final admission"
+  ],
+  "bindingsConfirmedSavedAndVerified": true,
+  "communityRoleSetupEvidence": "2026-11-02-community-migration-login-activation.json",
+  "actualQualifiedApiReadOnlyPreflight": {
+    "status": "BOTH_QUALIFIED_API_IMAGES_ACTUAL_READ_ONLY_PREFLIGHT_PASS",
+    "releaseId": "p1-41541683416-1",
+    "records": {
+      "course": {
+        "status": "QUALIFIED_IMAGE_ACTUAL_TARGET_READ_ONLY_PREFLIGHT_PASS",
+        "service": "lash-her-course-api",
+        "sourceCommit": "2ba96d5a8db46ef3470bb9759c6e9d4f84e7ed2b",
+        "migrationImageDigest": "sha256:c96917e08e8209bd0851cd136cfbb023f48a462188a924af34866ac1e52fc319",
+        "migrationRole": "lash_her_course_staging_migration",
+        "runtimeRole": "lash_her_course_staging_runtime",
+        "appliedCount": 0,
+        "pendingCount": 17,
+        "artifactSha256": "4dcfa96588280c6107898657e69b5ed4a1d9f4ffb288e7061dd5023d2e07a4f9",
+        "tlsVerified": true,
+        "roleSeparationVerified": true,
+        "runtimeFutureDmlVerified": true,
+        "providerMutation": false,
+        "migrationAuthorized": false
+      },
+      "community": {
+        "status": "QUALIFIED_IMAGE_ACTUAL_TARGET_READ_ONLY_PREFLIGHT_PASS",
+        "service": "lash-her-community-api",
+        "sourceCommit": "537a074e82c14d105c10b70fcecb2f9005753c9f",
+        "migrationImageDigest": "sha256:d8d6d96f51e70af55c0b0d3322ad039c50ccfdfa47e4a3c7d66390a31a799718",
+        "migrationRole": "lash_her_community_staging_migration",
+        "runtimeRole": "lash_her_community_staging_runtime",
+        "appliedCount": 0,
+        "pendingCount": 10,
+        "artifactSha256": "a834003d07b860efacdad12731d1e10cb29aac7a835af3553731f8318963adee",
+        "tlsVerified": true,
+        "roleSeparationVerified": true,
+        "runtimeFutureDmlVerified": true,
+        "providerMutation": false,
+        "migrationAuthorized": false
+      }
+    },
+    "providerMutation": false,
+    "migrationAuthorized": false,
+    "registryAuthRemoved": true
+  },
+  "providerReadOnlyPreflight": {
+    "status": "CORRECTED_RELEASE_PROVIDER_READ_ONLY_PREFLIGHT_PASS",
+    "releaseId": "p1-41541683416-1",
+    "checkedAt": "2026-11-02T23:32:00.869853+00:00",
+    "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+    "projectPointer": "dpl_DpTDFE5PVaHkEEXvgvavRUyujhTu",
+    "servedRecoveryDeployment": "dpl_BhcXzshZsXQ6nzqAkbKsn1BPDsZX",
+    "servedRecoverySource": "b5f7e08c5d264b66286062c60691f4d28d924294",
+    "servedRecoveryUrl": "lash-her-frontend-staging-hcrhvy66l-dardan-demiris-projects.vercel.app",
+    "servedAliases": [
+      "staging.lashher.com",
+      "lash-her-frontend-staging.vercel.app",
+      "lash-her-frontend-staging-dardan-demiris-projects.vercel.app",
+      "lash-her-frontend-staging-git-staging-dardan-demiris-projects.vercel.app"
+    ],
+    "servedRecoveryState": "READY",
+    "nativeSchedulesEnabled": true,
+    "nativeScheduleDeploymentId": "dpl_BhcXzshZsXQ6nzqAkbKsn1BPDsZX",
+    "nativeScheduleDefinitions": [
+      {
+        "host": "lash-her-frontend-staging-hcrhvy66l-dardan-demiris-projects.vercel.app",
+        "path": "/api/admin/marketing-contact-sync",
+        "schedule": "*/5 * * * *"
+      },
+      {
+        "host": "lash-her-frontend-staging-hcrhvy66l-dardan-demiris-projects.vercel.app",
+        "path": "/api/admin/payment-reconciliation",
+        "schedule": "*/30 * * * *"
+      },
+      {
+        "host": "lash-her-frontend-staging-hcrhvy66l-dardan-demiris-projects.vercel.app",
+        "path": "/api/admin/private-data-retention",
+        "schedule": "17 8 * * *"
+      },
+      {
+        "host": "lash-her-frontend-staging-hcrhvy66l-dardan-demiris-projects.vercel.app",
+        "path": "/api/cron/backup-validation",
+        "schedule": "0 6 * * 1"
+      },
+      {
+        "host": "lash-her-frontend-staging-hcrhvy66l-dardan-demiris-projects.vercel.app",
+        "path": "/api/cron/chitchats-shipping",
+        "schedule": "* * * * *"
+      },
+      {
+        "host": "lash-her-frontend-staging-hcrhvy66l-dardan-demiris-projects.vercel.app",
+        "path": "/api/cron/customer-email-outbox",
+        "schedule": "*/5 * * * *"
+      },
+      {
+        "host": "lash-her-frontend-staging-hcrhvy66l-dardan-demiris-projects.vercel.app",
+        "path": "/api/cron/highlevel-sync",
+        "schedule": "* * * * *"
+      },
+      {
+        "host": "lash-her-frontend-staging-hcrhvy66l-dardan-demiris-projects.vercel.app",
+        "path": "/api/cron/product-stock-reservations",
+        "schedule": "*/15 * * * *"
+      },
+      {
+        "host": "lash-her-frontend-staging-hcrhvy66l-dardan-demiris-projects.vercel.app",
+        "path": "/api/cron/shipping-rate-cache-refresh",
+        "schedule": "30 7 * * 1"
+      }
+    ],
+    "aliasJob": null,
+    "automationBypassAvailable": true,
+    "providerChanged": false,
+    "rollbackTested": false
+  },
+  "hostCapacityBaseline": {
+    "status": "CORRECTED_RELEASE_HOST_START_BASELINE_PASS",
+    "hostMachineId": "ec265c34b9fbf4d051aecfa185362c0a",
+    "cpuCount": 2,
+    "memory": {
+      "MemTotalKiB": 3924236,
+      "MemAvailableKiB": 3338708,
+      "SwapTotalKiB": 0,
+      "SwapFreeKiB": 0
+    },
+    "dockerDiskBytes": {
+      "total": 82086711296,
+      "free": 78790426624
+    },
+    "runningStagingContainers": 0,
+    "newAttemptAlreadyStarted": false,
+    "runtimeCapacityQualified": false,
+    "activeOpsLinkExists": false,
+    "certificateConfigurationInstalled": false
+  },
+  "liveReleaseApprovalRequested": true,
+  "proposedReleaseAction": {
+    "kind": "corrected-initial-staging-release-and-controlled-qualification",
+    "host": "184.196.129.231",
+    "runtimeContainers": 8,
+    "frontendDomain": "staging.lashher.com",
+    "sourceFrontend": "74ca26736e5834fce639407278b4575bf4d05670",
+    "databaseMigrations": {
+      "course": 17,
+      "community": 10,
+      "frontend": 0
+    },
+    "frontendDatabaseMode": "verified-current-only-read-only",
+    "gatewayWrites": "maintenance retained",
+    "nativeBusinessCrons": "disable and retain disabled",
+    "nativeCatalogSmoke": "enable only the exact dedicated qualification definition briefly, observe, disable and drain",
+    "hostMaintenance": "install reviewed watchdog and certificate maintenance after runtime is ready",
+    "productionChanges": false,
+    "vmDeletionOrReplacement": false,
+    "finalP1Acceptance": false
+  },
+  "frontendDomainsPromoted": true,
+  "realVercelServerWorkloadVerified": true,
+  "currentStagingRuntimeRunning": true,
+  "nativeSchedulesEnabled": false,
+  "liveExecutionEvidence": "2026-11-02-staging-promotion-reconciliation.json",
+  "maintenanceTimersInstalled": true
+}

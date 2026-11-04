@@ -34,9 +34,5 @@ export function createVercelConfiguration(env, now = Date.now()) {
   }
   // Release branches advance source independently of the explicit release action.
   // This controls Git push events; reviewed API/CLI deployments remain explicit.
-  return { crons, git: { deploymentEnabled: {
-    main: false,
-    staging: false,
-    "codex/p1-platform-foundation-20261101": false,
-  } } };
+  return { crons, git: { deploymentEnabled: false } };
 }

@@ -4,13 +4,7 @@ import { createVercelConfiguration } from "./ops/platform/vercel-config.mjs";
 // scheduler list is generated through imported code below.
 export const config = {
   git: {
-    deploymentEnabled: {
-      main: false,
-      staging: false,
-      "codex/p1-platform-foundation-20261101": false,
-      "codex/p1-static-git-release-policy-20261102": false,
-      "codex/p1-staging-certificate-lifecycle-20261102": false,
-    },
+    deploymentEnabled: false,
   },
 };
 

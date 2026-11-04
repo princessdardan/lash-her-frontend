@@ -1,0 +1,64 @@
+{
+  "status": "EXISTING_RUNTIME_CONTINUATION_COMPONENT_VALIDATION_PASS",
+  "recordedAt": "2026-11-03T20:04:29.374627+00:00",
+  "action": "p1-recreate-access-20261103-c3",
+  "parentSourceCommit": "738546802fd56517b4ecd1279666cd267fe2a2cd",
+  "node": {
+    "version": "24.18.0",
+    "tests": 173,
+    "passed": 173,
+    "failed": 0,
+    "skipped": 0,
+    "command": "node --test ops/gateway/*.test.mjs ops/platform/*.test.mjs",
+    "postTestSourceChange": "Nested block indentation only; focused ESLint subsequently passed. Final committed source requires CI."
+  },
+  "linuxHost": {
+    "tests": 260,
+    "passed": 260,
+    "failed": 0,
+    "seconds": 65.525,
+    "network": "none",
+    "platformSourceMount": "/source/ops/platform (read-only)",
+    "credentialsOrStagingAccess": false
+  },
+  "retainedLogEvidence": {
+    "node": {
+      "path": "/private/tmp/lash-p1-c3-node-tests-20261103.log",
+      "sha256": "d8d85367d18ece4729ed04ae7f3e391577030192c570652b3298edc41ad71857"
+    },
+    "linuxHost": {
+      "path": "/private/tmp/lash-p1-c3-linux-host-tests-platform-20261103.log",
+      "sha256": "b855580ce3c7a0b7816af4b6054408ea03ff2fe5d809513f1f13c434f84c923b"
+    }
+  },
+  "focusedEslint": {
+    "status": "passed",
+    "provenance": "Prior session result recorded in handoff-p1-existing-runtime-continuation-20261103.md; no retained standalone lint receipt",
+    "command": "node node_modules/eslint/bin/eslint.js <changed JavaScript modules>"
+  },
+  "gitDiffCheck": "passed",
+  "sourceSha256": {
+    "ops/platform/cold-recover-staging.mjs": "0e3c09101cda7287ee95b4cabd5f23759420e2f95add490088a421364c82ebdd",
+    "ops/platform/cold-recover-staging.test.mjs": "cc430883e59746705c63555ea45274262e05c6e4d908d037761acc1d95b4c22a",
+    "ops/platform/host/recreation_files.py": "e236fd52ebdc58bf4a227415f214b746e923160c7a03430691b79f5db1fb3226",
+    "ops/platform/host/recreation_files_test.py": "9723b284d4c4a8b6a29038fc4b4b11fce80e35a134eb70e05555a557b2f4cbdb",
+    "ops/platform/host/recreation_maintenance.py": "ca615e6587fcadf2f8511c8dd360cc58838878211959bb7c2b3ccefc4e2563ca",
+    "ops/platform/host/recreation_maintenance_test.py": "f3f07eb4f81806e486a7784bdbe29b5832edbdf1cf37927deb4833d4e370976b",
+    "ops/platform/recreation_inputs.mjs": "55aee4ee1f34106627539cff4ba47cd521d4d784ce3f39c7c45442b4fb641b5a",
+    "ops/platform/recreation_ssh.mjs": "2fc0a9ed2ce30ecf6497d40bfb4d7a46f0caf61e8f182367bb0e195c5a3b0153",
+    "ops/platform/existing_runtime_continuation.mjs": "7fa8c4f47cbb5e7889ee1c428e5a73ea973ac202140ad75af6fffc66dd14291f",
+    "ops/platform/existing_runtime_continuation.test.mjs": "6c7bfa02be9f793a5cee3944821d2d96205e8a95356784acde9449e865aad084"
+  },
+  "actualPrivatePayloadValidation": "2026-11-03-existing-runtime-payload-validation.json",
+  "actualReadOnlyPreflight": "2026-11-03-existing-runtime-continuation-readonly.json",
+  "parentReceiptHashesVerified": 7,
+  "inputFiles": 50,
+  "acmeFiles": 7,
+  "inputManifestSha256": "f5b1a5faad65d47219e89c4de4abae24be8f299a4dedfbb5a5b034b7bc5dae51",
+  "applicationCandidateOrInfrastructureTemplateChanged": false,
+  "passingChecksRepeated": false,
+  "liveC3Executed": false,
+  "providerMutationsPerformed": false,
+  "p1QualificationComplete": false,
+  "approvalRequired": true
+}

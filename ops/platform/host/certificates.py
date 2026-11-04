@@ -219,7 +219,7 @@ def execute(configuration, apply=False, confirmation=None, lock_path=Path("/run/
             for service in due:
                 # Record intent first: a timed-out stop may still take effect.
                 stopped.append(service)
-                command(["docker", "stop", "--time", "30", selected[service]["id"]], 40)
+                command(["docker", "stop", "--timeout", "30", selected[service]["id"]], 40)
                 demand(not running(selected[service]["id"]), "TLS_STOP_UNVERIFIED")
             if "gateway" in due:
                 outcome["phase"] = "acme-renewal"
@@ -254,7 +254,7 @@ def execute(configuration, apply=False, confirmation=None, lock_path=Path("/run/
                     if service in changed:
                         # Stop again if a later restart failed after an earlier
                         # service started. Never replace an active pair in place.
-                        command(["docker", "stop", "--time", "30", selected[service]["id"]], 40)
+                        command(["docker", "stop", "--timeout", "30", selected[service]["id"]], 40)
                         demand(not running(selected[service]["id"]), "TLS_STOP_UNVERIFIED")
                         for name in ("cert.pem", "key.pem"):
                             replace_file(selected[service]["directory"] / name, (attempt / service / ("previous-" + name)).read_bytes())

@@ -14,6 +14,7 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 from uuid import uuid4
 
 import migrate
+import docker_inspect
 
 STAGES = [("community-api", "course-api"), ("community-tls", "course-tls"),
           ("course-snapshot", "community-worker"), ("course-publisher",), ("gateway",)]
@@ -122,6 +123,23 @@ def environment_values(raw, environment, service, jobs):
     return values
 
 
+def validate_snapshot_source(source, release, jobs):
+    """Validate private input before an operation can pause or write fixtures.
+
+    Running snapshots have container-owned TLS/config files. They are not
+    reusable operator inputs; select the retained root-owned input instead.
+    """
+    migrate.private_directory(source)
+    for relative in ("runtime.json", *CONFIG_FILES, *TLS_FILES, *(f"{service}.env" for service in ENV_FILES)):
+        raw = migrate.read_input(source, relative, 65_536)
+        info = (source / relative).stat()
+        demand(info.st_uid == os.getuid(), "CONFIGURATION_OWNER_REQUIRED")
+        if relative.endswith((".env", "key.pem")):
+            demand(info.st_mode & 0o077 == 0, "PRIVATE_CREDENTIAL_FILE_REQUIRED")
+        if relative.endswith(".env"):
+            environment_values(raw, release["environment"], relative[:-4], jobs)
+
+
 def snapshot_configuration(source, destination, release, jobs, compose):
     migrate.private_directory(source)
     destination.mkdir(mode=0o700)
@@ -141,6 +159,8 @@ def snapshot_configuration(source, destination, release, jobs, compose):
     demand((destination / "tls/ca.pem").read_bytes() == (destination / "tls/gateway/ca.pem").read_bytes(), "SHARED_PRIVATE_CA_REQUIRED")
     (destination / "compose.yaml").write_bytes(compose)
     (destination / "compose.yaml").chmod(0o600)
+    # Directory binding exposes atomic host admission changes without restart.
+    (destination / "admission").mkdir(mode=0o755)
     # Each container receives only its own TLS directory/config. Env files are
     # read by the host Compose process, never mounted into other services.
     for path in [*(destination / "tls").rglob("*"), *(destination / name for name in CONFIG_FILES)]:
@@ -189,10 +209,16 @@ def configuration_container(arguments):
         demand(not remaining, "CONFIGURATION_CONTAINER_CLEANUP_UNVERIFIED")
 
 
-def preflight(release, snapshot, jobs):
+def preflight(release, snapshot, jobs, pull=True):
+    demand(type(pull) is bool, "EXPLICIT_IMAGE_PREFLIGHT_MODE_REQUIRED")
     env = runtime_environment(release, snapshot)
     for key in ("gateway", "courseRuntime", "communityRuntime"):
-        command(["docker", "pull", release["artifacts"][key]["image"]], SAFE_ENV, 180)
+        image = release["artifacts"][key]["image"]
+        if pull:
+            command(["docker", "pull", image], SAFE_ENV, 180)
+        else:
+            identity = command(["docker", "image", "inspect", "--platform", "linux/amd64", "--format", "{{.Id}}", image], SAFE_ENV)
+            demand(re.fullmatch(r"sha256:[a-f0-9]{64}", identity), "CACHED_RUNTIME_IMAGE_REQUIRED")
     # Avoid serialized/interpolation-escaped secret values from `compose config`.
     # Merge each already-validated raw file with its pinned public overrides.
     model = json.loads(command([*compose_command(snapshot, release["environment"]), "config", "--no-env-resolution", "--format", "json"], env))
@@ -232,7 +258,7 @@ def check_containers(release, snapshot):
         demand(len(ids) == 1 and re.fullmatch(r"[a-f0-9]{12,64}", ids[0]), "EXACT_RUNTIME_REPLICA_REQUIRED")
         identity = release["artifacts"][IMAGE_KEYS[service]]["image"]
         local = command(["docker", "image", "inspect", "--platform", "linux/amd64", "--format", "{{.Id}}", identity], SAFE_ENV)
-        fields = '{{.Image}}|{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}'
+        fields = docker_inspect.RUNTIME_FIELDS
         actual = command(["docker", "inspect", "--format", fields, ids[0]], SAFE_ENV).split("|")
         demand(len(actual) == 5 and actual[0] in (local, identity.split("@")[1]) and actual[1] == "true"
                and actual[2] == ("none" if service.endswith("-tls") else "healthy")

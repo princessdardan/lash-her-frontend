@@ -150,6 +150,21 @@ class RuntimeReleaseTests(unittest.TestCase):
             self.assertNotIn("private-fixture", str(failure.exception))
         self.assertEqual(release.environment_values(raw, "staging", "course-api", {name: {"job": job} for name, job in self.fixture.jobs.items()})["INTERNAL_SERVICE_JWT_SECRET"], "literal$VALUE")
 
+    def test_cached_preflight_cannot_pull_and_requires_valid_local_image_identity(self):
+        selected, jobs, _, _ = release.make_plan(self.bundle, self.configuration, self.compose)
+        snapshot = self.root / "preflight-snapshot"
+        release.snapshot_configuration(self.configuration, snapshot, selected, jobs, self.compose.read_bytes())
+        with self.patches():
+            release.preflight(selected, snapshot, jobs, pull=False)
+        self.assertFalse(any(args[1] == "pull" for args in self.calls))
+        image_reads = [args for args in self.calls if args[1:3] == ["image", "inspect"]]
+        self.assertEqual(len(image_reads), 3)
+        self.assertTrue(all(args[args.index("--platform") + 1] == "linux/amd64" for args in image_reads))
+        with patch.object(release, "command", return_value="not-an-image"), self.assertRaisesRegex(ValueError, "CACHED_RUNTIME_IMAGE"):
+            release.preflight(selected, snapshot, jobs, pull=False)
+        with patch.object(release, "command", side_effect=AssertionError("process invoked")), self.assertRaisesRegex(ValueError, "EXPLICIT_IMAGE_PREFLIGHT_MODE"):
+            release.preflight(selected, snapshot, jobs, pull="false")
+
     def test_full_control_flow_holds_the_lock_starts_dependencies_first_and_leaves_traffic_unapproved(self):
         with self.patches():
             result = self.execute()

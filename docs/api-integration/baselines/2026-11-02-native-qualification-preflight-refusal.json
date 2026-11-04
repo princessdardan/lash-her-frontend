@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "status": "NATIVE_QUALIFICATION_PREFLIGHT_REFUSAL_REQUIRES_REVIEW",
+  "action": "native-qualification-p1-41541683416-1-1",
+  "releaseId": "p1-41541683416-1",
+  "startedAt": "2026-11-03T01:53:08.706900+00:00",
+  "localIntentPreserved": true,
+  "localOutcome": {
+    "status": "REVIEWED_NATIVE_QUALIFICATION_STOPPED_INSPECT_HOST_AND_PROVIDER",
+    "retryAuthorized": false
+  },
+  "remoteQualificationOutputCreated": false,
+  "newDeploymentCreated": false,
+  "cronBindingTargetsAfterRefusal": [
+    "preview",
+    "production"
+  ],
+  "nativeSchedulesEnabled": false,
+  "originalHealthyContainers": 8,
+  "databaseMigrationsRepeated": false,
+  "providerMutationsObserved": false,
+  "failureClass": "not retained by original wrapper",
+  "likelyCause": "brief shared-lock contention with watchdog, not conclusively proven",
+  "watchdogWindowUtc": [
+    "2026-11-03T01:53:09.828069Z",
+    "2026-11-03T01:53:10.312658Z"
+  ],
+  "actualReadOnlyPreflightAfterRefusal": "PASS",
+  "retryExecuted": false,
+  "retryNeedsOperatorReview": true,
+  "gatewayWrites": "maintenance",
+  "p1Complete": false
+}

@@ -10,6 +10,8 @@ The [frontend plan](API-INTEGRATION-PLAN.md), [Course API plan](/Users/dardan/wo
 
 Maintain one tracker here. All three plan copies link to it. Changes made in either API repository must be followed by an update to this document, with the relevant repository revision and verification evidence.
 
+**November 3 current access hold:** C2 at `7385468` normally stopped and replaced the original host, preserved static IP `184.196.129.231`, and independently verified/pinned the replacement key. The 51-file payload reached the new host over pinned SSH, but the receiver rejected `initial-issuance.log` before creating private action/input files. The replacement is running with the static IP attached; Docker and applications are absent. The original snapshot is retained. [C2 failure reconciliation](docs/api-integration/baselines/2026-11-03-c2-runtime-handoff-failure.json) and [read-only existing-host check](docs/api-integration/baselines/2026-11-03-existing-runtime-continuation-readonly.json) record this state. C3 is being prepared to restore runtime on this same host with 50 files, excluding only that log and correcting creation of missing release parents. C3 has not been authorized or executed. No migrations, frontend promotion, business schedules, production changes, gateway write admission or P1 closure occurred.
+
 ## Current execution position
 
 | Field                                 | Current value                                                                                                                                                                                                                                                                                            |

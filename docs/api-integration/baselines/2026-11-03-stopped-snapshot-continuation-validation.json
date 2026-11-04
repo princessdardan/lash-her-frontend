@@ -1,0 +1,37 @@
+{
+  "status": "STOPPED_SNAPSHOT_CONTINUATION_COMPONENT_VALIDATION_PASS",
+  "observedAt": "2026-11-03T18:20:12.301525+00:00",
+  "parentSourceCommit": "40390f6ddc8a4dac8b282fa45d2a90b0d5b13fe4",
+  "node": {
+    "version": "24.18.0",
+    "tests": 166,
+    "passed": 166,
+    "failed": 0
+  },
+  "focusedTests": {
+    "tests": 20,
+    "passed": 20
+  },
+  "focusedEslint": "passed",
+  "gitDiffCheck": "passed",
+  "actualReadOnlyPreflight": "2026-11-03-stopped-snapshot-continuation-readonly.json",
+  "parentReceiptHashesVerified": true,
+  "stopOrSnapshotRetried": false,
+  "providerMutationsPerformed": false,
+  "privateConfigurationTransferred": false,
+  "templateAndPythonHostSubtreeChanged": false,
+  "priorUnchangedComponentEvidence": "2026-11-03-staging-access-recovery-component-validation.json",
+  "priorComponentEvidenceSource": "40390f6ddc8a4dac8b282fa45d2a90b0d5b13fe4",
+  "awsResponseReference": "https://repost.aws/knowledge-center/lightsail-aws-cli-snapshots-backups",
+  "sourceSha256": {
+    "ops/platform/access_recovery.mjs": "bb57c8799fe005d7429adf0e97c29c2cd3a386670027ddf8815cafabe88d8439",
+    "ops/platform/access_recovery.test.mjs": "e5ecfe9165bd740ee55b3ded46a4f3ad31aa022d62229a10a515f3b4131885bd",
+    "ops/platform/access_recovery_controller.mjs": "8d8efac926e382067d20f29626f03cc3511a30639927d52a8963fff2800f5f5c",
+    "ops/platform/access_recovery_controller.test.mjs": "86822e954c8cf536e818d1b7efa916d90c0db2835afa071745ef047db9ad07cb",
+    "ops/platform/access_recovery_continuation.mjs": "5da6702129a49f73fa2b5f9986dcbc0cbd92bbed9fe51ed9e0dded72311bf734",
+    "ops/platform/cold-recover-staging.mjs": "edcd145b820944b8730b7992daf1a616256fa1255c6600444ac90c055ac1832d",
+    "ops/platform/cold-recover-staging.test.mjs": "235b8177a093fb34f2c28f8fba3f86060e41529837fb31530be497c72cd13271"
+  },
+  "liveContinuationExecuted": false,
+  "p1QualificationComplete": false
+}

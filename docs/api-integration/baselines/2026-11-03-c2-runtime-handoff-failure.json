@@ -1,0 +1,67 @@
+{
+  "status": "C2_FAILED_AFTER_REPLACEMENT_BEFORE_PRIVATE_STAGING",
+  "observedAt": "2026-11-03T19:51:48.446Z",
+  "actionOutcome": {
+    "status": "STAGING_ACCESS_RECOVERY_REQUIRES_REVIEW",
+    "action": "p1-recreate-access-20261103-c2",
+    "sourceCommit": "738546802fd56517b4ecd1279666cd267fe2a2cd",
+    "startedAt": 1793734338303,
+    "productionChanged": false,
+    "migrationsExecuted": false,
+    "trafficAuthorized": false,
+    "releaseAccepted": false,
+    "liveRollbackQualified": false,
+    "p1RecreationQualified": false,
+    "failureCode": "ACTION_PHASE_FAILED",
+    "phase": "restore-reviewed-private-inputs",
+    "completedAt": 1793734700265
+  },
+  "receiverFailureCode": "RECREATION_FILES_ACME_SCOPE_REQUIRED",
+  "instance": {
+    "status": "STAGING_INFRASTRUCTURE_STATE_VERIFIED",
+    "state": "attached",
+    "stackId": "arn:aws:cloudformation:us-east-1:691588646557:stack/lash-her-api-staging/43564e90-d6f4-11f1-825b-12ffd9c5e733",
+    "addressArn": "arn:aws:lightsail:us-east-1:691588646557:StaticIp/dfdce3fc-150b-47c0-87df-2bffeb81e963",
+    "address": "184.196.129.231",
+    "templateSha256": "813a3f3fa1d6532b9d75dcd3889582df7ea4afff097068fba0da261458982fa6",
+    "instanceArn": "arn:aws:lightsail:us-east-1:691588646557:Instance/c88deb32-5f4f-42df-85b4-232609b0d23e",
+    "instanceCreatedAt": "2026-11-03T14:35:08.122000-05:00",
+    "instanceIpv6Addresses": [
+      "2600:1f18:142d:3d00:43ef:7ae6:7caf:bc80"
+    ],
+    "allocationPreserved": true,
+    "infrastructureChanged": false,
+    "accessRecoveryPhase": "ready",
+    "instanceState": "running",
+    "operatorIpv4Cidr": "99.239.187.88/32",
+    "browserSshEnabled": true
+  },
+  "host": {
+    "status": "BARE_RUNTIME_RESTORE_VERIFIED",
+    "hostMachineId": "ec2146be041cf26fda0a7986db4be3b6",
+    "failedActionInputsPresent": false,
+    "newActionPresent": false,
+    "dockerInstalled": false,
+    "readOnly": true
+  },
+  "snapshot": {
+    "status": "STAGING_STOPPED_HOST_RECOVERY_SNAPSHOT_AVAILABLE",
+    "snapshotArn": "arn:aws:lightsail:us-east-1:691588646557:InstanceSnapshot/a9d51e18-1494-4b6a-ab98-d8936f40c33d",
+    "snapshotName": "p1-recreate-access-20261103-original",
+    "fromInstanceArn": "arn:aws:lightsail:us-east-1:691588646557:Instance/2e608d2c-a88f-416f-a23f-209d20e042f4",
+    "createdAt": "2026-11-03T13:07:38.143000-05:00",
+    "privateRootDiskIncluded": true,
+    "snapshotContentsFetched": false,
+    "cleanupRequiresSuccessfulRecovery": true
+  },
+  "privatePayloadTransmittedOverPinnedSsh": true,
+  "privateFilesPersisted": 0,
+  "publicOperatorSourceInstalled": true,
+  "bootstrapRun": false,
+  "runtimeStarted": false,
+  "migrationsExecuted": false,
+  "frontendPromotionPerformed": false,
+  "productionChanged": false,
+  "snapshotRetained": true,
+  "correction": "Exclude only the retained issuance log and create missing private release parents after full validation. Continue on the existing host without provider mutation."
+}

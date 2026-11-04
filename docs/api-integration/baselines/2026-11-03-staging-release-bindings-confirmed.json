@@ -1,0 +1,31 @@
+{
+  "status": "STAGING_SEVEN_RELEASE_BINDINGS_PASS",
+  "checkedAt": "2026-11-03T16:44:32.859Z",
+  "requiredBindingNames": [
+    "PLATFORM_SOURCE_READ_TOKEN",
+    "VERCEL_TOKEN",
+    "GHCR_USERNAME",
+    "GHCR_READ_TOKEN",
+    "FRONTEND_STAGING_MIGRATION_DATABASE_URL",
+    "COURSE_STAGING_DATABASE_URL",
+    "COMMUNITY_STAGING_DATABASE_URL"
+  ],
+  "allBindingsPresent": true,
+  "databaseBindingsMatchReviewedTargetsRolesAndTls": true,
+  "sourceRepositories": [
+    {
+      "repository": "princessdardan/lash-her-course-api",
+      "repositoryId": 1296925924,
+      "sourceReadVerified": true
+    },
+    {
+      "repository": "princessdardan/lash-her-community-api",
+      "repositoryId": 1332194577,
+      "sourceReadVerified": true
+    }
+  ],
+  "databaseNetworkQueriesPerformed": false,
+  "credentialValuesDisplayed": false,
+  "mutationsPerformed": false,
+  "executionAuthorized": false
+}
