@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { finalizeSquarePayment } from "@/lib/booking/square-payment-finalizer";
 import {
   createServicePaymentAlertLogger,
@@ -366,6 +367,7 @@ export function createSquareWebhookPostHandler(
   dependencies: SquareWebhookDependencies,
   runRefundRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
   runTrainingInvoiceRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
+  runProductRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
 ): (req: Request) => Promise<Response> {
   return async function postSquareWebhook(req) {
     const env = await dependencies.getEnv();
@@ -644,6 +646,7 @@ export function createSquareWebhookPostHandler(
       const commerceResponse = await tryRecoverSquareCommercePayment(
         dependencies,
         event,
+        runProductRecovery,
       );
       if (commerceResponse !== null) {
         return commerceResponse;
@@ -810,6 +813,7 @@ async function tryFinalizeNoShowCharge(
 async function tryRecoverSquareCommercePayment(
   dependencies: SquareWebhookDependencies,
   event: VerifiedSquareWebhookEvent,
+  runProductRecovery: (task: () => Promise<Response>) => Promise<Response>,
 ): Promise<Response | null> {
   if (
     !event.eventType.startsWith("payment.") ||
@@ -847,31 +851,38 @@ async function tryRecoverSquareCommercePayment(
     return null;
   }
 
-  let result: SquareCommerceRecoveryResult;
-  try {
-    result = await dependencies.recoverSquareCommercePayment({
-      orderReference,
-      kind,
-      squarePaymentId: payment.id,
-      status: payment.status,
-      amountCents: payment.amount_money.amount,
-      currency: payment.amount_money.currency,
-    });
-  } catch (error) {
-    console.error("[square-webhook] commerce recovery failed", {
-      error: error instanceof Error ? error.message : "Unknown recovery error",
-      eventId: event.eventId,
-      orderReference,
-      kind,
-    });
-    return new Response(null, { status: 503 });
-  }
+  const recoverPayment = dependencies.recoverSquareCommercePayment;
+  // Classification above is SELECT-only. Only product recovery has had its
+  // complete effect chain audited; training card/split keep their own boundary.
+  const recover = async (): Promise<Response> => {
+    let result: SquareCommerceRecoveryResult;
+    try {
+      result = await recoverPayment({
+        orderReference,
+        kind,
+        squarePaymentId: payment.id,
+        status: payment.status,
+        amountCents: payment.amount_money.amount,
+        currency: payment.amount_money.currency,
+      });
+    } catch (error) {
+      console.error("[square-webhook] commerce recovery failed", {
+        error: error instanceof Error ? error.message : "Unknown recovery error",
+        eventId: event.eventId,
+        orderReference,
+        kind,
+      });
+      return new Response(null, { status: 503 });
+    }
 
-  // Retryable side-effect failures ask Square to redeliver; everything else
-  // (recovered / duplicate / ignored / terminal conflict) is acknowledged.
-  return new Response(null, {
-    status: result.status === "retryable" ? 503 : 200,
-  });
+    // Preserve ordinary terminal-conflict acknowledgements, but never use an
+    // unresolved captured payment as proof that an admitted operation completed.
+    if (kind === "product" && result.status === "conflict") markWriterOperationUncertain();
+    return new Response(null, {
+      status: result.status === "retryable" ? 503 : 200,
+    });
+  };
+  return kind === "product" ? runProductRecovery(recover) : recover();
 }
 
 function classifySquareCommerceCardOrder(

@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import "server-only";
 import { recordCheckoutConsent } from "@/lib/highlevel/checkout-consent";
 import type { CheckoutMarketing } from "@/lib/highlevel/contract";
@@ -1831,7 +1832,7 @@ export async function enqueuePaidProductOrderConfirmationEmail(input: {
       .returning();
     if (!claimedOrder) return null;
     const payload = toProductOrderConfirmationEmailRecord(claimedOrder);
-    await enqueueCustomerEmail(
+    const queued = await enqueueCustomerEmail(
       {
         kind: "product_order_confirmation",
         orderDatabaseId: claimedOrder.id,
@@ -1842,6 +1843,7 @@ export async function enqueuePaidProductOrderConfirmationEmail(input: {
       },
       tx,
     );
+    if (!queued) markWriterOperationUncertain();
     return payload;
   });
 }

@@ -1,0 +1,150 @@
+{
+  "version": 1,
+  "date": "2026-11-04",
+  "runtime": "Node 24.18.0",
+  "status": "SOURCE_COMPONENT_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "21197ca1f1e698b3caa07e15c603149c3346a348",
+  "sourceManifestSha256": "fbbfbf5102e0259cdb9ca6e5a2bd3f9aff9cb72090dd56d2cc1c484e358b5efa",
+  "files": {
+    "scripts/run-source-unit-tests.mjs": "845e4800c32bcf2e3e17f3e2298134c47142e40b66b76dfd3461973b3c933459",
+    "src/app/api/webhooks/square/handler.ts": "6bd062eed87c8c902fe72601266d9900aae284438de4dcf07c2556988bbdd22e",
+    "src/app/api/webhooks/square/route.ts": "9b94c57d8f45588aedabf198bfba6e256e27eb48b889ad9f5550caf926d8043f",
+    "src/lib/commerce/order-store.ts": "590f7b241264e035f3904138f030806aa3e66d161269770d6d8640fdf7d64f7c",
+    "src/lib/commerce/product-order-email.ts": "5b1c14989702bab5ada6d70d683a04175e4e46f476a7de474b36d3c24bc7860b",
+    "src/lib/commerce/product-stock-store.ts": "cb1c72587afe220d153a9d4ed9420c290d2dc4f241926b5164ce2a4583911697",
+    "src/lib/commerce/product-stock-store.db.test.ts": "9bd628e7c2c102ef515d07b90c1f3e800676a7f2f322d01b2a01b087460d8b63",
+    "src/lib/commerce/customer-email-outbox.db.test.ts": "b4da7938475f45850509be69c94c8708169f75c27befd162d1861e82aea378fa",
+    "src/lib/writer-admission/square-product.test.ts": "71c487c7c3546e061e893bfb0aa6732a1697c77df2a17c462ee66bed7713e455"
+  },
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "deploymentPerformed": false,
+  "liveDatabaseOrProviderChanged": false,
+  "p200Complete": false,
+  "checks": {
+    "unit": {
+      "ordinary": 1855,
+      "serverOnly": 238,
+      "scripts": 31,
+      "securityDependencies": 14,
+      "totalPassed": 2138,
+      "failed": 0,
+      "skipped": 0
+    },
+    "focusedRegression": {
+      "totalPassed": 124,
+      "newProductAdmissionTests": 10,
+      "failed": 0
+    },
+    "platform": {
+      "totalPassed": 178,
+      "failed": 0
+    },
+    "typescript": "PASS",
+    "targetedEslint": "PASS",
+    "gitDiffCheck": "PASS",
+    "ownedPostgres16Business": {
+      "migrations": 80,
+      "files": 3,
+      "passed": 3,
+      "providerTouched": false,
+      "scope": [
+        "Actual atomic outbox conflict marks uncertainty after commit",
+        "Actual zero-row stock UPDATE marks uncertainty after commit",
+        "Existing product money-ledger/finalizer/refund-reservation regression"
+      ]
+    },
+    "ownedPostgres16Protocols": {
+      "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+      "postgresMajor": 16,
+      "migrations": 80,
+      "checks": [
+        "fresh-apply",
+        "already-current",
+        "server-enforced-current-only-read-session",
+        "physical-database-lock-retained-through-compatible-frontend-continuation",
+        "idle-session-loss-retains-sanitized-failed-outcome",
+        "failed-frontend-preserves-successful-sql-without-reapply-or-admission",
+        "current-only-refuses-real-pending-migrations-without-applying",
+        "data-bearing-upgrade",
+        "lock-contention",
+        "pending-chain-refusal",
+        "lineage-refusal",
+        "schema-refusal",
+        "runtime-privilege-refusal",
+        "tls-certificate-refusal",
+        "exact-artifact-production-promotion"
+      ],
+      "providerTouched": false,
+      "admissionChecks": [
+        "bootstrap-is-closed-before-any-effect",
+        "outer-transactions-refuse-before-effects-and-cannot-hide-uncommitted-admission",
+        "historical-login-direct-table-role-spoof-and-null-bindings-refused",
+        "admission-refuses-policy-lock-contention",
+        "new-work-stops-independently-while-recovery-and-admitted-deferred-work-finish",
+        "both-controls-closed-and-zero-unresolved-required-for-ledger-drain",
+        "completed-operation-id-cannot-replay-effects",
+        "elapsed-time-never-drains-uncertain-work-and-only-explicit-reconciliation-clears-it",
+        "unresolved-operations-refuse-restoration",
+        "actual-backend-death-retains-active-operation-until-reviewed-reconciliation",
+        "lost-admission-acknowledgement-never-starts-effects-or-retries",
+        "lost-completion-acknowledgement-preserves-committed-ledger-without-replay",
+        "target-stale-epoch-and-concurrent-policy-changes-refuse",
+        "drain-observation-never-asserts-historical-fence-or-migration-authority"
+      ],
+      "historicalLoginChecks": [
+        "cross-database-session-refuses-before-cluster-wide-login-change",
+        "actual-membership-and-owned-object-refuse-before-retirement",
+        "owned-objects-in-another-database-refuse-without-a-legacy-session",
+        "role-name-alone-cannot-substitute-another-oid",
+        "committed-nologin-blocks-new-logins-but-existing-session-is-still-alive",
+        "existing-idle-and-writing-sessions-terminate-and-open-transaction-rolls-back",
+        "database-retirement-never-claims-provider-drain-or-sql-authority",
+        "disabled-login-replay-refuses-without-automatic-login-restoration",
+        "lost-commit-acknowledgement-keeps-login-disabled-and-never-retries",
+        "lost-termination-acknowledgement-keeps-login-disabled-and-never-retries",
+        "parent-physical-migration-lock-survives-success-and-failures"
+      ],
+      "writerRouteChecks": [
+        "closed-policy-and-unknown-source-or-legacy-login-refuse-before-route-effects",
+        "committed-admission-precedes-handler-and-closing-new-work-preserves-current-epoch-recovery",
+        "admitted-request-remains-active-through-all-awaited-handler-work",
+        "policy-close-between-observation-and-commit-refuses-without-starting-handler",
+        "caught-handler-5xx-records-uncertainty-and-never-acknowledges-webhook-success",
+        "caught-domain-errors-behind-http-success-remain-uncertain-until-owner-reconciliation",
+        "lost-settlement-acknowledgement-returns-503-without-replaying-successful-effects",
+        "actual-idle-runtime-connection-loss-retains-active-operation-and-retryable-response"
+      ],
+      "packagedCliVerified": false,
+      "sqlArtifactSha256": "775201b5352db56e2fe0402f5e9f9232e19cff131e38a71dca51dd1c72e77b3c",
+      "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+      "schemaBaselineSha256": "aa0dde73d73135fe922affee4e76a90ccdad2bde64e3277a3eccd39391132fb6"
+    },
+    "fullBuildBrowsersAndPostgres18": "PENDING_EXACT_HEAD_CI"
+  },
+  "review": {
+    "kind": "sequential local source review",
+    "scope": [
+      "Signature/classification boundary and independent adapters",
+      "Awaited money/stock/shipment/refund/outbox effects",
+      "No-op claims, unconfirmed insert/update and conflict outcomes",
+      "Admission-off compatibility and durable obligation/worker separation"
+    ],
+    "confirmedGapsAddressed": [
+      "Null notification claims",
+      "False outbox insertion without a verified matching handoff",
+      "Zero-row conditional stock update",
+      "Success-shaped terminal product conflicts"
+    ]
+  },
+  "environmentCorrections": [
+    "Default host Node26 caused an inherited prepare-migrations CLI test and migration rehearsal to refuse; all final checks use required Node24.",
+    "Unit tests require owned loopback HTTP fixtures; sandbox EPERM was resolved by executing the authorized local fixtures with loopback permissions."
+  ],
+  "limitations": [
+    "Valid already-delivered/already-queued duplicates can conservatively require reconciliation under enforcement.",
+    "Product route tests control ledger and finalizer/outbox terminals; actual business PostgreSQL regressions and ledger protocols are separate. No combined actual product webhook/ledger/database enforcement is claimed.",
+    "Checkout fixtures do not qualify a new immutable runtime, provider settlement, actual deployment/provider fencing or worker drain.",
+    "Historical bootstrap, remaining writers and parent release/recovery coordinator remain open."
+  ]
+}
