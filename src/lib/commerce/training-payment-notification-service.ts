@@ -1,3 +1,5 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+
 import type {
   claimTrainingPaymentEmails,
   markTrainingEnrollmentStaffAlerted,
@@ -38,6 +40,9 @@ export async function sendTrainingPaymentNotificationEmailsIfNeededWithDependenc
   });
 
   if (claimed === null) {
+    // Another claim or a concurrent state change is not proof these pending
+    // notifications completed. Preserve ordinary callers while refusing drain.
+    markWriterOperationUncertain();
     return;
   }
 
@@ -54,9 +59,10 @@ export async function sendTrainingPaymentNotificationEmailsIfNeededWithDependenc
   if (claimed.studentPaymentEmailSentAt === null) {
     try {
       await dependencies.sendTrainingCustomerPaymentEmail(emailInput);
-      await dependencies.markTrainingEnrollmentStudentPaymentEmailSent({
+      const recorded = await dependencies.markTrainingEnrollmentStudentPaymentEmailSent({
         enrollmentId: claimed.enrollmentId,
       });
+      if (!recorded) markWriterOperationUncertain();
     } catch (error) {
       errors.push(`customer: ${getErrorMessage(error)}`);
     }
@@ -65,9 +71,10 @@ export async function sendTrainingPaymentNotificationEmailsIfNeededWithDependenc
   if (claimed.staffAlertedAt === null) {
     try {
       await dependencies.sendTrainingAdminPaymentEmail(emailInput);
-      await dependencies.markTrainingEnrollmentStaffAlerted({
+      const recorded = await dependencies.markTrainingEnrollmentStaffAlerted({
         enrollmentId: claimed.enrollmentId,
       });
+      if (!recorded) markWriterOperationUncertain();
     } catch (error) {
       errors.push(`admin: ${getErrorMessage(error)}`);
     }

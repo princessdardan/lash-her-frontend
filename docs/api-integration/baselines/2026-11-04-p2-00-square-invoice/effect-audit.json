@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "baseCommit": "63de9cdc7ea3e0b436a9cf54d2e77e846e86f56e",
+  "candidateSourceManifestSha256": "e12b153aa9ccdc7983d3b1588bb3c81e9d811f151791e0a76ea868c7d3fafa44",
+  "scope": "training-invoice-paid webhook effect chain only",
+  "releaseAuthority": false,
+  "nodes": [
+    {
+      "file": "src/app/api/webhooks/square/handler.ts",
+      "sourceSha256": "72f7862bfba82b7c4c9ed4498e3eb2f01cd393d1fb915a632c2d91a99c2173c5",
+      "audit": "Verified training invoice dispatch; pre-boundary lookup is SELECT-only; receipt insert/dedup lookup, finalizer and processed update are awaited. Duplicate receipts never skip recovery."
+    },
+    {
+      "file": "src/app/api/webhooks/square/route.ts",
+      "sourceSha256": "e4bbf0f161f017c05a3cf6cc1997648c920d74fe03e5a676e4acbfc6cfae82e2",
+      "audit": "Production supplies separate refund and invoice effect adapters. Other branches stay unqualified."
+    },
+    {
+      "file": "src/lib/commerce/order-store.ts",
+      "sourceSha256": "53177e560f797616195d88f07f88503b44bf9a98810b9e28ffba60c3b89c51e7",
+      "audit": "Selected methods: findOrderBySquareInvoiceId SELECT; claimSquareInvoiceWebhookEvent insert-on-conflict then SELECT; markSquareInvoicePaid / markSquareInvoiceFinalizationFailed UPDATE; recordSquareInvoiceWebhookEventProcessed UPDATE. Other methods are not qualified."
+    },
+    {
+      "file": "src/lib/commerce/training-square-invoice-finalizer.ts",
+      "sourceSha256": "5a0f9b3cc5c8edd00718de3512564f1f2d7ed9b6f86e4e18e49982e13795d7d2",
+      "audit": "Rechecks order, fetches/validates invoice and order; paid transition, enrollment/token, notification recovery; caught results propagate notificationFailed/nonfinalization or operation-local uncertainty."
+    },
+    {
+      "file": "src/lib/commerce/square-invoice-client.ts",
+      "sourceSha256": "49367f4834ebe9ecd904d325f42b2a8af254cf122aa1befd1966099e4a2c0f5f",
+      "audit": "Selected getInvoice/getOrder perform awaited GET and parse/validate response. No POST publication or charge is invoked by the finalizer."
+    },
+    {
+      "file": "src/lib/commerce/training-enrollment-store.ts",
+      "sourceSha256": "0b86faeb6e4d38f3a09124db6bfb3d2821cdef3867930eae061d11558bccfc13",
+      "audit": "Idempotent enrollment INSERT/SELECT, pending confirmation SELECT, conditional token UPDATE, notification claim UPDATE/SELECT, sent/failure UPDATE. Token creation uses local crypto. Lease expiry is not drain evidence."
+    },
+    {
+      "file": "src/lib/commerce/training-payment-notification-service.ts",
+      "sourceSha256": "644e498d9f638a0468859adf0b4627c33f7a0dba60ec43bac354528be6c527f9",
+      "audit": "Claim and sequential customer/staff send plus persisted flags; errors collected only after both paths finish, failure record awaited then throws. Null claim/false persistence now mark admitted uncertainty."
+    },
+    {
+      "file": "src/lib/commerce/training-payment-email.ts",
+      "sourceSha256": "82058979d37f8cf67e1f895abadd2eeb1314144ea3e7ba65ccb9da696430fdaa",
+      "audit": "Selected customer/admin send functions await sendTransactionalEmail using existing deterministic per-order keys; no outbox or detached job."
+    },
+    {
+      "file": "src/lib/transactional-email.ts",
+      "sourceSha256": "85f2960027a7d40ce3639a8c2c25a5d364d4c6731a981a3f26542e248da0e6ec",
+      "audit": "Awaits Resend emails.send, rejects SDK error or missing acknowledgement. Provider call may be uncertain on failure; no application-level automatic retry added."
+    },
+    {
+      "file": "src/lib/resend-platform.ts",
+      "sourceSha256": "4a3528b39cab7b6667aaf0065bc22a3e967a5fca4613989184d3cdb0d8f1da03",
+      "audit": "Only getConfiguredTransactionalTemplate is used: local environment/template variable construction. Other provider/marketing exports are not invoked in this chain."
+    },
+    {
+      "file": "src/lib/security/bounded-text-body.ts",
+      "sourceSha256": "2677dd15cc681f923c9872563a21c30e442f440bb49e6ab7c2f8dbcb514eebc2",
+      "audit": "Raw body byte cap before signature work."
+    },
+    {
+      "file": "src/lib/booking/square-webhook.ts",
+      "sourceSha256": "a3753fb8ef4feab4457ef179618b46623bca227eb231793f98f60aef91cb1167",
+      "audit": "Raw HMAC verification and sanitized event parsing; no persistence/provider effects."
+    },
+    {
+      "file": "src/lib/writer-admission/runtime.ts",
+      "sourceSha256": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
+      "audit": "Actual shared runtime target/source/producer binding, begin before task, uncertainty and settlement; no lease-based drain."
+    },
+    {
+      "file": "src/lib/writer-admission/context.ts",
+      "sourceSha256": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+      "audit": "Operation-local uncertainty markers; inert outside admitted execution."
+    },
+    {
+      "file": "src/lib/writer-admission/route.ts",
+      "sourceSha256": "6c7a496c8f866da8abe89f4e48cfa18d5631ad543c767e7b83e66433082879c5",
+      "audit": "Non-streaming adapter sanitizes admission failures and treats 5xx as uncertain."
+    },
+    {
+      "file": "src/lib/private-db/client.ts",
+      "sourceSha256": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+      "audit": "Shared business PostgreSQL pool; separate ledger URL must bind same reviewed target/login under enforcement. No new client layer."
+    }
+  ],
+  "preAdmission": [
+    "Configuration resolution",
+    "64,000 byte bounded exact raw signature verification and parsing",
+    "Invoice ID extraction and local SELECT classification"
+  ],
+  "awaitedEffects": [
+    "receipt INSERT or duplicate SELECT",
+    "Square invoice/order GET verification",
+    "paid/failure UPDATE",
+    "idempotent enrollment INSERT/SELECT",
+    "scheduling-token SELECT/conditional UPDATE",
+    "email claim UPDATE/SELECT",
+    "sequential customer/staff provider send and sent/failure UPDATE",
+    "processed receipt UPDATE"
+  ],
+  "unknownOutcomes": [
+    "null notification claim with pending flags",
+    "false customer or staff notification persistence",
+    "duplicate finalization without pending enrollment (scheduled vs interrupted missing enrollment is ambiguous)",
+    "5xx, thrown errors, socket loss or lost settlement acknowledgement"
+  ],
+  "excluded": [
+    "other Square branches",
+    "invoice creation/publication and other finalizer callers",
+    "admin recovery, later provider webhooks and workers",
+    "actual deployment/provider producer inventory and fencing",
+    "bootstrap and parent release/recovery coordinator"
+  ],
+  "limitations": [
+    "Business repository and provider terminals are controlled in component tests. No combined real invoice Drizzle flow under enforcement is claimed.",
+    "Processed business receipt status does not clear operation-local uncertainty; duplicate retries still recover.",
+    "No live provider settings, SQL, bootstrap or admission changes."
+  ]
+}

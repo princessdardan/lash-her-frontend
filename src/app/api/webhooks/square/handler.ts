@@ -365,6 +365,7 @@ function redactSquareWebhookUrl(value: string): string {
 export function createSquareWebhookPostHandler(
   dependencies: SquareWebhookDependencies,
   runRefundRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
+  runTrainingInvoiceRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
 ): (req: Request) => Promise<Response> {
   return async function postSquareWebhook(req) {
     const env = await dependencies.getEnv();
@@ -534,91 +535,95 @@ export function createSquareWebhookPostHandler(
         }
 
         if (order !== null && isTrainingSquareInvoiceOrder(order)) {
-          const squareInvoiceEvent = toSquareInvoiceWebhookEventInput({
-            event,
-            invoiceId,
-            order,
-          });
-
-          try {
-            await dependencies.claimSquareInvoiceWebhookEvent(
-              squareInvoiceEvent,
-            );
-          } catch (error) {
-            console.error(
-              "[square-webhook] Square invoice event claim failed",
-              {
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : "Unknown event claim error",
-                eventId: event.eventId,
-                invoiceId,
-                orderId: order.orderId,
-              },
-            );
-            return new Response(null, { status: 503 });
-          }
-
-          try {
-            const finalizationResult =
-              await dependencies.finalizeTrainingSquareInvoicePayment({
-                event,
-                order,
-                source: "webhook",
-                squareInvoiceId: invoiceId,
-              });
-
-            if (finalizationResult.notificationFailed) {
-              console.error(
-                "[square-webhook] Training Square invoice notification recovery failed",
-                {
-                  eventId: event.eventId,
-                  invoiceId,
-                  orderId: order.orderId,
-                  status: finalizationResult.status,
-                },
-              );
-              return new Response(null, { status: 503 });
-            }
-
-            if (
-              !finalizationResult.finalized &&
-              !finalizationResult.duplicateEvent
-            ) {
-              console.error(
-                "[square-webhook] Training Square invoice finalizer did not complete",
-                {
-                  eventId: event.eventId,
-                  invoiceId,
-                  orderId: order.orderId,
-                  status: finalizationResult.status,
-                },
-              );
-              return new Response(null, { status: 503 });
-            }
-
-            await dependencies.recordSquareInvoiceWebhookEventProcessed({
-              ...squareInvoiceEvent,
-              status: "processed",
+          // The preceding order lookup is read-only classification. Admission
+          // starts before the receipt claim and spans every recovery effect.
+          return runTrainingInvoiceRecovery(async () => {
+            const squareInvoiceEvent = toSquareInvoiceWebhookEventInput({
+              event,
+              invoiceId,
+              order,
             });
-          } catch (error) {
-            console.error(
-              "[square-webhook] Training Square invoice finalization failed",
-              {
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : "Unknown finalization error",
-                eventId: event.eventId,
-                invoiceId,
-                orderId: order.orderId,
-              },
-            );
-            return new Response(null, { status: 503 });
-          }
 
-          return new Response(null, { status: 200 });
+            try {
+              await dependencies.claimSquareInvoiceWebhookEvent(
+                squareInvoiceEvent,
+              );
+            } catch (error) {
+              console.error(
+                "[square-webhook] Square invoice event claim failed",
+                {
+                  error:
+                    error instanceof Error
+                      ? error.message
+                      : "Unknown event claim error",
+                  eventId: event.eventId,
+                  invoiceId,
+                  orderId: order.orderId,
+                },
+              );
+              return new Response(null, { status: 503 });
+            }
+
+            try {
+              const finalizationResult =
+                await dependencies.finalizeTrainingSquareInvoicePayment({
+                  event,
+                  order,
+                  source: "webhook",
+                  squareInvoiceId: invoiceId,
+                });
+
+              if (finalizationResult.notificationFailed) {
+                console.error(
+                  "[square-webhook] Training Square invoice notification recovery failed",
+                  {
+                    eventId: event.eventId,
+                    invoiceId,
+                    orderId: order.orderId,
+                    status: finalizationResult.status,
+                  },
+                );
+                return new Response(null, { status: 503 });
+              }
+
+              if (
+                !finalizationResult.finalized &&
+                !finalizationResult.duplicateEvent
+              ) {
+                console.error(
+                  "[square-webhook] Training Square invoice finalizer did not complete",
+                  {
+                    eventId: event.eventId,
+                    invoiceId,
+                    orderId: order.orderId,
+                    status: finalizationResult.status,
+                  },
+                );
+                return new Response(null, { status: 503 });
+              }
+
+              await dependencies.recordSquareInvoiceWebhookEventProcessed({
+                ...squareInvoiceEvent,
+                status: "processed",
+              });
+            } catch (error) {
+              console.error(
+                "[square-webhook] Training Square invoice finalization failed",
+                {
+                  error:
+                    error instanceof Error
+                      ? error.message
+                      : "Unknown finalization error",
+                  eventId: event.eventId,
+                  invoiceId,
+                  orderId: order.orderId,
+                },
+              );
+              return new Response(null, { status: 503 });
+            }
+
+            return new Response(null, { status: 200 });
+          });
         }
 
         if (env.serviceBookingEnabled !== false) {

@@ -1,3 +1,4 @@
+import { withWriterOperationContext } from "@/lib/writer-admission/context";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -155,6 +156,8 @@ function createPaidInvoiceDetails(
 function createHarness(
   input: {
     customerEmailFailure?: boolean;
+    emailClaimUnavailable?: boolean;
+    emailMarkUnavailable?: "customer" | "admin";
     getInvoice?: TrainingSquareInvoiceFinalizerDependencies["getInvoice"];
     getOrder?: TrainingSquareInvoiceFinalizerDependencies["getOrder"];
     order?: CheckoutOrderRow | null;
@@ -291,12 +294,12 @@ function createHarness(
         };
       }
     },
-    async claimTrainingPaymentEmails(input) {
-      assert.equal(input.enrollmentId, "training-enrollment-id");
-      return enrollment;
+    async claimTrainingPaymentEmails(claimInput) {
+      assert.equal(claimInput.enrollmentId, "training-enrollment-id");
+      return input.emailClaimUnavailable ? null : enrollment;
     },
-    async markTrainingEnrollmentStaffAlerted(input) {
-      assert.equal(input.enrollmentId, "training-enrollment-id");
+    async markTrainingEnrollmentStaffAlerted(markInput) {
+      assert.equal(markInput.enrollmentId, "training-enrollment-id");
       calls.markStaffAlerted += 1;
       if (enrollment) {
         enrollment = {
@@ -304,10 +307,10 @@ function createHarness(
           staffAlertedAt: now,
         };
       }
-      return true;
+      return input.emailMarkUnavailable !== "admin";
     },
-    async markTrainingEnrollmentStudentPaymentEmailSent(input) {
-      assert.equal(input.enrollmentId, "training-enrollment-id");
+    async markTrainingEnrollmentStudentPaymentEmailSent(markInput) {
+      assert.equal(markInput.enrollmentId, "training-enrollment-id");
       calls.markStudentPaymentEmailSent += 1;
       if (enrollment) {
         enrollment = {
@@ -315,7 +318,7 @@ function createHarness(
           studentPaymentEmailSentAt: now,
         };
       }
-      return true;
+      return input.emailMarkUnavailable !== "customer";
     },
     async recordTrainingPaymentEmailFailure(failureInput) {
       assert.equal(failureInput.enrollmentId, "training-enrollment-id");
@@ -747,6 +750,11 @@ test("finalizeTrainingSquareInvoice treats already finalized paid orders without
   assert.equal(harness.calls.tokens, 0);
   assert.equal(harness.calls.emails, 0);
   assert.deepEqual(harness.calls.emailFailures, []);
+  // A pending-only lookup cannot distinguish a scheduled enrollment from a
+  // missing enrollment after interruption between marking paid and creation.
+  await assert.rejects(withWriterOperationContext(() => harness.finalizer({
+    invoiceId: "mock-square-invoice-1", origin: "https://lashher.test", paymentId: "square-payment-123",
+  })), /WRITER_OPERATION_REQUIRES_REVIEW/);
 });
 
 test("finalizeTrainingSquareInvoice retries after partial finalization failure without duplicating enrollment", async () => {
@@ -806,3 +814,28 @@ function createEnrollmentRecord(
     tokenExpiresAt: null,
   };
 }
+
+test("unavailable notification claim preserves off-mode result but refuses admitted completion", async () => {
+  for (const admitted of [false, true]) {
+    const harness = createHarness({ emailClaimUnavailable: true });
+    const run = () => harness.finalizer({ invoiceId: "mock-square-invoice-1", origin: "https://lashher.test", paymentId: "square-payment-123" });
+    if (admitted) await assert.rejects(withWriterOperationContext(run), /WRITER_OPERATION_REQUIRES_REVIEW/);
+    else assert.deepEqual(await run(), { duplicate: false, finalized: true });
+    assert.equal(harness.calls.emails, 0);
+    assert.equal(harness.calls.markPaid, 1);
+  }
+});
+
+test("unconfirmed notification persistence cannot complete an admitted operation", async () => {
+  for (const emailMarkUnavailable of ["customer", "admin"] as const) {
+    for (const admitted of [false, true]) {
+      const harness = createHarness({ emailMarkUnavailable });
+      const run = () => harness.finalizer({ invoiceId: "mock-square-invoice-1", origin: "https://lashher.test", paymentId: "square-payment-123" });
+      if (admitted) await assert.rejects(withWriterOperationContext(run), /WRITER_OPERATION_REQUIRES_REVIEW/);
+      else assert.deepEqual(await run(), { duplicate: false, finalized: true });
+      assert.equal(harness.calls.emails, 2);
+      assert.equal(harness.calls.markStaffAlerted, 1);
+      assert.equal(harness.calls.markStudentPaymentEmailSent, 1);
+    }
+  }
+});
