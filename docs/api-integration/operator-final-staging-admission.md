@@ -4,6 +4,8 @@ P1-09 has a local implementation in `ops/platform/host/staging_admission.py`. It
 
 The recorded C3 candidate predates this component and the gateway admission image/mount. Do not run this component against C3, change its retained configuration, replay SQL, or repeat C3. A future reviewed candidate must contain the gateway source and directory mount below, pass its required exact-source CI/image checks, and refresh affected qualification. Reuse unaffected frontend/native evidence with its actual applicability. G1 stays blocked until remaining live criteria and the reviewed final action pass.
 
+For compatible rollback, use the retained operator-owned configuration input, not the running snapshot whose gateway/TLS files belong to the container user. The rollback component validates input ownership, private modes and environment bindings before fixture writes or runtime stops. Preserve failed attempts and their receipts; do not change snapshot ownership to bypass this check. The recreated-host paths are `cold-restore/configuration-input` for copying and `cold-restore/configuration` for the original running mounts; their reviewed file hashes are identical.
+
 ## Inventory and bounds
 
 | Surface                                                                                           | P1 disposition and closing observation                                                                                                                                                                                                                         |

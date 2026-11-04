@@ -123,6 +123,23 @@ def environment_values(raw, environment, service, jobs):
     return values
 
 
+def validate_snapshot_source(source, release, jobs):
+    """Validate private input before an operation can pause or write fixtures.
+
+    Running snapshots have container-owned TLS/config files. They are not
+    reusable operator inputs; select the retained root-owned input instead.
+    """
+    migrate.private_directory(source)
+    for relative in ("runtime.json", *CONFIG_FILES, *TLS_FILES, *(f"{service}.env" for service in ENV_FILES)):
+        raw = migrate.read_input(source, relative, 65_536)
+        info = (source / relative).stat()
+        demand(info.st_uid == os.getuid(), "CONFIGURATION_OWNER_REQUIRED")
+        if relative.endswith((".env", "key.pem")):
+            demand(info.st_mode & 0o077 == 0, "PRIVATE_CREDENTIAL_FILE_REQUIRED")
+        if relative.endswith(".env"):
+            environment_values(raw, release["environment"], relative[:-4], jobs)
+
+
 def snapshot_configuration(source, destination, release, jobs, compose):
     migrate.private_directory(source)
     destination.mkdir(mode=0o700)

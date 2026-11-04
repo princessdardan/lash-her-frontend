@@ -172,6 +172,9 @@ def execute(bundle, configuration, database_receipts, runtime_receipts, compose_
     runtime.assert_host({"hostMachineId": plan["originalHostMachineId"]})
     checker = Path(__file__).with_name("database_current.mjs")
     demand(migrate.file_hash(migrate.read_input(checker.parent, checker.name, 65_536)) == checker_sha256, "ROLLBACK_REVIEWED_CHECKER_REQUIRED")
+    # A runtime snapshot deliberately gives TLS/config ownership to containers.
+    # Refuse it before fixtures or publisher stops, rather than after retirement.
+    runtime.validate_snapshot_source(configuration, selected, jobs)
     output.mkdir(mode=0o700)
     migrate.write_json(output, "rollback-started.json", plan)
     outcome = {**plan, "status": "STAGING_COMPATIBLE_ROLLBACK_REQUIRES_REVIEW", "phase": "retire-current"}

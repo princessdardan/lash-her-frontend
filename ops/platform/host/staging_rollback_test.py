@@ -1,6 +1,7 @@
 import hashlib
 import json
 import fcntl
+import os
 import unittest
 from contextlib import ExitStack
 from unittest.mock import patch
@@ -207,6 +208,26 @@ class StagingRollbackTests(unittest.TestCase):
         self.assertEqual(self.starts, [])
         self.assertEqual(self.running, set())
         self.assertTrue(migrate.read_json(self.output, "rollback-outcome.json")["runtimeStopped"])
+
+    def test_container_owned_input_refuses_before_fixture_writes_or_any_runtime_stop(self):
+        self.execution_fixture()
+        target = self.runtime.configuration / "gateway.json"
+        actual_stat = rollback.Path.stat
+        def container_owned(path, *args, **kwargs):
+            value = actual_stat(path, *args, **kwargs)
+            if path == target:
+                fields = list(value); fields[4] = os.getuid() + 1
+                return os.stat_result(fields)
+            return value
+        with self.patches(), patch.object(rollback.Path, "stat", new=container_owned), \
+                patch.object(self.operator_class, "prepare_retained", side_effect=AssertionError("fixture invoked")), \
+                patch.object(rollback.staging_retire, "execute", side_effect=AssertionError("runtime stop invoked")), \
+                self.assertRaisesRegex(ValueError, "CONFIGURATION_OWNER_REQUIRED"):
+            self.execute()
+        self.assertEqual(self.running, set(rollback.runtime.SERVICES))
+        self.assertEqual(self.starts, [])
+        self.assertEqual(self.database_calls, [])
+        self.assertFalse(self.output.exists())
 
     def test_changed_actual_recovery_digest_stops_before_reconciliation_and_cannot_publish_current_success(self):
         self.execution_fixture(); self.bad_recovery = True
