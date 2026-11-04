@@ -368,6 +368,7 @@ export function createSquareWebhookPostHandler(
   runRefundRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
   runTrainingInvoiceRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
   runProductRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
+  runTrainingCardRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
 ): (req: Request) => Promise<Response> {
   return async function postSquareWebhook(req) {
     const env = await dependencies.getEnv();
@@ -647,6 +648,7 @@ export function createSquareWebhookPostHandler(
         dependencies,
         event,
         runProductRecovery,
+        runTrainingCardRecovery,
       );
       if (commerceResponse !== null) {
         return commerceResponse;
@@ -814,6 +816,7 @@ async function tryRecoverSquareCommercePayment(
   dependencies: SquareWebhookDependencies,
   event: VerifiedSquareWebhookEvent,
   runProductRecovery: (task: () => Promise<Response>) => Promise<Response>,
+  runTrainingCardRecovery: (task: () => Promise<Response>) => Promise<Response>,
 ): Promise<Response | null> {
   if (
     !event.eventType.startsWith("payment.") ||
@@ -852,8 +855,8 @@ async function tryRecoverSquareCommercePayment(
   }
 
   const recoverPayment = dependencies.recoverSquareCommercePayment;
-  // Classification above is SELECT-only. Only product recovery has had its
-  // complete effect chain audited; training card/split keep their own boundary.
+  // Classification above is SELECT-only. Product and training-card recovery
+  // have separate effect adapters; split recovery still needs qualification.
   const recover = async (): Promise<Response> => {
     let result: SquareCommerceRecoveryResult;
     try {
@@ -877,12 +880,14 @@ async function tryRecoverSquareCommercePayment(
 
     // Preserve ordinary terminal-conflict acknowledgements, but never use an
     // unresolved captured payment as proof that an admitted operation completed.
-    if (kind === "product" && result.status === "conflict") markWriterOperationUncertain();
+    if ((kind === "product" || kind === "training_card") && result.status === "conflict") markWriterOperationUncertain();
     return new Response(null, {
       status: result.status === "retryable" ? 503 : 200,
     });
   };
-  return kind === "product" ? runProductRecovery(recover) : recover();
+  if (kind === "product") return runProductRecovery(recover);
+  if (kind === "training_card") return runTrainingCardRecovery(recover);
+  return recover();
 }
 
 function classifySquareCommerceCardOrder(

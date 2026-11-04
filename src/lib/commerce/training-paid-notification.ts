@@ -1,5 +1,7 @@
 import "server-only";
 
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+
 import {
   getOrIssueTrainingSchedulingTokenForPaidOrder,
   getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
@@ -7,21 +9,37 @@ import {
 import { sendTrainingPaymentNotificationEmailsIfNeeded } from "@/lib/commerce/training-payment-notifications";
 import { buildTrainingScheduleUrl } from "@/lib/training-checkout";
 
+export interface NotifyPaidTrainingOrderDependencies {
+  getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: typeof getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId;
+  getOrIssueTrainingSchedulingTokenForPaidOrder: typeof getOrIssueTrainingSchedulingTokenForPaidOrder;
+  sendTrainingPaymentNotificationEmailsIfNeeded: typeof sendTrainingPaymentNotificationEmailsIfNeeded;
+}
+
+const defaultDependencies: NotifyPaidTrainingOrderDependencies = {
+  getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
+  getOrIssueTrainingSchedulingTokenForPaidOrder,
+  sendTrainingPaymentNotificationEmailsIfNeeded,
+};
+
 /**
  * Issue the scheduling token for a paid training order and send the student +
- * staff notifications (idempotent, non-blocking). The training analogue of the
+ * staff notifications (idempotent and awaited). The training analogue of the
  * product order confirmation email. Used for the Square card flow; the same
  * per-order helpers back the Afterpay invoice finalizer.
  */
 export async function notifyPaidTrainingOrder(
   orderReference: string,
   origin?: string,
+  dependencies: NotifyPaidTrainingOrderDependencies = defaultDependencies,
 ): Promise<void> {
   const enrollment =
-    await getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(
+    await dependencies.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(
       orderReference,
     );
   if (enrollment === null) {
+    // A pending-only lookup also excludes scheduled/consumed enrollments. It
+    // cannot prove interrupted enrollment or notification work is complete.
+    markWriterOperationUncertain();
     return;
   }
   if (
@@ -32,7 +50,7 @@ export async function notifyPaidTrainingOrder(
   }
 
   const issued =
-    await getOrIssueTrainingSchedulingTokenForPaidOrder(orderReference);
+    await dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(orderReference);
   if (issued === null) {
     throw new Error("Training scheduling token could not be issued");
   }
@@ -50,7 +68,7 @@ export async function notifyPaidTrainingOrder(
     resolveSchedulingOrigin(origin),
   ).toString();
 
-  await sendTrainingPaymentNotificationEmailsIfNeeded({
+  await dependencies.sendTrainingPaymentNotificationEmailsIfNeeded({
     enrollment,
     paymentProvider: "square",
     schedulingUrl,

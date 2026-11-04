@@ -14,8 +14,10 @@ const scenario = String.raw`
   import assert from "node:assert/strict";
   import { eq } from "drizzle-orm";
   import { closePrivateDbPool, getPrivateDb } from "./src/lib/private-db/client.ts";
-  import { checkoutOrders } from "./src/lib/private-db/schema.ts";
+  import { checkoutOrders, trainingEnrollments } from "./src/lib/private-db/schema.ts";
   import { finalizeSquareTrainingCardPayment } from "./src/lib/commerce/square-training-card-finalizer.ts";
+  import { withWriterOperationContext } from "./src/lib/writer-admission/context.ts";
+  import { notifyPaidTrainingOrder } from "./src/lib/commerce/training-paid-notification.ts";
 
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL.includes("?")
     ? process.env.TEST_DATABASE_URL
@@ -144,8 +146,31 @@ const scenario = String.raw`
       providerStatus: "COMPLETED",
     });
     assert.equal(notFound.transition, "not_found");
+    // The actual pending-only lookup cannot distinguish missing enrollment
+    // from scheduled/consumed enrollment. Neither may prove admitted recovery
+    // complete; off-mode keeps its existing notification no-op.
+    await notifyPaidTrainingOrder(applied.orderId, "https://owned.invalid");
+    await assert.rejects(withWriterOperationContext(() => notifyPaidTrainingOrder(
+      applied.orderId, "https://owned.invalid",
+    )), /WRITER_OPERATION_REQUIRES_REVIEW/);
+    const [enrollment] = await db.insert(trainingEnrollments).values({
+      checkoutOrderId: applied.id, checkoutEmail: "owned@example.invalid",
+      productSnapshot: { id: "owned-training", title: "Owned Training", sku: "OWNED", priceCents: 30000, currency: "CAD" },
+      programSnapshot: { id: "owned-training", slug: "owned-training", title: "Owned Training" },
+      schedulingStatus: "scheduled", tokenUsedAt: new Date(),
+    }).returning();
+    await notifyPaidTrainingOrder(applied.orderId, "https://owned.invalid");
+    await assert.rejects(withWriterOperationContext(() => notifyPaidTrainingOrder(
+      applied.orderId, "https://owned.invalid",
+    )), /WRITER_OPERATION_REQUIRES_REVIEW/);
+    // A real pending row with both notification flags is positive completion
+    // evidence and needs no token mutation or provider send.
+    await db.update(trainingEnrollments).set({ schedulingStatus: "pending", tokenUsedAt: null,
+      studentPaymentEmailSentAt: new Date(), staffAlertedAt: new Date() }).where(eq(trainingEnrollments.id, enrollment.id));
+    await withWriterOperationContext(() => notifyPaidTrainingOrder(applied.orderId, "https://owned.invalid"));
   } finally {
     for (const orderId of createdOrderIds) {
+      await db.delete(trainingEnrollments).where(eq(trainingEnrollments.checkoutOrderId, orderId));
       await db.delete(checkoutOrders).where(eq(checkoutOrders.id, orderId));
     }
     await closePrivateDbPool();
