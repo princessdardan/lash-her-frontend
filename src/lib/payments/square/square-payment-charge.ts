@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import {
   matchesSquarePaymentMethod,
   validateSquareAfterpayPayment,
@@ -100,6 +101,7 @@ export async function authorizeCaptureSquarePayment<T extends string>(
     });
     payment = response.payment;
   } catch (error) {
+    markWriterOperationUncertain();
     dependencies.logError("[square-charge] authorization failed", {
       orderReference: input.orderReference,
       error: getErrorMessage(error),
@@ -147,6 +149,7 @@ export async function authorizeCaptureSquarePayment<T extends string>(
       providerStatus: payment.status,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     dependencies.logError("[square-charge] finalization threw", {
       orderReference: input.orderReference,
       squarePaymentId: payment.id,
@@ -178,6 +181,7 @@ export async function authorizeCaptureSquarePayment<T extends string>(
         try {
           await dependencies.onCaptured(input.orderReference, payment.id);
         } catch (error) {
+          markWriterOperationUncertain();
           // Non-fatal: the order is captured; only the COMPLETED marker is
           // missing, so the reconciliation sweep will re-confirm and mark it.
           dependencies.logError("[square-charge] mark-captured failed", {
@@ -188,6 +192,7 @@ export async function authorizeCaptureSquarePayment<T extends string>(
         }
       }
     } catch (error) {
+      markWriterOperationUncertain();
       // Rare: the order is recorded paid but capture did not complete. Do not
       // void (that would contradict the paid order) — the Square webhook /
       // reconciliation sweep must complete or flag it.
@@ -203,6 +208,7 @@ export async function authorizeCaptureSquarePayment<T extends string>(
   try {
     await dependencies.onSuccess(input.orderReference);
   } catch (error) {
+    markWriterOperationUncertain();
     dependencies.logError("[square-charge] success side effect failed", {
       orderReference: input.orderReference,
       error: getErrorMessage(error),
@@ -226,6 +232,7 @@ async function voidSafe<T extends string>(
   try {
     await dependencies.voidPayment(paymentId);
   } catch (error) {
+    markWriterOperationUncertain();
     dependencies.logError("[square-charge] void failed", {
       squarePaymentId: paymentId,
       error: getErrorMessage(error),
@@ -243,6 +250,7 @@ async function voidByKeySafe<T extends string>(
   try {
     await dependencies.voidPaymentByIdempotencyKey(idempotencyKey);
   } catch (error) {
+    markWriterOperationUncertain();
     dependencies.logError("[square-charge] void-by-key failed", {
       error: getErrorMessage(error),
     });

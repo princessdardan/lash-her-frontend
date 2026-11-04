@@ -13,6 +13,7 @@ import { readMigrationCatalog } from "./frontend-schema.mjs";
 import { verifyPackagedFrontendSource } from "./frontend-image-source.mjs";
 import { exerciseFrontendAdmission } from "./harness/owned-frontend-admission.mjs";
 import { exerciseHistoricalFrontendLogins } from "./harness/owned-frontend-historical-logins.mjs";
+import { exerciseFrontendWriterRoutes } from "./harness/owned-frontend-writer-routes.mjs";
 
 const source = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
@@ -214,9 +215,15 @@ async function main() {
     const admissionChecks = await exerciseFrontendAdmission(connect, password);
     phase = "historical-frontend-logins";
     const historicalLoginChecks = await exerciseHistoricalFrontendLogins(connect, password, major);
+    phase = "frontend-writer-route-admission";
+    const writerRouteChecks = await exerciseFrontendWriterRoutes(connect, options => {
+      const client = new Client({ ...options, ssl: { rejectUnauthorized: true, ca: readFileSync(certificate, "utf8") } });
+      connections.push(client); return client;
+    }, password, major);
     const result={status:"FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",postgresMajor:major,migrations:artifact.migrations.length,checks:records,providerTouched:false,
       admissionChecks,
       historicalLoginChecks,
+      writerRouteChecks,
       sourceCommit:commit,migrationImageDigest:job.migrationImageDigest,packagedCliVerified:cli.endsWith("frontend-image.mjs"),
       sqlArtifactSha256:artifact.sqlArtifactSha256,contractManifestSha256:artifact.contractManifestSha256,schemaBaselineSha256:hash(JSON.stringify(baseline))};
     if(process.env.FRONTEND_MIGRATION_EXPORT_SCHEMA==="true")result.schemaBaseline=baseline;
@@ -230,4 +237,4 @@ async function main() {
 main().catch((error)=>{console.error(JSON.stringify({status:"OWNED_FRONTEND_MIGRATION_FAILED",phase,providerTouched:false,
   sqlState:/^[A-Z0-9]{5}$/u.test(error.code ?? "") ? error.code : undefined,
   sqlPosition:/^[0-9]+$/u.test(error.position ?? "") ? error.position : undefined,
-  fixtureFrames:error.stack?.split("\n").filter(line=>/^\s+at .*owned-frontend-(?:admission|historical-logins)\.mjs/u.test(line))}));process.exitCode=1;});
+  fixtureFrames:error.stack?.split("\n").filter(line=>/^\s+at .*owned-frontend-(?:admission|historical-logins|writer-routes)\.mjs/u.test(line))}));process.exitCode=1;});
