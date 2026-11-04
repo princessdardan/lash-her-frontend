@@ -48,6 +48,15 @@ const defaultDependencies: MarketingUnsubscribeHandlerDependencies = {
 export const GET = createMarketingUnsubscribeGetHandler(defaultDependencies);
 export const POST = createMarketingUnsubscribePostHandler(defaultDependencies);
 
+// Admission failures must preserve the token-bearing endpoint's blank response
+// and referrer protections. No request, token or private exception is accepted.
+export function unavailableMarketingUnsubscribeResponse(): Response {
+  return new Response(null, {
+    status: 503,
+    headers: { ...BLANK_SECURITY_HEADERS, "Retry-After": "30" },
+  });
+}
+
 export function createMarketingUnsubscribeGetHandler(
   dependencies: MarketingUnsubscribeHandlerDependencies,
 ): (request: Request) => Promise<Response> {
