@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "baseCommit": "79ddf8b3e45bc741fc32542b53fe1cea5dd6fb80",
+  "sourceManifestSha256": "05fc98b8a5486d40a1d61bc1b257d307455a67ba39fdcadac0a877ed1183fe9e",
+  "releaseAuthority": false,
+  "scope": "classified no-show webhook recovery only",
+  "nodes": [
+    {
+      "file": "src/app/api/webhooks/square/route.ts",
+      "sourceSha256": "a71eaeb541ab451c107f73ea98e49568f40493dffd6f0b3152b8819352647535",
+      "audit": "Production explicitly supplies separate no-show, refund, invoice and commerce adapters. Ordinary booking/operational dispatch remains unqualified."
+    },
+    {
+      "file": "src/app/api/webhooks/square/handler.ts",
+      "sourceSha256": "4d949ac5b16cf527e178223a9128c14f808686c58e20e6c82f1729731621d552",
+      "audit": "Raw signature/parse and awaited all-settled SELECT-only no-show reference classification precede admission. Finalizer, error alert and result mapping remain within the awaited callback. Unmatched fallback cannot bypass a failed adapter."
+    },
+    {
+      "file": "src/lib/booking/payments/service-no-show-charge-finalizer.ts",
+      "sourceSha256": "bad46f50795295bd79a4a963281205de4433ebcffc6d4741729d6f63eebd984e",
+      "audit": "Awaits event/record queries, authoritative provider reads, atomic terminal receipt or ignored receipt and alerts. Explicit uncertainty survives financial mismatches, unknown records, terminal conflicts and ambiguous receipt replay. No new charge/capture/refund/cancellation is initiated."
+    },
+    {
+      "file": "src/lib/private-db/card-on-file-repository.ts",
+      "sourceSha256": "03b4254f0fce3a97c2e5ea995dfb2ceed6b14bb76e8654c28e62e8a7abd11f24",
+      "audit": "Selected no-show invoice/payment/order/event lookups are SELECT-only. Terminal update, optional existing attempt update and event insertion commit atomically; conflicts throw. Ignored-event insertion awaits the existing event-key conflict handling. Other exports are not invoked."
+    },
+    {
+      "file": "src/lib/private-db/appointment-finalization-repository.ts",
+      "sourceSha256": "fe5ff6cae5376c9eb6232b17a982b36d57f31b4017e726a85eeae97cc644e705",
+      "audit": "Factory construction creates closures only. No appointment-finalization method is invoked by no-show classification/finalization."
+    },
+    {
+      "file": "src/lib/booking/payments/service-no-show-invoice.ts",
+      "sourceSha256": "2d8095949ac1f17a7c4252f002daf36513845df4c435f5c97dcfe5be9e772c79",
+      "audit": "Selected getNoShowAllowedChargeAmountCents reads immutable policy metadata locally. Invoice publication/admin functions are separate and not invoked."
+    },
+    {
+      "file": "src/lib/payments/square/payments-client.ts",
+      "sourceSha256": "f02d73e3ba4fe0dc5cb28a43f2d180e83431f83faddca5e9167a5efd309017da",
+      "audit": "Selected getPayment awaits provider response and parses evidence. Create/capture/refund/cancel exports are not called by this execution."
+    },
+    {
+      "file": "src/lib/payments/square/invoice-client.ts",
+      "sourceSha256": "7179cd4b484beaee63a37a11a8fff1e4124a6b4f02badb6b66f4f85d1addf445",
+      "audit": "Selected getInvoice awaits provider response and parses evidence. No order/invoice creation or publication is called."
+    },
+    {
+      "file": "src/lib/booking/square-runtime.ts",
+      "sourceSha256": "dee156ab2ae11dfac9484e85af8cd9e4b5a6573f82f97c0535282e4970604c3e",
+      "audit": "Selected runtime environment resolution is local. Mock/client constructors for independent booking operations are not invoked."
+    },
+    {
+      "file": "src/lib/env/private-checkout.ts",
+      "sourceSha256": "e6d50773842ddc70b3d32422c41028f5214d4724ac519bceaadc4578226d8f04",
+      "audit": "Selected local Square runtime configuration and mock-mode policy; no external effects."
+    },
+    {
+      "file": "src/lib/booking/payments/service-payment-alerts.ts",
+      "sourceSha256": "6fb73c5c99a474b7013f6f64c541656ee093ae47054111703de175fe0610d25c",
+      "audit": "Current production alerts are synchronous sanitized local logs. The selected finalizer and error paths await alerts, including injected asynchronous regression terminals."
+    },
+    {
+      "file": "src/lib/booking/square-webhook.ts",
+      "sourceSha256": "a3753fb8ef4feab4457ef179618b46623bca227eb231793f98f60aef91cb1167",
+      "audit": "Exact raw HMAC verification and sanitized parsing; no business effects."
+    },
+    {
+      "file": "src/lib/security/bounded-text-body.ts",
+      "sourceSha256": "2677dd15cc681f923c9872563a21c30e442f440bb49e6ab7c2f8dbcb514eebc2",
+      "audit": "Byte cap precedes HMAC verification."
+    },
+    {
+      "file": "src/lib/private-db/client.ts",
+      "sourceSha256": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+      "audit": "Existing business pool; admission configuration binds the application and ledger database targets."
+    },
+    {
+      "file": "src/lib/private-db/pool-config.ts",
+      "sourceSha256": "3b1b78c9ec4f3c2df472e18042c7c9bdc0dfc2ede45702505a7dc837c8bf85b6",
+      "audit": "Local connection tuning/configuration only; loopback test fixture explicitly selects its non-TLS test connection."
+    },
+    {
+      "file": "src/lib/writer-admission/context.ts",
+      "sourceSha256": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+      "audit": "Operation-local uncertainty is inert outside admitted executions and cannot be cleared by success-shaped results."
+    },
+    {
+      "file": "src/lib/writer-admission/runtime.ts",
+      "sourceSha256": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
+      "audit": "Unchanged target/source/producer/TLS/epoch checks, committed begin and awaited terminal settlement. Lost socket/acknowledgements refuse without replay."
+    },
+    {
+      "file": "src/lib/writer-admission/route.ts",
+      "sourceSha256": "6c7a496c8f866da8abe89f4e48cfa18d5631ad543c767e7b83e66433082879c5",
+      "audit": "Nonstreaming adapter awaits the whole callback and converts admission uncertainty into sanitized retryable 503."
+    },
+    {
+      "file": "ops/platform/frontend-admission.mjs",
+      "sourceSha256": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
+      "audit": "Unchanged durable operation protocol and non-expiring unresolved state; no new bootstrap/migration permission."
+    }
+  ],
+  "excluded": [
+    "ordinary booking and operational-payment dispatch",
+    "independent admin no-show initiation, reconciliation and other workers",
+    "actual provider/deployment inventory, historical fencing, bootstrap and parent release/recovery coordination"
+  ],
+  "limits": [
+    "Route tests control ledger/repository/provider terminals. Actual business PostgreSQL16 checks use controlled provider reads and operation-local context, not the actual admission ledger.",
+    "Inherited TLS protocol evidence remains separate and was not rerun locally; exact-head CI still required.",
+    "No live deployment, provider settings, application SQL, admission or rollout controls changed."
+  ]
+}

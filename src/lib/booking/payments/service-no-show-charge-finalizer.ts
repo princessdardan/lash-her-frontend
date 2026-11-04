@@ -1,4 +1,5 @@
 import type { NoShowChargeStatus } from "@/lib/private-db/schema";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import type { SquareGetInvoiceResponse } from "@/lib/payments/square/invoice-client";
 import type { SquareGetPaymentResponse } from "@/lib/payments/square/payments-client";
@@ -113,6 +114,19 @@ export async function finalizeNoShowCharge(
     event.eventId,
   );
   if (existingEvent !== null) {
+    const outcome = resolveOutcome(
+      event,
+      event.eventType === "invoice.payment_made" ? getEventInvoiceId(event) : undefined,
+      event.paymentId,
+    );
+    // Ignored financial mismatches and unfinished receipts cannot establish
+    // completion. Confirmed failures and ordinary nonterminal ignores can.
+    const complete = existingEvent.processingStatus === "processed" ||
+      (existingEvent.processingStatus === "failed" && outcome.kind === "failed") ||
+      (existingEvent.processingStatus === "ignored" && outcome.kind === "ignored");
+    if (!complete) {
+      markWriterOperationUncertain();
+    }
     return {
       duplicateEvent: true,
       finalized: true,
@@ -129,6 +143,7 @@ export async function finalizeNoShowCharge(
   const paymentId = event.paymentId;
 
   if (invoiceId === undefined && paymentId === undefined) {
+    markWriterOperationUncertain();
     await alertUnknownProviderEvent(alerts, event, invoiceId, paymentId);
     return {
       duplicateEvent: false,
@@ -157,6 +172,7 @@ export async function finalizeNoShowCharge(
   }
 
   if (record === null) {
+    markWriterOperationUncertain();
     await alertUnknownProviderEvent(alerts, event, invoiceId, paymentId);
     return {
       duplicateEvent: false,
@@ -202,6 +218,7 @@ export async function finalizeNoShowCharge(
   }
 
   if (isConflictingTerminalOutcome(record, outcome)) {
+    markWriterOperationUncertain();
     await recordIgnoredProviderEvent(repository, {
       event,
       invoiceId,
@@ -238,6 +255,7 @@ export async function finalizeNoShowCharge(
   );
 
   if (!factsResult.ok) {
+    markWriterOperationUncertain();
     await recordIgnoredProviderEvent(repository, {
       event,
       invoiceId,
@@ -274,6 +292,7 @@ export async function finalizeNoShowCharge(
   );
 
   if (!validation.ok) {
+    markWriterOperationUncertain();
     await recordIgnoredProviderEvent(repository, {
       event,
       invoiceId,
@@ -325,7 +344,7 @@ export async function finalizeNoShowCharge(
   });
 
   if (outcome.kind === "failed") {
-    alerts.alert({
+    await alerts.alert({
       category: "no_show_charge_failed",
       severity: "warning",
       message: "Square no-show charge failed",
@@ -481,13 +500,13 @@ function isConflictingTerminalOutcome(
   return false;
 }
 
-function alertUnknownProviderEvent(
+async function alertUnknownProviderEvent(
   alerts: ServicePaymentAlertLogger,
   event: VerifiedSquareWebhookEvent,
   invoiceId: string | undefined,
   paymentId: string | undefined,
-): void {
-  alerts.alert({
+): Promise<void> {
+  await alerts.alert({
     category: "no_show_charge_unknown_provider_event",
     severity: "warning",
     message: "Square webhook event did not match a no-show charge record",
