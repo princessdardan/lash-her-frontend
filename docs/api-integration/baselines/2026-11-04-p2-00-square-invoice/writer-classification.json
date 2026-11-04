@@ -1,0 +1,1111 @@
+{
+  "version": 1,
+  "baseCommit": "63de9cdc7ea3e0b436a9cf54d2e77e846e86f56e",
+  "sourceManifestSha256": "7320a9cffdfba33561a2f27928e7010738b486927f718344433a7a8d0511d400",
+  "scope": "current merged-source classification with explicit candidate training-invoice delta",
+  "releaseAuthority": false,
+  "deploymentInventoryVerified": false,
+  "writerFenceVerified": false,
+  "drainVerified": false,
+  "limitations": [
+    "Conservative source classifications do not prove transitive all-writer coverage or live producer identity.",
+    "Source generator does not enumerate indirect clients, every manual wrapper, historical deployments, or provider credentials. Their exhaustive inventory remains a release blocker.",
+    "READ_ONLY classifications cover the reviewed source paths only; callers/historical revisions may differ.",
+    "Merged refunds retain admission. Only classified training-invoice-paid recovery gains admission in this candidate; classification reads and other Square branches are outside the new effect boundary."
+  ],
+  "routes": [
+    {
+      "file": "src/app/admin/(protected)/step-up/complete/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_GET_NEW_WORK",
+      "reason": "Issues persistent step-up proof and cookies; actor/auth flows require accounting."
+    },
+    {
+      "file": "src/app/api/admin/appointments/[id]/no-show/route.ts",
+      "method": "POST",
+      "classification": "UNQUALIFIED_PAYMENT_EFFECT",
+      "reason": "Admin initiates refund/no-show provider effects and persistence; separate execution from webhook reconciliation."
+    },
+    {
+      "file": "src/app/api/admin/calendar-connections/[id]/oauth/start/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_GET_NEW_WORK",
+      "reason": "Admin/self calendar connection OAuth start creates expiring state and can audit access."
+    },
+    {
+      "file": "src/app/api/admin/email-retries/route.ts",
+      "method": "POST",
+      "classification": "UNQUALIFIED_RECOVERY",
+      "reason": "Explicit email retry invokes business recovery and audit; not an ordinary read."
+    },
+    {
+      "file": "src/app/api/admin/gateway-smoke/route.ts",
+      "method": "GET",
+      "classification": "AUTH_SIDE_EFFECT_CANDIDATE",
+      "reason": "Probe is gateway GET, but requirePermission can audit denials/provision identity. Do not treat the entire admin request as read-only."
+    },
+    {
+      "file": "src/app/api/admin/highlevel/callback/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_GET_RECOVERY",
+      "reason": "GET finalizes payment or consumes OAuth state and stores/revokes provider grants. Preserve state and retries."
+    },
+    {
+      "file": "src/app/api/admin/marketing-contact-sync/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_WORKER",
+      "reason": "GET claims jobs or runs DB/provider recovery/retention/cache/stock effects; scheduler disablement alone cannot drain existing work."
+    },
+    {
+      "file": "src/app/api/admin/my-calendar/connections/[id]/oauth/start/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_GET_NEW_WORK",
+      "reason": "Admin/self calendar connection OAuth start creates expiring state and can audit access."
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/manual-fulfillment/route.ts",
+      "method": "POST",
+      "classification": "UNQUALIFIED_WRITER",
+      "reason": "Database/provider mutation; exact effects, caught outcomes and admission remain to qualify."
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/refund/route.ts",
+      "method": "POST",
+      "classification": "UNQUALIFIED_PAYMENT_EFFECT",
+      "reason": "Admin initiates refund/no-show provider effects and persistence; separate execution from webhook reconciliation."
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/shipping/buy/route.ts",
+      "method": "POST",
+      "classification": "UNQUALIFIED_WRITER",
+      "reason": "Database/provider mutation; exact effects, caught outcomes and admission remain to qualify."
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/shipping/label/route.ts",
+      "method": "GET",
+      "classification": "AUTH_SIDE_EFFECT_CANDIDATE",
+      "reason": "Business path reads shipment/operation or downloads provider label; requirePermission denial/audit/identity paths may write."
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/shipping/operations/[operationId]/route.ts",
+      "method": "GET",
+      "classification": "AUTH_SIDE_EFFECT_CANDIDATE",
+      "reason": "Business path reads shipment/operation or downloads provider label; requirePermission denial/audit/identity paths may write."
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/shipping/refund/route.ts",
+      "method": "POST",
+      "classification": "UNQUALIFIED_PAYMENT_EFFECT",
+      "reason": "Admin initiates refund/no-show provider effects and persistence; separate execution from webhook reconciliation."
+    },
+    {
+      "file": "src/app/api/admin/payment-reconciliation/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_WORKER",
+      "reason": "GET claims jobs or runs DB/provider recovery/retention/cache/stock effects; scheduler disablement alone cannot drain existing work."
+    },
+    {
+      "file": "src/app/api/admin/private-data-retention/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_WORKER",
+      "reason": "GET claims jobs or runs DB/provider recovery/retention/cache/stock effects; scheduler disablement alone cannot drain existing work."
+    },
+    {
+      "file": "src/app/api/admin/shipping/package-profiles/[id]/route.ts",
+      "method": "POST",
+      "classification": "UNQUALIFIED_WRITER",
+      "reason": "Database/provider mutation; exact effects, caught outcomes and admission remain to qualify."
+    },
+    {
+      "file": "src/app/api/admin/shipping/package-profiles/route.ts",
+      "method": "POST",
+      "classification": "UNQUALIFIED_WRITER",
+      "reason": "Database/provider mutation; exact effects, caught outcomes and admission remain to qualify."
+    },
+    {
+      "file": "src/app/api/auth/[...nextauth]/route.ts",
+      "method": "GET",
+      "classification": "AUTH_PROVIDER_SESSION",
+      "reason": "JWT sessions with Google OAuth; no SQL adapter here. Provider/session effects remain outside this admission component."
+    },
+    {
+      "file": "src/app/api/auth/[...nextauth]/route.ts",
+      "method": "POST",
+      "classification": "AUTH_PROVIDER_SESSION",
+      "reason": "JWT sessions with Google OAuth; no SQL adapter here. Provider/session effects remain outside this admission component."
+    },
+    {
+      "file": "src/app/api/booking/availability/route.ts",
+      "method": "GET",
+      "classification": "CLOSED_410",
+      "reason": "Route exports Fresha closure, with no legacy handler/provider import."
+    },
+    {
+      "file": "src/app/api/booking/availability/route.ts",
+      "method": "POST",
+      "classification": "CLOSED_410",
+      "reason": "Route exports Fresha closure, with no legacy handler/provider import."
+    },
+    {
+      "file": "src/app/api/booking/card-on-file/route.ts",
+      "method": "POST",
+      "classification": "UNQUALIFIED_WRITER",
+      "reason": "Database/provider mutation; exact effects, caught outcomes and admission remain to qualify."
+    },
+    {
+      "file": "src/app/api/booking/checkout/route.ts",
+      "method": "POST",
+      "classification": "READ_ONLY",
+      "reason": "Public config/catalog validation or lookup of existing hosted checkout; no creation/transition/provider charge."
+    },
+    {
+      "file": "src/app/api/booking/create/route.ts",
+      "method": "POST",
+      "classification": "CLOSED_410",
+      "reason": "Route exports Fresha closure, with no legacy handler/provider import."
+    },
+    {
+      "file": "src/app/api/booking/holds/route.ts",
+      "method": "POST",
+      "classification": "CLOSED_410",
+      "reason": "Route exports Fresha closure, with no legacy handler/provider import."
+    },
+    {
+      "file": "src/app/api/booking/oauth/callback/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_GET_RECOVERY",
+      "reason": "GET finalizes payment or consumes OAuth state and stores/revokes provider grants. Preserve state and retries."
+    },
+    {
+      "file": "src/app/api/booking/oauth/start/route.ts",
+      "method": "GET",
+      "classification": "COOKIE_OR_REDIRECT",
+      "reason": "Cookie/preview or OAuth consent redirect. Later callbacks and provider/credential sharing require separate fencing."
+    },
+    {
+      "file": "src/app/api/booking/payment/confirm/route.ts",
+      "method": "POST",
+      "classification": "UNQUALIFIED_WRITER",
+      "reason": "Database/provider mutation; exact effects, caught outcomes and admission remain to qualify."
+    },
+    {
+      "file": "src/app/api/booking/payment/promotion-code/route.ts",
+      "method": "POST",
+      "classification": "UNQUALIFIED_WRITER",
+      "reason": "Database/provider mutation; exact effects, caught outcomes and admission remain to qualify."
+    },
+    {
+      "file": "src/app/api/booking/square/config/route.ts",
+      "method": "GET",
+      "classification": "READ_ONLY",
+      "reason": "Public config/catalog validation or lookup of existing hosted checkout; no creation/transition/provider charge."
+    },
+    {
+      "file": "src/app/api/booking/square/return/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_GET_RECOVERY",
+      "reason": "GET finalizes payment or consumes OAuth state and stores/revokes provider grants. Preserve state and retries."
+    },
+    {
+      "file": "src/app/api/cart/preview/route.ts",
+      "method": "POST",
+      "classification": "READ_WITH_REDIS_LIMITER",
+      "reason": "Catalog/stock reads; abuse limiting may write external limiter state. No checkout reservation is created."
+    },
+    {
+      "file": "src/app/api/checkout/route.ts",
+      "method": "POST",
+      "classification": "OPT_IN_NEW_WORK",
+      "reason": "Merged product/training adapter; off by default. Deferred workers remain separate."
+    },
+    {
+      "file": "src/app/api/checkout/square/config/route.ts",
+      "method": "GET",
+      "classification": "READ_ONLY",
+      "reason": "Public config/catalog validation or lookup of existing hosted checkout; no creation/transition/provider charge."
+    },
+    {
+      "file": "src/app/api/cron/backup-validation/route.ts",
+      "method": "GET",
+      "classification": "CONFIG_SCAFFOLD",
+      "reason": "Current handler validates configuration and logs; reports validationPerformed=false. No restore runner is invoked."
+    },
+    {
+      "file": "src/app/api/cron/chitchats-shipping/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_WORKER",
+      "reason": "GET claims jobs or runs DB/provider recovery/retention/cache/stock effects; scheduler disablement alone cannot drain existing work."
+    },
+    {
+      "file": "src/app/api/cron/customer-email-outbox/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_WORKER",
+      "reason": "GET claims jobs or runs DB/provider recovery/retention/cache/stock effects; scheduler disablement alone cannot drain existing work."
+    },
+    {
+      "file": "src/app/api/cron/gateway-smoke/route.ts",
+      "method": "GET",
+      "classification": "READ_ONLY_PROBE",
+      "reason": "GET invokes gateway GET /v1/courses plus logs; explicit HEAD refuses without executing GET."
+    },
+    {
+      "file": "src/app/api/cron/highlevel-sync/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_WORKER",
+      "reason": "GET claims jobs or runs DB/provider recovery/retention/cache/stock effects; scheduler disablement alone cannot drain existing work."
+    },
+    {
+      "file": "src/app/api/cron/product-stock-reservations/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_WORKER",
+      "reason": "GET claims jobs or runs DB/provider recovery/retention/cache/stock effects; scheduler disablement alone cannot drain existing work."
+    },
+    {
+      "file": "src/app/api/cron/shipping-rate-cache-refresh/route.ts",
+      "method": "GET",
+      "classification": "UNQUALIFIED_WORKER",
+      "reason": "GET claims jobs or runs DB/provider recovery/retention/cache/stock effects; scheduler disablement alone cannot drain existing work."
+    },
+    {
+      "file": "src/app/api/draft-mode/disable/route.ts",
+      "method": "GET",
+      "classification": "COOKIE_OR_REDIRECT",
+      "reason": "Cookie/preview or OAuth consent redirect. Later callbacks and provider/credential sharing require separate fencing."
+    },
+    {
+      "file": "src/app/api/draft-mode/enable/route.ts",
+      "method": "GET",
+      "classification": "COOKIE_OR_REDIRECT",
+      "reason": "Cookie/preview or OAuth consent redirect. Later callbacks and provider/credential sharing require separate fencing."
+    },
+    {
+      "file": "src/app/api/internal/release-probe/route.ts",
+      "method": "GET",
+      "classification": "READ_ONLY_PROBE",
+      "reason": "GET invokes gateway GET /v1/courses plus logs; explicit HEAD refuses without executing GET."
+    },
+    {
+      "file": "src/app/api/internal/release-probe/route.ts",
+      "method": "HEAD",
+      "classification": "CLOSED_405",
+      "reason": "GET invokes gateway GET /v1/courses plus logs; explicit HEAD refuses without executing GET."
+    },
+    {
+      "file": "src/app/api/internal/release-scheduler-probe/route.ts",
+      "method": "GET",
+      "classification": "READ_ONLY_PROBE",
+      "reason": "GET invokes gateway GET /v1/courses plus logs; explicit HEAD refuses without executing GET."
+    },
+    {
+      "file": "src/app/api/internal/release-scheduler-probe/route.ts",
+      "method": "HEAD",
+      "classification": "CLOSED_405",
+      "reason": "GET invokes gateway GET /v1/courses plus logs; explicit HEAD refuses without executing GET."
+    },
+    {
+      "file": "src/app/api/marketing/unsubscribe/route.ts",
+      "method": "GET",
+      "classification": "READ_ONLY",
+      "reason": "Token verification and confirmation HTML only; POST owns unsubscribe persistence."
+    },
+    {
+      "file": "src/app/api/marketing/unsubscribe/route.ts",
+      "method": "POST",
+      "classification": "OPT_IN_RECOVERY",
+      "reason": "Merged recovery adapter; off by default. Jobs enqueued here do not admit their later workers."
+    },
+    {
+      "file": "src/app/api/promotion-code/route.ts",
+      "method": "POST",
+      "classification": "READ_ONLY",
+      "reason": "Public config/catalog validation or lookup of existing hosted checkout; no creation/transition/provider charge."
+    },
+    {
+      "file": "src/app/api/revalidate/route.ts",
+      "method": "POST",
+      "classification": "DEFERRED_WRITER",
+      "reason": "Cache invalidation plus after() product stock synchronization; response cannot establish completion."
+    },
+    {
+      "file": "src/app/api/shipping/quotes/route.ts",
+      "method": "GET",
+      "classification": "READ_ONLY",
+      "reason": "Read issued quote/status and validate current US contract; POST creates quote operations."
+    },
+    {
+      "file": "src/app/api/shipping/quotes/route.ts",
+      "method": "POST",
+      "classification": "UNQUALIFIED_WRITER",
+      "reason": "Database/provider mutation; exact effects, caught outcomes and admission remain to qualify."
+    },
+    {
+      "file": "src/app/api/training-checkout/route.ts",
+      "method": "POST",
+      "classification": "OPT_IN_NEW_WORK",
+      "reason": "Merged product/training adapter; off by default. Deferred workers remain separate."
+    },
+    {
+      "file": "src/app/api/training-checkout/split-status/route.ts",
+      "method": "POST",
+      "classification": "OPT_IN_RECOVERY",
+      "reason": "Merged recovery adapter; off by default. Jobs enqueued here do not admit their later workers."
+    },
+    {
+      "file": "src/app/api/training-checkout/square-invoice/route.ts",
+      "method": "POST",
+      "classification": "OPT_IN_NEW_WORK",
+      "reason": "Merged product/training adapter; off by default. Deferred workers remain separate."
+    },
+    {
+      "file": "src/app/api/webhooks/highlevel/route.ts",
+      "method": "POST",
+      "classification": "OPT_IN_RECOVERY",
+      "reason": "Merged recovery adapter; off by default. Jobs enqueued here do not admit their later workers."
+    },
+    {
+      "file": "src/app/api/webhooks/resend/route.ts",
+      "method": "POST",
+      "classification": "OPT_IN_RECOVERY",
+      "reason": "Merged recovery adapter; off by default. Jobs enqueued here do not admit their later workers."
+    },
+    {
+      "file": "src/app/api/webhooks/sanity/inventory-sync/route.ts",
+      "method": "POST",
+      "classification": "UNQUALIFIED_RECOVERY",
+      "reason": "Sanity stock synchronization writes private inventory; inspect idempotency/caught failures before admission."
+    },
+    {
+      "file": "src/app/api/webhooks/square/route.ts",
+      "method": "POST",
+      "classification": "MIXED_RECOVERY_UNQUALIFIED",
+      "reason": "Merged verified refund recovery is opt-in. Candidate adds classified training-invoice-paid effects only; classification read and commerce/split/booking/no-show/operational paths remain outside the new effect boundary."
+    }
+  ],
+  "actionModules": [
+    {
+      "file": "src/app/actions/course.ts",
+      "exports": [
+        "confirmCourseAccess",
+        "submitCourseSignup"
+      ],
+      "sourceSha256": "5f0f1d395de651cf2d436b5b2115e2c186b17f9685bcc4fba5ce3cde48f7004d",
+      "classification": "UNQUALIFIED_ACTIONS",
+      "reason": "All public action exports require an operation boundary. Form/course/admin/business/provider/session and audit paths are included conservatively; export names are not proof of read-only behavior."
+    },
+    {
+      "file": "src/app/actions/form.ts",
+      "exports": [
+        "submitContactPopup",
+        "submitGeneralInquiry",
+        "submitTrainingContact"
+      ],
+      "sourceSha256": "60a04577071ce4c213d79c596ba52c8dc0171baf0b196df9880ad3de4aaf64c2",
+      "classification": "UNQUALIFIED_ACTIONS",
+      "reason": "All public action exports require an operation boundary. Form/course/admin/business/provider/session and audit paths are included conservatively; export names are not proof of read-only behavior."
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "exports": [
+        "cancelScheduleExceptionAction",
+        "createBookingServiceAction",
+        "createCalendarConnectionAction",
+        "createMyCalendarConnectionAction",
+        "createOfferingAddOnAction",
+        "createResourceScheduleAction",
+        "createScheduleExceptionAction",
+        "createStaffUserAction",
+        "disableCalendarAssignmentAction",
+        "disableCalendarConnectionAction",
+        "disableMyCalendarAssignmentAction",
+        "disableResourceScheduleAction",
+        "disconnectMyCalendarConnectionAction",
+        "reconnectMyCalendarConnectionAction",
+        "refreshSquareTeamMappingsAction",
+        "reorderServiceOfferingsAction",
+        "saveCalendarAssignmentAction",
+        "saveMyCalendarAssignmentAction",
+        "setAppointmentAttendanceStatusAction",
+        "setBookingResourceStatusAction",
+        "setBookingServiceStatusAction",
+        "setOfferingAddOnStatusAction",
+        "setProviderSquareTeamMemberAction",
+        "setServiceOfferingStatusAction",
+        "setSquareAttributionRequirementAction",
+        "setStaffStatusAction",
+        "transferCalendarConnectionOwnershipAction",
+        "updateBookingServiceProfileAction",
+        "updateBookingSettingsAction",
+        "updateServiceOfferingAction"
+      ],
+      "sourceSha256": "f211046dc6b5d68d581a840e500fddf37f8c3d98d547f41079884ba39f2caeb4",
+      "classification": "UNQUALIFIED_ACTIONS",
+      "reason": "All public action exports require an operation boundary. Form/course/admin/business/provider/session and audit paths are included conservatively; export names are not proof of read-only behavior."
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/campaigns/actions.ts",
+      "exports": [
+        "saveCampaignDraftAction",
+        "sendCampaignAction",
+        "sendCampaignTestAction"
+      ],
+      "sourceSha256": "39fb7bbec24bccf9ce53aadc7ea423c719620aa2f17be7072fad0d4852019f8b",
+      "classification": "UNQUALIFIED_ACTIONS",
+      "reason": "All public action exports require an operation boundary. Form/course/admin/business/provider/session and audit paths are included conservatively; export names are not proof of read-only behavior."
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/highlevel/actions.ts",
+      "exports": [
+        "deleteHighLevelCopy",
+        "installHighLevel",
+        "replayHighLevelJob",
+        "resolveHighLevelEffect"
+      ],
+      "sourceSha256": "d8b6a31a2b35bc45e61cf66e41a0f9e3dc6d59c6863050a241ed3fa100874d86",
+      "classification": "UNQUALIFIED_ACTIONS",
+      "reason": "All public action exports require an operation boundary. Form/course/admin/business/provider/session and audit paths are included conservatively; export names are not proof of read-only behavior."
+    },
+    {
+      "file": "src/app/admin/(protected)/service-promotions/actions.ts",
+      "exports": [
+        "createServicePromotionAction",
+        "setServicePromotionStatusAction",
+        "updateServicePromotionAction"
+      ],
+      "sourceSha256": "280eae63fd3dc63ca46a539527b3339e790aa5e26b8f9f3719df21af94b40df5",
+      "classification": "UNQUALIFIED_ACTIONS",
+      "reason": "All public action exports require an operation boundary. Form/course/admin/business/provider/session and audit paths are included conservatively; export names are not proof of read-only behavior."
+    },
+    {
+      "file": "src/app/admin/auth-actions.ts",
+      "exports": [
+        "authorizeAdminDeveloperAccessAction",
+        "setAdminDeveloperSessionAction",
+        "signInWithGoogleAction",
+        "signOutAdminAction",
+        "stepUpWithGoogleAction"
+      ],
+      "sourceSha256": "c64beb3ff0313b94123c2737499fa013231c459459b2c2dbebb344e0f9fdc3af",
+      "classification": "UNQUALIFIED_ACTIONS",
+      "reason": "All public action exports require an operation boundary. Form/course/admin/business/provider/session and audit paths are included conservatively; export names are not proof of read-only behavior."
+    }
+  ],
+  "inlineActions": [],
+  "deferredSites": [
+    {
+      "file": "src/app/api/revalidate/handler.ts",
+      "line": 66,
+      "callee": "after",
+      "classification": "DEFERRED_SQL_WRITER",
+      "reason": "Stock synchronization must join accounting."
+    },
+    {
+      "file": "src/lib/admin/auth.ts",
+      "line": 125,
+      "callee": "after",
+      "classification": "IN_MEMORY_REQUEST_CACHE_CLEANUP",
+      "reason": "after() deletes requestActors map entry; not a DB write. Auth work before it still requires review."
+    }
+  ],
+  "databaseConstructors": [
+    {
+      "file": "scripts/check-private-db-migrations.ts",
+      "line": 90,
+      "callee": "Pool",
+      "classification": "READ_ONLY_SQL_CHECK",
+      "qualifiedAsExhaustiveFence": false
+    },
+    {
+      "file": "scripts/create-payment-reconciliation-indexes.ts",
+      "line": 27,
+      "callee": "Pool",
+      "classification": "MANUAL_SQL_WRITER",
+      "qualifiedAsExhaustiveFence": false
+    },
+    {
+      "file": "scripts/migrate-private-db.ts",
+      "line": 35,
+      "callee": "Pool",
+      "classification": "MANUAL_SQL_WRITER",
+      "qualifiedAsExhaustiveFence": false
+    },
+    {
+      "file": "scripts/provision-shipping-package-profiles.ts",
+      "line": 188,
+      "callee": "Pool",
+      "classification": "MANUAL_SQL_WRITER",
+      "qualifiedAsExhaustiveFence": false
+    },
+    {
+      "file": "scripts/verify-prod-purchasability.ts",
+      "line": 398,
+      "callee": "Pool",
+      "classification": "READ_ONLY_SQL_CHECK",
+      "qualifiedAsExhaustiveFence": false
+    },
+    {
+      "file": "src/lib/private-db/client.ts",
+      "line": 23,
+      "callee": "Pool",
+      "classification": "APPLICATION_POOL",
+      "qualifiedAsExhaustiveFence": false
+    },
+    {
+      "file": "src/lib/writer-admission/runtime.ts",
+      "line": 29,
+      "callee": "Client",
+      "classification": "ADMISSION_LEDGER_CLIENT",
+      "qualifiedAsExhaustiveFence": false
+    }
+  ],
+  "schedules": [
+    {
+      "path": "/api/admin/private-data-retention",
+      "schedule": "17 8 * * *",
+      "classification": "UNQUALIFIED_WORKER",
+      "actualProviderScheduleVerified": false
+    },
+    {
+      "path": "/api/cron/backup-validation",
+      "schedule": "0 6 * * 1",
+      "classification": "CONFIG_SCAFFOLD",
+      "actualProviderScheduleVerified": false
+    },
+    {
+      "path": "/api/admin/payment-reconciliation",
+      "schedule": "*/30 * * * *",
+      "classification": "UNQUALIFIED_WORKER",
+      "actualProviderScheduleVerified": false
+    },
+    {
+      "path": "/api/cron/chitchats-shipping",
+      "schedule": "* * * * *",
+      "classification": "UNQUALIFIED_WORKER",
+      "actualProviderScheduleVerified": false
+    },
+    {
+      "path": "/api/cron/customer-email-outbox",
+      "schedule": "*/5 * * * *",
+      "classification": "UNQUALIFIED_WORKER",
+      "actualProviderScheduleVerified": false
+    },
+    {
+      "path": "/api/cron/product-stock-reservations",
+      "schedule": "*/15 * * * *",
+      "classification": "UNQUALIFIED_WORKER",
+      "actualProviderScheduleVerified": false
+    },
+    {
+      "path": "/api/admin/marketing-contact-sync",
+      "schedule": "*/5 * * * *",
+      "classification": "UNQUALIFIED_WORKER",
+      "actualProviderScheduleVerified": false
+    },
+    {
+      "path": "/api/cron/shipping-rate-cache-refresh",
+      "schedule": "30 7 * * 1",
+      "classification": "UNQUALIFIED_WORKER",
+      "actualProviderScheduleVerified": false
+    },
+    {
+      "path": "/api/cron/highlevel-sync",
+      "schedule": "* * * * *",
+      "classification": "UNQUALIFIED_WORKER",
+      "actualProviderScheduleVerified": false
+    },
+    {
+      "path": "/api/internal/release-scheduler-probe",
+      "schedule": "* * * * *",
+      "classification": "ALTERNATIVE_QUALIFICATION_PROBE",
+      "actualProviderScheduleVerified": false
+    }
+  ],
+  "manualOperationalScripts": [
+    {
+      "file": "scripts/backfill-marketing-contact-submissions.ts",
+      "sourceSha256": "0910afeaec7aec5627b51d08bf684e9c91106325ce33a00dc420f9973136352a",
+      "classification": "SQL_OR_PRIVATE_RECORD_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/backfill-marketing-sync-jobs.ts",
+      "sourceSha256": "154071d82d6248f0399ff69b9de6b159c12d9269b1cbadd268cfcce8de84c36a",
+      "classification": "SQL_OR_PRIVATE_RECORD_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/backfill-product-stock.ts",
+      "sourceSha256": "b8fb611a87991bfb9bf7f1e0db59566488e98de9365c33b1159f2c6ab5ca1b8f",
+      "classification": "SQL_OR_PRIVATE_RECORD_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/bootstrap-booking-operations.ts",
+      "sourceSha256": "34c6c7f8efff0bb872b3f41b9a7dc74d9efaaf89207327286142a0925db9e7f3",
+      "classification": "SQL_OR_PRIVATE_RECORD_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/import-booking-operational-cutover.ts",
+      "sourceSha256": "00f7a8d3ef24366a9a14cd331825b0fd77e888ce94f3f97c60de5fe298c99f6e",
+      "classification": "SQL_OR_PRIVATE_RECORD_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/requeue-marketing-sync-failures.ts",
+      "sourceSha256": "43601117c099b128d067176a35cdecf899878f69e776c0a55e034e8131a8acd1",
+      "classification": "SQL_OR_PRIVATE_RECORD_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/seed-commerce-enabled-e2e.ts",
+      "sourceSha256": "33782c00dccd122d84aaad25d8ef402965412d5d28babd1b8e7d78c7dfed1362",
+      "classification": "SQL_OR_PRIVATE_RECORD_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/highlevel-backfill.ts",
+      "sourceSha256": "5e599ce6ae571a1bbbfb7e0330d2e83b308e96c27b465142671275e525fe8440",
+      "classification": "SQL_OR_PRIVATE_RECORD_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/migrate-private-db.ts",
+      "sourceSha256": "b89f0b30d5bf3874c46141c1d0f076ff403a1507730708bd1c15b5a61ab3d404",
+      "classification": "SQL_OR_PRIVATE_RECORD_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/create-payment-reconciliation-indexes.ts",
+      "sourceSha256": "f8b84c855ab0209c6b4892ee438ddd21de05b39a59d1bef0123504283451d600",
+      "classification": "SQL_OR_PRIVATE_RECORD_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/provision-shipping-package-profiles.ts",
+      "sourceSha256": "8142397a30f7aeb5464d59527a7099065207c41011208442d4db688cc56fbcc8",
+      "classification": "SQL_OR_PRIVATE_RECORD_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/backfill-home-training-programs-block.mjs",
+      "sourceSha256": "5cad23089ae7a0f177426e3a559bdb8cd2a18b8c17240e865e08b63ac47d9202",
+      "classification": "EDITORIAL_OR_PROVIDER_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/migrate-strapi-to-sanity.ts",
+      "sourceSha256": "290815efe042860290e07dc2ffc7ee467532147689b8b81e2a6d85531871da50",
+      "classification": "EDITORIAL_OR_PROVIDER_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/seed-resend-templates.ts",
+      "sourceSha256": "424f004e2a4b8256fd4aed7638309bd54618154c11c554efbf8a237cec9be352",
+      "classification": "EDITORIAL_OR_PROVIDER_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/update-contact-popup-resend-template.ts",
+      "sourceSha256": "9e81fc53ae9c8ab0dc1478c23818847b08a6fa75107a9dcc11397a3a96b053d4",
+      "classification": "EDITORIAL_OR_PROVIDER_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/update-approved-service-descriptions.mjs",
+      "sourceSha256": "4d8ad2c5ddae602f441804a79130493d9c03be4a64a4e65a927ae5c6fc4ac57d",
+      "classification": "EDITORIAL_OR_PROVIDER_WRITER",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/highlevel-tracking-probe.mjs",
+      "sourceSha256": "b43a43a7ca973d306ae7964b88661be7665416a65a9b02d2a6fa06b0c1bf0d60",
+      "classification": "LOCAL_EGRESS_BLOCKED_BROWSER_FIXTURE",
+      "admissionQualified": false,
+      "reason": "Intercepts and aborts third-party requests; vendor client behavior only, no provider ingestion."
+    },
+    {
+      "file": "scripts/check-private-db-migrations.ts",
+      "sourceSha256": "a8864df2e0fdc6b24e390b6933f9f4d5d82d1ff2cbf8fb02940a8f655074fc4d",
+      "classification": "READ_ONLY_OPERATIONAL_CHECK",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/verify-prod-purchasability.ts",
+      "sourceSha256": "8336df4757de68565118eaf8aef0fb663df2c703c1b03728b5d347ed3f6d9e46",
+      "classification": "READ_ONLY_OPERATIONAL_CHECK",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/inspect-marketing-sync-failures.ts",
+      "sourceSha256": "bad42b87571e37177c3b1f60f3bee7528e8e16bef3d502afca98d85dfd080696",
+      "classification": "READ_ONLY_OPERATIONAL_CHECK",
+      "admissionQualified": false
+    },
+    {
+      "file": "scripts/highlevel-config-check.ts",
+      "sourceSha256": "27a5b6e507d0f81e9ecd16d7debb7c42d12f05c3d61499d4b77e3cc622974cd1",
+      "classification": "PROVIDER_READ_WITH_OAUTH_REFRESH_WRITES",
+      "admissionQualified": false,
+      "reason": "highlevel GET calls use accessToken(), which can claim/rotate OAuth credentials and update highlevel_connections. This script is a writer candidate despite its diagnostic purpose."
+    }
+  ],
+  "nextSquareObligations": [
+    "Commerce, split, service booking, no-show, and operational-payment paths remain outside this component. Invoice creation has separate new-work admission; other invoice callers/workers remain separate executions.",
+    "defaultDependencies.isKnownNoShowChargeEvent uses Promise.all for DB lookups; an early failure can outlive the handler. Dynamic-import Promise.all sites are distinct from actual effects.",
+    "square-payment-finalizer catches scheduling-alert email errors; booking/no-show results can acknowledge incomplete/retryable domain work. Qualify domain uncertainty without changing ordinary off-mode responses.",
+    "operational-square-payment-observer catches cancellation errors and can return observed after uncertain provider effects; preserve uncertainty explicitly.",
+    "Audit all transitive booking finalizer/notification/claim paths and independent workers before admitting the entire Square route."
+  ],
+  "actionEntries": [
+    {
+      "file": "src/app/actions/course.ts",
+      "export": "confirmCourseAccess",
+      "classification": "READ_ONLY_ACCESS_CONFIRMATION",
+      "reason": "Reads course access cookie/content to confirm the signup response; no signup submission here.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/actions/course.ts",
+      "export": "submitCourseSignup",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/actions/form.ts",
+      "export": "submitContactPopup",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/actions/form.ts",
+      "export": "submitGeneralInquiry",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/actions/form.ts",
+      "export": "submitTrainingContact",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "cancelScheduleExceptionAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "createBookingServiceAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "createCalendarConnectionAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "createMyCalendarConnectionAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "createOfferingAddOnAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "createResourceScheduleAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "createScheduleExceptionAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "createStaffUserAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "disableCalendarAssignmentAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "disableCalendarConnectionAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "disableMyCalendarAssignmentAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "disableResourceScheduleAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "disconnectMyCalendarConnectionAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "reconnectMyCalendarConnectionAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "refreshSquareTeamMappingsAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "reorderServiceOfferingsAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "saveCalendarAssignmentAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "saveMyCalendarAssignmentAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "setAppointmentAttendanceStatusAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "setBookingResourceStatusAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "setBookingServiceStatusAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "setOfferingAddOnStatusAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "setProviderSquareTeamMemberAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "setServiceOfferingStatusAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "setSquareAttributionRequirementAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "setStaffStatusAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "transferCalendarConnectionOwnershipAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "updateBookingServiceProfileAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "updateBookingSettingsAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "export": "updateServiceOfferingAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/campaigns/actions.ts",
+      "export": "saveCampaignDraftAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/campaigns/actions.ts",
+      "export": "sendCampaignAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/campaigns/actions.ts",
+      "export": "sendCampaignTestAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/highlevel/actions.ts",
+      "export": "deleteHighLevelCopy",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/highlevel/actions.ts",
+      "export": "installHighLevel",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/highlevel/actions.ts",
+      "export": "replayHighLevelJob",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/highlevel/actions.ts",
+      "export": "resolveHighLevelEffect",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/service-promotions/actions.ts",
+      "export": "createServicePromotionAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/service-promotions/actions.ts",
+      "export": "setServicePromotionStatusAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/(protected)/service-promotions/actions.ts",
+      "export": "updateServicePromotionAction",
+      "classification": "UNQUALIFIED_ACTION_WRITER",
+      "reason": "Form/private record, admin mutation, or provider/audit effect requires an operation boundary.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/auth-actions.ts",
+      "export": "authorizeAdminDeveloperAccessAction",
+      "classification": "AUTH_SESSION_OR_ACTOR_EFFECT_CANDIDATE",
+      "reason": "Session/cookie/OAuth or actor-dependent path; qualify SQL audit/identity side effects separately.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/auth-actions.ts",
+      "export": "setAdminDeveloperSessionAction",
+      "classification": "AUTH_SESSION_OR_ACTOR_EFFECT_CANDIDATE",
+      "reason": "Session/cookie/OAuth or actor-dependent path; qualify SQL audit/identity side effects separately.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/auth-actions.ts",
+      "export": "signInWithGoogleAction",
+      "classification": "AUTH_SESSION_OR_ACTOR_EFFECT_CANDIDATE",
+      "reason": "Session/cookie/OAuth or actor-dependent path; qualify SQL audit/identity side effects separately.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/auth-actions.ts",
+      "export": "signOutAdminAction",
+      "classification": "AUTH_SESSION_OR_ACTOR_EFFECT_CANDIDATE",
+      "reason": "Session/cookie/OAuth or actor-dependent path; qualify SQL audit/identity side effects separately.",
+      "admissionQualified": false
+    },
+    {
+      "file": "src/app/admin/auth-actions.ts",
+      "export": "stepUpWithGoogleAction",
+      "classification": "AUTH_SESSION_OR_ACTOR_EFFECT_CANDIDATE",
+      "reason": "Session/cookie/OAuth or actor-dependent path; qualify SQL audit/identity side effects separately.",
+      "admissionQualified": false
+    }
+  ]
+}

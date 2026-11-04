@@ -3,8 +3,10 @@ import { createSquareWebhookPostHandler, defaultDependencies } from "./handler";
 
 export const runtime = "nodejs";
 
-// Only signature-verified refund events adopt admission here. Other Square
-// branches still require their own effect/outcome qualification.
-export const POST = createSquareWebhookPostHandler(defaultDependencies, task =>
-  withWriterAdmission("recovery", task)(),
+// Only verified refunds and classified training-invoice-paid recovery adopt
+// admission. Other Square branches require their own qualification.
+const runRecovery = (task: () => Promise<Response>) =>
+  withWriterAdmission("recovery", task)();
+export const POST = createSquareWebhookPostHandler(
+  defaultDependencies, runRecovery, runRecovery,
 );

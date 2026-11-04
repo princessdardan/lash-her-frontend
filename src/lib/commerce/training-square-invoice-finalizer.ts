@@ -1,3 +1,5 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+
 import type {
   CheckoutOrderRow,
   SquareInvoiceProviderMetadata,
@@ -199,6 +201,9 @@ async function recoverTrainingPaymentNotificationForPaidOrder(input: {
       );
 
     if (enrollment === null) {
+      // This pending-only lookup also excludes scheduled enrollments. It cannot
+      // prove enrollment creation survived an interrupted paid transition.
+      markWriterOperationUncertain();
       return undefined;
     }
 

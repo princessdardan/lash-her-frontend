@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "date": "2026-11-04",
+  "status": "SOURCE_COMPONENT_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "63de9cdc7ea3e0b436a9cf54d2e77e846e86f56e",
+  "sourceManifestSha256": "e12b153aa9ccdc7983d3b1588bb3c81e9d811f151791e0a76ea868c7d3fafa44",
+  "files": {
+    "src/app/api/webhooks/square/route.ts": "e4bbf0f161f017c05a3cf6cc1997648c920d74fe03e5a676e4acbfc6cfae82e2",
+    "src/app/api/webhooks/square/handler.ts": "72f7862bfba82b7c4c9ed4498e3eb2f01cd393d1fb915a632c2d91a99c2173c5",
+    "src/lib/commerce/training-payment-notification-service.ts": "644e498d9f638a0468859adf0b4627c33f7a0dba60ec43bac354528be6c527f9",
+    "src/lib/commerce/training-square-invoice-finalizer.ts": "5a0f9b3cc5c8edd00718de3512564f1f2d7ed9b6f86e4e18e49982e13795d7d2",
+    "src/lib/commerce/training-square-invoice-finalizer.test.ts": "556778a86a417cd219e77725380be48efa0d0c91549bb0bc3b66ebc1f0ac7e06",
+    "src/lib/writer-admission/square-invoice.test.ts": "b2a75d2aa9f8468b7f863c503069109207ec21bae5e772430079b93c535e6bdd",
+    "scripts/run-source-unit-tests.mjs": "33813b5c136745558df3a8551ff63c4aaae3918f177eaf046f218accd04dd037"
+  },
+  "scope": "training-invoice-paid webhook effect chain only",
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "deploymentPerformed": false,
+  "liveDatabaseOrProviderChanged": false,
+  "p200Complete": false,
+  "checks": {
+    "unit": {
+      "ordinary": 1855,
+      "serverOnly": 228,
+      "scripts": 31,
+      "securityDependencies": 14,
+      "totalPassed": 2128,
+      "failed": 0,
+      "skipped": 0
+    },
+    "focusedRegression": {
+      "totalPassed": 111,
+      "newInvoiceAdmission": 12,
+      "finalizerTests": 15,
+      "inheritedAdmissionAndSquareRegression": 84
+    },
+    "platform": {
+      "totalPassed": 178
+    },
+    "typescript": "PASS",
+    "targetedEslint": "PASS",
+    "gitDiffCheck": "PASS",
+    "ownedPostgres16": {
+      "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+      "postgresMajor": 16,
+      "migrations": 80,
+      "checks": [
+        "fresh-apply",
+        "already-current",
+        "server-enforced-current-only-read-session",
+        "physical-database-lock-retained-through-compatible-frontend-continuation",
+        "idle-session-loss-retains-sanitized-failed-outcome",
+        "failed-frontend-preserves-successful-sql-without-reapply-or-admission",
+        "current-only-refuses-real-pending-migrations-without-applying",
+        "data-bearing-upgrade",
+        "lock-contention",
+        "pending-chain-refusal",
+        "lineage-refusal",
+        "schema-refusal",
+        "runtime-privilege-refusal",
+        "tls-certificate-refusal",
+        "exact-artifact-production-promotion"
+      ],
+      "providerTouched": false,
+      "admissionChecks": [
+        "bootstrap-is-closed-before-any-effect",
+        "outer-transactions-refuse-before-effects-and-cannot-hide-uncommitted-admission",
+        "historical-login-direct-table-role-spoof-and-null-bindings-refused",
+        "admission-refuses-policy-lock-contention",
+        "new-work-stops-independently-while-recovery-and-admitted-deferred-work-finish",
+        "both-controls-closed-and-zero-unresolved-required-for-ledger-drain",
+        "completed-operation-id-cannot-replay-effects",
+        "elapsed-time-never-drains-uncertain-work-and-only-explicit-reconciliation-clears-it",
+        "unresolved-operations-refuse-restoration",
+        "actual-backend-death-retains-active-operation-until-reviewed-reconciliation",
+        "lost-admission-acknowledgement-never-starts-effects-or-retries",
+        "lost-completion-acknowledgement-preserves-committed-ledger-without-replay",
+        "target-stale-epoch-and-concurrent-policy-changes-refuse",
+        "drain-observation-never-asserts-historical-fence-or-migration-authority"
+      ],
+      "historicalLoginChecks": [
+        "cross-database-session-refuses-before-cluster-wide-login-change",
+        "actual-membership-and-owned-object-refuse-before-retirement",
+        "owned-objects-in-another-database-refuse-without-a-legacy-session",
+        "role-name-alone-cannot-substitute-another-oid",
+        "committed-nologin-blocks-new-logins-but-existing-session-is-still-alive",
+        "existing-idle-and-writing-sessions-terminate-and-open-transaction-rolls-back",
+        "database-retirement-never-claims-provider-drain-or-sql-authority",
+        "disabled-login-replay-refuses-without-automatic-login-restoration",
+        "lost-commit-acknowledgement-keeps-login-disabled-and-never-retries",
+        "lost-termination-acknowledgement-keeps-login-disabled-and-never-retries",
+        "parent-physical-migration-lock-survives-success-and-failures"
+      ],
+      "writerRouteChecks": [
+        "closed-policy-and-unknown-source-or-legacy-login-refuse-before-route-effects",
+        "committed-admission-precedes-handler-and-closing-new-work-preserves-current-epoch-recovery",
+        "admitted-request-remains-active-through-all-awaited-handler-work",
+        "policy-close-between-observation-and-commit-refuses-without-starting-handler",
+        "caught-handler-5xx-records-uncertainty-and-never-acknowledges-webhook-success",
+        "caught-domain-errors-behind-http-success-remain-uncertain-until-owner-reconciliation",
+        "lost-settlement-acknowledgement-returns-503-without-replaying-successful-effects",
+        "actual-idle-runtime-connection-loss-retains-active-operation-and-retryable-response"
+      ],
+      "packagedCliVerified": false,
+      "sqlArtifactSha256": "775201b5352db56e2fe0402f5e9f9232e19cff131e38a71dca51dd1c72e77b3c",
+      "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+      "schemaBaselineSha256": "aa0dde73d73135fe922affee4e76a90ccdad2bde64e3277a3eccd39391132fb6"
+    },
+    "ownedPostgres18Local": {
+      "status": "NOT_RUN",
+      "reason": "Exact-head CI provides owned PostgreSQL18 and packaged migration checks."
+    },
+    "fullBuildAndBrowserLocal": {
+      "status": "NOT_RUN",
+      "reason": "Exact-head CI owns full build/browser and ordinary business DB paths; no live credentials loaded locally."
+    }
+  },
+  "sequentialFindings": [
+    {
+      "finding": "Null notification claim can hide pending work behind finalizer success.",
+      "fix": "Operation-local uncertainty marker; off-mode unchanged.",
+      "targetedVerification": "Real finalizer/service with unavailable claim: no send, off-mode success, admitted context refuses completion."
+    },
+    {
+      "finding": "False notification persistence after a send is ignored.",
+      "fix": "Mark unconfirmed sent-state writes uncertain while awaiting remaining notifications.",
+      "targetedVerification": "Each recipient persistence refusal tested separately: both sequential send paths finish, off-mode unchanged, admitted completion refuses."
+    },
+    {
+      "finding": "Duplicate paid order without pending enrollment is ambiguous.",
+      "fix": "Mark uncertain without inferring scheduled or creating enrollment.",
+      "targetedVerification": "Existing off-mode duplicate remains unchanged; same actual finalizer inside admitted context refuses."
+    }
+  ],
+  "review": {
+    "kind": "local self-review",
+    "scope": [
+      "production diff and source/test registration",
+      "receipt deduplication, finalizer and enrollment claim/token persistence",
+      "provider GET verification and sequential email send/failure handling",
+      "uncertainty markers, processed-event semantics and off-mode preservation",
+      "pre-admission read classification and excluded Square dispatch"
+    ],
+    "additionalConfirmedFindings": 0
+  },
+  "limitations": [
+    "Business repository and provider terminals are controlled in component tests. No combined real invoice Drizzle flow under enforcement is claimed.",
+    "Processed business receipt status does not clear operation-local uncertainty; duplicate retries still recover.",
+    "No live provider settings, SQL, bootstrap or admission changes.",
+    "Owned PostgreSQL16 qualifies inherited migration/ledger/adapter protocols, not a new immutable image or invoice business repository flow.",
+    "Ordinary CI business DB/browser paths use admission off.",
+    "Exhaustive actual producer/provider fencing, all-worker drain, owned bootstrap and parent coordinator remain open.",
+    "Exact-head CI evidence is recorded later in the draft PR description; this is prepublication local evidence."
+  ]
+}
