@@ -12,6 +12,7 @@ import { frontendMigrationArtifact, FRONTEND_MIGRATION_LOCK } from "./frontend-m
 import { readMigrationCatalog } from "./frontend-schema.mjs";
 import { verifyPackagedFrontendSource } from "./frontend-image-source.mjs";
 import { exerciseFrontendAdmission } from "./harness/owned-frontend-admission.mjs";
+import { exerciseHistoricalFrontendLogins } from "./harness/owned-frontend-historical-logins.mjs";
 
 const source = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
@@ -34,7 +35,7 @@ async function main() {
     const key = join(directory, "server.key"), certificate = join(directory, "server.crt");
     run("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1", "-keyout", key, "-out", certificate]); chmodSync(key, 0o600);
     writeFileSync(join(data, "postgresql.conf"), `listen_addresses='127.0.0.1'\nport=${port}\nunix_socket_directories=''\nssl=on\nssl_cert_file='${certificate}'\nssl_key_file='${key}'\npassword_encryption='scram-sha-256'\n`);
-    writeFileSync(join(data, "pg_hba.conf"), "local all all trust\nhostssl all frontend_migration 127.0.0.1/32 scram-sha-256\nhostssl all frontend_runtime 127.0.0.1/32 scram-sha-256\nhostssl all frontend_admission_protocol 127.0.0.1/32 scram-sha-256\nhostssl all frontend_test_admin 127.0.0.1/32 trust\n");
+    writeFileSync(join(data, "pg_hba.conf"), "local all all trust\nhostssl all frontend_test_admin 127.0.0.1/32 trust\nhostssl all all 127.0.0.1/32 scram-sha-256\n");
     run(join(binaries, "pg_ctl"), ["-D", data, "-l", join(directory, "postgres.log"), "-w", "start"]); running = true;
     const connect = async (database, user = "frontend_test_admin") => {
       const client = new Client({ host: "127.0.0.1", port, user, database, password, ssl: { rejectUnauthorized: true, ca: readFileSync(certificate, "utf8") } });
@@ -43,7 +44,7 @@ async function main() {
     const admin = await connect("postgres");
     await admin.query(`create role frontend_migration login noinherit password '${password}'`);
     await admin.query(`create role frontend_runtime login noinherit password '${password}'`);
-    for (const database of ["frontend_baseline", "frontend_apply", "frontend_upgrade", "frontend_promote", "frontend_continuation", "frontend_admission_owned"]) {
+    for (const database of ["frontend_baseline", "frontend_apply", "frontend_upgrade", "frontend_promote", "frontend_continuation", "frontend_admission_owned", "frontend_historical_owned"]) {
       await admin.query(`create database ${database}`);
       await admin.query(`grant create,connect on database ${database} to frontend_migration`);
       const owner = await connect(database);
@@ -211,8 +212,11 @@ async function main() {
     success("exact-artifact-production-promotion",invoke("promotion",production,{...candidate,environment:"production"}));
     phase = "durable-frontend-admission";
     const admissionChecks = await exerciseFrontendAdmission(connect, password);
+    phase = "historical-frontend-logins";
+    const historicalLoginChecks = await exerciseHistoricalFrontendLogins(connect, password, major);
     const result={status:"FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",postgresMajor:major,migrations:artifact.migrations.length,checks:records,providerTouched:false,
       admissionChecks,
+      historicalLoginChecks,
       sourceCommit:commit,migrationImageDigest:job.migrationImageDigest,packagedCliVerified:cli.endsWith("frontend-image.mjs"),
       sqlArtifactSha256:artifact.sqlArtifactSha256,contractManifestSha256:artifact.contractManifestSha256,schemaBaselineSha256:hash(JSON.stringify(baseline))};
     if(process.env.FRONTEND_MIGRATION_EXPORT_SCHEMA==="true")result.schemaBaseline=baseline;
@@ -226,4 +230,4 @@ async function main() {
 main().catch((error)=>{console.error(JSON.stringify({status:"OWNED_FRONTEND_MIGRATION_FAILED",phase,providerTouched:false,
   sqlState:/^[A-Z0-9]{5}$/u.test(error.code ?? "") ? error.code : undefined,
   sqlPosition:/^[0-9]+$/u.test(error.position ?? "") ? error.position : undefined,
-  fixtureFrames:error.stack?.split("\n").filter(line=>/^\s+at .*owned-frontend-admission\.mjs/u.test(line))}));process.exitCode=1;});
+  fixtureFrames:error.stack?.split("\n").filter(line=>/^\s+at .*owned-frontend-(?:admission|historical-logins)\.mjs/u.test(line))}));process.exitCode=1;});
