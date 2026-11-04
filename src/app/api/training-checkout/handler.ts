@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import {
   parseCheckoutMarketing,
   type CheckoutMarketing,
@@ -247,7 +248,7 @@ export function createTrainingCheckoutPostHandler({
             charge.retryWithNewReservation === true;
           if (retryWithNewReservation && markTrainingOrderVerificationFailed) {
             await markTrainingOrderVerificationFailed(reserved.orderId).catch(
-              () => undefined,
+              markWriterOperationUncertain,
             );
           }
           return NextResponse.json<TrainingCheckoutErrorBody>(

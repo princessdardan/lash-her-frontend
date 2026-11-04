@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import type { SquareCheckoutPayment } from "@/lib/payments/square/afterpay-policy";
 import type {
   SquareCreatePaymentRequest,
@@ -85,6 +86,7 @@ export async function chargeSquareTrainingOrder(
     try {
       await dependencies.sendNotifications(input.orderReference);
     } catch (error) {
+      markWriterOperationUncertain();
       dependencies.logError("[square-training] retry notification failed", {
         orderReference: input.orderReference,
         error: error instanceof Error ? error.message : "Unknown error",

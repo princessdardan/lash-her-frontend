@@ -1,6 +1,6 @@
 # Frontend operation admission ledger
 
-P2-00 component only. The ledger is implemented and rehearsed on disposable databases. The [product checkout adapter](frontend-writer-route-admission.md) is the first opt-in application entrypoint; other routes, server actions and workers remain unwired. There is no live installation CLI, application migration, startup bootstrap, historical-credential retirement or release-coordinator integration. Existing pending frontend SQL paths continue to refuse.
+P2-00 component only. The ledger is implemented and rehearsed on disposable databases. The [product checkout adapter](frontend-writer-route-admission.md) and [training continuation](frontend-training-admission.md) are the first opt-in application entrypoints; other routes, server actions and workers remain unwired. There is no live installation CLI, application migration, startup bootstrap, historical-credential retirement or release-coordinator integration. Existing pending frontend SQL paths continue to refuse.
 
 ## Storage and authority
 

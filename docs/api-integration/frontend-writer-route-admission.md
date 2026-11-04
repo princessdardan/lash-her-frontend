@@ -1,6 +1,6 @@
 # Product checkout writer admission
 
-P2-00 component only. `POST /api/checkout` now has an opt-in server-only adapter around its existing handler. It is the only application route wired in this change. Admission remains off unless explicitly set to `enforce`; no live settings, bootstrap, grants, deployments or provider configuration were changed. Existing pending frontend SQL release paths remain closed.
+P2-00 component only. `POST /api/checkout` now has an opt-in server-only adapter around its existing handler. It was the first application route wired; the [training continuation](frontend-training-admission.md) covers primary training checkout, invoice initialization and split-status recovery. Admission remains off unless explicitly set to `enforce`; no live settings, bootstrap, grants, deployments or provider configuration were changed. Existing pending frontend SQL release paths remain closed.
 
 ## Execution and uncertainty
 
@@ -34,6 +34,6 @@ The [validation record](baselines/2026-11-04-p2-00-route-admission/validation.js
 
 The local production build compiled and passed its TypeScript stage, then refused page-data collection because `SANITY_API_READ_TOKEN` was unavailable. CI must establish full build/browser qualification with its existing configuration. Local type checking separately passed with dependencies matching the committed lockfile.
 
-Other checkout, booking, webhook, GET mutation, admin, form, server-action and worker entrypoints remain unwired. The generic adapter accepts new-work and recovery for qualification, but supports only non-streaming handlers with every side effect awaited. Next.js redirect exceptions, streaming/deferred work and caught domain-level uncertainty require explicit integration before adoption. It does not infer provider finality from an HTTP status alone.
+Other booking, webhook, GET mutation, admin, form, server-action and worker entrypoints remain unwired. Training checkout/invoice and split-status recovery are covered by the linked continuation. The generic adapter accepts new-work and recovery for qualification, but supports only non-streaming handlers with every side effect awaited. Next.js redirect exceptions, streaming/deferred work and caught domain-level uncertainty require explicit integration before adoption. It does not infer provider finality from an HTTP status alone.
 
 Application-wide producer classification, historical deployment/provider fencing, live bootstrap, all-writer/whole-provider drain, and the parent migration/deployment/recovery coordinator remain unfinished. The selected historical-login component and this route cannot prove those conditions. No result authorizes SQL or changes `historicalWritersFenced`/`migrationAuthorized` from false. Fresha/410 reservation closure remains in force. Live staging and production are unchanged.

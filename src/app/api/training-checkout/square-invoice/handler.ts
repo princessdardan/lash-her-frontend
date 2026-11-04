@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import {
   isTrainingInvoiceAfterpayAmountEligible,
   TRAINING_INVOICE_AFTERPAY_LIMIT_MESSAGE,
@@ -260,6 +261,7 @@ export function createTrainingSquareInvoicePostHandler({
         orderId: publicOrderId,
       });
     } catch (error) {
+      markWriterOperationUncertain();
       if (isSquareInvoiceBnplUnavailableError(error)) {
         return NextResponse.json<TrainingSquareInvoiceErrorBody>(
           {

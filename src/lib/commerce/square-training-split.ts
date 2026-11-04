@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import type {
   SquareCreatePaymentRequest,
   SquarePayment,
@@ -62,7 +63,12 @@ export async function chargeTrainingSplit(
   const failure = (
     reason: string,
     retryWithNewReservation = false,
-  ): TrainingSplitResult => ({ ok: false, reason, retryWithNewReservation });
+  ): TrainingSplitResult => {
+    if (["split_cancellation_pending", "split_capture_pending", "split_payment_requires_review"].includes(reason)) {
+      markWriterOperationUncertain();
+    }
+    return { ok: false, reason, retryWithNewReservation };
+  };
   if (
     input.payment &&
     (validateTrainingSplitPayment(input.payment, input.amountCents) ||
@@ -183,11 +189,17 @@ export async function chargeTrainingSplit(
         return await cancel();
     }
 
-    const readPayments = () =>
-      Promise.all([
+    const readPayments = async () => {
+      // A failed observation must not let its sibling escape operation lifetime.
+      const [card, afterpay] = await Promise.allSettled([
         deps.getPayment(state.cardPaymentId!),
         deps.getPayment(state.afterpayPaymentId!),
       ]);
+      if (card.status === "rejected" || afterpay.status === "rejected") {
+        throw new Error("split_payment_observation_failed");
+      }
+      return [card.value, afterpay.value] as const;
+    };
     let [card, afterpay] = await readPayments();
     if (!matches(card, "card") || !matches(afterpay, "afterpay"))
       throw new Error("split_provider_mismatch");
@@ -240,6 +252,7 @@ export async function chargeTrainingSplit(
       return failure("split_capture_pending");
     return await paid();
   } catch {
+    markWriterOperationUncertain();
     deps.logError(`split_${state.stage}_failed`);
     // PayOrder or local finalization may have succeeded. Preserve both IDs and
     // the reservation for webhook/retry recovery; never re-authorize here.
