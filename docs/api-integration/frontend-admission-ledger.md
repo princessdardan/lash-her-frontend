@@ -10,6 +10,8 @@ The owner controls policy, producer registration and reconciliation. Protocol-aw
 
 Historical application logins have no admission privileges. That protects this schema only: they may still write application tables or use retained provider access. Neither a closed ledger nor a disabled producer proves historical deployments are fenced. Live adoption still needs exhaustive deployment/provider inventory, actual retirement of bypassing access and reconciliation of work admitted outside this protocol.
 
+The next [database login retirement component](frontend-historical-login-retirement.md) implements selected-role NOLOGIN/session termination on owned databases. It has no live CLI and does not establish provider or whole-operation drain. Application-wide fencing, bootstrap and coordinator integration remain unfinished.
+
 ## Admission and operation lifetime
 
 `runFrontendWriterOperation` accepts a dedicated connected PostgreSQL client, exact environment/target binding, a fresh operation UUID, admission epoch, producer/source identity and new-work or recovery class. It calls a procedure that commits the admission record before returning. PostgreSQL refuses the call inside an explicit outer transaction, so an uncommitted admission cannot start effects. Contention on the policy row refuses immediately. There are no automatic retries; an uncertain admission acknowledgement never starts the callback.
