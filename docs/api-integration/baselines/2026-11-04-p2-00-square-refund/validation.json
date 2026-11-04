@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "date": "2026-11-04",
+  "status": "SOURCE_COMPONENT_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "cba79302942f19117a959fbbb32a900147517016",
+  "sourceManifestSha256": "7320a9cffdfba33561a2f27928e7010738b486927f718344433a7a8d0511d400",
+  "files": {
+    "src/app/api/webhooks/square/route.ts": "1b10e633c2e5495eb91e278ed67ce8e1fc5680c4307ad249071a3573ee922a16",
+    "src/app/api/webhooks/square/handler.ts": "c71927a4c5002f1ee7d3142a3f9fd8a9d8c51ddee99a988e42a30b9abe4e9bce",
+    "src/lib/shipping/policy-alerts.ts": "30922c93162371edc0417984d55c3d063b4fa8c2015ba80694bbd1f3625e921b",
+    "src/lib/shipping/policy-alerts.test.ts": "bc149c4898806676aa1f5d206981b495578505351c69f1ede145fb6b4092657e",
+    "src/lib/writer-admission/square-refund.test.ts": "4f8fe837093cddcee2aacf0b08ce9162b7167bc657059ba70990c464d6e828df",
+    "scripts/run-source-unit-tests.mjs": "bb65b87e136935f65b65529339254ddd51e019459f5beed00cdd8362b4df44a7"
+  },
+  "scope": "Verified Square refund recovery only; not whole-Square or all-writer admission",
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "deploymentPerformed": false,
+  "liveDatabaseOrProviderChanged": false,
+  "p200Complete": false,
+  "checks": {
+    "unit": {
+      "ordinary": 1853,
+      "serverOnly": 216,
+      "scripts": 31,
+      "securityDependencies": 14,
+      "totalPassed": 2114,
+      "failed": 0,
+      "skipped": 0
+    },
+    "focused": {
+      "totalPassed": 40,
+      "newRefund": 9,
+      "newPolicyAlert": 1,
+      "inheritedAdmission": 30
+    },
+    "platform": {
+      "totalPassed": 178
+    },
+    "typescript": "PASS",
+    "targetedEslint": "PASS",
+    "gitDiffCheck": "PASS",
+    "ownedPostgres16": {
+      "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+      "migrations": 80,
+      "migrationChecks": [
+        "fresh-apply",
+        "already-current",
+        "server-enforced-current-only-read-session",
+        "physical-database-lock-retained-through-compatible-frontend-continuation",
+        "idle-session-loss-retains-sanitized-failed-outcome",
+        "failed-frontend-preserves-successful-sql-without-reapply-or-admission",
+        "current-only-refuses-real-pending-migrations-without-applying",
+        "data-bearing-upgrade",
+        "lock-contention",
+        "pending-chain-refusal",
+        "lineage-refusal",
+        "schema-refusal",
+        "runtime-privilege-refusal",
+        "tls-certificate-refusal",
+        "exact-artifact-production-promotion"
+      ],
+      "admissionChecks": [
+        "bootstrap-is-closed-before-any-effect",
+        "outer-transactions-refuse-before-effects-and-cannot-hide-uncommitted-admission",
+        "historical-login-direct-table-role-spoof-and-null-bindings-refused",
+        "admission-refuses-policy-lock-contention",
+        "new-work-stops-independently-while-recovery-and-admitted-deferred-work-finish",
+        "both-controls-closed-and-zero-unresolved-required-for-ledger-drain",
+        "completed-operation-id-cannot-replay-effects",
+        "elapsed-time-never-drains-uncertain-work-and-only-explicit-reconciliation-clears-it",
+        "unresolved-operations-refuse-restoration",
+        "actual-backend-death-retains-active-operation-until-reviewed-reconciliation",
+        "lost-admission-acknowledgement-never-starts-effects-or-retries",
+        "lost-completion-acknowledgement-preserves-committed-ledger-without-replay",
+        "target-stale-epoch-and-concurrent-policy-changes-refuse",
+        "drain-observation-never-asserts-historical-fence-or-migration-authority"
+      ],
+      "historicalLoginChecks": [
+        "cross-database-session-refuses-before-cluster-wide-login-change",
+        "actual-membership-and-owned-object-refuse-before-retirement",
+        "owned-objects-in-another-database-refuse-without-a-legacy-session",
+        "role-name-alone-cannot-substitute-another-oid",
+        "committed-nologin-blocks-new-logins-but-existing-session-is-still-alive",
+        "existing-idle-and-writing-sessions-terminate-and-open-transaction-rolls-back",
+        "database-retirement-never-claims-provider-drain-or-sql-authority",
+        "disabled-login-replay-refuses-without-automatic-login-restoration",
+        "lost-commit-acknowledgement-keeps-login-disabled-and-never-retries",
+        "lost-termination-acknowledgement-keeps-login-disabled-and-never-retries",
+        "parent-physical-migration-lock-survives-success-and-failures"
+      ],
+      "writerRouteChecks": [
+        "closed-policy-and-unknown-source-or-legacy-login-refuse-before-route-effects",
+        "committed-admission-precedes-handler-and-closing-new-work-preserves-current-epoch-recovery",
+        "admitted-request-remains-active-through-all-awaited-handler-work",
+        "policy-close-between-observation-and-commit-refuses-without-starting-handler",
+        "caught-handler-5xx-records-uncertainty-and-never-acknowledges-webhook-success",
+        "caught-domain-errors-behind-http-success-remain-uncertain-until-owner-reconciliation",
+        "lost-settlement-acknowledgement-returns-503-without-replaying-successful-effects",
+        "actual-idle-runtime-connection-loss-retains-active-operation-and-retryable-response"
+      ],
+      "providerTouched": false,
+      "packagedCliVerified": false
+    },
+    "ownedPostgres18Local": {
+      "status": "NOT_RUN",
+      "reason": "Existing local Docker test image was absent; exact-head CI frontend-operator-migrations owns PostgreSQL18 validation."
+    },
+    "fullBuildAndBrowserLocal": {
+      "status": "NOT_RUN",
+      "reason": "Exact-head CI provides full build/browser and ordinary business DB evidence; no live Sanity credentials were loaded for local build."
+    }
+  },
+  "sequentialFindings": [
+    {
+      "component": "refund finance-alert outbox fan-out",
+      "finding": "Promise.all can reject while a sibling enqueue is still running.",
+      "fix": "Wait for Promise.allSettled, then propagate the first failure after every enqueue stops.",
+      "targetedVerification": "Real sendShippingPolicyAlert and encrypted outbox enqueue with controlled transaction queries: first recipient rejects, second is held; alert stays pending until the held enqueue finishes."
+    }
+  ],
+  "review": {
+    "kind": "local self-review",
+    "scope": [
+      "Complete production source diff and test registration",
+      "Refund receipt deduplication and reconciliation transaction / finance-alert enqueue call chain",
+      "Shared admission runner error/settlement/connection and off-mode behavior",
+      "Signature/body-cap dispatch and explicitly excluded Square branches"
+    ],
+    "additionalConfirmedFindings": 0
+  },
+  "limitations": [
+    "Handler tests use controlled persistence/ledger dependencies; no combined real refund Drizzle flow under enforcement is claimed.",
+    "Owned PostgreSQL16 tests exercise inherited adapter/ledger/login/migration protocols; they do not qualify a new immutable image.",
+    "No real Square refund delivery, provider effect, live admission bootstrap, exhaustive deployment inventory, all-worker drain or parent release coordinator is qualified.",
+    "Native schedules, indirect clients/manual wrappers, historical deployments and provider credentials remain separate inventory/fencing obligations.",
+    "Ordinary CI business database/browser paths run with admission off.",
+    "PostgreSQL18/full build/browser exact-head CI results must be verified separately after publication.",
+    "The initial sandbox unit attempt failed on tsx local IPC EPERM; rerun with local IPC allowed passed all 2114 tests."
+  ]
+}
