@@ -1,0 +1,32 @@
+(node:13360) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///private/tmp/lash-p2-00-frontend-quiescence/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /private/tmp/lash-p2-00-frontend-quiescence/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ frontend preparation binds exact source, target and reviewed SQL/schema without credentials (12.522917ms)
+✔ frontend credential parsing requires exact identity and explicit verified TLS (3.18225ms)
+✔ frontend job assembly derives reviewed bindings without copying credentials (4.172292ms)
+✔ frontend confirmation and source qualification precede credential acquisition (2.296708ms)
+✔ frontend apply uses one locked session, records before unlock and separates terminal completion (9.015666ms)
+✔ compatible frontend continuation retains the physical lock after the durable database receipt (7.671292ms)
+✔ failed or uncertain frontend continuation preserves successful SQL and never repeats it or authorizes traffic (5.766459ms)
+✔ lost database session, missing lock and post-deployment drift cannot qualify the continuation (36.345542ms)
+✔ continuation-looking JSON is refused before credentials and missing durable intent stops deployment (7.41425ms)
+✔ current frontend uses a server-enforced read-only session and issues no schema or journal writes (3.515667ms)
+✔ current-only mode refuses an unenforced or changed read-only setting and actual pending SQL (4.602041ms)
+✔ frontend lock contention, pending mismatch and apply errors stop without successful database receipt (5.343958ms)
+✔ frontend postflight schema/default-grant failures and disconnect failure cannot qualify completion (14.767ms)
+✔ frontend production refuses missing or failed staging migration evidence (1.658834ms)
+✔ frontend receipts are exclusive and contain complete parseable JSON (16.415541ms)
+✔ legacy frontend migration writes refuse release targets and remote local-label bypasses (328.26075ms)
+✔ inventory includes GET callbacks, re-exports, server actions, deferred work, scripts and native definitions (8.582458ms)
+✔ source changes change the inventory identity, including implementation-only changes (3.224ms)
+✔ NextAuth-style destructured HTTP methods are included (2.489375ms)
+✔ ambiguous export-star, invalid syntax and symlinks refuse instead of returning a complete-looking inventory (4.242333ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 595.636833

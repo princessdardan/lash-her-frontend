@@ -6,7 +6,7 @@ import { createServer } from "node:net";
 import { randomUUID, createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { frontendMigrationArtifact, FRONTEND_MIGRATION_LOCK } from "./frontend-migration.mjs";
 import { readMigrationCatalog } from "./frontend-schema.mjs";
@@ -42,7 +42,7 @@ async function main() {
     const admin = await connect("postgres");
     await admin.query(`create role frontend_migration login noinherit password '${password}'`);
     await admin.query(`create role frontend_runtime login noinherit password '${password}'`);
-    for (const database of ["frontend_baseline", "frontend_apply", "frontend_upgrade", "frontend_promote"]) {
+    for (const database of ["frontend_baseline", "frontend_apply", "frontend_upgrade", "frontend_promote", "frontend_continuation"]) {
       await admin.query(`create database ${database}`);
       await admin.query(`grant create,connect on database ${database} to frontend_migration`);
       const owner = await connect(database);
@@ -119,6 +119,67 @@ async function main() {
     assert.equal(noopReceipt.migrationMode, "verify-current-only"); assert.equal(noopReceipt.readOnlyVerified, true);
     assert.equal(noopTerminal.migrationMode, "verify-current-only"); assert.equal(noopTerminal.readOnlyVerified, true);
     assert.deepEqual(noopReceipt.applied, []); records.push("server-enforced-current-only-read-session");
+    phase = "locked-frontend-continuation";
+    const component = await import(pathToFileURL(join(app, "ops/platform/frontend-migration.mjs")).href);
+    const competing = await connect("frontend_apply", "frontend_migration"), continuationRecords = [];
+    const componentDependencies = (selected, output) => ({
+      confirmation: `${selected.environment}/${selected.releaseId}`,
+      ...(cli.endsWith("frontend-image.mjs") ? { assertSource: () => verifyPackagedFrontendSource(app, commit) } : {}),
+      getUrl: () => `postgresql://${selected.target.user}:${password}@127.0.0.1:${port}/${selected.target.database}?sslmode=verify-full`,
+      createClient: (options) => new Client({ ...options, ssl: { rejectUnauthorized: true, ca: readFileSync(certificate, "utf8") } }),
+      record: (name, value) => output.push({ name, value }),
+    });
+    const continuationDependencies = componentDependencies(current, continuationRecords);
+    continuationDependencies.afterDatabaseVerified = async (database, verifySession) => {
+      assert.equal(continuationRecords[0].name, "database-receipt.json");
+      assert.equal(Object.isFrozen(database.target), true);
+      for (let observation = 0; observation < 2; observation++) {
+        assert.equal((await competing.query("select pg_try_advisory_lock(hashtext($1)) as locked", [FRONTEND_MIGRATION_LOCK])).rows[0].locked, false);
+        await verifySession();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    };
+    await component.runFrontendMigration(component.prepareFrontendMigration(candidate, current, baseline), continuationDependencies);
+    assert.equal(continuationRecords.at(-1).value.status, "DATABASE_VERIFIED");
+    assert.equal((await competing.query("select pg_try_advisory_lock(hashtext($1)) as locked", [FRONTEND_MIGRATION_LOCK])).rows[0].locked, true);
+    await competing.query("select pg_advisory_unlock(hashtext($1))", [FRONTEND_MIGRATION_LOCK]);
+    records.push("physical-database-lock-retained-through-compatible-frontend-continuation");
+    phase = "idle-session-loss-during-continuation";
+    const lostRecords = [], lostDependencies = componentDependencies(current, lostRecords);
+    const createLostClient = lostDependencies.createClient; let lostClient;
+    lostDependencies.createClient = (options) => { lostClient = createLostClient(options); return lostClient; };
+    lostDependencies.afterDatabaseVerified = async (_database, verifySession) => {
+      const disconnected = new Promise((resolve) => lostClient.once("error", resolve));
+      await admin.query("select pg_terminate_backend($1)", [lostClient.processID]);
+      await disconnected;
+      // Even a callback that handles the failed probe cannot qualify success.
+      await assert.rejects(verifySession());
+    };
+    await assert.rejects(component.runFrontendMigration(component.prepareFrontendMigration(candidate, current, baseline), lostDependencies));
+    assert.equal(lostRecords[0].value.status, "DATABASE_VERIFIED");
+    assert.equal(lostRecords.at(-1).value.status, "FAILED_REQUIRES_REVIEW");
+    assert.equal(lostRecords.some(({ name }) => name === "frontend-continuation-completed.json"), false);
+    assert.equal(lostRecords.every(({ value }) => value.trafficAuthorized === false), true);
+    records.push("idle-session-loss-retains-sanitized-failed-outcome");
+    phase = "successful-sql-failed-frontend-continuation";
+    const continuationDb = await connect("frontend_continuation", "frontend_migration");
+    await applyPrefix(continuationDb, artifact.migrations.slice(0, -1));
+    const failedFrontend = structuredClone(job); failedFrontend.target.database = "frontend_continuation";
+    failedFrontend.target.allowEmptyBootstrap = false; failedFrontend.target.approvedPendingTags = [artifact.migrations.at(-1).tag];
+    const failedRecords = [], failedDependencies = componentDependencies(failedFrontend, failedRecords); let continuationCalls = 0;
+    failedDependencies.afterDatabaseVerified = async (_database, verifySession) => {
+      continuationCalls++; await verifySession(); throw new Error("OWNED_DEPLOYMENT_RESPONSE_LOST");
+    };
+    await assert.rejects(component.runFrontendMigration(component.prepareFrontendMigration(candidate, failedFrontend, baseline), failedDependencies));
+    assert.equal(continuationCalls, 1); assert.equal(failedRecords[0].value.status, "DATABASE_VERIFIED");
+    assert.deepEqual(failedRecords[0].value.applied.map(({ tag }) => tag), failedFrontend.target.approvedPendingTags);
+    assert.equal(failedRecords.at(-1).value.status, "FAILED_REQUIRES_REVIEW");
+    assert.equal(failedRecords.at(-1).value.phase, "compatible-frontend-continuation");
+    assert.equal(failedRecords.every(({ value }) => value.trafficAuthorized === false), true);
+    assert.equal((await continuationDb.query("select count(*)::int as count from drizzle.__drizzle_migrations")).rows[0].count, artifact.migrations.length);
+    assert.equal((await continuationDb.query("select pg_try_advisory_lock(hashtext($1)) as locked", [FRONTEND_MIGRATION_LOCK])).rows[0].locked, true);
+    await continuationDb.query("select pg_advisory_unlock(hashtext($1))", [FRONTEND_MIGRATION_LOCK]);
+    records.push("failed-frontend-preserves-successful-sql-without-reapply-or-admission");
     phase = "data-bearing-upgrade";
     const upgrade = await connect("frontend_upgrade", "frontend_migration"), cutoff = artifact.migrations.findIndex(({ tag }) => tag.startsWith("0033_")); assert.ok(cutoff > 0);
     await applyPrefix(upgrade, artifact.migrations.slice(0, cutoff + 1));
