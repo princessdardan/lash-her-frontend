@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "date": "2026-11-04",
+  "runtime": "Node 24.18.0",
+  "status": "SOURCE_COMPONENT_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "e8ac13b03d2fb4e2032e9eb0d98f8bcb187c8874",
+  "sourceManifestSha256": "83bd60942f68ad7021c720d7ff864e803fcff511f44aeacaa86d97b75b0f76d1",
+  "files": {
+    "scripts/run-source-unit-tests.mjs": "988e0a8b4d51bacc7430bc0d9586768fad12f142f836ab9f6110aa99b6131fe8",
+    "src/app/api/webhooks/square/handler.ts": "396e8ed18ee8ee89ece9e4343299d3ab4f5c4128678454381a112bbe5bcbc6b0",
+    "src/app/api/webhooks/square/route.ts": "c87a0b1b518c2d58cfc7ced9a074ddbb98e8882dc1fd1d1b374777e4549e480b",
+    "src/lib/commerce/square-training-split.db.test.ts": "77dbeb8ea86b6e047b78caaf96310a50eb46a5b975bfd6d7a24ef872053588d2",
+    "src/lib/writer-admission/square-training-split.test.ts": "18916014933287b29ec5976ebd7df3b49bce8f50aad7e5bd33bea3d3c05c90a3"
+  },
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "deploymentPerformed": false,
+  "liveDatabaseOrProviderChanged": false,
+  "p200Complete": false,
+  "checks": {
+    "unit": {
+      "ordinary": 1855,
+      "serverOnly": 266,
+      "scripts": 31,
+      "securityDependencies": 14,
+      "totalPassed": 2166,
+      "failed": 0,
+      "skipped": 0
+    },
+    "focusedRegression": {
+      "totalPassed": 146,
+      "newSplitWebhookTests": 17,
+      "failed": 0
+    },
+    "platform": {
+      "totalPassed": 178,
+      "failed": 0
+    },
+    "typescript": "PASS",
+    "targetedEslint": "PASS",
+    "gitDiffCheck": "PASS",
+    "ownedPostgres16Business": {
+      "migrations": 80,
+      "files": 2,
+      "passed": 2,
+      "failed": 0,
+      "providerTouched": false,
+      "scope": [
+        "Actual live split reservation binding and per-order lock contention",
+        "Mock-payment split durable paid receipt and idempotent duplicate",
+        "Actual missing/scheduled enrollment queries retain operation-local uncertainty",
+        "Actual fully-notified pending enrollment completes without token or email send",
+        "Preceding training-card finalizer/enrollment database regression"
+      ]
+    },
+    "ownedPostgres16Protocols": {
+      "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+      "postgresMajor": 16,
+      "migrations": 80,
+      "checks": [
+        "fresh-apply",
+        "already-current",
+        "server-enforced-current-only-read-session",
+        "physical-database-lock-retained-through-compatible-frontend-continuation",
+        "idle-session-loss-retains-sanitized-failed-outcome",
+        "failed-frontend-preserves-successful-sql-without-reapply-or-admission",
+        "current-only-refuses-real-pending-migrations-without-applying",
+        "data-bearing-upgrade",
+        "lock-contention",
+        "pending-chain-refusal",
+        "lineage-refusal",
+        "schema-refusal",
+        "runtime-privilege-refusal",
+        "tls-certificate-refusal",
+        "exact-artifact-production-promotion"
+      ],
+      "providerTouched": false,
+      "admissionChecks": [
+        "bootstrap-is-closed-before-any-effect",
+        "outer-transactions-refuse-before-effects-and-cannot-hide-uncommitted-admission",
+        "historical-login-direct-table-role-spoof-and-null-bindings-refused",
+        "admission-refuses-policy-lock-contention",
+        "new-work-stops-independently-while-recovery-and-admitted-deferred-work-finish",
+        "both-controls-closed-and-zero-unresolved-required-for-ledger-drain",
+        "completed-operation-id-cannot-replay-effects",
+        "elapsed-time-never-drains-uncertain-work-and-only-explicit-reconciliation-clears-it",
+        "unresolved-operations-refuse-restoration",
+        "actual-backend-death-retains-active-operation-until-reviewed-reconciliation",
+        "lost-admission-acknowledgement-never-starts-effects-or-retries",
+        "lost-completion-acknowledgement-preserves-committed-ledger-without-replay",
+        "target-stale-epoch-and-concurrent-policy-changes-refuse",
+        "drain-observation-never-asserts-historical-fence-or-migration-authority"
+      ],
+      "historicalLoginChecks": [
+        "cross-database-session-refuses-before-cluster-wide-login-change",
+        "actual-membership-and-owned-object-refuse-before-retirement",
+        "owned-objects-in-another-database-refuse-without-a-legacy-session",
+        "role-name-alone-cannot-substitute-another-oid",
+        "committed-nologin-blocks-new-logins-but-existing-session-is-still-alive",
+        "existing-idle-and-writing-sessions-terminate-and-open-transaction-rolls-back",
+        "database-retirement-never-claims-provider-drain-or-sql-authority",
+        "disabled-login-replay-refuses-without-automatic-login-restoration",
+        "lost-commit-acknowledgement-keeps-login-disabled-and-never-retries",
+        "lost-termination-acknowledgement-keeps-login-disabled-and-never-retries",
+        "parent-physical-migration-lock-survives-success-and-failures"
+      ],
+      "writerRouteChecks": [
+        "closed-policy-and-unknown-source-or-legacy-login-refuse-before-route-effects",
+        "committed-admission-precedes-handler-and-closing-new-work-preserves-current-epoch-recovery",
+        "admitted-request-remains-active-through-all-awaited-handler-work",
+        "policy-close-between-observation-and-commit-refuses-without-starting-handler",
+        "caught-handler-5xx-records-uncertainty-and-never-acknowledges-webhook-success",
+        "caught-domain-errors-behind-http-success-remain-uncertain-until-owner-reconciliation",
+        "lost-settlement-acknowledgement-returns-503-without-replaying-successful-effects",
+        "actual-idle-runtime-connection-loss-retains-active-operation-and-retryable-response"
+      ],
+      "packagedCliVerified": false,
+      "sqlArtifactSha256": "775201b5352db56e2fe0402f5e9f9232e19cff131e38a71dca51dd1c72e77b3c",
+      "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+      "schemaBaselineSha256": "aa0dde73d73135fe922affee4e76a90ccdad2bde64e3277a3eccd39391132fb6"
+    },
+    "fullBuildBrowsersAndPostgres18": "PENDING_EXACT_HEAD_CI"
+  },
+  "review": {
+    "kind": "sequential local source review",
+    "scope": [
+      "Raw signature/classification/effect boundary and production wiring",
+      "Existing-ID capture/completion/cancellation without new payment input",
+      "Both parallel observations and compensation attempts awaited before settlement",
+      "Durable receipt/notification lifetime and preserved uncertainty",
+      "Admission-off compatibility and independent recovery adapters",
+      "Source-bound inventory/classification and excluded workers/branches"
+    ]
+  },
+  "environmentCorrections": [
+    "Initial validation used the independent main workspace dependency tree (Sanity6 instead of selected Sanity4, missing contract toolchain). Switched only the local dependency symlink to the preceding candidate matching dependency tree and reran the complete unit/script suite and TypeScript successfully. No source or dependency-manifest fix was needed."
+  ],
+  "limitations": [
+    "Controlled ledger/model store/provider terminals in route tests; real business PostgreSQL tests and inherited TLS ledger protocols remain separate.",
+    "No combined actual webhook/ledger/business-database flow under enforcement, real provider delivery, immutable runtime or live drain is claimed.",
+    "Unsuccessful split results, including confirmed cancellation, preserve their existing retryable webhook mapping.",
+    "Remaining writers/workers, actual producer/provider fencing, bootstrap and parent coordination remain open."
+  ]
+}
