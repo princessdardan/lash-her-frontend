@@ -369,6 +369,7 @@ export function createSquareWebhookPostHandler(
   runTrainingInvoiceRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
   runProductRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
   runTrainingCardRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
+  runTrainingSplitRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
 ): (req: Request) => Promise<Response> {
   return async function postSquareWebhook(req) {
     const env = await dependencies.getEnv();
@@ -649,6 +650,7 @@ export function createSquareWebhookPostHandler(
         event,
         runProductRecovery,
         runTrainingCardRecovery,
+        runTrainingSplitRecovery,
       );
       if (commerceResponse !== null) {
         return commerceResponse;
@@ -817,6 +819,7 @@ async function tryRecoverSquareCommercePayment(
   event: VerifiedSquareWebhookEvent,
   runProductRecovery: (task: () => Promise<Response>) => Promise<Response>,
   runTrainingCardRecovery: (task: () => Promise<Response>) => Promise<Response>,
+  runTrainingSplitRecovery: (task: () => Promise<Response>) => Promise<Response>,
 ): Promise<Response | null> {
   if (
     !event.eventType.startsWith("payment.") ||
@@ -855,8 +858,8 @@ async function tryRecoverSquareCommercePayment(
   }
 
   const recoverPayment = dependencies.recoverSquareCommercePayment;
-  // Classification above is SELECT-only. Product and training-card recovery
-  // have separate effect adapters; split recovery still needs qualification.
+  // Classification above is SELECT-only. Each commerce recovery kind has its
+  // own adapter around the complete awaited database/provider effect chain.
   const recover = async (): Promise<Response> => {
     let result: SquareCommerceRecoveryResult;
     try {
@@ -887,7 +890,7 @@ async function tryRecoverSquareCommercePayment(
   };
   if (kind === "product") return runProductRecovery(recover);
   if (kind === "training_card") return runTrainingCardRecovery(recover);
-  return recover();
+  return runTrainingSplitRecovery(recover);
 }
 
 function classifySquareCommerceCardOrder(

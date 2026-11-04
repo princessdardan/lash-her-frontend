@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "baseCommit": "e8ac13b03d2fb4e2032e9eb0d98f8bcb187c8874",
+  "sourceManifestSha256": "83bd60942f68ad7021c720d7ff864e803fcff511f44aeacaa86d97b75b0f76d1",
+  "releaseAuthority": false,
+  "scope": "classified training-split webhook recovery only",
+  "nodes": [
+    {
+      "file": "src/app/api/webhooks/square/route.ts",
+      "sourceSha256": "c87a0b1b518c2d58cfc7ced9a074ddbb98e8882dc1fd1d1b374777e4549e480b",
+      "audit": "Production supplies independent refund, invoice, product, card and split recovery adapters; booking/no-show/operational dispatch remains unqualified."
+    },
+    {
+      "file": "src/app/api/webhooks/square/handler.ts",
+      "sourceSha256": "396e8ed18ee8ee89ece9e4343299d3ab4f5c4128678454381a112bbe5bcbc6b0",
+      "audit": "Bounded raw signature dispatch and SELECT-only classification precede split admission; complete existing recovery result is awaited."
+    },
+    {
+      "file": "src/lib/commerce/square-commerce-webhook-recovery.ts",
+      "sourceSha256": "1ac712e1cb846a4e2d5ff5a663768bbeb5d7ea11617dc3ce6f677782e1bec8b9",
+      "audit": "Completed split event triggers existing live recovery with original order reference only; no event amount finalization or new payment input."
+    },
+    {
+      "file": "src/lib/commerce/training-paid-notification.ts",
+      "sourceSha256": "df68b5f510e73cf5e006e9be1b35a6a6f66fea873ad5220b1702581d6998a079",
+      "audit": "Actual pending lookup and token/URL preparation followed by awaited shared notification service. Null pending lookup marks uncertainty; known complete flags skip sends."
+    },
+    {
+      "file": "src/lib/commerce/training-enrollment-store.ts",
+      "sourceSha256": "0b86faeb6e4d38f3a09124db6bfb3d2821cdef3867930eae061d11558bccfc13",
+      "audit": "Selected pending lookup, token SELECT/conditional UPDATE, email claim UPDATE/SELECT and sent/failure UPDATE; no enrollment creation invoked."
+    },
+    {
+      "file": "src/lib/commerce/training-payment-notifications.ts",
+      "sourceSha256": "8843de4c0191bec75ca3582e232062b9e0d3847e1dbb0a3898d78e824d46346c",
+      "audit": "Production binds shared notification service to actual store and email functions, with awaited return."
+    },
+    {
+      "file": "src/lib/commerce/training-payment-notification-service.ts",
+      "sourceSha256": "644e498d9f638a0468859adf0b4627c33f7a0dba60ec43bac354528be6c527f9",
+      "audit": "Sequential claim/send/persistence/failure chain. Null claim/false persistence retain inherited operation-local uncertainty."
+    },
+    {
+      "file": "src/lib/commerce/training-payment-email.ts",
+      "sourceSha256": "82058979d37f8cf67e1f895abadd2eeb1314144ea3e7ba65ccb9da696430fdaa",
+      "audit": "Selected student/staff sends await transactional email and retain deterministic per-order provider keys."
+    },
+    {
+      "file": "src/lib/transactional-email.ts",
+      "sourceSha256": "85f2960027a7d40ce3639a8c2c25a5d364d4c6731a981a3f26542e248da0e6ec",
+      "audit": "Awaits Resend send and rejects SDK failures/missing acknowledgement; uncertainty preserved on thrown/caught outcomes."
+    },
+    {
+      "file": "src/lib/resend-platform.ts",
+      "sourceSha256": "4a3528b39cab7b6667aaf0065bc22a3e967a5fca4613989184d3cdb0d8f1da03",
+      "audit": "Selected template configuration performs local environment/template construction. Other exports are not invoked."
+    },
+    {
+      "file": "src/lib/security/bounded-text-body.ts",
+      "sourceSha256": "2677dd15cc681f923c9872563a21c30e442f440bb49e6ab7c2f8dbcb514eebc2",
+      "audit": "Byte limit before HMAC work."
+    },
+    {
+      "file": "src/lib/booking/square-webhook.ts",
+      "sourceSha256": "a3753fb8ef4feab4457ef179618b46623bca227eb231793f98f60aef91cb1167",
+      "audit": "Raw HMAC verification and sanitized parsing with no business effects."
+    },
+    {
+      "file": "src/lib/writer-admission/runtime.ts",
+      "sourceSha256": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
+      "audit": "Actual source/producer/target/login/TLS and epoch checks, operation begin/finish and uncertainty handling."
+    },
+    {
+      "file": "src/lib/writer-admission/context.ts",
+      "sourceSha256": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+      "audit": "Operation-local uncertainty survives success-shaped domain results; inert outside admitted execution."
+    },
+    {
+      "file": "src/lib/writer-admission/route.ts",
+      "sourceSha256": "6c7a496c8f866da8abe89f4e48cfa18d5631ad543c767e7b83e66433082879c5",
+      "audit": "Nonstreaming adapter awaits task and maps uncertain admission outcomes to sanitized retryable 503."
+    },
+    {
+      "file": "src/lib/private-db/client.ts",
+      "sourceSha256": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+      "audit": "Existing shared business PostgreSQL pool; ledger binding must match reviewed target/login."
+    },
+    {
+      "file": "src/lib/commerce/square-training-split-live.ts",
+      "audit": "Per-order transaction advisory lock spans independently committed state saves, existing-payment reads/capture/completion/cancellation, paid receipt and notification work. Recovery cannot authorize or create an order without payment input. Worker export remains excluded.",
+      "sourceSha256": "7fed0738b134dd45fdb2d7284c884fa8d9d7f383f3c65ee9cf2bd46f33cc5f6c"
+    },
+    {
+      "file": "src/lib/commerce/square-training-split.ts",
+      "audit": "Both provider observations and both compensation attempts settle before return. Existing IDs/keys preserved; capture/cancel/partial/error uncertainty remains operation-local; notifications awaited on first and duplicate success.",
+      "sourceSha256": "7041de5496fca80062ad844cbf85c881b714837bbf5a946b906a164e16398038"
+    },
+    {
+      "file": "src/lib/payments/square/payments-client.ts",
+      "audit": "Selected get/complete/cancel/cancelByKey and split PayOrder await fetch and validated response; no detached tasks or automatic local retries. New create/refund paths not called by this recovery execution.",
+      "sourceSha256": "f02d73e3ba4fe0dc5cb28a43f2d180e83431f83faddca5e9167a5efd309017da"
+    },
+    {
+      "file": "src/lib/payments/square/training-split-policy.ts",
+      "audit": "Local split amount validation; no external effects.",
+      "sourceSha256": "4c4cd09518161d16dbf4a268c52255692ed5946aced156870dd4ee8ceaeb095d"
+    },
+    {
+      "file": "src/lib/env/private-checkout.ts",
+      "audit": "Local environment and mock-mode selection; no external effects.",
+      "sourceSha256": "e6d50773842ddc70b3d32422c41028f5214d4724ac519bceaadc4578226d8f04"
+    }
+  ],
+  "uncertainty": [
+    "capture/cancellation pending or partial capture/manual review",
+    "inherited caught split failures",
+    "missing/scheduled enrollment ambiguity and unconfirmed notification claims/writes",
+    "thrown/caught failures, connection loss, settlement loss or process death"
+  ],
+  "excluded": [
+    "service booking, no-show and operational-payment dispatch",
+    "independent checkout/split-status calls and reconciliation/notification workers",
+    "actual deployment/provider inventory and historical fencing, bootstrap and parent coordination"
+  ],
+  "limits": [
+    "Route tests control ledger and model store/provider terminals; actual live split PostgreSQL tests use mock-payment mode and operation-local context. Inherited owned TLS ledger protocols are separate.",
+    "No combined actual webhook/ledger/business database under enforcement, real provider delivery, immutable runtime or live drain qualification."
+  ]
+}

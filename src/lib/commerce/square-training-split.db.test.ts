@@ -5,9 +5,10 @@ const scenario = String.raw`
   import assert from "node:assert/strict";
   import { eq, sql } from "drizzle-orm";
   import { getPrivateDb, closePrivateDbPool } from "./src/lib/private-db/client.ts";
-  import { checkoutOrders } from "./src/lib/private-db/schema.ts";
+  import { checkoutOrders, trainingEnrollments } from "./src/lib/private-db/schema.ts";
   import { createPendingSquareTrainingCardOrder, findCheckoutOrderByOrderId } from "./src/lib/commerce/order-store.ts";
   import { chargeLiveTrainingSplit } from "./src/lib/commerce/square-training-split-live.ts";
+  import { withWriterOperationContext } from "./src/lib/writer-admission/context.ts";
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
   process.env.PAYMENT_GATEWAY_MODE = "mock";
   process.env.NODE_ENV = "test";
@@ -45,8 +46,30 @@ const scenario = String.raw`
     assert.equal(saved.providerMetadata.splitPayment.afterpayAmountCents, 200000);
     assert.notEqual(saved.providerMetadata.splitPayment.cardPaymentId, saved.providerMetadata.splitPayment.afterpayPaymentId);
     assert.equal((await chargeLiveTrainingSplit({ orderReference: order.orderId })).ok, true);
+    // A paid split's notification no-op is not completion evidence under admission.
+    await assert.rejects(withWriterOperationContext(() => chargeLiveTrainingSplit({
+      orderReference: order.orderId,
+    })), /WRITER_OPERATION_REQUIRES_REVIEW/);
+    const [enrollment] = await db.insert(trainingEnrollments).values({
+      checkoutOrderId: order.databaseId, checkoutEmail: input.customerEmail,
+      productSnapshot: { id: "owned-training", title: "Owned Training", sku: "OWNED", priceCents: 350000, currency: "CAD" },
+      programSnapshot: { id: "owned-training", slug: "owned-training", title: "Owned Training" },
+      schedulingStatus: "pending", studentPaymentEmailSentAt: new Date(), staffAlertedAt: new Date(),
+    }).returning();
+    const duplicate = await withWriterOperationContext(() => chargeLiveTrainingSplit({ orderReference: order.orderId }));
+    assert.equal(duplicate.ok, true); assert.equal(duplicate.transition, "already_applied");
+    await db.update(trainingEnrollments).set({ schedulingStatus: "scheduled", tokenUsedAt: new Date() })
+      .where(eq(trainingEnrollments.id, enrollment.id));
+    await assert.rejects(withWriterOperationContext(() => chargeLiveTrainingSplit({
+      orderReference: order.orderId,
+    })), /WRITER_OPERATION_REQUIRES_REVIEW/);
+    const replayed = await findCheckoutOrderByOrderId(order.orderId);
+    assert.deepEqual(replayed.providerMetadata.splitPayment, saved.providerMetadata.splitPayment);
   } finally {
-    if (order) await db.delete(checkoutOrders).where(eq(checkoutOrders.id, order.databaseId));
+    if (order) {
+      await db.delete(trainingEnrollments).where(eq(trainingEnrollments.checkoutOrderId, order.databaseId));
+      await db.delete(checkoutOrders).where(eq(checkoutOrders.id, order.databaseId));
+    }
     await closePrivateDbPool();
   }
 `;
