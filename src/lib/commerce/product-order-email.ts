@@ -1,5 +1,7 @@
 import "server-only";
 
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+
 import type {
   CheckoutOrderLineItemSnapshot,
   CheckoutOrderShippingAddressSnapshot,
@@ -121,7 +123,10 @@ export async function sendProductOrderConfirmationEmailForOrder(
   dependencies: SendProductOrderConfirmationEmailForOrderDependencies = defaultSendProductOrderConfirmationEmailForOrderDependencies,
 ): Promise<void> {
   if (dependencies.enqueuePaidProductOrderConfirmationEmail) {
-    await dependencies.enqueuePaidProductOrderConfirmationEmail({ orderId });
+    const queued = await dependencies.enqueuePaidProductOrderConfirmationEmail({ orderId });
+    // A null claim does not distinguish prior delivery from an interrupted
+    // claimant that never persisted its outbox handoff.
+    if (queued === null) markWriterOperationUncertain();
     return;
   }
   const claimed = await dependencies.claimProductOrderConfirmationEmail({
@@ -129,17 +134,19 @@ export async function sendProductOrderConfirmationEmailForOrder(
   });
 
   if (claimed === null) {
+    markWriterOperationUncertain();
     return;
   }
 
   try {
-    await dependencies.enqueueCustomerEmail({
+    const queued = await dependencies.enqueueCustomerEmail({
       kind: "product_order_confirmation",
       orderDatabaseId: claimed.orderDatabaseId,
       payload: claimed,
       providerIdempotencyKey: `product-confirmation:${claimed.orderId}`,
       recipient: claimed.customerEmail,
     });
+    if (!queued) markWriterOperationUncertain();
   } catch (error) {
     const message = getErrorMessage(error);
     await dependencies.recordProductOrderConfirmationEmailFailure({

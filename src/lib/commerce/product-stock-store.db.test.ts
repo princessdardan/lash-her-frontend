@@ -10,6 +10,7 @@ const dbTestSkipReason = process.env.TEST_DATABASE_URL
 // release, and untracked-line passthrough.
 const scenario = String.raw`
   import assert from "node:assert/strict";
+  import { withWriterOperationContext } from "./src/lib/writer-admission/context.ts";
   import crypto from "node:crypto";
   import { and, eq, isNull } from "drizzle-orm";
   import { closePrivateDbPool, getPrivateDb } from "./src/lib/private-db/client.ts";
@@ -117,6 +118,25 @@ const scenario = String.raw`
       .from(productStockMovements)
       .where(eq(productStockMovements.orderId, orderD));
     assert.equal(untrackedRows.length, 0, "untracked line records no movement");
+    // A recorded commit movement cannot prove the conditional stock UPDATE
+    // actually changed inventory. Preserve off-mode behavior but refuse an
+    // admitted completion when counters no longer cover the held reservation.
+    for (const admitted of [false, true]) {
+      await db.update(productStock).set({ onHand: 5, reserved: 0 })
+        .where(eq(productStock.productId, productId));
+      const brokenOrder = "stock-unconfirmed-" + crypto.randomUUID();
+      await db.transaction(tx => reserveProductStockInTransaction(tx, brokenOrder, lines));
+      await db.update(productStock).set({ onHand: 0, reserved: 0 })
+        .where(eq(productStock.productId, productId));
+      const commit = () => db.transaction(tx => commitProductStockForOrderInTransaction(tx, brokenOrder));
+      if (admitted) await assert.rejects(withWriterOperationContext(commit), /WRITER_OPERATION_REQUIRES_REVIEW/);
+      else await commit();
+      assert.deepEqual(await readRow(), { onHand: 0, reserved: 0 });
+      const movements = await db.select().from(productStockMovements).where(
+        and(eq(productStockMovements.orderId, brokenOrder), eq(productStockMovements.kind, "commit")),
+      );
+      assert.equal(movements.length, 1, "uncertainty survives a committed business transaction");
+    }
   } finally {
     await db.delete(productStock).where(eq(productStock.productId, productId));
     await closePrivateDbPool();

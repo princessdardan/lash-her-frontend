@@ -7,6 +7,7 @@ const dbTestSkipReason = process.env.TEST_DATABASE_URL
 
 const scenario = String.raw`
   import assert from "node:assert/strict";
+  import { withWriterOperationContext } from "./src/lib/writer-admission/context.ts";
   import { eq, inArray } from "drizzle-orm";
   import { closePrivateDbPool, getPrivateDb } from "./src/lib/private-db/client.ts";
   import { checkoutOrders, customerEmailOutbox, marketingContactSubmissions } from "./src/lib/private-db/schema.ts";
@@ -62,6 +63,13 @@ const scenario = String.raw`
       now: new Date("2026-08-15T12:00:00.000Z"),
     });
     assert.equal(queued?.orderDatabaseId, order.id);
+    // An expired claim can reach INSERT-on-conflict without a new handoff.
+    // Keep the ordinary idempotent result, but require reconciliation under
+    // admission rather than inferring a completed notification from false.
+    await assert.rejects(withWriterOperationContext(() => enqueuePaidProductOrderConfirmationEmail({
+      orderId: order.orderId,
+      now: new Date("2026-08-15T13:00:00.000Z"),
+    })), /WRITER_OPERATION_REQUIRES_REVIEW/);
     const [stored] = await db.select().from(customerEmailOutbox).where(
       eq(customerEmailOutbox.providerIdempotencyKey, "product-confirmation:" + order.orderId),
     );
