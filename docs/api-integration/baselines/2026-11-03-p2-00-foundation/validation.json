@@ -55,6 +55,13 @@
     "postgres18.json": "bf850ef0b87339a9666cf996f2f7e6f2a1c0dfb53ce4f53fa32c224fbf175b32",
     "platform-tests.log": "1a7a08e81257919a3eb7fe72674dd4774f97660fda0e742b2df2b6c8e3a0383a",
     "focused-tests.log": "3faa7bb4ea1478e0be1cbd3db4a436f28afcd30e8d918853935337256eed4165",
-    "host-regression.log": "82a41d8e916266a0b3a4c59275e076ce118fc865f46c4d164fadbaeab6486a3c"
+    "host-regression.log": "82a41d8e916266a0b3a4c59275e076ce118fc865f46c4d164fadbaeab6486a3c",
+    "staging-deployment-observation.json": "c20151036e88211bbc3ada3eb2dc9d06a3f84a58442b59e13d24755d876d35ca"
+  },
+  "providerReadOnlyObservation": {
+    "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "retainedDeployments": 25,
+    "readyDeployments": 7,
+    "sharedDatabaseProducerInventoryVerified": false
   }
 }
