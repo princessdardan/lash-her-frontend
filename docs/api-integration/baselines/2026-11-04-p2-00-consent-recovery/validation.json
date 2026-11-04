@@ -1,0 +1,231 @@
+{
+  "version": 1,
+  "task": "P2-00",
+  "status": "CONSENT_RECOVERY_ADMISSION_COMPONENT_VERIFIED_DISABLED_BY_DEFAULT",
+  "baseSourceCommit": "b8e8879559aeae864d259d080a4d5c50544e86ee",
+  "verifiedAt": "2026-11-04T17:56:45.861828+00:00",
+  "nodeVersion": "24.18.0",
+  "precedingReview": {
+    "pr": 72,
+    "reviewedHead": "a28e1d3bcbd8682cd36342194ddd1a71734de82d",
+    "findings": [],
+    "scope": "Training admission changes in session PR #72 only.",
+    "focusedTestsPassed": 22,
+    "ciPassedJobs": 10,
+    "ciRun": "https://github.com/princessdardan/lash-her-frontend/actions/runs/41782198018",
+    "mergeCommit": "b8e8879559aeae864d259d080a4d5c50544e86ee"
+  },
+  "wiredEntrypoints": [
+    {
+      "path": "src/app/api/webhooks/resend/route.ts",
+      "method": "POST",
+      "kind": "recovery"
+    },
+    {
+      "path": "src/app/api/webhooks/highlevel/route.ts",
+      "method": "POST",
+      "kind": "recovery"
+    },
+    {
+      "path": "src/app/api/marketing/unsubscribe/route.ts",
+      "method": "POST",
+      "kind": "recovery"
+    }
+  ],
+  "readOnlyEntrypointsUnchanged": [
+    "GET /api/marketing/unsubscribe"
+  ],
+  "testResults": {
+    "unitTotal": 2104,
+    "unitGroups": {
+      "source": 1853,
+      "serverOnlySource": 206,
+      "scripts": 31,
+      "securityDependencies": 14
+    },
+    "focusedAdmissionTests": 30,
+    "newConsentRecoveryTests": 8,
+    "platform": 178,
+    "typescript": "passed",
+    "eslint": "passed",
+    "diffCheck": "passed",
+    "fullBuild": "Not rerun locally: previous local build requires an unavailable Sanity read token. Full build and browser qualification remain for this head CI."
+  },
+  "ownedPostgres": {
+    "16": {
+      "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+      "postgresMajor": 16,
+      "migrations": 80,
+      "checks": [
+        "fresh-apply",
+        "already-current",
+        "server-enforced-current-only-read-session",
+        "physical-database-lock-retained-through-compatible-frontend-continuation",
+        "idle-session-loss-retains-sanitized-failed-outcome",
+        "failed-frontend-preserves-successful-sql-without-reapply-or-admission",
+        "current-only-refuses-real-pending-migrations-without-applying",
+        "data-bearing-upgrade",
+        "lock-contention",
+        "pending-chain-refusal",
+        "lineage-refusal",
+        "schema-refusal",
+        "runtime-privilege-refusal",
+        "tls-certificate-refusal",
+        "exact-artifact-production-promotion"
+      ],
+      "providerTouched": false,
+      "admissionChecks": [
+        "bootstrap-is-closed-before-any-effect",
+        "outer-transactions-refuse-before-effects-and-cannot-hide-uncommitted-admission",
+        "historical-login-direct-table-role-spoof-and-null-bindings-refused",
+        "admission-refuses-policy-lock-contention",
+        "new-work-stops-independently-while-recovery-and-admitted-deferred-work-finish",
+        "both-controls-closed-and-zero-unresolved-required-for-ledger-drain",
+        "completed-operation-id-cannot-replay-effects",
+        "elapsed-time-never-drains-uncertain-work-and-only-explicit-reconciliation-clears-it",
+        "unresolved-operations-refuse-restoration",
+        "actual-backend-death-retains-active-operation-until-reviewed-reconciliation",
+        "lost-admission-acknowledgement-never-starts-effects-or-retries",
+        "lost-completion-acknowledgement-preserves-committed-ledger-without-replay",
+        "target-stale-epoch-and-concurrent-policy-changes-refuse",
+        "drain-observation-never-asserts-historical-fence-or-migration-authority"
+      ],
+      "historicalLoginChecks": [
+        "cross-database-session-refuses-before-cluster-wide-login-change",
+        "actual-membership-and-owned-object-refuse-before-retirement",
+        "owned-objects-in-another-database-refuse-without-a-legacy-session",
+        "role-name-alone-cannot-substitute-another-oid",
+        "committed-nologin-blocks-new-logins-but-existing-session-is-still-alive",
+        "existing-idle-and-writing-sessions-terminate-and-open-transaction-rolls-back",
+        "database-retirement-never-claims-provider-drain-or-sql-authority",
+        "disabled-login-replay-refuses-without-automatic-login-restoration",
+        "lost-commit-acknowledgement-keeps-login-disabled-and-never-retries",
+        "lost-termination-acknowledgement-keeps-login-disabled-and-never-retries",
+        "parent-physical-migration-lock-survives-success-and-failures"
+      ],
+      "writerRouteChecks": [
+        "closed-policy-and-unknown-source-or-legacy-login-refuse-before-route-effects",
+        "committed-admission-precedes-handler-and-closing-new-work-preserves-current-epoch-recovery",
+        "admitted-request-remains-active-through-all-awaited-handler-work",
+        "policy-close-between-observation-and-commit-refuses-without-starting-handler",
+        "caught-handler-5xx-records-uncertainty-and-never-acknowledges-webhook-success",
+        "caught-domain-errors-behind-http-success-remain-uncertain-until-owner-reconciliation",
+        "lost-settlement-acknowledgement-returns-503-without-replaying-successful-effects",
+        "actual-idle-runtime-connection-loss-retains-active-operation-and-retryable-response"
+      ],
+      "sourceCommit": "5ad0f85d51d828b4b76994380dee82053cdf07f5",
+      "migrationImageDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "packagedCliVerified": false,
+      "sqlArtifactSha256": "775201b5352db56e2fe0402f5e9f9232e19cff131e38a71dca51dd1c72e77b3c",
+      "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+      "schemaBaselineSha256": "aa0dde73d73135fe922affee4e76a90ccdad2bde64e3277a3eccd39391132fb6"
+    },
+    "18": {
+      "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+      "postgresMajor": 18,
+      "migrations": 80,
+      "checks": [
+        "fresh-apply",
+        "already-current",
+        "server-enforced-current-only-read-session",
+        "physical-database-lock-retained-through-compatible-frontend-continuation",
+        "idle-session-loss-retains-sanitized-failed-outcome",
+        "failed-frontend-preserves-successful-sql-without-reapply-or-admission",
+        "current-only-refuses-real-pending-migrations-without-applying",
+        "data-bearing-upgrade",
+        "lock-contention",
+        "pending-chain-refusal",
+        "lineage-refusal",
+        "schema-refusal",
+        "runtime-privilege-refusal",
+        "tls-certificate-refusal",
+        "exact-artifact-production-promotion"
+      ],
+      "providerTouched": false,
+      "admissionChecks": [
+        "bootstrap-is-closed-before-any-effect",
+        "outer-transactions-refuse-before-effects-and-cannot-hide-uncommitted-admission",
+        "historical-login-direct-table-role-spoof-and-null-bindings-refused",
+        "admission-refuses-policy-lock-contention",
+        "new-work-stops-independently-while-recovery-and-admitted-deferred-work-finish",
+        "both-controls-closed-and-zero-unresolved-required-for-ledger-drain",
+        "completed-operation-id-cannot-replay-effects",
+        "elapsed-time-never-drains-uncertain-work-and-only-explicit-reconciliation-clears-it",
+        "unresolved-operations-refuse-restoration",
+        "actual-backend-death-retains-active-operation-until-reviewed-reconciliation",
+        "lost-admission-acknowledgement-never-starts-effects-or-retries",
+        "lost-completion-acknowledgement-preserves-committed-ledger-without-replay",
+        "target-stale-epoch-and-concurrent-policy-changes-refuse",
+        "drain-observation-never-asserts-historical-fence-or-migration-authority"
+      ],
+      "historicalLoginChecks": [
+        "cross-database-session-refuses-before-cluster-wide-login-change",
+        "actual-membership-and-owned-object-refuse-before-retirement",
+        "owned-objects-in-another-database-refuse-without-a-legacy-session",
+        "role-name-alone-cannot-substitute-another-oid",
+        "committed-nologin-blocks-new-logins-but-existing-session-is-still-alive",
+        "existing-idle-and-writing-sessions-terminate-and-open-transaction-rolls-back",
+        "database-retirement-never-claims-provider-drain-or-sql-authority",
+        "disabled-login-replay-refuses-without-automatic-login-restoration",
+        "lost-commit-acknowledgement-keeps-login-disabled-and-never-retries",
+        "lost-termination-acknowledgement-keeps-login-disabled-and-never-retries",
+        "parent-physical-migration-lock-survives-success-and-failures"
+      ],
+      "writerRouteChecks": [
+        "closed-policy-and-unknown-source-or-legacy-login-refuse-before-route-effects",
+        "committed-admission-precedes-handler-and-closing-new-work-preserves-current-epoch-recovery",
+        "admitted-request-remains-active-through-all-awaited-handler-work",
+        "policy-close-between-observation-and-commit-refuses-without-starting-handler",
+        "caught-handler-5xx-records-uncertainty-and-never-acknowledges-webhook-success",
+        "caught-domain-errors-behind-http-success-remain-uncertain-until-owner-reconciliation",
+        "lost-settlement-acknowledgement-returns-503-without-replaying-successful-effects",
+        "actual-idle-runtime-connection-loss-retains-active-operation-and-retryable-response"
+      ],
+      "sourceCommit": "ba18739ddf3f657eece69f8e36d8e95f071282b3",
+      "migrationImageDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "packagedCliVerified": false,
+      "sqlArtifactSha256": "775201b5352db56e2fe0402f5e9f9232e19cff131e38a71dca51dd1c72e77b3c",
+      "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+      "schemaBaselineSha256": "b6b8f15ba8a8e503763920085c290bb4aaeb637c5f41875939974a1276f79276"
+    }
+  },
+  "verificationLimits": [
+    "Actual consent handler factories use injected ledger and business-persistence dependencies.",
+    "Real Resend SDK Svix and HighLevel Ed25519 signature verification runs on exact raw bodies using owned fixture keys, without provider access.",
+    "Owned PostgreSQL fixtures exercise the inherited actual TypeScript adapter/protocol, not the combined real consent Drizzle flow under enforcement.",
+    "Existing CI business DB and browser tests use admission off.",
+    "No live webhook delivery, worker drain, producer, bootstrap or immutable runtime image is qualified."
+  ],
+  "scope": {
+    "admissionDefault": "off",
+    "liveDatabaseTouched": false,
+    "liveStagingChanged": false,
+    "deployed": false,
+    "pendingSqlEnabled": false,
+    "allApplicationWritersAdmitted": false,
+    "historicalWritersFenced": false,
+    "providerEffectsDrained": false,
+    "migrationAuthorized": false,
+    "p2Complete": false
+  },
+  "remaining": [
+    "Remaining route/action/worker and deferred/redirect admission coverage.",
+    "Exhaustive historical deployment/provider inventory and actual fencing.",
+    "Separately reviewed initial live bootstrap and exact producer/target qualification.",
+    "Parent migration/deployment/recovery coordinator and deliberate restoration."
+  ],
+  "sourceSha256": {
+    "docs/api-integration/frontend-admission-ledger.md": "5c97c859c10a6a6935c72d2eef9ad2bf0701e0e4067938a60d1db2deee5221d6",
+    "docs/api-integration/frontend-consent-recovery-admission.md": "0c1bbadb61cad829705377fb2fca25e171283a55b0e9b975093922c0b73b4c63",
+    "docs/api-integration/frontend-training-admission.md": "afc56970b0fe1c13a15cda1abd9c42af2092f8e8b89c1acb421aada319b4c7dd",
+    "docs/api-integration/frontend-writer-route-admission.md": "bae206e3581267b6b1c5746719e0ced8f395937b7204603f11ac7bff74c6bf48",
+    "docs/api-integration/p2-00-frontend-quiescence.md": "bd4d06f21723c35b56688876eeed935c52a0a5bb228ff38f2bc98d00a18c87c4",
+    "scripts/run-source-unit-tests.mjs": "fa4a1269e1f6d2e5e63b6a54a8e1bad87233f1c5be063570556d6598a0f6d102",
+    "src/app/api/marketing/unsubscribe/handler.ts": "7b9cd19a7b203c88fd54b01d94f732a2af4c9fe691a1201fccfa5023a4c775b5",
+    "src/app/api/marketing/unsubscribe/route.ts": "2415aa587d53dbb46a0d03ef79dcdd347d260c2384d610f9a677125c9e10a12b",
+    "src/app/api/webhooks/highlevel/route.ts": "2d2c209d7b23773731373cf6a5f2ac3b4135c2144c874fe74997f461081f391e",
+    "src/app/api/webhooks/resend/route.ts": "22e1a574012ec9d8f9db7b94c59cf76155149c694c6be8b113d64090eabff5f2",
+    "src/lib/writer-admission/consent-recovery.test.ts": "1472196364e4e2b1e42e5adf2d8be95533d9f79cd82b5a618b2884f02357d6b4",
+    "src/lib/writer-admission/route.ts": "6c7a496c8f866da8abe89f4e48cfa18d5631ad543c767e7b83e66433082879c5"
+  }
+}
