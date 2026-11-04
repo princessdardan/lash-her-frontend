@@ -51,7 +51,7 @@ export async function sendShippingPolicyAlert(input: {
   }
   if (!recipients.length)
     throw new Error("No active fulfillment owner to receive shipping alerts");
-  await Promise.all(
+  const results = await Promise.allSettled(
     recipients.map((recipient) =>
       enqueueCustomerEmail(
         {
@@ -69,6 +69,10 @@ export async function sendShippingPolicyAlert(input: {
       ),
     ),
   );
+  // A refund recovery operation must retain admission until every enqueue has
+  // stopped, including when another recipient's enqueue failed first.
+  const failed = results.find((result) => result.status === "rejected");
+  if (failed?.status === "rejected") throw failed.reason;
   return recipients.length;
 }
 
