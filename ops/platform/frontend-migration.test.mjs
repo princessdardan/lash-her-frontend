@@ -35,6 +35,7 @@ function runner(f, overrides = {}) {
       calls.push(sql);
       let rows = [];
       if (sql.startsWith("select pg_backend_pid")) rows = [{ pid: 123, current_user: f.job.target.user, database: f.job.target.database, major: 18 }];
+      else if (sql.includes("from pg_locks")) rows = [{ held: state.locked }];
       else if (sql.startsWith("select pg_try_advisory_lock")) { state.locked = true; rows = [{ locked: true }]; }
       else if (sql.startsWith("select pg_advisory_unlock")) state.locked = false;
       else if (sql.startsWith("select to_regclass")) rows = [{ present: false }];
@@ -100,6 +101,76 @@ test("frontend apply uses one locked session, records before unlock and separate
   assert.equal(r.records[0].value.applied.length, f.artifact.migrations.length);
   assert.ok(!JSON.stringify(r.records).includes("owned-private-marker"));
   assert.equal(r.calls.filter((sql) => sql === "begin").length, f.artifact.migrations.length);
+});
+
+test("compatible frontend continuation retains the physical lock after the durable database receipt", async () => {
+  const f = fixture(), r = runner(f); let continued = false;
+  r.dependencies.afterDatabaseVerified = async (database, verifySession) => {
+    assert.equal(r.state.locked, true); assert.equal(r.state.ended, false);
+    assert.equal(r.records[0].name, "database-receipt.json");
+    assert.equal(r.records[1].name, "frontend-continuation-started.json");
+    assert.equal(database.status, "DATABASE_VERIFIED");
+    assert.throws(() => database.target.host = "other.example.invalid", TypeError);
+    assert.throws(() => database.applied.pop(), TypeError);
+    await verifySession(); continued = true;
+  };
+  const result = await r.run();
+  assert.equal(continued, true); assert.equal(result.status, "DATABASE_VERIFIED");
+  assert.equal(result.trafficAuthorized, false);
+  assert.deepEqual(r.records.map(({ name }) => name), ["database-receipt.json", "frontend-continuation-started.json",
+    "frontend-continuation-completed.json", "job-outcome.json"]);
+});
+
+test("failed or uncertain frontend continuation preserves successful SQL and never repeats it or authorizes traffic", async () => {
+  const f = fixture(), r = runner(f); let called = 0;
+  r.dependencies.afterDatabaseVerified = async () => { called++; throw new Error("lost-promotion-response owned-private-marker"); };
+  await assert.rejects(r.run(), (error) => !error.message.includes("owned-private-marker"));
+  assert.equal(called, 1);
+  assert.equal(r.calls.filter((sql) => sql === "begin").length, f.artifact.migrations.length);
+  assert.equal(r.records[0].value.status, "DATABASE_VERIFIED");
+  assert.equal(r.records[0].value.applied.length, f.artifact.migrations.length);
+  assert.equal(r.records.at(-1).value.status, "FAILED_REQUIRES_REVIEW");
+  assert.equal(r.records.at(-1).value.phase, "compatible-frontend-continuation");
+  assert.equal(r.records.some(({ name }) => name === "frontend-continuation-completed.json"), false);
+  assert.equal(r.state.locked, false); assert.equal(r.state.ended, true);
+  assert.equal(r.records.every(({ value }) => value.trafficAuthorized === false), true);
+});
+
+test("lost database session, missing lock and post-deployment drift cannot qualify the continuation", async () => {
+  for (const mode of ["session", "lock", "schema", "lineage", "grants"]) {
+    const f = fixture(), r = runner(f), original = r.client.query; let continued = false;
+    r.dependencies.afterDatabaseVerified = async () => { continued = true; };
+    r.client.query = async (sql) => {
+      const result = await original(sql);
+      if (continued) {
+        if (mode === "session" && sql.startsWith("select pg_backend_pid")) result.rows[0].pid = 999;
+        if (mode === "lock" && sql.includes("from pg_locks")) result.rows[0].held = false;
+        if (mode === "schema" && sql.includes("p.proname")) result.rows.push({ unexpected: true });
+        if (mode === "lineage" && sql.startsWith("select hash, created_at")) result.rows.pop();
+        if (mode === "grants" && sql.includes("from pg_default_acl")) result.rows = [];
+      }
+      return result;
+    };
+    await assert.rejects(r.run());
+    assert.equal(r.records[0].value.status, "DATABASE_VERIFIED");
+    assert.equal(r.records.at(-1).value.status, "FAILED_REQUIRES_REVIEW");
+    assert.equal(r.records.some(({ name }) => name === "frontend-continuation-completed.json"), false);
+  }
+});
+
+test("continuation-looking JSON is refused before credentials and missing durable intent stops deployment", async () => {
+  const f = fixture(); let acquired = false, called = false;
+  const forged = runner(f, { afterDatabaseVerified: { status: "approved" }, getUrl: () => { acquired = true; } });
+  await assert.rejects(forged.run(), /IN_PROCESS_FRONTEND_CONTINUATION_REQUIRED/u); assert.equal(acquired, false);
+  const r = runner(f), record = r.dependencies.record;
+  r.dependencies.afterDatabaseVerified = async () => { called = true; };
+  r.dependencies.record = (name, value) => {
+    if (name === "frontend-continuation-started.json") throw new Error("owned-private-marker");
+    record(name, value);
+  };
+  await assert.rejects(r.run()); assert.equal(called, false);
+  assert.equal(r.records[0].value.status, "DATABASE_VERIFIED");
+  assert.equal(r.records.at(-1).value.status, "FAILED_REQUIRES_REVIEW");
 });
 
 test("current frontend uses a server-enforced read-only session and issues no schema or journal writes", async () => {

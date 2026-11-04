@@ -10,6 +10,13 @@ import { readMigrationCatalog } from "./frontend-schema.mjs";
 import { assertSourceCheckout } from "./source-checkout.mjs";
 
 export const FRONTEND_MIGRATION_LOCK = "lash-her:private-db:migrations";
+// hashtext is sign-extended by pg_advisory_lock(bigint). Match both halves,
+// including negative hashes, rather than assuming pg_locks.classid is zero.
+const HELD_FRONTEND_LOCK = `select exists(select 1 from pg_locks where locktype='advisory'
+  and pid=pg_backend_pid() and database=(select oid from pg_database where datname=current_database())
+  and classid=((hashtext($1)::bigint >> 32) & 4294967295)::oid
+  and objid=(hashtext($1)::bigint & 4294967295)::oid and objsubid=1
+  and mode='ExclusiveLock' and granted) as held`;
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const demand = (ok, code) => { if (!ok) throw new Error(code); };
@@ -170,6 +177,8 @@ export async function runFrontendMigration(prepared, dependencies) {
   const { job, artifact, baseline } = prepared, target = job.target;
   const readOnlyExpected = target.approvedPendingTags.length === 0;
   demand(dependencies.confirmation === `${job.environment}/${job.releaseId}`, "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED");
+  demand(dependencies.afterDatabaseVerified === undefined || typeof dependencies.afterDatabaseVerified === "function",
+    "IN_PROCESS_FRONTEND_CONTINUATION_REQUIRED");
   const receiptBase = { version: 1, service: "frontend", environment: job.environment, releaseId: job.releaseId, sourceCommit: job.sourceCommit,
     migrationImageDigest: job.migrationImageDigest,
     sqlArtifactSha256: job.sqlArtifactSha256, schemaBaselineSha256: job.schemaBaselineSha256, contractManifestSha256: job.contractManifestSha256,
@@ -227,6 +236,42 @@ export async function runFrontendMigration(prepared, dependencies) {
         schemaVerified: true, runtimeRoleVerified: true, readOnlyVerified: readOnlyExpected && same.default_read_only === "on" };
     } finally { await client.query("rollback"); }
     phase = "database-receipt"; await dependencies.record("database-receipt.json", databaseResult);
+    if (dependencies.afterDatabaseVerified) {
+      // The parent still owns its environment flock. Retain this physical
+      // database session and lock while it verifies/deploys compatible code.
+      // This hook neither fences writers nor authorizes promotion/admission.
+      // No CLI/JSON/environment input can supply an executable continuation.
+      const verifySession = async () => {
+        const same = (await client.query("select pg_backend_pid() as pid,current_user,current_database() as database,current_setting('default_transaction_read_only') as default_read_only")).rows[0];
+        demand(same?.pid === identity.pid && same.current_user === target.user && same.database === target.database &&
+          (!readOnlyExpected || same.default_read_only === "on"), "FRONTEND_CONTINUATION_SESSION_CHANGED");
+        demand((await client.query(HELD_FRONTEND_LOCK, [FRONTEND_MIGRATION_LOCK])).rows[0]?.held === true,
+          "FRONTEND_CONTINUATION_LOCK_LOST");
+      };
+      const frozen = (value) => {
+        if (value && typeof value === "object") { Object.values(value).forEach(frozen); Object.freeze(value); }
+        return value;
+      };
+      phase = "compatible-frontend-continuation";
+      await verifySession();
+      await dependencies.record("frontend-continuation-started.json", { ...receiptBase,
+        status: "FRONTEND_CONTINUATION_STARTED", databaseVerified: true });
+      await dependencies.afterDatabaseVerified(frozen(structuredClone(databaseResult)), verifySession);
+      await verifySession();
+      // A callback may take minutes. Recheck actual schema/lineage/grants;
+      // do not qualify a stale pre-deployment database observation.
+      phase = "post-continuation-verification";
+      await client.query("begin read only");
+      try {
+        demand(isDeepStrictEqual(await journal(client), databaseResult.after), "FRONTEND_CONTINUATION_LINEAGE_CHANGED");
+        demand(isDeepStrictEqual(await readMigrationCatalog(client), baseline.catalog), "FRONTEND_CONTINUATION_SCHEMA_CHANGED");
+        await verifyRuntime(client, target, true);
+        demand(frontendMigrationArtifact().sqlArtifactSha256 === artifact.sqlArtifactSha256, "FRONTEND_SOURCE_CHANGED");
+      } finally { await client.query("rollback"); }
+      await dependencies.record("frontend-continuation-completed.json", { ...receiptBase,
+        status: "FRONTEND_CONTINUATION_COMPLETED", databaseVerified: true });
+      phase = "completed";
+    }
   } catch (error) { failure = error; }
   finally {
     try { if (locked) await client.query("select pg_advisory_unlock(hashtext($1))", [FRONTEND_MIGRATION_LOCK]); }

@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "task": "P2-00",
+  "status": "IN_PROGRESS_FOUNDATION_VERIFIED",
+  "baseSourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "verifiedAt": "2026-11-04T01:51:59Z",
+  "providerMutations": false,
+  "liveDatabaseAccess": false,
+  "liveAdmissionChanged": false,
+  "pendingSqlReleaseEnabled": false,
+  "testResults": {
+    "platform": 163,
+    "focusedSubset": 20,
+    "hostRegression": 27,
+    "ownedPostgres": {
+      "16": 14,
+      "18": 14
+    },
+    "eslint": "passed",
+    "diffCheck": "passed"
+  },
+  "scope": {
+    "databaseLockContinuation": true,
+    "sourceWriterInventory": true,
+    "realWriterFence": false,
+    "historicalDeploymentBootstrap": false,
+    "wholeOperationDrain": false,
+    "parentReleaseCoordinator": false,
+    "deliberateRecoveryRestoration": false
+  },
+  "inventory": {
+    "sourceManifestSha256": "92f33e86f458713ebf5556be8c17460f46b3b5f3a2da9e637a802502aa03303a",
+    "routeFiles": 55,
+    "exportedHttpMethods": 61,
+    "serverActionModules": 7,
+    "exportedServerActions": 50,
+    "nativeDefinitionsIncludingAlternativeProbe": 10,
+    "providerInventoryVerified": false
+  },
+  "limitations": [
+    "Owned fixtures execute the checkout component; they do not qualify a new immutable migration image or live candidate.",
+    "The initial sandboxed host regression run could not bind its loopback fixtures; the permitted owned-loopback rerun passed all 27 tests.",
+    "No provider, process-death, in-flight capture or writer-fence end-to-end qualification is claimed."
+  ],
+  "operatorSourceSha256": {
+    "ops/platform/frontend-migration.mjs": "3df5be4e1883a02a5470e336ade6bfe9c48c5409c91b627ef6ca0f3a14ea70de",
+    "ops/platform/frontend-migration.test.mjs": "814865b9f21d48801d692307ee7fb7aebbafd668fc93d491bfa370cbeb3cd69a",
+    "ops/platform/frontend-writer-inventory.mjs": "8410930ebdbc918011fb5a438d7786900dd9ccee1f686091e82cab2fab3b5e09",
+    "ops/platform/frontend-writer-inventory.test.mjs": "98a467219d27abd3fc485b9d51212f7b4b72e7c78af5b9bb3bab70ca67f9056a",
+    "ops/platform/test-frontend-migration-local.mjs": "d0a83a331f60159621b82c5d45472d20701bdec6561111b777879a81256603b2"
+  },
+  "evidenceSha256": {
+    "source-inventory.json": "6142165f289ac9ce0f28f366b25acad376a5f753ffe35b026fc6639bfd0b4b4e",
+    "postgres16.json": "534c205a3f6bdedcef6d9dd13bd8eb75928ca0c2390ee2922b1e6419b8100c43",
+    "postgres18.json": "bf850ef0b87339a9666cf996f2f7e6f2a1c0dfb53ce4f53fa32c224fbf175b32",
+    "platform-tests.log": "1a7a08e81257919a3eb7fe72674dd4774f97660fda0e742b2df2b6c8e3a0383a",
+    "focused-tests.log": "3faa7bb4ea1478e0be1cbd3db4a436f28afcd30e8d918853935337256eed4165",
+    "host-regression.log": "82a41d8e916266a0b3a4c59275e076ce118fc865f46c4d164fadbaeab6486a3c"
+  }
+}
