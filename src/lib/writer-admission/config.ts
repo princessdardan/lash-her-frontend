@@ -49,11 +49,10 @@ export function resolveWriterAdmissionConfiguration(
       !Number.isInteger(target.port) || target.port < 1 || target.port > 65535 ||
       !name(target.database) || !name(target.user) || ![16, 18].includes(target.serverMajor) ||
       !digest(target.targetSha256, 64) || !digest(env.FRONTEND_WRITER_PRODUCER_SHA256, 64) || !digest(env.VERCEL_GIT_COMMIT_SHA, 40)) throw new Error();
-    const url = new URL(env.FRONTEND_WRITER_ADMISSION_DATABASE_URL ?? "");
-    if (!["postgres:", "postgresql:"].includes(url.protocol) || url.hostname !== target.host ||
-      Number(url.port || 5432) !== target.port || decodeURIComponent(url.pathname) !== `/${target.database}` ||
-      decodeURIComponent(url.username) !== target.user || !url.password || url.hash ||
-      [...url.searchParams].length !== 1 || url.searchParams.get("sslmode") !== "verify-full") throw new Error();
+    const url = requireTargetUrl(env.FRONTEND_WRITER_ADMISSION_DATABASE_URL, target);
+    // Business writes use DATABASE_URL through getPrivateDb(), not this ledger
+    // connection. Both must belong to the exact admitted database and login.
+    requireTargetUrl(env.DATABASE_URL, target);
     return {
       target: { environment, host: target.host, port: target.port, database: target.database, user: target.user,
         serverMajor: target.serverMajor, targetSha256: target.targetSha256 },
@@ -65,4 +64,14 @@ export function resolveWriterAdmissionConfiguration(
         application_name: "lash-her-frontend-writer-admission" },
     };
   } catch { throw new WriterAdmissionError("configuration"); }
+}
+
+
+function requireTargetUrl(raw: string | undefined, target: WriterAdmissionTarget): URL {
+  const url = new URL(raw ?? "");
+  if (!["postgres:", "postgresql:"].includes(url.protocol) || url.hostname !== target.host ||
+    Number(url.port || 5432) !== target.port || decodeURIComponent(url.pathname) !== `/${target.database}` ||
+    decodeURIComponent(url.username) !== target.user || !url.password || url.hash ||
+    [...url.searchParams].length !== 1 || url.searchParams.get("sslmode") !== "verify-full") throw new Error();
+  return url;
 }

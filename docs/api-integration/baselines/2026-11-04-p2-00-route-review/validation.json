@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "task": "P2-00",
+  "reviewedPr": 71,
+  "reviewedHead": "18e49c1ef0e1b0f5fc282770b7bc7511ab416471",
+  "verifiedAt": "2026-11-04T05:34:52.885723+00:00",
+  "findings": [
+    {
+      "priority": 1,
+      "status": "addressed",
+      "description": "The ledger URL was verified independently of the DATABASE_URL used for business writes, so the admitted database/login could differ from the writer target. Enforced mode now requires both URLs to match the reviewed direct host, port, database and login with only sslmode=verify-full.",
+      "regression": "The new regression failed before the fix because a missing or mismatched application URL still created the admission connection. All 11 focused admission tests pass after the fix, including no-connection/no-effect rejection and sanitized errors."
+    }
+  ],
+  "checks": {
+    "admissionTests": 11,
+    "typescript": "passed",
+    "eslint": "passed",
+    "diffCheck": "passed"
+  },
+  "priorCi": {
+    "head": "18e49c1ef0e1b0f5fc282770b7bc7511ab416471",
+    "run": "https://github.com/princessdardan/lash-her-frontend/actions/runs/41778175374",
+    "passedJobs": 10
+  },
+  "scope": {
+    "admissionDefault": "off",
+    "liveDatabaseTouched": false,
+    "liveStagingChanged": false,
+    "deployed": false,
+    "pendingSqlEnabled": false,
+    "p2Complete": false
+  },
+  "sourceSha256": {
+    "src/lib/writer-admission/config.ts": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
+    "src/lib/writer-admission/runtime.test.ts": "af5bfebe873ddf9876aa9fc4802add7590413d111cd0b22e597f5f3cb6f97d1e",
+    "docs/api-integration/frontend-writer-route-admission.md": "0ca6fd3c20846836c3cf6270e056ebfc8bf0328377c250ba8fe7e30031b27364"
+  }
+}

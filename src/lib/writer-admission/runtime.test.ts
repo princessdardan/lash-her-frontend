@@ -16,6 +16,7 @@ function environment() {
     APP_VERCEL_TEAM_ID: VERCEL_PROJECT_BINDINGS.teamId, VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.stagingProjectId,
     VERCEL_GIT_COMMIT_SHA: "c".repeat(40), FRONTEND_WRITER_PRODUCER_SHA256: "b".repeat(64),
     FRONTEND_WRITER_ADMISSION_TARGET_JSON: JSON.stringify({ environment: "staging", host: "db.owned.invalid", port: 5432, database: "owned", user: "protocol_runtime", serverMajor: 18, targetSha256: "a".repeat(64), password: "must-not-copy" }),
+    DATABASE_URL: "postgresql://protocol_runtime:owned-application-password@db.owned.invalid/owned?sslmode=verify-full",
     FRONTEND_WRITER_ADMISSION_DATABASE_URL: "postgresql://protocol_runtime:owned-private-marker@db.owned.invalid/owned?sslmode=verify-full" };
 }
 function fixture() {
@@ -189,4 +190,32 @@ test("uncertainty is sticky across awaits and isolated between simultaneous requ
   assert.equal((await withWriterAdmission("new-work", async () => Response.json({ ok: true }), clean.run)()).status, 200);
   release(); assert.equal((await pending).status, 503);
   assert.equal(failed.state.uncertain, true); assert.equal(clean.state.uncertain, false);
+});
+
+
+test("application database must share the admitted direct target, login and strict TLS before effects", async () => {
+  const valid = environment();
+  assert.ok(resolveWriterAdmissionConfiguration(valid));
+  for (const databaseUrl of [
+    undefined,
+    "postgresql://protocol_runtime:application-private-marker@elsewhere.owned.invalid/owned?sslmode=verify-full",
+    valid.DATABASE_URL.replace("/owned?", "/another?"),
+    valid.DATABASE_URL.replace("db.owned.invalid/", "db.owned.invalid:6432/"),
+    valid.DATABASE_URL.replace("protocol_runtime:", "legacy_runtime:"),
+    valid.DATABASE_URL.replace("db.owned.invalid", "db-pooler.owned.invalid"),
+    valid.DATABASE_URL.replace("verify-full", "disable"),
+    valid.DATABASE_URL + "&host=elsewhere.owned.invalid",
+    valid.DATABASE_URL + "&options=-csearch_path=other",
+  ]) {
+    let created = 0, effects = 0;
+    const run = createWriterAdmissionRunner({
+      getConfiguration: () => resolveWriterAdmissionConfiguration({ ...valid, DATABASE_URL: databaseUrl }),
+      createClient: () => { created++; throw new Error(); },
+    });
+    const response = await withWriterAdmission("new-work", async () => { effects++; return Response.json({ ok: true }); }, run)();
+    assert.equal(response.status, 503);
+    assert.equal(created, 0, "configuration must refuse before any connection is created");
+    assert.equal(effects, 0);
+    assert.equal((await response.text()).includes("application-private-marker"), false);
+  }
 });
