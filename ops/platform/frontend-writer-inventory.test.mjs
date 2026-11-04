@@ -43,6 +43,20 @@ test("NextAuth-style destructured HTTP methods are included", (t) => {
   assert.deepEqual(frontendWriterInventory(root).routes[0].methods, ["GET", "POST"]);
 });
 
+test("default server actions retain their public export name for every declaration form", (t) => {
+  const { root, save } = fixture(t);
+  for (const source of [
+    'export default async function mutate() {}',
+    'export default async function() {}',
+    'export default async () => {};',
+    'async function mutate() {} export default mutate;',
+    'export { mutate as default } from "./other";',
+  ]) {
+    save("src/app/actions/actions.ts", '"use server"; ' + source);
+    assert.deepEqual(frontendWriterInventory(root).actionModules[0].exports, ["default"], source);
+  }
+});
+
 test("ambiguous export-star, invalid syntax and symlinks refuse instead of returning a complete-looking inventory", (t) => {
   const { root, save } = fixture(t);
   save("src/app/api/callback/route.ts", 'export * from "./handler";');

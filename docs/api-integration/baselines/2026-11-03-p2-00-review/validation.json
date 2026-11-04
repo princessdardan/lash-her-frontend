@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "task": "P2-00",
+  "pullRequest": 68,
+  "reviewedHead": "b6c92817690854fb0b1bca85251b61f7039342a5",
+  "verifiedAt": "2026-11-04T02:04:45.155532+00:00",
+  "status": "REVIEW_FINDINGS_ADDRESSED_FOUNDATION_ONLY",
+  "findings": [
+    {
+      "priority": "P1",
+      "file": "ops/platform/frontend-migration.mjs",
+      "issue": "Idle pg Client errors during continuation could terminate the process before recording a sanitized failed outcome.",
+      "resolution": "Register a Client error listener before connect, retain a sticky sanitized failure through cleanup, and reject continuation liveness checks after connection loss.",
+      "validation": "Unit regression and actual pg_terminate_backend during idle continuation on owned PostgreSQL 16 and 18. A callback that catches its failed probe still cannot qualify success."
+    },
+    {
+      "priority": "P2",
+      "file": "ops/platform/frontend-writer-inventory.mjs",
+      "issue": "Default-exported module-level server actions were omitted, misnamed, or refused depending on their declaration form.",
+      "resolution": "Record the public default name for default declarations and export assignments.",
+      "validation": "Regression covers named and anonymous functions, arrow expressions, identifier assignments and re-exports."
+    }
+  ],
+  "nodeVersion": "24.18.0",
+  "testResults": {
+    "platform": {
+      "passed": 165,
+      "failed": 0
+    },
+    "migrationSubset": 17,
+    "inventorySubset": 5,
+    "eslint": "passed",
+    "diffCheck": "passed"
+  },
+  "commands": [
+    "node --test ops/platform/*.test.mjs",
+    "node node_modules/eslint/bin/eslint.js ops/platform/frontend-migration.mjs ops/platform/frontend-migration.test.mjs ops/platform/frontend-writer-inventory.mjs ops/platform/frontend-writer-inventory.test.mjs ops/platform/test-frontend-migration-local.mjs",
+    "git diff --check"
+  ],
+  "ownedPostgres": {
+    "16": {
+      "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+      "postgresMajor": 16,
+      "migrations": 80,
+      "checks": [
+        "fresh-apply",
+        "already-current",
+        "server-enforced-current-only-read-session",
+        "physical-database-lock-retained-through-compatible-frontend-continuation",
+        "idle-session-loss-retains-sanitized-failed-outcome",
+        "failed-frontend-preserves-successful-sql-without-reapply-or-admission",
+        "current-only-refuses-real-pending-migrations-without-applying",
+        "data-bearing-upgrade",
+        "lock-contention",
+        "pending-chain-refusal",
+        "lineage-refusal",
+        "schema-refusal",
+        "runtime-privilege-refusal",
+        "tls-certificate-refusal",
+        "exact-artifact-production-promotion"
+      ],
+      "providerTouched": false,
+      "sourceCommit": "38cac1902474aabd733c507cbf54a96a82c45f4c",
+      "migrationImageDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "packagedCliVerified": false,
+      "sqlArtifactSha256": "775201b5352db56e2fe0402f5e9f9232e19cff131e38a71dca51dd1c72e77b3c",
+      "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+      "schemaBaselineSha256": "aa0dde73d73135fe922affee4e76a90ccdad2bde64e3277a3eccd39391132fb6"
+    },
+    "18": {
+      "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+      "postgresMajor": 18,
+      "migrations": 80,
+      "checks": [
+        "fresh-apply",
+        "already-current",
+        "server-enforced-current-only-read-session",
+        "physical-database-lock-retained-through-compatible-frontend-continuation",
+        "idle-session-loss-retains-sanitized-failed-outcome",
+        "failed-frontend-preserves-successful-sql-without-reapply-or-admission",
+        "current-only-refuses-real-pending-migrations-without-applying",
+        "data-bearing-upgrade",
+        "lock-contention",
+        "pending-chain-refusal",
+        "lineage-refusal",
+        "schema-refusal",
+        "runtime-privilege-refusal",
+        "tls-certificate-refusal",
+        "exact-artifact-production-promotion"
+      ],
+      "providerTouched": false,
+      "sourceCommit": "b310637b562077c0103ca1e5085a7bb869e6c33d",
+      "migrationImageDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "packagedCliVerified": false,
+      "sqlArtifactSha256": "775201b5352db56e2fe0402f5e9f9232e19cff131e38a71dca51dd1c72e77b3c",
+      "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+      "schemaBaselineSha256": "b6b8f15ba8a8e503763920085c290bb4aaeb637c5f41875939974a1276f79276"
+    }
+  },
+  "operatorSourceSha256": {
+    "ops/platform/frontend-migration.mjs": "4c728e0e2cebc334819dc10e51618db88c385a95961786b2829f7e14d9f1ec14",
+    "ops/platform/frontend-migration.test.mjs": "51629e8dcdc11f842cf914fffcfda6b89c2f728dea9bb21f1c6a61f4a16927e4",
+    "ops/platform/frontend-writer-inventory.mjs": "8b9d259f6ff4f666197c247248ae3d3948843d3c48aa67a39b7ef48347e9e9e5",
+    "ops/platform/frontend-writer-inventory.test.mjs": "67a34eef7ff2775bc683d944aa06fbd50412bc1a91eeb4fed1df492a85b57edd",
+    "ops/platform/test-frontend-migration-local.mjs": "4e70fbfa72951f3a498bb232ad0054b418f087370d4136935d51356c4d15974d"
+  },
+  "providerMutations": false,
+  "liveDatabaseAccess": false,
+  "liveAdmissionChanged": false,
+  "limitations": [
+    "Owned database fixtures execute the updated checkout source, not a newly qualified immutable migration image.",
+    "Host regressions were not rerun for these review fixes; the original foundation retains its 27-test result.",
+    "Historical-deployment fencing, whole-operation drain and parent release/recovery coordination remain unfinished."
+  ]
+}

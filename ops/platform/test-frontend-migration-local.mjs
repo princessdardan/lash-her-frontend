@@ -144,6 +144,23 @@ async function main() {
     assert.equal((await competing.query("select pg_try_advisory_lock(hashtext($1)) as locked", [FRONTEND_MIGRATION_LOCK])).rows[0].locked, true);
     await competing.query("select pg_advisory_unlock(hashtext($1))", [FRONTEND_MIGRATION_LOCK]);
     records.push("physical-database-lock-retained-through-compatible-frontend-continuation");
+    phase = "idle-session-loss-during-continuation";
+    const lostRecords = [], lostDependencies = componentDependencies(current, lostRecords);
+    const createLostClient = lostDependencies.createClient; let lostClient;
+    lostDependencies.createClient = (options) => { lostClient = createLostClient(options); return lostClient; };
+    lostDependencies.afterDatabaseVerified = async (_database, verifySession) => {
+      const disconnected = new Promise((resolve) => lostClient.once("error", resolve));
+      await admin.query("select pg_terminate_backend($1)", [lostClient.processID]);
+      await disconnected;
+      // Even a callback that handles the failed probe cannot qualify success.
+      await assert.rejects(verifySession());
+    };
+    await assert.rejects(component.runFrontendMigration(component.prepareFrontendMigration(candidate, current, baseline), lostDependencies));
+    assert.equal(lostRecords[0].value.status, "DATABASE_VERIFIED");
+    assert.equal(lostRecords.at(-1).value.status, "FAILED_REQUIRES_REVIEW");
+    assert.equal(lostRecords.some(({ name }) => name === "frontend-continuation-completed.json"), false);
+    assert.equal(lostRecords.every(({ value }) => value.trafficAuthorized === false), true);
+    records.push("idle-session-loss-retains-sanitized-failed-outcome");
     phase = "successful-sql-failed-frontend-continuation";
     const continuationDb = await connect("frontend_continuation", "frontend_migration");
     await applyPrefix(continuationDb, artifact.migrations.slice(0, -1));

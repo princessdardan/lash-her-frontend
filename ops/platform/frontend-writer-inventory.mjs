@@ -29,9 +29,11 @@ function names(statement) {
     return node.elements.flatMap((element) => ts.isOmittedExpression(element) ? [] : bindingNames(element.name));
   };
   if (exported(statement)) {
+    if (statement.modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword)) return ["default"];
     if (ts.isFunctionDeclaration(statement)) { demand(statement.name); return [statement.name.text]; }
     if (ts.isVariableStatement(statement)) return statement.declarationList.declarations.flatMap((node) => bindingNames(node.name));
   }
+  if (ts.isExportAssignment(statement)) { demand(!statement.isExportEquals); return ["default"]; }
   if (ts.isExportDeclaration(statement) && !statement.isTypeOnly) {
     // An export-star cannot establish the complete public method/action set.
     demand(statement.exportClause && ts.isNamedExports(statement.exportClause));

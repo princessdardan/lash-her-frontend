@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { frontendMigrationArtifact, prepareFrontendMigration, prepareFrontendMigrationJob, frontendConnectionOptions, runFrontendMigration, writeFrontendReceipt } from "./frontend-migration.mjs";
 
 function fixture() {
@@ -29,7 +30,7 @@ function fixture() {
 
 function runner(f, overrides = {}) {
   const records = [], calls = [], state = { locked: false, ended: false, created: false };
-  const client = { connection: { stream: { encrypted: true, authorized: true } },
+  const client = Object.assign(new EventEmitter(), { connection: { stream: { encrypted: true, authorized: true } },
     connect: async () => {}, end: async () => { state.ended = true; },
     query: async (sql) => {
       calls.push(sql);
@@ -45,7 +46,7 @@ function runner(f, overrides = {}) {
       else if (sql.includes("as journal_access")) rows = [{ journal_access: false }];
       else if (sql.includes("from pg_default_acl")) rows = [...["SELECT", "INSERT", "UPDATE", "DELETE"].map((privilege) => ({ kind: "r", privilege })), ...["SELECT", "USAGE"].map((privilege) => ({ kind: "S", privilege }))];
       return { rows };
-    } };
+    } });
   const dependencies = { confirmation: `staging/${f.job.releaseId}`, assertSource: () => {},
     getUrl: () => "postgresql://frontend_migration:owned-private-marker@127.0.0.1:5432/frontend_owned?sslmode=verify-full",
     createClient: () => { state.created = true; return client; }, record: (name, value) => {
@@ -134,6 +135,22 @@ test("failed or uncertain frontend continuation preserves successful SQL and nev
   assert.equal(r.records.some(({ name }) => name === "frontend-continuation-completed.json"), false);
   assert.equal(r.state.locked, false); assert.equal(r.state.ended, true);
   assert.equal(r.records.every(({ value }) => value.trafficAuthorized === false), true);
+});
+
+test("idle connection errors during continuation are retained as sanitized failures even if the callback catches them", async () => {
+  const f = fixture(), r = runner(f); let livenessRejected = false;
+  r.dependencies.afterDatabaseVerified = async (_database, verifySession) => {
+    // pg emits error on its Client when the idle socket dies between queries.
+    r.client.emit("error", new Error("owned-private-marker"));
+    try { await verifySession(); } catch { livenessRejected = true; }
+  };
+  await assert.rejects(r.run(), /FRONTEND_MIGRATION_FAILED_REVIEW_REQUIRED/u);
+  assert.equal(livenessRejected, true);
+  assert.equal(r.records[0].value.status, "DATABASE_VERIFIED");
+  assert.equal(r.records.at(-1).value.status, "FAILED_REQUIRES_REVIEW");
+  assert.equal(r.records.some(({ name }) => name === "frontend-continuation-completed.json"), false);
+  assert.equal(JSON.stringify(r.records).includes("owned-private-marker"), false);
+  assert.equal(r.state.ended, true);
 });
 
 test("lost database session, missing lock and post-deployment drift cannot qualify the continuation", async () => {

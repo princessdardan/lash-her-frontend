@@ -190,6 +190,9 @@ export async function runFrontendMigration(prepared, dependencies) {
     (dependencies.assertSource ?? assertSourceCheckout)(root, job.sourceCommit);
     phase = "credential-acquisition";
     client = (dependencies.createClient ?? ((options) => new Client(options)))(frontendConnectionOptions(await dependencies.getUrl(), target));
+    // pg emits idle socket failures outside query promises. Keep a sanitized,
+    // sticky failure while the continuation awaits provider work and cleanup.
+    client.on("error", () => { failure ??= new Error("FRONTEND_DATABASE_CONNECTION_LOST"); });
     phase = "connect-and-target"; await client.connect();
     demand(client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true, "FRONTEND_VERIFIED_TLS_REQUIRED");
     const identity = (await client.query("select pg_backend_pid() as pid,current_user,current_database() as database,current_setting('server_version_num')::int/10000 as major,current_setting('default_transaction_read_only') as default_read_only")).rows[0];
@@ -242,11 +245,13 @@ export async function runFrontendMigration(prepared, dependencies) {
       // This hook neither fences writers nor authorizes promotion/admission.
       // No CLI/JSON/environment input can supply an executable continuation.
       const verifySession = async () => {
+        demand(!failure, "FRONTEND_CONTINUATION_SESSION_LOST");
         const same = (await client.query("select pg_backend_pid() as pid,current_user,current_database() as database,current_setting('default_transaction_read_only') as default_read_only")).rows[0];
         demand(same?.pid === identity.pid && same.current_user === target.user && same.database === target.database &&
           (!readOnlyExpected || same.default_read_only === "on"), "FRONTEND_CONTINUATION_SESSION_CHANGED");
         demand((await client.query(HELD_FRONTEND_LOCK, [FRONTEND_MIGRATION_LOCK])).rows[0]?.held === true,
           "FRONTEND_CONTINUATION_LOCK_LOST");
+        demand(!failure, "FRONTEND_CONTINUATION_SESSION_LOST");
       };
       const frozen = (value) => {
         if (value && typeof value === "object") { Object.values(value).forEach(frozen); Object.freeze(value); }
