@@ -367,6 +367,8 @@ jobs:
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/node_modules,dst=/source/node_modules,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/src/lib/private-db/migration-lineage.ts,dst=/source/src/lib/private-db/migration-lineage.ts,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/src/lib/writer-admission,dst=/source/src/lib/writer-admission,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/src/lib/env/application-environment.mjs,dst=/source/src/lib/env/application-environment.mjs,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/v1/manifest.json,dst=/source/contracts/api-integration/v1/manifest.json,readonly" \
             lash-her-frontend-migration:postgres18-test > "$RUNNER_TEMP/platform-evidence/frontend-migration-rehearsal.json"
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node \

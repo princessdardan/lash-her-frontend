@@ -75,6 +75,24 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'FRONTEND_OPERATION_SETTLEMENT_REFUSED'; END IF;
 END;
 $$;
+-- Runtime can observe its current epoch without direct access to control rows.
+-- The later admission procedure atomically rechecks that epoch and its class.
+CREATE FUNCTION frontend_admission.current_policy(
+  expected_environment text, expected_target text, producer text, source text
+) RETURNS TABLE(epoch text, new_work boolean, recovery boolean)
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, frontend_admission AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM frontend_admission.producers p
+    WHERE p.producer_sha256=producer AND p.source_sha=source AND p.enabled
+      AND p.database_role=session_user::regrole::oid) THEN
+    RAISE EXCEPTION 'FRONTEND_ADMISSION_REFUSED';
+  END IF;
+  RETURN QUERY SELECT c.epoch::text,c.new_work,c.recovery FROM frontend_admission.control c
+    WHERE c.singleton AND c.environment=expected_environment AND c.target_sha256=expected_target;
+  IF NOT FOUND THEN RAISE EXCEPTION 'FRONTEND_ADMISSION_REFUSED'; END IF;
+END;
+$$;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA frontend_admission FROM PUBLIC;
 -- COMMIT in these invoker procedures proves durable admission/settlement before
 -- returning. PostgreSQL refuses CALL inside an explicit caller transaction.

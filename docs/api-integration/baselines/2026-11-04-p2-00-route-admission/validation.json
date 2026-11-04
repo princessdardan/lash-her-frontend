@@ -1,0 +1,221 @@
+{
+  "version": 1,
+  "task": "P2-00",
+  "status": "PRODUCT_CHECKOUT_ADMISSION_OWNED_VERIFIED_DISABLED_BY_DEFAULT",
+  "baseSourceCommit": "4abfa38ac8873e20b1d19471fd3e1b62d407ffba",
+  "verifiedAt": "2026-11-04T05:14:48.460959+00:00",
+  "nodeVersion": "24.18.0",
+  "precedingReview": {
+    "pr": 70,
+    "head": "d9b9094547abd7268f88eeb58a4b6465d764eb16",
+    "findings": [],
+    "ciJobsPassed": 10,
+    "ciRun": "https://github.com/princessdardan/lash-her-frontend/actions/runs/41768645358",
+    "mergeCommit": "4abfa38ac8873e20b1d19471fd3e1b62d407ffba"
+  },
+  "wiredEntrypoints": [
+    {
+      "path": "src/app/api/checkout/route.ts",
+      "method": "POST",
+      "kind": "new-work"
+    }
+  ],
+  "testResults": {
+    "platform": 178,
+    "unitTotal": 2084,
+    "unitGroups": {
+      "source": 1853,
+      "serverOnlySource": 186,
+      "scripts": 31,
+      "securityDependencies": 14
+    },
+    "admissionUnitSubset": 10,
+    "typescript": "passed",
+    "eslint": "passed",
+    "diffCheck": "passed",
+    "productionBuild": {
+      "status": "blocked-after-successful-compilation-and-typescript",
+      "reason": "SANITY_API_READ_TOKEN unavailable locally; page-data collection for /api/draft-mode/enable refuses. Full build remains for CI."
+    }
+  },
+  "ownedPostgres": {
+    "16": {
+      "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+      "postgresMajor": 16,
+      "migrations": 80,
+      "checks": [
+        "fresh-apply",
+        "already-current",
+        "server-enforced-current-only-read-session",
+        "physical-database-lock-retained-through-compatible-frontend-continuation",
+        "idle-session-loss-retains-sanitized-failed-outcome",
+        "failed-frontend-preserves-successful-sql-without-reapply-or-admission",
+        "current-only-refuses-real-pending-migrations-without-applying",
+        "data-bearing-upgrade",
+        "lock-contention",
+        "pending-chain-refusal",
+        "lineage-refusal",
+        "schema-refusal",
+        "runtime-privilege-refusal",
+        "tls-certificate-refusal",
+        "exact-artifact-production-promotion"
+      ],
+      "providerTouched": false,
+      "admissionChecks": [
+        "bootstrap-is-closed-before-any-effect",
+        "outer-transactions-refuse-before-effects-and-cannot-hide-uncommitted-admission",
+        "historical-login-direct-table-role-spoof-and-null-bindings-refused",
+        "admission-refuses-policy-lock-contention",
+        "new-work-stops-independently-while-recovery-and-admitted-deferred-work-finish",
+        "both-controls-closed-and-zero-unresolved-required-for-ledger-drain",
+        "completed-operation-id-cannot-replay-effects",
+        "elapsed-time-never-drains-uncertain-work-and-only-explicit-reconciliation-clears-it",
+        "unresolved-operations-refuse-restoration",
+        "actual-backend-death-retains-active-operation-until-reviewed-reconciliation",
+        "lost-admission-acknowledgement-never-starts-effects-or-retries",
+        "lost-completion-acknowledgement-preserves-committed-ledger-without-replay",
+        "target-stale-epoch-and-concurrent-policy-changes-refuse",
+        "drain-observation-never-asserts-historical-fence-or-migration-authority"
+      ],
+      "historicalLoginChecks": [
+        "cross-database-session-refuses-before-cluster-wide-login-change",
+        "actual-membership-and-owned-object-refuse-before-retirement",
+        "owned-objects-in-another-database-refuse-without-a-legacy-session",
+        "role-name-alone-cannot-substitute-another-oid",
+        "committed-nologin-blocks-new-logins-but-existing-session-is-still-alive",
+        "existing-idle-and-writing-sessions-terminate-and-open-transaction-rolls-back",
+        "database-retirement-never-claims-provider-drain-or-sql-authority",
+        "disabled-login-replay-refuses-without-automatic-login-restoration",
+        "lost-commit-acknowledgement-keeps-login-disabled-and-never-retries",
+        "lost-termination-acknowledgement-keeps-login-disabled-and-never-retries",
+        "parent-physical-migration-lock-survives-success-and-failures"
+      ],
+      "writerRouteChecks": [
+        "closed-policy-and-unknown-source-or-legacy-login-refuse-before-route-effects",
+        "committed-admission-precedes-handler-and-closing-new-work-preserves-current-epoch-recovery",
+        "admitted-request-remains-active-through-all-awaited-handler-work",
+        "policy-close-between-observation-and-commit-refuses-without-starting-handler",
+        "caught-handler-5xx-records-uncertainty-and-never-acknowledges-webhook-success",
+        "caught-domain-errors-behind-http-success-remain-uncertain-until-owner-reconciliation",
+        "lost-settlement-acknowledgement-returns-503-without-replaying-successful-effects",
+        "actual-idle-runtime-connection-loss-retains-active-operation-and-retryable-response"
+      ],
+      "sourceCommit": "8bbf482d51710176c0f33b2b2e0e793147994156",
+      "migrationImageDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "packagedCliVerified": false,
+      "sqlArtifactSha256": "775201b5352db56e2fe0402f5e9f9232e19cff131e38a71dca51dd1c72e77b3c",
+      "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+      "schemaBaselineSha256": "aa0dde73d73135fe922affee4e76a90ccdad2bde64e3277a3eccd39391132fb6"
+    },
+    "18": {
+      "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+      "postgresMajor": 18,
+      "migrations": 80,
+      "checks": [
+        "fresh-apply",
+        "already-current",
+        "server-enforced-current-only-read-session",
+        "physical-database-lock-retained-through-compatible-frontend-continuation",
+        "idle-session-loss-retains-sanitized-failed-outcome",
+        "failed-frontend-preserves-successful-sql-without-reapply-or-admission",
+        "current-only-refuses-real-pending-migrations-without-applying",
+        "data-bearing-upgrade",
+        "lock-contention",
+        "pending-chain-refusal",
+        "lineage-refusal",
+        "schema-refusal",
+        "runtime-privilege-refusal",
+        "tls-certificate-refusal",
+        "exact-artifact-production-promotion"
+      ],
+      "providerTouched": false,
+      "admissionChecks": [
+        "bootstrap-is-closed-before-any-effect",
+        "outer-transactions-refuse-before-effects-and-cannot-hide-uncommitted-admission",
+        "historical-login-direct-table-role-spoof-and-null-bindings-refused",
+        "admission-refuses-policy-lock-contention",
+        "new-work-stops-independently-while-recovery-and-admitted-deferred-work-finish",
+        "both-controls-closed-and-zero-unresolved-required-for-ledger-drain",
+        "completed-operation-id-cannot-replay-effects",
+        "elapsed-time-never-drains-uncertain-work-and-only-explicit-reconciliation-clears-it",
+        "unresolved-operations-refuse-restoration",
+        "actual-backend-death-retains-active-operation-until-reviewed-reconciliation",
+        "lost-admission-acknowledgement-never-starts-effects-or-retries",
+        "lost-completion-acknowledgement-preserves-committed-ledger-without-replay",
+        "target-stale-epoch-and-concurrent-policy-changes-refuse",
+        "drain-observation-never-asserts-historical-fence-or-migration-authority"
+      ],
+      "historicalLoginChecks": [
+        "cross-database-session-refuses-before-cluster-wide-login-change",
+        "actual-membership-and-owned-object-refuse-before-retirement",
+        "owned-objects-in-another-database-refuse-without-a-legacy-session",
+        "role-name-alone-cannot-substitute-another-oid",
+        "committed-nologin-blocks-new-logins-but-existing-session-is-still-alive",
+        "existing-idle-and-writing-sessions-terminate-and-open-transaction-rolls-back",
+        "database-retirement-never-claims-provider-drain-or-sql-authority",
+        "disabled-login-replay-refuses-without-automatic-login-restoration",
+        "lost-commit-acknowledgement-keeps-login-disabled-and-never-retries",
+        "lost-termination-acknowledgement-keeps-login-disabled-and-never-retries",
+        "parent-physical-migration-lock-survives-success-and-failures"
+      ],
+      "writerRouteChecks": [
+        "closed-policy-and-unknown-source-or-legacy-login-refuse-before-route-effects",
+        "committed-admission-precedes-handler-and-closing-new-work-preserves-current-epoch-recovery",
+        "admitted-request-remains-active-through-all-awaited-handler-work",
+        "policy-close-between-observation-and-commit-refuses-without-starting-handler",
+        "caught-handler-5xx-records-uncertainty-and-never-acknowledges-webhook-success",
+        "caught-domain-errors-behind-http-success-remain-uncertain-until-owner-reconciliation",
+        "lost-settlement-acknowledgement-returns-503-without-replaying-successful-effects",
+        "actual-idle-runtime-connection-loss-retains-active-operation-and-retryable-response"
+      ],
+      "sourceCommit": "053dd76eca4b801372dd269818aca789724858d5",
+      "migrationImageDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "packagedCliVerified": false,
+      "sqlArtifactSha256": "775201b5352db56e2fe0402f5e9f9232e19cff131e38a71dca51dd1c72e77b3c",
+      "contractManifestSha256": "sha256:512f5bc012dd4fe69e7c8fc488503c1c8ab6216a8f8f04085233a0d661008938",
+      "schemaBaselineSha256": "b6b8f15ba8a8e503763920085c290bb4aaeb637c5f41875939974a1276f79276"
+    }
+  },
+  "scope": {
+    "liveSettingsChanged": false,
+    "liveDatabaseTouched": false,
+    "deployed": false,
+    "admissionDefault": "off",
+    "allApplicationWritersAdmitted": false,
+    "historicalWritersFenced": false,
+    "providerEffectsDrained": false,
+    "migrationAuthorized": false,
+    "p2Complete": false,
+    "immutableRuntimeImageQualified": false
+  },
+  "implementationReviewCorrections": [
+    "Caught payment and cleanup errors now mark an operation-local sticky uncertain outcome even behind HTTP 200/402.",
+    "Only product checkout is wired. Redirect, deferred-work and other domain recovery semantics require separate qualification."
+  ],
+  "remaining": [
+    "Other routes, actions and workers need exhaustive admission/deferred-work integration.",
+    "Historical deployment/provider inventory and actual fencing remain incomplete.",
+    "Live bootstrap, exact producer/target registration and deployment qualification require separate review.",
+    "Parent migration/deployment/recovery coordination remains unfinished."
+  ],
+  "sourceSha256": {
+    ".env.local.example": "4385826d0a99e6ea1b25e6500364a9e733e8b51a5af708a90ea06dc952b8402d",
+    ".github/workflows/ci.yml": "702b367aef4578b503422f62f7739021fbf9a3f177ce09a37a0d3239e387fb5b",
+    ".github/workflows/platform-artifacts.yml": "e425e2d9c6696bd3b9b76a37d66eba196993bad64c12c720c94d0b70b6356f44",
+    "docs/api-integration/frontend-admission-ledger.md": "3b01cb03fe9bbf7e76aa0b483c675baebe2d9486309e8ab8d218a6f1014d2308",
+    "docs/api-integration/frontend-writer-route-admission.md": "5f0417675e2e78431c721a034f2b1a81dad92f73d754a9a9d07fe31f5b834020",
+    "docs/api-integration/p2-00-frontend-quiescence.md": "8a3f1eb615f64903999a6937a26e41ab05bc0887f8bd8548c1f82b9e8c4f720f",
+    "ops/platform/frontend-admission.sql": "b8ec48242871a6e44fef415b127709e9b107a60751e47bc0fa328b99244ab6ab",
+    "ops/platform/harness/owned-frontend-writer-routes.mjs": "438f078736859734ffea504f63d09a64085ef0f20d126ea21136e77e071d83fa",
+    "ops/platform/test-frontend-migration-local.mjs": "f6ba60bc9f20982a4ddd75707e9fa827fa96993794f83f6a2f82c3dfc2020897",
+    "scripts/run-source-unit-tests.mjs": "be002744ab5a98eceea1c9137a41b6e20e2a1abe822c05d5848c0a0b40b0c310",
+    "src/app/api/checkout/handler.ts": "9cbd61871fb8f92df71117d1066c4447cdeaf527cd69e9e135bc81733c153fa5",
+    "src/app/api/checkout/route.ts": "e7334e4ea9409e12d62ff0a5ad8ba974b87f2801a90ee9bd175648827af09b98",
+    "src/lib/payments/square/square-payment-charge.ts": "c6228a3fc85f4b17319f763bc28624d64b103b26a7ad07ed29f2a2b280ff4744",
+    "src/lib/writer-admission/config.ts": "66d51f4fdca1baa791c4ec50eff20f68a92d65fa8d3fb446a736474d9911968d",
+    "src/lib/writer-admission/context.ts": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+    "src/lib/writer-admission/route.ts": "d5c6638308d9377dfe17c0d0d693013dd45154abb9b3a1b29808f3494bd86948",
+    "src/lib/writer-admission/runtime.test.ts": "ccce3269e2b3a7100aaeded94d00708f2e22654b1503f283bb30a6ace83e2020",
+    "src/lib/writer-admission/runtime.ts": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b"
+  }
+}

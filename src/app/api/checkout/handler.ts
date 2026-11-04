@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import {
   parseCheckoutMarketing,
   type CheckoutMarketing,
@@ -636,7 +637,7 @@ export function createCheckoutPostHandler({
           if (markOrderVerificationFailedDep) {
             await markOrderVerificationFailedDep(
               initializingOrder.orderId,
-            ).catch(() => undefined);
+            ).catch(markWriterOperationUncertain);
           }
           return NextResponse.json<CheckoutErrorBody>(
             { error: "Checkout is temporarily unavailable" },
@@ -652,7 +653,7 @@ export function createCheckoutPostHandler({
         if (paymentError) {
           await markOrderVerificationFailedDep?.(
             initializingOrder.orderId,
-          ).catch(() => undefined);
+          ).catch(markWriterOperationUncertain);
           return NextResponse.json({ error: paymentError }, { status: 422 });
         }
 
@@ -672,7 +673,7 @@ export function createCheckoutPostHandler({
           if (markOrderVerificationFailedDep) {
             await markOrderVerificationFailedDep(
               initializingOrder.orderId,
-            ).catch(() => undefined);
+            ).catch(markWriterOperationUncertain);
           }
           return NextResponse.json<CheckoutErrorBody>(
             { error: "Payment could not be completed" },
@@ -702,7 +703,7 @@ export function createCheckoutPostHandler({
         // abandoned-stock sweep.
         if (markOrderVerificationFailedDep) {
           await markOrderVerificationFailedDep(initializingOrderId).catch(
-            () => undefined,
+            markWriterOperationUncertain,
           );
         }
         if (markInitializationFailed) {
@@ -711,7 +712,7 @@ export function createCheckoutPostHandler({
             error instanceof Error
               ? error.message
               : "Unknown initialization error",
-          ).catch(() => undefined);
+          ).catch(markWriterOperationUncertain);
         }
       }
       log("error", "[checkout] Unable to initialize checkout", {
