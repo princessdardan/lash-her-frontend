@@ -130,18 +130,35 @@ jobs:
             com.lashher.source.revision=${{ inputs.frontend_revision }}
           cache-from: type=gha,scope=platform-gateway
           cache-to: type=gha,scope=platform-gateway,mode=max
-      - name: Scan exact gateway digest
+      - name: Retain raw exact gateway digest scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           version: v0.76.1
           image-ref: ghcr.io/princessdardan/lash-her-platform-gateway@${{ steps.build-gateway.outputs.digest }}
           format: json
-          output: ${{ runner.temp }}/platform-evidence/gateway-scan.json
-          exit-code: "1"
-          severity: CRITICAL,HIGH
+          output: ${{ runner.temp }}/platform-evidence/gateway-raw-scan.json
+          exit-code: "0"
+        env:
+          TRIVY_LIST_ALL_PKGS: "true"
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify patched gateway runtime and enforce scan
+        run: |-
+          node sources/lash-her-frontend/ops/gateway/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-gateway@${{ steps.build-gateway.outputs.digest }} "$RUNNER_TEMP/platform-evidence/gateway-raw-scan.json" "$RUNNER_TEMP/platform-evidence/gateway-runtime"
+          cp "$RUNNER_TEMP/platform-evidence/gateway-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/gateway-scan.json"
         env:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retain gateway runtime evidence even on refusal
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: gateway-runtime-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/platform-evidence/gateway-raw-scan.json
+            ${{ runner.temp }}/platform-evidence/gateway-runtime/
+          if-no-files-found: error
+          retention-days: 10
       - name: Attest gateway digest
         id: attest-gateway
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
@@ -168,18 +185,35 @@ jobs:
             com.lashher.source.revision=${{ inputs.frontend_revision }}
           cache-from: type=gha,scope=platform-frontend-migration
           cache-to: type=gha,scope=platform-frontend-migration,mode=max
-      - name: Scan exact frontend-migration digest
+      - name: Retain raw exact frontend-migration digest scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           version: v0.76.1
           image-ref: ghcr.io/princessdardan/lash-her-platform-frontend-migration@${{ steps.build-frontend-migration.outputs.digest }}
           format: json
-          output: ${{ runner.temp }}/platform-evidence/frontend-migration-scan.json
-          exit-code: "1"
-          severity: CRITICAL,HIGH
+          output: ${{ runner.temp }}/platform-evidence/frontend-migration-raw-scan.json
+          exit-code: "0"
+        env:
+          TRIVY_LIST_ALL_PKGS: "true"
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify patched frontend-migration runtime and enforce scan
+        run: |-
+          node sources/lash-her-frontend/ops/gateway/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-frontend-migration@${{ steps.build-frontend-migration.outputs.digest }} "$RUNNER_TEMP/platform-evidence/frontend-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/frontend-migration-runtime"
+          cp "$RUNNER_TEMP/platform-evidence/frontend-migration-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/frontend-migration-scan.json"
         env:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retain frontend-migration runtime evidence even on refusal
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: frontend-migration-runtime-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/platform-evidence/frontend-migration-raw-scan.json
+            ${{ runner.temp }}/platform-evidence/frontend-migration-runtime/
+          if-no-files-found: error
+          retention-days: 10
       - name: Attest frontend-migration digest
         id: attest-frontend-migration
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
@@ -283,7 +317,8 @@ jobs:
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           version: v0.76.1
-          image-ref: ghcr.io/princessdardan/lash-her-platform-community-runtime@${{ steps.build-community-runtime.outputs.digest
+          image-ref:
+            ghcr.io/princessdardan/lash-her-platform-community-runtime@${{ steps.build-community-runtime.outputs.digest
             }}
           format: json
           output: ${{ runner.temp }}/platform-evidence/community-runtime-scan.json
@@ -321,7 +356,8 @@ jobs:
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           version: v0.76.1
-          image-ref: ghcr.io/princessdardan/lash-her-platform-community-migration@${{
+          image-ref:
+            ghcr.io/princessdardan/lash-her-platform-community-migration@${{
             steps.build-community-migration.outputs.digest }}
           format: json
           output: ${{ runner.temp }}/platform-evidence/community-migration-scan.json

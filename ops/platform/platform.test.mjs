@@ -197,8 +197,17 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   assert.equal(scans.length, 6);
   for (const scan of scans) {
     assert.ok(scan.with["image-ref"].includes("@${{"));
-    assert.equal(scan.with["exit-code"], "1");
-    assert.equal(scan.with.severity, "CRITICAL,HIGH");
+    if (scan.with.output.endsWith("-raw-scan.json")) {
+      assert.equal(scan.with["exit-code"], "0");
+      assert.equal(scan.env.TRIVY_LIST_ALL_PKGS, "true");
+      const next = steps[steps.indexOf(scan) + 1];
+      assert.match(next.run, /ops\/gateway\/runtime\/verify\.mjs/u);
+      assert.ok(next.run.includes(scan.with["image-ref"]));
+      assert.match(next.run, /cp .*runtime\/scan\.json.*-scan\.json/u);
+    } else {
+      assert.equal(scan.with["exit-code"], "1");
+      assert.equal(scan.with.severity, "CRITICAL,HIGH");
+    }
     assert.equal(scan.with.version, "v0.76.1");
   }
   assert.ok(steps.some((step) => step.run?.includes("artifact-candidate.mjs --harness")));

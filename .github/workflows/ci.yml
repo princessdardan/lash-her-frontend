@@ -114,14 +114,30 @@ jobs:
           path: ${{ runner.temp }}/frontend-schema-summary.json
           if-no-files-found: error
           retention-days: 10
-      - name: Scan frontend migration image
+      - name: Retain raw frontend-runtime scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           version: v0.76.1
           image-ref: lash-her-frontend-migration:ci
-          format: table
-          exit-code: "1"
-          severity: CRITICAL,HIGH
+          format: json
+          output: ${{ runner.temp }}/frontend-runtime-raw.json
+          exit-code: "0"
+        env:
+          TRIVY_LIST_ALL_PKGS: "true"
+      - name: Scan frontend migration image against verified backport evidence
+        run: >-
+          node ops/gateway/runtime/verify.mjs lash-her-frontend-migration:ci
+          "$RUNNER_TEMP/frontend-runtime-raw.json" "$RUNNER_TEMP/frontend-runtime"
+      - name: Retain frontend-runtime qualification
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: frontend-runtime-qualification
+          path: |
+            ${{ runner.temp }}/frontend-runtime-raw.json
+            ${{ runner.temp }}/frontend-runtime/
+          if-no-files-found: error
+          retention-days: 10
   gateway-and-platform:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -182,14 +198,30 @@ jobs:
           docker run --rm --network none --read-only --cap-drop ALL
           --security-opt no-new-privileges --entrypoint node lash-her-gateway:ci
           -e "if(process.getuid()===0)process.exit(1);for(const f of ['server.mjs','private-tls.mjs','routes.json'])require('node:fs').accessSync(f)"
-      - name: Scan gateway image
+      - name: Retain raw gateway-runtime scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           version: v0.76.1
           image-ref: lash-her-gateway:ci
-          format: table
-          exit-code: "1"
-          severity: CRITICAL,HIGH
+          format: json
+          output: ${{ runner.temp }}/gateway-runtime-raw.json
+          exit-code: "0"
+        env:
+          TRIVY_LIST_ALL_PKGS: "true"
+      - name: Scan gateway image against verified backport evidence
+        run: >-
+          node ops/gateway/runtime/verify.mjs lash-her-gateway:ci
+          "$RUNNER_TEMP/gateway-runtime-raw.json" "$RUNNER_TEMP/gateway-runtime"
+      - name: Retain gateway-runtime qualification
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: gateway-runtime-qualification
+          path: |
+            ${{ runner.temp }}/gateway-runtime-raw.json
+            ${{ runner.temp }}/gateway-runtime/
+          if-no-files-found: error
+          retention-days: 10
   quality-and-unit:
     runs-on: ubuntu-latest
     steps:
@@ -870,7 +902,16 @@ jobs:
   # or the database job's service, so they can run alongside those jobs.
   browser:
     runs-on: ubuntu-latest
-    needs: [frontend-operator-migrations, gateway-and-platform, quality-and-unit, database, audit, build, browser-tests]
+    needs:
+      [
+        frontend-operator-migrations,
+        gateway-and-platform,
+        quality-and-unit,
+        database,
+        audit,
+        build,
+        browser-tests,
+      ]
     if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803

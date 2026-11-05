@@ -9,6 +9,7 @@ import { verifySourceCheckouts } from "./source-checkout.mjs";
 import { localImageId } from "./local-images.mjs";
 import { privateTlsPolicies } from "./configuration.mjs";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
+import { verifyRecordedRuntime } from "../gateway/runtime/verify.mjs";
 
 export const ARTIFACT_COMPONENTS = Object.freeze([
   { key: "gateway", env: "GATEWAY", source: "frontend", image: "lash-her-platform-gateway", local: "gateway" },
@@ -125,6 +126,11 @@ export function collectArtifactCandidate(directory, sourceRoot, environment = pr
     const image = `ghcr.io/princessdardan/${component.image}@${digest}`;
     const scan = JSON.parse(readFileSync(join(directory, `${component.local}-scan.json`), "utf8"));
     if (scan.ArtifactName !== image || scan.Metadata?.ImageConfig?.architecture !== "amd64" || !Array.isArray(scan.Results) || scan.Results.length === 0 || scan.Results.some((item) => item.Vulnerabilities?.some((v) => ["HIGH", "CRITICAL"].includes(v.Severity)))) throw new Error("Artifact scan required");
+    if (["gateway", "frontendMigration"].includes(component.key)) {
+      verifyRecordedRuntime(directory, component.local, image, join(sourceRoot, "lash-her-frontend"));
+    } else if (scan.Results.some(item => item.ExperimentalModifiedFindings?.length)) {
+      throw new Error("Unsupported artifact scan filtering");
+    }
     const bundlePath = environment[`${component.env}_BUNDLE`];
     if (!bundlePath || !environment.RUNNER_TEMP || !resolve(bundlePath).startsWith(`${resolve(environment.RUNNER_TEMP)}/`)) throw new Error("Runner-owned attestation bundle required");
     const verifier = ["attestation", "verify", `oci://${image}`, "--repo", SOURCE_REPOSITORIES.frontend,
