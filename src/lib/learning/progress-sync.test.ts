@@ -274,6 +274,60 @@ test("an explicit keepalive flush upgrades a queued update without replaying an 
   assert.deepEqual(keepaliveFlags, [false, true]);
 });
 
+test("an empty exit flush cannot strand a position queued in the same turn", async () => {
+  const calls: Array<ProgressUpdate & { keepalive: boolean }> = [];
+  const sync = createProgressSync({
+    initial: row,
+    latest: async () => row,
+    write: async (body, keepalive) => {
+      calls.push({ ...body, keepalive });
+      return { ...row, revision: 2, resumePositionSeconds: 2 };
+    },
+  });
+  const empty = sync.flush(true);
+  const queued = sync.queue({ resumePositionSeconds: 2 }, true);
+  await Promise.all([empty, queued]);
+  assert.deepEqual(calls, [
+    {
+      resumePositionSeconds: 2,
+      expectedProgressRevision: 1,
+      keepalive: true,
+    },
+  ]);
+  assert.equal(sync.snapshot()?.resumePositionSeconds, 2);
+});
+
+test("a position queued while a completed drain settles is acknowledged before its caller resolves", async () => {
+  const calls: Array<ProgressUpdate & { keepalive: boolean }> = [];
+  let queued: Promise<void> | undefined;
+  const sync = createProgressSync({
+    initial: row,
+    latest: async () => row,
+    write: async (body, keepalive) => {
+      calls.push({ ...body, keepalive });
+      return {
+        ...row,
+        revision: calls.length + 1,
+        resumePositionSeconds: body.resumePositionSeconds!,
+      };
+    },
+    changed: (_progress, status) => {
+      if (status === "saved" && calls.length === 1)
+        queueMicrotask(() => {
+          queued = sync.queue({ resumePositionSeconds: 2 }, true);
+        });
+    },
+  });
+  await sync.queue({ resumePositionSeconds: 1 });
+  assert.ok(queued);
+  await queued;
+  assert.deepEqual(calls, [
+    { resumePositionSeconds: 1, expectedProgressRevision: 1, keepalive: false },
+    { resumePositionSeconds: 2, expectedProgressRevision: 2, keepalive: true },
+  ]);
+  assert.equal(sync.snapshot()?.resumePositionSeconds, 2);
+});
+
 test("explicit server refresh waits for pending resume writes and refuses to discard unknown outcomes", async () => {
   let release!: () => void;
   const hold = new Promise<void>((resolve) => {
@@ -323,4 +377,36 @@ test("an explicit server refresh can adopt authoritative conflict state after st
   await sync.queue({ resumePositionSeconds: 2 });
   assert.equal(await sync.prepareRefresh(), true);
   assert.equal(sync.snapshot(), latest);
+});
+
+test("lost acknowledgements block refresh until revision recovery adopts the committed state without replay", async () => {
+  let committed = row;
+  const calls: Array<ProgressUpdate & { expectedProgressRevision: number }> =
+    [];
+  const sync = createProgressSync({
+    initial: row,
+    latest: async () => committed,
+    write: async (body) => {
+      calls.push(body);
+      if (body.expectedProgressRevision !== committed.revision)
+        throw new LearningRequestError("conflict", 409);
+      committed = {
+        ...row,
+        revision: 2,
+        resumePositionSeconds: body.resumePositionSeconds!,
+      };
+      throw new TypeError("Acknowledgement was lost after commit");
+    },
+  });
+  await sync.queue({ resumePositionSeconds: 12 });
+  await sync.queue({ resumePositionSeconds: 3 });
+  assert.equal(await sync.prepareRefresh(), false);
+  assert.equal(calls.length, 1);
+  await sync.retry();
+  assert.equal(await sync.prepareRefresh(), true);
+  assert.equal(sync.snapshot()?.resumePositionSeconds, 12);
+  assert.deepEqual(calls, [
+    { resumePositionSeconds: 12, expectedProgressRevision: 1 },
+    { resumePositionSeconds: 3, expectedProgressRevision: 1 },
+  ]);
 });

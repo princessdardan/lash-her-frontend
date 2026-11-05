@@ -124,8 +124,12 @@ export function createProgressSync(dependencies: {
   function flush(keepalive = false): Promise<void> {
     if (keepalive && pending) pendingKeepalive = true;
     if (running) return running;
+    if ((!pending && !pendingRead) || blocked) return Promise.resolve();
     running = drain().finally(() => {
       running = null;
+      // A caller can enqueue after drain exits but before this cleanup runs.
+      // Include that work in the same flush instead of leaving it stranded.
+      if ((pending || pendingRead) && !blocked) return flush();
     });
     return running;
   }
