@@ -69,6 +69,9 @@ async function main() {
       cli = "ops/platform/frontend-image.mjs";
     } else {
       mkdirSync(app); mkdirSync(join(app, "ops/platform"), { recursive: true }); mkdirSync(join(app, "src/lib/private-db"), { recursive: true });
+      mkdirSync(join(app, "scripts"), { recursive: true });
+      for (const name of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"])
+        copyFileSync(join(source, "scripts", name), join(app, "scripts", name));
       mkdirSync(join(app, "contracts/api-integration/v1"), { recursive: true });
       for (const name of ["frontend-migration.mjs", "frontend-schema.mjs", "source-checkout.mjs", "source-policy.mjs", "release-inputs.mjs", "release.mjs"])
         copyFileSync(join(source, "ops/platform", name), join(app, "ops/platform", name));
