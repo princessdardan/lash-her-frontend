@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { frontendProviderBindingsArtifact, frontendProviderMissingCapabilities, prepareFrontendProviderBindings, FRONTEND_VERCEL_PROJECT as PROJECT,
   FRONTEND_VERCEL_TEAM as TEAM, FRONTEND_VERCEL_REPOSITORY as REPOSITORY } from "./frontend-provider-bindings.mjs";
 import { frontendCoordinationHash as hash, validateFrontendFenceObservation } from "./frontend-release-inventory.mjs";
+import { frontendGoogleSnapshotSha256 } from "./frontend-google-effects.mjs";
 import { fenceFrontendExternalProducers, runFrontendVercelWorker, observeFrontendExternalFences, observeCompatibleFrontend } from "./frontend-release-adapters.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -92,6 +93,30 @@ test("Sanity hook selection binds only dedicated staging project, exact IDs and 
   }
 });
 
+test("Google selection binds distinct reviewed staging clients, grants and hashed calendar identities", () => {
+  const f = fixture("google");
+  const redisBefore = { grants: [{ grantId: "booking:google-refresh-token:production", present: false },
+    { grantId: "booking:google-refresh-token", present: false }], stateKeySha256: [] };
+  f.input.googleRetirement = { projectId: "lash-her-staging-20261022", projectNumber: "185770842371", sourceBindingSha256: "1".repeat(64),
+    databaseSnapshotSha256: frontendGoogleSnapshotSha256({ connections: [], assignments: [], events: [] }),
+    databaseBeforeSnapshot: { connections: [], assignments: [], events: [] }, redisSnapshotSha256: frontendGoogleSnapshotSha256(redisBefore),
+    redisBeforeSnapshot: redisBefore, legacyCalendarSha256: null,
+    clients: [{ kind: "identity", clientId: "185770842371-d3thak0b2btgb77pngj968nvhpjkqmgf.apps.googleusercontent.com" },
+      { kind: "calendar", clientId: "185770842371-lg0fktlf96u88pnqjnoom83st75btv4d.apps.googleusercontent.com" }].map(row => ({ ...row,
+        verificationOwnerSha256: "4".repeat(64), retiredCredentialBindingSha256: "5".repeat(64), replacementCredentialBindingSha256: "6".repeat(64), secret: "private-google-marker" })),
+    grants: [], calendars: [] };
+  const normalized = frontendProviderBindingsArtifact(f.input, f.plan);
+  assert.equal(JSON.stringify(normalized).includes("private-google-marker"), false);
+  assert.equal(normalized.googleRetirement.clients[0].kind, "calendar");
+  for (const mutate of [row => { row.projectNumber = "87626194287"; }, row => { row.clients[0].clientId = row.clients[1].clientId; },
+    row => { row.clients[0].replacementCredentialBindingSha256 = row.clients[0].retiredCredentialBindingSha256; },
+    row => { row.databaseSnapshotSha256 = "0".repeat(64); }, row => { row.calendars.push({ calendarSha256: "7".repeat(64), grantId: "unknown" }); },
+    row => { row.grants.push({ grantId: "production-token", ownerSha256: "8".repeat(64), disposition: "retire" }); }]) {
+    const changed = structuredClone(f.input); mutate(changed.googleRetirement);
+    assert.throws(() => frontendProviderBindingsArtifact(changed, f.plan));
+  }
+});
+
 test("restoration gateway binding selects an exact existing machine/configuration/image without copying runtime input", () => {
   const f = fixture();
   f.input.gatewayObservation = { hostMachineId: "1".repeat(32), releaseId: "existing-host", candidateSha256: "2".repeat(64),
@@ -155,7 +180,7 @@ async function protocolFixture(code, task) {
     mkdirSync(join(app, "scripts"), { recursive: true });
     for (const name of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"])
       copyFileSync(join(root, "scripts", name), join(app, "scripts", name));
-    const modules = ["frontend-release-restoration", "frontend-admission", "frontend-square-effects", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
+    const modules = ["frontend-release-restoration", "frontend-admission", "frontend-square-effects", "frontend-google-effects", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
       "frontend-migration", "frontend-schema", "source-checkout", "source-policy", "release-inputs", "release"];
     for (const name of modules) copyFileSync(join(root, "ops/platform", `${name}.mjs`), join(app, "ops/platform", `${name}.mjs`));
     copyFileSync(join(root, "src/lib/private-db/migration-lineage.ts"), join(app, "src/lib/private-db/migration-lineage.ts"));

@@ -5,6 +5,8 @@ fresh liveness checkpoint from the parent. No provider error body or private
 runtime value is written to stdout/common receipts.
 """
 import json
+import hashlib
+import hmac
 from pathlib import Path
 import re
 import secrets
@@ -14,6 +16,7 @@ import frontend_probe
 import frontend_resend_retirement
 import frontend_square_retirement
 import frontend_sanity_fencing
+import frontend_google_fencing
 import frontend_gateway_observation
 import migrate
 import vercel
@@ -44,9 +47,10 @@ class LockedClient:
 
     def request(self, method, path, body=None):
         self.verify()
-        result = self.client.request(method, path, body)
-        self.verify()
-        return result
+        try:
+            return self.client.request(method, path, body)
+        finally:
+            self.verify()
 
 
 class LockedProbe:
@@ -297,6 +301,13 @@ def configure_bootstrap(context, client, attempt, parent_directory):
             ("SQUARE_ENVIRONMENT", "sandbox", "plain"), ("SQUARE_LOCATION_ID", reviewed_square["locationId"], "plain"),
             ("SQUARE_APPLICATION_ID", reviewed_square["applicationId"], "plain"),
             ("LASH_RELEASE_SQUARE_MERCHANT_ID", reviewed_square["merchantId"], "plain")])
+    if context["bindings"].get("googleRetirement") is not None:
+        variables.extend([("AUTH_GOOGLE_ID", frontend_google_fencing.CLIENTS["identity"], "plain"),
+            ("AUTH_GOOGLE_SECRET", context["googleIdentityReplacementSecret"], "sensitive"),
+            ("GOOGLE_CLIENT_ID", frontend_google_fencing.CLIENTS["calendar"], "plain"),
+            ("GOOGLE_CLIENT_SECRET", context["googleCalendarReplacementSecret"], "sensitive")])
+        if context["bindings"]["googleRetirement"].get("legacyCalendarSha256") is not None:
+            variables.append(("GOOGLE_CALENDAR_ID", context["googleLegacyCalendarId"], "sensitive"))
     outcome = {**selected, "status": "BOOTSTRAP_CONFIGURATION_REQUIRES_REVIEW", "configuredKeys": [], "trafficAuthorized": False}
     migrate.write_json(attempt, "bootstrap-configuration-started.json", outcome)
     try:
@@ -479,6 +490,46 @@ def verify_square_runtime(context, client, attempt, probe):
         "historicalWritersFenced": False, "activeExecutions": None, "uncertainEffects": None, "trafficAuthorized": False}
 
 
+def verify_google_runtime(context, client, attempt, probe):
+    bootstrap_attempt = attempt.parent / "vercel-bootstrap"
+    observed = observe_compatible(context, client, bootstrap_attempt)
+    demand(observed.get("bootstrapAdmissionVerified") is True and observed.get("workloadVerified") is True and
+        observed.get("aliasJobMatchesIntent") is True and observed.get("aliasDeploymentId") == observed.get("deploymentId") and
+        observed.get("aliasJobState") == "succeeded", "GOOGLE_ADMISSION_BOOTSTRAP_REQUIRED")
+    staged = vercel._staged_identity(context["candidate"], bootstrap_attempt)
+    private = frontend_probe._private_input(Path(context["privateConfigurationDirectory"]) / "admission-bootstrap", staged)
+    project = vercel._project(client, staged["projectId"])
+    state = vercel.deployment_state(client, staged["deploymentId"], staged["projectId"], staged["sourceCommit"], staged["releaseId"])
+    challenge = secrets.token_hex(32)
+    value = probe.request(state["url"], private["secret"], frontend_probe._automation_bypass(project), challenge, "google-binding")
+    google = value.get("googleBinding", {})
+    demand(value.get("status") == "FRONTEND_WORKLOAD_PROBE_PASS" and value.get("challenge") == challenge and
+        all(value.get(key) == staged[key] for key in ("environment", "projectId", "sourceCommit")) and
+        value.get("gatewayOrigin") == private["gatewayOrigin"] and
+        value.get("checks") == ["gateway-course-catalog", "frontend-admission-bootstrap", "google-binding"] and
+        value.get("featureControls") == {key: False for key in BOOTSTRAP_FLAGS} and
+        value.get("admission", {}).get("epoch") == context["admissionObservation"]["epoch"] and
+        value.get("admission", {}).get("targetSha256") == context["plan"]["targetSha256"] and
+        value.get("admission", {}).get("sourceCommit") == staged["sourceCommit"] and
+        value.get("admission", {}).get("producerSha256") == context["plan"]["bootstrapCompatibility"]["runtimeProducerSha256"] and
+        value.get("admission", {}).get("newWork") is False and value.get("admission", {}).get("recovery") is False and
+        google.get("projectId") == "lash-her-staging-20261022" and google.get("projectNumber") == "185770842371",
+        "GOOGLE_RUNTIME_REPLACEMENT_BINDING_UNVERIFIED")
+    for kind, client_id in frontend_google_fencing.CLIENTS.items():
+        selected = google.get(kind, {})
+        expected = hmac.new(context["google" + kind.capitalize() + "ReplacementSecret"].encode(),
+            ("lash-her:frontend-google-binding:v1:" + kind + ":" + challenge).encode(), hashlib.sha256).hexdigest()
+        demand(selected.get("clientId") == client_id and isinstance(selected.get("proof"), str) and hmac.compare_digest(selected["proof"], expected),
+            "GOOGLE_RUNTIME_PRIVATE_EQUALITY_UNVERIFIED")
+    demand(google["calendar"].get("calendarIdSha256") == context["bindings"]["googleRetirement"]["legacyCalendarSha256"],
+        "GOOGLE_RUNTIME_DEFAULT_CALENDAR_BINDING_UNVERIFIED")
+    # The challenge and proof are private, transient comparison material. Never
+    # write them or a credential-derived digest into reviewed/common receipts.
+    return {**identity(context), "status": "STAGING_GOOGLE_ADMIN_AND_CALENDAR_RUNTIME_BINDING_VERIFIED", "deploymentId": staged["deploymentId"],
+        "identityClientId": frontend_google_fencing.CLIENTS["identity"], "calendarClientId": frontend_google_fencing.CLIENTS["calendar"],
+        "runtimeReplacementBindingVerified": True, "customerIdentityBindingVerified": False}
+
+
 def deploy_compatible(context, client, attempt, parent_directory, probe=None):
     selected = identity(context)
     observed = observe_vercel(context, client, attempt)
@@ -566,7 +617,7 @@ def execute(context, client, verify, probe=None):
     locked = LockedClient(client, verify)
     source_attempt = attempt
     if context.get("originalDirectory") is not None:
-        demand(operation in ("observe-vercel", "observe-compatible", "observe-admission", "observe-resend", "observe-resend-effects", "observe-square", "observe-sanity"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
+        demand(operation in ("observe-vercel", "observe-compatible", "observe-admission", "observe-resend", "observe-resend-effects", "observe-square", "observe-sanity", "observe-google"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
         original = Path(context["originalDirectory"])
         migrate.private_directory(original)
         source_attempt = original / attempt.name
@@ -588,6 +639,26 @@ def execute(context, client, verify, probe=None):
         return deploy_admission(context, locked, attempt, parent, LockedProbe(verify, probe))
     if operation == "retire-deployments":
         return retire_deployments(context, locked, attempt)
+    if operation in ("retire-google", "observe-google"):
+        reviewed = context["bindings"].get("googleRetirement")
+        demand(reviewed is not None, "REVIEWED_GOOGLE_RETIREMENT_REQUIRED")
+        replacements, retired = {}, {}
+        for kind in ("identity", "calendar"):
+            title = kind.capitalize()
+            replacements[kind] = frontend_google_fencing.Client(kind, context["google" + title + "ReplacementSecret"], verify)
+            retired[kind] = frontend_google_fencing.Client(kind, context["google" + title + "RetiredSecret"], verify)
+        redis = frontend_google_fencing.LegacyRedis(context["googleLegacyRedisToken"], verify)
+        if operation == "observe-google":
+            return {**selected, **frontend_google_fencing.observe(replacements, retired, redis, reviewed, context["googlePrivate"], context["googleActual"])}
+        admission = context.get("admissionObservation", {})
+        demand(admission.get("newWork") is False and admission.get("recovery") is False and admission.get("ledgerDrained") is True,
+            "GOOGLE_GRANT_RETIREMENT_REQUIRES_CLOSED_DRAINED_RECOVERY")
+        runtime = verify_google_runtime(context, locked, attempt, LockedProbe(verify, probe))
+        migrate.write_json(attempt, "google-runtime-before-retirement.json", runtime)
+        outcome = frontend_google_fencing.retire_grants(replacements, retired, redis, reviewed, context["googlePrivate"], context["googleActual"], selected, attempt)
+        runtime = verify_google_runtime(context, locked, attempt, LockedProbe(verify, probe))
+        migrate.write_json(attempt, "google-runtime-after-retirement.json", runtime)
+        return {**outcome, "runtimeReplacementBindingVerified": True, "customerIdentityBindingVerified": False}
     if operation in ("verify-square", "observe-square", "suspend-square"):
         reviewed = context["bindings"].get("squareRetirement")
         demand(reviewed is not None, "REVIEWED_SQUARE_SANDBOX_RETIREMENT_REQUIRED")

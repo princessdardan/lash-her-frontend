@@ -1,5 +1,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import hashlib
+import hmac
 from pathlib import Path
 import re
 import socket
@@ -13,6 +15,7 @@ import frontend_probe
 import frontend_release_adapters as adapter
 import frontend_resend_retirement
 import frontend_square_retirement
+import frontend_google_fencing
 import migrate
 import vercel
 import vercel_test
@@ -61,7 +64,7 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                         result = {"version": 1, "status": "FRONTEND_WORKLOAD_PROBE_PASS", "challenge": self.headers.get("x-lash-release-challenge"),
                                   "checks": ["gateway-course-catalog"], "gatewayOrigin": "https://gateway.example.invalid",
                                   "environment": "staging", "projectId": vercel.PROJECTS["staging"], "sourceCommit": "a" * 40}
-                        if self.headers.get("x-lash-release-mode") in ("admission-bootstrap", "resend-binding", "square-binding"):
+                        if self.headers.get("x-lash-release-mode") in ("admission-bootstrap", "resend-binding", "square-binding", "google-binding"):
                             result.update(checks=["gateway-course-catalog", "frontend-admission-bootstrap"],
                                 schemaCatalogSha256="f" * 64 if owner.bootstrap_probe_wrong else owner.context["preapplicationSchema"]["schemaCatalogSha256"],
                                 featureControls={key: False for key in adapter.BOOTSTRAP_FLAGS}, admission={"environment": "staging",
@@ -77,6 +80,15 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                                 observed = frontend_square_retirement.binding(frontend_square_retirement.Client(owner.variables["SQUARE_ACCESS_TOKEN"]["value"]), selected)
                                 result["checks"].append("square-binding")
                                 result["squareBinding"] = {"environment": "sandbox", "applicationId": selected["applicationId"], **observed}
+                            if self.headers.get("x-lash-release-mode") == "google-binding":
+                                result["checks"].append("google-binding")
+                                result["googleBinding"] = {"projectId": "lash-her-staging-20261022", "projectNumber": "185770842371"}
+                                for kind, prefix in (("identity", "AUTH_GOOGLE"), ("calendar", "GOOGLE_CLIENT")):
+                                    proof = hmac.new(owner.variables[prefix + "_SECRET"]["value"].encode(),
+                                        ("lash-her:frontend-google-binding:v1:" + kind + ":" + result["challenge"]).encode(), hashlib.sha256).hexdigest()
+                                    result["googleBinding"][kind] = {"clientId": frontend_google_fencing.CLIENTS[kind], "proof": proof}
+                                default_calendar = owner.variables.get("GOOGLE_CALENDAR_ID", {}).get("value")
+                                result["googleBinding"]["calendar"]["calendarIdSha256"] = hashlib.sha256(default_calendar.encode()).hexdigest() if default_calendar else None
                         self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Cache-Control", "no-store")
                         self.end_headers(); self.wfile.write(json.dumps(result).encode()); return
                     owner.assertEqual(self.headers.get("Authorization"), "Bearer owned-token-marker")
