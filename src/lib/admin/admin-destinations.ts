@@ -22,11 +22,14 @@ export type AdminCalendarManagementHref =
   | "/admin/my-calendar";
 
 interface AdminDestinationDefinition extends AdminDestination {
+  feature?: "courseAuthoring" | "customerLifecycle";
   action: AdminPermissionAction;
   roles?: readonly AdminRole[];
 }
 
 const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
+  { action: "courses:edit", feature: "courseAuthoring", description: "Author course curriculum, assessments and learning media.", group: "Manage business", href: "/admin/courses", keywords: ["courses", "curriculum", "academy", "lessons", "quizzes"], label: "Courses", navigation: true },
+  { action: "admin:view", roles: ["owner"], feature: "customerLifecycle", description: "Manage customer account access, exports and deletion.", group: "Manage business", href: "/admin/customer-accounts", keywords: ["customers", "accounts", "suspension", "exports", "deletion"], label: "Customer accounts", navigation: true },
   {
     action: "admin:view",
     description: "See today's schedule, follow-up work, and booking health.",
@@ -578,6 +581,7 @@ const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
 
 export function getVisibleAdminDestinations(
   actor: AdminActor,
+  features: { courseAuthoring?: boolean; customerLifecycle?: boolean } = {},
 ): AdminDestination[] {
   const permissionContext = {
     bookingProviderResourceIds: actor.bookingProviderResourceIds,
@@ -587,6 +591,7 @@ export function getVisibleAdminDestinations(
 
   return ADMIN_DESTINATION_DEFINITIONS.filter(
     (destination) =>
+      (destination.feature === undefined || features[destination.feature] === true) &&
       (destination.roles === undefined ||
         destination.roles.includes(actor.user.role)) &&
       canAdmin({ action: destination.action, ...permissionContext }),
