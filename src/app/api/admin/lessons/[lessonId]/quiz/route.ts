@@ -1,0 +1,6 @@
+import { createCourseAdminHandler } from "@/lib/api-integration/course-admin-handler";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export async function GET(request: Request, context: { params: Promise<{ lessonId: string }> }) { return createCourseAdminHandler("get-quiz")(request, await context.params); }
+export async function PUT(request: Request, context: { params: Promise<{ lessonId: string }> }) { return createCourseAdminHandler("update-quiz")(request, await context.params); }
+export const HEAD = () => new Response(null, { status: 405, headers: { "cache-control": "private, no-store" } });

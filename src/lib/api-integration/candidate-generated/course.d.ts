@@ -181,6 +181,38 @@ export interface paths {
         patch: operations["patch_v1_admin_lessons_By_lessonId"];
         trace?: never;
     };
+    "/v1/admin/lessons/{lessonId}/quiz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAdminLessonQuiz"];
+        put: operations["saveAdminLessonQuizRevision"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/lessons/{lessonId}/video": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAdminLessonVideoStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/lessons/{lessonId}/video-upload": {
         parameters: {
             query?: never;
@@ -191,6 +223,54 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["createAdminLessonVideoUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/captions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createAdminLessonVideoCaption"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/captions/{trackId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteAdminLessonVideoCaption"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["refreshAdminLessonVideoStatus"];
         delete?: never;
         options?: never;
         head?: never;
@@ -269,6 +349,38 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_v1_courses_By_slug"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/internal/accounts/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["receiveAccountLifecycleCommand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/internal/accounts/exports/{commandId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAccountLifecycleExport"];
         put?: never;
         post?: never;
         delete?: never;
@@ -453,6 +565,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/student/courses/{courseId}/enrollments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["enrollInFreeCourse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/student/courses/{courseId}/lessons": {
         parameters: {
             query?: never;
@@ -511,6 +639,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["recordStudentLessonProgress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/student/lessons/{lessonId}/quiz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getStudentLessonQuiz"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/student/lessons/{lessonId}/quiz/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listStudentQuizAttempts"];
+        put?: never;
+        post: operations["submitStudentQuizAttempt"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1950,7 +2110,7 @@ export interface operations {
                 /** @description Exact match against the locally cached users.email projection. Results are incomplete when external identity data has not been synchronized. */
                 email?: string;
                 limit?: number;
-                source?: "purchase" | "admin" | "import" | "promotion";
+                source?: "free" | "purchase" | "admin" | "import" | "promotion";
                 status?: "active" | "revoked" | "refunded";
                 userId?: string;
             };
@@ -1987,7 +2147,7 @@ export interface operations {
                             grantedAt: string;
                             refundedAt: string | null;
                             revokedAt: string | null;
-                            source: "purchase" | "admin" | "import" | "promotion";
+                            source: "free" | "purchase" | "admin" | "import" | "promotion";
                             status: "active" | "revoked" | "refunded";
                             /** Format: date-time */
                             updatedAt: string;
@@ -2071,7 +2231,7 @@ export interface operations {
                 /** @description Exact match against the locally cached users.email projection. Results are incomplete when external identity data has not been synchronized. */
                 email?: string;
                 grantId?: string;
-                grantReason?: "purchase" | "manual" | "promotion" | "import";
+                grantReason?: "free" | "purchase" | "manual" | "promotion" | "import";
                 idempotencyKey?: string;
                 limit?: number;
                 orderId?: string;
@@ -2115,7 +2275,7 @@ export interface operations {
                             grantedAt: string;
                             /** Format: uuid */
                             grantId: string;
-                            grantReason: "purchase" | "manual" | "promotion" | "import";
+                            grantReason: "free" | "purchase" | "manual" | "promotion" | "import";
                             idempotencyKey: string;
                             orderId: string | null;
                             provider: ("helcim" | "square" | "manual") | null;
@@ -2872,7 +3032,7 @@ export interface operations {
             };
         };
     };
-    createAdminLessonVideoUpload: {
+    getAdminLessonQuiz: {
         parameters: {
             query?: never;
             header?: never;
@@ -2882,6 +3042,529 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        quiz: {
+                            courseRevision: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: uuid */
+                            createdBy: string;
+                            document: {
+                                mode: "practice" | "graded";
+                                passingPercent: number;
+                                questions: {
+                                    correctOptionId: string;
+                                    feedback: string;
+                                    id: string;
+                                    options: {
+                                        id: string;
+                                        text: string;
+                                    }[];
+                                    prompt: string;
+                                }[];
+                                /** @enum {number} */
+                                version: 1;
+                            };
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            lessonId: string;
+                            revision: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            410: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Default Response */
+            500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    saveAdminLessonQuizRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lessonId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    document: {
+                        mode?: "practice" | "graded";
+                        passingPercent?: number;
+                        questions: {
+                            correctOptionId: string;
+                            feedback: string;
+                            id: string;
+                            options: {
+                                id: string;
+                                text: string;
+                            }[];
+                            prompt: string;
+                        }[];
+                        /** @enum {number} */
+                        version: 1;
+                    };
+                    expectedCourseRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        quiz: {
+                            courseRevision: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: uuid */
+                            createdBy: string;
+                            document: {
+                                mode: "practice" | "graded";
+                                passingPercent: number;
+                                questions: {
+                                    correctOptionId: string;
+                                    feedback: string;
+                                    id: string;
+                                    options: {
+                                        id: string;
+                                        text: string;
+                                    }[];
+                                    prompt: string;
+                                }[];
+                                /** @enum {number} */
+                                version: 1;
+                            };
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            lessonId: string;
+                            revision: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            410: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Default Response */
+            500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getAdminLessonVideoStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lessonId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        current: {
+                            captionTracks: {
+                                closedCaptions: boolean;
+                                id: string;
+                                label: string;
+                                language: string;
+                                status: string;
+                            }[];
+                            generation: number;
+                            /** Format: uuid */
+                            id: string;
+                            isCurrent: boolean;
+                            lastErrorCode: string | null;
+                            /** Format: uuid */
+                            lessonId: string;
+                            status: string;
+                        } | null;
+                        latest: {
+                            captionTracks: {
+                                closedCaptions: boolean;
+                                id: string;
+                                label: string;
+                                language: string;
+                                status: string;
+                            }[];
+                            generation: number;
+                            /** Format: uuid */
+                            id: string;
+                            isCurrent: boolean;
+                            lastErrorCode: string | null;
+                            /** Format: uuid */
+                            lessonId: string;
+                            status: string;
+                        } | null;
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Default Response */
+            500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            502: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createAdminLessonVideoUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lessonId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expectedCurrentVideoAssetId?: string | null;
+                };
+            };
+        };
         responses: {
             /** @description Default Response */
             201: {
@@ -2984,6 +3667,529 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
             /** @description Default Response */
             500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            502: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createAdminLessonVideoCaption: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lessonId: string;
+                videoAssetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    label: string;
+                    language: string;
+                    /** Format: uri */
+                    url: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        captionTracks: {
+                            closedCaptions: boolean;
+                            id: string;
+                            label: string;
+                            language: string;
+                            status: string;
+                        }[];
+                        generation: number;
+                        /** Format: uuid */
+                        id: string;
+                        isCurrent: boolean;
+                        lastErrorCode: string | null;
+                        /** Format: uuid */
+                        lessonId: string;
+                        status: string;
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Default Response */
+            500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            502: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    deleteAdminLessonVideoCaption: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lessonId: string;
+                trackId: string;
+                videoAssetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        captionTracks: {
+                            closedCaptions: boolean;
+                            id: string;
+                            label: string;
+                            language: string;
+                            status: string;
+                        }[];
+                        generation: number;
+                        /** Format: uuid */
+                        id: string;
+                        isCurrent: boolean;
+                        lastErrorCode: string | null;
+                        /** Format: uuid */
+                        lessonId: string;
+                        status: string;
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Default Response */
+            500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            502: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    refreshAdminLessonVideoStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lessonId: string;
+                videoAssetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        captionTracks: {
+                            closedCaptions: boolean;
+                            id: string;
+                            label: string;
+                            language: string;
+                            status: string;
+                        }[];
+                        generation: number;
+                        /** Format: uuid */
+                        id: string;
+                        isCurrent: boolean;
+                        lastErrorCode: string | null;
+                        /** Format: uuid */
+                        lessonId: string;
+                        status: string;
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Default Response */
+            500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            502: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     "X-Request-ID": components["headers"]["RequestId"];
                     [name: string]: unknown;
@@ -3699,6 +4905,323 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Default Response */
+            500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    receiveAccountLifecycleCommand: {
+        parameters: {
+            query?: never;
+            header: {
+                "x-idempotency-key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    accountVersion: number;
+                    action: "suspend" | "restore" | "export" | "delete";
+                    commandId: string;
+                    /** Format: date-time */
+                    issuedAt: string;
+                    userId: string;
+                    /** @enum {number} */
+                    version: 1;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        accountVersion: number;
+                        commandId: string;
+                        status: "accepted" | "duplicate";
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            413: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            415: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Default Response */
+            500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getAccountLifecycleExport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                commandId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        accountVersion: number;
+                        commandId: string;
+                        data: {
+                            account: {
+                                accountVersion: number;
+                                email: string | null;
+                                status: "active" | "suspended" | "deleted";
+                            };
+                            attempts: {
+                                answers: {
+                                    optionId: string;
+                                    questionId: string;
+                                }[];
+                                completed: boolean;
+                                correctCount: number;
+                                createdAt: string;
+                                id: string;
+                                lessonId: string;
+                                passed: boolean;
+                                quizRevisionId: string;
+                                totalCount: number;
+                            }[];
+                            commands: {
+                                acceptedAt: string;
+                                accountVersion: number;
+                                action: string;
+                                commandId: string;
+                                issuedAt: string;
+                            }[];
+                            grants: {
+                                courseId: string;
+                                enrollmentId: string | null;
+                                expiresAt: string | null;
+                                grantedAt: string;
+                                grantReason: string;
+                                id: string;
+                                revokedAt: string | null;
+                                status: string;
+                            }[];
+                            progress: {
+                                completedAt: string | null;
+                                completedQuizRevision: number | null;
+                                createdAt: string;
+                                enrollmentId: string | null;
+                                id: string;
+                                lastWatchedAt: string | null;
+                                lessonId: string;
+                                maxPositionSeconds: number;
+                                resumePositionSeconds: number;
+                                revision: number;
+                                updatedAt: string;
+                            }[];
+                        };
+                        /** Format: date-time */
+                        expiresAt: string;
+                        userId: string;
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     "X-Request-ID": components["headers"]["RequestId"];
                     [name: string]: unknown;
@@ -5273,6 +6796,184 @@ export interface operations {
             };
         };
     };
+    enrollInFreeCourse: {
+        parameters: {
+            query?: never;
+            header: {
+                "x-idempotency-key": string;
+            };
+            path: {
+                courseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        courseId: string;
+                        enrollmentId: string | null;
+                        grantId: string;
+                        idempotentReplay: boolean;
+                        /** @enum {string} */
+                        source: "free";
+                        status: "active" | "revoked" | "expired";
+                    };
+                };
+            };
+            /** @description Default Response */
+            201: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        courseId: string;
+                        enrollmentId: string | null;
+                        grantId: string;
+                        idempotentReplay: boolean;
+                        /** @enum {string} */
+                        source: "free";
+                        status: "active" | "revoked" | "expired";
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            410: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            422: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Default Response */
+            500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
     listStudentCourseLessons: {
         parameters: {
             query?: never;
@@ -5649,6 +7350,9 @@ export interface operations {
                         expiresAt: string;
                         playbackId: string;
                         playbackToken: string;
+                        /** Format: date-time */
+                        thumbnailExpiresAt?: string;
+                        thumbnailToken?: string;
                     };
                 };
             };
@@ -5693,7 +7397,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: {
-                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED";
+                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED" | "ACCOUNT_UNAVAILABLE";
                             message: string;
                         };
                     };
@@ -5811,7 +7515,9 @@ export interface operations {
             content: {
                 "application/json": {
                     event?: "lesson_started" | "lesson_completed";
+                    expectedProgressRevision: number;
                     maxPositionSeconds?: number;
+                    resumePositionSeconds?: number;
                 };
             };
         };
@@ -5826,6 +7532,7 @@ export interface operations {
                     "application/json": {
                         progress: {
                             completedAt: string | null;
+                            completedQuizRevision: number | null;
                             /** Format: date-time */
                             createdAt: string;
                             enrollmentId: string | null;
@@ -5835,6 +7542,8 @@ export interface operations {
                             /** Format: uuid */
                             lessonId: string;
                             maxPositionSeconds: number;
+                            resumePositionSeconds: number;
+                            revision: number;
                             /** Format: date-time */
                             updatedAt: string;
                             /** Format: uuid */
@@ -5907,6 +7616,21 @@ export interface operations {
                 };
             };
             /** @description Default Response */
+            409: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
             410: {
                 headers: {
                     "X-Request-ID": components["headers"]["RequestId"];
@@ -5941,6 +7665,485 @@ export interface operations {
             };
         };
     };
+    getStudentLessonQuiz: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lessonId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        quiz: {
+                            document: {
+                                mode: "practice" | "graded";
+                                passingPercent: number;
+                                questions: {
+                                    id: string;
+                                    options: {
+                                        id: string;
+                                        text: string;
+                                    }[];
+                                    prompt: string;
+                                }[];
+                                /** @enum {number} */
+                                version: 1;
+                            };
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            lessonId: string;
+                            revision: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            410: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Default Response */
+            500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listStudentQuizAttempts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lessonId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        attempts: {
+                            answers: {
+                                optionId: string;
+                                questionId: string;
+                            }[];
+                            completed: boolean;
+                            correctCount: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            lessonId: string;
+                            mode: "practice" | "graded";
+                            passed: boolean;
+                            passingPercent: number;
+                            quizRevision: number;
+                            /** Format: uuid */
+                            quizRevisionId: string;
+                            results: {
+                                correct: boolean;
+                                correctOptionId: string;
+                                feedback: string;
+                                questionId: string;
+                                selectedOptionId: string;
+                            }[];
+                            totalCount: number;
+                        }[];
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            410: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Default Response */
+            500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    submitStudentQuizAttempt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lessonId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    answers: {
+                        optionId: string;
+                        questionId: string;
+                    }[];
+                    quizRevision: number;
+                    /** Format: uuid */
+                    requestId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        attempt: {
+                            answers: {
+                                optionId: string;
+                                questionId: string;
+                            }[];
+                            completed: boolean;
+                            correctCount: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            lessonId: string;
+                            mode: "practice" | "graded";
+                            passed: boolean;
+                            passingPercent: number;
+                            quizRevision: number;
+                            /** Format: uuid */
+                            quizRevisionId: string;
+                            results: {
+                                correct: boolean;
+                                correctOptionId: string;
+                                feedback: string;
+                                questionId: string;
+                                selectedOptionId: string;
+                            }[];
+                            totalCount: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            410: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Default Response */
+            500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
     listStudentProgress: {
         parameters: {
             query?: {
@@ -5963,6 +8166,7 @@ export interface operations {
                     "application/json": {
                         progress: {
                             completedAt: string | null;
+                            completedQuizRevision: number | null;
                             /** Format: date-time */
                             createdAt: string;
                             enrollmentId: string | null;
@@ -5972,6 +8176,8 @@ export interface operations {
                             /** Format: uuid */
                             lessonId: string;
                             maxPositionSeconds: number;
+                            resumePositionSeconds: number;
+                            revision: number;
                             /** Format: date-time */
                             updatedAt: string;
                             /** Format: uuid */

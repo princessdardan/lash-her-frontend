@@ -2,9 +2,10 @@ import "server-only";
 
 import { createCourseClient } from "./course-client";
 import { integrationErrorResponse, IntegrationServiceError, safeIntegrationRequestId } from "./service-errors";
+import { readSameOriginJson } from "./same-origin-json";
 
 type Client = ReturnType<typeof createCourseClient>;
-export type AcademyOperation = "catalog" | "catalog-course" | "my-courses" | "my-course" | "course-lessons" | "lesson" | "playback" | "progress" | "record-progress";
+export type AcademyOperation = "catalog" | "catalog-course" | "my-courses" | "my-course" | "course-lessons" | "lesson" | "playback" | "progress" | "record-progress" | "free-enrollment" | "quiz" | "quiz-attempts" | "submit-quiz-attempt";
 
 export function createAcademyHandler(operation: AcademyOperation, dependencies: { client?: () => Client; origin?: () => string | undefined } = {}) {
   const origin = dependencies.origin ?? (() => process.env.CUSTOMER_AUTH_URL);
@@ -12,7 +13,7 @@ export function createAcademyHandler(operation: AcademyOperation, dependencies: 
     let requestId = safeIntegrationRequestId();
     try {
       const url = new URL(request.url);
-      if (request.method !== (operation === "record-progress" ? "POST" : "GET")) throw new IntegrationServiceError("invalid_request", 405);
+      if (request.method !== (["record-progress", "free-enrollment", "submit-quiz-attempt"].includes(operation) ? "POST" : "GET")) throw new IntegrationServiceError("invalid_request", 405);
       const query: Record<string, string | number> = Object.create(null);
       for (const [name, value] of url.searchParams) {
         if (Object.hasOwn(query, name)) throw new IntegrationServiceError("invalid_request", 400);
@@ -35,17 +36,12 @@ export function createAcademyHandler(operation: AcademyOperation, dependencies: 
         case "lesson": result = await course.getLesson(params.lessonId); break;
         case "playback": result = await course.authorizePlayback(params.lessonId); break;
         case "progress": result = await course.listProgress(query); break;
+        case "quiz": result = await course.getQuiz(params.lessonId); break;
+        case "quiz-attempts": result = await course.listQuizAttempts(params.lessonId); break;
+        case "free-enrollment": result = await course.enrollFree(params.courseId, await readSameOriginJson(request, origin(), 16_384) as Parameters<Client["enrollFree"]>[1]); break;
+        case "submit-quiz-attempt": result = await course.submitQuizAttempt(params.lessonId, await readSameOriginJson(request, origin(), 65_536) as Parameters<Client["submitQuizAttempt"]>[1]); break;
         case "record-progress": {
-          const trusted = origin();
-          if (!trusted || new URL(trusted).origin !== url.origin || request.headers.get("origin") !== url.origin || request.headers.get("x-lash-csrf") !== "1" ||
-            request.headers.get("sec-fetch-site") && request.headers.get("sec-fetch-site") !== "same-origin") throw new IntegrationServiceError("forbidden", 403);
-          if (request.headers.get("content-type")?.split(";", 1)[0] !== "application/json") throw new IntegrationServiceError("invalid_request", 415);
-          const reader = request.body?.getReader();
-          let size = 0; const chunks: Uint8Array[] = [];
-          if (reader) while (true) { const chunk = await reader.read(); if (chunk.done) break; size += chunk.value.byteLength;
-            if (size > 16_384) { await reader.cancel(); throw new IntegrationServiceError("invalid_request", 413); } chunks.push(chunk.value); }
-          let body: unknown;
-          try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { throw new IntegrationServiceError("invalid_request", 400); }
+          const body = await readSameOriginJson(request, origin(), 16_384);
           result = await course.recordProgress(params.lessonId, body as Parameters<Client["recordProgress"]>[1]); break;
         }
       }

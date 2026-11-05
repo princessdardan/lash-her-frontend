@@ -2,11 +2,12 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-export type IntegrationErrorCode = "invalid_request" | "sign_in_required" | "forbidden" | "not_found" | "access_required" | "access_revoked" | "conflict" | "rate_limited" | "feature_disabled" | "service_unavailable";
+export type IntegrationErrorCode = "invalid_request" | "sign_in_required" | "forbidden" | "not_found" | "access_required" | "access_revoked" | "course_archived" | "video_processing" | "video_unavailable" | "conflict" | "rate_limited" | "feature_disabled" | "service_unavailable";
 const messages: Record<IntegrationErrorCode, string> = {
   invalid_request: "The request is invalid.", sign_in_required: "Sign in to continue.", forbidden: "This operation is not permitted.",
   not_found: "This resource is unavailable.", access_required: "Course access is required.", access_revoked: "Course access has been revoked.",
   conflict: "This operation conflicts with the current state. Refresh and try again.", rate_limited: "Please wait before trying again.",
+  course_archived: "This course is archived.", video_processing: "This video is still processing.", video_unavailable: "This video is unavailable.",
   feature_disabled: "This feature is unavailable.", service_unavailable: "The service is temporarily unavailable.",
 };
 export function safeIntegrationRequestId(value?: string | null): string {
@@ -21,7 +22,7 @@ export class IntegrationServiceError extends Error {
   }
 }
 export function upstreamIntegrationError(status: number, upstreamCode: string, requestId: string | null, retryAfter: string | null): IntegrationServiceError {
-  const code: IntegrationErrorCode = upstreamCode === "ENTITLEMENT_REVOKED" ? "access_revoked" : upstreamCode === "ACTIVE_ENROLLMENT_REQUIRED" ? "access_required" :
+  const code: IntegrationErrorCode = upstreamCode === "ENTITLEMENT_REVOKED" ? "access_revoked" : upstreamCode === "ACTIVE_ENROLLMENT_REQUIRED" ? "access_required" : upstreamCode === "COURSE_ARCHIVED" ? "course_archived" : upstreamCode === "VIDEO_PROCESSING" ? "video_processing" : upstreamCode === "VIDEO_UNAVAILABLE" ? "video_unavailable" :
     status === 400 || status === 413 || status === 415 ? "invalid_request" : status === 401 ? "sign_in_required" : status === 403 ? "forbidden" :
       status === 404 ? "not_found" : status === 409 ? "conflict" : status === 429 ? "rate_limited" : "service_unavailable";
   return new IntegrationServiceError(code, status >= 500 ? 503 : status, requestId, retryAfter && /^[0-9]{1,5}$/u.test(retryAfter) ? retryAfter : undefined);

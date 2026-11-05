@@ -179,5 +179,55 @@
     "method": "GET",
     "path": "/v1/internal/accounts/exports/{commandId}",
     "auth": "application"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/admin/lessons/{lessonId}/quiz",
+    "auth": "application"
+  },
+  {
+    "method": "PUT",
+    "path": "/v1/admin/lessons/{lessonId}/quiz",
+    "auth": "application"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/admin/lessons/{lessonId}/video",
+    "auth": "application"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/captions",
+    "auth": "application"
+  },
+  {
+    "method": "DELETE",
+    "path": "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/captions/{trackId}",
+    "auth": "application"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/refresh",
+    "auth": "application"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/student/courses/{courseId}/enrollments",
+    "auth": "application"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/student/lessons/{lessonId}/quiz",
+    "auth": "application"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/student/lessons/{lessonId}/quiz/attempts",
+    "auth": "application"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/student/lessons/{lessonId}/quiz/attempts",
+    "auth": "application"
   }
 ]

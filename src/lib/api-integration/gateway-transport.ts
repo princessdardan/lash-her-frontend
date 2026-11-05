@@ -7,7 +7,7 @@ import { getApplicationEnvironment } from "@/lib/env/application-environment.ser
 
 export type GatewayRequest = {
   service?: "course" | "community";
-  method: "GET" | "POST" | "PATCH";
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   path: string;
   applicationToken?: string;
   idempotencyKey?: string;

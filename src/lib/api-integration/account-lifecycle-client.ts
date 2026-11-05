@@ -24,8 +24,10 @@ export class LifecycleDeliveryError extends IntegrationServiceError {
 
 /** Service-only delivery. The caller supplies its dedicated lifecycle issuer,
  * never a browser bearer or learner/admin token. No browser handler exposes it. */
-export function createAccountLifecycleClient(dependencies: {
-  receiver: LifecycleReceiver;
+type ReceiverExport<R extends LifecycleReceiver> = CandidateSuccess<R, "/v1/internal/accounts/exports/{commandId}", "get">;
+
+export function createAccountLifecycleClient<R extends LifecycleReceiver>(dependencies: {
+  receiver: R;
   mintServiceToken: () => string | Promise<string>;
   getTransport?: () => (request: GatewayRequest) => Promise<Response>;
   run?: WriterAdmissionRunner;
@@ -52,14 +54,13 @@ export function createAccountLifecycleClient(dependencies: {
             if (gatewayFailure.uncertain) markWriterOperationUncertain();
             return { failure: new LifecycleDeliveryError(gatewayFailure.failure.status, "unavailable", gatewayFailure.failure.requestId, gatewayFailure.failure.retryAfter) };
           }
-          if (receiver === "community") validateCandidateResponse("community", "/v1/internal/accounts/commands", "post", response.status, value);
+          validateCandidateResponse(receiver, "/v1/internal/accounts/commands", "post", response.status, value);
           if (response.status === 200) {
             const receipt = parseBoundary("AccountLifecycleReceipt", value);
             if (receipt.commandId !== command.commandId || receipt.accountVersion !== command.accountVersion) throw new Error("RECEIPT_MISMATCH");
             return { receipt };
           }
           if (![400, 401, 403, 409, 413, 415, 429, 500].includes(response.status)) throw new Error("UNDOCUMENTED_RESPONSE");
-          if (receiver === "course") parseBoundary("CourseError", value);
           const rawCode = value && typeof value === "object" && "error" in value && value.error && typeof value.error === "object" && "code" in value.error && typeof value.error.code === "string" ? value.error.code.toLowerCase() : "";
           const code: LifecycleReceiverCode = rawCode === "account_version_conflict" || rawCode === "idempotency_conflict" || rawCode === "account_deleted" ? rawCode : response.status >= 500 || response.status === 429 ? "unavailable" : "rejected";
           if (response.status >= 500) markWriterOperationUncertain();
@@ -72,27 +73,26 @@ export function createAccountLifecycleClient(dependencies: {
       if ("failure" in outcome) throw outcome.failure;
       return outcome.receipt;
     },
-    async getCommunityExport(input: AccountLifecycleCommand): Promise<CandidateSuccess<"community", "/v1/internal/accounts/exports/{commandId}", "get">> {
-      if (receiver !== "community") throw new IntegrationServiceError("invalid_request", 400);
+    async getExport(input: AccountLifecycleCommand): Promise<ReceiverExport<R>> {
       const command = parseBoundary("AccountLifecycleCommand", input);
       if (command.action !== "export") throw new IntegrationServiceError("invalid_request", 400);
       const { commandId } = command;
-      validateCandidateRequest("community", "/v1/internal/accounts/exports/{commandId}", "get", { params: { commandId } });
+      validateCandidateRequest(receiver, "/v1/internal/accounts/exports/{commandId}", "get", { params: { commandId } });
       try {
-        const response = await getTransport()({ service: "community", method: "GET", path: `/v1/internal/accounts/exports/${commandId}`, applicationToken: await dependencies.mintServiceToken() });
+        const response = await getTransport()({ service: receiver, method: "GET", path: `/v1/internal/accounts/exports/${commandId}`, applicationToken: await dependencies.mintServiceToken() });
         if (response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") throw new Error("INVALID_INTEGRATION_RESPONSE");
         const value: unknown = await response.json();
         const gatewayFailure = parseGatewayFailure(response, value);
         if (gatewayFailure) throw gatewayFailure.failure;
-        validateCandidateResponse("community", "/v1/internal/accounts/exports/{commandId}", "get", response.status, value);
+        validateCandidateResponse(receiver, "/v1/internal/accounts/exports/{commandId}", "get", response.status, value);
         if (response.status === 401) throw new IntegrationServiceError("service_unavailable", 503, response.headers.get("x-request-id"));
         if (response.status !== 200) throw upstreamIntegrationError(response.status, "", response.headers.get("x-request-id"), response.headers.get("retry-after"));
-        const result = value as CandidateSuccess<"community", "/v1/internal/accounts/exports/{commandId}", "get">;
+        const result = value as ReceiverExport<"course"> | ReceiverExport<"community">;
         if (result.commandId !== commandId || result.userId !== command.userId || result.accountVersion !== command.accountVersion) throw new Error("EXPORT_MISMATCH");
         const expires = Date.parse(result.expiresAt), now = (dependencies.now ?? Date.now)();
         if (expires <= now) throw new IntegrationServiceError("not_found", 404);
         if (expires > now + 86_400_000) throw new Error("EXPORT_EXPIRY_MISMATCH");
-        return result;
+        return result as ReceiverExport<R>;
       } catch (error) { if (error instanceof IntegrationServiceError) throw error; throw new IntegrationServiceError("service_unavailable", 503); }
     },
   };

@@ -5,10 +5,10 @@
   "artifacts": {
     "course": {
       "repository": "lash-her-course-api",
-      "revision": "ad748346ca19ecf4298b0ccfef43c762c9a9f2e5",
+      "revision": "919eec2912be3c5111a7f95d0f31758984d75428",
       "sourcePath": "openapi/course-api.json",
       "file": "course-api.json",
-      "sha256": "f354cbd56314ed90f0ff1ede9299ae0415bab618c74baa2042f8d466766a9444"
+      "sha256": "bf9cea75a388fdc79b3a28d6869d9263aa2d6c042e82181a67494e3595bea3db"
     },
     "community": {
       "repository": "lash-her-community-api",

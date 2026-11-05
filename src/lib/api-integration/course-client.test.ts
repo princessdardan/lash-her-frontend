@@ -17,7 +17,7 @@ const lessonId = "22222222-2222-4222-8222-222222222222";
 const adminId = "33333333-3333-4333-8333-333333333333";
 const at = "2026-11-05T12:00:00.000Z";
 const actor = (role: "owner" | "admin" | "employee", status: "active" | "disabled" = "active"): AdminActor => ({ bookingProviderResourceIds: [], bookingResourceIds: [], user: { id: adminId, email: "staff@example.com", emailNormalized: "staff@example.com", displayName: null, providerUserId: "google-provider-subject", role, status } });
-const progress = { id: lessonId, userId: customerId, lessonId, enrollmentId: null, maxPositionSeconds: 10, completedAt: null, lastWatchedAt: at, createdAt: at, updatedAt: at };
+const progress = { id: lessonId, userId: customerId, lessonId, enrollmentId: null, maxPositionSeconds: 10, resumePositionSeconds: 3, revision: 1, completedQuizRevision: null, completedAt: null, lastWatchedAt: at, createdAt: at, updatedAt: at };
 const customer = async () => ({ id: customerId, email: "customer@example.com", name: null });
 const allowed = () => true;
 const direct = async <T>(_kind: "new-work" | "recovery", work: () => Promise<T>) => work();
@@ -26,7 +26,7 @@ test("disabled capabilities stop before sessions, credentials, admission or work
   const client = createCourseClient({ enabled: () => false, getCustomer: async () => { assert.fail("read customer"); },
     mintToken: () => { assert.fail("minted token"); }, getTransport: () => { assert.fail("started transport"); }, run: async () => { assert.fail("entered admission"); } });
   await assert.rejects(client.listCatalog(), { code: "feature_disabled" });
-  await assert.rejects(client.recordProgress(lessonId, { event: "lesson_started" }), { code: "feature_disabled" });
+  await assert.rejects(client.recordProgress(lessonId, { expectedProgressRevision: 0, event: "lesson_started" }), { code: "feature_disabled" });
 });
 
 test("learner identity is server-derived and public calls use no application credentials", async () => {
@@ -93,7 +93,7 @@ test("documented access errors are safe, unknown successes are denied, and mutat
   });
   const uncertain = createCourseClient({ enabled: allowed, getCustomer: customer, mintToken: () => "learner.jwt", run: async (_kind, work) => withWriterOperationContext(work),
     getTransport: () => async () => Response.json({ unexpected: "must-not-leak" }, { status: 200 }) });
-  await assert.rejects(uncertain.recordProgress(lessonId, { event: "lesson_started" }), /WRITER_OPERATION_REQUIRES_REVIEW/u);
+  await assert.rejects(uncertain.recordProgress(lessonId, { expectedProgressRevision: 0, event: "lesson_started" }), /WRITER_OPERATION_REQUIRES_REVIEW/u);
 });
 
 test("academy handlers isolate caching, reject forged identity/query input and enforce mutation CSRF", async () => {
@@ -106,7 +106,7 @@ test("academy handlers isolate caching, reject forged identity/query input and e
   const privateResponse = await createAcademyHandler("my-courses", dependencies)(new Request("https://site.example.com/api/academy/courses"));
   assert.equal(privateResponse.headers.get("cache-control"), "private, no-store");
   const write = createAcademyHandler("record-progress", dependencies);
-  const post = (headers = {}) => new Request("https://site.example.com/api/academy/lessons/a/progress", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ event: "lesson_started" }) });
+  const post = (headers = {}) => new Request("https://site.example.com/api/academy/lessons/a/progress", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ expectedProgressRevision: 0, event: "lesson_started" }) });
   assert.equal((await write(post(), { lessonId })).status, 403);
   assert.equal((await write(post({ origin: "https://evil.test", "x-lash-csrf": "1" }), { lessonId })).status, 403);
   assert.equal(calls, 2);
@@ -119,7 +119,7 @@ test("closed gateway rate-limit and pre-forward maintenance envelopes remain saf
   for (const [status, code] of [[429, "rate_limit_exceeded"], [503, "release_maintenance"]] as const) {
     const client = createCourseClient({ enabled: allowed, getCustomer: customer, mintToken: () => "learner.jwt", run: async (_kind, work) => withWriterOperationContext(work),
       getTransport: () => async () => Response.json({ error: { code, message: code.replaceAll("_", " ") }, requestId: customerId }, { status, headers: { "x-request-id": customerId, "retry-after": "30" } }) });
-    await assert.rejects(client.recordProgress(lessonId, { event: "lesson_started" }), error => {
+    await assert.rejects(client.recordProgress(lessonId, { expectedProgressRevision: 0, event: "lesson_started" }), error => {
       assert.equal((error as { code: string }).code, status === 429 ? "rate_limited" : "service_unavailable");
       assert.equal((error as { requestId: string }).requestId, customerId);
       assert.equal((error as Error).message.includes(code), false); return true;

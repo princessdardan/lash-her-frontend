@@ -11,7 +11,7 @@ import type { paths as CommunityPaths } from "./candidate-generated/community";
 
 export type IntegrationService = "course" | "community";
 export interface CandidatePaths { course: CoursePaths; community: CommunityPaths }
-export type CandidateMethod = "get" | "post" | "patch";
+export type CandidateMethod = "get" | "post" | "patch" | "put" | "delete";
 type Operation<S extends IntegrationService, P extends keyof CandidatePaths[S], M extends CandidateMethod> = M extends keyof CandidatePaths[S][P] ? CandidatePaths[S][P][M] : never;
 type JsonBody<T> = T extends { content: { "application/json": infer B } } ? B : never;
 export type CandidateBody<S extends IntegrationService, P extends keyof CandidatePaths[S], M extends CandidateMethod> = Operation<S, P, M> extends { requestBody: infer B } ? JsonBody<B> : never;

@@ -52,7 +52,18 @@ test("private exports are closed, bound to command and owner/version, and denied
     const client = createAccountLifecycleClient({ receiver: "community", now: () => now, mintServiceToken: () => "service.jwt", getTransport: () => async request => {
       assert.equal(request.service, "community"); assert.equal(request.method, "GET"); assert.equal(request.path, `/v1/internal/accounts/exports/${command.commandId}`); return Response.json(response);
     } });
-    if (expected === "success") assert.deepEqual(await client.getCommunityExport(command), exported);
-    else await assert.rejects(client.getCommunityExport(command), { code: expected });
+    if (expected === "success") assert.deepEqual(await client.getExport(command), exported);
+    else await assert.rejects(client.getExport(command), { code: expected });
+  }
+});
+
+test("Course exports use their committed receiver schema and cannot be substituted with Community data", async () => {
+  const courseExport = { ...exported, data: { account: { status: "active", accountVersion: 2, email: null }, commands: [], progress: [], attempts: [], grants: [] } };
+  for (const value of [courseExport, exported, { ...courseExport, data: { ...courseExport.data, providerToken: "must-not-forward" } }]) {
+    const client = createAccountLifecycleClient({ receiver: "course", now: () => now, mintServiceToken: () => "course.service.jwt", getTransport: () => async request => {
+      assert.equal(request.service, "course"); return Response.json(value);
+    } });
+    if (value === courseExport) assert.deepEqual(await client.getExport(command), courseExport);
+    else await assert.rejects(client.getExport(command), { code: "service_unavailable" });
   }
 });
