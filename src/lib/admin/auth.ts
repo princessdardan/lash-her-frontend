@@ -7,6 +7,7 @@ import { after } from "next/server";
 import { getAdminOwnerEmails } from "@/lib/env/admin";
 
 import { getAdminUserStore } from "./admin-user-store";
+import { runAdminAuthorizationOperation } from "./authorization-operation";
 import {
   createAdminAuth,
   type AdminAuthService,
@@ -35,22 +36,26 @@ const ADMIN_REQUEST_ID_HEADER = "x-lash-admin-request-id";
 const requestActors = new Map<string, Promise<AdminActor>>();
 
 export function getAdminAuth(): AdminAuthService {
-  return createAdminAuth({
+  const service = createAdminAuth({
     getIdentity: getAuthJsIdentity,
     getOwnerEmails: getAdminOwnerEmails,
     userStore: getAdminUserStore(),
   });
+  return {
+    requireActor: () => runAdminAuthorizationOperation(() => service.requireActor()),
+    requirePermission: (action, context) => runAdminAuthorizationOperation(() => service.requirePermission(action, context)),
+  };
 }
 
 export async function requireAdminActor(): Promise<AdminActor> {
-  return getRequestActor();
+  return runAdminAuthorizationOperation(getRequestActor);
 }
 
 export async function requirePermission(
   action: AdminPermissionAction,
   context: AdminPermissionContext = {},
 ): Promise<AdminActor> {
-  return requirePermissionWithAudit({
+  return runAdminAuthorizationOperation(() => requirePermissionWithAudit({
     action,
     context,
     getActor: getRequestActor,
@@ -66,7 +71,7 @@ export async function requirePermission(
         }),
       );
     },
-  });
+  }));
 }
 
 export async function requireFreshAdminGoogleAuthentication(
