@@ -11,6 +11,10 @@ import { withWriterOperationContext } from "@/lib/writer-admission/context";
 import courseContract from "../../../contracts/api-integration/p2-candidate/course-api.json";
 import communityContract from "../../../contracts/api-integration/p2-candidate/community-api.json";
 import { ApiContractError } from "./api-contract-error";
+import { GET as catalogRoute } from "@/app/api/academy/catalog/route";
+import { GET as myCoursesRoute } from "@/app/api/academy/courses/route";
+import { GET as progressRoute } from "@/app/api/academy/progress/route";
+import { GET as adminCoursesRoute } from "@/app/api/admin/courses/route";
 
 const customerId = "11111111-1111-4111-8111-111111111111";
 const lessonId = "22222222-2222-4222-8222-222222222222";
@@ -21,6 +25,17 @@ const progress = { id: lessonId, userId: customerId, lessonId, enrollmentId: nul
 const customer = async () => ({ id: customerId, email: "customer@example.com", name: null });
 const allowed = () => true;
 const direct = async <T>(_kind: "new-work" | "recovery", work: () => Promise<T>) => work();
+
+test("actual static route exports ignore Next context rather than parsing it as domain parameters", async t => {
+  const saved = process.env.INTEGRATION_COURSE_READS_ENABLED;
+  process.env.INTEGRATION_COURSE_READS_ENABLED = "false";
+  t.after(() => { if (saved === undefined) delete process.env.INTEGRATION_COURSE_READS_ENABLED; else process.env.INTEGRATION_COURSE_READS_ENABLED = saved; });
+  for (const route of [catalogRoute, myCoursesRoute, progressRoute, adminCoursesRoute]) {
+    const response = await Reflect.apply(route, undefined, [new Request("https://site.example.com/api/academy/catalog"), { params: Promise.resolve({}) }]);
+    assert.equal(response.status, 404);
+    assert.equal((await response.json()).error.code, "feature_disabled");
+  }
+});
 
 test("disabled capabilities stop before sessions, credentials, admission or workload transport", async () => {
   const client = createCourseClient({ enabled: () => false, getCustomer: async () => { assert.fail("read customer"); },
