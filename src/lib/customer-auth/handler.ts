@@ -66,13 +66,16 @@ export function createCustomerAuthHandler(dependencies: {
       const client = clientIp ?? "unavailable";
       const allowed = await store.consumeThrottle(customerThrottleKey(configuration.secret, "client", client), 30, 900);
       if (emailRequest) {
+        // Stop here before even normalizing an attacker-selected address. A
+        // denied/untrusted client must not create arbitrarily many email rows.
+        if (!allowed || !clientIp && process.env.VERCEL === "1") return genericEmailResponse(configuration.origin);
         let email: string;
         try {
           const input = contentType === "application/json" ? JSON.parse(body) : Object.fromEntries(new URLSearchParams(body));
           email = normalizeCustomerEmail(input.email);
         } catch { return genericEmailResponse(configuration.origin); }
         const emailAllowed = await store.consumeThrottle(customerThrottleKey(configuration.secret, "email", email), 5, 900);
-        if (!allowed || !emailAllowed || !clientIp && process.env.VERCEL === "1") return genericEmailResponse(configuration.origin);
+        if (!emailAllowed) return genericEmailResponse(configuration.origin);
       } else if (!allowed || !clientIp && process.env.VERCEL === "1") {
         return Response.json({ error: "Please wait before trying again." }, { status: 429, headers: { "retry-after": "900" } });
       }

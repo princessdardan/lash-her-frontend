@@ -568,6 +568,13 @@
       "when": 1793907202941,
       "tag": "0080_customer_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1793908371084,
+      "tag": "0081_customer_auth_throttle_expiry",
+      "breakpoints": true
     }
   ]
 }

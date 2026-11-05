@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, gt, lt, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import type { Adapter, AdapterAccount, AdapterUser } from "next-auth/adapters";
 import { getPrivateDb } from "@/lib/private-db/client";
 import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
@@ -121,9 +121,14 @@ export function createCustomerAuthStore(database: () => Database = getPrivateDb,
     async consumeThrottle(key: string, limit: number, windowSeconds: number): Promise<boolean> {
       assertCustomerWriterContext();
       const instant = now();
-      await database().delete(customerAuthThrottle).where(lt(customerAuthThrottle.resetsAt, instant));
-      await database().delete(customerVerificationTokens).where(lt(customerVerificationTokens.expires, instant));
-      await database().delete(customerSessions).where(lt(customerSessions.expires, instant));
+      // Each indexed cleanup is bounded; one login cannot inherit an arbitrary
+      // maintenance backlog. No request allocates more than its fixed buckets.
+      await database().delete(customerAuthThrottle).where(inArray(customerAuthThrottle.key,
+        database().select({ key: customerAuthThrottle.key }).from(customerAuthThrottle).where(lt(customerAuthThrottle.resetsAt, instant)).orderBy(customerAuthThrottle.resetsAt).limit(100)));
+      await database().delete(customerVerificationTokens).where(inArray(customerVerificationTokens.token,
+        database().select({ token: customerVerificationTokens.token }).from(customerVerificationTokens).where(lt(customerVerificationTokens.expires, instant)).orderBy(customerVerificationTokens.expires).limit(100)));
+      await database().delete(customerSessions).where(inArray(customerSessions.tokenHash,
+        database().select({ tokenHash: customerSessions.tokenHash }).from(customerSessions).where(lt(customerSessions.expires, instant)).orderBy(customerSessions.expires).limit(100)));
       const [row] = await database().insert(customerAuthThrottle).values({ key, attempts: 1, resetsAt: new Date(instant.getTime() + windowSeconds * 1000) })
         .onConflictDoUpdate({ target: customerAuthThrottle.key, set: { attempts: sql`${customerAuthThrottle.attempts} + 1` } }).returning();
       return row.attempts <= limit;

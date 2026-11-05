@@ -1,6 +1,6 @@
 # Customer identity: P2-01
 
-The separate Auth.js customer configuration uses Google OIDC and Resend email proofs at `/api/customer-auth/**`. The existing administrator configuration, authorization and `/api/auth/**` cookies are unchanged. Customer authentication remains disabled unless `CUSTOMER_AUTH_ENABLED=true`; this change does not enable any deployed environment.
+The separate Auth.js customer configuration uses Google OIDC and Resend email proofs at `/api/customer-auth/**`. The existing administrator configuration, authorization and `/api/auth/**` cookies are unchanged. Customer authentication remains disabled unless both `CUSTOMER_AUTH_ENABLED=true` and `INTEGRATION_CUSTOMER_ACCESS_ENABLED=true`; this change does not enable any deployed environment.
 
 ## Configuration and interfaces
 
@@ -10,7 +10,7 @@ Migration `0080_customer_identity` adds `customer_users`, `customer_provider_lin
 
 `getCustomerActor()` from `src/lib/customer-auth/session.ts` returns `{ id, email, name }` or `null`. It is a server-only read of the specifically named customer database session. It does not renew a cookie or expiry, reuse an administrator session, or confer administrator permissions. Service JWT subjects must use `id`; token signing remains P2-04. Suspension/deletion commands and preferences remain P2-11.
 
-Sessions have a fixed 30-day lifetime, use HTTP-only SameSite=Lax host-only cookies and store only a SHA-256 digest of the random bearer in PostgreSQL. Every lookup checks expiry and active account state. Expired tokens/sessions/throttle rows are cleaned as part of a later admitted authentication mutation, never during rendering.
+Sessions have a fixed 30-day lifetime, use HTTP-only SameSite=Lax host-only cookies and store only a SHA-256 digest of the random bearer in PostgreSQL. Every lookup checks expiry and active account state. Expired tokens/sessions/throttle rows are cleaned in indexed batches of at most 100 rows per table as part of a later admitted authentication mutation, never during rendering. Forward migration `0081_customer_auth_throttle_expiry` adds the throttle-expiry index without rewriting migration0080.
 
 Email proofs expire after 15 minutes. Auth.js supplies the secret-bound SHA-256 proof digest; the adapter atomically deletes and returns the matching proof and denies expired/replayed proofs. The sender persists the digest before calling Resend and awaits the bounded provider acknowledgement. It never logs addresses, URLs, bearer tokens, profiles or provider response bodies. Provider or caught database ambiguity remains visible to durable admission even when Auth.js converts its failure to a redirect.
 

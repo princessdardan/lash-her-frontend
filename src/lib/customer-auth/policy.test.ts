@@ -4,8 +4,9 @@ import { customerSessionCookieName, customerThrottleKey, hashCustomerSession, no
 
 test("customer configuration is off by default and never borrows administrator credentials", () => {
   assert.equal(resolveCustomerAuthConfiguration({}), null);
-  const env = { CUSTOMER_AUTH_ENABLED: "true", CUSTOMER_AUTH_URL: "https://staging.example.com", CUSTOMER_AUTH_SECRET: "c".repeat(32), CUSTOMER_AUTH_GOOGLE_ID: "customer-client", CUSTOMER_AUTH_GOOGLE_SECRET: "customer-google", CUSTOMER_AUTH_RESEND_KEY: "customer-resend", CUSTOMER_AUTH_EMAIL_FROM: "Account <account@example.com>" };
+  const env = { CUSTOMER_AUTH_ENABLED: "true", INTEGRATION_CUSTOMER_ACCESS_ENABLED: "true", CUSTOMER_AUTH_URL: "https://staging.example.com", CUSTOMER_AUTH_SECRET: "c".repeat(32), CUSTOMER_AUTH_GOOGLE_ID: "customer-client", CUSTOMER_AUTH_GOOGLE_SECRET: "customer-google", CUSTOMER_AUTH_RESEND_KEY: "customer-resend", CUSTOMER_AUTH_EMAIL_FROM: "Account <account@example.com>" };
   assert.equal(resolveCustomerAuthConfiguration(env)?.origin, "https://staging.example.com");
+  assert.equal(resolveCustomerAuthConfiguration({ ...env, INTEGRATION_CUSTOMER_ACCESS_ENABLED: "false" }), null);
   for (const override of [{ AUTH_SECRET: env.CUSTOMER_AUTH_SECRET }, { AUTH_GOOGLE_SECRET: env.CUSTOMER_AUTH_GOOGLE_SECRET }, { AUTH_GOOGLE_ID: env.CUSTOMER_AUTH_GOOGLE_ID }, { AUTH_URL: "https://elsewhere.example.com" }, { CUSTOMER_AUTH_SECRET: "short" }, { CUSTOMER_AUTH_URL: "http://example.com" }, { CUSTOMER_AUTH_URL: "https://user:pass@example.com" }, { CUSTOMER_AUTH_URL: "https://example.com/api/auth" }]) {
     assert.throws(() => resolveCustomerAuthConfiguration({ ...env, ...override }));
   }

@@ -46,7 +46,7 @@ export interface CustomerAuthConfiguration {
 }
 
 export function resolveCustomerAuthConfiguration(env: Record<string, string | undefined> = process.env): CustomerAuthConfiguration | null {
-  if (env.CUSTOMER_AUTH_ENABLED !== "true") return null;
+  if (env.CUSTOMER_AUTH_ENABLED !== "true" || env.INTEGRATION_CUSTOMER_ACCESS_ENABLED !== "true") return null;
   const { CUSTOMER_AUTH_URL: url, CUSTOMER_AUTH_SECRET: secret, CUSTOMER_AUTH_GOOGLE_ID: googleId,
     CUSTOMER_AUTH_GOOGLE_SECRET: googleSecret, CUSTOMER_AUTH_RESEND_KEY: resendKey, CUSTOMER_AUTH_EMAIL_FROM: emailFrom } = env;
   if (!url || !secret || Buffer.byteLength(secret) < 32 || !googleId || !googleSecret || !resendKey || !emailFrom || /[\r\n]/u.test(emailFrom)) throw new Error("CUSTOMER_AUTH_CONFIGURATION");

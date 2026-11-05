@@ -93,6 +93,19 @@ test("durable throttle counters enforce concurrent limits and reopen only after 
   });
 });
 
+test("expired credential maintenance deletes at most one bounded batch per throttle call", skipped, async () => {
+  const store = createCustomerAuthStore(() => database!);
+  const keyPrefix = `${prefix}-expired-`;
+  await database!.insert(schema.customerAuthThrottle).values(Array.from({ length: 250 }, (_, index) => ({
+    key: `${keyPrefix}${index}`, attempts: 1, resetsAt: new Date(0),
+  })));
+  try {
+    await withCustomerWriterContext(async () => store.consumeThrottle(`${prefix}-active`, 5, 900));
+    const retained = await database!.select().from(schema.customerAuthThrottle).where(like(schema.customerAuthThrottle.key, `${keyPrefix}%`));
+    assert.equal(retained.length, 150);
+  } finally { await database!.delete(schema.customerAuthThrottle).where(like(schema.customerAuthThrottle.key, `${prefix}%`)); }
+});
+
 test("actual Auth.js email flow signs in once, strips secrets, isolates admin cookies and revokes on suspension", skipped, async () => {
   const store = createCustomerAuthStore(() => database!);
   const handler = createCustomerAuthHandler({ configuration: () => config, store: () => store, run: async (_kind, work) => work() });

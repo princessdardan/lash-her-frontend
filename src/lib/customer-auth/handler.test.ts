@@ -65,3 +65,13 @@ test("customer configuration isolates all cookies and explicitly forbids email-o
   assert.equal(google.options.allowDangerousEmailAccountLinking, false);
   assert.deepEqual(google.options.checks, ["pkce", "state", "nonce"]);
 });
+
+test("an exhausted client cannot allocate new email throttle buckets", async () => {
+  let throttleCalls = 0;
+  const handler = createCustomerAuthHandler({ configuration: () => configuration,
+    store: () => ({ consumeThrottle: async () => { throttleCalls++; return false; } }) as unknown as CustomerAuthStore,
+    run: async (_kind, work) => work(), handle: async () => { assert.fail("exhausted client reached Auth.js"); } });
+  const response = await handler(request("/signin/resend", post("another-new-email@example.com")));
+  assert.equal(response.status, 303);
+  assert.equal(throttleCalls, 1, "only the client bucket is visited");
+});

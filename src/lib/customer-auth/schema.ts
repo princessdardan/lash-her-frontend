@@ -42,4 +42,4 @@ export const customerAuthThrottle = pgTable("customer_auth_throttle", {
   key: text("key").primaryKey(),
   attempts: integer("attempts").notNull(),
   resetsAt: timestamp("resets_at", { withTimezone: true }).notNull(),
-});
+}, table => [index("customer_auth_throttle_expiry_idx").on(table.resetsAt)]);
