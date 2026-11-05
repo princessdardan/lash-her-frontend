@@ -12,6 +12,7 @@ import { frontendWriterInventory } from "../frontend-writer-inventory.mjs";
 import { changeFrontendAdmission, observeFrontendDrain, reconcileFrontendOperation } from "../frontend-admission.mjs";
 
 let phase = "configuration";
+const completedChecks = [];
 async function main() {
   assert.equal(process.env.FRONTEND_IDENTITY_OWNED_TEST, "true");
   const port = Number(process.env.OWNED_RECONCILIATION_PORT), password = process.env.OWNED_RECONCILIATION_PASSWORD;
@@ -51,16 +52,23 @@ async function main() {
   const operator = new Client({ host: target.host, port, database: target.database, user: "frontend_test_admin", password,
     ssl: { rejectUnauthorized: true, ca: readFileSync(process.env.NODE_EXTRA_CA_CERTS, "utf8") } });
   await operator.connect();
-  const connections = [operator], requests = [], checks = [], evidence = [], findings = [], nativeFetch = globalThis.fetch;
+  const connections = [operator], requests = [], checks = completedChecks, evidence = [], findings = [], nativeFetch = globalThis.fetch;
   const originalConsole = { log: console.log, warn: console.warn, error: console.error };
   const sourceBefore = frontendWriterInventory(fileURLToPath(new URL("../../../", import.meta.url)));
   let server, closePool, gate, providerMode = "success", verificationUrl, providerCalls = [], unexpectedFetches = 0, logCount = 0;
-  let expectedLifecycleCommand, lifecycleMode = "success";
+  let expectedLifecycleCommand, lifecycleMode = "success", adminDiagnostic;
+  const diagnosticLogTypes = [];
   const lifecycleSeen = new Map();
   let nonce, googleEmail = "owned@example.invalid", googleSubject = "owned-google-subject", invariantFailure;
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const jwk = { ...publicKey.export({ format: "jwk" }), kid: "owned-identity-key", alg: "RS256", use: "sig" };
-  console.log = console.warn = console.error = () => { logCount++; };
+  console.log = console.warn = console.error = (...args) => {
+    logCount++;
+    for (const value of args) {
+      if (typeof value === "string") diagnosticLogTypes.push(...["MissingSecret", "UntrustedHost", "MissingAdapter", "InvalidCallbackUrl", "JWTSessionError", "SessionTokenError", "UnsupportedStrategy", "InvalidProvider", "Configuration", "AccessDenied", "Error", "warn"].filter(name => value.includes(name)));
+      else if (value && typeof value === "object") diagnosticLogTypes.push(...[value.name, value.type, value.code, value.cause?.err?.name, value.cause?.err?.code].filter(v => typeof v === "string" && /^[A-Z_a-z]+$/u.test(v)));
+    }
+  };
   try {
     let epoch = (await operator.query("SELECT epoch::text FROM frontend_admission.control")).rows[0].epoch;
     const change = async (enabled, recovery = false) => { epoch = (await changeFrontendAdmission(operator, target, epoch, { newWork: enabled, recovery })).epoch; };
@@ -161,7 +169,7 @@ async function main() {
     const { POST: accountPreferences } = await import("../../../src/app/api/account/preferences/route.ts");
     const { POST: adminAccountCommand } = await import("../../../src/app/api/admin/customer-accounts/[userId]/commands/route.ts");
     const { GET: lifecycleCron } = await import("../../../src/app/api/cron/account-lifecycle/route.ts");
-    const { encode } = await import("next-auth/jwt");
+    const { encode, decode } = await import("next-auth/jwt");
     ({ closePrivateDbPool: closePool } = await import("../../../src/lib/private-db/client.ts"));
     server = createServer(async (incoming, outgoing) => {
       try {
@@ -179,7 +187,16 @@ async function main() {
           assert.ok(adminMatch || ["/api/account/commands", "/api/account/preferences"].includes(incoming.url));
           const route = adminMatch ? request => adminAccountCommand(request, { params: Promise.resolve({ userId: adminMatch[1] }) }) : incoming.url === "/api/account/commands" ? accountCommand : accountPreferences;
           const store = createRequestStoreForAPI(req, new URL(req.url));
-          result = await workAsyncStorage.run({ route: incoming.url, isStaticGeneration: false }, () => workUnitAsyncStorage.run(store, () => route(req)));
+          result = await workAsyncStorage.run({ route: incoming.url, isStaticGeneration: false }, () => workUnitAsyncStorage.run(store, async () => {
+            if (adminMatch) {
+              const { auth: readAdminAuth } = await import("../../../src/auth.ts");
+              const session = await readAdminAuth();
+              adminDiagnostic = { present: !!session, hasSubject: typeof session?.user?.providerUserId === "string", verified: session?.user?.isEmailVerified === true,
+                fresh: typeof session?.user?.authenticatedAt === "number" && Date.now() / 1000 - session.user.authenticatedAt < 300,
+                cookieNames: headers.get("cookie")?.split("; ").map(pair => pair.split("=", 1)[0]) };
+            }
+            return route(req);
+          }));
         }
         for (const [name, value] of result.headers) if (name !== "set-cookie") outgoing.setHeader(name, value);
         outgoing.setHeader("set-cookie", result.headers.getSetCookie()); outgoing.writeHead(result.status); outgoing.end(await result.text());
@@ -212,6 +229,8 @@ async function main() {
       await operator.query("INSERT INTO admin_users(id,provider_user_id,email,email_normalized,display_name,role,status) VALUES($1,$2,$3,$3,'Owned admin fixture',$4,'active')", [id, providerUserId, email, role]);
       const token = await encode({ secret: process.env.AUTH_SECRET, salt: "__Secure-authjs.session-token", maxAge: 3600,
         token: { sub: providerUserId, providerUserId, email, name: "Owned admin fixture", googleEmailVerified: true, adminAuthenticatedAt: Math.floor(Date.now() / 1000) - ageSeconds } });
+      const decoded = await decode({ token, secret: process.env.AUTH_SECRET, salt: "__Secure-authjs.session-token" });
+      assert.equal(decoded.providerUserId, providerUserId); assert.equal(decoded.googleEmailVerified, true);
       return { id, cookie: `__Secure-authjs.session-token=${token}` };
     };
     const adminCommand = (fixture, customer, action = "suspend") => request(`/api/admin/customer-accounts/${customer.id}/commands`, { method: "POST", cookie: fixture.cookie, body: { action, idempotencyKey: randomUUID() } });
@@ -524,7 +543,7 @@ async function main() {
     await reset(); const adminCustomer = await seedAccount(), owner = await seedAdmin(); await change(false); before = await operations(); beforeBusiness = await fingerprint();
     assert.equal((await adminCommand(owner, adminCustomer)).status, 503); await entries(before, []); assert.equal(await fingerprint(), beforeBusiness);
     await change(true, true); before = await operations();
-    const ownerCommand = await adminCommand(owner, adminCustomer); assert.equal(ownerCommand.status, 202);
+    const ownerCommand = await adminCommand(owner, adminCustomer); assert.equal(ownerCommand.status, 202, JSON.stringify({ response: JSON.parse(ownerCommand.text), entries: await since(before), unexpectedFetches, adminDiagnostic, logCount, diagnosticLogTypes }));
     await entries(before, ["completed", "completed", "completed"], ["new-work", "recovery", "recovery"]);
     assert.equal((await operator.query("SELECT status FROM customer_users WHERE id=$1", [adminCustomer.id])).rows[0].status, "suspended");
     assert.equal((await counts()).customer_sessions, 0); await loadLifecycleCommand();
@@ -616,7 +635,7 @@ async function main() {
   }
 }
 main().then(result => process.stdout.write(`${JSON.stringify(result)}\n`)).catch(error => {
-  process.stderr.write(`${JSON.stringify({ status: "FRONTEND_IDENTITY_OWNED_FAILED", phase, code: /^[A-Z0-9_]+$/u.test(error.code ?? "") ? error.code : undefined,
+  process.stderr.write(`${JSON.stringify({ status: "FRONTEND_IDENTITY_OWNED_FAILED", phase, completedChecks, code: /^[A-Z0-9_]+$/u.test(error.code ?? "") ? error.code : undefined,
     assertion: error instanceof assert.AssertionError ? error.message : undefined,
     frames: error.stack?.split("\n").filter(line => /owned-frontend-identity-admission\.mjs/u.test(line)) })}\n`); process.exitCode = 1;
 });

@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "status": "AUTH_PROFILE_ISOLATION_QUALIFICATION_FAILED",
+  "applicationSourceCommit": "75773775d1c511da551cd013a7e793658e3a7aef",
+  "isolatedSourceMergeCommit": "d4ffd8374f035f48e8d5e2b51d0f115ad84a356a",
+  "applicationSourceManifestSha256": "4eb176ee9aafee239876ef83466ce0d18be0a4d436a088ded16b02e64b30c37d",
+  "node": "24.18.0",
+  "postgresMajor": 16,
+  "files": {
+    "ops/platform/auth-profile-isolation.test.mjs": "b713e533ed20f3510b743ab5afb8d698cc4ca521ae7f03b8ce799db55f48ba90",
+    "ops/platform/harness/owned-frontend-identity-admission.mjs": "7bb72ddfbee2be4cda2cc13dd2010784a01448e803af587d4cecf5bd00a1b182",
+    "ops/platform/test-frontend-identity-local.mjs": "129331607c6004bc979d8bddeed91d57c2f0f9730b50cb8d00113567306b2039",
+    "src/auth.ts": "6ba0c0a10316dcbd17df57838d845e52fb243fcfb0bfca31994ac35cf25b49fb",
+    "src/lib/customer-auth/context.ts": "ecdd5bbc725ac8f4f1d406aabd1fb7e5a24092c6ab88aed79ef550c861857fc2",
+    "src/lib/customer-auth/store.ts": "4169a5d1988fdc2ea9c93c161d57d2df01c17aae8e7e1565fcba1db829e8d840",
+    "src/lib/admin/authorization-operation.ts": "281f265e7521fa6a72671e836234f6d149c4f43cf8309bdfdb158ee65405fb0f",
+    "package-lock.json": "797605065847a24761babb8b541a63a31356c0d5163b8983e497abec2189ebe1"
+  },
+  "dependency": {
+    "nextAuth": "5.0.0-beta.32",
+    "authCore": "0.41.3",
+    "installedAssertSha256": "527ccf487d7824c9e17e848ec3648dabf678a509693efc30f015dce217a3e178"
+  },
+  "findings": [
+    {
+      "code": "AUTH_CORE_EMAIL_FLAG_LEAKS_TO_ADMIN_JWT_CONFIG",
+      "description": "The module-level hasEmail flag survives customer email metadata validation and makes the later administrator JWT profile require an adapter.",
+      "module": "@auth/core/lib/utils/assert.js",
+      "flagDeclarationLine": 16,
+      "flagSetLine": 92,
+      "refusalLine": 135
+    }
+  ],
+  "checks": [
+    {
+      "command": "node --import tsx --import ./scripts/register-server-only-test.mjs --test --test-reporter=tap ops/platform/auth-profile-isolation.test.mjs",
+      "exitCode": 1,
+      "tests": 2,
+      "passed": 1,
+      "failed": 1,
+      "skipped": 0,
+      "customerThenAdmin": "MissingAdapter",
+      "adminThenCustomer": "valid",
+      "metadataOnly": true,
+      "databaseAccessed": false,
+      "providerCalled": false,
+      "tokenIssued": false
+    },
+    {
+      "command": "FRONTEND_IDENTITY_LOCAL_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin node --import tsx ops/platform/test-frontend-identity-local.mjs",
+      "exitCode": 1,
+      "completedIdentityAndCustomerAccountChecks": 31,
+      "failurePhase": "admin-lifecycle-closed-before-authorization-writes",
+      "actualAdminAuthReturned": null,
+      "actualAdminAuthError": "MissingAdapter",
+      "localSyntheticJwtDecoded": true,
+      "allSixPriorIdentityReceiptFindingsClosed": true,
+      "existingDbRegressionsReached": false
+    }
+  ],
+  "artifacts": {
+    "postgres16-failure.json": {
+      "path": "postgres16-failure.json",
+      "sha256": "2f7e52013909fa295af954996cc041ff7e808ee794f23436402481ee9dff6304"
+    },
+    "profile-isolation-failure.tap": {
+      "path": "profile-isolation-failure.tap",
+      "sha256": "b2626e6a1f210c28ade51fa4621d0690d090264185baed6c812fe2909ca9c71b"
+    }
+  },
+  "scope": {
+    "sameProcessRealAuthJs": true,
+    "realCustomerAdapterMetadata": true,
+    "constructedNextRequestStorage": true,
+    "actualNativeNextIsolationVerified": false,
+    "liveProviderTouched": false,
+    "liveDatabaseTouched": false
+  },
+  "p200Complete": false,
+  "p212Complete": false,
+  "g2Complete": false
+}
