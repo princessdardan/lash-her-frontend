@@ -4,12 +4,13 @@ const { createHmac, randomUUID } = require("node:crypto");
 if (process.env.LEARNING_E2E_FIXTURE === "1") {
   if (process.env.NODE_ENV === "production" || !["127.0.0.1", "localhost"].includes(new URL(process.env.DATABASE_URL).hostname)) throw new Error("Learning fixture requires local test DB and development runtime");
   const originalFetch = globalThis.fetch;
-  const courseId = "a1111111-1111-4111-8111-111111111111", moduleId = "a2222222-2222-4222-8222-222222222222", lessonId = "a3333333-3333-4333-8333-333333333333";
+  const courseId = "a1111111-1111-4111-8111-111111111111", moduleId = "a2222222-2222-4222-8222-222222222222", lessonId = "a3333333-3333-4333-8333-333333333333", previewId = "a5555555-5555-4555-8555-555555555555";
   const users = new Map();
   const lesson = { id: lessonId, moduleId, slug: "the-basics", title: "The basics", content: "PRIVATE_LEARNING_CONTENT", contentDocument: null, transcript: "A gentle approach protects the natural lash.", captions: [{ language: "en", label: "English", url: "https://learning-media.example.invalid/captions.vtt" }], isPreview: false, position: 1 };
   const course = { id: courseId, slug: "learning-fixture", title: "Lash foundations", description: "An introduction to intentional lash care.", introduction: "Build a careful, confident practice.", cover: null, seo: null, priceCents: 0, currency: "CAD", accessMode: "free" };
-  const fullCourse = { ...course, modules: [{ id: moduleId, slug: "foundations", title: "Foundations", description: null, position: 1, lessons: [lesson] }] };
-  const publicCourse = { ...fullCourse, modules: fullCourse.modules.map(module => ({ ...module, lessons: [] })) };
+  const preview = { ...lesson, id: previewId, slug: "preview", title: "A public preview", content: "Public preview lesson text.", transcript: null, captions: [], isPreview: true, position: 2 };
+  const fullCourse = { ...course, modules: [{ id: moduleId, slug: "foundations", title: "Foundations", description: null, position: 1, lessons: [lesson, preview] }] };
+  const publicCourse = { ...fullCourse, modules: fullCourse.modules.map(module => ({ ...module, lessons: [{ id: preview.id, slug: preview.slug, title: preview.title, isPreview: true, position: preview.position }] })) };
   const questions = [{ id: "q1", prompt: "Which approach protects the natural lash?", options: [{ id: "gentle", text: "Use gentle care" }, { id: "pull", text: "Pull the extensions" }] }, { id: "q2", prompt: "When can you revisit the lesson?", options: [{ id: "anytime", text: "At your own pace" }, { id: "never", text: "Only once" }] }];
   const quiz = { id: "a4444444-4444-4444-8444-444444444444", lessonId, revision: 1, document: { version: 1, mode: "graded", passingPercent: 80, questions } };
   const json = (body, status = 200) => Response.json(body, { status, headers: { "x-request-id": randomUUID(), "cache-control": "private, no-store" } });
@@ -42,6 +43,8 @@ if (process.env.LEARNING_E2E_FIXTURE === "1") {
       state.keys.set(body.idempotencyKey, result); return json(result, replay ? 200 : 201);
     }
     if (path === "/v1/student/courses") return json({ courses: state.grant ? [{ id: courseId, slug: course.slug, title: course.title, description: course.description, status: "published", progress: { totalLessons: 1, completedLessons: state.progress?.completedAt ? 1 : 0, percentComplete: state.progress?.completedAt ? 100 : 0, lastActivityAt: state.progress?.lastWatchedAt ?? null, continueLessonId: lessonId, continuePositionSeconds: state.progress?.resumePositionSeconds ?? 0 } }] : [] });
+    if (path === `/v1/student/lessons/${previewId}`) return json({ lesson: preview });
+    if (path === `/v1/student/lessons/${previewId}/playback`) return deny("VIDEO_UNAVAILABLE", 404);
     if (!state.grant) return deny("ACTIVE_ENROLLMENT_REQUIRED", 403);
     if (path === `/v1/student/courses/${courseId}` || path === `/v1/student/courses/${courseId}/lessons`) return json({ course: fullCourse });
     if (path === `/v1/student/lessons/${lessonId}`) return json({ lesson });

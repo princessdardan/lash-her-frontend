@@ -347,11 +347,12 @@ test("scheduled playback renewal rechecks access and removes the player when acc
   context,
 }) => {
   await login(context);
+  let initial = true;
   let renewals = 0;
   await page.route(
     `**/api/academy/lessons/${lessonId}/playback`,
     async (route) => {
-      if (++renewals === 1) {
+      if (initial) {
         const response = await route.fetch(),
           body = await response.json();
         // Shorten only the fixture's browser expiry to exercise the renewal timer.
@@ -363,7 +364,8 @@ test("scheduled playback renewal rechecks access and removes the player when acc
             thumbnailExpiresAt: new Date(Date.now() + 4000).toISOString(),
           },
         });
-      } else
+      } else {
+        renewals++;
         await route.fulfill({
           status: 403,
           contentType: "application/json",
@@ -374,13 +376,16 @@ test("scheduled playback renewal rechecks access and removes the player when acc
             },
           }),
         });
+      }
     },
   );
   await enroll(page);
+  await expect(page.locator("mux-player")).toHaveCount(1);
+  initial = false;
   await expect(
     page.getByText("Your access has ended.", { exact: false }),
   ).toBeVisible();
-  expect(renewals).toBe(2);
+  expect(renewals).toBe(1);
   await expect(page.locator("mux-player")).toHaveCount(0);
 });
 
@@ -489,10 +494,11 @@ test("page-exit flush keeps its final position request keepalive behind an activ
     await expect
       .poll(() =>
         player.evaluate(
-          (element: HTMLElement & { seeking: boolean }) => element.seeking,
+          (element: HTMLElement & { currentTime: number }) =>
+            element.currentTime,
         ),
       )
-      .toBe(false);
+      .toBeGreaterThanOrEqual(3);
     await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
     release();
     await expect
@@ -529,6 +535,7 @@ test("authorization expiry removes the player while renewal is stalled and refus
   context,
 }) => {
   await login(context);
+  let initial = true;
   let renewals = 0,
     release!: () => void;
   const held = new Promise<void>((resolve) => {
@@ -538,7 +545,7 @@ test("authorization expiry removes the player while renewal is stalled and refus
   await page.route(
     `**/api/academy/lessons/${lessonId}/playback`,
     async (route) => {
-      if (++renewals === 1) {
+      if (initial) {
         const response = await route.fetch(),
           body = await response.json();
         expired = {
@@ -548,6 +555,7 @@ test("authorization expiry removes the player while renewal is stalled and refus
         };
         await route.fulfill({ response, json: expired });
       } else {
+        renewals++;
         await held;
         // Aborting the expired request may already have closed this route.
         await route
@@ -559,17 +567,91 @@ test("authorization expiry removes the player while renewal is stalled and refus
   try {
     await enroll(page);
     await expect(page.locator("mux-player")).toHaveCount(1);
-    await expect.poll(() => renewals).toBe(2);
+    initial = false;
+    await expect.poll(() => renewals).toBe(1);
     await expect(page.locator("mux-player")).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Retry video" }),
     ).toBeVisible();
     release();
     await expect(page.locator("mux-player")).toHaveCount(0);
-    expect(renewals).toBe(2);
+    expect(renewals).toBe(1);
   } finally {
     release();
   }
+});
+
+test("public preview does not offer assessment outage recovery or saved completion", async ({
+  page,
+  context,
+}) => {
+  await login(context);
+  await page.goto(
+    `/academy/courses/${courseId}/lessons/a5555555-5555-4555-8555-555555555555?course=learning-fixture`,
+  );
+  await expect(
+    page.getByRole("heading", { name: "A public preview", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Preview lesson.", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Public preview lesson text.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Assessment unavailable" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", {
+      name: /Mark lesson complete|Submit answers|Reload assessment/,
+    }),
+  ).toHaveCount(0);
+});
+
+test("SPA navigation flushes the latest played position before its player ref is detached", async ({
+  page,
+  context,
+}) => {
+  await login(context);
+  await enroll(page);
+  await expect(
+    page.getByText("Progress saved to your account.", { exact: true }),
+  ).toBeVisible();
+  const player = page.locator("mux-player");
+  await expect
+    .poll(() =>
+      player.evaluate(
+        (element: HTMLElement & { readyState: number }) => element.readyState,
+      ),
+    )
+    .toBeGreaterThan(0);
+  await player.evaluate(
+    (element: HTMLElement & { play: () => Promise<void> }) => element.play(),
+  );
+  await expect
+    .poll(() =>
+      player.evaluate(
+        (element: HTMLElement & { currentTime: number }) => element.currentTime,
+      ),
+    )
+    .toBeGreaterThanOrEqual(2);
+  await page
+    .getByRole("navigation", { name: "Learning", exact: true })
+    .getByRole("link", { name: "My academy", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "My academy", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        (
+          await (
+            await page.request.get(`/api/academy/progress?lessonId=${lessonId}`)
+          ).json()
+        ).progress[0]?.resumePositionSeconds,
+    )
+    .toBeGreaterThanOrEqual(1);
 });
 
 test("another account cannot reuse learning state and a suspended session cannot renew playback", async ({
