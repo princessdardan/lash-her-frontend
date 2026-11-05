@@ -21,9 +21,9 @@ const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const demand = ok => { if (!ok) throw new Error("FRONTEND_RELEASE_COORDINATION_REFUSED"); };
 const immutable = value => { if (value && typeof value === "object" && !Object.isFrozen(value)) { Object.values(value).forEach(immutable); Object.freeze(value); } return value; };
 
-// The fixed adapter is intentionally absent until an exhaustive real provider
-// inventory and its reviewed implementation exist. Neither input JSON nor an
-// arbitrary callback can substitute a successful-looking fence certificate.
+// The fixed adapter's whole-fence export refuses unsupported historical/vendor
+// capabilities. Neither input JSON nor an arbitrary callback can substitute
+// source-qualified controls or a successful-looking fence certificate.
 export async function loadFrontendReleaseAdapters(sourceRoot, expectedSha256) {
   const relative = "ops/platform/frontend-release-adapters.mjs", path = join(sourceRoot, relative);
   for (const part of ["ops", "ops/platform", relative]) demand(!lstatSync(join(sourceRoot, part)).isSymbolicLink());
@@ -81,10 +81,13 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
     phase = "environment-release-lock";
     await withFrontendEnvironmentLock(async (verifyEnvironment, environmentSignal) => {
       const verifySource = async () => { await verifyEnvironment(); assertSource(root, plan.sourceCommit); };
-      const observeFences = async checkpoint => {
+      const providerContext = { candidate: migration.candidate, directory: dependencies.directory,
+        getProviderContext: dependencies.getProviderContext };
+      const observeFences = async (checkpoint, verifyLockedSession) => {
         await verifyEnvironment();
         const nonce = randomBytes(32).toString("hex");
-        const result = await adapters.observeFrontendExternalFences(Object.freeze({ plan, inventorySha256, nonce, checkpoint }));
+        const result = await adapters.observeFrontendExternalFences(Object.freeze({ plan, inventorySha256, nonce, checkpoint, ...providerContext,
+          verifyLockedSession, environmentSignal }));
         const proof = await validateFrontendFenceObservation(plan, nonce, result, store.retain);
         await verifyEnvironment();
         await store.record(`external-fences-${checkpoint}.json`, proof);
@@ -130,7 +133,7 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
           await store.record("admission-new-work-closed.json", { ...base, epoch, recovery: flags.recovery });
           phase = "external-producer-fencing";
           await adapters.fenceFrontendExternalProducers(Object.freeze({ plan, inventorySha256, deadline,
-            environmentSignal, verifyLockedSession: verify, record: store.record, retain: store.retain }));
+            environmentSignal, verifyLockedSession: verify, record: store.record, retain: store.retain, ...providerContext }));
           await verify(); demand(performance.now() <= deadline);
           phase = "historical-database-login-retirement";
           await retireHistoricalFrontendLogins(plan.historicalLogins, client, { confirmation: dependencies.confirmation, record: store.record });
@@ -163,7 +166,7 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
           });
           await store.record("admission-producers-verified.json", { ...base, producers: registered.length, registrationSha256: frontendCoordinationHash(registered) });
           phase = "independent-external-fence-observation";
-          await observeFences("before-sql"); await verify(); demand(performance.now() <= deadline);
+          await observeFences("before-sql", verify); await verify(); demand(performance.now() <= deadline);
           await verifySource(); demand(performance.now() <= deadline);
           // The core immediately rechecks physical liveness/lock before its
           // lineage preflight. A drain receipt alone is never SQL authority.
@@ -177,17 +180,19 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
           demand(beforeDeployDrain.ledgerDrained === true && beforeDeployDrain.active === 0 && beforeDeployDrain.uncertain === 0);
           frontendMutationAttempted = true;
           await adapters.deployCompatibleFrontend(Object.freeze({ plan, inventorySha256, database,
-            environmentSignal, verifyLockedSession: verify, record: store.record, retain: store.retain }));
+            environmentSignal, verifyLockedSession: verify, record: store.record, retain: store.retain,
+            admissionObservation: beforeDeployDrain, ...providerContext }));
           await verify(); phase = "independent-compatible-frontend-observation";
-          const observed = await adapters.observeCompatibleFrontend(Object.freeze({ plan, inventorySha256, database }));
+          const afterDeployDrain = await owner(admissionClient, verifySession, () => observeFrontendDrain(admissionClient, target, epoch));
+          demand(afterDeployDrain.ledgerDrained === true && afterDeployDrain.active === 0 && afterDeployDrain.uncertain === 0);
+          const observed = await adapters.observeCompatibleFrontend(Object.freeze({ plan, inventorySha256, database,
+            verifyLockedSession: verify, environmentSignal, admissionObservation: afterDeployDrain, ...providerContext }));
           const proof = deploymentProof(plan, observed);
           await store.retain(`${randomBytes(32).toString("hex")}-${proof.evidenceSha256}.json`, observed.evidence);
           await store.record("compatible-frontend-verified.json", proof);
           frontendVerified = true;
-          const afterDeployDrain = await owner(admissionClient, verifySession, () => observeFrontendDrain(admissionClient, target, epoch));
-          demand(afterDeployDrain.ledgerDrained === true && afterDeployDrain.active === 0 && afterDeployDrain.uncertain === 0);
           await store.record("admission-post-deployment-drained.json", { ...base, ...afterDeployDrain });
-          await observeFences("after-promotion"); await verifySource(); await verify();
+          await observeFences("after-promotion", verify); await verifySource(); await verify();
         },
       }); } finally { environmentSignal.removeEventListener("abort", fenceLostEnvironment); }
       phase = "locked-final-verification"; await verifyEnvironment();

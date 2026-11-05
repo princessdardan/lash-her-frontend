@@ -182,7 +182,7 @@ test("private receipt store preserves original exact evidence, rejects reuse/sym
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("the absent source-pinned live adapter refuses rather than converting component receipts into SQL authority", async () => {
+test("an unbound fixed adapter hash refuses rather than converting component receipts into SQL authority", async () => {
   const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
   await assert.rejects(loadFrontendReleaseAdapters(root, "a".repeat(64)));
 });

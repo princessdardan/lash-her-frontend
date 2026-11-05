@@ -40,13 +40,13 @@ The result is `FRONTEND_SQL_AND_COMPATIBLE_DEPLOYMENT_VERIFIED_HELD`, with traff
 
 ## Required fixed adapter
 
-The live adapter file is intentionally absent. Loading it requires its exact hash in the reviewed inventory and clean candidate source. Its module initialization must be credential- and side-effect-free; operations belong inside the locked exports. The owned fixture supplies a different committed adapter only inside its disposable source tree. Creating success-shaped JSON in the real checkout does not install an executable adapter.
+The fixed adapter now exists; its [concrete Vercel components](frontend-vercel-release-adapter.md) compose the existing scheduler/build/workload/promotion implementation. Loading it requires its exact hash in the reviewed inventory and clean candidate source. Its module initialization is credential- and side-effect-free; operations belong inside locked exports. Historical deployment/provider credential and callback fencing remains unsupported, is recorded explicitly, and always refuses whole-fence completion. Creating success-shaped JSON does not supply those missing capabilities.
 
 The adapter must implement these in-process exports using actual provider operations:
 
 | Export | Required behavior |
 | --- | --- |
-| `fenceFrontendExternalProducers(context)` | Suspend reviewed historical producers, retire bypassing provider access and reconcile possible outstanding effects under the supplied deadline/abort signal. Record original intents and all partial/uncertain outcomes. Use `verifyLockedSession` before effects and after awaited operations. Never restore credentials/schedules or infer a fence from project/schedule disablement alone. |
+| `fenceFrontendExternalProducers(context)` | Currently captures concrete staging metadata when runtime context is available, records missing historical/vendor/callback capabilities and refuses. It does not mutate providers or infer a fence from project/schedule disablement. Whole-fence qualification must eventually retire bypassing access and reconcile actual outstanding effects. |
 | `observeFrontendExternalFences(context)` | Independently read every exact external surface; bind the fresh nonce, action, source, target and inventory. Return per-surface proof bytes plus the actual observation and reconciliation bytes, with matching hashes. The coordinator durably retains all three before SQL. |
 | `deployCompatibleFrontend(context)` | Compose the existing verified provider build/workload/promotion behavior using the exact candidate source/project and completed database receipt. Keep admission and native schedules closed, verify the lock between stages, retain intents/partial outcomes, and never retry an uncertain mutation. |
 | `observeCompatibleFrontend(context)` | Read actual build/project/alias-job/scheduler state independently. Return bounded retained evidence bound to action/source/target/project/deployment and workload receipt. Recovery observations must also represent absent, pending or failed deployments without mutating them. |
@@ -63,7 +63,7 @@ Recovery reads actual complete migration lineage, schema-baseline agreement, sel
 
 ## Verification and remaining work
 
-Focused Node24 tests cover pure refusal/coverage, closed bootstrap, lost commit acknowledgement, exact evidence retention, native lock contention/inode replacement, exclusive receipts and absent-live-adapter refusal. Migration-core regression tests prove the original physical client reaches the new hook before lineage/SQL, and hook failure, socket loss, lock loss or serialized callbacks refuse before application SQL.
+Focused Node24 tests cover pure refusal/coverage, closed bootstrap, lost commit acknowledgement, exact evidence retention, native lock contention/inode replacement, exclusive receipts and unbound-adapter refusal. Migration-core regression tests prove the original physical client reaches the new hook before lineage/SQL, and hook failure, socket loss, lock loss or serialized callbacks refuse before application SQL.
 
 The independent owned rehearsal creates a fresh PostgreSQL TLS cluster, generates local-only credentials and commits a disposable source tree containing an adapter that uses an owned loopback HTTP provider model:
 
@@ -73,4 +73,4 @@ FRONTEND_RELEASE_LOCAL_TEST=true PG_BIN=/absolute/path/to/postgresql/bin node op
 
 It verifies real closed bootstrap/login retirement/full SQL/compatible promotion, environment/advisory contention during build and promotion, admitted deferred work remaining active after new-work closure, persistent uncertainty and mismatched producer registrations refusing before SQL, missing durable database receipts after committed SQL, actual migration-backend/environment-lock loss before promotion, and lost promotion acknowledgement followed by a distinct read-only recovery observation with unchanged original receipts and no replay. Its candidate/coverage/provider evidence is synthetic owned-fixture evidence and cannot qualify real writers, CI or providers. PostgreSQL16 was executed locally. PostgreSQL18 remains to be run in the owning CI/container environment; no PostgreSQL18 or live-provider qualification is claimed here.
 
-Real coverage evidence for all candidate writers, an exhaustive deployment/provider inventory, actual live adapter, restoration/host integration and affected provider qualification remain open. The existing staging entrypoint/pending-SQL refusal remains intact until the complete path is reviewed and qualified under the existing single-operator policy.
+Real coverage evidence for all candidate writers, an exhaustive deployment/provider inventory, supported historical/provider/callback fencing, restoration/host integration and live qualification remain open. The existing staging entrypoint/pending-SQL refusal remains intact until the complete path is reviewed and qualified under the existing single-operator policy.

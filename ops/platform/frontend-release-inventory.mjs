@@ -35,6 +35,7 @@ export function prepareFrontendReleaseInventory(input, migration, source) {
     input.sourceCommit === job.sourceCommit && digest(input.sourceCommit, 40) &&
     input.targetSha256 === frontendAdmissionTargetSha256("staging", job.target) &&
     input.sourceInventorySha256 === frontendCoordinationHash(source) && digest(input.reviewSha256) && digest(input.adaptersSha256) &&
+    (input.providerBindingsSha256 === undefined || digest(input.providerBindingsSha256)) &&
     Number.isInteger(input.observationBudgetSeconds) && input.observationBudgetSeconds > 0 && input.observationBudgetSeconds <= 300 &&
     ["bootstrap", "existing"].includes(input.admissionMode) && typeof input.expectedEpoch === "string" && /^[1-9][0-9]{0,17}$/u.test(input.expectedEpoch));
   if (input.admissionMode === "bootstrap") demand(input.expectedEpoch === "1" && job.target.approvedPendingTags.length > 0 && input.bootstrapSqlSha256 === frontendAdmissionBootstrapArtifact().sqlSha256);
@@ -79,6 +80,7 @@ export function prepareFrontendReleaseInventory(input, migration, source) {
   return { version: 1, environment: "staging", actionId: input.actionId, sourceCommit: input.sourceCommit,
     targetSha256: input.targetSha256, sourceInventorySha256: input.sourceInventorySha256,
     reviewSha256: input.reviewSha256, adaptersSha256: input.adaptersSha256,
+    ...(input.providerBindingsSha256 ? { providerBindingsSha256: input.providerBindingsSha256 } : {}),
     observationBudgetSeconds: input.observationBudgetSeconds, admissionMode: input.admissionMode,
     ...(input.admissionMode === "bootstrap" ? { bootstrapSqlSha256: input.bootstrapSqlSha256 } : {}),
     expectedEpoch: input.expectedEpoch, owner: { name: owner.name, oid: owner.oid }, producers,
@@ -105,8 +107,8 @@ export async function validateFrontendFenceObservation(plan, nonce, observed, re
     demand(evidence?.version === 1 && evidence.nonce === nonce && evidence.actionId === plan.actionId &&
       evidence.targetSha256 === plan.targetSha256 && evidence.sourceCommit === plan.sourceCommit &&
       evidence.surfaceSha256 === expected.surfaceSha256 && evidence.identitySha256 === expected.identitySha256 && evidence.kind === expected.kind &&
-      Number.isSafeInteger(evidence.activeExecutions) && evidence.activeExecutions >= 0 &&
-      Number.isSafeInteger(evidence.uncertainEffects) && evidence.uncertainEffects >= 0 &&
+      (Number.isSafeInteger(evidence.activeExecutions) && evidence.activeExecutions >= 0 || !requireFenced && evidence.activeExecutions === null) &&
+      (Number.isSafeInteger(evidence.uncertainEffects) && evidence.uncertainEffects >= 0 || !requireFenced && evidence.uncertainEffects === null) &&
       digest(evidence.observationSha256) && digest(evidence.reconciliationSha256));
     for (const [key, expectedHash] of [["observation", evidence.observationSha256], ["reconciliation", evidence.reconciliationSha256]]) {
       demand(Buffer.isBuffer(row[key]) && row[key].length > 0 && row[key].length <= 2_000_000 && frontendCoordinationHash(row[key]) === expectedHash);
@@ -116,6 +118,7 @@ export async function validateFrontendFenceObservation(plan, nonce, observed, re
     const fencedState = expected.kind === "provider" ? evidence.state === "credentials-retired-and-effects-reconciled" :
       expected.kind === "scheduler" ? evidence.state === "disabled-and-running-executions-reconciled" :
         ["retired-and-effects-reconciled", "admission-bound-and-effects-reconciled"].includes(evidence.state);
+    if (evidence.activeExecutions === null || evidence.uncertainEffects === null) demand(evidence.state === "unfenced");
     demand(requireFenced ? fencedState && evidence.activeExecutions === 0 && evidence.uncertainEffects === 0 : fencedState || evidence.state === "unfenced");
     await retain(`${nonce}-${expected.surfaceSha256}.json`, row.evidence);
     await retain(`${nonce}-${frontendCoordinationHash({ surfaceSha256: expected.surfaceSha256, artifact: "observation" })}.json`, row.observation);

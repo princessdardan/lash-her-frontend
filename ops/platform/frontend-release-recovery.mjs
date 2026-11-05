@@ -108,12 +108,15 @@ export async function observeFrontendReleaseRecovery(input, dependencies) {
         await verify(); await store.record("frontend-recovery-database-observed.json", { ...base, ...observedState });
         phase = "independent-provider-state-observation";
         const nonce = randomBytes(32).toString("hex");
-        const external = await adapters.observeFrontendExternalFences(Object.freeze({ plan, inventorySha256, nonce, checkpoint: "recovery", recoveryActionId: action.actionId }));
+        const providerContext = { candidate: migration.candidate, directory: dependencies.directory,
+          originalDirectory: dependencies.originalDirectory,
+          getProviderContext: dependencies.getProviderContext, verifyLockedSession: verify, environmentSignal };
+        const external = await adapters.observeFrontendExternalFences(Object.freeze({ plan, inventorySha256, nonce, checkpoint: "recovery", recoveryActionId: action.actionId, ...providerContext }));
         const proof = await validateFrontendFenceObservation(plan, nonce, external, store.retain, { requireFenced: false });
         await store.record("frontend-recovery-external-observed.json", { ...base, proof });
         phase = "actual-compatible-frontend-state-observation";
         const frontend = await adapters.observeCompatibleFrontend(Object.freeze({ plan, inventorySha256,
-          checkpoint: "recovery", recoveryActionId: action.actionId }));
+          checkpoint: "recovery", recoveryActionId: action.actionId, ...providerContext }));
         demand(frontend?.version === 1 && frontend.actionId === plan.actionId && frontend.environment === plan.environment &&
           frontend.sourceCommit === plan.sourceCommit && frontend.targetSha256 === plan.targetSha256 &&
           Buffer.isBuffer(frontend.evidence) && frontend.evidence.length > 0 && frontend.evidence.length <= 2_000_000 &&
