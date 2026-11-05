@@ -96,6 +96,19 @@ class MigrationDriverTests(unittest.TestCase):
             self.assertNotIn("STAGING_DATABASE_URL", env)
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
+    def test_failure_suspension_includes_new_workers_with60second_grace_and_bounded_wait(self):
+        calls = []
+        def docker(args, **kwargs):
+            calls.append((args, kwargs))
+            if args[1] == "ps" and "--format" in args:
+                return subprocess.CompletedProcess(args, 0, stdout="a" * 64 + " course-media\n" + "b" * 64 + " course-export-cleanup\n", stderr="")
+            if args[1] == "stop":
+                self.assertEqual(args, ["docker", "stop", "--timeout", "60", "a" * 64, "b" * 64]); self.assertEqual(kwargs["timeout"], 90)
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        with patch.object(subprocess, "run", side_effect=docker):
+            self.assertEqual(migrate.suspend_runtime("staging", {}), ["a" * 64, "b" * 64])
+        self.assertEqual(len(calls), 3)
+
     def test_three_databases_share_preflight_credential_checks_and_the_release_lock(self):
         self.add_frontend()
         def continuation(attempt, selected, result):
