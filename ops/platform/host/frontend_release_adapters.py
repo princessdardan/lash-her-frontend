@@ -131,6 +131,25 @@ def action_build(context, attempt):
     return {"status": value["status"], "deploymentId": deployment_id, "receiptSha256": migrate.file_hash(raw)}
 
 
+def retired_deployments(context, attempt):
+    if attempt is None:
+        return []
+    path = attempt.parent / "vercel" / "historical-deployments-outcome.json"
+    if not path.exists():
+        return []
+    value, selected = migrate.read_json(path.parent, path.name), identity(context)
+    if value.get("status") != "STAGING_HISTORICAL_INGRESS_RETIRED":
+        return []
+    reviewed = context["bindings"].get("deploymentRetirement") or {}
+    demand(all(value.get(key) == selected[key] for key in ("environment", "actionId", "sourceCommit", "targetSha256", "projectId")) and
+        value.get("deletedDeploymentIds") == reviewed.get("retireDeploymentIds"), "VERCEL_RETIREMENT_RECEIPT_REFUSED")
+    for deployment_id in value["deletedDeploymentIds"]:
+        receipt = migrate.read_json(path.parent, f"historical-{deployment_id}-deleted.json")
+        demand(receipt.get("state") == "DELETED" and receipt.get("deploymentId") == deployment_id and
+            all(receipt.get(key) == selected[key] for key in ("actionId", "sourceCommit", "targetSha256", "projectId")), "VERCEL_RETIREMENT_RECEIPT_REFUSED")
+    return value["deletedDeploymentIds"]
+
+
 def observe_vercel(context, client, attempt=None):
     selected = identity(context)
     before = vercel.promotion_state(client, selected["projectId"])
@@ -138,7 +157,8 @@ def observe_vercel(context, client, attempt=None):
     second = deployment_inventory(client, selected["projectId"])
     after = vercel.promotion_state(client, selected["projectId"])
     demand(first == second and before == after, "VERCEL_PROVIDER_CHANGED_DURING_INVENTORY")
-    expected = context["bindings"]["deployments"]
+    retired = retired_deployments(context, attempt)
+    expected = [row for row in context["bindings"]["deployments"] if row["deploymentId"] not in retired]
     known_ids = {row["deploymentId"] for row in expected}
     # One build created by this action may appear after the reviewed initial
     # inventory. Verify it through the existing exact source/project binding.
@@ -170,6 +190,7 @@ def observe_vercel(context, client, attempt=None):
               "reviewedInventoryMatches": inventory_matches, "reviewedProjectMatches": project_matches and cron_matches,
               "historicalWritersFenced": False, "activeExecutions": None, "uncertainEffects": None,
               "actionBuild": build,
+              "historicalIngressRetiredDeploymentIds": retired,
               "aliasJobActive": alias is not None and alias["jobStatus"] in ("pending", "in-progress")}
     return result
 
@@ -251,6 +272,7 @@ def configure_bootstrap(context, client, attempt, parent_directory):
     target = context["writerTarget"]
     demand(target.get("environment") == "staging" and target.get("targetSha256") == selected["targetSha256"], "BOOTSTRAP_RUNTIME_TARGET_REQUIRED")
     variables = [(key, "false", "plain") for key in BOOTSTRAP_FLAGS] + [
+        ("LASH_P2_CERTIFICATION_SCHEDULES", "off", "plain"),
         ("FRONTEND_WRITER_ADMISSION_MODE", "enforce", "plain"),
         ("FRONTEND_WRITER_ADMISSION_TARGET_JSON", json.dumps(target, separators=(",", ":")), "plain"),
         ("FRONTEND_WRITER_PRODUCER_SHA256", reviewed["runtimeProducerSha256"], "plain"),
@@ -324,6 +346,58 @@ def deploy_admission(context, client, attempt, parent_directory, probe):
     vercel.stage_frontend(client, context["candidate"], attempt)
     return vercel.promote_frontend(client, context["candidate"], attempt,
         lambda _release, _deployment: verify_bootstrap(context, client, attempt, private, probe))
+
+
+def retire_deployments(context, client, attempt):
+    selected = identity(context)
+    reviewed = context["bindings"].get("deploymentRetirement")
+    demand(isinstance(reviewed, dict) and reviewed.get("preserveBootstrapDeployment") is True and
+        isinstance(reviewed.get("retireDeploymentIds"), list) and reviewed["retireDeploymentIds"], "VERCEL_EXACT_RETIREMENT_PLAN_REQUIRED")
+    bootstrap_attempt = attempt.parent / "vercel-bootstrap"
+    # Preserve the now-current, source-bound, actual protected-probe-qualified
+    # admission deployment. Old C07 cannot count as this recovery boundary.
+    bootstrap = observe_compatible(context, client, bootstrap_attempt)
+    demand(bootstrap.get("bootstrapAdmissionVerified") is True and bootstrap.get("workloadVerified") is True and
+        bootstrap.get("aliasJobMatchesIntent") is True and bootstrap.get("aliasJobState") == "succeeded" and
+        bootstrap.get("aliasDeploymentId") == bootstrap.get("deploymentId") and bootstrap.get("nativeSchedulesEnabled") is False,
+        "ADMISSION_COMPATIBLE_BOOTSTRAP_REQUIRED_BEFORE_RETIREMENT")
+    protected_id = bootstrap["deploymentId"]
+    retired, preserved = reviewed["retireDeploymentIds"], reviewed.get("preserveDeploymentIds", [])
+    originals = context["bindings"]["deployments"]
+    demand(protected_id not in retired and len(set(retired + preserved)) == len(originals) and
+        sorted(retired + preserved) == sorted(row["deploymentId"] for row in originals), "VERCEL_RETIREMENT_PARTITION_REFUSED")
+    observed = observe_vercel(context, client, attempt)
+    demand(observed["reviewedInventoryMatches"] and observed["reviewedProjectMatches"] and not observed["aliasJobActive"],
+        "VERCEL_REVIEWED_INVENTORY_CHANGED")
+    before = observed["projectState"]
+    expected = observed["deployments"]
+    outcome = {**selected, "status": "HISTORICAL_RETIREMENT_FAILED_REQUIRES_REVIEW", "deletedDeploymentIds": [],
+        "preservedDeploymentIds": sorted(preserved + [protected_id]), "uncertainDeploymentId": None,
+        "historicalWritersFenced": False, "activeExecutions": None, "uncertainEffects": None, "trafficAuthorized": False}
+    migrate.write_json(attempt, "historical-deployments-started.json", {**outcome, "retireDeploymentIds": retired})
+    try:
+        for deployment_id in retired:
+            demand(deployment_id != before["productionDeploymentId"] and deployment_id not in preserved, "VERCEL_CURRENT_OR_RECOVERY_RETIREMENT_REFUSED")
+            demand(vercel.promotion_state(client, selected["projectId"]) == before and
+                deployment_inventory(client, selected["projectId"]) == expected, "VERCEL_RETIREMENT_PROVIDER_DRIFT")
+            bound = next(row for row in originals if row["deploymentId"] == deployment_id)
+            detail = client.request("GET", f"/v13/deployments/{deployment_id}?withGitRepoInfo=true")
+            git = detail.get("gitSource") or {}
+            demand(detail.get("id") == deployment_id and detail.get("projectId") == selected["projectId"] and
+                isinstance(git, dict) and git.get("type") == "github" and str(git.get("repoId")) == vercel.REPOSITORY_ID and
+                bound["sourceCommit"] is not None and git.get("sha") == bound["sourceCommit"], "VERCEL_HISTORICAL_SOURCE_BINDING_REFUSED")
+            outcome["uncertainDeploymentId"] = deployment_id
+            value = client.request("DELETE", f"/v13/deployments/{deployment_id}")
+            demand(value.get("state") == "DELETED" and value.get("uid") == deployment_id, "VERCEL_HISTORICAL_DELETE_ACK_UNVERIFIED")
+            migrate.write_json(attempt, f"historical-{deployment_id}-deleted.json", {**selected, "deploymentId": deployment_id, "state": "DELETED"})
+            outcome["deletedDeploymentIds"].append(deployment_id); outcome["uncertainDeploymentId"] = None
+            expected = [row for row in expected if row["deploymentId"] != deployment_id]
+        first, second = deployment_inventory(client, selected["projectId"]), deployment_inventory(client, selected["projectId"])
+        demand(first == second == expected and vercel.promotion_state(client, selected["projectId"]) == before, "VERCEL_RETIREMENT_ABSENCE_UNVERIFIED")
+        outcome.update(status="STAGING_HISTORICAL_INGRESS_RETIRED", remainingInventorySha256=migrate.file_hash(json.dumps(first, separators=(",", ":")).encode()))
+        return outcome
+    finally:
+        migrate.write_json(attempt, "historical-deployments-outcome.json", outcome)
 
 
 def deploy_compatible(context, client, attempt, parent_directory, probe=None):
@@ -427,6 +501,8 @@ def execute(context, client, verify, probe=None):
         return deploy_compatible(context, locked, attempt, parent, LockedProbe(verify, probe))
     if operation == "deploy-admission":
         return deploy_admission(context, locked, attempt, parent, LockedProbe(verify, probe))
+    if operation == "retire-deployments":
+        return retire_deployments(context, locked, attempt)
     if operation in ("observe-compatible", "observe-admission"):
         result = observe_compatible(context, locked, source_attempt)
         if operation == "observe-compatible" and (source_attempt.parent / "vercel-bootstrap").exists():

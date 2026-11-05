@@ -39,6 +39,15 @@ test("concrete binding artifact ties every deployment and scheduler to exact rev
   const input = structuredClone(f.input); input.password = "private-marker"; input.surfaces[0].identity.password = "private-marker";
   assert.equal(JSON.stringify(prepareFrontendProviderBindings(input, f.plan)).includes("private-marker"), false);
   assert.throws(() => prepareFrontendProviderBindings(f.input, { ...f.plan, providerBindingsSha256: "f".repeat(64) }));
+  const retirement = structuredClone(f.input);
+  retirement.deploymentRetirement = { preserveBootstrapDeployment: true, retireDeploymentIds: ["dpl_previous"], preserveDeploymentIds: [] };
+  const reviewed = frontendProviderBindingsArtifact(retirement, f.plan);
+  assert.deepEqual(reviewed.deploymentRetirement, retirement.deploymentRetirement);
+  for (const invalid of [r => { r.preserveBootstrapDeployment = false; }, r => { r.preserveDeploymentIds.push("dpl_previous"); },
+    r => { r.retireDeploymentIds = []; }, r => { r.retireDeploymentIds = ["dpl_unknown"]; }]) {
+    const copy = structuredClone(retirement); invalid(copy.deploymentRetirement);
+    assert.throws(() => frontendProviderBindingsArtifact(copy, f.plan));
+  }
 });
 
 test("missing historical/provider capabilities remain explicit for every surface without synthetic zero counts", () => {

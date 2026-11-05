@@ -35,7 +35,8 @@ class Client:
                                                   urllib.request.HTTPSHandler(context=ssl.create_default_context()))
 
     def request(self, method, path, body=None):
-        demand(method in ("GET", "POST", "PATCH") and isinstance(path, str)
+        demand((method in ("GET", "POST", "PATCH") or method == "DELETE" and body is None and
+                isinstance(path, str) and re.fullmatch(r"/v13/deployments/dpl_[A-Za-z0-9]+", path)) and isinstance(path, str)
                and re.fullmatch(r"/v[0-9]+/[A-Za-z0-9_/?=&.-]+", path), "VERCEL_REQUEST_REFUSED")
         separator = "&" if "?" in path else "?"
         data = None if body is None else json.dumps(body, separators=(",", ":")).encode()

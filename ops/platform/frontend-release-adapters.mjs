@@ -36,7 +36,7 @@ async function runtime(context) {
 export async function runFrontendVercelWorker(operation, context) {
   let child, output, failed = false, deadline, killDeadline, received = false, bytes = 0, processing = Promise.resolve();
   try {
-    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission"].includes(operation));
+    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments"].includes(operation));
     const { value, bindings, candidate } = await runtime(context);
     const payload = { operation, plan: fields(context.plan, ["environment", "actionId", "sourceCommit", "targetSha256", "bootstrapCompatibility"]),
       candidate, bindings, directory: context.directory, vercelToken: value.vercelToken,
@@ -132,6 +132,13 @@ export async function fenceFrontendExternalProducers(context) {
 // until every vendor/callback/credential surface has actual supported controls.
 export async function suspendFrontendVercelSchedules(context) {
   return runFrontendVercelWorker("suspend-schedules", context);
+}
+
+// Exact reviewed IDs only, after an actual admission-compatible bootstrap.
+// This retires future ingress; it never asserts running/provider effect drain.
+export async function retireFrontendVercelDeployments(context) {
+  demand(context?.admissionObservation?.newWork === false);
+  return runFrontendVercelWorker("retire-deployments", context);
 }
 
 export async function observeFrontendExternalFences(context) {

@@ -54,6 +54,17 @@ export function frontendProviderBindingsArtifact(input, plan) {
     teamId: FRONTEND_VERCEL_TEAM, projectId: FRONTEND_VERCEL_PROJECT, repositoryId: FRONTEND_VERCEL_REPOSITORY,
     gatewayHost: input.gatewayHost ?? null,
     projectState: { productionDeploymentId: input.projectState.productionDeploymentId, nativeSchedulesEnabled: input.projectState.nativeSchedulesEnabled }, deployments, surfaces };
+  if (input.deploymentRetirement !== undefined) {
+    const retirement = input.deploymentRetirement;
+    demand(retirement?.preserveBootstrapDeployment === true && Array.isArray(retirement.retireDeploymentIds) && retirement.retireDeploymentIds.length > 0 &&
+      Array.isArray(retirement.preserveDeploymentIds));
+    const retired = [...retirement.retireDeploymentIds].sort(), preserved = [...retirement.preserveDeploymentIds].sort();
+    const selected = [...retired, ...preserved].sort();
+    demand(selected.every(deploymentId) && new Set(selected).size === selected.length && selected.length === deployments.length &&
+      selected.every((id, index) => id === deployments.map(row => row.deploymentId).sort()[index]) &&
+      retired.every(id => deployments.find(row => row.deploymentId === id).sourceCommit !== null));
+    result.deploymentRetirement = { preserveBootstrapDeployment: true, retireDeploymentIds: retired, preserveDeploymentIds: preserved };
+  }
   return result;
 }
 

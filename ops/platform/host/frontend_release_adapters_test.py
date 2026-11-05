@@ -35,6 +35,7 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
         self.lost_promotion, self.lost_lock, self.fail_lock_after_build, self.ignore_pin = False, False, False, False
         self.lost_build, self.failed_build = False, False
         self.bootstrap_probe_wrong = False
+        self.lost_delete, self.historical_source_wrong, self.switch_current_after_delete = False, False, False
         self.previous = {"uid": "dpl_previous", "state": "READY", "target": "production", "created": 20,
                          "url": "previous.vercel.app", "meta": {"githubCommitSha": "b" * 40}}
         self.failed = {"uid": "dpl_error", "state": "ERROR", "target": None, "created": 10,
@@ -88,9 +89,20 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                         if owner.lost_build:
                             self.connection.shutdown(socket.SHUT_RDWR); self.connection.close(); return
                         result = {"id": deployment_id}
+                    elif path.startswith("/v13/deployments/") and self.command == "DELETE":
+                        deployment_id = path.rsplit("/", 1)[-1]
+                        owner.assertTrue(any(row["uid"] == deployment_id for row in owner.deployments))
+                        owner.deployments = [row for row in owner.deployments if row["uid"] != deployment_id]
+                        if owner.switch_current_after_delete:
+                            owner.current = "dpl_previous"
+                        if owner.lost_delete:
+                            self.connection.shutdown(socket.SHUT_RDWR); self.connection.close(); return
+                        result = {"state": "DELETED", "uid": deployment_id}
                     elif path.startswith("/v13/deployments/"):
                         deployment_id = path.rsplit("/", 1)[-1]
-                        source = "a" * 40 if deployment_id.startswith("dpl_candidate") else "b" * 40
+                        source = "a" * 40 if deployment_id.startswith("dpl_candidate") else "c" * 40 if deployment_id == "dpl_error" else "b" * 40
+                        if deployment_id == "dpl_error" and owner.historical_source_wrong:
+                            source = "f" * 40
                         result = {"id": deployment_id, "projectId": vercel.PROJECTS["staging"], "target": "production",
                                   "readyState": "ERROR" if deployment_id == "dpl_candidate" and owner.failed_build else "READY",
                                   "url": "owned.vercel.app", "gitSource": {"type": "github", "repoId": vercel.REPOSITORY_ID, "sha": source},
@@ -123,6 +135,7 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
 
             do_POST = do_GET
             do_PATCH = do_GET
+            do_DELETE = do_GET
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -236,6 +249,7 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
         self.assertEqual(observed["schemaCatalogSha256"], "6" * 64)
         self.assertTrue(all(self.variables[key]["value"] == "false" for key in adapter.BOOTSTRAP_FLAGS))
         self.assertEqual(self.variables["FRONTEND_WRITER_ADMISSION_MODE"]["value"], "enforce")
+        self.assertEqual(self.variables["LASH_P2_CERTIFICATION_SCHEDULES"]["value"], "off")
         pins = migrate.read_json(self.parent / "vercel-bootstrap", "source-pins-outcome.json")
         self.assertEqual(pins["receiptKind"], "verified-preapplication-schema-only")
         common = "".join(path.read_text() for path in self.parent.rglob("*.json"))
@@ -275,6 +289,67 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
         self.assertEqual(len(self.mutations()), writes); self.assertFalse((self.parent / "database-receipt.json").exists())
         for path, raw in original.items():
             self.assertEqual(Path(path).read_bytes(), raw)
+
+    def retirement_plan(self):
+        self.context["bindings"]["deploymentRetirement"] = {"preserveBootstrapDeployment": True,
+            "retireDeploymentIds": ["dpl_error", "dpl_previous"], "preserveDeploymentIds": []}
+
+    def test_historical_deletes_use_exact_reviewed_staging_ids_and_preserve_actual_bootstrap_recovery(self):
+        self.bootstrap_context(); self.execute("deploy-admission"); self.retirement_plan()
+        result = self.execute("retire-deployments")
+        self.assertEqual(result["status"], "STAGING_HISTORICAL_INGRESS_RETIRED")
+        self.assertEqual(result["deletedDeploymentIds"], ["dpl_error", "dpl_previous"])
+        self.assertEqual(result["preservedDeploymentIds"], ["dpl_candidate"])
+        self.assertFalse(result["historicalWritersFenced"]); self.assertIsNone(result["activeExecutions"])
+        self.assertEqual(self.current, "dpl_candidate")
+        self.assertEqual([row["path"].split("?")[0] for row in self.calls if row["method"] == "DELETE"],
+            ["/v13/deployments/dpl_error", "/v13/deployments/dpl_previous"])
+        observed = self.execute("observe-vercel")
+        self.assertTrue(observed["reviewedInventoryMatches"]); self.assertEqual(observed["historicalIngressRetiredDeploymentIds"], result["deletedDeploymentIds"])
+
+    def test_retirement_refuses_absent_bootstrap_unreviewed_inventory_and_wrong_historical_source(self):
+        self.retirement_plan()
+        with self.assertRaisesRegex(ValueError, "ADMISSION_COMPATIBLE_BOOTSTRAP_REQUIRED"):
+            self.execute("retire-deployments")
+        self.bootstrap_context(); self.execute("deploy-admission")
+        extra = {"uid": "dpl_unreviewed", "state": "READY", "target": None, "created": 1, "url": None, "meta": {"githubCommitSha": "f" * 40}}
+        self.deployments.append(extra)
+        with self.assertRaisesRegex(ValueError, "VERCEL_REVIEWED_INVENTORY_CHANGED"):
+            self.execute("retire-deployments")
+        self.deployments.remove(extra); self.historical_source_wrong = True
+        with self.assertRaisesRegex(ValueError, "VERCEL_HISTORICAL_SOURCE_BINDING_REFUSED"):
+            self.execute("retire-deployments")
+        self.assertFalse(any(row["method"] == "DELETE" for row in self.calls))
+
+    def test_lost_delete_ack_is_unknown_and_never_replayed_or_converted_to_drain_by_inventory_absence(self):
+        self.bootstrap_context(); self.execute("deploy-admission"); self.retirement_plan(); self.lost_delete = True
+        with self.assertRaises(ValueError):
+            self.execute("retire-deployments")
+        failed = migrate.read_json(self.parent / "vercel", "historical-deployments-outcome.json")
+        self.assertEqual(failed["deletedDeploymentIds"], []); self.assertEqual(failed["uncertainDeploymentId"], "dpl_error")
+        self.assertFalse(any(row["uid"] == "dpl_error" for row in self.deployments))
+        self.assertFalse(self.execute("observe-vercel")["reviewedInventoryMatches"])
+        deletes = len([row for row in self.calls if row["method"] == "DELETE"])
+        with self.assertRaises(ValueError):
+            self.execute("retire-deployments")
+        self.assertEqual(len([row for row in self.calls if row["method"] == "DELETE"]), deletes)
+        self.assertEqual(migrate.read_json(self.parent / "vercel", "historical-deployments-outcome.json"), failed)
+
+    def test_project_change_after_one_delete_stops_the_next_and_keeps_original_partial_success(self):
+        self.bootstrap_context(); self.execute("deploy-admission"); self.retirement_plan(); self.switch_current_after_delete = True
+        with self.assertRaisesRegex(ValueError, "VERCEL_RETIREMENT_PROVIDER_DRIFT"):
+            self.execute("retire-deployments")
+        outcome = migrate.read_json(self.parent / "vercel", "historical-deployments-outcome.json")
+        self.assertEqual(outcome["deletedDeploymentIds"], ["dpl_error"])
+        self.assertTrue(any(row["uid"] == "dpl_previous" for row in self.deployments))
+        self.assertEqual(len([row for row in self.calls if row["method"] == "DELETE"]), 1)
+
+    def test_delete_transport_refuses_non_deployment_scope_and_payload_before_network(self):
+        for path, body in [("/v9/projects/" + vercel.PROJECTS["staging"], None), ("/v13/deployments/dpl_error?url=alias", None),
+                           ("/v13/deployments/dpl_error", {})]:
+            with self.assertRaisesRegex(ValueError, "VERCEL_REQUEST_REFUSED"):
+                self.client.request("DELETE", path, body)
+        self.assertFalse(self.calls)
 
     def test_missing_or_mismatched_durable_database_receipt_refuses_before_writes(self):
         for mode in ("missing", "mismatched"):
