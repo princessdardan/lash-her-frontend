@@ -129,8 +129,12 @@ export function createCustomerAuthStore(database: () => Database = getPrivateDb,
         database().select({ token: customerVerificationTokens.token }).from(customerVerificationTokens).where(lt(customerVerificationTokens.expires, instant)).orderBy(customerVerificationTokens.expires).limit(100)));
       await database().delete(customerSessions).where(inArray(customerSessions.tokenHash,
         database().select({ tokenHash: customerSessions.tokenHash }).from(customerSessions).where(lt(customerSessions.expires, instant)).orderBy(customerSessions.expires).limit(100)));
-      const [row] = await database().insert(customerAuthThrottle).values({ key, attempts: 1, resetsAt: new Date(instant.getTime() + windowSeconds * 1000) })
-        .onConflictDoUpdate({ target: customerAuthThrottle.key, set: { attempts: sql`${customerAuthThrottle.attempts} + 1` } }).returning();
+      const resetsAt = new Date(instant.getTime() + windowSeconds * 1000);
+      const [row] = await database().insert(customerAuthThrottle).values({ key, attempts: 1, resetsAt })
+        .onConflictDoUpdate({ target: customerAuthThrottle.key, set: {
+          attempts: sql`CASE WHEN ${customerAuthThrottle.resetsAt} <= ${instant.toISOString()}::timestamptz THEN 1 ELSE ${customerAuthThrottle.attempts} + 1 END`,
+          resetsAt: sql`CASE WHEN ${customerAuthThrottle.resetsAt} <= ${instant.toISOString()}::timestamptz THEN ${resetsAt.toISOString()}::timestamptz ELSE ${customerAuthThrottle.resetsAt} END`,
+        } }).returning();
       return row.attempts <= limit;
     },
   };

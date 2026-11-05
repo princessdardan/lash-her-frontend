@@ -99,8 +99,11 @@ test("expired credential maintenance deletes at most one bounded batch per throt
   await database!.insert(schema.customerAuthThrottle).values(Array.from({ length: 250 }, (_, index) => ({
     key: `${keyPrefix}${index}`, attempts: 1, resetsAt: new Date(0),
   })));
+  const activeKey = `${prefix}-active`;
+  await database!.insert(schema.customerAuthThrottle).values({ key: activeKey, attempts: 100, resetsAt: new Date(Date.now() - 1) });
   try {
-    await withCustomerWriterContext(async () => store.consumeThrottle(`${prefix}-active`, 5, 900));
+    assert.equal(await withCustomerWriterContext(async () => store.consumeThrottle(activeKey, 5, 900)), true,
+      "an expired selected bucket resets even when older rows consume the cleanup batch");
     const retained = await database!.select().from(schema.customerAuthThrottle).where(like(schema.customerAuthThrottle.key, `${keyPrefix}%`));
     assert.equal(retained.length, 150);
   } finally { await database!.delete(schema.customerAuthThrottle).where(like(schema.customerAuthThrottle.key, `${prefix}%`)); }
