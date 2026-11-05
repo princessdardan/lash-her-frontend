@@ -45,7 +45,7 @@ async function main() {
   // implementation for exported account routes, without claiming native-server
   // or browser transport/cookie certification.
   globalThis.AsyncLocalStorage ??= AsyncLocalStorage;
-  const { NextRequest } = await import("next/server");
+  const { NextRequest } = await import("next/server.js");
   const { createRequestStoreForAPI } = await import("next/dist/server/async-storage/request-store.js");
   const { workAsyncStorage } = await import("next/dist/server/app-render/work-async-storage.external.js");
   const { workUnitAsyncStorage } = await import("next/dist/server/app-render/work-unit-async-storage.external.js");
@@ -555,11 +555,26 @@ async function main() {
       const actor = await seedAdmin(denied === "nonowner" ? "admin" : "owner", denied === "stale-google-proof" ? 3600 : 0);
       if (denied === "disabled-owner") await operator.query("UPDATE admin_users SET status='disabled' WHERE id=$1", [actor.id]);
       await change(true, true); before = await operations();
-      const result = await adminCommand(actor, customer); assert.ok([403, 503].includes(result.status));
-      const current = await since(before); assert.ok(current.length >= 2); assert.equal(current[0].kind, "new-work");
-      assert.ok(current.every(row => row.state !== "active")); assert.equal((await counts()).customer_account_commands, 0);
+      const result = await adminCommand(actor, customer);
+      if (denied === "nonowner") {
+        assert.equal(result.status, 403);
+        assert.equal(JSON.parse(result.text).error, "account_action_denied");
+        await entries(before, ["completed", "completed", "completed"], ["new-work", "recovery", "recovery"]);
+      } else {
+        // The route conservatively retains its parent when a non-domain
+        // authorization error escapes. Inner authorization still settles its
+        // confirmed denial/refresh; never upgrade the parent to known success.
+        assert.equal(result.status, 503);
+        assert.equal(JSON.parse(result.text).error, "temporarily_unavailable");
+        await entries(before, denied === "disabled-owner" ? ["uncertain", "completed"] : ["uncertain", "completed", "completed"],
+          denied === "disabled-owner" ? ["new-work", "recovery"] : ["new-work", "recovery", "recovery"]);
+      }
+      assert.equal((await counts()).customer_account_commands, 0);
       assert.equal((await counts()).customer_sessions, 1);
       assert.equal((await operator.query("SELECT status FROM customer_users WHERE id=$1", [customer.id])).rows[0].status, "active");
+      const deniedBusiness = await fingerprint(), deniedProviders = providerCalls.length;
+      await change(false); assert.equal((await adminCommand(actor, customer)).status, 503);
+      assert.equal(await fingerprint(), deniedBusiness); assert.equal(providerCalls.length, deniedProviders);
       await reconcile(); checks.push(`actual-admin-lifecycle-${denied}-real-auth-js-and-persistent-guard-deny-command-without-session-revocation`);
     }
 
@@ -578,7 +593,16 @@ async function main() {
 
     phase = "lifecycle-cron-auth-and-closed-entry";
     await reset(); await seedAccount(); await change(false); before = await operations(); beforeBusiness = await fingerprint();
-    assert.equal((await recovery(false)).status, 401); assert.equal((await recovery()).status, 503);
+    assert.equal((await recovery(false)).status, 401);
+    for (const authorization of ["Bearer owned-wrong-secret", `bearer ${process.env.CRON_SECRET}`])
+      assert.equal((await request("/api/cron/account-lifecycle", { authorization })).status, 401);
+    process.env.CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED = "false";
+    try { assert.equal((await recovery()).status, 404); }
+    finally { process.env.CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED = "true"; }
+    const cronSecret = process.env.CRON_SECRET; delete process.env.CRON_SECRET;
+    try { assert.equal((await recovery()).status, 404); }
+    finally { process.env.CRON_SECRET = cronSecret; }
+    assert.equal((await recovery()).status, 503);
     await entries(before, []); assert.equal(await fingerprint(), beforeBusiness); assert.deepEqual(providerCalls, []);
     await change(false, true); before = await operations(); assert.equal((await recovery()).status, 200);
     await entries(before, ["completed"], ["recovery"]); await reconcile();
