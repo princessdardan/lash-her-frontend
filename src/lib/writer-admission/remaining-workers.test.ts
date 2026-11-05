@@ -17,6 +17,24 @@ import { syncResendMarketingContact } from "@/lib/resend-platform";
 import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
 import { resolveWriterAdmissionConfiguration } from "./config";
 import { createWriterAdmissionRunner } from "./runtime";
+import { runPrivateDataRetentionCleanup } from "@/lib/private-db/retention";
+import { refreshFlatRateCache } from "@/lib/shipping/flat-rate-refresh";
+import type { ChitChatsClient } from "@/lib/shipping/chitchats-client";
+import {
+  SHIPPING_ZONE_IDS,
+  SIZE_BUCKET_IDS,
+} from "@/lib/shipping/flat-rate-zones";
+import {
+  syncProductStockForPublishedId,
+  syncProductStockFromProduct,
+  untrackProductStock,
+  reconcileProductStock,
+} from "@/lib/commerce/product-stock-sync";
+import { createRevalidatePostHandler } from "@/app/api/revalidate/handler";
+import { createInventorySyncPostHandler } from "@/app/api/webhooks/sanity/inventory-sync/handler";
+import type { NextRequest } from "next/server";
+import type { TProduct } from "@/types";
+import { WriterAdmissionError } from "./config";
 
 function admission() {
   const url =
@@ -393,9 +411,9 @@ test("best-effort Resend event failures and absent provider receipts retain unce
                       },
                     } as never)
                   : {
-                data: { event: "owned-event", object: "event" },
-                error: null,
-                headers: null,
+                      data: { event: "owned-event", object: "event" },
+                      error: null,
+                      headers: null,
                     };
               },
             },
@@ -408,4 +426,206 @@ test("best-effort Resend event failures and absent provider receipts retain unce
     if (old === undefined) delete process.env.RESEND_API_KEY;
     else process.env.RESEND_API_KEY = old;
   }
+});
+
+const refreshConfig: NonNullable<
+  Parameters<typeof refreshFlatRateCache>[0]
+>["config"] = {
+  accessToken: "owned-unused",
+  baseUrl: "https://owned.invalid",
+  clientId: "owned-client",
+  environment: "staging",
+  quoteSigningSecret: "owned-unused",
+  region: "ontario_manitoba",
+  trackedPostageTypes: new Set(["chit_chats_canada_tracked"]),
+  usShippingEnabled: false,
+};
+function rateRefresh(
+  f: ReturnType<typeof admission>,
+  fault?: "create" | "cleanup" | "write",
+  off = false,
+) {
+  const calls: string[] = [];
+  const client = {
+    createShipment: async () => {
+      calls.push("create");
+      if (fault === "create") throw new Error("owned-private-detail");
+      return {
+        id: "owned-draft",
+        rates: [
+          {
+            postage_type: "chit_chats_canada_tracked",
+            postage_description: "Owned tracked",
+            tracking_type_description: "Full tracking included",
+            is_insured: true,
+            payment_amount: "12.34",
+          },
+        ],
+      };
+    },
+    deleteShipment: async () => {
+      calls.push("cleanup");
+      if (fault === "cleanup") throw new Error("owned-private-detail");
+    },
+  } as unknown as ChitChatsClient;
+  const run = () =>
+    refreshFlatRateCache({
+      client,
+      config: refreshConfig,
+      now: () => now,
+      upsert: async () => {
+        calls.push("write");
+        if (fault === "write") throw new Error("owned-private-detail");
+      },
+      runAdmission: off ? f.off : f.run,
+    });
+  return { calls, run, client };
+}
+
+test("retention and rate refresh are maintenance new-work and refuse before queries/effects", async () => {
+  const f = admission(),
+    r = rateRefresh(f);
+  await assert.rejects(runPrivateDataRetentionCleanup({ now }, f.run));
+  await assert.rejects(r.run());
+  assert.deepEqual(r.calls, []);
+  assert.deepEqual(f.state.outcomes, []);
+});
+
+test("rate refresh settles only after every cell write and provider draft cleanup", async () => {
+  const f = admission();
+  f.state.newWork = true;
+  const r = rateRefresh(f),
+    result = await r.run();
+  const cells = SHIPPING_ZONE_IDS.length * SIZE_BUCKET_IDS.length;
+  assert.equal(result.attempted, cells);
+  assert.equal(result.failed, 0);
+  assert.ok(result.updated > 0);
+  assert.equal(r.calls.filter((c) => c === "create").length, cells);
+  assert.equal(r.calls.filter((c) => c === "cleanup").length, cells);
+  assert.equal(r.calls.filter((c) => c === "write").length, result.updated);
+  assert.deepEqual(f.state.outcomes, ["completed"]);
+});
+
+test("caught rate-probe create/write/cleanup failures retain uncertainty through every remaining cell", async () => {
+  for (const fault of ["create", "write", "cleanup"] as const) {
+    const f = admission();
+    f.state.newWork = true;
+    const r = rateRefresh(f, fault);
+    await assert.rejects(r.run());
+    assert.equal(
+      r.calls.filter((c) => c === "create").length,
+      SHIPPING_ZONE_IDS.length * SIZE_BUCKET_IDS.length,
+    );
+    assert.deepEqual(f.state.outcomes, ["uncertain"]);
+  }
+});
+
+test("rate refresh off mode preserves partial summaries and best-effort cleanup", async () => {
+  const f = admission();
+  const createFailure = await rateRefresh(f, "create", true).run();
+  assert.equal(createFailure.failed, createFailure.attempted);
+  const cleanupFailure = await rateRefresh(f, "cleanup", true).run();
+  assert.equal(cleanupFailure.failed, 0);
+  assert.deepEqual(f.calls, []);
+});
+
+test("every exported inventory writer refuses malformed enforcement before loader or database access", async () => {
+  const mode = process.env.FRONTEND_WRITER_ADMISSION_MODE;
+  process.env.FRONTEND_WRITER_ADMISSION_MODE = "invalid-owned-fixture";
+  try {
+    for (const run of [
+      () => syncProductStockForPublishedId("owned-product"),
+      () => syncProductStockFromProduct({ _id: "owned-product" } as TProduct),
+      () => untrackProductStock("owned-product"),
+      () => reconcileProductStock([]),
+    ])
+      await assert.rejects(
+        run(),
+        (error) =>
+          error instanceof WriterAdmissionError &&
+          error.code === "configuration",
+      );
+  } finally {
+    if (mode === undefined) delete process.env.FRONTEND_WRITER_ADMISSION_MODE;
+    else process.env.FRONTEND_WRITER_ADMISSION_MODE = mode;
+  }
+});
+
+function inventoryWebhook(type = "product") {
+  return {
+    getWebhookSecret: () => "owned-unused",
+    parseBody: async <T>() => ({
+      body: { _id: "owned-product", _type: type } as T,
+      isValidSignature: true,
+    }),
+  };
+}
+const webhookRequest = () =>
+  new Request("https://owned.invalid", {
+    method: "POST",
+    body: "{}",
+  }) as NextRequest;
+
+test("Sanity revalidation waits for admitted inventory work before acknowledging the product event", async () => {
+  const f = admission();
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const waiting = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const post = createRevalidatePostHandler({
+    ...inventoryWebhook(),
+    revalidateTag() {},
+    syncProductStock: () =>
+      f.run("recovery", async () => {
+        entered();
+        await held;
+      }),
+  });
+  let responded = false;
+  const response = post(webhookRequest()).then((value) => {
+    responded = true;
+    return value;
+  });
+  await waiting;
+  assert.equal(responded, false);
+  assert.deepEqual(f.state.outcomes, []);
+  release();
+  assert.equal((await response).status, 200);
+  assert.deepEqual(f.state.outcomes, ["completed"]);
+});
+
+test("Sanity inventory callbacks return retryable private refusal and unrelated content remains unaffected", async () => {
+  const f = admission();
+  f.state.recovery = false;
+  const syncProductStock = () =>
+    f.run("recovery", async () => {
+      throw new Error("must not execute");
+    });
+  for (const post of [
+    createInventorySyncPostHandler({ ...inventoryWebhook(), syncProductStock }),
+    createRevalidatePostHandler({
+      ...inventoryWebhook(),
+      revalidateTag() {},
+      syncProductStock,
+    }),
+  ]) {
+    const response = await post(webhookRequest());
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("retry-after"), "30");
+    assert.equal(await response.text(), "");
+  }
+  assert.equal(
+    (
+      await createInventorySyncPostHandler({
+        ...inventoryWebhook("homePage"),
+        syncProductStock,
+      })(webhookRequest())
+    ).status,
+    200,
+  );
+  assert.deepEqual(f.state.outcomes, []);
 });

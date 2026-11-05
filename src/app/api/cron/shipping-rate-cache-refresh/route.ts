@@ -5,6 +5,7 @@ import {
   isFlatRateShippingEnabled,
 } from "@/lib/shipping/config";
 import { refreshFlatRateCache } from "@/lib/shipping/flat-rate-refresh";
+import { WriterAdmissionError } from "@/lib/writer-admission/config";
 
 export const runtime = "nodejs";
 // Pricing every zone × bucket makes one carrier round-trip per cell; give the
@@ -30,6 +31,17 @@ export async function GET(req: Request): Promise<Response> {
       status: result.failed > 0 ? 503 : 200,
     });
   } catch (error) {
+    if (error instanceof WriterAdmissionError)
+      return NextResponse.json(
+        {
+          error:
+            "This operation is temporarily unavailable. Please retry shortly.",
+        },
+        {
+          status: 503,
+          headers: { "cache-control": "no-store", "retry-after": "30" },
+        },
+      );
     return NextResponse.json(
       {
         error: "Flat-rate cache refresh failed",

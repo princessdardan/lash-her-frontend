@@ -1,6 +1,10 @@
 import type { NextRequest } from "next/server";
 
 import { log } from "@/lib/logging/logger";
+import {
+  resolveWriterAdmissionConfiguration,
+  WriterAdmissionError,
+} from "@/lib/writer-admission/config";
 
 // Map Sanity document _type to cache tag (per D-01, D-05, D-06, D-07)
 const TYPE_TAG_MAP: Record<string, string> = {
@@ -37,7 +41,7 @@ interface RevalidateWebhookDependencies {
    * Fire-and-forget from the handler's perspective; the real wiring runs it
    * after the response so it can never fail cache revalidation.
    */
-  syncProductStock?: (id: string) => void;
+  syncProductStock?: (id: string) => void | Promise<void>;
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -62,7 +66,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     // The stock sync is a set-point detector, so an unchanged stock number is a
     // no-op — a plain product edit never resets the live count. Runs after the
     // response so a DB hiccup cannot break revalidation.
-    syncProductStock: (id) =>
+    syncProductStock: (id) => {
+      // Enforced inventory work must be admitted and settled before the
+      // provider receives success. Off mode retains the legacy deferred path.
+      if (resolveWriterAdmissionConfiguration(process.env))
+        return syncProductStockForPublishedId(id);
       after(async () => {
         try {
           await syncProductStockForPublishedId(id);
@@ -71,7 +79,8 @@ export async function POST(req: NextRequest): Promise<Response> {
             error: error instanceof Error ? error.message : "unknown",
           });
         }
-      }),
+      });
+    },
   })(req);
 }
 
@@ -128,7 +137,20 @@ export function createRevalidatePostHandler(
     // Fold-in: a product publish also reconciles that product's stock. Only a
     // changed set-point resets the live count, so ordinary edits are no-ops.
     if (body._type === "product" && body._id) {
-      dependencies.syncProductStock?.(body._id);
+      try {
+        await dependencies.syncProductStock?.(body._id);
+      } catch (error) {
+        log("error", "[revalidate] product stock sync unavailable", {
+          error:
+            error instanceof WriterAdmissionError
+              ? error.code
+              : "inventory_sync_failed",
+        });
+        return new Response(null, {
+          status: 503,
+          headers: { "cache-control": "no-store", "retry-after": "30" },
+        });
+      }
     }
 
     return new Response(null, { status: 200 });

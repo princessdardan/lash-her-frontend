@@ -1,12 +1,29 @@
 import "server-only";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import {
+  runWriterAdmission,
+  type WriterOperationKind,
+} from "@/lib/writer-admission/runtime";
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { getPrivateDb } from "@/lib/private-db/client";
 import { productStock } from "@/lib/private-db/schema";
 import type { TProduct } from "@/types";
 
 import { normalizeProductVariantModel } from "./product-variant-model";
+
+// One stock batch owns its nested helpers. A fence closing during an admitted
+// callback/backfill must not interrupt its already admitted transaction chain.
+const stockOperation = new AsyncLocalStorage<boolean>();
+function runStockOperation<T>(
+  kind: WriterOperationKind,
+  task: () => Promise<T>,
+): Promise<T> {
+  if (stockOperation.getStore()) return task();
+  return runWriterAdmission(kind, () => stockOperation.run(true, task));
+}
 
 type DbTransaction = Parameters<
   Parameters<ReturnType<typeof getPrivateDb>["transaction"]>[0]
@@ -77,6 +94,12 @@ function desiredTargets(product: TProduct): DesiredTarget[] {
 export async function syncProductStockFromProduct(
   product: TProduct,
 ): Promise<ProductStockSyncResult> {
+  return runStockOperation("new-work", () => applyProductStock(product));
+}
+
+async function applyProductStock(
+  product: TProduct,
+): Promise<ProductStockSyncResult> {
   const productId = publishedProductId(product._id);
   const targets = desiredTargets(product);
   return getPrivateDb().transaction((tx) =>
@@ -123,7 +146,12 @@ async function applyTargets(
   for (const row of existing) {
     if (desiredByKey.has(row.variantKey ?? "")) continue;
     if (row.reserved === 0) {
-      await tx.delete(productStock).where(eq(productStock.id, row.id));
+      const receipts = await tx
+        .delete(productStock)
+        .where(eq(productStock.id, row.id))
+        .returning({ id: productStock.id });
+      if (receipts.length !== 1 || receipts[0].id !== row.id)
+        markWriterOperationUncertain();
       result.untracked += 1;
     } else {
       result.unchanged += 1;
@@ -151,6 +179,22 @@ async function applyTargets(
         .returning({ id: productStock.id });
       if (inserted.length > 0) {
         result.tracked += 1;
+      } else {
+        // A concurrent insert is an ordinary idempotent outcome only when its
+        // exact target actually exists after the conflict.
+        const rows = await tx
+          .select({ id: productStock.id })
+          .from(productStock)
+          .where(
+            and(
+              eq(productStock.productId, productId),
+              target.variantKey === null
+                ? isNull(productStock.variantKey)
+                : eq(productStock.variantKey, target.variantKey),
+            ),
+          )
+          .limit(1);
+        if (rows.length !== 1) markWriterOperationUncertain();
       }
       continue;
     }
@@ -165,14 +209,17 @@ async function applyTargets(
     // already reserved by in-flight orders (that would strand those holds and
     // violate the reserved<=onHand invariant). Record the authored set-point so
     // an unchanged republish is a no-op even when the count was clamped up.
-    await tx
+    const receipts = await tx
       .update(productStock)
       .set({
         onHand: Math.max(target.quantity, row.reserved),
         sanitySeedQuantity: target.quantity,
         updatedAt: now,
       })
-      .where(eq(productStock.id, row.id));
+      .where(eq(productStock.id, row.id))
+      .returning({ id: productStock.id });
+    if (receipts.length !== 1 || receipts[0].id !== row.id)
+      markWriterOperationUncertain();
     result.reset += 1;
   }
 
@@ -190,13 +237,15 @@ async function applyTargets(
 export async function syncProductStockForPublishedId(
   id: string,
 ): Promise<void> {
-  const { loaders } = await import("@/data/loaders");
-  const product = await loaders.getProductForStockSync(id);
-  if (product) {
-    await syncProductStockFromProduct(product);
-  } else {
-    await untrackProductStock(id);
-  }
+  return runStockOperation("recovery", async () => {
+    const { loaders } = await import("@/data/loaders");
+    const product = await loaders.getProductForStockSync(id);
+    if (product) {
+      await syncProductStockFromProduct(product);
+    } else {
+      await untrackProductStock(id);
+    }
+  });
 }
 
 /**
@@ -204,6 +253,12 @@ export async function syncProductStockForPublishedId(
  * with an outstanding reservation are kept until released.
  */
 export async function untrackProductStock(
+  productId: string,
+): Promise<{ productId: string; untracked: number; unchanged: number }> {
+  return runStockOperation("new-work", () => removeProductStock(productId));
+}
+
+async function removeProductStock(
   productId: string,
 ): Promise<{ productId: string; untracked: number; unchanged: number }> {
   const resolvedId = publishedProductId(productId);
@@ -218,7 +273,12 @@ export async function untrackProductStock(
     let unchanged = 0;
     for (const row of rows) {
       if (row.reserved === 0) {
-        await tx.delete(productStock).where(eq(productStock.id, row.id));
+        const receipts = await tx
+          .delete(productStock)
+          .where(eq(productStock.id, row.id))
+          .returning({ id: productStock.id });
+        if (receipts.length !== 1 || receipts[0].id !== row.id)
+          markWriterOperationUncertain();
         untracked += 1;
       } else {
         unchanged += 1;
@@ -236,9 +296,11 @@ export async function untrackProductStock(
 export async function reconcileProductStock(
   products: readonly TProduct[],
 ): Promise<ProductStockSyncResult[]> {
-  const results: ProductStockSyncResult[] = [];
-  for (const product of products) {
-    results.push(await syncProductStockFromProduct(product));
-  }
-  return results;
+  return runStockOperation("new-work", async () => {
+    const results: ProductStockSyncResult[] = [];
+    for (const product of products) {
+      results.push(await syncProductStockFromProduct(product));
+    }
+    return results;
+  });
 }

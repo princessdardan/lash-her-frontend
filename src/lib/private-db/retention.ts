@@ -1,5 +1,9 @@
 import "server-only";
 import { retainHighLevelRecords } from "@/lib/highlevel/retention";
+import {
+  runWriterAdmission,
+  type WriterAdmissionRunner,
+} from "@/lib/writer-admission/runtime";
 
 import {
   and,
@@ -647,7 +651,14 @@ export function getTerminalAppointmentRedactionPredicate(cutoff: Date) {
 
 export async function runPrivateDataRetentionCleanup(
   input: { now?: Date } = {},
+  run: WriterAdmissionRunner = runWriterAdmission,
 ): Promise<PrivateDataRetentionCleanupSummary> {
+  return run("new-work", () => processPrivateDataRetentionCleanup(input));
+}
+
+async function processPrivateDataRetentionCleanup(input: {
+  now?: Date;
+}): Promise<PrivateDataRetentionCleanupSummary> {
   const now = input.now ?? new Date();
   const deletedStepUpProofs = await getPrivateDb()
     .delete(adminStepUpProofs)
