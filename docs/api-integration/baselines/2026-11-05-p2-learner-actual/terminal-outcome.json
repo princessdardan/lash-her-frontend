@@ -1,0 +1,9 @@
+{
+  "frontendSource": "6ed7825c192b1652827b64ffe5f51544fc7c8f33",
+  "frontendSourceDirectory": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner",
+  "courseSource": "5c23b8c53f7849426cf8a71703cc6a5c84fef3d7",
+  "courseSourceDirectory": "/Users/dardan/workspace/lash-her-course-api/.worktrees/phase2-course",
+  "outcome": "passed",
+  "ownedServersStopped": true,
+  "ownedPostgresStopped": true
+}
