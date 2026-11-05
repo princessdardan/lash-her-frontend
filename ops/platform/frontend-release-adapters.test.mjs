@@ -83,6 +83,10 @@ test("restoration gateway binding selects an exact existing machine/configuratio
     gatewayConfigurationSha256: "3".repeat(64), runtimeConfigurationSha256: "4".repeat(64),
     gatewayImage: `ghcr.io/princessdardan/lash-her-platform-gateway@sha256:${"5".repeat(64)}` };
   const normalized = frontendProviderBindingsArtifact(f.input, f.plan).gatewayObservation; assert.deepEqual(normalized, f.input.gatewayObservation);
+  const restoration = { gatewayBindingSha256: hash(normalized) };
+  assert.deepEqual(frontendProviderBindingsArtifact(f.input, { ...f.plan, restoration }).gatewayObservation, normalized);
+  assert.throws(() => frontendProviderBindingsArtifact(f.input, { ...f.plan, restoration: { gatewayBindingSha256: "a".repeat(64) } }));
+  assert.throws(() => frontendProviderBindingsArtifact(f.input, { ...f.plan, restoration: { gatewayBindingSha256: "0".repeat(64) } }));
   for (const change of [v => { v.hostMachineId = "0".repeat(32); }, v => { v.gatewayImage = "unreviewed:latest"; },
     v => { v.gatewayConfigurationSha256 = "0".repeat(64); }, v => { v.candidateSha256 = "unknown"; }]) {
     const copy = structuredClone(f.input); change(copy.gatewayObservation); assert.throws(() => frontendProviderBindingsArtifact(copy, f.plan));

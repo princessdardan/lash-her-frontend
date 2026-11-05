@@ -102,6 +102,7 @@ export function frontendProviderBindingsArtifact(input, plan) {
     result.squareRetirement = { environment: "sandbox", credentialKind: "personal-access-token", locationId: selected.locationId,
       apiVersion: selected.apiVersion, merchantId: selected.merchantId, applicationId: selected.applicationId, webhookIds: [...selected.webhookIds], effects };
   }
+  if (plan.restoration !== undefined) demand(result.gatewayObservation && hash(result.gatewayObservation) === plan.restoration.gatewayBindingSha256);
   return result;
 }
 

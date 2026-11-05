@@ -115,7 +115,7 @@ def effects(client, reviewed, actual_rows):
             consistent = (actual["databaseStatus"], status) in (("captured", "COMPLETED"), ("failed", "FAILED"), ("cancelled", "CANCELED"))
         else:
             matches = matches and value.get("payment_id") == actual["originalPaymentId"]
-            consistent = (actual["databaseStatus"], status) in (("succeeded", "COMPLETED"), ("failed", "FAILED"), ("rejected", "REJECTED"))
+            consistent = (actual["databaseStatus"], status) in (("succeeded", "COMPLETED"), ("failed", "FAILED"), ("failed", "REJECTED"))
         summary.update(providerStatus=status, immutableMatch=matches, storedOutcomeConsistent=matches and consistent)
         if not summary["storedOutcomeConsistent"]:
             summary["unresolvedReason"] = "immutable-effect-mismatch" if not matches else "provider-and-database-outcome-not-terminal-and-equal"

@@ -21,6 +21,10 @@ async function runtime(context) {
     sourceCommit: context.plan.sourceCommit, targetSha256: context.plan.targetSha256 }));
   const bindings = prepareFrontendProviderBindings(value?.bindings, context.plan);
   frontendPrivateReceiptDirectory(context.directory);
+  if (context.plan.restoration !== undefined) {
+    demand(typeof value.gatewayRuntimeDirectory === "string");
+    frontendPrivateReceiptDirectory(value.gatewayRuntimeDirectory);
+  }
   demand(typeof value.vercelToken === "string" && value.vercelToken.length > 0 && value.vercelToken.length <= 8192 &&
     [...value.vercelToken].every(char => char.charCodeAt(0) > 32 && char.charCodeAt(0) < 127));
   const candidate = context.candidate;

@@ -20,7 +20,7 @@ class SquareRetirementTests(unittest.TestCase):
 
     def setUp(self):
         self.denied, self.forbidden, self.enabled, self.wrong_location, self.mismatch, self.pending, self.fail_disable = False, False, True, False, False, False, False
-        self.calls = []
+        self.calls = []; self.refund_status = "COMPLETED"
         owner = self
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args): pass
@@ -44,7 +44,7 @@ class SquareRetirementTests(unittest.TestCase):
                         "amount_money": {"amount": 999 if owner.mismatch else 100, "currency": "CAD"}, "reference_id": "owned-public-ref", "order_id": "owned-order",
                         "application_details": {"application_id": "sandbox-sq0idb-owned"}, "buyer_email_address": "private-buyer-marker"}}
                 elif self.path == "/v2/refunds/owned-refund":
-                    value = {"refund": {"id": "owned-refund", "status": "COMPLETED", "location_id": square.LOCATION, "payment_id": "owned-payment",
+                    value = {"refund": {"id": "owned-refund", "status": owner.refund_status, "location_id": square.LOCATION, "payment_id": "owned-payment",
                         "amount_money": {"amount": 100, "currency": "CAD"}, "reason": "private-refund-reason"}}
                 else:
                     self.send_response(500); self.end_headers(); return
@@ -111,6 +111,13 @@ class SquareRetirementTests(unittest.TestCase):
         self.assertFalse(square.effects(self.client, self.plan, self.rows)[0]["storedOutcomeConsistent"])
         self.pending = False; self.rows[0]["databaseStatus"] = "pending"
         self.assertFalse(square.effects(self.client, self.plan, self.rows)[0]["storedOutcomeConsistent"])
+
+    def test_rejected_refund_matches_existing_failed_enum_but_not_pending_or_manual_review(self):
+        self.refund_status = "REJECTED"; self.rows[1]["databaseStatus"] = "failed"
+        self.assertTrue(square.effects(self.client, self.plan, self.rows)[1]["storedOutcomeConsistent"])
+        for status in ("processing", "manual_review", "outcome_unknown"):
+            self.rows[1]["databaseStatus"] = status
+            self.assertFalse(square.effects(self.client, self.plan, self.rows)[1]["storedOutcomeConsistent"])
 
     def test_missing_preretirement_or_wrong_runtime_epoch_refuses(self):
         self.fixture.execute("deploy-admission"); self.denied = True
