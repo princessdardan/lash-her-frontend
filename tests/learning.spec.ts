@@ -878,3 +878,96 @@ test("explicit revised assessment refresh settles pending resume and removes old
     release();
   }
 });
+
+test("revised assessment refresh preserves an unknown progress outcome until explicit revision recovery", async ({
+  page,
+  context,
+}) => {
+  await login(context);
+  await enroll(page);
+  await expect(
+    page.getByText("Progress saved to your account.", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("radio", { name: "Pull the extensions" }).check();
+  await page.getByRole("radio", { name: "Only once" }).check();
+  await page.route(
+    `**/api/academy/lessons/${lessonId}/quiz/attempts`,
+    (route) => {
+      const body = route.request().postDataJSON();
+      return route.continue({
+        postData: JSON.stringify({
+          ...body,
+          requestId: "b8888888-8888-4888-8888-888888888888",
+        }),
+      });
+    },
+    { times: 1 },
+  );
+  await page.getByRole("button", { name: "Submit answers" }).click();
+  const refresh = page.getByRole("button", {
+    name: "Load the latest assessment",
+  });
+  await expect(refresh).toBeVisible();
+  let committedRevision: number | undefined;
+  await page.route(
+    `**/api/academy/lessons/${lessonId}/progress`,
+    async (route) => {
+      const response = await route.fetch();
+      expect(response.ok()).toBe(true);
+      committedRevision = (await response.json()).progress.revision;
+      await route.abort("failed");
+    },
+    { times: 1 },
+  );
+  const player = page.locator("mux-player");
+  await expect
+    .poll(() =>
+      player.evaluate(
+        (element: HTMLElement & { readyState: number }) => element.readyState,
+      ),
+    )
+    .toBeGreaterThan(0);
+  await player.evaluate(
+    (element: HTMLElement & { currentTime: number; pause: () => void }) => {
+      element.currentTime = 4;
+      element.pause();
+    },
+  );
+  await expect(
+    page.getByRole("button", { name: "Retry saving progress" }),
+  ).toBeVisible();
+  expect(committedRevision).toBeGreaterThan(1);
+  await refresh.click();
+  await expect(
+    page.getByText("Your latest progress could not be confirmed.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Revised assessment:", { exact: false }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("radio", { name: "Pull the extensions" }),
+  ).toBeChecked();
+  await page.getByRole("button", { name: "Retry saving progress" }).click();
+  await expect(
+    page.getByRole("button", { name: "Load latest progress" }),
+  ).toBeVisible();
+  await refresh.click();
+  await expect(
+    page.getByText("Revised assessment:", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Retry saving progress" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Load latest progress" }),
+  ).toHaveCount(0);
+  const progress = (
+    await (
+      await page.request.get(`/api/academy/progress?lessonId=${lessonId}`)
+    ).json()
+  ).progress[0];
+  expect(progress.revision).toBeGreaterThanOrEqual(committedRevision!);
+  expect(progress.resumePositionSeconds).toBeGreaterThanOrEqual(3);
+});
