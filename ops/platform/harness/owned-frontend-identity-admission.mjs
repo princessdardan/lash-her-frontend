@@ -16,6 +16,7 @@ let phase = "configuration";
 const completedChecks = [];
 export function ownedIdentityTarget(environment) {
   assert.equal(environment.FRONTEND_IDENTITY_OWNED_TEST, "true");
+  assert.ok(["16", "18"].includes(environment.OWNED_RECONCILIATION_MAJOR));
   const port = Number(environment.OWNED_RECONCILIATION_PORT), major = Number(environment.OWNED_RECONCILIATION_MAJOR);
   assert.ok(Number.isInteger(port) && port > 0 && port < 65536);
   assert.ok(/^owned-[a-f0-9-]{36}$/u.test(environment.OWNED_RECONCILIATION_PASSWORD ?? ""));

@@ -22,6 +22,7 @@ test("identity entry qualification accepts explicit PostgreSQL 16/18 loopback bi
   }
   for (const mutation of [{ FRONTEND_IDENTITY_OWNED_TEST: undefined }, { OWNED_RECONCILIATION_PORT: "0" },
     { OWNED_RECONCILIATION_PORT: "65536" }, { OWNED_RECONCILIATION_MAJOR: "17" }, { OWNED_RECONCILIATION_MAJOR: "18.1" },
+    { OWNED_RECONCILIATION_MAJOR: "16.0" },
     { OWNED_RECONCILIATION_PASSWORD: "unowned" }, { NODE_EXTRA_CA_CERTS: "relative-ca.crt" }])
     assert.throws(() => ownedIdentityTarget({ ...owned, ...mutation }));
 });
