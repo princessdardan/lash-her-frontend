@@ -36,6 +36,22 @@ test("owned provider interception refuses unselected payments, verbs, suffixes a
   ]) assert.throws(() => reconciliationProviderStage(new Request(url, { method })), /OWNED_UNEXPECTED_FETCH/);
 });
 
+test("owned stock lookup accepts only the bound location, window, page size and cursor", () => {
+  const url = new URL("https://connect.squareupsandbox.com/v2/payments");
+  url.search = new URLSearchParams({ location_id: "owned-location", begin_time: "2020-01-01T11:45:00.000Z",
+    end_time: "2020-01-02T12:00:00.000Z", sort_order: "ASC", limit: "100" }).toString();
+  assert.equal(reconciliationProviderStage(new Request(url)), "stock");
+  url.searchParams.set("cursor", "owned-next");
+  assert.equal(reconciliationProviderStage(new Request(url)), "stock");
+  for (const [key, value] of [["location_id", "unrelated"], ["limit", "50"], ["begin_time", "2020-01-01"],
+    ["end_time", "2020-01-02"], ["sort_order", "DESC"], ["cursor", "unrelated"], ["extra", "true"]]) {
+    const changed = new URL(url); changed.searchParams.set(key, value);
+    assert.throws(() => reconciliationProviderStage(new Request(changed)), /OWNED_UNEXPECTED_FETCH/);
+  }
+  const duplicate = new URL(url); duplicate.searchParams.append("limit", "100");
+  assert.throws(() => reconciliationProviderStage(new Request(duplicate)), /OWNED_UNEXPECTED_FETCH/);
+});
+
 test("owned effect qualification refuses replay, missing calls and reordered batches", () => {
   const calls = [
     { stage: "email", method: "POST", path: "/emails" },

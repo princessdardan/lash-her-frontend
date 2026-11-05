@@ -13,6 +13,7 @@ import {
 } from "@/lib/private-db/schema";
 
 import { releaseProductStockForOrderInTransaction } from "./product-stock-store";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 // A product order reserves stock at creation and commits it at payment. If the
 // buyer abandons before paying (the synchronous charge never completes and no
@@ -71,41 +72,25 @@ export interface AbandonedStockSweepOptions {
   verifyProviderPayment?: AbandonedOrderProviderVerifier;
 }
 
+export interface AbandonedStockSweepDependencies {
+  listCandidates: typeof listAbandonedOrders;
+  release: typeof releaseAbandonedOrder;
+}
+
+const defaultDependencies: AbandonedStockSweepDependencies = {
+  listCandidates: listAbandonedOrders,
+  release: releaseAbandonedOrder,
+};
+
 export async function releaseAbandonedProductStockReservations(
   options: AbandonedStockSweepOptions = {},
+  dependencies: AbandonedStockSweepDependencies = defaultDependencies,
 ): Promise<AbandonedStockSweepResult> {
   const now = options.now ?? new Date();
   const graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
   const limit = options.limit ?? DEFAULT_BATCH_LIMIT;
   const cutoff = new Date(now.getTime() - graceMs);
-  const db = getPrivateDb();
-
-  const candidates = await db
-    .select({
-      orderId: checkoutOrders.orderId,
-      createdAt: checkoutOrders.createdAt,
-    })
-    .from(checkoutOrders)
-    .innerJoin(
-      orderPaymentObligations,
-      and(
-        eq(orderPaymentObligations.orderId, checkoutOrders.id),
-        eq(orderPaymentObligations.purpose, "primary"),
-      ),
-    )
-    .where(
-      and(
-        eq(checkoutOrders.purpose, "product"),
-        eq(checkoutOrders.status, "pending"),
-        // No captured payment recorded on the order (defense in depth alongside
-        // the per-order transaction check below).
-        isNull(checkoutOrders.providerPaymentId),
-        eq(orderPaymentObligations.status, "pending"),
-        isNotNull(orderPaymentObligations.expiresAt),
-        lt(orderPaymentObligations.expiresAt, cutoff),
-      ),
-    )
-    .limit(limit);
+  const candidates = await dependencies.listCandidates(cutoff, limit);
 
   let released = 0;
   let skipped = 0;
@@ -131,6 +116,7 @@ export async function releaseAbandonedProductStockReservations(
             createdAt: candidate.createdAt,
           });
         } catch (error) {
+          markWriterOperationUncertain();
           log(
             "warn",
             "[product-stock-sweep] Provider re-verification failed; proceeding",
@@ -151,13 +137,14 @@ export async function releaseAbandonedProductStockReservations(
         }
       }
 
-      const outcome = await releaseAbandonedOrder(candidate.orderId, now);
+      const outcome = await dependencies.release(candidate.orderId, now);
       if (outcome === "released") {
         released += 1;
       } else {
         skipped += 1;
       }
     } catch (error) {
+      markWriterOperationUncertain();
       failed += 1;
       log("error", "[product-stock-sweep] Failed to release abandoned order", {
         orderId: candidate.orderId,
@@ -167,6 +154,33 @@ export async function releaseAbandonedProductStockReservations(
   }
 
   return { scanned: candidates.length, released, skipped, failed };
+}
+
+async function listAbandonedOrders(cutoff: Date, limit: number) {
+  return getPrivateDb()
+    .select({
+      orderId: checkoutOrders.orderId,
+      createdAt: checkoutOrders.createdAt,
+    })
+    .from(checkoutOrders)
+    .innerJoin(
+      orderPaymentObligations,
+      and(
+        eq(orderPaymentObligations.orderId, checkoutOrders.id),
+        eq(orderPaymentObligations.purpose, "primary"),
+      ),
+    )
+    .where(
+      and(
+        eq(checkoutOrders.purpose, "product"),
+        eq(checkoutOrders.status, "pending"),
+        isNull(checkoutOrders.providerPaymentId),
+        eq(orderPaymentObligations.status, "pending"),
+        isNotNull(orderPaymentObligations.expiresAt),
+        lt(orderPaymentObligations.expiresAt, cutoff),
+      ),
+    )
+    .limit(limit);
 }
 
 async function releaseAbandonedOrder(
@@ -221,7 +235,7 @@ async function releaseAbandonedOrder(
 
     await releaseProductStockForOrderInTransaction(tx, orderId);
 
-    await tx
+    const cancelledObligations = await tx
       .update(orderPaymentObligations)
       .set({ status: "cancelled", updatedAt: now })
       .where(
@@ -229,9 +243,11 @@ async function releaseAbandonedOrder(
           eq(orderPaymentObligations.id, obligation.id),
           eq(orderPaymentObligations.status, "pending"),
         ),
-      );
+      )
+      .returning({ id: orderPaymentObligations.id });
+    if (cancelledObligations.length !== 1) markWriterOperationUncertain();
 
-    await tx
+    const cancelledOrders = await tx
       .update(checkoutOrders)
       .set({ status: "cancelled", failedAt: now, updatedAt: now })
       .where(
@@ -239,7 +255,9 @@ async function releaseAbandonedOrder(
           eq(checkoutOrders.id, order.id),
           eq(checkoutOrders.status, "pending"),
         ),
-      );
+      )
+      .returning({ id: checkoutOrders.id });
+    if (cancelledOrders.length !== 1) markWriterOperationUncertain();
 
     await tx
       .update(productShipments)
@@ -358,12 +376,19 @@ async function findSquareCommercePaymentByReference(
       ) {
         heldAuthorization = payment;
       }
+      if (
+        !["COMPLETED", "APPROVED", "AUTHORIZED", "CANCELED", "FAILED"].includes(
+          status,
+        )
+      )
+        markWriterOperationUncertain();
     }
-    if (!response.cursor) break;
+    if (!response.cursor) return heldAuthorization;
     cursor = response.cursor;
   }
   // No capture found within the page budget: surface a held authorization if we
   // saw one, else report not-found and let the finalizer's late-capture refund
   // backstop the rare miss.
+  markWriterOperationUncertain();
   return heldAuthorization;
 }

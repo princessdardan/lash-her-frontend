@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "scope": "Authenticated product-stock-reservations cron batch only",
+  "admissionEnabled": false,
+  "effects": [
+    {
+      "stage": "authentication",
+      "source": "src/lib/commerce/product-stock-abandoned-sweep-cron.ts",
+      "accounting": "Existing 404/401 before recovery admission and candidate scan."
+    },
+    {
+      "stage": "selection/configuration",
+      "source": "src/lib/commerce/product-stock-abandoned-sweep.ts",
+      "accounting": "Configuration and initial candidate query run inside one recovery entry; query failure cannot complete."
+    },
+    {
+      "stage": "provider verification",
+      "source": "src/lib/commerce/product-stock-abandoned-sweep.ts",
+      "accounting": "Await every bounded list page. Caught errors, remaining cursor and unknown matching statuses retain uncertainty; preserve legacy fallback."
+    },
+    {
+      "stage": "provider row filtering",
+      "source": "src/lib/payments/square/payments-client.ts",
+      "accounting": "Silently filtered malformed observations mark any enclosing admitted operation uncertain; off-mode return filtering remains unchanged."
+    },
+    {
+      "stage": "stock release",
+      "source": "src/lib/commerce/product-stock-store.ts",
+      "accounting": "Await reserve/settlement reads, release movement insert and stock projection; missing stock update is uncertain."
+    },
+    {
+      "stage": "cancellation/abandonment",
+      "source": "src/lib/commerce/product-stock-abandoned-sweep.ts",
+      "accounting": "Await locked order/obligation/payment checks and stock/order/obligation/shipment writes and transaction settlement. Missing expected cancellation receipts retain uncertainty; existing concurrent-state skips remain skips."
+    },
+    {
+      "stage": "caught errors/result",
+      "source": "src/app/api/cron/product-stock-reservations/route.ts",
+      "accounting": "Per-order failures mark uncertainty and retain later-order execution. Failed summaries, sticky markers and socket/settlement loss yield sanitized retryable no-store 503 under enforcement."
+    }
+  ],
+  "deferredWorkInCron": false,
+  "businessReservationExpiryIsDrainProof": false,
+  "productionDependenciesReplacedInOwnedFixture": false,
+  "providerResponsesIntercepted": true
+}

@@ -1,4 +1,5 @@
 import "server-only";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 const SQUARE_VERSION = "2026-05-20";
 const SQUARE_BASE_URLS = {
@@ -178,6 +179,11 @@ export function createSquarePaymentsClient(
       const payments = Array.isArray(envelope.payments)
         ? envelope.payments.filter(isSquarePayment)
         : [];
+      if (
+        Array.isArray(envelope.payments) &&
+        payments.length !== envelope.payments.length
+      )
+        markWriterOperationUncertain();
       return {
         payments,
         ...(typeof envelope.cursor === "string"

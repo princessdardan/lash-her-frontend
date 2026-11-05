@@ -5,9 +5,13 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { runAbandonedProductStockSweep } from "./product-stock-abandoned-sweep";
+import { WriterAdmissionError } from "@/lib/writer-admission/config";
 
 export function createAbandonedProductStockCronHandler(
   sweep: typeof runAbandonedProductStockSweep = runAbandonedProductStockSweep,
+  runRecovery: (
+    task: () => ReturnType<typeof runAbandonedProductStockSweep>,
+  ) => ReturnType<typeof runAbandonedProductStockSweep> = (task) => task(),
 ): (request: Request) => Promise<Response> {
   return async function abandonedProductStockCronHandler(
     request: Request,
@@ -18,8 +22,22 @@ export function createAbandonedProductStockCronHandler(
     if (!safeEqual(authorization, `Bearer ${secret}`)) {
       return new Response("Unauthorized", { status: 401 });
     }
-    const result = await sweep();
-    return NextResponse.json(result, { status: 200 });
+    try {
+      const result = await runRecovery(() => sweep());
+      return NextResponse.json(result, { status: 200 });
+    } catch (error) {
+      if (!(error instanceof WriterAdmissionError)) throw error;
+      return NextResponse.json(
+        {
+          error:
+            "This operation is temporarily unavailable. Please retry shortly.",
+        },
+        {
+          status: 503,
+          headers: { "cache-control": "no-store", "retry-after": "30" },
+        },
+      );
+    }
   };
 }
 
