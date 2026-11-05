@@ -187,6 +187,8 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   const crossContractIndex = steps.findIndex((step) => step.run?.includes("check-vendored-course-contract.mjs"));
   assert.ok(crossContractIndex > verifyIndex && crossContractIndex < steps.indexOf(builds[0]));
   assert.match(steps[crossContractIndex].run, /--release/u);
+  const phase2Index = steps.findIndex(step => step.run?.includes("source-checkout.mjs --phase2"));
+  assert.ok(phase2Index > crossContractIndex && phase2Index < steps.indexOf(builds[0]));
   assert.equal(steps.find((step) => step.with?.path === "sources/lash-her-community-api").with["fetch-depth"], 0);
   assert.equal(builds.length, 6);
   for (const build of builds) {
@@ -225,6 +227,8 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   assert.equal(collectors.length, 2);
   for (const step of collectors) assert.match(step.run, /^node sources\/lash-her-frontend\/ops\/platform\/artifact-candidate\.mjs/u);
   const harnessIndex = steps.findIndex((step) => step.run?.includes("local-harness.mjs"));
+  assert.ok(steps[harnessIndex].run.includes("local-harness.mjs --phase p2"));
+  assert.ok(steps.some(step => step.run?.includes("contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly")));
   const finalCheckIndex = steps.findIndex((step) => step.run?.includes("source-checks.final.json"));
   const qualificationIndex = steps.findIndex((step) => step.run?.includes("artifact-candidate.mjs --harness"));
   assert.ok(harnessIndex > verifyIndex && finalCheckIndex > harnessIndex && qualificationIndex > finalCheckIndex);

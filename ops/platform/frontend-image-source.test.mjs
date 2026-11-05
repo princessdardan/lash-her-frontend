@@ -16,6 +16,7 @@ function fixture() {
     copyFileSync(join(source, `ops/platform/${name}.mjs`), join(root, `ops/platform/${name}.mjs`));
   for (const name of ["package.json", "package-lock.json"]) copyFileSync(join(source, "ops/platform/frontend-migration-deps", name), join(root, name));
   for (const name of ["src/lib/private-db/migration-lineage.ts", "contracts/api-integration/v1/manifest.json"]) copyFileSync(join(source, name), join(root, name));
+  cpSync(join(source, "contracts/api-integration/p2-candidate"), join(root, "contracts/api-integration/p2-candidate"), { recursive: true });
   cpSync(join(source, "drizzle"), join(root, "drizzle"), { recursive: true });
   return root;
 }
@@ -47,12 +48,26 @@ test("extra SQL or omitted source cannot silently enter a packaged image", () =>
   }
 });
 
+for (const file of ["manifest.json", "course-api.json", "community-api.json", "enrollment-event.schema.json", "boundary-contracts.json", "README.md"]) {
+  test(`packaged image refuses modified P2 ${file}`, () => {
+    const root = fixture();
+    try {
+      const manifest = writePackagedFrontendSource("a".repeat(40), root), path = `contracts/api-integration/p2-candidate/${file}`;
+      assert.ok(manifest.files[path]); assert.doesNotThrow(() => verifyPackagedFrontendSource(root));
+      writeFileSync(join(root, path), "modified\n");
+      assert.throws(() => verifyPackagedFrontendSource(root));
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
 test("minimal image dependencies stay aligned with the application lock", () => {
   const isolated = JSON.parse(readFileSync(join(source, "ops/platform/frontend-migration-deps/package-lock.json")));
   const app = JSON.parse(readFileSync(join(source, "package-lock.json")));
   for (const name of ["pg", "drizzle-orm"]) assert.equal(isolated.packages[`node_modules/${name}`].version, app.packages[`node_modules/${name}`].version);
   assert.deepEqual(Object.keys(isolated.packages[""].dependencies).sort(), ["drizzle-orm", "pg"]);
   assert.ok(frontendMigrationArtifact().migrations.length > 0);
+  assert.ok(readFileSync(join(source, "ops/platform/Dockerfile.frontend-migration"), "utf8").includes("COPY contracts/api-integration/p2-candidate/ ./contracts/api-integration/p2-candidate/"));
+  assert.ok(readFileSync(join(source, ".github/workflows/ci.yml"), "utf8").includes("contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly"));
 });
 
 test("image entrypoint never offers checkout or environment source-verification bypasses", () => {
