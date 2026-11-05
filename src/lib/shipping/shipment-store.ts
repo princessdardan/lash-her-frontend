@@ -1031,7 +1031,18 @@ export async function enqueueShipmentJob(input: {
     .values({ ...input, operationPayloadHash, status: "queued" })
     .onConflictDoNothing({ target: productShipmentJobs.idempotencyKey })
     .returning();
-  if (created) return created;
+  if (created) {
+    if (
+      created.shipmentId !== input.shipmentId ||
+      created.type !== input.type ||
+      created.idempotencyKey !== input.idempotencyKey ||
+      created.operationPayloadHash !== operationPayloadHash ||
+      hashOperationPayload(created.payload ?? {}) !==
+        hashOperationPayload(input.payload ?? {})
+    )
+      markWriterOperationUncertain();
+    return created;
+  }
   const [existing] = await getPrivateDb()
     .select()
     .from(productShipmentJobs)
@@ -1045,6 +1056,11 @@ export async function enqueueShipmentJob(input: {
   ) {
     throw new Error("Shipment operation idempotency key was reused");
   }
+  if (
+    hashOperationPayload(existing.payload ?? {}) !==
+    hashOperationPayload(input.payload ?? {})
+  )
+    markWriterOperationUncertain();
   return existing;
 }
 
@@ -1665,13 +1681,14 @@ export async function listShipmentsDueForPolling(
 export async function abandonExpiredQuotes(now = new Date()): Promise<number> {
   const db = getPrivateDb();
   const detachedCount = await db.transaction(async (tx) => {
-    const rows = await tx
-      .update(productShipments)
-      .set({
-        status: "abandoned",
-        stateVersion: sql`${productShipments.stateVersion} + 1`,
-        updatedAt: now,
+    // Lock the expected rows so a suppressed update cannot turn a nonempty
+    // abandonment batch into an apparently successful empty result.
+    const candidates = await tx
+      .select({
+        id: productShipments.id,
+        stateVersion: productShipments.stateVersion,
       })
+      .from(productShipments)
       .where(
         and(
           isNull(productShipments.orderId),
@@ -1683,10 +1700,38 @@ export async function abandonExpiredQuotes(now = new Date()): Promise<number> {
           lte(productShipments.quoteExpiresAt, now),
         ),
       )
+      .for("update");
+    if (!candidates.length) return 0;
+    const rows = await tx
+      .update(productShipments)
+      .set({
+        status: "abandoned",
+        stateVersion: sql`${productShipments.stateVersion} + 1`,
+        updatedAt: now,
+      })
+      .where(
+        inArray(
+          productShipments.id,
+          candidates.map(({ id }) => id),
+        ),
+      )
       .returning({
         id: productShipments.id,
+        status: productShipments.status,
         stateVersion: productShipments.stateVersion,
       });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    if (
+      rows.length !== candidates.length ||
+      candidates.some((candidate) => {
+        const receipt = byId.get(candidate.id);
+        return (
+          receipt?.status !== "abandoned" ||
+          receipt.stateVersion !== candidate.stateVersion + 1
+        );
+      })
+    )
+      markWriterOperationUncertain();
     if (rows.length)
       await tx
         .insert(productShipmentJobs)
@@ -1703,6 +1748,14 @@ export async function abandonExpiredQuotes(now = new Date()): Promise<number> {
           })),
         )
         .onConflictDoNothing();
+    await verifyQuoteCleanupReceipts(
+      tx,
+      rows.map(({ id, stateVersion }) => ({
+        shipmentId: id,
+        idempotencyKey: `quote-cleanup/${id}`,
+        payload: { expectedShipmentStateVersion: stateVersion },
+      })),
+    );
     return rows.length;
   });
 
@@ -1797,8 +1850,21 @@ export async function abandonExpiredQuotes(now = new Date()): Promise<number> {
             eq(productShipments.stateVersion, shipment.stateVersion),
           ),
         )
-        .returning({ stateVersion: productShipments.stateVersion });
-      if (!abandoned) return 0;
+        .returning({
+          id: productShipments.id,
+          status: productShipments.status,
+          stateVersion: productShipments.stateVersion,
+        });
+      if (!abandoned) {
+        markWriterOperationUncertain();
+        return 0;
+      }
+      if (
+        abandoned.id !== candidate.shipmentId ||
+        abandoned.status !== "abandoned" ||
+        abandoned.stateVersion !== shipment.stateVersion + 1
+      )
+        markWriterOperationUncertain();
       const payload = {
         expectedShipmentStateVersion: abandoned.stateVersion,
         reason: "attached_primary_quote_expired",
@@ -1814,10 +1880,50 @@ export async function abandonExpiredQuotes(now = new Date()): Promise<number> {
           payload,
         })
         .onConflictDoNothing({ target: productShipmentJobs.idempotencyKey });
+      await verifyQuoteCleanupReceipts(tx, [
+        {
+          shipmentId: candidate.shipmentId,
+          idempotencyKey: `attached-quote-cleanup/${candidate.shipmentId}`,
+          payload,
+        },
+      ]);
       return 1;
     });
   }
   return detachedCount + attachedCount;
+}
+
+async function verifyQuoteCleanupReceipts(
+  tx: DbTransaction,
+  expected: Array<{
+    shipmentId: string;
+    idempotencyKey: string;
+    payload: Record<string, unknown>;
+  }>,
+): Promise<void> {
+  if (!expected.length) return;
+  const receipts = await tx
+    .select()
+    .from(productShipmentJobs)
+    .where(
+      inArray(
+        productShipmentJobs.idempotencyKey,
+        expected.map((row) => row.idempotencyKey),
+      ),
+    );
+  const byKey = new Map(receipts.map((row) => [row.idempotencyKey, row]));
+  for (const row of expected) {
+    const receipt = byKey.get(row.idempotencyKey);
+    if (
+      !receipt ||
+      receipt.shipmentId !== row.shipmentId ||
+      receipt.type !== "cleanup" ||
+      receipt.operationPayloadHash !== hashOperationPayload(row.payload) ||
+      hashOperationPayload(receipt.payload ?? {}) !==
+        hashOperationPayload(row.payload)
+    )
+      markWriterOperationUncertain();
+  }
 }
 
 export async function claimShipmentOperationJobs(input: {

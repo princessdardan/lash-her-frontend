@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "baseCommit": "412f3a3401815e46f67b05b128d7306af6400183",
+  "baseSourceManifestSha256": "eab36f0674c5ef75f4fc15c889c0a982c39841e46ee1baeb7cfe5238dc1ecd2d",
+  "candidateSourceManifestSha256": "0c5cb016c9c9b3aefdcb416b3b0fdc1aae055acbfb92cb5cd5cd5525a0c9f428",
+  "scope": "Shipping preparation batch after independent product-refund settlement",
+  "priorClassificationReference": "../2026-11-05-p2-00-product-refund-worker/writer-classification.json",
+  "releaseAuthority": false,
+  "deploymentInventoryVerified": false,
+  "writerFenceVerified": false,
+  "drainVerified": false,
+  "candidateRoutes": [
+    {
+      "file": "src/app/api/cron/chitchats-shipping/route.ts",
+      "method": "GET",
+      "classification": "OPT_IN_RECOVERY_SUBTASK",
+      "boundary": "After refund completion, before shipping configuration and business reads; through quote abandonment, cleanup receipts and polling/tracking enqueue transactions.",
+      "wholeRouteQualified": false,
+      "independentExecutionsQualified": false,
+      "providerDeliveryQualified": false,
+      "deployedRuntimeQualified": false
+    }
+  ],
+  "excludedExecutions": [
+    "Shipment-job execution and provider/alert effects after preparation",
+    "Shipment PII redaction after execution",
+    "Direct helper/admin callers",
+    "Other workers/actions, historical deployments and manual wrappers"
+  ],
+  "remainingWork": [
+    "Qualify shipment-job execution/provider/persistence/alert outcomes and PII redaction.",
+    "Qualify remaining affected producers and actual deployment/database/provider bindings.",
+    "Complete historical fencing/bootstrap and parent release/drain/restoration coordination."
+  ]
+}

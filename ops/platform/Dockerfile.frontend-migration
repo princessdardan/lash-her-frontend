@@ -11,8 +11,13 @@ ARG FRONTEND_SOURCE_COMMIT
 RUN node ops/platform/frontend-image-source.mjs --write "$FRONTEND_SOURCE_COMMIT"
 RUN node ops/platform/frontend-image.mjs --manifest-only
 
+FROM buildpack-deps:trixie@sha256:059b2051d977584f515d03f39881bbf3c53cad9a0d1938c69d1b108ccddda48b AS zlib-build
+COPY ops/gateway/runtime/ /runtime/
+RUN ulimit -c 0; sh /runtime/build.sh
+
 FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:a6c34457f6da4295807e051411c7783739c65b997a324fed14e4fa292615ae91
 WORKDIR /app
+COPY --from=zlib-build /out/rootfs/ /
 ENV NODE_ENV=production
 ENV PATH=/nodejs/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 COPY --from=build /app /app

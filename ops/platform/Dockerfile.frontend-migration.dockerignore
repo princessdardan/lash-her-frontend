@@ -17,3 +17,7 @@
 !drizzle/*.sql
 !drizzle/meta/
 !drizzle/meta/_journal.json
+
+!ops/gateway/
+!ops/gateway/runtime/
+!ops/gateway/runtime/**

@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "status": "PATCHED_RUNTIME_VERIFIED",
+  "image": {
+    "Id": "sha256:ad98dc26556f702e204866e36d9067e343887aeeae5f235232270a666cf9755e",
+    "RepoDigests": [
+      "lash-her-frontend-migration@sha256:ad98dc26556f702e204866e36d9067e343887aeeae5f235232270a666cf9755e"
+    ],
+    "Os": "linux",
+    "Architecture": "arm64"
+  },
+  "binding": {
+    "product": "pkg:oci/lash-her-frontend-migration@sha256:ad98dc26556f702e204866e36d9067e343887aeeae5f235232270a666cf9755e?arch=arm64&repository_url=index.docker.io%2Flibrary%2Flash-her-frontend-migration",
+    "component": "pkg:deb/debian/zlib1g@1.3.dfsg%2Breally1.3.1-1%2Blash1?arch=arm64&distro=debian-13.7&epoch=1"
+  },
+  "build": {
+    "inputs": {
+      "builder": "buildpack-deps:trixie@sha256:059b2051d977584f515d03f39881bbf3c53cad9a0d1938c69d1b108ccddda48b",
+      "implementation": {
+        "build.sh": "e13442a0b92a8d4132dd64d18031b3001caaae132eac763b23ffce7e9bdef892",
+        "failed-write.c": "1bf462e84c75fac033e13fb1de35c4332c3f181cc1cb6112ce0a71192ff6d1fd"
+      },
+      "inputs": {
+        "descriptor": {
+          "sha256": "ede2791e29c1d3b422f9208bdd7edf040c20445ea1e7453a72037576e64fa197",
+          "url": "https://deb.debian.org/debian/pool/main/z/zlib/zlib_1.3.dfsg+really1.3.1-1.dsc"
+        },
+        "packaging": {
+          "sha256": "9ed525955ce9fb0c1b39be8ff98f73450dbfc6305a9a27e6149c8972d38a0a9e",
+          "url": "https://deb.debian.org/debian/pool/main/z/zlib/zlib_1.3.dfsg+really1.3.1-1.debian.tar.xz"
+        },
+        "source": {
+          "sha256": "60dd315c07f616887caa029408308a018ace66e3d142726a97db164b3b8f69fb",
+          "url": "https://deb.debian.org/debian/pool/main/z/zlib/zlib_1.3.dfsg+really1.3.1.orig.tar.gz"
+        }
+      },
+      "packageVersion": "1:1.3.dfsg+really1.3.1-1+lash1",
+      "patches": {
+        "backport.patch": "69555c1182f7b7a6d5559c06437e8c63a87a7aecf2836d5694b860d60ad47816",
+        "upstream.patch": "110ff14375733173d8aa54574473424fbd7dfe4b81f1ca34a759c6fe14b15b14"
+      },
+      "sourceDateEpoch": 1791061200,
+      "upstreamCommit": "df84af25dc1942490e1d1c899a07619152a46148",
+      "version": 1,
+      "vulnerabilities": [
+        "CVE-2026-76844",
+        "CVE-2026-85091"
+      ]
+    },
+    "inputsLockSha256": "74ef1c74c0c0d119c8a0704314be61dfc9e9d26bb2c3416e9ca36db51a8ff69c",
+    "library": "/usr/lib/aarch64-linux-gnu/libz.so.1.3.1",
+    "librarySha256": "c23306d21b2fb5f13d35458f704fed20e2c8974e3946555407c98d371eaa04d5",
+    "packageSha256": "8bf2cc0b8307e0ad3e5190d51fa30cd972e3621cfd7bc8781dcaa9eab2eab257",
+    "regression": {
+      "patched": "PASS",
+      "shared": "PASS",
+      "unpatched": "EXPECTED_ASSERTION_FAILURE",
+      "upstreamTests": "PASS"
+    },
+    "regressionBinarySha256": "fa8df705c5bdaf80cbe5b8142028811c71b45c961907f051d2675b3b7eb14c9b",
+    "version": 1
+  },
+  "observed": {
+    "evidence": {
+      "inputs": {
+        "builder": "buildpack-deps:trixie@sha256:059b2051d977584f515d03f39881bbf3c53cad9a0d1938c69d1b108ccddda48b",
+        "implementation": {
+          "build.sh": "e13442a0b92a8d4132dd64d18031b3001caaae132eac763b23ffce7e9bdef892",
+          "failed-write.c": "1bf462e84c75fac033e13fb1de35c4332c3f181cc1cb6112ce0a71192ff6d1fd"
+        },
+        "inputs": {
+          "descriptor": {
+            "sha256": "ede2791e29c1d3b422f9208bdd7edf040c20445ea1e7453a72037576e64fa197",
+            "url": "https://deb.debian.org/debian/pool/main/z/zlib/zlib_1.3.dfsg+really1.3.1-1.dsc"
+          },
+          "packaging": {
+            "sha256": "9ed525955ce9fb0c1b39be8ff98f73450dbfc6305a9a27e6149c8972d38a0a9e",
+            "url": "https://deb.debian.org/debian/pool/main/z/zlib/zlib_1.3.dfsg+really1.3.1-1.debian.tar.xz"
+          },
+          "source": {
+            "sha256": "60dd315c07f616887caa029408308a018ace66e3d142726a97db164b3b8f69fb",
+            "url": "https://deb.debian.org/debian/pool/main/z/zlib/zlib_1.3.dfsg+really1.3.1.orig.tar.gz"
+          }
+        },
+        "packageVersion": "1:1.3.dfsg+really1.3.1-1+lash1",
+        "patches": {
+          "backport.patch": "69555c1182f7b7a6d5559c06437e8c63a87a7aecf2836d5694b860d60ad47816",
+          "upstream.patch": "110ff14375733173d8aa54574473424fbd7dfe4b81f1ca34a759c6fe14b15b14"
+        },
+        "sourceDateEpoch": 1791061200,
+        "upstreamCommit": "df84af25dc1942490e1d1c899a07619152a46148",
+        "version": 1,
+        "vulnerabilities": [
+          "CVE-2026-76844",
+          "CVE-2026-85091"
+        ]
+      },
+      "inputsLockSha256": "74ef1c74c0c0d119c8a0704314be61dfc9e9d26bb2c3416e9ca36db51a8ff69c",
+      "library": "/usr/lib/aarch64-linux-gnu/libz.so.1.3.1",
+      "librarySha256": "c23306d21b2fb5f13d35458f704fed20e2c8974e3946555407c98d371eaa04d5",
+      "packageSha256": "8bf2cc0b8307e0ad3e5190d51fa30cd972e3621cfd7bc8781dcaa9eab2eab257",
+      "regression": {
+        "patched": "PASS",
+        "shared": "PASS",
+        "unpatched": "EXPECTED_ASSERTION_FAILURE",
+        "upstreamTests": "PASS"
+      },
+      "regressionBinarySha256": "fa8df705c5bdaf80cbe5b8142028811c71b45c961907f051d2675b3b7eb14c9b",
+      "version": 1
+    },
+    "librarySha256": "c23306d21b2fb5f13d35458f704fed20e2c8974e3946555407c98d371eaa04d5",
+    "regressionBinarySha256": "fa8df705c5bdaf80cbe5b8142028811c71b45c961907f051d2675b3b7eb14c9b",
+    "packageStatus": "Status: install ok installed\nPackage: zlib1g\nSource: zlib\nVersion: 1:1.3.dfsg+really1.3.1-1+lash1\nArchitecture: arm64\nMaintainer: Lash Her runtime maintainers\nSection: libs\nPriority: required\nDepends: libc6 (>= 2.17)\nDescription: zlib with the reviewed Lash Her failed-write security backport\n",
+    "regressionStatus": 0,
+    "uid": 65532,
+    "architecture": "arm64"
+  },
+  "rawScanSha256": "c15cd1121295e02a6a069f6e50c9051fe813f9efd7b43cdb06396270b16c2b09",
+  "sbomSha256": "ca520d6cdc9e85ddbb78c3026c800e9a05ff42d7030fd73c793bcebcc05fb58e",
+  "vexSha256": "1ae95de7eb57185e687c3a5c90a350153125339ec9f01d8af514cf0a5c390188",
+  "scanSha256": "db70d3613f0e4ea5f2fe740c1c55f996ce67a0dbedce7bba36da011821c72c94"
+}

@@ -77,6 +77,7 @@ async function main() {
         stockMovements: (await operator.query("SELECT order_id,kind,quantity FROM product_stock_movements ORDER BY id")).rows,
         obligations: (await operator.query("SELECT order_id,status FROM order_payment_obligations ORDER BY id")).rows,
         shipments: (await operator.query("SELECT order_id,status FROM product_shipments ORDER BY id")).rows,
+        shipmentJobs: (await operator.query("SELECT shipment_id,type,status,idempotency_key,operation_payload_hash,payload FROM product_shipment_jobs ORDER BY id")).rows,
         outbox: (await operator.query("SELECT id,kind,status,provider_message_id,provider_idempotency_key,lease_owner,lease_expires_at FROM customer_email_outbox ORDER BY id")).rows };
       const evidence = createHash("sha256").update(JSON.stringify(inspected)).digest("hex");
       reconciliationEvidence.push(evidence);
@@ -536,7 +537,7 @@ async function main() {
 
     phase = "refund-worker-empty";
     await seedRefund("empty"); await change(true); before = await operations();
-    assert.equal((await refundRequest()).status, 200); assert.deepEqual((await since(before)).map(row => row.state), ["completed"]);
+    assert.equal((await refundRequest()).status, 200); assert.deepEqual((await since(before)).map(row => row.state), ["completed", "completed"]);
     assert.deepEqual(activeCalls, []); await reconcile(); checks.push("refund-worker-empty-batch-completes-independent-recovery-entry");
 
     for (const mode of ["settled", "pending", "provider-failure", "rejected", "mismatched-payment", "missing-payment-id", "expired-lease",
@@ -553,7 +554,7 @@ async function main() {
       try { result = await refundRequest(); }
       finally { failProvider = undefined; if (suppress) await operator.query(`DROP TRIGGER owned_missing_refund_receipt ON ${suppress[0]}`); }
       assert.equal(result.status, mode === "settled" ? 200 : 503);
-      assert.deepEqual((await since(before)).map(row => row.state), [mode === "settled" ? "completed" : "uncertain"]);
+      assert.deepEqual((await since(before)).map(row => row.state), mode === "settled" ? ["completed", "completed"] : ["uncertain"]);
       await assertRefundReceipt(mode);
       if (mode === "expired-lease") assert.deepEqual(activeCalls, []);
       else assertReconciliationProviderCalls(assert, activeCalls, ["refund-worker"]);
@@ -570,7 +571,7 @@ async function main() {
       assert.equal((await drain()).active, 1); assert.equal((await drain()).ledgerDrained, false);
       assert.equal((await refundRequest()).status, 503); assert.equal((await since(before)).length, 1);
     } finally { refundHeld.release(); }
-    assert.equal((await refundPending).status, 200); gate = undefined; await assertRefundReceipt();
+    assert.equal((await refundPending).status, 503); gate = undefined; await assertRefundReceipt();
     assertReconciliationProviderCalls(assert, activeCalls, ["refund-worker"]); await reconcile();
     checks.push("refund-worker-close-retains-admitted-provider-call-and-expired-business-lease-never-drains-ledger");
 
@@ -587,7 +588,7 @@ async function main() {
       await change(false); assert.equal((await drain()).active, 1); assert.equal((await drain()).ledgerDrained, false);
       assert.equal((await refundRequest()).status, 503); assert.equal((await since(before)).length, 1);
     } finally { refundReceiptHeld.release(); await refundBlocker.query("ROLLBACK"); }
-    assert.equal((await refundPending).status, 200); gate = undefined; await assertRefundReceipt();
+    assert.equal((await refundPending).status, 503); gate = undefined; await assertRefundReceipt();
     assertReconciliationProviderCalls(assert, activeCalls, ["refund-worker"]); await reconcile();
     checks.push("refund-worker-close-retains-active-entry-through-actually-blocked-settlement-transaction");
 
@@ -603,6 +604,211 @@ async function main() {
     assert.deepEqual((await since(before)).map(row => row.state), ["active"]); await assertRefundReceipt();
     assertReconciliationProviderCalls(assert, activeCalls, ["refund-worker"]); await reconcile();
     checks.push("refund-worker-ledger-backend-death-retains-unresolved-entry-without-replaying-settled-refund");
+    // Qualify preparation through the actual route. Future-dated jobs keep the
+    // separate, still-unqualified executor out of these synthetic cases.
+    Object.assign(process.env, {
+      CHITCHATS_SHIPPING_ENABLED: "true", SQUARE_COMMERCE_ENABLED: "false",
+      CHITCHATS_ENVIRONMENT: "staging", CHITCHATS_CLIENT_ID: "owned-unused-client",
+      CHITCHATS_ACCESS_TOKEN: "owned-unused-key", CHITCHATS_QUOTE_SIGNING_SECRET: "owned-unused-signing-key",
+      CHITCHATS_REGION: "ontario_manitoba",
+    });
+    await operator.query(`CREATE FUNCTION pg_temp.delay_owned_preparation_job() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN NEW.available_at = now() + interval '1 hour'; RETURN NEW; END $$`);
+    await operator.query(`CREATE TRIGGER owned_delay_preparation BEFORE INSERT ON product_shipment_jobs
+      FOR EACH ROW EXECUTE FUNCTION pg_temp.delay_owned_preparation_job()`);
+    const seedPreparation = async (mode = "normal") => {
+      await seedReconciliationRows(operator, []);
+      await operator.query("TRUNCATE product_shipments CASCADE");
+      activeCalls = []; expectedRefundKey = undefined;
+      if (mode === "empty") return {};
+      const order = (await operator.query(`INSERT INTO checkout_orders(order_id,purpose,status,payment_provider,
+        customer_name,customer_email,amount_cents,line_items)
+        VALUES('owned-preparation-order','product','pending','square','Owned fixture','owned@example.invalid',1000,'[]') RETURNING id`)).rows[0].id;
+      await operator.query(`INSERT INTO order_payment_obligations(order_id,purpose,status,merchandise_amount_cents,
+        shipping_amount_cents,tax_amount_cents,total_amount_cents,currency,source_workflow,tax_policy_version,policy_version,
+        payment_provider,initialization_status,idempotency_key,expires_at)
+        VALUES($1,'primary','pending',1000,0,0,1000,'CAD','owned-preparation','owned','owned','square','ready',
+        'owned-preparation-obligation',now()-interval '1 hour')`, [order]);
+      const ids = {};
+      for (const [name, status, orderId, provider] of [
+        ["detached", "quoted", null, null], ["attached", "payment_pending", order, null],
+        ["poll", "in_transit", null, "owned-preparation-provider"],
+      ]) ids[name] = (await operator.query(`INSERT INTO product_shipments(order_id,public_reference,quote_token_hash,quote_fingerprint,
+        status,destination,package_snapshot,customs_lines,rates,quote_expires_at,provider_shipment_id,created_at,pii_redaction_due_at)
+        VALUES($1,$2,$2,$2,$3,'{}','{}','[]','[]',now()-interval '1 hour',$4,now()-interval '1 day',now()+interval '364 days') RETURNING id`,
+        [orderId, `owned-preparation-${name}`, status, provider])).rows[0].id;
+      if (mode === "conflicting-cleanup") await operator.query(`INSERT INTO product_shipment_jobs(shipment_id,type,status,idempotency_key,operation_payload_hash,payload)
+        VALUES($1,'cleanup','queued',$2,'owned-wrong-hash','{}')`, [ids.detached, `quote-cleanup/${ids.detached}`]);
+      return ids;
+    };
+    const preparationReceipts = async () => ({
+      shipments: (await operator.query("SELECT public_reference,status,state_version FROM product_shipments ORDER BY public_reference")).rows,
+      jobs: (await operator.query("SELECT shipment_id,type,status,idempotency_key,operation_payload_hash,payload,available_at FROM product_shipment_jobs ORDER BY idempotency_key")).rows,
+    });
+    const assertPreparationReceipts = async (ids, mode = "normal") => {
+      const receipt = await preparationReceipts();
+      assert.deepEqual(receipt.shipments, [
+        { public_reference: "owned-preparation-attached", status: mode === "missing-attached-update" ? "payment_pending" : "abandoned", state_version: mode === "missing-attached-update" ? 1 : 2 },
+        { public_reference: "owned-preparation-detached", status: mode === "missing-detached-update" ? "quoted" : "abandoned", state_version: mode === "missing-detached-update" ? 1 : 2 },
+        { public_reference: "owned-preparation-poll", status: "in_transit", state_version: 1 },
+      ]);
+      const { hashOperationPayload } = await import("../../../src/lib/shipping/shipment-store.ts");
+      const { createHash } = await import("node:crypto");
+      for (const [name, key, payload] of [
+        ["detached", `quote-cleanup/${ids.detached}`, { expectedShipmentStateVersion: 2 }],
+        ["attached", `attached-quote-cleanup/${ids.attached}`, { expectedShipmentStateVersion: 2, reason: "attached_primary_quote_expired" }],
+      ]) {
+        const rows = receipt.jobs.filter(row => row.idempotency_key === key);
+        if (mode === `missing-${name}-update` || mode === `missing-${name}-cleanup`) { assert.deepEqual(rows, []); continue; }
+        assert.equal(rows.length, 1); assert.equal(rows[0].shipment_id, ids[name]); assert.equal(rows[0].type, "cleanup");
+        if (mode === "conflicting-cleanup" && name === "detached") { assert.equal(rows[0].operation_payload_hash, "owned-wrong-hash"); continue; }
+        assert.equal(rows[0].operation_payload_hash, hashOperationPayload(payload)); assert.deepEqual(rows[0].payload, payload);
+      }
+      const tracking = receipt.jobs.filter(row => row.type === "tracking");
+      assert.equal(tracking.length, mode === "missing-tracking" ? 0 : 1);
+      if (tracking.length) {
+        const row = tracking[0], parts = row.idempotency_key.split("/");
+        assert.deepEqual(parts.slice(0,3), ["tracking", ids.poll, "1"]); assert.match(parts[3], /^[0-9]+$/u);
+        assert.equal(row.shipment_id, ids.poll); assert.deepEqual(row.payload, mode === "mutated-tracking" ? {} : { expectedShipmentStateVersion: 1 });
+        assert.equal(row.operation_payload_hash, createHash("sha256").update(`${ids.poll}:1:${parts[3]}`).digest("hex"));
+      }
+      assert.ok(receipt.jobs.every(row => row.status === "queued" && row.available_at > new Date()));
+      assert.equal(receipt.jobs.length, ["missing-detached-update", "missing-attached-update", "missing-detached-cleanup", "missing-attached-cleanup", "missing-tracking"].includes(mode) ? 2 : 3);
+      assert.deepEqual(activeCalls, []);
+    };
+    phase = "shipping-preparation-closed";
+    await seedPreparation(); before = await operations();
+    assert.equal((await refundRequest(false)).status, 401); assert.equal((await refundRequest()).status, 503);
+    assert.deepEqual(await since(before), []); assert.deepEqual((await preparationReceipts()).jobs, []);
+    checks.push("shipping-preparation-closed-authenticated-route-has-no-business-effects");
+
+    for (const mode of ["empty", "normal", "missing-detached-update", "missing-attached-update",
+      "missing-detached-cleanup", "missing-attached-cleanup", "conflicting-cleanup", "missing-tracking", "mutated-tracking", "off", "off-missing-detached-cleanup"]) {
+      phase = `shipping-preparation-${mode}`;
+      const ids = await seedPreparation(mode); await change(true); before = await operations();
+      const receiptMode = mode === "off-missing-detached-cleanup" ? "missing-detached-cleanup" : mode;
+      const off = mode.startsWith("off");
+      const suppressed = receiptMode.startsWith("missing-") ? receiptMode : undefined;
+      if (suppressed) {
+        await operator.query(`CREATE OR REPLACE FUNCTION pg_temp.suppress_owned_preparation() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN RETURN NULL; END $$`);
+        const table = receiptMode.endsWith("update") ? "product_shipments" : "product_shipment_jobs";
+        const condition = receiptMode === "missing-detached-update" ? "NEW.status='abandoned' AND NEW.public_reference='owned-preparation-detached'" :
+          receiptMode === "missing-attached-update" ? "NEW.status='abandoned' AND NEW.public_reference='owned-preparation-attached'" :
+          receiptMode === "missing-tracking" ? "NEW.type='tracking'" :
+          `NEW.idempotency_key LIKE '${receiptMode === "missing-detached-cleanup" ? "quote-cleanup/" : "attached-quote-cleanup/"}%'`;
+        await operator.query(`CREATE TRIGGER owned_missing_preparation BEFORE ${receiptMode.endsWith("update") ? "UPDATE" : "INSERT"} ON ${table}
+          FOR EACH ROW WHEN (${condition}) EXECUTE FUNCTION pg_temp.suppress_owned_preparation()`);
+      }
+      if (mode === "mutated-tracking") {
+        await operator.query(`CREATE OR REPLACE FUNCTION pg_temp.mutate_owned_tracking() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN NEW.payload = '{}'::jsonb; RETURN NEW; END $$`);
+        await operator.query(`CREATE TRIGGER owned_mutated_tracking BEFORE INSERT ON product_shipment_jobs FOR EACH ROW
+          WHEN (NEW.type='tracking') EXECUTE FUNCTION pg_temp.mutate_owned_tracking()`);
+      }
+      if (off) process.env.FRONTEND_WRITER_ADMISSION_MODE = "off";
+      let result;
+      try { result = await refundRequest(); }
+      finally {
+        process.env.FRONTEND_WRITER_ADMISSION_MODE = "enforce";
+        if (suppressed) await operator.query(`DROP TRIGGER owned_missing_preparation ON ${receiptMode.endsWith("update") ? "product_shipments" : "product_shipment_jobs"}`);
+      }
+      if (mode === "mutated-tracking") await operator.query("DROP TRIGGER owned_mutated_tracking ON product_shipment_jobs");
+      assert.equal(result.status, off || ["empty", "normal"].includes(mode) ? 200 : 503);
+      if (result.status === 200) {
+        const summary = JSON.parse(result.text);
+        assert.deepEqual(summary.operations, { claimed: 0, succeeded: 0, retried: 0, deadLettered: 0, fenced: 0 });
+        assert.equal(summary.redacted, 0); assert.equal(summary.queued, mode === "empty" ? 0 : 1);
+        assert.equal(summary.abandoned, mode === "empty" ? 0 : 2);
+      }
+      assert.deepEqual((await since(before)).map(row => row.state), off ? [] : ["completed", ["empty", "normal"].includes(mode) ? "completed" : "uncertain"]);
+      if (mode === "empty") assert.deepEqual((await preparationReceipts()).jobs, []);
+      else await assertPreparationReceipts(ids, receiptMode);
+      if (["normal", "mutated-tracking"].includes(mode)) {
+        assert.equal((await refundRequest()).status, mode === "normal" ? 200 : 503);
+        await assertPreparationReceipts(ids, mode);
+      }
+      await reconcile(); checks.push(`shipping-preparation-${mode}-real-abandonment-cleanup-and-tracking-receipts-accounted`);
+    }
+
+    // A returned row is only a receipt for the requested mutation when its
+    // identity and resulting state still match, including on fresh inserts.
+    for (const mode of ["tracking-shipment", "tracking-type", "tracking-key", "tracking-hash",
+      "detached-status", "detached-version", "attached-status", "attached-version", "off-tracking-hash"]) {
+      phase = `shipping-preparation-mutated-${mode}`;
+      const ids = await seedPreparation(); await change(true); before = await operations();
+      const off = mode.startsWith("off-");
+      const mutation = off ? mode.slice(4) : mode;
+      const tracking = mutation.startsWith("tracking-");
+      const attached = mutation.startsWith("attached-");
+      const table = tracking ? "product_shipment_jobs" : "product_shipments";
+      const statement = {
+        "tracking-shipment": `NEW.shipment_id = '${ids.detached}'::uuid`,
+        "tracking-type": "NEW.type = 'cleanup'",
+        "tracking-key": "NEW.idempotency_key = NEW.idempotency_key || '/changed'",
+        "tracking-hash": "NEW.operation_payload_hash = 'owned-changed-hash'",
+        "detached-status": "NEW.status = OLD.status",
+        "detached-version": "NEW.state_version = OLD.state_version",
+        "attached-status": "NEW.status = OLD.status",
+        "attached-version": "NEW.state_version = OLD.state_version",
+      }[mutation];
+      const condition = tracking ? "NEW.type='tracking'" :
+        `NEW.status='abandoned' AND NEW.public_reference='owned-preparation-${attached ? "attached" : "detached"}'`;
+      await operator.query(`CREATE OR REPLACE FUNCTION pg_temp.change_owned_preparation_receipt() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN ${statement}; RETURN NEW; END $$`);
+      await operator.query(`CREATE TRIGGER owned_changed_preparation BEFORE ${tracking ? "INSERT" : "UPDATE"} ON ${table}
+        FOR EACH ROW WHEN (${condition}) EXECUTE FUNCTION pg_temp.change_owned_preparation_receipt()`);
+      let result;
+      if (off) process.env.FRONTEND_WRITER_ADMISSION_MODE = "off";
+      try { result = await refundRequest(); }
+      finally {
+        process.env.FRONTEND_WRITER_ADMISSION_MODE = "enforce";
+        await operator.query(`DROP TRIGGER owned_changed_preparation ON ${table}`);
+      }
+      const receipt = await preparationReceipts();
+      assert.equal(receipt.jobs.length, 3);
+      assert.deepEqual(activeCalls, []);
+      if (tracking) {
+        const row = receipt.jobs.find(row => row.idempotency_key.startsWith("tracking/"));
+        assert.ok(row);
+        if (mutation === "tracking-shipment") assert.equal(row.shipment_id, ids.detached);
+        if (mutation === "tracking-type") assert.equal(row.type, "cleanup");
+        if (mutation === "tracking-key") assert.ok(row.idempotency_key.endsWith("/changed"));
+        if (mutation === "tracking-hash") assert.equal(row.operation_payload_hash, "owned-changed-hash");
+      } else {
+        const row = receipt.shipments.find(row => row.public_reference.endsWith(attached ? "-attached" : "-detached"));
+        assert.equal(row.status, mutation.endsWith("status") ? (attached ? "payment_pending" : "quoted") : "abandoned");
+        assert.equal(row.state_version, mutation.endsWith("version") ? 1 : 2);
+      }
+      assert.equal(result.status, off ? 200 : 503, mode);
+      assert.deepEqual((await since(before)).map(row => row.state), off ? [] : ["completed", "uncertain"]);
+      await reconcile(); checks.push(`shipping-preparation-mutated-${mode}-retains-receipt-uncertainty`);
+    }
+
+    for (const fault of ["close", "ledger-backend-death"]) {
+      phase = `shipping-preparation-blocked-transaction-${fault}`;
+      const ids = await seedPreparation(); await change(true); before = await operations();
+      const blocker = new Client({ host: target.host, port, database: target.database, user: "frontend_test_admin",
+        password, ssl: { rejectUnauthorized: true, ca: readFileSync(process.env.NODE_EXTRA_CA_CERTS, "utf8") } });
+      connections.push(blocker); await blocker.connect(); await blocker.query("BEGIN");
+      await blocker.query("SELECT id FROM product_shipments WHERE id=$1 FOR UPDATE", [ids.detached]);
+      const pending = refundRequest();
+      try {
+        await until(async () => (await operator.query("SELECT 1 FROM pg_stat_activity WHERE usename=$1 AND wait_event_type='Lock'", [target.user])).rows.length === 1);
+        await change(false); assert.equal((await drain()).active, 1); assert.equal((await drain()).ledgerDrained, false);
+        assert.equal((await refundRequest()).status, 503);
+        assert.deepEqual((await since(before)).map(row => row.state), ["completed", "active"]);
+        if (fault === "ledger-backend-death") {
+          const sessions = (await operator.query("SELECT pid FROM pg_stat_activity WHERE usename=$1 AND application_name='lash-her-frontend-writer-admission'", [target.user])).rows;
+          assert.equal(sessions.length, 1); await operator.query("SELECT pg_terminate_backend($1,1000)", [sessions[0].pid]); await delay(25);
+        }
+      } finally { await blocker.query("ROLLBACK"); }
+      assert.equal((await pending).status, fault === "close" ? 200 : 503);
+      assert.deepEqual((await since(before)).map(row => row.state), ["completed", fault === "close" ? "completed" : "active"]);
+      await assertPreparationReceipts(ids); await reconcile();
+      checks.push(`shipping-preparation-blocked-transaction-${fault}-retains-entry-without-replaying-committed-work`);
+    }
+    await operator.query("DROP TRIGGER owned_delay_preparation ON product_shipment_jobs");
     assert.equal(unexpectedFetches, 0);
     if (providerInvariantFailure) throw providerInvariantFailure;
     return { status: "FRONTEND_RECONCILIATION_OWNED_PASS", postgresMajor: major, checks, reconciliationEvidence,
