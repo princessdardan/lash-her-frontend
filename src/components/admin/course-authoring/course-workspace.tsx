@@ -39,6 +39,7 @@ export function CourseWorkspace({
     [readiness, setReadiness] = useState<Readiness | null>(null);
   const editable = course.status === "draft";
   const [dirty, setDirty] = useState(false);
+  const [reviewPaidArchive, setReviewPaidArchive] = useState(false);
   useEffect(() => {
     if (!dirty) return;
     const preventLoss = (event: BeforeUnloadEvent) => {
@@ -248,6 +249,10 @@ export function CourseWorkspace({
               className={secondaryClass}
               disabled={pending}
               onClick={() => {
+                if (course.accessMode === "paid") {
+                  setReviewPaidArchive(true);
+                  return;
+                }
                 void discardThenSave(
                   `/api/admin/courses/${course.id}`,
                   "PATCH",
@@ -260,6 +265,65 @@ export function CourseWorkspace({
             </button>
           )}
         </div>
+        {reviewPaidArchive &&
+          course.accessMode === "paid" &&
+          course.status !== "archived" && (
+            <section
+              aria-labelledby="paid-archive-heading"
+              className="space-y-3 border border-lh-primary/30 bg-lh-primary/5 p-4 text-sm"
+            >
+              <h3 id="paid-archive-heading" className="font-medium">
+                Before archiving this paid course
+              </h3>
+              <p>
+                Archiving denies protected lessons, new playback, assessments
+                and progress updates, including access from existing purchases.
+                Already issued video access may continue for up to 600 seconds.
+              </p>
+              <p>
+                Course and lesson identifiers, independent grants, progress and
+                assessment and audit history remain. Community access depends on
+                remaining eligible courses and grants.
+              </p>
+              <p>
+                Archiving does not issue a refund or cancel a payment. Support
+                and refund requests follow existing applicable terms and owner
+                review.
+              </p>
+              <p>
+                Restoring access requires an explicit republish that passes
+                current publication checks. Republish cannot override revoked or
+                expired grants, suspension or account deletion.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  className={secondaryClass}
+                  disabled={pending}
+                  onClick={() => setReviewPaidArchive(false)}
+                >
+                  Cancel archive
+                </button>
+                <button
+                  type="button"
+                  className={buttonClass}
+                  disabled={pending}
+                  onClick={() => {
+                    void discardThenSave(
+                      `/api/admin/courses/${course.id}`,
+                      "PATCH",
+                      { expectedRevision: course.revision, status: "archived" },
+                      "Course archived. Historical references remain available.",
+                    ).then((saved) => {
+                      if (saved) setReviewPaidArchive(false);
+                    });
+                  }}
+                >
+                  Archive paid course
+                </button>
+              </div>
+            </section>
+          )}
         {dirty && (
           <p className="text-sm text-lh-muted">
             Save the open editor before publishing.

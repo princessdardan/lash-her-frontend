@@ -40,7 +40,10 @@ if (process.env.COURSE_AUTHORING_BROWSER_FIXTURE === "1") {
       const result = query.includes('"globalSettings"')
         ? {
             title: "Lash Her",
-            header: { logoText: { label: "Lash Her", href: "/" } },
+            header: {
+              logoText: { label: "Lash Her", href: "/" },
+              ctaButton: [{ _key: "book", label: "Book now", href: "/contact" }],
+            },
             footer: {
               logoText: { label: "Lash Her", href: "/" },
               navigationMenus: [],
@@ -57,12 +60,8 @@ if (process.env.COURSE_AUTHORING_BROWSER_FIXTURE === "1") {
       );
     }
     if (
-      [
-        "127.0.0.1",
-        "localhost",
-        "fonts.googleapis.com",
-        "fonts.gstatic.com",
-      ].includes(url.hostname)
+      url.origin === course.origin ||
+      url.origin === new URL(process.env.AUTH_URL).origin
     )
       return original(input, options);
     throw new Error("Unexpected external request in authoring browser fixture");

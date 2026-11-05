@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "status": "ADMIN_AUTHORIZATION_ACTOR_ISOLATION_REPRODUCED_AND_CORRECTED",
+  "baseSourceCommit": "3ba66f4695b9d65d810ad885d7fe798b88c0d663",
+  "testedSourceCommit": "e5af4b1264b07805b7a38b10381b4bb1d966b22e",
+  "applicationSourceManifestSha256": "2b286365e9dc255328a660d83660c215d3f804f96d4362058d4f736569b62bbd",
+  "node": "24.18.0",
+  "runtimeFilesChanged": [
+    "src/lib/admin/auth.ts",
+    "src/lib/admin/authorization-operation.ts"
+  ],
+  "fixtureScenarioSha256": "a39ecc6985b0b3bdd84d99a21dea962ba8d5a7366661057d5b2ad0b814362ff9",
+  "reproduction": {
+    "failedBefore": true,
+    "sourceUnchangedDuringBeforeRun": true,
+    "sameScenarioBeforeAndAfter": true,
+    "independentRequestStores": true,
+    "sameCallerSelectedRequestId": true,
+    "sameProcessOverlap": true,
+    "observations": [
+      "different active account receives first owner actor without its own repository reads",
+      "disabled other account receives first owner actor without its own repository reads",
+      "a second request after account disable receives the prior active actor while different-header control is denied",
+      "independent authorization operations within one request reuse a prior actor after account disable"
+    ],
+    "proxyMatcherVerifiedUsingInstalledNextUtility": {
+      "adminPagesMatched": true,
+      "adminApiRoutesMatched": false
+    },
+    "deployedExploitDemonstrated": false
+  },
+  "correction": {
+    "actorPromiseScopedToAuthorizationOperationAls": true,
+    "headerKeyedGlobalActorMapRemoved": true,
+    "nestedPromiseDeduplication": true,
+    "nestedKnownDenialsPreserved": true,
+    "unknownPersistenceOrAuditRemainsUncertain": true,
+    "closedAdmissionStillPrecedesResolution": true
+  },
+  "focusedTests": {
+    "command": "node --import ./scripts/register-server-only-test.mjs --import tsx --test --test-reporter=tap src/lib/admin/authorization-operation.test.ts src/lib/admin/auth.test.ts src/lib/admin/authorization-policy.test.ts src/lib/admin/auth-actor-isolation.test.ts src/lib/admin/auth-provider-policy.test.ts",
+    "tests": 18,
+    "passed": 18,
+    "failed": 0,
+    "skipped": 0
+  },
+  "ownedRegression": {
+    "command": "FRONTEND_IDENTITY_LOCAL_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin node --import tsx ops/platform/test-frontend-identity-local.mjs",
+    "postgresMajor": 16,
+    "actualEntryChecks": 43,
+    "admissionChecks": 14,
+    "databaseRegressions": {
+      "files": [
+        "src/lib/customer-auth/store.db.test.ts",
+        "src/lib/customer-auth/receipts.db.test.ts",
+        "src/lib/customer-auth/session-issuance.db.test.ts",
+        "src/lib/customer-lifecycle/store.db.test.ts",
+        "src/lib/customer-lifecycle/faults.db.test.ts"
+      ],
+      "tests": 33,
+      "failures": 0,
+      "skipped": 0
+    },
+    "findings": 0,
+    "clusterStoppedAndRemoved": true
+  },
+  "dependency": {
+    "packageJsonSha256": "eb0a7c143e640fc3aa9a69944a4ffac1e21d7f2acc06661bb7d4cddb6fdcc9d3",
+    "packageLockSha256": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886",
+    "nextAuth": "5.0.0-beta.32",
+    "authCore": "0.41.3-lash-her.1",
+    "installedAuthCorePackageSha256": "681f29f4b8404600f64026ac96dc7f318eef772f254a173772405b8cf420e10c",
+    "installedAuthCoreAssertSha256": "1311304fef49c222c2c266843d4e39da218be7dae5c0902f7d25f6fb2af721e4"
+  },
+  "providerPolicyTest": {
+    "exactReviewedForkRequired": true,
+    "upstreamSecurityBaseline": "@auth/core@0.41.3",
+    "dependencyFilesChanged": false
+  },
+  "lint": "PASS",
+  "fullTypecheck": "PASS",
+  "diffCheck": "PASS",
+  "scope": {
+    "actualAuthJsJwtDecoding": true,
+    "syntheticGoogleJwtClaims": true,
+    "actualAdminAuthorizationAndAccountPolicy": true,
+    "actualNextRequestStorageAndAfterContext": true,
+    "controlledUserRepositoryForCollisionReproduction": true,
+    "inMemoryAdmissionPeerForCollisionReproduction": true,
+    "realTlsPostgresForExisting43EntryRegressions": true,
+    "nativeNextServer": false,
+    "browser": false,
+    "liveDatabaseTouched": false,
+    "liveProviderTouched": false,
+    "productionTrafficOrExploitationObserved": false,
+    "noAutomaticEffectReplay": true
+  },
+  "limitations": [
+    "Collision reproduction requires concurrent same-process requests or independent operations sharing the caller-selected header before response cleanup.",
+    "The collision reproduction controls repository records and admission transport; it does not claim production request routing or observed exploitation.",
+    "The separate PostgreSQL run preserves existing auth/admin/cron regression coverage; the header-collision scenarios use the focused controlled repository fixture.",
+    "Native Next/browser, live identity providers and deployed staging certification remain outside this local record."
+  ],
+  "artifacts": {
+    "before.tap": {
+      "path": "before.tap",
+      "sha256": "bd589691685641684fa4637cb21a3633b469afda124b2aa96a384753ff2ec973"
+    },
+    "before-observations.json": {
+      "path": "before-observations.json",
+      "sha256": "b9c2649e9e1af3debe6b7759d0270c402ff135b1df75b40da7158efee63442aa"
+    },
+    "focused-after.tap": {
+      "path": "focused-after.tap",
+      "sha256": "089fee0ac1a67e51f9a23b8dda1c364ccb26791928191ea521ff3b72574db9b7"
+    },
+    "after-observations.json": {
+      "path": "after-observations.json",
+      "sha256": "34b8b066d0e522391321c54d54f577fd32ac634759e42df3dbe83c775f3f7cbb"
+    },
+    "owned-postgres16.json": {
+      "path": "owned-postgres16.json",
+      "sha256": "6c0bf4f5ccd2631723328749b6b7876ad56c313eda568cf41a45de68783ece9f"
+    },
+    "typescript.txt": {
+      "path": "typescript.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate-source-inventory.json": {
+      "path": "candidate-source-inventory.json",
+      "sha256": "33abd2b563907d03b689d3dc32a77060a35f108a189e4fc6422cadf79646e12f"
+    },
+    "source-bindings.json": {
+      "path": "source-bindings.json",
+      "sha256": "8e4ffb73d7a907d2c252ec5eeefda8a1e27b6a7cf94f60f2daf8b0959f8c9c9c"
+    }
+  },
+  "p200Complete": false,
+  "p212Complete": false,
+  "g2Complete": false
+}

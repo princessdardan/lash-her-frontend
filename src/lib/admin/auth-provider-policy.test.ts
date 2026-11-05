@@ -23,6 +23,7 @@ test("admin authentication remains Auth.js based with no Clerk runtime dependenc
   };
 
   assert.equal(packageJson.dependencies?.["next-auth"], "5.0.0-beta.32");
+  assert.equal(packageJson.dependencies?.["@auth/core"], "file:vendor/security/lash-her-auth-core-0.41.3-lash-her.1.tgz");
   assert.deepEqual(
     Object.keys(dependencies).filter((name) =>
       name.toLowerCase().includes("clerk"),
@@ -32,14 +33,20 @@ test("admin authentication remains Auth.js based with no Clerk runtime dependenc
 
   const lockfile = await readFile(path.join(root, "package-lock.json"), "utf8");
   const lockfileJson = JSON.parse(lockfile) as {
-    packages?: Record<string, { version?: string }>;
+    packages?: Record<string, { name?: string; version?: string; resolved?: string }>;
   };
 
-  assert.equal(
-    lockfileJson.packages?.["node_modules/@auth/core"]?.version,
-    "0.41.3",
-    "next-auth must resolve the Auth.js core release that fixes GHSA-x445-f3h2-j279",
-  );
+  const core = lockfileJson.packages?.["node_modules/@auth/core"];
+  assert.deepEqual({ name: core?.name, version: core?.version, resolved: core?.resolved }, {
+    name: "@lash-her/auth-core", version: "0.41.3-lash-her.1", resolved: "file:vendor/security/lash-her-auth-core-0.41.3-lash-her.1.tgz",
+  });
+  const inventory = JSON.parse(await readFile(path.join(root, "vendor/security/forks.json"), "utf8")) as {
+    forks: Array<{ dependency: string; name: string; version: string; upstream: { name: string; version: string } }>;
+  };
+  const fork = inventory.forks.find(entry => entry.dependency === "@auth/core");
+  assert.equal(fork?.name, core?.name); assert.equal(fork?.version, core?.version);
+  assert.deepEqual(fork?.upstream && { name: fork.upstream.name, version: fork.upstream.version },
+    { name: "@auth/core", version: "0.41.3" }, "the reviewed fork must retain the security-fixed 0.41.3 upstream baseline");
   assert.doesNotMatch(lockfile, /node_modules\/@clerk\//i);
 
   const runtimeFiles = [

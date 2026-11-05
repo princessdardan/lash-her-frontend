@@ -1,0 +1,201 @@
+TAP version 13
+# Subtest: real Auth.js administrator actors stay within their authorization operation despite repeated inbound request IDs
+not ok 1 - real Auth.js administrator actors stay within their authorization operation despite repeated inbound request IDs
+  ---
+  duration_ms: 428.87525
+  type: 'test'
+  location: '/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-qualification/src/lib/admin/auth-actor-isolation.test.ts:126:31'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    ... Skipped lines
+    
+      {
+        closed: {
+          reads: 0,
+          refreshes: 0,
+          result: {
+    ...
+          second: {
+    +       id: 'owner-a'
+    -       id: 'employee-b'
+          },
+    +     secondReads: 0
+    -     secondReads: 2
+        },
+        disabledAccount: {
+          admissions: [
+            1,
+            1
+    ...
+          second: {
+    +       id: 'owner-a'
+    -       error: 'disabled'
+          },
+    +     secondReads: 0
+    -     secondReads: 2
+        },
+        independentOperations: {
+          admissions: 2,
+    +     reads: 2,
+    -     reads: 4,
+          refreshes: 1,
+          result: {
+    +       id: 'owner-a'
+    -       error: 'disabled'
+          }
+        },
+        nestedDenial: {
+          admissions: 1,
+          reads: 2,
+    ...
+          admissions: 1,
+    +     reads: 6,
+    +     refreshes: 3,
+    -     reads: 2,
+    -     refreshes: 1,
+          result: {
+            id: 'owner-a,owner-a,owner-a'
+          }
+        },
+        statusChange: {
+    ...
+          second: {
+    +       id: 'owner-a'
+    -       error: 'disabled'
+          },
+    +     secondReads: 0
+    -     secondReads: 2
+        }
+      }
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    differentActive:
+      first:
+        id: 'owner-a'
+      second:
+        id: 'employee-b'
+      secondReads: 2
+      admissions:
+        0: 1
+        1: 1
+    disabledAccount:
+      first:
+        id: 'owner-a'
+      second:
+        error: 'disabled'
+      secondReads: 2
+      admissions:
+        0: 1
+        1: 1
+    statusChange:
+      second:
+        error: 'disabled'
+      control:
+        error: 'disabled'
+      secondReads: 2
+    nestedWithHeader:
+      result:
+        id: 'owner-a,owner-a,owner-a'
+      reads: 2
+      refreshes: 1
+      admissions: 1
+    nestedWithoutHeader:
+      result:
+        id: 'owner-a,owner-a,owner-a'
+      reads: 2
+      refreshes: 1
+      admissions: 1
+    independentOperations:
+      result:
+        error: 'disabled'
+      reads: 4
+      refreshes: 1
+      admissions: 2
+    nestedDenial:
+      result:
+        id: 'three-known-denials'
+      reads: 2
+      refreshes: 0
+      admissions: 1
+      uncertain: false
+    closed:
+      result:
+        error: 'unavailable'
+      reads: 0
+      refreshes: 0
+  actual:
+    differentActive:
+      first:
+        id: 'owner-a'
+      second:
+        id: 'owner-a'
+      secondReads: 0
+      admissions:
+        0: 1
+        1: 1
+    disabledAccount:
+      first:
+        id: 'owner-a'
+      second:
+        id: 'owner-a'
+      secondReads: 0
+      admissions:
+        0: 1
+        1: 1
+    statusChange:
+      second:
+        id: 'owner-a'
+      control:
+        error: 'disabled'
+      secondReads: 0
+    nestedWithHeader:
+      result:
+        id: 'owner-a,owner-a,owner-a'
+      reads: 2
+      refreshes: 1
+      admissions: 1
+    nestedWithoutHeader:
+      result:
+        id: 'owner-a,owner-a,owner-a'
+      reads: 6
+      refreshes: 3
+      admissions: 1
+    independentOperations:
+      result:
+        id: 'owner-a'
+      reads: 2
+      refreshes: 1
+      admissions: 2
+    nestedDenial:
+      result:
+        id: 'three-known-denials'
+      reads: 2
+      refreshes: 0
+      admissions: 1
+      uncertain: false
+    closed:
+      result:
+        error: 'unavailable'
+      reads: 0
+      refreshes: 0
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-qualification/src/lib/admin/auth-actor-isolation.test.ts:142:10)
+    Test.runInAsyncScope (node:async_hooks:227:14)
+    Test.run (node:internal/test_runner/test:1325:25)
+    Test.start (node:internal/test_runner/test:1191:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:385:17)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 528.877583

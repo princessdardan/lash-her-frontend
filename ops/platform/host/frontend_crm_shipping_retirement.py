@@ -23,6 +23,13 @@ PRODUCTION_HIGHLEVEL_LOCATION = "vd09FLBpPLXuHb5Tnhn4"
 HIGHLEVEL_ORIGIN = "https://services.leadconnectorhq.com"
 CHITCHATS_ORIGIN = "https://staging.chitchats.com"
 MAXIMUM_ROWS = 4096
+# These acknowledged provider states describe purchased physical shipments,
+# rather than an API operation still executing. Match the existing application
+# normalization without authorizing any future polling or carrier action.
+ACKNOWLEDGED_SHIPMENT_STATES = {
+    "ready": "label_ready", "received": "accepted", "released": "in_transit",
+    "inducted": "in_transit", "in_transit": "in_transit", "delivered": "delivered", "voided": "voided",
+}
 
 
 class AuthenticationDenied(ValueError):
@@ -386,12 +393,13 @@ def observe_chitchats(replacement, retired, reviewed, actual_rows):
                 row.get("selected_postage_type") is not None and remote["postage_type"] == row["selected_postage_type"] and
                 type(row.get("actual_purchase_total_cents")) is int and _money(remote["purchase_amount"]) == row["actual_purchase_total_cents"] and
                 row.get("provider_cost_currency") == "CAD")
-            terminal = remote["status"] in ("delivered", "voided") and row.get("status") == remote["status"] and row.get("provider_status") == remote["status"]
-            result.update(providerStatus=remote["status"], immutableMatch=matches, storedOutcomeConsistent=matches and terminal)
+            normalized = ACKNOWLEDGED_SHIPMENT_STATES.get(remote["status"])
+            acknowledged = normalized is not None and row.get("status") == normalized and ACKNOWLEDGED_SHIPMENT_STATES.get(row.get("provider_status")) == normalized
+            result.update(providerStatus=remote["status"], immutableMatch=matches, storedOutcomeConsistent=matches and acknowledged)
         if not result["storedOutcomeConsistent"]:
-            result["unresolvedReason"] = "missing-or-mismatched-provider-object-or-nonterminal-stored-outcome"
+            result["unresolvedReason"] = "missing-or-mismatched-provider-object-or-unreconciled-provider-state"
         effects.append(result)
-    jobs, job_ids = [], set()
+    jobs, job_ids, shipment_receipts = [], set(), {}
     for row in actual["jobs"]:
         demand(identifier(row.get("id")) and row["id"] not in job_ids and row.get("shipment_id") in shipment_ids and digest(row.get("idempotency_sha256")),
             "CHITCHATS_DATABASE_JOB_BINDING_REFUSED")
@@ -400,6 +408,15 @@ def observe_chitchats(replacement, retired, reviewed, actual_rows):
             row.get("outcome_unknown") is False and row.get("lease_held") is False and row.get("completed_at") is not None and digest(row.get("operation_payload_hash")))
         jobs.append({"recordId": row["id"], "databaseRowSha256": snapshot_sha256(row), "idempotencySha256": row["idempotency_sha256"],
             "databaseStatus": row.get("status"), "storedOutcomeConsistent": bool(settled)})
+        shipment_receipts.setdefault(row["shipment_id"], []).append((row.get("type"), bool(settled)))
+    deferred = []
+    for effect in effects:
+        receipts = shipment_receipts.get(effect["recordId"], [])
+        known = receipts and all(settled for _kind, settled in receipts) and any(kind in ("purchase", "tracking", "refund") for kind, _settled in receipts)
+        if not known:
+            effect.update(storedOutcomeConsistent=False, unresolvedReason="missing-or-unsettled-operation-receipt")
+        elif effect["storedOutcomeConsistent"] and effect["providerStatus"] not in ("delivered", "voided"):
+            deferred.append(effect["providerId"])
     second = chitchats_inventory(replacement, reviewed)
     demand(first == second, "CHITCHATS_INVENTORY_CHANGED_DURING_OBSERVATION")
     unknown = len(set(providers) - seen)
@@ -410,8 +427,8 @@ def observe_chitchats(replacement, retired, reviewed, actual_rows):
         "sourceBindingSha256": reviewed["sourceBindingSha256"], "databaseSnapshotSha256": reviewed["databaseSnapshotSha256"],
         "retiredCredentialDenied": old_denied, "replacementReadVerified": True, "providerInventoryComplete": True,
         "providerShipmentIds": sorted(providers), "knownEffects": effects, "knownJobs": jobs, "unmappedProviderShipments": unknown,
-        "knownUnresolvedEffects": unresolved, "activeExecutions": sum(row["status"] not in ("delivered", "voided") for row in providers.values()) +
-            sum(row.get("status") == "processing" for row in actual["jobs"]), "uncertainEffects": unresolved,
+        "knownUnresolvedEffects": unresolved, "activeExecutions": sum(row.get("status") == "processing" for row in actual["jobs"]), "uncertainEffects": unresolved,
+        "deferredPhysicalShipmentIds": sorted(deferred), "compatiblePollingRequired": bool(deferred), "futurePollingAuthorized": False,
         "historicalWritersFenced": False, "inboundWebhooksQualified": False, "runtimeReplacementBindingVerified": False, "trafficAuthorized": False}
 
 

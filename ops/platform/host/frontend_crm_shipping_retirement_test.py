@@ -201,6 +201,43 @@ class RetirementTests(unittest.TestCase):
         self.assertEqual(result["unmappedProviderShipments"], 1)
         self.assertGreater(result["uncertainEffects"], 0)
 
+    def test_acknowledged_carrier_states_are_reconciled_effects_with_future_polling_held(self):
+        self.denied = True
+        for provider, stored in (("ready", "label_ready"), ("received", "accepted"), ("released", "in_transit"), ("inducted", "in_transit"), ("in_transit", "in_transit")):
+            with self.subTest(provider=provider):
+                self.shipments[0]["status"] = provider
+                self.rows["shipments"][0].update(status=stored, provider_status=provider)
+                result = self.observe_shipping()
+                self.assertTrue(result["retiredCredentialDenied"])
+                self.assertEqual((result["activeExecutions"], result["uncertainEffects"]), (0, 0))
+                self.assertEqual(result["deferredPhysicalShipmentIds"], ["ownedShipment"])
+                self.assertTrue(result["compatiblePollingRequired"])
+                self.assertFalse(result["futurePollingAuthorized"])
+                self.assertFalse(result["historicalWritersFenced"])
+        self.rows["shipments"][0]["provider_status"] = "released"
+        self.shipments[0]["status"] = "inducted"
+        self.assertEqual(self.observe_shipping()["uncertainEffects"], 0, "equivalent recognized carrier observations normalize to the same persisted state")
+
+    def test_acknowledged_shipping_requires_operation_receipts_and_no_pending_or_changed_effects(self):
+        self.shipments[0]["status"] = "ready"
+        self.rows["shipments"][0].update(status="label_ready", provider_status="ready")
+        original = deepcopy(self.rows)
+        for field, value in (("status", "processing"), ("lease_held", True), ("outcome_unknown", True), ("operation_payload_hash", None)):
+            self.rows["jobs"][0][field] = value
+            result = self.observe_shipping()
+            self.assertGreater(result["uncertainEffects"], 0)
+            if value == "processing":
+                self.assertEqual(result["activeExecutions"], 1)
+            self.rows = deepcopy(original)
+        self.rows["jobs"] = []
+        self.assertGreater(self.observe_shipping()["uncertainEffects"], 0)
+        self.rows = deepcopy(original)
+        self.rows["shipments"][0]["provider_status"] = "pending"
+        self.assertGreater(self.observe_shipping()["uncertainEffects"], 0)
+        self.rows = deepcopy(original)
+        self.rows["shipments"][0]["status"] = "purchase_pending"
+        self.assertGreater(self.observe_shipping()["uncertainEffects"], 0)
+
     def test_pagination_count_duplicates_scope_drift_and_changed_immutable_readback_refuse(self):
         for flag in ("count_delta", "duplicate", "changed_order", "drift"):
             with self.subTest(flag=flag):
@@ -522,6 +559,17 @@ class DatabaseRetirementTests(unittest.TestCase):
         result = self.observe_shipping()
         self.assertEqual(result["uncertainEffects"], 0)
         self.assertEqual(result["knownJobs"][0]["idempotencySha256"], hashlib.sha256(b"owned-purchase-operation").hexdigest())
+        self.sql("UPDATE product_shipments SET status='label_ready',provider_status='ready',delivered_at=null WHERE id='11111111-1111-4111-8111-111111111111';")
+        self.shipments[0]["status"] = "ready"
+        self.rows = self.actual("chitchats", self.shipping)
+        accepted = self.observe_shipping()
+        self.assertEqual((accepted["activeExecutions"], accepted["uncertainEffects"]), (0, 0))
+        self.assertEqual(accepted["deferredPhysicalShipmentIds"], ["ownedShipment"])
+        self.assertFalse(accepted["futurePollingAuthorized"])
+        self.sql("UPDATE product_shipments SET status='delivered',provider_status='delivered',delivered_at=now() WHERE id='11111111-1111-4111-8111-111111111111';")
+        self.shipments[0]["status"] = "delivered"
+        self.rows = self.actual("chitchats", self.shipping)
+        self.shipping["databaseSnapshotSha256"] = component.snapshot_sha256(self.rows)
         self.crm_rows = self.actual("highlevel", self.crm)
         self.crm["databaseSnapshotSha256"] = component.snapshot_sha256(self.crm_rows)
         self.assertNotIn("private-email", json.dumps(self.crm_rows))

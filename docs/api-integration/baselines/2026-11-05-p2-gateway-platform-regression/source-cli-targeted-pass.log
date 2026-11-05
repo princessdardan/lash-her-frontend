@@ -1,0 +1,57 @@
+(node:38203) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ frontend CI schema evidence must match source SQL, contracts and the full owned rehearsal (1.020708ms)
+✔ builder evidence requires the exact repository and source revision (0.24825ms)
+✔ empty or unrelated attestation metadata cannot stand in for an SBOM (0.108125ms)
+✔ harness qualification requires the exact candidate bytes and never asserts real OIDC or approval (0.430333ms)
+✔ candidate collection and final qualification bind the operator dispatch, source and CI receipt (12.899083ms)
+✔ candidate validates course-runtime with its repository-owned runtime CLI (62.9735ms)
+✔ candidate validates course-migration with its repository-owned runtime CLI (59.610292ms)
+✔ candidate validates community-runtime with its repository-owned runtime CLI (63.429875ms)
+✔ candidate validates community-migration with its repository-owned runtime CLI (58.560416ms)
+✔ candidate API runtime qualification refuses unrelated raw HIGH finding with recomputed hashes (67.240833ms)
+✔ candidate API runtime qualification refuses unresolved filtered CRITICAL finding (34.505292ms)
+✔ candidate API runtime qualification refuses unsupported not-affected statement with recomputed hashes (65.242916ms)
+✔ candidate API runtime qualification refuses forged fixed package with recomputed hashes (65.654459ms)
+✔ candidate API runtime qualification refuses forged VEX with recomputed hashes (65.511833ms)
+✔ candidate API runtime qualification refuses failed installed-library regression with recomputed hashes (68.803625ms)
+✔ candidate API runtime qualification refuses different published digest with recomputed hashes (67.059375ms)
+✔ candidate API runtime qualification refuses another image proof relabelled with the candidate name (66.252917ms)
+✔ candidate API runtime qualification refuses another source lock while the sibling lock still matches (65.929291ms)
+✔ candidate API runtime qualification refuses tampered retained scan bytes (64.7265ms)
+✔ candidate API runtime qualification refuses missing filtered scan (33.873208ms)
+✔ candidate API runtime qualification refuses missing raw scan (65.729292ms)
+✔ candidate API runtime qualification refuses missing qualification record (65.860625ms)
+✔ candidate API runtime qualification refuses missing runtime SBOM (65.790041ms)
+✔ candidate API runtime qualification refuses missing VEX (65.712708ms)
+✔ candidate API runtime qualification refuses successful CLI without the qualification receipt (60.801834ms)
+✔ P2 source guard binds the released manifest, every API revision and exact contract bytes (508.002ms)
+✔ P2 source guard refuses wrong course revision in an otherwise clean checkout (383.942833ms)
+✔ P2 source guard refuses wrong community revision in an otherwise clean checkout (414.92625ms)
+✔ P2 source guard refuses wrong enrollmentEvent revision in an otherwise clean checkout (397.14075ms)
+✔ P2 source guard refuses changed API bytes even when both checkout and manifest pins were advanced (390.044ms)
+✔ P2 manifest integrity refuses changed course-api.json (231.746666ms)
+✔ P2 manifest integrity refuses changed community-api.json (230.642625ms)
+✔ P2 manifest integrity refuses changed enrollment-event.schema.json (220.368333ms)
+✔ P2 manifest integrity refuses changed boundary-contracts.json (250.020166ms)
+✔ P2 manifest integrity refuses changed README.md (227.979958ms)
+✔ new P2 source publication refuses candidate status and wrong or missing source-proof hash (1114.680208ms)
+✔ source CLI records exact published P2 approval once and fails without exposing credentials (1678.17125ms)
+✔ manual dispatch accepts unprotected repositories, records actual protection and verifies exact CI (15.674375ms)
+✔ new source proofs require the P2 hash and every API contract revision before provider access (0.499416ms)
+✔ non-operator, fork, PR and substituted frontend refuse before provider access (0.199958ms)
+✔ coordinator must be public, current and dispatched by the sole operator (0.489041ms)
+✔ branch protection is optional and operator reruns recheck current CI (1.166875ms)
+✔ latest CI failure, skipped jobs, missing scans and forged repository/workflow refuse (2.064083ms)
+✔ source API failures are sanitized and newer failures cannot hide behind old success (0.526792ms)
+✔ frontend staging coordinates private API main heads without extra API branches (0.665416ms)
+ℹ tests 45
+ℹ suites 0
+ℹ pass 45
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4418.450583

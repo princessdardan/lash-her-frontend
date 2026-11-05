@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "status": "SOURCE_COMPONENT_MILESTONE_ONLY",
+  "contractPublication": {
+    "frontendRevision": "1952af989e0d6939e8b642858b1b83f498f8ab65",
+    "archivedBaselineRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "phase2ManifestSha256": "9d998158361cf0d7126cf7e910a42fcda1d75383f8727104e4f9f0dca67a079f",
+    "exactDeltaCount": 40,
+    "changedCourseOperations": 19,
+    "releaseCheck": "passed",
+    "generatedAdapterCheck": "passed",
+    "historicalV1DirectoryChanged": false
+  },
+  "apis": {
+    "course": {
+      "revision": "2847d953771adc8e8be287f9512b3003af94f190",
+      "requiredCi": "https://github.com/princessdardan/lash-her-course-api/actions/runs/42124565807",
+      "conclusion": "success",
+      "unitCases": 696,
+      "postgresCases": 87,
+      "migrationRoundTrips": 22
+    },
+    "community": {
+      "revision": "5709ab0a71bf22b2d2a48044d59dd1f60d8765e7",
+      "requiredCi": "https://github.com/princessdardan/lash-her-community-api/actions/runs/42124561971",
+      "conclusion": "success",
+      "unitCases": 364,
+      "postgresCases": 31,
+      "migrationRoundTrips": 11
+    }
+  },
+  "ownedApiHarness": {
+    "frontendRevision": "00b5b52e76b6f647159d2892cc45a0ba20a09c4b",
+    "checks": 11,
+    "postgresMajor": 16,
+    "actualApis": true,
+    "verifiedTls": true,
+    "workloadIdentity": "owned fixture",
+    "imagesQualifiedByThisHarness": false
+  },
+  "frontendPartialVerification": {
+    "sourceAtStart": "6470058b",
+    "typecheck": "passed",
+    "lint": {
+      "exitCode": 0,
+      "warnings": 13,
+      "ownedHarnessUnusedImportsCorrectedAt": "1f0ad835"
+    },
+    "unitSandboxAttempt": "failed TSX IPC EPERM",
+    "unitOwnedAttempt": {
+      "exitCode": 1,
+      "regularCasesPassed": 1882,
+      "regularCasesFailed": 2,
+      "reasons": [
+        "release-probe test needs server-only classification after Google probe import; corrected at1f0ad835",
+        "old auth policy test expects upstream version instead of reviewed security fork; correction under identity owner"
+      ]
+    },
+    "preliminaryBuild": {
+      "exitCode": 0,
+      "sourceAtStart": "78d0bd50",
+      "qualification": "preliminary only: later source commits integrated while command ran; final clean-source CI remains required",
+      "liveCredentials": false,
+      "operationalFeaturesEnabled": false
+    }
+  },
+  "componentEvidence": {
+    "identity": "../2026-11-05-p2-00-identity-ci-integration/validation.json",
+    "learnerFixture": "../2026-11-05-p2-learner-review/validation.json",
+    "actualAuthoring": "../2026-11-05-p2-authoring-requalification/validation.json",
+    "shippingAncestry": "../2026-11-05-p2-00-shipping-ancestry/validation.json",
+    "google": "../2026-11-05-google-provider-fencing/validation.json",
+    "crmShipping": "../2026-11-05-crm-shipping-retirement/validation.json"
+  },
+  "open": [
+    "Frontend final required CI and native immutable candidate",
+    "Actual-stack learner browser qualification",
+    "Independent admin actor isolation correction and regression",
+    "Complete provider observation/coordinator join and actual historical binding evidence",
+    "Dardan-started reviewed staging release",
+    "Real Google Resend Mux and deployed authoring learning access lifecycle certification",
+    "P2-12 and G2"
+  ],
+  "liveChangesByThisGoal": false,
+  "g2Accepted": false,
+  "receipts": {
+    "contract-release-check.txt": {
+      "sha256": "0b07a77f279c4b8ee49d872a5d52530a03fe7cc3e3e9189a9f8c790c8d295f08",
+      "bytes": 51
+    },
+    "api-source-harness.json": {
+      "sha256": "e11e25468907aa1e534586c6a9fa66663fe8144cf2dd1c514b60e0236e36007b",
+      "bytes": 961
+    },
+    "frontend-unit-sandbox-failure.txt": {
+      "sha256": "7d538ddf052c7b42e284bc49c5e2f6b5b3a483eaf8ba6af6993068f4dfcbe9d7",
+      "bytes": 2390489
+    },
+    "frontend-unit-integration-failure.txt": {
+      "sha256": "62c92d403b5000d4db9f09b8035cc8f15913fd0cb70d8d4e9051d843a8929894",
+      "bytes": 170397
+    },
+    "frontend-lint.txt": {
+      "sha256": "ce42e510e2f40a3a61c1ec18a1fb33f9e1b71d45e874d8dc0051b794357a65aa",
+      "bytes": 2420
+    },
+    "frontend-preliminary-build.txt": {
+      "sha256": "07c6f61487d76b66a912bcbaa1f647ead9112b69b0a0531fbbd9a338ac8692d2",
+      "bytes": 11045
+    }
+  }
+}
