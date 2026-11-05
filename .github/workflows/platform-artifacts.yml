@@ -239,18 +239,36 @@ jobs:
           cache-from: type=gha,scope=platform-course-runtime
           cache-to: type=gha,scope=platform-course-runtime,mode=max
           target: runtime
-      - name: Scan exact course-runtime digest
+      - name: Retain raw exact course-runtime digest scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           version: v0.76.1
           image-ref: ghcr.io/princessdardan/lash-her-platform-course-runtime@${{ steps.build-course-runtime.outputs.digest }}
           format: json
-          output: ${{ runner.temp }}/platform-evidence/course-runtime-scan.json
-          exit-code: "1"
-          severity: CRITICAL,HIGH
+          output: ${{ runner.temp }}/platform-evidence/course-runtime-raw-scan.json
+          exit-code: "0"
+        env:
+          TRIVY_LIST_ALL_PKGS: "true"
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify patched course-runtime runtime and enforce scan
+        run: |-
+          node sources/lash-her-course-api/ops/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-course-runtime@${{ steps.build-course-runtime.outputs.digest }} "$RUNNER_TEMP/platform-evidence/course-runtime-raw-scan.json" "$RUNNER_TEMP/platform-evidence/course-runtime-runtime"
+          cp "$RUNNER_TEMP/platform-evidence/course-runtime-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/course-runtime-scan.json"
         env:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retain course-runtime runtime evidence even on refusal
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: course-runtime-runtime-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/platform-evidence/course-runtime-raw-scan.json
+            ${{ runner.temp }}/platform-evidence/course-runtime-scan.json
+            ${{ runner.temp }}/platform-evidence/course-runtime-runtime/
+          if-no-files-found: error
+          retention-days: 10
       - name: Attest course-runtime digest
         id: attest-course-runtime
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
@@ -276,18 +294,36 @@ jobs:
           cache-from: type=gha,scope=platform-course-migration
           cache-to: type=gha,scope=platform-course-migration,mode=max
           target: migration
-      - name: Scan exact course-migration digest
+      - name: Retain raw exact course-migration digest scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           version: v0.76.1
           image-ref: ghcr.io/princessdardan/lash-her-platform-course-migration@${{ steps.build-course-migration.outputs.digest }}
           format: json
-          output: ${{ runner.temp }}/platform-evidence/course-migration-scan.json
-          exit-code: "1"
-          severity: CRITICAL,HIGH
+          output: ${{ runner.temp }}/platform-evidence/course-migration-raw-scan.json
+          exit-code: "0"
+        env:
+          TRIVY_LIST_ALL_PKGS: "true"
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify patched course-migration runtime and enforce scan
+        run: |-
+          node sources/lash-her-course-api/ops/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-course-migration@${{ steps.build-course-migration.outputs.digest }} "$RUNNER_TEMP/platform-evidence/course-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/course-migration-runtime"
+          cp "$RUNNER_TEMP/platform-evidence/course-migration-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/course-migration-scan.json"
         env:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retain course-migration runtime evidence even on refusal
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: course-migration-runtime-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/platform-evidence/course-migration-raw-scan.json
+            ${{ runner.temp }}/platform-evidence/course-migration-scan.json
+            ${{ runner.temp }}/platform-evidence/course-migration-runtime/
+          if-no-files-found: error
+          retention-days: 10
       - name: Attest course-migration digest
         id: attest-course-migration
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
@@ -313,20 +349,36 @@ jobs:
           cache-from: type=gha,scope=platform-community-runtime
           cache-to: type=gha,scope=platform-community-runtime,mode=max
           target: runtime
-      - name: Scan exact community-runtime digest
+      - name: Retain raw exact community-runtime digest scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           version: v0.76.1
-          image-ref:
-            ghcr.io/princessdardan/lash-her-platform-community-runtime@${{ steps.build-community-runtime.outputs.digest
-            }}
+          image-ref: ghcr.io/princessdardan/lash-her-platform-community-runtime@${{ steps.build-community-runtime.outputs.digest }}
           format: json
-          output: ${{ runner.temp }}/platform-evidence/community-runtime-scan.json
-          exit-code: "1"
-          severity: CRITICAL,HIGH
+          output: ${{ runner.temp }}/platform-evidence/community-runtime-raw-scan.json
+          exit-code: "0"
+        env:
+          TRIVY_LIST_ALL_PKGS: "true"
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify patched community-runtime runtime and enforce scan
+        run: |-
+          node sources/lash-her-community-api/ops/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-community-runtime@${{ steps.build-community-runtime.outputs.digest }} "$RUNNER_TEMP/platform-evidence/community-runtime-raw-scan.json" "$RUNNER_TEMP/platform-evidence/community-runtime-runtime"
+          cp "$RUNNER_TEMP/platform-evidence/community-runtime-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/community-runtime-scan.json"
         env:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retain community-runtime runtime evidence even on refusal
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: community-runtime-runtime-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/platform-evidence/community-runtime-raw-scan.json
+            ${{ runner.temp }}/platform-evidence/community-runtime-scan.json
+            ${{ runner.temp }}/platform-evidence/community-runtime-runtime/
+          if-no-files-found: error
+          retention-days: 10
       - name: Attest community-runtime digest
         id: attest-community-runtime
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
@@ -352,20 +404,36 @@ jobs:
           cache-from: type=gha,scope=platform-community-migration
           cache-to: type=gha,scope=platform-community-migration,mode=max
           target: migration
-      - name: Scan exact community-migration digest
+      - name: Retain raw exact community-migration digest scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           version: v0.76.1
-          image-ref:
-            ghcr.io/princessdardan/lash-her-platform-community-migration@${{
-            steps.build-community-migration.outputs.digest }}
+          image-ref: ghcr.io/princessdardan/lash-her-platform-community-migration@${{ steps.build-community-migration.outputs.digest }}
           format: json
-          output: ${{ runner.temp }}/platform-evidence/community-migration-scan.json
-          exit-code: "1"
-          severity: CRITICAL,HIGH
+          output: ${{ runner.temp }}/platform-evidence/community-migration-raw-scan.json
+          exit-code: "0"
+        env:
+          TRIVY_LIST_ALL_PKGS: "true"
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify patched community-migration runtime and enforce scan
+        run: |-
+          node sources/lash-her-community-api/ops/runtime/verify.mjs ghcr.io/princessdardan/lash-her-platform-community-migration@${{ steps.build-community-migration.outputs.digest }} "$RUNNER_TEMP/platform-evidence/community-migration-raw-scan.json" "$RUNNER_TEMP/platform-evidence/community-migration-runtime"
+          cp "$RUNNER_TEMP/platform-evidence/community-migration-runtime/scan.json" "$RUNNER_TEMP/platform-evidence/community-migration-scan.json"
         env:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retain community-migration runtime evidence even on refusal
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: community-migration-runtime-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/platform-evidence/community-migration-raw-scan.json
+            ${{ runner.temp }}/platform-evidence/community-migration-scan.json
+            ${{ runner.temp }}/platform-evidence/community-migration-runtime/
+          if-no-files-found: error
+          retention-days: 10
       - name: Attest community-migration digest
         id: attest-community-migration
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
