@@ -1,60 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { phase2ContractManifestBinding } from "./release.mjs";
 import { verifySourceCheckouts } from "./source-checkout.mjs";
-import { buildCompatibilityReview, readReviewBundle, readReviewBundleAtRevision } from "../../scripts/api-contract-compatibility-review.mjs";
+import { phase2SourceFixture as fixture } from "./phase2-contract-bindings.fixture.mjs";
 
-const frontend = fileURLToPath(new URL("../..", import.meta.url));
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
-
-function fixture(run) {
-  const directory = mkdtempSync(join(tmpdir(), "phase2-contract-source-")), sources = {};
-  const git = (repo, ...args) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8", stdio: "pipe" }).trim();
-  const commit = repo => {
-    git(repo, "add", ".");
-    git(repo, "-c", "user.name=Owned fixture", "-c", "user.email=owned@example.invalid", "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "--no-gpg-sign", "-m", "Owned P2 source fixture");
-    return git(repo, "rev-parse", "HEAD");
-  };
-  const source = join(directory, "lash-her-frontend"), bundle = join(source, "contracts/api-integration/p2-candidate");
-  mkdirSync(bundle, { recursive: true });
-  cpSync(join(frontend, "contracts/api-integration/p2-candidate"), bundle, { recursive: true });
-  const manifest = JSON.parse(readFileSync(join(bundle, "manifest.json")));
-  manifest.status = "released";
-  manifest.readmeSha256 = hash(readFileSync(join(bundle, "README.md")));
-  try {
-    for (const name of ["course", "community"]) {
-      const repo = join(directory, `lash-her-${name}-api`); mkdirSync(repo);
-      git(repo, "init", "--quiet");
-      for (const artifact of Object.values(manifest.artifacts).filter(item => item.repository === `lash-her-${name}-api`)) {
-        const path = join(repo, artifact.sourcePath); mkdirSync(dirname(path), { recursive: true });
-        writeFileSync(path, readFileSync(join(bundle, artifact.file)));
-      }
-      sources[name] = { repository: `https://github.com/princessdardan/lash-her-${name}-api.git`, commit: commit(repo), requiredChecks: "passed" };
-    }
-    for (const [name, artifact] of Object.entries(manifest.artifacts)) artifact.revision = sources[name === "enrollmentEvent" ? "community" : name].commit;
-    writeFileSync(join(bundle, "manifest.json"), JSON.stringify(manifest) + "\n");
-    git(source, "init", "--quiet");
-    const archive = join(source, "contracts/api-integration/v1");
-    cpSync(bundle, archive, { recursive: true });
-    const baselineRevision = commit(source);
-    const reviewPath = join(bundle, "compatibility-review.json");
-    const review = buildCompatibilityReview(readReviewBundleAtRevision(source, baselineRevision), readReviewBundle(bundle), baselineRevision);
-    writeFileSync(reviewPath, JSON.stringify(review) + "\n");
-    sources.frontend = { repository: "https://github.com/princessdardan/lash-her-frontend.git", commit: commit(source), requiredChecks: "passed" };
-    const retain = () => {
-      const bytes = JSON.stringify(manifest) + "\n";
-      writeFileSync(join(bundle, "manifest.json"), bytes); review.candidate.manifestSha256 = hash(bytes);
-      writeFileSync(reviewPath, JSON.stringify(review) + "\n"); sources.frontend.commit = commit(source);
-    };
-    run({ directory, source, bundle, sources, manifest, retain, commit });
-  } finally { rmSync(directory, { recursive: true, force: true }); }
-}
 
 test("P2 source guard binds the released manifest, every API revision and exact contract bytes", () => fixture(f => {
   const binding = verifySourceCheckouts(f.directory, f.sources, { requirePhase2: true });
