@@ -40,7 +40,10 @@ if (process.env.COURSE_AUTHORING_BROWSER_FIXTURE === "1") {
       const result = query.includes('"globalSettings"')
         ? {
             title: "Lash Her",
-            header: { logoText: { label: "Lash Her", href: "/" } },
+            header: {
+              logoText: { label: "Lash Her", href: "/" },
+              ctaButton: [{ _key: "book", label: "Book now", href: "/contact" }],
+            },
             footer: {
               logoText: { label: "Lash Her", href: "/" },
               navigationMenus: [],
