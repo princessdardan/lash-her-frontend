@@ -385,3 +385,262 @@ test("keyboard ordering, archival identity and dirty-editor cancellation remain 
     await context.close().catch(() => {});
   }
 });
+
+test("paid CAD catalog publication warns before archive and requires validated restoration", async ({
+  browser,
+  baseURL,
+}) => {
+  if (!storagePath || !baseURL)
+    throw new Error("Owned browser fixture required");
+  const states = JSON.parse(await readFile(storagePath, "utf8"));
+  const context = await ownedContext(browser, states.owner);
+  const page = await context.newPage();
+  const headers = { origin: baseURL, "x-lash-csrf": "1" };
+  try {
+    await page.goto("/admin/courses");
+    await page
+      .getByLabel("Course title", { exact: true })
+      .fill("Paid browser catalog fixture");
+    await page
+      .getByRole("textbox", { name: /^URL name/ })
+      .fill("paid-browser-catalog-fixture");
+    await page.getByLabel("Access", { exact: true }).selectOption("paid");
+    await page.getByLabel("Price (CAD)", { exact: false }).fill("10.00");
+    await page
+      .getByLabel("Approved tax classification")
+      .fill("fixture-reviewed");
+    await page
+      .getByRole("button", { name: "Create draft", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/admin\/courses\/[a-f0-9-]{36}$/);
+    const courseId = page.url().split("/").pop();
+    async function course() {
+      return (
+        await (
+          await context.request.get(`/api/admin/courses/${courseId}`)
+        ).json()
+      ).course;
+    }
+    const draft = await course();
+    expect(draft).toMatchObject({
+      status: "draft",
+      accessMode: "paid",
+      currency: "CAD",
+      priceCents: 1000,
+    });
+    const createdModule = await context.request.post(
+      `/api/admin/courses/${courseId}/modules`,
+      {
+        headers,
+        data: {
+          expectedCourseRevision: 1,
+          title: "Paid module",
+          slug: "paid-module",
+          position: 1,
+        },
+      },
+    );
+    expect(createdModule.status()).toBe(200);
+    const moduleId = (await createdModule.json()).module.id;
+    const contentDocument = {
+      version: 1,
+      blocks: [
+        {
+          _type: "block",
+          _key: "paid-block",
+          children: [
+            {
+              _type: "span",
+              _key: "paid-text",
+              text: "PRIVATE_PAID_LESSON_FIXTURE",
+            },
+          ],
+        },
+      ],
+    };
+    const createdLesson = await context.request.post(
+      `/api/admin/modules/${moduleId}/lessons`,
+      {
+        headers,
+        data: {
+          expectedCourseRevision: 2,
+          title: "Paid lesson",
+          slug: "paid-lesson",
+          position: 1,
+          contentDocument,
+        },
+      },
+    );
+    expect(createdLesson.status()).toBe(200);
+    const lessonId = (await createdLesson.json()).lesson.id;
+    await page.reload();
+    const mutations: Record<string, unknown>[] = [];
+    const mutationPaths: string[] = [];
+    page.on("request", (request) => {
+      if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method()))
+        mutationPaths.push(new URL(request.url()).pathname);
+      if (
+        request.method() === "PATCH" &&
+        new URL(request.url()).pathname === `/api/admin/courses/${courseId}`
+      )
+        mutations.push(request.postDataJSON());
+    });
+    await page
+      .getByRole("button", { name: "Review publication readiness" })
+      .click();
+    await expect(
+      page.getByText("Ready to publish", { exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Publish course", exact: true })
+      .click();
+    await expect(
+      page.getByText("Course published.", { exact: true }),
+    ).toBeVisible();
+    const catalog = await context.request.get(
+      "/api/academy/catalog/paid-browser-catalog-fixture",
+    );
+    expect(catalog.status()).toBe(200);
+    expect((await catalog.json()).course).toMatchObject({
+      id: courseId,
+      accessMode: "paid",
+      currency: "CAD",
+      priceCents: 1000,
+    });
+    expect(await catalog.text()).not.toContain("PRIVATE_PAID_LESSON_FIXTURE");
+    const publicPage = await context.newPage();
+    await publicPage.goto("/courses/paid-browser-catalog-fixture");
+    await expect(
+      publicPage.getByRole("heading", {
+        name: "Paid browser catalog fixture",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      publicPage.getByRole("button", { name: /buy|pay|checkout/i }),
+    ).toHaveCount(0);
+    expect(await publicPage.content()).not.toContain(
+      "PRIVATE_PAID_LESSON_FIXTURE",
+    );
+    await page
+      .getByRole("button", { name: "Archive course", exact: true })
+      .click();
+    const warning = page.getByRole("region", {
+      name: "Before archiving this paid course",
+    });
+    await expect(warning).toBeVisible();
+    await expect(warning).toContainText(
+      "including access from existing purchases",
+    );
+    await expect(warning).toContainText("600 seconds");
+    await expect(warning).toContainText("independent grants, progress");
+    await expect(warning).toContainText(
+      "Community access depends on remaining eligible courses and grants",
+    );
+    await expect(warning).toContainText(
+      "does not issue a refund or cancel a payment",
+    );
+    await expect(warning).toContainText(
+      "existing applicable terms and owner review",
+    );
+    await expect(warning).toContainText(
+      "cannot override revoked or expired grants, suspension or account deletion",
+    );
+    expect(mutations).toHaveLength(1);
+    await warning
+      .getByRole("button", { name: "Cancel archive", exact: true })
+      .click();
+    await expect(warning).toHaveCount(0);
+    expect((await course()).status).toBe("published");
+    expect(mutations).toHaveLength(1);
+    await page
+      .getByRole("button", { name: "Archive course", exact: true })
+      .click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({
+      path: test.info().outputPath("paid-archive-warning.png"),
+      fullPage: true,
+    });
+    await warning
+      .getByRole("button", { name: "Archive paid course", exact: true })
+      .click();
+    await expect(
+      page.getByText(
+        "Course archived. Historical references remain available.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    expect(mutations).toEqual([
+      { expectedRevision: 3, status: "published" },
+      { expectedRevision: 4, status: "archived" },
+    ]);
+    expect(mutationPaths).toEqual([
+      `/api/admin/courses/${courseId}`,
+      `/api/admin/courses/${courseId}`,
+    ]);
+    const archived = await course();
+    expect(archived.modules[0].id).toBe(moduleId);
+    expect(archived.modules[0].lessons[0].id).toBe(lessonId);
+    expect(
+      (
+        await context.request.get(
+          "/api/academy/catalog/paid-browser-catalog-fixture",
+        )
+      ).status(),
+    ).toBe(404);
+    await page
+      .getByRole("button", { name: "Move to draft", exact: true })
+      .click();
+    await expect(
+      page.getByText("Course moved to draft.", { exact: true }),
+    ).toBeVisible();
+    const removed = await context.request.patch(
+      `/api/admin/lessons/${lessonId}`,
+      { headers, data: { expectedCourseRevision: 6, contentDocument: null } },
+    );
+    expect(removed.status()).toBe(200);
+    await page.reload();
+    await page
+      .getByRole("button", { name: "Review publication readiness" })
+      .click();
+    await expect(
+      page.getByText("Resolve these items before publishing"),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Publish course", exact: true }),
+    ).toHaveCount(0);
+    const repaired = await context.request.patch(
+      `/api/admin/lessons/${lessonId}`,
+      { headers, data: { expectedCourseRevision: 7, contentDocument } },
+    );
+    expect(repaired.status()).toBe(200);
+    await page.reload();
+    await page
+      .getByRole("button", { name: "Review publication readiness" })
+      .click();
+    await expect(
+      page.getByText("Ready to publish", { exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Publish course", exact: true })
+      .click();
+    await expect(
+      page.getByText("Course published.", { exact: true }),
+    ).toBeVisible();
+    expect(
+      (
+        await context.request.get(
+          "/api/academy/catalog/paid-browser-catalog-fixture",
+        )
+      ).status(),
+    ).toBe(200);
+    expect((await course()).modules[0].lessons[0].id).toBe(lessonId);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  } finally {
+    await context.close().catch(() => {});
+  }
+});
