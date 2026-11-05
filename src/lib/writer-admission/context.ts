@@ -9,6 +9,12 @@ export function markWriterOperationUncertain(): void {
   if (operation) operation.uncertain = true;
 }
 
+export function assertWriterOperationCertain(): void {
+  if (operationContext.getStore()?.uncertain) {
+    throw new Error("WRITER_OPERATION_REQUIRES_REVIEW");
+  }
+}
+
 export async function withWriterOperationContext<T>(task: () => Promise<T>): Promise<T> {
   return operationContext.run({ uncertain: false }, async () => {
     const result = await task();

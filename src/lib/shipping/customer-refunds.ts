@@ -206,6 +206,7 @@ export async function queueProductOrderRefundAllocationsInTransaction(
       ({ refund, component }) => !refund.adjustmentId || !component,
     );
     if (untyped.length) {
+      markWriterOperationUncertain();
       await tx
         .update(productOrderRefunds)
         .set({
@@ -329,8 +330,21 @@ export async function queueProductOrderRefundAllocationsInTransaction(
         status: "reserved",
         idempotencyKey: adjustmentKey,
       })
-      .returning({ id: productOrderAdjustments.id });
+      .returning();
     if (!adjustment) throw new Error("Refund adjustment could not be reserved");
+    if (
+      adjustment.orderId !== order.id ||
+      adjustment.direction !== "refund" ||
+      adjustment.component !== allocation.component ||
+      adjustment.reason !== reason ||
+      adjustment.amountCents !== allocation.amountCents ||
+      adjustment.status !== "reserved" ||
+      adjustment.idempotencyKey !== adjustmentKey ||
+      adjustment.sourceShipmentId !== (input.sourceShipmentId ?? null) ||
+      adjustment.sourceAddressRequestId !==
+        (input.sourceAddressRequestId ?? null)
+    )
+      markWriterOperationUncertain();
     const [created] = await tx
       .insert(productOrderRefunds)
       .values({
@@ -350,6 +364,19 @@ export async function queueProductOrderRefundAllocationsInTransaction(
       })
       .returning();
     if (!created) throw new Error("Refund could not be queued");
+    if (
+      created.orderId !== order.id ||
+      created.idempotencyKey !== semanticRefundUuid(adjustmentKey) ||
+      created.status !== "queued" ||
+      created.reason !== reason ||
+      created.amountCents !== allocation.amountCents ||
+      created.originalTransactionId !==
+        allocation.transaction.providerTransactionId ||
+      created.paymentTransactionId !== allocation.transaction.id ||
+      created.adjustmentId !== adjustment.id ||
+      created.automated !== (input.automated ?? false)
+    )
+      markWriterOperationUncertain();
     result.push(created);
   }
   return result;
