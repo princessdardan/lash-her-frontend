@@ -1,0 +1,544 @@
+Owned authoring evidence: /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/test-results/course-authoring-browser/run-r3xa3L
+frontend.log:
+ resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 9ms (next.js: 3ms, proxy.ts: 3ms, application-code: 3ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32m,%22import%22:%22Bebas_Neue%22,%22arguments%22:[{%22variable%22:%22--font-bebas-neue%22,...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32mrt%22:%22Inter%22,%22arguments%22:[{%22variable%22:%22--font-inter%22,%22subsets%22:[%22...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 8ms (next.js: 3ms, proxy.ts: 3ms, application-code: 2.0ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32m,%22import%22:%22Bebas_Neue%22,%22arguments%22:[{%22variable%22:%22--font-bebas-neue%22,...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32mrt%22:%22Inter%22,%22arguments%22:[{%22variable%22:%22--font-inter%22,%22subsets%22:[%22...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 5ms (next.js: 2ms, proxy.ts: 1.6ms, application-code: 1.6ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32m,%22import%22:%22Bebas_Neue%22,%22arguments%22:[{%22variable%22:%22--font-bebas-neue%22,...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32mrt%22:%22Inter%22,%22arguments%22:[{%22variable%22:%22--font-inter%22,%22subsets%22:[%22...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 5ms (next.js: 2ms, proxy.ts: 1.4ms, application-code: 1.5ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32m,%22import%22:%22Bebas_Neue%22,%22arguments%22:[{%22variable%22:%22--font-bebas-neue%22,...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32mrt%22:%22Inter%22,%22arguments%22:[{%22variable%22:%22--font-inter%22,%22subsets%22:[%22...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 6ms (next.js: 3ms, proxy.ts: 1.4ms, application-code: 1.6ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32m,%22import%22:%22Bebas_Neue%22,%22arguments%22:[{%22variable%22:%22--font-bebas-neue%22,...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32mrt%22:%22Inter%22,%22arguments%22:[{%22variable%22:%22--font-inter%22,%22subsets%22:[%22...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 6ms (next.js: 3ms, proxy.ts: 1.6ms, application-code: 1.7ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32m,%22import%22:%22Bebas_Neue%22,%22arguments%22:[{%22variable%22:%22--font-bebas-neue%22,...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32mrt%22:%22Inter%22,%22arguments%22:[{%22variable%22:%22--font-inter%22,%22subsets%22:[%22...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 5ms (next.js: 2ms, proxy.ts: 1.7ms, application-code: 1.5ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32m,%22import%22:%22Bebas_Neue%22,%22arguments%22:[{%22variable%22:%22--font-bebas-neue%22,...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32mrt%22:%22Inter%22,%22arguments%22:[{%22variable%22:%22--font-inter%22,%22subsets%22:[%22...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 5ms (next.js: 1.9ms, proxy.ts: 1.5ms, application-code: 1.3ms)
+⨯ [next]/internal/font/google/bebas_neue_8353006.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32m,%22import%22:%22Bebas_Neue%22,%22arguments%22:[{%22variable%22:%22--font-bebas-neue%22,...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/bebas_neue_8353006.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+
+[next]/internal/font/google/inter_55581303.js:1:1
+Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/cssmodule.module.css'
+[31m[1m>[0m [90m1 |[0m ...[32mrt%22:%22Inter%22,%22arguments%22:[{%22variable%22:%22--font-inter%22,%22subsets%22:[%22...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m2 |[0m ...
+  [90m3 |[0m ...
+  [90m4 |[0m ...
+
+url not found
+
+Debug info:
+- Execution of <ModuleAssetContext as AssetContext>::resolve_asset failed
+- Execution of resolve failed
+- Execution of resolve_internal failed
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+Error while looking up import map: url not found
+
+Debug info:
+- Execution of NextFontGoogleCssModuleReplacer::import_map_result failed
+- url not found
+
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/inter_55581303.js
+    ./src/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /admin/sign-in 500 in 5ms (next.js: 2ms, proxy.ts: 1.7ms, application-code: 1.3ms)
+[?25h
+
+file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/scripts/test-course-authoring-browser.mjs:482
+      throw new Error("Owned server exited before readiness");
+            ^
+
+Error: Owned server exited before readiness
+    at ready (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/scripts/test-course-authoring-browser.mjs:482:13)
+    at async file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/scripts/test-course-authoring-browser.mjs:303:3
+
+Node.js v24.18.0
