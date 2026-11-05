@@ -13,6 +13,7 @@ import sys
 import frontend_probe
 import frontend_resend_retirement
 import frontend_square_retirement
+import frontend_sanity_fencing
 import frontend_gateway_observation
 import migrate
 import vercel
@@ -563,7 +564,7 @@ def execute(context, client, verify, probe=None):
     locked = LockedClient(client, verify)
     source_attempt = attempt
     if context.get("originalDirectory") is not None:
-        demand(operation in ("observe-vercel", "observe-compatible", "observe-admission", "observe-resend", "observe-square"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
+        demand(operation in ("observe-vercel", "observe-compatible", "observe-admission", "observe-resend", "observe-resend-effects", "observe-square", "observe-sanity"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
         original = Path(context["originalDirectory"])
         migrate.private_directory(original)
         source_attempt = original / attempt.name
@@ -612,11 +613,21 @@ def execute(context, client, verify, probe=None):
         verified = verify_square_runtime(context, locked, attempt, LockedProbe(verify, probe))
         migrate.write_json(attempt, "square-runtime-binding-verified.json", verified)
         return {**outcome, "runtimeReplacementBindingVerified": True}
-    if operation in ("retire-resend", "observe-resend"):
+    if operation in ("suspend-sanity", "observe-sanity"):
+        reviewed = context["bindings"].get("sanityRetirement")
+        demand(reviewed is not None, "REVIEWED_SANITY_RETIREMENT_REQUIRED")
+        replacement = LockedClient(frontend_sanity_fencing.Client(context["sanityReplacementToken"]), verify)
+        retired = LockedClient(frontend_sanity_fencing.Client(context["sanityRetiredToken"]), verify)
+        if operation == "observe-sanity":
+            return {**selected, **frontend_sanity_fencing.observe(replacement, retired, reviewed)}
+        return frontend_sanity_fencing.suspend(replacement, retired, reviewed, selected, attempt)
+    if operation in ("retire-resend", "observe-resend", "observe-resend-effects"):
         reviewed = context["bindings"].get("resendRetirement")
         demand(reviewed is not None, "REVIEWED_RESEND_RETIREMENT_REQUIRED")
         replacement = LockedClient(frontend_resend_retirement.Client(context["resendReplacementToken"]), verify)
         retired = LockedClient(frontend_resend_retirement.Client(context["resendRetiredToken"]), verify)
+        if operation == "observe-resend-effects":
+            return {**selected, **frontend_resend_retirement.accepted_email_effects(replacement, reviewed)}
         if operation == "observe-resend":
             return {**selected, **frontend_resend_retirement.observe(replacement, retired, reviewed)}
         # The protected runtime must be usable before destructive retirement,

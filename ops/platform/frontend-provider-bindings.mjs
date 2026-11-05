@@ -102,6 +102,19 @@ export function frontendProviderBindingsArtifact(input, plan) {
     result.squareRetirement = { environment: "sandbox", credentialKind: "personal-access-token", locationId: selected.locationId,
       apiVersion: selected.apiVersion, merchantId: selected.merchantId, applicationId: selected.applicationId, webhookIds: [...selected.webhookIds], effects };
   }
+  if (input.sanityRetirement !== undefined) {
+    const selected = input.sanityRetirement;
+    demand(selected?.projectId === "7o23yrvk" && selected.dataset === "staging-2026-05-10" &&
+      Array.isArray(selected.hooks) && selected.hooks.length <= 4096 &&
+      surfaces.some(row => row.kind === "provider" && row.identity.provider === "sanity"));
+    const hooks = selected.hooks.map(row => {
+      demand(typeof row?.hookId === "string" && /^[A-Za-z0-9_-]{1,192}$/u.test(row.hookId) &&
+        ["/api/revalidate", "/api/webhooks/sanity/inventory-sync"].includes(row.path));
+      return { hookId: row.hookId, path: row.path };
+    }).sort((a, b) => a.hookId.localeCompare(b.hookId));
+    demand(new Set(hooks.map(row => row.hookId)).size === hooks.length);
+    result.sanityRetirement = { projectId: selected.projectId, dataset: selected.dataset, hooks };
+  }
   if (plan.restoration !== undefined) demand(result.gatewayObservation && hash(result.gatewayObservation) === plan.restoration.gatewayBindingSha256);
   return result;
 }

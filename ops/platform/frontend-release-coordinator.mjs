@@ -20,6 +20,7 @@ import { frontendCoordinationHash, prepareFrontendReleaseInventory, validateFron
 import { frontendReleaseReceiptStore } from "./frontend-release-receipts.mjs";
 import { withFrontendEnvironmentLock } from "./frontend-environment-lock.mjs";
 import { observeFrontendBootstrapSchema } from "./frontend-bootstrap-compatibility.mjs";
+import { observeFrontendOperationalProviderInventory } from "./frontend-operational-provider-inventory.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const demand = ok => { if (!ok) throw new Error("FRONTEND_RELEASE_COORDINATION_REFUSED"); };
@@ -96,7 +97,7 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
         await verifyEnvironment();
         const nonce = randomBytes(32).toString("hex");
         const result = await adapters.observeFrontendExternalFences(Object.freeze({ plan, inventorySha256, nonce, checkpoint, ...providerContext,
-          verifyLockedSession, environmentSignal }));
+          databaseClient, verifyLockedSession, environmentSignal }));
         const proof = await validateFrontendFenceObservation(plan, nonce, result, store.retain);
         await verifyEnvironment();
         await store.record(`external-fences-${checkpoint}.json`, proof);
@@ -172,9 +173,13 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
           const flags = await owner(client, verifySession, () => changeFrontendAdmission(client, target, epoch, { newWork: false, recovery: current.recovery }));
           epoch = flags.epoch;
           await store.record("admission-new-work-closed.json", { ...base, epoch, recovery: flags.recovery });
+          phase = "operational-provider-binding-inventory";
+          const providerInventory = await observeFrontendOperationalProviderInventory(client, verify);
+          await store.record("frontend-operational-provider-inventory-before-fence.json", { ...base, ...providerInventory });
           phase = "external-producer-fencing";
           await adapters.fenceFrontendExternalProducers(Object.freeze({ plan, inventorySha256, deadline,
-            environmentSignal, verifyLockedSession: verify, record: store.record, retain: store.retain, ...providerContext }));
+            environmentSignal, verifyLockedSession: verify, record: store.record, retain: store.retain,
+            admissionObservation: { ...current, ...flags }, databaseClient: client, ...providerContext }));
           await verify(); demand(performance.now() <= deadline);
           phase = "historical-database-login-retirement";
           await retireHistoricalFrontendLogins(plan.historicalLogins, client, { confirmation: dependencies.confirmation, record: store.record });
@@ -193,6 +198,8 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
           const drain = await owner(client, verifySession, () => observeFrontendDrain(client, target, epoch));
           demand(drain.ledgerDrained === true && drain.active === 0 && drain.uncertain === 0 && performance.now() <= deadline);
           await store.record("admission-drained.json", { ...base, ...drain });
+          const drainedProviderInventory = await observeFrontendOperationalProviderInventory(client, verify);
+          await store.record("frontend-operational-provider-inventory-after-drain.json", { ...base, ...drainedProviderInventory });
           phase = "current-source-producer-verification";
           const registered = await owner(client, verifySession, async () => {
             const rows = (await client.query("SELECT producer_sha256,source_sha,database_role::text AS role_oid FROM frontend_admission.producers WHERE enabled ORDER BY producer_sha256")).rows;

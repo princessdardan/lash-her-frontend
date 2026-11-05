@@ -77,6 +77,21 @@ test("Square retirement artifact permits only dedicated sandbox IDs and actual f
   }
 });
 
+test("Sanity hook selection binds only dedicated staging project, exact IDs and reviewed ingress paths", () => {
+  const f = fixture("sanity");
+  f.input.sanityRetirement = { projectId: "7o23yrvk", dataset: "staging-2026-05-10",
+    hooks: [{ hookId: "5a1KWQjkVBYLeAU3", path: "/api/revalidate", secret: "private-marker" }] };
+  const normalized = frontendProviderBindingsArtifact(f.input, f.plan);
+  assert.deepEqual(normalized.sanityRetirement.hooks, [{ hookId: "5a1KWQjkVBYLeAU3", path: "/api/revalidate" }]);
+  assert.equal(JSON.stringify(normalized).includes("private-marker"), false);
+  for (const change of [r => { r.projectId = "3auncj84"; }, r => { r.dataset = "production"; },
+    r => { r.hooks[0].path = "/api/webhooks/square"; }, r => { r.hooks[0].hookId = "../production"; },
+    r => { r.hooks.push(r.hooks[0]); }]) {
+    const copy = structuredClone(f.input); change(copy.sanityRetirement);
+    assert.throws(() => frontendProviderBindingsArtifact(copy, f.plan));
+  }
+});
+
 test("restoration gateway binding selects an exact existing machine/configuration/image without copying runtime input", () => {
   const f = fixture();
   f.input.gatewayObservation = { hostMachineId: "1".repeat(32), releaseId: "existing-host", candidateSha256: "2".repeat(64),

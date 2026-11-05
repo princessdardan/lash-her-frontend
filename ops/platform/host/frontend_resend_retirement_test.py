@@ -34,6 +34,8 @@ class ResendRetirementTests(unittest.TestCase):
         self.lost_delete, self.old_still_works, self.ignore_hook, self.production_domain, self.old_forbidden = False, False, False, False, False
         self.after_delete = None
         self.paginate_keys, self.repeat_page = False, False
+        self.email_states = [{"id": self.EMAIL, "last_event": "queued"}]
+        self.repeat_email_page = False
         owner = self
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args): pass
@@ -70,6 +72,13 @@ class ResendRetirementTests(unittest.TestCase):
                     value = {"object": "api_key", "id": owner.OLD, "deleted": True}
                 elif path == "/emails/" + owner.EMAIL:
                     value = {"id": owner.EMAIL, "last_event": "queued", "to": ["private-recipient-marker"], "html": "private-content-marker"}
+                elif path == "/emails":
+                    selected = owner.email_states
+                    if "after=" in self.path and not owner.repeat_email_page:
+                        cursor = self.path.split("after=", 1)[1]
+                        selected = selected[next(i for i, row in enumerate(selected) if row["id"] == cursor) + 1:]
+                    value = {"object": "list", "has_more": len(selected) > 100,
+                        "data": [{**row, "to": ["private-recipient-marker"], "subject": "private-content-marker"} for row in selected[:100]]}
                 else:
                     self.send_response(500); self.end_headers(); return
                 self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(json.dumps(value).encode())
@@ -95,6 +104,32 @@ class ResendRetirementTests(unittest.TestCase):
 
     def mutate_calls(self):
         return [row for row in self.calls if row["method"] != "GET"]
+
+    def test_account_email_pagination_captures_unrecorded_sends_without_recipient_or_content_data(self):
+        self.email_states = [{"id": f"{i:08x}-1111-4111-8111-111111111111", "last_event": "delivered"} for i in range(101)]
+        self.email_states[0] = {"id": self.EMAIL, "last_event": "delivered"}
+        observed = resend.accepted_email_effects(self.client, self.plan)
+        self.assertTrue(observed["accountEmailPaginationComplete"])
+        self.assertEqual(len(observed["acceptedEmails"]), 101)
+        self.assertEqual(observed["unresolvedEffects"], 0)
+        self.assertNotIn("private-", json.dumps(observed))
+        self.assertEqual(self.mutate_calls(), [])
+
+    def test_scheduled_sent_unknown_and_queued_emails_remain_unresolved_after_old_key_retirement(self):
+        for state in ("scheduled", "sent", "queued", "delivery_delayed", "unknown"):
+            self.email_states[0]["last_event"] = state
+            self.assertEqual(resend.accepted_email_effects(self.client, self.plan)["unresolvedEffects"], 1)
+
+    def test_repeated_email_page_and_missing_known_email_refuse_account_coverage(self):
+        self.email_states = [{"id": f"{i:08x}-1111-4111-8111-111111111111", "last_event": "delivered"} for i in range(101)]
+        self.email_states[0] = {"id": self.EMAIL, "last_event": "delivered"}
+        self.repeat_email_page = True
+        with self.assertRaisesRegex(ValueError, "INVENTORY_ID_REFUSED"):
+            resend.accepted_email_effects(self.client, self.plan)
+        self.repeat_email_page = False
+        self.email_states = []
+        with self.assertRaisesRegex(ValueError, "KNOWN_EMAIL_ABSENT"):
+            resend.accepted_email_effects(self.client, self.plan)
 
     def test_actual_key_delete_webhook_disable_and_runtime_readback_keep_unknown_effects_unresolved(self):
         self.fixture.execute("deploy-admission")
