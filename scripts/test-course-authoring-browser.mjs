@@ -13,7 +13,6 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:net";
-import { createServer as createHttpServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,8 +52,6 @@ let started = false;
 let resultDirectory;
 let sourceEvidence;
 let outcome = "failed";
-let fontServer;
-let fontsStopped = true;
 try {
   if ((await run("git", ["status", "--porcelain"], root)).trim())
     throw new Error(
@@ -254,35 +251,6 @@ try {
     ),
   );
   await ready(`${apiOrigin}/health`);
-  const font = await readFile(
-    join(
-      root,
-      "node_modules/next/dist/next-devtools/server/font/geist-latin.woff2",
-    ),
-  );
-  fontServer = createHttpServer((request, response) => {
-    if (
-      request.url !== "/fixture.woff2" ||
-      !["GET", "HEAD"].includes(request.method)
-    ) {
-      response.writeHead(404).end();
-      return;
-    }
-    response.writeHead(200, {
-      "content-type": "font/woff2",
-      "content-length": font.length,
-    });
-    response.end(request.method === "HEAD" ? undefined : font);
-  });
-  await new Promise((resolveListening, reject) => {
-    fontServer.once("error", reject);
-    fontServer.listen(0, "127.0.0.1", resolveListening);
-  });
-  fontsStopped = false;
-  const fontAddress = fontServer.address();
-  if (!fontAddress || typeof fontAddress === "string")
-    throw new Error("Missing owned font address");
-  const fontOrigin = `http://127.0.0.1:${fontAddress.port}`;
   const frontendEnv = {
     ...common,
     NODE_ENV: "development",
@@ -310,7 +278,6 @@ try {
     INTEGRATION_LEARNING_ROUTES_ENABLED: "true",
     COURSE_AUTHORING_BROWSER_FIXTURE: "1",
     COURSE_AUTHORING_API_ORIGIN: apiOrigin,
-    COURSE_AUTHORING_FONT_ORIGIN: fontOrigin,
     NEXT_FONT_GOOGLE_MOCKED_RESPONSES: join(
       root,
       "tests/course-authoring-browser/font-fixture.cjs",
@@ -323,6 +290,7 @@ try {
       [
         "node_modules/next/dist/bin/next",
         "dev",
+        "--webpack",
         "--hostname",
         "127.0.0.1",
         "--port",
@@ -369,7 +337,7 @@ try {
         liveProvidersCertified: false,
         stagingCertified: false,
         externalFonts: "bundled-local-fixture",
-        nextBundler: "turbopack-development",
+        nextBundler: "webpack-development",
       },
       null,
       2,
@@ -408,17 +376,6 @@ try {
   }
   let postgresStopped = !started;
   let cleanupError;
-  if (fontServer) {
-    try {
-      fontServer.closeAllConnections();
-      await new Promise((resolveClosed, reject) =>
-        fontServer.close((error) => (error ? reject(error) : resolveClosed())),
-      );
-      fontsStopped = true;
-    } catch (error) {
-      cleanupError = error;
-    }
-  }
   if (started) {
     try {
       await run(join(pgBin, "pg_ctl"), [
@@ -448,7 +405,6 @@ try {
           outcome: cleanupError ? "failed" : outcome,
           ownedServersStopped: true,
           ownedPostgresStopped: postgresStopped,
-          ownedFontsStopped: fontsStopped,
         },
         null,
         2,

@@ -20,6 +20,17 @@ async function ownedContext(
   await context.route("**/*", async (route) => {
     const requested = new URL(route.request().url());
     if (requested.origin === origin) await route.continue();
+    else if (
+      requested.origin === "https://va.vercel-scripts.com" &&
+      [
+        "/v1/speed-insights/script.debug.js",
+        "/v1/speed-insights/script.js",
+      ].includes(requested.pathname)
+    )
+      await route.fulfill({
+        contentType: "application/javascript",
+        body: "/* Owned telemetry fixture: no collection. */",
+      });
     else {
       externalOrigins.add(requested.origin);
       await route.abort("blockedbyclient");
@@ -404,7 +415,9 @@ test("paid CAD catalog publication warns before archive and requires validated r
     await page
       .getByRole("textbox", { name: /^URL name/ })
       .fill("paid-browser-catalog-fixture");
-    await page.getByLabel("Access", { exact: true }).selectOption("paid");
+    await page
+      .getByRole("combobox", { name: "Access", exact: true })
+      .selectOption("paid");
     await page.getByLabel("Price (CAD)", { exact: false }).fill("10.00");
     await page
       .getByLabel("Approved tax classification")
