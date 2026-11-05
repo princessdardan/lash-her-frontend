@@ -1,5 +1,6 @@
 "use server";
 
+import { completeAdminSignOut } from "@/lib/admin/sign-out";
 import { runAdminIdentityWriter } from "@/lib/admin/user-writer-admission";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
@@ -71,15 +72,13 @@ export async function stepUpWithGoogleAction(
 }
 
 export async function signOutAdminAction(): Promise<void> {
-  const url = await runAdminIdentityWriter("recovery", async () => {
-    const hadDeveloperSession = await hasAdminDeveloperSession();
-    await clearAdminDeveloperSession();
-    if (hadDeveloperSession) return "/admin/sign-in";
-    // The installed Auth.js version returns its raw response when redirect is
-    // disabled, unlike signIn which returns a URL.
-    await signOut({ redirectTo: "/admin/sign-in", redirect: false });
-    return "/admin/sign-in";
-  });
+  const url = await runAdminIdentityWriter("recovery", () =>
+    completeAdminSignOut({
+      hasDeveloperSession: hasAdminDeveloperSession,
+      clearDeveloperSession: clearAdminDeveloperSession,
+      signOut: () => signOut({ redirectTo: "/admin/sign-in", redirect: false }),
+    }),
+  );
   redirect(url);
 }
 

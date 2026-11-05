@@ -121,3 +121,23 @@ test("admin authentication routes classify provider initiation separately from c
   assert.deepEqual(kinds, ["new-work", "recovery", "recovery", "recovery"]);
   assert.equal(calls, 3);
 });
+
+test("admin sign-out awaits the installed Auth.js raw-response shape before returning its fixed redirect", async () => {
+  const { completeAdminSignOut } = await import("@/lib/admin/sign-out");
+  for (const developer of [false, true]) {
+    const events: string[] = [];
+    const result = await completeAdminSignOut({
+      hasDeveloperSession: async () => developer,
+      clearDeveloperSession: async () => {
+        events.push("clear");
+      },
+      signOut: async () => {
+        events.push("authjs");
+        return { redirect: "/admin/sign-in", cookies: [], status: 302 };
+      },
+    });
+    assert.equal(result, "/admin/sign-in");
+    assert.equal(typeof result, "string");
+    assert.deepEqual(events, developer ? ["clear"] : ["clear", "authjs"]);
+  }
+});
