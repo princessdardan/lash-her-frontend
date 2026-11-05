@@ -10,6 +10,7 @@ import { frontendWriterInventory } from "../frontend-writer-inventory.mjs";
 import { changeFrontendAdmission, observeFrontendDrain, reconcileFrontendOperation } from "../frontend-admission.mjs";
 import { seedReconciliationRows, assertReconciliationReceipts } from "./owned-reconciliation-rows.mjs";
 import { reconciliationProviderStage, assertReconciliationProviderCalls } from "./owned-reconciliation-providers.mjs";
+import { exerciseShippingExecution } from "./owned-shipping-execution.mjs";
 
 let phase = "configuration";
 async function main() {
@@ -145,9 +146,9 @@ async function main() {
       } catch { response.writeHead(500); response.end("OWNED_BRIDGE_FAILED"); }
     });
     await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
-    const performRequest = async (authorized = true, path = "/api/admin/payment-reconciliation") => {
+    const performRequest = async (authorized = true, path = "/api/admin/payment-reconciliation", token = "owned-cron") => {
       const result = await nativeFetch(`http://127.0.0.1:${server.address().port}${path}`, {
-        headers: authorized ? { authorization: "Bearer owned-cron" } : {}, signal: AbortSignal.timeout(15000),
+        headers: authorized ? { authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(15000),
       });
       const text = await result.text();
       assert.equal(text.includes(password), false); assert.equal(text.includes("owned-private-provider-detail"), false);
@@ -156,8 +157,8 @@ async function main() {
       }
       return { status: result.status, text };
     };
-    const request = (authorized = true, path) => {
-      const pending = performRequest(authorized, path); requests.push(pending);
+    const request = (authorized = true, path, token) => {
+      const pending = performRequest(authorized, path, token); requests.push(pending);
       pending.catch(() => {}); return pending;
     };
     const until = async (predicate) => {
@@ -721,7 +722,8 @@ async function main() {
         assert.equal(summary.redacted, 0); assert.equal(summary.queued, mode === "empty" ? 0 : 1);
         assert.equal(summary.abandoned, mode === "empty" ? 0 : 2);
       }
-      assert.deepEqual((await since(before)).map(row => row.state), off ? [] : ["completed", ["empty", "normal"].includes(mode) ? "completed" : "uncertain"]);
+      assert.deepEqual((await since(before)).map(row => row.state), off ? [] :
+        ["completed", ...(["empty", "normal"].includes(mode) ? ["completed", "completed"] : ["uncertain"])]);
       if (mode === "empty") assert.deepEqual((await preparationReceipts()).jobs, []);
       else await assertPreparationReceipts(ids, receiptMode);
       if (["normal", "mutated-tracking"].includes(mode)) {
@@ -803,12 +805,15 @@ async function main() {
           assert.equal(sessions.length, 1); await operator.query("SELECT pg_terminate_backend($1,1000)", [sessions[0].pid]); await delay(25);
         }
       } finally { await blocker.query("ROLLBACK"); }
-      assert.equal((await pending).status, fault === "close" ? 200 : 503);
+      // Execution has its own admission after preparation; closure refuses it.
+      assert.equal((await pending).status, 503);
       assert.deepEqual((await since(before)).map(row => row.state), ["completed", fault === "close" ? "completed" : "active"]);
       await assertPreparationReceipts(ids); await reconcile();
       checks.push(`shipping-preparation-blocked-transaction-${fault}-retains-entry-without-replaying-committed-work`);
     }
     await operator.query("DROP TRIGGER owned_delay_preparation ON product_shipment_jobs");
+    await exerciseShippingExecution({ operator, target, password, connections, change, operations, since,
+      reconcile, request: (authorized = true) => request(authorized, "/api/cron/chitchats-shipping", process.env.CHITCHATS_WORKER_CRON_SECRET), drain, checks, setPhase: value => { phase = value; } });
     assert.equal(unexpectedFetches, 0);
     if (providerInvariantFailure) throw providerInvariantFailure;
     return { status: "FRONTEND_RECONCILIATION_OWNED_PASS", postgresMajor: major, checks, reconciliationEvidence,
@@ -830,6 +835,6 @@ async function main() {
 main().then(result => process.stdout.write(`${JSON.stringify(result)}\n`)).catch(error => {
   process.stderr.write(`${JSON.stringify({ status: "FRONTEND_RECONCILIATION_OWNED_FAILED", phase,
     code: error.code, assertion: error instanceof assert.AssertionError ? error.message : undefined,
-    frames: error.stack?.split("\n").filter(line => /owned-(?:frontend-reconciliation|reconciliation-rows)\.mjs/u.test(line)) })}\n`);
+    frames: error.stack?.split("\n").filter(line => /owned-(?:frontend-reconciliation|reconciliation-rows|shipping-execution)\.mjs/u.test(line)) })}\n`);
   process.exitCode = 1;
 });

@@ -1,4 +1,5 @@
 import "server-only";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import { createHash, randomUUID } from "node:crypto";
 import type { ChitChatsClient } from "./chitchats-client";
@@ -99,6 +100,7 @@ export async function processClaimedShipmentOperation(
     }
     const outcomeCode = await dispatch(job, dependencies);
     const completed = await completeShipmentJob(job.id, {
+      expectedOperation: job,
       outcomeCode,
       leaseOwner: job.leaseOwner ?? dependencies.workerId,
       expectedStateVersion: job.stateVersion,
@@ -106,7 +108,9 @@ export async function processClaimedShipmentOperation(
     return completed ? "succeeded" : "fenced";
   } catch (error) {
     if (error instanceof FencedOperationError) {
+      markWriterOperationUncertain();
       const completed = await completeShipmentJob(job.id, {
+        expectedOperation: job,
         outcomeCode: "shipment_state_fenced",
         leaseOwner: job.leaseOwner ?? dependencies.workerId,
         expectedStateVersion: job.stateVersion,
@@ -125,12 +129,15 @@ export async function processClaimedShipmentOperation(
         });
       }
       const shipment = await getShipmentForOperation(job.shipmentId);
-      if (shipment)
-        await markShipmentOperationManualReview({
+      if (shipment) {
+        const marked = await markShipmentOperationManualReview({
           shipmentId: shipment.id,
           expectedStateVersion: shipment.stateVersion,
         });
+        if (!marked) markWriterOperationUncertain();
+      }
       const completed = await completeShipmentJob(job.id, {
+        expectedOperation: job,
         outcomeCode: classification.code,
         manualReview: true,
         lastError: classification.message,
@@ -190,6 +197,8 @@ async function dispatch(
         `The ${job.type} operation type is no longer supported`,
       );
     case "notification":
+      // The legacy delegation has no persisted handoff receipt of its own.
+      markWriterOperationUncertain();
       return "notification_delegated";
   }
 }
@@ -259,6 +268,7 @@ async function processCreate(
       throw mutationFailure(error, "create_outcome_unknown");
     }
   }
+  verifyProviderIdentity(provider, shipment);
   let persistedShipment: typeof shipment;
   try {
     const persisted = await persistKnownProviderDraft({
@@ -351,6 +361,7 @@ function providerDraftCleanupOutcomeCode(
     case "provider_already_cleaned":
       return "shipping_quote_context_changed_provider_already_cleaned";
     case "manual_review":
+      markWriterOperationUncertain();
       return "shipping_quote_context_changed_cleanup_manual_review";
     case "fenced":
       throw new FencedOperationError();
@@ -386,6 +397,7 @@ async function processQuoteRefresh(
     throw mutationFailure(error, "quote_refresh_outcome_unknown");
   }
   assertProviderMatchesRefreshIntent(provider, refreshIntent);
+  verifyProviderIdentity(provider, shipment, shipment.providerShipmentId);
   const policy = await loadShippingPolicyContext(dependencies.now());
   const rates = selectCustomerRates(
     provider.rates ?? [],
@@ -459,6 +471,7 @@ async function processPurchase(
   // purchase (refresh → select → buy) rather than reconciling a prior attempt.
   if (job.outcomeUnknown && !draftJustEnsured) {
     provider = await dependencies.client.getShipment(providerShipmentId);
+    verifyProviderIdentity(provider, shipment, providerShipmentId);
     assertProviderMatchesRefreshIntent(provider, refreshIntent);
     const action = classifyProviderPurchaseAction(provider, true);
     if (action === "wait")
@@ -482,6 +495,7 @@ async function processPurchase(
     } catch (error) {
       throw mutationFailure(error, "purchase_refresh_outcome_unknown");
     }
+    verifyProviderIdentity(provider, shipment, providerShipmentId);
     assertProviderMatchesRefreshIntent(provider, refreshIntent);
     const action = classifyProviderPurchaseAction(provider, false);
     if (action === "wait")
@@ -608,6 +622,7 @@ async function processPurchase(
       throw mutationFailure(error, "purchase_outcome_unknown");
     }
   }
+  verifyProviderIdentity(provider, shipment, providerShipmentId);
   if (provider.status === "postage_requested")
     throw new UnknownMutationOutcomeError("purchase_reconciliation_pending");
   if (provider.status === "postage_purchase_failed")
@@ -712,6 +727,7 @@ async function ensureFlatRateProviderDraft(
       throw mutationFailure(error, "flat_rate_create_outcome_unknown");
     }
   }
+  verifyProviderIdentity(provider, shipment);
   // Any failure persisting or reloading after the draft exists at the provider
   // must surface as outcome-unknown so the retry RECONCILES by public reference
   // (via the `job.outcomeUnknown` branch above) instead of creating a second,
@@ -808,6 +824,7 @@ async function processTracking(
   const provider = await dependencies.client.getShipment(
     shipment.providerShipmentId,
   );
+  verifyProviderIdentity(provider, shipment, shipment.providerShipmentId);
   await persistProviderState(shipment, provider, dependencies.now());
   return "tracking_reconciled";
 }
@@ -839,6 +856,9 @@ async function processRefund(
       throw mutationFailure(error, "refund_outcome_unknown");
     }
   }
+  verifyProviderIdentity(provider, shipment, shipment.providerShipmentId);
+  if (normalizeChitChatsStatus(provider) !== "voided")
+    markWriterOperationUncertain();
   try {
     await persistProviderState(shipment, provider, dependencies.now());
   } catch (error) {
@@ -870,6 +890,7 @@ async function processDelete(
   }
   try {
     const provider = await dependencies.client.getShipment(providerId);
+    verifyProviderIdentity(provider, shipment, providerId);
     if (provider.status !== "unpaid")
       throw new DeterministicOperationError(
         "provider_not_deletable",
@@ -959,7 +980,7 @@ async function persistProviderState(
       subject: `Missing settled postage cost: ${shipment.publicReference}`,
       message: `The provider shipment is purchased but authoritative purchase_amount is absent. Component evidence totals ${settlement.componentTotalCents ?? "incomplete"} cents and was stored separately without treating it as settlement.`,
       idempotencyKey: `shipping-settlement-missing/${shipment.id}/${provider.status}`,
-    }).catch(() => undefined);
+    }).catch(() => markWriterOperationUncertain());
     throw new UnknownMutationOutcomeError("settled_cost_missing");
   }
   const transitionEvent = providerShipmentTransitionEvent(provider, observedAt);
@@ -977,8 +998,9 @@ async function persistProviderState(
       subject: `Unverified shipment transition time: ${shipment.publicReference}`,
       message: `Chit Chats reported ${provider.status} without a matching certified tracking event timestamp. The shipment was placed in manual review; ${transitionEvent.source} was retained only as fallback evidence.`,
       idempotencyKey: `shipping-transition-time-missing/${shipment.id}/${provider.status}/${transitionEvent.eventAt.toISOString()}`,
-    }).catch(() => undefined);
+    }).catch(() => markWriterOperationUncertain());
   }
+  if (normalized === "manual_review") markWriterOperationUncertain();
   const eventAt = transitionEvent.eventAt;
   const updated = await updateShipmentFromProvider({
     id: shipment.id,
@@ -1026,13 +1048,18 @@ async function persistProviderState(
       subject: `Settled postage variance: ${shipment.publicReference}`,
       message: `The settled Chit Chats debit differs from the customer quote by ${variance} cents. Review the provider adjustment and accounting treatment.`,
       idempotencyKey: `shipping-settlement-variance/${shipment.id}/${settledPurchaseCents}`,
-    }).catch(() => undefined);
+    }).catch(() => markWriterOperationUncertain());
   }
   for (const event of provider.tracking_events ?? []) {
     const occurredAt = event.created_at
       ? new Date(event.created_at)
       : observedAt;
-    if (!Number.isFinite(occurredAt.getTime())) continue;
+    if (!event.created_at || occurredAt > observedAt)
+      markWriterOperationUncertain();
+    if (!Number.isFinite(occurredAt.getTime())) {
+      markWriterOperationUncertain();
+      continue;
+    }
     await recordShipmentEvent({
       shipmentId: shipment.id,
       fingerprint: createHash("sha256")
@@ -1092,6 +1119,22 @@ function providerInstant(
   return Number.isFinite(parsed.getTime()) && parsed <= observedAt
     ? parsed
     : null;
+}
+
+function verifyProviderIdentity(
+  provider: ChitChatsShipment,
+  shipment: { publicReference: string },
+  expectedId?: string,
+): void {
+  if (
+    !provider.id?.trim() ||
+    (expectedId
+      ? provider.id !== expectedId
+      : provider.order_id !== shipment.publicReference) ||
+    (provider.order_id !== undefined &&
+      provider.order_id !== shipment.publicReference)
+  )
+    markWriterOperationUncertain();
 }
 
 async function requireShipment(id: string) {

@@ -36,11 +36,15 @@ type ShippingPreparationResult = {
 type ShippingPreparationRecoveryRunner = (
   task: () => Promise<ShippingPreparationResult>,
 ) => Promise<ShippingPreparationResult>;
+type ShippingExecutionRecoveryRunner = (
+  task: () => ReturnType<typeof runShippingOperationWorker>,
+) => ReturnType<typeof runShippingOperationWorker>;
 
 export function createShippingWorkerCronHandler(
   dependencies: typeof defaultDependencies = defaultDependencies,
   runRefundRecovery: ProductRefundRecoveryRunner = (task) => task(),
   runPreparationRecovery: ShippingPreparationRecoveryRunner = (task) => task(),
+  runExecutionRecovery: ShippingExecutionRecoveryRunner = (task) => task(),
 ): (req: Request) => Promise<Response> {
   return async function shippingWorkerCron(req: Request): Promise<Response> {
     if (!authorized(req)) return new Response(null, { status: 401 });
@@ -49,6 +53,7 @@ export function createShippingWorkerCronHandler(
         dependencies,
         runRefundRecovery,
         runPreparationRecovery,
+        runExecutionRecovery,
       );
     } catch (error) {
       if (error instanceof WriterAdmissionError) {
@@ -81,6 +86,7 @@ async function runShippingWorkerCron(
   dependencies: typeof defaultDependencies,
   runRefundRecovery: ProductRefundRecoveryRunner,
   runPreparationRecovery: ShippingPreparationRecoveryRunner,
+  runExecutionRecovery: ShippingExecutionRecoveryRunner,
 ): Promise<Response> {
   const now = dependencies.now();
   // Manual Square refunds queue a row (via the admin refund route) and are
@@ -105,7 +111,9 @@ async function runShippingWorkerCron(
     );
   }
   const { abandoned, queued } = preparation;
-  const operations = await dependencies.runShippingOperationWorker();
+  const operations = await runExecutionRecovery(() =>
+    dependencies.runShippingOperationWorker(),
+  );
   const redacted = await dependencies.redactExpiredShipmentPii(now);
   return NextResponse.json(
     { queued, abandoned, operations, redacted, refunds: refundSummary },

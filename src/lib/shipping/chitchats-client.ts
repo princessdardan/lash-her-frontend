@@ -1,4 +1,5 @@
 import "server-only";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import { getChitChatsConfig, type ChitChatsConfig } from "./config";
 import type {
@@ -104,6 +105,9 @@ export function createChitChatsClient(
       const result = await request<
         ChitChatsShipment[] | { shipments: ChitChatsShipment[] }
       >(`/shipments?limit=100&page=1&q=${encodeURIComponent(query)}`);
+      const rows = Array.isArray(result) ? result : result.shipments;
+      if (!Array.isArray(rows) || rows.length >= 100)
+        markWriterOperationUncertain();
       return Array.isArray(result) ? result : (result.shipments ?? []);
     },
     async refreshShipment(id, input) {
