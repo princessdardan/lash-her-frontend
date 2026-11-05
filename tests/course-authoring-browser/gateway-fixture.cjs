@@ -58,7 +58,8 @@ if (process.env.COURSE_AUTHORING_BROWSER_FIXTURE === "1") {
     }
     if (
       url.origin === course.origin ||
-      url.origin === new URL(process.env.AUTH_URL).origin
+      url.origin === new URL(process.env.AUTH_URL).origin ||
+      url.origin === process.env.COURSE_AUTHORING_FONT_ORIGIN
     )
       return original(input, options);
     throw new Error("Unexpected external request in authoring browser fixture");
