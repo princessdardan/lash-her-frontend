@@ -1,0 +1,18 @@
+{
+  "frontendSource": "825d5ead4d6ae7b3fe4867635e0076104f0bc236",
+  "frontendSourceDirectory": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner",
+  "courseSource": "2847d953771adc8e8be287f9512b3003af94f190",
+  "courseSourceDirectory": "/Users/dardan/workspace/lash-her-course-api/.worktrees/phase2-course",
+  "courseArtifactSha256": "0ebc41df298a5d515cde6a5d70f9428bfbc20058cfeedb8470d77debc0b95186",
+  "postgresMajor": 16,
+  "migrationsApplied": {
+    "frontend": 83,
+    "course": 22
+  },
+  "gatewayWorkloadVerification": "fixture",
+  "frontendAdmission": "off-in-owned-local-only",
+  "liveProvidersCertified": false,
+  "stagingCertified": false,
+  "externalFonts": "bundled-local-fixture",
+  "nextBundler": "webpack-development"
+}

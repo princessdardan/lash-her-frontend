@@ -1,4 +1,4 @@
-// Owns both disposable PostgreSQL16 databases, a fixed Course source export and
+// Owns both disposable PostgreSQL16 databases, an exact Course source export and
 // loopback Next/Course servers. Accepts no database URL or live provider config.
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -7,6 +7,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -22,20 +23,17 @@ import { encode } from "next-auth/jwt";
 import pg from "pg";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const courseSource =
-  process.env.COURSE_AUTHORING_API_SOURCE ?? "/private/tmp/lash-phase2-course";
-const courseSha = "11ea33d085e277bf4d9517476b683b5389c8eaa8";
+const requestedCourseSource = process.env.COURSE_AUTHORING_API_SOURCE;
+const courseSha = process.env.COURSE_AUTHORING_API_REVISION;
+if (!requestedCourseSource || !/^[a-f0-9]{40}$/u.test(courseSha ?? ""))
+  throw new Error(
+    "Select COURSE_AUTHORING_API_SOURCE and a full lowercase COURSE_AUTHORING_API_REVISION commit SHA",
+  );
+const courseSource = await realpath(resolve(requestedCourseSource));
 const pgBin = process.env.PG16_BIN_DIR ?? "/opt/homebrew/opt/postgresql@16/bin";
 const temporary = await mkdtemp(join(tmpdir(), "lash-authoring-browser-"));
 const cluster = join(temporary, "postgres"),
   courseExport = join(temporary, "course");
-const databasePort = await freePort(),
-  coursePort = await freePort(),
-  frontendPort = await freePort();
-const origin = `http://localhost:${frontendPort}`,
-  apiOrigin = `http://127.0.0.1:${coursePort}`;
-const frontendUrl = `postgresql://postgres@127.0.0.1:${databasePort}/lash_authoring_frontend_integration?sslmode=disable`;
-const courseUrl = `postgresql://postgres@127.0.0.1:${databasePort}/lash_authoring_course_integration?sslmode=disable`;
 const signingKey = randomBytes(32).toString("hex"),
   authKey = randomBytes(32).toString("hex");
 const workload = `${Buffer.from('{"alg":"HS256"}').toString("base64url")}.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 7200 })).toString("base64url")}.fixture`;
@@ -51,12 +49,42 @@ const common = {
 };
 const children = [];
 let started = false;
+let resultDirectory;
+let sourceEvidence;
+let outcome = "failed";
 try {
   if ((await run("git", ["status", "--porcelain"], root)).trim())
     throw new Error(
       "Commit the exact frontend source before browser qualification",
     );
   const frontendSha = (await run("git", ["rev-parse", "HEAD"], root)).trim();
+  if (
+    (await realpath(
+      (await run("git", ["rev-parse", "--show-toplevel"], courseSource)).trim(),
+    )) !== courseSource ||
+    (await run("git", ["status", "--porcelain"], courseSource)).trim() ||
+    (await run("git", ["rev-parse", "HEAD"], courseSource)).trim() !== courseSha
+  )
+    throw new Error(
+      "Select a clean Course repository at the exact requested commit",
+    );
+  const databasePort = await freePort(),
+    coursePort = await freePort(),
+    frontendPort = await freePort();
+  const origin = `http://localhost:${frontendPort}`,
+    apiOrigin = `http://127.0.0.1:${coursePort}`;
+  const frontendUrl = `postgresql://postgres@127.0.0.1:${databasePort}/lash_authoring_frontend_integration?sslmode=disable`;
+  const courseUrl = `postgresql://postgres@127.0.0.1:${databasePort}/lash_authoring_course_integration?sslmode=disable`;
+  const resultsRoot = join(root, "test-results/course-authoring-browser");
+  await mkdir(resultsRoot, { recursive: true });
+  resultDirectory = await mkdtemp(join(resultsRoot, "run-"));
+  sourceEvidence = {
+    frontendSource: frontendSha,
+    frontendSourceDirectory: root,
+    courseSource: courseSha,
+    courseSourceDirectory: courseSource,
+  };
+  process.stdout.write(`Owned authoring evidence: ${resultDirectory}\n`);
   await mkdir(courseExport);
   await exportSource();
   const candidateHash = createHash("sha256")
@@ -98,6 +126,7 @@ try {
     "--no-locale",
     "--encoding=UTF8",
   ]);
+  started = true;
   await run(join(pgBin, "pg_ctl"), [
     "-D",
     cluster,
@@ -108,7 +137,6 @@ try {
     "-w",
     "start",
   ]);
-  started = true;
   const admin = new pg.Client({
     connectionString: `postgresql://postgres@127.0.0.1:${databasePort}/postgres`,
   });
@@ -180,7 +208,7 @@ try {
           email,
           name: `Authoring ${role}`,
           googleEmailVerified: true,
-          authenticatedAt: Date.now(),
+          adminAuthenticatedAt: Math.floor(Date.now() / 1000),
         },
       });
       storage[role] = {
@@ -247,8 +275,13 @@ try {
     NEXT_PUBLIC_SITE_URL: origin,
     API_GATEWAY_STAGING_ORIGIN: "https://authoring-gateway.invalid",
     INTEGRATION_COURSE_READS_ENABLED: "true",
+    INTEGRATION_LEARNING_ROUTES_ENABLED: "true",
     COURSE_AUTHORING_BROWSER_FIXTURE: "1",
     COURSE_AUTHORING_API_ORIGIN: apiOrigin,
+    NEXT_FONT_GOOGLE_MOCKED_RESPONSES: join(
+      root,
+      "tests/course-authoring-browser/font-fixture.cjs",
+    ),
     NODE_OPTIONS: `--require=${join(root, "tests/course-authoring-browser/gateway-fixture.cjs")}`,
   };
   children.push(
@@ -257,6 +290,7 @@ try {
       [
         "node_modules/next/dist/bin/next",
         "dev",
+        "--webpack",
         "--hostname",
         "127.0.0.1",
         "--port",
@@ -278,21 +312,23 @@ try {
     `Authoring browser source frontend=${frontendSha} course=${courseSha}\n`,
   );
   await run(
-    "npx",
-    ["playwright", "test", "--config=playwright.course-authoring.config.ts"],
+    process.execPath,
+    [
+      "node_modules/@playwright/test/cli.js",
+      "test",
+      "--config=playwright.course-authoring.config.ts",
+      `--output=${join(resultDirectory, "browser")}`,
+    ],
     root,
     testEnvironment,
     true,
   );
-  await mkdir(join(root, "test-results/course-authoring-browser"), {
-    recursive: true,
-  });
+  outcome = "passed";
   await writeFile(
-    join(root, "test-results/course-authoring-browser/evidence.json"),
+    join(resultDirectory, "evidence.json"),
     JSON.stringify(
       {
-        frontendSource: frontendSha,
-        courseSource: courseSha,
+        ...sourceEvidence,
         courseArtifactSha256: candidateHash,
         postgresMajor: 16,
         migrationsApplied,
@@ -300,6 +336,8 @@ try {
         frontendAdmission: "off-in-owned-local-only",
         liveProvidersCertified: false,
         stagingCertified: false,
+        externalFonts: "bundled-local-fixture",
+        nextBundler: "webpack-development",
       },
       null,
       2,
@@ -315,31 +353,66 @@ try {
   }
   throw error;
 } finally {
-  for (const child of children.reverse()) {
-    if (child.exitCode === null && child.pid) {
+  for (const record of children.reverse()) {
+    const { child, closed } = record;
+    if (!record.done && child.pid) {
       try {
         process.kill(-child.pid, "SIGTERM");
       } catch {}
-      await new Promise((resolveDone) => {
-        child.once("close", resolveDone);
-        setTimeout(resolveDone, 3000);
-      });
-      if (child.exitCode === null)
+      let deadline;
+      await Promise.race([
+        closed,
+        new Promise((resolveDone) => {
+          deadline = setTimeout(resolveDone, 3000);
+        }),
+      ]);
+      clearTimeout(deadline);
+      if (!record.done)
         try {
           process.kill(-child.pid, "SIGKILL");
         } catch {}
     }
+    await closed;
   }
-  if (started)
-    await run(join(pgBin, "pg_ctl"), [
-      "-D",
-      cluster,
-      "-m",
-      "immediate",
-      "-w",
-      "stop",
-    ]);
-  await rm(temporary, { recursive: true, force: true });
+  let postgresStopped = !started;
+  let cleanupError;
+  if (started) {
+    try {
+      await run(join(pgBin, "pg_ctl"), [
+        "-D",
+        cluster,
+        "-m",
+        "immediate",
+        "-w",
+        "stop",
+      ]);
+      postgresStopped = true;
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+  if (resultDirectory) {
+    for (const name of ["course.log", "frontend.log", "postgres.log"]) {
+      const log = await readFile(join(temporary, name)).catch(() => null);
+      if (log)
+        await writeFile(join(resultDirectory, name), log, { mode: 0o600 });
+    }
+    await writeFile(
+      join(resultDirectory, "outcome.json"),
+      JSON.stringify(
+        {
+          ...sourceEvidence,
+          outcome: cleanupError ? "failed" : outcome,
+          ownedServersStopped: true,
+          ownedPostgresStopped: postgresStopped,
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+  }
+  if (postgresStopped) await rm(temporary, { recursive: true, force: true });
+  if (cleanupError) throw cleanupError;
 }
 function start(command, args, cwd, env, log) {
   const stream = createWriteStream(join(temporary, log), { mode: 0o600 });
@@ -349,9 +422,19 @@ function start(command, args, cwd, env, log) {
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  child.stdout.pipe(stream);
-  child.stderr.pipe(stream);
-  return child;
+  const record = { child, done: false, error: null, closed: null };
+  child.stdout.pipe(stream, { end: false });
+  child.stderr.pipe(stream, { end: false });
+  child.once("error", (error) => {
+    record.error = error;
+  });
+  record.closed = new Promise((resolveClosed) =>
+    child.once("close", () => {
+      record.done = true;
+      stream.end(resolveClosed);
+    }),
+  );
+  return record;
 }
 function run(command, args, cwd = root, env = common, forward = false) {
   return new Promise((resolveResult, reject) => {
@@ -381,33 +464,23 @@ function run(command, args, cwd = root, env = common, forward = false) {
     );
   });
 }
-function exportSource() {
-  return new Promise((resolveExport, reject) => {
-    const archive = spawn("git", ["archive", courseSha], {
-        cwd: courseSource,
-        env: common,
-        stdio: ["ignore", "pipe", "pipe"],
-      }),
-      extract = spawn("tar", ["-xf", "-", "-C", courseExport], {
-        env: common,
-        stdio: ["pipe", "ignore", "pipe"],
-      });
-    archive.stdout.pipe(extract.stdin);
-    let statuses = 0;
-    for (const child of [archive, extract]) {
-      child.once("error", reject);
-      child.once("close", (code) => {
-        if (code !== 0)
-          reject(new Error("Could not export exact Course candidate"));
-        else if (++statuses === 2) resolveExport();
-      });
-    }
-  });
+async function exportSource() {
+  const archive = join(temporary, "course-source.tar");
+  await run(
+    "git",
+    ["archive", "--format=tar", `--output=${archive}`, courseSha],
+    courseSource,
+  );
+  await run("tar", ["-xf", archive, "-C", courseExport]);
 }
 async function ready(url, budget = 60_000) {
   const deadline = Date.now() + budget;
   while (Date.now() < deadline) {
-    if (children.some((child) => child.exitCode !== null))
+    if (
+      children.some(
+        ({ child, done, error }) => done || error || child.exitCode !== null,
+      )
+    )
       throw new Error("Owned server exited before readiness");
     try {
       if (
