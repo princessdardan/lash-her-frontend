@@ -87,6 +87,7 @@ function business(f: ReturnType<typeof admission>, options: {
   status?: string; amount?: number; identity?: boolean; duplicate?: boolean; missingOrder?: boolean; missingHold?: boolean;
   holdState?: BookingHoldRecord["state"]; finalization?: FinalizePaidBookingResult; fail?: string;
   wait?: (stage: string) => Promise<void>; noFailedWriter?: boolean; off?: boolean;
+  paymentId?: string; providerOrderId?: string; returnedOrderId?: string; tenderPaymentId?: string;
 } = {}) {
   const calls: string[] = [], record = hold();
   if (options.duplicate) { record.state = options.holdState ?? "booked"; record.googleEventId = "owned-calendar-event"; }
@@ -102,7 +103,7 @@ function business(f: ReturnType<typeof admission>, options: {
     repository: {
       claimSquareEvent: async () => { await step("claim"); return options.duplicate ? { duplicate: true, processingStatus: "processed" } : { duplicate: false }; },
       findSquareOrder: async () => { await step("order"); return options.missingOrder ? null : {
-        id: "owned-order-db", orderId: "lh-sq-owned", amountCents: 10000, providerOrderId: "owned-order", providerPaymentId: options.identity ? "other-payment" : "owned-payment",
+        id: "owned-order-db", orderId: "lh-sq-owned", amountCents: 10000, providerOrderId: options.providerOrderId ?? "owned-order", providerPaymentId: options.identity ? "other-payment" : options.paymentId ?? "owned-payment",
         purpose: "appointment_full", squareLocationId: "owned-location", status: options.duplicate ? "paid" : "pending",
       }; },
       recordSquareEvent: async () => { await step("receipt"); return { duplicate: false }; },
@@ -110,9 +111,9 @@ function business(f: ReturnType<typeof admission>, options: {
       recordSquarePaymentFailed: options.noFailedWriter ? undefined : async () => { await step("failed"); },
     },
     squareClientFactory: () => ({
-      getPayment: async () => { await step("payment"); return { payment: { id: "owned-payment", order_id: "owned-order",
+      getPayment: async () => { await step("payment"); return { payment: { id: options.paymentId ?? "owned-payment", order_id: options.providerOrderId ?? "owned-order",
         status: options.status ?? "COMPLETED", amount_money: { amount: options.amount ?? 10000, currency: "CAD" } } }; },
-      getOrder: async () => { await step("provider-order"); return { order: { id: "owned-order", tenders: [{ payment_id: "owned-payment" }] } }; },
+      getOrder: async () => { await step("provider-order"); return { order: { id: options.returnedOrderId ?? "owned-order", tenders: [{ payment_id: options.tenderPaymentId ?? "owned-payment" }] } }; },
     } as unknown as SquareClient),
     getAppointmentHoldByCheckoutOrderPublicId: async () => { await step("duplicate-hold"); return options.missingHold ? null : record; },
     finalizeAppointmentPaymentForOrder: async () => options.finalization ?? finalizeAppointmentPaymentWithLock({
@@ -197,6 +198,24 @@ test("ordinary mismatch, missing records, unknown and authorization-only payment
   for (const options of [{ amount: 1 }, { status: "PENDING", amount: 1 }, { identity: true }, { duplicate: true, identity: true }, { missingOrder: true }, { missingHold: true }, { status: "UNKNOWN" }, { status: "APPROVED" }, { status: "FAILED", noFailedWriter: true }]) {
     const f = admission(), b = business(f, options);
     assert.equal((await handler(f.run, { finalizeSquarePayment: b.run, alerts: b.alerts })(request())).status, 503); assert.equal(f.state.uncertain, true);
+  }
+});
+
+test("ordinary lookup identities must agree with the signed event and requested Square resources", async () => {
+  for (const [type, options] of [
+    ["payment.updated", { paymentId: "other-payment" }],
+    ["payment.updated", { providerOrderId: "other-order" }],
+    ["order.updated", { returnedOrderId: "other-order" }],
+    ["order.updated", { tenderPaymentId: "other-payment" }],
+    ["order.updated", { providerOrderId: "other-order" }],
+  ] as const) {
+    for (const off of [false, true]) {
+      const f = admission(), b = business(f, { ...options, off });
+      const response = await handler(off ? f.off : f.run, { finalizeSquarePayment: b.run })(request(raw(type)));
+      assert.equal(response.status, off ? 200 : 503, `${type}: ${JSON.stringify(options)}`);
+      assert.equal(f.state.uncertain, !off);
+      assert.ok(b.calls.includes("receipt"));
+    }
   }
 });
 

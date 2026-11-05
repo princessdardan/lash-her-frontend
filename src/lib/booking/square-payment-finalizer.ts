@@ -226,6 +226,13 @@ export function createSquarePaymentFinalizer(
 
     const providerOrderId =
       lookup.payment.order_id ?? lookup.order?.id ?? input.event?.orderId;
+    const requestedProviderOrderId = classifySquareReturnOrderId(
+      input.orderId ?? input.event?.orderId,
+    ).providerOrderId;
+    if (
+      (requestedProviderOrderId !== undefined && requestedProviderOrderId !== providerOrderId) ||
+      (lookup.order !== null && lookup.payment.order_id !== lookup.order.id)
+    ) markWriterOperationUncertain();
     const localOrder = await dependencies.repository.findSquareOrder({
       providerOrderId,
       providerPaymentId: lookup.payment.id,
@@ -873,12 +880,19 @@ async function resolveSquarePaymentLookup(
   repository: SquarePaymentFinalizerRepository,
   squareClient: SquareClient,
 ): Promise<SquarePaymentLookupResult> {
+  // A success-shaped API response is not proof that it describes the resource
+  // requested by the signed event (or by an order's tender reference).
+  const getPayment = async (paymentId: string): Promise<SquarePayment> => {
+    const { payment } = await squareClient.getPayment(paymentId);
+    if (payment.id !== paymentId) markWriterOperationUncertain();
+    return payment;
+  };
   const paymentId = input.paymentId ?? input.event?.paymentId;
 
   if (paymentId !== undefined) {
     return {
       order: null,
-      payment: (await squareClient.getPayment(paymentId)).payment,
+      payment: await getPayment(paymentId),
     };
   }
 
@@ -905,8 +919,7 @@ async function resolveSquarePaymentLookup(
     ) {
       return {
         order: null,
-        payment: (await squareClient.getPayment(localOrder.providerPaymentId))
-          .payment,
+        payment: await getPayment(localOrder.providerPaymentId),
       };
     }
 
@@ -914,6 +927,7 @@ async function resolveSquarePaymentLookup(
   }
 
   const order = (await squareClient.getOrder(orderId)).order;
+  if (order.id !== orderId) markWriterOperationUncertain();
   const orderPaymentId = getSquareOrderPaymentId(order);
 
   if (orderPaymentId === undefined) {
@@ -922,7 +936,7 @@ async function resolveSquarePaymentLookup(
 
   return {
     order,
-    payment: (await squareClient.getPayment(orderPaymentId)).payment,
+    payment: await getPayment(orderPaymentId),
   };
 }
 
