@@ -36,14 +36,15 @@ async function runtime(context) {
 export async function runFrontendVercelWorker(operation, context) {
   let child, output, failed = false, deadline, killDeadline, received = false, bytes = 0, processing = Promise.resolve();
   try {
-    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible"].includes(operation));
+    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission"].includes(operation));
     const { value, bindings, candidate } = await runtime(context);
-    const payload = { operation, plan: fields(context.plan, ["environment", "actionId", "sourceCommit", "targetSha256"]),
+    const payload = { operation, plan: fields(context.plan, ["environment", "actionId", "sourceCommit", "targetSha256", "bootstrapCompatibility"]),
       candidate, bindings, directory: context.directory, vercelToken: value.vercelToken,
       ...(context.originalDirectory ? { originalDirectory: frontendPrivateReceiptDirectory(context.originalDirectory) } : {}),
       ...(context.database ? { database: context.database } : {}),
+      ...(context.preapplicationSchema ? { preapplicationSchema: context.preapplicationSchema } : {}),
       ...(context.admissionObservation ? { admissionObservation: context.admissionObservation } : {}) };
-    if (operation === "deploy-compatible") {
+    if (operation === "deploy-compatible" || operation === "deploy-admission") {
       const privateDirectory = frontendPrivateReceiptDirectory(value.privateConfigurationDirectory);
       demand(privateDirectory !== context.directory && !privateDirectory.startsWith(context.directory + sep) &&
         !context.directory.startsWith(privateDirectory + sep) && typeof value.gatewayHost === "string" && value.gatewayHost === bindings.gatewayHost &&
@@ -51,6 +52,18 @@ export async function runFrontendVercelWorker(operation, context) {
       payload.privateConfigurationDirectory = privateDirectory; payload.gatewayHost = value.gatewayHost;
       const control = context.admissionObservation;
       demand(control?.ledgerDrained === true && control.newWork === false && control.recovery === false && control.active === 0 && control.uncertain === 0);
+      if (operation === "deploy-admission") {
+        const target = context.bootstrapRuntimeTarget;
+        demand(target?.environment === "staging" && target.targetSha256 === context.plan.targetSha256 &&
+          context.plan.bootstrapCompatibility?.runtimeProducerSha256 && typeof value.frontendRuntimeDatabaseUrl === "string");
+        const url = new URL(value.frontendRuntimeDatabaseUrl);
+        demand(["postgres:", "postgresql:"].includes(url.protocol) && url.hostname === target.host &&
+          Number(url.port || 5432) === target.port && decodeURIComponent(url.pathname) === `/${target.database}` &&
+          decodeURIComponent(url.username) === target.user && url.password && !url.hash &&
+          [...url.searchParams].length === 1 && url.searchParams.get("sslmode") === "verify-full");
+        payload.frontendRuntimeDatabaseUrl = value.frontendRuntimeDatabaseUrl;
+        payload.writerTarget = target;
+      }
     }
     const raw = JSON.stringify(payload) + "\n"; demand(Buffer.byteLength(raw) <= 2_000_000);
     await context.verifyLockedSession(); demand(!context.environmentSignal?.aborted);
@@ -149,5 +162,20 @@ export async function observeCompatibleFrontend(context) {
     result.aliasDeploymentId === result.deploymentId && result.aliasJobDeploymentId === result.deploymentId &&
     result.aliasJobMatchesIntent === true && result.aliasJobType === "promote" &&
     result.nativeSchedulesEnabled === false && result.workloadVerified === true && result.admissionNewWork === false && result.admissionRecovery === false);
+  const evidence = Buffer.from(JSON.stringify(result)); return { ...result, evidence, evidenceSha256: hash(evidence) };
+}
+
+export async function deployAdmissionCompatibleFrontend(context) {
+  return runFrontendVercelWorker("deploy-admission", context);
+}
+
+export async function observeAdmissionCompatibleFrontend(context) {
+  const result = await runFrontendVercelWorker("observe-admission", context);
+  if (context.checkpoint !== "recovery") demand(result.readyState === "READY" && result.aliasJobState === "succeeded" && result.aliasDeploymentId === result.deploymentId &&
+    result.aliasJobMatchesIntent === true && result.aliasJobDeploymentId === result.deploymentId && result.aliasJobType === "promote" &&
+    result.nativeSchedulesEnabled === false && result.workloadVerified === true && result.bootstrapAdmissionVerified === true &&
+    result.admissionNewWork === false && result.admissionRecovery === false &&
+    result.schemaCatalogSha256 === context.preapplicationSchema.schemaCatalogSha256 &&
+    result.appliedLineageSha256 === context.preapplicationSchema.appliedLineageSha256);
   const evidence = Buffer.from(JSON.stringify(result)); return { ...result, evidence, evidenceSha256: hash(evidence) };
 }

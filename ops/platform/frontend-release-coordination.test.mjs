@@ -33,7 +33,10 @@ function fixture() {
       contractManifestSha256: artifact.contractManifestSha256, schemaBaselines: { 18: job.schemaBaselineSha256 } } };
   const inventory = { version: 1, environment: "staging", actionId: job.releaseId, sourceCommit: job.sourceCommit,
     targetSha256: frontendAdmissionTargetSha256("staging", job.target), sourceInventorySha256: hash(source), reviewSha256: "3".repeat(64), adaptersSha256: "4".repeat(64),
-    observationBudgetSeconds: 300, admissionMode: "bootstrap", bootstrapSqlSha256: frontendAdmissionBootstrapArtifact().sqlSha256, expectedEpoch: "1", owner: { name: "admission_owner", oid: "100" },
+    observationBudgetSeconds: 300, admissionMode: "bootstrap", bootstrapSqlSha256: frontendAdmissionBootstrapArtifact().sqlSha256,
+    bootstrapCompatibility: { version: 1, schemaCatalogSha256: hash(baseline.catalog), appliedLineageSha256: hash([]), appliedCount: 0,
+      validationEvidenceSha256: "9".repeat(64), runtimeProducerSha256: "5".repeat(64), recoveryAfterCompatibleBuild: false },
+    expectedEpoch: "1", owner: { name: "admission_owner", oid: "100" },
     producers: [{ producerSha256: "5".repeat(64), role: { name: "runtime", oid: "101" } }],
     candidateCoverage: frontendCandidateSurfaces(source).map(row => ({ surfaceSha256: row.surfaceSha256, disposition: "admitted", producerSha256: "5".repeat(64), evidenceSha256: "6".repeat(64) })),
     externalSurfaces: ["deployment", "provider", "scheduler", "direct-caller"].map((kind, i) => {
@@ -53,6 +56,8 @@ test("pure inventory requires complete exact-source coverage, all external surfa
   for (const change of [i => { i.environment = "production"; }, i => { i.targetSha256 = "f".repeat(64); },
     i => { i.sourceCommit = "f".repeat(40); }, i => { i.candidateCoverage.pop(); }, i => { i.candidateCoverage[1] = i.candidateCoverage[0]; },
     i => { i.externalSurfaces.pop(); }, i => { i.adaptersSha256 = "0".repeat(64); }, i => { i.observationBudgetSeconds = 301; },
+    i => { delete i.bootstrapCompatibility; }, i => { i.bootstrapCompatibility.runtimeProducerSha256 = "f".repeat(64); },
+    i => { i.bootstrapCompatibility.appliedLineageSha256 = "0".repeat(64); }, i => { i.bootstrapCompatibility.recoveryAfterCompatibleBuild = "true"; },
     i => { i.historicalLogins.target.user = "other"; }, i => { i.candidateCoverage[0].producerSha256 = "f".repeat(64); }]) {
     const inventory = structuredClone(f.inventory); change(inventory);
     assert.throws(() => prepareFrontendReleaseInventory(inventory, f.migration, f.source));

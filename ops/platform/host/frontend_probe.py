@@ -93,11 +93,13 @@ class ProbeClient:
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), vercel.NoRedirect(),
                                                   urllib.request.HTTPSHandler(context=ssl.create_default_context()))
 
-    def request(self, url, secret, bypass, challenge):
+    def request(self, url, secret, bypass, challenge, mode=None):
         demand(isinstance(url, str) and DEPLOYMENT_URL.fullmatch(url), "FRONTEND_PROBE_ORIGIN_REFUSED")
+        demand(mode in (None, "admission-bootstrap"), "FRONTEND_PROBE_MODE_REFUSED")
         request = urllib.request.Request(url + "/api/internal/release-probe", method="GET", headers={
             "Authorization": "Bearer " + secret, "x-vercel-protection-bypass": bypass,
             "x-lash-release-challenge": challenge, "Accept": "application/json", "Cache-Control": "no-cache",
+            **({"x-lash-release-mode": mode} if mode is not None else {}),
         })
         try:
             with self._opener.open(request, timeout=20) as response:

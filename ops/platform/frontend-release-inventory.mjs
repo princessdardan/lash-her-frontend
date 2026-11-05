@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { frontendAdmissionTargetSha256, frontendAdmissionBootstrapArtifact } from "./frontend-admission-bootstrap.mjs";
 import { prepareHistoricalFrontendLogins } from "./frontend-historical-logins.mjs";
+import { prepareFrontendBootstrapCompatibility } from "./frontend-bootstrap-compatibility.mjs";
 
 export const frontendCoordinationHash = value => createHash("sha256").update(typeof value === "string" || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest("hex");
 const demand = ok => { if (!ok) throw new Error("FRONTEND_RELEASE_INVENTORY_REFUSED"); };
@@ -38,8 +39,11 @@ export function prepareFrontendReleaseInventory(input, migration, source) {
     (input.providerBindingsSha256 === undefined || digest(input.providerBindingsSha256)) &&
     Number.isInteger(input.observationBudgetSeconds) && input.observationBudgetSeconds > 0 && input.observationBudgetSeconds <= 300 &&
     ["bootstrap", "existing"].includes(input.admissionMode) && typeof input.expectedEpoch === "string" && /^[1-9][0-9]{0,17}$/u.test(input.expectedEpoch));
-  if (input.admissionMode === "bootstrap") demand(input.expectedEpoch === "1" && job.target.approvedPendingTags.length > 0 && input.bootstrapSqlSha256 === frontendAdmissionBootstrapArtifact().sqlSha256);
-  else demand(input.bootstrapSqlSha256 === undefined);
+  let bootstrapCompatibility;
+  if (input.admissionMode === "bootstrap") {
+    demand(input.expectedEpoch === "1" && job.target.approvedPendingTags.length > 0 && input.bootstrapSqlSha256 === frontendAdmissionBootstrapArtifact().sqlSha256);
+    bootstrapCompatibility = prepareFrontendBootstrapCompatibility(input.bootstrapCompatibility);
+  } else demand(input.bootstrapSqlSha256 === undefined && input.bootstrapCompatibility === undefined);
   const owner = input.owner;
   demand(roleName(owner?.name) && oid(owner.oid) && owner.name !== job.target.user &&
     Array.isArray(input.producers) && input.producers.length > 0 && input.producers.length <= 256);
@@ -55,6 +59,8 @@ export function prepareFrontendReleaseInventory(input, migration, source) {
     roleNames.set(producer.role.name, producer.role.oid); roleOids.set(producer.role.oid, producer.role.name);
   }
   demand(producers.some(p => p.role.name === job.target.runtimeRole));
+  if (bootstrapCompatibility) demand(producers.some(p => p.role.name === job.target.runtimeRole &&
+    p.producerSha256 === bootstrapCompatibility.runtimeProducerSha256));
   const expected = frontendCandidateSurfaces(source);
   demand(Array.isArray(input.candidateCoverage) && input.candidateCoverage.length === expected.length);
   const coverage = input.candidateCoverage.map(row => {
@@ -82,7 +88,7 @@ export function prepareFrontendReleaseInventory(input, migration, source) {
     reviewSha256: input.reviewSha256, adaptersSha256: input.adaptersSha256,
     ...(input.providerBindingsSha256 ? { providerBindingsSha256: input.providerBindingsSha256 } : {}),
     observationBudgetSeconds: input.observationBudgetSeconds, admissionMode: input.admissionMode,
-    ...(input.admissionMode === "bootstrap" ? { bootstrapSqlSha256: input.bootstrapSqlSha256 } : {}),
+    ...(input.admissionMode === "bootstrap" ? { bootstrapSqlSha256: input.bootstrapSqlSha256, bootstrapCompatibility } : {}),
     expectedEpoch: input.expectedEpoch, owner: { name: owner.name, oid: owner.oid }, producers,
     candidateCoverage: coverage, externalSurfaces: surfaces, historicalLogins: historical };
 }

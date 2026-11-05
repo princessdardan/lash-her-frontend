@@ -16,6 +16,7 @@ import { retireHistoricalFrontendLogins } from "./frontend-historical-logins.mjs
 import { frontendCoordinationHash, prepareFrontendReleaseInventory, validateFrontendFenceObservation } from "./frontend-release-inventory.mjs";
 import { frontendReleaseReceiptStore } from "./frontend-release-receipts.mjs";
 import { withFrontendEnvironmentLock } from "./frontend-environment-lock.mjs";
+import { observeFrontendBootstrapSchema } from "./frontend-bootstrap-compatibility.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const demand = ok => { if (!ok) throw new Error("FRONTEND_RELEASE_COORDINATION_REFUSED"); };
@@ -31,7 +32,8 @@ export async function loadFrontendReleaseAdapters(sourceRoot, expectedSha256) {
   demand(bytes.length > 0 && bytes.length <= 2_000_000 && frontendCoordinationHash(bytes) === expectedSha256);
   const adapters = await import(`${pathToFileURL(path).href}?source=${expectedSha256}`);
   demand(frontendCoordinationHash(readFileSync(path)) === expectedSha256 &&
-    ["fenceFrontendExternalProducers", "observeFrontendExternalFences", "deployCompatibleFrontend", "observeCompatibleFrontend"].every(key => typeof adapters[key] === "function"));
+    ["fenceFrontendExternalProducers", "observeFrontendExternalFences", "deployCompatibleFrontend", "observeCompatibleFrontend",
+      "deployAdmissionCompatibleFrontend", "observeAdmissionCompatibleFrontend"].every(key => typeof adapters[key] === "function"));
   return adapters;
 }
 
@@ -72,6 +74,7 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
     targetSha256: plan.targetSha256, inventorySha256, adaptersSha256: plan.adaptersSha256,
     trafficAuthorized: false, migrationAuthorized: false, admissionRestored: false, nativeSchedulesRestored: false };
   let phase = "source-and-adapter-preflight", intentRecorded = false, databaseVerified = false, frontendVerified = false, frontendMutationAttempted = false;
+  let bootstrapFrontendMutationAttempted = false, bootstrapFrontendVerified = false;
   let epoch = plan.expectedEpoch, outcome;
   const assertSource = dependencies.assertSource ?? assertSourceCheckout;
   try {
@@ -82,6 +85,9 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
     await withFrontendEnvironmentLock(async (verifyEnvironment, environmentSignal) => {
       const verifySource = async () => { await verifyEnvironment(); assertSource(root, plan.sourceCommit); };
       const providerContext = { candidate: migration.candidate, directory: dependencies.directory,
+        bootstrapRuntimeTarget: { environment: plan.environment, targetSha256: plan.targetSha256,
+          host: migration.job.target.host, port: migration.job.target.port, database: migration.job.target.database,
+          user: migration.job.target.runtimeRole, serverMajor: migration.job.target.serverMajor },
         getProviderContext: dependencies.getProviderContext };
       const observeFences = async (checkpoint, verifyLockedSession) => {
         await verifyEnvironment();
@@ -124,6 +130,38 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
               target: migration.job.target, owner: plan.owner,
               producers: plan.producers.map(p => ({ ...p, sourceCommit: plan.sourceCommit })) }, client,
             { confirmation: dependencies.confirmation, verifySession: verify, record: store.record });
+            phase = "preapplication-schema-verification";
+            const preapplicationSchema = await observeFrontendBootstrapSchema(client, plan, migration, verify);
+            await store.record("frontend-preapplication-schema.json", preapplicationSchema);
+            const admission = await owner(client, verifySession, () => observeFrontendDrain(client, target, epoch));
+            demand(admission.newWork === false && admission.recovery === false && admission.ledgerDrained === true);
+            phase = "admission-compatible-bootstrap-deployment";
+            bootstrapFrontendMutationAttempted = true;
+            await adapters.deployAdmissionCompatibleFrontend(Object.freeze({ plan, inventorySha256, preapplicationSchema,
+              admissionObservation: admission, verifyLockedSession: verify, environmentSignal, ...providerContext }));
+            await verify();
+            const after = await owner(client, verifySession, () => observeFrontendDrain(client, target, epoch));
+            demand(after.newWork === false && after.recovery === false && after.ledgerDrained === true);
+            const observed = await adapters.observeAdmissionCompatibleFrontend(Object.freeze({ plan, inventorySha256, preapplicationSchema,
+              admissionObservation: after, verifyLockedSession: verify, environmentSignal, ...providerContext }));
+            const proof = deploymentProof(plan, observed);
+            demand(observed.bootstrapAdmissionVerified === true && observed.schemaCatalogSha256 === preapplicationSchema.schemaCatalogSha256 &&
+              observed.appliedLineageSha256 === preapplicationSchema.appliedLineageSha256);
+            const evidence = JSON.parse(observed.evidence.toString("utf8"));
+            demand(["bootstrapAdmissionVerified", "schemaCatalogSha256", "appliedLineageSha256"].every(key => evidence[key] === observed[key]));
+            const rechecked = await observeFrontendBootstrapSchema(client, plan, migration, verify);
+            demand(frontendCoordinationHash(rechecked) === frontendCoordinationHash(preapplicationSchema));
+            await store.retain(`${randomBytes(32).toString("hex")}-${proof.evidenceSha256}.json`, observed.evidence);
+            await store.record("frontend-bootstrap-compatible-verified.json", { ...proof, schemaCatalogSha256: rechecked.schemaCatalogSha256,
+              appliedLineageSha256: rechecked.appliedLineageSha256, bootstrapAdmissionVerified: true });
+            bootstrapFrontendVerified = true;
+            // The reviewed recovery-only stage is explicit and follows actual
+            // compatible promotion. Failure never automatically reopens it.
+            if (plan.bootstrapCompatibility.recoveryAfterCompatibleBuild) {
+              phase = "reviewed-bootstrap-eligible-recovery";
+              epoch = (await owner(client, verifySession, () => changeFrontendAdmission(client, target, epoch, { newWork: false, recovery: true }))).epoch;
+              await store.record("frontend-bootstrap-recovery-enabled.json", { ...base, epoch, newWork: false, recovery: true });
+            }
           }
           phase = "new-work-closure";
           const started = performance.now(), deadline = started + plan.observationBudgetSeconds * 1000;
@@ -206,6 +244,7 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
     try { if (intentRecorded) await store.record("frontend-release-outcome.json", { ...base, status: "FAILED_REQUIRES_REVIEW", phase, epoch,
       databaseVerified, databaseOutcome: databaseVerified ? "verified" : "unverified", frontendVerified,
       frontendDomainsPromoted: frontendVerified ? true : frontendMutationAttempted ? null : false,
+      bootstrapFrontendVerified, bootstrapFrontendDomainsPromoted: bootstrapFrontendVerified ? true : bootstrapFrontendMutationAttempted ? null : false,
       sqlReplayAuthorized: false }); } catch { /* preserve original partial successes */ }
     throw new Error("FRONTEND_RELEASE_COORDINATION_FAILED_REVIEW_REQUIRED");
   }

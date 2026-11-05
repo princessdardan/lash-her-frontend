@@ -85,7 +85,7 @@ async function protocolFixture(code, task) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "frontend-provider-protocol-"))), app = join(directory, "app");
   try {
     mkdirSync(join(app, "ops/platform/host"), { recursive: true }); mkdirSync(join(app, "src/lib/private-db"), { recursive: true });
-    const modules = ["frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins",
+    const modules = ["frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
       "frontend-migration", "frontend-schema", "source-checkout", "source-policy", "release-inputs", "release"];
     for (const name of modules) copyFileSync(join(root, "ops/platform", `${name}.mjs`), join(app, "ops/platform", `${name}.mjs`));
     copyFileSync(join(root, "src/lib/private-db/migration-lineage.ts"), join(app, "src/lib/private-db/migration-lineage.ts"));

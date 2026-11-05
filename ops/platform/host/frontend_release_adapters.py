@@ -7,6 +7,7 @@ runtime value is written to stdout/common receipts.
 import json
 from pathlib import Path
 import re
+import secrets
 import sys
 
 import frontend_probe
@@ -16,6 +17,9 @@ import vercel
 demand = migrate.demand
 MAXIMUM = 2_000_000
 STATES = ("QUEUED", "INITIALIZING", "BUILDING", "READY", "ERROR", "CANCELED")
+BOOTSTRAP_FLAGS = ("INTEGRATION_CUSTOMER_ACCESS_ENABLED", "INTEGRATION_COURSE_READS_ENABLED", "INTEGRATION_CHECKOUT_ENABLED",
+    "INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED", "INTEGRATION_COMMUNITY_READS_ENABLED", "INTEGRATION_COMMUNITY_WRITES_ENABLED",
+    "INTEGRATION_LEARNING_ROUTES_ENABLED", "CUSTOMER_AUTH_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED")
 
 
 def checkpoint():
@@ -138,18 +142,23 @@ def observe_vercel(context, client, attempt=None):
     known_ids = {row["deploymentId"] for row in expected}
     # One build created by this action may appear after the reviewed initial
     # inventory. Verify it through the existing exact source/project binding.
-    staged, build = None, action_build(context, attempt)
-    if build is not None and build["status"] == "FRONTEND_STAGED":
-        staged = vercel._staged_identity(context["candidate"], attempt)
-        state = vercel.deployment_state(client, staged["deploymentId"], staged["projectId"], staged["sourceCommit"], staged["releaseId"])
-        if state["readyState"] != "READY":
-            staged = None
+    staged, build = [], action_build(context, attempt)
+    attempts = [attempt] if attempt is not None else []
+    if attempt is not None and attempt.name != "vercel-bootstrap":
+        attempts.append(attempt.parent / "vercel-bootstrap")
+    for source_attempt in attempts:
+        action = action_build(context, source_attempt)
+        if action is not None and action["status"] == "FRONTEND_STAGED":
+            item = vercel._staged_identity(context["candidate"], source_attempt)
+            state = vercel.deployment_state(client, item["deploymentId"], item["projectId"], item["sourceCommit"], item["releaseId"])
+            if state["readyState"] == "READY":
+                staged.append(item)
     baseline = [row for row in first if row["deploymentId"] in known_ids]
     extras = [row for row in first if row["deploymentId"] not in known_ids]
-    inventory_matches = baseline == expected and (not extras or staged is not None and len(extras) == 1
-           and extras[0]["deploymentId"] == staged["deploymentId"] and extras[0]["sourceCommit"] == selected["sourceCommit"])
+    inventory_matches = baseline == expected and all(any(row["deploymentId"] == item["deploymentId"] and
+        row["sourceCommit"] == selected["sourceCommit"] for item in staged) for row in extras)
     original = context["bindings"]["projectState"]
-    allowed_current = [original["productionDeploymentId"]] + ([staged["deploymentId"]] if staged else [])
+    allowed_current = [original["productionDeploymentId"]] + [item["deploymentId"] for item in staged]
     project_matches = after["productionDeploymentId"] in allowed_current
     cron_matches = after["cronsEnabled"] == original["nativeSchedulesEnabled"]
     if not cron_matches and after["cronsEnabled"] is False and attempt is not None and (attempt / "native-schedules-outcome.json").exists():
@@ -181,6 +190,33 @@ def suspend_schedules(context, client, attempt):
         migrate.write_json(attempt, "native-schedules-outcome.json", outcome)
 
 
+def write_source_pins(context, client, attempt, receipt_sha, receipt_kind):
+    selected = identity(context)
+    outcome = {**selected, "status": "SOURCE_PINS_FAILED_REQUIRES_REVIEW", "receiptSha256": receipt_sha, "receiptKind": receipt_kind,
+               "configuredKeys": [], "trafficAuthorized": False}
+    migrate.write_json(attempt, "source-pins-started.json", outcome)
+    keys = ("STAGING_RELEASE_COMMIT", "STAGING_MIGRATION_VERIFIED_COMMIT")
+    try:
+        for key in keys:
+            value = client.request("POST", f'/v10/projects/{selected["projectId"]}/env?upsert=true', {
+                "key": key, "value": selected["sourceCommit"], "type": "plain", "target": ["production"],
+                "gitBranch": None, "customEnvironmentIds": [], "comment": "Verified frontend source " + selected["actionId"]})
+            created = value.get("created")
+            demand(value.get("failed") == [] and isinstance(created, dict) and created.get("key") == key
+                   and created.get("target") == ["production"] and created.get("type") == "plain"
+                   and not created.get("gitBranch") and not created.get("customEnvironmentIds"), "SOURCE_PIN_WRITE_UNVERIFIED")
+        readback = client.request("GET", f'/v10/projects/{selected["projectId"]}/env?decrypt=false').get("envs")
+        demand(isinstance(readback, list), "SOURCE_PIN_READBACK_UNVERIFIED")
+        for key in keys:
+            rows = [row for row in readback if row.get("key") == key and "production" in row.get("target", [])
+                    and not row.get("gitBranch") and not row.get("customEnvironmentIds")]
+            demand(len(rows) == 1 and rows[0].get("type") == "plain" and rows[0].get("value") == selected["sourceCommit"], "SOURCE_PIN_READBACK_UNVERIFIED")
+        outcome.update(status="SOURCE_PINS_CONFIGURED", configuredKeys=list(keys))
+        return outcome
+    finally:
+        migrate.write_json(attempt, "source-pins-outcome.json", outcome)
+
+
 def configure_pending_source_pins(context, client, attempt, parent_directory):
     selected = identity(context)
     database = context["database"]
@@ -199,29 +235,95 @@ def configure_pending_source_pins(context, client, attempt, parent_directory):
     target_hash = migrate.file_hash(json.dumps({"environment": "staging", **{key: target.get(key) for key in
         ("host", "port", "database", "user", "serverMajor")}}, separators=(",", ":")).encode())
     demand(target_hash == selected["targetSha256"], "LOCKED_FRONTEND_DATABASE_TARGET_BINDING_REFUSED")
-    outcome = {**selected, "status": "SOURCE_PINS_FAILED_REQUIRES_REVIEW", "databaseReceiptSha256": migrate.file_hash(raw),
-               "configuredKeys": [], "trafficAuthorized": False}
-    migrate.write_json(attempt, "source-pins-started.json", outcome)
-    keys = ("STAGING_RELEASE_COMMIT", "STAGING_MIGRATION_VERIFIED_COMMIT")
+    return write_source_pins(context, client, attempt, migrate.file_hash(raw), "verified-pending-application-sql")
+
+
+def configure_bootstrap(context, client, attempt, parent_directory):
+    selected = identity(context)
+    raw = migrate.read_input(parent_directory, "frontend-preapplication-schema.json")
+    receipt, reviewed = json.loads(raw), context["plan"]["bootstrapCompatibility"]
+    demand(receipt == context.get("preapplicationSchema") and receipt.get("status") == "FRONTEND_PREAPPLICATION_SCHEMA_VERIFIED"
+        and all(receipt.get(key) == selected[key] for key in ("environment", "actionId", "sourceCommit", "targetSha256"))
+        and all(receipt.get(key) == reviewed[key] for key in ("schemaCatalogSha256", "appliedLineageSha256", "appliedCount", "validationEvidenceSha256"))
+        and receipt.get("applicationSqlApplied") is False and receipt.get("migrationAuthorized") is False,
+        "PREAPPLICATION_SCHEMA_RECEIPT_REQUIRED")
+    write_source_pins(context, client, attempt, migrate.file_hash(raw), "verified-preapplication-schema-only")
+    target = context["writerTarget"]
+    demand(target.get("environment") == "staging" and target.get("targetSha256") == selected["targetSha256"], "BOOTSTRAP_RUNTIME_TARGET_REQUIRED")
+    variables = [(key, "false", "plain") for key in BOOTSTRAP_FLAGS] + [
+        ("FRONTEND_WRITER_ADMISSION_MODE", "enforce", "plain"),
+        ("FRONTEND_WRITER_ADMISSION_TARGET_JSON", json.dumps(target, separators=(",", ":")), "plain"),
+        ("FRONTEND_WRITER_PRODUCER_SHA256", reviewed["runtimeProducerSha256"], "plain"),
+        ("FRONTEND_WRITER_ADMISSION_DATABASE_URL", context["frontendRuntimeDatabaseUrl"], "sensitive"),
+        ("DATABASE_URL", context["frontendRuntimeDatabaseUrl"], "sensitive")]
+    outcome = {**selected, "status": "BOOTSTRAP_CONFIGURATION_REQUIRES_REVIEW", "configuredKeys": [], "trafficAuthorized": False}
+    migrate.write_json(attempt, "bootstrap-configuration-started.json", outcome)
     try:
-        for key in keys:
-            value = client.request("POST", f'/v10/projects/{selected["projectId"]}/env?upsert=true', {
-                "key": key, "value": selected["sourceCommit"], "type": "plain", "target": ["production"],
-                "gitBranch": None, "customEnvironmentIds": [], "comment": "Verified pending frontend SQL " + selected["actionId"]})
-            created = value.get("created")
-            demand(value.get("failed") == [] and isinstance(created, dict) and created.get("key") == key
-                   and created.get("target") == ["production"] and created.get("type") == "plain"
-                   and not created.get("gitBranch") and not created.get("customEnvironmentIds"), "SOURCE_PIN_WRITE_UNVERIFIED")
+        for key, value, kind in variables:
+            result = client.request("POST", f'/v10/projects/{selected["projectId"]}/env?upsert=true', {
+                "key": key, "value": value, "type": kind, "target": ["production"], "gitBranch": None,
+                "customEnvironmentIds": [], "comment": "Closed admission bootstrap " + selected["actionId"]})
+            created = result.get("created")
+            demand(result.get("failed") == [] and isinstance(created, dict) and created.get("key") == key and created.get("type") == kind
+                and created.get("target") == ["production"] and not created.get("gitBranch") and not created.get("customEnvironmentIds"),
+                "BOOTSTRAP_CONFIGURATION_UNVERIFIED")
         readback = client.request("GET", f'/v10/projects/{selected["projectId"]}/env?decrypt=false').get("envs")
-        demand(isinstance(readback, list), "SOURCE_PIN_READBACK_UNVERIFIED")
-        for key in keys:
-            rows = [row for row in readback if row.get("key") == key and "production" in row.get("target", [])
-                    and not row.get("gitBranch") and not row.get("customEnvironmentIds")]
-            demand(len(rows) == 1 and rows[0].get("type") == "plain" and rows[0].get("value") == selected["sourceCommit"], "SOURCE_PIN_READBACK_UNVERIFIED")
-        outcome.update(status="SOURCE_PINS_CONFIGURED", configuredKeys=list(keys))
+        demand(isinstance(readback, list), "BOOTSTRAP_CONFIGURATION_UNVERIFIED")
+        for key, value, kind in variables:
+            rows = [row for row in readback if row.get("key") == key and row.get("target") == ["production"] and
+                not row.get("gitBranch") and not row.get("customEnvironmentIds")]
+            demand(len(rows) == 1 and rows[0].get("type") == kind and (kind == "sensitive" or rows[0].get("value") == value),
+                "BOOTSTRAP_CONFIGURATION_UNVERIFIED")
+        outcome.update(status="BOOTSTRAP_CONFIGURATION_VERIFIED", configuredKeys=[key for key, _value, _kind in variables])
         return outcome
     finally:
-        migrate.write_json(attempt, "source-pins-outcome.json", outcome)
+        migrate.write_json(attempt, "bootstrap-configuration-outcome.json", outcome)
+
+
+def verify_bootstrap(context, client, attempt, private, probe):
+    identity_value = vercel._staged_identity(context["candidate"], attempt)
+    receipt = context["preapplicationSchema"]
+    outcome = {**identity_value, "status": "FRONTEND_VERIFICATION_REQUIRES_REVIEW", "bootstrapAdmissionVerified": False,
+        "trafficAuthorized": False, "schemaCatalogSha256": receipt["schemaCatalogSha256"],
+        "appliedLineageSha256": receipt["appliedLineageSha256"]}
+    try:
+        state = vercel.deployment_state(client, identity_value["deploymentId"], identity_value["projectId"], identity_value["sourceCommit"], identity_value["releaseId"])
+        credential = frontend_probe._private_input(private, identity_value)
+        project = vercel._project(client, identity_value["projectId"])
+        demand(state["readyState"] == "READY" and (project.get("targets") or {}).get("production", {}).get("id") == identity_value["previousDeploymentId"]
+            and (project.get("crons") or {}).get("disabledAt") is not None, "BOOTSTRAP_PROBE_PROJECT_CHANGED")
+        challenge = secrets.token_hex(32)
+        observed = probe.request(state["url"], credential["secret"], frontend_probe._automation_bypass(project), challenge, "admission-bootstrap")
+        admission = observed.get("admission") or {}
+        demand(observed.get("version") == 1 and observed.get("status") == "FRONTEND_WORKLOAD_PROBE_PASS" and observed.get("challenge") == challenge
+            and observed.get("checks") == ["gateway-course-catalog", "frontend-admission-bootstrap"]
+            and all(observed.get(key) == identity_value[key] for key in ("environment", "projectId", "sourceCommit"))
+            and observed.get("gatewayOrigin") == credential["gatewayOrigin"] and observed.get("schemaCatalogSha256") == receipt["schemaCatalogSha256"]
+            and observed.get("featureControls") == {key: False for key in BOOTSTRAP_FLAGS}
+            and admission.get("environment") == "staging" and admission.get("targetSha256") == context["plan"]["targetSha256"]
+            and admission.get("producerSha256") == context["plan"]["bootstrapCompatibility"]["runtimeProducerSha256"]
+            and admission.get("sourceCommit") == identity_value["sourceCommit"] and admission.get("newWork") is False and admission.get("recovery") is False
+            and admission.get("epoch") == context["admissionObservation"]["epoch"], "BOOTSTRAP_ADMISSION_PROBE_UNVERIFIED")
+        outcome.update(status="FRONTEND_VERIFIED", bootstrapAdmissionVerified=True, checks=observed["checks"])
+        return outcome
+    finally:
+        migrate.write_json(attempt, "frontend-workload-outcome.json", outcome)
+
+
+def deploy_admission(context, client, attempt, parent_directory, probe):
+    observed = observe_vercel(context, client, attempt)
+    demand(observed["reviewedInventoryMatches"] and observed["reviewedProjectMatches"], "VERCEL_REVIEWED_INVENTORY_CHANGED")
+    demand(observed["projectState"]["cronsEnabled"] is False and not observed["aliasJobActive"], "VERCEL_SCHEDULE_SUSPENSION_REQUIRED")
+    demand(context.get("gatewayHost") == context["bindings"].get("gatewayHost"), "REVIEWED_FRONTEND_GATEWAY_BINDING_REQUIRED")
+    private = Path(context["privateConfigurationDirectory"]) / "admission-bootstrap"
+    if not private.exists():
+        private.mkdir(mode=0o700)
+    frontend_probe._private_configuration(private)
+    configure_bootstrap(context, client, attempt, parent_directory)
+    frontend_probe.prepare(client, context["candidate"], private, attempt, context["gatewayHost"], scheduler_qualification=False)
+    vercel.stage_frontend(client, context["candidate"], attempt)
+    return vercel.promote_frontend(client, context["candidate"], attempt,
+        lambda _release, _deployment: verify_bootstrap(context, client, attempt, private, probe))
 
 
 def deploy_compatible(context, client, attempt, parent_directory, probe=None):
@@ -287,6 +389,9 @@ def observe_compatible(context, client, attempt):
         outcome["workloadVerified"] = workload.get("status") == "FRONTEND_VERIFIED" and all(
             workload.get(key) == staged[key] for key in ("environment", "projectId", "sourceCommit", "releaseId", "deploymentId"))
         outcome["workloadReceiptSha256"] = migrate.file_hash(raw)
+        if workload.get("bootstrapAdmissionVerified") is True:
+            outcome.update(bootstrapAdmissionVerified=True, schemaCatalogSha256=workload.get("schemaCatalogSha256"),
+                appliedLineageSha256=workload.get("appliedLineageSha256"))
     # Admission values are supplied only after the parent's actual post-SQL
     # closed-ledger observation; provider metadata cannot observe the ledger.
     controls = context.get("admissionObservation")
@@ -300,18 +405,18 @@ def execute(context, client, verify, probe=None):
     parent = Path(context["directory"])
     migrate.private_directory(parent)
     demand(not any((p / ".git").exists() for p in (parent.resolve(), *parent.resolve().parents)), "PROVIDER_RECEIPTS_OUTSIDE_CHECKOUT_REQUIRED")
-    attempt = parent / "vercel"
+    operation = context["operation"]
+    attempt = parent / ("vercel-bootstrap" if operation in ("deploy-admission", "observe-admission") else "vercel")
     if not attempt.exists():
         attempt.mkdir(mode=0o700)
     migrate.private_directory(attempt)
     locked = LockedClient(client, verify)
-    operation = context["operation"]
     source_attempt = attempt
     if context.get("originalDirectory") is not None:
-        demand(operation in ("observe-vercel", "observe-compatible"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
+        demand(operation in ("observe-vercel", "observe-compatible", "observe-admission"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
         original = Path(context["originalDirectory"])
         migrate.private_directory(original)
-        source_attempt = original / "vercel"
+        source_attempt = original / attempt.name
         if source_attempt.exists():
             migrate.private_directory(source_attempt)
     if operation == "observe-vercel":
@@ -320,8 +425,13 @@ def execute(context, client, verify, probe=None):
         return suspend_schedules(context, locked, attempt)
     if operation == "deploy-compatible":
         return deploy_compatible(context, locked, attempt, parent, LockedProbe(verify, probe))
-    if operation == "observe-compatible":
-        return observe_compatible(context, locked, source_attempt)
+    if operation == "deploy-admission":
+        return deploy_admission(context, locked, attempt, parent, LockedProbe(verify, probe))
+    if operation in ("observe-compatible", "observe-admission"):
+        result = observe_compatible(context, locked, source_attempt)
+        if operation == "observe-compatible" and (source_attempt.parent / "vercel-bootstrap").exists():
+            result["bootstrapFrontend"] = observe_compatible(context, locked, source_attempt.parent / "vercel-bootstrap")
+        return result
     raise ValueError("FRONTEND_PROVIDER_OPERATION_REFUSED")
 
 

@@ -34,6 +34,7 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
         self.current, self.disabled, self.alias = "dpl_previous", True, None
         self.lost_promotion, self.lost_lock, self.fail_lock_after_build, self.ignore_pin = False, False, False, False
         self.lost_build, self.failed_build = False, False
+        self.bootstrap_probe_wrong = False
         self.previous = {"uid": "dpl_previous", "state": "READY", "target": "production", "created": 20,
                          "url": "previous.vercel.app", "meta": {"githubCommitSha": "b" * 40}}
         self.failed = {"uid": "dpl_error", "state": "ERROR", "target": None, "created": 10,
@@ -57,6 +58,12 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                         result = {"version": 1, "status": "FRONTEND_WORKLOAD_PROBE_PASS", "challenge": self.headers.get("x-lash-release-challenge"),
                                   "checks": ["gateway-course-catalog"], "gatewayOrigin": "https://gateway.example.invalid",
                                   "environment": "staging", "projectId": vercel.PROJECTS["staging"], "sourceCommit": "a" * 40}
+                        if self.headers.get("x-lash-release-mode") == "admission-bootstrap":
+                            result.update(checks=["gateway-course-catalog", "frontend-admission-bootstrap"],
+                                schemaCatalogSha256="f" * 64 if owner.bootstrap_probe_wrong else owner.context["preapplicationSchema"]["schemaCatalogSha256"],
+                                featureControls={key: False for key in adapter.BOOTSTRAP_FLAGS}, admission={"environment": "staging",
+                                    "targetSha256": owner.context["plan"]["targetSha256"], "producerSha256": "5" * 64,
+                                    "sourceCommit": "a" * 40, "epoch": "1", "newWork": False, "recovery": False})
                         self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Cache-Control", "no-store")
                         self.end_headers(); self.wfile.write(json.dumps(result).encode()); return
                     owner.assertEqual(self.headers.get("Authorization"), "Bearer owned-token-marker")
@@ -74,14 +81,16 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                     elif path == "/v13/deployments" and self.command == "POST":
                         owner.assertEqual(body["gitSource"]["sha"], "a" * 40); owner.assertEqual(body["gitSource"]["ref"], "staging")
                         owner.assertFalse(body["autoAssignCustomDomains"])
-                        owner.deployments.append({"uid": "dpl_candidate", "state": "READY", "target": "production", "created": 30,
+                        deployment_id = "dpl_candidate" + (str(len([row for row in owner.deployments if row["uid"].startswith("dpl_candidate")]) + 1)
+                            if any(row["uid"].startswith("dpl_candidate") for row in owner.deployments) else "")
+                        owner.deployments.append({"uid": deployment_id, "state": "READY", "target": "production", "created": 30,
                                                   "url": "owned.vercel.app", "meta": {"githubCommitSha": "a" * 40}})
                         if owner.lost_build:
                             self.connection.shutdown(socket.SHUT_RDWR); self.connection.close(); return
-                        result = {"id": "dpl_candidate"}
+                        result = {"id": deployment_id}
                     elif path.startswith("/v13/deployments/"):
                         deployment_id = path.rsplit("/", 1)[-1]
-                        source = "a" * 40 if deployment_id == "dpl_candidate" else "b" * 40
+                        source = "a" * 40 if deployment_id.startswith("dpl_candidate") else "b" * 40
                         result = {"id": deployment_id, "projectId": vercel.PROJECTS["staging"], "target": "production",
                                   "readyState": "ERROR" if deployment_id == "dpl_candidate" and owner.failed_build else "READY",
                                   "url": "owned.vercel.app", "gitSource": {"type": "github", "repoId": vercel.REPOSITORY_ID, "sha": source},
@@ -97,8 +106,9 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                     elif path.endswith("/crons") and self.command == "PATCH":
                         owner.disabled = not body["enabled"]; result = {}
                     elif "/promote/" in path and self.command == "POST":
-                        owner.current = "dpl_candidate"
-                        owner.alias = {"jobStatus": "succeeded", "requestedAt": 200, "toDeploymentId": "dpl_candidate", "type": "promote"}
+                        owner.current = path.rsplit("/", 1)[-1]
+                        owner.alias = {"jobStatus": "succeeded", "requestedAt": 200 if owner.alias is None else owner.alias["requestedAt"] + 100,
+                            "toDeploymentId": owner.current, "type": "promote"}
                         if owner.lost_promotion:
                             self.connection.shutdown(socket.SHUT_RDWR); self.connection.close(); return
                         result = {}
@@ -133,7 +143,7 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                                      "gatewayHost": "gateway.example.invalid",
                                      "projectState": {"productionDeploymentId": "dpl_previous", "nativeSchedulesEnabled": False},
                                      "deployments": sorted([adapter.deployment_metadata(row) for row in self.deployments], key=lambda row: row["deploymentId"])},
-                        "admissionObservation": {"ledgerDrained": True, "newWork": False, "recovery": False, "active": 0, "uncertain": 0}}
+                        "admissionObservation": {"epoch": "1", "ledgerDrained": True, "newWork": False, "recovery": False, "active": 0, "uncertain": 0}}
         self.database = {"version": 1, "service": "frontend", "environment": "staging", "releaseId": "adapter-owned", "sourceCommit": "a" * 40,
                          "migrationImageDigest": "sha256:" + "b" * 64, "sqlArtifactSha256": "c" * 64, "schemaBaselineSha256": "d" * 64,
                          "contractManifestSha256": "sha256:" + "e" * 64, "target": {"host": "owned.invalid", "port": 5432, "database": "owned", "user": "operator", "serverMajor": 18}, "after": [], "applied": [],
@@ -158,6 +168,20 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                 with patch.object(frontend_probe, "DEPLOYMENT_URL", re.compile(re.escape(owner.origin))):
                     return owner.probe_client.request(owner.origin, *args)
         return MappedProbe()
+
+    def bootstrap_context(self):
+        compatibility = {"version": 1, "schemaCatalogSha256": "6" * 64, "appliedLineageSha256": "7" * 64,
+            "appliedCount": 80, "validationEvidenceSha256": "8" * 64, "runtimeProducerSha256": "5" * 64,
+            "recoveryAfterCompatibleBuild": False}
+        self.context["plan"]["bootstrapCompatibility"] = compatibility
+        self.context["preapplicationSchema"] = {"version": 1, "service": "frontend", "environment": "staging", "actionId": "adapter-owned",
+            "sourceCommit": "a" * 40, "targetSha256": self.context["plan"]["targetSha256"], "status": "FRONTEND_PREAPPLICATION_SCHEMA_VERIFIED",
+            **{key: compatibility[key] for key in ("schemaCatalogSha256", "appliedLineageSha256", "appliedCount", "validationEvidenceSha256")},
+            "applicationSqlApplied": False, "migrationAuthorized": False, "trafficAuthorized": False}
+        self.context["writerTarget"] = {"environment": "staging", "targetSha256": self.context["plan"]["targetSha256"],
+            "host": "owned.invalid", "port": 5432, "database": "owned", "user": "runtime", "serverMajor": 18}
+        self.context["frontendRuntimeDatabaseUrl"] = "postgresql://runtime:owned-runtime-marker@owned.invalid/owned?sslmode=verify-full"
+        migrate.write_json(self.parent, "frontend-preapplication-schema.json", self.context["preapplicationSchema"])
 
     def execute(self, operation):
         self.context["operation"] = operation
@@ -203,6 +227,54 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
         for value in ["owned-token-marker", "owned-bypass-marker", "provider-private-marker", self.variables["LASH_RELEASE_PROBE_SECRET"]["value"]]:
             self.assertTrue(value not in common)
         self.assertTrue(self.disabled)
+
+    def test_preapplication_schema_build_configures_closed_admission_and_uses_actual_protected_probe(self):
+        self.bootstrap_context(); result = self.execute("deploy-admission")
+        self.assertEqual(result["status"], "FRONTEND_DOMAINS_PROMOTED")
+        observed = self.execute("observe-admission")
+        self.assertTrue(observed["bootstrapAdmissionVerified"]); self.assertTrue(observed["aliasJobMatchesIntent"])
+        self.assertEqual(observed["schemaCatalogSha256"], "6" * 64)
+        self.assertTrue(all(self.variables[key]["value"] == "false" for key in adapter.BOOTSTRAP_FLAGS))
+        self.assertEqual(self.variables["FRONTEND_WRITER_ADMISSION_MODE"]["value"], "enforce")
+        pins = migrate.read_json(self.parent / "vercel-bootstrap", "source-pins-outcome.json")
+        self.assertEqual(pins["receiptKind"], "verified-preapplication-schema-only")
+        common = "".join(path.read_text() for path in self.parent.rglob("*.json"))
+        self.assertNotIn("owned-runtime-marker", common); self.assertFalse((self.parent / "database-receipt.json").exists())
+        self.assertTrue(self.execute("observe-vercel")["reviewedInventoryMatches"])
+        # The later post-SQL build is independent and preserves both actions'
+        # original staging/probe/promotion evidence.
+        migrate.write_json(self.parent, "database-receipt.json", self.database)
+        self.assertEqual(self.execute("deploy-compatible")["status"], "FRONTEND_DOMAINS_PROMOTED")
+        self.assertEqual(self.current, "dpl_candidate2")
+        self.assertTrue(self.execute("observe-vercel")["reviewedInventoryMatches"])
+
+    def test_preapplication_receipt_or_runtime_schema_probe_mismatch_cannot_promote(self):
+        self.bootstrap_context(); (self.parent / "frontend-preapplication-schema.json").unlink()
+        with self.assertRaises(OSError):
+            self.execute("deploy-admission")
+        self.assertFalse(self.mutations())
+        migrate.write_json(self.parent, "frontend-preapplication-schema.json", self.context["preapplicationSchema"])
+        self.bootstrap_probe_wrong = True
+        with self.assertRaises(ValueError):
+            self.execute("deploy-admission")
+        self.assertEqual(self.current, "dpl_previous")
+        self.assertFalse(any("/promote/" in row["path"] for row in self.mutations()))
+        self.assertFalse(migrate.read_json(self.parent / "vercel-bootstrap", "frontend-workload-outcome.json")["bootstrapAdmissionVerified"])
+
+    def test_bootstrap_lost_promotion_is_observed_readonly_without_sql_or_reopening_controls(self):
+        self.bootstrap_context(); self.lost_promotion = True
+        with self.assertRaises(ValueError):
+            self.execute("deploy-admission")
+        original = {str(path): path.read_bytes() for path in self.parent.rglob("*.json")}
+        recovery = self.parent.parent / "recovery"; recovery.mkdir(mode=0o700)
+        self.context["originalDirectory"] = str(self.parent); self.context["directory"] = str(recovery)
+        writes = len(self.mutations()); observed = self.execute("observe-compatible")
+        self.assertIsNone(observed["deploymentId"])
+        self.assertTrue(observed["bootstrapFrontend"]["aliasJobMatchesIntent"])
+        self.assertTrue(observed["bootstrapFrontend"]["bootstrapAdmissionVerified"])
+        self.assertEqual(len(self.mutations()), writes); self.assertFalse((self.parent / "database-receipt.json").exists())
+        for path, raw in original.items():
+            self.assertEqual(Path(path).read_bytes(), raw)
 
     def test_missing_or_mismatched_durable_database_receipt_refuses_before_writes(self):
         for mode in ("missing", "mismatched"):

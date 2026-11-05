@@ -35,6 +35,20 @@ async function call(method,path,value) {
   });
 }
 export async function fenceFrontendExternalProducers(c){await c.verifyLockedSession();await call('POST','/fence',{actionId:c.plan.actionId});await c.verifyLockedSession();await c.record('owned-provider-fenced.json',{status:'OWNED_FENCED',actionId:c.plan.actionId});}
+export async function deployAdmissionCompatibleFrontend(c){
+ await c.verifyLockedSession();await call('POST','/bootstrap-build',{actionId:c.plan.actionId,sourceCommit:c.plan.sourceCommit,schema:c.preapplicationSchema});
+ await c.verifyLockedSession();await call('POST','/bootstrap-promote',{actionId:c.plan.actionId});await c.verifyLockedSession();
+}
+export async function observeAdmissionCompatibleFrontend(c){
+ const raw=(await call('GET','/state/'+c.plan.actionId)).value;
+ const value={version:1,environment:c.plan.environment,actionId:c.plan.actionId,sourceCommit:c.plan.sourceCommit,targetSha256:c.plan.targetSha256,
+  projectId:'prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM',deploymentId:'dpl_OwnedBootstrap',readyState:raw.bootstrapBuilt?'READY':null,
+  aliasJobState:raw.bootstrapPromoted?'succeeded':null,aliasDeploymentId:raw.bootstrapPromoted?'dpl_OwnedBootstrap':null,nativeSchedulesEnabled:false,
+  admissionNewWork:c.admissionObservation.newWork,admissionRecovery:c.admissionObservation.recovery,workloadVerified:raw.bootstrapBuilt,
+  workloadReceiptSha256:hash({ownedBootstrapWorkload:raw.bootstrapBuilt}),bootstrapAdmissionVerified:raw.bootstrapBuilt&&raw.bootstrapPromoted,
+  schemaCatalogSha256:raw.bootstrapSchema.schemaCatalogSha256,appliedLineageSha256:raw.bootstrapSchema.appliedLineageSha256};
+ const evidence=Buffer.from(JSON.stringify(value));return {...value,evidence,evidenceSha256:hash(evidence)};
+}
 export async function observeFrontendExternalFences(c){
  const raw=await call('GET','/state/'+c.plan.actionId);
  return {version:1,nonce:c.nonce,actionId:c.plan.actionId,sourceCommit:c.plan.sourceCommit,targetSha256:c.plan.targetSha256,inventorySha256:c.inventorySha256,
@@ -70,7 +84,7 @@ async function main() {
   const version = run(join(binaries, "postgres"), ["--version"]), major = Number(version.match(/PostgreSQL\) (\d+)\./u)?.[1]);
   assert.ok([16, 18].includes(major));
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "frontend-release-owned-"))), data = join(directory, "data"), app = join(directory, "app");
-  const password = `owned-${randomUUID()}`, connections = [], providerState = new Map(), onFence = new Map(), onBuild = new Map(), onPromote = new Map(); let running = false, provider;
+  const password = `owned-${randomUUID()}`, connections = [], providerState = new Map(), onFence = new Map(), onBuild = new Map(), onPromote = new Map(), onBootstrapBuild = new Map(); let running = false, provider;
   const checks = [];
   try {
     const probe = netServer(); await new Promise((resolve, reject) => { probe.once("error", reject); probe.listen(0, "127.0.0.1", resolve); });
@@ -102,7 +116,8 @@ async function main() {
     };
     phase = "owned-provider";
     const getState = actionId => {
-      if (!providerState.has(actionId)) providerState.set(actionId, { fenced: false, active: 0, uncertain: 0, built: false, promoted: false, counts: { fence: 0, build: 0, promote: 0 } });
+      if (!providerState.has(actionId)) providerState.set(actionId, { fenced: false, active: 0, uncertain: 0, built: false, promoted: false,
+        bootstrapBuilt: false, bootstrapPromoted: false, counts: { fence: 0, build: 0, promote: 0 } });
       return providerState.get(actionId);
     };
     provider = httpServer(async (req, res) => {
@@ -111,7 +126,15 @@ async function main() {
         const parts = []; for await (const bytes of req) parts.push(bytes); const body = JSON.parse(Buffer.concat(parts).toString());
         const state = getState(body.actionId);
         if (req.method !== "POST") throw new Error();
-        if (req.url === "/fence") { state.fenced = true; state.counts.fence++; if (onFence.has(body.actionId)) await onFence.get(body.actionId)(); }
+        if (req.url === "/bootstrap-build") {
+          assert.equal(state.fenced, false); state.bootstrapBuilt = true; state.bootstrapSchema = body.schema;
+          if (onBootstrapBuild.has(body.actionId)) await onBootstrapBuild.get(body.actionId)();
+        }
+        else if (req.url === "/bootstrap-promote") {
+          assert.equal(state.bootstrapBuilt, true); state.bootstrapPromoted = true;
+          if (body.actionId === "owned-bootstrap-uncertain-promotion") { req.socket.destroy(); return; }
+        }
+        else if (req.url === "/fence") { state.fenced = true; state.counts.fence++; if (onFence.has(body.actionId)) await onFence.get(body.actionId)(); }
         else if (req.url === "/build") {
           assert.equal(state.fenced, true); state.built = true; state.sourceCommit = body.sourceCommit; state.counts.build++;
           if (onBuild.has(body.actionId)) await onBuild.get(body.actionId)();
@@ -154,7 +177,7 @@ async function main() {
     const baseline = { version: 1, serverMajor: major, sqlArtifactSha256: artifact.sqlArtifactSha256, catalog: await readMigrationCatalog(baselineClient) };
     const sourceInventory = frontendWriterInventory(app), candidateSurfaces = frontendCandidateSurfaces(sourceInventory);
     const adapterSha256 = hash(readFileSync(join(app, "ops/platform/frontend-release-adapters.mjs")));
-    const make = async (suffix, admissionMode = "bootstrap", budget = 300) => {
+    const make = async (suffix, admissionMode = "bootstrap", budget = 300, recoveryAfterCompatibleBuild = false) => {
       const actionId = `owned-${suffix}`, database = `release_${suffix.replaceAll("-", "_")}`, historicalRole = `old_${suffix.replaceAll("-", "_")}`;
       const client = await createDatabase(database);
       await admin.query(`CREATE ROLE ${historicalRole} LOGIN NOINHERIT PASSWORD '${password}'`);
@@ -174,7 +197,11 @@ async function main() {
       const producerSha256 = "5".repeat(64), targetSha256 = frontendAdmissionTargetSha256("staging", job.target);
       const inventory = { version: 1, environment: "staging", actionId, sourceCommit: commit, targetSha256,
         sourceInventorySha256: hash(sourceInventory), reviewSha256: "3".repeat(64), adaptersSha256: adapterSha256,
-        observationBudgetSeconds: budget, admissionMode, ...(admissionMode === "bootstrap" ? { bootstrapSqlSha256: hash(readFileSync(join(app, "ops/platform/frontend-admission.sql"))) } : {}), expectedEpoch: "1", owner: { name: "release_admission_owner", oid: ownerOid },
+        observationBudgetSeconds: budget, admissionMode, ...(admissionMode === "bootstrap" ? {
+          bootstrapSqlSha256: hash(readFileSync(join(app, "ops/platform/frontend-admission.sql"))),
+          bootstrapCompatibility: { version: 1, schemaCatalogSha256: hash(await readMigrationCatalog(client)), appliedLineageSha256: hash([]),
+            appliedCount: 0, validationEvidenceSha256: "9".repeat(64), runtimeProducerSha256: producerSha256, recoveryAfterCompatibleBuild },
+        } : {}), expectedEpoch: "1", owner: { name: "release_admission_owner", oid: ownerOid },
         producers: [{ producerSha256, role: { name: "release_runtime", oid: runtimeOid } }],
         candidateCoverage: candidateSurfaces.map(row => ({ surfaceSha256: row.surfaceSha256, disposition: "admitted", producerSha256, evidenceSha256: "6".repeat(64) })),
         externalSurfaces: ["deployment", "provider", "scheduler", "direct-caller"].map((kind, i) => {
@@ -209,10 +236,15 @@ async function main() {
       locksObserved++;
     };
     onBuild.set("owned-bootstrap", verifyBothLocks); onPromote.set("owned-bootstrap", verifyBothLocks);
+    onBootstrapBuild.set("owned-bootstrap", async () => {
+      await verifyBothLocks();
+      assert.equal((await first.client.query("SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS present")).rows[0].present, false);
+      assert.deepEqual((await first.client.query("SELECT new_work,recovery FROM frontend_admission.control")).rows[0], { new_work: false, recovery: false });
+    });
     // Prepared objects are data, never an executable SQL authority. The
     // parent must reconstruct the artifact from the pinned source.
     first.prepared.migration.artifact.migrations[0].sql = ["SELECT 'owned-mutated-prepared-artifact'"];
-    const outcome = await first.run(); assert.equal(locksObserved, 2);
+    const outcome = await first.run(); assert.equal(locksObserved, 3);
     assert.equal(outcome.status, "FRONTEND_SQL_AND_COMPATIBLE_DEPLOYMENT_VERIFIED_HELD");
     assert.equal(outcome.trafficAuthorized, false); assert.equal(outcome.admissionRestored, false); assert.equal(outcome.nativeSchedulesRestored, false);
     assert.equal(first.historicalEnded(), true);
@@ -220,6 +252,51 @@ async function main() {
     assert.deepEqual(controls, { new_work: false, recovery: false });
     assert.equal((await first.client.query("SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations")).rows[0].count, artifact.migrations.length);
     checks.push("closed-bootstrap-real-login-retirement-migrations-compatible-http-promotion-and-held-controls");
+    phase = "bootstrap-schema-refusal";
+    const badSchema = await make("bootstrap-schema-mismatch");
+    await badSchema.client.query("CREATE TABLE public.unreviewed_schema_drift(id int)");
+    await assert.rejects(badSchema.run(), /FRONTEND_RELEASE_COORDINATION_FAILED_REVIEW_REQUIRED/u);
+    assert.equal(getState("owned-bootstrap-schema-mismatch").bootstrapBuilt, false);
+    assert.equal((await badSchema.client.query("SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS present")).rows[0].present, false);
+    checks.push("actual-preapplication-schema-drift-refuses-before-bootstrap-build-and-sql");
+    phase = "bootstrap-backend-death";
+    const bootstrapDead = await make("bootstrap-backend-death");
+    onBootstrapBuild.set("owned-bootstrap-backend-death", async () => {
+      assert.equal((await admin.query("SELECT pg_terminate_backend($1,1000) AS stopped", [bootstrapDead.migrationClient().processID])).rows[0].stopped, true);
+    });
+    await assert.rejects(bootstrapDead.run(), /FRONTEND_RELEASE_COORDINATION_FAILED_REVIEW_REQUIRED/u);
+    assert.equal(getState("owned-bootstrap-backend-death").bootstrapPromoted, false);
+    assert.equal(getState("owned-bootstrap-backend-death").counts.fence, 0);
+    assert.equal((await bootstrapDead.client.query("SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS present")).rows[0].present, false);
+    assert.deepEqual((await bootstrapDead.client.query("SELECT new_work,recovery FROM frontend_admission.control")).rows[0], { new_work: false, recovery: false });
+    checks.push("actual-backend-death-during-bootstrap-stops-promotion-fencing-and-application-sql-with-closed-controls");
+    phase = "bootstrap-uncertain-promotion";
+    const bootstrapUncertain = await make("bootstrap-uncertain-promotion");
+    await assert.rejects(bootstrapUncertain.run(), /FRONTEND_RELEASE_COORDINATION_FAILED_REVIEW_REQUIRED/u);
+    assert.equal(getState("owned-bootstrap-uncertain-promotion").bootstrapPromoted, true);
+    assert.equal(getState("owned-bootstrap-uncertain-promotion").counts.fence, 0);
+    assert.equal((await bootstrapUncertain.client.query("SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS present")).rows[0].present, false);
+    const bootstrapFailure = JSON.parse(readFileSync(join(bootstrapUncertain.output, "frontend-release-outcome.json")));
+    assert.equal(bootstrapFailure.bootstrapFrontendDomainsPromoted, null); assert.equal(bootstrapFailure.databaseVerified, false);
+    assert.deepEqual((await bootstrapUncertain.client.query("SELECT new_work,recovery FROM frontend_admission.control")).rows[0], { new_work: false, recovery: false });
+    checks.push("lost-bootstrap-promotion-response-retains-uncertainty-without-application-sql-replay-or-control-reopening");
+    phase = "bootstrap-budget-placement";
+    const slowBootstrap = await make("bootstrap-slow", "bootstrap", 1);
+    onBootstrapBuild.set("owned-bootstrap-slow", async () => { await new Promise(resolve => setTimeout(resolve, 1200)); });
+    await slowBootstrap.run();
+    checks.push("drain-budget-starts-after-locked-bootstrap-build-and-independent-verification");
+    phase = "reviewed-bootstrap-recovery-stage";
+    const eligibleBootstrap = await make("bootstrap-eligible-recovery", "bootstrap", 300, true);
+    onBootstrapBuild.set("owned-bootstrap-eligible-recovery", async () => {
+      assert.deepEqual((await eligibleBootstrap.client.query("SELECT new_work,recovery FROM frontend_admission.control")).rows[0], { new_work: false, recovery: false });
+    });
+    onFence.set("owned-bootstrap-eligible-recovery", async () => {
+      assert.deepEqual((await eligibleBootstrap.client.query("SELECT new_work,recovery FROM frontend_admission.control")).rows[0], { new_work: false, recovery: true });
+      assert.equal(getState("owned-bootstrap-eligible-recovery").bootstrapPromoted, true);
+    });
+    await eligibleBootstrap.run();
+    assert.deepEqual((await eligibleBootstrap.client.query("SELECT new_work,recovery FROM frontend_admission.control")).rows[0], { new_work: false, recovery: false });
+    checks.push("explicit-reviewed-recovery-only-stage-follows-verified-bootstrap-and-closes-before-sql");
     phase = "deferred-admitted-operation";
     const deferred = await make("deferred", "existing");
     let releaseWork, startedWork; const workHeld = new Promise(resolve => { releaseWork = resolve; }), workStarted = new Promise(resolve => { startedWork = resolve; });
