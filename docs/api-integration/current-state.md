@@ -1,6 +1,6 @@
 # Current integration checkpoint
 
-Updated November 3, 2026 (Toronto). Final admission completed November 4 at 01:27:39 UTC, with independent postflight at 01:29:33 UTC. [The tracker](../../API-INTEGRATION-EXECUTION.md) owns task status; [release policy](release-policy.md) governs future releases.
+Source checkpoint updated November 5, 2026 (Toronto). Accepted live admission completed November 4 at 01:27:39 UTC, with independent postflight at 01:29:33 UTC. [The tracker](../../API-INTEGRATION-EXECUTION.md) owns task status; [release policy](release-policy.md) governs future releases.
 
 ## Accepted P1 state
 
@@ -71,3 +71,9 @@ The [tracker milestone](../../API-INTEGRATION-EXECUTION.md) records integrated s
 Frontend source `847f0b0` passed 83 migrations and the 16 lifecycle/ten identity/75 reconciliation/12 interactive/ten worker/four bootstrap groups in the [owned PostgreSQL receipt](baselines/2026-11-05-p2-integrated-owned/validation.json). The actual three-repository lifecycle harness passed against Course `11ea33d`/Community `610a581`. Subsequent Auth.js receipt fixes and admin read boundaries are integrated at `7577377` and undergoing independent entry-point qualification. Learner review corrections, P2-00 provider/restoration integration and final source checks remain active.
 
 API draft PRs Course #5/Community #4 have started real required CI. Quality passed for both and Community PostgreSQL passed; Course database/packaged migration and Community native scan failures are being corrected. No immutable candidate or deployed Phase 2 capability is qualified yet. Dardan must start the concrete reviewed staging release after candidate preparation; no live mutation has occurred in this goal. G1 remains accepted and monitoring deferred.
+
+## Phase 2 exact source milestone — November 5, 2026
+
+Current source evidence is [the contract/API milestone](baselines/2026-11-05-p2-contract-and-api-milestone/validation.json) and [latest tracker entry](../../API-INTEGRATION-EXECUTION.md). Course `2847d953` and Community `5709ab0a` have terminal passing required CI; their draft PRs are unmerged. Frontend `1952af98` publishes the exact reviewed P2 contracts against archived v1 without changing historical v1 files. Four actual-stack authoring cases and 28 learner fixture/four legacy browser cases pass. Paid publication/archive policy is approved. Identity admission has 43 actual entry-point/33 database cases; a later reproduced admin actor cache collision is being fixed. Final frontend CI/native artifacts, actual-stack learner checks, complete provider/coordinator join and actual historical fencing remain open.
+
+PR #91 is integrated unchanged; PR #92 is reconciled as an ancestor with original receipts preserved. No live migration, credential/provider change, scheduler activation, frontend deployment or admission occurred in this goal. The accepted recovery-only G1 profile above is historical accepted evidence, not P2 certification. Dardan must start a concrete reviewed staging release after candidate preparation. P2-12 and G2 remain open.

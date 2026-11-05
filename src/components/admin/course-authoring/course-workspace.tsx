@@ -288,8 +288,7 @@ export function CourseWorkspace({
               <p>
                 Archiving does not issue a refund or cancel a payment. Support
                 and refund requests follow existing applicable terms and owner
-                review. No new refund deadline or retention period is
-                introduced.
+                review.
               </p>
               <p>
                 Restoring access requires an explicit republish that passes
