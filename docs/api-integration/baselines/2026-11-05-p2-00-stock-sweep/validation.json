@@ -7,16 +7,16 @@
   "files": {
     ".github/workflows/ci.yml": "a4dcbe5b848ccad1c644e6a6a4e3fb5ec2e3b70e497bc67c54477cb02454280d",
     "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/base-source-inventory.json": "de0ff4192b61109aa21ae41dbb86fba9a618c3577066b4d9717a8288552ee4e0",
-    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/candidate-source-inventory.json": "3b3c3b2d3665afd0e6362ef0a7042d783cb5f233bc0df69f4f9543bce8758f0a",
-    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/effect-audit.json": "7f3dad284343ea3cf7633369fa780e3101750389c38c00bd991a49a12375a2cc",
-    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/writer-classification.json": "e6fb73c6482a8de8cfb724bbe5dade11aed36b1fd0688b0d7f8cf0b169b31cb4",
-    "docs/api-integration/frontend-stock-sweep-recovery-admission.md": "0affcbdb4a0b829fe89ab6f5fdf127ca29ffc7c0263a46b139b59c650ec727d6",
-    "docs/api-integration/p2-00-frontend-quiescence.md": "bab60e9c1b86fc87125b612fb87bb44969175d59d2c1e03c489204d219169d76",
+    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/candidate-source-inventory.json": "db9645c5fa9fca35c559e95e3c817e27895016b900ce7d0cb15826eeed68ad4b",
+    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/effect-audit.json": "1982a3b33f41119d732212d98312acbdf8ce8dcd467b200562452c400359c1c7",
+    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/writer-classification.json": "883e6487f427edec6b0437949e13392b7df3d5dd6437b5c39b8d09872d8daae9",
+    "docs/api-integration/frontend-stock-sweep-recovery-admission.md": "503079992f3c44f12c3ed182865e9208f7a55a0cebcfe66061b6175005d3cef0",
+    "docs/api-integration/p2-00-frontend-quiescence.md": "a10f17a76b410305e43a292b6050fd13a73215eab38446d7186b7a82ce0d9ef5",
     "docs/scheduled-jobs-runbook.md": "2ceda082c7048a6442ab6a4e3c4327582c553aef61012837145f6dbcdad6af32",
     "ops/platform/frontend-admission.mjs": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
     "ops/platform/frontend-reconciliation.test.mjs": "571f0ab72ba17fc8734c8a248e5e5ab1aeae082ccd29a7a3e1aaed9c2c614378",
     "ops/platform/frontend-writer-inventory.mjs": "8b9d259f6ff4f666197c247248ae3d3948843d3c48aa67a39b7ef48347e9e9e5",
-    "ops/platform/harness/owned-frontend-reconciliation.mjs": "7763721f4909f47bd6bbfb4c2e41b8d51e7fb081c7ccb00ff99776636c126cfb",
+    "ops/platform/harness/owned-frontend-reconciliation.mjs": "24649f78a8c54ecb5ca423c998113456f0a4299dfa6d3ba1ab638181abd09a1f",
     "ops/platform/harness/owned-reconciliation-providers.mjs": "851e033ff42243a87164dd125ade70c997194170adfdd7c31188e61308dc3e95",
     "ops/platform/harness/owned-reconciliation-rows.mjs": "bd51c6068b691c6a7be5591d10a6f0d0c4323e4b89cfc0371c44ac8cb2cf4537",
     "ops/platform/test-frontend-migration-local.mjs": "91f07d3e46f610e87cc1c4b830040a6179145e797b95fa4a0f1c6a9a46c9ecb5",
@@ -28,7 +28,7 @@
     "src/lib/commerce/product-stock-abandoned-sweep-cron.ts": "e11abcd349ac4b7c8bd2927e048db458792a1d3c8cf99b2e6aab36752ab64ccd",
     "src/lib/commerce/product-stock-abandoned-sweep.db.test.ts": "11a6cdbf9ac30afb4def64da3496f2e64fb87e344fdb8ff015ff1ea4b6ae76d6",
     "src/lib/commerce/product-stock-abandoned-sweep.test.ts": "e18ec91fe51b765eb4ae39a3dab7eab31d4a1b20df31e13c4f8438f786438c22",
-    "src/lib/commerce/product-stock-abandoned-sweep.ts": "34260d38521f6e85b064010ace3e5beae5b12f8eb0813e6da58baec5b6ca7802",
+    "src/lib/commerce/product-stock-abandoned-sweep.ts": "b7308648880775c756e43d2eef419db471ab352bc68b844c79f0722595d61c37",
     "src/lib/commerce/product-stock-store.ts": "37d29e5d007e4f404c275dc8e178d7e8ee5973aecc13b56b8af0c5ab8fad957e",
     "src/lib/payments/square/payments-client.ts": "de098698dc55a2567767b1904754c6fce42c7a2df0229e9bb2bf2011979f4721",
     "src/lib/private-db/client.ts": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
@@ -38,15 +38,15 @@
     "src/lib/writer-admission/runtime.ts": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
     "src/lib/writer-admission/stock-sweep.test.ts": "36b950374e3bd1a9923583935cea475935d5cef6a8fd5d0c14426df4b357b65b"
   },
-  "candidateSourceManifestSha256": "b43b1f73b5ce334046e46a071c771ad94573c79606ad290a8d62e359d9d17a51",
+  "candidateSourceManifestSha256": "f5b19299d87850531ddb0a391adb269f351b7dc18c07b1cbbeecd9f79df4b062",
   "postgres": [
     {
       "major": 16,
-      "stockChecks": 11,
+      "stockChecks": 13,
       "existingChecks": 68,
-      "totalChecks": 79,
+      "totalChecks": 81,
       "clusterStoppedAndRemoved": true,
-      "resultSha256": "c4db3c34765970bb01f3fd8490e01589b9473d5a571e9921542e435324f0b77e"
+      "resultSha256": "9365df2aab9e304dea92046adf23abe889fb9c268aaa181b77df03766548a814"
     }
   ],
   "unitTests": {
@@ -101,5 +101,20 @@
     "PostgreSQL 16 exercised locally; PostgreSQL 18 qualification runs in exact-head CI.",
     "Direct callers, other writers, actual producer/provider inventory, historical fencing/bootstrap and parent coordination remain open."
   ],
-  "reviewFix": "Missing release-movement inserts now retain uncertainty. Controlled loop tests and a real PostgreSQL trigger that suppresses the release insert cover stock/order cleanup completing without that receipt."
+  "reviewFix": "Missing release-movement inserts now retain uncertainty. Controlled loop tests and a real PostgreSQL trigger that suppresses the release insert cover stock/order cleanup completing without that receipt. A second review reproduced completed admission after a suppressed pending-shipment update (HTTP 200 instead of 503). Expected shipment identities are now locked and matched to returned abandonment receipts. The real-database fixture covers missing shipment receipts and successful cleanup without a shipment.",
+  "review": {
+    "reviewedHead": "71e0bf141b0e8eb69b9250935a5c8ce4992cf609",
+    "regressionBeforeFix": {
+      "phase": "stock-missing-shipment-receipt",
+      "expectedHttpStatus": 503,
+      "actualHttpStatus": 200
+    },
+    "regressionsAfterFix": [
+      "stock-missing-shipment-receipt-real-stock-order-obligation-and-shipment-receipts-accounted",
+      "stock-no-shipment-real-stock-order-obligation-and-shipment-receipts-accounted"
+    ],
+    "fullUnitSuiteRerun": true,
+    "platformSuiteRerun": true,
+    "focusedSuiteRerun": true
+  }
 }

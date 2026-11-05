@@ -31,7 +31,7 @@
     {
       "stage": "cancellation/abandonment",
       "source": "src/lib/commerce/product-stock-abandoned-sweep.ts",
-      "accounting": "Await locked order/obligation/payment checks and stock/order/obligation/shipment writes and transaction settlement. Missing expected cancellation receipts retain uncertainty; existing concurrent-state skips remain skips."
+      "accounting": "Await locked order/obligation/payment checks and stock/order/obligation/shipment writes and transaction settlement. Lock expected pending shipment rows and match their identities to returned abandonment receipts; orders without shipments remain valid. Missing expected cancellation or abandonment receipts retain uncertainty; existing concurrent-state skips remain skips."
     },
     {
       "stage": "caught errors/result",

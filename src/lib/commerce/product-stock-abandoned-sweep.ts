@@ -259,7 +259,20 @@ async function releaseAbandonedOrder(
       .returning({ id: checkoutOrders.id });
     if (cancelledOrders.length !== 1) markWriterOperationUncertain();
 
-    await tx
+    // Pickup orders need no shipment. For shipping orders, account for every
+    // pending row so a missing abandonment receipt cannot complete admission.
+    const pendingShipments = await tx
+      .select({ id: productShipments.id })
+      .from(productShipments)
+      .where(
+        and(
+          eq(productShipments.orderId, order.id),
+          eq(productShipments.status, "payment_pending"),
+        ),
+      )
+      .for("update");
+
+    const abandonedShipments = await tx
       .update(productShipments)
       .set({ status: "abandoned", updatedAt: now })
       .where(
@@ -267,7 +280,13 @@ async function releaseAbandonedOrder(
           eq(productShipments.orderId, order.id),
           eq(productShipments.status, "payment_pending"),
         ),
-      );
+      )
+      .returning({ id: productShipments.id });
+    const abandonedShipmentIds = new Set(
+      abandonedShipments.map(({ id }) => id),
+    );
+    if (pendingShipments.some(({ id }) => !abandonedShipmentIds.has(id)))
+      markWriterOperationUncertain();
 
     // Audit trail: cancelling an abandoned order is expected, but logging each
     // one lets staff spot the rare case where a genuinely-captured payment
