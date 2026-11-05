@@ -1,3 +1,4 @@
+import { runAdminReadOperation } from "@/lib/admin/read-operation";
 import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import "server-only";
 
@@ -150,6 +151,14 @@ export async function insertConnectionBookingEvent(input: {
  * The contextual alias `primary` is never returned as a durable assignment.
  */
 export async function listConnectionGoogleCalendars(
+  connectionId: string,
+): Promise<GoogleCalendarOption[]> {
+  return runAdminReadOperation("calendar-discovery", () =>
+    listConnectionGoogleCalendarsWork(connectionId),
+  );
+}
+
+async function listConnectionGoogleCalendarsWork(
   connectionId: string,
 ): Promise<GoogleCalendarOption[]> {
   const { createDrizzleCalendarConnectionRepository } =

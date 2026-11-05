@@ -1,3 +1,4 @@
+import { runAdminReadOperation } from "./read-operation";
 import { runAdminIdentityWriter } from "@/lib/admin/user-writer-admission";
 import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import "server-only";
@@ -212,8 +213,10 @@ export async function listEmployeeGoogleCalendars(input: {
   connectionId: string;
   resourceId: string;
 }): Promise<GoogleCalendarOption[]> {
-  await assertEmployeeOwnsCalendarConnection(input);
-  return listConnectionGoogleCalendars(input.connectionId);
+  return runAdminReadOperation("calendar-discovery", async () => {
+    await assertEmployeeOwnsCalendarConnection(input);
+    return listConnectionGoogleCalendars(input.connectionId);
+  });
 }
 
 export type EmployeeGoogleCredentialSaveResult =

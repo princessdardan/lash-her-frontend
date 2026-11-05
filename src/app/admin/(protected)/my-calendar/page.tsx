@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { AdminAuthError } from "@/lib/admin/types";
 
 import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
 import { AdminSubmitButton } from "@/components/admin/admin-submit-button";
@@ -18,7 +18,9 @@ import {
   type CalendarDiscoveryResult,
 } from "@/lib/admin/calendar-discovery-result";
 import type { GoogleCalendarOption } from "@/lib/booking/google-calendar";
-import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
+import { requirePermission } from "@/lib/admin/auth";
+import { loadAdmittedCalendarPage } from "@/lib/admin/calendar-discovery-page";
+import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import {
   getCalendarAssignmentStatusPresentation,
   getCalendarConnectionStatusPresentation,
@@ -45,39 +47,41 @@ export default async function MyCalendarPage({
   }>;
 }) {
   const feedback = await searchParams;
-  const actor = await requireAdminPagePermission(
-    "calendar-connections:self-manage",
-  );
-  if (actor.user.role !== "employee") {
-    redirect("/admin/not-authorized");
-  }
-  const data = await listEmployeeCalendarWorkspace();
-  const requestedResourceId = firstString(feedback.resource);
-  const contextResource =
-    data.resources.find((resource) => resource.id === requestedResourceId) ??
-    data.resources[0];
-  const contextResourceId = contextResource?.id;
-  const discoveredEntries: Array<
-    readonly [string, CalendarDiscoveryResult<GoogleCalendarOption>]
-  > = await Promise.all(
-    data.connections.map(async (connection) => {
-      if (connection.status !== "active" || !contextResourceId) {
-        return [
-          connection.id,
-          { calendars: [], kind: "ready" } as const,
-        ] as const;
+  const { actor, data, contextResource, contextResourceId, discoveredEntries } =
+    await loadAdmittedCalendarPage(async () => {
+      const actor = await requirePermission("calendar-connections:self-manage");
+      if (actor.user.role !== "employee") {
+        throw new AdminAuthError("forbidden");
       }
-      return [
-        connection.id,
-        await loadCalendarDiscoveryResult(() =>
-          listEmployeeGoogleCalendars({
-            connectionId: connection.id,
-            resourceId: contextResourceId,
-          }),
-        ),
-      ] as const;
-    }),
-  );
+      const data = await listEmployeeCalendarWorkspace();
+      const requestedResourceId = firstString(feedback.resource);
+      const contextResource =
+        data.resources.find((resource) => resource.id === requestedResourceId) ??
+        data.resources[0];
+      const contextResourceId = contextResource?.id;
+      const discoveredEntries: Array<
+        readonly [string, CalendarDiscoveryResult<GoogleCalendarOption>]
+      > = await settleWriterEffects(
+        data.connections.map(async (connection) => {
+          if (connection.status !== "active" || !contextResourceId) {
+            return [
+              connection.id,
+              { calendars: [], kind: "ready" } as const,
+            ] as const;
+          }
+          return [
+            connection.id,
+            await loadCalendarDiscoveryResult(() =>
+              listEmployeeGoogleCalendars({
+                connectionId: connection.id,
+                resourceId: contextResourceId,
+              }),
+            ),
+          ] as const;
+        }),
+      );
+      return { actor, data, contextResource, contextResourceId, discoveredEntries };
+    });
   const discoveryByConnection = new Map(discoveredEntries);
   const ownedConnectionIds = new Set(
     data.connections.map((connection) => connection.id),
