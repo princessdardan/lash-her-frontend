@@ -26,6 +26,7 @@ def configure_source_pins(client, selected, jobs, migration_attempt, attempt):
     database = json.loads(database_raw)
     terminal = migrate.read_json(migration_attempt / "frontend", "job-outcome.json")
     migration = migrate.read_json(migration_attempt, "migration-outcome.json")
+    migrate.require_contract_identity(selected, job, database, terminal, migration)
     demand(migration.get("status") == "DATABASES_VERIFIED" and migration.get("environment") == environment
            and migration.get("releaseId") == selected["releaseId"]
            and migration.get("databaseReceiptSha256", {}).get("frontend") == migrate.file_hash(database_raw),
@@ -48,6 +49,7 @@ def configure_source_pins(client, selected, jobs, migration_attempt, attempt):
     keys = ("STAGING_RELEASE_COMMIT", "STAGING_MIGRATION_VERIFIED_COMMIT")
     outcome = {"status": "SOURCE_PINS_FAILED_REQUIRES_REVIEW", "projectId": project_id, "sourceCommit": commit,
                "releaseId": selected["releaseId"], "configuredKeys": [], "trafficAuthorized": False}
+    outcome.update(migrate.contract_identity(selected))
     migrate.write_json(attempt, "source-pins-started.json", outcome)
     try:
         for key in keys:
@@ -111,6 +113,7 @@ def execute(bundle, configuration, results, compose_file, apply=False, confirmat
                and migrate.file_hash(migrate.read_input(migration_attempt, "migration-outcome.json")) == api_outcome["migrationOutcomeSha256"],
                "STAGING_DURABLE_RUNTIME_RECEIPT_REQUIRED")
         current = migrate.read_json(migration_attempt / "frontend", "job-outcome.json")
+        migrate.require_contract_identity(selected, current, api_outcome)
         demand(current.get("status") == "DATABASE_VERIFIED" and current.get("readOnlyVerified") is True
                and current.get("migrationMode") == "verify-current-only", "STAGING_CURRENT_FRONTEND_VERIFICATION_REQUIRED")
         attempt = runtime_attempt / "frontend"
@@ -121,6 +124,7 @@ def execute(bundle, configuration, results, compose_file, apply=False, confirmat
                    "nativeSchedulerVerified": False, "externalIngressVerified": False, "frontendDomainsPromoted": False,
                    "candidateSha256": api_outcome["candidateSha256"], "migrationOutcomeSha256": api_outcome["migrationOutcomeSha256"],
                    "apiRuntimeReceiptSha256": migrate.file_hash(migrate.read_input(runtime_attempt, "runtime-outcome.json"))}
+        outcome.update(migrate.contract_identity(selected))
         migrate.write_json(attempt, "staging-started.json", outcome)
         try:
             demand(vercel.project_state(client, plan["frontendProjectId"]) == expected, "VERCEL_PROJECT_CHANGED_BEFORE_STAGING")

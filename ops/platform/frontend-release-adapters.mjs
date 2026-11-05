@@ -32,7 +32,11 @@ async function runtime(context) {
     candidate.sources?.frontend?.commit === context.plan.sourceCommit && candidate.sources.frontend.requiredChecks === "passed" &&
     candidate.sources.frontend.repository === "https://github.com/princessdardan/lash-her-frontend.git" &&
     candidate.workload?.projectId === bindings.projectId && candidate.workload.environment === "production");
+  const phase2 = candidate.contractPhase !== undefined || candidate.phase2ContractManifestSha256 !== undefined;
+  if (phase2) demand(candidate.contractPhase === "p2" && typeof candidate.phase2ContractManifestSha256 === "string" &&
+    /^sha256:[a-f0-9]{64}$/u.test(candidate.phase2ContractManifestSha256) && candidate.phase2ContractManifestSha256 !== `sha256:${"0".repeat(64)}`);
   return { value, bindings, candidate: { version: 2, environment: "staging", releaseId: candidate.releaseId,
+    ...(phase2 ? { contractPhase: "p2", phase2ContractManifestSha256: candidate.phase2ContractManifestSha256 } : {}),
     sources: { frontend: fields(candidate.sources.frontend, ["repository", "commit", "requiredChecks"]) },
     workload: fields(candidate.workload, ["projectId", "environment"]) } };
   } catch { throw new Error("FRONTEND_PROVIDER_RUNTIME_CONTEXT_REFUSED"); }

@@ -30,6 +30,23 @@ def digest(value):
     return isinstance(value, str) and DIGEST.fullmatch(value) and value != "sha256:" + "0" * 64
 
 
+def contract_identity(value):
+    """Additive P2 identity; absence preserves the original P1 contract schema."""
+    demand(isinstance(value, dict), "CONTRACT_IDENTITY_REFUSED")
+    keys = ("contractPhase", "phase2ContractManifestSha256")
+    if not any(key in value for key in keys):
+        return {}
+    demand(all(key in value for key in keys) and value["contractPhase"] == "p2" and
+           digest(value["phase2ContractManifestSha256"]), "P2_CONTRACT_IDENTITY_REQUIRED")
+    return {key: value[key] for key in keys}
+
+
+def require_contract_identity(expected, *actual, code="P2_CONTRACT_BINDING_MISMATCH"):
+    selected = contract_identity(expected)
+    demand(all(contract_identity(value) == selected for value in actual), code)
+    return selected
+
+
 def source_commit(value):
     return isinstance(value, str) and COMMIT.fullmatch(value) and value != "0" * 40
 
@@ -115,6 +132,7 @@ def make_plan(bundle):
     demand(release.get("version") == 2 and environment in ("staging", "production")
            and isinstance(release_id, str) and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", release_id), "RELEASE_IDENTITY_REFUSED")
     demand(digest(release.get("contractManifestSha256")) and release.get("integration", {}).get("state") == "passed", "QUALIFIED_CANDIDATE_REQUIRED")
+    contract_identity(release)
     approval = release.get("sourceApproval", {})
     demand(approval.get("mode") == "single-operator-dispatch" and approval.get("operatorGithubUserId") == "8996309", "SOURCE_CI_RECEIPT_REQUIRED")
     for name, repository in (("frontend", "lash-her-frontend"), ("course", "lash-her-course-api"), ("community", "lash-her-community-api")):
@@ -124,6 +142,7 @@ def make_plan(bundle):
     jobs = {}
     for name, (service, migration_key, runtime_key) in SERVICES.items():
         job = read_json(bundle, f"jobs/{name}.json")
+        require_contract_identity(release, job)
         images = {}
         for key, suffix in ((migration_key, "migration"), (runtime_key, "runtime")):
             artifact = release.get("artifacts", {}).get(key, {})
@@ -153,6 +172,7 @@ def make_plan(bundle):
             demand(isinstance(staging, dict) and staging.get("receiptRef") == f"staging/{name}", "STAGING_RECEIPT_REQUIRED")
             previous = read_json(bundle, f"staging/{name}/database-receipt.json")
             outcome = read_json(bundle, f"staging/{name}/job-outcome.json")
+            require_contract_identity(release, previous, outcome)
             demand(previous.get("status") == "DATABASE_VERIFIED" and previous.get("environment") == "staging"
                    and previous.get("service") == service and previous.get("failureCode") is None
                    and outcome.get("status") == "DATABASE_VERIFIED", "PASSING_STAGING_MIGRATION_REQUIRED")
@@ -164,6 +184,7 @@ def make_plan(bundle):
         jobs["frontend"] = frontend_plan(bundle, release)
     if environment == "production":
         acceptance = read_json(bundle, "staging/acceptance.json")
+        require_contract_identity(release, acceptance)
         demand(acceptance.get("status") == "STAGING_VERIFIED" and acceptance.get("environment") == "staging"
                and acceptance.get("contractManifestSha256") == release["contractManifestSha256"], "STAGING_ACCEPTANCE_REQUIRED")
         for name in ("frontend", "course", "community"):
@@ -190,6 +211,7 @@ def frontend_plan(bundle, release):
     demand(isinstance(image, str) and image.startswith(prefix) and digest(image[len(prefix):])
            and artifact.get("scan") == "passed" and digest(artifact.get("sbomSha256")) and digest(artifact.get("provenanceSha256")), "VERIFIED_FRONTEND_IMAGE_REQUIRED")
     target, source = job.get("target", {}), release.get("frontendMigration", {})
+    require_contract_identity(release, source, job)
     demand(job.get("version") == 1 and job.get("operator") == "Dardan" and job.get("environment") == release["environment"]
            and job.get("releaseId") == release["releaseId"] and job.get("sourceCommit") == source.get("sourceCommit") == release["sources"]["frontend"]["commit"]
            and job.get("migrationImageDigest") == image.split("@")[1] and job.get("contractManifestSha256") == source.get("contractManifestSha256") == release["contractManifestSha256"]
@@ -273,6 +295,7 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
             "targets": {name: {"host": info["job"]["target"].get("host"), "database": info["job"]["target"].get("database"),
                                "pendingTags": info["job"]["target"].get("approvedPendingTags"), "image": info["image"]} for name, info in jobs.items()},
             "trafficAuthorized": False, "credentialsRead": False, "maintenanceRequired": True}
+    plan.update(contract_identity(release))
     if "frontend" in jobs:
         plan.update(frontendMigrationMode="verify-current-only" if frontend_read_only else "apply-forward",
                     frontendProducerSuspensionRequired=not frontend_read_only)
@@ -292,6 +315,7 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
         write_json(attempt, "started.json", plan)
         write_json(attempt, "candidate.json", release)
         outcome = {"status": "FAILED_REQUIRES_REVIEW", "releaseId": release_id, "environment": environment, "trafficAuthorized": False}
+        outcome.update(contract_identity(release))
         base_env = dict(docker_env) if docker_env is not None else {
             key: os.environ[key] for key in ("PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG") if key in os.environ}
         uid, gid = (65532, 65532) if os.getuid() == 0 else (os.getuid(), os.getgid())
@@ -359,6 +383,7 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                     demand(not inventory.stdout.strip(), "MIGRATION_CONTAINER_CLEANUP_UNVERIFIED")
                 receipt = read_json(receipts, "database-receipt.json")
                 terminal = read_json(receipts, "job-outcome.json")
+                require_contract_identity(release, info["job"], receipt, terminal)
                 demand(receipt.get("status") == "DATABASE_VERIFIED" and terminal.get("status") == "DATABASE_VERIFIED"
                        and receipt.get("environment") == environment and receipt.get("releaseId") == release_id
                        and receipt.get("service") == info["service"] and receipt.get("failureCode") is None and terminal.get("failureCode") is None, "MIGRATION_OUTCOME_REFUSED")

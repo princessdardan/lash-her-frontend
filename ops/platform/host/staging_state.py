@@ -31,6 +31,7 @@ def retained_state(bundle, configuration, database_receipts, runtime_receipts, c
            "RESTORE_CANDIDATE_BINDING_MISMATCH")
     raw_database = migrate.read_input(database_receipts, "migration-outcome.json")
     database = json.loads(raw_database)
+    migrate.require_contract_identity(selected, database)
     demand(database.get("status") == "DATABASES_VERIFIED" and database.get("environment") == "staging"
            and database.get("releaseId") == selected["releaseId"] and database.get("candidateSha256") == candidate_sha256
            and database.get("trafficAuthorized") is False and database.get("frontendReadOnlyVerified") is True
@@ -41,6 +42,7 @@ def retained_state(bundle, configuration, database_receipts, runtime_receipts, c
         receipt = json.loads(raw)
         terminal = migrate.read_json(database_receipts, name + "/job-outcome.json")
         job = info["job"]
+        migrate.require_contract_identity(selected, job, receipt, terminal)
         demand(migrate.file_hash(raw) == database["databaseReceiptSha256"][name]
                and receipt.get("status") == terminal.get("status") == "DATABASE_VERIFIED"
                and receipt.get("environment") == "staging" and receipt.get("releaseId") == selected["releaseId"]
@@ -62,6 +64,7 @@ def retained_state(bundle, configuration, database_receipts, runtime_receipts, c
                    "RESTORE_API_MIGRATION_COMPLETION_REQUIRED")
             counts[name] = {"mode": "already-applied", "appliedCount": receipt["postAppliedCount"]}
     ready = migrate.read_json(runtime_receipts, "runtime-outcome.json")
+    migrate.require_contract_identity(selected, ready)
     demand(ready.get("status") in ("API_RUNTIME_READY", "API_RUNTIME_RESTORED_FOR_QUALIFICATION")
            and ready.get("phase") == "completed" and ready.get("environment") == "staging"
            and ready.get("releaseId") == selected["releaseId"] and ready.get("trafficAuthorized") is False
@@ -84,6 +87,7 @@ def retained_state(bundle, configuration, database_receipts, runtime_receipts, c
             "currentDatabaseChecksRequired": ["frontend-read-only-current", "course-read-only-current", "community-read-only-current"],
             "newMachineBindingRequired": True, "migrationsExecuted": False, "trafficAuthorized": False,
             "businessSchedulesEnabled": False, "releaseAccepted": False}
+    plan.update(migrate.contract_identity(selected))
     return selected, jobs, plan, compose
 
 
@@ -128,6 +132,7 @@ def restored_configuration(source, destination, selected, jobs, compose, expecte
         stream.write(compose)
     (destination / "compose.yaml").chmod(0o600)
     return {"status": "RESTORE_CONFIGURATION_BOUND_TO_NEW_MACHINE", "originalHostMachineId": original_machine,
+            **migrate.contract_identity(selected),
             "newHostMachineId": new_machine, "sourceSha256": expected_hashes,
             "restoredSha256": configuration_hashes(destination),
             "composeSha256": migrate.file_hash(compose), "originalConfigurationChanged": False,

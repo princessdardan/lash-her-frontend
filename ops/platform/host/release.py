@@ -85,6 +85,7 @@ def make_plan(bundle, configuration, compose_file):
             "databaseTargets": {name: {key: info["job"]["target"].get(key) for key in ("host", "database", "approvedPendingTags")} for name, info in jobs.items()},
             "previousReleaseRef": target["previousReleaseRef"], "maintenanceRef": target["maintenanceRef"],
             "stages": STAGES, "credentialsRead": False, "trafficAuthorized": False, "frontendPromotionAuthorized": False}
+    plan.update(migrate.contract_identity(release))
     return release, jobs, plan, compose
 
 
@@ -298,12 +299,14 @@ def execute(bundle, configuration, results, compose_file, apply=False, confirmat
     outcome = {"status": "FAILED_REQUIRES_REVIEW", "environment": release["environment"], "releaseId": release["releaseId"],
                "trafficAuthorized": False, "frontendPromotionAuthorized": False, "releaseAccepted": False,
                "realVercelOidcVerified": False, "externalIngressVerified": False, "phase": "configuration-preflight"}
+    outcome.update(migrate.contract_identity(release))
 
     def start_runtime(migration_attempt, verified_release, database_outcome):
         # Invoked only after durable database success, while migrate.execute
         # holds the release/watchdog lock. No second approval step is needed.
         try:
             demand(verified_release == release and database_outcome.get("status") == "DATABASES_VERIFIED", "DATABASE_STAGE_BINDING_REFUSED")
+            migrate.require_contract_identity(release, database_outcome)
             outcome["phase"] = "runtime-startup"
             prefix, env = compose_command(snapshot, release["environment"]), runtime_environment(release, snapshot)
             for stage in STAGES:
