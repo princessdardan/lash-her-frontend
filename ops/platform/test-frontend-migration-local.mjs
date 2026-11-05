@@ -268,6 +268,21 @@ async function main() {
     assert.match(customerIdentity.stdout, /^# fail 0$/mu);
     assert.match(customerIdentity.stdout, /^# skipped 0$/mu);
     const customerIdentityDatabase = { status: "FRONTEND_CUSTOMER_IDENTITY_OWNED_PASS", tests: customerTests, passed: customerPassed, failures: 0, skipped: 0 };
+    phase = "customer-lifecycle-owned-database";
+    const lifecycle = spawnSync(process.execPath, ["--import", "tsx", "--import", "./scripts/register-server-only-test.mjs",
+      "--test", "--test-reporter=tap", "src/lib/customer-lifecycle/store.db.test.ts"], {
+      cwd: source, encoding: "utf8", timeout: 120000,
+      env: { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, NODE_ENV: "test", APP_ENV: "local",
+        NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project", NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
+        TEST_DATABASE_URL: `postgresql://frontend_admission_protocol:${password}@127.0.0.1:${port}/frontend_admission_owned?sslmode=verify-full` },
+    });
+    assert.equal(lifecycle.status, 0, `Owned customer lifecycle failed: ${lifecycle.stderr}\n${lifecycle.stdout}`);
+    const lifecycleTests = Number(/^# tests (\d+)$/mu.exec(lifecycle.stdout)?.[1]);
+    const lifecyclePassed = Number(/^# pass (\d+)$/mu.exec(lifecycle.stdout)?.[1]);
+    assert.ok(lifecycleTests >= 6 && lifecycleTests === lifecyclePassed);
+    assert.match(lifecycle.stdout, /^# fail 0$/mu);
+    assert.match(lifecycle.stdout, /^# skipped 0$/mu);
+    const customerLifecycleDatabase = { status: "FRONTEND_CUSTOMER_LIFECYCLE_OWNED_PASS", tests: lifecycleTests, passed: lifecyclePassed, failures: 0, skipped: 0 };
     const result={status:"FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",postgresMajor:major,migrations:artifact.migrations.length,checks:records,providerTouched:false,
       admissionChecks,
       historicalLoginChecks,
@@ -276,6 +291,7 @@ async function main() {
       interactiveRoute,
       workerRoutes,
       customerIdentityDatabase,
+      customerLifecycleDatabase,
       sourceCommit:commit,migrationImageDigest:job.migrationImageDigest,packagedCliVerified:cli.endsWith("frontend-image.mjs"),
       sqlArtifactSha256:artifact.sqlArtifactSha256,contractManifestSha256:artifact.contractManifestSha256,schemaBaselineSha256:hash(JSON.stringify(baseline))};
     if(process.env.FRONTEND_MIGRATION_EXPORT_SCHEMA==="true")result.schemaBaseline=baseline;
@@ -287,7 +303,7 @@ async function main() {
   }
 }
 main().catch((error)=>{console.error(JSON.stringify({status:"OWNED_FRONTEND_MIGRATION_FAILED",phase,providerTouched:false,
-  fixtureDetail:["frontend-reconciliation-owned-route", "frontend-interactive-owned-route", "frontend-worker-owned-route", "customer-identity-owned-database"].includes(phase) ? error.message : undefined,
+  fixtureDetail:["frontend-reconciliation-owned-route", "frontend-interactive-owned-route", "frontend-worker-owned-route", "customer-identity-owned-database", "customer-lifecycle-owned-database"].includes(phase) ? error.message : undefined,
   sqlState:/^[A-Z0-9]{5}$/u.test(error.code ?? "") ? error.code : undefined,
   sqlPosition:/^[0-9]+$/u.test(error.position ?? "") ? error.position : undefined,
   fixtureFrames:error.stack?.split("\n").filter(line=>/^\s+at .*owned-frontend-(?:admission|historical-logins|writer-routes)\.mjs/u.test(line))}));process.exitCode=1;});

@@ -575,6 +575,13 @@
       "when": 1793908371084,
       "tag": "0081_customer_auth_throttle_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1793910009844,
+      "tag": "0082_customer_account_lifecycle",
+      "breakpoints": true
     }
   ]
 }

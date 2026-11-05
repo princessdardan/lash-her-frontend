@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, check, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const customerUsers = pgTable("customer_users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -7,10 +7,12 @@ export const customerUsers = pgTable("customer_users", {
   emailVerified: timestamp("email_verified", { withTimezone: true }),
   name: text("name"),
   status: text("status").notNull().default("active"),
+  accountVersion: bigint("account_version", { mode: "number" }).notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [uniqueIndex("customer_users_email_idx").on(table.email),
   check("customer_users_email_normalized", sql`${table.email} = lower(trim(${table.email}))`),
-  check("customer_users_status", sql`${table.status} IN ('active', 'suspended', 'deleted')`)]);
+  check("customer_users_status", sql`${table.status} IN ('active', 'suspended', 'deleted')`),
+  check("customer_users_account_version", sql`${table.accountVersion} BETWEEN 0 AND 9007199254740991`)]);
 
 // Authentication needs provider identity only. Provider access/refresh/ID tokens
 // are deliberately discarded rather than retained as account credentials.
