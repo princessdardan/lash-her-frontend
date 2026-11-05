@@ -67,10 +67,15 @@ fixed Python child remains under the existing environment and physical database
 locks. Every provider/Redis request checks parent liveness before and after the
 request, including expected HTTP denial paths.
 
-1. Privately verify both selected old and replacement client secrets through
-   successful Google refresh requests and actual OpenID UserInfo owner checks.
-   The exact private client instances stay in memory throughout the operation,
-   preventing substitution of an arbitrary invalid string after preflight.
+1. Privately calibrate each selected client with one synthetic wrong secret and
+   the same deliberately unissued grant. That negative must return
+   `invalid_client`. Actual old and replacement secrets must either successfully
+   refresh a real grant and verify its OpenID UserInfo owner, or return
+   `invalid_grant` for that same unissued grant. Any nondiscriminating or different
+   error refuses. The latter is a bounded live inference of client authentication,
+   not proof of an owner, usable grant, or settled effects. Administrator Identity
+   requests no offline grant in the existing application and requires no new
+   offline consent. The exact private clients remain in memory throughout.
 2. Verify the protected, actually built admission frontend uses the selected
    replacement runtime values. The authenticated `google-binding` probe returns
    exact client IDs and a fresh challenge-bound HMAC per secret. The host compares
@@ -85,7 +90,8 @@ request, including expected HTTP denial paths.
    An orphan, pending effect, changed principal or unknown outcome refuses.
 4. The same reviewed action observes Dardan's supported Google Auth Platform
    client-secret retirement. It polls these same actual old credentials for
-   `invalid_client`, while replacement refreshes continue to succeed. No Google
+   `invalid_client`, while replacement authentication continues to pass the same
+   calibrated test or actual refresh/UserInfo check. No Google
    client-management endpoint is invented. The existing 300-second observation
    budget bounds the action; it is not an approval expiry.
 5. Revoke only selected grants through Google's documented `POST /revoke`, then
@@ -135,7 +141,9 @@ still has to return `invalid_grant`. No grants are created by the observer.
 
 The private runtime supplies the two replacement secrets, two exact old secrets,
 existing Redis credential, base64 Calendar credential-encryption key/reference
-mapping, verification grants and any required legacy Calendar ID. These are
+mapping, any existing verification grants and required legacy Calendar ID. Actual
+Calendar grants still require successful refresh, UserInfo and event readback;
+the negative client-authentication probe cannot replace these observations. These are
 private runtime inputs, never reviewed artifact fields. The component exposes no
 standalone live CLI or ambient credential acquisition path.
 
@@ -147,7 +155,7 @@ The coordinator must join the historical deployment/login/direct-caller and
 other provider observations before its existing strict fence validator permits
 the reviewed application SQL.
 
-The owned validation includes 12 Google HTTPS cases, 12 Node adapter/binding
+The owned validation includes 14 Google HTTPS cases, Node adapter/binding
 tests, and a fresh TLS PostgreSQL 16 run through all 83 source migrations. The
 database run exercises the five Google projections, real application-format
 AES-GCM decoding, redaction, wrong-key refusal and snapshot mismatch. The
@@ -158,6 +166,8 @@ PostgreSQL 18 or live G2.
 
 Primary references: [Google client-secret rotation](https://support.google.com/cloud/answer/15549257),
 [Google web-server refresh and revocation](https://developers.google.com/identity/protocols/oauth2/web-server),
+[Google OpenID Connect errors](https://developers.google.com/identity/openid-connect/reference),
+[OAuth error discrimination](https://www.rfc-editor.org/rfc/rfc6749#section-5.2),
 [OpenID UserInfo](https://developers.google.com/identity/openid-connect/openid-connect),
 [Calendar event listing](https://developers.google.com/workspace/calendar/api/v3/reference/events/list),
 [Upstash Redis REST API](https://upstash.com/docs/redis/features/restapi).

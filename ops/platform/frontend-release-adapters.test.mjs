@@ -117,6 +117,27 @@ test("Google selection binds distinct reviewed staging clients, grants and hashe
   }
 });
 
+test("CRM and shipping bindings preserve only scoped nonsecret credential provenance and exact provider IDs", () => {
+  for (const provider of ["highlevel", "chitchats"]) {
+    const f = fixture(provider), key = `${provider}Retirement`;
+    f.input[key] = { environment: "staging", sourceBindingSha256: "1".repeat(64), databaseSnapshotSha256: "2".repeat(64),
+      retiredCredentialBindingSha256: "3".repeat(64), replacementCredentialBindingSha256: "4".repeat(64), privateToken: "private-marker",
+      ...(provider === "chitchats" ? { credentialKind: "personal-access-token", clientId: "owned-client", expectedProviderShipmentIds: [] } :
+        { credentialKind: "oauth-installation", locationId: "owned-location", companyId: "owned-company", appId: "owned-app", oauthClientId: "owned-oauth-client",
+          expectedProviderContactIds: [], expectedWorkflowIds: [] }) };
+    assert.equal(JSON.stringify(frontendProviderBindingsArtifact(f.input, f.plan)).includes("private-marker"), false);
+    for (const change of [row => { row.environment = "production"; }, row => { row.credentialKind = "unknown-kind"; },
+      row => { row.replacementCredentialBindingSha256 = row.retiredCredentialBindingSha256; }, row => { row.sourceBindingSha256 = "0".repeat(64); },
+      row => { row[provider === "chitchats" ? "clientId" : "locationId"] = "../outside-scope"; }]) {
+      const copy = structuredClone(f.input); change(copy[key]); assert.throws(() => frontendProviderBindingsArtifact(copy, f.plan));
+    }
+    if (provider === "highlevel") {
+      f.input[key].locationId = "vd09FLBpPLXuHb5Tnhn4";
+      assert.throws(() => frontendProviderBindingsArtifact(f.input, f.plan));
+    }
+  }
+});
+
 test("restoration gateway binding selects an exact existing machine/configuration/image without copying runtime input", () => {
   const f = fixture();
   f.input.gatewayObservation = { hostMachineId: "1".repeat(32), releaseId: "existing-host", candidateSha256: "2".repeat(64),
@@ -180,7 +201,7 @@ async function protocolFixture(code, task) {
     mkdirSync(join(app, "scripts"), { recursive: true });
     for (const name of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"])
       copyFileSync(join(root, "scripts", name), join(app, "scripts", name));
-    const modules = ["frontend-release-restoration", "frontend-admission", "frontend-square-effects", "frontend-google-effects", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
+    const modules = ["frontend-release-restoration", "frontend-admission", "frontend-square-effects", "frontend-google-effects", "frontend-crm-shipping-effects", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
       "frontend-migration", "frontend-schema", "source-checkout", "source-policy", "release-inputs", "release"];
     for (const name of modules) copyFileSync(join(root, "ops/platform", `${name}.mjs`), join(app, "ops/platform", `${name}.mjs`));
     copyFileSync(join(root, "src/lib/private-db/migration-lineage.ts"), join(app, "src/lib/private-db/migration-lineage.ts"));
