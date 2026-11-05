@@ -28,14 +28,28 @@ type ProductRefundRecoveryRunner = (
   task: () => ReturnType<typeof drainQueuedProductOrderRefunds>,
 ) => ReturnType<typeof drainQueuedProductOrderRefunds>;
 
+type ShippingPreparationResult = {
+  enabled: boolean;
+  abandoned: number;
+  queued: number;
+};
+type ShippingPreparationRecoveryRunner = (
+  task: () => Promise<ShippingPreparationResult>,
+) => Promise<ShippingPreparationResult>;
+
 export function createShippingWorkerCronHandler(
   dependencies: typeof defaultDependencies = defaultDependencies,
   runRefundRecovery: ProductRefundRecoveryRunner = (task) => task(),
+  runPreparationRecovery: ShippingPreparationRecoveryRunner = (task) => task(),
 ): (req: Request) => Promise<Response> {
   return async function shippingWorkerCron(req: Request): Promise<Response> {
     if (!authorized(req)) return new Response(null, { status: 401 });
     try {
-      return await runShippingWorkerCron(dependencies, runRefundRecovery);
+      return await runShippingWorkerCron(
+        dependencies,
+        runRefundRecovery,
+        runPreparationRecovery,
+      );
     } catch (error) {
       if (error instanceof WriterAdmissionError) {
         return NextResponse.json(
@@ -66,6 +80,7 @@ export function createShippingWorkerCronHandler(
 async function runShippingWorkerCron(
   dependencies: typeof defaultDependencies,
   runRefundRecovery: ProductRefundRecoveryRunner,
+  runPreparationRecovery: ShippingPreparationRecoveryRunner,
 ): Promise<Response> {
   const now = dependencies.now();
   // Manual Square refunds queue a row (via the admin refund route) and are
@@ -80,12 +95,38 @@ async function runShippingWorkerCron(
     succeeded: refunds.succeeded,
     needsReview: refunds.needsReview,
   };
-  if (!dependencies.isChitChatsShippingEnabled()) {
+  const preparation = await runPreparationRecovery(() =>
+    prepareShipping(dependencies, now),
+  );
+  if (!preparation.enabled) {
     return NextResponse.json(
       { enabled: false, queued: 0, refunds: refundSummary },
       { status: refunds.needsReview > 0 ? 503 : 200 },
     );
   }
+  const { abandoned, queued } = preparation;
+  const operations = await dependencies.runShippingOperationWorker();
+  const redacted = await dependencies.redactExpiredShipmentPii(now);
+  return NextResponse.json(
+    { queued, abandoned, operations, redacted, refunds: refundSummary },
+    {
+      status:
+        operations.deadLettered > 0 ||
+        operations.retried > 0 ||
+        operations.fenced > 0 ||
+        refunds.needsReview > 0
+          ? 503
+          : 200,
+    },
+  );
+}
+
+async function prepareShipping(
+  dependencies: typeof defaultDependencies,
+  now: Date,
+): Promise<ShippingPreparationResult> {
+  if (!dependencies.isChitChatsShippingEnabled())
+    return { enabled: false, abandoned: 0, queued: 0 };
   const abandoned = await dependencies.abandonExpiredQuotes(now);
   const due = await dependencies.listShipmentsDueForPolling(now, 100);
   let queued = 0;
@@ -103,20 +144,7 @@ async function runShippingWorkerCron(
     });
     queued += 1;
   }
-  const operations = await dependencies.runShippingOperationWorker();
-  const redacted = await dependencies.redactExpiredShipmentPii(now);
-  return NextResponse.json(
-    { queued, abandoned, operations, redacted, refunds: refundSummary },
-    {
-      status:
-        operations.deadLettered > 0 ||
-        operations.retried > 0 ||
-        operations.fenced > 0 ||
-        refunds.needsReview > 0
-          ? 503
-          : 200,
-    },
-  );
+  return { enabled: true, abandoned, queued };
 }
 
 function pollingBucket(status: string, now: Date): number {

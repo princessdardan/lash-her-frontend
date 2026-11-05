@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "reviewedShippingHead": "968ed4317b0264a7c88f614079187c7fd97e2288",
+  "status": "LOCAL_PATCHED_RUNTIME_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "scope": "Frontend-owned gateway and migration images only; shipping preparation behavior unchanged",
+  "runtime": "Node 24.18.0 unit/DB tests; Trivy 0.76.1; Docker 29.4.0; local Linux arm64 images",
+  "unitTests": {
+    "tests": 2324,
+    "pass": 2324,
+    "fail": 0,
+    "skipped": 0
+  },
+  "platformTests": {
+    "tests": 212,
+    "pass": 212,
+    "fail": 0,
+    "skipped": 0,
+    "newRuntimeChecks": 25
+  },
+  "postgres16": {
+    "status": "PASS",
+    "totalChecks": 120,
+    "clusterStoppedAndRemoved": true
+  },
+  "nativeRegression": {
+    "original": "EXPECTED_ASSERTION_FAILURE",
+    "patchedStatic": "PASS",
+    "patchedShared": "PASS",
+    "installedInBothFinalImages": "PASS",
+    "upstreamZlibChecks": "PASS"
+  },
+  "imageScans": {
+    "rawReportsRetained": true,
+    "rawZlibFinding": "CVE-2026-76844",
+    "verifiedFixedStatusOnly": true,
+    "unresolvedHighCriticalFindings": 0,
+    "unknownFindingsStillFail": true
+  },
+  "independentReferenceBuilds": "PASS; both images and separate builds produce the same custom package and installed library hashes",
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "formatting": "PASS",
+  "diffCheck": "PASS",
+  "files": {
+    ".github/workflows/ci.yml": "145f556208eff59d7d5bbfac9973767ffe3360a225341055cf12080278e8cb75",
+    ".github/workflows/platform-artifacts.yml": "d12d0aba9d3cbf96e60550fbea5b34527c1becc917816b08b79d329a21dd705e",
+    "docs/api-integration/baselines/2026-11-05-pr91-patched-runtime/gateway.json": "eff6ec9613eabd6fdfa577564a63270017d4fe57215016319eb80dae8d554169",
+    "docs/api-integration/baselines/2026-11-05-pr91-patched-runtime/migration.json": "73ea2198e07d38791df42a49fb3b567ffd018214c35ae8eb84462bba532cdb14",
+    "docs/api-integration/baselines/2026-11-05-pr91-patched-runtime/postgres16.json": "21f78bdca1e496dd6378d00e1405f99a65ab0a79d2261c54731cb196a50222a7",
+    "ops/gateway/Dockerfile": "62d67f41fa449fd7fcd514db53dc8fcbfb813df116e165f65e91f7f50938dcbf",
+    "ops/gateway/runtime/README.md": "c4a9f599e61ba20d4aae9cef50a6f103bdf3cf25063b378c1e4a49151108e554",
+    "ops/gateway/runtime/backport.patch": "69555c1182f7b7a6d5559c06437e8c63a87a7aecf2836d5694b860d60ad47816",
+    "ops/gateway/runtime/build.sh": "e13442a0b92a8d4132dd64d18031b3001caaae132eac763b23ffce7e9bdef892",
+    "ops/gateway/runtime/failed-write.c": "1bf462e84c75fac033e13fb1de35c4332c3f181cc1cb6112ce0a71192ff6d1fd",
+    "ops/gateway/runtime/inputs.lock.json": "74ef1c74c0c0d119c8a0704314be61dfc9e9d26bb2c3416e9ca36db51a8ff69c",
+    "ops/gateway/runtime/upstream.patch": "110ff14375733173d8aa54574473424fbd7dfe4b81f1ca34a759c6fe14b15b14",
+    "ops/gateway/runtime/verify.mjs": "e88f1a5050e02268f7837aecf0cf40c35f60e2f5dce98ef07f5063b8cd3d98a7",
+    "ops/platform/Dockerfile.frontend-migration": "f94df31cbbcbb3ee321a77f36a08e70d039a26424bc845925ff6dbc51fe1fdf4",
+    "ops/platform/Dockerfile.frontend-migration.dockerignore": "cbbcc6217ac5db6914f628a97c751250f514877062fca2086cc4e3b627c3a8d6",
+    "ops/platform/artifact-candidate.mjs": "d5440e3759820421464f1532a6f36c2b40d6702bd8332c6d187335e64d29c401",
+    "ops/platform/patched-runtime.test.mjs": "d47695c7a8ce48132783e4a1d57972a3ea33e378b1262429d55d59db5d992a94",
+    "ops/platform/platform.test.mjs": "3d0cc5602857fb508355b97f72cc3b99206d4c225ce222244f996bcd2b18efde",
+    "docs/api-integration/frontend-shipping-preparation-recovery-admission.md": "71d786496407936082dd1804a2c385c9afd195b3b4d9efc555444ae808a88571"
+  },
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "deploymentPerformed": false,
+  "candidatePublicationDispatched": false,
+  "p200Complete": false,
+  "limitations": [
+    "Linux amd64 images, PostgreSQL 18 and all ten CI jobs must pass on the published reviewed head before merge.",
+    "Local migration image manifest names the pre-runtime shipping head; exact-head CI rebuilds and binds the published revision.",
+    "Raw scans, SBOMs and VEX files are retained under /private/tmp/pr91-{gateway,migration}-qualified locally and uploaded by CI/publication workflows, including refusal paths.",
+    "Artifact-publication changes are locally tested but no publication or runtime release was dispatched."
+  ]
+}

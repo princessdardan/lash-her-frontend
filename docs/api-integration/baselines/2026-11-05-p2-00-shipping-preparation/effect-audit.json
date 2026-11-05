@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "scope": "Authenticated shipping-preparation batch only",
+  "admissionEnabled": false,
+  "effects": [
+    {
+      "stage": "authentication and prior refund",
+      "source": "src/app/api/cron/chitchats-shipping/handler.ts",
+      "accounting": "401 precedes admission. Refund has its own entry; a closed preparation entry does not replay an earlier settled refund."
+    },
+    {
+      "stage": "configuration/abandonment",
+      "source": "src/app/api/cron/chitchats-shipping/route.ts",
+      "accounting": "Acquire independent recovery before shipping-enabled check and all preparation business reads/writes. Disabled/empty batches complete without later provider work."
+    },
+    {
+      "stage": "detached quote receipts",
+      "source": "src/lib/shipping/shipment-store.ts",
+      "accounting": "Lock expected expired quote rows before update; check abandonment receipts and exact persisted cleanup identity/hash/payload inside transaction."
+    },
+    {
+      "stage": "attached quote receipts",
+      "source": "src/lib/shipping/shipment-store.ts",
+      "accounting": "Retain order/obligation/shipment lock rechecks and benign concurrent eligibility skips; missing locked update or cleanup receipt marks uncertainty."
+    },
+    {
+      "stage": "tracking enqueue",
+      "source": "src/lib/shipping/shipment-store.ts",
+      "accounting": "Preserve deterministic polling bucket/shipment/version key and conflict checks. Missing insert/readback throws; changed inserted or reused stored payload marks uncertainty."
+    },
+    {
+      "stage": "transaction/ledger settlement",
+      "source": "src/lib/writer-admission/runtime.ts",
+      "accounting": "Await every selected effect and DB transaction. Errors, receipt markers, socket loss and lost completion acknowledgement refuse success without replay."
+    },
+    {
+      "stage": "remaining shipping work",
+      "source": "src/app/api/cron/chitchats-shipping/handler.ts",
+      "accounting": "Shipment execution/provider/alerts and PII redaction run afterward outside the entry. Completed preparation cannot prove their drain."
+    }
+  ],
+  "deferredWorkInPreparation": false,
+  "wholeShippingRouteQualified": false,
+  "providerResponsesIntercepted": true,
+  "fixtureJobsDelayed": true,
+  "shippingExecutorQualified": false
+}

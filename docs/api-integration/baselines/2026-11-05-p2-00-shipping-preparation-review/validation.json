@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "status": "LOCAL_REVIEW_FIXES_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "reviewedHead": "1253544b6e745ea1d9312c96fb6b81e413aaa465",
+  "scope": "PR #91 shipping preparation receipts only",
+  "runtime": "Node 24.18.0",
+  "findings": [
+    {
+      "severity": "P1",
+      "issue": "Fresh tracking insert receipts checked payload only and could settle completion with a changed shipment, type, idempotency key or operation hash.",
+      "beforeFix": {
+        "phase": "shipping-preparation-mutated-tracking-shipment",
+        "actualHttpStatus": 200,
+        "expectedHttpStatus": 503
+      },
+      "fix": "Compare all requested operation identity fields and payload before treating the insert as a receipt; mismatches mark uncertainty."
+    },
+    {
+      "severity": "P1",
+      "issue": "Abandonment receipt counts/presence could settle completion when a returned row retained its previous status or state version.",
+      "beforeFix": {
+        "phase": "shipping-preparation-mutated-detached-status",
+        "actualHttpStatus": 200,
+        "expectedHttpStatus": 503,
+        "trackingFixAlreadyApplied": true
+      },
+      "fix": "Compare each locked shipment identity, abandoned status and exact state-version increment for detached and attached paths."
+    }
+  ],
+  "regressionCases": [
+    "tracking-shipment",
+    "tracking-type",
+    "tracking-key",
+    "tracking-hash",
+    "detached-status",
+    "detached-version",
+    "attached-status",
+    "attached-version",
+    "off-tracking-hash"
+  ],
+  "postgres": {
+    "major": 16,
+    "totalChecks": 120,
+    "shippingPreparationChecks": 23,
+    "existingChecks": 97,
+    "clusterStoppedAndRemoved": true,
+    "providersIntercepted": true,
+    "unexpectedExternalFetches": 0,
+    "resultFile": "postgres16.json"
+  },
+  "unitTests": {
+    "tests": 2324,
+    "pass": 2324,
+    "fail": 0,
+    "skipped": 0
+  },
+  "focusedTests": {
+    "tests": 26,
+    "pass": 26,
+    "fail": 0,
+    "skipped": 0
+  },
+  "platformTests": {
+    "tests": 187,
+    "pass": 187,
+    "fail": 0,
+    "skipped": 0
+  },
+  "typecheck": "PASS",
+  "lint": "PASS; pre-existing unused _input warning in shipment-store.ts",
+  "formatting": "PASS",
+  "diffCheck": "PASS",
+  "candidateSourceManifestSha256": "1cca7541394116ca75a2395be0b69343a5bc0d416564af957128f7ea1760ba1b",
+  "files": {
+    ".github/workflows/ci.yml": "a4dcbe5b848ccad1c644e6a6a4e3fb5ec2e3b70e497bc67c54477cb02454280d",
+    "docs/api-integration/baselines/2026-11-05-p2-00-shipping-preparation/base-source-inventory.json": "2168534852f85eb2249e70536da94b10b970fdc9f4e7eb1535e724068f35829e",
+    "docs/api-integration/baselines/2026-11-05-p2-00-shipping-preparation/candidate-source-inventory.json": "5262911afba064617a0b27061800e4fbdb7763f33836a2384e1efe839bd7da4b",
+    "docs/api-integration/baselines/2026-11-05-p2-00-shipping-preparation/effect-audit.json": "df8c4ee5e188f46b557cc7d421e8032308a9bf37898b545fa200600b1bda30e6",
+    "docs/api-integration/baselines/2026-11-05-p2-00-shipping-preparation/postgres16.json": "ba5b3cb4b58826d8bce633490ec7e69a77406b5f98b5d38a53438494c9502cf3",
+    "docs/api-integration/baselines/2026-11-05-p2-00-shipping-preparation/writer-classification.json": "2f1023ebbea01be1547f1988f711f93b5a47ef624bc2e22e855e15344a3821f3",
+    "docs/api-integration/frontend-shipping-preparation-recovery-admission.md": "337b8636d3b17449176e10805d607c838ee0a36cda75665b92d60a167fafb60c",
+    "docs/api-integration/p2-00-frontend-quiescence.md": "544f1b867e7dc4924ce7d00c8c90a9bcfe3e314ea1a2f6bad650e3c0ec2b3c2d",
+    "docs/scheduled-jobs-runbook.md": "77842631dcb09137358db2b733180f92749d00e9827a9da9c8bcf2fffd396689",
+    "ops/platform/frontend-admission.mjs": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
+    "ops/platform/frontend-reconciliation.test.mjs": "ec6a3ee8ff7d66d069f7e28e8c74b1b0ae19ae9b620566d085b1c5113328bb51",
+    "ops/platform/frontend-writer-inventory.mjs": "8b9d259f6ff4f666197c247248ae3d3948843d3c48aa67a39b7ef48347e9e9e5",
+    "ops/platform/harness/owned-frontend-reconciliation.mjs": "6660cb2c51ac91f160115dece6b0688ca0bff78654789d255fb7ed718178f59c",
+    "ops/platform/harness/owned-reconciliation-providers.mjs": "bdb10ab69c75a2f9fb550e303c9053844e6626d66de4ef3064f5d7e88fd29d01",
+    "ops/platform/test-frontend-migration-local.mjs": "91f07d3e46f610e87cc1c4b830040a6179145e797b95fa4a0f1c6a9a46c9ecb5",
+    "package-lock.json": "797605065847a24761babb8b541a63a31356c0d5163b8983e497abec2189ebe1",
+    "package.json": "9480b83d72bd25037f1d4b98c12ccb9f5cc4a6ea53d841b7bb2fb9bf4f170f3c",
+    "scripts/register-server-only-test.mjs": "b0d794ce98c9179660f01926d7a879fa61d2ebc5a7b1c539953e2a2d99af28c6",
+    "scripts/run-source-unit-tests.mjs": "3ce2c81b0722784e5f427969ad0f551addf9d6c40ecb1f11807381603299633b",
+    "src/app/api/cron/chitchats-shipping/handler.ts": "9d540a93175097a609818f1fb9bc1e75dd5f8b74d815b51d812ac8f7f6efebc5",
+    "src/app/api/cron/chitchats-shipping/route.ts": "cb989953e70e3e8c3680734bda5f21daf451e7b106b10b267ea50adf23ff046f",
+    "src/lib/private-db/client.ts": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+    "src/lib/private-db/schema.ts": "210b802be6d6419c12b533de326a6db87780c475d4491fb06a192eea40a4baa9",
+    "src/lib/shipping/config.ts": "275de69708236d3c91f527c1f8f2b5f28b690314021375a31e5c9f4c83217736",
+    "src/lib/shipping/customer-refunds.ts": "82944d2ee2619cec76b20736dc56a09dcb77cbae00f41623146b2eb224ea5ed4",
+    "src/lib/shipping/operation-worker.ts": "c8fe521cc09ffeba696705c9b1a4aa9ebff1ea5f0c066f5193bf519573021ab4",
+    "src/lib/shipping/shipment-store.test.ts": "143c1058d671bee214e173b7f856c38dae1f74d2399baf6bef09cb33decf0393",
+    "src/lib/shipping/shipment-store.ts": "ebd99cf29d1fa4fa829d9a70345e61dd3c09551219cb4b5a2b21631a85bb9ea1",
+    "src/lib/writer-admission/config.ts": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
+    "src/lib/writer-admission/context.ts": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+    "src/lib/writer-admission/product-refund-worker.test.ts": "fd2b14e508ee5f95319a539cd690cc9c2634d794902e11151e1ea52c5a5b71db",
+    "src/lib/writer-admission/runtime.ts": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
+    "src/lib/writer-admission/shipping-preparation.test.ts": "848258b653498702b7c2f4daff148d2964aa82a1103fca8e6c6a89ec03bebf16",
+    "docs/api-integration/baselines/2026-11-05-p2-00-shipping-preparation-review/postgres16.json": "170ced2661c36a326dfe04015ec70c56400b249fd8c780870e143f049585945b"
+  },
+  "commands": [
+    "FRONTEND_MIGRATION_LOCAL_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin node ops/platform/test-frontend-migration-local.mjs",
+    "npm run test:unit",
+    "node --test ops/platform/*.test.mjs",
+    "NEXT_PUBLIC_SANITY_DATASET=test-dataset NEXT_PUBLIC_SANITY_PROJECT_ID=test-project node --import ./scripts/register-server-only-test.mjs --import tsx --test src/lib/writer-admission/shipping-preparation.test.ts src/lib/writer-admission/product-refund-worker.test.ts src/lib/shipping/shipment-store.test.ts",
+    "tsc --noEmit",
+    "eslint src/lib/shipping/shipment-store.ts ops/platform/harness/owned-frontend-reconciliation.mjs"
+  ],
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "deploymentPerformed": false,
+  "providerTouched": false,
+  "p200Complete": false,
+  "limitations": [
+    "PostgreSQL 18 and full CI remain required on the updated published head.",
+    "The actual GET runs through a loopback HTTP bridge with synthetic rows and delayed jobs; it does not qualify deployed Next.js, native scheduling or shipment execution.",
+    "Shipment execution/provider/persistence/alert effects, PII redaction, independent callers, historical fencing/bootstrap and parent release coordination remain outside this review."
+  ]
+}
