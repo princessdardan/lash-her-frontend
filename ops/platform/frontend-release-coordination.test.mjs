@@ -33,6 +33,8 @@ function fixture() {
     artifacts: { frontendMigration: { image: `ghcr.io/princessdardan/lash-her-platform-frontend-migration@${job.migrationImageDigest}` } },
     contractManifestSha256: artifact.contractManifestSha256, frontendMigration: { sourceCommit: job.sourceCommit, sqlArtifactSha256: artifact.sqlArtifactSha256,
       contractManifestSha256: artifact.contractManifestSha256, schemaBaselines: { 18: job.schemaBaselineSha256 } } };
+  const phase2 = { contractPhase: artifact.contractPhase, phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 };
+  for (const value of [candidate, candidate.frontendMigration, job]) Object.assign(value, phase2);
   const inventory = { version: 1, environment: "staging", actionId: job.releaseId, sourceCommit: job.sourceCommit,
     targetSha256: frontendAdmissionTargetSha256("staging", job.target), sourceInventorySha256: hash(source), reviewSha256: "3".repeat(64), adaptersSha256: "4".repeat(64),
     observationBudgetSeconds: 300, admissionMode: "bootstrap", bootstrapSqlSha256: frontendAdmissionBootstrapArtifact().sqlSha256,

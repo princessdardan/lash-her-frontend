@@ -94,8 +94,9 @@ test("real bundle CLI includes optional frontend bindings and refuses a substitu
     f.candidate.contractManifestSha256 = artifact.contractManifestSha256;
     f.candidate.frontendMigration = { sourceCommit: f.candidate.sources.frontend.commit, sqlArtifactSha256: artifact.sqlArtifactSha256,
       contractManifestSha256: artifact.contractManifestSha256, schemaBaselines: { 18: createHash("sha256").update(JSON.stringify(baseline)).digest("hex") } };
+    for (const value of [f.candidate, f.candidate.frontendMigration]) Object.assign(value, { contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 });
     f.settings.frontend = { ...f.settings.services.course, host: "frontend.example.invalid", approvedPendingTags: artifact.migrations.map(({ tag }) => tag), password: "must-not-copy" };
-    f.schemas.frontend = { status: "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS", postgresMajor: 18, providerTouched: false, schemaBaseline: baseline };
+    f.schemas.frontend = { status: "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS", postgresMajor: 18, providerTouched: false, schemaBaseline: baseline, contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 };
     const schemas = join(root, "schemas"); mkdirSync(schemas);
     for (const [name, schema] of Object.entries(f.schemas)) { mkdirSync(join(schemas, name)); writeFileSync(join(schemas, name, "operator-schema-postgres18.json"), JSON.stringify(schema)); }
     const candidate = join(root, "candidate.json"), settings = join(root, "targets.json"), output = join(root, "bundle");

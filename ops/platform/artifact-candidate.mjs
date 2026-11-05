@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { SOURCE_REPOSITORIES, sourceContextFromEnvironment } from "./release-inputs.mjs";
@@ -29,6 +29,8 @@ export function verifyFrontendSchemaSummary(summary, artifact, sourceCommit) {
       summary.sqlArtifactSha256 !== artifact.sqlArtifactSha256 || summary.contractManifestSha256 !== artifact.contractManifestSha256 ||
       !/^[a-f0-9]{64}$/u.test(summary.schemaBaselineSha256 ?? "") || /^0+$/u.test(summary.schemaBaselineSha256) ||
       !Array.isArray(summary.checks) || !required.every((name) => summary.checks.includes(name))) throw new Error("Exact frontend CI schema summary required");
+  if (artifact.contractPhase === "p2" && (summary.contractPhase !== "p2" ||
+    summary.phase2ContractManifestSha256 !== artifact.phase2ContractManifestSha256)) throw new Error("Exact phase 2 frontend CI schema summary required");
   return summary.schemaBaselineSha256;
 }
 
@@ -66,10 +68,31 @@ function command(program, args) {
   return execFileSync(program, args, { encoding: "utf8", timeout: 120_000, maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
 }
 
-export function assertCandidateSourceApproval(proof, context) {
-  assertSourceContext(context);
+// Source checkouts must be verified before running their repository-owned CLI.
+export function verifyArtifactRuntime(directory, sourceRoot, component, image) {
+  const scan = JSON.parse(readFileSync(join(directory, `${component.local}-scan.json`), "utf8"));
+  if (scan.ArtifactName !== image || scan.Metadata?.ImageConfig?.architecture !== "amd64" || !Array.isArray(scan.Results) || scan.Results.length === 0 ||
+      scan.Results.some((item) => item.Vulnerabilities?.some((v) => ["HIGH", "CRITICAL"].includes(v.Severity)))) throw new Error("Artifact scan required");
+  const sourceDirectory = join(sourceRoot, SOURCE_REPOSITORIES[component.source].split("/")[1]);
+  if (component.source === "frontend") {
+    verifyRecordedRuntime(directory, component.local, image, sourceDirectory);
+  } else {
+    const apiSourceDirectory = realpathSync(sourceDirectory);
+    const receipt = command(process.execPath, [join(apiSourceDirectory, "ops/runtime/verify.mjs"), "--recorded",
+      directory, component.local, image, apiSourceDirectory]);
+    if (receipt.trim() !== "PATCHED_RUNTIME_RECORD_VERIFIED") throw new Error("Repository-owned runtime verification required");
+    const record = JSON.parse(readFileSync(join(directory, `${component.local}-runtime/verification.json`), "utf8"));
+    if (!record.image?.RepoDigests?.includes(image)) throw new Error("Exact candidate runtime image proof required");
+  }
+}
+
+export function assertCandidateSourceApproval(proof, context, { requirePhase2 = false } = {}) {
+  const phase2 = proof?.version === 4;
+  assertSourceContext(context, { requirePhase2: requirePhase2 || phase2 });
   const approval = proof?.sourceApproval;
-  if (proof?.version !== 3 || proof.workflowSha !== context.workflowSha || proof.workflowRef !== context.workflowRef ||
+  if ((!phase2 && (requirePhase2 || proof?.version !== 3 || context.contractPhase !== undefined || proof.contractPhase !== undefined || proof.phase2ContractManifestSha256 !== undefined)) ||
+      (phase2 && (proof.contractPhase !== "p2" || proof.phase2ContractManifestSha256 !== context.phase2ContractManifestSha256)) ||
+      proof.workflowSha !== context.workflowSha || proof.workflowRef !== context.workflowRef ||
       proof.contractManifestSha256 !== context.contractManifestSha256 ||
       approval?.mode !== SOURCE_APPROVAL_MODE || approval.operatorGithubUserId !== SOURCE_OPERATOR_ID ||
       approval.runId !== context.runId || String(approval.runAttempt) !== context.runAttempt ||
@@ -87,10 +110,10 @@ export function assertCandidateSourceApproval(proof, context) {
   return approval;
 }
 
-function candidateSourceContext(proof, environment) {
+function candidateSourceContext(proof, environment, sourceRoot) {
   return sourceContextFromEnvironment({ ...environment, SOURCE_BRANCH: proof.workflowRef?.replace(/^refs\/heads\//u, ""),
     FRONTEND_REVISION: proof.sources?.frontend?.commit, COURSE_REVISION: proof.sources?.course?.commit,
-    COMMUNITY_REVISION: proof.sources?.community?.commit });
+    COMMUNITY_REVISION: proof.sources?.community?.commit }, join(sourceRoot, "lash-her-frontend"), { historicalPhase1: proof.version === 3 });
 }
 
 // This produces a signed-build candidate, never an approved runtime release.
@@ -99,14 +122,16 @@ export function collectArtifactCandidate(directory, sourceRoot, environment = pr
   if (environment.GITHUB_REPOSITORY !== SOURCE_REPOSITORIES.frontend || environment.GITHUB_SHA !== proof.workflowSha ||
       environment.GITHUB_REF !== proof.workflowRef || !["refs/heads/staging", "refs/heads/main"].includes(proof.workflowRef) ||
       !/^\d+$/u.test(environment.GITHUB_RUN_ID ?? "") || !/^\d+$/u.test(environment.GITHUB_RUN_ATTEMPT ?? "")) throw new Error("Verified coordinator context required");
-  verifySourceCheckouts(sourceRoot, proof.sources);
-  const sourceApproval = assertCandidateSourceApproval(proof, candidateSourceContext(proof, environment));
+  const phase2 = verifySourceCheckouts(sourceRoot, proof.sources, { requirePhase2: true });
+  const sourceApproval = assertCandidateSourceApproval(proof, candidateSourceContext(proof, environment, sourceRoot), { requirePhase2: true });
   const candidate = JSON.parse(readFileSync(new URL("./release.candidate.json", import.meta.url), "utf8"));
   candidate.releaseId = `p1-${environment.GITHUB_RUN_ID}-${environment.GITHUB_RUN_ATTEMPT}`;
   candidate.approval.releaseId = candidate.releaseId;
   candidate.sources = proof.sources;
   candidate.sourceApproval = sourceApproval;
   candidate.contractManifestSha256 = hash(readFileSync(join(sourceRoot, "lash-her-frontend/contracts/api-integration/v1/manifest.json")));
+  candidate.contractPhase = "p2";
+  candidate.phase2ContractManifestSha256 = phase2.phase2ContractManifestSha256;
   candidate.runtime = { composeSha256: hash(readFileSync(join(sourceRoot, "lash-her-frontend/ops/platform/compose.yaml"))),
     privateTlsPolicies: privateTlsPolicies() };
   const frontend = frontendMigrationArtifact(join(sourceRoot, "lash-her-frontend"));
@@ -117,6 +142,7 @@ export function collectArtifactCandidate(directory, sourceRoot, environment = pr
   if (frontendSummary.length > 2_000_000) throw new Error("Frontend CI summary exceeds bound");
   const schemaHash = verifyFrontendSchemaSummary(JSON.parse(frontendSummary), frontend, proof.sources.frontend.commit);
   candidate.frontendMigration = { sourceCommit: proof.sources.frontend.commit, sqlArtifactSha256: frontend.sqlArtifactSha256,
+    contractPhase: "p2", phase2ContractManifestSha256: frontend.phase2ContractManifestSha256,
     contractManifestSha256: frontend.contractManifestSha256, schemaBaselines: { 18: schemaHash }, ciSummarySha256: hash(frontendSummary) };
   candidate.buildWorkflow = { repository: SOURCE_REPOSITORIES.frontend, commit: proof.workflowSha, ref: proof.workflowRef,
     runId: environment.GITHUB_RUN_ID, attempt: environment.GITHUB_RUN_ATTEMPT };
@@ -124,13 +150,7 @@ export function collectArtifactCandidate(directory, sourceRoot, environment = pr
     const digest = environment[`${component.env}_DIGEST`];
     if (!/^sha256:[0-9a-f]{64}$/u.test(digest ?? "") || /^sha256:0+$/u.test(digest)) throw new Error("Immutable artifact digest required");
     const image = `ghcr.io/princessdardan/${component.image}@${digest}`;
-    const scan = JSON.parse(readFileSync(join(directory, `${component.local}-scan.json`), "utf8"));
-    if (scan.ArtifactName !== image || scan.Metadata?.ImageConfig?.architecture !== "amd64" || !Array.isArray(scan.Results) || scan.Results.length === 0 || scan.Results.some((item) => item.Vulnerabilities?.some((v) => ["HIGH", "CRITICAL"].includes(v.Severity)))) throw new Error("Artifact scan required");
-    if (["gateway", "frontendMigration"].includes(component.key)) {
-      verifyRecordedRuntime(directory, component.local, image, join(sourceRoot, "lash-her-frontend"));
-    } else if (scan.Results.some(item => item.ExperimentalModifiedFindings?.length)) {
-      throw new Error("Unsupported artifact scan filtering");
-    }
+    verifyArtifactRuntime(directory, sourceRoot, component, image);
     const bundlePath = environment[`${component.env}_BUNDLE`];
     if (!bundlePath || !environment.RUNNER_TEMP || !resolve(bundlePath).startsWith(`${resolve(environment.RUNNER_TEMP)}/`)) throw new Error("Runner-owned attestation bundle required");
     const verifier = ["attestation", "verify", `oci://${image}`, "--repo", SOURCE_REPOSITORIES.frontend,
@@ -187,11 +207,19 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       if (process.argv.length !== 5) throw new Error("Usage");
       const directory = resolve(process.argv[3]);
       const candidate = JSON.parse(readFileSync(join(directory, "release.candidate.json"), "utf8"));
-      verifySourceCheckouts(resolve(process.argv[4]), candidate.sources);
+      const sourceRoot = resolve(process.argv[4]);
+      // Historical P1 recovery keeps its own source/proof semantics. A checkout
+      // containing P2 can never select that path by omitting candidate fields.
+      const requirePhase2 = existsSync(join(sourceRoot, "lash-her-frontend/contracts/api-integration/p2-candidate/manifest.json")) ||
+        candidate.contractPhase !== undefined || candidate.phase2ContractManifestSha256 !== undefined;
+      const phase2 = verifySourceCheckouts(sourceRoot, candidate.sources, { requirePhase2 });
       const finalProof = JSON.parse(readFileSync(join(directory, "source-checks.final.json"), "utf8"));
-      const approval = assertCandidateSourceApproval(finalProof, candidateSourceContext(finalProof, process.env));
+      const approval = assertCandidateSourceApproval(finalProof, candidateSourceContext(finalProof, process.env, sourceRoot), { requirePhase2 });
       if (candidate.sourceApproval?.runId !== approval.runId || candidate.sourceApproval?.runAttempt !== approval.runAttempt ||
-          JSON.stringify(candidate.sources) !== JSON.stringify(finalProof.sources)) throw new Error("Candidate source changed after harness");
+          JSON.stringify(candidate.sources) !== JSON.stringify(finalProof.sources) || requirePhase2 && (candidate.contractPhase !== "p2" ||
+          candidate.phase2ContractManifestSha256 !== phase2.phase2ContractManifestSha256 ||
+          candidate.frontendMigration?.phase2ContractManifestSha256 !== phase2.phase2ContractManifestSha256 || candidate.frontendMigration?.contractPhase !== "p2"))
+        throw new Error("Candidate source changed after harness");
       const reportBytes = readFileSync(join(directory, "container-harness.json"));
       const report = JSON.parse(reportBytes.toString("utf8"));
       const frontendReport = JSON.parse(readFileSync(join(directory, "frontend-migration-rehearsal.json"), "utf8"));

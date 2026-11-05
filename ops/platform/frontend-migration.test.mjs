@@ -25,6 +25,8 @@ function fixture() {
       allowEmptyBootstrap: true, approvedPendingTags: artifact.migrations.map(({ tag }) => tag) } };
   candidate.frontendMigration = { sourceCommit: job.sourceCommit, sqlArtifactSha256: artifact.sqlArtifactSha256,
     contractManifestSha256: artifact.contractManifestSha256, schemaBaselines: { 18: job.schemaBaselineSha256 } };
+  const phase2 = { contractPhase: artifact.contractPhase, phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 };
+  for (const value of [candidate, candidate.frontendMigration, job]) Object.assign(value, phase2);
   return { artifact, candidate, job, baseline };
 }
 
@@ -79,11 +81,41 @@ test("frontend credential parsing requires exact identity and explicit verified 
 
 test("frontend job assembly derives reviewed bindings without copying credentials", () => {
   const f = fixture();
-  const exported = { status: "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS", providerTouched: false, postgresMajor: 18, schemaBaseline: f.baseline };
+  const exported = { status: "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS", providerTouched: false, postgresMajor: 18, schemaBaseline: f.baseline, contractPhase: f.job.contractPhase, phase2ContractManifestSha256: f.job.phase2ContractManifestSha256 };
   const prepared = prepareFrontendMigrationJob(f.candidate, { ...f.job.target, recoveryRef: f.job.recoveryRef, password: "must-not-copy" }, exported);
   assert.equal(prepared.job.sqlArtifactSha256, f.artifact.sqlArtifactSha256);
   assert.equal(prepared.job.schemaBaselineSha256, f.job.schemaBaselineSha256);
   assert.ok(!JSON.stringify(prepared).includes("must-not-copy"));
+  assert.equal(prepared.job.phase2ContractManifestSha256, f.artifact.phase2ContractManifestSha256);
+  for (const value of [undefined, `sha256:${"b".repeat(64)}`]) {
+    exported.phase2ContractManifestSha256 = value;
+    assert.throws(() => prepareFrontendMigrationJob(f.candidate, { ...f.job.target, recoveryRef: f.job.recoveryRef }, exported));
+  }
+});
+
+test("new frontend migration artifacts require P2 candidate, SQL image and job identity without changing v1", () => {
+  for (const target of ["artifact", "candidate", "job", "frontendMigration"]) for (const mode of ["missing", "wrong"]) {
+    const f = fixture(), value = target === "frontendMigration" ? f.candidate.frontendMigration : f[target];
+    assert.doesNotThrow(() => prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact));
+    if (mode === "missing") delete value.phase2ContractManifestSha256;
+    else value.phase2ContractManifestSha256 = `sha256:${"b".repeat(64)}`;
+    assert.throws(() => prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact), /PHASE2/u);
+  }
+  const f = fixture(), v1 = f.artifact.contractManifestSha256;
+  for (const value of [f.artifact, f.candidate, f.job, f.candidate.frontendMigration]) {
+    delete value.contractPhase; delete value.phase2ContractManifestSha256;
+  }
+  assert.doesNotThrow(() => prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact));
+  assert.equal(f.job.contractManifestSha256, v1);
+});
+
+test("frontend database and terminal receipts retain the separate P2 binding", async () => {
+  const f = fixture(), r = runner(f); await r.run();
+  for (const record of r.records.filter(row => ["database-receipt.json", "job-outcome.json"].includes(row.name))) {
+    assert.equal(record.value.contractPhase, "p2");
+    assert.equal(record.value.phase2ContractManifestSha256, f.artifact.phase2ContractManifestSha256);
+    assert.equal(record.value.contractManifestSha256, f.artifact.contractManifestSha256);
+  }
 });
 
 test("frontend confirmation and source qualification precede credential acquisition", async () => {
@@ -293,7 +325,7 @@ test("frontend production refuses missing or failed staging migration evidence",
   const f = fixture(); f.candidate.environment = f.job.environment = "production";
   assert.throws(() => prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact));
   const binding = { version: 1, service: "frontend", environment: "staging", releaseId: "prior-staging", sourceCommit: f.job.sourceCommit,
-    migrationImageDigest: f.job.migrationImageDigest,
+    migrationImageDigest: f.job.migrationImageDigest, contractPhase: f.job.contractPhase, phase2ContractManifestSha256: f.job.phase2ContractManifestSha256,
     target: { host: "staging.example.invalid", database: "staging" }, sqlArtifactSha256: f.job.sqlArtifactSha256,
     contractManifestSha256: f.job.contractManifestSha256, schemaBaselineSha256: f.job.schemaBaselineSha256 };
   f.job.stagingVerification = { database: { ...binding, status: "DATABASE_VERIFIED", schemaVerified: true, runtimeRoleVerified: true },

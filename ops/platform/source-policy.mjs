@@ -16,7 +16,7 @@ export const isRevision = (value) => typeof value === "string" && /^[0-9a-f]{40}
 // GitHub's authenticated manual dispatch is the source-build approval.
 // This policy does not claim independence from a compromised GitHub account.
 export const SOURCE_APPROVAL_MODE = "single-operator-dispatch";
-export function assertSourceContext(context) {
+export function assertSourceContext(context, { requirePhase2 = false } = {}) {
   const id = (value) => typeof value === "string" && /^[1-9][0-9]{0,19}$/u.test(value);
   if (context?.repository !== SOURCE_REPOSITORIES.frontend || context.repositoryId !== SOURCE_REPOSITORY_IDS.frontend ||
       context.ownerId !== SOURCE_OPERATOR_ID || context.actorId !== SOURCE_OPERATOR_ID || context.event !== "workflow_dispatch" ||
@@ -26,6 +26,12 @@ export function assertSourceContext(context) {
       !id(context.runId) || !id(context.runAttempt) ||
       !/^sha256:[0-9a-f]{64}$/u.test(context.contractManifestSha256 ?? "") || /^sha256:0+$/u.test(context.contractManifestSha256)) {
     throw new Error("Canonical operator-dispatched source context required");
+  }
+  if (requirePhase2 || context.contractPhase !== undefined || context.phase2ContractManifestSha256 !== undefined) {
+    if (context.contractPhase !== "p2" || !/^sha256:[0-9a-f]{64}$/u.test(context.phase2ContractManifestSha256 ?? "") ||
+      /^sha256:0+$/u.test(context.phase2ContractManifestSha256) ||
+      context.phase2ContractRevisions?.course !== context.revisions.course || context.phase2ContractRevisions?.community !== context.revisions.community ||
+      context.phase2ContractRevisions?.enrollmentEvent !== context.revisions.community) throw new Error("Exact phase 2 source contract pins required");
   }
 }
 

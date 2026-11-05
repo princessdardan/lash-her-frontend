@@ -9,7 +9,9 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const demand = (ok) => { if (!ok) throw new Error("FRONTEND_PACKAGED_SOURCE_REFUSED"); };
 const fixed = ["package.json", "package-lock.json", "src/lib/private-db/migration-lineage.ts", "contracts/api-integration/v1/manifest.json",
   ...["frontend-migration", "frontend-schema", "frontend-image", "frontend-image-source", "source-checkout", "release-inputs", "source-policy", "release"].map((name) => `ops/platform/${name}.mjs`),
-  "drizzle/meta/_journal.json"];
+  "drizzle/meta/_journal.json",
+  ...["manifest.json", "course-api.json", "community-api.json", "enrollment-event.schema.json", "boundary-contracts.json", "README.md"]
+    .map(file => `contracts/api-integration/p2-candidate/${file}`)];
 function bytes(directory, relative) {
   let path = directory;
   for (const part of relative.split("/")) { path = join(path, part); demand(!lstatSync(path).isSymbolicLink()); }

@@ -8,6 +8,7 @@ import { readMigrationFiles } from "drizzle-orm/migrator";
 import { buildExpectedPrivateDbMigrationLineage, assertAppliedMigrationLineage } from "../../src/lib/private-db/migration-lineage.ts";
 import { readMigrationCatalog } from "./frontend-schema.mjs";
 import { assertSourceCheckout } from "./source-checkout.mjs";
+import { phase2ContractManifestBinding } from "./release.mjs";
 
 export const FRONTEND_MIGRATION_LOCK = "lash-her:private-db:migrations";
 // hashtext is sign-extended by pg_advisory_lock(bigint). Match both halves,
@@ -69,6 +70,10 @@ export function frontendMigrationArtifact(sourceRoot = root) {
   });
   const manifest = { journalSha256: hash(journalBytes), entries: migrations.map(({ tag, hash, folderMillis }) => ({ tag, hash, folderMillis })) };
   return { migrations, expected: buildExpectedPrivateDbMigrationLineage(migrations), sqlArtifactSha256: hash(JSON.stringify(manifest)), manifest,
+    ...(existsSync(join(sourceRoot, "contracts/api-integration/p2-candidate/manifest.json")) ? (() => {
+      const { contractPhase, phase2ContractManifestSha256 } = phase2ContractManifestBinding(sourceRoot);
+      return { contractPhase, phase2ContractManifestSha256 };
+    })() : {}),
     contractManifestSha256: "sha256:" + hash(read(join(sourceRoot, "contracts/api-integration/v1/manifest.json"))) };
 }
 
@@ -83,6 +88,12 @@ export function prepareFrontendMigration(candidate, job, baseline, artifact = fr
     job.contractManifestSha256 === candidate.contractManifestSha256 && job.contractManifestSha256 === artifact.contractManifestSha256, "FRONTEND_RELEASE_BINDING_REFUSED");
   demand(candidate.frontendMigration?.sourceCommit === job.sourceCommit && candidate.frontendMigration.sqlArtifactSha256 === artifact.sqlArtifactSha256 &&
     candidate.frontendMigration.contractManifestSha256 === job.contractManifestSha256, "CANDIDATE_FRONTEND_SQL_BINDING_REQUIRED");
+  const bindings = [artifact, candidate, candidate.frontendMigration, job];
+  if (bindings.some(value => value.contractPhase !== undefined || value.phase2ContractManifestSha256 !== undefined)) {
+    demand(bindings.every(value => value.contractPhase === "p2" && /^sha256:[a-f0-9]{64}$/u.test(value.phase2ContractManifestSha256 ?? "") &&
+      !/^sha256:0+$/u.test(value.phase2ContractManifestSha256) && value.phase2ContractManifestSha256 === artifact.phase2ContractManifestSha256),
+    "FRONTEND_PHASE2_CONTRACT_BINDING_REQUIRED");
+  }
   demand(/^sha256:[a-f0-9]{64}$/u.test(job.migrationImageDigest ?? "") && !/^sha256:0+$/u.test(job.migrationImageDigest) &&
     candidate.artifacts?.frontendMigration?.image === `ghcr.io/princessdardan/lash-her-platform-frontend-migration@${job.migrationImageDigest}`,
   "FRONTEND_MIGRATION_IMAGE_BINDING_REQUIRED");
@@ -103,10 +114,12 @@ export function prepareFrontendMigration(candidate, job, baseline, artifact = fr
       prior.terminal?.status === "DATABASE_VERIFIED" && prior.database.sourceCommit === job.sourceCommit &&
       prior.database.sqlArtifactSha256 === job.sqlArtifactSha256 && prior.database.contractManifestSha256 === job.contractManifestSha256 &&
       prior.database.migrationImageDigest === job.migrationImageDigest &&
+      prior.database.contractPhase === job.contractPhase && prior.database.phase2ContractManifestSha256 === job.phase2ContractManifestSha256 &&
       prior.database.schemaVerified === true && prior.database.runtimeRoleVerified === true &&
       prior.database.schemaBaselineSha256 === job.schemaBaselineSha256 &&
       ["version", "service", "environment", "releaseId", "sourceCommit", "migrationImageDigest", "sqlArtifactSha256", "contractManifestSha256", "schemaBaselineSha256", "target"]
         .every((key) => prior.database[key] !== undefined && isDeepStrictEqual(prior.database[key], prior.terminal[key])) &&
+      prior.database.contractPhase === prior.terminal.contractPhase && prior.database.phase2ContractManifestSha256 === prior.terminal.phase2ContractManifestSha256 &&
       prior.database.failureCode === undefined && prior.terminal.failureCode === undefined,
     "EXACT_STAGING_FRONTEND_MIGRATION_REQUIRED");
   }
@@ -118,8 +131,11 @@ export function prepareFrontendMigration(candidate, job, baseline, artifact = fr
 export function prepareFrontendMigrationJob(candidate, settings, schemaExport, stagingVerification = undefined) {
   demand(schemaExport?.status === "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS" && schemaExport.providerTouched === false &&
     schemaExport.postgresMajor === settings?.serverMajor && schemaExport.schemaBaseline?.serverMajor === settings.serverMajor, "FRONTEND_SCHEMA_EXPORT_REQUIRED");
+  if (candidate.contractPhase === "p2") demand(schemaExport.contractPhase === "p2" &&
+    schemaExport.phase2ContractManifestSha256 === candidate.phase2ContractManifestSha256, "FRONTEND_PHASE2_SCHEMA_EXPORT_REQUIRED");
   const baseline = structuredClone(schemaExport.schemaBaseline);
   const job = { version: 1, operator: "Dardan", releaseId: candidate.releaseId, environment: candidate.environment,
+    ...(candidate.contractPhase === "p2" ? { contractPhase: "p2", phase2ContractManifestSha256: candidate.phase2ContractManifestSha256 } : {}),
     sourceCommit: candidate.sources?.frontend?.commit, contractManifestSha256: candidate.contractManifestSha256,
     migrationImageDigest: candidate.artifacts?.frontendMigration?.image?.split("@")[1],
     sqlArtifactSha256: candidate.frontendMigration?.sqlArtifactSha256, schemaBaselineSha256: hash(JSON.stringify(baseline)),
@@ -184,6 +200,7 @@ export async function runFrontendMigration(prepared, dependencies) {
   demand(dependencies.beforeDatabasePreflight === undefined || typeof dependencies.beforeDatabasePreflight === "function",
     "IN_PROCESS_FRONTEND_PREFLIGHT_REQUIRED");
   const receiptBase = { version: 1, service: "frontend", environment: job.environment, releaseId: job.releaseId, sourceCommit: job.sourceCommit,
+    ...(job.contractPhase === "p2" ? { contractPhase: "p2", phase2ContractManifestSha256: job.phase2ContractManifestSha256 } : {}),
     migrationImageDigest: job.migrationImageDigest,
     sqlArtifactSha256: job.sqlArtifactSha256, schemaBaselineSha256: job.schemaBaselineSha256, contractManifestSha256: job.contractManifestSha256,
     operator: "Dardan", migrationMode: readOnlyExpected ? "verify-current-only" : "apply-forward",
@@ -324,7 +341,8 @@ export async function frontendMigrationCli(argv, options = {}) {
     const [mode, candidateFile, jobFile, schemaFile, flag, confirmation, output] = argv;
     if (mode === "--manifest-only") {
       demand(argv.length === 1, "ARGUMENTS_REFUSED"); const artifact = frontendMigrationArtifact();
-      console.log(JSON.stringify({ ...artifact.manifest, sqlArtifactSha256: artifact.sqlArtifactSha256, contractManifestSha256: artifact.contractManifestSha256 }));
+      console.log(JSON.stringify({ ...artifact.manifest, sqlArtifactSha256: artifact.sqlArtifactSha256, contractManifestSha256: artifact.contractManifestSha256,
+        ...(artifact.contractPhase === "p2" ? { contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 } : {}) }));
     }
     else {
       demand((mode === "--check" && argv.length === 4) || (mode === "--execute" && argv.length === 7 && flag === "--confirm"), "ARGUMENTS_REFUSED");
