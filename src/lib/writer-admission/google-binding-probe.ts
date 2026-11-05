@@ -1,5 +1,5 @@
 import "server-only";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
 const clients = {
   identity: "185770842371-d3thak0b2btgb77pngj968nvhpjkqmgf.apps.googleusercontent.com",
@@ -11,7 +11,7 @@ export interface FrontendGoogleBindingProbe {
     projectId: "lash-her-staging-20261022";
     projectNumber: "185770842371";
     identity: { clientId: typeof clients.identity; proof: string };
-    calendar: { clientId: typeof clients.calendar; proof: string };
+    calendar: { clientId: typeof clients.calendar; proof: string; calendarIdSha256: string | null };
   };
 }
 
@@ -27,13 +27,16 @@ export function createFrontendGoogleBindingProbe(dependencies: {
       if (env.APP_ENV !== "staging" || env.VERCEL_GIT_COMMIT_SHA !== source.sourceCommit ||
         env.AUTH_GOOGLE_ID !== clients.identity || env.GOOGLE_CLIENT_ID !== clients.calendar) throw new Error();
       const identity = env.AUTH_GOOGLE_SECRET, calendar = env.GOOGLE_CLIENT_SECRET;
+      const calendarId = env.GOOGLE_CALENDAR_ID;
+      if (calendarId && (calendarId.trim() !== calendarId || Buffer.byteLength(calendarId, "utf8") > 4096 || /[\u0000-\u001f\u007f]/u.test(calendarId))) throw new Error();
       const valid = (value: string | undefined): value is string => Boolean(value && value.length >= 16 && value.length <= 8192 && /^[!-~]+$/u.test(value));
       if (!valid(identity) || !valid(calendar) || identity === calendar) throw new Error();
       const proof = (kind: "identity" | "calendar", secret: string) => createHmac("sha256", secret)
         .update(`lash-her:frontend-google-binding:v1:${kind}:${challenge}`, "utf8").digest("hex");
       return { googleBinding: { projectId: "lash-her-staging-20261022", projectNumber: "185770842371",
         identity: { clientId: clients.identity, proof: proof("identity", identity) },
-        calendar: { clientId: clients.calendar, proof: proof("calendar", calendar) } } };
+        calendar: { clientId: clients.calendar, proof: proof("calendar", calendar),
+          calendarIdSha256: calendarId ? createHash("sha256").update(calendarId, "utf8").digest("hex") : null } } };
     } catch { throw new Error("FRONTEND_GOOGLE_BINDING_PROBE_REFUSED"); }
   };
 }

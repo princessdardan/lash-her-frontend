@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import test from "node:test";
 import { createFrontendGoogleBindingProbe } from "./google-binding-probe";
 
@@ -32,4 +32,15 @@ test("Google proof refuses wrong source, production, client substitutions and ma
   const run = createFrontendGoogleBindingProbe({ environment: () => { reads++; return env; } });
   await assert.rejects(run({ ...source, environment: "production" }, challenge));
   await assert.rejects(run(source, "wrong")); assert.equal(reads, 0);
+});
+
+test("optional legacy Calendar identity is bound as UTF8 metadata without exposing its plaintext or changing secret proofs", async () => {
+  const env = environment(), calendarId = "owned-calendar@group.calendar.google.com";
+  const absent = await createFrontendGoogleBindingProbe({ environment: () => env })(source, challenge);
+  assert.equal(absent.googleBinding.calendar.calendarIdSha256, null);
+  const configured = await createFrontendGoogleBindingProbe({ environment: () => ({ ...env, GOOGLE_CALENDAR_ID: calendarId }) })(source, challenge);
+  assert.equal(configured.googleBinding.calendar.calendarIdSha256, createHash("sha256").update(calendarId, "utf8").digest("hex"));
+  assert.equal(configured.googleBinding.calendar.proof, absent.googleBinding.calendar.proof);
+  assert.equal(JSON.stringify(configured).includes(calendarId), false);
+  await assert.rejects(createFrontendGoogleBindingProbe({ environment: () => ({ ...env, GOOGLE_CALENDAR_ID: " private-calendar " }) })(source, challenge));
 });
