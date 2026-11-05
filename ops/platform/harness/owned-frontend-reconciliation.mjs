@@ -731,6 +731,60 @@ async function main() {
       await reconcile(); checks.push(`shipping-preparation-${mode}-real-abandonment-cleanup-and-tracking-receipts-accounted`);
     }
 
+    // A returned row is only a receipt for the requested mutation when its
+    // identity and resulting state still match, including on fresh inserts.
+    for (const mode of ["tracking-shipment", "tracking-type", "tracking-key", "tracking-hash",
+      "detached-status", "detached-version", "attached-status", "attached-version", "off-tracking-hash"]) {
+      phase = `shipping-preparation-mutated-${mode}`;
+      const ids = await seedPreparation(); await change(true); before = await operations();
+      const off = mode.startsWith("off-");
+      const mutation = off ? mode.slice(4) : mode;
+      const tracking = mutation.startsWith("tracking-");
+      const attached = mutation.startsWith("attached-");
+      const table = tracking ? "product_shipment_jobs" : "product_shipments";
+      const statement = {
+        "tracking-shipment": `NEW.shipment_id = '${ids.detached}'::uuid`,
+        "tracking-type": "NEW.type = 'cleanup'",
+        "tracking-key": "NEW.idempotency_key = NEW.idempotency_key || '/changed'",
+        "tracking-hash": "NEW.operation_payload_hash = 'owned-changed-hash'",
+        "detached-status": "NEW.status = OLD.status",
+        "detached-version": "NEW.state_version = OLD.state_version",
+        "attached-status": "NEW.status = OLD.status",
+        "attached-version": "NEW.state_version = OLD.state_version",
+      }[mutation];
+      const condition = tracking ? "NEW.type='tracking'" :
+        `NEW.status='abandoned' AND NEW.public_reference='owned-preparation-${attached ? "attached" : "detached"}'`;
+      await operator.query(`CREATE OR REPLACE FUNCTION pg_temp.change_owned_preparation_receipt() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN ${statement}; RETURN NEW; END $$`);
+      await operator.query(`CREATE TRIGGER owned_changed_preparation BEFORE ${tracking ? "INSERT" : "UPDATE"} ON ${table}
+        FOR EACH ROW WHEN (${condition}) EXECUTE FUNCTION pg_temp.change_owned_preparation_receipt()`);
+      let result;
+      if (off) process.env.FRONTEND_WRITER_ADMISSION_MODE = "off";
+      try { result = await refundRequest(); }
+      finally {
+        process.env.FRONTEND_WRITER_ADMISSION_MODE = "enforce";
+        await operator.query(`DROP TRIGGER owned_changed_preparation ON ${table}`);
+      }
+      const receipt = await preparationReceipts();
+      assert.equal(receipt.jobs.length, 3);
+      assert.deepEqual(activeCalls, []);
+      if (tracking) {
+        const row = receipt.jobs.find(row => row.idempotency_key.startsWith("tracking/"));
+        assert.ok(row);
+        if (mutation === "tracking-shipment") assert.equal(row.shipment_id, ids.detached);
+        if (mutation === "tracking-type") assert.equal(row.type, "cleanup");
+        if (mutation === "tracking-key") assert.ok(row.idempotency_key.endsWith("/changed"));
+        if (mutation === "tracking-hash") assert.equal(row.operation_payload_hash, "owned-changed-hash");
+      } else {
+        const row = receipt.shipments.find(row => row.public_reference.endsWith(attached ? "-attached" : "-detached"));
+        assert.equal(row.status, mutation.endsWith("status") ? (attached ? "payment_pending" : "quoted") : "abandoned");
+        assert.equal(row.state_version, mutation.endsWith("version") ? 1 : 2);
+      }
+      assert.equal(result.status, off ? 200 : 503, mode);
+      assert.deepEqual((await since(before)).map(row => row.state), off ? [] : ["completed", "uncertain"]);
+      await reconcile(); checks.push(`shipping-preparation-mutated-${mode}-retains-receipt-uncertainty`);
+    }
+
     for (const fault of ["close", "ledger-backend-death"]) {
       phase = `shipping-preparation-blocked-transaction-${fault}`;
       const ids = await seedPreparation(); await change(true); before = await operations();

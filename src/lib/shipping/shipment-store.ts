@@ -1033,8 +1033,12 @@ export async function enqueueShipmentJob(input: {
     .returning();
   if (created) {
     if (
+      created.shipmentId !== input.shipmentId ||
+      created.type !== input.type ||
+      created.idempotencyKey !== input.idempotencyKey ||
+      created.operationPayloadHash !== operationPayloadHash ||
       hashOperationPayload(created.payload ?? {}) !==
-      hashOperationPayload(input.payload ?? {})
+        hashOperationPayload(input.payload ?? {})
     )
       markWriterOperationUncertain();
     return created;
@@ -1680,7 +1684,10 @@ export async function abandonExpiredQuotes(now = new Date()): Promise<number> {
     // Lock the expected rows so a suppressed update cannot turn a nonempty
     // abandonment batch into an apparently successful empty result.
     const candidates = await tx
-      .select({ id: productShipments.id })
+      .select({
+        id: productShipments.id,
+        stateVersion: productShipments.stateVersion,
+      })
       .from(productShipments)
       .where(
         and(
@@ -1710,9 +1717,21 @@ export async function abandonExpiredQuotes(now = new Date()): Promise<number> {
       )
       .returning({
         id: productShipments.id,
+        status: productShipments.status,
         stateVersion: productShipments.stateVersion,
       });
-    if (rows.length !== candidates.length) markWriterOperationUncertain();
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    if (
+      rows.length !== candidates.length ||
+      candidates.some((candidate) => {
+        const receipt = byId.get(candidate.id);
+        return (
+          receipt?.status !== "abandoned" ||
+          receipt.stateVersion !== candidate.stateVersion + 1
+        );
+      })
+    )
+      markWriterOperationUncertain();
     if (rows.length)
       await tx
         .insert(productShipmentJobs)
@@ -1831,11 +1850,21 @@ export async function abandonExpiredQuotes(now = new Date()): Promise<number> {
             eq(productShipments.stateVersion, shipment.stateVersion),
           ),
         )
-        .returning({ stateVersion: productShipments.stateVersion });
+        .returning({
+          id: productShipments.id,
+          status: productShipments.status,
+          stateVersion: productShipments.stateVersion,
+        });
       if (!abandoned) {
         markWriterOperationUncertain();
         return 0;
       }
+      if (
+        abandoned.id !== candidate.shipmentId ||
+        abandoned.status !== "abandoned" ||
+        abandoned.stateVersion !== shipment.stateVersion + 1
+      )
+        markWriterOperationUncertain();
       const payload = {
         expectedShipmentStateVersion: abandoned.stateVersion,
         reason: "attached_primary_quote_expired",
