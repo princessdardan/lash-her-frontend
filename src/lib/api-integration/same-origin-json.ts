@@ -1,14 +1,14 @@
 import "server-only";
 
 import { IntegrationServiceError } from "./service-errors";
+import { hasConfiguredRequestOrigin } from "./request-origin";
 
 /** Browser mutations require a protected origin and a header that cross-origin
  * forms cannot send. Never infer trust from an arbitrary Host/Forwarded header. */
 export async function readSameOriginJson(request: Request, configuredOrigin: string | undefined, maximumBytes = 1_048_576): Promise<unknown> {
-  const url = new URL(request.url);
   let expected: URL;
   try { expected = new URL(configuredOrigin ?? ""); } catch { throw new IntegrationServiceError("forbidden", 403); }
-  if (expected.username || expected.password || expected.origin !== url.origin || request.headers.get("origin") !== url.origin ||
+  if (!hasConfiguredRequestOrigin(request, configuredOrigin) || request.headers.get("origin") !== expected.origin ||
       request.headers.get("x-lash-csrf") !== "1" || request.headers.get("sec-fetch-site") && request.headers.get("sec-fetch-site") !== "same-origin") throw new IntegrationServiceError("forbidden", 403);
   if (request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") throw new IntegrationServiceError("invalid_request", 415);
   const declaredLength = request.headers.get("content-length");

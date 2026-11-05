@@ -1,4 +1,5 @@
 import "server-only";
+import { hasConfiguredRequestOrigin } from "@/lib/api-integration/request-origin";
 
 import NextAuth from "next-auth";
 import { NextRequest } from "next/server";
@@ -98,7 +99,7 @@ export function createCustomerAuthHandler(dependencies: {
       const url = new URL(request.url);
       const action = url.pathname.slice(CUSTOMER_AUTH_BASE_PATH.length);
       const allowed = request.method === "GET" ? ["/csrf", "/providers", "/session", "/callback/google", "/callback/resend"] : ["/signin/google", "/signin/resend", "/signout"];
-      if (url.origin !== configuration.origin || !url.pathname.startsWith(`${CUSTOMER_AUTH_BASE_PATH}/`) || !allowed.includes(action)) return noStore(Response.json({ error: "Invalid request." }, { status: 404 }));
+      if (!hasConfiguredRequestOrigin(request, configuration.origin) || !url.pathname.startsWith(`${CUSTOMER_AUTH_BASE_PATH}/`) || !allowed.includes(action)) return noStore(Response.json({ error: "Invalid request." }, { status: 404 }));
       if (request.method === "POST" && request.headers.get("origin") !== configuration.origin) return noStore(Response.json({ error: "Invalid request." }, { status: 403 }));
       return noStore(await admitted(request, configuration));
     } catch { return unavailable(); }
