@@ -79,6 +79,14 @@ export function frontendProviderBindingsArtifact(input, plan) {
     result.resendRetirement = { domainId: selected.domainId, domainName: selected.domainName, retiredKeyId: selected.retiredKeyId,
       replacementKeyId: selected.replacementKeyId, ...lists };
   }
+  if (input.gatewayObservation !== undefined) {
+    const selected = input.gatewayObservation;
+    demand(typeof selected?.hostMachineId === "string" && /^[a-f0-9]{32}$/u.test(selected.hostMachineId) && !/^0+$/u.test(selected.hostMachineId) &&
+      typeof selected.releaseId === "string" && /^[a-z0-9][a-z0-9-]{0,79}$/u.test(selected.releaseId) && digest(selected.candidateSha256) &&
+      digest(selected.gatewayConfigurationSha256) && digest(selected.runtimeConfigurationSha256) && typeof selected.gatewayImage === "string" &&
+      /^ghcr\.io\/princessdardan\/lash-her-platform-gateway@sha256:[a-f0-9]{64}$/u.test(selected.gatewayImage));
+    result.gatewayObservation = Object.fromEntries(["hostMachineId", "releaseId", "candidateSha256", "gatewayConfigurationSha256", "runtimeConfigurationSha256", "gatewayImage"].map(key => [key, selected[key]]));
+  }
   if (input.squareRetirement !== undefined) {
     const selected = input.squareRetirement;
     demand(selected?.environment === "sandbox" && selected.credentialKind === "personal-access-token" && selected.locationId === "LE2H76M5V90AM" &&

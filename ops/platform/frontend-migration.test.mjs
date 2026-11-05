@@ -327,3 +327,51 @@ test("legacy frontend migration writes refuse release targets and remote local-l
     assert.ok(!result.stderr.includes("owned-private-marker"));
   }
 });
+
+test("finalization runs after durable core continuation verification with the original physical lock held", async () => {
+  const r = runner(fixture()); let finalized = false;
+  r.dependencies.afterDatabaseVerified = async (_database, verifySession) => { await verifySession(); };
+  r.dependencies.afterContinuationVerified = async ({ database, verifySession }) => {
+    assert.equal(r.records.at(-2).name, "frontend-continuation-completed.json");
+    assert.equal(r.records.at(-1).name, "frontend-finalization-started.json");
+    assert.equal(r.state.locked, true); assert.equal(r.state.ended, false); assert.equal(database.status, "DATABASE_VERIFIED");
+    assert.throws(() => database.after.pop(), TypeError); await verifySession(); finalized = true;
+  };
+  assert.equal((await r.run()).status, "DATABASE_VERIFIED"); assert.equal(finalized, true);
+  assert.ok(r.records.some(row => row.name === "frontend-finalization-completed.json"));
+});
+
+test("failed post-continuation verification or missing durable completion never enters finalization", async () => {
+  for (const mode of ["schema", "receipt", "idle-loss"]) {
+    const r = runner(fixture()); let after = false, finalized = false; const query = r.client.query, record = r.dependencies.record;
+    r.dependencies.afterDatabaseVerified = async () => { after = true; };
+    r.client.query = async sql => {
+      if (after && mode === "schema" && sql.includes("FROM pg_class c WHERE")) return { rows: [{ unreviewed: true }] };
+      return query(sql);
+    };
+    r.dependencies.record = (name, value) => {
+      if (name === "frontend-continuation-completed.json" && mode === "receipt") throw new Error("owned-storage-failure");
+      record(name, value); if (name === "frontend-continuation-completed.json" && mode === "idle-loss") r.client.emit("error", new Error("owned-socket-loss"));
+    };
+    r.dependencies.afterContinuationVerified = async () => { finalized = true; };
+    await assert.rejects(r.run()); assert.equal(finalized, false);
+    assert.equal(r.records.some(row => row.name === "frontend-finalization-started.json"), false);
+  }
+});
+
+test("uncertain finalization preserves successful SQL and refuses final success without repeating its callback", async () => {
+  const r = runner(fixture()); let calls = 0;
+  r.dependencies.afterDatabaseVerified = async () => {};
+  r.dependencies.afterContinuationVerified = async ({ verifySession }) => { await verifySession(); calls++; throw new Error("owned-lost-commit"); };
+  await assert.rejects(r.run()); assert.equal(calls, 1);
+  assert.equal(r.records.at(-1).value.phase, "post-continuation-finalization");
+  assert.equal(r.records[0].value.status, "DATABASE_VERIFIED");
+  assert.equal(r.records.some(row => row.name === "frontend-finalization-completed.json"), false);
+});
+
+test("serialized finalization or finalization without a compatible continuation refuses before credentials", async () => {
+  for (const hooks of [{ afterContinuationVerified: { approved: true } }, { afterContinuationVerified: async () => {} }]) {
+    let acquired = false; const r = runner(fixture(), { ...hooks, getUrl: () => { acquired = true; } });
+    await assert.rejects(r.run(), /IN_PROCESS_FRONTEND_FINALIZATION_REQUIRED/u); assert.equal(acquired, false);
+  }
+});

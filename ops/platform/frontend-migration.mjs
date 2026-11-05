@@ -179,6 +179,8 @@ export async function runFrontendMigration(prepared, dependencies) {
   demand(dependencies.confirmation === `${job.environment}/${job.releaseId}`, "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED");
   demand(dependencies.afterDatabaseVerified === undefined || typeof dependencies.afterDatabaseVerified === "function",
     "IN_PROCESS_FRONTEND_CONTINUATION_REQUIRED");
+  demand(dependencies.afterContinuationVerified === undefined || typeof dependencies.afterContinuationVerified === "function" &&
+    typeof dependencies.afterDatabaseVerified === "function", "IN_PROCESS_FRONTEND_FINALIZATION_REQUIRED");
   demand(dependencies.beforeDatabasePreflight === undefined || typeof dependencies.beforeDatabasePreflight === "function",
     "IN_PROCESS_FRONTEND_PREFLIGHT_REQUIRED");
   const receiptBase = { version: 1, service: "frontend", environment: job.environment, releaseId: job.releaseId, sourceCommit: job.sourceCommit,
@@ -287,6 +289,18 @@ export async function runFrontendMigration(prepared, dependencies) {
       } finally { await client.query("rollback"); }
       await dependencies.record("frontend-continuation-completed.json", { ...receiptBase,
         status: "FRONTEND_CONTINUATION_COMPLETED", databaseVerified: true });
+      if (dependencies.afterContinuationVerified) {
+        // Deliberate restoration starts only after every core SQL/runtime and
+        // compatible-continuation check above succeeded and was durably retained.
+        // Retain the same physical advisory lock/client; no source or JSON input
+        // can install an executor or infer opening authority from a receipt.
+        phase = "post-continuation-finalization";
+        await verifySession();
+        await dependencies.record("frontend-finalization-started.json", { ...receiptBase, status: "FRONTEND_FINALIZATION_STARTED", databaseVerified: true });
+        await dependencies.afterContinuationVerified({ database: frozen(structuredClone(databaseResult)), verifySession });
+        await verifySession();
+        await dependencies.record("frontend-finalization-completed.json", { ...receiptBase, status: "FRONTEND_FINALIZATION_COMPLETED", databaseVerified: true });
+      }
       phase = "completed";
     }
   } catch (error) { failure = error; }

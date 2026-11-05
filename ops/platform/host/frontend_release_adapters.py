@@ -13,6 +13,7 @@ import sys
 import frontend_probe
 import frontend_resend_retirement
 import frontend_square_retirement
+import frontend_gateway_observation
 import migrate
 import vercel
 
@@ -544,7 +545,7 @@ def observe_compatible(context, client, attempt):
     # Admission values are supplied only after the parent's actual post-SQL
     # closed-ledger observation; provider metadata cannot observe the ledger.
     controls = context.get("admissionObservation")
-    if isinstance(controls, dict) and controls.get("ledgerDrained") is True and controls.get("active") == 0 and controls.get("uncertain") == 0:
+    if isinstance(controls, dict) and type(controls.get("active")) is int and controls["active"] >= 0 and type(controls.get("uncertain")) is int and controls["uncertain"] >= 0 and type(controls.get("newWork")) is bool and type(controls.get("recovery")) is bool:
         outcome.update(admissionNewWork=controls.get("newWork"), admissionRecovery=controls.get("recovery"))
     return outcome
 
@@ -568,6 +569,12 @@ def execute(context, client, verify, probe=None):
         source_attempt = original / attempt.name
         if source_attempt.exists():
             migrate.private_directory(source_attempt)
+    if operation == "observe-restoration":
+        reviewed = context["bindings"].get("gatewayObservation")
+        demand(reviewed is not None, "RESTORATION_GATEWAY_BINDING_REQUIRED")
+        gateway = frontend_gateway_observation.observe(context["gatewayRuntimeDirectory"], reviewed, verify)
+        frontend = observe_compatible(context, locked, source_attempt)
+        return {**selected, "status": "FRONTEND_RESTORATION_BOUNDARY_OBSERVED", "gateway": gateway, "frontend": frontend}
     if operation == "observe-vercel":
         return observe_vercel(context, locked, source_attempt)
     if operation == "suspend-schedules":

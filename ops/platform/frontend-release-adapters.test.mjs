@@ -77,6 +77,18 @@ test("Square retirement artifact permits only dedicated sandbox IDs and actual f
   }
 });
 
+test("restoration gateway binding selects an exact existing machine/configuration/image without copying runtime input", () => {
+  const f = fixture();
+  f.input.gatewayObservation = { hostMachineId: "1".repeat(32), releaseId: "existing-host", candidateSha256: "2".repeat(64),
+    gatewayConfigurationSha256: "3".repeat(64), runtimeConfigurationSha256: "4".repeat(64),
+    gatewayImage: `ghcr.io/princessdardan/lash-her-platform-gateway@sha256:${"5".repeat(64)}` };
+  const normalized = frontendProviderBindingsArtifact(f.input, f.plan).gatewayObservation; assert.deepEqual(normalized, f.input.gatewayObservation);
+  for (const change of [v => { v.hostMachineId = "0".repeat(32); }, v => { v.gatewayImage = "unreviewed:latest"; },
+    v => { v.gatewayConfigurationSha256 = "0".repeat(64); }, v => { v.candidateSha256 = "unknown"; }]) {
+    const copy = structuredClone(f.input); change(copy.gatewayObservation); assert.throws(() => frontendProviderBindingsArtifact(copy, f.plan));
+  }
+});
+
 test("missing historical/provider capabilities remain explicit for every surface without synthetic zero counts", () => {
   const f = fixture(), missing = frontendProviderMissingCapabilities(f.artifact);
   assert.equal(missing.length, f.plan.externalSurfaces.length);
@@ -121,7 +133,7 @@ async function protocolFixture(code, task) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "frontend-provider-protocol-"))), app = join(directory, "app");
   try {
     mkdirSync(join(app, "ops/platform/host"), { recursive: true }); mkdirSync(join(app, "src/lib/private-db"), { recursive: true });
-    const modules = ["frontend-square-effects", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
+    const modules = ["frontend-release-restoration", "frontend-square-effects", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
       "frontend-migration", "frontend-schema", "source-checkout", "source-policy", "release-inputs", "release"];
     for (const name of modules) copyFileSync(join(root, "ops/platform", `${name}.mjs`), join(app, "ops/platform", `${name}.mjs`));
     copyFileSync(join(root, "src/lib/private-db/migration-lineage.ts"), join(app, "src/lib/private-db/migration-lineage.ts"));
