@@ -153,6 +153,37 @@ test("idle connection errors during continuation are retained as sanitized failu
   assert.equal(r.state.ended, true);
 });
 
+test("parent preflight receives the original locked physical client before lineage or application SQL", async () => {
+  const f = fixture(), r = runner(f); let called = false;
+  r.dependencies.beforeDatabasePreflight = async ({ client, verifySession }) => {
+    assert.equal(client, r.client); assert.equal(r.state.locked, true); assert.equal(r.state.ended, false);
+    assert.equal(r.calls.some(sql => /to_regclass|create schema|insert into drizzle/u.test(sql)), false);
+    await verifySession(); called = true;
+  };
+  await r.run(); assert.equal(called, true); assert.equal(r.state.ended, true);
+});
+
+test("failed, disconnected or unlocked parent preflight refuses before lineage or application SQL", async () => {
+  for (const mode of ["throw", "socket", "unlock"]) {
+    const f = fixture(), r = runner(f);
+    r.dependencies.beforeDatabasePreflight = async () => {
+      if (mode === "throw") throw new Error("private-marker");
+      if (mode === "socket") r.client.emit("error", new Error("private-marker"));
+      if (mode === "unlock") r.state.locked = false;
+    };
+    await assert.rejects(r.run(), /FRONTEND_MIGRATION_FAILED_REVIEW_REQUIRED/u);
+    assert.equal(r.calls.some(sql => /to_regclass|create schema|insert into drizzle/u.test(sql)), false);
+    assert.equal(r.records.at(-1).value.status, "FAILED_REQUIRES_REVIEW");
+    assert.equal(JSON.stringify(r.records).includes("private-marker"), false);
+  }
+});
+
+test("a serialized preflight callback is refused before credentials or database access", async () => {
+  const f = fixture(), r = runner(f, { beforeDatabasePreflight: { status: "FENCED" } });
+  await assert.rejects(r.run(), /IN_PROCESS_FRONTEND_PREFLIGHT_REQUIRED/u);
+  assert.equal(r.state.created, false); assert.equal(r.calls.length, 0);
+});
+
 test("lost database session, missing lock and post-deployment drift cannot qualify the continuation", async () => {
   for (const mode of ["session", "lock", "schema", "lineage", "grants"]) {
     const f = fixture(), r = runner(f), original = r.client.query; let continued = false;

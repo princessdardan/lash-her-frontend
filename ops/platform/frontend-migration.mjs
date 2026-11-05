@@ -179,6 +179,8 @@ export async function runFrontendMigration(prepared, dependencies) {
   demand(dependencies.confirmation === `${job.environment}/${job.releaseId}`, "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED");
   demand(dependencies.afterDatabaseVerified === undefined || typeof dependencies.afterDatabaseVerified === "function",
     "IN_PROCESS_FRONTEND_CONTINUATION_REQUIRED");
+  demand(dependencies.beforeDatabasePreflight === undefined || typeof dependencies.beforeDatabasePreflight === "function",
+    "IN_PROCESS_FRONTEND_PREFLIGHT_REQUIRED");
   const receiptBase = { version: 1, service: "frontend", environment: job.environment, releaseId: job.releaseId, sourceCommit: job.sourceCommit,
     migrationImageDigest: job.migrationImageDigest,
     sqlArtifactSha256: job.sqlArtifactSha256, schemaBaselineSha256: job.schemaBaselineSha256, contractManifestSha256: job.contractManifestSha256,
@@ -201,6 +203,25 @@ export async function runFrontendMigration(prepared, dependencies) {
     phase = "database-lock";
     locked = (await client.query("select pg_try_advisory_lock(hashtext($1)) as locked", [FRONTEND_MIGRATION_LOCK])).rows[0].locked;
     demand(locked, "FRONTEND_RELEASE_LOCK_CONTENDED");
+    const verifySession = async () => {
+      demand(!failure, "FRONTEND_CONTINUATION_SESSION_LOST");
+      const same = (await client.query("select pg_backend_pid() as pid,current_user,current_database() as database,current_setting('default_transaction_read_only') as default_read_only")).rows[0];
+      demand(same?.pid === identity.pid && same.current_user === target.user && same.database === target.database &&
+        (!readOnlyExpected || same.default_read_only === "on"), "FRONTEND_CONTINUATION_SESSION_CHANGED");
+      demand((await client.query(HELD_FRONTEND_LOCK, [FRONTEND_MIGRATION_LOCK])).rows[0]?.held === true,
+        "FRONTEND_CONTINUATION_LOCK_LOST");
+      demand(!failure, "FRONTEND_CONTINUATION_SESSION_LOST");
+    };
+    if (dependencies.beforeDatabasePreflight) {
+      // The reviewed parent owns the environment lock. Its in-process hook
+      // establishes bootstrap/fencing/drain while this runner retains the same
+      // physical database connection and advisory lock. JSON/CLI inputs cannot
+      // provide code or turn a leaf-component receipt into SQL authority.
+      phase = "locked-parent-preflight";
+      await verifySession();
+      await dependencies.beforeDatabasePreflight({ client, verifySession });
+      await verifySession();
+    }
     phase = "lineage-preflight";
     const present = (await client.query("select to_regclass('drizzle.__drizzle_migrations') is not null as present")).rows[0].present;
     const before = present ? await journal(client) : [];
@@ -244,15 +265,6 @@ export async function runFrontendMigration(prepared, dependencies) {
       // database session and lock while it verifies/deploys compatible code.
       // This hook neither fences writers nor authorizes promotion/admission.
       // No CLI/JSON/environment input can supply an executable continuation.
-      const verifySession = async () => {
-        demand(!failure, "FRONTEND_CONTINUATION_SESSION_LOST");
-        const same = (await client.query("select pg_backend_pid() as pid,current_user,current_database() as database,current_setting('default_transaction_read_only') as default_read_only")).rows[0];
-        demand(same?.pid === identity.pid && same.current_user === target.user && same.database === target.database &&
-          (!readOnlyExpected || same.default_read_only === "on"), "FRONTEND_CONTINUATION_SESSION_CHANGED");
-        demand((await client.query(HELD_FRONTEND_LOCK, [FRONTEND_MIGRATION_LOCK])).rows[0]?.held === true,
-          "FRONTEND_CONTINUATION_LOCK_LOST");
-        demand(!failure, "FRONTEND_CONTINUATION_SESSION_LOST");
-      };
       const frozen = (value) => {
         if (value && typeof value === "object") { Object.values(value).forEach(frozen); Object.freeze(value); }
         return value;
