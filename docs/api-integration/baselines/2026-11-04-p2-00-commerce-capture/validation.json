@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "date": "2026-11-04",
+  "runtime": "Node 24.18.0",
+  "status": "SOURCE_COMPONENT_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "d2c0aa91c8f7643fcf9dde7bc141d288456592ce",
+  "sourceManifestSha256": "9a447e776f223e6f1ef87de82eeccc8231eea0e45acd4336e0516edda0c708a7",
+  "files": {
+    "scripts/run-source-unit-tests.mjs": "999dd6bf8cf683c0a5e27d522a1bd83f9b11b58db010a616a99a46d574e92855",
+    "src/app/api/admin/payment-reconciliation/handler.ts": "d16c12957d15a0d3fe981cbe699efc0d7a1def668018076138732650100dd048",
+    "src/app/api/admin/payment-reconciliation/route.ts": "46e87ee974777f754cc4ca368d683382a5ce22d45e23815f96b7375aa8fd8e6d",
+    "src/lib/commerce/square-commerce-capture-reconciliation.ts": "a0271a0126b4476a3af684360be45d1cd7f949eb32a720a6133dd70c04b92c31",
+    "src/lib/commerce/order-store.ts": "de233237db1cb59fc9c31b5490a31a2133a0d549ccf6b8f6e38aaf133699c21c",
+    "src/lib/writer-admission/commerce-capture.test.ts": "f853edb06f9762dc37f961bcf480b6057ba84d0b9ab9f17355efde0988c664ab"
+  },
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "deploymentPerformed": false,
+  "liveDatabaseOrProviderChanged": false,
+  "p200Complete": false,
+  "checks": {
+    "unit": {
+      "tests": 2249,
+      "pass": 2249,
+      "fail": 0,
+      "skipped": 0
+    },
+    "focused": {
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0,
+      "newComponentTests": 13,
+      "admittedClosureStages": 5
+    },
+    "typescript": "PASS",
+    "targetedEslint": "PASS",
+    "gitDiffCheck": "PASS",
+    "sourceInventories": "Verified against base/candidate sources",
+    "httpMethods": 61,
+    "actions": 50,
+    "operationalScriptHashes": 21,
+    "fullBuildBrowsersAndPostgres18": "PENDING_EXACT_HEAD_CI"
+  },
+  "review": {
+    "findingsAddressed": [
+      "The previous live adapter ignored completePayment response identity/status; require the requested payment id and COMPLETED before writing a captured receipt.",
+      "A captured receipt could update zero paid order/payment rows or an uncollected target could disappear while still producing a success-shaped result; retain operation-local uncertainty."
+    ],
+    "wholeRouteQualified": false
+  },
+  "limitations": [
+    "Service monitor and training-split reconciliation remain outside this selected boundary.",
+    "Direct helper executions, other writers, actual producer inventory, historical fencing/bootstrap and parent coordination remain separate.",
+    "No combined actual cron/TLS-ledger/business-database flow, actual PostgreSQL quarantine/outbox rollback, delivery or runtime-drain proof."
+  ],
+  "predecessor": {
+    "pr": 83,
+    "mergedAtCommit": "d2c0aa91c8f7643fcf9dde7bc141d288456592ce",
+    "reviewedHead": "82eee55d02c04cc865693610ee77c5bbe63ed1c6",
+    "exactHeadCiRun": "https://github.com/princessdardan/lash-her-frontend/actions/runs/41953159507",
+    "passedJobs": 10
+  }
+}

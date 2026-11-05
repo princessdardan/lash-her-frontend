@@ -1630,11 +1630,13 @@ export async function findUncapturedSquareCommerceOrders(input: {
 export async function markSquareCommerceOrderCaptured(
   orderReference: string,
   squarePaymentId: string,
+  db: ReturnType<typeof getPrivateDb> = getPrivateDb(),
 ): Promise<void> {
   await setSquareCommerceOrderProviderStatus(
     orderReference,
     squarePaymentId,
     SQUARE_CAPTURED_PROVIDER_STATUS,
+    db,
   );
 }
 
@@ -1654,8 +1656,9 @@ export async function markSquareCommerceOrderCaptured(
 export async function markSquareCommerceOrderUncollected(
   orderReference: string,
   squarePaymentId: string,
+  db: ReturnType<typeof getPrivateDb> = getPrivateDb(),
 ): Promise<void> {
-  await getPrivateDb().transaction(async (tx) => {
+  await db.transaction(async (tx) => {
     const now = new Date();
     const [order] = await tx
       .select({
@@ -1676,7 +1679,10 @@ export async function markSquareCommerceOrderUncollected(
       .for("update")
       .limit(1);
     // No matching paid order (already reconciled or changed) — nothing to do.
-    if (!order) return;
+    if (!order) {
+      markWriterOperationUncertain();
+      return;
+    }
 
     // Gate the shipment hold + alert on the first quarantine so a re-run of the
     // sweep neither re-holds an in-transit shipment nor re-alerts.
@@ -1740,8 +1746,9 @@ async function setSquareCommerceOrderProviderStatus(
   orderReference: string,
   squarePaymentId: string,
   providerStatus: string,
+  db: ReturnType<typeof getPrivateDb>,
 ): Promise<void> {
-  await getPrivateDb()
+  const rows = await db
     .update(checkoutOrders)
     .set({ providerStatus, updatedAt: new Date() })
     .where(
@@ -1751,7 +1758,9 @@ async function setSquareCommerceOrderProviderStatus(
         eq(checkoutOrders.providerPaymentId, squarePaymentId),
         eq(checkoutOrders.status, "paid"),
       ),
-    );
+    )
+    .returning({ id: checkoutOrders.id });
+  if (rows.length !== 1) markWriterOperationUncertain();
 }
 
 export async function claimSquareInvoiceWebhookEvent(

@@ -7,12 +7,17 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Only the booking-outcome retry batch acquires this boundary. The monitor and
-// commerce capture reconciliation still require independent qualification.
+// The email and uncaptured-commerce batches acquire separate recovery entries.
+// The service monitor and training-split reconciliation remain unqualified.
 export const GET = createPaymentReconciliationGetHandler(
   defaultDependencies,
   (task) =>
     runWriterAdmission("recovery", task, {
       uncertainResult: (summary) => summary.failed > 0,
+    }),
+  (task) =>
+    runWriterAdmission("recovery", task, {
+      uncertainResult: (summary) =>
+        summary.failed > 0 || summary.uncollected > 0,
     }),
 );

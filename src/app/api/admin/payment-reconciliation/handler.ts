@@ -5,7 +5,10 @@ import runServiceReconciliationMonitor, {
   type ServiceReconciliationSummary,
 } from "@/lib/booking/payments/service-reconciliation-monitor";
 import { retryOperationalBookingOutcomeEmails } from "@/lib/booking/email";
-import { runSquareCommerceCaptureReconciliation } from "@/lib/commerce/square-commerce-capture-reconciliation";
+import {
+  runSquareCommerceCaptureReconciliation,
+  type SquareCaptureRecoveryRunner,
+} from "@/lib/commerce/square-commerce-capture-reconciliation";
 import { WriterAdmissionError } from "@/lib/writer-admission/config";
 
 export const runtime = "nodejs";
@@ -39,6 +42,7 @@ export function createPaymentReconciliationGetHandler(
     task: () => ReturnType<typeof retryOperationalBookingOutcomeEmails>,
   ) => ReturnType<typeof retryOperationalBookingOutcomeEmails> = (task) =>
     task(),
+  runCommerceCaptureRecovery: SquareCaptureRecoveryRunner = (task) => task(),
 ): (req: Request) => Promise<Response> {
   return async function paymentReconciliationGetHandler(
     req: Request,
@@ -78,9 +82,13 @@ export function createPaymentReconciliationGetHandler(
       now,
       runBookingOutcomeRecovery,
     );
-    await reconcileCommerceCapturesSafely(dependencies, now);
+    const commerceAdmissionFailed = await reconcileCommerceCapturesSafely(
+      dependencies,
+      now,
+      runCommerceCaptureRecovery,
+    );
 
-    if (emailAdmissionFailed) {
+    if (emailAdmissionFailed || commerceAdmissionFailed) {
       return Response.json(
         {
           error:
@@ -107,15 +115,19 @@ export function createPaymentReconciliationGetHandler(
 async function reconcileCommerceCapturesSafely(
   dependencies: PaymentReconciliationDependencies,
   now: Date,
-): Promise<void> {
+  runRecovery: SquareCaptureRecoveryRunner,
+): Promise<boolean> {
   if (dependencies.runCommerceCaptureReconciliation === undefined) {
-    return;
+    return false;
   }
 
   try {
-    const summary = await dependencies.runCommerceCaptureReconciliation({
-      now,
-    });
+    const summary = await dependencies.runCommerceCaptureReconciliation(
+      {
+        now,
+      },
+      runRecovery,
+    );
     if (summary !== null && summary.uncollected > 0) {
       dependencies.logWarn(
         "[payment-reconciliation] Square commerce orders have uncollected funds",
@@ -127,7 +139,9 @@ async function reconcileCommerceCapturesSafely(
       "[payment-reconciliation] Square commerce capture reconciliation failed",
       buildReconciliationErrorContext(error),
     );
+    return error instanceof WriterAdmissionError;
   }
+  return false;
 }
 
 async function retryBookingOutcomeEmailsSafely(

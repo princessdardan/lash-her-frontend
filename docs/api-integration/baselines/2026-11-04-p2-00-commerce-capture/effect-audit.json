@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "baseCommit": "d2c0aa91c8f7643fcf9dde7bc141d288456592ce",
+  "sourceManifestSha256": "9a447e776f223e6f1ef87de82eeccc8231eea0e45acd4336e0516edda0c708a7",
+  "releaseAuthority": false,
+  "scope": "Authenticated payment-reconciliation uncaptured-commerce capture batch only",
+  "nodes": [
+    {
+      "file": "src/app/api/admin/payment-reconciliation/route.ts",
+      "sourceSha256": "46e87ee974777f754cc4ca368d683382a5ce22d45e23815f96b7375aa8fd8e6d",
+      "audit": "Separate disabled-by-default email and capture recovery runners. Failed/uncollected capture summaries retain uncertainty. Whole route remains unqualified."
+    },
+    {
+      "file": "src/app/api/admin/payment-reconciliation/handler.ts",
+      "sourceSha256": "d16c12957d15a0d3fe981cbe699efc0d7a1def668018076138732650100dd048",
+      "audit": "Authenticates before work and awaits the independent subtasks. Either admitted subtask failure returns sanitized retryable no-store 503."
+    },
+    {
+      "file": "src/lib/commerce/square-commerce-capture-reconciliation.ts",
+      "sourceSha256": "a0271a0126b4476a3af684360be45d1cd7f949eb32a720a6133dd70c04b92c31",
+      "audit": "Independent training-split work precedes capture admission. The selected bounded list, provider lookups/completion, receipts/quarantine and later orders all settle before finish. Requested payment identity and COMPLETED acknowledgement are validated. Caught errors mark uncertainty."
+    },
+    {
+      "file": "src/lib/commerce/order-store.ts",
+      "sourceSha256": "de233237db1cb59fc9c31b5490a31a2133a0d549ccf6b8f6e38aaf133699c21c",
+      "audit": "Selected list and paid-order/payment-bound mutations are awaited. Zero-row capture updates and missing uncollected targets retain uncertainty. Existing quarantine, shipment hold and alert enqueue commit together; no new migrations or idempotency keys."
+    },
+    {
+      "file": "src/lib/payments/square/payments-client.ts",
+      "sourceSha256": "f02d73e3ba4fe0dc5cb28a43f2d180e83431f83faddca5e9167a5efd309017da",
+      "audit": "Existing getPayment/completePayment HTTP calls await parsed responses. The caller now checks requested identity and completed capture acknowledgement."
+    },
+    {
+      "file": "src/lib/shipping/policy-alerts.ts",
+      "sourceSha256": "30922c93162371edc0417984d55c3d063b4fa8c2015ba80694bbd1f3625e921b",
+      "audit": "Selected recipient lookup and every transactional alert enqueue are awaited via allSettled before any failure propagation."
+    },
+    {
+      "file": "src/lib/shipping/configured-owner.ts",
+      "sourceSha256": "4ea8de8a763d2a78c67820a96ecb6c2e30c4545f0150a4b21651a9b7d7a9a63a",
+      "audit": "Existing local configured alert recipient lookup."
+    },
+    {
+      "file": "src/lib/commerce/customer-email-outbox.ts",
+      "sourceSha256": "7ef68bdb0143c178fe2add3c91c70d54b185673c85c8010e09a1e7989586086c",
+      "audit": "Existing transactional alert enqueue and duplicate-key handling. Delivery is owned by an independent worker."
+    },
+    {
+      "file": "src/lib/commerce/customer-email-outbox-cipher.ts",
+      "sourceSha256": "36e7e7c4819b847d5f59fca9f404c60a70532300b1683a330bba6f9b53e7ffc2",
+      "audit": "Existing local payload encryption; no sensitive material enters admission records."
+    },
+    {
+      "file": "src/sanity/env.ts",
+      "sourceSha256": "3e96695fdfd4a1b8d4390725a85057be63aeed2466374ddaa7d00009b7058811",
+      "audit": "Selected local encryption-key configuration only; no Sanity read/write is introduced."
+    },
+    {
+      "file": "src/lib/private-db/client.ts",
+      "sourceSha256": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+      "audit": "Existing selected pool/Drizzle queries and transactions are awaited."
+    },
+    {
+      "file": "src/lib/private-db/pool-config.ts",
+      "sourceSha256": "3b1b78c9ec4f3c2df472e18042c7c9bdc0dfc2ede45702505a7dc837c8bf85b6",
+      "audit": "Unchanged business database connection configuration."
+    },
+    {
+      "file": "src/lib/private-db/schema.ts",
+      "sourceSha256": "210b802be6d6419c12b533de326a6db87780c475d4491fb06a192eea40a4baa9",
+      "audit": "Unchanged static schema; no migration."
+    },
+    {
+      "file": "src/lib/env/private-checkout.ts",
+      "sourceSha256": "e6d50773842ddc70b3d32422c41028f5214d4724ac519bceaadc4578226d8f04",
+      "audit": "Existing local enable/config lookup. Disabled commerce skips capture admission."
+    },
+    {
+      "file": "src/lib/logging/logger.ts",
+      "sourceSha256": "a85afd2e211f642ad2af0f9b17e1fd5c496742461234766e3adfc0c3655eab18",
+      "audit": "Synchronous console diagnostics only."
+    },
+    {
+      "file": "src/lib/writer-admission/context.ts",
+      "sourceSha256": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+      "audit": "Unchanged operation-local uncertainty, inert outside admission."
+    },
+    {
+      "file": "src/lib/writer-admission/config.ts",
+      "sourceSha256": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
+      "audit": "Unchanged source/producer/environment/application-and-ledger target validation; disabled by default."
+    },
+    {
+      "file": "src/lib/env/application-environment.mjs",
+      "sourceSha256": "893934b2cf52c9a26fbdc50530ab413496862d832abcb321d2d7046bea2b9000",
+      "audit": "Unchanged local environment/project binding."
+    },
+    {
+      "file": "src/lib/writer-admission/runtime.ts",
+      "sourceSha256": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
+      "audit": "Unchanged TLS/identity/current-policy binding, operation lifetime and awaited settlement, without replay."
+    },
+    {
+      "file": "ops/platform/frontend-admission.mjs",
+      "sourceSha256": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
+      "audit": "Unchanged durable protocol; active/uncertain entries do not expire into drain."
+    }
+  ],
+  "excluded": [
+    "Service monitor and training-split reconciliation inside the same route",
+    "Direct helper callers and independent initiation/admin/other workers",
+    "Actual producer/provider inventory, historical fencing/bootstrap and parent release/restoration coordination"
+  ],
+  "limits": [
+    "Controlled ledger/database/provider terminals and actual Square client with controlled HTTP do not prove combined actual cron/TLS-ledger/business-database enforcement, delivery or drain.",
+    "The quarantine/outbox transaction retains prior source behavior; current fixtures do not prove actual PostgreSQL transaction or rollback behavior.",
+    "No live provider/database/scheduler/admission/pending-SQL/rollout-control changes."
+  ]
+}
