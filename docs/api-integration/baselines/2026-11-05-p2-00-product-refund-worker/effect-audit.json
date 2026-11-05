@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "scope": "Authenticated queued product-refund batch only",
+  "admissionEnabled": false,
+  "effects": [
+    {
+      "stage": "authentication",
+      "source": "src/app/api/cron/chitchats-shipping/handler.ts",
+      "accounting": "Existing 401 for missing/invalid accepted secrets, before admission or configuration."
+    },
+    {
+      "stage": "admission/configuration/selection",
+      "source": "src/app/api/cron/chitchats-shipping/route.ts",
+      "accounting": "Independent recovery entry before Square-enabled check, candidate reads and claims; query errors and nonsettled result rows refuse completion."
+    },
+    {
+      "stage": "refund processing",
+      "source": "src/lib/shipping/customer-refunds.ts",
+      "accounting": "Await immutable evidence/atomic claim/provider call, guarded refund settlement, typed adjustment and full-refund obligation/order projections. Missing receipts or still-paid/missing order projection mark uncertainty. Existing lost claim races remain benign skips."
+    },
+    {
+      "stage": "provider normalization",
+      "source": "src/lib/payments/square/product-refund.ts",
+      "accounting": "Missing provider payment identity retains uncertainty despite legacy normalized request-identity fallback."
+    },
+    {
+      "stage": "alerts and later rows",
+      "source": "src/lib/shipping/customer-refunds.ts",
+      "accounting": "Await all policy alert enqueue work before the next refund; caught processing/alert errors and nonsettled rows retain uncertainty. Later rows still run."
+    },
+    {
+      "stage": "remaining shipping work",
+      "source": "src/app/api/cron/chitchats-shipping/handler.ts",
+      "accounting": "Runs after refund settlement outside this entry; remains explicitly unqualified. Admission failure returns before these effects."
+    }
+  ],
+  "deferredWorkInRefundBatch": false,
+  "businessLeaseExpiryIsDrainProof": false,
+  "productionDependenciesReplacedInOwnedFixture": false,
+  "providerResponsesIntercepted": true
+}

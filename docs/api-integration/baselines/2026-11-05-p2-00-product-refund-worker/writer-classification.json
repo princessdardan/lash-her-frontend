@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "baseCommit": "02a37ab663ab82fecf3f489df54327fecc64877a",
+  "baseSourceManifestSha256": "f5b19299d87850531ddb0a391adb269f351b7dc18c07b1cbbeecd9f79df4b062",
+  "candidateSourceManifestSha256": "eab36f0674c5ef75f4fc15c889c0a982c39841e46ee1baeb7cfe5238dc1ecd2d",
+  "scope": "Queued product-refund batch only; subsequent shipping work remains unqualified",
+  "priorClassificationReference": "../2026-11-05-p2-00-stock-sweep/writer-classification.json",
+  "releaseAuthority": false,
+  "deploymentInventoryVerified": false,
+  "writerFenceVerified": false,
+  "drainVerified": false,
+  "candidateRoutes": [
+    {
+      "file": "src/app/api/cron/chitchats-shipping/route.ts",
+      "method": "GET",
+      "classification": "OPT_IN_RECOVERY_SUBTASK",
+      "boundary": "After cron authentication and before Square configuration/selection; through refund provider calls, financial receipts, alerts and transaction settlement.",
+      "wholeRouteQualified": false,
+      "independentExecutionsQualified": false,
+      "providerDeliveryQualified": false,
+      "deployedRuntimeQualified": false
+    }
+  ],
+  "excludedExecutions": [
+    "Quote abandonment, shipment polling/enqueueing, shipping operations and PII redaction after the refund batch",
+    "Direct drain/process/admin and other independent refund executions",
+    "Other workers/actions, historical deployments and manual wrappers"
+  ],
+  "remainingWork": [
+    "Qualify remaining shipping effects and other affected producers.",
+    "Verify actual deployment/database/provider bindings and historical fencing/bootstrap.",
+    "Complete parent environment-lock release/drain/restoration coordination and end-to-end failure qualification."
+  ]
+}

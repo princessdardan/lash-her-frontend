@@ -1,4 +1,5 @@
 import "server-only";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -561,101 +562,127 @@ export async function processProductOrderRefund(
   });
 }
 
+export interface ProductRefundDrainDependencies {
+  listCandidates: typeof listQueuedProductRefundCandidates;
+  processRefund: typeof processProductOrderRefund;
+  alert: typeof sendShippingPolicyAlert;
+}
+
+const defaultDrainDependencies: ProductRefundDrainDependencies = {
+  listCandidates: listQueuedProductRefundCandidates,
+  processRefund: processProductOrderRefund,
+  alert: sendShippingPolicyAlert,
+};
+
 /**
  * Executes queued Square product refunds. Manual admin refunds queue a row and
  * this drain — run by the shipping worker cron — performs the actual Square
  * refund. Callers gate on Square commerce being enabled. Replaces the former
  * policy-worker refund drain.
  */
-export async function drainQueuedProductOrderRefunds(input?: {
-  refundIds?: string[];
-  limit?: number;
-  /**
-   * Test-only Square refunder injection. In production this is omitted, so each
-   * refund falls back to {@link createLiveSquareProductRefunder} (passing
-   * `undefined` still triggers the default parameter of
-   * {@link processProductOrderRefund}).
-   */
-  refunder?: SquareProductRefunder;
-}): Promise<{
+export async function drainQueuedProductOrderRefunds(
+  input?: {
+    refundIds?: string[];
+    limit?: number;
+    /**
+     * Test-only Square refunder injection. In production this is omitted, so each
+     * refund falls back to {@link createLiveSquareProductRefunder} (passing
+     * `undefined` still triggers the default parameter of
+     * {@link processProductOrderRefund}).
+     */
+    refunder?: SquareProductRefunder;
+  },
+  dependencies: ProductRefundDrainDependencies = defaultDrainDependencies,
+): Promise<{
   processed: number;
   succeeded: number;
   needsReview: number;
   refunds: ProductOrderRefundRow[];
 }> {
-  const db = getPrivateDb();
   const now = new Date();
   const ids =
     input?.refundIds ??
-    (
-      await db
-        .select({ id: productOrderRefunds.id })
-        .from(productOrderRefunds)
-        // Reap refunds stranded in `processing` by a worker that crashed after
-        // claiming the row but before/around the Square call: their lease has
-        // expired and nothing else re-selects them. Feeding them back through
-        // processProductOrderRefund routes them into its expired-lease recovery
-        // branch, which marks them `outcome_unknown` and surfaces them for
-        // manual reconciliation instead of leaving them stuck forever.
-        .where(
-          or(
-            eq(productOrderRefunds.status, "queued"),
-            and(
-              eq(productOrderRefunds.status, "processing"),
-              isNotNull(productOrderRefunds.leaseExpiresAt),
-              lte(productOrderRefunds.leaseExpiresAt, now),
-            ),
-          ),
-        )
-        .orderBy(asc(productOrderRefunds.createdAt))
-        .limit(input?.limit ?? 25)
-    ).map((row) => row.id);
+    (await dependencies.listCandidates(now, input?.limit ?? 25));
   let processed = 0;
   let succeeded = 0;
   let needsReview = 0;
   const refunds: ProductOrderRefundRow[] = [];
   for (const id of ids) {
     try {
-      const refund = await processProductOrderRefund(id, input?.refunder);
+      const refund = await dependencies.processRefund(id, input?.refunder);
+      if (refund.status !== "succeeded") markWriterOperationUncertain();
       refunds.push(refund);
       processed += 1;
       if (refund.status === "succeeded") succeeded += 1;
       if (refund.status === "manual_review") {
         needsReview += 1;
-        await sendShippingPolicyAlert({
-          duties: ["finance_owner"],
-          critical: true,
-          subject: "Square refund requires manual review",
-          message: `Refund ${id} has invalid or incomplete immutable payment evidence and was removed from the automatic queue.`,
-          idempotencyKey: `shipping-refund-manual-review/${id}`,
-        }).catch(() => undefined);
+        await dependencies
+          .alert({
+            duties: ["finance_owner"],
+            critical: true,
+            subject: "Square refund requires manual review",
+            message: `Refund ${id} has invalid or incomplete immutable payment evidence and was removed from the automatic queue.`,
+            idempotencyKey: `shipping-refund-manual-review/${id}`,
+          })
+          .catch(() => markWriterOperationUncertain());
       }
       if (refund.status === "outcome_unknown") {
         needsReview += 1;
-        await sendShippingPolicyAlert({
-          duties: ["finance_owner"],
-          critical: true,
-          subject: "Square refund outcome is unknown",
-          message: `Refund ${id} requires transaction reconciliation; do not resubmit it.`,
-          idempotencyKey: `shipping-refund-unknown/${id}`,
-        }).catch(() => undefined);
+        await dependencies
+          .alert({
+            duties: ["finance_owner"],
+            critical: true,
+            subject: "Square refund outcome is unknown",
+            message: `Refund ${id} requires transaction reconciliation; do not resubmit it.`,
+            idempotencyKey: `shipping-refund-unknown/${id}`,
+          })
+          .catch(() => markWriterOperationUncertain());
       }
     } catch (error) {
-      // A lost claim race — an overlapping cron invocation already advanced this
-      // refund past `queued` — is benign, not a worker failure: skip it without
-      // paging finance. Every other throw is a genuine failure worth alerting.
+      // A lost claim race is a benign skip; no provider call was started here.
       if (error instanceof RefundClaimUnavailableError) continue;
+      markWriterOperationUncertain();
       needsReview += 1;
-      await sendShippingPolicyAlert({
-        duties: ["finance_owner"],
-        critical: true,
-        subject: "Square refund worker failed",
-        message: `Refund ${id} could not be processed. Later queued refunds were still attempted.`,
-        idempotencyKey: `shipping-refund-worker-failed/${id}`,
-      }).catch(() => undefined);
+      await dependencies
+        .alert({
+          duties: ["finance_owner"],
+          critical: true,
+          subject: "Square refund worker failed",
+          message: `Refund ${id} could not be processed. Later queued refunds were still attempted.`,
+          idempotencyKey: `shipping-refund-worker-failed/${id}`,
+        })
+        .catch(() => markWriterOperationUncertain());
     }
   }
   return { processed, succeeded, needsReview, refunds };
+}
+
+async function listQueuedProductRefundCandidates(
+  now: Date,
+  limit: number,
+): Promise<string[]> {
+  const rows = await getPrivateDb()
+    .select({ id: productOrderRefunds.id })
+    .from(productOrderRefunds)
+    // Reap refunds stranded in `processing` by a worker that crashed after
+    // claiming the row but before/around the Square call: their lease has
+    // expired and nothing else re-selects them. Feeding them back through
+    // processProductOrderRefund routes them into its expired-lease recovery
+    // branch, which marks them `outcome_unknown` and surfaces them for
+    // manual reconciliation instead of leaving them stuck forever.
+    .where(
+      or(
+        eq(productOrderRefunds.status, "queued"),
+        and(
+          eq(productOrderRefunds.status, "processing"),
+          isNotNull(productOrderRefunds.leaseExpiresAt),
+          lte(productOrderRefunds.leaseExpiresAt, now),
+        ),
+      ),
+    )
+    .orderBy(asc(productOrderRefunds.createdAt))
+    .limit(limit);
+  return rows.map((row) => row.id);
 }
 
 async function markRefundForManualReview(
@@ -1123,7 +1150,7 @@ async function completeClaimedRefund(
     if (!updated.adjustmentId) {
       throw new Error("Refund completed without a typed financial adjustment");
     }
-    await tx
+    const adjustmentReceipts = await tx
       .update(productOrderAdjustments)
       .set({
         status:
@@ -1136,9 +1163,12 @@ async function completeClaimedRefund(
                 : "failed",
         updatedAt: input.now,
       })
-      .where(eq(productOrderAdjustments.id, updated.adjustmentId));
+      .where(eq(productOrderAdjustments.id, updated.adjustmentId))
+      .returning({ id: productOrderAdjustments.id });
+    if (adjustmentReceipts.length !== 1) markWriterOperationUncertain();
     return updated;
   }
+  markWriterOperationUncertain();
   const [current] = await tx
     .select()
     .from(productOrderRefunds)
@@ -1196,6 +1226,8 @@ async function updateRefundedFinancialState(
         isNull(productOrderRefunds.fulfillmentQuarantinedAt),
       ),
     );
+  if (transactions.length === 0 || quarantinedCapture)
+    markWriterOperationUncertain();
   const refundedByTransaction = new Map<string, number>();
   for (const refund of succeeded) {
     if (!refund.paymentTransactionId) continue;
@@ -1218,10 +1250,12 @@ async function updateRefundedFinancialState(
         transaction.amountCents,
     );
     if (fullyRefunded) {
-      await tx
+      const obligationReceipts = await tx
         .update(orderPaymentObligations)
         .set({ status: "refunded", updatedAt: new Date() })
-        .where(eq(orderPaymentObligations.id, obligationId));
+        .where(eq(orderPaymentObligations.id, obligationId))
+        .returning({ id: orderPaymentObligations.id });
+      if (obligationReceipts.length !== 1) markWriterOperationUncertain();
     }
   }
   const allCapturedRefunded =
@@ -1232,12 +1266,24 @@ async function updateRefundedFinancialState(
         transaction.amountCents,
     );
   if (allCapturedRefunded && !quarantinedCapture) {
-    await tx
+    const orderReceipts = await tx
       .update(checkoutOrders)
       .set({ status: "refunded", updatedAt: new Date() })
       .where(
         and(eq(checkoutOrders.id, orderId), eq(checkoutOrders.status, "paid")),
-      );
+      )
+      .returning({ id: checkoutOrders.id });
+    if (orderReceipts.length !== 1) {
+      // A prior refund or late-capture cancellation can legitimately leave no
+      // paid order to advance. A still-paid or missing order has no receipt.
+      const [current] = await tx
+        .select({ status: checkoutOrders.status })
+        .from(checkoutOrders)
+        .where(eq(checkoutOrders.id, orderId))
+        .limit(1);
+      if (!current || !["refunded", "cancelled"].includes(current.status))
+        markWriterOperationUncertain();
+    }
   }
 }
 

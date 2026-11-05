@@ -3,6 +3,7 @@ import type {
   SquareRefundPaymentRequest,
   SquareRefundPaymentResponse,
 } from "@/lib/payments/square/payments-client";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 /**
  * Minimal client port for issuing a Square refund. `createSquarePaymentsClient`
@@ -85,6 +86,9 @@ export function createSquareProductRefunder(
       }
 
       const refund = response.refund;
+      // Keep the legacy normalized fallback, but do not use an echoed request
+      // identity as proof that the provider acknowledged this payment.
+      if (!refund.payment_id) markWriterOperationUncertain();
       const status = refund.status.toUpperCase();
 
       // Square accepts a refund as either COMPLETED (settled now) or PENDING
