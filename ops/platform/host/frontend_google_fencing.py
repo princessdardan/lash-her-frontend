@@ -1,12 +1,13 @@
 """Selected staging Google OAuth/Calendar and isolated legacy Redis controls.
 
 No client-management API is invented. The operator disables selected old client
-secrets in Google Auth Platform; this module checks actual invalid_client and
-successful replacement refreshes. Grant revocation is the documented endpoint.
+secrets in Google Auth Platform; this module checks discriminating client-auth
+errors or actual replacement refreshes. Grant revocation is documented.
 """
 import hashlib
 import json
 import re
+import secrets
 import ssl
 import time
 import urllib.error
@@ -27,6 +28,7 @@ CLIENTS = {
 }
 LEGACY_KEYS = ("booking:google-refresh-token:production", "booking:google-refresh-token")
 STATE_PREFIX = "booking:calendar-oauth-state:"
+UNISSUED_GRANT = "lash-her-release-deliberately-unissued-grant-v1"
 
 
 def sha(value):
@@ -188,6 +190,22 @@ def secret_denied(client, token):
     return status in (400, 401) and value == {"error": "invalid_client"}
 
 
+def client_authentication(client, private_token, owner):
+    if isinstance(private_token, str) and private_token:
+        access(client, private_token, owner)
+        return {"replacementRefreshVerified": True, "replacementClientAuthenticationVerified": True,
+            "clientAuthenticationMethod": "actual-refresh-and-userinfo"}
+    status, value = client.refresh(UNISSUED_GRANT)
+    demand(status == 400 and value == {"error": "invalid_grant"}, "GOOGLE_CLIENT_AUTHENTICATION_PROBE_UNVERIFIED")
+    return {"replacementRefreshVerified": False, "replacementClientAuthenticationVerified": True,
+        "clientAuthenticationMethod": "calibrated-unissued-grant-error-discrimination"}
+
+
+def calibrate_client(client):
+    wrong = Client(client.kind, "lh-release-wrong-" + secrets.token_urlsafe(32), client.verify)
+    demand(secret_denied(wrong, UNISSUED_GRANT), "GOOGLE_CLIENT_ERROR_DISCRIMINATION_UNVERIFIED")
+
+
 def database_transition(reviewed, actual):
     before, current = reviewed.get("databaseBeforeSnapshot"), actual["snapshot"]
     demand(isinstance(before, dict) and canonical(actual["events"]) == canonical(current.get("events")) and canonical(before) == reviewed["databaseSnapshotSha256"] and
@@ -226,10 +244,10 @@ def observe_clients(replacements, retired, reviewed, private):
     result = []
     for selected in reviewed["clients"]:
         kind = selected["kind"]
-        token = private["verificationGrants"][kind]
-        access(replacements[kind], token, selected["verificationOwnerSha256"])
-        result.append({"kind": kind, "clientId": CLIENTS[kind], "replacementRefreshVerified": True,
-            "retiredSecretDenied": secret_denied(retired[kind], token)})
+        token = private.get("verificationGrants", {}).get(kind)
+        calibrated = client_authentication(replacements[kind], token, selected["verificationOwnerSha256"])
+        result.append({"kind": kind, "clientId": CLIENTS[kind], **calibrated,
+            "retiredSecretDenied": secret_denied(retired[kind], token or UNISSUED_GRANT)})
     return result
 
 
@@ -285,14 +303,18 @@ def retire_grants(replacements, retired, redis, reviewed, private, actual, selec
     # Both actual secrets must be usable before the supported console rotation.
     # Keep these exact private Client instances in memory throughout observation;
     # an arbitrary invalid string cannot be substituted after this preflight.
+    clients = []
     for binding in reviewed["clients"]:
         kind = binding["kind"]
+        calibrate_client(replacements[kind])
         for client in (replacements[kind], retired[kind]):
-            access(client, private["verificationGrants"][kind], binding["verificationOwnerSha256"])
+            verified = client_authentication(client, private.get("verificationGrants", {}).get(kind), binding["verificationOwnerSha256"])
+        clients.append({"kind": kind, "clientId": CLIENTS[kind], **verified, "retiredSecretDenied": False})
     migrate.write_json(attempt, "google-clients-before-retirement.json", {**selected,
-        "sourceBindingSha256": reviewed["sourceBindingSha256"], "clients": reviewed["clients"], "bothSecretsRefreshVerified": True})
-    clients = [{"kind": row["kind"], "clientId": CLIENTS[row["kind"]], "replacementRefreshVerified": True,
-        "retiredSecretDenied": False} for row in reviewed["clients"]]
+        "sourceBindingSha256": reviewed["sourceBindingSha256"], "clients": reviewed["clients"],
+        "clientErrorDiscriminationVerified": True, "bothSecretsClientAuthenticationVerified": True,
+        "bothSecretsRefreshVerified": all(isinstance(private.get("verificationGrants", {}).get(kind), str) and
+            bool(private["verificationGrants"][kind]) for kind in CLIENTS)})
     legacy = redis.snapshot()
     if any(row["refreshToken"] is not None for row in legacy["grants"]):
         demand(reviewed.get("legacyCalendarSha256") is not None and any(row["calendarSha256"] == reviewed["legacyCalendarSha256"] for row in reviewed["calendars"]),
@@ -371,6 +393,8 @@ def retire_grants(replacements, retired, redis, reviewed, private, actual, selec
 
 def observe(replacements, retired, redis, reviewed, private, actual):
     transition = database_transition(reviewed, actual)
+    for client in replacements.values():
+        calibrate_client(client)
     clients = observe_clients(replacements, retired, reviewed, private)
     first, second = redis.snapshot(), redis.snapshot()
     demand(first == second, "GOOGLE_LEGACY_REDIS_CHANGED")

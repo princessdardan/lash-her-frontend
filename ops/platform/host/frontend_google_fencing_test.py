@@ -34,6 +34,7 @@ class GoogleFencingTests(unittest.TestCase):
         self.lost_revoke = False
         self.orphan_event = False
         self.empty_calendar = True
+        self.nondiscriminating = False
         owner = self
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args): pass
@@ -47,8 +48,12 @@ class GoogleFencingTests(unittest.TestCase):
                     owner.assertEqual(form["grant_type"], ["refresh_token"])
                     owner.assertIn(form["client_id"][0], google.CLIENTS.values())
                     secret, token = form["client_secret"][0], form["refresh_token"][0]
-                    if secret.startswith("old-") and owner.old_denied:
+                    if secret.startswith("lh-release-wrong-"):
+                        status, value = (400, {"error": "invalid_grant"}) if owner.nondiscriminating else (401, {"error": "invalid_client"})
+                    elif secret.startswith("old-") and owner.old_denied:
                         status, value = (403 if owner.forbidden else 401), {"error": "invalid_client", "error_description": "private-provider-error-marker"}
+                    elif token == google.UNISSUED_GRANT:
+                        status, value = 400, {"error": "invalid_grant"}
                     elif owner.revoked and not token.endswith("fresh") and token != "preserved-grant":
                         status, value = 400, {"error": "invalid_grant", "error_description": "private-grant-marker"}
                     else:
@@ -181,6 +186,22 @@ class GoogleFencingTests(unittest.TestCase):
         self.assertEqual(result["preservedGrantIds"], ["connection:owned"])
         self.assertEqual(google.access(self.replacement["calendar"], "preserved-grant", google.sha("987654321")), "access:preserved-grant")
         self.assertEqual(sum(path == "/revoke" for _method, path in self.calls), 1)
+
+    def test_identity_needs_no_offline_grant_but_requires_live_wrong_secret_error_discrimination(self):
+        self.private["verificationGrants"]["identity"] = None
+        self.reviewed["clients"][0]["verificationOwnerSha256"] = None
+        result = self.retire()
+        identity = next(row for row in result["clients"] if row["kind"] == "identity")
+        self.assertFalse(identity["replacementRefreshVerified"])
+        self.assertTrue(identity["replacementClientAuthenticationVerified"])
+        self.assertTrue(identity["retiredSecretDenied"])
+
+    def test_nondiscriminating_invalid_grant_cannot_qualify_client_authentication(self):
+        self.private["verificationGrants"]["identity"] = None
+        self.nondiscriminating = True
+        with self.assertRaisesRegex(ValueError, "ERROR_DISCRIMINATION_UNVERIFIED"):
+            self.retire()
+        self.assertFalse(any(path == "/revoke" for _method, path in self.calls))
 
     def test_original_oauth_state_may_expire_or_finish_during_approved_drain_without_replacing_prestate(self):
         original = copy.deepcopy(self.reviewed["redisBeforeSnapshot"])

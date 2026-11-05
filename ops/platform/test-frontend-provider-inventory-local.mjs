@@ -10,6 +10,7 @@ import { Client } from "pg";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
 import { observeFrontendOperationalProviderInventory } from "./frontend-operational-provider-inventory.mjs";
 import { observeFrontendGoogleDatabase, frontendGoogleSnapshotSha256 } from "./frontend-google-effects.mjs";
+import { observeFrontendCrmShippingDatabase, frontendCrmShippingSnapshotSha256 } from "./frontend-crm-shipping-effects.mjs";
 
 assert.equal(process.env.FRONTEND_PROVIDER_INVENTORY_LOCAL_TEST, "true");
 assert.equal(process.versions.node.split(".")[0], "24");
@@ -66,6 +67,16 @@ try {
     /FRONTEND_GOOGLE_DATABASE_BINDING_REFUSED/u);
   await client.query(`INSERT INTO highlevel_connections(location_id,credentials_ciphertext,expires_at,installed_by)
     VALUES('owned-location','private-encrypted-credential-marker',now()+interval '1 hour',$1::uuid)`, [randomUUID()]);
+  const crmReviewed = { environment: "staging", locationId: "owned-location", databaseSnapshotSha256: "a".repeat(64) };
+  const crmBefore = await observeFrontendCrmShippingDatabase(client, "highlevel", crmReviewed, verify, false);
+  assert.equal(Object.keys(crmBefore).length, 6);
+  assert.equal(crmBefore.connections.length, 1);
+  assert.equal(crmBefore.connections[0].credentials_revoked, false);
+  assert.equal(JSON.stringify(crmBefore).includes("private-encrypted"), false);
+  crmReviewed.databaseSnapshotSha256 = frontendCrmShippingSnapshotSha256(crmBefore);
+  assert.deepEqual(await observeFrontendCrmShippingDatabase(client, "highlevel", crmReviewed, verify), crmBefore);
+  const shippingReviewed = { environment: "staging", databaseSnapshotSha256: frontendCrmShippingSnapshotSha256({ shipments: [], jobs: [] }) };
+  assert.deepEqual(await observeFrontendCrmShippingDatabase(client, "chitchats", shippingReviewed, verify), { shipments: [], jobs: [] });
   const actual = await observeFrontendOperationalProviderInventory(client, verify);
   const before = baseline.tables.find(table => table.table === "highlevel_connections"), after = actual.tables.find(table => table.table === "highlevel_connections");
   assert.equal(after.rowCount, 1); assert.equal(after.credentialRecords, 1); assert.notEqual(before.rowsSha256, after.rowsSha256);
@@ -81,7 +92,7 @@ try {
     error => error.message === "FRONTEND_OPERATIONAL_PROVIDER_INVENTORY_REFUSED");
   assert.equal((await client.query("SELECT 1 AS value")).rows[0].value, 1);
   console.log(JSON.stringify({ status: "FRONTEND_PROVIDER_INVENTORY_OWNED_POSTGRES_PASS", migrations: artifact.migrations.length,
-    tables: actual.tables.length, googleCredentialAndEventQueries: 5, providerTouched: false, liveQualified: false }));
+    tables: actual.tables.length, googleCredentialAndEventQueries: 5, crmShippingQueries: 8, providerTouched: false, liveQualified: false }));
 } finally {
   if (client) await client.end().catch(() => {});
   if (running) { try { run(join(binaries, "pg_ctl"), ["-D", data, "-m", "immediate", "-w", "stop"]); } catch { /* owned cleanup */ } }

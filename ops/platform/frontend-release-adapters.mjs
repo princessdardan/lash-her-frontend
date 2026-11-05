@@ -8,6 +8,7 @@ import { frontendPrivateReceiptDirectory } from "./frontend-release-receipts.mjs
 import { frontendCoordinationHash as hash } from "./frontend-release-inventory.mjs";
 import { observeFrontendSquareEffects } from "./frontend-square-effects.mjs";
 import { observeFrontendGoogleDatabase } from "./frontend-google-effects.mjs";
+import { observeFrontendCrmShippingDatabase, frontendCrmShippingSnapshotSha256 } from "./frontend-crm-shipping-effects.mjs";
 import { prepareFrontendProviderBindings, frontendProviderMissingCapabilities } from "./frontend-provider-bindings.mjs";
 
 const demand = ok => { if (!ok) throw new Error("FRONTEND_PROVIDER_ADAPTER_REFUSED"); };
@@ -46,7 +47,7 @@ async function runtime(context) {
 export async function runFrontendVercelWorker(operation, context) {
   let child, output, failed = false, deadline, killDeadline, received = false, bytes = 0, processing = Promise.resolve();
   try {
-    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments", "retire-resend", "observe-resend", "observe-resend-effects", "verify-square", "observe-square", "suspend-square", "suspend-sanity", "observe-sanity", "retire-google", "observe-google", "observe-restoration"].includes(operation));
+    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments", "retire-resend", "observe-resend", "observe-resend-effects", "verify-square", "observe-square", "suspend-square", "suspend-sanity", "observe-sanity", "retire-google", "observe-google", "suspend-highlevel", "verify-highlevel", "observe-highlevel", "suspend-chitchats", "verify-chitchats", "observe-chitchats", "observe-restoration"].includes(operation));
     const { value, bindings, candidate } = await runtime(context);
     const payload = { operation, plan: fields(context.plan, ["environment", "actionId", "sourceCommit", "targetSha256", "bootstrapCompatibility", "restoration"]),
       candidate, bindings, directory: context.directory, vercelToken: value.vercelToken,
@@ -93,10 +94,34 @@ export async function runFrontendVercelWorker(operation, context) {
           payload[key] = value[key];
         }
         demand(value.googleIdentityRetiredSecret !== value.googleIdentityReplacementSecret && value.googleCalendarRetiredSecret !== value.googleCalendarReplacementSecret);
-        demand(value.googleVerificationGrants && typeof value.googleVerificationGrants.identity === "string" && typeof value.googleVerificationGrants.calendar === "string" && context.databaseClient);
-        payload.googlePrivate = { verificationGrants: value.googleVerificationGrants, calendarObserverGrants: value.googleCalendarObserverGrants ?? {} };
+        const verification = value.googleVerificationGrants ?? {};
+        demand(context.databaseClient && ["identity", "calendar"].every(kind => verification[kind] === undefined || verification[kind] === null ||
+          typeof verification[kind] === "string" && verification[kind].length > 0 && verification[kind].length <= 8192));
+        payload.googlePrivate = { verificationGrants: { identity: verification.identity ?? null, calendar: verification.calendar ?? null },
+          calendarObserverGrants: value.googleCalendarObserverGrants ?? {} };
         payload.googleActual = await observeFrontendGoogleDatabase(context.databaseClient, bindings.googleRetirement, value, context.verifyLockedSession, false);
       }
+    }
+    const crmShipping = /^(suspend|verify|observe)-(highlevel|chitchats)$/u.exec(operation);
+    let crmShippingActual, crmShippingReviewed;
+    if (crmShipping) {
+      const provider = crmShipping[2], prefix = provider === "highlevel" ? "highlevel" : "chitchats";
+      crmShippingReviewed = bindings[`${prefix}Retirement`]; demand(crmShippingReviewed && context.databaseClient);
+      for (const suffix of ["ReplacementToken", "RetiredToken"]) {
+        const token = value[prefix + suffix];
+        demand(typeof token === "string" && token.length > 0 && token.length <= 8192 && /^[!-~]+$/u.test(token));
+        payload[prefix + suffix] = token;
+      }
+      demand(value[prefix + "ReplacementToken"] !== value[prefix + "RetiredToken"]);
+      if (provider === "highlevel" && crmShippingReviewed.credentialKind === "oauth-installation" && crmShipping[1] === "verify") {
+        const refresh = value.highlevelRetiredRefreshCredentials;
+        demand(refresh?.client_id === crmShippingReviewed.oauthClientId && ["client_id", "client_secret", "refresh_token"].every(key =>
+          typeof refresh[key] === "string" && refresh[key].length > 0 && refresh[key].length <= 8192 && /^[!-~]+$/u.test(refresh[key])));
+        payload.highlevelRetiredRefreshCredentials = fields(refresh, ["client_id", "client_secret", "refresh_token"]);
+      }
+      crmShippingActual = await observeFrontendCrmShippingDatabase(context.databaseClient, provider, crmShippingReviewed,
+        context.verifyLockedSession, crmShipping[1] === "suspend");
+      payload.crmShippingActual = crmShippingActual;
     }
     if (bindings.resendRetirement && ["deploy-admission", "retire-resend", "observe-resend", "observe-resend-effects"].includes(operation)) {
       demand(typeof value.resendReplacementToken === "string" && value.resendReplacementToken.length > 0 && value.resendReplacementToken.length <= 8192 &&
@@ -170,6 +195,16 @@ export async function runFrontendVercelWorker(operation, context) {
     const code = await exit; await processing;
     lines.close(); context.environmentSignal?.removeEventListener("abort", abort);
     demand(code === 0 && !failed && received); await context.verifyLockedSession();
+    if (crmShipping) {
+      const actual = await observeFrontendCrmShippingDatabase(context.databaseClient, crmShipping[2], crmShippingReviewed, context.verifyLockedSession, false);
+      if (frontendCrmShippingSnapshotSha256(actual) !== frontendCrmShippingSnapshotSha256(crmShippingActual)) {
+        const depth = context.crmShippingObservationDepth ?? 0;
+        demand(crmShipping[1] !== "suspend" && Number.isSafeInteger(depth) && depth >= 0 && depth < 2);
+        // The fixed provider observer reclassifies the current rows against
+        // original immutable receipts. It never replays an OAuth refresh.
+        return runFrontendVercelWorker(`observe-${crmShipping[2]}`, { ...context, crmShippingObservationDepth: depth + 1 });
+      }
+    }
     return output;
   } catch { throw new Error("FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED"); }
   finally { clearTimeout(deadline); clearTimeout(killDeadline); }
@@ -249,6 +284,22 @@ export async function retireFrontendGoogleGrants(context) {
 
 export async function observeFrontendGoogleScope(context) {
   return runFrontendVercelWorker("observe-google", context);
+}
+
+export async function suspendFrontendCrmShippingCredential(provider, context) {
+  demand(["highlevel", "chitchats"].includes(provider) && context?.admissionObservation?.newWork === false);
+  return runFrontendVercelWorker(`suspend-${provider}`, context);
+}
+
+export async function verifyFrontendCrmShippingRetirement(provider, context) {
+  demand(["highlevel", "chitchats"].includes(provider) && context?.admissionObservation?.ledgerDrained === true &&
+    context.admissionObservation.newWork === false && context.admissionObservation.recovery === false);
+  return runFrontendVercelWorker(`verify-${provider}`, context);
+}
+
+export async function observeFrontendCrmShippingScope(provider, context) {
+  demand(["highlevel", "chitchats"].includes(provider));
+  return runFrontendVercelWorker(`observe-${provider}`, context);
 }
 
 export async function observeFrontendExternalFences(context) {

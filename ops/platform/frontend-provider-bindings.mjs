@@ -127,7 +127,7 @@ export function frontendProviderBindingsArtifact(input, plan) {
       Array.isArray(selected.calendars) && selected.calendars.length <= 256 &&
       surfaces.some(row => row.kind === "provider" && ["google", "google-calendar", "google-identity"].includes(row.identity.provider)));
     const clientRows = selected.clients.map(row => {
-      demand(clients[row?.kind] === row.clientId && digest(row.verificationOwnerSha256) && digest(row.retiredCredentialBindingSha256) &&
+      demand(clients[row?.kind] === row.clientId && (row.verificationOwnerSha256 === null || digest(row.verificationOwnerSha256)) && digest(row.retiredCredentialBindingSha256) &&
         digest(row.replacementCredentialBindingSha256) && row.retiredCredentialBindingSha256 !== row.replacementCredentialBindingSha256);
       return { kind: row.kind, clientId: row.clientId, verificationOwnerSha256: row.verificationOwnerSha256,
         retiredCredentialBindingSha256: row.retiredCredentialBindingSha256, replacementCredentialBindingSha256: row.replacementCredentialBindingSha256 };
@@ -161,6 +161,35 @@ export function frontendProviderBindingsArtifact(input, plan) {
       redisSnapshotSha256: selected.redisSnapshotSha256, legacyCalendarSha256: selected.legacyCalendarSha256, clients: clientRows, grants, calendars };
     result.googleRetirement.databaseBeforeSnapshot = databaseBeforeSnapshot;
     result.googleRetirement.redisBeforeSnapshot = redisSnapshot;
+  }
+  for (const provider of ["highlevel", "chitchats"]) {
+    const key = provider === "highlevel" ? "highlevelRetirement" : "chitchatsRetirement";
+    if (input[key] === undefined) continue;
+    const selected = input[key];
+    const id = value => typeof value === "string" && /^[A-Za-z0-9_-]{1,192}$/u.test(value);
+    demand(selected?.environment === "staging" &&
+      ["sourceBindingSha256", "databaseSnapshotSha256", "retiredCredentialBindingSha256", "replacementCredentialBindingSha256"].every(key => digest(selected[key])) &&
+      selected.retiredCredentialBindingSha256 !== selected.replacementCredentialBindingSha256 &&
+      surfaces.some(row => row.kind === "provider" && row.identity.provider === provider));
+    const row = { environment: "staging", credentialKind: selected.credentialKind,
+      ...Object.fromEntries(["sourceBindingSha256", "databaseSnapshotSha256", "retiredCredentialBindingSha256", "replacementCredentialBindingSha256"].map(key => [key, selected[key]])) };
+    const lists = provider === "chitchats" ? ["expectedProviderShipmentIds"] : ["expectedProviderContactIds", "expectedWorkflowIds"];
+    for (const list of lists) {
+      demand(Array.isArray(selected[list]) && selected[list].length <= 4096 && selected[list].every(id) && new Set(selected[list]).size === selected[list].length);
+      row[list] = [...selected[list]].sort();
+    }
+    if (provider === "chitchats") {
+      demand(selected.credentialKind === "personal-access-token" && id(selected.clientId));
+      row.clientId = selected.clientId;
+    } else {
+      demand(["private-integration-token", "oauth-installation"].includes(selected.credentialKind) && id(selected.locationId) &&
+        selected.locationId !== "vd09FLBpPLXuHb5Tnhn4" && id(selected.companyId));
+      row.locationId = selected.locationId; row.companyId = selected.companyId;
+      if (selected.credentialKind === "oauth-installation") {
+        demand(id(selected.appId) && id(selected.oauthClientId)); row.appId = selected.appId; row.oauthClientId = selected.oauthClientId;
+      } else { demand(id(selected.retiredIntegrationId)); row.retiredIntegrationId = selected.retiredIntegrationId; }
+    }
+    result[key] = row;
   }
   if (plan.restoration !== undefined) demand(result.gatewayObservation && hash(result.gatewayObservation) === plan.restoration.gatewayBindingSha256);
   return result;

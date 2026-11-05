@@ -17,6 +17,7 @@ import frontend_resend_retirement
 import frontend_square_retirement
 import frontend_sanity_fencing
 import frontend_google_fencing
+import frontend_crm_shipping_retirement
 import frontend_gateway_observation
 import migrate
 import vercel
@@ -617,7 +618,7 @@ def execute(context, client, verify, probe=None):
     locked = LockedClient(client, verify)
     source_attempt = attempt
     if context.get("originalDirectory") is not None:
-        demand(operation in ("observe-vercel", "observe-compatible", "observe-admission", "observe-resend", "observe-resend-effects", "observe-square", "observe-sanity", "observe-google"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
+        demand(operation in ("observe-vercel", "observe-compatible", "observe-admission", "observe-resend", "observe-resend-effects", "observe-square", "observe-sanity", "observe-google", "observe-highlevel", "observe-chitchats"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
         original = Path(context["originalDirectory"])
         migrate.private_directory(original)
         source_attempt = original / attempt.name
@@ -639,6 +640,23 @@ def execute(context, client, verify, probe=None):
         return deploy_admission(context, locked, attempt, parent, LockedProbe(verify, probe))
     if operation == "retire-deployments":
         return retire_deployments(context, locked, attempt)
+    crm_shipping = re.fullmatch(r"(suspend|verify|observe)-(highlevel|chitchats)", operation)
+    if crm_shipping:
+        task, provider = crm_shipping.groups()
+        reviewed = context["bindings"].get(provider + "Retirement")
+        demand(reviewed is not None, "REVIEWED_CRM_SHIPPING_RETIREMENT_REQUIRED")
+        replacement = LockedClient(frontend_crm_shipping_retirement.Client(provider, context[provider + "ReplacementToken"], reviewed), verify)
+        refresh = context.get("highlevelRetiredRefreshCredentials") if provider == "highlevel" and task == "verify" else None
+        retired = LockedClient(frontend_crm_shipping_retirement.Client(provider, context[provider + "RetiredToken"], reviewed, refresh_credentials=refresh), verify)
+        actual = context["crmShippingActual"]
+        if task == "observe":
+            return {**selected, **frontend_crm_shipping_retirement.observe_retirement(provider, replacement, retired, reviewed, actual, selected, source_attempt)}
+        admission = context.get("admissionObservation", {})
+        demand(admission.get("newWork") is False, "CRM_SHIPPING_NEW_WORK_MUST_BE_CLOSED")
+        if task == "suspend":
+            return frontend_crm_shipping_retirement.suspend(provider, replacement, retired, reviewed, actual, selected, attempt)
+        demand(admission.get("recovery") is False and admission.get("ledgerDrained") is True, "CRM_SHIPPING_RECOVERY_MUST_BE_CLOSED_DRAINED")
+        return frontend_crm_shipping_retirement.verify_retirement(provider, replacement, retired, reviewed, actual, selected, attempt)
     if operation in ("retire-google", "observe-google"):
         reviewed = context["bindings"].get("googleRetirement")
         demand(reviewed is not None, "REVIEWED_GOOGLE_RETIREMENT_REQUIRED")
