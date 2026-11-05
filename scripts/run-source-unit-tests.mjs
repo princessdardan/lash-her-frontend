@@ -12,6 +12,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/writer-admission/square-training-card.test.ts",
   "src/lib/writer-admission/square-training-split.test.ts",
   "src/lib/writer-admission/square-no-show.test.ts",
+  "src/lib/writer-admission/square-operational.test.ts",
   "src/lib/writer-admission/consent-recovery.test.ts",
   "src/lib/writer-admission/training.test.ts",
   "src/lib/api-integration/gateway-transport.test.ts",

@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { resolveBookingModelVersion } from "@/lib/booking/booking-model-version";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import type { BookingHoldRecord, BookingHoldState } from "@/lib/booking/holds";
 import type {
   ChargeAndStoreRepository,
@@ -924,7 +925,7 @@ export async function createServiceBookingPaymentRepository(
     },
 
     async recordCapturedOperationalPayment(input) {
-      await appointmentFinalization.recordPaymentAttempt({
+      const recorded = await appointmentFinalization.recordPaymentAttempt({
         amountCents: input.amountCents,
         capturedAt: input.now,
         currency: input.currency,
@@ -938,7 +939,9 @@ export async function createServiceBookingPaymentRepository(
         status: "captured",
       });
 
-      await appointmentFinalization.confirmOperationalAppointment({
+      if (recorded.bookingModelVersion !== 2) markWriterOperationUncertain();
+
+      const confirmed = await appointmentFinalization.confirmOperationalAppointment({
         calendar: { status: "pending" },
         holdId: input.holdId,
         holdOutcome: "paid_pending_booking",
@@ -954,6 +957,7 @@ export async function createServiceBookingPaymentRepository(
         },
         source: "square_charge_and_store",
       });
+      if (confirmed.bookingModelVersion !== 2) markWriterOperationUncertain();
     },
 
     async recordAuthorizedOperationalPayment(input) {

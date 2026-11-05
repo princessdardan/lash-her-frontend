@@ -7,6 +7,7 @@ import {
   type ServicePaymentAlertLogger,
 } from "@/lib/booking/payments/service-payment-alerts";
 import type { SquarePayment } from "@/lib/payments/square/payments-client";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import { getPrivateDb } from "./client";
 import { appointmentHolds, bookingPaymentAttempts } from "./schema";
@@ -52,6 +53,20 @@ interface OperationalSquarePaymentObserverDependencies {
     input: CompletedOperationalPaymentEvidence,
     db: ReturnType<typeof getPrivateDb>,
   ): Promise<void>;
+}
+
+// Classification is SELECT-only and deliberately broader than a valid attempt:
+// disappearing attempts and financial mismatches must be checked under admission.
+export async function isKnownOperationalSquarePayment(
+  payment: SquarePayment,
+  db: ReturnType<typeof getPrivateDb> = getPrivateDb(),
+): Promise<boolean> {
+  const referenceId = payment.reference_id?.trim();
+  if (!referenceId) return false;
+  const [hold] = await db.select({ id: appointmentHolds.id }).from(appointmentHolds)
+    .where(and(eq(appointmentHolds.publicReference, referenceId), eq(appointmentHolds.bookingModelVersion, 2)))
+    .limit(1);
+  return hold !== undefined;
 }
 
 export async function observeOperationalSquarePayment(
@@ -102,6 +117,7 @@ export async function observeOperationalSquarePayment(
       .limit(1)
       .for("update");
     if (attempt === undefined) {
+      markWriterOperationUncertain();
       return {
         completedPayment: null,
         paymentIdentityConflict: null,
@@ -118,6 +134,7 @@ export async function observeOperationalSquarePayment(
       attempt.currency !== payment.amount_money.currency.trim().toUpperCase() ||
       intent.squareCustomerId !== payment.customer_id
     ) {
+      markWriterOperationUncertain();
       return {
         completedPayment: null,
         paymentIdentityConflict: null,
@@ -157,6 +174,12 @@ export async function observeOperationalSquarePayment(
       ? attempt.providerMetadata
       : {};
     const terminalStatus = payment.status.trim().toUpperCase();
+    if (
+      !["APPROVED", "PENDING", "COMPLETED", "CANCELED", "FAILED", "DECLINED"].includes(terminalStatus) ||
+      (attempt.status === "captured" && ["CANCELED", "FAILED", "DECLINED"].includes(terminalStatus))
+    ) {
+      markWriterOperationUncertain();
+    }
     const localStatus =
       terminalStatus === "CANCELED"
         ? "cancelled"
@@ -244,6 +267,7 @@ export async function observeOperationalSquarePayment(
   });
 
   if (observation.paymentIdentityConflict !== null) {
+    markWriterOperationUncertain();
     await dependencies.alerts.alert({
       category: "stuck_payment_state",
       severity: "error",
@@ -255,6 +279,9 @@ export async function observeOperationalSquarePayment(
   }
 
   if (observation.remediation !== null) {
+    // Remediation is awaited, but invalid attribution and manual financial
+    // follow-up do not establish an ordinary completed recovery operation.
+    markWriterOperationUncertain();
     await remediateAttributionMismatch(
       observation.remediation,
       now,

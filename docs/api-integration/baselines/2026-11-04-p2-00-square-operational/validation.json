@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "date": "2026-11-04",
+  "runtime": "Node 24.18.0",
+  "status": "SOURCE_COMPONENT_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "884e10046341820557f18205b8d06f8137b86b58",
+  "sourceManifestSha256": "b016d4c7ff4053b66628e551e4d180cf78ffc32dec7739f2492310382928ee12",
+  "files": {
+    "scripts/run-source-unit-tests.mjs": "92dc12cd951203b7f95073c368b80da2d0684f3fa647ff8d015df93d1d8876c1",
+    "src/app/api/webhooks/square/handler.ts": "7626ad44cb193b621c3623039f6a1899392d94cfe7eb05f08088086f6fcfe9cf",
+    "src/app/api/webhooks/square/route.ts": "f6d5b2d0e1746c926ad79a91e04c2d183814eae58b6ebef343a5572114efd115",
+    "src/lib/private-db/operational-square-payment-observer.ts": "5f7765a6ed2f8bffd3ecb9f5bec28760026abcb90d2fcf3b049774e00f8226a9",
+    "src/lib/private-db/service-booking-payment-repository.ts": "cf23a4b59815ca0ff278557d26a2ca5c0f979a1b8ed8f490a7360261f489b780",
+    "src/lib/private-db/appointment-finalization-repository.ts": "82b4447f6625ba313d5fa1ffcac36e419330e09cac6079a0d39f6c404780e09f",
+    "src/lib/private-db/appointment-finalization-repository.db.test.ts": "8f1e5a8626d541044c427d00ffa65352ce868b7e0b202ee766edfda4b0ccbced",
+    "src/lib/writer-admission/square-operational.test.ts": "30b7c96c39bb15a6d5e9aba931930e081aa2b3e835c7ad2ea8a0be032fddd52a"
+  },
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "deploymentPerformed": false,
+  "liveDatabaseOrProviderChanged": false,
+  "p200Complete": false,
+  "checks": {
+    "unit": {
+      "ordinary": 1855,
+      "serverOnly": 296,
+      "scripts": 31,
+      "securityDependencies": 14,
+      "totalPassed": 2196,
+      "failed": 0,
+      "skipped": 0
+    },
+    "focusedRegression": {
+      "totalPassed": 164,
+      "newOperationalWebhookTests": 14,
+      "failed": 0
+    },
+    "platform": {
+      "totalPassed": 178,
+      "failed": 0
+    },
+    "typescript": "PASS",
+    "targetedEslint": "PASS",
+    "gitDiffCheck": "PASS",
+    "ownedPostgres16Business": {
+      "migrations": 80,
+      "files": 2,
+      "passed": 45,
+      "failed": 0,
+      "skipped": 0,
+      "providerTouched": false,
+      "tlsLedgerCombined": false,
+      "scope": [
+        "Actual operational classification, observer and capture/projection repositories with durable replay and immutable payment identity",
+        "Captured evidence preserved after late failure and projection errors",
+        "Legacy model result cannot complete admitted capture; existing authorization, remediation and reservation/finalization regressions"
+      ]
+    },
+    "inheritedProtocols": {
+      "locallyRerun": false,
+      "priorEvidence": "../2026-11-04-p2-00-square-training-split/validation.json",
+      "unchangedProtocolFiles": [
+        "src/lib/writer-admission/runtime.ts",
+        "src/lib/writer-admission/route.ts",
+        "src/lib/writer-admission/context.ts",
+        "ops/platform/frontend-admission.mjs"
+      ]
+    },
+    "fullBuildBrowsersAndPostgres18": "PENDING_EXACT_HEAD_CI"
+  },
+  "review": {
+    "kind": "sequential local source/effect review",
+    "scope": [
+      "Verified dispatch and SELECT-only classification",
+      "Awaited row locks, writes, transaction commits, captured projection, cancellation and remediation lifetime",
+      "Swallowed cancellation errors, immutable identity, mismatches and legacy/no-op outcomes",
+      "Admission-off compatibility, unmatched fallback and ordinary booking separation"
+    ]
+  },
+  "followupReview": {
+    "date": "2026-11-04",
+    "reviewedCommit": "fe403572a1e69974e0c2e734da9027af32397e82",
+    "applicationSourceChanged": false,
+    "finding": {
+      "file": "writer-classification.json",
+      "issue": "candidateSourceManifestSha256 incorrectly repeated the merged-source hash instead of binding the candidate inventory.",
+      "before": "05fc98b8a5486d40a1d61bc1b257d307455a67ba39fdcadac0a877ed1183fe9e",
+      "after": "b016d4c7ff4053b66628e551e4d180cf78ffc32dec7739f2492310382928ee12",
+      "verification": "Candidate-binding equality assertion failed before correction and passed afterward; the merged-source binding remains unchanged."
+    },
+    "checks": {
+      "unitScriptSecurityPassed": 2196,
+      "focusedSquareRegressionsPassed": 134,
+      "sourceHashesVerified": 27,
+      "regeneratedMergedInventory": "IDENTICAL",
+      "regeneratedCandidateInventory": "IDENTICAL",
+      "classifiedHttpMethods": 61,
+      "classifiedActions": 50,
+      "operationalScriptHashesVerified": 21,
+      "gitDiffCheck": "PASS"
+    },
+    "runtimeFindings": [],
+    "limits": "No new combined webhook/ledger/business-database qualification or live changes. Exact-head CI remains required for the evidence correction."
+  },
+  "environmentCorrections": [
+    "Disposable loopback PostgreSQL16 uses a fresh owned role/database with explicit sslmode=disable; all 80 migrations and 45 tests passed, then the cluster stopped. It does not supply TLS-ledger qualification.",
+    "Full unit suite uses local fixture IPC/loopback permission. Initial focused test compilation exposed two fixture syntax errors, corrected before the passing runs."
+  ],
+  "limitations": [
+    "Actual webhook/ledger/business-database enforcement remains unqualified as one combined flow.",
+    "No actual provider delivery, immutable runtime or live drain/producer/historical fencing/bootstrap/parent coordination is claimed.",
+    "All attribution remediation, including confirmed cancellation, conservatively remains uncertain; failed/canceled replay without an active attempt also remains uncertain.",
+    "Ordinary booking recovery and independent initiation/admin/worker executions remain separate requirements."
+  ]
+}
