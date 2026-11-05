@@ -1,6 +1,7 @@
 // Concrete nonsecret provider targets. This validates identity/coverage, not
 // credential retirement, live callback completion or exhaustive account scope.
 import { frontendCoordinationHash as hash } from "./frontend-release-inventory.mjs";
+import { normalizeFrontendGoogleSnapshot, frontendGoogleSnapshotSha256 } from "./frontend-google-effects.mjs";
 
 export const FRONTEND_VERCEL_TEAM = "team_2Hrn5eMZyZxfAWdmYvyKi9t3";
 export const FRONTEND_VERCEL_PROJECT = "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM";
@@ -114,6 +115,52 @@ export function frontendProviderBindingsArtifact(input, plan) {
     }).sort((a, b) => a.hookId.localeCompare(b.hookId));
     demand(new Set(hooks.map(row => row.hookId)).size === hooks.length);
     result.sanityRetirement = { projectId: selected.projectId, dataset: selected.dataset, hooks };
+  }
+  if (input.googleRetirement !== undefined) {
+    const selected = input.googleRetirement;
+    const clients = { identity: "185770842371-d3thak0b2btgb77pngj968nvhpjkqmgf.apps.googleusercontent.com",
+      calendar: "185770842371-lg0fktlf96u88pnqjnoom83st75btv4d.apps.googleusercontent.com" };
+    demand(selected?.projectId === "lash-her-staging-20261022" && selected.projectNumber === "185770842371" &&
+      digest(selected.sourceBindingSha256) && digest(selected.databaseSnapshotSha256) && digest(selected.redisSnapshotSha256) &&
+      (selected.legacyCalendarSha256 === null || digest(selected.legacyCalendarSha256)) &&
+      Array.isArray(selected.clients) && selected.clients.length === 2 && Array.isArray(selected.grants) && selected.grants.length <= 4098 &&
+      Array.isArray(selected.calendars) && selected.calendars.length <= 256 &&
+      surfaces.some(row => row.kind === "provider" && ["google", "google-calendar", "google-identity"].includes(row.identity.provider)));
+    const clientRows = selected.clients.map(row => {
+      demand(clients[row?.kind] === row.clientId && digest(row.verificationOwnerSha256) && digest(row.retiredCredentialBindingSha256) &&
+        digest(row.replacementCredentialBindingSha256) && row.retiredCredentialBindingSha256 !== row.replacementCredentialBindingSha256);
+      return { kind: row.kind, clientId: row.clientId, verificationOwnerSha256: row.verificationOwnerSha256,
+        retiredCredentialBindingSha256: row.retiredCredentialBindingSha256, replacementCredentialBindingSha256: row.replacementCredentialBindingSha256 };
+    }).sort((a, b) => a.kind.localeCompare(b.kind));
+    demand(new Set(clientRows.map(row => row.kind)).size === 2);
+    const grants = selected.grants.map(row => {
+      demand(typeof row?.grantId === "string" && (/^connection:[a-f0-9-]{36}$/u.test(row.grantId) ||
+        ["booking:google-refresh-token:production", "booking:google-refresh-token"].includes(row.grantId)) &&
+        digest(row.ownerSha256) && ["retire", "preserve"].includes(row.disposition));
+      return { grantId: row.grantId, ownerSha256: row.ownerSha256, disposition: row.disposition };
+    }).sort((a, b) => a.grantId.localeCompare(b.grantId));
+    demand(new Set(grants.map(row => row.grantId)).size === grants.length);
+    const calendars = selected.calendars.map(row => {
+      demand(digest(row?.calendarSha256) && (row.grantId === "verification:calendar" || grants.some(grant => grant.grantId === row.grantId)));
+      return { calendarSha256: row.calendarSha256, grantId: row.grantId };
+    }).sort((a, b) => a.calendarSha256.localeCompare(b.calendarSha256));
+    demand(new Set(calendars.map(row => row.calendarSha256)).size === calendars.length);
+    const databaseBeforeSnapshot = normalizeFrontendGoogleSnapshot(selected.databaseBeforeSnapshot);
+    demand(frontendGoogleSnapshotSha256(databaseBeforeSnapshot) === selected.databaseSnapshotSha256);
+    const redisBeforeSnapshot = selected.redisBeforeSnapshot;
+    demand(Array.isArray(redisBeforeSnapshot?.grants) && redisBeforeSnapshot.grants.length === 2 &&
+      redisBeforeSnapshot.grants[0]?.grantId === "booking:google-refresh-token:production" && redisBeforeSnapshot.grants[1]?.grantId === "booking:google-refresh-token" &&
+      redisBeforeSnapshot.grants.every(row => typeof row.present === "boolean") && Array.isArray(redisBeforeSnapshot.stateKeySha256) &&
+      redisBeforeSnapshot.stateKeySha256.length <= 4096 && redisBeforeSnapshot.stateKeySha256.every(digest) &&
+      new Set(redisBeforeSnapshot.stateKeySha256).size === redisBeforeSnapshot.stateKeySha256.length);
+    const redisSnapshot = { grants: redisBeforeSnapshot.grants.map(row => ({ grantId: row.grantId, present: row.present })),
+      stateKeySha256: [...redisBeforeSnapshot.stateKeySha256].sort() };
+    demand(frontendGoogleSnapshotSha256(redisSnapshot) === selected.redisSnapshotSha256);
+    result.googleRetirement = { projectId: selected.projectId, projectNumber: selected.projectNumber,
+      sourceBindingSha256: selected.sourceBindingSha256, databaseSnapshotSha256: selected.databaseSnapshotSha256,
+      redisSnapshotSha256: selected.redisSnapshotSha256, legacyCalendarSha256: selected.legacyCalendarSha256, clients: clientRows, grants, calendars };
+    result.googleRetirement.databaseBeforeSnapshot = databaseBeforeSnapshot;
+    result.googleRetirement.redisBeforeSnapshot = redisSnapshot;
   }
   if (plan.restoration !== undefined) demand(result.gatewayObservation && hash(result.gatewayObservation) === plan.restoration.gatewayBindingSha256);
   return result;

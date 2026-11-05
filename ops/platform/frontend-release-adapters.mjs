@@ -7,6 +7,7 @@ import { resolve, dirname, sep } from "node:path";
 import { frontendPrivateReceiptDirectory } from "./frontend-release-receipts.mjs";
 import { frontendCoordinationHash as hash } from "./frontend-release-inventory.mjs";
 import { observeFrontendSquareEffects } from "./frontend-square-effects.mjs";
+import { observeFrontendGoogleDatabase } from "./frontend-google-effects.mjs";
 import { prepareFrontendProviderBindings, frontendProviderMissingCapabilities } from "./frontend-provider-bindings.mjs";
 
 const demand = ok => { if (!ok) throw new Error("FRONTEND_PROVIDER_ADAPTER_REFUSED"); };
@@ -45,7 +46,7 @@ async function runtime(context) {
 export async function runFrontendVercelWorker(operation, context) {
   let child, output, failed = false, deadline, killDeadline, received = false, bytes = 0, processing = Promise.resolve();
   try {
-    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments", "retire-resend", "observe-resend", "observe-resend-effects", "verify-square", "observe-square", "suspend-square", "suspend-sanity", "observe-sanity", "observe-restoration"].includes(operation));
+    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments", "retire-resend", "observe-resend", "observe-resend-effects", "verify-square", "observe-square", "suspend-square", "suspend-sanity", "observe-sanity", "retire-google", "observe-google", "observe-restoration"].includes(operation));
     const { value, bindings, candidate } = await runtime(context);
     const payload = { operation, plan: fields(context.plan, ["environment", "actionId", "sourceCommit", "targetSha256", "bootstrapCompatibility", "restoration"]),
       candidate, bindings, directory: context.directory, vercelToken: value.vercelToken,
@@ -75,6 +76,28 @@ export async function runFrontendVercelWorker(operation, context) {
         payload[key] = value[key];
       }
     }
+    if (bindings.googleRetirement && ["retire-google", "observe-google", "deploy-admission"].includes(operation)) {
+      if (bindings.googleRetirement.legacyCalendarSha256 !== null) {
+        demand(typeof value.googleLegacyCalendarId === "string" && value.googleLegacyCalendarId.length > 0 && value.googleLegacyCalendarId.length <= 1024 &&
+          hash(value.googleLegacyCalendarId) === bindings.googleRetirement.legacyCalendarSha256);
+        payload.googleLegacyCalendarId = value.googleLegacyCalendarId;
+      }
+      for (const kind of ["Identity", "Calendar"]) {
+        const key = `google${kind}ReplacementSecret`;
+        demand(typeof value[key] === "string" && value[key].length > 0 && value[key].length <= 8192 && /^[!-~]+$/u.test(value[key]));
+        payload[key] = value[key];
+      }
+      if (operation !== "deploy-admission") {
+        for (const key of ["googleIdentityRetiredSecret", "googleCalendarRetiredSecret", "googleLegacyRedisToken"]) {
+          demand(typeof value[key] === "string" && value[key].length > 0 && value[key].length <= 8192 && /^[!-~]+$/u.test(value[key]));
+          payload[key] = value[key];
+        }
+        demand(value.googleIdentityRetiredSecret !== value.googleIdentityReplacementSecret && value.googleCalendarRetiredSecret !== value.googleCalendarReplacementSecret);
+        demand(value.googleVerificationGrants && typeof value.googleVerificationGrants.identity === "string" && typeof value.googleVerificationGrants.calendar === "string" && context.databaseClient);
+        payload.googlePrivate = { verificationGrants: value.googleVerificationGrants, calendarObserverGrants: value.googleCalendarObserverGrants ?? {} };
+        payload.googleActual = await observeFrontendGoogleDatabase(context.databaseClient, bindings.googleRetirement, value, context.verifyLockedSession, false);
+      }
+    }
     if (bindings.resendRetirement && ["deploy-admission", "retire-resend", "observe-resend", "observe-resend-effects"].includes(operation)) {
       demand(typeof value.resendReplacementToken === "string" && value.resendReplacementToken.length > 0 && value.resendReplacementToken.length <= 8192 &&
         /^[!-~]+$/u.test(value.resendReplacementToken));
@@ -85,7 +108,7 @@ export async function runFrontendVercelWorker(operation, context) {
         payload.resendRetiredToken = value.resendRetiredToken;
       }
     }
-    if (["retire-resend", "verify-square", "suspend-square"].includes(operation)) {
+    if (["retire-resend", "verify-square", "suspend-square", "retire-google"].includes(operation)) {
       const privateDirectory = frontendPrivateReceiptDirectory(value.privateConfigurationDirectory);
       demand(privateDirectory !== context.directory && !privateDirectory.startsWith(context.directory + sep));
       payload.privateConfigurationDirectory = privateDirectory;
@@ -217,6 +240,15 @@ export async function suspendFrontendSanityHooks(context) {
 
 export async function observeFrontendSanityScope(context) {
   return runFrontendVercelWorker("observe-sanity", context);
+}
+
+export async function retireFrontendGoogleGrants(context) {
+  demand(context?.admissionObservation?.ledgerDrained === true && context.admissionObservation.newWork === false && context.admissionObservation.recovery === false);
+  return runFrontendVercelWorker("retire-google", context);
+}
+
+export async function observeFrontendGoogleScope(context) {
+  return runFrontendVercelWorker("observe-google", context);
 }
 
 export async function observeFrontendExternalFences(context) {
