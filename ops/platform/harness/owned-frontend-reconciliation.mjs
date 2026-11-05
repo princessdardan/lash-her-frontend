@@ -44,7 +44,7 @@ async function main() {
     password, ssl: { rejectUnauthorized: true, ca: readFileSync(process.env.NODE_EXTRA_CA_CERTS, "utf8") } });
   await operator.connect();
   const connections = [operator], checks = [], reconciliationEvidence = [], nativeFetch = globalThis.fetch;
-  let server, closePool, gate, failProvider, providerInvariantFailure, expectedOutboxKey, unexpectedFetches = 0, activeCalls = [], logCount = 0;
+  let server, closePool, gate, failProvider, providerInvariantFailure, expectedOutboxKey, stockProviderMode, unexpectedFetches = 0, activeCalls = [], logCount = 0;
   const requests = [];
   const originalConsole = { log: console.log, warn: console.warn, error: console.error };
   // Expected domain failures are inspected through durable rows and sanitized
@@ -70,6 +70,10 @@ async function main() {
         attempts: (await operator.query("SELECT id,status,idempotency_key,provider_payment_id FROM booking_payment_attempts ORDER BY id")).rows,
         appointments: (await operator.query("SELECT id,booking_confirmation_email_sent_at,booking_confirmation_email_claimed_until,booking_confirmation_email_last_error FROM appointments ORDER BY id")).rows,
         orders: (await operator.query("SELECT order_id,status,provider_status,provider_metadata FROM checkout_orders ORDER BY order_id")).rows,
+        stock: (await operator.query("SELECT id,on_hand,reserved FROM product_stock ORDER BY id")).rows,
+        stockMovements: (await operator.query("SELECT order_id,kind,quantity FROM product_stock_movements ORDER BY id")).rows,
+        obligations: (await operator.query("SELECT order_id,status FROM order_payment_obligations ORDER BY id")).rows,
+        shipments: (await operator.query("SELECT order_id,status FROM product_shipments ORDER BY id")).rows,
         outbox: (await operator.query("SELECT id,kind,status,provider_message_id,provider_idempotency_key,lease_owner,lease_expires_at FROM customer_email_outbox ORDER BY id")).rows };
       const evidence = createHash("sha256").update(JSON.stringify(inspected)).digest("hex");
       reconciliationEvidence.push(evidence);
@@ -100,6 +104,9 @@ async function main() {
       if (gate?.stage === stage && !gate.used) { gate.used = true; gate.enter(); await gate.wait; }
       if (failProvider === stage) return Response.json({ name: "owned_failure", message: "owned-private-provider-detail" }, { status: 500 });
       if (stage === "email") return Response.json({ id: "owned-email-receipt" });
+      if (stage === "stock") return Response.json(stockProviderMode === "malformed" ? { payments: [{ id: "owned-malformed" }] } :
+        stockProviderMode === "bounded" ? { payments: [], cursor: "owned-next" } :
+        stockProviderMode === "captured" ? { payments: [{ id: "owned-stock-payment", reference_id: "owned-stock-order", status: "COMPLETED", amount_money: { amount: 1000, currency: "CAD" } }] } : { payments: [] });
       const id = selected.pathname.split("/")[3];
       const status = stage === "service" || selected.pathname.endsWith("/cancel") ? "CANCELED" : selected.pathname.endsWith("/complete") ? "COMPLETED" : "APPROVED";
       return Response.json({ payment: { id, status, amount_money: { amount: 1000, currency: "CAD" } } });
@@ -107,12 +114,13 @@ async function main() {
     phase = "import-actual-route";
     const { GET } = await import("../../../src/app/api/admin/payment-reconciliation/route.ts");
     const { GET: outboxGet } = await import("../../../src/app/api/cron/customer-email-outbox/route.ts");
+    const { GET: stockGet } = await import("../../../src/app/api/cron/product-stock-reservations/route.ts");
     ({ closePrivateDbPool: closePool } = await import("../../../src/lib/private-db/client.ts"));
     const { runWriterAdmission } = await import("../../../src/lib/writer-admission/runtime.ts");
     server = createServer(async (request, response) => {
       try {
-        assert.ok(["/api/admin/payment-reconciliation", "/api/cron/customer-email-outbox"].includes(request.url)); assert.equal(request.method, "GET");
-        const selectedGet = request.url === "/api/cron/customer-email-outbox" ? outboxGet : GET;
+        assert.ok(["/api/admin/payment-reconciliation", "/api/cron/customer-email-outbox", "/api/cron/product-stock-reservations"].includes(request.url)); assert.equal(request.method, "GET");
+        const selectedGet = request.url === "/api/cron/product-stock-reservations" ? stockGet : request.url === "/api/cron/customer-email-outbox" ? outboxGet : GET;
         const result = await selectedGet(new Request(`http://127.0.0.1${request.url}`, {
           headers: request.headers.authorization ? { authorization: request.headers.authorization } : {},
         }));
@@ -353,6 +361,113 @@ async function main() {
       assertReconciliationProviderCalls(assert, activeCalls, ["email"]);
       await reconcile(); checks.push(`customer-email-${fault}-refuses-success-without-replaying-real-delivery`);
     }
+    const stockRequest = (authorized = true) => request(authorized, "/api/cron/product-stock-reservations");
+    const seedStock = async (mode = "absent") => {
+      await seedReconciliationRows(operator, []);
+      await operator.query("TRUNCATE product_stock CASCADE");
+      expectedOutboxKey = undefined; stockProviderMode = mode; activeCalls = [];
+      if (mode === "empty") return;
+      const order = (await operator.query(`INSERT INTO checkout_orders(order_id,purpose,status,payment_provider,
+        customer_name,customer_email,amount_cents,line_items,created_at,pii_redaction_due_at)
+        VALUES('owned-stock-order','product','pending','square','Owned fixture','owned@example.invalid',1000,'[]','2020-01-01T12:00:00Z','2020-12-30T12:00:00Z') RETURNING id`)).rows[0].id;
+      await operator.query(`INSERT INTO order_payment_obligations(order_id,purpose,status,merchandise_amount_cents,
+        shipping_amount_cents,tax_amount_cents,total_amount_cents,currency,source_workflow,tax_policy_version,policy_version,
+        payment_provider,initialization_status,idempotency_key,expires_at)
+        VALUES($1,'primary','pending',1000,0,0,1000,'CAD','owned-stock','owned','owned','square','ready','owned-stock-key',now()-interval '3 hours')`, [order]);
+      const stock = (await operator.query(`INSERT INTO product_stock(product_id,on_hand,reserved)
+        VALUES('owned-stock-product',10,$1) RETURNING id`, [mode === "missing-stock-receipt" ? 0 : 2])).rows[0].id;
+      await operator.query(`INSERT INTO product_stock_movements(product_stock_id,order_id,kind,quantity)
+        VALUES($1,'owned-stock-order','reserve',2)`, [stock]);
+      if (mode === "no-shipment") return;
+      await operator.query(`INSERT INTO product_shipments(order_id,public_reference,quote_token_hash,quote_fingerprint,
+        status,destination,package_snapshot,customs_lines,rates,quote_expires_at)
+        VALUES($1,'owned-stock-shipment','owned-stock-token','owned-stock-fingerprint','payment_pending','{}','{}','[]','[]',now()+interval '1 hour')`, [order]);
+    };
+    const assertStockReceipt = async (released = true, missingMovement = false, shipmentMode = "normal") => {
+      const orders = (await operator.query("SELECT status FROM checkout_orders WHERE order_id='owned-stock-order'")).rows;
+      assert.equal(orders.length, 1); assert.equal(orders[0].status, released ? "cancelled" : "pending");
+      const obligations = (await operator.query("SELECT status,idempotency_key FROM order_payment_obligations")).rows;
+      assert.equal(obligations.length, 1); assert.equal(obligations[0].status, released ? "cancelled" : "pending");
+      assert.equal(obligations[0].idempotency_key, "owned-stock-key");
+      const stock = (await operator.query("SELECT on_hand,reserved FROM product_stock")).rows;
+      assert.deepEqual(stock, [{ on_hand: 10, reserved: released ? 0 : 2 }]);
+      const movements = (await operator.query("SELECT kind,quantity FROM product_stock_movements ORDER BY kind::text")).rows;
+      assert.deepEqual(movements, released && !missingMovement ? [{ kind: "release", quantity: 2 }, { kind: "reserve", quantity: 2 }] : [{ kind: "reserve", quantity: 2 }]);
+      const shipments = (await operator.query("SELECT status FROM product_shipments")).rows;
+      assert.deepEqual(shipments, shipmentMode === "no-shipment" ? [] : [{ status: released && shipmentMode !== "missing-shipment-receipt" ? "abandoned" : "payment_pending" }]);
+    };
+    phase = "stock-authentication-and-closed-admission";
+    await seedStock(); before = await operations();
+    assert.equal((await stockRequest(false)).status, 401);
+    delete process.env.CRON_SECRET; assert.equal((await stockRequest()).status, 404); process.env.CRON_SECRET = "owned-cron";
+    assert.equal((await stockRequest()).status, 503); assert.deepEqual(await since(before), []); assert.deepEqual(activeCalls, []);
+    await assertStockReceipt(false); checks.push("stock-authentication-and-closed-admission-refuse-before-selection-provider-or-cleanup");
+
+    phase = "stock-empty";
+    await seedStock("empty"); await change(true); before = await operations();
+    assert.equal((await stockRequest()).status, 200); assert.deepEqual((await since(before)).map(row => row.state), ["completed"]);
+    assert.deepEqual(activeCalls, []); await reconcile(); checks.push("stock-empty-batch-completes-independent-recovery-entry");
+
+    for (const mode of ["absent", "captured", "provider-failure", "malformed", "bounded", "missing-stock-receipt", "missing-movement-receipt", "missing-shipment-receipt", "no-shipment"]) {
+      phase = `stock-${mode}`;
+      await seedStock(mode); await change(true); before = await operations();
+      failProvider = mode === "provider-failure" ? "stock" : undefined;
+      if (mode === "missing-movement-receipt") {
+        await operator.query("CREATE FUNCTION pg_temp.suppress_owned_release() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$");
+        await operator.query("CREATE TRIGGER owned_missing_release BEFORE INSERT ON product_stock_movements FOR EACH ROW WHEN (NEW.kind = 'release') EXECUTE FUNCTION pg_temp.suppress_owned_release()");
+      }
+      if (mode === "missing-shipment-receipt") {
+        await operator.query("CREATE FUNCTION pg_temp.suppress_owned_abandonment() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$");
+        await operator.query("CREATE TRIGGER owned_missing_abandonment BEFORE UPDATE ON product_shipments FOR EACH ROW WHEN (NEW.status = 'abandoned') EXECUTE FUNCTION pg_temp.suppress_owned_abandonment()");
+      }
+      let result;
+      try { result = await stockRequest(); }
+      finally {
+        failProvider = undefined;
+        if (mode === "missing-movement-receipt") await operator.query("DROP TRIGGER owned_missing_release ON product_stock_movements");
+        if (mode === "missing-shipment-receipt") await operator.query("DROP TRIGGER owned_missing_abandonment ON product_shipments");
+      }
+      const completed = ["absent", "captured", "no-shipment"].includes(mode);
+      assert.equal(result.status, completed ? 200 : 503);
+      assert.deepEqual((await since(before)).map(row => row.state), [completed ? "completed" : "uncertain"]);
+      await assertStockReceipt(mode !== "captured", mode === "missing-movement-receipt", mode);
+      const expectedCalls = Array.from({ length: mode === "bounded" ? 4 : 1 }, () => ({ stage: "stock", method: "GET", path: "/v2/payments" }));
+      assert.deepEqual(activeCalls, expectedCalls);
+      if (mode === "absent") {
+        assert.deepEqual(JSON.parse(result.text), { scanned: 1, released: 1, skipped: 0, failed: 0 });
+        assert.equal((await stockRequest()).status, 200); await assertStockReceipt(); assert.deepEqual(activeCalls, expectedCalls);
+      }
+      await reconcile(); checks.push(`stock-${mode}-real-stock-order-obligation-and-shipment-receipts-accounted`);
+    }
+
+    phase = "stock-closure-during-locked-cleanup";
+    await seedStock(); await change(true); before = await operations();
+    const stockBlocker = new Client({ host: target.host, port, database: target.database, user: "frontend_test_admin",
+      password, ssl: { rejectUnauthorized: true, ca: readFileSync(process.env.NODE_EXTRA_CA_CERTS, "utf8") } });
+    connections.push(stockBlocker); await stockBlocker.connect(); await stockBlocker.query("BEGIN");
+    await stockBlocker.query("SELECT id FROM checkout_orders WHERE order_id='owned-stock-order' FOR UPDATE");
+    let stockPending = stockRequest();
+    try {
+      await until(async () => (await operator.query("SELECT 1 FROM pg_stat_activity WHERE usename=$1 AND wait_event_type='Lock'", [target.user])).rows.length === 1);
+      await change(false); assert.equal((await drain()).active, 1); assert.equal((await drain()).ledgerDrained, false);
+      assert.equal((await stockRequest()).status, 503); assert.equal((await since(before)).length, 1);
+    } finally { await stockBlocker.query("ROLLBACK"); }
+    assert.equal((await stockPending).status, 200); await assertStockReceipt();
+    assertReconciliationProviderCalls(assert, activeCalls, ["stock"]); await reconcile();
+    checks.push("stock-close-retains-active-entry-through-actually-blocked-transaction-and-refuses-new-sweep");
+
+    phase = "stock-ledger-backend-death";
+    await seedStock(); await change(true); before = await operations();
+    const stockHeld = holdProvider("stock"); stockPending = stockRequest();
+    try {
+      await stockHeld.entered(); await change(false);
+      const sessions = (await operator.query("SELECT pid FROM pg_stat_activity WHERE usename=$1 AND application_name='lash-her-frontend-writer-admission'", [target.user])).rows;
+      assert.equal(sessions.length, 1); await operator.query("SELECT pg_terminate_backend($1,1000)", [sessions[0].pid]); await delay(25);
+    } finally { stockHeld.release(); }
+    assert.equal((await stockPending).status, 503); gate = undefined;
+    assert.deepEqual((await since(before)).map(row => row.state), ["active"]);
+    await assertStockReceipt(); assertReconciliationProviderCalls(assert, activeCalls, ["stock"]); await reconcile();
+    checks.push("stock-ledger-backend-death-retains-unresolved-entry-without-replaying-committed-cleanup");
     assert.equal(unexpectedFetches, 0);
     if (providerInvariantFailure) throw providerInvariantFailure;
     return { status: "FRONTEND_RECONCILIATION_OWNED_PASS", postgresMajor: major, checks, reconciliationEvidence,

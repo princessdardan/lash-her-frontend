@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "status": "LOCAL_STOCK_SWEEP_RECOVERY_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "8b248627d962771175947b2637881e2f1e4e313f",
+  "runtime": "Node 24.18.0",
+  "files": {
+    ".github/workflows/ci.yml": "a4dcbe5b848ccad1c644e6a6a4e3fb5ec2e3b70e497bc67c54477cb02454280d",
+    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/base-source-inventory.json": "de0ff4192b61109aa21ae41dbb86fba9a618c3577066b4d9717a8288552ee4e0",
+    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/candidate-source-inventory.json": "db9645c5fa9fca35c559e95e3c817e27895016b900ce7d0cb15826eeed68ad4b",
+    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/effect-audit.json": "1982a3b33f41119d732212d98312acbdf8ce8dcd467b200562452c400359c1c7",
+    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/writer-classification.json": "883e6487f427edec6b0437949e13392b7df3d5dd6437b5c39b8d09872d8daae9",
+    "docs/api-integration/frontend-stock-sweep-recovery-admission.md": "503079992f3c44f12c3ed182865e9208f7a55a0cebcfe66061b6175005d3cef0",
+    "docs/api-integration/p2-00-frontend-quiescence.md": "a10f17a76b410305e43a292b6050fd13a73215eab38446d7186b7a82ce0d9ef5",
+    "docs/scheduled-jobs-runbook.md": "2ceda082c7048a6442ab6a4e3c4327582c553aef61012837145f6dbcdad6af32",
+    "ops/platform/frontend-admission.mjs": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
+    "ops/platform/frontend-reconciliation.test.mjs": "571f0ab72ba17fc8734c8a248e5e5ab1aeae082ccd29a7a3e1aaed9c2c614378",
+    "ops/platform/frontend-writer-inventory.mjs": "8b9d259f6ff4f666197c247248ae3d3948843d3c48aa67a39b7ef48347e9e9e5",
+    "ops/platform/harness/owned-frontend-reconciliation.mjs": "24649f78a8c54ecb5ca423c998113456f0a4299dfa6d3ba1ab638181abd09a1f",
+    "ops/platform/harness/owned-reconciliation-providers.mjs": "851e033ff42243a87164dd125ade70c997194170adfdd7c31188e61308dc3e95",
+    "ops/platform/harness/owned-reconciliation-rows.mjs": "bd51c6068b691c6a7be5591d10a6f0d0c4323e4b89cfc0371c44ac8cb2cf4537",
+    "ops/platform/test-frontend-migration-local.mjs": "91f07d3e46f610e87cc1c4b830040a6179145e797b95fa4a0f1c6a9a46c9ecb5",
+    "package-lock.json": "797605065847a24761babb8b541a63a31356c0d5163b8983e497abec2189ebe1",
+    "package.json": "9480b83d72bd25037f1d4b98c12ccb9f5cc4a6ea53d841b7bb2fb9bf4f170f3c",
+    "scripts/register-server-only-test.mjs": "b0d794ce98c9179660f01926d7a879fa61d2ebc5a7b1c539953e2a2d99af28c6",
+    "scripts/run-source-unit-tests.mjs": "ec160caeaec15ca8fd6b7e5211bf777cf0cd52d87090171c2a8fb77b8cc537a9",
+    "src/app/api/cron/product-stock-reservations/route.ts": "743283427d841039c140d0b4a6f1c3a3a4edfbe6a2145ca23c2e60e1c0e2a31e",
+    "src/lib/commerce/product-stock-abandoned-sweep-cron.ts": "e11abcd349ac4b7c8bd2927e048db458792a1d3c8cf99b2e6aab36752ab64ccd",
+    "src/lib/commerce/product-stock-abandoned-sweep.db.test.ts": "11a6cdbf9ac30afb4def64da3496f2e64fb87e344fdb8ff015ff1ea4b6ae76d6",
+    "src/lib/commerce/product-stock-abandoned-sweep.test.ts": "e18ec91fe51b765eb4ae39a3dab7eab31d4a1b20df31e13c4f8438f786438c22",
+    "src/lib/commerce/product-stock-abandoned-sweep.ts": "b7308648880775c756e43d2eef419db471ab352bc68b844c79f0722595d61c37",
+    "src/lib/commerce/product-stock-store.ts": "37d29e5d007e4f404c275dc8e178d7e8ee5973aecc13b56b8af0c5ab8fad957e",
+    "src/lib/payments/square/payments-client.ts": "de098698dc55a2567767b1904754c6fce42c7a2df0229e9bb2bf2011979f4721",
+    "src/lib/private-db/client.ts": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+    "src/lib/private-db/schema.ts": "210b802be6d6419c12b533de326a6db87780c475d4491fb06a192eea40a4baa9",
+    "src/lib/writer-admission/config.ts": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
+    "src/lib/writer-admission/context.ts": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+    "src/lib/writer-admission/runtime.ts": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
+    "src/lib/writer-admission/stock-sweep.test.ts": "36b950374e3bd1a9923583935cea475935d5cef6a8fd5d0c14426df4b357b65b"
+  },
+  "candidateSourceManifestSha256": "f5b19299d87850531ddb0a391adb269f351b7dc18c07b1cbbeecd9f79df4b062",
+  "postgres": [
+    {
+      "major": 16,
+      "stockChecks": 13,
+      "existingChecks": 68,
+      "totalChecks": 81,
+      "clusterStoppedAndRemoved": true,
+      "resultSha256": "9365df2aab9e304dea92046adf23abe889fb9c268aaa181b77df03766548a814"
+    }
+  ],
+  "unitTests": {
+    "passed": 2300,
+    "failed": 0,
+    "skipped": 0,
+    "scopes": {
+      "regularSource": 1850,
+      "serverOnlySource": 405,
+      "scripts": 31,
+      "securityDependencies": 14
+    }
+  },
+  "platformTests": {
+    "passed": 186,
+    "failed": 0,
+    "skipped": 0
+  },
+  "focusedTests": {
+    "passed": 58,
+    "newAdmissionTests": 15,
+    "failed": 0,
+    "skipped": 0
+  },
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "diffCheck": "PASS",
+  "build": "Not run locally; exact-head CI required",
+  "actualRouteExport": true,
+  "loopbackHttp": true,
+  "verifiedPostgresTls": true,
+  "realBusinessDatabase": true,
+  "providersIntercepted": true,
+  "syntheticLedgerSourceIdentity": true,
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "providerTouched": false,
+  "deploymentPerformed": false,
+  "historicalWritersFenced": false,
+  "migrationAuthorized": false,
+  "p200Complete": false,
+  "predecessor": {
+    "pr": 88,
+    "head": "f485f65ce79bee9c607703b77eadae672271960e",
+    "mergedAt": "8b248627d962771175947b2637881e2f1e4e313f",
+    "ci": "https://github.com/princessdardan/lash-her-frontend/actions/runs/42063640996",
+    "passedJobs": 10
+  },
+  "limitations": [
+    "Actual GET through a loopback test bridge, not deployed Next.js/native cron.",
+    "Square responses and producer identities are synthetic; no live provider-drain claim.",
+    "PostgreSQL 16 exercised locally; PostgreSQL 18 qualification runs in exact-head CI.",
+    "Direct callers, other writers, actual producer/provider inventory, historical fencing/bootstrap and parent coordination remain open."
+  ],
+  "reviewFix": "Missing release-movement inserts now retain uncertainty. Controlled loop tests and a real PostgreSQL trigger that suppresses the release insert cover stock/order cleanup completing without that receipt. A second review reproduced completed admission after a suppressed pending-shipment update (HTTP 200 instead of 503). Expected shipment identities are now locked and matched to returned abandonment receipts. The real-database fixture covers missing shipment receipts and successful cleanup without a shipment.",
+  "review": {
+    "reviewedHead": "71e0bf141b0e8eb69b9250935a5c8ce4992cf609",
+    "regressionBeforeFix": {
+      "phase": "stock-missing-shipment-receipt",
+      "expectedHttpStatus": 503,
+      "actualHttpStatus": 200
+    },
+    "regressionsAfterFix": [
+      "stock-missing-shipment-receipt-real-stock-order-obligation-and-shipment-receipts-accounted",
+      "stock-no-shipment-real-stock-order-obligation-and-shipment-receipts-accounted"
+    ],
+    "fullUnitSuiteRerun": true,
+    "platformSuiteRerun": true,
+    "focusedSuiteRerun": true
+  }
+}

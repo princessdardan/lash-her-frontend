@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "baseCommit": "8b248627d962771175947b2637881e2f1e4e313f",
+  "baseSourceManifestSha256": "198cd2c2faac2f0dd39a51392df619eeb46b7f948db7462fd5f37f1c08fbd2fb",
+  "candidateSourceManifestSha256": "f5b19299d87850531ddb0a391adb269f351b7dc18c07b1cbbeecd9f79df4b062",
+  "scope": "Product-stock reservation sweep cron delta; earlier classifications retain their original limits",
+  "priorClassificationReference": "../2026-11-05-p2-00-customer-email-outbox/writer-classification.json",
+  "releaseAuthority": false,
+  "deploymentInventoryVerified": false,
+  "writerFenceVerified": false,
+  "drainVerified": false,
+  "candidateRoutes": [
+    {
+      "file": "src/app/api/cron/product-stock-reservations/route.ts",
+      "method": "GET",
+      "classification": "OPT_IN_RECOVERY",
+      "boundary": "After cron authentication and before Square configuration/candidate query; through all awaited provider/stock/order/obligation/shipment effects and transaction cleanup.",
+      "independentExecutionsQualified": false,
+      "providerDeliveryQualified": false,
+      "deployedRuntimeQualified": false
+    }
+  ],
+  "excludedExecutions": [
+    "Direct releaseAbandonedProductStockReservations/runAbandonedProductStockSweep/helper callers",
+    "Other cron/worker/admin/action producers, historical deployments and manual wrappers"
+  ],
+  "remainingWork": [
+    "Qualify all affected producers and actual database/provider bindings.",
+    "Bootstrap admission and retire historical deployments/credentials without uncoordinated application SQL.",
+    "Complete parent environment-lock release/drain/restoration coordination and end-to-end failure qualification."
+  ]
+}
