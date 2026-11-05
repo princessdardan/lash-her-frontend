@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { resolveCustomerAuthConfiguration } from "@/lib/customer-auth/policy";
 import { WriterAdmissionError } from "@/lib/writer-admission/config";
+import { hasConfiguredRequestOrigin } from "@/lib/api-integration/request-origin";
 import { runAccountWriter } from "./context";
 import { AccountLifecycleError, canonicalUuid, parseAccountRequest, type AccountAction } from "./policy";
 import { getAccountCustomerSession, type AccountCustomerSession } from "./session";
@@ -23,7 +24,7 @@ export function createAccountHandler(dependencies: {
       if (!(dependencies.enabled ?? isAccountLifecycleEnabled)()) return response({ error: "unavailable", requestId }, 404, requestId);
       const origin = (dependencies.origin ?? (() => resolveCustomerAuthConfiguration()?.origin ?? null))();
       const url = new URL(request.url);
-      if (!origin || url.origin !== origin || url.search || request.headers.get("sec-fetch-site") === "cross-site") throw new AccountLifecycleError(403, "request_denied");
+      if (!origin || !hasConfiguredRequestOrigin(request, origin) || url.search || request.headers.get("sec-fetch-site") === "cross-site") throw new AccountLifecycleError(403, "request_denied");
       if (request.method !== "GET" && (request.headers.get("origin") !== origin || request.headers.get("content-type")?.split(";", 1)[0].toLowerCase() !== "application/json")) throw new AccountLifecycleError(403, "request_denied");
       const session = await (dependencies.session ?? getAccountCustomerSession)();
       if (!session) throw new AccountLifecycleError(401, "sign_in_required");

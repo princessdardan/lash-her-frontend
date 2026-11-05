@@ -4,6 +4,7 @@ import { runAccountWriter } from "./context";
 import { isAccountLifecycleEnabled } from "./handler";
 import { AccountLifecycleError, canonicalUuid } from "./policy";
 import { createAccountLifecycleStore } from "./store";
+import { hasConfiguredRequestOrigin } from "@/lib/api-integration/request-origin";
 
 export async function getAdminAccountExport(request: Request, userId: string, commandId: string): Promise<Response> {
   const requestId = randomUUID(), headers = { "cache-control": "private, no-store", "x-request-id": requestId, "x-content-type-options": "nosniff" };
@@ -11,7 +12,7 @@ export async function getAdminAccountExport(request: Request, userId: string, co
     if (!isAccountLifecycleEnabled()) throw new AccountLifecycleError(404, "unavailable");
     const origin = new URL(process.env.CUSTOMER_AUTH_URL ?? "").origin;
     const url = new URL(request.url);
-    if (url.origin !== origin || url.search || request.headers.get("sec-fetch-site") === "cross-site" || !canonicalUuid(userId) || !canonicalUuid(commandId)) throw new AccountLifecycleError(403, "request_denied");
+    if (!hasConfiguredRequestOrigin(request, origin) || url.search || request.headers.get("sec-fetch-site") === "cross-site" || !canonicalUuid(userId) || !canonicalUuid(commandId)) throw new AccountLifecycleError(403, "request_denied");
     const data = await runAccountWriter("new-work", async () => {
       const { requireAdminActor, requireFreshAdminGoogleAuthentication } = await import("@/lib/admin/auth");
       const actor = await requireAdminActor();
