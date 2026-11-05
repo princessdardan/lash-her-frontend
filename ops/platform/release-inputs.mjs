@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { contractManifestHash } from "./release.mjs";
+import { contractManifestHash, phase2ContractManifestBinding } from "./release.mjs";
 import { SOURCE_REPOSITORIES, SOURCE_REPOSITORY_IDS, SOURCE_OPERATOR_ID, SOURCE_WORKFLOW, REQUIRED_SOURCE_JOBS, SOURCE_APPROVAL_MODE, assertSourceContext, isRevision, sourceBranchFor } from "./source-policy.mjs";
 import { createHash } from "node:crypto";
 const sourceHash = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
@@ -19,7 +19,7 @@ export function githubSourceApi(token, fetch = globalThis.fetch) {
 }
 
 export async function verifyCoordinatorRun(api, context) {
-  assertSourceContext(context);
+  assertSourceContext(context, { requirePhase2: true });
   const run = await api(`/repos/${SOURCE_REPOSITORIES.frontend}/actions/runs/${context.runId}`);
 
   if (String(run.id) !== context.runId || String(run.run_attempt) !== context.runAttempt || run.path !== SOURCE_WORKFLOW ||
@@ -75,13 +75,13 @@ export async function inspectSourceRevisions({ branch, revisions, api }) {
 export async function verifyReleaseInputs({ context, token, fetch = globalThis.fetch, now = new Date() }) {
   // These checks use GitHub's authenticated API and ordinary workflow context.
   // They are not independent cryptographic approval of repository-controlled code.
-  assertSourceContext(context);
+  assertSourceContext(context, { requirePhase2: true });
   const api = githubSourceApi(token, fetch);
   await verifyCoordinatorRun(api, context);
   const sources = await inspectSourceRevisions({ branch: context.branch, revisions: context.revisions, api });
   const checkedAt = now.toISOString();
-  return { version: 3, checkedAt, workflowSha: context.workflowSha, workflowRef: context.workflowRef,
-    contractManifestSha256: context.contractManifestSha256, sources,
+  return { version: 4, checkedAt, workflowSha: context.workflowSha, workflowRef: context.workflowRef,
+    contractManifestSha256: context.contractManifestSha256, contractPhase: "p2", phase2ContractManifestSha256: context.phase2ContractManifestSha256, sources,
     sourceApproval: { mode: SOURCE_APPROVAL_MODE, operatorGithubUserId: SOURCE_OPERATOR_ID,
       runId: context.runId, runAttempt: Number(context.runAttempt), verifiedAt: checkedAt } };
 }
@@ -100,13 +100,13 @@ export async function readBoundedJson(response, maximum = 2 * 1024 * 1024) {
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
-export function sourceContextFromEnvironment(environment = process.env) {
+export function sourceContextFromEnvironment(environment = process.env, sourceRoot = undefined, { historicalPhase1 = false } = {}) {
   return { repository: environment.GITHUB_REPOSITORY, repositoryId: environment.GITHUB_REPOSITORY_ID,
     ownerId: environment.GITHUB_REPOSITORY_OWNER_ID, actorId: environment.GITHUB_ACTOR_ID, event: environment.GITHUB_EVENT_NAME,
     branch: environment.SOURCE_BRANCH, workflowRef: environment.GITHUB_REF, workflowSha: environment.GITHUB_SHA,
     runId: environment.GITHUB_RUN_ID, runAttempt: environment.GITHUB_RUN_ATTEMPT,
     revisions: { frontend: environment.FRONTEND_REVISION, course: environment.COURSE_REVISION, community: environment.COMMUNITY_REVISION },
-    contractManifestSha256: contractManifestHash() };
+    contractManifestSha256: contractManifestHash(), ...(historicalPhase1 ? {} : phase2ContractManifestBinding(sourceRoot, { requireReleased: true })) };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

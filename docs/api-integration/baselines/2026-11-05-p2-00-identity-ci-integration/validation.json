@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "status": "LOCAL_P2_BOUND_MIGRATION_PARENT_WITH_IDENTITY_QUALIFIED",
+  "testedSourceCommit": "4c5cbec36d6d0c663509513c36d7445596f965ff",
+  "artifactBindingSourceCommit": "463d2fe3ff8fbfc3684efc505f12810a081d5303",
+  "applicationSourceManifestSha256": "8990d827d4dd55cd4806fbe3cb7db814953040adb2c8d98dc2406e24ee3b1126",
+  "node": "24.18.0",
+  "postgresMajor": 16,
+  "postgres18Executed": false,
+  "command": "FRONTEND_MIGRATION_LOCAL_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin node ops/platform/test-frontend-migration-local.mjs",
+  "exitCode": 0,
+  "migrations": 83,
+  "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+  "contractPhase": "p2",
+  "phase2ContractManifestSha256": "sha256:d39a877eec52031c8971fdc9c1be2d19344edd6a2ca5b246126d7dd92de1da4e",
+  "syntheticMigrationSourceFixture": true,
+  "syntheticMigrationSourceCommit": "29bcd061212431dc271f420b2b22d9356cbea8db",
+  "packagedCliVerified": false,
+  "identity": {
+    "actualEntryChecks": 43,
+    "findings": 0,
+    "skipped": 0,
+    "identityDatabase": {
+      "status": "FRONTEND_CUSTOMER_IDENTITY_OWNED_PASS",
+      "tests": 17,
+      "passed": 17,
+      "failures": 0,
+      "skipped": 0
+    },
+    "lifecycleDatabase": {
+      "status": "FRONTEND_CUSTOMER_LIFECYCLE_OWNED_PASS",
+      "tests": 16,
+      "passed": 16,
+      "failures": 0,
+      "skipped": 0
+    },
+    "databaseRegressionsRepeatedInsideIdentityChild": false,
+    "realAuthProfilesRunInSameChildProcess": true
+  },
+  "existingParentChecks": {
+    "migration": 15,
+    "admission": 14,
+    "historicalLogins": 11,
+    "writerRoutes": 8,
+    "reconciliation": 75,
+    "interactive": 12,
+    "workers": 10,
+    "bootstrap": 4
+  },
+  "guardTests": {
+    "command": "node --test --test-reporter=tap ops/platform/frontend-identity-owned.test.mjs ops/platform/auth-profile-isolation.test.mjs",
+    "tests": 8,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "actualValidatorOrderCasesInsideProfileParent": 2,
+    "refusalCases": [
+      "missing ownership",
+      "unowned target",
+      "noncanonical PostgreSQL major",
+      "missing receipt",
+      "empty checks",
+      "partial checks",
+      "duplicate checks",
+      "renamed mandatory case",
+      "findings",
+      "skips",
+      "wrong major",
+      "wrong candidate source",
+      "substituted auth/route/TLS boundary"
+    ],
+    "parentExecutionAndPostgres18CiWiringChecked": true,
+    "unitGuardsSubstituteForOwnedRun": false
+  },
+  "lint": {
+    "status": "PASS",
+    "changedFixtureFilesOnly": true
+  },
+  "diffCheck": "PASS",
+  "firstAttempt": {
+    "sourceCommit": "16c7306219d9b76ac6497a6b18de1842bead08f1",
+    "exitCode": 1,
+    "phase": "frontend-identity-admin-lifecycle-owned-routes",
+    "identityCasesExecuted": 0,
+    "correctedAt": "4c5cbec36d6d0c663509513c36d7445596f965ff"
+  },
+  "scope": {
+    "loopbackTlsScram": true,
+    "actualRouteExports": true,
+    "actualAdminAuthAndOwnerGuard": true,
+    "actualLifecycleCron": true,
+    "syntheticProviders": true,
+    "nativeNextServer": false,
+    "providerTouched": false,
+    "liveDatabaseTouched": false,
+    "scheduleChanged": false,
+    "clusterStoppedAndRemoved": true,
+    "runtimeRoleGrantsExpanded": false,
+    "privilegedFaultRegressionsUseOwnedFixtureAdmin": true,
+    "actualEntryCasesUseAdmissionProtocolRole": true
+  },
+  "artifacts": {
+    "postgres16.json": {
+      "path": "postgres16.json",
+      "sha256": "811f656d64caede3bf98119e24991d741ab0e88961bc479861f4bf7995bf8288"
+    },
+    "identity-ci-guards.tap": {
+      "path": "identity-ci-guards.tap",
+      "sha256": "120c8b62d607597e1a2cad5425b59585e14b61535700c025b9347b4fca6eaee8"
+    },
+    "first-integration-failure.json": {
+      "path": "first-integration-failure.json",
+      "sha256": "24d507457d572103c1092ee48fd1dc0d2f2990c8b1fc822148b25d5ccc34d2fa"
+    },
+    "candidate-source-inventory.json": {
+      "path": "candidate-source-inventory.json",
+      "sha256": "5caf8414221b090fc646935691cf2a0c7cc21646723ce256e98d94af36ed0467"
+    },
+    "source-bindings.json": {
+      "path": "source-bindings.json",
+      "sha256": "486f56a2cd3bdfd9c75f4482edc3a1e71c495e9d3d12ebb985d139be0bfa7067"
+    }
+  },
+  "preservedPriorRecords": [
+    "../2026-11-05-p2-00-identity-admission-qualified/validation.json",
+    "../2026-11-05-p2-00-identity-admission-frozen-findings/validation.json",
+    "../2026-11-05-p2-00-identity-admission-adjacent-findings/validation.json",
+    "../2026-11-05-p2-00-auth-profile-isolation-failure/validation.json"
+  ],
+  "limitations": [
+    "PostgreSQL 18 is wired into required exact-candidate CI but has not executed locally.",
+    "Local migration source is a synthetic fixture; packaged CLI/image execution is not claimed.",
+    "Native Next/browser behavior, external Google/Resend and deployed provider/receiver certification remain required."
+  ],
+  "p200Complete": false,
+  "p212Complete": false,
+  "g2Complete": false,
+  "evidenceDocumentationAddedAfterTest": true
+}

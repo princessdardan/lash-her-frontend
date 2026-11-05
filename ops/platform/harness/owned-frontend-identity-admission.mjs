@@ -7,20 +7,27 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { Client } from "pg";
 import { frontendWriterInventory } from "../frontend-writer-inventory.mjs";
 import { changeFrontendAdmission, observeFrontendDrain, reconcileFrontendOperation } from "../frontend-admission.mjs";
 
 let phase = "configuration";
 const completedChecks = [];
-async function main() {
-  assert.equal(process.env.FRONTEND_IDENTITY_OWNED_TEST, "true");
-  const port = Number(process.env.OWNED_RECONCILIATION_PORT), password = process.env.OWNED_RECONCILIATION_PASSWORD;
-  const major = Number(process.env.OWNED_RECONCILIATION_MAJOR);
+export function ownedIdentityTarget(environment) {
+  assert.equal(environment.FRONTEND_IDENTITY_OWNED_TEST, "true");
+  assert.ok(["16", "18"].includes(environment.OWNED_RECONCILIATION_MAJOR));
+  const port = Number(environment.OWNED_RECONCILIATION_PORT), major = Number(environment.OWNED_RECONCILIATION_MAJOR);
   assert.ok(Number.isInteger(port) && port > 0 && port < 65536);
-  assert.ok(/^owned-[a-f0-9-]{36}$/u.test(password ?? "")); assert.ok([16, 18].includes(major));
-  const target = { environment: "staging", host: "127.0.0.1", port, database: "frontend_admission_owned",
+  assert.ok(/^owned-[a-f0-9-]{36}$/u.test(environment.OWNED_RECONCILIATION_PASSWORD ?? ""));
+  assert.ok([16, 18].includes(major));
+  assert.ok(environment.NODE_EXTRA_CA_CERTS?.startsWith("/"));
+  return { environment: "staging", host: "127.0.0.1", port, database: "frontend_admission_owned",
     user: "frontend_admission_protocol", serverMajor: major, targetSha256: "a".repeat(64) };
+}
+async function main() {
+  const target = ownedIdentityTarget(process.env), password = process.env.OWNED_RECONCILIATION_PASSWORD;
+  const { port, serverMajor: major } = target;
   const url = `postgresql://${target.user}:${password}@127.0.0.1:${port}/${target.database}?sslmode=verify-full`;
   const origin = "https://customer.example.invalid", secret = "owned-customer-auth-fixture-secret-32";
   const { VERCEL_PROJECT_BINDINGS } = await import("../../../src/lib/env/application-environment.mjs");
@@ -70,6 +77,11 @@ async function main() {
     }
   };
   try {
+    assert.equal(operator.connection.stream.encrypted, true); assert.equal(operator.connection.stream.authorized, true);
+    assert.deepEqual((await operator.query(`SELECT current_user AS username,current_database() AS database,
+      current_setting('server_version_num')::int/10000 AS major,host(inet_server_addr()) AS host,
+      (SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()) AS ssl`)).rows,
+    [{ username: "frontend_test_admin", database: target.database, major, host: target.host, ssl: true }]);
     let epoch = (await operator.query("SELECT epoch::text FROM frontend_admission.control")).rows[0].epoch;
     const change = async (enabled, recovery = false) => { epoch = (await changeFrontendAdmission(operator, target, epoch, { newWork: enabled, recovery })).epoch; };
     const drain = () => observeFrontendDrain(operator, target, epoch);
@@ -662,7 +674,7 @@ async function main() {
 
     assert.equal(unexpectedFetches, 0); if (invariantFailure) throw invariantFailure;
     assert.equal(frontendWriterInventory(fileURLToPath(new URL("../../../", import.meta.url))).sourceManifestSha256, sourceBefore.sourceManifestSha256);
-    return { status: findings.length ? "FRONTEND_IDENTITY_OWNED_FINDINGS" : "FRONTEND_IDENTITY_OWNED_PASS", postgresMajor: major, checks, findings, reconciliationEvidenceSha256: evidence,
+    return { status: findings.length ? "FRONTEND_IDENTITY_OWNED_FINDINGS" : "FRONTEND_IDENTITY_OWNED_PASS", postgresMajor: major, checks, executedChecks: checks.length, skipped: 0, findings, reconciliationEvidenceSha256: evidence,
       applicationSourceManifestSha256: sourceBefore.sourceManifestSha256, syntheticLedgerSourceIdentity: true, actualAuthRouteExport: true, actualAccountRouteExports: true,
       actualAuthJs: true, actualAdminLifecycleRouteExport: true, actualLifecycleCronExport: true, constructedNextRequestStorage: true, nativeNextServer: false, loopbackHttp: true, verifiedPostgresTls: true, realBusinessDatabase: true,
       providersIntercepted: true, providerTouched: false, historicalWritersFenced: false, migrationAuthorized: false, applicationLogsSuppressed: logCount > 0 };
@@ -673,7 +685,7 @@ async function main() {
     globalThis.fetch = nativeFetch; Object.assign(console, originalConsole);
   }
 }
-main().then(result => process.stdout.write(`${JSON.stringify(result)}\n`)).catch(error => {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().then(result => process.stdout.write(`${JSON.stringify(result)}\n`)).catch(error => {
   process.stderr.write(`${JSON.stringify({ status: "FRONTEND_IDENTITY_OWNED_FAILED", phase, completedChecks, code: /^[A-Z0-9_]+$/u.test(error.code ?? "") ? error.code : undefined,
     assertion: error instanceof assert.AssertionError ? error.message : undefined,
     frames: error.stack?.split("\n").filter(line => /owned-frontend-identity-admission\.mjs/u.test(line)) })}\n`); process.exitCode = 1;
