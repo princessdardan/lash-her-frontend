@@ -1,5 +1,7 @@
 import "server-only";
 
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+
 import {
   SQL,
   and,
@@ -230,6 +232,18 @@ async function runReconciliationCheck<T>(
   }
 }
 
+// Observe every sibling before propagating a rejection. Admission must not
+// settle while a concurrent business-database query is still running.
+async function awaitReconciliationChecks<T extends readonly unknown[]>(
+  checks: [...T],
+): Promise<{ [K in keyof T]: Awaited<T[K]> }> {
+  const results = await Promise.allSettled(checks);
+  return results.map((result) => {
+    if (result.status === "rejected") throw result.reason;
+    return result.value;
+  }) as { [K in keyof T]: Awaited<T[K]> };
+}
+
 function handledNoShowPaymentEventExists(): SQL {
   return sql`
     (select 1
@@ -264,7 +278,7 @@ export function createServiceReconciliationMonitor(
         operationalAppointmentsPendingCalendar,
         operationalAppointmentsWithoutCapturedPayment,
         capturedPaymentsWithoutOperationalAppointment,
-      ] = await Promise.all([
+      ] = await awaitReconciliationChecks([
         runReconciliationCheck("findAuthorizedOperationalPayments", () =>
           dependencies.repository.findAuthorizedOperationalPayments(now),
         ),
@@ -491,6 +505,7 @@ async function reconcileAuthorizedOperationalPayments(input: {
 
   for (const attempt of input.attempts) {
     if (input.dependencies.providerPayments === undefined) {
+      markWriterOperationUncertain();
       findings.push({
         category: "authorized_payment_provider_state_unverified",
         holdId: attempt.holdId,
@@ -506,6 +521,7 @@ async function reconcileAuthorizedOperationalPayments(input: {
         attempt.squarePaymentId,
       );
     } catch {
+      markWriterOperationUncertain();
       findings.push({
         category: "authorized_payment_provider_state_unverified",
         holdId: attempt.holdId,
@@ -517,6 +533,17 @@ async function reconcileAuthorizedOperationalPayments(input: {
 
     const payment = providerResponse.payment;
     const providerStatus = payment.status.trim().toUpperCase();
+    if (payment.id !== attempt.squarePaymentId) {
+      markWriterOperationUncertain();
+      findings.push({
+        category: "authorized_payment_provider_evidence_mismatch",
+        holdId: attempt.holdId,
+        paymentAttemptId: attempt.paymentAttemptId,
+        providerStatus,
+        severity: "error",
+      });
+      continue;
+    }
     const evidenceMatches = providerPaymentMatchesAuthorizedAttempt(
       payment,
       attempt,
@@ -554,6 +581,7 @@ async function reconcileAuthorizedOperationalPayments(input: {
           },
         );
       } catch {
+        markWriterOperationUncertain();
         findings.push({
           category:
             "provider_completed_payment_without_operational_appointment",
@@ -600,6 +628,7 @@ async function reconcileAuthorizedOperationalPayments(input: {
           });
         }
       } catch (error) {
+        markWriterOperationUncertain();
         await alertReconciliationFailure(
           input.dependencies,
           "Failed to persist terminal Square authorization evidence",
@@ -678,6 +707,7 @@ async function cancelMismatchedAuthorization(input: {
       }
     }
   } catch (error) {
+    markWriterOperationUncertain();
     await alertReconciliationFailure(
       input.dependencies,
       "Failed to cancel a mismatched Square authorization during reconciliation",
@@ -728,6 +758,7 @@ async function markReconciliationRefundRequired(input: {
       squarePaymentId: input.attempt.squarePaymentId,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     await alertReconciliationFailure(
       input.dependencies,
       "Failed to persist operational payment manual follow-up state",
@@ -777,6 +808,8 @@ function providerPaymentMatchesAuthorizedAttempt(
       attempt.currency.trim().toUpperCase() &&
     payment.customer_id === attempt.squareCustomerId &&
     payment.reference_id === attempt.referenceId &&
+    (attempt.squareOrderId === undefined ||
+      payment.order_id === attempt.squareOrderId) &&
     (payment.team_member_id ?? undefined) === attempt.squareTeamMemberId
   );
 }
@@ -856,7 +889,12 @@ export function createDrizzleServiceReconciliationRepository(
       return rows.flatMap((row) => {
         if (row.holdId === null || row.squarePaymentId === null) return [];
         const intent = readSquareRequestIntent(row.providerMetadata);
-        if (intent === null) return [];
+        if (intent === null) {
+          // A selected authorization remains unresolved when its immutable
+          // evidence cannot be reconstructed, even if every usable row succeeds.
+          markWriterOperationUncertain();
+          return [];
+        }
         return [
           {
             amountCents: row.amountCents,
@@ -1236,7 +1274,7 @@ export function createDrizzleServiceReconciliationRepository(
 
     async findAmountCurrencyCustomerMismatches() {
       const [amountCurrencyRows, customerRows, cardRows, linkRows] =
-        await Promise.all([
+        await awaitReconciliationChecks([
           db
             .select({
               holdId: bookingNoShowChargeRecords.holdId,

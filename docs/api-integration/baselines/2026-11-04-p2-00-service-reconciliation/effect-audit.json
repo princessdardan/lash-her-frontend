@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "baseCommit": "5bcb2981e0666baeb8b6d73bf6fb8e2359060b94",
+  "sourceManifestSha256": "11173a06dc73859fd4b9543e63d1b421fc3b5b1b335681c0737e42a382c28a1a",
+  "releaseAuthority": false,
+  "scope": "Authenticated cron service reconciliation monitor batch only",
+  "nodes": [
+    {
+      "file": "src/app/api/admin/payment-reconciliation/route.ts",
+      "sourceSha256": "08ba3b8d6b0e2d738dfabfa5800d71cb98077e81d71baaabed96dcb5292aa4d5",
+      "audit": "Four independent disabled-by-default recovery runners. Every nonempty service finding set conservatively retains uncertainty."
+    },
+    {
+      "file": "src/app/api/admin/payment-reconciliation/handler.ts",
+      "sourceSha256": "4ea21dd451eef0199adb1aec8dbb9be8203e50855d3f8d06bef379dd3133a33b",
+      "audit": "Authentication precedes service admission; awaits monitor before later independent batches, maps admission errors to sanitized retryable no-store 503. Refusal still permits sibling entries to attempt admission."
+    },
+    {
+      "file": "src/lib/booking/payments/service-reconciliation-monitor.ts",
+      "sourceSha256": "f352b44d232dd8f15ab77f4063f1550be125f124f04ea8504221dffdc6d92ab6",
+      "audit": "Admission covers 15 repository checks and four nested mismatch queries. All concurrent siblings finish before rejection. Existing observations, cancellation, projections and local remediation are awaited. Caught failures mark sticky uncertainty. Lookup payment identity is validated before remediation and expected Square order identity before completion. Selected authorized rows with unusable stored request intent retain sticky uncertainty instead of silently completing."
+    },
+    {
+      "file": "src/lib/booking/payments/service-payment-alerts.ts",
+      "sourceSha256": "6fb73c5c99a474b7013f6f64c541656ee093ae47054111703de175fe0610d25c",
+      "audit": "Selected default alerts are synchronous redacted console writes; injected asynchronous alerts are awaited by the monitor. No durable provider delivery claim."
+    },
+    {
+      "file": "src/lib/booking/payments/service-no-show-invoice.ts",
+      "sourceSha256": "2d8095949ac1f17a7c4252f002daf36513845df4c435f5c97dcfe5be9e772c79",
+      "audit": "Selected import supplies the pure stale-pending threshold constant only; no invoice workflow is invoked."
+    },
+    {
+      "file": "src/lib/booking/square-runtime.ts",
+      "sourceSha256": "dee156ab2ae11dfac9484e85af8cd9e4b5a6573f82f97c0535282e4970604c3e",
+      "audit": "Selected environment lookup constructs local configuration only, without provider calls or database access."
+    },
+    {
+      "file": "src/lib/env/private-checkout.ts",
+      "sourceSha256": "e6d50773842ddc70b3d32422c41028f5214d4724ac519bceaadc4578226d8f04",
+      "audit": "Selected existing service-payment configuration lookup; no external effects."
+    },
+    {
+      "file": "src/lib/payments/square/payments-client.ts",
+      "sourceSha256": "f02d73e3ba4fe0dc5cb28a43f2d180e83431f83faddca5e9167a5efd309017da",
+      "audit": "Parsed get/cancel HTTP calls are awaited. Lookup identity is validated in the monitor; cancellation requires requested payment ID and CANCELED status. No create/complete payment call is selected."
+    },
+    {
+      "file": "src/lib/private-db/service-booking-payment-repository.ts",
+      "sourceSha256": "cf23a4b59815ca0ff278557d26a2ca5c0f979a1b8ed8f490a7360261f489b780",
+      "audit": "Selected methods await captured-payment recording and operational projection, terminal payment transactions, hold failure and refund-required transactions. Existing legacy-projection uncertainty is retained. No-op/preserved terminal/manual outcomes produce nonempty monitor findings and cannot settle under enforcement."
+    },
+    {
+      "file": "src/lib/private-db/appointment-finalization-repository.ts",
+      "sourceSha256": "82b4447f6625ba313d5fa1ffcac36e419330e09cac6079a0d39f6c404780e09f",
+      "audit": "Selected recording/confirmation transactions await row locks, immutable attempt validation, reservation checks, appointment/event/calendar projection and hold updates. No Calendar provider call or detached work."
+    },
+    {
+      "file": "src/lib/booking/booking-model-version.ts",
+      "sourceSha256": "ecd9d8969401c81b8193a5e57fb325fb096afcfd8fd6069d1c622eea804132cf",
+      "audit": "Existing pure legacy/v2 classification used by selected transactions."
+    },
+    {
+      "file": "src/lib/private-db/client.ts",
+      "sourceSha256": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+      "audit": "Existing lazy pool and Drizzle operations are reached inside the monitor entry; transactions and queries are awaited."
+    },
+    {
+      "file": "src/lib/private-db/pool-config.ts",
+      "sourceSha256": "3b1b78c9ec4f3c2df472e18042c7c9bdc0dfc2ede45702505a7dc837c8bf85b6",
+      "audit": "Unchanged application database connection/TLS/pool configuration."
+    },
+    {
+      "file": "src/lib/private-db/schema.ts",
+      "sourceSha256": "210b802be6d6419c12b533de326a6db87780c475d4491fb06a192eea40a4baa9",
+      "audit": "Unchanged static operational schema; no application migration."
+    },
+    {
+      "file": "src/lib/writer-admission/context.ts",
+      "sourceSha256": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+      "audit": "Unchanged operation-local sticky uncertainty, inert outside an admitted operation."
+    },
+    {
+      "file": "src/lib/writer-admission/config.ts",
+      "sourceSha256": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
+      "audit": "Unchanged disabled-by-default source/producer/environment/database-target validation."
+    },
+    {
+      "file": "src/lib/env/application-environment.mjs",
+      "sourceSha256": "893934b2cf52c9a26fbdc50530ab413496862d832abcb321d2d7046bea2b9000",
+      "audit": "Unchanged local application environment binding."
+    },
+    {
+      "file": "src/lib/writer-admission/runtime.ts",
+      "sourceSha256": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
+      "audit": "Unchanged TLS/identity/current-policy admission and awaited durable settlement without replay."
+    },
+    {
+      "file": "ops/platform/frontend-admission.mjs",
+      "sourceSha256": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
+      "audit": "Unchanged durable ledger; active/uncertain operations cannot expire into completion."
+    }
+  ],
+  "excluded": [
+    "Independent email/split/capture entries are covered by their own source boundaries.",
+    "Direct monitor/helper/admin executions and remaining writers.",
+    "Combined owned end-to-end qualification, actual producer inventory/historical fencing/bootstrap and parent release/restoration coordination."
+  ],
+  "limits": [
+    "Controlled route/runtime/monitor terminals plus isolated PostgreSQL repository regressions do not prove combined actual cron/TLS-ledger/business-database enforcement.",
+    "No actual Square/Resend delivery, immutable runtime deployment or live writer-drain proof.",
+    "No live deployment/provider/database/credential/scheduler/admission/pending-SQL/rollout-control changes."
+  ]
+}

@@ -45,6 +45,9 @@ export function createPaymentReconciliationGetHandler(
     task(),
   runCommerceCaptureRecovery: SquareCaptureRecoveryRunner = (task) => task(),
   runTrainingSplitRecovery: TrainingSplitRecoveryRunner = (task) => task(),
+  runServiceRecovery: (
+    task: () => Promise<ServiceReconciliationSummary>,
+  ) => Promise<ServiceReconciliationSummary> = (task) => task(),
 ): (req: Request) => Promise<Response> {
   return async function paymentReconciliationGetHandler(
     req: Request,
@@ -67,12 +70,16 @@ export function createPaymentReconciliationGetHandler(
 
     let summary: ServiceReconciliationSummary | null = null;
     let monitorFailed = false;
+    let serviceAdmissionFailed = false;
     const now = dependencies.getNow();
 
     try {
-      summary = await dependencies.runMonitor({ now });
+      summary = await runServiceRecovery(() =>
+        dependencies.runMonitor({ now }),
+      );
     } catch (error) {
       monitorFailed = true;
+      serviceAdmissionFailed = error instanceof WriterAdmissionError;
       dependencies.logError(
         "[payment-reconciliation] Monitor failed",
         buildReconciliationErrorContext(error),
@@ -91,7 +98,11 @@ export function createPaymentReconciliationGetHandler(
       runTrainingSplitRecovery,
     );
 
-    if (emailAdmissionFailed || commerceAdmissionFailed) {
+    if (
+      serviceAdmissionFailed ||
+      emailAdmissionFailed ||
+      commerceAdmissionFailed
+    ) {
       return Response.json(
         {
           error:
