@@ -1,0 +1,1800 @@
+{
+  "version": 2,
+  "scope": "candidate-source-only",
+  "sourceManifestSha256": "2b286365e9dc255328a660d83660c215d3f804f96d4362058d4f736569b62bbd",
+  "deploymentInventoryVerified": false,
+  "writerFenceVerified": false,
+  "drainVerified": false,
+  "routes": [
+    {
+      "file": "src/app/admin/(protected)/step-up/complete/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "5c216e7529964d732e36bb8d4e91a1e73abe76a8b026470d0a4cb8410cbd8e2e",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/academy/catalog/[slug]/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "716e4fba4c368e15f4753799dadda1d495befcdc897456e9405393774d655f2b",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/academy/catalog/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "980615bcd5b2ebcf65c0527805cdabdffa82150e06d82a122e6d921e93812b88",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/academy/courses/[courseId]/enrollments/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "4cf4d63c94cf4725b33e7a28c4f0665e7842c5da7c2dc06473054d3769857ad2",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/academy/courses/[courseId]/lessons/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "04202eaaf667c5e9279775ede7f2aeda627bff39376aff4c4e7a5852628144cc",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/academy/courses/[courseId]/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "a873e575f02c34a6612631d0a0ec447b4b953813bcc3c660a81ee8e10da757e4",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/academy/courses/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "12a4cb0050989743aaaf599deedf3d5821abe46f2f6cc9cbfe6f30039e2045a0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/academy/lessons/[lessonId]/playback/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "65e137ec1e7e1ce51a6fb8115eb1e7fa39e867ee15cc327e93fc16a42c711952",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/academy/lessons/[lessonId]/progress/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "87d879299cb039985b7b49e9f2d0f9e0b70f233d8d357fd85ebc3f40c0610cfd",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/academy/lessons/[lessonId]/quiz/attempts/route.ts",
+      "methods": [
+        "GET",
+        "HEAD",
+        "POST"
+      ],
+      "sourceSha256": "a19b5ee06ce7e8ac8f8aaf8944b7efc0875c174956709f9df98a4a574ae6b75b",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/academy/lessons/[lessonId]/quiz/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "7bc6347d9166e42e4107c10ed4f20f09fd9ee317996583e551a1ab2d4e70b382",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/academy/lessons/[lessonId]/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "710e3add0bf5b8ca0fd53a7269fb3de1f015136c903b0615dc2a1ee781026c30",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/academy/progress/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "aedbc6fe8c366c6c9c5dcf466cb9c18022920105a7df13fe7244d95c48e3fc32",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/account/commands/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "05630ea7696e510366d1e701b5f2a852b718906d3d2b4168b21777117613fd6a",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/account/exports/[commandId]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "aa808e22d2ac20885717f7365589b0f04bf97779ebd5610c2873cfbf75bbf77d",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/account/preferences/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "05630ea7696e510366d1e701b5f2a852b718906d3d2b4168b21777117613fd6a",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/account/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "aa808e22d2ac20885717f7365589b0f04bf97779ebd5610c2873cfbf75bbf77d",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/appointments/[id]/no-show/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "44698de208b2b8396a63cb0d8d9c47c1a5a39818a9a62f570dd53d94cefaad68",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/calendar-connections/[id]/oauth/start/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "5dd0f8451215813f1bfb797683f2dcb0b297d6e012f92782e70f00b8699688b1",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/courses/[courseId]/modules/reorder/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "dcbecb337c73eb34320b62bdb0559839d181b79442c09b3afff8b90c69e62962",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/courses/[courseId]/modules/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "5c966d49b9518b907d09368ddea86c4bf1bbc11b44ea12395d568dfc62c71ef1",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/courses/[courseId]/publication-readiness/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "df065d92e8261e69b77cfbc4d3b7ea40448f1b75897435f86aa9e6b6df52fea7",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/courses/[courseId]/route.ts",
+      "methods": [
+        "GET",
+        "HEAD",
+        "PATCH"
+      ],
+      "sourceSha256": "8ebc0cceda7db49c8901f02513da2860c4707a98f59f8fba51baa77c7680d49d",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/courses/route.ts",
+      "methods": [
+        "GET",
+        "HEAD",
+        "POST"
+      ],
+      "sourceSha256": "e2161b36666fec49bc74cf6ea542b7cfb407c3e9de01658a765034fa7cfa75d7",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/customer-accounts/[userId]/commands/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "0d7dbd35be2a23607c698f6b633dc34eb676e60970b8549df6d3978b60c967c8",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/customer-accounts/[userId]/exports/[commandId]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "bb239b2bb5a862efd5012da7c1099f07ff9afe025bc16b58d23c9911424e337f",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/email-retries/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "a4a44b8baefbc408536a92bd3422acea771e7b527af17aff2d2b01bc318aba15",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/gateway-smoke/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "134769b321e2ac619493852eb97677d0b13e96d9675d9bc258cbe0a428eb96a4",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/highlevel/callback/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "c46043a630e1b835ecb04318267e6e8bb176d16bca517e60265a33660c2024cd",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/lessons/[lessonId]/quiz/route.ts",
+      "methods": [
+        "GET",
+        "HEAD",
+        "PUT"
+      ],
+      "sourceSha256": "9229744317c1e12395c92ae2dbf258dd4ea4c34c66b49e1648b581ffe9bcaac9",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/lessons/[lessonId]/route.ts",
+      "methods": [
+        "PATCH"
+      ],
+      "sourceSha256": "0ddb42808ad8e0bda63e5a0500aa505cfbf81b5685b8b41641c66639f20ac05b",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/lessons/[lessonId]/video-upload/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "b624d1e0c0d05e76bfe7fd196bdc8e9a27e0382bae2d756102aca5c51a3a380e",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/lessons/[lessonId]/video/[videoAssetId]/captions/[trackId]/route.ts",
+      "methods": [
+        "DELETE"
+      ],
+      "sourceSha256": "c5c4181bc6a4ef8036f66340dcecf9da4b4893a5ecd941d8a2f81aad808e45c7",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/lessons/[lessonId]/video/[videoAssetId]/captions/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "2600d0657c487337e825d33ae327c95cd12cee4a2933603b7b816f1190f12521",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/lessons/[lessonId]/video/[videoAssetId]/refresh/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "c5e31985d150eeb1ee2a3304762f820e777be58f0d993313bf27d158835171e6",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/lessons/[lessonId]/video/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "62f65cd13bebd60c4af343369ec69cb1a0f8f18924ef29b2fb230dea3a25f352",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/marketing-contact-sync/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "9681f51b74b6ccc2c56dcbe15fca9197f31e3cd5fd46efa7f5e42904443449ea",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/modules/[moduleId]/lessons/reorder/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "f67cda84319ecc9ef9584edb2b546ee0b434e26ddba9aaaa2233dec5c9cc908b",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/modules/[moduleId]/lessons/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "d3ce22134067839d9c58fb803027b565329dd62ff38e872bdf5c7e103cb1884c",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/modules/[moduleId]/route.ts",
+      "methods": [
+        "PATCH"
+      ],
+      "sourceSha256": "8e08ad0f5c71b873ae40929c1e1524f869942ef575991057b7a71fce49a11337",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/my-calendar/connections/[id]/oauth/start/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "3d4781f18ec32b433af565eb1cc3159491bb9b0050cc7c8534224752e3663fe0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/manual-fulfillment/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "0f3f05f8a9a57de50af27dc6a9fbd0b276e7d46d3f6414131e5317f366ace80c",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/refund/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "fcbdd26739d681730c6ea4b06f12b7535a7892d7e8ad22985e3ecd2436ff5cc3",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/shipping/buy/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "cb112d39e630ddc977f3d1d9edfcd3f6a0898645e05a1568ba51aa38af4cf183",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/shipping/label/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "a208ff5927c3e6a537bbe2bb0fa51ffcbb651575e945a5c15b02e1f745a9391f",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/shipping/operations/[operationId]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "a60379135153c45ce5f09b3622ad8ce4c934eb011cc10cd5f9d2bd46def65175",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/shipping/refund/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "72355775a0973f8bb28e93be1f7a6602b83f76c1d49243fd64c0fea2dbb4054f",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/payment-reconciliation/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "08ba3b8d6b0e2d738dfabfa5800d71cb98077e81d71baaabed96dcb5292aa4d5",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/private-data-retention/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "9681f51b74b6ccc2c56dcbe15fca9197f31e3cd5fd46efa7f5e42904443449ea",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/shipping/package-profiles/[id]/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "d9e5093a5e9c4300bb4b87561e26f9bb944b0ffa5d1d153562488d9ef70288c5",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/shipping/package-profiles/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "d0b05daaaaad972f2eec270e659e87f824099168eb3650bba35f7aedc02e4579",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/auth/[...nextauth]/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "sourceSha256": "5fe7209fe0fd02719dd02f8e733c9141da62d412711c10326dd44e18972c9325",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/availability/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "sourceSha256": "3853d59e3401d1616dc5fc63b2f9c5d821483e5abc3c4684e35aa14c8c7716b1",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/card-on-file/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e7334e4ea9409e12d62ff0a5ad8ba974b87f2801a90ee9bd175648827af09b98",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/checkout/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "f1de28a156404da3db63e52d1e9dd304bab27e950307443d97ad60e0521fb310",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/create/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e6f488ca89fe0559f7e5175873971218ac5e3ced054b425fea09665a97da51a0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/holds/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e6f488ca89fe0559f7e5175873971218ac5e3ced054b425fea09665a97da51a0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/oauth/callback/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "edc09dee000f3faf527a7d902e23f70bb654ce113a47cfd6f453545da3d8d7f9",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/oauth/start/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "2b61c23423dcc6375a595524941cfe6c9cac3ba44539c44aa7581403ccd85e5d",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/payment/confirm/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e7334e4ea9409e12d62ff0a5ad8ba974b87f2801a90ee9bd175648827af09b98",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/payment/promotion-code/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e7334e4ea9409e12d62ff0a5ad8ba974b87f2801a90ee9bd175648827af09b98",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/square/config/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "132625f6d869a081a3e4975ec2c8ba870536500ab472bb5454553ac83e2fd8fa",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/square/return/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "cfd1aba7fda79cb251203a5280bce47b6d333a74c3b58a1a1e46b50c41a63a47",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cart/preview/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "df50f0e1237098a47c0fe5c7b4c202fec5a038ff44d082c9c92fddd46b974fc0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/checkout/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e7334e4ea9409e12d62ff0a5ad8ba974b87f2801a90ee9bd175648827af09b98",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/checkout/square/config/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "132625f6d869a081a3e4975ec2c8ba870536500ab472bb5454553ac83e2fd8fa",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/account-lifecycle/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "a42e9786c20525a9d2a1a6c574913f841d14c37ab9ce54e00f2ad15c424b1a1b",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/backup-validation/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "9681f51b74b6ccc2c56dcbe15fca9197f31e3cd5fd46efa7f5e42904443449ea",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/chitchats-shipping/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "d782af6519b22495cca9cbfc367ef77ee2a533cf9766f81f3fc7ef8ccc4da888",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/customer-email-outbox/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "b05f6a5130bbac35e28694022ca6f30a52755e2ddb8503263f9ca7d4688ba125",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/gateway-smoke/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "5be825fd95430ab4ddda57b1f4dddb7bd478ad19559c375f1ebb74b70f8bee35",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/highlevel-sync/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "e589cbcc952960f971b597236a9724f4ca12103be0baf11f4c03effd667b3966",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/product-stock-reservations/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "743283427d841039c140d0b4a6f1c3a3a4edfbe6a2145ca23c2e60e1c0e2a31e",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/shipping-rate-cache-refresh/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "3132452a740d5e94e4d26b11e73e83e9cbbaae0ae1e6d73507dba5b6dbee82f3",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/customer-auth/[...nextauth]/route.ts",
+      "methods": [
+        "GET",
+        "HEAD",
+        "POST"
+      ],
+      "sourceSha256": "0f249f8661dced534e1d8562f8ecbea98325d9319358fd2c702f3b520b404f8b",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/draft-mode/disable/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "378a27a423cd37598dad67ccfe525a10bcdb019791893999555e9003eefb03e9",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/draft-mode/enable/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "18e8451e7e5d04be1a8817f615a3384df21def07f7265ded11f489de2348b4f4",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/internal/release-probe/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "c9f1b5f5d25fba4669fbecdedffc758226ee9a7807688ac6024171e54e541c71",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/internal/release-scheduler-probe/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "d8a47bedf9eb5efa0537c8310dc23a190c84e5f72e45255c7c10467009180a42",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/marketing/unsubscribe/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "sourceSha256": "2415aa587d53dbb46a0d03ef79dcdd347d260c2384d610f9a677125c9e10a12b",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/promotion-code/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "f1de28a156404da3db63e52d1e9dd304bab27e950307443d97ad60e0521fb310",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/revalidate/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "f1de28a156404da3db63e52d1e9dd304bab27e950307443d97ad60e0521fb310",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/shipping/quotes/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "sourceSha256": "8da853e115f5aed98e684a7e66ec23c880a4b3758c0bc7376f973c34cfa60a05",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/training-checkout/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e7334e4ea9409e12d62ff0a5ad8ba974b87f2801a90ee9bd175648827af09b98",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/training-checkout/split-status/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "22e1a574012ec9d8f9db7b94c59cf76155149c694c6be8b113d64090eabff5f2",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/training-checkout/square-invoice/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e7334e4ea9409e12d62ff0a5ad8ba974b87f2801a90ee9bd175648827af09b98",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/webhooks/highlevel/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "2d2c209d7b23773731373cf6a5f2ac3b4135c2144c874fe74997f461081f391e",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/webhooks/resend/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "22e1a574012ec9d8f9db7b94c59cf76155149c694c6be8b113d64090eabff5f2",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/webhooks/sanity/inventory-sync/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "dbffee337f97ee1f24965dd454dac4cd7c356c5b92082eb8eaf8533b59619b8d",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/webhooks/square/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "4f10de60fc7e02a0c24eff427221fc3c0a91ed548d2eadb2721a00694c7ac458",
+      "classification": "REVIEW_REQUIRED"
+    }
+  ],
+  "actionModules": [
+    {
+      "file": "src/app/actions/course.ts",
+      "exports": [
+        "confirmCourseAccess",
+        "submitCourseSignup"
+      ],
+      "sourceSha256": "03826a75e3b603398d04e70fda69bb8e5e54b66b2210cda615f42bd43f5bd095",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/actions/form.ts",
+      "exports": [
+        "submitContactPopup",
+        "submitGeneralInquiry",
+        "submitTrainingContact"
+      ],
+      "sourceSha256": "79b85ba0b56f36812996383f984881a8a545b1c3194deed9854368a7d64d47c2",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "exports": [
+        "cancelScheduleExceptionAction",
+        "createBookingServiceAction",
+        "createCalendarConnectionAction",
+        "createMyCalendarConnectionAction",
+        "createOfferingAddOnAction",
+        "createResourceScheduleAction",
+        "createScheduleExceptionAction",
+        "createStaffUserAction",
+        "disableCalendarAssignmentAction",
+        "disableCalendarConnectionAction",
+        "disableMyCalendarAssignmentAction",
+        "disableResourceScheduleAction",
+        "disconnectMyCalendarConnectionAction",
+        "reconnectMyCalendarConnectionAction",
+        "refreshSquareTeamMappingsAction",
+        "reorderServiceOfferingsAction",
+        "saveCalendarAssignmentAction",
+        "saveMyCalendarAssignmentAction",
+        "setAppointmentAttendanceStatusAction",
+        "setBookingResourceStatusAction",
+        "setBookingServiceStatusAction",
+        "setOfferingAddOnStatusAction",
+        "setProviderSquareTeamMemberAction",
+        "setServiceOfferingStatusAction",
+        "setSquareAttributionRequirementAction",
+        "setStaffStatusAction",
+        "transferCalendarConnectionOwnershipAction",
+        "updateBookingServiceProfileAction",
+        "updateBookingSettingsAction",
+        "updateServiceOfferingAction"
+      ],
+      "sourceSha256": "9a0568cbf6e27260e2cf90d31d068623ec714c2798557bd9dbd722158663ed91",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/campaigns/actions.ts",
+      "exports": [
+        "saveCampaignDraftAction",
+        "sendCampaignAction",
+        "sendCampaignTestAction"
+      ],
+      "sourceSha256": "5669048c975253c04f713684cbcca9917ef63e7ba618738c23e723dfb41a4ee7",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/highlevel/actions.ts",
+      "exports": [
+        "deleteHighLevelCopy",
+        "installHighLevel",
+        "replayHighLevelJob",
+        "resolveHighLevelEffect"
+      ],
+      "sourceSha256": "eb3bb076da20e4eaf59e248c91f8ba1c29ff7df37fd8c00c93f8f53b1d23a369",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/service-promotions/actions.ts",
+      "exports": [
+        "createServicePromotionAction",
+        "setServicePromotionStatusAction",
+        "updateServicePromotionAction"
+      ],
+      "sourceSha256": "e64a263d798774a970767e3ea355449b9786caa51f05dbdd0976c51597f2acea",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/auth-actions.ts",
+      "exports": [
+        "authorizeAdminDeveloperAccessAction",
+        "setAdminDeveloperSessionAction",
+        "signInWithGoogleAction",
+        "signOutAdminAction",
+        "stepUpWithGoogleAction"
+      ],
+      "sourceSha256": "fc794902f43d699ef2232d795391c0823822795df1f1ac9efc37fffa15064eed",
+      "classification": "REVIEW_REQUIRED"
+    }
+  ],
+  "renderEntries": [
+    {
+      "file": "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "71fef5cff4673dbad672881687cb2254d03bdf59fa148f95e4819acc02770462",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/academy/courses/[courseId]/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "e8459a0b396095d2e427b9c207d15992fe142e40e626e76b7c34f8dc06db1f64",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/academy/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "86e0bcf871096483bb9dc4fae9cb74ee12e74b05d77def3922357043c82ca98b",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/account/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "92bf4c0eba85348f3f01b4e63681d2fd7644d3c117aae8a148d4fa2487e15493",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/account/sign-in-methods/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "eea49fdb84f5c6b39c9946798d8615002a82fcd811a6908bf62af53b545eee91",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/booking/confirmation/page.tsx",
+      "exports": [
+        "default",
+        "generateMetadata"
+      ],
+      "runtime": "server",
+      "sourceSha256": "9d6ba9cbb729bcf7d7301a5a02106523c6f594a349a485f89dfb5ae8f398351d",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/booking/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "678ccef92f3b7f68f9a0a75afd65bef702974f1adb84893faa84a362ac916fc6",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/checkout/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "2a81e516a052edf3173e30c2ae94765e20e6a93659b83868f476d9a5711a5fb6",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/contact/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "f8acbc375d7bc55471094e62c9784e80bdcc8e2d6561aaa57d02c347d412499d",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/courses/[slug]/page.tsx",
+      "exports": [
+        "default",
+        "generateMetadata"
+      ],
+      "runtime": "server",
+      "sourceSha256": "eb93d297355e3df04c45f46d83468c6cf53e341827b8fcea349191325b61f949",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/courses/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "482b5630b9d89562f79dbd819f8623a6b4398293d1a9d8ee54bc69b98100b4a0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/gallery/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "e651cb8cdc3dd91f8ae35534c7c9010e32ec8c79a3a1dbee37fc4e5fd66f4b6a",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/layout.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "dc2e7ee5ab97150b5805840de70560ec0ccdc946e38f5039f7a10eeacee8f96f",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "3edfdcd5bc113a80576eb49d58230419cd1d3c2472f3005a836cf39a99dd38ee",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/policies/[slug]/page.tsx",
+      "exports": [
+        "default",
+        "generateMetadata",
+        "generateStaticParams"
+      ],
+      "runtime": "server",
+      "sourceSha256": "ff23a18bd3f016533681d1a80f8fb03d43c0f66f96c4010bcec2316ecd13a159",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/products/[slug]/page.tsx",
+      "exports": [
+        "default",
+        "generateMetadata",
+        "generateStaticParams"
+      ],
+      "runtime": "server",
+      "sourceSha256": "2e04b03ae0647aaa8d2cf79b3e92567088250ddcef1f2a0532899d0d23a7cfc8",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/products/confirmation/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "4d280e7d96a11cf42a17a2f23d5b8f297ab02535a2c2bb935711da0bbaa08fac",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/products/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "dd35b2cefecd881202001dad08feff2182e5b766bdff73ecc339dbda803d0f81",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/services/[slug]/booking/confirmation/page.tsx",
+      "exports": [
+        "default",
+        "generateMetadata"
+      ],
+      "runtime": "server",
+      "sourceSha256": "dfd34295349c492faeb3c997e15eaa73de6eec5d0bbaa238db19878dab4ea4d5",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/services/[slug]/booking/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "678ccef92f3b7f68f9a0a75afd65bef702974f1adb84893faa84a362ac916fc6",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/services/[slug]/booking/payment/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "d31fdef681c04a76d57b8cd871dfe22d52beeb43609e7b36b41b2ab0d24248b2",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/services/[slug]/page.tsx",
+      "exports": [
+        "default",
+        "generateMetadata",
+        "generateStaticParams"
+      ],
+      "runtime": "server",
+      "sourceSha256": "964fb73e9bd7d85c5a4275b848c191a59b53c5b7f9ce5312caefc4b03c8e6850",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/services/booking/confirmation/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "c0cdb188b08e09b9f0342565e09bab26caa726f39d0fc059f202ad07faf75458",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/services/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "19de6ddfee8e9c3b5c460ba034ea3d8be13baef0d4151b88b58e1f0f041cd854",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/sign-in/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "05fb350ee2e3fa795e52fd87394c437b4362b6dcbcda7ab8805e178791253ccb",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/training-programs/[slug]/checkout/page.tsx",
+      "exports": [
+        "default",
+        "generateMetadata"
+      ],
+      "runtime": "server",
+      "sourceSha256": "e8469b79efc3dbc7fef7204cd649ccf468d85876bbe9a74c1af4cafbb03d6e09",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/training-programs/[slug]/confirmation/page.tsx",
+      "exports": [
+        "default",
+        "generateMetadata"
+      ],
+      "runtime": "server",
+      "sourceSha256": "2e4198867953b4101ad1185ab3d2632df78300963f5b681cee8a5cc502ec415a",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/training-programs/[slug]/page.tsx",
+      "exports": [
+        "default",
+        "generateMetadata",
+        "generateStaticParams"
+      ],
+      "runtime": "server",
+      "sourceSha256": "b2e68584d95da15c4f3b40734884566202b7cf4cd4ca32cd2770f1a9cc47537f",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/training-programs/[slug]/schedule/page.tsx",
+      "exports": [
+        "default",
+        "generateMetadata"
+      ],
+      "runtime": "server",
+      "sourceSha256": "7036d358c5e922cbbe9f5201c4af6305d1a0e228800cc240bcfb7e3d7b098195",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/training-programs/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "4eb09656e017994f233f4e7da0112cee1529a5961a247b5b56122f64ac3eb81a",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/(site)/training/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "86a08c8ea81573f0b4ad45165fe16944c60e02ded754982ed45ef3d9f4ddc3f9",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/analytics/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "8251faa85dd88b42be53fe5a1bfeec4b42ceb7bcec803ac13bbec35d3b8e8634",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/appointments/[id]/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "99f06afc522b19b484fbeb24534c4374d3b63904a323d348eb8f804aa2d0d14a",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/appointments/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "fc10020fb145a21d6f27abec2038ab4807bc80de2394e4de5aabba9a07cc9f56",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/audit/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "59989b9f821b8285b3797e065c33afaea5803bca931081f48b27578fe8f4f7b5",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/booking-issues/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "5e3307bcaa358ae4c63ada89ae33de0ec3ad18d7705c7b08d1dd3afdd14e497c",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/booking-settings/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "f87e3c0c5eae94cd6484768a61b8d7bcf0caba34eda83f8714186a6472df8eb2",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/calendar-connections/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "70cd70eefb4ece92cca68e3afc5363829337f1e849522ffcafa9a16116fc5562",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/courses/[courseId]/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "288f69529b0c23d2bec28d664e30dfe77998917b15686a3e30b06b3ad31762ad",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/courses/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "f109b4e89c9ceabf6565af2b31141a6564520429538ced6abb411d578f80e28a",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/customer-accounts/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "3166b433a6632fec34677fb8b1e12abf9cc7870de1d37e841085b55f7fc5cd29",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/inquiries/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "967f6c6be7c8047b9eaac7a4f388a59741a377338b6efe5cb20f93e335441392",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/integrations/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "1d0ce911acc54091ee099592d07b7f17eb529ddeb0d1b1d43b53dcf1fa9e6606",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/inventory/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "4822fbf2897c04bbff571dca4fdcd8d6cb602ec39e2cb5bb7fc72257070ade88",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/layout.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "0a7759982957c63ad4d1b661cd4d5fc5b4a750d95b39005f74c65e87248e84e4",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/highlevel/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "e70ecfac325adf751976a60b218bee76310a91cfa616c1595d52a6e01bd6b55e",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "253cc2cdb9ea477857137686b38a5d4c49d16dafc173a9ab43e12dff4833e96b",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/my-calendar/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "e0d9f8151250b8ebbadbe4b95c81279f575a0cb8a371ba8b884dcac8840e5be5",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/offerings/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "9f65e76a3df88b9283e62862c31e99d55e738ae6f710ab47b7d4ed514f035e36",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/orders/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "9b6deb2789aa6ea76f3406099b367efa15d45ede52b92b41e2850c45ebba4322",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "23c3fdfb80400d85e10808597415debc84934cd65cc8c30a4ac2ca3774df328b",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/payments/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "84a341088be970202850727c7600aac38356e6ce9a7d6a7b0ce7a4b73bf49d65",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/schedules/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "92c0dd491dfec7e0a7f300f177fc7663b5b3fc3b9abe6a7c38cbc2be23ef34af",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/service-promotions/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "dca388c980a62202f5fd38e17bc17bf0982035c539183fb8c421f595cc2681d0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/setup/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "f8dda61c4c1726e4886ead0faf48bb63c29c23d809ee0b358e0a7a40205fa109",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/shipping-packages/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "a6e4f74f61389d1b3907b32a1e24dff2a2c6aa28ebd399b0cc4b50d44df95df7",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/staff/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "a45ab4db9a70560438bd9dc9b11ce8b0fd3f6ed9165b7a6876e550c7cd2d63e0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/step-up/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "e5a177a63c60b456e351a930223063e710bd380a7c70e01b1b1e889cfda62d02",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/training/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "adbb2e8fe898b19513cd7b28b9226809731d25e89c282d0b969b97bb9b846239",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/layout.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "50f2d465ef206d70999d3162bb2cdc9c4ad9941c1bc1d336dd3135bf7bdb9ff7",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/not-authorized/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "122878fa97c8f4288c648ba95d4e69b6003eacd4444fa776ff54cf99759e7cbd",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/sign-in/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "4ac271bc5649b6af2464278d374fee350d66a071fe74b8725397458f858a86bd",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/layout.tsx",
+      "exports": [
+        "default",
+        "generateMetadata"
+      ],
+      "runtime": "server",
+      "sourceSha256": "53c2360f06ae4097c8d61543ddd306eece981c08dd9a23472c4ceb50734847e5",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/studio/[[...tool]]/page.tsx",
+      "exports": [
+        "default"
+      ],
+      "runtime": "server",
+      "sourceSha256": "007915d756d7c37359f365815f91676c6d34371f3204b643f64c481b4030c5ba",
+      "classification": "REVIEW_REQUIRED"
+    }
+  ],
+  "manualEntries": [
+    {
+      "file": "scripts/api-contract-tools.mjs",
+      "exports": [
+        "assertCompatible",
+        "contractDirectory",
+        "readContractBundle",
+        "sha256",
+        "verifyBundleRevision",
+        "verifySources"
+      ],
+      "sourceSha256": "07ea982075a34dfaef6549a2f433f1408633aed00955a51af53e67778707e262",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/backfill-home-training-programs-block.mjs",
+      "exports": [],
+      "sourceSha256": "5cad23089ae7a0f177426e3a559bdb8cd2a18b8c17240e865e08b63ac47d9202",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/backfill-marketing-contact-submissions.ts",
+      "exports": [],
+      "sourceSha256": "a438e24189a67be45adb32cf24f00d410a8f7290c2d86e920cf7799402f10302",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/backfill-marketing-sync-jobs.ts",
+      "exports": [],
+      "sourceSha256": "8516e54b42994ab8dbc0a726d7f37dbb7d992f5954b8f9439a5e75e4e3ea804e",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/backfill-product-stock.ts",
+      "exports": [],
+      "sourceSha256": "84aecf83b0f147ed064253f85352778105597983ff2d56f7a45cc42da049f179",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/bootstrap-booking-operations.ts",
+      "exports": [],
+      "sourceSha256": "84935930a1712345d3b94200de61912ff59eec7a4971d6f34b90c12d8018d644",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/check-api-contracts.mjs",
+      "exports": [],
+      "sourceSha256": "6cd800dd7290e4748cf10dc0ce9254a5a106b79951210efabffb010be49e8d16",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/check-private-db-migrations.ts",
+      "exports": [],
+      "sourceSha256": "a8864df2e0fdc6b24e390b6933f9f4d5d82d1ff2cbf8fb02940a8f655074fc4d",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/check-square-card-on-file-env.mjs",
+      "exports": [],
+      "sourceSha256": "0090820a875e01b55e7e8476159d80f04a8f9dc681467a0318c13b2312f341a9",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/create-payment-reconciliation-indexes.ts",
+      "exports": [],
+      "sourceSha256": "45b4fd8d6ddefae29468c0f6bacbd22c2882815fee3fd7b90c305eb990e65326",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/generate-api-contracts.mjs",
+      "exports": [],
+      "sourceSha256": "261287e1afb9b382f63502c81b84963a2068d0aad998c7970e92b978b6659ac8",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/highlevel-backfill.ts",
+      "exports": [],
+      "sourceSha256": "5e599ce6ae571a1bbbfb7e0330d2e83b308e96c27b465142671275e525fe8440",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/highlevel-config-check.ts",
+      "exports": [],
+      "sourceSha256": "e49708a721c84fabd87ff801fb1ea8293cc1185764eeee638722c51b3659f0ef",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/highlevel-tracking-probe.mjs",
+      "exports": [],
+      "sourceSha256": "b43a43a7ca973d306ae7964b88661be7665416a65a9b02d2a6fa06b0c1bf0d60",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/import-booking-operational-cutover.ts",
+      "exports": [],
+      "sourceSha256": "e464753aff5799911796ba4c4444434b255edc67f103d6af00eda7bd4955c456",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/inspect-marketing-sync-failures.ts",
+      "exports": [],
+      "sourceSha256": "bad42b87571e37177c3b1f60f3bee7528e8e16bef3d502afca98d85dfd080696",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/migrate-private-db.ts",
+      "exports": [],
+      "sourceSha256": "b89f0b30d5bf3874c46141c1d0f076ff403a1507730708bd1c15b5a61ab3d404",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/migrate-strapi-to-sanity.ts",
+      "exports": [],
+      "sourceSha256": "290815efe042860290e07dc2ffc7ee467532147689b8b81e2a6d85531871da50",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/pack-security-forks.mjs",
+      "exports": [],
+      "sourceSha256": "f12d737ae7731a42070469a780aed94274874ab470592fe88e0df8d170a548ff",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/provision-shipping-package-profiles.ts",
+      "exports": [],
+      "sourceSha256": "9ae4d9e7c1ed9f68bae7c30c9fd340c28ef0031b07ccb7430c05bbceb15208dd",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/register-react-server-db-compat.mjs",
+      "exports": [],
+      "sourceSha256": "fa4e7753f1823f25f10b1e7286906523c9b6589e738bf6e24372a6a048d496d1",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/register-server-only-test.mjs",
+      "exports": [],
+      "sourceSha256": "b0d794ce98c9179660f01926d7a879fa61d2ebc5a7b1c539953e2a2d99af28c6",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/requeue-marketing-sync-failures.ts",
+      "exports": [],
+      "sourceSha256": "af9be190adda63113961054412db8634290721620e62a786da08f88548634fc4",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/run-source-unit-tests.mjs",
+      "exports": [],
+      "sourceSha256": "f06e7161dae76cc74bf1f42b518f835a2737ae575f8a0d689ff7267d7563e3dd",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/seed-commerce-enabled-e2e.ts",
+      "exports": [],
+      "sourceSha256": "dc65b8d5bd21f9e19e325463a920d7e6940e8c1e9498f2f412c72c194c39018e",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/seed-resend-templates.ts",
+      "exports": [],
+      "sourceSha256": "424f004e2a4b8256fd4aed7638309bd54618154c11c554efbf8a237cec9be352",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/test-course-authoring-browser.mjs",
+      "exports": [],
+      "sourceSha256": "f6dc7f5d1e787d622aef9dcb370a1975081595ea0a5d4f235c43877ca56529f3",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/update-approved-service-descriptions.mjs",
+      "exports": [
+        "APPROVED_COPY",
+        "TARGET",
+        "assertTarget",
+        "buildUpdatePlan",
+        "getClientConfig",
+        "main",
+        "parseArgs",
+        "runUpdate",
+        "safeErrorMessage",
+        "saveBackup"
+      ],
+      "sourceSha256": "4d8ad2c5ddae602f441804a79130493d9c03be4a64a4e65a927ae5c6fc4ac57d",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/update-contact-popup-resend-template.ts",
+      "exports": [],
+      "sourceSha256": "9e81fc53ae9c8ab0dc1478c23818847b08a6fa75107a9dcc11397a3a96b053d4",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/validate-sanity-env.mjs",
+      "exports": [],
+      "sourceSha256": "1629f3d4b76e2883a6a2eeefb2c6509d0d5c7786f7c03950a65f6a2dff2198af",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/validate-staging-release.mjs",
+      "exports": [
+        "checkStagingRelease"
+      ],
+      "sourceSha256": "fcdc2683f745c99bdb7c87512451a793e4fceae030bd5cbe2e4813580fbef30b",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/verify-critical-source-coverage.mjs",
+      "exports": [],
+      "sourceSha256": "69f46c0e29d3a0fb29f8f0c0cdb304fa0db8be48ba878c77b1021e0e1b80bb96",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/verify-git-remote.mjs",
+      "exports": [],
+      "sourceSha256": "6ddd8d4f5c044f351175e3bd92d5594c0de3738e0724cb01da3838d824720f70",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/verify-playwright-coverage.mjs",
+      "exports": [],
+      "sourceSha256": "274e16d59b07e79557be497a38be493b75d0148d99af4a65a19c92a803aee9ad",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/verify-prod-purchasability.ts",
+      "exports": [],
+      "sourceSha256": "8336df4757de68565118eaf8aef0fb663df2c703c1b03728b5d347ed3f6d9e46",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/verify-security-forks.mjs",
+      "exports": [],
+      "sourceSha256": "8080e846d8fcb1ed90ff43b16d66b30058bbae88d1ddf9b6de987774115d2ae9",
+      "classification": "REVIEW_REQUIRED"
+    }
+  ],
+  "inlineActions": [],
+  "deferredSites": [
+    {
+      "file": "src/app/api/revalidate/handler.ts",
+      "line": 74,
+      "callee": "after",
+      "classification": "REVIEW_REQUIRED"
+    }
+  ],
+  "databaseConstructors": [
+    {
+      "file": "scripts/check-private-db-migrations.ts",
+      "line": 90,
+      "callee": "Pool",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/migrate-private-db.ts",
+      "line": 35,
+      "callee": "Pool",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/test-course-authoring-browser.mjs",
+      "line": 112,
+      "callee": "pg.Client",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/test-course-authoring-browser.mjs",
+      "line": 126,
+      "callee": "pg.Client",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/test-course-authoring-browser.mjs",
+      "line": 162,
+      "callee": "pg.Client",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/verify-prod-purchasability.ts",
+      "line": 398,
+      "callee": "Pool",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/lib/private-db/client.ts",
+      "line": 23,
+      "callee": "Pool",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/lib/writer-admission/bootstrap-probe.ts",
+      "line": 38,
+      "callee": "Client",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/lib/writer-admission/runtime.ts",
+      "line": 29,
+      "callee": "Client",
+      "classification": "REVIEW_REQUIRED"
+    }
+  ],
+  "schedules": [
+    {
+      "path": "/api/admin/private-data-retention",
+      "schedule": "17 8 * * *"
+    },
+    {
+      "path": "/api/cron/backup-validation",
+      "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/admin/payment-reconciliation",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/chitchats-shipping",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/customer-email-outbox",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/product-stock-reservations",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/admin/marketing-contact-sync",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/shipping-rate-cache-refresh",
+      "schedule": "30 7 * * 1"
+    },
+    {
+      "path": "/api/cron/highlevel-sync",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/account-lifecycle",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/internal/release-scheduler-probe",
+      "schedule": "* * * * *"
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "differentActive": {
+    "first": {
+      "id": "owner-a"
+    },
+    "second": {
+      "id": "owner-a"
+    },
+    "secondReads": 0,
+    "admissions": {
+      "0": 1,
+      "1": 1
+    }
+  },
+  "disabledAccount": {
+    "first": {
+      "id": "owner-a"
+    },
+    "second": {
+      "id": "owner-a"
+    },
+    "secondReads": 0,
+    "admissions": {
+      "0": 1,
+      "1": 1
+    }
+  },
+  "statusChange": {
+    "second": {
+      "id": "owner-a"
+    },
+    "control": {
+      "error": "disabled"
+    },
+    "secondReads": 0
+  },
+  "nestedWithHeader": {
+    "result": {
+      "id": "owner-a,owner-a,owner-a"
+    },
+    "reads": 2,
+    "refreshes": 1,
+    "admissions": 1
+  },
+  "nestedWithoutHeader": {
+    "result": {
+      "id": "owner-a,owner-a,owner-a"
+    },
+    "reads": 6,
+    "refreshes": 3,
+    "admissions": 1
+  },
+  "independentOperations": {
+    "result": {
+      "id": "owner-a"
+    },
+    "reads": 2,
+    "refreshes": 1,
+    "admissions": 2
+  },
+  "nestedDenial": {
+    "result": {
+      "id": "three-known-denials"
+    },
+    "reads": 2,
+    "refreshes": 0,
+    "admissions": 1,
+    "uncertain": false
+  },
+  "closed": {
+    "result": {
+      "error": "unavailable"
+    },
+    "reads": 0,
+    "refreshes": 0
+  }
+}
