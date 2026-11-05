@@ -6,6 +6,8 @@ import course from "../../../contracts/api-integration/v1/course-api.json";
 import community from "../../../contracts/api-integration/v1/community-api.json";
 import type { paths as CoursePaths } from "@/lib/api-integration/generated/course";
 import type { paths as CommunityPaths } from "@/lib/api-integration/generated/community";
+import { ApiContractError } from "./api-contract-error";
+export { ApiContractError } from "./api-contract-error";
 
 type Method = "get" | "post" | "put" | "patch" | "delete" | "head" | "options";
 type Responses<Operation> = Operation extends { responses: infer R }
@@ -43,14 +45,6 @@ const ajv = new Ajv2020({
 addFormats(ajv);
 for (const service of ["course", "community"] as const) {
   ajv.addSchema(documents[service], `urn:lash-her:${service}`);
-}
-
-export class ApiContractError extends Error {
-  constructor() {
-    // Never include upstream bodies, Ajv value details, identities or credentials.
-    super("Upstream response does not match the pinned API contract");
-    this.name = "ApiContractError";
-  }
 }
 
 export function validateApiResponse(

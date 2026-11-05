@@ -7,6 +7,8 @@ import process from "node:process";
 const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/customer-lifecycle/handler.test.ts",
   "src/lib/api-integration/lifecycle-service-jwt.test.ts",
+  "src/lib/api-integration/account-lifecycle-client.test.ts",
+  "src/lib/api-integration/course-client.test.ts",
   "src/lib/api-integration/application-jwt.test.ts",
   "src/lib/writer-admission/public-forms.test.ts",
   "src/lib/writer-admission/remaining-workers.test.ts",

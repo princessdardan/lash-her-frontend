@@ -72,6 +72,34 @@ test("private TLS upstream receives only selected headers, original query and ap
   assert.equal(result.headers["cache-control"], "no-store");
 });
 
+test("same lifecycle paths route to their explicit service and never expose private enrollment routes", async t => {
+  let communityCalls = 0, courseCalls = 0;
+  const community = createServer({ key, cert }, (req, res) => {
+    communityCalls++;
+    assert.equal(req.url, "/v1/internal/accounts/commands");
+    assert.equal(req.headers.authorization, "Bearer lifecycle.jwt");
+    assert.equal(req.headers.cookie, undefined);
+    res.setHeader("content-type", "application/json"); res.end('{"receiver":"community"}');
+  });
+  await new Promise(resolve => community.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise(resolve => { community.close(resolve); community.closeAllConnections(); }));
+  const f = await fixture(t, (_req, res) => { courseCalls++; res.end('{"receiver":"course"}'); }, { communityOrigin: `https://127.0.0.1:${community.address().port}` });
+  const input = { method: "POST", headers: { authorization: "Bearer lifecycle.jwt", cookie: "must-not-forward=private" }, body: "{}" };
+  assert.equal((await f.send({ ...input, path: "/community/v1/internal/accounts/commands" })).body, '{"receiver":"community"}');
+  assert.equal((await f.send({ ...input, path: "/course/v1/internal/accounts/commands" })).body, '{"receiver":"course"}');
+  assert.equal((await f.send({ ...input, path: "/community/v1/internal/course/enrollment-events" })).status, 404);
+  assert.equal((await f.send({ ...input, path: "/community/v1/courses" })).status, 404);
+  assert.equal((await f.send({ ...input, path: "/community/v1/internal/accounts/commands", headers: { cookie: "session=browser" } })).status, 401);
+  assert.equal(communityCalls, 1); assert.equal(courseCalls, 1);
+});
+
+test("missing optional Community upstream fails closed without forwarding to Course", async t => {
+  let calls = 0;
+  const f = await fixture(t, (_req, res) => { calls++; res.end("{}"); });
+  assert.equal((await f.send({ path: "/community/v1/internal/accounts/exports/a", headers: { authorization: "Bearer lifecycle" } })).status, 503);
+  assert.equal(calls, 0);
+});
+
 test("host fence changes immediately for historical callers while recovery remains independent", async (t) => {
   const file = join(folder, "admission.json");
   const binding = { file, candidateSha256: "a".repeat(64), releaseId: "fixture" };

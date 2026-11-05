@@ -34,6 +34,7 @@ const RECOVERY_ROUTES = new Set([
 ]);
 
 export function admissionClass(route) {
+  if (route.admission === "recovery") return "recovery";
   if (route.method === "GET") return null;
   // Service-authorized durable financial commands and signed media callbacks
   // may recover independently of customer/student/admin authoring writes.

@@ -13,7 +13,7 @@ export function privateTlsPolicies() {
     course: {
       upstream: "http://course-api:4000", keyFile: "/tls/key.pem", certFile: "/tls/cert.pem",
       peers: [
-        { address: "172.29.10.10", routes: routes.map(({ method, path }) => ({ method, path })) },
+        { address: "172.29.10.10", routes: routes.filter(route => (route.service ?? "course") === "course").map(({ method, path }) => ({ method, path })) },
         { address: "172.29.10.31", routes: [authority[0]] },
         { address: "172.29.10.32", routes: authority },
         { address: "172.29.10.60", routes: operations },
@@ -23,6 +23,7 @@ export function privateTlsPolicies() {
       upstream: "http://community-api:4100", keyFile: "/tls/key.pem", certFile: "/tls/cert.pem",
       peers: [
         { address: "172.29.10.22", routes: [{ method: "POST", path: "/v1/internal/course/enrollment-events" }] },
+        { address: "172.29.10.10", routes: routes.filter(route => route.service === "community").map(({ method, path }) => ({ method, path })) },
         { address: "172.29.10.60", routes: operations },
       ],
     },

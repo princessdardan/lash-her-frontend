@@ -65,6 +65,9 @@ export function createGateway(input, options = {}) {
       if (req.headers.host !== config.publicHost || (req.socket.servername && req.socket.servername !== config.publicHost.split(":")[0])) return refuse(421, "invalid_host");
       const route = matchRoute(req.method, req.url);
       if (!route) return refuse(404, "route_not_allowed");
+      const service = route.service ?? "course";
+      const upstreamOrigin = service === "community" ? config.communityOrigin : config.courseOrigin;
+      if (!upstreamOrigin) return refuse(503, "upstream_unavailable");
       const retry = budgets.consume(route.auth === "webhook" ? "webhook" : "preauth");
       if (retry) return refuse(429, "rate_limit_exceeded", retry);
       if (route.auth !== "webhook") {
@@ -107,10 +110,10 @@ export function createGateway(input, options = {}) {
       }
       if (route.auth !== "webhook") delete headers["mux-signature"];
       else delete headers.authorization;
-      const upstream = new URL(config.courseOrigin);
+      const upstream = new URL(upstreamOrigin);
       await new Promise((resolve) => {
         const call = httpsRequest(upstream, {
-          agent, method: req.method, path: req.url.slice("/course".length), headers,
+          agent, method: req.method, path: req.url.slice(service.length + 1), headers,
           timeout: 5000,
         }, (reply) => {
           const result = [];

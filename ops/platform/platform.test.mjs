@@ -77,8 +77,12 @@ test("private policies isolate workload, publisher, authority and operational pe
   const { course, community } = privateTlsPolicies();
   const workload = course.peers.find((peer) => peer.address === "172.29.10.10");
   assert.ok(!workload.routes.some((route) => route.path.startsWith("/v1/internal/community/") || route.path === "/metrics"));
-  assert.equal(community.peers.length, 2);
+  assert.equal(community.peers.length, 3);
   assert.deepEqual(community.peers[0].routes, [{ method: "POST", path: "/v1/internal/course/enrollment-events" }]);
+  assert.deepEqual(community.peers.find(peer => peer.address === "172.29.10.10").routes, [
+    { method: "POST", path: "/v1/internal/accounts/commands" },
+    { method: "GET", path: "/v1/internal/accounts/exports/{commandId}" },
+  ]);
   assert.equal(course.peers.find((peer) => peer.address === "172.29.10.31").routes.length, 1);
   for (const budget of Object.values(databaseConnectionBudgets)) {
     assert.equal(budget.runtimeMaximum, budget.runtimeProcesses * 11);

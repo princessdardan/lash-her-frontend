@@ -117,6 +117,13 @@ class RuntimeReleaseTests(unittest.TestCase):
         self.assertFalse(plan["trafficAuthorized"])
         self.assertEqual(list(self.results.iterdir()), [])
 
+    def test_optional_community_origin_is_exactly_the_private_tls_receiver(self):
+        self.save("gateway.json", {**self.gateway, "communityOrigin": "https://community-tls:8443"})
+        release.make_plan(self.bundle, self.configuration, self.compose)
+        self.save("gateway.json", {**self.gateway, "communityOrigin": "https://unreviewed.example.invalid"})
+        with self.assertRaisesRegex(ValueError, "GATEWAY_TARGET"):
+            release.make_plan(self.bundle, self.configuration, self.compose)
+
     def test_confirmation_and_host_checks_precede_private_reads(self):
         with patch.object(release, "assert_host", side_effect=ValueError("WRONG_HOST")), patch.object(release, "snapshot_configuration", side_effect=AssertionError("Credentials read")):
             with self.assertRaisesRegex(ValueError, "EXPLICIT_OPERATOR"):

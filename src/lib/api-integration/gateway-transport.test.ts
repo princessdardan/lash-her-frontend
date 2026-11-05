@@ -51,3 +51,14 @@ test("transport refuses redirects, cancels oversized responses and sanitizes SDK
   const transport = createGatewayTransport({ origin: "https://gateway.example.test", getWorkloadToken: async () => { throw new Error("private-credential"); } });
   await assert.rejects(transport({ method: "GET", path: "/v1/courses" }), { message: "Gateway transport unavailable" });
 });
+
+test("transport selects only declared service aliases and sanitizes correlation headers", async () => {
+  const transport = createGatewayTransport({ origin: "https://gateway.example.test", getWorkloadToken: async () => "proof", fetch: async (url) => {
+    assert.equal(String(url), "https://gateway.example.test/community/v1/internal/accounts/commands");
+    return Response.json({}, { headers: { "x-request-id": "private-token-like-value", "retry-after": "private-provider-message" } });
+  } });
+  const response = await transport({ service: "community", method: "POST", path: "/v1/internal/accounts/commands", applicationToken: "dedicated.lifecycle.jwt", body: "{}" });
+  assert.equal(response.headers.get("x-request-id"), null); assert.equal(response.headers.get("retry-after"), null);
+  await assert.rejects(transport({ service: "community", method: "GET", path: "/v1/courses" }), { code: "route" });
+  await assert.rejects(transport({ service: "community", method: "POST", path: "/v1/internal/course/enrollment-events", applicationToken: "wrong" }), { code: "route" });
+});

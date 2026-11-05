@@ -1,0 +1,9 @@
+# Phase 2 candidate contracts
+
+This separate candidate pins committed Course P2-05 and Community P2-03/P2-11 source artifacts for frontend adapter development. It does not replace `../v1`, certify a release or enable a deployment. The manifest records exact source commits and hashes; `scripts/check-api-contracts.mjs --bundle contracts/api-integration/p2-candidate --sources <repository-parent>` verifies the source bytes.
+
+The identity, lifecycle command/receipt and enrollment event contracts are unchanged from v1. Course catalog/content responses and authoring requests intentionally expand for versioned Portable Text, lifecycle state, metadata, pagination, aggregate revision checks and atomic reorder operations; they require coordinated frontend/receiver deployment. Community adds only the dedicated internal account command and private export retrieval operations. There are no member/moderation/browser proxy routes in this candidate.
+
+Use `scripts/generate-api-contracts.mjs --bundle contracts/api-integration/p2-candidate --output src/lib/api-integration/candidate-generated` to regenerate types. Runtime candidate adapters reject undeclared object fields, missing/malformed fields and undocumented status codes without coercion, defaults or stripping. Explicitly declared map schemas retain their map behavior. Public and private client calls remain separate. Source updates require a newly reviewed manifest/hash update and regenerated types; release promotion remains an operator-owned decision after all P2 evidence is complete.
+
+The Course lifecycle command/export routes added to the gateway are reserved transport aliases for the published lifecycle boundary; their Course implementation and export response schema must be pinned before the Course export adapter is enabled. Existing private Course-to-Community enrollment/authority paths remain inaccessible through the public gateway.

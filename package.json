@@ -49,13 +49,15 @@
     "verify:security-forks": "node scripts/verify-security-forks.mjs",
     "test:security-deps": "node --test scripts/security-dependencies.test.mjs",
     "pack:security-forks": "node scripts/pack-security-forks.mjs",
-    "contracts:generate": "node scripts/generate-api-contracts.mjs",
-    "contracts:check": "node scripts/check-api-contracts.mjs && node scripts/generate-api-contracts.mjs --check",
+    "contracts:generate": "node scripts/generate-api-contracts.mjs && npm run contracts:p2:generate",
+    "contracts:check": "node scripts/check-api-contracts.mjs && node scripts/generate-api-contracts.mjs --check && npm run contracts:p2:check",
     "contracts:sources": "node scripts/check-api-contracts.mjs --sources ..",
     "contracts:release-check": "node scripts/check-api-contracts.mjs --release",
     "contracts:test": "node --test scripts/api-contract-tools.test.mjs",
     "test:staging-release": "node --import tsx --test ops/staging/tests/migrate-frontend.test.ts ops/staging/tests/import-release-secrets.test.mjs",
-    "postinstall": "npm ci --ignore-scripts --prefix tools/api-contract-toolchain"
+    "postinstall": "npm ci --ignore-scripts --prefix tools/api-contract-toolchain",
+    "contracts:p2:generate": "node scripts/generate-api-contracts.mjs --bundle contracts/api-integration/p2-candidate --output src/lib/api-integration/candidate-generated",
+    "contracts:p2:check": "node scripts/check-api-contracts.mjs --bundle contracts/api-integration/p2-candidate && node scripts/generate-api-contracts.mjs --bundle contracts/api-integration/p2-candidate --output src/lib/api-integration/candidate-generated --check"
   },
   "dependencies": {
     "@icons-pack/react-simple-icons": "13.11.1",

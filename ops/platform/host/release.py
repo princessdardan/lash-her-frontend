@@ -63,6 +63,7 @@ def make_plan(bundle, configuration, compose_file):
            and gateway.get("projectId") == release.get("workload", {}).get("projectId") and gateway.get("maintenance") is True
            and isinstance(gateway.get("publicHost"), str) and re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+", gateway["publicHost"])
            and gateway.get("courseOrigin") == "https://course-tls:8443"
+           and gateway.get("communityOrigin") in (None, "https://community-tls:8443")
            and gateway.get("tlsKeyFile") == "/tls/key.pem" and gateway.get("tlsCertFile") == "/tls/cert.pem"
            and gateway.get("upstreamCaFile") == "/tls/ca.pem", "GATEWAY_TARGET_MISMATCH")
     for name in ("course", "community"):
