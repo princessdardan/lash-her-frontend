@@ -14,6 +14,7 @@ import { IntegrationServiceError, parseGatewayFailure, safeIntegrationRequestId,
 import { courseCapabilitiesForActor } from "./staff-capabilities";
 import type { paths } from "./candidate-generated/course";
 import { invalidateCourseCatalog } from "./catalog-invalidation";
+import { runCourseAdminOperation } from "./course-admin-operation";
 
 type Method = "get" | "post" | "patch" | "put" | "delete";
 type Body<P extends keyof paths, M extends Method> = CandidateBody<"course", P, M>;
@@ -117,7 +118,7 @@ export function createCourseClient(dependencies: {
     };
     // Named mutation helpers are admitted even when called directly by actions.
     // Deterministic documented denials settle before they become UI errors.
-    const result = method === "get" ? await execute() : await run("new-work", execute);
+    const result = access === "editor" || access === "support" ? await runCourseAdminOperation(execute, run) : method === "get" ? await execute() : await run("new-work", execute);
     if ("failure" in result) throw result.failure;
     return result.value;
   }

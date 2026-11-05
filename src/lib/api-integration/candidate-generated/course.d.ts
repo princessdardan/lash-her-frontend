@@ -6737,6 +6737,21 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED" | "FORBIDDEN" | "ACCOUNT_UNAVAILABLE";
+                            message: string;
+                        };
+                    };
+                };
+            };
             429: components["responses"]["TooManyRequests"];
             /** @description Default Response */
             500: {
@@ -6890,7 +6905,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: {
-                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED";
+                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED" | "FORBIDDEN" | "ACCOUNT_UNAVAILABLE";
                             message: string;
                         };
                     };
@@ -7259,7 +7274,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: {
-                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED";
+                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED" | "FORBIDDEN" | "ACCOUNT_UNAVAILABLE";
                             message: string;
                         };
                     };
@@ -7421,7 +7436,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: {
-                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED";
+                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED" | "FORBIDDEN" | "ACCOUNT_UNAVAILABLE";
                             message: string;
                         };
                     };
@@ -7548,7 +7563,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: {
-                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED" | "ACCOUNT_UNAVAILABLE";
+                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED" | "FORBIDDEN" | "ACCOUNT_UNAVAILABLE";
                             message: string;
                         };
                     };
@@ -7744,7 +7759,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: {
-                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED";
+                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED" | "FORBIDDEN" | "ACCOUNT_UNAVAILABLE";
                             message: string;
                         };
                     };
@@ -8378,7 +8393,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: {
-                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED";
+                            code: "ACTIVE_ENROLLMENT_REQUIRED" | "ENTITLEMENT_REVOKED" | "FORBIDDEN" | "ACCOUNT_UNAVAILABLE";
                             message: string;
                         };
                     };

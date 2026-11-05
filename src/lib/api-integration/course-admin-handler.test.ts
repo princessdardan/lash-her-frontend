@@ -3,6 +3,8 @@ import test from "node:test";
 import { createCourseAdminHandler } from "./course-admin-handler";
 import { createCourseClient } from "./course-client";
 import type { AdminActor } from "@/lib/admin/types";
+import { markWriterOperationUncertain, withWriterOperationContext } from "@/lib/writer-admission/context";
+import { IntegrationServiceError } from "./service-errors";
 
 const id = "11111111-1111-4111-8111-111111111111";
 const origin = "https://site.example.invalid";
@@ -11,7 +13,7 @@ const req = (path: string, method = "GET", body?: unknown, headers: Record<strin
 
 test("admin boundaries require configured origin/CSRF before invoking staff authentication or mutation", async () => {
   let calls = 0;
-  const handler = createCourseAdminHandler("update-course", { client: () => { calls++; return {} as never; }, origin: () => origin });
+  const handler = createCourseAdminHandler("update-course", { enabled: () => true, client: () => { calls++; return {} as never; }, origin: () => origin });
   assert.equal((await handler(req("/api/admin/courses/1", "PATCH", {}, { origin: "https://attacker.invalid" }), { courseId: id })).status, 403);
   assert.equal((await handler(req("/api/admin/courses/1", "PATCH", {}, { "x-lash-csrf": "" }), { courseId: id })).status, 403);
   assert.equal((await handler(req("/api/admin/courses/1", "PATCH", {}, { "sec-fetch-site": "cross-site" }), { courseId: id })).status, 403);
@@ -25,7 +27,7 @@ test("admin paginated reads are private, validated and authorized through the re
   const client = createCourseClient({ enabled: () => true, getAdmin: async permission => { assert.equal(permission, "courses:edit"); return actor; }, mintToken: () => "server.admin.jwt", getTransport: () => async input => {
     calls++; assert.equal(input.path, "/v1/admin/courses?limit=10"); assert.equal(input.applicationToken, "server.admin.jwt"); return Response.json({ courses: [], nextCursor: null });
   } });
-  const handler = createCourseAdminHandler("list-courses", { client: () => client });
+  const handler = createCourseAdminHandler("list-courses", { enabled: () => true, client: () => client });
   const response = await handler(req("/api/admin/courses?limit=10"));
   assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "private, no-store");
   assert.equal((await handler(req("/api/admin/courses?limit=101"))).status, 400);
@@ -42,11 +44,11 @@ test("quiz PUT passes only validated aggregate revision/document and admits one 
   const client = createCourseClient({ enabled: () => true, invalidateCatalog: () => { invalidated++; }, getAdmin: async () => actor, mintToken: () => "server.admin.jwt", run: async (kind, work) => { assert.equal(kind, "new-work"); writes++; return work(); }, getTransport: () => async input => {
     assert.equal(input.method, "PUT"); assert.equal(input.path, `/v1/admin/lessons/${id}/quiz`); assert.deepEqual(JSON.parse(input.body!), body); return Response.json({ quiz });
   } });
-  const handler = createCourseAdminHandler("update-quiz", { client: () => client, origin: () => origin });
+  const handler = createCourseAdminHandler("update-quiz", { enabled: () => true, run: async (_kind, work) => { writes++; return work(); }, client: () => client, origin: () => origin });
   assert.equal((await handler(req(`/api/admin/lessons/${id}/quiz`, "PUT", body), { lessonId: id })).status, 200);
   assert.equal(writes, 1); assert.equal(invalidated, 1);
   assert.equal((await handler(req(`/api/admin/lessons/${id}/quiz`, "PUT", { ...body, userId: id }), { lessonId: id })).status, 400);
-  assert.equal(writes, 1); assert.equal(invalidated, 1);
+  assert.equal(writes, 2); assert.equal(invalidated, 1);
 });
 
 test("media authoring requires the current aggregate revision before admission and forwards exact DELETE bodies", async () => {
@@ -59,7 +61,35 @@ test("media authoring requires the current aggregate revision before admission a
   await assert.rejects(client.addVideoCaption(id, id, { url: "https://media.example.invalid/caption.vtt", language: "en", label: "English" } as never), { code: "invalid_request" });
   await assert.rejects(client.deleteVideoCaption(id, id, "mux_track", {} as never), { code: "invalid_request" });
   assert.equal(calls.length, 0);
-  const handler = createCourseAdminHandler("delete-caption", { client: () => client, origin: () => origin });
+  const handler = createCourseAdminHandler("delete-caption", { enabled: () => true, client: () => client, origin: () => origin });
   assert.equal((await handler(req(`/api/admin/lessons/${id}/video/${id}/captions/mux_track`, "DELETE", { expectedCourseRevision: 3 }), { lessonId: id, videoAssetId: id, trackId: "mux_track" })).status, 200);
   assert.equal(calls[0].method, "DELETE"); assert.deepEqual(JSON.parse(calls[0].body!), { expectedCourseRevision: 3 });
+});
+
+test("direct admin reads and the whole handler cover staff resolution through outbound validation in one semantic admission", async () => {
+  let active = false, entries = 0;
+  const run = async <T>(kind: "new-work" | "recovery", work: () => Promise<T>) => {
+    assert.equal(kind, "new-work"); assert.equal(active, false); entries++; active = true;
+    try { return await withWriterOperationContext(work); } finally { active = false; }
+  };
+  const client = createCourseClient({ enabled: () => true, run, getAdmin: async () => { assert.equal(active, true); return actor; }, mintToken: () => { assert.equal(active, true); return "admin.jwt"; }, getTransport: () => async () => {
+    assert.equal(active, true); return Response.json({ courses: [], nextCursor: null });
+  }, onResponse: () => { assert.equal(active, true); } });
+  await withWriterOperationContext(() => client.listAdminCourses());
+  assert.equal(entries, 1, "an unrelated parent uncertainty context does not replace semantic admission");
+  const handler = createCourseAdminHandler("list-courses", { enabled: () => true, client: () => client, run });
+  assert.equal((await handler(req("/api/admin/courses"))).status, 200);
+  assert.equal(entries, 2, "the client reuses the matching enclosing handler instead of opening another entry");
+  assert.equal(active, false);
+});
+
+test("deterministic staff denial settles cleanly while caught identity uncertainty poisons the whole admin operation", async () => {
+  let settled = 0;
+  const run = async <T>(_kind: "new-work" | "recovery", work: () => Promise<T>) => { const result = await withWriterOperationContext(work); settled++; return result; };
+  const denied = createCourseClient({ enabled: () => true, run, getAdmin: async () => { throw new IntegrationServiceError("forbidden", 403); }, getTransport: () => { assert.fail("denied outbound call"); } });
+  const denyHandler = createCourseAdminHandler("list-courses", { enabled: () => true, client: () => denied, run });
+  assert.equal((await denyHandler(req("/api/admin/courses"))).status, 403); assert.equal(settled, 1);
+  const uncertain = createCourseClient({ enabled: () => true, run, getAdmin: async () => { markWriterOperationUncertain(); return actor; }, mintToken: () => "admin.jwt", getTransport: () => async () => Response.json({ courses: [], nextCursor: null }) });
+  const uncertainHandler = createCourseAdminHandler("list-courses", { enabled: () => true, client: () => uncertain, run });
+  assert.equal((await uncertainHandler(req("/api/admin/courses"))).status, 503); assert.equal(settled, 1);
 });
