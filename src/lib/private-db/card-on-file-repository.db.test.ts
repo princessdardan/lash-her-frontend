@@ -27,6 +27,8 @@ const helperScript = String.raw`
   import { Pool } from "pg";
 
   import { createCardOnFileDrizzleRepository } from "./src/lib/private-db/card-on-file-repository.ts";
+  import { finalizeNoShowCharge } from "./src/lib/booking/payments/service-no-show-charge-finalizer.ts";
+  import { withWriterOperationContext } from "./src/lib/writer-admission/context.ts";
   import { createPrivateDbPoolConfig } from "./src/lib/private-db/pool-config.ts";
   import {
     appointmentHolds,
@@ -147,6 +149,48 @@ const helperScript = String.raw`
     return row.id;
   }
 `;
+
+test(
+  "no-show admission context distinguishes durable terminal and nonterminal receipts from ignored financial mismatches",
+  { skip: dbTestSkipReason },
+  () => {
+    runDbScenario(`
+      await withTestDb(async (db) => {
+        for (const mode of ["charged", "failed", "nonterminal", "mismatch"]) {
+          await resetCardOnFileTables(db);
+          const hold = await seedHeldAppointmentHold(db, "lh-test-no-show-admission");
+          const recordId = await seedProviderDraftNoShowRecord(db, hold.id);
+          const repository = await createCardOnFileDrizzleRepository(db);
+          const status = mode === "failed" ? "FAILED" : mode === "nonterminal" ? "APPROVED" : "COMPLETED";
+          const event = { eventId: "owned-no-show-" + mode, eventType: "payment.updated", paymentId: "owned-payment", orderId: "order-test",
+            payloadSanitized: { data: { object: { payment: { id: "owned-payment", status } } } } };
+          let reads = 0;
+          const deps = { repository, alerts: { alert() {} }, providerReader: {
+            getPayment: async () => { reads++; return { payment: { id: "owned-payment", status,
+              order_id: "order-test", amount_money: { amount: mode === "mismatch" ? 1 : 12500, currency: "CAD" } } }; },
+            getInvoice: async () => { throw new Error("unexpected-invoice"); },
+          } };
+          const run = () => withWriterOperationContext(() => finalizeNoShowCharge({ event }, deps));
+          if (mode === "mismatch") {
+            await assert.rejects(run, /WRITER_OPERATION_REQUIRES_REVIEW/);
+            await assert.rejects(run, /WRITER_OPERATION_REQUIRES_REVIEW/);
+            assert.equal(reads, 1);
+          } else {
+            const first = await run();
+            assert.equal(first.status, mode === "charged" ? "charged" : mode === "failed" ? "charge_failed" : "ignored");
+            assert.equal((await run()).status, "duplicate");
+            assert.equal(reads, mode === "nonterminal" ? 0 : 1);
+          }
+          const receipt = await repository.findNoShowChargeEventByProviderEventId(event.eventId);
+          assert.equal(receipt.noShowChargeRecordId, recordId);
+          assert.equal(receipt.processingStatus, mode === "charged" ? "processed" : mode === "failed" ? "failed" : "ignored");
+          const stored = await repository.getNoShowChargeRecordById(recordId);
+          assert.equal(stored.status, mode === "charged" ? "charged" : mode === "failed" ? "charge_failed" : "provider_draft_created");
+        }
+      });
+    `);
+  },
+);
 
 test(
   "card-on-file confirmation claim is hold-wide and row-lock safe",

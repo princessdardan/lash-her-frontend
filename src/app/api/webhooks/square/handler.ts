@@ -6,6 +6,7 @@ import {
 } from "@/lib/booking/payments/service-payment-alerts";
 import {
   isNoShowChargeEventType,
+  type NoShowChargeFinalizerRepository,
   type NoShowChargeFinalizerResult,
 } from "@/lib/booking/payments/service-no-show-charge-finalizer";
 import {
@@ -244,32 +245,7 @@ export const defaultDependencies: SquareWebhookDependencies = {
     ]);
     const repository = await createCardOnFileDrizzleRepository();
 
-    const invoiceId =
-      event.eventType === "invoice.payment_made"
-        ? getSquareInvoiceId(event)
-        : null;
-    const paymentId = event.paymentId;
-    const orderId = event.orderId;
-
-    const [recordByInvoice, recordByPayment, recordByOrder] = await Promise.all(
-      [
-        invoiceId !== null
-          ? repository.findNoShowChargeRecordBySquareInvoiceId(invoiceId)
-          : Promise.resolve(null),
-        paymentId !== undefined
-          ? repository.findNoShowChargeRecordBySquarePaymentId(paymentId)
-          : Promise.resolve(null),
-        orderId !== undefined
-          ? repository.findNoShowChargeRecordBySquareOrderId(orderId)
-          : Promise.resolve(null),
-      ],
-    );
-
-    return (
-      recordByInvoice !== null ||
-      recordByPayment !== null ||
-      recordByOrder !== null
-    );
+    return isKnownNoShowChargeEventWithRepository(event, repository);
   },
   async observeOperationalPayment(input) {
     const { observeOperationalSquarePayment } =
@@ -370,6 +346,7 @@ export function createSquareWebhookPostHandler(
   runProductRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
   runTrainingCardRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
   runTrainingSplitRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
+  runNoShowRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
 ): (req: Request) => Promise<Response> {
   return async function postSquareWebhook(req) {
     const env = await dependencies.getEnv();
@@ -634,6 +611,7 @@ export function createSquareWebhookPostHandler(
           const noShowResponse = await tryFinalizeNoShowCharge(
             dependencies,
             event,
+            runNoShowRecovery,
           );
           if (noShowResponse !== null) {
             return noShowResponse;
@@ -668,7 +646,7 @@ export function createSquareWebhookPostHandler(
       return new Response(null, { status: 404 });
     }
 
-    const noShowResponse = await tryFinalizeNoShowCharge(dependencies, event);
+    const noShowResponse = await tryFinalizeNoShowCharge(dependencies, event, runNoShowRecovery);
     if (noShowResponse !== null) {
       return noShowResponse;
     }
@@ -754,6 +732,7 @@ export function createSquareWebhookPostHandler(
 async function tryFinalizeNoShowCharge(
   dependencies: SquareWebhookDependencies,
   event: VerifiedSquareWebhookEvent,
+  runRecovery: (task: () => Promise<Response>) => Promise<Response>,
 ): Promise<Response | null> {
   if (!isNoShowChargeEventType(event.eventType)) {
     return null;
@@ -781,37 +760,70 @@ async function tryFinalizeNoShowCharge(
     return new Response(null, { status: 503 });
   }
 
-  let result: NoShowChargeFinalizerResult;
+  // Classification above is read-only. Preserve the legacy unmatched fallback
+  // only after a successful adapter result; admission failures must not bypass it.
+  let unmatched = false;
+  const response = await runRecovery(async () => {
+    let result: NoShowChargeFinalizerResult;
 
-  try {
-    result = await dependencies.finalizeNoShowCharge({
-      event,
-      alerts: dependencies.alerts,
-    });
-  } catch (error) {
-    await dependencies.alerts.alert({
-      category: "square_webhook_retryable_failure",
-      severity: "error",
-      message: "No-show charge finalizer failed",
-      context: {
-        error:
-          error instanceof Error ? error.message : "Unknown finalization error",
-        eventId: event.eventId,
-        eventType: event.eventType,
-        orderId: event.orderId,
-      },
-    });
-    return new Response(null, { status: 503 });
-  }
+    try {
+      result = await dependencies.finalizeNoShowCharge({
+        event,
+        alerts: dependencies.alerts,
+      });
+    } catch (error) {
+      await dependencies.alerts.alert({
+        category: "square_webhook_retryable_failure",
+        severity: "error",
+        message: "No-show charge finalizer failed",
+        context: {
+          error:
+            error instanceof Error ? error.message : "Unknown finalization error",
+          eventId: event.eventId,
+          eventType: event.eventType,
+          orderId: event.orderId,
+        },
+      });
+      return new Response(null, { status: 503 });
+    }
 
-  if (
-    result.status === "ignored" &&
-    result.noShowChargeRecordId === undefined
-  ) {
-    return null;
-  }
+    if (
+      result.status === "ignored" &&
+      result.noShowChargeRecordId === undefined
+    ) {
+      unmatched = true;
+      markWriterOperationUncertain();
+    }
+    if (
+      result.retryable ||
+      (!result.finalized && !result.duplicateEvent && result.status !== "ignored")
+    ) {
+      markWriterOperationUncertain();
+    }
 
-  return new Response(null, { status: 200 });
+    return new Response(null, { status: 200 });
+  });
+  return unmatched && response.status === 200 ? null : response;
+}
+
+export async function isKnownNoShowChargeEventWithRepository(
+  event: VerifiedSquareWebhookEvent,
+  repository: Pick<
+    NoShowChargeFinalizerRepository,
+    "findNoShowChargeRecordBySquareInvoiceId" |
+    "findNoShowChargeRecordBySquarePaymentId" |
+    "findNoShowChargeRecordBySquareOrderId"
+  >,
+): Promise<boolean> {
+  const invoiceId = event.eventType === "invoice.payment_made" ? getSquareInvoiceId(event) : null;
+  // Classification must await every sibling even when one lookup fails.
+  const results = await Promise.allSettled([
+    async () => invoiceId !== null ? repository.findNoShowChargeRecordBySquareInvoiceId(invoiceId) : null,
+    async () => event.paymentId !== undefined ? repository.findNoShowChargeRecordBySquarePaymentId(event.paymentId) : null,
+    async () => event.orderId !== undefined ? repository.findNoShowChargeRecordBySquareOrderId(event.orderId) : null,
+  ].map(read => read()));
+  if (results.some(result => result.status === "rejected")) throw new Error("No-show charge lookup failed");
+  return results.some(result => result.status === "fulfilled" && result.value !== null);
 }
 
 async function tryRecoverSquareCommercePayment(

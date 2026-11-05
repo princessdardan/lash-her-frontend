@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "date": "2026-11-04",
+  "runtime": "Node 24.18.0",
+  "status": "SOURCE_COMPONENT_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "79ddf8b3e45bc741fc32542b53fe1cea5dd6fb80",
+  "sourceManifestSha256": "05fc98b8a5486d40a1d61bc1b257d307455a67ba39fdcadac0a877ed1183fe9e",
+  "files": {
+    "scripts/run-source-unit-tests.mjs": "5a5cc8bf35b3cf8b9902cf3365c1ee638fbb7ad36ccb17148f59b0816f7f3eda",
+    "src/app/api/webhooks/square/handler.ts": "4d949ac5b16cf527e178223a9128c14f808686c58e20e6c82f1729731621d552",
+    "src/app/api/webhooks/square/route.ts": "a71eaeb541ab451c107f73ea98e49568f40493dffd6f0b3152b8819352647535",
+    "src/lib/booking/payments/service-no-show-charge-finalizer.ts": "bad46f50795295bd79a4a963281205de4433ebcffc6d4741729d6f63eebd984e",
+    "src/lib/private-db/card-on-file-repository.db.test.ts": "dd31444112ce0aa041fb16c43be7aeab44bca570d98482fcc153e99e14b21a06",
+    "src/lib/writer-admission/square-no-show.test.ts": "78721f54aa4eeb06a8310da7686bf03a4972161de25d5ca4ef4bd5db0bb202dd"
+  },
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "deploymentPerformed": false,
+  "liveDatabaseOrProviderChanged": false,
+  "p200Complete": false,
+  "checks": {
+    "unit": {
+      "ordinary": 1855,
+      "serverOnly": 282,
+      "scripts": 31,
+      "securityDependencies": 14,
+      "totalPassed": 2182,
+      "failed": 0,
+      "skipped": 0
+    },
+    "focusedRegression": {
+      "totalPassed": 170,
+      "newNoShowWebhookTests": 16,
+      "failed": 0
+    },
+    "platform": {
+      "totalPassed": 178,
+      "failed": 0
+    },
+    "typescript": "PASS",
+    "targetedEslint": "PASS",
+    "gitDiffCheck": "PASS",
+    "ownedPostgres16Business": {
+      "migrations": 80,
+      "files": 1,
+      "passed": 16,
+      "failed": 0,
+      "providerTouched": false,
+      "tlsLedgerCombined": false,
+      "scope": [
+        "Actual card-on-file/no-show repository regression file",
+        "Actual finalizer and operation-local context over committed success, confirmed failure and nonterminal ignored receipts",
+        "Ignored financial-mismatch receipt and duplicate both retain uncertainty without provider replay",
+        "Existing atomic terminal conflict and guarded update regressions"
+      ]
+    },
+    "inheritedProtocols": {
+      "locallyRerun": false,
+      "priorEvidence": "../2026-11-04-p2-00-square-training-split/validation.json",
+      "unchangedProtocolFiles": [
+        "src/lib/writer-admission/runtime.ts",
+        "src/lib/writer-admission/route.ts",
+        "src/lib/writer-admission/context.ts",
+        "ops/platform/frontend-admission.mjs"
+      ],
+      "scope": "Prior TLS admission/migration checks remain separate from this component business-database evidence."
+    },
+    "fullBuildBrowsersAndPostgres18": "PENDING_EXACT_HEAD_CI"
+  },
+  "review": {
+    "kind": "sequential local source review",
+    "scope": [
+      "Both payment/invoice no-show dispatch boundaries and production wiring",
+      "All-sibling read-only classification lifetime",
+      "Authoritative provider evidence and existing atomic no-show record/attempt/event writes",
+      "Ignored financial conflicts and duplicate receipt uncertainty",
+      "Awaited failed/unknown alert lifetime and closed-recovery behavior",
+      "Admission-off compatibility, safe unmatched fallback and independent branch scope"
+    ]
+  },
+  "environmentCorrections": [
+    "Initial sandboxed full-suite execution could not open existing test IPC/loopback listeners. Re-ran with those local fixture permissions; final full suite passed.",
+    "Initial disposable PostgreSQL fixture refused the shared pool default TLS and a host-login-derived role mismatch. Both instances stopped without business tests. The passing fresh fixture selected an explicit owned role and sslmode=disable only for its isolated loopback database; all 80 migrations and 16 business tests passed, then the instance stopped."
+  ],
+  "limitations": [
+    "Route tests control ledger/repository/provider terminals. Actual PostgreSQL business tests use the real repository/finalizer with controlled provider reads and operation-local context; no actual combined webhook/ledger/business enforcement is claimed.",
+    "Inherited TLS protocol evidence was not rerun locally; full exact-head CI remains required.",
+    "No real provider delivery, immutable runtime or live drain, actual producer/historical fencing, bootstrap or parent coordinator completion is claimed.",
+    "Independent admin no-show initiation, ordinary booking/operational recovery and reconciliation workers remain outside this component."
+  ]
+}
