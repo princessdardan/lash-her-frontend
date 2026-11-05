@@ -5,6 +5,11 @@ import { pathToFileURL } from "node:url";
 import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
+  "src/lib/api-integration/application-jwt.test.ts",
+  "src/lib/writer-admission/public-forms.test.ts",
+  "src/lib/writer-admission/remaining-workers.test.ts",
+  "src/lib/writer-admission/admin-identity.test.ts",
+  "src/lib/writer-admission/admin-interactive.test.ts",
   "src/lib/writer-admission/product-refund-worker.test.ts",
   "src/lib/writer-admission/stock-sweep.test.ts",
   "src/lib/writer-admission/customer-email-outbox.test.ts",
