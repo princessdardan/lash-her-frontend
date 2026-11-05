@@ -1,4 +1,6 @@
 import type { UncapturedSquareCommerceOrder } from "@/lib/commerce/order-store";
+import type { SquarePaymentsClient } from "@/lib/payments/square/payments-client";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 const DEFAULT_GRACE_MS = 5 * 60 * 1000;
 const DEFAULT_LIMIT = 100;
@@ -32,6 +34,39 @@ export interface SquareCaptureReconciliationDependencies {
   markUncollected: (orderReference: string, paymentId: string) => Promise<void>;
   logError: (message: string, meta: Record<string, unknown>) => void;
   logWarn: (message: string, meta: Record<string, unknown>) => void;
+}
+
+export type SquareCaptureRecoveryRunner = (
+  task: () => Promise<SquareCaptureReconciliationSummary>,
+) => Promise<SquareCaptureReconciliationSummary>;
+
+interface LiveCaptureReconciliationDependencies {
+  reconcileTrainingSplits: (now: Date) => Promise<void>;
+  capture: SquareCaptureReconciliationDependencies;
+}
+
+export function createSquareCapturePaymentOperations(
+  client: Pick<SquarePaymentsClient, "getPayment" | "completePayment">,
+): Pick<
+  SquareCaptureReconciliationDependencies,
+  "getPaymentStatus" | "completePayment"
+> {
+  return {
+    getPaymentStatus: async (paymentId) => {
+      const { payment } = await client.getPayment(paymentId);
+      if (payment.id !== paymentId)
+        throw new Error("Square payment lookup identity mismatch");
+      return payment.status;
+    },
+    completePayment: async (paymentId) => {
+      const { payment } = await client.completePayment(paymentId);
+      if (payment.id !== paymentId || payment.status !== "COMPLETED") {
+        throw new Error(
+          "Square payment capture acknowledgement is unconfirmed",
+        );
+      }
+    },
+  };
 }
 
 /**
@@ -107,8 +142,10 @@ export async function reconcileUncapturedSquareCommercePayments(
           status,
         },
       );
+      markWriterOperationUncertain();
       summary.failed += 1;
     } catch (error) {
+      markWriterOperationUncertain();
       dependencies.logError(
         "[square-capture-reconciliation] order reconciliation failed",
         {
@@ -128,9 +165,21 @@ export async function reconcileUncapturedSquareCommercePayments(
  * Live wiring for the reconciliation cron. Returns null when Square commerce is
  * not enabled (nothing to reconcile).
  */
-export async function runSquareCommerceCaptureReconciliation(input: {
-  now: Date;
-}): Promise<SquareCaptureReconciliationSummary | null> {
+export async function runSquareCommerceCaptureReconciliation(
+  input: { now: Date },
+  runRecovery: SquareCaptureRecoveryRunner = (task) => task(),
+  loadDependencies: () => Promise<LiveCaptureReconciliationDependencies | null> = loadLiveDependencies,
+): Promise<SquareCaptureReconciliationSummary | null> {
+  const dependencies = await loadDependencies();
+  if (dependencies === null) return null;
+  // This pre-existing sibling remains outside the selected capture boundary.
+  await dependencies.reconcileTrainingSplits(input.now);
+  return runRecovery(() =>
+    reconcileUncapturedSquareCommercePayments(input, dependencies.capture),
+  );
+}
+
+async function loadLiveDependencies(): Promise<LiveCaptureReconciliationDependencies | null> {
   const [
     { getSquareCommerceEnv },
     { createSquarePaymentsClient },
@@ -154,22 +203,17 @@ export async function runSquareCommerceCaptureReconciliation(input: {
 
   const { reconcileTrainingSplits } =
     await import("./square-training-split-live");
-  await reconcileTrainingSplits(input.now);
   const client = createSquarePaymentsClient(env);
 
-  return reconcileUncapturedSquareCommercePayments(
-    { now: input.now },
-    {
+  return {
+    reconcileTrainingSplits,
+    capture: {
       findUncaptured: findUncapturedSquareCommerceOrders,
-      getPaymentStatus: async (paymentId) =>
-        (await client.getPayment(paymentId)).payment.status,
-      completePayment: async (paymentId) => {
-        await client.completePayment(paymentId);
-      },
+      ...createSquareCapturePaymentOperations(client),
       markCaptured: markSquareCommerceOrderCaptured,
       markUncollected: markSquareCommerceOrderUncollected,
       logError: (message, meta) => log("error", message, meta),
       logWarn: (message, meta) => log("warn", message, meta),
     },
-  );
+  };
 }
