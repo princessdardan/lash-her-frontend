@@ -1,0 +1,602 @@
+✔ valid workload is verified with pinned JWKS URL and bounded fetch (130.732958ms)
+✔ signed wrong identity, audience, environment and invalid lifetime fail closed (70.899583ms)
+✔ forgery, unsigned/HS256 proofs, unknown keys and missing proof are refused (7.59725ms)
+✔ overlapping rotation works; cold unverifiable JWKS refuses (11.46325ms)
+✔ stale keys are not accepted during a JWKS outage; new keys reload after cooldown (13.386084ms)
+✔ gateway exposes exact reviewed service methods; enrollment/authority traffic stays private (7.31075ms)
+✔ configuration pins Vercel identity, production target and TLS upstream (0.464667ms)
+✔ aggregate, verified workload, service and webhook windows remain independent (0.12375ms)
+✔ runtime probes check public auth and both private boundaries without claiming external or Vercel proof (0.779041ms)
+✔ any unexpected public or private status stops the boundary qualification (1.523167ms)
+✖ private TLS upstream receives only selected headers, original query and application authorization (12.960833ms)
+✖ same lifecycle paths route to their explicit service and never expose private enrollment routes (4.144291ms)
+✖ missing optional Community upstream fails closed without forwarding to Course (0.828334ms)
+✖ host fence changes immediately for historical callers while recovery remains independent (0.831917ms)
+✖ fencing accounts for admitted delayed work before reporting drained (0.713792ms)
+✖ an upstream disconnect preserves mutation uncertainty even after transport drain (0.580916ms)
+✖ missing workload, OIDC-only protected requests, wrong host and duplicate credentials never reach upstream (0.420375ms)
+✖ maintenance holds application writes while read probes and signed callback forwarding remain available (0.49975ms)
+✖ exact Mux exception preserves raw bytes/signature; other webhook methods are denied (0.417458ms)
+✖ upstream 429 envelope and Retry-After survive; internal locations and cookies cannot escape (2.564ms)
+✖ workload admission does not consume independent webhook/service budgets (0.603416ms)
+✖ untrusted private TLS certificate is refused without exposing connection details (0.649958ms)
+✖ private TLS terminator checks actual peer and route, replacing spoofed forwarding metadata (0.899458ms)
+✖ private TLS permits exact P2 quiz PUT and caption DELETE routes while denying other methods and peers (0.317875ms)
+✔ recovery phases preserve the old source until fresh creation and retain authenticated browser recovery (8.237333ms)
+✔ each exact CloudFormation change is reviewable without executing an operation (3.319625ms)
+✔ unexpected host properties, replacement, allocation deletion, parameter drift and partial pages refuse (7.08025ms)
+✔ snapshot must be a fresh manual snapshot of the exact stopped source identity (0.672291ms)
+✔ AWS stopped evidence does not claim per-container graceful shutdown or P1 qualification (0.437ms)
+✔ template is staging-only, preserves the allocation and bounds managed browser access (1.090459ms)
+✔ recovery requires stopped source and available snapshot before any CloudFormation mutation (12.185416ms)
+✔ verified browser recovery is retained on the same new instance without an extra mutation (8.036042ms)
+✔ uncertain mutation responses are recorded once and cannot be silently retried (4.029083ms)
+✔ producer drift or snapshot failure cannot delete compute (1.136333ms)
+✔ the documented paired snapshot operations are retained and any wrong, duplicate or failed source operation prevents removal (10.599833ms)
+✔ deliberate continuation reads the exact stopped source and existing regional snapshot without another stop or snapshot creation (4.762875ms)
+✔ changed parent receipts, a different failure phase or wrong existing snapshot refuse before compute mutation (1.88075ms)
+✔ parent input requires all exact recorded bytes and continuation plans remove stop and snapshot creation (0.51725ms)
+✔ detached continuation verifies read-only, stops the provider-started original once and skips the completed detach update (1.844166ms)
+✔ detached continuation rejects changed parent or snapshot and uncertain stop cannot proceed to removal or retry (3.120459ms)
+✔ detached parent byte pins and plan cannot select another snapshot or repeat detach (0.813667ms)
+✔ fixed staging producer observation is read-only and omits provider environment values (22.966542ms)
+✔ changed source, enabled or undrained crons, another project or alias refuse (14.777375ms)
+✔ provider redirects and oversized JSON refuse (10.474917ms)
+✔ fresh complete Dev Mux inventory must still have no staging callback (1.743584ms)
+(node:96819) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ frontend CI schema evidence must match source SQL, contracts and the full owned rehearsal (3.278542ms)
+✔ builder evidence requires the exact repository and source revision (0.603667ms)
+✔ empty or unrelated attestation metadata cannot stand in for an SBOM (0.174083ms)
+✔ harness qualification requires the exact candidate bytes and never asserts real OIDC or approval (0.990042ms)
+✔ candidate collection and final qualification bind the operator dispatch, source and CI receipt (26.373916ms)
+✔ candidate validates course-runtime with its repository-owned runtime CLI (103.476958ms)
+✔ candidate validates course-migration with its repository-owned runtime CLI (97.957959ms)
+✔ candidate validates community-runtime with its repository-owned runtime CLI (90.000167ms)
+✔ candidate validates community-migration with its repository-owned runtime CLI (90.412042ms)
+✔ candidate API runtime qualification refuses unrelated raw HIGH finding with recomputed hashes (103.493625ms)
+✔ candidate API runtime qualification refuses unresolved filtered CRITICAL finding (67.357666ms)
+✔ candidate API runtime qualification refuses unsupported not-affected statement with recomputed hashes (98.118208ms)
+✔ candidate API runtime qualification refuses forged fixed package with recomputed hashes (105.868834ms)
+✔ candidate API runtime qualification refuses forged VEX with recomputed hashes (116.115917ms)
+✔ candidate API runtime qualification refuses failed installed-library regression with recomputed hashes (137.073292ms)
+✔ candidate API runtime qualification refuses different published digest with recomputed hashes (106.208125ms)
+✔ candidate API runtime qualification refuses another image proof relabelled with the candidate name (106.486625ms)
+✔ candidate API runtime qualification refuses another source lock while the sibling lock still matches (101.622125ms)
+✔ candidate API runtime qualification refuses tampered retained scan bytes (98.292833ms)
+✔ candidate API runtime qualification refuses missing filtered scan (68.412458ms)
+✔ candidate API runtime qualification refuses missing raw scan (104.358ms)
+✔ candidate API runtime qualification refuses missing qualification record (113.335083ms)
+✔ candidate API runtime qualification refuses missing runtime SBOM (109.452333ms)
+✔ candidate API runtime qualification refuses missing VEX (96.259792ms)
+✔ candidate API runtime qualification refuses successful CLI without the qualification receipt (98.4135ms)
+✔ installed Auth.js isolates customer email and administrator JWT profiles in both orders (570.737584ms)
+✔ operator AWS fallback binds profile/region and removes ambient credentials and SDK retries (0.640042ms)
+✔ unsupported APIs, production stacks and unreviewed parameters never reach AWS (0.7375ms)
+✔ SSH trust lookup projects public metadata without returning temporary credentials (0.66975ms)
+✔ an empty execute acknowledgement is accepted once; arbitrary errors stay sanitized (0.204792ms)
+✔ access recovery cannot force-stop another host or snapshot into an unreviewed name/scope (0.245167ms)
+✔ actual browser key output binds account, new instance, machine, key bytes and strict SSH pin (0.864834ms)
+✔ an unverified account, substituted endpoint/key, old machine or other action cannot establish trust (3.135792ms)
+✔ business evidence exports private-key HMACs and counts without rows, identities or reasons (2.972834ms)
+✔ canonical key order and PostgreSQL Date serialization produce stable evidence (1.870209ms)
+✔ new rows are allowed but changed or removed baseline rows and changed keys refuse (24.584ms)
+✔ table scope, unique primary keys and bounded row counts cannot be weakened (13.302625ms)
+✔ settings carry only reviewed public identities; invalid CLI arguments refuse before environment access (87.896459ms)
+✔ continuation settings bind only the recorded stopped-snapshot failure and a fresh action (0.392042ms)
+✔ detached continuation settings require the second failure and its fixed new action (0.217833ms)
+✔ existing-host settings bind the C2 file-validation failure and cannot choose another host (5.357083ms)
+﹣ course-media: compiled minimal parser rejects malformed enablement and requires no API credentials (0.362208ms) # SKIP
+﹣ course-media: actual disabled process exposes liveness, denies readiness without DB and exits on SIGTERM (0.243083ms) # SKIP
+﹣ course-export-cleanup: compiled minimal parser rejects malformed enablement and requires no API credentials (0.092ms) # SKIP
+﹣ course-export-cleanup: actual disabled process exposes liveness, denies readiness without DB and exits on SIGTERM (0.098167ms) # SKIP
+✔ Course workers use distinct minimal env files without API networks, credentials or public ports (3.883917ms)
+✔ examples leave every new loop disabled and omit unrelated secrets; Compose does not override enablement (0.649833ms)
+✔ disabled workers retain bounded readiness probes and graceful stop with existing hardening (0.198875ms)
+✔ connection budget counts all five Course pools and resource deltas stay on the existing host (0.161416ms)
+✔ current database verification uses one read-only snapshot without migrations or journal writes (1.485333ms)
+✔ current P2 database verification binds both fields and rejects partial or malformed bindings before SQL (1.232042ms)
+✔ production and non-dedicated identities stop before database access (0.186833ms)
+✔ unenforced read-only and wrong server/role/database refuse with rollback; TLS must be authenticated first (0.313667ms)
+✔ missing lineage, pending SQL and exact schema drift cannot qualify a restore (0.165833ms)
+✔ role separation, login, default grants and runtime journal boundaries are mandatory (0.78125ms)
+✔ catalog reader cannot turn the read adapter into a write path (0.104625ms)
+✔ query and rollback errors prevent successful results (0.152625ms)
+✔ runtime-only continuation retains the exact existing host and browser observation without infrastructure steps (1.704042ms)
+✔ wrong failure, changed receipt bytes, private scope or retained key cannot authorize runtime restoration (4.469625ms)
+✔ operation completion waits for nested deferred work (4.207833ms)
+✔ denied or uncertain admission never starts effects or retries (1.3375ms)
+✔ main and deferred failures persist uncertainty only after all deferred work finishes (1.593709ms)
+✔ a lost settlement response never retries work or settlement (0.216792ms)
+✔ late deferrals and malformed bindings refuse (0.179083ms)
+(node:96842) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ plan preparation excludes unknown secret fields and refuses protected, duplicate and production scope (1.739333ms)
+✔ durable intent and committed NOLOGIN precede guarded session termination without releasing parent locks (2.112125ms)
+✔ wrong TLS, host, lock, role OID, memberships, ownership or cross-database sessions refuse before mutations (9.205834ms)
+✔ missing durable intent or termination intent stops the next mutation (0.560292ms)
+✔ changed role scope at the transaction boundary refuses before ALTER ROLE (0.329292ms)
+✔ lost commit acknowledgement never terminates sessions, retries or restores LOGIN (0.411291ms)
+✔ uncertain or failed termination stops once and retains disabled logins (7.934167ms)
+✔ lock loss or idle socket failure after disabling prevents a later signal (0.291625ms)
+✔ identity entry qualification accepts explicit PostgreSQL 16/18 loopback bindings and ignores caller database URLs (12.535334ms)
+✔ identity child refuses missing ownership before application imports or any database connection (445.989833ms)
+✔ owned CI identity runner invokes the actual child once with the parent PostgreSQL major (3.381417ms)
+✔ owned CI rejects absent, empty, partial, duplicate, skipped and finding-bearing identity receipts (4.802542ms)
+✔ owned CI rejects a wrong server major, candidate source or substituted authentication/effect boundary (1.630708ms)
+✔ the migration parent executes the mandatory identity child after the 33 existing DB regressions and returns its receipt (41.111834ms)
+✔ required PostgreSQL 18 CI invokes the migration parent containing the identity qualification (17.68725ms)
+(node:96844) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ packaged source binds the migration executable, SQL, lineage and minimal dependencies (119.620166ms)
+✔ extra SQL or omitted source cannot silently enter a packaged image (222.907958ms)
+✔ packaged image refuses modified P2 manifest.json (188.268959ms)
+✔ packaged image refuses modified P2 course-api.json (204.407333ms)
+✔ packaged image refuses modified P2 community-api.json (177.571542ms)
+✔ packaged image refuses modified P2 enrollment-event.schema.json (157.864792ms)
+✔ packaged image refuses modified P2 boundary-contracts.json (175.846166ms)
+✔ packaged image refuses modified P2 README.md (150.601333ms)
+✔ released P2 image source requires and binds the fixed compatibility review and verifier source (288.520291ms)
+✔ minimal image dependencies stay aligned with the application lock (11.950042ms)
+✔ image entrypoint never offers checkout or environment source-verification bypasses (80.5585ms)
+(node:96846) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ frontend preparation binds exact source, target and reviewed SQL/schema without credentials (13.618417ms)
+✔ frontend credential parsing requires exact identity and explicit verified TLS (20.284625ms)
+✔ frontend job assembly derives reviewed bindings without copying credentials (9.551167ms)
+✔ new frontend migration artifacts require P2 candidate, SQL image and job identity without changing v1 (65.644292ms)
+✔ frontend database and terminal receipts retain the separate P2 binding (24.8515ms)
+✔ frontend confirmation and source qualification precede credential acquisition (4.515917ms)
+✔ frontend apply uses one locked session, records before unlock and separates terminal completion (9.702916ms)
+✔ compatible frontend continuation retains the physical lock after the durable database receipt (11.466084ms)
+✔ failed or uncertain frontend continuation preserves successful SQL and never repeats it or authorizes traffic (12.771584ms)
+✔ idle connection errors during continuation are retained as sanitized failures even if the callback catches them (10.40475ms)
+✔ parent preflight receives the original locked physical client before lineage or application SQL (20.177959ms)
+✔ failed, disconnected or unlocked parent preflight refuses before lineage or application SQL (9.748542ms)
+✔ a serialized preflight callback is refused before credentials or database access (3.456208ms)
+✔ lost database session, missing lock and post-deployment drift cannot qualify the continuation (231.842ms)
+✔ continuation-looking JSON is refused before credentials and missing durable intent stops deployment (51.833292ms)
+✔ current frontend uses a server-enforced read-only session and issues no schema or journal writes (44.734834ms)
+✔ current-only mode refuses an unenforced or changed read-only setting and actual pending SQL (12.827209ms)
+✔ frontend lock contention, pending mismatch and apply errors stop without successful database receipt (17.2295ms)
+✔ frontend postflight schema/default-grant failures and disconnect failure cannot qualify completion (99.038291ms)
+✔ frontend production refuses missing or failed staging migration evidence (15.949208ms)
+✔ frontend receipts are exclusive and contain complete parseable JSON (23.801ms)
+✔ legacy frontend migration writes refuse release targets and remote local-label bypasses (569.447125ms)
+✔ finalization runs after durable core continuation verification with the original physical lock held (19.922125ms)
+✔ failed post-continuation verification or missing durable completion never enters finalization (51.20975ms)
+✔ uncertain finalization preserves successful SQL and refuses final success without repeating its callback (22.272041ms)
+✔ serialized finalization or finalization without a compatible continuation refuses before credentials (16.150375ms)
+✔ owned qualification refuses a missing split receipt (0.9965ms)
+✔ owned qualification refuses a missing capture receipt (0.61625ms)
+✔ owned qualification refuses changed capture identity behind a completed status (0.615292ms)
+✔ owned qualification refuses changed split identities behind a canceled stage (0.162292ms)
+✔ owned provider interception refuses unselected payments, verbs, suffixes and queries (19.060666ms)
+✔ owned refund lookup accepts only the bound sandbox refund operation (0.260708ms)
+✔ owned stock lookup accepts only the bound location, window, page size and cursor (0.709ms)
+✔ owned effect qualification refuses replay, missing calls and reordered batches (0.393833ms)
+✔ owned effect qualification refuses interleaved batches while allowing concurrent split legs (1.010625ms)
+(node:96850) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ concrete binding artifact ties every deployment and scheduler to exact reviewed surface identities (34.066291ms)
+✔ Resend retirement artifact binds only isolated staging domain and exact scoped key/webhook/email IDs (0.815ms)
+✔ Square retirement artifact permits only dedicated sandbox IDs and actual financial row references (1.932583ms)
+✔ Sanity hook selection binds only dedicated staging project, exact IDs and reviewed ingress paths (0.483375ms)
+✔ Google selection binds distinct reviewed staging clients, grants and hashed calendar identities (0.726875ms)
+✔ restoration gateway binding selects an exact existing machine/configuration/image without copying runtime input (0.459042ms)
+✔ missing historical/provider capabilities remain explicit for every surface without synthetic zero counts (0.126334ms)
+✔ missing runtime context refuses before any provider process and records missing capabilities (0.710916ms)
+✔ private runtime supplier errors are sanitized and do not expose credentials (0.214875ms)
+✔ unknown invocation/callback counts are retainable only in deliberate read-only recovery (0.544375ms)
+✔ private Python protocol checkpoints actual parent liveness and returns only sanitized frames (89.517166ms)
+✔ provider worker refusal or lost parent checkpoint cannot pass through private stderr/error payloads (113.866875ms)
+(node:96851) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ pure inventory requires complete exact-source coverage, all external surface classes and exact protected targets (101.386334ms)
+✔ bootstrap preparation binds the selected SQL, owner/OIDs, target and source without copying secrets (51.671458ms)
+✔ bootstrap installs only the independent ledger in one transaction with both controls closed (6.122917ms)
+✔ bootstrap intent/target/role refusal happens before installation and never resumes an existing schema (31.7895ms)
+✔ lost bootstrap commit acknowledgement preserves the installed schema without retry or reopening (4.9355ms)
+✔ external fence checks require retained exact bytes for every surface and fresh action/target/nonce (4.638125ms)
+✔ native flock serializes with other contenders, stays held through asynchronous continuation and refuses inode replacement (170.155833ms)
+✔ private receipt store preserves original exact evidence, rejects reuse/symlinks and cannot write inside checkout (17.249333ms)
+✔ an unbound fixed adapter hash refuses rather than converting component receipts into SQL authority (0.292458ms)
+✔ restoration selects exact ordered frontend controls while native and retired ingress remain closed (0.921458ms)
+✔ shipping qualification accepts only explicit owned loopback bindings (3.718667ms)
+✔ standalone shipping harness refuses before application or database imports without ownership (457.323417ms)
+✔ standalone shipping cluster launcher refuses before any cluster or target activity without ownership (202.892709ms)
+(node:96855) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ the actual owned source-copy branch produces an executable migration CLI with its complete contract verifier closure (1480.409833ms)
+(node:96857) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ actual DB rows bind original idempotency without replay, preserve missing IDs and use readonly transaction (0.960583ms)
+✔ changed financial rows or foreign provider refuse and rollback without returning an effect certificate (0.514333ms)
+✔ worker qualification accepts only explicit owned loopback bindings (8.907334ms)
+✔ invoking worker qualification without owned authorization refuses before app or database work (506.967458ms)
+✔ inventory includes GET callbacks, re-exports, server actions, deferred work, scripts and native definitions (10.222917ms)
+✔ render generators, client pages and scripts without database constructors remain review surfaces (3.40675ms)
+✔ source changes change the inventory identity, including implementation-only changes (10.419167ms)
+✔ NextAuth-style destructured HTTP methods are included (7.55075ms)
+✔ default server actions retain their public export name for every declaration form (11.062125ms)
+✔ ambiguous export-star, invalid syntax and symlinks refuse instead of returning a complete-looking inventory (18.112084ms)
+✔ staging detaches before removing compute and preserves the allocation through recreation (0.821333ms)
+✔ production rejects detachment and compute removal (0.07825ms)
+✔ change-set inspection accepts only the ordered three staging transitions (3.523541ms)
+✔ provider template serialization cannot change the reviewed template semantics (0.893084ms)
+✔ first adoption permits one host metadata update and refuses duplicate or property updates (2.102584ms)
+✔ change-set inspection refuses replacement, address deletion and unrelated or ambiguous changes (5.416958ms)
+✔ provider state binds the exact stack, preserved allocation, selected host and closed IPv6 ports (3.122375ms)
+✔ other stack identity, replaced allocation, open IPv6, unreviewed resources or partial pages refuse (4.468792ms)
+✔ service validation must be complete, successful and tied to the exact operation (0.433458ms)
+✔ each reviewed transition executes once, checks postconditions and records before mutation (3.299625ms)
+✔ an uncertain execution is never retried or followed by another provider mutation (1.407083ms)
+✔ replacement or incomplete retirement prevents execution (0.663166ms)
+✔ local image aliases resolve the runnable index ID without inspecting platform manifests (0.571625ms)
+✔ registry references select the exact published digest, independent of mutable aliases (0.645875ms)
+✔ missing, ambiguous and malformed cached identities refuse (0.285584ms)
+✔ runtime fixed statements bind the proven image and exact custom package only (2.184292ms)
+✔ runtime verification refuses changed library (0.614667ms)
+✔ runtime verification refuses changed test executable (0.161208ms)
+✔ runtime verification refuses missing backport (0.629125ms)
+✔ runtime verification refuses changed source (0.609708ms)
+✔ runtime verification refuses stale reference build (0.304417ms)
+✔ runtime verification refuses unrelated image (0.453209ms)
+✔ runtime verification refuses unrelated digest (4.461666ms)
+✔ runtime verification refuses unrelated SBOM (1.378416ms)
+✔ runtime verification refuses unrelated package (0.587709ms)
+✔ runtime verification refuses original package (0.414875ms)
+✔ runtime verification refuses missing negative control (0.263ms)
+✔ runtime verification refuses failed regression (0.129583ms)
+✔ runtime verification refuses unsupported CVE (0.097833ms)
+✔ runtime verification refuses root runtime (0.11275ms)
+✔ build inputs and patches remain bound to the reviewed lock (0.812041ms)
+✔ an unresolved HIGH finding still fails the verified-runtime scan (3.555875ms)
+✔ candidate qualification accepts only the exact verified fixed package (0.768667ms)
+✔ candidate qualification refuses unrelated raw HIGH finding (0.521958ms)
+✔ candidate qualification refuses unresolved filtered finding (0.256833ms)
+✔ candidate qualification refuses unproven filtered package (0.509875ms)
+✔ candidate qualification refuses not affected assertion (0.146625ms)
+✔ candidate qualification refuses missing successful qualification (0.103584ms)
+✔ candidate qualification refuses changed VEX (0.225125ms)
+✔ candidate qualification refuses different published digest (0.103125ms)
+✔ P2 source guard binds the released manifest, every API revision and exact contract bytes (981.120083ms)
+✔ P2 source guard refuses wrong course revision in an otherwise clean checkout (726.782167ms)
+✔ P2 source guard refuses wrong community revision in an otherwise clean checkout (666.378709ms)
+✔ P2 source guard refuses wrong enrollmentEvent revision in an otherwise clean checkout (451.141625ms)
+✔ P2 source guard refuses changed API bytes even when both checkout and manifest pins were advanced (394.205917ms)
+✔ P2 manifest integrity refuses changed course-api.json (230.505125ms)
+✔ P2 manifest integrity refuses changed community-api.json (241.016542ms)
+✔ P2 manifest integrity refuses changed enrollment-event.schema.json (242.58425ms)
+✔ P2 manifest integrity refuses changed boundary-contracts.json (244.016ms)
+✔ P2 manifest integrity refuses changed README.md (251.52875ms)
+✔ new P2 source publication refuses candidate status and wrong or missing source-proof hash (1277.014375ms)
+✔ P2 harness removes retired aliases and keeps three authentication profiles separate (0.94125ms)
+✔ disabled P2 workers receive only their named database and exact false flags (0.334167ms)
+﹣ current Course process parsers accept the actual P2 API and minimal worker fixture inputs (0.05225ms) # SKIP
+✔ lightsail-host: Lightsail-prefixed user data runs under POSIX sh and emits valid SSH lines (34.558083ms)
+✔ lightsail-access-recovery: Lightsail-prefixed user data runs under POSIX sh and emits valid SSH lines (24.4305ms)
+✔ monitoring is deferred outside the default runtime and release gate (4.1815ms)
+✔ topology publishes only gateway HTTPS; runtime and migration security boundaries cannot regress (0.534292ms)
+✔ private policies isolate workload, publisher, authority and operational peers (0.209333ms)
+✔ unfilled release candidate refuses and structural validation does not infer approvals (0.156167ms)
+✔ release completeness needs no billing access, forecast or verified spending controls (0.566084ms)
+✔ host watchdog uses the stock Python runtime and a bounded hardened systemd unit (0.175542ms)
+✔ candidate publication uses sole-operator dispatch, a scoped read token and never deploys (12.21475ms)
+(node:97023) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ bundle preparation derives image/source/SQL bindings and excludes unknown credential fields (3.822583ms)
+✔ wrong schema service/version, mutable images and a URL in the hostname refuse (0.69125ms)
+✔ production preparation requires staging receipts later and binds exact artifact identities (0.418833ms)
+✔ real preparation CLI creates a private bundle accepted by the read-only host plan and never overwrites (481.362958ms)
+✔ real bundle CLI includes optional frontend bindings and refuses a substituted CI schema (313.045167ms)
+✔ pending trust or an absent action confirmation refuses before private input or provider access (2.069041ms)
+✔ settings accept no production target, credentials or arbitrary trust mode (4.182875ms)
+✔ actual CLI invalid invocation prints only the fixed refusal and does not reveal ambient bindings (86.235083ms)
+✔ plan and absent confirmation cannot run AWS, SSH or private receipt export (6.488375ms)
+✔ complete ordered orchestration retains private work before real change-set gates and ends pending provider evidence (567.29025ms)
+✔ missing retained work or non-graceful stop prevents every AWS mutation (328.832625ms)
+✔ uncertain AWS acknowledgement is preserved without retry or another lifecycle transition (137.625833ms)
+✔ failed new-host restoration preserves off-host recovery inputs and does not enable maintenance or repeat compute changes (308.600291ms)
+✔ actual terminal failure receipts are retained by observation without executing the failed phase again (293.215375ms)
+✔ old container identities cannot qualify a newly created machine (336.525ms)
+✔ compiled operator programs bind owned modules and reject production before runtime imports or HTTP (127.4995ms)
+✔ foreign compiler inputs cannot be treated as reviewed program sources (0.60525ms)
+✔ private receipt decoding verifies raw hashes and rejects duplicates, traversal and invalid base64 (4.799916ms)
+✔ new-machine private handoff replaces the action copy without mutating original receipts (0.152125ms)
+✔ supplemental source proof binds current canonical PR head, every required job and exact workflow bytes (7.132084ms)
+✔ forked source, wrong actor, failed or skipped jobs and missing workflow refuse (3.424375ms)
+✔ newer failed attempts and moved source heads cannot hide behind prior green CI (1.145333ms)
+✔ real CI workflow pins every checkout to exact PR source and never persists its token (31.252208ms)
+✔ SSH retains strict separate known-hosts and quotes every remote argument (0.529667ms)
+✔ private phase payload reaches only SSH stdin, without ambient tokens or agent (33.147416ms)
+✔ uncertain child response retains private diagnostics once and never retries (18.825125ms)
+✔ a missing or permissive trust file refuses before SSH starts (14.895833ms)
+✖ source CLI records manual approval once, needs no signing setup and fails without exposing credentials (86.133875ms)
+✔ manual dispatch accepts unprotected repositories, records actual protection and verifies exact CI (30.645458ms)
+✔ new source proofs require the P2 hash and every API contract revision before provider access (0.497541ms)
+✔ non-operator, fork, PR and substituted frontend refuse before provider access (0.2ms)
+✔ coordinator must be public, current and dispatched by the sole operator (0.487541ms)
+✔ branch protection is optional and operator reruns recheck current CI (4.1115ms)
+✔ latest CI failure, skipped jobs, missing scans and forged repository/workflow refuse (3.471666ms)
+✔ source API failures are sanitized and newer failures cannot hide behind old success (0.608166ms)
+✔ frontend staging coordinates private API main heads without extra API branches (0.692417ms)
+(node:97233) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ pinned clean source permits installed dependencies and generated Python cache (194.494667ms)
+✔ tracked changes refuse whether staged or unstaged (220.398417ms)
+✔ untracked files and ignored injected source/configuration refuse (358.241208ms)
+✔ wrong revisions and parent repositories cannot substitute for a checkout (107.783958ms)
+✔ three-repository verification requires every canonical source and successful check pin (645.90775ms)
+✔ final CLI requires source/dispatch evidence, qualifies exact fixture images and refuses later dirty source (955.872375ms)
+✔ AWS-bound fresh key yields a separate explicit known_hosts line (5.525958ms)
+✔ empty provider metadata or temporary credentials never establish first-use trust (1.444708ms)
+✔ old instance, old witness, changed allocation or fingerprint refuse (3.412292ms)
+✔ explicit operator first-use acceptance binds the new action, instance, address and exact key without claiming AWS key authentication (0.258917ms)
+✔ pre-creation acceptance, a different action or a changed key cannot establish first-use trust (0.332458ms)
+✔ staging fixture uses three existing authenticated APIs and retains only synthetic identifiers (3.492792ms)
+✔ production, alternate input fields and non-synthetic identities refuse before HTTP (0.495583ms)
+✔ application token must be short-lived, bound to the synthetic actor and contain no personal claims (0.28325ms)
+✔ unverified creation stops before grants and never retries (0.105292ms)
+✔ a grant refusal or replay preserves prior progress without claiming completion (0.232541ms)
+✔ private TLS caller refuses caller-selected routes or destinations (0.200041ms)
+✔ P2 fixture uses the closed v1 administrator profile for both independent capabilities (0.18025ms)
+✔ P2 fixture rejects profile confusion, absent capabilities, aliases and added claims before HTTP (0.425125ms)
+✔ retained work uses audited reads and the actual repository claim/retry interfaces (7.416083ms)
+✔ unrelated pending work, wrong stream/course, existing lease or previous retry refuses before writes (1.448167ms)
+✔ wrong audited identity and changed claim set cannot produce retained-work proof (1.933584ms)
+✔ failed retry, elapsed eligibility window or an early competing claim prevents success (0.328041ms)
+✔ recovery requires exact actual source/receiver identities, digests and eligibility floors (0.411417ms)
+✔ image adapter derives only exact staging runtime identity and explicit authenticated TLS (2.400333ms)
+✔ only repository retention mode permits a writable session (0.426334ms)
+✔ production selectors, ambient PG configuration and disabled TLS refuse before imports or connections (0.30475ms)
+✔ migration or owner identity, other host or parameters cannot replace runtime binding (0.25975ms)
+✔ a socket-shaped object cannot stand in for an authenticated Node TLS connection (0.08225ms)
+✔ ordinary builds preserve business schedules and require explicit releases from main and staging (0.853583ms)
+✔ qualification selects only the bounded staging smoke job and never serializes credentials (0.216958ms)
+✔ wrong target, source, expiry or malformed mode stops qualification configuration (0.940833ms)
+✔ Phase 2 certification schedules only lifecycle recovery on the reviewed staging source (0.139916ms)
+ℹ tests 338
+ℹ suites 0
+ℹ pass 318
+ℹ fail 15
+ℹ cancelled 0
+ℹ skipped 5
+ℹ todo 0
+ℹ duration_ms 6694.490542
+
+✖ failing tests:
+
+test at ops/gateway/server.test.mjs:58:1
+✖ private TLS upstream receives only selected headers, original query and application authorization (12.960833ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:75:1
+✖ same lifecycle paths route to their explicit service and never expose private enrollment routes (4.144291ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:96:1
+✖ missing optional Community upstream fails closed without forwarding to Course (0.828334ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:103:1
+✖ host fence changes immediately for historical callers while recovery remains independent (0.831917ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:140:1
+✖ fencing accounts for admitted delayed work before reporting drained (0.713792ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:162:1
+✖ an upstream disconnect preserves mutation uncertainty even after transport drain (0.580916ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:175:1
+✖ missing workload, OIDC-only protected requests, wrong host and duplicate credentials never reach upstream (0.420375ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:189:1
+✖ maintenance holds application writes while read probes and signed callback forwarding remain available (0.49975ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:199:1
+✖ exact Mux exception preserves raw bytes/signature; other webhook methods are denied (0.417458ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:214:1
+✖ upstream 429 envelope and Retry-After survive; internal locations and cookies cannot escape (2.564ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:231:1
+✖ workload admission does not consume independent webhook/service budgets (0.603416ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:242:1
+✖ untrusted private TLS certificate is refused without exposing connection details (0.649958ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:250:1
+✖ private TLS terminator checks actual peer and route, replacing spoofed forwarding metadata (0.899458ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:275:1
+✖ private TLS permits exact P2 quiz PUT and caption DELETE routes while denying other methods and peers (0.317875ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/platform/release-inputs-cli.test.mjs:12:1
+✖ source CLI records manual approval once, needs no signing setup and fails without exposing credentials (86.133875ms)
+  AssertionError [ERR_ASSERTION]: Source verification refused
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/ops/platform/release-inputs-cli.test.mjs:37:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.start (node:internal/test_runner/test:1191:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:385:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

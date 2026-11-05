@@ -1,0 +1,233 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-05T23:23:11.064Z",
+  "scope": "owned-source-regression-only",
+  "status": "PASS_WITH_RECORDED_SKIPS",
+  "sourceCommit": "9caf16b1a4676cd1e352d57985828d6e9b727c4f",
+  "sourceTree": "3a07f5b3134cce9641a0ab2e6a4e7640a1aad4c1",
+  "nodeVersion": "v24.18.0",
+  "pythonVersion": "Python 3.14.3",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "gatewayDependency": {
+    "version": "6.2.3",
+    "lockSha256": "def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0",
+    "restore": "offline npm ci --ignore-scripts --no-audit --no-fund --prefix ops/gateway"
+  },
+  "commands": {
+    "gatewayPlatform": "/usr/bin/env PATH=\"/Users/dardan/.nvm/versions/node/v24.18.0/bin:$PATH\" /Users/dardan/.nvm/versions/node/v24.18.0/bin/node --test ops/gateway/*.test.mjs ops/platform/*.test.mjs",
+    "hostPython": "/usr/bin/env PATH=\"/Users/dardan/.nvm/versions/node/v24.18.0/bin:$PATH\" python3 -m unittest discover -v -s ops/platform/host -p '*_test.py'"
+  },
+  "finalNode": {
+    "exitCode": 0,
+    "tests": 338,
+    "passed": 333,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 5,
+    "durationMs": 5986.180375,
+    "log": "gateway-platform-owned-pass.log",
+    "sourceCommit": "9caf16b1a4676cd1e352d57985828d6e9b727c4f",
+    "skips": [
+      {
+        "test": "course-media: compiled minimal parser rejects malformed enablement and requires no API credentials",
+        "reason": "COURSE_WORKER_RUNTIME_DIR was not configured; no reviewed built Course runtime was selected",
+        "sources": [
+          "ops/platform/course-workers-runtime.test.mjs",
+          "ops/platform/phase2-harness-profile.test.mjs"
+        ]
+      },
+      {
+        "test": "course-media: actual disabled process exposes liveness, denies readiness without DB and exits on SIGTERM",
+        "reason": "COURSE_WORKER_RUNTIME_DIR was not configured; no reviewed built Course runtime was selected",
+        "sources": [
+          "ops/platform/course-workers-runtime.test.mjs",
+          "ops/platform/phase2-harness-profile.test.mjs"
+        ]
+      },
+      {
+        "test": "course-export-cleanup: compiled minimal parser rejects malformed enablement and requires no API credentials",
+        "reason": "COURSE_WORKER_RUNTIME_DIR was not configured; no reviewed built Course runtime was selected",
+        "sources": [
+          "ops/platform/course-workers-runtime.test.mjs",
+          "ops/platform/phase2-harness-profile.test.mjs"
+        ]
+      },
+      {
+        "test": "course-export-cleanup: actual disabled process exposes liveness, denies readiness without DB and exits on SIGTERM",
+        "reason": "COURSE_WORKER_RUNTIME_DIR was not configured; no reviewed built Course runtime was selected",
+        "sources": [
+          "ops/platform/course-workers-runtime.test.mjs",
+          "ops/platform/phase2-harness-profile.test.mjs"
+        ]
+      },
+      {
+        "test": "current Course process parsers accept the actual P2 API and minimal worker fixture inputs",
+        "reason": "COURSE_WORKER_RUNTIME_DIR was not configured; no reviewed built Course runtime was selected",
+        "sources": [
+          "ops/platform/course-workers-runtime.test.mjs",
+          "ops/platform/phase2-harness-profile.test.mjs"
+        ]
+      }
+    ]
+  },
+  "finalHostPython": {
+    "exitCode": 0,
+    "tests": 378,
+    "passed": 377,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 1,
+    "durationSeconds": 110.076,
+    "log": "host-python-owned-pass.log",
+    "sourceCommit": "8a64aafcbbcddd63ec36fa44445454a8d4c10173",
+    "sourceTree": "1d8e08a4d0f0520f9b81217dc337ae18d53af5d9",
+    "equivalentRootRevision": "1f0ad835d1f36da40b671145a6d95fe3aa661f8b",
+    "hostFilesUnchangedThrough": "9caf16b1a4676cd1e352d57985828d6e9b727c4f",
+    "inventory": "host-source-inventory.json",
+    "skips": [
+      {
+        "test": "frontend_crm_shipping_retirement_test.DatabaseRetirementTests.test_fixed_sql_runs_against_migrated_schema_and_actual_terminal_receipt_joins",
+        "reason": "explicit owned disposable PostgreSQL fixture only",
+        "condition": "FRONTEND_CRM_SHIPPING_POSTGRES_TEST was not true"
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "log": "gateway-platform-sandbox-failure.log",
+      "exitCode": 1,
+      "tests": 338,
+      "passed": 318,
+      "failed": 15,
+      "skipped": 5,
+      "causes": {
+        "sandboxListenEPERM": 14,
+        "staleSourceCliFixture": 1
+      },
+      "joseVersion": "6.2.15",
+      "sourceCommit": "8a64aafcbbcddd63ec36fa44445454a8d4c10173"
+    },
+    {
+      "log": "host-python-sandbox-failure.log",
+      "exitCode": 1,
+      "tests": 378,
+      "errors": 174,
+      "skipped": 1,
+      "cause": "Sandbox PermissionError binding localhost fixtures",
+      "sourceCommit": "8a64aafcbbcddd63ec36fa44445454a8d4c10173"
+    },
+    {
+      "log": "gateway-platform-owned-before-cli-fix.log",
+      "exitCode": 1,
+      "tests": 338,
+      "passed": 332,
+      "failed": 1,
+      "skipped": 5,
+      "cause": "Stale source-CLI fixture expected synthetic equal pins and source proof v3",
+      "joseVersion": "6.2.3",
+      "sourceCommit": "8a64aafcbbcddd63ec36fa44445454a8d4c10173"
+    },
+    {
+      "log": "source-cli-fixture-path-failure.log",
+      "exitCode": 1,
+      "tests": 45,
+      "passed": 44,
+      "failed": 1,
+      "cause": "Initial owned fixture used /var alias; actual CLI entry guard did not execute, no proof file was produced; test-only setup now uses realpath"
+    }
+  ],
+  "fixtureCorrection": {
+    "commit": "9caf16b1a4676cd1e352d57985828d6e9b727c4f",
+    "files": [
+      "ops/platform/phase2-contract-bindings.fixture.mjs",
+      "ops/platform/phase2-contract-bindings.test.mjs",
+      "ops/platform/release-inputs-cli.test.mjs",
+      "ops/platform/release-inputs.fixture.mjs"
+    ],
+    "productionGuardChanges": [],
+    "guardHashes": {
+      "ops/platform/release-inputs.mjs": "2ec998338ddebc3d698e8e18e21d7e9241377d67749e5f27d6041d827e6785e2",
+      "ops/platform/source-policy.mjs": "996f5e0a03c2812f33ed00d102a74a056bd8ee73d66016b319d3dd73b1c498c1",
+      "ops/platform/source-checkout.mjs": "a2ba91a49a36c1bbc53614b03c8b90bf1d649609ac9543b0429909a5e725be63",
+      "ops/platform/release.mjs": "294fab0395a41fbe7f835f73df20268084d7720d72c2d5cb82512d8b5368d5e2",
+      "scripts/api-contract-tools.mjs": "c4cb8a34dbdf2357003012b1b7c94c22fe9245d2894757d057946f40ecdc4104",
+      "scripts/api-contract-compatibility-review.mjs": "1207a1075692bb641e40cc30702e6c002ea52aaeb6ac265d9986337dbc6dcfc3",
+      "scripts/check-api-contracts.mjs": "07fb6e01a4dd985789675be6c3d046a9347903ea0535a47acf9a8ff01811e0da"
+    },
+    "targeted": {
+      "exitCode": 0,
+      "tests": 45,
+      "passed": 45,
+      "failed": 0,
+      "skipped": 0,
+      "log": "source-cli-targeted-pass.log"
+    },
+    "lint": {
+      "exitCode": 0,
+      "files": [
+        "ops/platform/release-inputs-cli.test.mjs",
+        "ops/platform/release-inputs.fixture.mjs",
+        "ops/platform/phase2-contract-bindings.test.mjs",
+        "ops/platform/phase2-contract-bindings.fixture.mjs"
+      ]
+    }
+  },
+  "limits": [
+    "Five opt-in compiled Course runtime checks were not selected",
+    "One explicit owned PostgreSQL retirement check was not selected",
+    "Docker image builds and Linux host/network qualification were not run",
+    "PostgreSQL 18 and exact remote CI/image qualification remain separate",
+    "No staging or production changes or deployment approval"
+  ],
+  "files": {
+    "gateway-platform-sandbox-failure.log": {
+      "sha256": "0bb7ba45065356f03928e7c3ff5bca322cec63e8972b296669a03864a0fc2b4f",
+      "bytes": 48331
+    },
+    "host-python-sandbox-failure.log": {
+      "sha256": "6364527db53073ca0ea18aef3f62b9d7daf376e09e2845a9696e085fa622b9b3",
+      "bytes": 320748
+    },
+    "gateway-platform-owned-before-cli-fix.log": {
+      "sha256": "e9957193bb1137bcefc936479413d93a746c293704b6dee5209035b5e3f5c9a7",
+      "bytes": 40399
+    },
+    "host-python-owned-pass.log": {
+      "sha256": "e6cdc4e33cb764692d8dda0ef6d62d12e1926178ab32a3d30e62294336a39386",
+      "bytes": 73121
+    },
+    "source-cli-fixture-path-failure.log": {
+      "sha256": "0a2a76a82e7fdd0575751854fc5650543f560648ffd7896bc792d1f580310cde",
+      "bytes": 6321
+    },
+    "source-cli-targeted-pass.log": {
+      "sha256": "860d5184cc51344da70cd4bf3ede0ee4d96cec70ebfd38337643594a21630759",
+      "bytes": 5058
+    },
+    "gateway-platform-owned-pass.log": {
+      "sha256": "e9ab4cf615e1bd56806ccf3dfe233b885b3d837607b4d8c85cc08535b1d3bcc1",
+      "bytes": 39556
+    },
+    "gateway-locked-dependencies.log": {
+      "sha256": "c0ce4874ce5cf70e489a9f776a780024ebfddd80d4c72821499b39536a064bb1",
+      "bytes": 26
+    },
+    "host-source-inventory.json": {
+      "sha256": "852eb92bfcc63538c76af22937f98f264a0548536b99a1bc02e048d04008c109",
+      "bytes": 8869
+    },
+    "README.md": {
+      "sha256": "d425ed0206c776177d2ab5e8898fa5ad951a2f78bc320ffb2eaeda3e037d470c",
+      "bytes": 3160
+    }
+  },
+  "rawLogFormatting": {
+    "preservedByteForByte": true,
+    "trailingWhitespaceLines": {
+      "gateway-platform-sandbox-failure.log": 3,
+      "gateway-platform-owned-before-cli-fix.log": 3
+    },
+    "reason": "Original assertion formatter output retained as failure evidence"
+  }
+}
