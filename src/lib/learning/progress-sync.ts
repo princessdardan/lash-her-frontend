@@ -150,6 +150,12 @@ export function createProgressSync(dependencies: {
       await flush(keepalive);
     },
     flush,
+    async prepareRefresh() {
+      await flush(true);
+      // A CAS conflict already discarded local stale writes and requires the
+      // explicit authoritative reload. Unknown outcomes still need recovery.
+      return blocked !== "error" && pending === null && !pendingRead;
+    },
     async retry() {
       if (blocked !== "error") return;
       blocked = null;

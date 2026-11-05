@@ -34,40 +34,44 @@ if (process.env.LEARNING_E2E_FIXTURE === "1") {
     if (createHmac("sha256", process.env.COURSE_LEARNER_JWT_CURRENT_SECRET).update(`${header}.${payload}`).digest("base64url") !== signature) return deny("UNAUTHORIZED", 401);
     const claims = JSON.parse(Buffer.from(payload, "base64url").toString());
     if (claims.aud !== "lash-her-course-api:learner" || claims.exp < Date.now() / 1000 || "email" in claims) return deny("UNAUTHORIZED", 401);
-    if (!users.has(claims.sub)) users.set(claims.sub, { grant: null, keys: new Map(), progress: null, attempts: [] });
+    if (!users.has(claims.sub)) users.set(claims.sub, { grant: null, keys: new Map(), progress: null, attempts: [], quizRevision: 1, quizMode: "graded" });
     const state = users.get(claims.sub), body = init?.body ? JSON.parse(init.body) : {};
+    const derivedProgress = () => state.progress && state.progress.completedQuizRevision !== null && state.progress.completedQuizRevision !== state.quizRevision ? { ...state.progress, completedAt: null } : state.progress;
+    const currentQuiz = () => ({ ...quiz, id: state.quizRevision === 1 ? quiz.id : "a6666666-6666-4666-8666-666666666666", revision: state.quizRevision, document: { ...quiz.document, mode: state.quizMode, questions: state.quizRevision === 1 ? questions : questions.map((question, index) => index === 0 ? { ...question, prompt: "Revised assessment: which approach protects the natural lash?" } : question) } });
     if (path === `/v1/student/courses/${courseId}/enrollments` && method === "POST") {
       if (headers.get("x-idempotency-key") !== body.idempotencyKey) return deny("INVALID_REQUEST", 400);
+      if (body.idempotencyKey === "b7777777-7777-4777-8777-777777777777") state.quizMode = "practice";
       const replay = state.keys.has(body.idempotencyKey); state.grant ??= randomUUID();
       const result = { grantId: state.grant, enrollmentId: null, courseId, source: "free", status: "active", idempotentReplay: replay };
       state.keys.set(body.idempotencyKey, result); return json(result, replay ? 200 : 201);
     }
-    if (path === "/v1/student/courses") return json({ courses: state.grant ? [{ id: courseId, slug: course.slug, title: course.title, description: course.description, status: "published", progress: { totalLessons: 1, completedLessons: state.progress?.completedAt ? 1 : 0, percentComplete: state.progress?.completedAt ? 100 : 0, lastActivityAt: state.progress?.lastWatchedAt ?? null, continueLessonId: lessonId, continuePositionSeconds: state.progress?.resumePositionSeconds ?? 0 } }] : [] });
+    if (path === "/v1/student/courses") return json({ courses: state.grant ? [{ id: courseId, slug: course.slug, title: course.title, description: course.description, status: "published", progress: { totalLessons: 2, completedLessons: derivedProgress()?.completedAt ? 1 : 0, percentComplete: derivedProgress()?.completedAt ? 50 : 0, lastActivityAt: state.progress?.lastWatchedAt ?? null, continueLessonId: lessonId, continuePositionSeconds: state.progress?.resumePositionSeconds ?? 0 } }] : [] });
     if (path === `/v1/student/lessons/${previewId}`) return json({ lesson: preview });
     if (path === `/v1/student/lessons/${previewId}/playback`) return deny("VIDEO_UNAVAILABLE", 404);
     if (!state.grant) return deny("ACTIVE_ENROLLMENT_REQUIRED", 403);
     if (path === `/v1/student/courses/${courseId}` || path === `/v1/student/courses/${courseId}/lessons`) return json({ course: fullCourse });
     if (path === `/v1/student/lessons/${lessonId}`) return json({ lesson });
-    if (path === "/v1/student/progress") return json({ progress: state.progress ? [state.progress] : [] });
+    if (path === "/v1/student/progress") return json({ progress: state.progress ? [derivedProgress()] : [] });
     if (path.endsWith("/progress") && method === "POST") {
       if (body.expectedProgressRevision !== (state.progress?.revision ?? 0)) return deny("PROGRESS_REVISION_CONFLICT", 409);
       if (body.event === "lesson_completed") return deny("QUIZ_COMPLETION_REQUIRED", 409);
       const now = new Date().toISOString();
-      state.progress = { id: state.progress?.id ?? randomUUID(), userId: claims.sub, lessonId, enrollmentId: null, revision: (state.progress?.revision ?? 0) + 1, resumePositionSeconds: body.resumePositionSeconds ?? state.progress?.resumePositionSeconds ?? 0, maxPositionSeconds: Math.max(body.maxPositionSeconds ?? 0, state.progress?.maxPositionSeconds ?? 0), completedQuizRevision: state.progress?.completedQuizRevision ?? null, completedAt: state.progress?.completedAt ?? null, createdAt: state.progress?.createdAt ?? now, updatedAt: now, lastWatchedAt: now }; return json({ progress: state.progress });
+      state.progress = { id: state.progress?.id ?? randomUUID(), userId: claims.sub, lessonId, enrollmentId: null, revision: (state.progress?.revision ?? 0) + 1, resumePositionSeconds: body.resumePositionSeconds ?? state.progress?.resumePositionSeconds ?? 0, maxPositionSeconds: Math.max(body.maxPositionSeconds ?? 0, state.progress?.maxPositionSeconds ?? 0), completedQuizRevision: state.progress?.completedQuizRevision ?? null, completedAt: state.progress?.completedAt ?? null, createdAt: state.progress?.createdAt ?? now, updatedAt: now, lastWatchedAt: now }; return json({ progress: derivedProgress() });
     }
     if (path.endsWith("/playback")) {
       const makeToken = aud => `${Buffer.from('{"alg":"RS256"}').toString("base64url")}.${Buffer.from(JSON.stringify({ sub: "learningSignedPlayback", aud, exp: Math.floor(Date.now() / 1000) + 600 })).toString("base64url")}.fixture`;
       const expiresAt = new Date(Date.now() + 600_000).toISOString(); return json({ playbackId: "learningSignedPlayback", playbackToken: makeToken("v"), thumbnailToken: makeToken("t"), expiresAt, thumbnailExpiresAt: expiresAt });
     }
-    if (path.endsWith("/quiz")) return json({ quiz });
+    if (path.endsWith("/quiz")) return json({ quiz: currentQuiz() });
     if (path.endsWith("/quiz/attempts") && method === "GET") return json({ attempts: state.attempts });
     if (path.endsWith("/quiz/attempts") && method === "POST") {
-      if (body.quizRevision !== 1) return deny("QUIZ_REVISION_CONFLICT", 409);
+      if (body.requestId === "b8888888-8888-4888-8888-888888888888" && state.quizRevision === 1) state.quizRevision = 2;
+      if (body.quizRevision !== state.quizRevision) return deny("QUIZ_REVISION_CONFLICT", 409);
       const previous = state.attempts.find(attempt => attempt.id === body.requestId); if (previous) return json({ attempt: previous });
       const results = questions.map((question, index) => { const selectedOptionId = body.answers.find(answer => answer.questionId === question.id)?.optionId; const correctOptionId = index === 0 ? "gentle" : "anytime"; return { questionId: question.id, selectedOptionId, correctOptionId, correct: selectedOptionId === correctOptionId, feedback: "Careful, consistent practice supports healthy lashes." }; });
       const correctCount = results.filter(result => result.correct).length, passed = correctCount === 2;
-      const attempt = { id: body.requestId, lessonId, quizRevisionId: quiz.id, quizRevision: 1, mode: "graded", passingPercent: 80, answers: body.answers, correctCount, totalCount: 2, passed, completed: passed, results, createdAt: new Date().toISOString() }; state.attempts.unshift(attempt);
-      if (passed && state.progress) state.progress = { ...state.progress, revision: state.progress.revision + 1, completedAt: attempt.createdAt, completedQuizRevision: 1 };
+      const attempt = { id: body.requestId, lessonId, quizRevisionId: currentQuiz().id, quizRevision: state.quizRevision, mode: state.quizMode, passingPercent: 80, answers: body.answers, correctCount, totalCount: 2, passed, completed: state.quizMode === "practice" || passed, results, createdAt: new Date().toISOString() }; state.attempts.unshift(attempt);
+      if (attempt.completed && state.progress) state.progress = { ...state.progress, revision: state.progress.revision + 1, completedAt: attempt.createdAt, completedQuizRevision: state.quizRevision };
       return json({ attempt });
     }
     return deny("NOT_FOUND", 404);

@@ -1,6 +1,13 @@
 "use client";
 
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
 import type { MuxPlayerRefAttributes } from "@mux/mux-player-react";
 import type {
   LearnerLesson,
@@ -22,10 +29,12 @@ export function AuthorizedVideo({
   lesson,
   resume,
   onPosition,
+  flushPositionRef,
 }: {
   lesson: LearnerLesson;
   resume: number;
   onPosition: (resume: number, watched?: number, keepalive?: boolean) => void;
+  flushPositionRef?: MutableRefObject<(() => void) | null>;
 }) {
   const [authorization, setAuthorization] =
     useState<PlaybackAuthorization | null>(null);
@@ -36,6 +45,7 @@ export function AuthorizedVideo({
   const lastSent = useRef(resume);
   const watched = useRef(0);
   const seeking = useRef(false);
+  const observed = useRef(false);
   const onPositionRef = useRef(onPosition);
   useEffect(() => {
     onPositionRef.current = onPosition;
@@ -154,13 +164,20 @@ export function AuthorizedVideo({
   useEffect(() => {
     const save = () => {
       const media = player.current;
-      if (media?.readyState)
+      if (media?.readyState) {
+        position.current = Math.floor(media.currentTime);
+        observed.current = true;
+      }
+      // React detaches host refs before passive unmount cleanup. Preserve the
+      // last observed position so SPA navigation can still flush it.
+      if (observed.current)
         onPositionRef.current(
-          Math.floor(media.currentTime),
+          position.current,
           Math.floor(watched.current),
           true,
         );
     };
+    if (flushPositionRef) flushPositionRef.current = save;
     const visibility = () => {
       if (document.visibilityState === "hidden") save();
     };
@@ -168,10 +185,11 @@ export function AuthorizedVideo({
     document.addEventListener("visibilitychange", visibility);
     return () => {
       save();
+      if (flushPositionRef?.current === save) flushPositionRef.current = null;
       window.removeEventListener("pagehide", save);
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, []);
+  }, [flushPositionRef]);
 
   const unavailable =
     failure instanceof LearningRequestError &&
@@ -231,6 +249,7 @@ export function AuthorizedVideo({
             storyboardSrc=""
             onLoadedMetadata={() => {
               const media = player.current;
+              observed.current = true;
               if (
                 media &&
                 position.current > 0 &&

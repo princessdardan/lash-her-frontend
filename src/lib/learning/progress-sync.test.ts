@@ -273,3 +273,54 @@ test("an explicit keepalive flush upgrades a queued update without replaying an 
   await Promise.all([ordinary, queued, exit]);
   assert.deepEqual(keepaliveFlags, [false, true]);
 });
+
+test("explicit server refresh waits for pending resume writes and refuses to discard unknown outcomes", async () => {
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let fail = false;
+  const sync = createProgressSync({
+    initial: row,
+    latest: async () => row,
+    write: async (body) => {
+      await hold;
+      if (fail) throw new TypeError("offline");
+      return {
+        ...row,
+        revision: 2,
+        resumePositionSeconds: body.resumePositionSeconds!,
+      };
+    },
+  });
+  const pending = sync.queue({ resumePositionSeconds: 9 });
+  let prepared = false;
+  const refresh = sync.prepareRefresh().then((value) => {
+    prepared = value;
+  });
+  await Promise.resolve();
+  assert.equal(prepared, false);
+  release();
+  await Promise.all([pending, refresh]);
+  assert.equal(prepared, true);
+  fail = true;
+  await sync.queue({ resumePositionSeconds: 10 });
+  assert.equal(await sync.prepareRefresh(), false);
+  fail = false;
+  await sync.retry();
+  assert.equal(await sync.prepareRefresh(), true);
+});
+
+test("an explicit server refresh can adopt authoritative conflict state after stale local work was discarded", async () => {
+  const latest = { ...row, revision: 9, resumePositionSeconds: 42 };
+  const sync = createProgressSync({
+    initial: row,
+    latest: async () => latest,
+    write: async () => {
+      throw new LearningRequestError("conflict", 409);
+    },
+  });
+  await sync.queue({ resumePositionSeconds: 2 });
+  assert.equal(await sync.prepareRefresh(), true);
+  assert.equal(sync.snapshot(), latest);
+});

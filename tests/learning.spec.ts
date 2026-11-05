@@ -737,3 +737,144 @@ test("another account cannot reuse learning state and a suspended session cannot
     await second.close();
   }
 });
+
+test("practice completion is authoritative even with an incorrect score and supports retries", async ({
+  page,
+  context,
+}) => {
+  await login(context);
+  await page.route(`**/api/academy/courses/${courseId}/enrollments`, (route) =>
+    route.continue({
+      postData: JSON.stringify({
+        idempotencyKey: "b7777777-7777-4777-8777-777777777777",
+      }),
+    }),
+  );
+  await enroll(page);
+  await expect(
+    page.getByRole("heading", { name: "Put it into practice" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Mark lesson complete" }),
+  ).toHaveCount(0);
+  await page.getByRole("radio", { name: "Pull the extensions" }).check();
+  await page.getByRole("radio", { name: "Only once" }).check();
+  await page.getByRole("button", { name: "Submit answers" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Practice complete" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Lesson complete. Progress saved.", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await page.getByRole("radio", { name: "Use gentle care" }).check();
+  await page.getByRole("radio", { name: "At your own pace" }).check();
+  await page.getByRole("button", { name: "Submit answers" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Practice complete" }),
+  ).toBeVisible();
+  const attempts = (
+    await (
+      await page.request.get(`/api/academy/lessons/${lessonId}/quiz/attempts`)
+    ).json()
+  ).attempts;
+  expect(attempts).toHaveLength(2);
+  expect(attempts[0].mode).toBe("practice");
+  expect(attempts[1].passed).toBe(false);
+  expect(attempts[1].completed).toBe(true);
+});
+
+test("explicit revised assessment refresh settles pending resume and removes old completion", async ({
+  page,
+  context,
+}) => {
+  await login(context);
+  await enroll(page);
+  await page.getByRole("radio", { name: "Use gentle care" }).check();
+  await page.getByRole("radio", { name: "At your own pace" }).check();
+  await page.getByRole("button", { name: "Submit answers" }).click();
+  await expect(
+    page.getByText("Lesson complete. Progress saved.", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await page.getByRole("radio", { name: "Pull the extensions" }).check();
+  await page.getByRole("radio", { name: "Only once" }).check();
+  await page.route(
+    `**/api/academy/lessons/${lessonId}/quiz/attempts`,
+    (route) => {
+      const body = route.request().postDataJSON();
+      return route.continue({
+        postData: JSON.stringify({
+          ...body,
+          requestId: "b8888888-8888-4888-8888-888888888888",
+        }),
+      });
+    },
+    { times: 1 },
+  );
+  await page.getByRole("button", { name: "Submit answers" }).click();
+  await expect(
+    page.getByRole("button", { name: "Load the latest assessment" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("radio", { name: "Pull the extensions" }),
+  ).toBeChecked();
+  let release!: () => void,
+    active = false;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    `**/api/academy/lessons/${lessonId}/progress`,
+    async (route) => {
+      active = true;
+      await held;
+      await route.continue();
+    },
+    { times: 1 },
+  );
+  try {
+    const player = page.locator("mux-player");
+    await expect
+      .poll(() =>
+        player.evaluate(
+          (element: HTMLElement & { readyState: number }) => element.readyState,
+        ),
+      )
+      .toBeGreaterThan(0);
+    await player.evaluate(
+      (element: HTMLElement & { currentTime: number; pause: () => void }) => {
+        element.currentTime = 4;
+        element.pause();
+      },
+    );
+    await expect.poll(() => active).toBe(true);
+    await page
+      .getByRole("button", { name: "Load the latest assessment" })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Load the latest assessment" }),
+    ).toBeDisabled();
+    await expect(
+      page.getByText("Revised assessment:", { exact: false }),
+    ).toHaveCount(0);
+    release();
+    await expect(
+      page.getByText("Revised assessment:", { exact: false }),
+    ).toBeVisible();
+    await expect(page.getByText(/^Lesson complete\./)).toHaveCount(0);
+    await expect(
+      page.getByRole("radio", { name: "Pull the extensions" }),
+    ).not.toBeChecked();
+    const progress = (
+      await (
+        await page.request.get(`/api/academy/progress?lessonId=${lessonId}`)
+      ).json()
+    ).progress[0];
+    expect(progress.completedAt).toBeNull();
+    expect(progress.resumePositionSeconds).toBeGreaterThanOrEqual(3);
+    await expect(page.getByText(/Earlier assessment version/)).toBeVisible();
+  } finally {
+    release();
+  }
+});
