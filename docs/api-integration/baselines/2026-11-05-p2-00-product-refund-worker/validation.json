@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "status": "LOCAL_PRODUCT_REFUND_WORKER_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "02a37ab663ab82fecf3f489df54327fecc64877a",
+  "runtime": "Node 24.18.0",
+  "files": {
+    ".github/workflows/ci.yml": "a4dcbe5b848ccad1c644e6a6a4e3fb5ec2e3b70e497bc67c54477cb02454280d",
+    "docs/api-integration/baselines/2026-11-05-p2-00-product-refund-worker/base-source-inventory.json": "db9645c5fa9fca35c559e95e3c817e27895016b900ce7d0cb15826eeed68ad4b",
+    "docs/api-integration/baselines/2026-11-05-p2-00-product-refund-worker/candidate-source-inventory.json": "2168534852f85eb2249e70536da94b10b970fdc9f4e7eb1535e724068f35829e",
+    "docs/api-integration/baselines/2026-11-05-p2-00-product-refund-worker/effect-audit.json": "5dcd13a96808479ebc0dc6d211ac650e5996c492a99c0525bfea48c78a1103d6",
+    "docs/api-integration/baselines/2026-11-05-p2-00-product-refund-worker/existing-refund-db-regression.log": "dd4baf2ba60c184cdccee1cde7bb36b29e078a830c1942c253946b66e25adf57",
+    "docs/api-integration/baselines/2026-11-05-p2-00-product-refund-worker/writer-classification.json": "bc33466afb8b26859a869aefc2eb757e37e28b53a34685e13d1aa5cfbf758ce9",
+    "docs/api-integration/frontend-product-refund-worker-recovery-admission.md": "b8c12a1995a9b82607c4508c1e5be436d60eae18011a01578b1b71e97ead902d",
+    "docs/api-integration/p2-00-frontend-quiescence.md": "e9f724096de91f1d949c0556d2eb8ad9567dd7509258f89a0f54b7c4ecb7f523",
+    "docs/scheduled-jobs-runbook.md": "8767338377f184fbc96a1e96bc0ffca7b9de508e23ea59cfd7e5d88e4a762b56",
+    "ops/platform/frontend-admission.mjs": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
+    "ops/platform/frontend-reconciliation.test.mjs": "ec6a3ee8ff7d66d069f7e28e8c74b1b0ae19ae9b620566d085b1c5113328bb51",
+    "ops/platform/frontend-writer-inventory.mjs": "8b9d259f6ff4f666197c247248ae3d3948843d3c48aa67a39b7ef48347e9e9e5",
+    "ops/platform/harness/owned-frontend-reconciliation.mjs": "55c0eb42c73c355ce245a9fbe0dec6ee7ced288e561ed0ab701112a136d6af38",
+    "ops/platform/harness/owned-reconciliation-providers.mjs": "bdb10ab69c75a2f9fb550e303c9053844e6626d66de4ef3064f5d7e88fd29d01",
+    "ops/platform/test-frontend-migration-local.mjs": "91f07d3e46f610e87cc1c4b830040a6179145e797b95fa4a0f1c6a9a46c9ecb5",
+    "package-lock.json": "797605065847a24761babb8b541a63a31356c0d5163b8983e497abec2189ebe1",
+    "package.json": "9480b83d72bd25037f1d4b98c12ccb9f5cc4a6ea53d841b7bb2fb9bf4f170f3c",
+    "scripts/register-server-only-test.mjs": "b0d794ce98c9179660f01926d7a879fa61d2ebc5a7b1c539953e2a2d99af28c6",
+    "scripts/run-source-unit-tests.mjs": "c8742c9d0e74132f5bf3c6264e009fa6eff2873615c57a10e66fa1371a040216",
+    "src/app/api/cron/chitchats-shipping/handler.ts": "075df72a2be2be37ade5adb65246a88a565937acf08b63756196d1e1c9bf3bc4",
+    "src/app/api/cron/chitchats-shipping/route.ts": "03ebd9de019d8987becc0076b90a48c8931e069045795fe89ce3643357372c66",
+    "src/lib/commerce/customer-email-outbox.ts": "7ef68bdb0143c178fe2add3c91c70d54b185673c85c8010e09a1e7989586086c",
+    "src/lib/payments/square/payments-client.test.ts": "3f93a822a1ddecc547988070b73efb48e881cf40cc4a748adcb1d62f77b7506a",
+    "src/lib/payments/square/payments-client.ts": "de098698dc55a2567767b1904754c6fce42c7a2df0229e9bb2bf2011979f4721",
+    "src/lib/payments/square/product-refund.test.ts": "b7a286129f6827049b3ab76100dfe60a447a9e37c7980f88442f8b877abc4245",
+    "src/lib/payments/square/product-refund.ts": "81139bd6a7c0b736b6728c089798766ff7fcc3b6c94d38c10199691deb1cf73c",
+    "src/lib/private-db/client.ts": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+    "src/lib/private-db/schema.ts": "210b802be6d6419c12b533de326a6db87780c475d4491fb06a192eea40a4baa9",
+    "src/lib/shipping/customer-refunds.db.test.ts": "b9cff61419010e773a31aaea8bdbba82da72e972647e070e2bc691cb32bf9720",
+    "src/lib/shipping/customer-refunds.ts": "82944d2ee2619cec76b20736dc56a09dcb77cbae00f41623146b2eb224ea5ed4",
+    "src/lib/shipping/policy-alerts.test.ts": "bc149c4898806676aa1f5d206981b495578505351c69f1ede145fb6b4092657e",
+    "src/lib/shipping/policy-alerts.ts": "30922c93162371edc0417984d55c3d063b4fa8c2015ba80694bbd1f3625e921b",
+    "src/lib/writer-admission/config.ts": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
+    "src/lib/writer-admission/context.ts": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+    "src/lib/writer-admission/product-refund-worker.test.ts": "fd2b14e508ee5f95319a539cd690cc9c2634d794902e11151e1ea52c5a5b71db",
+    "src/lib/writer-admission/runtime.ts": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b"
+  },
+  "candidateSourceManifestSha256": "eab36f0674c5ef75f4fc15c889c0a982c39841e46ee1baeb7cfe5238dc1ecd2d",
+  "postgres": [
+    {
+      "major": 16,
+      "refundWorkerChecks": 16,
+      "existingChecks": 81,
+      "totalChecks": 97,
+      "clusterStoppedAndRemoved": true,
+      "resultSha256": "0751c0e253dbd2fc1d6706503f9ec1f29ce9b76611fe8e69e39ae121eb70bd7c"
+    }
+  ],
+  "unitTests": {
+    "passed": 2313,
+    "failed": 0,
+    "skipped": 0,
+    "scopes": {
+      "regularSource": 1850,
+      "serverOnlySource": 418,
+      "scripts": 31,
+      "securityDependencies": 14
+    }
+  },
+  "platformTests": {
+    "passed": 187,
+    "failed": 0,
+    "skipped": 0
+  },
+  "focusedTests": {
+    "passed": 63,
+    "newAdmissionTests": 13,
+    "failed": 0,
+    "skipped": 0
+  },
+  "existingRefundDatabaseRegression": {
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "clusterStoppedAndRemoved": true
+  },
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "formatting": "PASS",
+  "diffCheck": "PASS",
+  "build": "Not run locally; exact-head CI required",
+  "actualRouteExport": true,
+  "loopbackHttp": true,
+  "verifiedPostgresTls": true,
+  "realBusinessDatabase": true,
+  "providersIntercepted": true,
+  "syntheticLedgerSourceIdentity": true,
+  "wholeShippingRouteQualified": false,
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "providerTouched": false,
+  "deploymentPerformed": false,
+  "historicalWritersFenced": false,
+  "migrationAuthorized": false,
+  "p200Complete": false,
+  "predecessor": {
+    "pr": 89,
+    "head": "afc95c67c62023c9821a41e9004c46448ca9c9cf",
+    "mergedAt": "02a37ab663ab82fecf3f489df54327fecc64877a",
+    "ci": "https://github.com/princessdardan/lash-her-frontend/actions/runs/42075951979",
+    "passedJobs": 10
+  },
+  "limitations": [
+    "Actual GET runs through a test HTTP bridge, not deployed Next.js/native cron.",
+    "Provider observations and producer identities are synthetic.",
+    "PostgreSQL 18 qualification remains required on the exact published head.",
+    "Other shipping work, independent callers, actual producer/provider inventory, historical fencing/bootstrap and parent coordination remain open."
+  ]
+}

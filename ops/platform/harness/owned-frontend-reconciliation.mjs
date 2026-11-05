@@ -38,13 +38,14 @@ async function main() {
     RESEND_API_KEY: "re_owned_unused", ADMIN_EMAIL: "owned@example.invalid", FROM_EMAIL: "owned@example.invalid",
     STAGING_EMAIL_RECIPIENT_ALLOWLIST: "owned@example.invalid", NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project",
     NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
+    CHITCHATS_SHIPPING_ENABLED: "false", ADMIN_OWNER_EMAILS: "owned@example.invalid",
     CHECKOUT_SECRET_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"), CRON_SECRET: "owned-cron",
   });
   const operator = new Client({ host: target.host, port, database: target.database, user: "frontend_test_admin",
     password, ssl: { rejectUnauthorized: true, ca: readFileSync(process.env.NODE_EXTRA_CA_CERTS, "utf8") } });
   await operator.connect();
   const connections = [operator], checks = [], reconciliationEvidence = [], nativeFetch = globalThis.fetch;
-  let server, closePool, gate, failProvider, providerInvariantFailure, expectedOutboxKey, stockProviderMode, unexpectedFetches = 0, activeCalls = [], logCount = 0;
+  let server, closePool, gate, failProvider, providerInvariantFailure, expectedOutboxKey, stockProviderMode, refundProviderMode, expectedRefundKey, unexpectedFetches = 0, activeCalls = [], logCount = 0;
   const requests = [];
   const originalConsole = { log: console.log, warn: console.warn, error: console.error };
   // Expected domain failures are inspected through durable rows and sanitized
@@ -71,6 +72,8 @@ async function main() {
         appointments: (await operator.query("SELECT id,booking_confirmation_email_sent_at,booking_confirmation_email_claimed_until,booking_confirmation_email_last_error FROM appointments ORDER BY id")).rows,
         orders: (await operator.query("SELECT order_id,status,provider_status,provider_metadata FROM checkout_orders ORDER BY order_id")).rows,
         stock: (await operator.query("SELECT id,on_hand,reserved FROM product_stock ORDER BY id")).rows,
+        refunds: (await operator.query("SELECT id,status,idempotency_key,provider_refund_id,lease_owner,lease_expires_at FROM product_order_refunds ORDER BY id")).rows,
+        adjustments: (await operator.query("SELECT id,status FROM product_order_adjustments ORDER BY id")).rows,
         stockMovements: (await operator.query("SELECT order_id,kind,quantity FROM product_stock_movements ORDER BY id")).rows,
         obligations: (await operator.query("SELECT order_id,status FROM order_payment_obligations ORDER BY id")).rows,
         shipments: (await operator.query("SELECT order_id,status FROM product_shipments ORDER BY id")).rows,
@@ -102,11 +105,22 @@ async function main() {
       }
       activeCalls.push({ stage, method: request.method, path: selected.pathname });
       if (gate?.stage === stage && !gate.used) { gate.used = true; gate.enter(); await gate.wait; }
+      if (stage === "refund-worker") {
+        const body = await request.json();
+        try { assert.deepEqual(body, { idempotency_key: expectedRefundKey, payment_id: "owned-refund-payment", amount_money: { amount: 1000, currency: "CAD" } }); }
+        catch (error) { providerInvariantFailure = error; throw error; }
+      }
       if (failProvider === stage) return Response.json({ name: "owned_failure", message: "owned-private-provider-detail" }, { status: 500 });
       if (stage === "email") return Response.json({ id: "owned-email-receipt" });
       if (stage === "stock") return Response.json(stockProviderMode === "malformed" ? { payments: [{ id: "owned-malformed" }] } :
         stockProviderMode === "bounded" ? { payments: [], cursor: "owned-next" } :
         stockProviderMode === "captured" ? { payments: [{ id: "owned-stock-payment", reference_id: "owned-stock-order", status: "COMPLETED", amount_money: { amount: 1000, currency: "CAD" } }] } : { payments: [] });
+      if (stage === "refund-worker") {
+        if (refundProviderMode === "rejected") return Response.json({ errors: [{ code: "BAD_REQUEST" }] }, { status: 400 });
+        return Response.json({ refund: { id: "owned-worker-refund", status: refundProviderMode === "pending" ? "PENDING" : "COMPLETED",
+          ...(refundProviderMode === "missing-payment-id" ? {} : { payment_id: refundProviderMode === "mismatched-payment" ? "unrelated-payment" : "owned-refund-payment" }),
+          amount_money: { amount: 1000, currency: "CAD" } } });
+      }
       const id = selected.pathname.split("/")[3];
       const status = stage === "service" || selected.pathname.endsWith("/cancel") ? "CANCELED" : selected.pathname.endsWith("/complete") ? "COMPLETED" : "APPROVED";
       return Response.json({ payment: { id, status, amount_money: { amount: 1000, currency: "CAD" } } });
@@ -114,13 +128,15 @@ async function main() {
     phase = "import-actual-route";
     const { GET } = await import("../../../src/app/api/admin/payment-reconciliation/route.ts");
     const { GET: outboxGet } = await import("../../../src/app/api/cron/customer-email-outbox/route.ts");
+    const { GET: refundGet } = await import("../../../src/app/api/cron/chitchats-shipping/route.ts");
+    const { queueProductOrderRefundAllocations } = await import("../../../src/lib/shipping/customer-refunds.ts");
     const { GET: stockGet } = await import("../../../src/app/api/cron/product-stock-reservations/route.ts");
     ({ closePrivateDbPool: closePool } = await import("../../../src/lib/private-db/client.ts"));
     const { runWriterAdmission } = await import("../../../src/lib/writer-admission/runtime.ts");
     server = createServer(async (request, response) => {
       try {
-        assert.ok(["/api/admin/payment-reconciliation", "/api/cron/customer-email-outbox", "/api/cron/product-stock-reservations"].includes(request.url)); assert.equal(request.method, "GET");
-        const selectedGet = request.url === "/api/cron/product-stock-reservations" ? stockGet : request.url === "/api/cron/customer-email-outbox" ? outboxGet : GET;
+        assert.ok(["/api/admin/payment-reconciliation", "/api/cron/customer-email-outbox", "/api/cron/product-stock-reservations", "/api/cron/chitchats-shipping"].includes(request.url)); assert.equal(request.method, "GET");
+        const selectedGet = request.url === "/api/cron/chitchats-shipping" ? refundGet : request.url === "/api/cron/product-stock-reservations" ? stockGet : request.url === "/api/cron/customer-email-outbox" ? outboxGet : GET;
         const result = await selectedGet(new Request(`http://127.0.0.1${request.url}`, {
           headers: request.headers.authorization ? { authorization: request.headers.authorization } : {},
         }));
@@ -468,6 +484,125 @@ async function main() {
     assert.deepEqual((await since(before)).map(row => row.state), ["active"]);
     await assertStockReceipt(); assertReconciliationProviderCalls(assert, activeCalls, ["stock"]); await reconcile();
     checks.push("stock-ledger-backend-death-retains-unresolved-entry-without-replaying-committed-cleanup");
+    const refundRequest = (authorized = true) => request(authorized, "/api/cron/chitchats-shipping");
+    const seedRefund = async (mode = "settled") => {
+      await seedReconciliationRows(operator, []);
+      await operator.query("TRUNCATE customer_email_outbox CASCADE");
+      expectedOutboxKey = undefined; expectedRefundKey = undefined; refundProviderMode = mode; activeCalls = [];
+      if (mode === "empty") return;
+      const order = (await operator.query(`INSERT INTO checkout_orders(order_id,purpose,status,payment_provider,provider_payment_id,
+        customer_name,customer_email,amount_cents,merchandise_amount_cents,line_items,paid_at)
+        VALUES('owned-refund-order','product','paid','square','owned-refund-payment','Owned fixture','owned@example.invalid',1000,1000,'[]',now()) RETURNING id`)).rows[0].id;
+      const obligation = (await operator.query(`INSERT INTO order_payment_obligations(order_id,purpose,status,merchandise_amount_cents,
+        shipping_amount_cents,tax_amount_cents,total_amount_cents,currency,source_workflow,tax_policy_version,policy_version,
+        payment_provider,initialization_status,idempotency_key,paid_at)
+        VALUES($1,'primary','paid',1000,0,0,1000,'CAD','owned-refund','owned','owned','square','ready','owned-refund-obligation',now()) RETURNING id`, [order])).rows[0].id;
+      await operator.query(`INSERT INTO order_payment_transactions(obligation_id,provider,provider_transaction_id,amount_cents,currency,
+        provider_type,provider_status,risk_status,risk_reason_codes,captured_at)
+        VALUES($1,'square','owned-refund-payment',1000,'CAD','PAYMENT','COMPLETED','cleared','[]',now())`, [obligation]);
+      const [refund] = await queueProductOrderRefundAllocations({ orderReference: "owned-refund-order", reason: "Owned fixture refund" });
+      expectedRefundKey = refund.idempotencyKey;
+      if (mode === "expired-lease") {
+        await operator.query("UPDATE product_order_refunds SET status='processing',lease_owner='owned-dead-worker',lease_expires_at=now()-interval '1 hour',attempt_count=1,state_version=state_version+1");
+        await operator.query("UPDATE product_order_adjustments SET status='processing'");
+      }
+    };
+    const assertRefundReceipt = async (mode = "settled") => {
+      const pending = ["pending", "provider-failure", "mismatched-payment", "expired-lease"].includes(mode);
+      const manual = mode === "rejected";
+      const missing = mode === "missing-refund-receipt";
+      const refundStatus = pending ? "outcome_unknown" : manual ? "manual_review" : missing ? "processing" : "succeeded";
+      const rows = (await operator.query("SELECT status,idempotency_key,provider_refund_id,lease_owner,attempt_count FROM product_order_refunds")).rows;
+      assert.equal(rows.length, 1); assert.equal(rows[0].status, refundStatus); assert.equal(rows[0].idempotency_key, expectedRefundKey);
+      assert.equal(rows[0].attempt_count, 1);
+      assert.equal(rows[0].provider_refund_id, ["provider-failure", "rejected", "expired-lease", "missing-refund-receipt"].includes(mode) ? null : "owned-worker-refund");
+      if (!missing) assert.equal(rows[0].lease_owner, null);
+      const adjustmentStatus = mode === "missing-adjustment-receipt" || missing ? "processing" : refundStatus;
+      assert.deepEqual((await operator.query("SELECT status FROM product_order_adjustments")).rows, [{ status: adjustmentStatus }]);
+      const orderStatus = pending || manual || missing || mode === "missing-order-receipt" ? "paid" : "refunded";
+      const obligationStatus = pending || manual || missing || mode === "missing-obligation-receipt" ? "paid" : "refunded";
+      assert.deepEqual((await operator.query("SELECT status FROM checkout_orders")).rows, [{ status: orderStatus }]);
+      assert.deepEqual((await operator.query("SELECT status FROM order_payment_obligations")).rows, [{ status: obligationStatus }]);
+      const alerts = (await operator.query("SELECT kind,status,recipient_ciphertext,template_data_ciphertext FROM customer_email_outbox")).rows;
+      assert.equal(alerts.length, pending || manual ? 1 : 0);
+      for (const row of alerts) { assert.equal(row.kind, "shipping_policy_alert"); assert.equal(row.status, "queued"); assert.ok(row.recipient_ciphertext && row.template_data_ciphertext); }
+    };
+    phase = "refund-worker-authentication-and-closed-admission";
+    await seedRefund(); before = await operations();
+    assert.equal((await refundRequest(false)).status, 401);
+    assert.equal((await refundRequest()).status, 503); assert.deepEqual(await since(before), []); assert.deepEqual(activeCalls, []);
+    assert.equal((await operator.query("SELECT status FROM product_order_refunds")).rows[0].status, "queued");
+    checks.push("refund-worker-authentication-and-closed-admission-refuse-before-selection-claim-or-provider");
+
+    phase = "refund-worker-empty";
+    await seedRefund("empty"); await change(true); before = await operations();
+    assert.equal((await refundRequest()).status, 200); assert.deepEqual((await since(before)).map(row => row.state), ["completed"]);
+    assert.deepEqual(activeCalls, []); await reconcile(); checks.push("refund-worker-empty-batch-completes-independent-recovery-entry");
+
+    for (const mode of ["settled", "pending", "provider-failure", "rejected", "mismatched-payment", "missing-payment-id", "expired-lease",
+      "missing-refund-receipt", "missing-adjustment-receipt", "missing-obligation-receipt", "missing-order-receipt"]) {
+      phase = `refund-worker-${mode}`; await seedRefund(mode); await change(true); before = await operations();
+      failProvider = mode === "provider-failure" ? "refund-worker" : undefined;
+      const suppress = { "missing-refund-receipt": ["product_order_refunds", "succeeded"], "missing-adjustment-receipt": ["product_order_adjustments", "succeeded"],
+        "missing-obligation-receipt": ["order_payment_obligations", "refunded"], "missing-order-receipt": ["checkout_orders", "refunded"] }[mode];
+      if (suppress) {
+        await operator.query("CREATE OR REPLACE FUNCTION pg_temp.suppress_owned_refund_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$");
+        await operator.query(`CREATE TRIGGER owned_missing_refund_receipt BEFORE UPDATE ON ${suppress[0]} FOR EACH ROW WHEN (NEW.status = '${suppress[1]}') EXECUTE FUNCTION pg_temp.suppress_owned_refund_receipt()`);
+      }
+      let result;
+      try { result = await refundRequest(); }
+      finally { failProvider = undefined; if (suppress) await operator.query(`DROP TRIGGER owned_missing_refund_receipt ON ${suppress[0]}`); }
+      assert.equal(result.status, mode === "settled" ? 200 : 503);
+      assert.deepEqual((await since(before)).map(row => row.state), [mode === "settled" ? "completed" : "uncertain"]);
+      await assertRefundReceipt(mode);
+      if (mode === "expired-lease") assert.deepEqual(activeCalls, []);
+      else assertReconciliationProviderCalls(assert, activeCalls, ["refund-worker"]);
+      if (mode === "settled") { assert.equal((await refundRequest()).status, 200); await assertRefundReceipt(); assertReconciliationProviderCalls(assert, activeCalls, ["refund-worker"]); }
+      await reconcile(); checks.push(`refund-worker-${mode}-durable-refund-adjustment-order-obligation-and-alert-receipts-accounted`);
+    }
+
+    phase = "refund-worker-close-during-provider-and-expired-business-lease";
+    await seedRefund(); await change(true); before = await operations();
+    const refundHeld = holdProvider("refund-worker"); let refundPending = refundRequest();
+    try {
+      await refundHeld.entered(); await change(false);
+      await operator.query("UPDATE product_order_refunds SET lease_expires_at=now()-interval '1 hour'");
+      assert.equal((await drain()).active, 1); assert.equal((await drain()).ledgerDrained, false);
+      assert.equal((await refundRequest()).status, 503); assert.equal((await since(before)).length, 1);
+    } finally { refundHeld.release(); }
+    assert.equal((await refundPending).status, 200); gate = undefined; await assertRefundReceipt();
+    assertReconciliationProviderCalls(assert, activeCalls, ["refund-worker"]); await reconcile();
+    checks.push("refund-worker-close-retains-admitted-provider-call-and-expired-business-lease-never-drains-ledger");
+
+    phase = "refund-worker-close-during-blocked-settlement";
+    await seedRefund(); await change(true); before = await operations();
+    const refundBlocker = new Client({ host: target.host, port, database: target.database, user: "frontend_test_admin",
+      password, ssl: { rejectUnauthorized: true, ca: readFileSync(process.env.NODE_EXTRA_CA_CERTS, "utf8") } });
+    connections.push(refundBlocker); await refundBlocker.connect();
+    const refundReceiptHeld = holdProvider("refund-worker"); refundPending = refundRequest();
+    try {
+      await refundReceiptHeld.entered(); await refundBlocker.query("BEGIN");
+      await refundBlocker.query("SELECT id FROM product_order_refunds FOR UPDATE"); refundReceiptHeld.release();
+      await until(async () => (await operator.query("SELECT 1 FROM pg_stat_activity WHERE usename=$1 AND wait_event_type='Lock'", [target.user])).rows.length === 1);
+      await change(false); assert.equal((await drain()).active, 1); assert.equal((await drain()).ledgerDrained, false);
+      assert.equal((await refundRequest()).status, 503); assert.equal((await since(before)).length, 1);
+    } finally { refundReceiptHeld.release(); await refundBlocker.query("ROLLBACK"); }
+    assert.equal((await refundPending).status, 200); gate = undefined; await assertRefundReceipt();
+    assertReconciliationProviderCalls(assert, activeCalls, ["refund-worker"]); await reconcile();
+    checks.push("refund-worker-close-retains-active-entry-through-actually-blocked-settlement-transaction");
+
+    phase = "refund-worker-ledger-backend-death";
+    await seedRefund(); await change(true); before = await operations();
+    const refundDeath = holdProvider("refund-worker"); refundPending = refundRequest();
+    try {
+      await refundDeath.entered(); await change(false);
+      const sessions = (await operator.query("SELECT pid FROM pg_stat_activity WHERE usename=$1 AND application_name='lash-her-frontend-writer-admission'", [target.user])).rows;
+      assert.equal(sessions.length, 1); await operator.query("SELECT pg_terminate_backend($1,1000)", [sessions[0].pid]); await delay(25);
+    } finally { refundDeath.release(); }
+    assert.equal((await refundPending).status, 503); gate = undefined;
+    assert.deepEqual((await since(before)).map(row => row.state), ["active"]); await assertRefundReceipt();
+    assertReconciliationProviderCalls(assert, activeCalls, ["refund-worker"]); await reconcile();
+    checks.push("refund-worker-ledger-backend-death-retains-unresolved-entry-without-replaying-settled-refund");
     assert.equal(unexpectedFetches, 0);
     if (providerInvariantFailure) throw providerInvariantFailure;
     return { status: "FRONTEND_RECONCILIATION_OWNED_PASS", postgresMajor: major, checks, reconciliationEvidence,

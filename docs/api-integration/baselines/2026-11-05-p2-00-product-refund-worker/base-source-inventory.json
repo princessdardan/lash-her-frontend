@@ -1,0 +1,658 @@
+{
+  "version": 1,
+  "scope": "candidate-source-only",
+  "sourceManifestSha256": "f5b19299d87850531ddb0a391adb269f351b7dc18c07b1cbbeecd9f79df4b062",
+  "deploymentInventoryVerified": false,
+  "writerFenceVerified": false,
+  "drainVerified": false,
+  "routes": [
+    {
+      "file": "src/app/admin/(protected)/step-up/complete/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "309a7afb1a7cb5396b13f49489a2a38669116704f0c0a4984b589c58b3ad5401",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/appointments/[id]/no-show/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "d4b2a12935320246fc289a9fde3fd0734068a6c4dc34dfab4dccef7c93f682e7",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/calendar-connections/[id]/oauth/start/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "5057759c49ae9471f555157c78f329d97b52679ba6fe0807e7583a8e257999cc",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/email-retries/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "9f348e515b69ae1a2a2e10a1c1a99c431a0c877e3ccf410c2acd1ccc5b3e7d31",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/gateway-smoke/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "134769b321e2ac619493852eb97677d0b13e96d9675d9bc258cbe0a428eb96a4",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/highlevel/callback/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "dbcea3f219a89227acb08ed76d30df88d8d4d7aa4bc1e18d5182e8508a0c4a84",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/marketing-contact-sync/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "9681f51b74b6ccc2c56dcbe15fca9197f31e3cd5fd46efa7f5e42904443449ea",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/my-calendar/connections/[id]/oauth/start/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "812c9a75fad150336e9db21bd6fd4531f52b88eb420edca2e0034666e3de69f9",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/manual-fulfillment/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "867a060a7e430ad085aff1e37a6fd1edf52724d22484441a9844b61f3e53bbb6",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/refund/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "41afc33cba59f06c6bcaae1ca52b6010d47337df1d79c07b2005cf0fb66c4abc",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/shipping/buy/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "08dd18c8cf27ac2f730f79f5f9fbc17211f9b85a1ab3045a798e49834a89def6",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/shipping/label/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "45cd5d975f6fd5208f7d9f1d3365d8a70df6764edc95d5e0cb165dbdfdbdd3b9",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/shipping/operations/[operationId]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "a60379135153c45ce5f09b3622ad8ce4c934eb011cc10cd5f9d2bd46def65175",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/orders/[orderId]/shipping/refund/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "ee3ad9be2104e776730aef7b767b726a26c1ff2a85536095d561b14bb209fa84",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/payment-reconciliation/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "08ba3b8d6b0e2d738dfabfa5800d71cb98077e81d71baaabed96dcb5292aa4d5",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/private-data-retention/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "9681f51b74b6ccc2c56dcbe15fca9197f31e3cd5fd46efa7f5e42904443449ea",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/shipping/package-profiles/[id]/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "832c65ef038e1fa263425e3352735384166b47aa550b3d62f948e5a7f74427d0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/admin/shipping/package-profiles/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e32d3507b7db8a749423a1ee859a31c09dbc22e68b0d578d727079e651f0a0d1",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/auth/[...nextauth]/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "sourceSha256": "c3e8185d66af3fe7019dd236a463365cce7e1e8dcaea2a7c3b8f0b103e930ce4",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/availability/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "sourceSha256": "3853d59e3401d1616dc5fc63b2f9c5d821483e5abc3c4684e35aa14c8c7716b1",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/card-on-file/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "d959b4e323d5b2497f11a24b70d9a4e6f294df6eff88d9a0a3bbfe76eb852ad0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/checkout/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "f1de28a156404da3db63e52d1e9dd304bab27e950307443d97ad60e0521fb310",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/create/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e6f488ca89fe0559f7e5175873971218ac5e3ced054b425fea09665a97da51a0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/holds/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e6f488ca89fe0559f7e5175873971218ac5e3ced054b425fea09665a97da51a0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/oauth/callback/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "c4380a597555181ef9a9ca570047731f58d7c9bdb8c4d00daa2fff60aa0496e0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/oauth/start/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "2b61c23423dcc6375a595524941cfe6c9cac3ba44539c44aa7581403ccd85e5d",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/payment/confirm/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "d959b4e323d5b2497f11a24b70d9a4e6f294df6eff88d9a0a3bbfe76eb852ad0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/payment/promotion-code/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "d959b4e323d5b2497f11a24b70d9a4e6f294df6eff88d9a0a3bbfe76eb852ad0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/square/config/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "132625f6d869a081a3e4975ec2c8ba870536500ab472bb5454553ac83e2fd8fa",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/booking/square/return/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "cfd1aba7fda79cb251203a5280bce47b6d333a74c3b58a1a1e46b50c41a63a47",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cart/preview/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "df50f0e1237098a47c0fe5c7b4c202fec5a038ff44d082c9c92fddd46b974fc0",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/checkout/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e7334e4ea9409e12d62ff0a5ad8ba974b87f2801a90ee9bd175648827af09b98",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/checkout/square/config/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "132625f6d869a081a3e4975ec2c8ba870536500ab472bb5454553ac83e2fd8fa",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/backup-validation/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "9681f51b74b6ccc2c56dcbe15fca9197f31e3cd5fd46efa7f5e42904443449ea",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/chitchats-shipping/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "b364bb6b46c9fad7a14328801c5124ed887e371281a34abd3df6dafee432c180",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/customer-email-outbox/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "b05f6a5130bbac35e28694022ca6f30a52755e2ddb8503263f9ca7d4688ba125",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/gateway-smoke/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "5be825fd95430ab4ddda57b1f4dddb7bd478ad19559c375f1ebb74b70f8bee35",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/highlevel-sync/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "e589cbcc952960f971b597236a9724f4ca12103be0baf11f4c03effd667b3966",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/product-stock-reservations/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "743283427d841039c140d0b4a6f1c3a3a4edfbe6a2145ca23c2e60e1c0e2a31e",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/cron/shipping-rate-cache-refresh/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "22a7f44dcfa9a52fcbfab40c4e4152bc7aa9b4f626864fd3d2c706efc587f1ed",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/draft-mode/disable/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "378a27a423cd37598dad67ccfe525a10bcdb019791893999555e9003eefb03e9",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/draft-mode/enable/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "sourceSha256": "18e8451e7e5d04be1a8817f615a3384df21def07f7265ded11f489de2348b4f4",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/internal/release-probe/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "1c382dd1eebc078e7ceee6230d133d9eecb351985fc871b7eab4fd7038554763",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/internal/release-scheduler-probe/route.ts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "sourceSha256": "d8a47bedf9eb5efa0537c8310dc23a190c84e5f72e45255c7c10467009180a42",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/marketing/unsubscribe/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "sourceSha256": "2415aa587d53dbb46a0d03ef79dcdd347d260c2384d610f9a677125c9e10a12b",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/promotion-code/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "f1de28a156404da3db63e52d1e9dd304bab27e950307443d97ad60e0521fb310",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/revalidate/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "f1de28a156404da3db63e52d1e9dd304bab27e950307443d97ad60e0521fb310",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/shipping/quotes/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "sourceSha256": "8da853e115f5aed98e684a7e66ec23c880a4b3758c0bc7376f973c34cfa60a05",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/training-checkout/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e7334e4ea9409e12d62ff0a5ad8ba974b87f2801a90ee9bd175648827af09b98",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/training-checkout/split-status/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "22e1a574012ec9d8f9db7b94c59cf76155149c694c6be8b113d64090eabff5f2",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/training-checkout/square-invoice/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "e7334e4ea9409e12d62ff0a5ad8ba974b87f2801a90ee9bd175648827af09b98",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/webhooks/highlevel/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "2d2c209d7b23773731373cf6a5f2ac3b4135c2144c874fe74997f461081f391e",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/webhooks/resend/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "22e1a574012ec9d8f9db7b94c59cf76155149c694c6be8b113d64090eabff5f2",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/webhooks/sanity/inventory-sync/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "dbffee337f97ee1f24965dd454dac4cd7c356c5b92082eb8eaf8533b59619b8d",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/api/webhooks/square/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "sourceSha256": "4f10de60fc7e02a0c24eff427221fc3c0a91ed548d2eadb2721a00694c7ac458",
+      "classification": "REVIEW_REQUIRED"
+    }
+  ],
+  "actionModules": [
+    {
+      "file": "src/app/actions/course.ts",
+      "exports": [
+        "confirmCourseAccess",
+        "submitCourseSignup"
+      ],
+      "sourceSha256": "5f0f1d395de651cf2d436b5b2115e2c186b17f9685bcc4fba5ce3cde48f7004d",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/actions/form.ts",
+      "exports": [
+        "submitContactPopup",
+        "submitGeneralInquiry",
+        "submitTrainingContact"
+      ],
+      "sourceSha256": "60a04577071ce4c213d79c596ba52c8dc0171baf0b196df9880ad3de4aaf64c2",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/actions.ts",
+      "exports": [
+        "cancelScheduleExceptionAction",
+        "createBookingServiceAction",
+        "createCalendarConnectionAction",
+        "createMyCalendarConnectionAction",
+        "createOfferingAddOnAction",
+        "createResourceScheduleAction",
+        "createScheduleExceptionAction",
+        "createStaffUserAction",
+        "disableCalendarAssignmentAction",
+        "disableCalendarConnectionAction",
+        "disableMyCalendarAssignmentAction",
+        "disableResourceScheduleAction",
+        "disconnectMyCalendarConnectionAction",
+        "reconnectMyCalendarConnectionAction",
+        "refreshSquareTeamMappingsAction",
+        "reorderServiceOfferingsAction",
+        "saveCalendarAssignmentAction",
+        "saveMyCalendarAssignmentAction",
+        "setAppointmentAttendanceStatusAction",
+        "setBookingResourceStatusAction",
+        "setBookingServiceStatusAction",
+        "setOfferingAddOnStatusAction",
+        "setProviderSquareTeamMemberAction",
+        "setServiceOfferingStatusAction",
+        "setSquareAttributionRequirementAction",
+        "setStaffStatusAction",
+        "transferCalendarConnectionOwnershipAction",
+        "updateBookingServiceProfileAction",
+        "updateBookingSettingsAction",
+        "updateServiceOfferingAction"
+      ],
+      "sourceSha256": "f211046dc6b5d68d581a840e500fddf37f8c3d98d547f41079884ba39f2caeb4",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/campaigns/actions.ts",
+      "exports": [
+        "saveCampaignDraftAction",
+        "sendCampaignAction",
+        "sendCampaignTestAction"
+      ],
+      "sourceSha256": "39fb7bbec24bccf9ce53aadc7ea423c719620aa2f17be7072fad0d4852019f8b",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/marketing/highlevel/actions.ts",
+      "exports": [
+        "deleteHighLevelCopy",
+        "installHighLevel",
+        "replayHighLevelJob",
+        "resolveHighLevelEffect"
+      ],
+      "sourceSha256": "d8b6a31a2b35bc45e61cf66e41a0f9e3dc6d59c6863050a241ed3fa100874d86",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/(protected)/service-promotions/actions.ts",
+      "exports": [
+        "createServicePromotionAction",
+        "setServicePromotionStatusAction",
+        "updateServicePromotionAction"
+      ],
+      "sourceSha256": "280eae63fd3dc63ca46a539527b3339e790aa5e26b8f9f3719df21af94b40df5",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/app/admin/auth-actions.ts",
+      "exports": [
+        "authorizeAdminDeveloperAccessAction",
+        "setAdminDeveloperSessionAction",
+        "signInWithGoogleAction",
+        "signOutAdminAction",
+        "stepUpWithGoogleAction"
+      ],
+      "sourceSha256": "c64beb3ff0313b94123c2737499fa013231c459459b2c2dbebb344e0f9fdc3af",
+      "classification": "REVIEW_REQUIRED"
+    }
+  ],
+  "inlineActions": [],
+  "deferredSites": [
+    {
+      "file": "src/app/api/revalidate/handler.ts",
+      "line": 66,
+      "callee": "after",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/lib/admin/auth.ts",
+      "line": 125,
+      "callee": "after",
+      "classification": "REVIEW_REQUIRED"
+    }
+  ],
+  "databaseConstructors": [
+    {
+      "file": "scripts/check-private-db-migrations.ts",
+      "line": 90,
+      "callee": "Pool",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/create-payment-reconciliation-indexes.ts",
+      "line": 27,
+      "callee": "Pool",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/migrate-private-db.ts",
+      "line": 35,
+      "callee": "Pool",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/provision-shipping-package-profiles.ts",
+      "line": 188,
+      "callee": "Pool",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "scripts/verify-prod-purchasability.ts",
+      "line": 398,
+      "callee": "Pool",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/lib/private-db/client.ts",
+      "line": 23,
+      "callee": "Pool",
+      "classification": "REVIEW_REQUIRED"
+    },
+    {
+      "file": "src/lib/writer-admission/runtime.ts",
+      "line": 29,
+      "callee": "Client",
+      "classification": "REVIEW_REQUIRED"
+    }
+  ],
+  "schedules": [
+    {
+      "path": "/api/admin/private-data-retention",
+      "schedule": "17 8 * * *"
+    },
+    {
+      "path": "/api/cron/backup-validation",
+      "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/admin/payment-reconciliation",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/chitchats-shipping",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/customer-email-outbox",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/product-stock-reservations",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/admin/marketing-contact-sync",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/shipping-rate-cache-refresh",
+      "schedule": "30 7 * * 1"
+    },
+    {
+      "path": "/api/cron/highlevel-sync",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/internal/release-scheduler-probe",
+      "schedule": "* * * * *"
+    }
+  ]
+}

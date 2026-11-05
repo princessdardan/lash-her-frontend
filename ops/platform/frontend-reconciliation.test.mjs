@@ -36,6 +36,14 @@ test("owned provider interception refuses unselected payments, verbs, suffixes a
   ]) assert.throws(() => reconciliationProviderStage(new Request(url, { method })), /OWNED_UNEXPECTED_FETCH/);
 });
 
+test("owned refund lookup accepts only the bound sandbox refund operation", () => {
+  const url = "https://connect.squareupsandbox.com/v2/refunds";
+  assert.equal(reconciliationProviderStage(new Request(url, { method: "POST" })), "refund-worker");
+  for (const [method, selected] of [["GET", url], ["POST", `${url}/extra`], ["POST", `${url}?unselected=true`],
+    ["POST", "https://connect.squareup.com/v2/refunds"]])
+    assert.throws(() => reconciliationProviderStage(new Request(selected, { method })), /OWNED_UNEXPECTED_FETCH/);
+});
+
 test("owned stock lookup accepts only the bound location, window, page size and cursor", () => {
   const url = new URL("https://connect.squareupsandbox.com/v2/payments");
   url.search = new URLSearchParams({ location_id: "owned-location", begin_time: "2020-01-01T11:45:00.000Z",

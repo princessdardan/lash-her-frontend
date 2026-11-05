@@ -13,6 +13,7 @@ const calls = {
     ["POST", "/v2/payments/owned-capture-payment/complete"],
   ],
   stock: [["GET", "/v2/payments"]],
+  "refund-worker": [["POST", "/v2/refunds"]],
 };
 
 export function reconciliationProviderStage(request) {
