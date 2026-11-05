@@ -889,7 +889,12 @@ export function createDrizzleServiceReconciliationRepository(
       return rows.flatMap((row) => {
         if (row.holdId === null || row.squarePaymentId === null) return [];
         const intent = readSquareRequestIntent(row.providerMetadata);
-        if (intent === null) return [];
+        if (intent === null) {
+          // A selected authorization remains unresolved when its immutable
+          // evidence cannot be reconstructed, even if every usable row succeeds.
+          markWriterOperationUncertain();
+          return [];
+        }
         return [
           {
             amountCents: row.amountCents,

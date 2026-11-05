@@ -4,13 +4,13 @@
   "runtime": "v26.5.0",
   "status": "SOURCE_COMPONENT_VALIDATED_PENDING_EXACT_HEAD_CI",
   "baseCommit": "5bcb2981e0666baeb8b6d73bf6fb8e2359060b94",
-  "sourceManifestSha256": "b71cfd07aa4152bf9514d48f6dcf97e4f64e1eb9928cc40f1692104f8c404578",
+  "sourceManifestSha256": "11173a06dc73859fd4b9543e63d1b421fc3b5b1b335681c0737e42a382c28a1a",
   "files": {
     "scripts/run-source-unit-tests.mjs": "f3314a38637d235339b74fde0c05583bd3c1e59fb6f5305de84a171bdb8340c7",
     "src/app/api/admin/payment-reconciliation/handler.ts": "4ea21dd451eef0199adb1aec8dbb9be8203e50855d3f8d06bef379dd3133a33b",
     "src/app/api/admin/payment-reconciliation/route.ts": "08ba3b8d6b0e2d738dfabfa5800d71cb98077e81d71baaabed96dcb5292aa4d5",
-    "src/lib/booking/payments/service-reconciliation-monitor.ts": "9a2db7fa2bf4552fc175e80078737bb1a5eef3e5ec24a6690f0316c92c0c586a",
-    "src/lib/writer-admission/service-reconciliation.test.ts": "e5c77afd566598293cd69c2288ec23ae4a825e3b811159c5c23861265407b2b2",
+    "src/lib/booking/payments/service-reconciliation-monitor.ts": "f352b44d232dd8f15ab77f4063f1550be125f124f04ea8504221dffdc6d92ab6",
+    "src/lib/writer-admission/service-reconciliation.test.ts": "c09484700fe6668bbfddfabb391207610701e1059afccd94e590710c2e882f23",
     "src/lib/writer-admission/booking-outcome.test.ts": "ce91b3e9f93c7145db95a17e8383ce15bc45bf4c39078a49db48d75dd7f0e429",
     "src/lib/writer-admission/commerce-capture.test.ts": "498b38504b1df44185af0e90134d7117dde1198a6273ff5faedde7b9dcebf806",
     "src/lib/writer-admission/training-split-reconciliation.test.ts": "5d96db6d2858d986b28ced7defe404c444d6f44cddc6cc685c7e98e7584e734d"
@@ -22,17 +22,17 @@
   "p200Complete": false,
   "checks": {
     "unit": {
-      "tests": 2273,
-      "passed": 2273,
+      "tests": 2274,
+      "passed": 2274,
       "failed": 0,
       "skipped": 0
     },
     "focused": {
-      "tests": 52,
-      "passed": 52,
+      "tests": 53,
+      "passed": 53,
       "failed": 0,
       "skipped": 0,
-      "newComponentTests": 13,
+      "newComponentTests": 14,
       "admittedClosureStages": 8
     },
     "postgres16": {
@@ -40,7 +40,9 @@
       "passed": 42,
       "failed": 0,
       "skipped": 0,
-      "fixture": "New disposable loopback PostgreSQL 16 cluster; all migrations applied; actual monitor and Drizzle repository regressions; cluster stopped"
+      "fixture": "New disposable loopback PostgreSQL 16 cluster; all migrations applied; actual monitor and Drizzle repository regressions; cluster stopped",
+      "sourceCommit": "1400295b1be22dcfad503502e7a0b63ec2202a8c",
+      "reviewNote": "Original isolated database evidence retained; review change does not alter SQL. Review regression exercises the actual Drizzle repository with controlled query rows."
     },
     "typescript": "PASS",
     "targetedEslint": "PASS",
@@ -56,9 +58,14 @@
       "Concurrent initial/mismatch queries could outlive an early rejection; both groups now await all siblings.",
       "Unrelated terminal provider payment identity could terminalize the selected local attempt; lookup identity now gates every remediation branch.",
       "Stored Square order identity was omitted from completion evidence validation; it is now required when present.",
-      "Caught failures and success-shaped incomplete projection outcomes cannot clear admitted uncertainty."
+      "Caught failures and success-shaped incomplete projection outcomes cannot clear admitted uncertainty.",
+      "Selected authorized attempts with unusable stored request intent were silently omitted and could settle as completed; omitted attempts now retain sticky uncertainty without changing admission-off behavior."
     ],
-    "wholeRouteQualified": false
+    "wholeRouteQualified": false,
+    "reviewedCommit": "1400295b1be22dcfad503502e7a0b63ec2202a8c",
+    "regressionBeforeFix": "FAIL: expected retryable 503 and uncertain settlement, received 200",
+    "regressionAfterFix": "PASS: four invalid-intent shapes under enforced/off modes, valid projection and independent later batches still run",
+    "sourceBindingsVerified": 55
   },
   "limitations": [
     "Controlled route/runtime/monitor terminals plus isolated PostgreSQL repository regressions do not prove combined actual cron/TLS-ledger/business-database enforcement.",

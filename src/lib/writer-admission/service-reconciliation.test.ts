@@ -454,6 +454,58 @@ test("success-shaped projection cannot clear operation-local uncertainty", async
   assert.ok(b.calls.includes("record:hold-1"));
 });
 
+test("selected attempts without usable request intent cannot settle as completed", async () => {
+  for (const providerMetadata of [
+    null,
+    {},
+    { squareRequestIntent: null },
+    { squareRequestIntent: { squareCustomerId: "" } },
+  ]) {
+    for (const off of [false, true]) {
+      const f = admission();
+      const valid = attempt(1);
+      const rows = [
+        { ...attempt(), providerMetadata },
+        {
+          ...valid,
+          providerMetadata: {
+            squareRequestIntent: { squareCustomerId: valid.squareCustomerId },
+          },
+        },
+      ];
+      const db = {
+        select: () => ({
+          from: () => ({
+            innerJoin: () => ({ where: async () => rows }),
+          }),
+        }),
+      } as unknown as Parameters<
+        typeof createDrizzleServiceReconciliationRepository
+      >[0];
+      const repository = createDrizzleServiceReconciliationRepository(db);
+      const b = business(f, {
+        off,
+        repository: {
+          findAuthorizedOperationalPayments:
+            repository.findAuthorizedOperationalPayments,
+        },
+      });
+      const response = await b.get(request());
+      assert.equal(response.status, off ? 200 : 503);
+      assert.deepEqual(f.state.outcomes, off ? [] : ["uncertain"]);
+      if (off) {
+        assert.equal((await response.json()).ok, true);
+      } else {
+        assert.equal(response.headers.get("cache-control"), "no-store");
+        assert.equal(response.headers.get("retry-after"), "30");
+      }
+      assert.equal(b.calls.includes("lookup:payment-0"), false);
+      assert.ok(b.calls.includes("record:hold-1"));
+      assert.deepEqual(b.calls.slice(-2), ["email", "commerce"]);
+    }
+  }
+});
+
 test("service findings remain uncertain including warnings, missing provider, and unknown or terminal states", async () => {
   for (const status of [
     "APPROVED",
