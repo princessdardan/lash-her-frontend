@@ -260,7 +260,7 @@ async function main() {
     }, "FRONTEND_BOOTSTRAP_PROBE_OWNED_PASS");
     phase = "customer-identity-owned-database";
     const customerIdentity = spawnSync(process.execPath, ["--import", "tsx", "--import", "./scripts/register-server-only-test.mjs",
-      "--test", "--test-concurrency=1", "--test-reporter=tap", "src/lib/customer-auth/store.db.test.ts", "src/lib/customer-auth/session-issuance.db.test.ts"], {
+      "--test", "--test-concurrency=1", "--test-reporter=tap", "src/lib/customer-auth/store.db.test.ts", "src/lib/customer-auth/session-issuance.db.test.ts", "src/lib/customer-auth/receipts.db.test.ts"], {
       cwd: source, encoding: "utf8", timeout: 120000,
       env: { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, NODE_ENV: "test", APP_ENV: "local",
         NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project", NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
@@ -269,7 +269,7 @@ async function main() {
     assert.equal(customerIdentity.status, 0, `Owned customer identity failed: ${customerIdentity.stderr}\n${customerIdentity.stdout}`);
     const customerTests = Number(/^# tests (\d+)$/mu.exec(customerIdentity.stdout)?.[1]);
     const customerPassed = Number(/^# pass (\d+)$/mu.exec(customerIdentity.stdout)?.[1]);
-    assert.ok(customerTests >= 10 && customerTests === customerPassed);
+    assert.ok(customerTests >= 17 && customerTests === customerPassed);
     assert.match(customerIdentity.stdout, /^# fail 0$/mu);
     assert.match(customerIdentity.stdout, /^# skipped 0$/mu);
     const customerIdentityDatabase = { status: "FRONTEND_CUSTOMER_IDENTITY_OWNED_PASS", tests: customerTests, passed: customerPassed, failures: 0, skipped: 0 };

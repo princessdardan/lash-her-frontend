@@ -5,6 +5,8 @@ import { pathToFileURL } from "node:url";
 import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
+  "src/lib/admin/read-operation.test.ts",
+  "src/lib/admin/calendar-discovery-result.test.ts",
   "src/lib/writer-admission/square-binding-probe.test.ts",
   "src/lib/course-authoring/page-data.test.ts",
   "src/lib/admin/authorization-operation.test.ts",
@@ -132,6 +134,11 @@ const DB_TEST_FILES = new Set([
 ]);
 
 const mode = process.argv[2] ?? "--no-db";
+// These tests pass synthetic environment records to pure policy functions;
+// mentioning TEST_DATABASE_URL does not open or mutate a database.
+const PURE_ENV_POLICY_TEST_FILES = new Set([
+  "src/lib/private-db/isolated-commerce-fixture.test.ts",
+]);
 if (!new Set(["--no-db", "--db-only"]).has(mode)) {
   throw new Error(`Unsupported test mode: ${mode}`);
 }
@@ -140,6 +147,7 @@ const testFiles = (await listTestFiles("src")).sort();
 const registeredTestFiles = new Set([
   ...SERVER_ONLY_TEST_FILES,
   ...DB_TEST_FILES,
+  ...PURE_ENV_POLICY_TEST_FILES,
 ]);
 const missingRegisteredFiles = [...registeredTestFiles].filter(
   (file) => !testFiles.includes(file),
@@ -155,7 +163,7 @@ const dbAwareTestFiles = (
   await Promise.all(
     testFiles.map(async (file) => ({
       file,
-      usesTestDatabase: (await readFile(file, "utf8")).includes(
+      usesTestDatabase: !PURE_ENV_POLICY_TEST_FILES.has(file) && (await readFile(file, "utf8")).includes(
         "TEST_DATABASE_URL",
       ),
     })),

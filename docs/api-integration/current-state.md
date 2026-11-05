@@ -63,3 +63,11 @@ A user-approved goal is implementing remaining Phase 2 in isolated worktrees; se
 ## Phase 2 implementation milestone — November 5, 2026
 
 The [goal execution record](phase2-goal.md) records the isolated baselines, source packages and parallel ownership. Dardan approved the lifecycle defaults with progress deletion and retained-attempt deidentification. Auth/curriculum foundations are verified locally; media, quizzes/progress and free grants are being integrated. Frontend migration 0082 passed disposable PostgreSQL 16 with six lifecycle scenarios, seven identity cases and the integrated admission checks. Real staging capabilities remain disabled; accepted recovery-only G1 evidence is preserved. P2-00 historical/provider fencing, PR #91 dependent shipping, final source/CI/artifact checks and P2-12/G2 deployed certification remain open.
+
+## Phase 2 combined qualification — November 5, 2026
+
+The [tracker milestone](../../API-INTEGRATION-EXECUTION.md) records integrated source and open conditions. PR #91 is consumed at its final merge. PR #92 is an overlapping shipment-execution predecessor, already explicitly reused; retain its source/CI evidence and reconcile the combined branch ancestry before publication. Whole-route/direct-worker/PII additions remain distinct incremental work.
+
+Frontend source `847f0b0` passed 83 migrations and the 16 lifecycle/ten identity/75 reconciliation/12 interactive/ten worker/four bootstrap groups in the [owned PostgreSQL receipt](baselines/2026-11-05-p2-integrated-owned/validation.json). The actual three-repository lifecycle harness passed against Course `11ea33d`/Community `610a581`. Subsequent Auth.js receipt fixes and admin read boundaries are integrated at `7577377` and undergoing independent entry-point qualification. Learner review corrections, P2-00 provider/restoration integration and final source checks remain active.
+
+API draft PRs Course #5/Community #4 have started real required CI. Quality passed for both and Community PostgreSQL passed; Course database/packaged migration and Community native scan failures are being corrected. No immutable candidate or deployed Phase 2 capability is qualified yet. Dardan must start the concrete reviewed staging release after candidate preparation; no live mutation has occurred in this goal. G1 remains accepted and monitoring deferred.

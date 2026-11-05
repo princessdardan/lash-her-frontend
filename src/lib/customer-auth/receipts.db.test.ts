@@ -11,7 +11,15 @@ import { hashCustomerSession } from "./policy";
 import { createCustomerAuthStore } from "./store";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
-if (databaseUrl && !["127.0.0.1", "localhost", "[::1]"].includes(new URL(databaseUrl).hostname)) throw new Error("Customer receipt faults require isolated loopback PostgreSQL");
+if (databaseUrl) {
+  const target = new URL(databaseUrl);
+  if (!["127.0.0.1", "localhost", "[::1]"].includes(target.hostname) ||
+    !["/frontend_admission_owned", "/lash_her_ci", "/lash_her_ci_upgrade"].includes(target.pathname) ||
+    [...target.searchParams.keys()].some(key => !["sslmode", "application_name", "connect_timeout"].includes(key)) ||
+    ["staging", "production"].includes(process.env.APP_ENV ?? "") || process.env.VERCEL_ENV === "production") {
+    throw new Error("Customer receipt faults require a named disposable loopback database");
+  }
+}
 const pool = databaseUrl ? new Pool({ connectionString: databaseUrl, max: 6 }) : null;
 const db = pool ? drizzle({ client: pool, schema }) : null;
 const skipped = { skip: !db && "set TEST_DATABASE_URL for real PostgreSQL receipt faults" };
