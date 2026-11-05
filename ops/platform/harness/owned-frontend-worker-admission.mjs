@@ -106,17 +106,17 @@ export async function exerciseOwnedFrontendWorkers() {
   };
   const seedMarketing = async () => {
     await clearTriggers(); await operator.query("DELETE FROM marketing_contact_sync_jobs");
-    await operator.query("DELETE FROM marketing_contacts WHERE email_normalized='owned-worker@example.invalid'");
-    await operator.query("INSERT INTO marketing_contacts(email,email_normalized,source,first_consented_at,last_consented_at) VALUES('owned-worker@example.invalid','owned-worker@example.invalid','contact_popup',now(),now())");
+    await operator.query("DELETE FROM marketing_contacts WHERE email_normalized='owned-worker@example.test'");
+    await operator.query("INSERT INTO marketing_contacts(email,email_normalized,source,first_consented_at,last_consented_at) VALUES('owned-worker@example.test','owned-worker@example.test','contact_popup',now(),now())");
     await operator.query(`INSERT INTO marketing_contact_sync_jobs(idempotency_key,email,email_normalized,source,payload)
-      VALUES('owned-worker','owned-worker@example.invalid','owned-worker@example.invalid','contact_popup',$1)`,
-    [JSON.stringify({ email: "owned-worker@example.invalid", source: "contact_popup", consentedAt: new Date().toISOString() })]);
+      VALUES('owned-worker','owned-worker@example.test','owned-worker@example.test','contact_popup',$1)`,
+    [JSON.stringify({ email: "owned-worker@example.test", source: "contact_popup", consentedAt: new Date().toISOString() })]);
     providerCalls.length = 0; providerFailure = undefined;
   };
   const seedCrm = async () => {
     await clearTriggers(); await operator.query("DELETE FROM highlevel_outbox"); await operator.query("DELETE FROM highlevel_effects");
     await operator.query("DELETE FROM highlevel_contacts");
-    const contact = (await operator.query(`INSERT INTO highlevel_contacts(location_id,email_normalized,provider_id) VALUES($1,'owned-worker@example.invalid','owned-crm') RETURNING id`, [process.env.HIGHLEVEL_LOCATION_ID])).rows[0].id;
+    const contact = (await operator.query(`INSERT INTO highlevel_contacts(location_id,email_normalized,provider_id) VALUES($1,'owned-worker@example.test','owned-crm') RETURNING id`, [process.env.HIGHLEVEL_LOCATION_ID])).rows[0].id;
     await operator.query("INSERT INTO highlevel_outbox(event_key,entity_type,entity_id,event_type) VALUES('owned-worker','contact',$1,'owned_fixture')", [contact]);
     providerCalls.length = 0; providerFailure = undefined;
   };
@@ -137,7 +137,7 @@ export async function exerciseOwnedFrontendWorkers() {
       }
       if (selected.hostname === "services.leadconnectorhq.com" && selected.pathname.startsWith("/contacts/owned-crm")) {
         await provider("crm", "recovery");
-        return Response.json({ contact: { id: "owned-crm", locationId: process.env.HIGHLEVEL_LOCATION_ID, email: "owned-worker@example.invalid" } });
+        return Response.json({ contact: { id: "owned-crm", locationId: process.env.HIGHLEVEL_LOCATION_ID, email: "owned-worker@example.test" } });
       }
       invariantFailure = new Error("unexpected-provider-route"); throw invariantFailure;
     };
