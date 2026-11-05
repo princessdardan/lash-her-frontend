@@ -15,6 +15,7 @@ import { Pool } from "pg";
 import type { ResolvedOperationalBooking } from "@/lib/booking/operations/offering";
 import {
   claimBookingConfirmationEmailByHoldId,
+  claimBookingConfirmationEmailByOrderId,
   listRetryableOperationalBookingOutcomeEmailHoldIds,
   markBookingConfirmationEmailSent,
   recordBookingConfirmationEmailFailure,
@@ -66,6 +67,8 @@ import {
 import * as schema from "./schema";
 import { isKnownOperationalSquarePayment, observeOperationalSquarePayment } from "./operational-square-payment-observer";
 import { withWriterOperationContext } from "@/lib/writer-admission/context";
+import { createDrizzleSquarePaymentFinalizerRepository } from "@/lib/booking/square-payment-finalizer";
+import { checkoutOrders } from "./schema";
 
 const TEST_PREFIX = "v2-final-test-";
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -76,6 +79,77 @@ const pool = testDatabaseUrl
   ? new Pool(createPrivateDbPoolConfig(testDatabaseUrl))
   : null;
 const db = pool ? drizzle({ client: pool, schema }) : null;
+
+test("hosted Square payment observations preserve notification receipts across replay", { skip: skipReason }, async () => {
+  const database = requireDb(), seeded = await seedOperationalHold(), basePayment = createCapturedPayment();
+  const now = new Date("2032-01-01T12:01:00.000Z");
+  const [order] = await database.insert(checkoutOrders).values({ orderId: `${TEST_PREFIX}hosted-${randomUUID()}`,
+    customerName: "Owned customer", customerEmail: "owned@example.com", lineItems: [], amountCents: basePayment.amountCents,
+    purpose: "appointment_deposit", paymentProvider: "square", providerOrderId: basePayment.providerOrderId }).returning();
+  await database.update(appointmentHolds).set({ checkoutOrderId: order.id, checkoutOrderPublicId: order.orderId })
+    .where(eq(appointmentHolds.id, seeded.holdId));
+  const payment = { ...basePayment, checkoutOrderId: order.id, operation: "square_hosted_checkout",
+    idempotencyKey: `square:hosted:${basePayment.providerPaymentId}` };
+  const finalization = createAppointmentFinalizationRepository(database);
+  await finalization.confirmOperationalAppointment({ calendar: { status: "synced", providerEventId: `${TEST_PREFIX}hosted-event-${randomUUID()}` },
+    holdId: seeded.holdId, holdOutcome: "booked", now, payment });
+  await markBookingConfirmationEmailSent({ holdId: seeded.holdId, now }, database);
+  await markProviderBookingEmailSent({ holdId: seeded.holdId, now }, database);
+  const repository = createDrizzleSquarePaymentFinalizerRepository(async () => database);
+  await withWriterOperationContext(() => repository.recordSquarePaymentPendingCalendar({ amountCents: order.amountCents,
+    order, paidAt: now, payment: { id: payment.providerPaymentId, order_id: payment.providerOrderId, status: "COMPLETED",
+      amount_money: { amount: order.amountCents, currency: "CAD" } }, providerOrderId: payment.providerOrderId }));
+  assert.equal(await withWriterOperationContext(() => claimBookingConfirmationEmailByOrderId({ orderId: order.orderId, now }, database)), null);
+  assert.equal(await withWriterOperationContext(() => claimProviderBookingEmail({ lookup: { orderId: order.orderId }, now }, database)), null);
+  const [persisted] = await database.select().from(appointmentHolds).where(eq(appointmentHolds.id, seeded.holdId));
+  assert.equal(persisted.reconciliationMetadata?.bookingConfirmationEmailOutcome, "booked");
+});
+
+test("booking recovery distinguishes active notification claims from durable sent receipts", { skip: skipReason }, async () => {
+  const database = requireDb(), seeded = await seedOperationalHold();
+  const repository = createAppointmentFinalizationRepository(database), payment = createCapturedPayment();
+  const now = new Date("2032-01-01T12:01:00.000Z");
+  await repository.confirmOperationalAppointment({ calendar: { status: "pending" }, holdId: seeded.holdId,
+    holdOutcome: "paid_pending_booking", now, payment });
+  await repository.confirmOperationalAppointment({ calendar: { status: "synced", providerEventId: `${TEST_PREFIX}recovery-email-${randomUUID()}` },
+    holdId: seeded.holdId, holdOutcome: "booked", now, payment });
+
+  const customer = () => withWriterOperationContext(() => claimBookingConfirmationEmailByHoldId({ holdId: seeded.holdId, now }, database));
+  const provider = () => withWriterOperationContext(() => claimProviderBookingEmail({ lookup: { holdId: seeded.holdId }, now }, database));
+  assert.ok(await customer());
+  await assert.rejects(customer, /WRITER_OPERATION_REQUIRES_REVIEW/);
+  await withWriterOperationContext(() => markBookingConfirmationEmailSent({ holdId: seeded.holdId, now }, database));
+  assert.equal(await customer(), null);
+  assert.ok(await provider());
+  await assert.rejects(provider, /WRITER_OPERATION_REQUIRES_REVIEW/);
+  await withWriterOperationContext(() => markProviderBookingEmailSent({ holdId: seeded.holdId, now }, database));
+  assert.equal(await provider(), null);
+
+  // Legacy booked/sent evidence also permits a no-op replay; absence of a
+  // customer claim is not itself proof of outstanding work.
+  const publicId = `${TEST_PREFIX}legacy-receipt-${randomUUID()}`;
+  await database.update(appointmentHolds).set({ bookingModelVersion: 1, checkoutOrderPublicId: publicId })
+    .where(eq(appointmentHolds.id, seeded.holdId));
+  assert.equal(await withWriterOperationContext(() => claimBookingConfirmationEmailByOrderId({ orderId: publicId, now }, database)), null);
+});
+
+test("booking recovery missing notification targets and ineligible projections remain uncertain", { skip: skipReason }, async () => {
+  const database = requireDb(), missingId = randomUUID(), now = new Date("2032-01-01T12:01:00.000Z");
+  await assert.rejects(() => withWriterOperationContext(() => claimBookingConfirmationEmailByHoldId({ holdId: missingId, now }, database)), /WRITER_OPERATION_REQUIRES_REVIEW/);
+  await assert.rejects(() => withWriterOperationContext(() => claimProviderBookingEmail({ lookup: { holdId: missingId }, now }, database)), /WRITER_OPERATION_REQUIRES_REVIEW/);
+  await assert.rejects(() => withWriterOperationContext(() => markBookingConfirmationEmailSent({ holdId: missingId, now }, database)), /WRITER_OPERATION_REQUIRES_REVIEW/);
+  await assert.rejects(() => withWriterOperationContext(() => markProviderBookingEmailSent({ holdId: missingId, now }, database)), /WRITER_OPERATION_REQUIRES_REVIEW/);
+  const seeded = await seedOperationalHold();
+  await assert.rejects(() => withWriterOperationContext(() => claimBookingConfirmationEmailByHoldId({ holdId: seeded.holdId, now }, database)), /WRITER_OPERATION_REQUIRES_REVIEW/);
+  await assert.rejects(() => withWriterOperationContext(() => claimProviderBookingEmail({ lookup: { holdId: seeded.holdId }, now }, database)), /WRITER_OPERATION_REQUIRES_REVIEW/);
+  await createAppointmentFinalizationRepository(database).confirmOperationalAppointment({ calendar: { status: "pending" },
+    holdId: seeded.holdId, holdOutcome: "paid_pending_booking", now, payment: createCapturedPayment() });
+  await database.update(appointments).set({ bookingConfirmationEmailSentAt: now }).where(eq(appointments.sourceHoldId, seeded.holdId));
+  await database.update(appointmentHolds).set({ providerBookingEmailSentAt: now,
+    reconciliationMetadata: { bookingConfirmationEmailOutcome: "manual_followup" } }).where(eq(appointmentHolds.id, seeded.holdId));
+  await assert.rejects(() => withWriterOperationContext(() => claimBookingConfirmationEmailByHoldId({ holdId: seeded.holdId, now }, database)), /WRITER_OPERATION_REQUIRES_REVIEW/);
+  await assert.rejects(() => withWriterOperationContext(() => claimProviderBookingEmail({ lookup: { holdId: seeded.holdId }, now }, database)), /WRITER_OPERATION_REQUIRES_REVIEW/);
+});
 
 test("operational recovery context preserves durable capture and replay while rejecting conflicting identity", { skip: skipReason }, async () => {
   const database = requireDb();
@@ -2462,7 +2536,7 @@ async function cleanupTestRows(): Promise<void> {
   const database = requireDb();
 
   await database.execute(
-    sql`delete from ${bookingPaymentAttempts} where ${bookingPaymentAttempts.idempotencyKey} like ${`${TEST_PREFIX}%`}`,
+    sql`delete from ${bookingPaymentAttempts} where ${bookingPaymentAttempts.idempotencyKey} like ${`${TEST_PREFIX}%`} or ${bookingPaymentAttempts.providerPaymentId} like ${`${TEST_PREFIX}%`}`,
   );
   await database.execute(
     sql`delete from ${appointments} where ${appointments.sourceHoldPublicReference} like ${`${TEST_PREFIX}%`}`,
@@ -2470,6 +2544,7 @@ async function cleanupTestRows(): Promise<void> {
   await database.execute(
     sql`delete from ${appointmentHolds} where ${appointmentHolds.publicReference} like ${`${TEST_PREFIX}%`}`,
   );
+  await database.execute(sql`delete from ${checkoutOrders} where ${checkoutOrders.orderId} like ${`${TEST_PREFIX}%`}`);
   await database.execute(
     sql`delete from ${bookingSavedPaymentMethods} where ${bookingSavedPaymentMethods.customerId} in (select ${bookingSquareCustomers.id} from ${bookingSquareCustomers} where ${bookingSquareCustomers.emailNormalized} like ${`${TEST_PREFIX}%`})`,
   );

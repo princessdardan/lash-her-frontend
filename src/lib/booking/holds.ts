@@ -12,6 +12,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import {
   appointmentHolds,
@@ -545,6 +546,7 @@ async function claimBookingConfirmationEmail(
       .for("update");
 
     if (hold === undefined) {
+      markWriterOperationUncertain();
       return null;
     }
 
@@ -554,6 +556,27 @@ async function claimBookingConfirmationEmail(
           bookingConfirmationEmailOutcome?: unknown;
         } | null
       )?.bookingConfirmationEmailOutcome;
+      const [existingAppointment] = await tx
+        .select({
+          calendarSyncStatus: appointments.calendarSyncStatus,
+          sentAt: appointments.bookingConfirmationEmailSentAt,
+          status: appointments.status,
+        })
+        .from(appointments)
+        .where(eq(appointments.sourceHoldId, hold.id))
+        .limit(1)
+        .for("update");
+      if (existingAppointment === undefined) {
+        markWriterOperationUncertain();
+        return null;
+      }
+      const expectedOutcome = existingAppointment.status === "confirmed" &&
+        existingAppointment.calendarSyncStatus === "synced" ? "booked" : "manual_followup";
+      if (expectedOutcome !== "booked") markWriterOperationUncertain();
+      if (existingAppointment.sentAt !== null &&
+        (previousEmailOutcome === "booked" || previousEmailOutcome === expectedOutcome)) {
+        return null;
+      }
       const sentEligibility =
         previousEmailOutcome === "manual_followup"
           ? or(
@@ -592,6 +615,7 @@ async function claimBookingConfirmationEmail(
         });
 
       if (appointment === undefined) {
+        markWriterOperationUncertain();
         return null;
       }
 
@@ -606,8 +630,12 @@ async function claimBookingConfirmationEmail(
     }
 
     if (input.operationalOnly) {
+      markWriterOperationUncertain();
       return null;
     }
+
+    if (hold.status === "booked" && hold.googleEventId !== null &&
+      hold.bookingConfirmationEmailSentAt !== null) return null;
 
     const [claimedHold] = await tx
       .update(appointmentHolds)
@@ -630,6 +658,7 @@ async function claimBookingConfirmationEmail(
       )
       .returning();
 
+    if (claimedHold === undefined) markWriterOperationUncertain();
     return claimedHold
       ? {
           ...toBookingHoldRecord(claimedHold),
@@ -647,6 +676,7 @@ export async function markBookingConfirmationEmailSent(
   return (db ?? (await getAppointmentHoldDb())).transaction(async (tx) => {
     const [hold] = await tx
       .select({
+        bookingModelVersion: appointmentHolds.bookingModelVersion,
         reconciliationMetadata: appointmentHolds.reconciliationMetadata,
       })
       .from(appointmentHolds)
@@ -663,6 +693,9 @@ export async function markBookingConfirmationEmailSent(
       .limit(1)
       .for("update");
     const sentOutcome = input.bookingStatus ?? "booked";
+    if (hold === undefined || (hold.bookingModelVersion === 2 && appointment === undefined)) {
+      markWriterOperationUncertain();
+    }
     const previousSentOutcome = (
       hold?.reconciliationMetadata as {
         bookingConfirmationEmailOutcome?: unknown;

@@ -1,4 +1,6 @@
 import { nanoid } from "nanoid";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { awaitBookingEffects } from "./await-effects";
 
 import { resolveBookingModelVersion } from "./booking-model-version";
 import type { CheckoutOrderPurpose } from "@/lib/private-db/schema";
@@ -241,7 +243,7 @@ export async function finalizeAppointmentPaymentForOrder(
                 const occupiedEnd =
                   paidHold.occupiedEnd ?? paidHold.selectedEnd;
                 const externalBusyWindows = (
-                  await Promise.all(
+                  await awaitBookingEffects(
                     routing.busyCalendars.map((calendar) =>
                       googleCalendarModule.listConnectionCalendarEvents({
                         calendarId: calendar.calendarId,
@@ -263,7 +265,7 @@ export async function finalizeAppointmentPaymentForOrder(
                   );
                 }
 
-                return googleCalendarModule.insertConnectionBookingEvent({
+                return await googleCalendarModule.insertConnectionBookingEvent({
                   calendarId: routing.writeCalendar.calendarId,
                   connectionId: routing.writeCalendar.connectionId,
                   event: googleCalendarModule.buildBookingEventPayload({
@@ -292,6 +294,7 @@ export async function finalizeAppointmentPaymentForOrder(
                     lockId: calendarLockId,
                   });
                 } catch (error) {
+                  markWriterOperationUncertain();
                   console.warn(
                     "[booking-finalizer] Assigned Calendar lock release failed",
                     {
@@ -350,7 +353,7 @@ export async function finalizeAppointmentPaymentForOrder(
                 );
               }
 
-              return googleCalendarModule.insertBookingEvent({
+              return await googleCalendarModule.insertBookingEvent({
                 calendarId: primaryCalendarId,
                 event: googleCalendarModule.buildBookingEventPayload({
                   answers: [],
@@ -416,6 +419,7 @@ export async function finalizeAppointmentPaymentWithLock(input: {
       ttlSeconds: 90,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     return {
       ok: false,
       error: getErrorMessage(error),
@@ -424,6 +428,7 @@ export async function finalizeAppointmentPaymentWithLock(input: {
   }
 
   if (!lockAcquired) {
+    markWriterOperationUncertain();
     return {
       ok: false,
       error: "Booking finalization is already in progress.",
@@ -434,6 +439,7 @@ export async function finalizeAppointmentPaymentWithLock(input: {
   try {
     return await input.finalize();
   } catch (error) {
+    markWriterOperationUncertain();
     return {
       ok: false,
       error: getErrorMessage(error),
@@ -443,6 +449,7 @@ export async function finalizeAppointmentPaymentWithLock(input: {
     try {
       await input.lock.release({ holdId: input.holdId, lockId });
     } catch (error) {
+      markWriterOperationUncertain();
       console.warn("[booking-finalizer] Scoped lock release failed", {
         error: getErrorMessage(error),
         holdId: input.holdId,
@@ -480,8 +487,8 @@ export async function isPaidHoldSlotStillAvailable(input: {
     input.hold,
   );
 
-  const [calendarEventsArrays, activeHolds] = await Promise.all([
-    Promise.all(
+  const [calendarEventsArrays, activeHolds] = await awaitBookingEffects([
+    awaitBookingEffects(
       input.calendarIds.map((calendarId) =>
         input.listCalendarEvents({
           calendarId,
@@ -496,7 +503,7 @@ export async function isPaidHoldSlotStillAvailable(input: {
       timeMax: input.hold.selectedEnd,
       now: input.now,
     }),
-  ]);
+  ] as const);
   const availabilityWindows = buildAvailabilityWindowsFromHours({
     horizonEnd: input.hold.selectedEnd,
     now: input.now,
@@ -722,6 +729,9 @@ async function finalizePaidCalendarBooking(input: {
       status: "booked",
     };
   } catch (error) {
+    // A retry/manual result can conceal a provider write or a failed local
+    // acknowledgement, even if concurrent recovery has since booked the hold.
+    markWriterOperationUncertain();
     const message = getErrorMessage(error);
 
     if (error instanceof BookingRebookingRequiredError) {

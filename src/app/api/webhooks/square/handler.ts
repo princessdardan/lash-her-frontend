@@ -354,6 +354,7 @@ export function createSquareWebhookPostHandler(
   runTrainingSplitRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
   runNoShowRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
   runOperationalRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
+  runBookingRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
 ): (req: Request) => Promise<Response> {
   return async function postSquareWebhook(req) {
     const env = await dependencies.getEnv();
@@ -723,45 +724,47 @@ export function createSquareWebhookPostHandler(
       }
     }
 
-    try {
-      const result = await dependencies.finalizeSquarePayment({
-        event,
-        source: "webhook",
-      });
+    return runBookingRecovery(async () => {
+      try {
+        const result = await dependencies.finalizeSquarePayment({
+          event,
+          source: "webhook",
+        });
 
-      if (!result.finalized && !result.duplicateEvent) {
+        if (!result.finalized && !result.duplicateEvent) {
+          await dependencies.alerts.alert({
+            category: "square_webhook_non_finalized",
+            severity: "warning",
+            message: "Square webhook did not finalize service booking",
+            context: {
+              eventId: event.eventId,
+              eventType: event.eventType,
+              orderId: result.orderId ?? event.orderId,
+              reason: result.reason,
+              status: result.status,
+            },
+          });
+        }
+      } catch (error) {
         await dependencies.alerts.alert({
-          category: "square_webhook_non_finalized",
-          severity: "warning",
+          category: "square_webhook_retryable_failure",
+          severity: "error",
           message: "Square webhook did not finalize service booking",
           context: {
+            error:
+              error instanceof Error
+                ? error.message
+                : "Unknown finalization error",
             eventId: event.eventId,
             eventType: event.eventType,
-            orderId: result.orderId ?? event.orderId,
-            reason: result.reason,
-            status: result.status,
+            orderId: event.orderId,
           },
         });
+        return new Response(null, { status: 503 });
       }
-    } catch (error) {
-      await dependencies.alerts.alert({
-        category: "square_webhook_retryable_failure",
-        severity: "error",
-        message: "Square webhook did not finalize service booking",
-        context: {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unknown finalization error",
-          eventId: event.eventId,
-          eventType: event.eventType,
-          orderId: event.orderId,
-        },
-      });
-      return new Response(null, { status: 503 });
-    }
 
-    return new Response(null, { status: 200 });
+      return new Response(null, { status: 200 });
+    });
   };
 }
 
