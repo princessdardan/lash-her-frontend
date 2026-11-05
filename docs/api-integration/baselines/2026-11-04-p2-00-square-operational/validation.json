@@ -77,6 +77,31 @@
       "Admission-off compatibility, unmatched fallback and ordinary booking separation"
     ]
   },
+  "followupReview": {
+    "date": "2026-11-04",
+    "reviewedCommit": "fe403572a1e69974e0c2e734da9027af32397e82",
+    "applicationSourceChanged": false,
+    "finding": {
+      "file": "writer-classification.json",
+      "issue": "candidateSourceManifestSha256 incorrectly repeated the merged-source hash instead of binding the candidate inventory.",
+      "before": "05fc98b8a5486d40a1d61bc1b257d307455a67ba39fdcadac0a877ed1183fe9e",
+      "after": "b016d4c7ff4053b66628e551e4d180cf78ffc32dec7739f2492310382928ee12",
+      "verification": "Candidate-binding equality assertion failed before correction and passed afterward; the merged-source binding remains unchanged."
+    },
+    "checks": {
+      "unitScriptSecurityPassed": 2196,
+      "focusedSquareRegressionsPassed": 134,
+      "sourceHashesVerified": 27,
+      "regeneratedMergedInventory": "IDENTICAL",
+      "regeneratedCandidateInventory": "IDENTICAL",
+      "classifiedHttpMethods": 61,
+      "classifiedActions": 50,
+      "operationalScriptHashesVerified": 21,
+      "gitDiffCheck": "PASS"
+    },
+    "runtimeFindings": [],
+    "limits": "No new combined webhook/ledger/business-database qualification or live changes. Exact-head CI remains required for the evidence correction."
+  },
   "environmentCorrections": [
     "Disposable loopback PostgreSQL16 uses a fresh owned role/database with explicit sslmode=disable; all 80 migrations and 45 tests passed, then the cluster stopped. It does not supply TLS-ledger qualification.",
     "Full unit suite uses local fixture IPC/loopback permission. Initial focused test compilation exposed two fixture syntax errors, corrected before the passing runs."
