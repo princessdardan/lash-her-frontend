@@ -34,13 +34,6 @@ const pgBin = process.env.PG16_BIN_DIR ?? "/opt/homebrew/opt/postgresql@16/bin";
 const temporary = await mkdtemp(join(tmpdir(), "lash-authoring-browser-"));
 const cluster = join(temporary, "postgres"),
   courseExport = join(temporary, "course");
-const databasePort = await freePort(),
-  coursePort = await freePort(),
-  frontendPort = await freePort();
-const origin = `http://localhost:${frontendPort}`,
-  apiOrigin = `http://127.0.0.1:${coursePort}`;
-const frontendUrl = `postgresql://postgres@127.0.0.1:${databasePort}/lash_authoring_frontend_integration?sslmode=disable`;
-const courseUrl = `postgresql://postgres@127.0.0.1:${databasePort}/lash_authoring_course_integration?sslmode=disable`;
 const signingKey = randomBytes(32).toString("hex"),
   authKey = randomBytes(32).toString("hex");
 const workload = `${Buffer.from('{"alg":"HS256"}').toString("base64url")}.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 7200 })).toString("base64url")}.fixture`;
@@ -75,6 +68,13 @@ try {
     throw new Error(
       "Select a clean Course repository at the exact requested commit",
     );
+  const databasePort = await freePort(),
+    coursePort = await freePort(),
+    frontendPort = await freePort();
+  const origin = `http://localhost:${frontendPort}`,
+    apiOrigin = `http://127.0.0.1:${coursePort}`;
+  const frontendUrl = `postgresql://postgres@127.0.0.1:${databasePort}/lash_authoring_frontend_integration?sslmode=disable`;
+  const courseUrl = `postgresql://postgres@127.0.0.1:${databasePort}/lash_authoring_course_integration?sslmode=disable`;
   const resultsRoot = join(root, "test-results/course-authoring-browser");
   await mkdir(resultsRoot, { recursive: true });
   resultDirectory = await mkdtemp(join(resultsRoot, "run-"));
