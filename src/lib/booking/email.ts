@@ -1,4 +1,5 @@
 import "server-only";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import {
   claimBookingConfirmationEmailByHoldId,
@@ -270,6 +271,7 @@ async function sendCustomerBookingConfirmationEmailForOrder(
         bookingStatus: claimed.bookingConfirmationStatus ?? "booked",
         holdId: claimed.id,
       });
+      if (sent === undefined) markWriterOperationUncertain();
       correctionRequired = sent?.correctionRequired === true;
     } catch (error) {
       const message = getErrorMessage(error);
@@ -311,6 +313,7 @@ async function sendCustomerBookingConfirmationEmailForHold(
         bookingStatus: claimed.bookingConfirmationStatus ?? "booked",
         holdId: claimed.id,
       });
+      if (sent === undefined) markWriterOperationUncertain();
       correctionRequired = sent?.correctionRequired === true;
     } catch (error) {
       const message = getErrorMessage(error);

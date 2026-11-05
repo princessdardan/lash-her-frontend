@@ -1,6 +1,8 @@
 import "server-only";
 
 import { and, asc, desc, eq, inArray, isNull, lte, or } from "drizzle-orm";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { awaitBookingEffects } from "@/lib/booking/await-effects";
 
 import { getPrivateDb } from "./client";
 import {
@@ -74,16 +76,22 @@ export async function claimProviderBookingEmail(
       .limit(1)
       .for("update");
 
+    if (hold === undefined) {
+      markWriterOperationUncertain();
+      return null;
+    }
+    if (!(await isSuccessfullyBooked(tx, hold))) {
+      markWriterOperationUncertain();
+      return null;
+    }
+    // A durable sent receipt permits a duplicate to complete. A live claim or
+    // an ineligible/missing projection supplies no equivalent completion proof.
+    if (hold.providerBookingEmailSentAt !== null) return null;
     if (
-      hold === undefined ||
-      hold.providerBookingEmailSentAt !== null ||
       (hold.providerBookingEmailClaimedUntil !== null &&
         hold.providerBookingEmailClaimedUntil > now)
     ) {
-      return null;
-    }
-
-    if (!(await isSuccessfullyBooked(tx, hold))) {
+      markWriterOperationUncertain();
       return null;
     }
 
@@ -107,11 +115,12 @@ export async function claimProviderBookingEmail(
       .returning();
 
     if (claimed === undefined) {
+      markWriterOperationUncertain();
       return null;
     }
 
     const [checkoutOrder, capturedPayment, provider, recipients] =
-      await Promise.all([
+      await awaitBookingEffects([
         claimed.checkoutOrderId === null
           ? Promise.resolve(undefined)
           : tx
@@ -178,7 +187,7 @@ export async function claimProviderBookingEmail(
                 ),
               )
               .orderBy(asc(adminUsers.email)),
-      ]);
+      ] as const);
 
     return {
       bookingType: claimed.bookingType,
@@ -215,7 +224,7 @@ export async function markProviderBookingEmailSent(
   db: PrivateDb = getPrivateDb(),
 ): Promise<void> {
   const now = input.now ?? new Date();
-  await db
+  const updated = await db
     .update(appointmentHolds)
     .set({
       providerBookingEmailClaimedUntil: null,
@@ -223,7 +232,9 @@ export async function markProviderBookingEmailSent(
       providerBookingEmailSentAt: now,
       updatedAt: now,
     })
-    .where(eq(appointmentHolds.id, input.holdId));
+    .where(eq(appointmentHolds.id, input.holdId))
+    .returning({ id: appointmentHolds.id });
+  if (updated.length !== 1) markWriterOperationUncertain();
 }
 
 export async function recordProviderBookingEmailFailure(

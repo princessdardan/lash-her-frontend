@@ -1,0 +1,218 @@
+{
+  "version": 1,
+  "baseCommit": "0f80d9eed4c188018cceea650840451c9471b205",
+  "sourceManifestSha256": "dd22321e22f20c084f4eda64e935c3492e40c52e4b995f4925a0cf981b98840d",
+  "releaseAuthority": false,
+  "scope": "ordinary Square booking webhook recovery only",
+  "nodes": [
+    {
+      "file": "src/app/api/webhooks/square/route.ts",
+      "sourceSha256": "4f10de60fc7e02a0c24eff427221fc3c0a91ed548d2eadb2721a00694c7ac458",
+      "audit": "Explicit separate ordinary-booking recovery adapter; existing classified adapters retain their boundaries. Returns and independent executions remain separate."
+    },
+    {
+      "file": "src/app/api/webhooks/square/handler.ts",
+      "sourceSha256": "67468b00aa99573a4edfbba7882d722be845495a74f40032de6e92345f0b87e9",
+      "audit": "Signature/parse/dispatch gating precedes ordinary admission. All selected finalizer results, caught failures and alerts stay inside the awaited adapter."
+    },
+    {
+      "file": "src/lib/booking/square-payment-finalizer.ts",
+      "sourceSha256": "73c824906a2c8ee19276d4377a064f0f63a715f302de90ab85ab75f18b7bdd0b",
+      "audit": "Awaits claims, Square lookup, observation/projection, Calendar finalizer, notifications and receipts. Explicit domain/financial/identity/no-op uncertainty; caught admin alerts remain uncertain. Hosted observations atomically merge metadata to preserve prior receipts. Factory is inert and defaults to the private DB."
+    },
+    {
+      "file": "src/lib/booking/finalizer.ts",
+      "sourceSha256": "56d598c4425e53f19a78be2deafeaa3264d8b566090647fd4b2d248368bd87b7",
+      "audit": "Awaits hold/state persistence, Calendar discovery/availability/insertion, retry/manual writes and Redis cleanup. Inserts finish before lock release. Caught provider/cleanup failures mark uncertainty even if the result becomes booked."
+    },
+    {
+      "file": "src/lib/booking/await-effects.ts",
+      "sourceSha256": "ff10e6ec5e92d9b47bf05b4bb88974930714b3b5e0b25208e3faa353ba74481c",
+      "audit": "Waits for every started sibling with allSettled before propagating a rejection. No retries, detached work or external effect of its own."
+    },
+    {
+      "file": "src/lib/booking/holds.ts",
+      "sourceSha256": "fc7de1e0bc768ae25bd1b4bf2def4ff8b523a96bc6d9f7cd13f8fe71755e7897",
+      "audit": "Selected lookup/transition/finalizer, customer claim/sent/failure paths await DB work. Claims distinguish durable sent proof from busy/missing/ineligible evidence; a non-booked operational projection remains uncertain. Existing operational appointment projection and legacy fallback are awaited."
+    },
+    {
+      "file": "src/lib/booking/email.ts",
+      "sourceSha256": "0de94e86fa63c2dceb3650b9faeeea4f30f3012c3ff129336a3416a4ace3af0e",
+      "audit": "Awaits customer and provider notifications sequentially, including correction loops and failure persistence. Default claim repositories mark ambiguous no-ops; unavailable sent acknowledgements mark uncertainty. Selected admin alert awaits the email API."
+    },
+    {
+      "file": "src/lib/booking/provider-booking-email.ts",
+      "sourceSha256": "58d7c37265d891fb60aebd4507428958ad794d2d06aef1cb4737ece08ee1fc03",
+      "audit": "Awaits every recipient send before propagating failure, then sent/failure persistence. Existing recipient idempotency keys remain unchanged."
+    },
+    {
+      "file": "src/lib/private-db/booking-provider-email-repository.ts",
+      "sourceSha256": "05af8d5547be21cc3804cb457c7725a25989c209052b7ce6c0c840c967d06c05",
+      "audit": "Claims validate booking eligibility even for sent receipts; busy/missing/zero-row evidence is uncertain. All transaction siblings settle before propagation; missing sent target marks uncertainty."
+    },
+    {
+      "file": "src/lib/booking/google-calendar.ts",
+      "sourceSha256": "4176dae7971727429f297a15f32d5ccd6489cf3bd50f5cf0c3428c2e93cc1584",
+      "audit": "Selected discovery/list/insertion awaits provider/OAuth HTTP results. Insertion may request provider notifications; this is not proof of their delivery. No detached token event listener is registered in the selected client constructor."
+    },
+    {
+      "file": "src/lib/booking/google-calendar-event-payload.ts",
+      "sourceSha256": "0084ff8b09171668bfe04abc9607772dca928d17cef1dc1a6725171f3b0634aa",
+      "audit": "Local existing Calendar payload construction and hold correlation, no external effect."
+    },
+    {
+      "file": "src/lib/booking/operational-store.ts",
+      "sourceSha256": "1953ae1187428da3e594c830cb8e03dd7fd82bcf3ca74b491e1e9b6bede13aa2",
+      "audit": "Selected Redis token reads and scoped/global lock acquire/release await REST results. No new lease expiry or credential retirement claim."
+    },
+    {
+      "file": "src/lib/booking/google-refresh-token-store.ts",
+      "sourceSha256": "a93061d7c6351ba5e91c63aa88380ab6d00a4561ef4527ddbf4e81b4eb6e8f65",
+      "audit": "Selected existing deployment-scoped token read is awaited; no new credential writes introduced."
+    },
+    {
+      "file": "src/lib/private-db/calendar-connection-repository.ts",
+      "sourceSha256": "136b02f51120fcdc010c3bc0e2e05bf995f75c6f943bdafa014b616ed0d457e6",
+      "audit": "Selected active Calendar credential retrieval awaits the private database; independent OAuth setup mutations remain separate."
+    },
+    {
+      "file": "src/lib/private-db/operational-calendar-routing-repository.ts",
+      "sourceSha256": "70744e5ac7b96d3b4ef28a09445e4552cf93b4d6c72145e888bf0a2305abdb3c",
+      "audit": "Selected hold/assignment routing is awaited and rejects unavailable/inconsistent write routes. No new provider mutation."
+    },
+    {
+      "file": "src/lib/private-db/appointment-finalization-repository.ts",
+      "sourceSha256": "82b4447f6625ba313d5fa1ffcac36e419330e09cac6079a0d39f6c404780e09f",
+      "audit": "Existing hold locks, captured attempt/projection, reservations, linkage, Calendar projection and audit transactions remain awaited. V1 legacy behavior remains supported in ordinary booking."
+    },
+    {
+      "file": "src/lib/booking/square-client.ts",
+      "sourceSha256": "325b464f31d0143329a1f3497666b91bd36711ab7798daa2d1ff02634f094251",
+      "audit": "Selected getPayment/getOrder await existing provider HTTP and response validation. No charge/capture/refund call is added."
+    },
+    {
+      "file": "src/lib/booking/square-runtime.ts",
+      "sourceSha256": "dee156ab2ae11dfac9484e85af8cd9e4b5a6573f82f97c0535282e4970604c3e",
+      "audit": "Selected runtime/client configuration; no eager provider request."
+    },
+    {
+      "file": "src/lib/booking/booking-model-version.ts",
+      "sourceSha256": "ecd9d8969401c81b8193a5e57fb325fb096afcfd8fd6069d1c622eea804132cf",
+      "audit": "Local model-version resolution only."
+    },
+    {
+      "file": "src/lib/booking/availability.ts",
+      "sourceSha256": "27241b6c0577e43a4c9ec37b0fd6c814be213cdec44df7140c6f78200e8b6471",
+      "audit": "Selected local slot calculations after awaited remote reads."
+    },
+    {
+      "file": "src/lib/booking/schedule-windows.ts",
+      "sourceSha256": "d39b6879735bfad42d5e3bfaa7b7be9f817e55a944411e51f2b996eb2c6cc251",
+      "audit": "Local existing availability-window construction only."
+    },
+    {
+      "file": "src/lib/booking/calendar-ids.ts",
+      "sourceSha256": "7776d9b59b59d9132a1ee1bebbe76e744477fb7ad0cc2758efd6c6fb720733ea",
+      "audit": "Local existing legacy Calendar ID parsing only."
+    },
+    {
+      "file": "src/data/loaders.ts",
+      "sourceSha256": "08e8584693d4cde08f79e616a30fffe6b66c75c7dc5a259beaa64f06104277b1",
+      "audit": "Existing loader supplies legacy published booking settings for retained V1 holds. No parallel content access layer or new Sanity write."
+    },
+    {
+      "file": "src/lib/booking/payment-policy.ts",
+      "sourceSha256": "b2b879774455719bac3d03b50dc231b79ec95b28530963bab11bd6b4cc0dc8b2",
+      "audit": "Local existing booking payment/snapshot interpretation."
+    },
+    {
+      "file": "src/lib/booking/payments/service-promotion.ts",
+      "sourceSha256": "58c7895ef05debd3515f07521de6aee1f08d072b452f11f3ad945464873b1ba8",
+      "audit": "Local existing promotion snapshot interpretation."
+    },
+    {
+      "file": "src/lib/booking/service-tax-policy.ts",
+      "sourceSha256": "8d3a737c3f9f710d8ada36d6221155a07ec01b48be14a1b36dc4ba9d309e59a7",
+      "audit": "Local existing provider-email price calculations."
+    },
+    {
+      "file": "src/lib/resend-platform.ts",
+      "sourceSha256": "4a3528b39cab7b6667aaf0065bc22a3e967a5fca4613989184d3cdb0d8f1da03",
+      "audit": "Selected local transactional-template lookup only."
+    },
+    {
+      "file": "src/lib/transactional-email.ts",
+      "sourceSha256": "85f2960027a7d40ce3639a8c2c25a5d364d4c6731a981a3f26542e248da0e6ec",
+      "audit": "Selected sender awaits the Resend response, validates recipient policy and requires an email ID. Existing idempotency keys and environment tags are retained."
+    },
+    {
+      "file": "src/lib/env/staging-email-policy.mjs",
+      "sourceSha256": "e82583cd9e7f1f8ab3e5a639ab1c49e0079f3e7a35e6fa58c08a02442716d979",
+      "audit": "Local existing staging-recipient refusal before email HTTP."
+    },
+    {
+      "file": "src/lib/env/private-checkout.ts",
+      "sourceSha256": "e6d50773842ddc70b3d32422c41028f5214d4724ac519bceaadc4578226d8f04",
+      "audit": "Selected local runtime/mock-mode checks; no external effects."
+    },
+    {
+      "file": "src/lib/booking/payments/service-payment-alerts.ts",
+      "sourceSha256": "6fb73c5c99a474b7013f6f64c541656ee093ae47054111703de175fe0610d25c",
+      "audit": "Default selected alert logger is synchronous and sanitized; selected callers explicitly await alert results."
+    },
+    {
+      "file": "src/lib/booking/square-webhook.ts",
+      "sourceSha256": "a3753fb8ef4feab4457ef179618b46623bca227eb231793f98f60aef91cb1167",
+      "audit": "Existing exact raw signature verification and sanitized parsing precede admission."
+    },
+    {
+      "file": "src/lib/security/bounded-text-body.ts",
+      "sourceSha256": "2677dd15cc681f923c9872563a21c30e442f440bb49e6ab7c2f8dbcb514eebc2",
+      "audit": "Existing byte cap before HMAC work; no writes."
+    },
+    {
+      "file": "src/lib/private-db/client.ts",
+      "sourceSha256": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+      "audit": "Existing pool/Drizzle access; selected work awaits DB calls. Admission binds the application and ledger target configuration."
+    },
+    {
+      "file": "src/lib/private-db/pool-config.ts",
+      "sourceSha256": "3b1b78c9ec4f3c2df472e18042c7c9bdc0dfc2ede45702505a7dc837c8bf85b6",
+      "audit": "Existing connection configuration. Owned business fixture is isolated loopback PostgreSQL16 without TLS; not a TLS-ledger qualification."
+    },
+    {
+      "file": "src/lib/private-db/schema.ts",
+      "sourceSha256": "210b802be6d6419c12b533de326a6db87780c475d4491fb06a192eea40a4baa9",
+      "audit": "Static schema/types only; no new schema or migration."
+    },
+    {
+      "file": "src/lib/writer-admission/context.ts",
+      "sourceSha256": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+      "audit": "Unchanged operation-local uncertainty marker, inert outside enforcement."
+    },
+    {
+      "file": "src/lib/writer-admission/runtime.ts",
+      "sourceSha256": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
+      "audit": "Unchanged source/producer/target/TLS/current-policy binding, awaited operation and settlement; no effect replay."
+    },
+    {
+      "file": "src/lib/writer-admission/route.ts",
+      "sourceSha256": "6c7a496c8f866da8abe89f4e48cfa18d5631ad543c767e7b83e66433082879c5",
+      "audit": "Unchanged nonstreaming adapter returns a sanitized retryable 503 for admission/outcome failures."
+    },
+    {
+      "file": "ops/platform/frontend-admission.mjs",
+      "sourceSha256": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
+      "audit": "Unchanged durable protocol; active/uncertain records do not expire into drain proof."
+    }
+  ],
+  "excluded": [
+    "Browser returns and independent initiation/admin/reconciliation/worker executions",
+    "Actual producer/provider inventory, historical fencing/bootstrap and parent coordination"
+  ],
+  "limits": [
+    "Controlled route/ledger/provider/database terminals and separate actual PostgreSQL16 business checks; not a combined actual enforcement proof.",
+    "Inherited TLS admission/migration evidence remains separate. Exact-head build/browser/PostgreSQL18 CI is required.",
+    "No live provider, SQL, admission or six-control changes."
+  ]
+}

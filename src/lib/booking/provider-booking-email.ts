@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import { awaitBookingEffects } from "./await-effects";
 
 import {
   claimProviderBookingEmail,
@@ -71,7 +72,7 @@ export async function sendProviderBookingEmail(
     formattedStart,
   });
 
-  await Promise.all(
+  await awaitBookingEffects(
     recipients.map((recipient) =>
       sendTransactionalEmail({
         html: getProviderBookingHtml({

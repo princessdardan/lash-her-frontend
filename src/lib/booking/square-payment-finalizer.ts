@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 
 import {
   appointmentHolds,
@@ -167,6 +168,7 @@ export function createSquarePaymentFinalizer(
     );
 
     if (lookup.pendingVerification) {
+      markWriterOperationUncertain();
       const eventRecordInput: SquareEventRecordInput = {
         eventId: input.event?.eventId,
         eventType: input.event?.eventType ?? `square.${input.source}`,
@@ -202,6 +204,7 @@ export function createSquarePaymentFinalizer(
     }
 
     if (lookup.payment === null) {
+      markWriterOperationUncertain();
       await dependencies.repository.recordSquareEvent({
         eventId: input.event?.eventId,
         eventType: input.event?.eventType ?? `square.${input.source}`,
@@ -229,6 +232,7 @@ export function createSquarePaymentFinalizer(
     });
 
     if (localOrder === null) {
+      markWriterOperationUncertain();
       await dependencies.repository.recordSquareEvent({
         amountCents: lookup.payment.amount_money?.amount,
         currency: lookup.payment.amount_money?.currency,
@@ -250,7 +254,20 @@ export function createSquarePaymentFinalizer(
       };
     }
 
+    if (
+      (localOrder.providerPaymentId !== null && localOrder.providerPaymentId !== lookup.payment.id) ||
+      (localOrder.providerOrderId !== null && providerOrderId !== localOrder.providerOrderId) ||
+      lookup.payment.amount_money?.amount !== localOrder.amountCents ||
+      lookup.payment.amount_money?.currency !== "CAD"
+    ) markWriterOperationUncertain();
+
     if (!isPaidSquarePayment(lookup.payment)) {
+      const providerStatus = lookup.payment.status?.trim().toUpperCase();
+      if (
+        !["PENDING", "CANCELED", "CANCELLED", "FAILED"].includes(providerStatus ?? "") ||
+        localOrder.status === "paid" ||
+        !isAppointmentCheckoutPurpose(localOrder.purpose)
+      ) markWriterOperationUncertain();
       await dependencies.repository.recordSquareEvent({
         amountCents: lookup.payment.amount_money?.amount,
         currency: lookup.payment.amount_money?.currency,
@@ -265,6 +282,11 @@ export function createSquarePaymentFinalizer(
       });
 
       if (isTerminalUnpaidSquarePayment(lookup.payment)) {
+        if (
+          dependencies.repository.recordSquarePaymentFailed === undefined ||
+          lookup.payment.amount_money?.amount !== localOrder.amountCents ||
+          lookup.payment.amount_money?.currency !== "CAD"
+        ) markWriterOperationUncertain();
         await dependencies.repository.recordSquarePaymentFailed?.({
           order: localOrder,
           payment: lookup.payment,
@@ -284,6 +306,7 @@ export function createSquarePaymentFinalizer(
     const currency = lookup.payment.amount_money?.currency;
 
     if (amountCents !== localOrder.amountCents || currency !== "CAD") {
+      markWriterOperationUncertain();
       await dependencies.repository.recordSquareEvent({
         amountCents,
         currency,
@@ -305,6 +328,13 @@ export function createSquarePaymentFinalizer(
         status: "ignored",
       };
     }
+
+    // Preserve legacy transitions, but an authorization, a different bound
+    // payment, or a non-booking purpose is not confirmed recovery completion.
+    if (
+      lookup.payment.status?.trim().toUpperCase() !== "COMPLETED" ||
+      !isAppointmentCheckoutPurpose(localOrder.purpose)
+    ) markWriterOperationUncertain();
 
     await dependencies.repository.recordSquarePaymentPendingCalendar({
       amountCents,
@@ -333,6 +363,7 @@ export function createSquarePaymentFinalizer(
           source: input.source,
           transactionId: lookup.payment.id,
         });
+      if (!bookingFinalization.ok) markWriterOperationUncertain();
 
       if (
         bookingFinalization.ok ||
@@ -361,6 +392,7 @@ export function createSquarePaymentFinalizer(
             paymentStatus: lookup.payment.status ?? "unknown",
           });
         } catch (emailError) {
+          markWriterOperationUncertain();
           console.error(
             "[square-finalizer] Failed to send admin scheduling failure alert",
             {
@@ -415,8 +447,14 @@ async function recoverProcessedDuplicateBookingConfirmation(
     localOrder.status !== "paid" ||
     !isAppointmentCheckoutPurpose(localOrder.purpose)
   ) {
+    markWriterOperationUncertain();
     return;
   }
+
+  if (
+    (input.event?.paymentId !== undefined && localOrder.providerPaymentId !== input.event.paymentId) ||
+    (input.event?.orderId !== undefined && localOrder.providerOrderId !== input.event.orderId)
+  ) markWriterOperationUncertain();
 
   if (dependencies.getAppointmentHoldByCheckoutOrderPublicId !== undefined) {
     const hold = await dependencies.getAppointmentHoldByCheckoutOrderPublicId(
@@ -424,8 +462,10 @@ async function recoverProcessedDuplicateBookingConfirmation(
     );
 
     if (hold === null) {
+      markWriterOperationUncertain();
       return;
     }
+    if (hold.googleEventId === null) markWriterOperationUncertain();
 
     if (resolveBookingModelVersion(hold) === 2) {
       if (
@@ -434,14 +474,21 @@ async function recoverProcessedDuplicateBookingConfirmation(
         hold.state !== "paid_unbookable_rebooking_pending" &&
         hold.state !== "manual_rebooked"
       ) {
+        markWriterOperationUncertain();
         return;
       }
     } else if (
       (hold.state !== "booked" && hold.state !== "manual_rebooked") ||
       hold.googleEventId === null
     ) {
+      markWriterOperationUncertain();
       return;
     }
+    if (hold.state !== "booked" && hold.state !== "manual_rebooked") {
+      markWriterOperationUncertain();
+    }
+  } else {
+    markWriterOperationUncertain();
   }
 
   await dependencies.sendBookingConfirmationEmailForOrder(localOrder.orderId);
@@ -472,14 +519,16 @@ export async function finalizeSquarePayment(
   })(input);
 }
 
-function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizerRepository {
+export function createDrizzleSquarePaymentFinalizerRepository(
+  getDb = getSquarePaymentFinalizerDb,
+): SquarePaymentFinalizerRepository {
   return {
     async claimSquareEvent(input) {
       if (input.eventId === undefined) {
         return { duplicate: false };
       }
 
-      const db = await getSquarePaymentFinalizerDb();
+      const db = await getDb();
       const [createdEvent] = await db
         .insert(checkoutPaymentEvents)
         .values(toSquareEventInsert(input))
@@ -506,6 +555,8 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
         )
         .limit(1);
 
+      if (existingEvent === undefined) markWriterOperationUncertain();
+
       return {
         duplicate: true,
         processingStatus: existingEvent?.processingStatus ?? "received",
@@ -526,7 +577,7 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
       }
 
       const [row] = await (
-        await getSquarePaymentFinalizerDb()
+        await getDb()
       )
         .select()
         .from(checkoutOrders)
@@ -556,7 +607,7 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
 
       if (input.eventId !== undefined) {
         const [createdEvent] = await (
-          await getSquarePaymentFinalizerDb()
+          await getDb()
         )
           .insert(checkoutPaymentEvents)
           .values(insertValues)
@@ -569,11 +620,12 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
           })
           .returning({ id: checkoutPaymentEvents.id });
 
+        if (createdEvent === undefined) markWriterOperationUncertain();
         return { duplicate: createdEvent === undefined };
       }
 
       const [createdEvent] = await (
-        await getSquarePaymentFinalizerDb()
+        await getDb()
       )
         .insert(checkoutPaymentEvents)
         .values(insertValues)
@@ -588,10 +640,10 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
       const providerOrderId =
         input.providerOrderId ?? input.order.providerOrderId;
       const providerStatus = input.payment.status ?? "unpaid";
-      const db = await getSquarePaymentFinalizerDb();
+      const db = await getDb();
 
       await db.transaction(async (tx) => {
-        await tx
+        const updatedOrder = await tx
           .update(checkoutOrders)
           .set({
             failedAt: now,
@@ -606,9 +658,11 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
               eq(checkoutOrders.id, input.order.id),
               eq(checkoutOrders.status, "pending"),
             ),
-          );
+          )
+          .returning({ id: checkoutOrders.id });
+        if (updatedOrder.length !== 1) markWriterOperationUncertain();
 
-        await tx
+        const updatedHold = await tx
           .update(appointmentHolds)
           .set({
             failureMetadata: {
@@ -635,7 +689,9 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
                 eq(appointmentHolds.status, "payment_pending"),
               ),
             ),
-          );
+          )
+          .returning({ id: appointmentHolds.id });
+        if (updatedHold.length !== 1) markWriterOperationUncertain();
       });
 
       const amountCents = input.payment.amount_money?.amount;
@@ -670,14 +726,16 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
             ? "cancelled"
             : "failed",
         });
+      } else {
+        markWriterOperationUncertain();
       }
     },
 
     async recordSquarePaymentPendingCalendar(input) {
       const now = new Date();
-      const db = await getSquarePaymentFinalizerDb();
+      const db = await getDb();
       await db.transaction(async (tx) => {
-        await tx
+        const updatedOrder = await tx
           .update(checkoutOrders)
           .set({
             calendarFinalizationStatus: "paid_calendar_pending",
@@ -690,21 +748,25 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
             status: "paid",
             updatedAt: now,
           })
-          .where(eq(checkoutOrders.id, input.order.id));
+          .where(eq(checkoutOrders.id, input.order.id))
+          .returning({ id: checkoutOrders.id });
+        if (updatedOrder.length !== 1) markWriterOperationUncertain();
 
         await tx
           .update(appointmentHolds)
           .set({
             finalizationStatus: "paid_calendar_pending",
             paidAt: input.paidAt,
-            reconciliationMetadata: {
+            // Keep prior booking/email receipts when a later event observes
+            // the same payment; replacing the JSON would erase replay proof.
+            reconciliationMetadata: sql`coalesce(${appointmentHolds.reconciliationMetadata}, '{}'::jsonb) || ${JSON.stringify({
               squarePayment: {
                 amountCents: input.amountCents,
                 orderId: input.providerOrderId ?? input.order.providerOrderId,
                 paymentId: input.payment.id,
                 status: input.payment.status,
               },
-            },
+            })}::jsonb`,
             squareOrderId: input.providerOrderId ?? input.order.providerOrderId,
             squarePaymentId: input.payment.id,
             status: "paid_pending_booking",
