@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "date": "2026-11-04",
+  "runtime": "Node 24.18.0",
+  "status": "SOURCE_COMPONENT_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "56e0ac3eb63bb1b444a4fd876ea8b0ba8f7e41e7",
+  "sourceManifestSha256": "36a503d8b832936151868fa09e1e27a4d8398e547c624ef56dacf5007d496983",
+  "files": {
+    "scripts/run-source-unit-tests.mjs": "5528f21840e13dbd74fa656ff1e4437965eba14b1eb7f67b6ec9fbc050ab23a4",
+    "src/app/api/admin/payment-reconciliation/route.ts": "9e2ddb46174acc8e6d1cfb981634199062e9be363a67210ae4d129ea722c29f2",
+    "src/app/api/admin/payment-reconciliation/handler.ts": "6d0106f2e3229937eb50368fe11b758de017b1732b002ace52ffa8b563ea434f",
+    "src/lib/booking/email.ts": "9663472ff0d31d4e03ebe03eab09efced535f3a5b0c07494cd86ae30dea945ce",
+    "src/lib/writer-admission/booking-outcome.test.ts": "5f4eb1429ad842deabf3290266244552a3aab14f592c4df7127fff957638abf5"
+  },
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "deploymentPerformed": false,
+  "liveDatabaseOrProviderChanged": false,
+  "p200Complete": false,
+  "checks": {
+    "unit": {
+      "passed": 2236,
+      "failed": 0,
+      "skipped": 0
+    },
+    "focusedBookingRegressions": {
+      "passed": 87,
+      "failed": 0,
+      "skipped": 0,
+      "bookingOutcomeTests": 15,
+      "admittedClosureStages": 9
+    },
+    "typescript": "PASS",
+    "targetedEslint": "PASS",
+    "gitDiffCheck": "PASS",
+    "sourceBindings": 27,
+    "operationalScriptHashes": 21,
+    "httpMethods": 61,
+    "actions": 50,
+    "fullBuildBrowsersAndPostgres18": "PENDING_EXACT_HEAD_CI",
+    "inheritedRepositoryEvidence": {
+      "locallyRerun": false,
+      "repositorySourceUnchanged": true,
+      "priorEvidence": "../2026-11-04-p2-00-square-booking/validation.json",
+      "combinedActualEnforcement": false
+    },
+    "inheritedProtocol": {
+      "locallyRerun": false,
+      "protocolSourceUnchanged": true,
+      "priorEvidence": "../2026-11-04-p2-00-square-operational/validation.json"
+    }
+  },
+  "review": {
+    "findingsAddressed": [
+      "Hold notification cleanup may reject without an error value; operation-local uncertainty now survives a success-shaped legacy batch result."
+    ],
+    "regression": {
+      "originalEmailSource": "FAIL: expected 503, received 200 for undefined cleanup rejection",
+      "updatedSource": "PASS: undefined customer/provider cleanup rejections retain uncertainty while sibling notifications finish"
+    },
+    "wholeRouteQualified": false
+  },
+  "limitations": [
+    "The service monitor and commerce capture reconciliation remain outside the selected boundary.",
+    "Direct helper executions, other writers, actual producer inventory, historical fencing/bootstrap and parent coordination remain separate.",
+    "No combined actual cron/TLS-ledger/business-database enforcement, provider delivery or runtime drain proof."
+  ],
+  "predecessor": {
+    "pr": 82,
+    "mergedAtCommit": "56e0ac3eb63bb1b444a4fd876ea8b0ba8f7e41e7",
+    "reviewedHead": "34a4d5a49a8864c90cf2e9a3b333f5677f7749e2",
+    "exactHeadCiRun": "https://github.com/princessdardan/lash-her-frontend/actions/runs/41948708715",
+    "passedJobs": 10
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "baseCommit": "56e0ac3eb63bb1b444a4fd876ea8b0ba8f7e41e7",
+  "sourceManifestSha256": "36a503d8b832936151868fa09e1e27a4d8398e547c624ef56dacf5007d496983",
+  "releaseAuthority": false,
+  "scope": "Authenticated payment-reconciliation booking-outcome email retry batch only",
+  "nodes": [
+    {
+      "file": "src/app/api/admin/payment-reconciliation/route.ts",
+      "sourceSha256": "9e2ddb46174acc8e6d1cfb981634199062e9be363a67210ae4d129ea722c29f2",
+      "audit": "Production GET supplies disabled-by-default recovery runner for the booking-outcome email batch only; failed summaries are uncertain. The route as a whole remains unqualified."
+    },
+    {
+      "file": "src/app/api/admin/payment-reconciliation/handler.ts",
+      "sourceSha256": "6d0106f2e3229937eb50368fe11b758de017b1732b002ace52ffa8b563ea434f",
+      "audit": "Authenticates before worker work; awaits the existing monitor, admitted email subtask and independent commerce subtask. Admission refusal/uncertainty becomes sanitized retryable no-store 503 only after sibling work returns. Admission-off logging/status semantics remain unchanged."
+    },
+    {
+      "file": "src/lib/booking/email.ts",
+      "sourceSha256": "9663472ff0d31d4e03ebe03eab09efced535f3a5b0c07494cd86ae30dea945ce",
+      "audit": "Selected retry lists bounded operational holds and awaits each customer/provider send orchestration, correction loop and receipt before the next hold. Caught failures mark uncertainty and preserve later-hold processing. Hold notification catches retain uncertainty even for undefined cleanup rejections. No detached notification work."
+    },
+    {
+      "file": "src/lib/booking/holds.ts",
+      "sourceSha256": "fc7de1e0bc768ae25bd1b4bf2def4ff8b523a96bc6d9f7cd13f8fe71755e7897",
+      "audit": "Selected retry-list query, operational customer claim, sent acknowledgement and failure persistence are awaited. Actual claim logic distinguishes durable sent proof from missing/busy/ineligible projections; manual outcomes and missing sent targets mark uncertainty. No claim expiry is treated as drain."
+    },
+    {
+      "file": "src/lib/booking/provider-booking-email.ts",
+      "sourceSha256": "58d7c37265d891fb60aebd4507428958ad794d2d06aef1cb4737ece08ee1fc03",
+      "audit": "Selected hold notification awaits claim, every recipient request, then sent or failure persistence. Existing recipient-specific idempotency keys and fallback recipient behavior are unchanged."
+    },
+    {
+      "file": "src/lib/private-db/booking-provider-email-repository.ts",
+      "sourceSha256": "05af8d5547be21cc3804cb457c7725a25989c209052b7ce6c0c840c967d06c05",
+      "audit": "Selected claims verify successful booking before accepting durable sent proof. Busy/missing/zero-row claims retain uncertainty. Concurrent claim queries settle together before propagation; unavailable sent acknowledgements mark uncertainty."
+    },
+    {
+      "file": "src/lib/booking/await-effects.ts",
+      "sourceSha256": "ff10e6ec5e92d9b47bf05b4bb88974930714b3b5e0b25208e3faa353ba74481c",
+      "audit": "Unchanged allSettled barrier retains every started recipient/query sibling before propagating a rejection."
+    },
+    {
+      "file": "src/lib/booking/booking-model-version.ts",
+      "sourceSha256": "ecd9d8969401c81b8193a5e57fb325fb096afcfd8fd6069d1c622eea804132cf",
+      "audit": "Local existing booking-model interpretation, no external effect."
+    },
+    {
+      "file": "src/lib/booking/payment-policy.ts",
+      "sourceSha256": "b2b879774455719bac3d03b50dc231b79ec95b28530963bab11bd6b4cc0dc8b2",
+      "audit": "Local existing customer email booking/payment snapshot interpretation."
+    },
+    {
+      "file": "src/lib/booking/service-tax-policy.ts",
+      "sourceSha256": "8d3a737c3f9f710d8ada36d6221155a07ec01b48be14a1b36dc4ba9d309e59a7",
+      "audit": "Local existing provider-email price calculations."
+    },
+    {
+      "file": "src/lib/booking/payments/service-promotion.ts",
+      "sourceSha256": "58c7895ef05debd3515f07521de6aee1f08d072b452f11f3ad945464873b1ba8",
+      "audit": "Local existing provider-email promotion snapshot interpretation."
+    },
+    {
+      "file": "src/lib/resend-platform.ts",
+      "sourceSha256": "4a3528b39cab7b6667aaf0065bc22a3e967a5fca4613989184d3cdb0d8f1da03",
+      "audit": "Selected local transactional-template lookup only."
+    },
+    {
+      "file": "src/lib/transactional-email.ts",
+      "sourceSha256": "85f2960027a7d40ce3639a8c2c25a5d364d4c6731a981a3f26542e248da0e6ec",
+      "audit": "Selected sender awaits the Resend API response and validates recipient policy/provider acknowledgement. Existing idempotency keys and environment tags remain unchanged; acknowledgement does not prove delivery."
+    },
+    {
+      "file": "src/lib/env/staging-email-policy.mjs",
+      "sourceSha256": "e82583cd9e7f1f8ab3e5a639ab1c49e0079f3e7a35e6fa58c08a02442716d979",
+      "audit": "Local existing staging-recipient refusal before notification HTTP."
+    },
+    {
+      "file": "src/lib/private-db/client.ts",
+      "sourceSha256": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+      "audit": "Existing pool and Drizzle access; selected work awaits queries/transactions. No new connection mechanism."
+    },
+    {
+      "file": "src/lib/private-db/pool-config.ts",
+      "sourceSha256": "3b1b78c9ec4f3c2df472e18042c7c9bdc0dfc2ede45702505a7dc837c8bf85b6",
+      "audit": "Existing business database connection configuration; unchanged and separately qualified."
+    },
+    {
+      "file": "src/lib/private-db/schema.ts",
+      "sourceSha256": "210b802be6d6419c12b533de326a6db87780c475d4491fb06a192eea40a4baa9",
+      "audit": "Static existing schema/types. No new migration."
+    },
+    {
+      "file": "src/lib/writer-admission/context.ts",
+      "sourceSha256": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+      "audit": "Unchanged operation-local uncertainty marker, inert outside an admitted context."
+    },
+    {
+      "file": "src/lib/writer-admission/config.ts",
+      "sourceSha256": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
+      "audit": "Unchanged fail-closed source/producer/environment/application-and-ledger-target binding; disabled by default."
+    },
+    {
+      "file": "src/lib/env/application-environment.mjs",
+      "sourceSha256": "893934b2cf52c9a26fbdc50530ab413496862d832abcb321d2d7046bea2b9000",
+      "audit": "Unchanged local environment/project binding validation."
+    },
+    {
+      "file": "src/lib/writer-admission/runtime.ts",
+      "sourceSha256": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
+      "audit": "Unchanged source/producer/target/TLS/current-policy binding, operation lifetime and awaited settlement. No effect replay."
+    },
+    {
+      "file": "ops/platform/frontend-admission.mjs",
+      "sourceSha256": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
+      "audit": "Unchanged durable protocol; active/uncertain operations never expire into drain proof."
+    }
+  ],
+  "excluded": [
+    "Service reconciliation monitor and commerce capture reconciliation within the same route",
+    "Direct email-helper callers, independent initiation/confirmation/admin/other workers",
+    "Actual producer/provider inventory, historical fencing/bootstrap and parent release/restoration coordination"
+  ],
+  "limits": [
+    "Controlled route, ledger, database and provider terminals do not prove combined actual cron/TLS-ledger/business-database enforcement or delivery/drain.",
+    "Inherited actual PostgreSQL repository and ledger evidence remains separate. Full exact-head CI is required.",
+    "No live provider, database, scheduler, admission, pending SQL or six-control changes."
+  ]
+}
