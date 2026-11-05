@@ -521,20 +521,6 @@ test("paid CAD catalog publication warns before archive and requires validated r
       priceCents: 1000,
     });
     expect(await catalog.text()).not.toContain("PRIVATE_PAID_LESSON_FIXTURE");
-    const publicPage = await context.newPage();
-    await publicPage.goto("/courses/paid-browser-catalog-fixture");
-    await expect(
-      publicPage.getByRole("heading", {
-        name: "Paid browser catalog fixture",
-        exact: true,
-      }),
-    ).toBeVisible();
-    await expect(
-      publicPage.getByRole("button", { name: /buy|pay|checkout/i }),
-    ).toHaveCount(0);
-    expect(await publicPage.content()).not.toContain(
-      "PRIVATE_PAID_LESSON_FIXTURE",
-    );
     await page
       .getByRole("button", { name: "Archive course", exact: true })
       .click();
@@ -648,6 +634,20 @@ test("paid CAD catalog publication warns before archive and requires validated r
       ).status(),
     ).toBe(200);
     expect((await course()).modules[0].lessons[0].id).toBe(lessonId);
+    const publicPage = await context.newPage();
+    await publicPage.goto("/courses/paid-browser-catalog-fixture");
+    await expect(
+      publicPage.getByRole("heading", {
+        name: "Paid browser catalog fixture",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      publicPage.getByRole("button", { name: /buy|pay|checkout/i }),
+    ).toHaveCount(0);
+    expect(await publicPage.content()).not.toContain(
+      "PRIVATE_PAID_LESSON_FIXTURE",
+    );
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
