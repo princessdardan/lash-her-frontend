@@ -220,10 +220,24 @@ async function main() {
       const client = new Client({ ...options, ssl: { rejectUnauthorized: true, ca: readFileSync(certificate, "utf8") } });
       connections.push(client); return client;
     }, password, major);
+    phase = "frontend-reconciliation-owned-route";
+    await applyPrefix(await connect("frontend_admission_owned", "frontend_migration"), artifact.migrations);
+    const reconciliationOwner = await connect("frontend_admission_owned");
+    await reconciliationOwner.query("GRANT USAGE ON SCHEMA public TO frontend_admission_protocol");
+    await reconciliationOwner.query("GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO frontend_admission_protocol");
+    await reconciliationOwner.query("GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO frontend_admission_protocol");
+    const reconciliation = spawnSync(process.execPath, ["--import", "tsx", "--import", "./scripts/register-server-only-test.mjs",
+      "ops/platform/harness/owned-frontend-reconciliation.mjs"], { cwd: source, encoding: "utf8", timeout: 90000,
+      env: { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, FRONTEND_RECONCILIATION_OWNED_TEST: "true",
+        OWNED_RECONCILIATION_PORT: String(port), OWNED_RECONCILIATION_PASSWORD: password, OWNED_RECONCILIATION_MAJOR: String(major) } });
+    assert.equal(reconciliation.status, 0, `Owned reconciliation route failed: ${reconciliation.stderr}`);
+    const reconciliationRoute = JSON.parse(reconciliation.stdout);
+    assert.equal(reconciliationRoute.status, "FRONTEND_RECONCILIATION_OWNED_PASS");
     const result={status:"FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",postgresMajor:major,migrations:artifact.migrations.length,checks:records,providerTouched:false,
       admissionChecks,
       historicalLoginChecks,
       writerRouteChecks,
+      reconciliationRoute,
       sourceCommit:commit,migrationImageDigest:job.migrationImageDigest,packagedCliVerified:cli.endsWith("frontend-image.mjs"),
       sqlArtifactSha256:artifact.sqlArtifactSha256,contractManifestSha256:artifact.contractManifestSha256,schemaBaselineSha256:hash(JSON.stringify(baseline))};
     if(process.env.FRONTEND_MIGRATION_EXPORT_SCHEMA==="true")result.schemaBaseline=baseline;
@@ -235,6 +249,7 @@ async function main() {
   }
 }
 main().catch((error)=>{console.error(JSON.stringify({status:"OWNED_FRONTEND_MIGRATION_FAILED",phase,providerTouched:false,
+  fixtureDetail:phase === "frontend-reconciliation-owned-route" ? error.message : undefined,
   sqlState:/^[A-Z0-9]{5}$/u.test(error.code ?? "") ? error.code : undefined,
   sqlPosition:/^[0-9]+$/u.test(error.position ?? "") ? error.position : undefined,
   fixtureFrames:error.stack?.split("\n").filter(line=>/^\s+at .*owned-frontend-(?:admission|historical-logins|writer-routes)\.mjs/u.test(line))}));process.exitCode=1;});
