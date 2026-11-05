@@ -10,6 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { encode } from "next-auth/jwt";
 import pg from "pg";
 
@@ -101,7 +102,29 @@ try {
     const client = new pg.Client({ connectionString: url });
     await client.connect();
     try {
-      await migrate(drizzle(client), { migrationsFolder });
+      if (url === frontendUrl) {
+        // The reviewed frontend lineage commits each journal entry separately:
+        // later indexes consume enum values introduced by prior migrations.
+        await client.query("create schema drizzle");
+        await client.query(
+          "create table drizzle.__drizzle_migrations(id serial primary key, hash text not null, created_at bigint)",
+        );
+        for (const migration of readMigrationFiles({ migrationsFolder })) {
+          await client.query("begin");
+          try {
+            for (const statement of migration.sql)
+              await client.query(statement);
+            await client.query(
+              "insert into drizzle.__drizzle_migrations(hash,created_at) values($1,$2)",
+              [migration.hash, migration.folderMillis],
+            );
+            await client.query("commit");
+          } catch (error) {
+            await client.query("rollback");
+            throw error;
+          }
+        }
+      } else await migrate(drizzle(client), { migrationsFolder });
     } finally {
       await client.end();
     }
