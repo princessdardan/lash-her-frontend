@@ -1,5 +1,6 @@
 import "server-only";
 
+import { markWriterOperationUncertain } from "./context";
 import { WriterAdmissionError } from "@/lib/writer-admission/config";
 import {
   runWriterAdmission,
@@ -18,7 +19,23 @@ export async function runActionWriterAdmission<T>(
   try {
     return await run(kind, task);
   } catch (error) {
+    markWriterOperationUncertain();
     if (!(error instanceof WriterAdmissionError)) throw error;
     return unavailable();
+  }
+}
+
+// Nested boundaries must preserve an unknown inner outcome in their caller,
+// even when that caller catches the inner admission error as a domain failure.
+export async function runWriterAdmissionWithParent<T>(
+  kind: WriterOperationKind,
+  task: () => Promise<T>,
+  run: WriterAdmissionRunner = runWriterAdmission,
+): Promise<T> {
+  try {
+    return await run(kind, task);
+  } catch (error) {
+    markWriterOperationUncertain();
+    throw error;
   }
 }

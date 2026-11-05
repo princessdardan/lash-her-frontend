@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { AdminUserRepository } from "./admin-user-store";
-import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { runWriterAdmissionWithParent } from "@/lib/writer-admission/action";
 import {
   runWriterAdmission,
   type WriterAdmissionRunner,
@@ -42,12 +42,5 @@ export async function runAdminIdentityWriter<T>(
   task: () => Promise<T>,
   run: WriterAdmissionRunner = runWriterAdmission,
 ): Promise<T> {
-  try {
-    return await run(kind, task);
-  } catch (error) {
-    // Nested admission restores its caller's context before rejecting. Preserve
-    // the parent's uncertainty when auth policy catches the inner failure.
-    markWriterOperationUncertain();
-    throw error;
-  }
+  return runWriterAdmissionWithParent(kind, task, run);
 }

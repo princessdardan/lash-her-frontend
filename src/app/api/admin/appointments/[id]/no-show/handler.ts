@@ -1,3 +1,4 @@
+import { runWriterAdmissionWithParent } from "@/lib/writer-admission/action";
 import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import "server-only";
 
@@ -478,7 +479,7 @@ async function defaultFindBookedAppointmentWithNoShowRecord(
   }
 }
 
-export async function defaultChargeNoShowCommand(
+async function defaultChargeNoShowCommandWork(
   input: ChargeNoShowInvoiceInput,
   dependencies: ChargeNoShowCommandDependencies = {},
 ): Promise<ChargeNoShowInvoiceResult> {
@@ -600,4 +601,12 @@ export async function defaultChargeNoShowCommand(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export async function defaultChargeNoShowCommand(
+  ...args: Parameters<typeof defaultChargeNoShowCommandWork>
+) {
+  return runWriterAdmissionWithParent("new-work", () =>
+    defaultChargeNoShowCommandWork(...args),
+  );
 }

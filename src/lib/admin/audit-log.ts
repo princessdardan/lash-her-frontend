@@ -1,3 +1,4 @@
+import { runAdminIdentityWriter } from "@/lib/admin/user-writer-admission";
 import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import "server-only";
 
@@ -74,7 +75,7 @@ export interface AdminActivityHistoryResult {
   total: number;
 }
 
-export async function recordAdminAudit(
+async function recordAdminAuditWork(
   input: AdminAuditEntryInput,
 ): Promise<{ id: string }> {
   const db = getPrivateDb();
@@ -533,4 +534,12 @@ function formatActorOptionLabel(actor: {
 function cleanOptional(value: string | null | undefined): string | undefined {
   const cleaned = value?.trim() ?? "";
   return cleaned ? cleaned : undefined;
+}
+
+export async function recordAdminAudit(
+  ...args: Parameters<typeof recordAdminAuditWork>
+) {
+  return runAdminIdentityWriter("recovery", () =>
+    recordAdminAuditWork(...args),
+  );
 }

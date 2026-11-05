@@ -141,3 +141,125 @@ test("admin sign-out awaits the installed Auth.js raw-response shape before retu
     assert.deepEqual(events, developer ? ["clear"] : ["clear", "authjs"]);
   }
 });
+
+test("manual write mode refuses before inventory and side effects; read-only dry runs preserve their behavior", async () => {
+  const { runManualWriterAdmission } = await import("./manual");
+  const f = interactiveAdmissionFixture();
+  f.state.open = false;
+  let tasks = 0;
+  const task = async () => {
+    tasks++;
+    return "owned-result";
+  };
+  await assert.rejects(
+    runManualWriterAdmission(true, "new-work", task, f.run),
+    WriterAdmissionError,
+  );
+  assert.equal(tasks, 0);
+  assert.equal(
+    await runManualWriterAdmission(false, "new-work", task, f.run),
+    "owned-result",
+  );
+  assert.equal(tasks, 1);
+  assert.deepEqual(f.events, []);
+});
+
+test("exported nonshipping admin/manual primitives refuse closed configuration before request context or provider effects", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "./scripts/register-server-only-test.mjs",
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "--eval",
+      String.raw`
+    import assert from "node:assert/strict";
+    let providers = 0;
+    globalThis.fetch = async () => { providers++; throw new Error("OWNED_UNEXPECTED_PROVIDER"); };
+    const operations = await import("./src/lib/admin/operations-write.ts");
+    const employee = await import("./src/lib/admin/employee-calendar.ts");
+    const promotions = await import("./src/lib/admin/service-promotions.ts");
+    const square = await import("./src/lib/admin/square-team-attribution.ts");
+    const audits = await import("./src/lib/admin/audit-log.ts");
+    const proofs = await import("./src/lib/admin/step-up-proof.ts");
+    const retries = await import("./src/lib/transactional-email-retry.ts");
+    const noShow = await import("./src/app/api/admin/appointments/[id]/no-show/handler.ts");
+    const calls = [
+      () => operations.createCalendarConnection(),
+      () => operations.saveAdminGoogleCalendarCredential({}),
+      () => employee.createEmployeeCalendarConnection("owned"),
+      () => employee.saveEmployeeGoogleCalendarCredential({}),
+      () => promotions.createServicePromotion({}),
+      () => square.refreshSquareTeamMappings(),
+      () => audits.recordAdminAudit({}),
+      () => proofs.issueAdminStepUpProof({}),
+      () => proofs.consumeAdminStepUpProof({}),
+      () => retries.retryTransactionalEmail({ flow: "booking", orderId: "owned", origin: "https://owned.invalid" }),
+      () => noShow.defaultChargeNoShowCommand({}),
+    ];
+    for (const call of calls) await assert.rejects(call(), error => error.name === "WriterAdmissionError" && error.code === "configuration");
+    assert.equal(providers, 0);
+  `,
+    ],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        FRONTEND_WRITER_ADMISSION_MODE: "enforce",
+        FRONTEND_WRITER_ADMISSION_TARGET_JSON: "{}",
+        NEXT_PUBLIC_SANITY_DATASET: "owned",
+        NEXT_PUBLIC_SANITY_PROJECT_ID: "owned",
+        VERCEL_ENV: "production",
+        VERCEL_TARGET_ENV: "production",
+        APP_ENV: "staging",
+      },
+    },
+  );
+  assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+});
+
+test("legacy booking write-mode maintenance commands refuse before their Sanity inventory fetch", async () => {
+  const { spawnSync } = await import("node:child_process");
+  for (const script of [
+    "bootstrap-booking-operations",
+    "import-booking-operational-cutover",
+  ]) {
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "./scripts/register-server-only-test.mjs",
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "--eval",
+        `
+      globalThis.fetch = async () => { throw new Error("OWNED_UNEXPECTED_PROVIDER"); };
+      process.argv.push("--execute");
+      await import("./scripts/${script}.ts");
+    `,
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          FRONTEND_WRITER_ADMISSION_MODE: "enforce",
+          FRONTEND_WRITER_ADMISSION_TARGET_JSON: "{}",
+          NEXT_PUBLIC_SANITY_DATASET: "owned",
+          NEXT_PUBLIC_SANITY_PROJECT_ID: "owned",
+          VERCEL_ENV: "production",
+          VERCEL_TARGET_ENV: "production",
+          APP_ENV: "staging",
+        },
+      },
+    );
+    assert.equal(result.status, 1, script);
+    assert.match(result.stderr, /Writer admission configuration/);
+    assert.doesNotMatch(result.stderr, /OWNED_UNEXPECTED_PROVIDER/);
+  }
+});

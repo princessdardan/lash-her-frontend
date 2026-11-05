@@ -212,6 +212,18 @@ async function main() {
     assert.equal(missingHold.status, 503); assert.equal((await inspectBusiness()).holds[0].has_promotion, true);
     assert.deepEqual((await since(before)).map(row => row.state), ["uncertain"]); await reconcile();
     checks.push("actual-booking-promotion-missing-update-receipt-remains-uncertain-behind-conflict-result");
+    phase = "direct-admin-maintenance-refusal";
+    const { createCalendarConnection } = await import("../../../src/lib/admin/operations-write.ts");
+    const { refreshSquareTeamMappings } = await import("../../../src/lib/admin/square-team-attribution.ts");
+    const { recordAdminAudit } = await import("../../../src/lib/admin/audit-log.ts");
+    before = await operations();
+    const auditCount = (await operator.query("SELECT count(*)::int AS count FROM admin_audit_logs")).rows[0].count;
+    for (const work of [() => createCalendarConnection(), () => refreshSquareTeamMappings(), () => recordAdminAudit({})]) {
+      await assert.rejects(work(), error => error.name === "WriterAdmissionError" && error.code === "unavailable");
+    }
+    assert.deepEqual(await since(before), []);
+    assert.equal((await operator.query("SELECT count(*)::int AS count FROM admin_audit_logs")).rows[0].count, auditCount);
+    checks.push("actual-direct-admin-exports-refuse-closed-tls-policy-before-auth-provider-and-audit-writes");
     assert.equal(unexpectedFetches, 0); assert.equal(invariantFailure, undefined);
     const sourceAfter = frontendWriterInventory(fileURLToPath(new URL("../../../", import.meta.url)));
     assert.deepEqual(sourceAfter, sourceBefore);

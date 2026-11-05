@@ -1,3 +1,4 @@
+import { runAdminIdentityWriter } from "@/lib/admin/user-writer-admission";
 import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import "server-only";
 
@@ -158,7 +159,7 @@ async function assertOfferingMutationAllowed(
   return offering;
 }
 
-export async function createConfiguredBookingService(input: {
+async function createConfiguredBookingServiceWork(input: {
   bufferAfterMinutes: number;
   bufferBeforeMinutes: number;
   depositAmountCents: number;
@@ -298,7 +299,7 @@ async function assertAddOnMutationAllowed(
   return addOn;
 }
 
-export async function createStaffUser(input: {
+async function createStaffUserWork(input: {
   displayName?: string;
   email: string;
   role: Exclude<AdminRole, "owner">;
@@ -341,7 +342,7 @@ export async function createStaffUser(input: {
   });
 }
 
-export async function setStaffStatus(input: {
+async function setStaffStatusWork(input: {
   status: "active" | "disabled";
   userId: string;
 }) {
@@ -411,7 +412,7 @@ export async function setStaffStatus(input: {
   });
 }
 
-export async function setBookingResourceStatus(input: {
+async function setBookingResourceStatusWork(input: {
   resourceId: string;
   status: Exclude<BookingConfigurationStatus, "archived">;
 }) {
@@ -479,7 +480,7 @@ export async function setBookingResourceStatus(input: {
   });
 }
 
-export async function createBookingService(input: {
+async function createBookingServiceWork(input: {
   displayTitle: string;
   ownerProviderId: string;
   publicSlug?: string;
@@ -530,7 +531,7 @@ export async function createBookingService(input: {
   });
 }
 
-export async function setBookingServiceStatus(input: {
+async function setBookingServiceStatusWork(input: {
   serviceId: string;
   status: Exclude<BookingConfigurationStatus, "archived">;
 }) {
@@ -559,7 +560,7 @@ export async function setBookingServiceStatus(input: {
   });
 }
 
-export async function updateBookingServiceProfile(input: {
+async function updateBookingServiceProfileWork(input: {
   displayTitle: string;
   publicSlug?: string;
   sanityDocumentId?: string;
@@ -601,7 +602,7 @@ export async function updateBookingServiceProfile(input: {
   });
 }
 
-export async function createServiceOffering(input: {
+async function createServiceOfferingWork(input: {
   bufferAfterMinutes: number;
   bufferBeforeMinutes: number;
   depositAmountCents: number;
@@ -692,7 +693,7 @@ export async function createServiceOffering(input: {
   });
 }
 
-export async function updateServiceOffering(input: {
+async function updateServiceOfferingWork(input: {
   bufferAfterMinutes: number;
   bufferBeforeMinutes: number;
   depositAmountCents: number;
@@ -762,9 +763,7 @@ export async function updateServiceOffering(input: {
   });
 }
 
-export async function reorderServiceOfferings(input: {
-  offeringIds: string[];
-}) {
+async function reorderServiceOfferingsWork(input: { offeringIds: string[] }) {
   const actor = await requirePermission("offerings:manage");
   if (input.offeringIds.length === 0) {
     throw new Error("At least one service is required to save the order");
@@ -823,7 +822,7 @@ export async function reorderServiceOfferings(input: {
   });
 }
 
-export async function setServiceOfferingStatus(input: {
+async function setServiceOfferingStatusWork(input: {
   offeringId: string;
   status: Exclude<BookingConfigurationStatus, "archived">;
 }) {
@@ -1084,7 +1083,7 @@ export async function setServiceOfferingStatus(input: {
   });
 }
 
-export async function createOfferingAddOn(input: {
+async function createOfferingAddOnWork(input: {
   addOnKey: string;
   description: string;
   durationDeltaMinutes: number;
@@ -1125,7 +1124,7 @@ export async function createOfferingAddOn(input: {
   });
 }
 
-export async function setOfferingAddOnStatus(input: {
+async function setOfferingAddOnStatusWork(input: {
   addOnId: string;
   status: "active" | "disabled";
 }) {
@@ -1170,7 +1169,7 @@ export async function setOfferingAddOnStatus(input: {
   });
 }
 
-export async function updateBookingSettings(input: {
+async function updateBookingSettingsWork(input: {
   bookingHorizonDays: number;
   defaultBufferAfterMinutes: number;
   defaultBufferBeforeMinutes: number;
@@ -1231,7 +1230,7 @@ export async function updateBookingSettings(input: {
   });
 }
 
-export async function createResourceSchedule(input: {
+async function createResourceScheduleWork(input: {
   effectiveFrom: string;
   effectiveUntil?: string;
   endsAt: string;
@@ -1274,7 +1273,7 @@ export async function createResourceSchedule(input: {
   });
 }
 
-export async function disableResourceSchedule(input: {
+async function disableResourceScheduleWork(input: {
   resourceId: string;
   scheduleId: string;
 }) {
@@ -1307,7 +1306,7 @@ export async function disableResourceSchedule(input: {
   });
 }
 
-export async function createScheduleException(input: {
+async function createScheduleExceptionWork(input: {
   endsAtLocal: string;
   kind: BookingScheduleExceptionKind;
   note?: string;
@@ -1379,7 +1378,7 @@ export async function createScheduleException(input: {
   }
 }
 
-export async function cancelScheduleException(input: {
+async function cancelScheduleExceptionWork(input: {
   exceptionId: string;
   resourceId: string;
 }) {
@@ -1434,7 +1433,7 @@ export async function cancelScheduleException(input: {
   });
 }
 
-export async function createCalendarConnection() {
+async function createCalendarConnectionWork() {
   const actor = await requirePermission("calendar-connections:manage");
   return runAuditedAdminMutation({
     action: "calendar_connection_created",
@@ -1457,7 +1456,7 @@ export async function createCalendarConnection() {
   });
 }
 
-export async function disableAdminCalendarConnectionAfterOAuthFailure(
+async function disableAdminCalendarConnectionAfterOAuthFailureWork(
   connectionId: string,
 ): Promise<void> {
   const actor = await requirePermission("calendar-connections:manage");
@@ -1478,7 +1477,7 @@ export async function disableAdminCalendarConnectionAfterOAuthFailure(
   });
 }
 
-export async function saveAdminGoogleCalendarCredential(input: {
+async function saveAdminGoogleCalendarCredentialWork(input: {
   accountEmail: string;
   connectionId: string;
   providerAccountId: string;
@@ -1526,7 +1525,7 @@ export async function saveAdminGoogleCalendarCredential(input: {
   });
 }
 
-export async function disableCalendarConnection(connectionId: string) {
+async function disableCalendarConnectionWork(connectionId: string) {
   const actor = await requirePermission("calendar-connections:manage");
   const expectedOwnerAdminUserId =
     await loadCalendarConnectionOwnerSnapshot(connectionId);
@@ -1613,7 +1612,7 @@ export async function disableCalendarConnection(connectionId: string) {
   await revokeEncryptedGoogleCredentialBestEffort(credentialCiphertext);
 }
 
-export async function transferCalendarConnectionOwnership(input: {
+async function transferCalendarConnectionOwnershipWork(input: {
   connectionId: string;
   employeeUserId: string | null;
 }) {
@@ -1727,7 +1726,7 @@ export async function transferCalendarConnectionOwnership(input: {
   });
 }
 
-export async function saveCalendarAssignment(input: {
+async function saveCalendarAssignmentWork(input: {
   acceptsBookings: boolean;
   calendarLabel?: string;
   confirmedReplacementAssignmentId?: string;
@@ -2008,7 +2007,7 @@ async function loadCalendarAssignmentOwnershipSnapshot(
   return assignment;
 }
 
-export async function disableCalendarAssignment(assignmentId: string) {
+async function disableCalendarAssignmentWork(assignmentId: string) {
   const actor = await requirePermission("calendar-connections:manage");
   const assignmentSnapshot =
     await loadCalendarAssignmentOwnershipSnapshot(assignmentId);
@@ -2075,7 +2074,7 @@ export async function disableCalendarAssignment(assignmentId: string) {
   });
 }
 
-export async function setAppointmentAttendanceStatus(input: {
+async function setAppointmentAttendanceStatusWork(input: {
   appointmentId: string;
   status: "completed" | "no_show";
 }) {
@@ -2269,4 +2268,210 @@ function getPostgresErrorCode(error: unknown): string | null {
     candidate = "cause" in candidate ? candidate.cause : null;
   }
   return null;
+}
+
+export async function createConfiguredBookingService(
+  ...args: Parameters<typeof createConfiguredBookingServiceWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    createConfiguredBookingServiceWork(...args),
+  );
+}
+
+export async function createStaffUser(
+  ...args: Parameters<typeof createStaffUserWork>
+) {
+  return runAdminIdentityWriter("new-work", () => createStaffUserWork(...args));
+}
+
+export async function setStaffStatus(
+  ...args: Parameters<typeof setStaffStatusWork>
+) {
+  return runAdminIdentityWriter("new-work", () => setStaffStatusWork(...args));
+}
+
+export async function setBookingResourceStatus(
+  ...args: Parameters<typeof setBookingResourceStatusWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    setBookingResourceStatusWork(...args),
+  );
+}
+
+export async function createBookingService(
+  ...args: Parameters<typeof createBookingServiceWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    createBookingServiceWork(...args),
+  );
+}
+
+export async function setBookingServiceStatus(
+  ...args: Parameters<typeof setBookingServiceStatusWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    setBookingServiceStatusWork(...args),
+  );
+}
+
+export async function updateBookingServiceProfile(
+  ...args: Parameters<typeof updateBookingServiceProfileWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    updateBookingServiceProfileWork(...args),
+  );
+}
+
+export async function createServiceOffering(
+  ...args: Parameters<typeof createServiceOfferingWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    createServiceOfferingWork(...args),
+  );
+}
+
+export async function updateServiceOffering(
+  ...args: Parameters<typeof updateServiceOfferingWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    updateServiceOfferingWork(...args),
+  );
+}
+
+export async function reorderServiceOfferings(
+  ...args: Parameters<typeof reorderServiceOfferingsWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    reorderServiceOfferingsWork(...args),
+  );
+}
+
+export async function setServiceOfferingStatus(
+  ...args: Parameters<typeof setServiceOfferingStatusWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    setServiceOfferingStatusWork(...args),
+  );
+}
+
+export async function createOfferingAddOn(
+  ...args: Parameters<typeof createOfferingAddOnWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    createOfferingAddOnWork(...args),
+  );
+}
+
+export async function setOfferingAddOnStatus(
+  ...args: Parameters<typeof setOfferingAddOnStatusWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    setOfferingAddOnStatusWork(...args),
+  );
+}
+
+export async function updateBookingSettings(
+  ...args: Parameters<typeof updateBookingSettingsWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    updateBookingSettingsWork(...args),
+  );
+}
+
+export async function createResourceSchedule(
+  ...args: Parameters<typeof createResourceScheduleWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    createResourceScheduleWork(...args),
+  );
+}
+
+export async function disableResourceSchedule(
+  ...args: Parameters<typeof disableResourceScheduleWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    disableResourceScheduleWork(...args),
+  );
+}
+
+export async function createScheduleException(
+  ...args: Parameters<typeof createScheduleExceptionWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    createScheduleExceptionWork(...args),
+  );
+}
+
+export async function cancelScheduleException(
+  ...args: Parameters<typeof cancelScheduleExceptionWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    cancelScheduleExceptionWork(...args),
+  );
+}
+
+export async function createCalendarConnection(
+  ...args: Parameters<typeof createCalendarConnectionWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    createCalendarConnectionWork(...args),
+  );
+}
+
+export async function disableAdminCalendarConnectionAfterOAuthFailure(
+  ...args: Parameters<
+    typeof disableAdminCalendarConnectionAfterOAuthFailureWork
+  >
+) {
+  return runAdminIdentityWriter("recovery", () =>
+    disableAdminCalendarConnectionAfterOAuthFailureWork(...args),
+  );
+}
+
+export async function saveAdminGoogleCalendarCredential(
+  ...args: Parameters<typeof saveAdminGoogleCalendarCredentialWork>
+) {
+  return runAdminIdentityWriter("recovery", () =>
+    saveAdminGoogleCalendarCredentialWork(...args),
+  );
+}
+
+export async function disableCalendarConnection(
+  ...args: Parameters<typeof disableCalendarConnectionWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    disableCalendarConnectionWork(...args),
+  );
+}
+
+export async function transferCalendarConnectionOwnership(
+  ...args: Parameters<typeof transferCalendarConnectionOwnershipWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    transferCalendarConnectionOwnershipWork(...args),
+  );
+}
+
+export async function saveCalendarAssignment(
+  ...args: Parameters<typeof saveCalendarAssignmentWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    saveCalendarAssignmentWork(...args),
+  );
+}
+
+export async function disableCalendarAssignment(
+  ...args: Parameters<typeof disableCalendarAssignmentWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    disableCalendarAssignmentWork(...args),
+  );
+}
+
+export async function setAppointmentAttendanceStatus(
+  ...args: Parameters<typeof setAppointmentAttendanceStatusWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    setAppointmentAttendanceStatusWork(...args),
+  );
 }

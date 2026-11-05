@@ -1,5 +1,6 @@
 import "server-only";
 
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { WriterAdmissionError } from "@/lib/writer-admission/config";
 import {
   runWriterAdmission,
@@ -20,6 +21,7 @@ export async function attemptAdmittedAdminAction<T>(
     const value = await run("new-work", task);
     return { ok: true, value };
   } catch (error) {
+    markWriterOperationUncertain();
     return {
       error:
         error instanceof WriterAdmissionError

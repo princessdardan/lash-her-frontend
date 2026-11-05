@@ -1,3 +1,4 @@
+import { runAdminIdentityWriter } from "@/lib/admin/user-writer-admission";
 import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import "server-only";
 
@@ -121,7 +122,7 @@ export async function listEmployeeCalendarWorkspace() {
   return { assignments, connections, resources };
 }
 
-export async function createEmployeeCalendarConnection(
+async function createEmployeeCalendarConnectionWork(
   resourceId: string,
 ): Promise<{ id: string }> {
   const actor = await requireEmployeeResource(resourceId);
@@ -157,7 +158,7 @@ export async function createEmployeeCalendarConnection(
   });
 }
 
-export async function disableEmployeeCalendarConnectionAfterOAuthFailure(input: {
+async function disableEmployeeCalendarConnectionAfterOAuthFailureWork(input: {
   connectionId: string;
   resourceId: string;
 }): Promise<void> {
@@ -224,7 +225,7 @@ export type EmployeeGoogleCredentialSaveResult =
   | { connectionId: string; status: "reconnected_existing" }
   | { status: "owned_elsewhere" };
 
-export async function saveEmployeeGoogleCalendarCredential(input: {
+async function saveEmployeeGoogleCalendarCredentialWork(input: {
   accountEmail: string;
   connectionId: string;
   providerAccountId: string;
@@ -269,7 +270,7 @@ export async function saveEmployeeGoogleCalendarCredential(input: {
   });
 }
 
-export async function saveEmployeeCalendarAssignment(input: {
+async function saveEmployeeCalendarAssignmentWork(input: {
   acceptsBookings: boolean;
   calendarLabel?: string;
   confirmedReplacementAssignmentId?: string;
@@ -428,7 +429,7 @@ export async function saveEmployeeCalendarAssignment(input: {
   });
 }
 
-export async function disableEmployeeBusyAssignment(input: {
+async function disableEmployeeBusyAssignmentWork(input: {
   assignmentId: string;
   resourceId: string;
 }): Promise<void> {
@@ -491,7 +492,7 @@ export async function disableEmployeeBusyAssignment(input: {
   });
 }
 
-export async function disconnectEmployeeCalendarConnection(input: {
+async function disconnectEmployeeCalendarConnectionWork(input: {
   connectionId: string;
   resourceId: string;
 }): Promise<void> {
@@ -714,4 +715,54 @@ async function loadActiveEmployeeConnectionSnapshot(input: {
     providerAccountId: connection.providerAccountId,
     updatedAt: connection.updatedAt,
   };
+}
+
+export async function createEmployeeCalendarConnection(
+  ...args: Parameters<typeof createEmployeeCalendarConnectionWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    createEmployeeCalendarConnectionWork(...args),
+  );
+}
+
+export async function disableEmployeeCalendarConnectionAfterOAuthFailure(
+  ...args: Parameters<
+    typeof disableEmployeeCalendarConnectionAfterOAuthFailureWork
+  >
+) {
+  return runAdminIdentityWriter("recovery", () =>
+    disableEmployeeCalendarConnectionAfterOAuthFailureWork(...args),
+  );
+}
+
+export async function saveEmployeeGoogleCalendarCredential(
+  ...args: Parameters<typeof saveEmployeeGoogleCalendarCredentialWork>
+) {
+  return runAdminIdentityWriter("recovery", () =>
+    saveEmployeeGoogleCalendarCredentialWork(...args),
+  );
+}
+
+export async function saveEmployeeCalendarAssignment(
+  ...args: Parameters<typeof saveEmployeeCalendarAssignmentWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    saveEmployeeCalendarAssignmentWork(...args),
+  );
+}
+
+export async function disableEmployeeBusyAssignment(
+  ...args: Parameters<typeof disableEmployeeBusyAssignmentWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    disableEmployeeBusyAssignmentWork(...args),
+  );
+}
+
+export async function disconnectEmployeeCalendarConnection(
+  ...args: Parameters<typeof disconnectEmployeeCalendarConnectionWork>
+) {
+  return runAdminIdentityWriter("new-work", () =>
+    disconnectEmployeeCalendarConnectionWork(...args),
+  );
 }
