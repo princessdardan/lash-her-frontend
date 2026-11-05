@@ -301,6 +301,46 @@ async function main() {
       await reconcile();
     }
 
+    for (const mode of ["signout-suppressed", "token-restored-after-consumption", "google-link-suppressed", "throttle-reset-after-write"]) {
+      phase = `auth-${mode}`; await reset(); await change(true);
+      let proof = await csrf(), path, options, table, timing, event, statement;
+      if (mode === "signout-suppressed") {
+        const fixture = await seedAccount();
+        path = "/api/customer-auth/signout";
+        options = { method: "POST", cookie: cookieJoin(proof.cookie, fixture.cookie), body: new URLSearchParams({ csrfToken: proof.token }) };
+        table = "customer_sessions"; timing = "BEFORE"; event = "DELETE"; statement = "RETURN NULL";
+      } else if (mode === "token-restored-after-consumption") {
+        assert.equal((await emailStart(proof)).status, 303);
+        path = new URL(verificationUrl).pathname + new URL(verificationUrl).search; options = { cookie: proof.cookie };
+        table = "customer_verification_tokens"; timing = "AFTER"; event = "DELETE";
+        statement = "INSERT INTO customer_verification_tokens(token,identifier,expires) VALUES(OLD.token,OLD.identifier,OLD.expires); RETURN OLD";
+      } else if (mode === "google-link-suppressed") {
+        const start = await request("/api/customer-auth/signin/google", { method: "POST", cookie: proof.cookie, body: new URLSearchParams({ csrfToken: proof.token, callbackUrl: "/academy" }) });
+        const authorization = new URL(start.headers.get("location")); nonce = authorization.searchParams.get("nonce");
+        path = `/api/customer-auth/callback/google?${new URLSearchParams({ code: "owned-synthetic-code", state: authorization.searchParams.get("state") })}`;
+        options = { cookie: cookieJoin(proof.cookie, start.headers.getSetCookie()) };
+        table = "customer_provider_links"; timing = "BEFORE"; event = "INSERT"; statement = "RETURN NULL";
+      } else {
+        path = "/api/customer-auth/signin/resend";
+        options = { method: "POST", cookie: proof.cookie, body: new URLSearchParams({ email: "owned@example.invalid", csrfToken: proof.token }) };
+        table = "customer_auth_throttle"; timing = "AFTER"; event = "INSERT OR UPDATE";
+        statement = "IF pg_trigger_depth() = 1 THEN UPDATE customer_auth_throttle SET attempts=0 WHERE key=NEW.key; END IF; RETURN NEW";
+      }
+      await operator.query(`CREATE OR REPLACE FUNCTION pg_temp.fault_owned_identity_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN ${statement}; END $$`);
+      await operator.query(`CREATE TRIGGER owned_fault_identity_receipt ${timing} ${event} ON ${table} FOR EACH ROW EXECUTE FUNCTION pg_temp.fault_owned_identity_receipt()`);
+      before = await operations(); let result;
+      try { result = await request(path, options); }
+      finally { await operator.query(`DROP TRIGGER owned_fault_identity_receipt ON ${table}`); }
+      const current = await since(before), business = await counts();
+      if (result.status !== 503 || current.length !== 1 || current[0].state !== "uncertain") {
+        findings.push({ code: `AUTH_${mode.toUpperCase().replaceAll("-", "_")}_RECEIPT`, path: "src/lib/customer-auth/store.ts", table,
+          responseStatus: result.status, operationStates: current.map(row => row.state), persistedRows: business[table], issuedSessionCookie: !!sessionCookie(result),
+          tokenRows: business.customer_verification_tokens, sessionRows: business.customer_sessions, linkRows: business.customer_provider_links,
+          throttleAttempts: mode === "throttle-reset-after-write" ? (await operator.query("SELECT attempts FROM customer_auth_throttle ORDER BY key")).rows.map(row => row.attempts) : undefined });
+      } else checks.push(`actual-auth-${mode}-missing-or-mutated-persistence-refuses-with-whole-operation-uncertainty`);
+      await reconcile();
+    }
+
     phase = "account-closed-and-real-session";
     await reset(); const fixture = await seedAccount(); await change(false); before = await operations(); beforeBusiness = await fingerprint();
     assert.equal((await account("preferences", fixture, { learningUpdates: true })).status, 503);
