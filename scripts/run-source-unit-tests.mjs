@@ -10,6 +10,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/writer-admission/remaining-workers.test.ts",
   "src/lib/writer-admission/admin-identity.test.ts",
   "src/lib/writer-admission/admin-interactive.test.ts",
+  "src/lib/writer-admission/booking-interactive.test.ts",
   "src/lib/customer-auth/handler.test.ts",
   "src/lib/writer-admission/product-refund-worker.test.ts",
   "src/lib/writer-admission/stock-sweep.test.ts",
