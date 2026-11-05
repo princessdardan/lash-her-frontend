@@ -593,10 +593,12 @@ test("public preview does not offer assessment outage recovery or saved completi
     page.getByRole("heading", { name: "A public preview", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Preview lesson.", { exact: false }),
+    page.getByRole("main").getByText("Preview lesson.", { exact: false }),
   ).toBeVisible();
   await expect(
-    page.getByText("Public preview lesson text.", { exact: true }),
+    page
+      .getByRole("main")
+      .getByText("Public preview lesson text.", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Assessment unavailable" }),
@@ -873,6 +875,7 @@ test("explicit revised assessment refresh settles pending resume and removes old
     ).progress[0];
     expect(progress.completedAt).toBeNull();
     expect(progress.resumePositionSeconds).toBeGreaterThanOrEqual(3);
+    await page.getByText("Your recent attempts", { exact: true }).click();
     await expect(page.getByText(/Earlier assessment version/)).toBeVisible();
   } finally {
     release();
