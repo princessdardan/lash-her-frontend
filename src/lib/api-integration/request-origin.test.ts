@@ -19,5 +19,6 @@ test("origin binding permits only exact origins or explicit non-production loopb
 test("loopback compatibility preserves exact Origin, CSRF, Fetch Metadata and body bounds", async () => {
   const request = (headers: Record<string, string> = {}) => new Request("http://localhost:3111/api/academy/progress", { method: "POST", headers: { host: "127.0.0.1:3111", origin: "http://127.0.0.1:3111", "content-type": "application/json", "x-lash-csrf": "1", ...headers }, body: "{}" });
   assert.deepEqual(await readSameOriginJson(request(), "http://127.0.0.1:3111"), {});
-  for (const headers of [{ origin: "http://localhost:3111" }, { "x-lash-csrf": "" }, { "sec-fetch-site": "cross-site" }, { host: "evil.invalid" }]) await assert.rejects(readSameOriginJson(request(headers), "http://127.0.0.1:3111"), { code: "forbidden" });
+  const denied: Array<Record<string, string>> = [{ origin: "http://localhost:3111" }, { "x-lash-csrf": "" }, { "sec-fetch-site": "cross-site" }, { host: "evil.invalid" }];
+  for (const headers of denied) await assert.rejects(readSameOriginJson(request(headers), "http://127.0.0.1:3111"), { code: "forbidden" });
 });
