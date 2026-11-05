@@ -65,6 +65,18 @@ test("Resend retirement artifact binds only isolated staging domain and exact sc
   }
 });
 
+test("Square retirement artifact permits only dedicated sandbox IDs and actual financial row references", () => {
+  const f = fixture();
+  f.input.squareRetirement = { environment: "sandbox", credentialKind: "personal-access-token", locationId: "LE2H76M5V90AM", apiVersion: "2026-05-20",
+    merchantId: "ownedMerchant", applicationId: "sandbox-sq0idb-owned", webhookIds: ["wbhk_b8cf77ce0a5142b38b93715c05ede7d5"], effects: [] };
+  assert.deepEqual(frontendProviderBindingsArtifact(f.input, f.plan).squareRetirement, f.input.squareRetirement);
+  for (const change of [r => { r.environment = "production"; }, r => { r.credentialKind = "oauth"; }, r => { r.locationId = "production"; },
+    r => { r.applicationId = "sq0idp-production"; }, r => { r.webhookIds = ["wbhk_7059795d5bdc460fb9333430fa70c0ec"]; },
+    r => { r.effects = [{ recordKind: "arbitrary-table", recordId: "11111111-1111-4111-8111-111111111111", databaseRowSha256: "a".repeat(64) }]; }]) {
+    const copy = structuredClone(f.input); change(copy.squareRetirement); assert.throws(() => frontendProviderBindingsArtifact(copy, f.plan));
+  }
+});
+
 test("missing historical/provider capabilities remain explicit for every surface without synthetic zero counts", () => {
   const f = fixture(), missing = frontendProviderMissingCapabilities(f.artifact);
   assert.equal(missing.length, f.plan.externalSurfaces.length);
@@ -109,7 +121,7 @@ async function protocolFixture(code, task) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "frontend-provider-protocol-"))), app = join(directory, "app");
   try {
     mkdirSync(join(app, "ops/platform/host"), { recursive: true }); mkdirSync(join(app, "src/lib/private-db"), { recursive: true });
-    const modules = ["frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
+    const modules = ["frontend-square-effects", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
       "frontend-migration", "frontend-schema", "source-checkout", "source-policy", "release-inputs", "release"];
     for (const name of modules) copyFileSync(join(root, "ops/platform", `${name}.mjs`), join(app, "ops/platform", `${name}.mjs`));
     copyFileSync(join(root, "src/lib/private-db/migration-lineage.ts"), join(app, "src/lib/private-db/migration-lineage.ts"));

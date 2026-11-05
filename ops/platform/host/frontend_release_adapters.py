@@ -12,6 +12,7 @@ import sys
 
 import frontend_probe
 import frontend_resend_retirement
+import frontend_square_retirement
 import migrate
 import vercel
 
@@ -285,6 +286,13 @@ def configure_bootstrap(context, client, attempt, parent_directory):
         variables.extend([("RESEND_API_KEY", context["resendReplacementToken"], "sensitive"),
             ("LASH_RELEASE_RESEND_DOMAIN_ID", reviewed_resend["domainId"], "plain"),
             ("LASH_RELEASE_RESEND_DOMAIN_NAME", reviewed_resend["domainName"], "plain")])
+    if context["bindings"].get("squareRetirement") is not None:
+        reviewed_square = context["bindings"]["squareRetirement"]
+        demand(isinstance(context.get("squareReplacementToken"), str), "SQUARE_BOOTSTRAP_REPLACEMENT_REQUIRED")
+        variables.extend([("SQUARE_ACCESS_TOKEN", context["squareReplacementToken"], "sensitive"),
+            ("SQUARE_ENVIRONMENT", "sandbox", "plain"), ("SQUARE_LOCATION_ID", reviewed_square["locationId"], "plain"),
+            ("SQUARE_APPLICATION_ID", reviewed_square["applicationId"], "plain"),
+            ("LASH_RELEASE_SQUARE_MERCHANT_ID", reviewed_square["merchantId"], "plain")])
     outcome = {**selected, "status": "BOOTSTRAP_CONFIGURATION_REQUIRES_REVIEW", "configuredKeys": [], "trafficAuthorized": False}
     migrate.write_json(attempt, "bootstrap-configuration-started.json", outcome)
     try:
@@ -437,6 +445,36 @@ def verify_resend_runtime(context, client, attempt, probe):
         "historicalWritersFenced": False, "activeExecutions": None, "uncertainEffects": None, "trafficAuthorized": False}
 
 
+def verify_square_runtime(context, client, attempt, probe):
+    bootstrap_attempt = attempt.parent / "vercel-bootstrap"
+    observed = observe_compatible(context, client, bootstrap_attempt)
+    demand(observed.get("bootstrapAdmissionVerified") is True and observed.get("workloadVerified") is True and
+        observed.get("aliasJobMatchesIntent") is True and observed.get("aliasDeploymentId") == observed.get("deploymentId") and
+        observed.get("aliasJobState") == "succeeded", "SQUARE_ADMISSION_BOOTSTRAP_REQUIRED")
+    staged = vercel._staged_identity(context["candidate"], bootstrap_attempt)
+    private = frontend_probe._private_input(Path(context["privateConfigurationDirectory"]) / "admission-bootstrap", staged)
+    project = vercel._project(client, staged["projectId"])
+    state = vercel.deployment_state(client, staged["deploymentId"], staged["projectId"], staged["sourceCommit"], staged["releaseId"])
+    challenge = secrets.token_hex(32)
+    value = probe.request(state["url"], private["secret"], frontend_probe._automation_bypass(project), challenge, "square-binding")
+    reviewed = context["bindings"]["squareRetirement"]
+    demand(value.get("version") == 1 and value.get("status") == "FRONTEND_WORKLOAD_PROBE_PASS" and value.get("challenge") == challenge and
+        all(value.get(key) == staged[key] for key in ("environment", "projectId", "sourceCommit")) and
+        value.get("gatewayOrigin") == private["gatewayOrigin"] and
+        value.get("checks") == ["gateway-course-catalog", "frontend-admission-bootstrap", "square-binding"] and
+        value.get("squareBinding") == {"environment": "sandbox", "locationId": reviewed["locationId"], "merchantId": reviewed["merchantId"], "applicationId": reviewed["applicationId"], "currency": "CAD", "country": "CA", "locationStatus": "ACTIVE"} and
+        value.get("featureControls") == {key: False for key in BOOTSTRAP_FLAGS} and
+        value.get("admission", {}).get("targetSha256") == context["plan"]["targetSha256"] and
+        value.get("admission", {}).get("sourceCommit") == staged["sourceCommit"] and
+        value.get("admission", {}).get("producerSha256") == context["plan"]["bootstrapCompatibility"]["runtimeProducerSha256"] and
+        value.get("admission", {}).get("epoch") == context["admissionObservation"]["epoch"] and
+        value.get("admission", {}).get("newWork") is False and value.get("admission", {}).get("recovery") is False,
+        "SQUARE_RUNTIME_REPLACEMENT_BINDING_UNVERIFIED")
+    return {**identity(context), "status": "STAGING_SQUARE_RUNTIME_BINDING_VERIFIED", "deploymentId": staged["deploymentId"],
+        "locationId": reviewed["locationId"], "merchantId": reviewed["merchantId"], "applicationId": reviewed["applicationId"], "runtimeReplacementBindingVerified": True,
+        "historicalWritersFenced": False, "activeExecutions": None, "uncertainEffects": None, "trafficAuthorized": False}
+
+
 def deploy_compatible(context, client, attempt, parent_directory, probe=None):
     selected = identity(context)
     observed = observe_vercel(context, client, attempt)
@@ -524,7 +562,7 @@ def execute(context, client, verify, probe=None):
     locked = LockedClient(client, verify)
     source_attempt = attempt
     if context.get("originalDirectory") is not None:
-        demand(operation in ("observe-vercel", "observe-compatible", "observe-admission", "observe-resend"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
+        demand(operation in ("observe-vercel", "observe-compatible", "observe-admission", "observe-resend", "observe-square"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
         original = Path(context["originalDirectory"])
         migrate.private_directory(original)
         source_attempt = original / attempt.name
@@ -540,6 +578,33 @@ def execute(context, client, verify, probe=None):
         return deploy_admission(context, locked, attempt, parent, LockedProbe(verify, probe))
     if operation == "retire-deployments":
         return retire_deployments(context, locked, attempt)
+    if operation in ("verify-square", "observe-square", "suspend-square"):
+        reviewed = context["bindings"].get("squareRetirement")
+        demand(reviewed is not None, "REVIEWED_SQUARE_SANDBOX_RETIREMENT_REQUIRED")
+        replacement = LockedClient(frontend_square_retirement.Client(context["squareReplacementToken"]), verify)
+        retired = LockedClient(frontend_square_retirement.Client(context["squareRetiredToken"]), verify)
+        if operation == "observe-square":
+            return {**selected, **frontend_square_retirement.observe(replacement, retired, reviewed, context["squareEffects"])}
+        runtime = verify_square_runtime(context, locked, attempt, LockedProbe(verify, probe))
+        if operation == "suspend-square":
+            demand(frontend_square_retirement.binding(retired, reviewed) == frontend_square_retirement.binding(replacement, reviewed),
+                "SQUARE_OLD_CREDENTIAL_SCOPE_UNVERIFIED")
+            migrate.write_json(attempt, "square-runtime-before-retirement.json", {**runtime, "retiredCredentialWasUsable": True})
+            before = frontend_square_retirement.webhook(replacement)
+            migrate.write_json(attempt, "square-callback-suspension-started.json", {**selected, "webhookId": before["webhookId"], "previouslyEnabled": before["enabled"]})
+            if before["enabled"]:
+                replacement.request("PUT", "/v2/webhooks/subscriptions/" + before["webhookId"], {"subscription": {"enabled": False}})
+            after = frontend_square_retirement.webhook(replacement)
+            demand(after == {**before, "enabled": False}, "SQUARE_CALLBACK_DISABLE_READBACK_UNVERIFIED")
+            migrate.write_json(attempt, "square-callback-suspension-verified.json", {**selected, **after})
+            return {**selected, **after, "status": "SQUARE_SANDBOX_CALLBACK_DISABLED_DASHBOARD_RETIREMENT_PENDING", "activeExecutions": None, "uncertainEffects": None}
+        previous = migrate.read_json(attempt, "square-runtime-before-retirement.json")
+        demand(all(previous.get(key) == runtime[key] for key in ("actionId", "sourceCommit", "targetSha256", "deploymentId", "locationId", "merchantId", "applicationId")) and
+            previous.get("retiredCredentialWasUsable") is True, "SQUARE_PRE_RETIREMENT_RUNTIME_EVIDENCE_REQUIRED")
+        outcome = frontend_square_retirement.verify_retirement(replacement, retired, reviewed, context["squareEffects"], selected, attempt)
+        verified = verify_square_runtime(context, locked, attempt, LockedProbe(verify, probe))
+        migrate.write_json(attempt, "square-runtime-binding-verified.json", verified)
+        return {**outcome, "runtimeReplacementBindingVerified": True}
     if operation in ("retire-resend", "observe-resend"):
         reviewed = context["bindings"].get("resendRetirement")
         demand(reviewed is not None, "REVIEWED_RESEND_RETIREMENT_REQUIRED")

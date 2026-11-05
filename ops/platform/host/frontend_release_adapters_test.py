@@ -12,6 +12,7 @@ from unittest.mock import patch
 import frontend_probe
 import frontend_release_adapters as adapter
 import frontend_resend_retirement
+import frontend_square_retirement
 import migrate
 import vercel
 import vercel_test
@@ -60,7 +61,7 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                         result = {"version": 1, "status": "FRONTEND_WORKLOAD_PROBE_PASS", "challenge": self.headers.get("x-lash-release-challenge"),
                                   "checks": ["gateway-course-catalog"], "gatewayOrigin": "https://gateway.example.invalid",
                                   "environment": "staging", "projectId": vercel.PROJECTS["staging"], "sourceCommit": "a" * 40}
-                        if self.headers.get("x-lash-release-mode") in ("admission-bootstrap", "resend-binding"):
+                        if self.headers.get("x-lash-release-mode") in ("admission-bootstrap", "resend-binding", "square-binding"):
                             result.update(checks=["gateway-course-catalog", "frontend-admission-bootstrap"],
                                 schemaCatalogSha256="f" * 64 if owner.bootstrap_probe_wrong else owner.context["preapplicationSchema"]["schemaCatalogSha256"],
                                 featureControls={key: False for key in adapter.BOOTSTRAP_FLAGS}, admission={"environment": "staging",
@@ -71,6 +72,11 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                                 observed = frontend_resend_retirement.domain(frontend_resend_retirement.Client(owner.variables["RESEND_API_KEY"]["value"]), selected)
                                 result["checks"].append("resend-binding")
                                 result["resendBinding"] = observed
+                            if self.headers.get("x-lash-release-mode") == "square-binding":
+                                selected = owner.context["bindings"]["squareRetirement"]
+                                observed = frontend_square_retirement.binding(frontend_square_retirement.Client(owner.variables["SQUARE_ACCESS_TOKEN"]["value"]), selected)
+                                result["checks"].append("square-binding")
+                                result["squareBinding"] = {"environment": "sandbox", "applicationId": selected["applicationId"], **observed}
                         self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Cache-Control", "no-store")
                         self.end_headers(); self.wfile.write(json.dumps(result).encode()); return
                     owner.assertEqual(self.headers.get("Authorization"), "Bearer owned-token-marker")
