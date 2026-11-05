@@ -4,10 +4,17 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { build } from "esbuild";
-import { generateKeyPair, exportJWK, exportPKCS8, SignJWT } from "../gateway/node_modules/jose/dist/webapi/index.js";
+import { generateKeyPair, exportJWK, exportPKCS8, SignJWT } from "jose";
 import { privateTlsPolicies } from "./configuration.mjs";
 import { localImageId } from "./local-images.mjs";
+import { courseHarnessAuth, disabledCourseWorkerEnvironment, phase2Workers } from "./phase2-harness-profile.mjs";
 
+import { parseArgs } from "node:util";
+
+const { values: options } = parseArgs({ options: { phase: { type: "string", default: "p1" } } });
+const phase = options.phase;
+if (!["p1", "p2"].includes(phase)) throw new Error("Explicit harness contract phase required");
+const additionalWorkers = phase === "p2" ? phase2Workers : [];
 const root = resolve(import.meta.dirname, "../..");
 const runId = randomUUID();
 const project = `lash-p1-${runId}`;
@@ -16,7 +23,7 @@ chmodSync(directory, 0o755);
 const output = join(directory, "out");
 mkdirSync(output, { mode: 0o777 }); chmodSync(output, 0o777);
 const secret = () => randomBytes(32).toString("hex");
-const password = secret(), frontendSecret = secret(), publisherSecret = secret(), readerSecret = secret(), muxSecret = secret();
+const password = secret(), frontendSecret = secret(), publisherSecret = secret(), readerSecret = secret(), muxSecret = secret(), firstPartySecret = secret(), learnerSecret = secret();
 const courseId = randomUUID(), userId = randomUUID();
 const image = (name) => localImageId((command, args) => execFileSync(command, args, { encoding: "utf8" }), `lash-her-${name}:p1-local`);
 const images = Object.fromEntries(["gateway", "course-runtime", "course-migration", "community-runtime", "community-migration"].map((name) => [name, image(name)]));
@@ -79,26 +86,27 @@ try {
   copyFileSync(join(import.meta.dirname, "prometheus.staging.yml"), join(directory, "prometheus.yml"));
   mkdirSync(join(directory, "alerts"));
   for (const name of ["driver", "observer", "authority"]) copyFileSync(join(import.meta.dirname, `harness/${name}.mjs`), join(directory, `${name}.mjs`));
-  write("transport-entry.mjs", `export { createGatewayTransport } from ${JSON.stringify(join(root, "src/lib/api-integration/gateway-transport.ts"))};\nexport { runGatewaySmoke } from ${JSON.stringify(join(root, "src/lib/api-integration/gateway-smoke.ts"))};\n`);
+  write("transport-entry.mjs", `export { createGatewayTransport } from ${JSON.stringify(join(root, "src/lib/api-integration/gateway-transport.ts"))};\nexport { ${phase === "p2" ? "runPhase2GatewaySmoke as runGatewaySmoke" : "runGatewaySmoke"} } from ${JSON.stringify(join(root, `src/lib/api-integration/${phase === "p2" ? "phase2-gateway-smoke" : "gateway-smoke"}.ts`))};\n`);
   await build({ entryPoints: [join(directory, "transport-entry.mjs")], outfile: join(directory, "transport.mjs"), bundle: true,
     platform: "node", format: "esm", tsconfig: join(root, "tsconfig.json"),
     alias: { "server-only": join(root, "node_modules/server-only/empty.js") },
     banner: { js: 'import { createRequire as harnessCreateRequire } from "node:module"; const require = harnessCreateRequire(import.meta.url);' } });
   const database = (name) => ({ DATABASE_TARGET: "test", TEST_DATABASE_URL: `postgresql://postgres:${password}@postgres:5432/lash_her_${name}_p1_test?sslmode=disable` });
   const muxPair = await generateKeyPair("RS256", { extractable: true });
-  envFile("course-api.env", { ...database("course"), FIRST_PARTY_AUTH_SECRET: secret(), INTERNAL_SERVICE_JWT_SECRET: frontendSecret,
-    INTERNAL_SERVICE_JWT_ISSUER: "lash-her-frontend", INTERNAL_SERVICE_JWT_AUDIENCE: "lash-her-course-api", INTERNAL_SERVICE_JWT_ALLOWED_SUBJECTS: "lash-her-frontend",
-    COURSE_COMMUNITY_READ_JWT_CURRENT_SECRET: readerSecret, MUX_TOKEN_ID: "isolated-fixture", MUX_TOKEN_SECRET: secret(), MUX_WEBHOOK_SECRET: muxSecret,
+  envFile("course-api.env", { ...database("course"), ...courseHarnessAuth(phase, { frontendSecret, adminSecret: firstPartySecret, learnerSecret }),
+    COURSE_COMMUNITY_READ_JWT_CURRENT_SECRET: readerSecret,
+    ...(phase === "p2" ? { MUX_ENVIRONMENT_ID: "owned-fixture", MUX_CORS_ORIGIN: "https://gateway.test:8443" } : {}), MUX_TOKEN_ID: "isolated-fixture", MUX_TOKEN_SECRET: secret(), MUX_WEBHOOK_SECRET: muxSecret,
     MUX_SIGNING_KEY_ID: "isolated-fixture", MUX_SIGNING_PRIVATE_KEY: Buffer.from(await exportPKCS8(muxPair.privateKey)).toString("base64") });
   envFile("course-publisher.env", { ...database("course"), COMMUNITY_ENROLLMENT_PUBLISHER_JWT_CURRENT_SECRET: publisherSecret });
   envFile("course-snapshot.env", database("course"));
+  for (const worker of phase2Workers) envFile(`${worker}.env`, disabledCourseWorkerEnvironment(database("course").TEST_DATABASE_URL, worker));
   envFile("community-api.env", { ...database("community"), COURSE_PUBLISHER_JWT_CURRENT_SECRET: publisherSecret, COMMUNITY_READER_JWT_CURRENT_SECRET: readerSecret });
   envFile("community-worker.env", { ...database("community"), COMMUNITY_READER_JWT_CURRENT_SECRET: readerSecret });
-  envFile("driver.env", { VERCEL_OIDC_TOKEN_FILE: "/test/oidc.token", HARNESS_FRONTEND_SECRET: frontendSecret, HARNESS_MUX_SECRET: muxSecret });
+  envFile("driver.env", { VERCEL_OIDC_TOKEN_FILE: "/test/oidc.token", HARNESS_CONTRACT_PHASE: phase, HARNESS_FRONTEND_SECRET: frontendSecret, HARNESS_MUX_SECRET: muxSecret });
   envFile("postgres.env", { POSTGRES_PASSWORD: password });
   const mounts = `      - ${directory}:/test:ro\n      - ${output}:/test/out:rw\n`;
   const appOverride = (name) => `  ${name}:\n    environment: {NODE_ENV: development}\n    networks: {test_database: {}}\n    volumes:\n${mounts}`;
-  write("override.yaml", `services:\n  postgres:\n    image: postgres:16\n    env_file: [${directory}/postgres.env]\n    ports: ["127.0.0.1::5432"]\n    networks: [test_database]\n  gateway:\n    restart: "no"\n    ports: !reset []\n    command: [node, /test/driver.mjs]\n    env_file: [${directory}/driver.env]\n    environment: {NODE_EXTRA_CA_CERTS: /test/tls/ca.pem}\n    networks:\n      mesh: {aliases: [gateway.test]}\n    volumes:\n${mounts}  observer:\n    restart: "no"\n    read_only: true\n    cap_drop: [ALL]\n    security_opt: [no-new-privileges:true]\n    pids_limit: 64\n    mem_limit: 128m\n    cpus: 0.25\n    networks: {mesh: {ipv4_address: 172.29.10.60}}\n    image: ${images.gateway}\n    user: "65532:65532"\n    command: [node, /test/observer.mjs]\n    environment: {NODE_EXTRA_CA_CERTS: /test/tls/ca.pem}\n    volumes:\n${mounts}${["course-api", "course-publisher", "course-snapshot", "community-api", "community-worker"].map(appOverride).join("")}networks:\n  test_database: {}\n`);
+  write("override.yaml", `services:\n  postgres:\n    image: postgres:16\n    env_file: [${directory}/postgres.env]\n    ports: ["127.0.0.1::5432"]\n    networks: [test_database]\n  gateway:\n    restart: "no"\n    ports: !reset []\n    command: [node, /test/driver.mjs]\n    env_file: [${directory}/driver.env]\n    environment: {NODE_EXTRA_CA_CERTS: /test/tls/ca.pem}\n    networks:\n      mesh: {aliases: [gateway.test]}\n    volumes:\n${mounts}  observer:\n    restart: "no"\n    read_only: true\n    cap_drop: [ALL]\n    security_opt: [no-new-privileges:true]\n    pids_limit: 64\n    mem_limit: 128m\n    cpus: 0.25\n    networks: {mesh: {ipv4_address: 172.29.10.60}}\n    image: ${images.gateway}\n    user: "65532:65532"\n    command: [node, /test/observer.mjs]\n    environment: {NODE_EXTRA_CA_CERTS: /test/tls/ca.pem}\n    volumes:\n${mounts}${["course-api", "course-publisher", "course-snapshot", "community-api", "community-worker", ...additionalWorkers].map(appOverride).join("")}networks:\n  test_database: {}\n`);
   started = true; compose(["up", "-d", "postgres"]);
   const portResult = spawnSync("docker", [...composeArgs, "port", "postgres", "5432"], { env: environment, encoding: "utf8" });
   const hostPort = portResult.stdout?.trim();
@@ -112,7 +120,9 @@ try {
   }
   compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "lash_her_course_p1_test", "-v", "ON_ERROR_STOP=1", "-c",
     `INSERT INTO users(id) VALUES('${userId}'); INSERT INTO courses(id,slug,title,status,price_cents,currency) VALUES('${courseId}','p1-fixture','P1 fixture','published',0,'CAD');`]);
-  compose(["up", "-d", "observer", "course-publisher", "course-snapshot", "community-worker", "gateway"]);
+  compose(["up", "-d", "observer", "course-publisher", "course-snapshot", "community-worker", ...additionalWorkers, "gateway"]);
+  const workerProbe = "Promise.all([fetch('http://127.0.0.1:'+process.env.PORT+'/ready'),fetch('http://127.0.0.1:'+process.env.PORT+'/metrics')]).then(async([r,m])=>{if(!r.ok||!m.ok||!/_enabled 0\\b/u.test(await m.text()))process.exit(1)}).catch(()=>process.exit(1))";
+  for (const worker of additionalWorkers) await waitFor(`${worker} disabled readiness`, () => spawnSync("docker", [...composeArgs, "exec", "-T", worker, "node", "-e", workerProbe], { env: environment, stdio: "ignore" }).status === 0);
   await waitFor("grant", () => existsSync(join(output, "grant.json")));
   compose(["exec", "-T", "community-api", "node", "/test/authority.mjs"]);
   await waitFor("restart readiness", () => existsSync(join(output, "restart-ready.json")));
@@ -120,7 +130,7 @@ try {
   write("out/restarted.json", { restarted: true });
   await waitFor("results", () => existsSync(join(output, "results.json")));
   const result = JSON.parse(readFileSync(join(output, "results.json"), "utf8"));
-  process.stdout.write(JSON.stringify({ runId, images, ...result, directory }) + "\n");
+  process.stdout.write(JSON.stringify({ runId, contractPhase: phase, images, ...result, ...(additionalWorkers.length ? { records: [...result.records, { name: "disabled-course-workers-ready", passed: true }] } : {}), directory }) + "\n");
   if (result.records.some((record) => !record.passed)) process.exitCode = 1;
 } catch (error) {
   process.stdout.write(JSON.stringify({ runId, passed: false, reason: error.message, directory }) + "\n");
@@ -130,5 +140,5 @@ try {
   if (started) spawnSync("docker", [...composeArgs, "down", "--volumes", "--remove-orphans"], { env: environment, stdio: ["ignore", log, log], timeout: 60_000 });
   closeSync(log);
   // All credentials are synthetic, but still discard them after owned cleanup.
-  for (const name of ["tls", "oidc-private.pem", "oidc.token", "driver.env", "postgres.env", "course-api.env", "course-publisher.env", "course-snapshot.env", "community-api.env", "community-worker.env"]) rmSync(join(directory, name), { recursive: true, force: true });
+  for (const name of ["tls", "oidc-private.pem", "oidc.token", "driver.env", "postgres.env", "course-api.env", "course-publisher.env", "course-snapshot.env", "community-api.env", "community-worker.env", "course-media.env", "course-export-cleanup.env"]) rmSync(join(directory, name), { recursive: true, force: true });
 }

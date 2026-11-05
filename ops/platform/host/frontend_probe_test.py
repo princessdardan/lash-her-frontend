@@ -98,11 +98,11 @@ class FrontendProbeTests(unittest.TestCase):
     def mapped_http(self):
         owner = self
         class Mapped:
-            def request(self, url, secret, bypass, challenge):
+            def request(self, url, secret, bypass, challenge, mode=None):
                 owner.assertEqual(url, "https://owned-fixture.vercel.app")
                 # Test-only mapping to owned TLS. Production has no URL/CA flag.
                 with patch.object(frontend_probe, "DEPLOYMENT_URL", re.compile(re.escape(owner.origin))):
-                    return owner.http.request(owner.origin, secret, bypass, challenge)
+                    return owner.http.request(owner.origin, secret, bypass, challenge, mode=mode)
         return Mapped()
 
     def prepared_responses(self):
@@ -216,6 +216,31 @@ class FrontendProbeTests(unittest.TestCase):
         retained = (attempt / "frontend-workload-outcome.json").read_text()
         for secret in ("b" * 64, "fixture-protection-bypass", "fixture-private-token", headers["x-lash-release-challenge"]):
             self.assertNotIn(secret, retained)
+
+    def test_phase2_final_probe_selects_only_current_catalog_and_retains_the_exact_contract_pair(self):
+        self.release.update(contractPhase="p2", phase2ContractManifestSha256="sha256:" + "d" * 64)
+        self.credential(); attempt = self.attempt()
+        self.probe_body = {"checks": ["gateway-course-catalog-p2"], "contractPhase": "p2"}
+        self.fixture.enqueue(self.fixture.deployment(), self.project())
+        result = frontend_probe.verify(self.client, self.release, attempt, self.private, self.mapped_http())
+        self.assertEqual(result["checks"], ["frontend-server-gateway-course-catalog-p2"])
+        self.assertEqual(result["contractPhase"], "p2")
+        self.assertEqual(result["phase2ContractManifestSha256"], self.release["phase2ContractManifestSha256"])
+        headers = {key.lower(): value for key, value in self.probes[0]["headers"].items()}
+        self.assertEqual(headers["x-lash-release-mode"], "phase2")
+        self.assertNotIn("cookie", headers)
+
+    def test_phase2_never_accepts_the_historical_catalog_receipt_or_partial_contract_binding(self):
+        self.release.update(contractPhase="p2", phase2ContractManifestSha256="sha256:" + "d" * 64)
+        self.credential()
+        self.fixture.enqueue(self.fixture.deployment(), self.project())
+        with self.assertRaisesRegex(ValueError, "FRONTEND_WORKLOAD_VERIFICATION_FAILED"):
+            frontend_probe.verify(self.client, self.release, self.attempt("legacy"), self.private, self.mapped_http())
+        self.assertEqual(len(self.probes), 1)
+        del self.release["phase2ContractManifestSha256"]
+        with self.assertRaisesRegex(ValueError, "FRONTEND_WORKLOAD_VERIFICATION_FAILED"):
+            frontend_probe.verify(self.client, self.release, self.attempt("partial"), self.private, self.mapped_http())
+        self.assertEqual(len(self.probes), 1)
 
     def test_substituted_source_or_unready_deployment_refuses_before_probe(self):
         self.credential()

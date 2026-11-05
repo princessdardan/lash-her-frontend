@@ -130,3 +130,34 @@ test("Square mode requires staging admission plus deployed sandbox reader and re
   assert.deepEqual(body.squareBinding, (await square()).squareBinding);
   assert.equal((await createReleaseProbeHandler({ configuration: () => ({ ...configuration()!, environment: "production" }), run, admission, square })(request({ "x-lash-release-mode": "square-binding" }))).status, 503);
 });
+
+test("explicit P2 mode uses only its current catalog parser and requires no bootstrap or disabled feature controls", async () => {
+  let calls = 0;
+  const handler = createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration(environment(), now),
+    run: async () => assert.fail("legacy parser called"), admission: async () => assert.fail("bootstrap called"),
+    square: async () => assert.fail("Square called"), resend: async () => assert.fail("Resend called"),
+    phase2: async (...args) => { assert.deepEqual(args, ["https://gateway.example.invalid"]); calls++; return { ok: true, service: "course", durationMs: 2 }; } });
+  const response = await handler(request({ "x-lash-release-mode": "phase2", "x-lash-workload-token": "forged", cookie: "private-cookie" }));
+  assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(await response.json(), { version: 1, status: "FRONTEND_WORKLOAD_PROBE_PASS", challenge, environment: "staging",
+    projectId: VERCEL_PROJECT_BINDINGS.stagingProjectId, sourceCommit: "a".repeat(40), gatewayOrigin: "https://gateway.example.invalid",
+    checks: ["gateway-course-catalog-p2"], contractPhase: "p2", durationMs: 2 });
+  assert.equal(calls, 1);
+});
+
+test("P2 mode authenticates before work, refuses missing/production configuration and never falls back after parser failure", async () => {
+  let calls = 0;
+  const configuration = () => readReleaseProbeConfiguration(environment(), now);
+  const run = async () => { calls++; return { ok: true as const, service: "course" as const, durationMs: 1 }; };
+  const phase2 = async () => { calls++; throw new Error("private-parser-diagnostic"); };
+  assert.equal((await createReleaseProbeHandler({ configuration, run })(request({ "x-lash-release-mode": "phase2" }))).status, 503);
+  const handler = createReleaseProbeHandler({ configuration, run, phase2 });
+  assert.equal((await handler(request({ "x-lash-release-mode": "phase2", authorization: "Bearer wrong" }))).status, 401);
+  assert.equal((await handler(request({ "x-lash-release-mode": "phase2", "x-lash-release-challenge": "wrong" }))).status, 400);
+  assert.equal((await handler(request({ "x-lash-release-mode": "phase2-other" }))).status, 400);
+  assert.equal((await createReleaseProbeHandler({ configuration: () => ({ ...configuration()!, environment: "production" }), run, phase2 })(request({ "x-lash-release-mode": "phase2" }))).status, 503);
+  assert.equal(calls, 0);
+  const failed = await handler(request({ "x-lash-release-mode": "phase2" }));
+  assert.equal(failed.status, 503); assert.deepEqual(await failed.json(), { error: "Release probe failed" });
+  assert.equal(calls, 1);
+});

@@ -95,7 +95,7 @@ class ProbeClient:
 
     def request(self, url, secret, bypass, challenge, mode=None):
         demand(isinstance(url, str) and DEPLOYMENT_URL.fullmatch(url), "FRONTEND_PROBE_ORIGIN_REFUSED")
-        demand(mode in (None, "admission-bootstrap", "resend-binding", "square-binding"), "FRONTEND_PROBE_MODE_REFUSED")
+        demand(mode in (None, "admission-bootstrap", "resend-binding", "square-binding", "phase2"), "FRONTEND_PROBE_MODE_REFUSED")
         request = urllib.request.Request(url + "/api/internal/release-probe", method="GET", headers={
             "Authorization": "Bearer " + secret, "x-vercel-protection-bypass": bypass,
             "x-lash-release-challenge": challenge, "Accept": "application/json", "Cache-Control": "no-cache",
@@ -137,6 +137,12 @@ def verify(client, release, attempt, private_configuration, probe_client=None):
     outcome = {**identity, "status": "FRONTEND_VERIFICATION_REQUIRES_REVIEW", "phase": "deployment-binding",
                "trafficAuthorized": False, "nativeSchedulerVerified": False}
     try:
+        phase2 = "contractPhase" in release or "phase2ContractManifestSha256" in release
+        demand(not phase2 or (release.get("contractPhase") == "p2"
+               and isinstance(release.get("phase2ContractManifestSha256"), str)
+               and re.fullmatch(r"sha256:[a-f0-9]{64}", release["phase2ContractManifestSha256"])
+               and release["phase2ContractManifestSha256"] != "sha256:" + "0" * 64
+               and identity["environment"] == "staging"), "FRONTEND_PHASE2_PROBE_BINDING_REQUIRED")
         state = vercel.deployment_state(client, identity["deploymentId"], identity["projectId"], identity["sourceCommit"], identity["releaseId"])
         demand(state["readyState"] == "READY", "VERCEL_PROMOTION_DEPLOYMENT_NOT_READY")
         private = _private_input(private_configuration, identity)
@@ -146,13 +152,17 @@ def verify(client, release, attempt, private_configuration, probe_client=None):
         bypass = _automation_bypass(project)
         outcome["phase"] = "workload-request"
         challenge = secrets.token_hex(32)
-        observed = (probe_client or ProbeClient()).request(state["url"], private["secret"], bypass, challenge)
+        requester = probe_client or ProbeClient()
+        observed = requester.request(state["url"], private["secret"], bypass, challenge, mode="phase2") if phase2 else requester.request(state["url"], private["secret"], bypass, challenge)
         demand(type(observed.get("version")) is int and observed["version"] == 1 and observed.get("status") == "FRONTEND_WORKLOAD_PROBE_PASS"
-               and observed.get("challenge") == challenge and observed.get("checks") == ["gateway-course-catalog"]
+               and observed.get("challenge") == challenge and observed.get("checks") == ["gateway-course-catalog-p2" if phase2 else "gateway-course-catalog"]
+               and (not phase2 or observed.get("contractPhase") == "p2")
                and observed.get("gatewayOrigin") == private.get("gatewayOrigin")
                and all(observed.get(key) == identity[key] for key in ("environment", "projectId", "sourceCommit"))
                and int(time.time() * 1000) < private["expiresAt"], "FRONTEND_WORKLOAD_PROBE_UNVERIFIED")
-        outcome.update(status="FRONTEND_VERIFIED", phase="completed", checks=["frontend-server-gateway-course-catalog"])
+        outcome.update(status="FRONTEND_VERIFIED", phase="completed", checks=["frontend-server-gateway-course-catalog-p2" if phase2 else "frontend-server-gateway-course-catalog"])
+        if phase2:
+            outcome.update(contractPhase="p2", phase2ContractManifestSha256=release["phase2ContractManifestSha256"])
         return outcome
     except BaseException:
         raise ValueError("FRONTEND_WORKLOAD_VERIFICATION_FAILED") from None

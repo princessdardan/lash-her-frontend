@@ -1,5 +1,6 @@
 import { createReleaseProbeHandler, readReleaseProbeConfiguration } from "./handler";
 import { runGatewaySmoke } from "@/lib/api-integration/gateway-smoke";
+import { runPhase2GatewaySmoke } from "@/lib/api-integration/phase2-gateway-smoke";
 import { createGatewayTransport } from "@/lib/api-integration/gateway-transport";
 import { runFrontendBootstrapProbe } from "@/lib/writer-admission/bootstrap-probe";
 import { runFrontendSquareBindingProbe } from "@/lib/writer-admission/square-binding-probe";
@@ -12,6 +13,7 @@ export const maxDuration = 15;
 export const GET = createReleaseProbeHandler({
   configuration: () => readReleaseProbeConfiguration(process.env),
   run: (origin) => runGatewaySmoke(createGatewayTransport({ origin })),
+  phase2: (origin) => runPhase2GatewaySmoke(createGatewayTransport({ origin })),
   admission: runFrontendBootstrapProbe,
   resend: runFrontendResendBindingProbe,
   square: runFrontendSquareBindingProbe,

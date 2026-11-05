@@ -271,3 +271,32 @@ test("private TLS terminator checks actual peer and route, replacing spoofed for
   assert.equal(await send("/metrics"), 403);
   assert.equal(await send("/v1/internal/course/%65nrollment-events"), 403);
 });
+
+test("private TLS permits exact P2 quiz PUT and caption DELETE routes while denying other methods and peers", async (t) => {
+  const received = [];
+  const backend = createHttpServer((req, res) => { received.push(`${req.method} ${req.url}`); req.resume(); res.end("ok"); });
+  await new Promise(done => backend.listen(0, "127.0.0.1", done));
+  const routes = [{ method: "PUT", path: "/v1/admin/lessons/{lessonId}/quiz" },
+    { method: "DELETE", path: "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/captions/{trackId}" }];
+  const proxy = createPrivateTlsProxy({ upstream: `http://127.0.0.1:${backend.address().port}`, keyFile, certFile,
+    peers: [{ address: "127.0.0.1", routes }, { address: "127.0.0.2", routes: [{ method: "GET", path: "/health" }] }] });
+  const otherPeer = createPrivateTlsProxy({ upstream: `http://127.0.0.1:${backend.address().port}`, keyFile, certFile,
+    peers: [{ address: "127.0.0.2", routes }] });
+  await new Promise(done => proxy.listen(0, "127.0.0.1", done));
+  await new Promise(done => otherPeer.listen(0, "127.0.0.1", done));
+  t.after(async () => { await Promise.all([proxy, otherPeer, backend].map(server => new Promise(done => { server.close(done); server.closeAllConnections(); }))); });
+  const send = (method, path, port = proxy.address().port) => new Promise((done, fail) => {
+    const call = request({ host: "127.0.0.1", port, ca: cert, method, path, headers: { "content-type": "application/json", "content-length": "2" } }, reply => {
+      reply.resume(); reply.once("end", () => done(reply.statusCode));
+    });
+    call.once("error", fail); call.end("{}");
+  });
+  const quiz = "/v1/admin/lessons/owned/quiz", caption = "/v1/admin/lessons/owned/video/current/captions/en";
+  assert.equal(await send("PUT", quiz), 200);
+  assert.equal(await send("DELETE", caption), 200);
+  for (const [method, path, peer] of [["POST", quiz], ["DELETE", quiz], ["PUT", caption], ["PUT", "/v1/admin/other"],
+    ["PUT", quiz, otherPeer.address().port], ["DELETE", caption, otherPeer.address().port]]) assert.equal(await send(method, path, peer), 403);
+  assert.deepEqual(received, [`PUT ${quiz}`, `DELETE ${caption}`]);
+  assert.throws(() => createPrivateTlsProxy({ upstream: "http://127.0.0.1", keyFile, certFile,
+    peers: [{ address: "127.0.0.1", routes: [{ method: "OPTIONS", path: "/v1/admin/lessons/{lessonId}/quiz" }] }] }), /Invalid private peer policy/u);
+});

@@ -63,7 +63,7 @@ try {
   const issuedAt = Math.floor(Date.now() / 1000);
   const applicationToken = await new SignJWT({ iat: issuedAt, exp: issuedAt + 300, jti: randomUUID() })
     .setProtectedHeader({ alg: "HS256" }).setIssuer("lash-her-frontend").setAudience("lash-her-course-api")
-    .setSubject("lash-her-frontend").sign(new TextEncoder().encode(process.env.HARNESS_FRONTEND_SECRET));
+    .setSubject(process.env.HARNESS_CONTRACT_PHASE === "p2" ? "frontend" : "lash-her-frontend").sign(new TextEncoder().encode(process.env.HARNESS_FRONTEND_SECRET));
   const idempotencyKey = randomUUID();
   const command = { userId: fixture.userId, courseId: fixture.courseId, orderId: `fixture-${idempotencyKey}`,
     idempotencyKey, grantReason: "import", grantedAt: new Date().toISOString() };
