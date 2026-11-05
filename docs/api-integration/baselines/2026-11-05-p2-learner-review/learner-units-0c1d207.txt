@@ -1,0 +1,28 @@
+✔ playback lifetime uses the same-origin clock and subtracts response time with skewed customer clocks (0.405709ms)
+✔ the earlier thumbnail expiry and the 600-second maximum both bound playback (0.076333ms)
+✔ invalid, expired and network-exhausted authorizations cannot be reinstalled (0.194083ms)
+✔ a missing or malformed response Date uses the local clock conservatively (0.080167ms)
+✔ learning content links and image/caption URLs reject executable, credentialed and insecure schemes (0.501375ms)
+✔ course links, price and resume labels preserve canonical paths and CAD access semantics (9.908833ms)
+✔ player writes serialize by revision while resume may move backwards and watched progress stays monotonic (0.901166ms)
+✔ stale CAS reloads newer cross-device progress and never replays queued local positions or completion (0.337458ms)
+✔ network failure retains the latest queued position for explicit retry without an automatic retry loop (0.453ms)
+✔ assessment refresh uses authoritative completion and page-exit flush uses a single keepalive write (0.414709ms)
+✔ retry repeats a failed authoritative read and publishes recovery with no pending write (0.291375ms)
+✔ retry reconciles a failed assessment read before sending positions collected during the outage (0.169917ms)
+✔ a page-exit position queued behind an ordinary write retains its keepalive request (0.133833ms)
+✔ an explicit keepalive flush upgrades a queued update without replaying an active write (0.113042ms)
+✔ an empty exit flush cannot strand a position queued in the same turn (0.11925ms)
+✔ a position queued while a completed drain settles is acknowledged before its caller resolves (0.328875ms)
+✔ explicit server refresh waits for pending resume writes and refuses to discard unknown outcomes (0.163875ms)
+✔ an explicit server refresh can adopt authoritative conflict state after stale local work was discarded (0.091541ms)
+✔ lost acknowledgements block refresh until revision recovery adopts the committed state without replay (0.117375ms)
+✔ new learning routes require both explicit migration switch and independently enabled Course reads (1.441292ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 140.957416

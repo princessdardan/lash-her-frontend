@@ -1,0 +1,1265 @@
+{
+  "config": {
+    "configFile": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.playwright.config.ts",
+    "rootDir": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/private/tmp/phase2-learner-browser-0c1d207",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "learning.spec.ts"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/private/tmp/phase2-learner-browser-0c1d207",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "mobile",
+        "name": "mobile",
+        "testDir": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "learning.spec.ts"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.59.1",
+    "workers": 1,
+    "webServer": {
+      "command": "node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3111",
+      "cwd": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner",
+      "url": "http://127.0.0.1:3111/courses",
+      "reuseExistingServer": false,
+      "timeout": 120000,
+      "env": {
+        "LEARNING_E2E_FIXTURE": "1",
+        "DATABASE_URL": "postgresql://dardan@127.0.0.1:5432/lash_phase2_learner_review_20261105?sslmode=disable",
+        "FRONTEND_WRITER_ADMISSION_MODE": "off",
+        "CUSTOMER_AUTH_ENABLED": "true",
+        "INTEGRATION_CUSTOMER_ACCESS_ENABLED": "true",
+        "INTEGRATION_COURSE_READS_ENABLED": "true",
+        "INTEGRATION_LEARNING_ROUTES_ENABLED": "true",
+        "CUSTOMER_AUTH_URL": "http://127.0.0.1:3111",
+        "CUSTOMER_AUTH_SECRET": "learning-e2e-customer-auth-secret-0123456789",
+        "CUSTOMER_AUTH_GOOGLE_ID": "learning-e2e-google-client",
+        "CUSTOMER_AUTH_GOOGLE_SECRET": "learning-e2e-google-secret",
+        "CUSTOMER_AUTH_RESEND_KEY": "learning-e2e-resend-key",
+        "CUSTOMER_AUTH_EMAIL_FROM": "Learning <test@example.invalid>",
+        "AUTH_URL": "http://127.0.0.1:3111",
+        "AUTH_SECRET": "learning-e2e-admin-auth-secret-0123456789",
+        "AUTH_GOOGLE_ID": "learning-e2e-admin-google-client",
+        "AUTH_GOOGLE_SECRET": "learning-e2e-admin-google-secret",
+        "COURSE_LEARNER_JWT_CURRENT_SECRET": "learning-e2e-course-learner-secret-0123456789",
+        "COURSE_LEARNER_JWT_PREVIOUS_SECRET": "",
+        "API_GATEWAY_STAGING_ORIGIN": "https://learning-gateway.example.invalid",
+        "VERCEL_OIDC_TOKEN": "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3OTM5MjQzNDZ9.fixture",
+        "VERCEL_OIDC_TOKEN_FILE": "",
+        "APP_ENV": "staging",
+        "VERCEL": "1",
+        "VERCEL_ENV": "production",
+        "VERCEL_TARGET_ENV": "production",
+        "APP_VERCEL_TEAM_ID": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+        "VERCEL_PROJECT_ID": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+        "NEXT_PUBLIC_SANITY_PROJECT_ID": "7o23yrvk",
+        "NEXT_PUBLIC_SANITY_DATASET": "staging-2026-05-10",
+        "SANITY_API_READ_TOKEN": "",
+        "SANITY_WRITE_TOKEN": "",
+        "RESEND_API_KEY": "",
+        "KV_REST_API_URL": "",
+        "KV_REST_API_TOKEN": "",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "",
+        "NODE_OPTIONS": "--require=/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/support/learning-fetch-fixture.cjs"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "learning.spec.ts",
+      "file": "learning.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "anonymous catalog/detail reveal public metadata, keep canonical URL and direct protected learning to customer sign-in",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5263,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:12.432Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-2abab31208b041013fb1",
+          "file": "learning.spec.ts",
+          "line": 94,
+          "column": 5
+        },
+        {
+          "title": "free enrollment, signed player, keyboard assessment and another-device resume use the server account",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 7853,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:17.970Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-98f7bc439fc56c3071ba",
+          "file": "learning.spec.ts",
+          "line": 120,
+          "column": 5
+        },
+        {
+          "title": "stale progress reloads the other device revision and never silently overwrites its saved position",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1308,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:25.830Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-7c68efaa926f820b9d63",
+          "file": "learning.spec.ts",
+          "line": 249,
+          "column": 5
+        },
+        {
+          "title": "media processing and access denial remain usable and provide explicit recovery",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 746,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:27.143Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-4a96f12471315650751e",
+          "file": "learning.spec.ts",
+          "line": 303,
+          "column": 5
+        },
+        {
+          "title": "scheduled playback renewal rechecks access and removes the player when access ends",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1956,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:27.894Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-97d7cf4d1c613994c117",
+          "file": "learning.spec.ts",
+          "line": 345,
+          "column": 5
+        },
+        {
+          "title": "failed completion read can be retried without another assessment or progress write",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 967,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:29.855Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-11b162e8c9768cd7154e",
+          "file": "learning.spec.ts",
+          "line": 392,
+          "column": 5
+        },
+        {
+          "title": "page-exit flush keeps its final position request keepalive behind an active heartbeat",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1295,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:30.827Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-2970acc93bf3a1bfe5a5",
+          "file": "learning.spec.ts",
+          "line": 430,
+          "column": 5
+        },
+        {
+          "title": "authorization expiry removes the player while renewal is stalled and refuses a late expired response",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4736,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:32.126Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-714ab29dba3262fbaaf3",
+          "file": "learning.spec.ts",
+          "line": 533,
+          "column": 5
+        },
+        {
+          "title": "public preview does not offer assessment outage recovery or saved completion",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 493,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('Preview lesson.')\nExpected: visible\nError: strict mode violation: getByText('Preview lesson.') resolved to 2 elements:\n    1) <p role=\"status\" class=\"mt-6 border border-lh-primary/20 p-4 text-sm\">Preview lesson. Enroll in the course to save prog…</p> aka locator('#main-content').getByText('Preview lesson. Enroll in the')\n    2) <p role=\"status\" class=\"mt-6 border border-lh-primary/20 p-4 text-sm\">Preview lesson. Enroll in the course to save prog…</p> aka getByText('Preview lesson. Enroll in the').nth(1)\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText('Preview lesson.')\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('Preview lesson.')\nExpected: visible\nError: strict mode violation: getByText('Preview lesson.') resolved to 2 elements:\n    1) <p role=\"status\" class=\"mt-6 border border-lh-primary/20 p-4 text-sm\">Preview lesson. Enroll in the course to save prog…</p> aka locator('#main-content').getByText('Preview lesson. Enroll in the')\n    2) <p role=\"status\" class=\"mt-6 border border-lh-primary/20 p-4 text-sm\">Preview lesson. Enroll in the course to save prog…</p> aka getByText('Preview lesson. Enroll in the').nth(1)\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText('Preview lesson.')\u001b[22m\n\n    at /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts:597:5",
+                    "location": {
+                      "file": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts",
+                      "column": 5,
+                      "line": 597
+                    },
+                    "snippet": "  595 |   await expect(\n  596 |     page.getByText(\"Preview lesson.\", { exact: false }),\n> 597 |   ).toBeVisible();\n      |     ^\n  598 |   await expect(\n  599 |     page.getByText(\"Public preview lesson text.\", { exact: true }),\n  600 |   ).toBeVisible();"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts",
+                        "column": 5,
+                        "line": 597
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('Preview lesson.')\nExpected: visible\nError: strict mode violation: getByText('Preview lesson.') resolved to 2 elements:\n    1) <p role=\"status\" class=\"mt-6 border border-lh-primary/20 p-4 text-sm\">Preview lesson. Enroll in the course to save prog…</p> aka locator('#main-content').getByText('Preview lesson. Enroll in the')\n    2) <p role=\"status\" class=\"mt-6 border border-lh-primary/20 p-4 text-sm\">Preview lesson. Enroll in the course to save prog…</p> aka getByText('Preview lesson. Enroll in the').nth(1)\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText('Preview lesson.')\u001b[22m\n\n\n  595 |   await expect(\n  596 |     page.getByText(\"Preview lesson.\", { exact: false }),\n> 597 |   ).toBeVisible();\n      |     ^\n  598 |   await expect(\n  599 |     page.getByText(\"Public preview lesson text.\", { exact: true }),\n  600 |   ).toBeVisible();\n    at /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts:597:5"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:36.867Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-public-preview-do-6b1ef-ecovery-or-saved-completion-chromium/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-public-preview-do-6b1ef-ecovery-or-saved-completion-chromium/error-context.md"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-public-preview-do-6b1ef-ecovery-or-saved-completion-chromium/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-public-preview-do-6b1ef-ecovery-or-saved-completion-chromium/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts",
+                    "column": 5,
+                    "line": 597
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-d2c587729f3ed13e7920",
+          "file": "learning.spec.ts",
+          "line": 584,
+          "column": 5
+        },
+        {
+          "title": "SPA navigation flushes the latest played position before its player ref is detached",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4324,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:37.735Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-d939ea5435ae23da1ae7",
+          "file": "learning.spec.ts",
+          "line": 611,
+          "column": 5
+        },
+        {
+          "title": "another account cannot reuse learning state and a suspended session cannot renew playback",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2150,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:42.137Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-3402cc086acf08b0156d",
+          "file": "learning.spec.ts",
+          "line": 657,
+          "column": 5
+        },
+        {
+          "title": "practice completion is authoritative even with an incorrect score and supports retries",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1198,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:44.293Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-fd015b43567e6ba393f2",
+          "file": "learning.spec.ts",
+          "line": 741,
+          "column": 5
+        },
+        {
+          "title": "explicit revised assessment refresh settles pending resume and removes old completion",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 6569,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByText(/Earlier assessment version/)\nExpected: visible\nReceived: hidden\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText(/Earlier assessment version/)\u001b[22m\n\u001b[2m    9 × locator resolved to <li class=\"text-sm\">…</li>\u001b[22m\n\u001b[2m      - unexpected value \"hidden\"\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByText(/Earlier assessment version/)\nExpected: visible\nReceived: hidden\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText(/Earlier assessment version/)\u001b[22m\n\u001b[2m    9 × locator resolved to <li class=\"text-sm\">…</li>\u001b[22m\n\u001b[2m      - unexpected value \"hidden\"\u001b[22m\n\n    at /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts:876:64",
+                    "location": {
+                      "file": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts",
+                      "column": 64,
+                      "line": 876
+                    },
+                    "snippet": "  874 |     expect(progress.completedAt).toBeNull();\n  875 |     expect(progress.resumePositionSeconds).toBeGreaterThanOrEqual(3);\n> 876 |     await expect(page.getByText(/Earlier assessment version/)).toBeVisible();\n      |                                                                ^\n  877 |   } finally {\n  878 |     release();\n  879 |   }"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts",
+                        "column": 64,
+                        "line": 876
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByText(/Earlier assessment version/)\nExpected: visible\nReceived: hidden\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText(/Earlier assessment version/)\u001b[22m\n\u001b[2m    9 × locator resolved to <li class=\"text-sm\">…</li>\u001b[22m\n\u001b[2m      - unexpected value \"hidden\"\u001b[22m\n\n\n  874 |     expect(progress.completedAt).toBeNull();\n  875 |     expect(progress.resumePositionSeconds).toBeGreaterThanOrEqual(3);\n> 876 |     await expect(page.getByText(/Earlier assessment version/)).toBeVisible();\n      |                                                                ^\n  877 |   } finally {\n  878 |     release();\n  879 |   }\n    at /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts:876:64"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:45.495Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-explicit-revised--7f2bb--and-removes-old-completion-chromium/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-explicit-revised--7f2bb--and-removes-old-completion-chromium/error-context.md"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-explicit-revised--7f2bb--and-removes-old-completion-chromium/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-explicit-revised--7f2bb--and-removes-old-completion-chromium/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts",
+                    "column": 64,
+                    "line": 876
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-0225e4a6c0a4d71c7a58",
+          "file": "learning.spec.ts",
+          "line": 787,
+          "column": 5
+        },
+        {
+          "title": "revised assessment refresh preserves an unknown progress outcome until explicit revision recovery",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1661,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:52.398Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-c9aad07bfb5c6bf122a8",
+          "file": "learning.spec.ts",
+          "line": 882,
+          "column": 5
+        },
+        {
+          "title": "anonymous catalog/detail reveal public metadata, keep canonical URL and direct protected learning to customer sign-in",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 831,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:54.463Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-da9229018a8f4405ff34",
+          "file": "learning.spec.ts",
+          "line": 94,
+          "column": 5
+        },
+        {
+          "title": "free enrollment, signed player, keyboard assessment and another-device resume use the server account",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2729,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:55.379Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-fcda18deb532d8a34566",
+          "file": "learning.spec.ts",
+          "line": 120,
+          "column": 5
+        },
+        {
+          "title": "stale progress reloads the other device revision and never silently overwrites its saved position",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1228,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:58.114Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-c84f5ecfe641578f3237",
+          "file": "learning.spec.ts",
+          "line": 249,
+          "column": 5
+        },
+        {
+          "title": "media processing and access denial remain usable and provide explicit recovery",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 674,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:19:59.346Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-a41afcf9ee371b448c17",
+          "file": "learning.spec.ts",
+          "line": 303,
+          "column": 5
+        },
+        {
+          "title": "scheduled playback renewal rechecks access and removes the player when access ends",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2013,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:20:00.024Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-5076a98cdda200bcd583",
+          "file": "learning.spec.ts",
+          "line": 345,
+          "column": 5
+        },
+        {
+          "title": "failed completion read can be retried without another assessment or progress write",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1163,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:20:02.042Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-561fbc643a155cd3acec",
+          "file": "learning.spec.ts",
+          "line": 392,
+          "column": 5
+        },
+        {
+          "title": "page-exit flush keeps its final position request keepalive behind an active heartbeat",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1346,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:20:03.209Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-952996bd3b9dd16238fc",
+          "file": "learning.spec.ts",
+          "line": 430,
+          "column": 5
+        },
+        {
+          "title": "authorization expiry removes the player while renewal is stalled and refuses a late expired response",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3740,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:20:04.559Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-e14324c1717d6b8d3b4f",
+          "file": "learning.spec.ts",
+          "line": 533,
+          "column": 5
+        },
+        {
+          "title": "public preview does not offer assessment outage recovery or saved completion",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 489,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('Preview lesson.')\nExpected: visible\nError: strict mode violation: getByText('Preview lesson.') resolved to 2 elements:\n    1) <p role=\"status\" class=\"mt-6 border border-lh-primary/20 p-4 text-sm\">Preview lesson. Enroll in the course to save prog…</p> aka locator('#main-content').getByText('Preview lesson. Enroll in the')\n    2) <p role=\"status\" class=\"mt-6 border border-lh-primary/20 p-4 text-sm\">Preview lesson. Enroll in the course to save prog…</p> aka getByText('Preview lesson. Enroll in the').nth(1)\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText('Preview lesson.')\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('Preview lesson.')\nExpected: visible\nError: strict mode violation: getByText('Preview lesson.') resolved to 2 elements:\n    1) <p role=\"status\" class=\"mt-6 border border-lh-primary/20 p-4 text-sm\">Preview lesson. Enroll in the course to save prog…</p> aka locator('#main-content').getByText('Preview lesson. Enroll in the')\n    2) <p role=\"status\" class=\"mt-6 border border-lh-primary/20 p-4 text-sm\">Preview lesson. Enroll in the course to save prog…</p> aka getByText('Preview lesson. Enroll in the').nth(1)\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText('Preview lesson.')\u001b[22m\n\n    at /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts:597:5",
+                    "location": {
+                      "file": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts",
+                      "column": 5,
+                      "line": 597
+                    },
+                    "snippet": "  595 |   await expect(\n  596 |     page.getByText(\"Preview lesson.\", { exact: false }),\n> 597 |   ).toBeVisible();\n      |     ^\n  598 |   await expect(\n  599 |     page.getByText(\"Public preview lesson text.\", { exact: true }),\n  600 |   ).toBeVisible();"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts",
+                        "column": 5,
+                        "line": 597
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('Preview lesson.')\nExpected: visible\nError: strict mode violation: getByText('Preview lesson.') resolved to 2 elements:\n    1) <p role=\"status\" class=\"mt-6 border border-lh-primary/20 p-4 text-sm\">Preview lesson. Enroll in the course to save prog…</p> aka locator('#main-content').getByText('Preview lesson. Enroll in the')\n    2) <p role=\"status\" class=\"mt-6 border border-lh-primary/20 p-4 text-sm\">Preview lesson. Enroll in the course to save prog…</p> aka getByText('Preview lesson. Enroll in the').nth(1)\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText('Preview lesson.')\u001b[22m\n\n\n  595 |   await expect(\n  596 |     page.getByText(\"Preview lesson.\", { exact: false }),\n> 597 |   ).toBeVisible();\n      |     ^\n  598 |   await expect(\n  599 |     page.getByText(\"Public preview lesson text.\", { exact: true }),\n  600 |   ).toBeVisible();\n    at /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts:597:5"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:20:08.303Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-public-preview-do-6b1ef-ecovery-or-saved-completion-mobile/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-public-preview-do-6b1ef-ecovery-or-saved-completion-mobile/error-context.md"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-public-preview-do-6b1ef-ecovery-or-saved-completion-mobile/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-public-preview-do-6b1ef-ecovery-or-saved-completion-mobile/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts",
+                    "column": 5,
+                    "line": 597
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-13f69534364c8481ca74",
+          "file": "learning.spec.ts",
+          "line": 584,
+          "column": 5
+        },
+        {
+          "title": "SPA navigation flushes the latest played position before its player ref is detached",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4112,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:20:09.112Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-4e60e506e8b5c75ea120",
+          "file": "learning.spec.ts",
+          "line": 611,
+          "column": 5
+        },
+        {
+          "title": "another account cannot reuse learning state and a suspended session cannot renew playback",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2003,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:20:13.302Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-2744b4ed16fecdfe7226",
+          "file": "learning.spec.ts",
+          "line": 657,
+          "column": 5
+        },
+        {
+          "title": "practice completion is authoritative even with an incorrect score and supports retries",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1144,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:20:15.311Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-f7f29b28c96626b506ef",
+          "file": "learning.spec.ts",
+          "line": 741,
+          "column": 5
+        },
+        {
+          "title": "explicit revised assessment refresh settles pending resume and removes old completion",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 6655,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByText(/Earlier assessment version/)\nExpected: visible\nReceived: hidden\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText(/Earlier assessment version/)\u001b[22m\n\u001b[2m    9 × locator resolved to <li class=\"text-sm\">…</li>\u001b[22m\n\u001b[2m      - unexpected value \"hidden\"\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByText(/Earlier assessment version/)\nExpected: visible\nReceived: hidden\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText(/Earlier assessment version/)\u001b[22m\n\u001b[2m    9 × locator resolved to <li class=\"text-sm\">…</li>\u001b[22m\n\u001b[2m      - unexpected value \"hidden\"\u001b[22m\n\n    at /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts:876:64",
+                    "location": {
+                      "file": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts",
+                      "column": 64,
+                      "line": 876
+                    },
+                    "snippet": "  874 |     expect(progress.completedAt).toBeNull();\n  875 |     expect(progress.resumePositionSeconds).toBeGreaterThanOrEqual(3);\n> 876 |     await expect(page.getByText(/Earlier assessment version/)).toBeVisible();\n      |                                                                ^\n  877 |   } finally {\n  878 |     release();\n  879 |   }"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts",
+                        "column": 64,
+                        "line": 876
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByText(/Earlier assessment version/)\nExpected: visible\nReceived: hidden\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText(/Earlier assessment version/)\u001b[22m\n\u001b[2m    9 × locator resolved to <li class=\"text-sm\">…</li>\u001b[22m\n\u001b[2m      - unexpected value \"hidden\"\u001b[22m\n\n\n  874 |     expect(progress.completedAt).toBeNull();\n  875 |     expect(progress.resumePositionSeconds).toBeGreaterThanOrEqual(3);\n> 876 |     await expect(page.getByText(/Earlier assessment version/)).toBeVisible();\n      |                                                                ^\n  877 |   } finally {\n  878 |     release();\n  879 |   }\n    at /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts:876:64"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:20:16.459Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-explicit-revised--7f2bb--and-removes-old-completion-mobile/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-explicit-revised--7f2bb--and-removes-old-completion-mobile/error-context.md"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-explicit-revised--7f2bb--and-removes-old-completion-mobile/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/private/tmp/phase2-learner-browser-0c1d207/learning-explicit-revised--7f2bb--and-removes-old-completion-mobile/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner/tests/learning.spec.ts",
+                    "column": 64,
+                    "line": 876
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-323e4f947efbe0f7db60",
+          "file": "learning.spec.ts",
+          "line": 787,
+          "column": 5
+        },
+        {
+          "title": "revised assessment refresh preserves an unknown progress outcome until explicit revision recovery",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "mobile",
+              "projectName": "mobile",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1521,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-05T22:20:23.455Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e0ec79b0c4f511f16424-a151467b8b4fdc62dc05",
+          "file": "learning.spec.ts",
+          "line": 882,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-05T22:19:06.864Z",
+    "duration": 78279.875,
+    "expected": 24,
+    "skipped": 0,
+    "unexpected": 4,
+    "flaky": 0
+  }
+}
