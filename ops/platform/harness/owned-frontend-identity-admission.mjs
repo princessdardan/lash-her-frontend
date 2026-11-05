@@ -556,19 +556,10 @@ async function main() {
       if (denied === "disabled-owner") await operator.query("UPDATE admin_users SET status='disabled' WHERE id=$1", [actor.id]);
       await change(true, true); before = await operations();
       const result = await adminCommand(actor, customer);
-      if (denied === "nonowner") {
-        assert.equal(result.status, 403);
-        assert.equal(JSON.parse(result.text).error, "account_action_denied");
-        await entries(before, ["completed", "completed", "completed"], ["new-work", "recovery", "recovery"]);
-      } else {
-        // The route conservatively retains its parent when a non-domain
-        // authorization error escapes. Inner authorization still settles its
-        // confirmed denial/refresh; never upgrade the parent to known success.
-        assert.equal(result.status, 503);
-        assert.equal(JSON.parse(result.text).error, "temporarily_unavailable");
-        await entries(before, denied === "disabled-owner" ? ["uncertain", "completed"] : ["uncertain", "completed", "completed"],
-          denied === "disabled-owner" ? ["new-work", "recovery"] : ["new-work", "recovery", "recovery"]);
-      }
+      assert.equal(result.status, 403);
+      assert.equal(JSON.parse(result.text).error, denied === "stale-google-proof" ? "fresh_sign_in_required" : "account_action_denied");
+      await entries(before, denied === "disabled-owner" ? ["completed", "completed"] : ["completed", "completed", "completed"],
+        denied === "disabled-owner" ? ["new-work", "recovery"] : ["new-work", "recovery", "recovery"]);
       assert.equal((await counts()).customer_account_commands, 0);
       assert.equal((await counts()).customer_sessions, 1);
       assert.equal((await operator.query("SELECT status FROM customer_users WHERE id=$1", [customer.id])).rows[0].status, "active");
@@ -577,6 +568,30 @@ async function main() {
       assert.equal(await fingerprint(), deniedBusiness); assert.equal(providerCalls.length, deniedProviders);
       await reconcile(); checks.push(`actual-admin-lifecycle-${denied}-real-auth-js-and-persistent-guard-deny-command-without-session-revocation`);
     }
+
+    phase = "admin-lifecycle-authorization-sql-commit-acknowledgement-loss";
+    await reset(); const uncertainAdminCustomer = await seedAccount(), uncertainOwner = await seedAdmin(); await change(true, true); before = await operations();
+    const adminQuery = Client.prototype.query, adminClients = new WeakSet(); let lostAdminCommit = false;
+    Client.prototype.query = function(...args) {
+      const text = (typeof args[0] === "string" ? args[0] : args[0]?.text)?.toLowerCase();
+      const result = Reflect.apply(adminQuery, this, args);
+      if (this.connectionParameters.user === target.user && text?.includes('update "admin_users"')) adminClients.add(this);
+      if (!lostAdminCommit && text === "commit" && adminClients.has(this)) {
+        lostAdminCommit = true; return result.then(() => { throw new Error("OWNED_IDENTITY_ADMIN_COMMIT_ACK_LOST"); });
+      }
+      return result;
+    };
+    let uncertainAdminResult;
+    try { uncertainAdminResult = await adminCommand(uncertainOwner, uncertainAdminCustomer); }
+    finally { Client.prototype.query = adminQuery; }
+    assert.equal(lostAdminCommit, true); assert.equal(uncertainAdminResult.status, 503);
+    await entries(before, ["uncertain", "uncertain", "uncertain"], ["new-work", "recovery", "recovery"]);
+    assert.ok((await operator.query("SELECT last_signed_in_at FROM admin_users WHERE id=$1", [uncertainOwner.id])).rows[0].last_signed_in_at);
+    assert.equal((await counts()).customer_account_commands, 0); assert.equal((await counts()).customer_sessions, 1);
+    assert.equal((await operator.query("SELECT status FROM customer_users WHERE id=$1", [uncertainAdminCustomer.id])).rows[0].status, "active");
+    beforeBusiness = await fingerprint(); await change(false); assert.equal((await adminCommand(uncertainOwner, uncertainAdminCustomer)).status, 503);
+    assert.equal(await fingerprint(), beforeBusiness); assert.deepEqual(providerCalls, []); await reconcile();
+    checks.push("actual-admin-lifecycle-lost-authorization-sql-commit-ack-retains-all-parent-uncertainty-and-committed-refresh-without-command-or-automatic-replay");
 
     phase = "admin-lifecycle-blocked-authorization-refresh";
     await reset(); const blockedCustomer = await seedAccount(), blockedOwner = await seedAdmin(); await change(true, true); before = await operations();
