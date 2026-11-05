@@ -233,11 +233,49 @@ async function main() {
     assert.equal(reconciliation.status, 0, `Owned reconciliation route failed: ${reconciliation.stderr}`);
     const reconciliationRoute = JSON.parse(reconciliation.stdout);
     assert.equal(reconciliationRoute.status, "FRONTEND_RECONCILIATION_OWNED_PASS");
+    const runOwnedChild = (module, environment, expectedStatus) => {
+      const child = spawnSync(process.execPath, ["--import", "tsx", "--import", "./scripts/register-server-only-test.mjs", module], {
+        cwd: source, encoding: "utf8", timeout: 120000,
+        env: { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, ...environment },
+      });
+      assert.equal(child.status, 0, `Owned child failed (${module}): ${child.stderr}`);
+      const result = JSON.parse(child.stdout);
+      assert.equal(result.status, expectedStatus);
+      return result;
+    };
+    phase = "frontend-interactive-owned-route";
+    const interactiveRoute = runOwnedChild("ops/platform/harness/owned-frontend-interactive-admission.mjs", {
+      FRONTEND_INTERACTIVE_OWNED_TEST: "true", OWNED_INTERACTIVE_PORT: String(port),
+      OWNED_INTERACTIVE_PASSWORD: password, OWNED_INTERACTIVE_MAJOR: String(major),
+    }, "FRONTEND_INTERACTIVE_OWNED_PASS");
+    phase = "frontend-worker-owned-route";
+    const workerRoutes = runOwnedChild("ops/platform/harness/owned-frontend-worker-admission.mjs", {
+      FRONTEND_WORKER_ADMISSION_OWNED_TEST: "true", OWNED_RECONCILIATION_PORT: String(port),
+      OWNED_RECONCILIATION_PASSWORD: password, OWNED_RECONCILIATION_MAJOR: String(major),
+    }, "FRONTEND_WORKER_ADMISSION_OWNED_PASS");
+    phase = "customer-identity-owned-database";
+    const customerIdentity = spawnSync(process.execPath, ["--import", "tsx", "--import", "./scripts/register-server-only-test.mjs",
+      "--test", "--test-reporter=tap", "src/lib/customer-auth/store.db.test.ts"], {
+      cwd: source, encoding: "utf8", timeout: 120000,
+      env: { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, NODE_ENV: "test", APP_ENV: "local",
+        NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project", NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
+        TEST_DATABASE_URL: `postgresql://frontend_admission_protocol:${password}@127.0.0.1:${port}/frontend_admission_owned?sslmode=verify-full` },
+    });
+    assert.equal(customerIdentity.status, 0, `Owned customer identity failed: ${customerIdentity.stderr}\n${customerIdentity.stdout}`);
+    const customerTests = Number(/^# tests (\d+)$/mu.exec(customerIdentity.stdout)?.[1]);
+    const customerPassed = Number(/^# pass (\d+)$/mu.exec(customerIdentity.stdout)?.[1]);
+    assert.ok(customerTests >= 7 && customerTests === customerPassed);
+    assert.match(customerIdentity.stdout, /^# fail 0$/mu);
+    assert.match(customerIdentity.stdout, /^# skipped 0$/mu);
+    const customerIdentityDatabase = { status: "FRONTEND_CUSTOMER_IDENTITY_OWNED_PASS", tests: customerTests, passed: customerPassed, failures: 0, skipped: 0 };
     const result={status:"FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",postgresMajor:major,migrations:artifact.migrations.length,checks:records,providerTouched:false,
       admissionChecks,
       historicalLoginChecks,
       writerRouteChecks,
       reconciliationRoute,
+      interactiveRoute,
+      workerRoutes,
+      customerIdentityDatabase,
       sourceCommit:commit,migrationImageDigest:job.migrationImageDigest,packagedCliVerified:cli.endsWith("frontend-image.mjs"),
       sqlArtifactSha256:artifact.sqlArtifactSha256,contractManifestSha256:artifact.contractManifestSha256,schemaBaselineSha256:hash(JSON.stringify(baseline))};
     if(process.env.FRONTEND_MIGRATION_EXPORT_SCHEMA==="true")result.schemaBaseline=baseline;
@@ -249,7 +287,7 @@ async function main() {
   }
 }
 main().catch((error)=>{console.error(JSON.stringify({status:"OWNED_FRONTEND_MIGRATION_FAILED",phase,providerTouched:false,
-  fixtureDetail:phase === "frontend-reconciliation-owned-route" ? error.message : undefined,
+  fixtureDetail:["frontend-reconciliation-owned-route", "frontend-interactive-owned-route", "frontend-worker-owned-route", "customer-identity-owned-database"].includes(phase) ? error.message : undefined,
   sqlState:/^[A-Z0-9]{5}$/u.test(error.code ?? "") ? error.code : undefined,
   sqlPosition:/^[0-9]+$/u.test(error.position ?? "") ? error.position : undefined,
   fixtureFrames:error.stack?.split("\n").filter(line=>/^\s+at .*owned-frontend-(?:admission|historical-logins|writer-routes)\.mjs/u.test(line))}));process.exitCode=1;});
