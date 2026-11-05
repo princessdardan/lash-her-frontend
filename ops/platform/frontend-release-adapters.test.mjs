@@ -10,11 +10,11 @@ import { frontendCoordinationHash as hash, validateFrontendFenceObservation } fr
 import { fenceFrontendExternalProducers, runFrontendVercelWorker, observeFrontendExternalFences, observeCompatibleFrontend } from "./frontend-release-adapters.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
-function fixture() {
+function fixture(provider = "square") {
   const plan = { version: 1, environment: "staging", actionId: "adapter-owned", sourceCommit: "a".repeat(40), targetSha256: "b".repeat(64) };
   const identities = [{ kind: "deployment", identity: { provider: "vercel", teamId: TEAM, projectId: PROJECT, deploymentId: "dpl_previous" } },
     { kind: "scheduler", identity: { provider: "vercel", teamId: TEAM, projectId: PROJECT, scheduler: "native-crons" } },
-    { kind: "provider", identity: { provider: "square", accountSha256: "c".repeat(64), credentialBindingSha256: "d".repeat(64) } },
+    { kind: "provider", identity: { provider, accountSha256: "c".repeat(64), credentialBindingSha256: "d".repeat(64) } },
     { kind: "direct-caller", identity: { provider: "manual", accountSha256: "e".repeat(64), credentialBindingSha256: "f".repeat(64) } }];
   plan.externalSurfaces = identities.map(row => ({ kind: row.kind, identitySha256: hash(row.identity), surfaceSha256: hash({ kind: row.kind, identitySha256: hash(row.identity) }) }))
     .sort((a, b) => a.surfaceSha256.localeCompare(b.surfaceSha256));
@@ -47,6 +47,21 @@ test("concrete binding artifact ties every deployment and scheduler to exact rev
     r => { r.retireDeploymentIds = []; }, r => { r.retireDeploymentIds = ["dpl_unknown"]; }]) {
     const copy = structuredClone(retirement); invalid(copy.deploymentRetirement);
     assert.throws(() => frontendProviderBindingsArtifact(copy, f.plan));
+  }
+});
+
+test("Resend retirement artifact binds only isolated staging domain and exact scoped key/webhook/email IDs", () => {
+  const f = fixture("resend");
+  f.input.resendRetirement = { domainId: "d7371c9b-b16d-41d8-b9e8-3286b58eb432", domainName: "mail.staging.lashher.com",
+    retiredKeyId: "c133ba26-4f99-4450-beab-49912e586d3a", replacementKeyId: "b133ba26-4f99-4450-beab-49912e586d3b",
+    expectedKeyIds: ["c133ba26-4f99-4450-beab-49912e586d3a", "b133ba26-4f99-4450-beab-49912e586d3b"],
+    webhookIds: ["333dea10-e8c3-44a5-bb93-bf2d4c604811"], knownEmailIds: [] };
+  const prepared = frontendProviderBindingsArtifact(f.input, f.plan);
+  assert.equal(prepared.resendRetirement.expectedKeyIds[0], f.input.resendRetirement.replacementKeyId);
+  for (const mutate of [r => { r.domainName = "mail.lashher.com"; }, r => { r.domainId = "../domains"; },
+    r => { r.replacementKeyId = r.retiredKeyId; }, r => { r.expectedKeyIds.pop(); }, r => { r.webhookIds.push(r.webhookIds[0]); }]) {
+    const changed = structuredClone(f.input); mutate(changed.resendRetirement);
+    assert.throws(() => frontendProviderBindingsArtifact(changed, f.plan));
   }
 });
 

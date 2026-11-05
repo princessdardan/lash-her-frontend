@@ -11,6 +11,7 @@ import secrets
 import sys
 
 import frontend_probe
+import frontend_resend_retirement
 import migrate
 import vercel
 
@@ -278,6 +279,12 @@ def configure_bootstrap(context, client, attempt, parent_directory):
         ("FRONTEND_WRITER_PRODUCER_SHA256", reviewed["runtimeProducerSha256"], "plain"),
         ("FRONTEND_WRITER_ADMISSION_DATABASE_URL", context["frontendRuntimeDatabaseUrl"], "sensitive"),
         ("DATABASE_URL", context["frontendRuntimeDatabaseUrl"], "sensitive")]
+    if context["bindings"].get("resendRetirement") is not None:
+        reviewed_resend = context["bindings"]["resendRetirement"]
+        demand(isinstance(context.get("resendReplacementToken"), str), "RESEND_BOOTSTRAP_REPLACEMENT_REQUIRED")
+        variables.extend([("RESEND_API_KEY", context["resendReplacementToken"], "sensitive"),
+            ("LASH_RELEASE_RESEND_DOMAIN_ID", reviewed_resend["domainId"], "plain"),
+            ("LASH_RELEASE_RESEND_DOMAIN_NAME", reviewed_resend["domainName"], "plain")])
     outcome = {**selected, "status": "BOOTSTRAP_CONFIGURATION_REQUIRES_REVIEW", "configuredKeys": [], "trafficAuthorized": False}
     migrate.write_json(attempt, "bootstrap-configuration-started.json", outcome)
     try:
@@ -400,6 +407,36 @@ def retire_deployments(context, client, attempt):
         migrate.write_json(attempt, "historical-deployments-outcome.json", outcome)
 
 
+def verify_resend_runtime(context, client, attempt, probe):
+    bootstrap_attempt = attempt.parent / "vercel-bootstrap"
+    observed = observe_compatible(context, client, bootstrap_attempt)
+    demand(observed.get("bootstrapAdmissionVerified") is True and observed.get("workloadVerified") is True and
+        observed.get("aliasJobMatchesIntent") is True and observed.get("aliasDeploymentId") == observed.get("deploymentId") and
+        observed.get("aliasJobState") == "succeeded", "RESEND_ADMISSION_BOOTSTRAP_REQUIRED")
+    staged = vercel._staged_identity(context["candidate"], bootstrap_attempt)
+    private = frontend_probe._private_input(Path(context["privateConfigurationDirectory"]) / "admission-bootstrap", staged)
+    project = vercel._project(client, staged["projectId"])
+    state = vercel.deployment_state(client, staged["deploymentId"], staged["projectId"], staged["sourceCommit"], staged["releaseId"])
+    challenge = secrets.token_hex(32)
+    value = probe.request(state["url"], private["secret"], frontend_probe._automation_bypass(project), challenge, "resend-binding")
+    reviewed = context["bindings"]["resendRetirement"]
+    demand(value.get("version") == 1 and value.get("status") == "FRONTEND_WORKLOAD_PROBE_PASS" and value.get("challenge") == challenge and
+        all(value.get(key) == staged[key] for key in ("environment", "projectId", "sourceCommit")) and
+        value.get("gatewayOrigin") == private["gatewayOrigin"] and
+        value.get("checks") == ["gateway-course-catalog", "frontend-admission-bootstrap", "resend-binding"] and
+        value.get("resendBinding") == {"domainId": reviewed["domainId"], "domainName": reviewed["domainName"], "domainStatus": "verified"} and
+        value.get("featureControls") == {key: False for key in BOOTSTRAP_FLAGS} and
+        value.get("admission", {}).get("targetSha256") == context["plan"]["targetSha256"] and
+        value.get("admission", {}).get("sourceCommit") == staged["sourceCommit"] and
+        value.get("admission", {}).get("producerSha256") == context["plan"]["bootstrapCompatibility"]["runtimeProducerSha256"] and
+        value.get("admission", {}).get("epoch") == context["admissionObservation"]["epoch"] and
+        value.get("admission", {}).get("newWork") is False and value.get("admission", {}).get("recovery") is False,
+        "RESEND_RUNTIME_REPLACEMENT_BINDING_UNVERIFIED")
+    return {**identity(context), "status": "STAGING_RESEND_RUNTIME_BINDING_VERIFIED", "deploymentId": staged["deploymentId"],
+        "domainId": reviewed["domainId"], "domainName": reviewed["domainName"], "runtimeReplacementBindingVerified": True,
+        "historicalWritersFenced": False, "activeExecutions": None, "uncertainEffects": None, "trafficAuthorized": False}
+
+
 def deploy_compatible(context, client, attempt, parent_directory, probe=None):
     selected = identity(context)
     observed = observe_vercel(context, client, attempt)
@@ -487,7 +524,7 @@ def execute(context, client, verify, probe=None):
     locked = LockedClient(client, verify)
     source_attempt = attempt
     if context.get("originalDirectory") is not None:
-        demand(operation in ("observe-vercel", "observe-compatible", "observe-admission"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
+        demand(operation in ("observe-vercel", "observe-compatible", "observe-admission", "observe-resend"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
         original = Path(context["originalDirectory"])
         migrate.private_directory(original)
         source_attempt = original / attempt.name
@@ -503,6 +540,20 @@ def execute(context, client, verify, probe=None):
         return deploy_admission(context, locked, attempt, parent, LockedProbe(verify, probe))
     if operation == "retire-deployments":
         return retire_deployments(context, locked, attempt)
+    if operation in ("retire-resend", "observe-resend"):
+        reviewed = context["bindings"].get("resendRetirement")
+        demand(reviewed is not None, "REVIEWED_RESEND_RETIREMENT_REQUIRED")
+        replacement = LockedClient(frontend_resend_retirement.Client(context["resendReplacementToken"]), verify)
+        retired = LockedClient(frontend_resend_retirement.Client(context["resendRetiredToken"]), verify)
+        if operation == "observe-resend":
+            return {**selected, **frontend_resend_retirement.observe(replacement, retired, reviewed)}
+        # The protected runtime must be usable before destructive retirement,
+        # and must still succeed after the old token is actually denied.
+        verify_resend_runtime(context, locked, attempt, LockedProbe(verify, probe))
+        outcome = frontend_resend_retirement.retire(replacement, retired, reviewed, selected, attempt)
+        verified = verify_resend_runtime(context, locked, attempt, LockedProbe(verify, probe))
+        migrate.write_json(attempt, "resend-runtime-binding-verified.json", verified)
+        return {**outcome, "runtimeReplacementBindingVerified": True}
     if operation in ("observe-compatible", "observe-admission"):
         result = observe_compatible(context, locked, source_attempt)
         if operation == "observe-compatible" and (source_attempt.parent / "vercel-bootstrap").exists():

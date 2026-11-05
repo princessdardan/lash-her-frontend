@@ -36,7 +36,7 @@ async function runtime(context) {
 export async function runFrontendVercelWorker(operation, context) {
   let child, output, failed = false, deadline, killDeadline, received = false, bytes = 0, processing = Promise.resolve();
   try {
-    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments"].includes(operation));
+    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments", "retire-resend", "observe-resend"].includes(operation));
     const { value, bindings, candidate } = await runtime(context);
     const payload = { operation, plan: fields(context.plan, ["environment", "actionId", "sourceCommit", "targetSha256", "bootstrapCompatibility"]),
       candidate, bindings, directory: context.directory, vercelToken: value.vercelToken,
@@ -44,6 +44,21 @@ export async function runFrontendVercelWorker(operation, context) {
       ...(context.database ? { database: context.database } : {}),
       ...(context.preapplicationSchema ? { preapplicationSchema: context.preapplicationSchema } : {}),
       ...(context.admissionObservation ? { admissionObservation: context.admissionObservation } : {}) };
+    if (bindings.resendRetirement && ["deploy-admission", "retire-resend", "observe-resend"].includes(operation)) {
+      demand(typeof value.resendReplacementToken === "string" && value.resendReplacementToken.length > 0 && value.resendReplacementToken.length <= 8192 &&
+        /^[!-~]+$/u.test(value.resendReplacementToken));
+      payload.resendReplacementToken = value.resendReplacementToken;
+      if (operation !== "deploy-admission") {
+        demand(typeof value.resendRetiredToken === "string" && value.resendRetiredToken.length > 0 && value.resendRetiredToken.length <= 8192 &&
+          /^[!-~]+$/u.test(value.resendRetiredToken));
+        payload.resendRetiredToken = value.resendRetiredToken;
+      }
+    }
+    if (operation === "retire-resend") {
+      const privateDirectory = frontendPrivateReceiptDirectory(value.privateConfigurationDirectory);
+      demand(privateDirectory !== context.directory && !privateDirectory.startsWith(context.directory + sep));
+      payload.privateConfigurationDirectory = privateDirectory;
+    }
     if (operation === "deploy-compatible" || operation === "deploy-admission") {
       const privateDirectory = frontendPrivateReceiptDirectory(value.privateConfigurationDirectory);
       demand(privateDirectory !== context.directory && !privateDirectory.startsWith(context.directory + sep) &&
@@ -141,13 +156,23 @@ export async function retireFrontendVercelDeployments(context) {
   return runFrontendVercelWorker("retire-deployments", context);
 }
 
+export async function retireFrontendResendCredential(context) {
+  demand(context?.admissionObservation?.ledgerDrained === true && context.admissionObservation.newWork === false && context.admissionObservation.recovery === false);
+  return runFrontendVercelWorker("retire-resend", context);
+}
+
+export async function observeFrontendResendCredential(context) {
+  return runFrontendVercelWorker("observe-resend", context);
+}
+
 export async function observeFrontendExternalFences(context) {
   const { bindings } = await runtime(context);
   const observed = await runFrontendVercelWorker("observe-vercel", context);
+  const resend = bindings.resendRetirement ? await runFrontendVercelWorker("observe-resend", context) : undefined;
   return { version: 1, nonce: context.nonce, actionId: context.plan.actionId, sourceCommit: context.plan.sourceCommit,
     targetSha256: context.plan.targetSha256, inventorySha256: context.inventorySha256,
     surfaces: bindings.surfaces.map(surface => {
-      const observation = Buffer.from(JSON.stringify(surface.identity.provider === "vercel" ? observed : {
+      const observation = Buffer.from(JSON.stringify(surface.identity.provider === "vercel" ? observed : surface.identity.provider === "resend" && resend ? resend : {
         status: "PROVIDER_OBSERVATION_UNSUPPORTED", surfaceSha256: surface.surfaceSha256, provider: surface.identity.provider }));
       const reconciliation = Buffer.from(JSON.stringify({ status: "EFFECT_RECONCILIATION_UNAVAILABLE", surfaceSha256: surface.surfaceSha256,
         missing: frontendProviderMissingCapabilities(bindings).filter(row => row.surfaceSha256 === surface.surfaceSha256) }));

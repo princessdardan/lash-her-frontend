@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import frontend_probe
 import frontend_release_adapters as adapter
+import frontend_resend_retirement
 import migrate
 import vercel
 import vercel_test
@@ -59,12 +60,17 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                         result = {"version": 1, "status": "FRONTEND_WORKLOAD_PROBE_PASS", "challenge": self.headers.get("x-lash-release-challenge"),
                                   "checks": ["gateway-course-catalog"], "gatewayOrigin": "https://gateway.example.invalid",
                                   "environment": "staging", "projectId": vercel.PROJECTS["staging"], "sourceCommit": "a" * 40}
-                        if self.headers.get("x-lash-release-mode") == "admission-bootstrap":
+                        if self.headers.get("x-lash-release-mode") in ("admission-bootstrap", "resend-binding"):
                             result.update(checks=["gateway-course-catalog", "frontend-admission-bootstrap"],
                                 schemaCatalogSha256="f" * 64 if owner.bootstrap_probe_wrong else owner.context["preapplicationSchema"]["schemaCatalogSha256"],
                                 featureControls={key: False for key in adapter.BOOTSTRAP_FLAGS}, admission={"environment": "staging",
                                     "targetSha256": owner.context["plan"]["targetSha256"], "producerSha256": "5" * 64,
                                     "sourceCommit": "a" * 40, "epoch": "1", "newWork": False, "recovery": False})
+                            if self.headers.get("x-lash-release-mode") == "resend-binding":
+                                selected = owner.context["bindings"]["resendRetirement"]
+                                observed = frontend_resend_retirement.domain(frontend_resend_retirement.Client(owner.variables["RESEND_API_KEY"]["value"]), selected)
+                                result["checks"].append("resend-binding")
+                                result["resendBinding"] = observed
                         self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Cache-Control", "no-store")
                         self.end_headers(); self.wfile.write(json.dumps(result).encode()); return
                     owner.assertEqual(self.headers.get("Authorization"), "Bearer owned-token-marker")

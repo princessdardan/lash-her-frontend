@@ -96,3 +96,22 @@ test("bootstrap response binds the ordinary workload proof and actual read-only 
   assert.deepEqual(body.admission, observation.admission); assert.equal(body.schemaCatalogSha256, observation.schemaCatalogSha256);
   assert.equal("appliedLineageSha256" in body, false);
 });
+
+test("private Resend mode retains bootstrap checks, staging scope and challenge without forwarding incoming credentials", async () => {
+  const observation: FrontendBootstrapProbe = { admission: { environment: "staging", targetSha256: "a".repeat(64), producerSha256: "b".repeat(64), sourceCommit: "a".repeat(40), epoch: "1", newWork: false, recovery: false }, schemaCatalogSha256: "d".repeat(64), featureControls: {} as FrontendBootstrapProbe["featureControls"] };
+  const domain = { resendBinding: { domainId: "d7371c9b-b16d-41d8-b9e8-3286b58eb432", domainName: "mail.staging.lashher.com" as const, domainStatus: "verified" as const } };
+  let calls = 0;
+  const dependencies = { configuration: () => readReleaseProbeConfiguration(environment(), now),
+    run: async () => ({ ok: true as const, service: "course" as const, durationMs: 1 }), admission: async () => observation,
+    resend: async (...args: unknown[]) => { assert.deepEqual(args, [{ environment: "staging", sourceCommit: "a".repeat(40) }]); calls++; return domain; } };
+  const handler = createReleaseProbeHandler(dependencies);
+  assert.equal((await handler(request({ "x-lash-release-mode": "resend-binding", authorization: "Bearer invalid" }))).status, 401);
+  const response = await handler(request({ "x-lash-release-mode": "resend-binding", cookie: "private-cookie" }));
+  assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "no-store");
+  const body = await response.json(); assert.equal(body.challenge, challenge); assert.deepEqual(body.resendBinding, domain.resendBinding);
+  assert.deepEqual(body.checks, ["gateway-course-catalog", "frontend-admission-bootstrap", "resend-binding"]); assert.deepEqual(body.admission, observation.admission);
+  assert.equal(calls, 1); assert.equal(JSON.stringify(body).includes("private-cookie"), false);
+  assert.equal((await createReleaseProbeHandler({ ...dependencies, resend: undefined })(request({ "x-lash-release-mode": "resend-binding" }))).status, 503);
+  assert.equal((await createReleaseProbeHandler({ ...dependencies, configuration: () => ({ ...dependencies.configuration()!, environment: "production" }) })(request({ "x-lash-release-mode": "resend-binding" }))).status, 503);
+  assert.equal(calls, 1);
+});

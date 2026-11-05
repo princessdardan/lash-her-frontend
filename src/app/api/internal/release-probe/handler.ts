@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { resolveApplicationEnvironment } from "@/lib/env/application-environment.mjs";
 import type { FrontendBootstrapProbe } from "@/lib/writer-admission/bootstrap-probe";
+import type { FrontendResendBindingProbe } from "@/lib/writer-admission/resend-binding-probe";
 
 const MAX_LIFETIME_MS = 60 * 60 * 1000;
 type Configuration = {
@@ -32,6 +33,7 @@ export function createReleaseProbeHandler(deps: {
   configuration(): Configuration | null;
   run(gatewayOrigin: string): Promise<{ ok: true; service: "course"; durationMs: number }>;
   admission?(source: { environment: string; sourceCommit: string }): Promise<FrontendBootstrapProbe>;
+  resend?(source: { environment: string; sourceCommit: string }): Promise<FrontendResendBindingProbe>;
 }) {
   return async (request: Request): Promise<Response> => {
     try {
@@ -43,16 +45,17 @@ export function createReleaseProbeHandler(deps: {
       const challenge = request.headers.get("x-lash-release-challenge") ?? "";
       if (!/^[a-f0-9]{64}$/u.test(challenge)) return reply(400, { error: "Invalid challenge" });
       const mode = request.headers.get("x-lash-release-mode");
-      if (mode !== null && mode !== "admission-bootstrap") return reply(400, { error: "Invalid mode" });
-      if (mode && (config.environment !== "staging" || !deps.admission)) return reply(503, { error: "Release probe failed" });
+      if (mode !== null && mode !== "admission-bootstrap" && mode !== "resend-binding") return reply(400, { error: "Invalid mode" });
+      if (mode && (config.environment !== "staging" || !deps.admission || mode === "resend-binding" && !deps.resend)) return reply(503, { error: "Release probe failed" });
       // No incoming credential is passed upstream. The ordinary transport gets
       // its workload token from this function's current Vercel execution.
       const result = await deps.run(config.gatewayOrigin);
-      const bootstrap = mode === "admission-bootstrap" ? await deps.admission!({ environment: config.environment, sourceCommit: config.sourceCommit }) : undefined;
+      const bootstrap = mode ? await deps.admission!({ environment: config.environment, sourceCommit: config.sourceCommit }) : undefined;
+      const resend = mode === "resend-binding" ? await deps.resend!({ environment: config.environment, sourceCommit: config.sourceCommit }) : undefined;
       return reply(200, { version: 1, status: "FRONTEND_WORKLOAD_PROBE_PASS", challenge,
         environment: config.environment, projectId: config.projectId, sourceCommit: config.sourceCommit, gatewayOrigin: config.gatewayOrigin,
-        checks: bootstrap ? ["gateway-course-catalog", "frontend-admission-bootstrap"] : ["gateway-course-catalog"], durationMs: result.durationMs,
-        ...(bootstrap ?? {}) });
+        checks: resend ? ["gateway-course-catalog", "frontend-admission-bootstrap", "resend-binding"] : bootstrap ? ["gateway-course-catalog", "frontend-admission-bootstrap"] : ["gateway-course-catalog"], durationMs: result.durationMs,
+        ...(bootstrap ?? {}), ...(resend ?? {}) });
     } catch { return reply(503, { error: "Release probe failed" }); }
   };
 }

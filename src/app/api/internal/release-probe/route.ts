@@ -2,6 +2,7 @@ import { createReleaseProbeHandler, readReleaseProbeConfiguration } from "./hand
 import { runGatewaySmoke } from "@/lib/api-integration/gateway-smoke";
 import { createGatewayTransport } from "@/lib/api-integration/gateway-transport";
 import { runFrontendBootstrapProbe } from "@/lib/writer-admission/bootstrap-probe";
+import { runFrontendResendBindingProbe } from "@/lib/writer-admission/resend-binding-probe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +12,7 @@ export const GET = createReleaseProbeHandler({
   configuration: () => readReleaseProbeConfiguration(process.env),
   run: (origin) => runGatewaySmoke(createGatewayTransport({ origin })),
   admission: runFrontendBootstrapProbe,
+  resend: runFrontendResendBindingProbe,
 });
 
 // Framework-generated HEAD would otherwise execute the upstream GET probe.

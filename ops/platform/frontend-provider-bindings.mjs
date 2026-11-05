@@ -9,6 +9,7 @@ const demand = ok => { if (!ok) throw new Error("FRONTEND_PROVIDER_BINDINGS_REFU
 const digest = v => typeof v === "string" && /^[a-f0-9]{64}$/u.test(v) && !/^0+$/u.test(v);
 const commit = v => typeof v === "string" && /^[a-f0-9]{40}$/u.test(v) && !/^0+$/u.test(v);
 const deploymentId = v => typeof v === "string" && /^dpl_[A-Za-z0-9]+$/u.test(v);
+const uuid = v => typeof v === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(v);
 
 export function frontendProviderBindingsArtifact(input, plan) {
   demand(input?.version === 1 && input.environment === "staging" && input.actionId === plan.actionId &&
@@ -64,6 +65,19 @@ export function frontendProviderBindingsArtifact(input, plan) {
       selected.every((id, index) => id === deployments.map(row => row.deploymentId).sort()[index]) &&
       retired.every(id => deployments.find(row => row.deploymentId === id).sourceCommit !== null));
     result.deploymentRetirement = { preserveBootstrapDeployment: true, retireDeploymentIds: retired, preserveDeploymentIds: preserved };
+  }
+  if (input.resendRetirement !== undefined) {
+    const selected = input.resendRetirement;
+    demand(selected?.domainName === "mail.staging.lashher.com" && uuid(selected.domainId) && uuid(selected.retiredKeyId) && uuid(selected.replacementKeyId) &&
+      selected.retiredKeyId !== selected.replacementKeyId && surfaces.some(row => row.kind === "provider" && row.identity.provider === "resend"));
+    const lists = {};
+    for (const key of ["expectedKeyIds", "webhookIds", "knownEmailIds"]) {
+      demand(Array.isArray(selected[key]) && selected[key].length <= 4096 && selected[key].every(uuid) && new Set(selected[key]).size === selected[key].length);
+      lists[key] = [...selected[key]].sort();
+    }
+    demand(lists.expectedKeyIds.includes(selected.retiredKeyId) && lists.expectedKeyIds.includes(selected.replacementKeyId));
+    result.resendRetirement = { domainId: selected.domainId, domainName: selected.domainName, retiredKeyId: selected.retiredKeyId,
+      replacementKeyId: selected.replacementKeyId, ...lists };
   }
   return result;
 }
