@@ -172,7 +172,11 @@ async function main() {
     const account = (path, fixture, body) => request(`/api/account/${path}`, { method: "POST", cookie: fixture.cookie, body });
 
     phase = "closed-auth-routes";
-    await reset(); await change(false); let before = await operations(), beforeBusiness = await fingerprint();
+    await reset(); await seedAccount();
+    await operator.query("UPDATE customer_sessions SET expires=now()-interval '1 day'");
+    await operator.query("INSERT INTO customer_verification_tokens(token,identifier,expires) VALUES('owned-expired-token','owned@example.invalid',now()-interval '1 day')");
+    await operator.query("INSERT INTO customer_auth_throttle(key,attempts,resets_at) VALUES('owned-expired-throttle',99,now()-interval '1 day')");
+    await change(false); let before = await operations(), beforeBusiness = await fingerprint();
     for (const path of ["/csrf", "/providers", "/session", "/callback/resend?email=owned%40example.invalid&token=owned", "/callback/google?code=owned&state=owned"])
       assert.equal((await request(`/api/customer-auth${path}`)).status, 503, path);
     for (const path of ["/signin/resend", "/signin/google", "/signout"])
@@ -182,7 +186,7 @@ async function main() {
     checks.push("actual-auth-exports-closed-before-callback-throttle-cleanup-token-session-or-provider-writes-and-head-never-consumes");
 
     phase = "auth-origin-csrf-and-email-success";
-    await change(true); before = await operations();
+    await reset(); await change(true); before = await operations();
     assert.equal((await request("/api/customer-auth/signin/resend", { method: "POST", requestOrigin: "https://other.invalid", body: new URLSearchParams() })).status, 403);
     await entries(before, []);
     const proof = await csrf(); before = await operations();
@@ -281,6 +285,26 @@ async function main() {
       await reconcile(); checks.push(`actual-auth-blocked-session-insert-${fault}-retains-whole-entry-through-real-sql-without-reconsuming-proof`);
     }
 
+    phase = "auth-committed-session-sql-acknowledgement-loss";
+    await reset(); await change(true); const sqlProof = await issueEmail(); before = await operations();
+    const nativeQuery = Client.prototype.query, sessionClients = new WeakSet(); let lostSessionCommit = false;
+    Client.prototype.query = function(...args) {
+      const text = (typeof args[0] === "string" ? args[0] : args[0]?.text)?.toLowerCase();
+      const result = Reflect.apply(nativeQuery, this, args);
+      if (this.connectionParameters.user === target.user && text?.includes('insert into "customer_sessions"')) sessionClients.add(this);
+      if (!lostSessionCommit && text === "commit" && sessionClients.has(this)) {
+        lostSessionCommit = true; return result.then(() => { throw new Error("OWNED_IDENTITY_SESSION_COMMIT_ACK_LOST"); });
+      }
+      return result;
+    };
+    let sessionCommitResult;
+    try { sessionCommitResult = await callback(sqlProof); } finally { Client.prototype.query = nativeQuery; }
+    assert.equal(lostSessionCommit, true); assert.equal(sessionCommitResult.status, 503); assert.equal(sessionCookie(sessionCommitResult), undefined);
+    await entries(before, ["uncertain"]); assert.equal((await counts()).customer_sessions, 1); assert.equal((await counts()).customer_verification_tokens, 0);
+    assert.equal(providerCalls.length, 1); await change(false); assert.equal((await callback(sqlProof)).status, 503);
+    assert.equal((await counts()).customer_sessions, 1); await reconcile();
+    checks.push("actual-auth-lost-session-sql-commit-ack-preserves-committed-session-and-consumed-proof-without-cookie-or-replay");
+
     // Fault observations below are not converted into a passing qualification.
     // Any missing durable receipt remains a concrete source finding for the
     // integration owner; this fixture does not edit application behavior.
@@ -293,7 +317,8 @@ async function main() {
       try { result = table === "customer_sessions" ? await callback(proof) : await emailStart(proof); }
       finally { await operator.query(`DROP TRIGGER owned_skip_identity_insert ON ${table}`); }
       const current = await since(before), business = await counts();
-      if (result.status !== 503 || current.length !== 1 || current[0].state !== "uncertain") {
+      const unsafeEffect = !!sessionCookie(result) || table === "customer_verification_tokens" && providerCalls.length > 0;
+      if (unsafeEffect || result.status !== 503 || current.length !== 1 || current[0].state !== "uncertain") {
         findings.push({ code: `MISSING_${table.toUpperCase()}_RECEIPT`, path: "src/lib/customer-auth/store.ts", table,
           responseStatus: result.status, operationStates: current.map(row => row.state), persistedRows: business[table], providerCalls: providerCalls.length,
           issuedSessionCookie: !!sessionCookie(result), durableTokenBeforeProvider: providerCalls.find(row => row.stage === "resend")?.durableTokenBeforeProvider });
@@ -332,7 +357,8 @@ async function main() {
       try { result = await request(path, options); }
       finally { await operator.query(`DROP TRIGGER owned_fault_identity_receipt ON ${table}`); }
       const current = await since(before), business = await counts();
-      if (result.status !== 503 || current.length !== 1 || current[0].state !== "uncertain") {
+      const unsafeEffect = !!sessionCookie(result) || ["token-restored-after-consumption", "google-link-suppressed"].includes(mode) && business.customer_sessions > 0 || mode === "throttle-reset-after-write" && providerCalls.length > 0;
+      if (unsafeEffect || result.status !== 503 || current.length !== 1 || current[0].state !== "uncertain") {
         findings.push({ code: `AUTH_${mode.toUpperCase().replaceAll("-", "_")}_RECEIPT`, path: "src/lib/customer-auth/store.ts", table,
           responseStatus: result.status, operationStates: current.map(row => row.state), persistedRows: business[table], issuedSessionCookie: !!sessionCookie(result),
           tokenRows: business.customer_verification_tokens, sessionRows: business.customer_sessions, linkRows: business.customer_provider_links,
@@ -383,6 +409,53 @@ async function main() {
       assert.equal((await operator.query("SELECT learning_updates FROM customer_account_preferences WHERE user_id=$1", [fixture.id])).rows[0].learning_updates, true);
       await reconcile(); checks.push(`actual-account-blocked-preferences-${fault}-whole-admission-awaits-real-transaction-and-preserves-committed-state`);
     }
+
+    for (const state of ["expired-session", "suspended-user"]) {
+      phase = `account-${state}-preentry-denial`; await reset(); const fixture = await seedAccount(); await change(true);
+      await operator.query(state === "expired-session" ? "UPDATE customer_sessions SET expires=now()-interval '1 day'" : "UPDATE customer_users SET status='suspended'");
+      before = await operations(); beforeBusiness = await fingerprint();
+      assert.equal((await account("preferences", fixture, { learningUpdates: true })).status, 401);
+      assert.equal((await account("commands", fixture, { action: "export", idempotencyKey: randomUUID() })).status, 401);
+      await entries(before, []); assert.equal(await fingerprint(), beforeBusiness); await reconcile();
+      checks.push(`actual-account-${state}-real-cookie-and-store-deny-both-writers-before-admission`);
+    }
+
+    phase = "account-signout-race-before-locked-preferences";
+    await reset(); const raceFixture = await seedAccount(); await change(true); before = await operations();
+    const sessionBlocker = await connect(); await sessionBlocker.query("BEGIN");
+    await sessionBlocker.query("SELECT id FROM customer_users WHERE id=$1 FOR UPDATE", [raceFixture.id]);
+    const racedPreferences = account("preferences", raceFixture, { learningUpdates: true });
+    try {
+      await until(async () => (await operator.query("SELECT 1 FROM pg_stat_activity WHERE usename=$1 AND wait_event_type='Lock'", [target.user])).rows.length === 1);
+      await entries(before, ["active"]);
+      await sessionBlocker.query("DELETE FROM customer_sessions WHERE user_id=$1", [raceFixture.id]); await sessionBlocker.query("COMMIT");
+    } finally { await sessionBlocker.query("ROLLBACK"); }
+    assert.equal((await racedPreferences).status, 401); await entries(before, ["completed"]);
+    assert.equal((await counts()).customer_account_preferences, 0); await reconcile();
+    checks.push("actual-account-session-revoked-after-route-read-is-rechecked-under-customer-lock-with-clean-denial");
+
+    phase = "account-command-ledger-death-after-admission";
+    await reset(); const commandFixture = await seedAccount(); await change(true); before = await operations();
+    const commandKey = randomUUID(), commandBody = { action: "export", idempotencyKey: commandKey };
+    const commandBlocker = await connect(); await commandBlocker.query("BEGIN");
+    await commandBlocker.query("SELECT id FROM customer_users WHERE id=$1 FOR UPDATE", [commandFixture.id]);
+    const uncertainCommand = account("commands", commandFixture, commandBody);
+    try {
+      await until(async () => (await operator.query("SELECT 1 FROM pg_stat_activity WHERE usename=$1 AND wait_event_type='Lock'", [target.user])).rows.length === 1);
+      await change(false); await entries(before, ["active"]); await killLedger();
+    } finally { await commandBlocker.query("ROLLBACK"); }
+    assert.equal((await uncertainCommand).status, 503); await entries(before, ["active"]);
+    const persistedCommand = (await operator.query("SELECT command_id FROM customer_account_commands WHERE idempotency_key=$1", [commandKey])).rows;
+    assert.equal(persistedCommand.length, 1); assert.equal((await counts()).customer_account_deliveries, 2);
+    beforeBusiness = await fingerprint(); assert.equal((await account("commands", commandFixture, commandBody)).status, 503);
+    assert.equal(await fingerprint(), beforeBusiness); await reconcile();
+    // Only this deliberate owner reconciliation permits a new exact request.
+    // It returns the original command without replaying committed mutations.
+    await change(true); before = await operations();
+    const recovered = await account("commands", commandFixture, commandBody); assert.equal(recovered.status, 202);
+    assert.equal(JSON.parse(recovered.text).commandId, persistedCommand[0].command_id);
+    assert.equal(await fingerprint(), beforeBusiness); await entries(before, ["completed"]); await reconcile();
+    checks.push("actual-account-command-ledger-death-preserves-committed-command-and-both-deliveries-owner-reconciled-exact-retry-does-not-rewrite");
 
     phase = "account-revoked-and-stale-sessions-and-delete";
     await reset(); const deleted = await seedAccount(); await change(true); before = await operations();
