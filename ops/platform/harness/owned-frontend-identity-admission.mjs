@@ -79,7 +79,7 @@ async function main() {
   try {
     assert.equal(operator.connection.stream.encrypted, true); assert.equal(operator.connection.stream.authorized, true);
     assert.deepEqual((await operator.query(`SELECT current_user AS username,current_database() AS database,
-      current_setting('server_version_num')::int/10000 AS major,inet_server_addr()::text AS host,
+      current_setting('server_version_num')::int/10000 AS major,host(inet_server_addr()) AS host,
       (SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()) AS ssl`)).rows,
     [{ username: "frontend_test_admin", database: target.database, major, host: target.host, ssl: true }]);
     let epoch = (await operator.query("SELECT epoch::text FROM frontend_admission.control")).rows[0].epoch;
