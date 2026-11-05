@@ -261,6 +261,11 @@ export function createSquarePaymentFinalizer(
       };
     }
 
+    const requestedLocalOrderId = classifySquareReturnOrderId(input.orderId).localOrderId;
+    if (requestedLocalOrderId !== undefined && localOrder.orderId !== requestedLocalOrderId) {
+      markWriterOperationUncertain();
+    }
+
     if (
       (localOrder.providerPaymentId !== null && localOrder.providerPaymentId !== lookup.payment.id) ||
       (localOrder.providerOrderId !== null && providerOrderId !== localOrder.providerOrderId) ||

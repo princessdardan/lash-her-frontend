@@ -1,5 +1,8 @@
-import { GET } from "./handler";
+import { runWriterAdmission } from "@/lib/writer-admission/runtime";
+import { createSquareReturnGetHandler, defaultDependencies } from "./handler";
 
 export const runtime = "nodejs";
 
-export { GET };
+export const GET = createSquareReturnGetHandler(defaultDependencies, task =>
+  runWriterAdmission("recovery", task),
+);
