@@ -1,5 +1,8 @@
 // In-process staging component. The legacy staging entrypoint deliberately does
 // not call this module. No CLI, provider credentials or automatic restoration.
+import { isDeepStrictEqual } from "node:util";
+import { readMigrationCatalog } from "./frontend-schema.mjs";
+import { restoreFrontendAdmission } from "./frontend-release-restoration.mjs";
 import { randomBytes } from "node:crypto";
 import { readFileSync, lstatSync } from "node:fs";
 import { resolve, join } from "node:path";
@@ -75,7 +78,7 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
     trafficAuthorized: false, migrationAuthorized: false, admissionRestored: false, nativeSchedulesRestored: false };
   let phase = "source-and-adapter-preflight", intentRecorded = false, databaseVerified = false, frontendVerified = false, frontendMutationAttempted = false;
   let bootstrapFrontendMutationAttempted = false, bootstrapFrontendVerified = false;
-  let epoch = plan.expectedEpoch, outcome;
+  let epoch = plan.expectedEpoch, outcome, restored, restorationAttempted = false;
   const assertSource = dependencies.assertSource ?? assertSourceCheckout;
   try {
     assertSource(root, plan.sourceCommit);
@@ -109,7 +112,7 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
       };
       const target = { environment: plan.environment, targetSha256: plan.targetSha256 };
       phase = "locked-database-stage";
-      let databaseClient, admissionClient;
+      let databaseClient, admissionClient, verifiedDeployment;
       const fenceLostEnvironment = () => { try { if (databaseClient) void Promise.resolve(databaseClient.end()).catch(() => {}); } catch { /* sticky lost lease refuses progress */ } };
       environmentSignal.addEventListener("abort", fenceLostEnvironment, { once: true });
       try { await runFrontendMigration(migration, {
@@ -227,14 +230,55 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
             verifyLockedSession: verify, environmentSignal, admissionObservation: afterDeployDrain, ...providerContext }));
           const proof = deploymentProof(plan, observed);
           await store.retain(`${randomBytes(32).toString("hex")}-${proof.evidenceSha256}.json`, observed.evidence);
-          await store.record("compatible-frontend-verified.json", proof);
+          await store.record("compatible-frontend-verified.json", proof); verifiedDeployment = proof;
           frontendVerified = true;
           await store.record("admission-post-deployment-drained.json", { ...base, ...afterDeployDrain });
           await observeFences("after-promotion", verify); await verifySource(); await verify();
         },
+        afterContinuationVerified: plan.restoration === undefined ? undefined : async ({ database, verifySession }) => {
+          if (plan.restoration === undefined) return;
+          const verify = async () => { await verifyEnvironment(); await verifySession(); };
+          const proof = verifiedDeployment;
+          if (plan.restoration !== undefined) {
+            demand(typeof adapters.observeFrontendRestorationBoundary === "function");
+            phase = "deliberate-admission-restoration"; restorationAttempted = true;
+            restored = await restoreFrontendAdmission(plan, admissionClient, epoch, {
+              verifySession: verify, record: store.record,
+              withOwner: work => owner(admissionClient, verifySession, work),
+              async verifyBoundary(stage, admission) {
+                await verifySource(); await verify();
+                demand(isDeepStrictEqual(await readMigrationCatalog(admissionClient), migration.baseline.catalog) &&
+                  isDeepStrictEqual((await admissionClient.query("select hash, created_at from drizzle.__drizzle_migrations order by created_at asc nulls first, id asc")).rows, database.after));
+                await observeFences(stage, verify);
+                const actual = await adapters.observeFrontendRestorationBoundary(Object.freeze({ plan, inventorySha256, database,
+                  admissionObservation: admission, verifyLockedSession: verify, environmentSignal, ...providerContext }));
+                demand(Buffer.isBuffer(actual.evidence) && actual.evidence.length > 0 && actual.evidence.length <= 2_000_000 &&
+                  frontendCoordinationHash(actual.evidence) === actual.evidenceSha256);
+                const value = JSON.parse(actual.evidence.toString("utf8"));
+                demand(value.status === "FRONTEND_RESTORATION_BOUNDARY_OBSERVED" && value.environment === plan.environment &&
+                  value.actionId === plan.actionId && value.sourceCommit === plan.sourceCommit && value.targetSha256 === plan.targetSha256);
+                const frontend = value.frontend, gateway = value.gateway;
+                demand(frontend?.deploymentId === proof.deploymentId && frontend.aliasDeploymentId === proof.deploymentId && frontend.readyState === "READY" &&
+                  frontend.aliasJobState === "succeeded" && frontend.aliasJobMatchesIntent === true && frontend.aliasJobType === "promote" &&
+                  frontend.workloadVerified === true && frontend.workloadReceiptSha256 === proof.workloadReceiptSha256 && frontend.nativeSchedulesEnabled === false &&
+                  frontend.admissionNewWork === admission.newWork && frontend.admissionRecovery === admission.recovery);
+                demand(gateway?.status === "FRONTEND_RESTORATION_GATEWAY_OBSERVED" && gateway.gatewayMutated === false &&
+                  frontendCoordinationHash(gateway.binding) === plan.restoration.gatewayBindingSha256 &&
+                  gateway.admission?.newWork === plan.restoration.newWork && gateway.admission.recovery === plan.restoration.recovery &&
+                  gateway.admission.uncertain?.newWork === 0 && gateway.admission.uncertain?.recovery === 0);
+                await store.record(`${stage}-boundary.json`, { version: 1, actionId: plan.actionId, sourceCommit: plan.sourceCommit,
+                  targetSha256: plan.targetSha256, evidenceSha256: actual.evidenceSha256, frontend, gateway });
+                await store.retain(`${randomBytes(32).toString("hex")}-${actual.evidenceSha256}.json`, actual.evidence);
+                await verify();
+              },
+            });
+            epoch = restored.epoch;
+          }
+        },
       }); } finally { environmentSignal.removeEventListener("abort", fenceLostEnvironment); }
       phase = "locked-final-verification"; await verifyEnvironment();
-      outcome = { ...base, status: "FRONTEND_SQL_AND_COMPATIBLE_DEPLOYMENT_VERIFIED_HELD", databaseVerified, frontendVerified,
+      outcome = { ...base, status: restored ? "FRONTEND_SQL_COMPATIBLE_DEPLOYMENT_AND_ADMISSION_RESTORED" : "FRONTEND_SQL_AND_COMPATIBLE_DEPLOYMENT_VERIFIED_HELD", databaseVerified, frontendVerified,
+        ...(restored ? { admissionRestored: true, admissionNewWork: restored.newWork, admissionRecovery: restored.recovery } : {}),
         databaseOutcome: "verified", frontendDomainsPromoted: true, epoch, wholeReleaseAccepted: false, phase: "completed" };
       await store.record("frontend-release-held.json", outcome);
     }, dependencies.lockPath ? { path: dependencies.lockPath } : {});
@@ -245,7 +289,7 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
       databaseVerified, databaseOutcome: databaseVerified ? "verified" : "unverified", frontendVerified,
       frontendDomainsPromoted: frontendVerified ? true : frontendMutationAttempted ? null : false,
       bootstrapFrontendVerified, bootstrapFrontendDomainsPromoted: bootstrapFrontendVerified ? true : bootstrapFrontendMutationAttempted ? null : false,
-      sqlReplayAuthorized: false }); } catch { /* preserve original partial successes */ }
+      restorationAttempted, ...(restorationAttempted ? { admissionNewWork: null, admissionRecovery: null } : {}), sqlReplayAuthorized: false }); } catch { /* preserve original partial successes */ }
     throw new Error("FRONTEND_RELEASE_COORDINATION_FAILED_REVIEW_REQUIRED");
   }
 }

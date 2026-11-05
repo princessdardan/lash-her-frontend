@@ -1,0 +1,188 @@
+{
+  "status": "FRONTEND_IDENTITY_LOCAL_FINDINGS",
+  "postgresMajor": 16,
+  "migrations": 83,
+  "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+  "admissionChecks": [
+    "bootstrap-is-closed-before-any-effect",
+    "outer-transactions-refuse-before-effects-and-cannot-hide-uncommitted-admission",
+    "historical-login-direct-table-role-spoof-and-null-bindings-refused",
+    "admission-refuses-policy-lock-contention",
+    "new-work-stops-independently-while-recovery-and-admitted-deferred-work-finish",
+    "both-controls-closed-and-zero-unresolved-required-for-ledger-drain",
+    "completed-operation-id-cannot-replay-effects",
+    "elapsed-time-never-drains-uncertain-work-and-only-explicit-reconciliation-clears-it",
+    "unresolved-operations-refuse-restoration",
+    "actual-backend-death-retains-active-operation-until-reviewed-reconciliation",
+    "lost-admission-acknowledgement-never-starts-effects-or-retries",
+    "lost-completion-acknowledgement-preserves-committed-ledger-without-replay",
+    "target-stale-epoch-and-concurrent-policy-changes-refuse",
+    "drain-observation-never-asserts-historical-fence-or-migration-authority"
+  ],
+  "identity": {
+    "status": "FRONTEND_IDENTITY_OWNED_FINDINGS",
+    "postgresMajor": 16,
+    "checks": [
+      "actual-auth-exports-closed-before-callback-throttle-cleanup-token-session-or-provider-writes-and-head-never-consumes",
+      "actual-auth-email-proof-durable-before-synthetic-resend-and-whole-new-work-completes-on-real-tls-database",
+      "closed-real-single-use-callback-retains-its-proof-before-throttle-and-consumption",
+      "actual-auth-email-callback-single-use-canonical-session-private-read-and-signout-accounted-with-admin-cookie-isolation",
+      "actual-auth-email-reject-retains-proof-and-uncertainty-without-provider-replay",
+      "actual-auth-email-missing-receipt-retains-proof-and-uncertainty-without-provider-replay",
+      "actual-auth-delayed-resend-close-whole-entry-stays-unresolved-until-provider-settles-no-automatic-replay",
+      "actual-auth-delayed-resend-ledger-death-whole-entry-stays-unresolved-until-provider-settles-no-automatic-replay",
+      "actual-auth-begin-lost-acknowledgement-preserves-original-receipt-and-never-replays",
+      "actual-auth-finish-lost-acknowledgement-preserves-original-receipt-and-never-replays",
+      "actual-google-export-closed-before-token-exchange-and-positive-oidc-callback-owns-profile-link-and-session-through-ledger-settlement",
+      "actual-auth-blocked-session-insert-close-retains-whole-entry-through-real-sql-without-reconsuming-proof",
+      "actual-auth-blocked-session-insert-ledger-death-retains-whole-entry-through-real-sql-without-reconsuming-proof",
+      "actual-account-exports-with-next-request-storage-real-active-session-closed-before-writes-and-exact-command-replay",
+      "actual-account-customer_account_preferences-missing-receipt-rolls-back-completely-and-preserves-whole-uncertainty",
+      "actual-account-customer_account_commands-missing-receipt-rolls-back-completely-and-preserves-whole-uncertainty",
+      "actual-account-customer_account_deliveries-missing-receipt-rolls-back-completely-and-preserves-whole-uncertainty",
+      "actual-account-blocked-preferences-close-whole-admission-awaits-real-transaction-and-preserves-committed-state",
+      "actual-account-blocked-preferences-ledger-death-whole-admission-awaits-real-transaction-and-preserves-committed-state",
+      "actual-account-delete-requires-fresh-real-session-creates-both-receiver-commands-and-revoked-session-cannot-write"
+    ],
+    "findings": [
+      {
+        "code": "MISSING_CUSTOMER_VERIFICATION_TOKENS_RECEIPT",
+        "path": "src/lib/customer-auth/store.ts",
+        "table": "customer_verification_tokens",
+        "responseStatus": 303,
+        "operationStates": [
+          "completed"
+        ],
+        "persistedRows": 0,
+        "providerCalls": 1,
+        "issuedSessionCookie": false,
+        "durableTokenBeforeProvider": false
+      },
+      {
+        "code": "MISSING_CUSTOMER_SESSIONS_RECEIPT",
+        "path": "src/lib/customer-auth/store.ts",
+        "table": "customer_sessions",
+        "responseStatus": 302,
+        "operationStates": [
+          "completed"
+        ],
+        "persistedRows": 0,
+        "providerCalls": 1,
+        "issuedSessionCookie": true,
+        "durableTokenBeforeProvider": true
+      },
+      {
+        "code": "AUTH_SIGNOUT_SUPPRESSED_RECEIPT",
+        "path": "src/lib/customer-auth/store.ts",
+        "table": "customer_sessions",
+        "responseStatus": 302,
+        "operationStates": [
+          "completed"
+        ],
+        "persistedRows": 1,
+        "issuedSessionCookie": false,
+        "tokenRows": 0,
+        "sessionRows": 1,
+        "linkRows": 0
+      },
+      {
+        "code": "AUTH_TOKEN_RESTORED_AFTER_CONSUMPTION_RECEIPT",
+        "path": "src/lib/customer-auth/store.ts",
+        "table": "customer_verification_tokens",
+        "responseStatus": 302,
+        "operationStates": [
+          "completed"
+        ],
+        "persistedRows": 1,
+        "issuedSessionCookie": true,
+        "tokenRows": 1,
+        "sessionRows": 1,
+        "linkRows": 0
+      },
+      {
+        "code": "AUTH_GOOGLE_LINK_SUPPRESSED_RECEIPT",
+        "path": "src/lib/customer-auth/store.ts",
+        "table": "customer_provider_links",
+        "responseStatus": 302,
+        "operationStates": [
+          "completed"
+        ],
+        "persistedRows": 0,
+        "issuedSessionCookie": true,
+        "tokenRows": 0,
+        "sessionRows": 1,
+        "linkRows": 0
+      },
+      {
+        "code": "AUTH_THROTTLE_RESET_AFTER_WRITE_RECEIPT",
+        "path": "src/lib/customer-auth/store.ts",
+        "table": "customer_auth_throttle",
+        "responseStatus": 303,
+        "operationStates": [
+          "completed"
+        ],
+        "persistedRows": 2,
+        "issuedSessionCookie": false,
+        "tokenRows": 1,
+        "sessionRows": 0,
+        "linkRows": 0,
+        "throttleAttempts": [
+          0,
+          0
+        ]
+      }
+    ],
+    "reconciliationEvidenceSha256": [
+      "68da66612b1071c4b0d54d84145ea1f09a7685244e7e56b3b91409639a52d850",
+      "4ca0c7c84b8322963571918a0846691dc72cbcd19b440f106168d2b36e44bee6",
+      "0c55c0a79e5577441eccdcaa68e4aa04863bed99020b93c377b4eba9e7e4578a",
+      "f071afefa32fe84d71d1a026395c9da1941005797066bab5094c0b7a8dc07453",
+      "f1883d8a8ebb363f739d693bd76cf61c288eee9701c79e721fe51f8abec90658",
+      "36a6f0c6b213984ef4532caf253db1b18570f91657ba053145cbb1964bc90e9e",
+      "cff30485c5d7a948de5ca5800bca6e4d3ddff80ec2c5b5e242fc5450b708376a",
+      "253bb9d32183234cde624ccdee344a81f9941e2807bca8ced3c5989735c2a42e",
+      "fe9c477c128397f990d76e6c0e238d15b670b329109f7f6727c2f1dd272ddd86",
+      "fef8f8000feffb3487ac32c849eeebb6d2babe06697ce731397bbc5b06d0e495",
+      "0decb850237a395472e9de9a1b81d5ba5d9b2821eaa50145aec6bcd57a4b3684",
+      "b9828a5107e249f91bc4ef0c5dde5b8492cca0610e6a8ae683794f38a55c3539",
+      "5cc89b85deb9afbfb61e2e406718b7f367fba8f5a49ab948076cb1f10355f824",
+      "8bfe8f717f9314cce2189afb3aa7d19a41ca77a57040df8d929908ddc36b4f84",
+      "6f565f26b9b931f1176e93c5d6b6c3535b200d459607e83a86bf4ecdbc5f4c43",
+      "48e1c1b7ce309a8288d0b1ecec1a50fcd3feb53c1d2dbf3f923fc6e7b257ef76",
+      "45e1bcf009fd962ddd20f499e77f44009b6fba22c8f4f87e879c21084b98b0f9",
+      "0053fc21e2eb1464c929bd59939b9be1ce8095379558b70736c3a00d35c6f69f",
+      "1f93bc655d5fdef8f4a2e34d091248f1a062fd31a81392c65a775c9fd1e4a41c",
+      "578056a595d4c91a0d66860a3c694cd129cab2596e9b0a738c0f9727ec13f83f",
+      "259c7c4e6bc84443c89e091ae5d2363a0914286afafa1019a3f444062fff4421",
+      "6053212503c247aab8ed5a2e689b856d7698af93d66cc3f9b19c763a44812082",
+      "256a36b852260c0d7998730fb17ad0400c374eb4b5a93238b4027ddbb9dea7fd"
+    ],
+    "applicationSourceManifestSha256": "03e1dbebdd12b2ed01510901ea921203ceaeffe17e9d0f4e4b2ae082a8cc5a12",
+    "syntheticLedgerSourceIdentity": true,
+    "actualAuthRouteExport": true,
+    "actualAccountRouteExports": true,
+    "actualAuthJs": true,
+    "constructedNextRequestStorage": true,
+    "nativeNextServer": false,
+    "loopbackHttp": true,
+    "verifiedPostgresTls": true,
+    "realBusinessDatabase": true,
+    "providersIntercepted": true,
+    "providerTouched": false,
+    "historicalWritersFenced": false,
+    "migrationAuthorized": false,
+    "applicationLogsSuppressed": false
+  },
+  "legacyDatabaseRegressions": {
+    "files": [
+      "src/lib/customer-auth/store.db.test.ts",
+      "src/lib/customer-auth/session-issuance.db.test.ts",
+      "src/lib/customer-lifecycle/store.db.test.ts",
+      "src/lib/customer-lifecycle/faults.db.test.ts"
+    ],
+    "tests": 26,
+    "failures": 0,
+    "skipped": 0
+  },
+  "providerTouched": false
+}

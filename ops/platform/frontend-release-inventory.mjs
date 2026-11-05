@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { frontendAdmissionTargetSha256, frontendAdmissionBootstrapArtifact } from "./frontend-admission-bootstrap.mjs";
 import { prepareHistoricalFrontendLogins } from "./frontend-historical-logins.mjs";
 import { prepareFrontendBootstrapCompatibility } from "./frontend-bootstrap-compatibility.mjs";
+import { prepareFrontendRestoration } from "./frontend-release-restoration.mjs";
 
 export const frontendCoordinationHash = value => createHash("sha256").update(typeof value === "string" || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest("hex");
 const demand = ok => { if (!ok) throw new Error("FRONTEND_RELEASE_INVENTORY_REFUSED"); };
@@ -11,12 +12,23 @@ const oid = v => typeof v === "string" && /^[1-9][0-9]{0,9}$/u.test(v) && Number
 const roleName = v => typeof v === "string" && /^[a-z][a-z0-9_]{0,62}$/u.test(v);
 
 export function frontendCandidateSurfaces(source) {
-  demand(source?.version === 1 && source.scope === "candidate-source-only" && digest(source.sourceManifestSha256));
+  demand(source?.version === 2 && source.scope === "candidate-source-only" && digest(source.sourceManifestSha256));
   const surfaces = [];
   const add = (kind, value) => surfaces.push({ surfaceSha256: frontendCoordinationHash({ kind, ...value }), kind });
   for (const [key, names] of [["routes", "methods"], ["actionModules", "exports"]]) {
     demand(Array.isArray(source[key]));
     for (const entry of source[key]) for (const name of entry[names]) add(key, { file: entry.file, name, sourceSha256: entry.sourceSha256 });
+  }
+  for (const key of ["renderEntries", "manualEntries"]) {
+    demand(Array.isArray(source[key]));
+    for (const entry of source[key]) {
+      demand(typeof entry.file === "string" && digest(entry.sourceSha256) && Array.isArray(entry.exports));
+      if (key === "renderEntries") demand(["server", "client"].includes(entry.runtime) && entry.exports.includes("default"));
+      // Every script/module is a surface, including top-level invocations with
+      // no exported names. Render exports also bind metadata/static generators.
+      add(key, { file: entry.file, exports: entry.exports, sourceSha256: entry.sourceSha256,
+        ...(key === "renderEntries" ? { runtime: entry.runtime } : {}) });
+    }
   }
   for (const key of ["inlineActions", "deferredSites", "databaseConstructors", "schedules"]) {
     demand(Array.isArray(source[key]));
@@ -88,6 +100,7 @@ export function prepareFrontendReleaseInventory(input, migration, source) {
     reviewSha256: input.reviewSha256, adaptersSha256: input.adaptersSha256,
     ...(input.providerBindingsSha256 ? { providerBindingsSha256: input.providerBindingsSha256 } : {}),
     observationBudgetSeconds: input.observationBudgetSeconds, admissionMode: input.admissionMode,
+    ...(input.restoration !== undefined ? { restoration: prepareFrontendRestoration(input.restoration) } : {}),
     ...(input.admissionMode === "bootstrap" ? { bootstrapSqlSha256: input.bootstrapSqlSha256, bootstrapCompatibility } : {}),
     expectedEpoch: input.expectedEpoch, owner: { name: owner.name, oid: owner.oid }, producers,
     candidateCoverage: coverage, externalSurfaces: surfaces, historicalLogins: historical };

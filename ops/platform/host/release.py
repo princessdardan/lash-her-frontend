@@ -17,9 +17,9 @@ import migrate
 import docker_inspect
 
 STAGES = [("community-api", "course-api"), ("community-tls", "course-tls"),
-          ("course-snapshot", "community-worker"), ("course-publisher",), ("gateway",)]
+          ("course-snapshot", "community-worker", "course-media", "course-export-cleanup"), ("course-publisher",), ("gateway",)]
 SERVICES = tuple(service for stage in STAGES for service in stage)
-ENV_FILES = ("course-api", "course-publisher", "course-snapshot", "community-api", "community-worker")
+ENV_FILES = ("course-api", "course-publisher", "course-snapshot", "community-api", "community-worker", "course-media", "course-export-cleanup")
 TLS_FILES = ("tls/ca.pem", "tls/gateway/ca.pem", "tls/gateway/key.pem", "tls/gateway/cert.pem",
              "tls/course/key.pem", "tls/course/cert.pem", "tls/community/key.pem", "tls/community/cert.pem")
 CONFIG_FILES = ("gateway.json", "course-tls.json", "community-tls.json")
@@ -27,9 +27,12 @@ PROBE_CHECKS = {"public-tls-missing-workload-denied", "public-metrics-hidden", "
                 "private-application-credential-required", "private-community-peer-denied"}
 IMAGE_KEYS = {"gateway": "gateway", "course-tls": "gateway", "community-tls": "gateway",
               "course-api": "courseRuntime", "course-publisher": "courseRuntime", "course-snapshot": "courseRuntime",
+              "course-media": "courseRuntime", "course-export-cleanup": "courseRuntime",
               "community-api": "communityRuntime", "community-worker": "communityRuntime"}
 NODE_CONFIG_CHECKS = {
     "course-api": 'await import("./dist/config/env.js")',
+    "course-media": 'const m=await import("./dist/config/mux-media-process-env.js");m.parseMuxMediaProcessEnv()',
+    "course-export-cleanup": 'const m=await import("./dist/config/account-export-process-env.js");m.parseAccountExportProcessEnv()',
     "course-publisher": 'const m=await import("./dist/config/community-process-env.js");m.parseCommunityPublisherProcessEnv()',
     "course-snapshot": 'const m=await import("./dist/config/community-process-env.js");m.parseCommunitySnapshotWorkerProcessEnv()',
     "community-api": 'await import("./dist/config/env.js")',
@@ -111,6 +114,12 @@ def environment_values(raw, environment, service, jobs):
                and ("DATABASE_URL" not in key or key == selected)
                and "MIGRATION" not in key, "RUNTIME_CREDENTIAL_SCOPE_REFUSED")
         values[key] = value
+    worker_keys = {
+        "course-media": {"MUX_TOKEN_ID", "MUX_TOKEN_SECRET", "MUX_ENVIRONMENT_ID", "MUX_MEDIA_RECOVERY_ENABLED", "MUX_MEDIA_CLEANUP_ENABLED", "MUX_MEDIA_RECOVERY_POLL_INTERVAL_MS"},
+        "course-export-cleanup": {"COURSE_ACCOUNT_EXPORT_CLEANUP_ENABLED", "COURSE_ACCOUNT_EXPORT_CLEANUP_POLL_MS"},
+    }
+    if service in worker_keys:
+        demand(set(values).issubset({"NODE_ENV", "DATABASE_TARGET", selected} | worker_keys[service]), "WORKER_CREDENTIAL_SCOPE_REFUSED")
     name = "course" if service.startswith("course-") else "community"
     target = jobs[name]["job"]["target"]
     role = jobs[name]["job"].get("runtimeRole")
@@ -227,6 +236,9 @@ def preflight(release, snapshot, jobs, pull=True):
     for service in SERVICES:
         demand(model["services"][service].get("image") == release["artifacts"][IMAGE_KEYS[service]]["image"], "COMPOSE_IMAGE_MISMATCH")
     for service in ENV_FILES:
+        if service in ("course-media", "course-export-cleanup"):
+            expected = {"NODE_ENV": "production", "PORT": "4003" if service == "course-media" else "4004", "NODE_OPTIONS": "--max-old-space-size=128"}
+            demand(model["services"][service].get("environment") == expected, "WORKER_PUBLIC_OVERRIDES_REFUSED")
         values = {**environment_values(migrate.read_input(snapshot, f"{service}.env", 65_536), release["environment"], service,
                                       jobs),
                   **model["services"][service]["environment"]}

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { resolve, dirname, sep } from "node:path";
 import { frontendPrivateReceiptDirectory } from "./frontend-release-receipts.mjs";
 import { frontendCoordinationHash as hash } from "./frontend-release-inventory.mjs";
+import { observeFrontendSquareEffects } from "./frontend-square-effects.mjs";
 import { prepareFrontendProviderBindings, frontendProviderMissingCapabilities } from "./frontend-provider-bindings.mjs";
 
 const demand = ok => { if (!ok) throw new Error("FRONTEND_PROVIDER_ADAPTER_REFUSED"); };
@@ -20,6 +21,10 @@ async function runtime(context) {
     sourceCommit: context.plan.sourceCommit, targetSha256: context.plan.targetSha256 }));
   const bindings = prepareFrontendProviderBindings(value?.bindings, context.plan);
   frontendPrivateReceiptDirectory(context.directory);
+  if (context.plan.restoration !== undefined) {
+    demand(typeof value.gatewayRuntimeDirectory === "string");
+    frontendPrivateReceiptDirectory(value.gatewayRuntimeDirectory);
+  }
   demand(typeof value.vercelToken === "string" && value.vercelToken.length > 0 && value.vercelToken.length <= 8192 &&
     [...value.vercelToken].every(char => char.charCodeAt(0) > 32 && char.charCodeAt(0) < 127));
   const candidate = context.candidate;
@@ -36,14 +41,30 @@ async function runtime(context) {
 export async function runFrontendVercelWorker(operation, context) {
   let child, output, failed = false, deadline, killDeadline, received = false, bytes = 0, processing = Promise.resolve();
   try {
-    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments", "retire-resend", "observe-resend"].includes(operation));
+    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments", "retire-resend", "observe-resend", "verify-square", "observe-square", "suspend-square", "observe-restoration"].includes(operation));
     const { value, bindings, candidate } = await runtime(context);
-    const payload = { operation, plan: fields(context.plan, ["environment", "actionId", "sourceCommit", "targetSha256", "bootstrapCompatibility"]),
+    const payload = { operation, plan: fields(context.plan, ["environment", "actionId", "sourceCommit", "targetSha256", "bootstrapCompatibility", "restoration"]),
       candidate, bindings, directory: context.directory, vercelToken: value.vercelToken,
       ...(context.originalDirectory ? { originalDirectory: frontendPrivateReceiptDirectory(context.originalDirectory) } : {}),
       ...(context.database ? { database: context.database } : {}),
       ...(context.preapplicationSchema ? { preapplicationSchema: context.preapplicationSchema } : {}),
       ...(context.admissionObservation ? { admissionObservation: context.admissionObservation } : {}) };
+    if (operation === "observe-restoration") {
+      demand(bindings.gatewayObservation && hash(bindings.gatewayObservation) === context.plan.restoration?.gatewayBindingSha256 &&
+        typeof value.gatewayRuntimeDirectory === "string");
+      payload.gatewayRuntimeDirectory = frontendPrivateReceiptDirectory(value.gatewayRuntimeDirectory);
+    }
+    if (bindings.squareRetirement && ["deploy-admission", "verify-square", "observe-square", "suspend-square"].includes(operation)) {
+      demand(typeof value.squareReplacementToken === "string" && value.squareReplacementToken.length > 0 && value.squareReplacementToken.length <= 8192 &&
+        /^[!-~]+$/u.test(value.squareReplacementToken));
+      payload.squareReplacementToken = value.squareReplacementToken;
+      if (operation !== "deploy-admission") {
+        demand(typeof value.squareRetiredToken === "string" && value.squareRetiredToken.length > 0 && value.squareRetiredToken.length <= 8192 &&
+          /^[!-~]+$/u.test(value.squareRetiredToken) && context.databaseClient);
+        payload.squareRetiredToken = value.squareRetiredToken;
+        payload.squareEffects = await observeFrontendSquareEffects(context.databaseClient, bindings.squareRetirement, context.verifyLockedSession);
+      }
+    }
     if (bindings.resendRetirement && ["deploy-admission", "retire-resend", "observe-resend"].includes(operation)) {
       demand(typeof value.resendReplacementToken === "string" && value.resendReplacementToken.length > 0 && value.resendReplacementToken.length <= 8192 &&
         /^[!-~]+$/u.test(value.resendReplacementToken));
@@ -54,7 +75,7 @@ export async function runFrontendVercelWorker(operation, context) {
         payload.resendRetiredToken = value.resendRetiredToken;
       }
     }
-    if (operation === "retire-resend") {
+    if (["retire-resend", "verify-square", "suspend-square"].includes(operation)) {
       const privateDirectory = frontendPrivateReceiptDirectory(value.privateConfigurationDirectory);
       demand(privateDirectory !== context.directory && !privateDirectory.startsWith(context.directory + sep));
       payload.privateConfigurationDirectory = privateDirectory;
@@ -156,6 +177,16 @@ export async function retireFrontendVercelDeployments(context) {
   return runFrontendVercelWorker("retire-deployments", context);
 }
 
+export async function verifyFrontendSquareCredentialRetirement(context) {
+  demand(context?.admissionObservation?.ledgerDrained === true && context.admissionObservation.newWork === false && context.admissionObservation.recovery === false);
+  return runFrontendVercelWorker("verify-square", context);
+}
+export async function suspendFrontendSquareCallback(context) {
+  demand(context?.admissionObservation?.ledgerDrained === true && context.admissionObservation.newWork === false && context.admissionObservation.recovery === false);
+  return runFrontendVercelWorker("suspend-square", context);
+}
+export async function observeFrontendSquareScope(context) { return runFrontendVercelWorker("observe-square", context); }
+
 export async function retireFrontendResendCredential(context) {
   demand(context?.admissionObservation?.ledgerDrained === true && context.admissionObservation.newWork === false && context.admissionObservation.recovery === false);
   return runFrontendVercelWorker("retire-resend", context);
@@ -182,6 +213,11 @@ export async function observeFrontendExternalFences(context) {
         observationSha256: hash(observation), reconciliationSha256: hash(reconciliation) }));
       return { surfaceSha256: surface.surfaceSha256, evidence, evidenceSha256: hash(evidence), observation, reconciliation };
     }) };
+}
+
+export async function observeFrontendRestorationBoundary(context) {
+  const result = await runFrontendVercelWorker("observe-restoration", context);
+  const evidence = Buffer.from(JSON.stringify(result)); return { ...result, evidence, evidenceSha256: hash(evidence) };
 }
 
 export async function deployCompatibleFrontend(context) {

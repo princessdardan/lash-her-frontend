@@ -12,6 +12,23 @@ import migrate_test
 import release
 
 
+def historical_runtime_fixture():
+    """Explicit original eight-service P1 evidence, never the current topology."""
+    from contextlib import ExitStack
+    import staging_state
+    import staging_rollback
+    stages = [("community-api", "course-api"), ("community-tls", "course-tls"),
+        ("course-snapshot", "community-worker"), ("course-publisher",), ("gateway",)]
+    stack = ExitStack()
+    stack.enter_context(patch.object(release, "STAGES", stages))
+    stack.enter_context(patch.object(release, "SERVICES", tuple(service for stage in stages for service in stage)))
+    stack.enter_context(patch.object(release, "ENV_FILES", ("course-api", "course-publisher", "course-snapshot", "community-api", "community-worker")))
+    stack.enter_context(patch.object(staging_state, "CONFIGURATION_FILES", ("runtime.json", *release.CONFIG_FILES, *release.TLS_FILES,
+        *(service + ".env" for service in release.ENV_FILES))))
+    stack.enter_context(patch.object(staging_rollback, "RECOVERY_STAGES", [stages[0], stages[1], ("course-publisher",), stages[2], stages[4]]))
+    return stack
+
+
 class RuntimeReleaseTests(unittest.TestCase):
     def setUp(self):
         self.fixture = migrate_test.MigrationDriverTests()
@@ -42,8 +59,20 @@ class RuntimeReleaseTests(unittest.TestCase):
             self.save(name, "owned-fixture-certificate")
         for service in release.ENV_FILES:
             name = service.split("-")[0]
-            self.save(f"{service}.env", f"DATABASE_TARGET=staging\nSTAGING_DATABASE_URL=postgresql://runtime_role:private-fixture@{name}.example.invalid:5432/{name}_test?sslmode=verify-full\nINTERNAL_SERVICE_JWT_SECRET=literal$VALUE\n")
+            self.save(f"{service}.env", f"DATABASE_TARGET=staging\nSTAGING_DATABASE_URL=postgresql://runtime_role:private-fixture@{name}.example.invalid:5432/{name}_test?sslmode=verify-full\n" + ("" if service in ("course-media", "course-export-cleanup") else "INTERNAL_SERVICE_JWT_SECRET=literal$VALUE\n"))
         self.running, self.calls = set(), []
+
+    def test_new_workers_have_closed_credential_scopes_and_independent_config_parsers(self):
+        jobs = {name: {"job": job} for name, job in self.fixture.jobs.items()}
+        for service in ("course-media", "course-export-cleanup"):
+            raw = (self.configuration / (service + ".env")).read_bytes()
+            self.assertEqual(release.environment_values(raw, "staging", service, jobs)["DATABASE_TARGET"], "staging")
+            for field in ("INTERNAL_SERVICE_JWT_SECRET", "COURSE_USER_JWT_PRIVATE_KEY", "COMMUNITY_SIGNING_KEY", "MUX_WEBHOOK_SIGNING_SECRET", "RESEND_API_KEY"):
+                with self.assertRaisesRegex(ValueError, "WORKER_CREDENTIAL_SCOPE_REFUSED"):
+                    release.environment_values(raw + (field + "=private-fixture\n").encode(), "staging", service, jobs)
+        self.assertIn("parseMuxMediaProcessEnv()", release.NODE_CONFIG_CHECKS["course-media"])
+        self.assertIn("parseAccountExportProcessEnv()", release.NODE_CONFIG_CHECKS["course-export-cleanup"])
+        self.assertIn("course-media", release.STAGES[2]); self.assertIn("course-export-cleanup", release.STAGES[2])
 
     def tearDown(self):
         self.fixture.tearDown()
@@ -67,7 +96,7 @@ class RuntimeReleaseTests(unittest.TestCase):
         output = ""
         if args[1] == "compose":
             if "config" in args:
-                environment = {service: {"DATABASE_TARGET": "staging", "INTERNAL_SERVICE_JWT_SECRET": "literal$VALUE"} for service in release.ENV_FILES}
+                environment = {service: ({"NODE_ENV": "production", "PORT": "4003" if service == "course-media" else "4004", "NODE_OPTIONS": "--max-old-space-size=128"} if service in ("course-media", "course-export-cleanup") else {"DATABASE_TARGET": "staging", "INTERNAL_SERVICE_JWT_SECRET": "literal$VALUE"}) for service in release.ENV_FILES}
                 output = json.dumps({"services": {service: {"image": self.fixture.release["artifacts"][release.IMAGE_KEYS[service]]["image"],
                                 "environment": environment.get(service, {})} for service in release.SERVICES}})
             elif "up" in args:
@@ -81,18 +110,18 @@ class RuntimeReleaseTests(unittest.TestCase):
             elif "exec" in args:
                 output = json.dumps({"status": "API_RUNTIME_BOUNDARIES_PASS", "checks": sorted(release.PROBE_CHECKS)})
             elif "ps" in args:
-                output = str(release.SERVICES.index(args[-1]) + 1) * 64
+                output = format(release.SERVICES.index(args[-1]) + 1, "064x")
         elif args[1:3] == ["image", "inspect"]:
             output = args[-1].split("@")[1]
         elif args[1] == "inspect":
-            service = release.SERVICES[int(args[-1][0]) - 1]
+            service = release.SERVICES[int(args[-1], 16) - 1]
             image = self.fixture.release["artifacts"][release.IMAGE_KEYS[service]]["image"].split("@")[1]
             output = f'{image}|true|{"none" if service.endswith("-tls") else "healthy"}|lash-her-staging|{service}'
         elif args[1] == "ps":
             if "--format" in args:
-                output = "\n".join(f'{str(release.SERVICES.index(service)+1)*12} {service}' for service in self.running)
+                output = "\n".join(f'{format(release.SERVICES.index(service)+1, "064x")} {service}' for service in self.running)
             else:
-                output = "\n".join(str(release.SERVICES.index(service)+1)*12 for service in self.running)
+                output = "\n".join(format(release.SERVICES.index(service)+1, "064x") for service in self.running)
         elif args[1] == "stop":
             self.running.clear()
         elif "--execute" in args:
@@ -179,12 +208,12 @@ class RuntimeReleaseTests(unittest.TestCase):
         self.assertFalse(result["trafficAuthorized"])
         self.assertFalse(result["frontendPromotionAuthorized"])
         self.assertFalse(result["realVercelOidcVerified"])
-        self.assertEqual(len(result["containers"]), 8)
+        self.assertEqual(len(result["containers"]), len(release.SERVICES))
         starts = [tuple(args[args.index("90")+1:]) for args in self.calls if "up" in args]
         self.assertEqual(starts, release.STAGES)
         check_indices = [index for index, args in enumerate(self.calls) if "--eval" in args]
         apply_indices = [index for index, args in enumerate(self.calls) if "--execute" in args]
-        self.assertEqual(len(check_indices), 8)
+        self.assertEqual(len(check_indices), len(release.SERVICES))
         self.assertLess(max(check_indices), min(apply_indices))
         stored = (self.results / "runtime-test-release/runtime-outcome.json").read_text()
         self.assertNotIn("private-fixture", stored)
@@ -318,6 +347,20 @@ class RuntimeReleaseTests(unittest.TestCase):
         with self.patches(), patch.object(subprocess, "run", side_effect=fail), self.assertRaisesRegex(ValueError, "RUNTIME_BOUNDARY"):
             self.execute()
         self.assertFalse(self.running)
+
+    def test_new_worker_compose_cannot_override_loop_flags_or_inject_api_credentials(self):
+        original = self.docker
+        for key, value in (("MUX_MEDIA_RECOVERY_ENABLED", "true"), ("INTERNAL_SERVICE_JWT_SECRET", "private-fixture")):
+            def changed(args, **kwargs):
+                result = original(args, **kwargs)
+                if args[1] == "compose" and "config" in args:
+                    model = json.loads(result.stdout); model["services"]["course-media"]["environment"][key] = value
+                    result.stdout = json.dumps(model)
+                return result
+            with self.patches(), patch.object(subprocess, "run", side_effect=changed), self.assertRaisesRegex(ValueError, "WORKER_PUBLIC_OVERRIDES_REFUSED"):
+                release.preflight(self.fixture.release, self.configuration, {name: {"job": job} for name, job in self.fixture.jobs.items()}, pull=False)
+            for file in self.configuration.glob("*.resolved.env"): file.unlink()
+        self.assertFalse(any("--execute" in args for args in self.calls))
 
     def test_unverified_configuration_container_cleanup_prevents_migration(self):
         original = self.docker

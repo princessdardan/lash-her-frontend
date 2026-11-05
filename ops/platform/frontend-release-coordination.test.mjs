@@ -13,9 +13,11 @@ import { loadFrontendReleaseAdapters } from "./frontend-release-coordinator.mjs"
 import { withFrontendEnvironmentLock } from "./frontend-environment-lock.mjs";
 
 const directory = () => realpathSync(mkdtempSync(join(tmpdir(), "frontend-release-test-")));
-const source = { version: 1, scope: "candidate-source-only", sourceManifestSha256: "1".repeat(64),
+const source = { version: 2, scope: "candidate-source-only", sourceManifestSha256: "1".repeat(64),
   routes: [{ file: "src/app/api/owned/route.ts", methods: ["POST"], sourceSha256: "2".repeat(64) }],
-  actionModules: [], inlineActions: [], deferredSites: [], databaseConstructors: [], schedules: [{ path: "/api/owned", schedule: "* * * * *" }] };
+  actionModules: [], renderEntries: [{ file: "src/app/admin/page.tsx", exports: ["default"], runtime: "server", sourceSha256: "8".repeat(64) }],
+  manualEntries: [{ file: "scripts/owned.ts", exports: [], sourceSha256: "7".repeat(64) }],
+  inlineActions: [], deferredSites: [], databaseConstructors: [], schedules: [{ path: "/api/owned", schedule: "* * * * *" }] };
 function fixture() {
   const artifact = frontendMigrationArtifact();
   const baseline = { version: 1, serverMajor: 18, sqlArtifactSha256: artifact.sqlArtifactSha256,
@@ -64,6 +66,13 @@ test("pure inventory requires complete exact-source coverage, all external surfa
   }
   const changedSource = structuredClone(f.source); changedSource.routes[0].sourceSha256 = "f".repeat(64);
   assert.throws(() => prepareFrontendReleaseInventory(f.inventory, f.migration, changedSource));
+  for (const key of ["renderEntries", "manualEntries"]) {
+    const incomplete = structuredClone(f.source); delete incomplete[key];
+    assert.throws(() => frontendCandidateSurfaces(incomplete));
+    const omitted = structuredClone(f.source); omitted[key] = [];
+    assert.throws(() => prepareFrontendReleaseInventory(f.inventory, f.migration, omitted));
+  }
+  assert.throws(() => frontendCandidateSurfaces({ ...f.source, version: 1 }));
   const input = structuredClone(f.inventory); input.password = "private-marker"; input.externalSurfaces[0].password = "private-marker";
   assert.equal(JSON.stringify(prepareFrontendReleaseInventory(input, f.migration, f.source)).includes("private-marker"), false);
 });

@@ -79,6 +79,30 @@ export function frontendProviderBindingsArtifact(input, plan) {
     result.resendRetirement = { domainId: selected.domainId, domainName: selected.domainName, retiredKeyId: selected.retiredKeyId,
       replacementKeyId: selected.replacementKeyId, ...lists };
   }
+  if (input.gatewayObservation !== undefined) {
+    const selected = input.gatewayObservation;
+    demand(typeof selected?.hostMachineId === "string" && /^[a-f0-9]{32}$/u.test(selected.hostMachineId) && !/^0+$/u.test(selected.hostMachineId) &&
+      typeof selected.releaseId === "string" && /^[a-z0-9][a-z0-9-]{0,79}$/u.test(selected.releaseId) && digest(selected.candidateSha256) &&
+      digest(selected.gatewayConfigurationSha256) && digest(selected.runtimeConfigurationSha256) && typeof selected.gatewayImage === "string" &&
+      /^ghcr\.io\/princessdardan\/lash-her-platform-gateway@sha256:[a-f0-9]{64}$/u.test(selected.gatewayImage));
+    result.gatewayObservation = Object.fromEntries(["hostMachineId", "releaseId", "candidateSha256", "gatewayConfigurationSha256", "runtimeConfigurationSha256", "gatewayImage"].map(key => [key, selected[key]]));
+  }
+  if (input.squareRetirement !== undefined) {
+    const selected = input.squareRetirement;
+    demand(selected?.environment === "sandbox" && selected.credentialKind === "personal-access-token" && selected.locationId === "LE2H76M5V90AM" &&
+      selected.apiVersion === "2026-05-20" && typeof selected.merchantId === "string" && /^[A-Za-z0-9_-]{8,192}$/u.test(selected.merchantId) &&
+      typeof selected.applicationId === "string" && /^sandbox-sq0idb-[A-Za-z0-9_-]{1,160}$/u.test(selected.applicationId) &&
+      Array.isArray(selected.webhookIds) && selected.webhookIds.length === 1 && selected.webhookIds[0] === "wbhk_b8cf77ce0a5142b38b93715c05ede7d5" &&
+      surfaces.some(row => row.kind === "provider" && row.identity.provider === "square") && Array.isArray(selected.effects) && selected.effects.length <= 4096);
+    const effects = selected.effects.map(row => {
+      demand(["booking-payment-attempt", "product-refund"].includes(row?.recordKind) && uuid(row.recordId) && digest(row.databaseRowSha256));
+      return { recordKind: row.recordKind, recordId: row.recordId, databaseRowSha256: row.databaseRowSha256 };
+    }).sort((a, b) => `${a.recordKind}/${a.recordId}`.localeCompare(`${b.recordKind}/${b.recordId}`));
+    demand(new Set(effects.map(row => `${row.recordKind}/${row.recordId}`)).size === effects.length);
+    result.squareRetirement = { environment: "sandbox", credentialKind: "personal-access-token", locationId: selected.locationId,
+      apiVersion: selected.apiVersion, merchantId: selected.merchantId, applicationId: selected.applicationId, webhookIds: [...selected.webhookIds], effects };
+  }
+  if (plan.restoration !== undefined) demand(result.gatewayObservation && hash(result.gatewayObservation) === plan.restoration.gatewayBindingSha256);
   return result;
 }
 

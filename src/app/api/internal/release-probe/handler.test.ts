@@ -115,3 +115,18 @@ test("private Resend mode retains bootstrap checks, staging scope and challenge 
   assert.equal((await createReleaseProbeHandler({ ...dependencies, configuration: () => ({ ...dependencies.configuration()!, environment: "production" }) })(request({ "x-lash-release-mode": "resend-binding" }))).status, 503);
   assert.equal(calls, 1);
 });
+
+test("Square mode requires staging admission plus deployed sandbox reader and retains challenge", async () => {
+  const configuration = () => readReleaseProbeConfiguration(environment(), now);
+  const run = async () => ({ ok: true as const, service: "course" as const, durationMs: 1 });
+  assert.equal((await createReleaseProbeHandler({ configuration, run })(request({ "x-lash-release-mode": "square-binding" }))).status, 503);
+  const square = async () => ({ squareBinding: { environment: "sandbox" as const, locationId: "LE2H76M5V90AM" as const, merchantId: "ownedMerchant",
+    applicationId: "sandbox-sq0idb-owned", currency: "CAD" as const, country: "CA" as const, locationStatus: "ACTIVE" as const } });
+  const admission = async (): Promise<FrontendBootstrapProbe> => ({ admission: { environment: "staging" as const, targetSha256: "a".repeat(64), producerSha256: "b".repeat(64), sourceCommit: "a".repeat(40), epoch: "1", newWork: false, recovery: false }, schemaCatalogSha256: "d".repeat(64), featureControls: {} as FrontendBootstrapProbe["featureControls"] });
+  const handler = createReleaseProbeHandler({ configuration, run, admission, square });
+  const response = await handler(request({ "x-lash-release-mode": "square-binding", "x-square-token": "forged" }));
+  assert.equal(response.status, 200); const body = await response.json();
+  assert.equal(body.challenge, challenge); assert.deepEqual(body.checks, ["gateway-course-catalog", "frontend-admission-bootstrap", "square-binding"]);
+  assert.deepEqual(body.squareBinding, (await square()).squareBinding);
+  assert.equal((await createReleaseProbeHandler({ configuration: () => ({ ...configuration()!, environment: "production" }), run, admission, square })(request({ "x-lash-release-mode": "square-binding" }))).status, 503);
+});

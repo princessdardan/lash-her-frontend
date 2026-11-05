@@ -246,16 +246,19 @@ def suspend_runtime(environment, env):
     inventory = subprocess.run(["docker", "ps", "--filter", f"label=com.docker.compose.project={project}",
                                 "--format", '{{.ID}} {{.Label "com.docker.compose.service"}}'],
                                check=True, capture_output=True, text=True, env=env, timeout=30)
-    allowed = {"gateway", "course-api", "course-tls", "course-publisher", "course-snapshot", "community-api", "community-tls", "community-worker"}
+    allowed = {"gateway", "course-api", "course-tls", "course-publisher", "course-snapshot", "community-api", "community-tls", "community-worker", "course-media", "course-export-cleanup"}
     ids = []
+    long_grace = False
     lines = inventory.stdout.splitlines()
     demand(len(lines) <= 32, "RUNTIME_INVENTORY_REFUSED")
     for line in lines:
         parts = line.split()
         demand(len(parts) == 2 and re.fullmatch(r"[a-f0-9]{12,64}", parts[0]) and parts[1] in allowed, "RUNTIME_INVENTORY_REFUSED")
         ids.append(parts[0])
+        long_grace = long_grace or parts[1] in ("course-media", "course-export-cleanup")
     if ids:
-        subprocess.run(["docker", "stop", "--timeout", "30", *ids], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, timeout=60)
+        grace = 60 if long_grace else 30
+        subprocess.run(["docker", "stop", "--timeout", str(grace), *ids], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, timeout=grace + 30)
     remaining = subprocess.run(["docker", "ps", "-q", "--filter", f"label=com.docker.compose.project={project}"],
                                check=True, capture_output=True, text=True, env=env, timeout=30)
     demand(not remaining.stdout.strip(), "WRITERS_NOT_SUSPENDED")
