@@ -228,8 +228,7 @@ try {
       [
         "node_modules/next/dist/bin/next",
         "dev",
-        "--webpack",
-        "--hostname",
+          "--hostname",
         "127.0.0.1",
         "--port",
         String(frontendPort),
