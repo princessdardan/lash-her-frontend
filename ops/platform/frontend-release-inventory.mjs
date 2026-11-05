@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { frontendAdmissionTargetSha256, frontendAdmissionBootstrapArtifact } from "./frontend-admission-bootstrap.mjs";
 import { prepareHistoricalFrontendLogins } from "./frontend-historical-logins.mjs";
 import { prepareFrontendBootstrapCompatibility } from "./frontend-bootstrap-compatibility.mjs";
+import { prepareFrontendRestoration } from "./frontend-release-restoration.mjs";
 
 export const frontendCoordinationHash = value => createHash("sha256").update(typeof value === "string" || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest("hex");
 const demand = ok => { if (!ok) throw new Error("FRONTEND_RELEASE_INVENTORY_REFUSED"); };
@@ -99,6 +100,7 @@ export function prepareFrontendReleaseInventory(input, migration, source) {
     reviewSha256: input.reviewSha256, adaptersSha256: input.adaptersSha256,
     ...(input.providerBindingsSha256 ? { providerBindingsSha256: input.providerBindingsSha256 } : {}),
     observationBudgetSeconds: input.observationBudgetSeconds, admissionMode: input.admissionMode,
+    ...(input.restoration !== undefined ? { restoration: prepareFrontendRestoration(input.restoration) } : {}),
     ...(input.admissionMode === "bootstrap" ? { bootstrapSqlSha256: input.bootstrapSqlSha256, bootstrapCompatibility } : {}),
     expectedEpoch: input.expectedEpoch, owner: { name: owner.name, oid: owner.oid }, producers,
     candidateCoverage: coverage, externalSurfaces: surfaces, historicalLogins: historical };

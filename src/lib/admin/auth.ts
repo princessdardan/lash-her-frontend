@@ -8,6 +8,7 @@ import { getAdminOwnerEmails } from "@/lib/env/admin";
 
 import { getAdminUserStore } from "./admin-user-store";
 import { runAdminAuthorizationOperation } from "./authorization-operation";
+import { assertFreshAdminAuthenticationTimestamp } from "./authentication-freshness";
 import {
   createAdminAuth,
   type AdminAuthService,
@@ -79,15 +80,7 @@ export async function requireFreshAdminGoogleAuthentication(
 ): Promise<Date> {
   const { auth } = await import("@/auth");
   const session = await auth();
-  const authenticatedAt = session?.user?.authenticatedAt;
-  if (typeof authenticatedAt !== "number" || authenticatedAt <= 0) {
-    throw new Error("Step-up authentication is required");
-  }
-  const authenticatedAtDate = new Date(authenticatedAt * 1_000);
-  if (Date.now() - authenticatedAtDate.getTime() > maxAgeMs) {
-    throw new Error("Step-up authentication has expired");
-  }
-  return authenticatedAtDate;
+  return assertFreshAdminAuthenticationTimestamp(session?.user?.authenticatedAt, Date.now(), maxAgeMs);
 }
 
 export async function requireRecentAdminAuthentication(input: {

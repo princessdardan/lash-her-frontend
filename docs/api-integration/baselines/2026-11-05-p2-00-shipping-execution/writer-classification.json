@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "baseCommit": "0d45f462c92a3de0af700e6f246bc4c57c8617b3",
+  "baseSourceManifestSha256": "1cca7541394116ca75a2395be0b69343a5bc0d416564af957128f7ea1760ba1b",
+  "candidateSourceManifestSha256": "ea1d72b3083823a1b617b01c31c93fbfd581753b802f0cc396694daa63a9d610",
+  "scope": "Authenticated shipping execution batch after independent refund and preparation settlement",
+  "priorClassificationReference": "../2026-11-05-p2-00-shipping-preparation/writer-classification.json",
+  "releaseAuthority": false,
+  "deploymentInventoryVerified": false,
+  "writerFenceVerified": false,
+  "drainVerified": false,
+  "candidateRoutes": [
+    {
+      "file": "src/app/api/cron/chitchats-shipping/route.ts",
+      "method": "GET",
+      "classification": "OPT_IN_RECOVERY_SUBTASK",
+      "boundary": "After preparation completes and before default worker configuration; through all claimed operations, provider calls, persistence, events, financial and alert enqueues.",
+      "wholeRouteQualified": false,
+      "independentExecutionsQualified": false,
+      "realProviderDeliveryQualified": false,
+      "deployedRuntimeQualified": false
+    }
+  ],
+  "excludedExecutions": [
+    "Shipment PII redaction after execution",
+    "Direct helper/admin executions",
+    "Other workers/actions, historical deployments and manual wrappers"
+  ],
+  "remainingWork": [
+    "Qualify shipment PII redaction separately.",
+    "Qualify remaining affected producers and actual deployment/database/provider bindings.",
+    "Complete historical fencing/bootstrap and parent release/drain/restoration coordination."
+  ]
+}

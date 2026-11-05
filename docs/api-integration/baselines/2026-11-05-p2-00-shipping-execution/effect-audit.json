@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "scope": "Authenticated shipment execution batch only",
+  "admissionEnabled": false,
+  "effects": [
+    {
+      "stage": "admission/order",
+      "source": "src/app/api/cron/chitchats-shipping/handler.ts",
+      "accounting": "Authentication precedes all entries. Separate refund/preparation batches settle first; execution acquires independent recovery before worker configuration or claims. Disabled shipping has no execution entry; empty enabled execution settles normally."
+    },
+    {
+      "stage": "claim/batch",
+      "source": "src/lib/shipping/shipment-store.ts",
+      "accounting": "Lock claim candidates and verify exact returned identities, payload/hash, lease, attempts, version and outcome-unknown state. Worker remains sequential; a classified job failure does not skip later claimed jobs. Unhandled failures retain uncertainty for the entire batch."
+    },
+    {
+      "stage": "create/quote_refresh",
+      "source": "src/lib/shipping/operation-worker.ts",
+      "accounting": "Validate provider identities/references, refresh intent, provider draft and quote receipts; verify cleanup handoff identity/hash/payload/status/version. Bounded or malformed provider searches cannot establish absence. Manual review/fencing remains uncertain, including success-shaped legacy counters."
+    },
+    {
+      "stage": "purchase",
+      "source": "src/lib/shipping/operation-worker.ts",
+      "accounting": "Retain flat draft creation, freshness/rate selection, paid-order and active-shipment gates, provider-call intent, purchase reconciliation and settlement rules. Verify draft/refresh/intent/provider/shipment/event receipts. Funding finalize helper is explicitly vacuous legacy behavior and performs no write."
+    },
+    {
+      "stage": "tracking",
+      "source": "src/lib/shipping/operation-worker.ts",
+      "accounting": "Validate known provider identity, shipment/money/state/version/time receipts, immutable event/conflict receipts, carrier movement and notification handoffs. Missing or future event timestamps, manual review and ignored stale/missing updates retain uncertainty."
+    },
+    {
+      "stage": "refund/delete/cleanup",
+      "source": "src/lib/shipping/operation-worker.ts",
+      "accounting": "Keep provider reconciliation/404 semantics and deterministic cleanup identity. Nonvoid refund_requested remains uncertain. Verify persisted provider and job receipts; deletion requires awaited provider acknowledgement or an explicit 404. Refund requests queued from cost decrease verify typed adjustment and immutable payment/refund identities."
+    },
+    {
+      "stage": "notification/replacement_prepare/address_replace",
+      "source": "src/lib/shipping/operation-worker.ts",
+      "accounting": "Legacy notification delegation has no durable handoff receipt, so always marks uncertainty without changing counters. Unsupported removed replacement/address operations remain dead-lettered and uncertain."
+    },
+    {
+      "stage": "email handoff/fan-out",
+      "source": "src/lib/shipping/email-receipt.ts",
+      "accounting": "Check persisted key/kind/order, inserted identity, live delivery status and decrypted recipient/payload. Missing, unrelated, corrupt, dead-lettered or inconsistent receipts retain uncertainty. Alert fan-out awaits allSettled siblings, including after failure. Real email delivery is outside this batch."
+    },
+    {
+      "stage": "terminal outcomes",
+      "source": "src/lib/shipping/operation-worker.ts",
+      "accounting": "Success completion receipts bind original operation shipment/type/key/hash/payload, owner/version, outcome and cleared leases. All retried/dead-lettered/fenced summaries retain uncertainty even when their own receipt is absent or changed; they never settle completed."
+    },
+    {
+      "stage": "ledger/redaction boundary",
+      "source": "src/lib/writer-admission/runtime.ts",
+      "accounting": "Await every effect and transaction before settlement. Socket/backend loss and lost settlement acknowledgement cannot replay work or prove drain. Enforced uncertainty returns sanitized no-store retryable 503 before redaction; completed execution does not qualify redaction or whole-route drain."
+    }
+  ],
+  "deferredWorkInExecution": false,
+  "wholeShippingRouteQualified": false,
+  "syntheticProviderResponsesIntercepted": true,
+  "realProviderDrainQualified": false,
+  "redactionQualified": false,
+  "directHelperAdminExecutionsQualified": false
+}

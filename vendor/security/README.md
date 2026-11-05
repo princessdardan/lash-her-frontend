@@ -32,11 +32,30 @@ YAML follows js-yaml 4's safe default schema; JavaScript tags are rejected.
 Sanity's existing CommonJS package-manager detection remains compatible, including
 reading pnpm's `.modules.yaml`.
 
+## Auth.js configuration isolation
+
+`@lash-her/auth-core@0.41.3-lash-her.1` derives from the integrity-pinned
+`@auth/core@0.41.3` archive. This corrects a configuration isolation defect;
+no published security advisory is claimed. Upstream `assertConfig` retains
+`hasCredentials`, `hasEmail` and `hasWebAuthn` between configurations. After
+the customer email configuration runs, the separate Google/JWT admin profile
+incorrectly fails with `MissingAdapter`. All three flags now belong to each
+validation invocation. Built JavaScript and supplied TypeScript carry the same
+minimal change. Provider checks, cookies, adapters, sessions and cryptographic
+behavior otherwise retain upstream implementation. The original ISC license
+and all unchanged upstream files remain in the verified archive.
+
+Package identity/version and a package metadata export support the existing
+source/archive/installed-byte checks. The actual validator/customer-adapter test
+exercises both configuration orders. The owned HTTP harness additionally checks
+customer email sign-in followed by admin Google/JWT validation in one process.
+Original failed evidence is preserved under the Phase 2 admission baselines.
+
 ## Installation and verification
 
-The root manifest directly declares the two archive dependencies under the
+The root manifest directly declares the archive dependencies under the
 original import names. Root overrides reference those declarations with `$braces`
-and `$load-yaml-file`, so every transitive caller uses the same installation.
+and `$load-yaml-file` (and `$@auth/core`), so every transitive caller uses the same installation.
 The references also avoid npm resolving a relative tarball separately from each
 transitive package's directory.
 

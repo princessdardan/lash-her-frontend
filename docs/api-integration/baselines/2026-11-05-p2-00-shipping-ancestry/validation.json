@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "status": "LOCAL_SOURCE_ANCESTRY_RECONCILIATION_NO_RUNTIME_CHANGE",
+  "integratedParent": "9ef5398a13930b6f62c95154adb5b9e4e779db23",
+  "sourcePredecessor": "56d64fe68c4d207b0eecdc023e54331a548a4cee",
+  "predecessorBase": "0d45f462c92a3de0af700e6f246bc4c57c8617b3",
+  "method": "Two-parent local merge of exact PR92 source; overlapping current implementation, tests and shared harness preserved.",
+  "frozenPredecessor": {
+    "importedFiles": [
+      {
+        "file": "docs/api-integration/baselines/2026-11-05-p2-00-shipping-execution/base-source-inventory.json",
+        "sha256": "a8ad00aab93ca37fb2b08944e3457a7d9564e23c7c0022c63c25f3ca19deaa9a",
+        "blob": "26faa8541150f70e93260d75b09450cc415b9d2d"
+      },
+      {
+        "file": "docs/api-integration/baselines/2026-11-05-p2-00-shipping-execution/candidate-source-inventory.json",
+        "sha256": "0edfead2bbf9d4fb036b7d485807918b210ed895dbc82bce5e35b07e24add609",
+        "blob": "ea0cf1510e8a21e51a7af2dae44d76a1fc839240"
+      },
+      {
+        "file": "docs/api-integration/baselines/2026-11-05-p2-00-shipping-execution/effect-audit.json",
+        "sha256": "d845a60eb2dc0f1f7b9de588af3d596fad446723f7a9aff18f1cc340f6382acc",
+        "blob": "f57f90243857021bb381ef242dadd3ddd04d2f4c"
+      },
+      {
+        "file": "docs/api-integration/baselines/2026-11-05-p2-00-shipping-execution/postgres16.json",
+        "sha256": "40ed22f5803e9998ada4ecd755febcf69abbfabe4672d1b2c8ab37ee6a401558",
+        "blob": "8d7769b0086570ba74f2d14dabc16a63865348e5"
+      },
+      {
+        "file": "docs/api-integration/baselines/2026-11-05-p2-00-shipping-execution/predecessor-merge.json",
+        "sha256": "43233b45a78d82fca742fa784e2ad04493ed7df9096d36ce172b24d97964917d",
+        "blob": "233780d100b6d30190822b84e2c26d036bfd5b7b"
+      },
+      {
+        "file": "docs/api-integration/baselines/2026-11-05-p2-00-shipping-execution/validation.json",
+        "sha256": "9b53d2603128987103355fae55c5dbdc8d032418534396ec1382c77a3f27a127",
+        "blob": "ed1fba31d35503e136c2cdca49e967150b0131ba"
+      },
+      {
+        "file": "docs/api-integration/baselines/2026-11-05-p2-00-shipping-execution/writer-classification.json",
+        "sha256": "ce88da7c039de4dd993571cae5eb8c870e661cb6ce385c36c156814c7a1e9412",
+        "blob": "00ac55876b9de40bc2e991072e0423bca54628af"
+      },
+      {
+        "file": "docs/api-integration/frontend-shipping-execution-recovery-admission.md",
+        "sha256": "36273a36261dc3d7109fa3795921cdba0821c457e2238162b326ca8945d0eb0e",
+        "blob": "bedda6d2dc1183f2ddc55b8c06d8c686900a4c11"
+      }
+    ],
+    "sourceBindingsChecked": 42,
+    "sourceBindingMismatches": 0,
+    "sourceManifestFileCount": 661,
+    "reproducedSourceManifestSha256": "ea1d72b3083823a1b617b01c31c93fbfd581753b802f0cc396694daa63a9d610",
+    "inventoryVersion": 1,
+    "scope": "Historical exact-predecessor evidence, not qualification of the integrated candidate."
+  },
+  "currentCandidate": {
+    "unchangedTrackedFileCount": 1452,
+    "unchangedRoots": [
+      "src/",
+      "scripts/",
+      "ops/",
+      ".github/",
+      "package.json",
+      "package-lock.json"
+    ],
+    "sourceManifestFileCount": 791,
+    "sourceManifestSha256": "e13cfca77ca5d34c5e67d3604812921274717000581544ec32386a4eb5f0141f",
+    "inventoryVersion": 2,
+    "inventoryImplementationSha256": "3f06ffcc7e1df781004ee1c1931314305267c40f5c83f83cad5c8a313fa9cfa1",
+    "preservedOverlappingFiles": {
+      "ops/platform/harness/owned-frontend-reconciliation.mjs": {
+        "blob": "a4e6101b0058647ce968596fc00c91d04ffdf1f4",
+        "sha256": "a82383bb35d58cb216c4d774bb792dbcc46448a622aaf991d74a12d00cfd4954"
+      },
+      "ops/platform/harness/owned-shipping-execution.mjs": {
+        "blob": "2f86a15c2687036825cb440089ded9579da2bc25",
+        "sha256": "073deaf52ef5d2cd808ce2f6b1595f015ecf46bbfee06af4de8e182d9ce9d2db"
+      },
+      "scripts/run-source-unit-tests.mjs": {
+        "blob": "7158a0e7ff2623ede59fd4308212636403ecb2fe",
+        "sha256": "b11d4902973ae6509cdfd21554386d93ea34a9da2cc557d7cc116d9f5c46f775"
+      },
+      "src/app/api/cron/chitchats-shipping/handler.ts": {
+        "blob": "1b0117041f74177a7649d4e5361203b0964b207b",
+        "sha256": "b8dc8d54b16c4c5dc1229f4d2e5d9d4be23f051e9362db343bde058f8265f842"
+      },
+      "src/app/api/cron/chitchats-shipping/route.ts": {
+        "blob": "cf366ef4407dcbdf6144da6f06666c5b2eb36dfc",
+        "sha256": "d782af6519b22495cca9cbfc367ef77ee2a533cf9766f81f3fc7ef8ccc4da888"
+      },
+      "src/lib/shipping/chitchats-client.ts": {
+        "blob": "c484cced397f17bc6a18e28f4b666e8710894b20",
+        "sha256": "d02ddc3166f6be645bc23c9b12420a6bd1b7592c98560a88d0ef5a365d40c13e"
+      },
+      "src/lib/shipping/customer-refunds.ts": {
+        "blob": "73381e295116d2fc23dcf6db67d5a374064653a9",
+        "sha256": "d3bfb1d556a2f0ee950aff3fd7470d3221267a948481315c2674f907ab80bee6"
+      },
+      "src/lib/shipping/email-receipt.ts": {
+        "blob": "7d70e10939d6d69b0517232cb89fa79f0edb9f60",
+        "sha256": "dfc72130719e5bdd3c374c106608bda4de404e36d9b3c87be9567bf10330fd5d"
+      },
+      "src/lib/shipping/operation-worker.ts": {
+        "blob": "2bcaba68a61c82baf502c0d62090fe8506687e10",
+        "sha256": "417d94f8320d34907a15160c84a4408cfa5cf2b48e1d08fcef9ebfc4452bb79d"
+      },
+      "src/lib/shipping/policy-alerts.ts": {
+        "blob": "83deaa267dc9147bdd5aeec285ca99ac17573dae",
+        "sha256": "f0e7c5cf36c31d2aa76c54175ba2aa9514e0aaa22a83ae1054abf8a980edb005"
+      },
+      "src/lib/shipping/shipment-store.ts": {
+        "blob": "477453f3c96649ed066079d1a330b4a4c3828465",
+        "sha256": "4c4f5cb52472b373fcc8f4844e3aba4a4bfa1e63ba88d6cc6e88a34561abc6c3"
+      },
+      "src/lib/writer-admission/shipping-execution.test.ts": {
+        "blob": "bd10ebe16176c7cf6f5685ceb1cd87db3be91883",
+        "sha256": "bb6e59708a241192f7ea57db0218c7e07aad6632d8146925cbff5ed3e97cca9f"
+      }
+    },
+    "wholeCronBoundaryPreserved": true,
+    "directWorkerBoundariesPreserved": true,
+    "piiMaintenanceBoundaryPreserved": true,
+    "exactReceiptBehaviorPreserved": true,
+    "existingUnitRegistrationsAndSharedHarnessPreserved": true,
+    "applicationChanges": [],
+    "renderEntries": 64,
+    "manualEntries": 36
+  },
+  "checks": [
+    {
+      "check": "42 SHA-256 bindings from predecessor validation.json against git show <predecessor>:<path>",
+      "result": "PASS"
+    },
+    {
+      "check": "Recompute predecessor source manifest from all non-test src/scripts JS/TS and ops/platform/vercel-config.mjs, sorted by path",
+      "result": "PASS",
+      "files": 661
+    },
+    {
+      "check": "Byte comparison of eight imported original docs/evidence files against predecessor git objects",
+      "result": "PASS",
+      "files": 8
+    },
+    {
+      "check": "Byte comparison of current tracked runtime/tooling/CI/package roots against integrated parent",
+      "result": "PASS",
+      "files": 1452
+    },
+    {
+      "check": "git diff --cached --check",
+      "result": "PASS"
+    },
+    {
+      "check": "Current frontendWriterInventory execution",
+      "result": "PASS",
+      "version": 2,
+      "renderEntries": 64,
+      "manualEntries": 36,
+      "sourceManifestSha256": "e13cfca77ca5d34c5e67d3604812921274717000581544ec32386a4eb5f0141f"
+    },
+    {
+      "command": "node --import tsx --import ./scripts/register-server-only-test.mjs --test src/lib/writer-admission/shipping-execution.test.ts src/lib/writer-admission/shipping-preparation.test.ts src/lib/shipping/operation-worker.test.ts src/lib/shipping/shipment-store.test.ts src/lib/shipping/chitchats-client.test.ts src/lib/shipping/policy-alerts.test.ts",
+      "result": "CONFIGURATION_FAILURE",
+      "reason": "Direct invocation initially omitted the source test runner synthetic NEXT_PUBLIC_SANITY_DATASET and NEXT_PUBLIC_SANITY_PROJECT_ID defaults. Five files failed module loading; five client tests passed. No source change followed.",
+      "outputSha256": "b72d05d604043fc7f1b1669a5098a7ed10fd0f8793eef02c7313e62bda164d64"
+    },
+    {
+      "command": "NEXT_PUBLIC_SANITY_DATASET=test-dataset NEXT_PUBLIC_SANITY_PROJECT_ID=test-project node --import tsx --import ./scripts/register-server-only-test.mjs --test src/lib/writer-admission/shipping-execution.test.ts src/lib/writer-admission/shipping-preparation.test.ts src/lib/shipping/operation-worker.test.ts src/lib/shipping/shipment-store.test.ts src/lib/shipping/chitchats-client.test.ts src/lib/shipping/policy-alerts.test.ts",
+      "result": "PASS",
+      "tests": 44,
+      "failures": 0,
+      "skipped": 0,
+      "outputSha256": "d75bbc309333be469243fc660befe136cc277fa13fbcdedfc66dfecc68032568"
+    },
+    {
+      "command": "node --test ops/platform/frontend-shipping-owned.test.mjs",
+      "result": "PASS",
+      "tests": 3,
+      "failures": 0,
+      "skipped": 0,
+      "outputSha256": "32cb3a8d86054216db780b16a2b58abc56b7d0b45f30975bf73dc831da259949"
+    }
+  ],
+  "operatorDocs": [
+    "docs/api-integration/p2-00-frontend-quiescence.md",
+    "docs/scheduled-jobs-runbook.md"
+  ],
+  "limitations": [
+    "This source-ancestry merge does not modify or merge the public PR92 branch.",
+    "Historical PR92 source inventories remain version1 only inside their frozen baseline; current inventory remains version2.",
+    "Prior predecessor/component tests and CI do not certify the larger integrated candidate.",
+    "No live provider, database, deployment, scheduler, credential or admission-control changes are performed.",
+    "Exact integrated candidate CI, deployed scheduler/provider evidence, historical fencing and parent release/restoration qualification remain separate."
+  ],
+  "publicationPerformed": false,
+  "deploymentPerformed": false,
+  "liveControlsChanged": false,
+  "p200Complete": false,
+  "p212Complete": false,
+  "g2Complete": false,
+  "runtime": "Node 24.18.0",
+  "predecessorWasAncestorBefore": false,
+  "expectedMergeParents": [
+    "9ef5398a13930b6f62c95154adb5b9e4e779db23",
+    "56d64fe68c4d207b0eecdc023e54331a548a4cee"
+  ],
+  "dependencyTree": "Shared coordinator frontend node_modules; shipping dependencies unchanged. The adjacent Auth.js fork is present only in that dependency tree; integrated-parent package files remain unchanged by this merge."
+}
