@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "status": "OWNED_LIFECYCLE_SCRUB_RECEIPTS_VALIDATED",
+  "baseCommit": "f561025adf9ee2568415afd722e72c7714854e8d",
+  "reviewedCommit": "6470058b6fb03e3e616341a3c100db199de6f8df",
+  "runtime": "Node 24.18.0 / Python 3.14.3",
+  "postgres": "16.13",
+  "files": {
+    "src/lib/customer-lifecycle/store.ts": "6dd02a6006432fbfe4184dd44e58ffbbeae28760df2a9a355328297d36d42bcc",
+    "src/lib/customer-lifecycle/faults.db.test.ts": "a8d21268a8673d398de31b55df75cfae596e4f59a5449e0911782b6bab61f66b",
+    "docs/api-integration/baselines/2026-11-05-lifecycle-scrub-receipts/run-owned.py": "614efada0e35b8f82ae20c1616cbaf12b652f646ce4e3c2322a0dec9b6051421",
+    "docs/api-integration/baselines/2026-11-05-lifecycle-scrub-receipts/README.md": "c99e64f9159d9c70ca30078ad5794069ad95c2fa19c8f48d20742dd54ee2ac78"
+  },
+  "artifacts": {
+    "pre-fix-reproduction.log": {
+      "sha256": "bdafa37cceb78ce9595e0ecf28be33fefcff25a38ab5d2ef9830e2345a975041"
+    },
+    "owned-database.log": {
+      "sha256": "27b1c00cf9cb6f5e60c45c0d5fe4cc490cd618e09c86bfa91e7e8a4ea1269b57"
+    },
+    "focused-unit.log": {
+      "sha256": "86702d04ebe3010e196c3d6aefebf33ad06e0695bc40f2468e83df64fa02d883"
+    },
+    "typecheck.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "lint.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "preFix": {
+    "storeSha256": "d2f2bbf7f8a9724f85fd9f184b31196fa740022d3e2d4acf5eb6cfa8da8e3743",
+    "physicalFault": "Owned AFTER UPDATE trigger restores only prior private export bytes after the RETURNING tuple.",
+    "observed": {
+      "reported": 1,
+      "admissionCompletedCleanly": true,
+      "failedSnapshotRetained": true,
+      "expiredBytesRetained": true,
+      "laterCleanupCount": 0
+    }
+  },
+  "checks": [
+    {
+      "command": "LIFECYCLE_SCRUB_OWNED_TEST=true NODE_BIN=<Node24> PG_BIN=<PostgreSQL16> python3 docs/api-integration/baselines/2026-11-05-lifecycle-scrub-receipts/run-owned.py",
+      "result": "PASS",
+      "tests": 19,
+      "failures": 0,
+      "skipped": 0,
+      "migrations": 83
+    },
+    {
+      "command": "Node24 --import tsx --import ./scripts/register-server-only-test.mjs --test <11 BFF/lifecycle source suites> with synthetic Sanity defaults",
+      "result": "PASS",
+      "tests": 60,
+      "failures": 0,
+      "skipped": 0
+    },
+    {
+      "command": "Node24 node_modules/typescript/bin/tsc --noEmit --pretty false --incremental false",
+      "result": "PASS"
+    },
+    {
+      "command": "Node24 node_modules/eslint/bin/eslint.js src/lib/customer-lifecycle/store.ts src/lib/customer-lifecycle/faults.db.test.ts",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "observations": {
+    "actual83Migrations": true,
+    "ownedLoopbackTlsScram": true,
+    "physicalAfterReturningMismatchDetectedForFailureAndExpiry": true,
+    "mismatchRollsBackAndRetainsAdmissionUncertainty": true,
+    "preexistingFailedAndExpiredBytesRepaired": true,
+    "terminalStatusOwnershipReadinessAndExpiryPreserved": true,
+    "readyExportProtected": true,
+    "commandDeliveryAndAccountVersionReferencesUnchanged": true,
+    "subsequentCleanupReturnsZero": true,
+    "rowLockBatchLimit": 100,
+    "privatePayloadsNotLoadedForScrubReceipts": true,
+    "clusterStoppedAndRemoved": true
+  },
+  "scope": "Scrub only private bytes already required to be absent in failed/expired exports, plus the existing due ready/pending expiry policy. No new retention period or expiry extension.",
+  "limitations": [
+    "Physical receipt regression uses a controlled owned trigger; no live deployment is claimed to contain that trigger.",
+    "This source verification does not certify native scheduling, live receiver/provider delivery, historical fencing, release activation or G2."
+  ],
+  "liveDatabaseTouched": false,
+  "providerTouched": false,
+  "credentialsRetrieved": false,
+  "deploymentPerformed": false,
+  "admissionEnabled": false,
+  "p200Complete": false,
+  "g2Complete": false
+}

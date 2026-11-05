@@ -13,6 +13,11 @@ type Database = ReturnType<typeof getPrivateDb>;
 export type AccountRequester = { kind: "customer"; session: AccountCustomerSession } | { kind: "admin"; adminId: string };
 export interface ClaimedAccountDelivery { command: AccountCommand; receiver: AccountReceiver; leaseId: string; attempts: number }
 
+// Scrub receipts prove persisted byte absence without loading up to 100 private
+// export payloads into the worker. Ownership/readiness/expiry remain exact.
+const exportScrubFields = { commandId: exports.commandId, userId: exports.userId, status: exports.status, readyAt: exports.readyAt, expiresAt: exports.expiresAt,
+  dataCleared: sql<boolean>`${exports.data} is null`, frontendCleared: sql<boolean>`${exports.frontendData} is null` };
+
 export function createAccountLifecycleStore(database: () => Database = getPrivateDb, now: () => Date = () => new Date()) {
   return {
     async request(input: { userId: string; action: AccountAction; idempotencyKey: string; requester: AccountRequester }): Promise<AccountCommand> {
@@ -204,27 +209,42 @@ export function createAccountLifecycleStore(database: () => Database = getPrivat
     async failExport(commandId: string): Promise<void> {
       assertAccountWriter();
       await database().transaction(async tx => {
-        const rows = await tx.update(exports).set({ status: "failed", data: null, frontendData: null }).where(and(eq(exports.commandId, commandId), eq(exports.status, "pending"))).returning();
-        if (rows.length === 1 && rows[0].commandId === commandId && rows[0].status === "failed" && rows[0].data === null && rows[0].frontendData === null) return;
-        if (!rows.length) {
-          const [existing] = await tx.select().from(exports).where(eq(exports.commandId, commandId));
-          if (existing && existing.status !== "pending") return;
-        }
-        throw new Error("ACCOUNT_EXPORT_RECEIPT_MISSING");
+        const [existing] = await tx.select(exportScrubFields).from(exports).where(eq(exports.commandId, commandId)).for("update");
+        if (!existing) throw new Error("ACCOUNT_EXPORT_RECEIPT_MISSING");
+        // A concurrent successful assembly remains authoritative. Terminal
+        // failed/expired snapshots may only repair already-required byte removal.
+        if (existing.status === "ready") return;
+        if (!["pending", "failed", "expired"].includes(existing.status)) throw new Error("ACCOUNT_EXPORT_RECEIPT_MISSING");
+        if (existing.status !== "pending" && existing.dataCleared === true && existing.frontendCleared === true) return;
+        const expected = { ...existing, status: existing.status === "pending" ? "failed" : existing.status, dataCleared: true, frontendCleared: true };
+        const rows = await tx.update(exports).set({ status: expected.status, data: null, frontendData: null })
+          .where(and(eq(exports.commandId, commandId), eq(exports.status, existing.status))).returning(exportScrubFields);
+        const [persisted] = await tx.select(exportScrubFields).from(exports).where(eq(exports.commandId, commandId));
+        if (rows.length !== 1 || !isDeepStrictEqual(rows[0], expected) || !isDeepStrictEqual(persisted, expected)) throw new Error("ACCOUNT_EXPORT_RECEIPT_MISSING");
       });
     },
 
     async expireExports(): Promise<number> {
       assertAccountWriter();
       // Pending snapshots also contain PII. Expire them after 24h from their
-      // command, even if a receiver never recovers; a retry cannot extend them.
+      // command, even if a receiver never recovers. Repair bytes left in a
+      // failed/expired snapshot without changing its terminal status or expiry.
       return database().transaction(async tx => {
-        const expired = await tx.select({ commandId: exports.commandId }).from(exports).innerJoin(commands, eq(commands.commandId, exports.commandId))
-          .where(sql`(${exports.status} = 'ready' and ${exports.expiresAt} <= ${now()}) or (${exports.status} = 'pending' and ${commands.issuedAt} <= ${new Date(now().getTime() - EXPORT_MAX_AGE_MS)})`)
+        const instant = now();
+        const expired = await tx.select(exportScrubFields).from(exports).innerJoin(commands, eq(commands.commandId, exports.commandId))
+          .where(sql`(${exports.status} = 'ready' and ${exports.expiresAt} <= ${instant})
+            or (${exports.status} = 'pending' and ${commands.issuedAt} <= ${new Date(instant.getTime() - EXPORT_MAX_AGE_MS)})
+            or (${exports.status} in ('failed', 'expired') and (${exports.data} is not null or ${exports.frontendData} is not null))`)
           .orderBy(commands.issuedAt).limit(100).for("update", { of: exports, skipLocked: true });
         if (!expired.length) return 0;
-        const rows = await tx.update(exports).set({ status: "expired", data: null, frontendData: null }).where(inArray(exports.commandId, expired.map(row => row.commandId))).returning();
-        if (rows.length !== expired.length || expired.some(expected => rows.filter(row => row.commandId === expected.commandId && row.status === "expired" && row.data === null && row.frontendData === null).length !== 1)) throw new Error("ACCOUNT_EXPORT_EXPIRY_RECEIPT_MISSING");
+        const expected = expired.map(row => ({ ...row, status: row.status === "failed" ? "failed" : "expired", dataCleared: true, frontendCleared: true }));
+        const commandIds = expected.map(row => row.commandId);
+        const rows = await tx.update(exports).set({ status: sql`case when ${exports.status} = 'failed' then 'failed' else 'expired' end`, data: null, frontendData: null })
+          .where(inArray(exports.commandId, commandIds)).returning(exportScrubFields);
+        const persisted = await tx.select(exportScrubFields).from(exports).where(inArray(exports.commandId, commandIds));
+        for (const receipts of [rows, persisted]) {
+          if (receipts.length !== expected.length || expected.some(row => receipts.filter(receipt => isDeepStrictEqual(receipt, row)).length !== 1)) throw new Error("ACCOUNT_EXPORT_EXPIRY_RECEIPT_MISSING");
+        }
         return rows.length;
       });
     },

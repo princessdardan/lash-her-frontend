@@ -1,0 +1,28 @@
+✔ missing restore receiver does not reopen frontend access after the remaining acknowledgment (51.180167ms)
+✔ missing predecessor receiver denies its later command and prevents restoration (12.520417ms)
+✔ missing export receiver prevents assembly until both expected receivers acknowledge (16.410459ms)
+✔ a one-row delivery insertion receipt rolls back state, session revocation and command allocation (3.374042ms)
+✔ suppressed session deletion rolls back suspension instead of preserving a restorable old session (3.483ms)
+✔ suppressed eligible PII deletion or export redaction rolls back terminal deletion (29.236416ms)
+✔ concurrent fresh export keys allocate one pending command while exact replay bypasses quota (35.122042ms)
+✔ export cooldown remains after pending completion and opens at fifteen minutes (9.303875ms)
+✔ pending export quota does not delay owner suspension or terminal deletion (8.675125ms)
+✔ export command-history snapshot contains only the most recent one hundred commands (20.118375ms)
+✔ physical export scrub mismatches refuse failure and expiry, retain uncertainty and roll back (26.9545ms)
+✔ bounded expiry recovery repairs existing terminal bytes while preserving ready exports and immutable references (12.580583ms)
+✔ failure retries repair terminal private bytes and preserve a concurrent ready export (19.346959ms)
+✔ suspension revokes every session atomically; ordered restore waits for both receivers and ignores stale acknowledgments (62.218334ms)
+✔ concurrent idempotency creates one command and sequence; a failed transaction leaves no revocation or partial delivery (24.922083ms)
+✔ private exports bind immutable ownership, expire without replay extension, and never contain session/provider credentials (18.490333ms)
+✔ deletion removes new account PII, preserves immutable commands/tombstone, and cannot be restored or revived by SQL (27.728583ms)
+✔ fresh authentication, cross-account requests and stale preferences are checked inside the account lock (12.385875ms)
+✔ receiver outages retain ordered durable retry, lease expiry replays exact command, and exports assemble only after both acknowledgments (19.202708ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 834.627875
+OWNED_FIXTURE_MIGRATIONS=83

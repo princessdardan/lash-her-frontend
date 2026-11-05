@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test, { after, before } from "node:test";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "@/lib/private-db/schema";
@@ -92,6 +92,30 @@ async function acknowledge(command: AccountCommand, store: ReturnType<typeof cre
     const claim = await store.claimDelivery();
     assert.ok(claim); assert.equal(claim.command.commandId, command.commandId);
     await store.settleDelivery(claim, "acknowledged");
+  }
+}
+
+async function withRetainedScrubBytes(commandId: string, task: () => Promise<void>) {
+  assert.ok(db);
+  assert.match(commandId, /^[a-f0-9-]{36}$/u);
+  const name = `owned_lifecycle_scrub_${randomUUID().replaceAll("-", "")}`;
+  // Real PostgreSQL AFTER mutation: RETURNING still describes cleared bytes,
+  // while a subsequent physical read observes the restored private snapshot.
+  await db.execute(sql.raw(`CREATE FUNCTION public.${name}() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      UPDATE customer_account_exports SET data=OLD.data, frontend_data=OLD.frontend_data WHERE command_id=NEW.command_id;
+      RETURN NULL;
+    END $$`));
+  let created = false;
+  try {
+    await db.execute(sql.raw(`CREATE TRIGGER ${name} AFTER UPDATE ON customer_account_exports FOR EACH ROW
+      WHEN (NEW.command_id='${commandId}'::uuid AND NEW.status IN ('failed','expired') AND NEW.data IS NULL AND NEW.frontend_data IS NULL
+        AND (OLD.data IS NOT NULL OR OLD.frontend_data IS NOT NULL)) EXECUTE FUNCTION public.${name}()`));
+    created = true;
+    await task();
+  } finally {
+    if (created) await db.execute(sql.raw(`DROP TRIGGER ${name} ON customer_account_exports`));
+    await db.execute(sql.raw(`DROP FUNCTION public.${name}()`));
   }
 }
 
@@ -274,4 +298,78 @@ test("export command-history snapshot contains only the most recent one hundred 
     }).sort((left, right) => left - right);
     assert.deepEqual(versions, Array.from({ length: 100 }, (_, index) => index + 22));
   } finally { await f.quarantine(); }
+});
+
+test("physical export scrub mismatches refuse failure and expiry, retain uncertainty and roll back", skipped, async () => {
+  for (const mode of ["failure", "expiry"] as const) {
+    const f = await fixture();
+    try {
+      const command = await f.customerExport();
+      if (mode === "expiry") {
+        await admitted(() => acknowledge(command, f.store));
+        await admitted(() => f.store.completeExport(command, { private: "owned-expiry-bytes" }, [new Date(f.now().getTime() + 86_400_000)]));
+        f.advance(86_400_001);
+      }
+      const [before] = await db!.select().from(exports).where(eq(exports.commandId, command.commandId));
+      await withRetainedScrubBytes(command.commandId, async () => {
+        await uncertainRefusal(() => mode === "failure" ? f.store.failExport(command.commandId) : f.store.expireExports());
+        const [persisted] = await db!.select().from(exports).where(eq(exports.commandId, command.commandId));
+        assert.deepEqual(persisted, before, "a misleading RETURNING receipt must not commit a terminal state with retained bytes");
+      });
+      if (mode === "failure") await admitted(() => f.store.failExport(command.commandId));
+      else assert.equal(await admitted(() => f.store.expireExports()), 1);
+      const [scrubbed] = await db!.select().from(exports).where(eq(exports.commandId, command.commandId));
+      assert.equal(scrubbed.status, mode === "failure" ? "failed" : "expired");
+      assert.equal(scrubbed.frontendData, null); assert.equal(scrubbed.data, null);
+      assert.equal(scrubbed.expiresAt?.getTime(), before.expiresAt?.getTime());
+      assert.equal(await admitted(() => f.store.expireExports()), 0);
+    } finally { await f.quarantine(); }
+  }
+});
+
+test("bounded expiry recovery repairs existing terminal bytes while preserving ready exports and immutable references", skipped, async () => {
+  const failed = await fixture(), expired = await fixture(), ready = await fixture();
+  try {
+    const commandsForFixture = await Promise.all([failed.customerExport(), expired.customerExport(), ready.customerExport()]);
+    const [failedCommand, expiredCommand, readyCommand] = commandsForFixture;
+    await db!.update(exports).set({ status: "failed" }).where(eq(exports.commandId, failedCommand.commandId));
+    await db!.update(exports).set({ status: "expired", frontendData: null, data: { private: "owned-preexisting-terminal-bytes" },
+      readyAt: new Date(expired.now().getTime() - 172_800_000), expiresAt: new Date(expired.now().getTime() - 86_400_000) }).where(eq(exports.commandId, expiredCommand.commandId));
+    await admitted(() => ready.store.completeExport(readyCommand, { private: "owned-unexpired-ready-bytes" }, [new Date(ready.now().getTime() + 86_400_000)]));
+    const ids = commandsForFixture.map(command => command.commandId);
+    const before = await db!.select().from(exports).where(inArray(exports.commandId, ids));
+    const deliveryBefore = await db!.select().from(deliveries).where(inArray(deliveries.commandId, ids)).orderBy(deliveries.commandId, deliveries.receiver);
+    assert.equal(await admitted(() => failed.store.expireExports()), 2);
+    const after = await db!.select().from(exports).where(inArray(exports.commandId, ids));
+    for (const command of [failedCommand, expiredCommand]) {
+      const original = before.find(row => row.commandId === command.commandId)!;
+      assert.deepEqual(after.find(row => row.commandId === command.commandId), { ...original, frontendData: null, data: null });
+    }
+    assert.deepEqual(after.find(row => row.commandId === readyCommand.commandId), before.find(row => row.commandId === readyCommand.commandId));
+    assert.deepEqual(await db!.select().from(deliveries).where(inArray(deliveries.commandId, ids)).orderBy(deliveries.commandId, deliveries.receiver), deliveryBefore);
+    for (const f of [failed, expired, ready]) {
+      const [user] = await db!.select().from(customerUsers).where(eq(customerUsers.id, f.user.id));
+      assert.equal(user.accountVersion, 1);
+      assert.equal((await db!.select().from(commands).where(eq(commands.userId, f.user.id))).length, 1);
+    }
+    assert.equal(await admitted(() => failed.store.expireExports()), 0);
+  } finally { await failed.quarantine(); await expired.quarantine(); await ready.quarantine(); }
+});
+
+test("failure retries repair terminal private bytes and preserve a concurrent ready export", skipped, async () => {
+  for (const status of ["failed", "expired", "ready"] as const) {
+    const f = await fixture();
+    try {
+      const command = await f.customerExport();
+      const expiry = new Date(f.now().getTime() + 86_400_000);
+      if (status === "ready") await admitted(() => f.store.completeExport(command, { private: "owned-ready-receipt" }, [expiry]));
+      else await db!.update(exports).set({ status, expiresAt: expiry }).where(eq(exports.commandId, command.commandId));
+      const [before] = await db!.select().from(exports).where(eq(exports.commandId, command.commandId));
+      await admitted(() => f.store.failExport(command.commandId));
+      const [persisted] = await db!.select().from(exports).where(eq(exports.commandId, command.commandId));
+      assert.deepEqual(persisted, status === "ready" ? before : { ...before, data: null, frontendData: null });
+      await admitted(() => f.store.failExport(command.commandId));
+      assert.deepEqual((await db!.select().from(exports).where(eq(exports.commandId, command.commandId)))[0], persisted);
+    } finally { await f.quarantine(); }
+  }
 });
