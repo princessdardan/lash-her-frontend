@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import "server-only";
 
 import { google } from "googleapis";
@@ -66,14 +67,18 @@ export function getCalendarConnectionOAuthConsentUrl(state: string): string {
   });
 }
 
-export async function revokeGoogleTokenBestEffort(token: string): Promise<void> {
+export async function revokeGoogleTokenBestEffort(
+  token: string,
+): Promise<void> {
   try {
-    await fetch("https://oauth2.googleapis.com/revoke", {
+    const response = await fetch("https://oauth2.googleapis.com/revoke", {
       body: new URLSearchParams({ token }),
       headers: { "content-type": "application/x-www-form-urlencoded" },
       method: "POST",
     });
+    if (!response.ok) markWriterOperationUncertain();
   } catch {
+    markWriterOperationUncertain();
     // Local credential deletion remains authoritative when Google is unavailable.
   }
 }

@@ -1,3 +1,4 @@
+import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import "server-only";
 
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
@@ -46,7 +47,7 @@ export async function listEmployeeCalendarWorkspace() {
     return { assignments: [], connections: [], resources: [] };
   }
 
-  const [connections, resources, assignments] = await Promise.all([
+  const [connections, resources, assignments] = await settleWriterEffects([
     db
       .select({
         accountEmail: bookingCalendarConnections.accountEmail,

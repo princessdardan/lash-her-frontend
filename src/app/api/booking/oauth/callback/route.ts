@@ -1,3 +1,5 @@
+import { withWriterAdmission } from "@/lib/writer-admission/route";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import type { NextRequest } from "next/server";
 import { eq, or } from "drizzle-orm";
 import { google } from "googleapis";
@@ -16,7 +18,7 @@ import { bookingCalendarConnections } from "@/lib/private-db/schema";
 
 const OAUTH_STATE_COOKIE = "booking_oauth_state";
 
-export async function GET(req: NextRequest): Promise<Response> {
+async function handleGet(req: NextRequest): Promise<Response> {
   const code = req.nextUrl.searchParams.get("code");
   const state = req.nextUrl.searchParams.get("state");
 
@@ -63,6 +65,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       status: 200,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     console.error("[booking oauth callback] Failed:", getErrorMessage(error));
 
     return new Response("OAuth setup failed", { status: 500 });
@@ -174,3 +177,5 @@ function getErrorMessage(error: unknown): string {
 
   return "Unknown error";
 }
+
+export const GET = withWriterAdmission("recovery", handleGet);

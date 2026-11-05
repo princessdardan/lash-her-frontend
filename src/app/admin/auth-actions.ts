@@ -1,5 +1,6 @@
 "use server";
 
+import { runAdminIdentityWriter } from "@/lib/admin/user-writer-admission";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 
@@ -24,12 +25,13 @@ export async function signInWithGoogleAction(
 ): Promise<void> {
   const returnTo = getSafeAdminReturnTo(formData.get("returnTo"));
 
-  await signIn("google", { redirectTo: returnTo });
+  const url = await runAdminIdentityWriter("new-work", () =>
+    signIn("google", { redirectTo: returnTo, redirect: false }),
+  );
+  redirect(url);
 }
 
-export async function stepUpWithGoogleAction(
-  formData: FormData,
-): Promise<void> {
+async function stepUpWithGoogleActionImpl(formData: FormData): Promise<string> {
   const returnTo = getSafeAdminReturnTo(formData.get("returnTo"));
   const action = getRequiredFormValue(formData, "action");
   const target = getRequiredFormValue(formData, "target");
@@ -49,21 +51,33 @@ export async function stepUpWithGoogleAction(
   });
   const completionQuery = new URLSearchParams({ returnTo });
 
-  await signIn(
+  return signIn(
     "google",
-    { redirectTo: `/admin/step-up/complete?${completionQuery.toString()}` },
+    {
+      redirectTo: `/admin/step-up/complete?${completionQuery.toString()}`,
+      redirect: false,
+    },
     { max_age: "0", prompt: "login" },
   );
 }
 
-export async function signOutAdminAction(): Promise<void> {
-  const hadDeveloperSession = await hasAdminDeveloperSession();
-  await clearAdminDeveloperSession();
-  if (hadDeveloperSession) {
-    redirect("/admin/sign-in");
-  }
+export async function stepUpWithGoogleAction(
+  formData: FormData,
+): Promise<void> {
+  const url = await runAdminIdentityWriter("new-work", () =>
+    stepUpWithGoogleActionImpl(formData),
+  );
+  redirect(url);
+}
 
-  await signOut({ redirectTo: "/admin/sign-in" });
+export async function signOutAdminAction(): Promise<void> {
+  const url = await runAdminIdentityWriter("recovery", async () => {
+    const hadDeveloperSession = await hasAdminDeveloperSession();
+    await clearAdminDeveloperSession();
+    if (hadDeveloperSession) return "/admin/sign-in";
+    return signOut({ redirectTo: "/admin/sign-in", redirect: false });
+  });
+  redirect(url);
 }
 
 export async function authorizeAdminDeveloperAccessAction(
@@ -71,9 +85,12 @@ export async function authorizeAdminDeveloperAccessAction(
 ): Promise<void> {
   const returnTo = getSafeAdminReturnTo(formData.get("returnTo"));
   const candidateAccessKey = getRequiredFormValue(formData, "accessKey");
-  const authorized =
-    candidateAccessKey.length <= 512 &&
-    (await authorizeAdminDeveloperAccess(candidateAccessKey));
+  const authorized = await runAdminIdentityWriter(
+    "new-work",
+    async () =>
+      candidateAccessKey.length <= 512 &&
+      authorizeAdminDeveloperAccess(candidateAccessKey),
+  );
 
   const query = new URLSearchParams({ returnTo });
   if (!authorized) {
@@ -91,7 +108,9 @@ export async function setAdminDeveloperSessionAction(
     throw new Error("Invalid developer permission level");
   }
 
-  await setAdminDeveloperSession({ actingAdminUserId, permissionRole });
+  await runAdminIdentityWriter("new-work", () =>
+    setAdminDeveloperSession({ actingAdminUserId, permissionRole }),
+  );
   redirect(getSafeAdminReturnTo(formData.get("returnTo")));
 }
 

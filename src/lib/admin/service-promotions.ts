@@ -1,3 +1,4 @@
+import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import "server-only";
 
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
@@ -38,7 +39,7 @@ export interface ServicePromotionMutationInput {
 export async function listAdminServicePromotions() {
   await requirePermission("service-promotions:view");
   const db = getPrivateDb();
-  const [promotions, eligibility, offerings] = await Promise.all([
+  const [promotions, eligibility, offerings] = await settleWriterEffects([
     db
       .select()
       .from(bookingServicePromotionCodes)

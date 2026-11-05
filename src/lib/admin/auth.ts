@@ -1,3 +1,4 @@
+import { runAdminIdentityWriter } from "./user-writer-admission";
 import "server-only";
 
 import { cookies, headers } from "next/headers";
@@ -57,11 +58,13 @@ export async function requirePermission(
       // The writer does not authorize. The dynamic import avoids the
       // audit-log -> auth read-path dependency becoming a module cycle.
       const { recordAdminAuditBestEffort } = await import("./audit-log");
-      await recordAdminAuditBestEffort({
-        ...ADMIN_PERMISSION_DENIAL_AUDIT_EVENT,
-        actor: deniedActor,
-        metadata: { requestedPermission },
-      });
+      await runAdminIdentityWriter("recovery", () =>
+        recordAdminAuditBestEffort({
+          ...ADMIN_PERMISSION_DENIAL_AUDIT_EVENT,
+          actor: deniedActor,
+          metadata: { requestedPermission },
+        }),
+      );
     },
   });
 }

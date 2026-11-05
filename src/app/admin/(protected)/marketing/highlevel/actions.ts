@@ -1,4 +1,5 @@
 "use server";
+import { runWriterAdmission } from "@/lib/writer-admission/runtime";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { sql } from "drizzle-orm";
@@ -8,7 +9,7 @@ import { getPrivateDb } from "@/lib/private-db/client";
 import { deleteReviewedCrmCopy } from "@/lib/highlevel/retention";
 import { createInstallation } from "@/lib/highlevel/oauth";
 
-export async function installHighLevel(): Promise<void> {
+async function installHighLevelImpl(): Promise<string> {
   const actor = await requirePermission("settings:manage");
   const installation = await createInstallation(actor.user.id);
   await recordAdminAudit({
@@ -17,10 +18,10 @@ export async function installHighLevel(): Promise<void> {
     domain: "marketing",
     outcome: "success",
   });
-  redirect(installation.url);
+  return installation.url;
 }
 
-export async function replayHighLevelJob(form: FormData): Promise<void> {
+async function replayHighLevelJobImpl(form: FormData): Promise<void> {
   const actor = await requirePermission("marketing:manage");
   const id = String(form.get("id") ?? "");
   if (!/^[a-f0-9-]{36}$/i.test(id)) throw new Error("Invalid job");
@@ -40,7 +41,7 @@ export async function replayHighLevelJob(form: FormData): Promise<void> {
   revalidatePath("/admin/marketing/highlevel");
 }
 
-export async function resolveHighLevelEffect(form: FormData): Promise<void> {
+async function resolveHighLevelEffectImpl(form: FormData): Promise<void> {
   const actor = await requirePermission("marketing:manage");
   const key = String(form.get("key") ?? "");
   const outcome = String(form.get("outcome") ?? "");
@@ -80,7 +81,7 @@ export async function resolveHighLevelEffect(form: FormData): Promise<void> {
   revalidatePath("/admin/marketing/highlevel");
 }
 
-export async function deleteHighLevelCopy(form: FormData): Promise<void> {
+async function deleteHighLevelCopyImpl(form: FormData): Promise<void> {
   const actor = await requirePermission("settings:manage");
   const id = String(form.get("id") ?? "");
   if (!/^[a-f0-9-]{36}$/i.test(id) || form.get("reviewed") !== "on")
@@ -97,4 +98,18 @@ export async function deleteHighLevelCopy(form: FormData): Promise<void> {
     targetType: "crm_contact",
   });
   revalidatePath("/admin/marketing/highlevel");
+}
+
+export async function installHighLevel(): Promise<void> {
+  const url = await runWriterAdmission("new-work", installHighLevelImpl);
+  redirect(url);
+}
+export async function replayHighLevelJob(form: FormData): Promise<void> {
+  return runWriterAdmission("new-work", () => replayHighLevelJobImpl(form));
+}
+export async function resolveHighLevelEffect(form: FormData): Promise<void> {
+  return runWriterAdmission("new-work", () => resolveHighLevelEffectImpl(form));
+}
+export async function deleteHighLevelCopy(form: FormData): Promise<void> {
+  return runWriterAdmission("new-work", () => deleteHighLevelCopyImpl(form));
 }

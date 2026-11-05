@@ -1,3 +1,4 @@
+import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import "server-only";
 
 import { randomUUID } from "node:crypto";
@@ -923,7 +924,7 @@ export async function setServiceOfferingStatus(input: {
           bookingCalendar,
           activeAddOns,
           requiredSecondaryResourceRows,
-        ] = await Promise.all([
+        ] = await settleWriterEffects([
           tx
             .select({ id: bookingResourceSchedules.id })
             .from(bookingResourceSchedules)
@@ -1670,35 +1671,36 @@ export async function transferCalendarConnectionOwnership(input: {
           );
         }
 
-        const [assignedResources, activeAssignments] = await Promise.all([
-          tx
-            .select({ resourceId: adminUserResources.bookingResourceId })
-            .from(adminUserResources)
-            .innerJoin(
-              bookingResources,
-              eq(bookingResources.id, adminUserResources.bookingResourceId),
-            )
-            .where(
-              and(
-                eq(adminUserResources.adminUserId, employee.id),
-                eq(bookingResources.kind, "provider"),
-              ),
-            ),
-          tx
-            .select({
-              resourceId: bookingResourceCalendarAssignments.resourceId,
-            })
-            .from(bookingResourceCalendarAssignments)
-            .where(
-              and(
-                eq(
-                  bookingResourceCalendarAssignments.calendarConnectionId,
-                  input.connectionId,
+        const [assignedResources, activeAssignments] =
+          await settleWriterEffects([
+            tx
+              .select({ resourceId: adminUserResources.bookingResourceId })
+              .from(adminUserResources)
+              .innerJoin(
+                bookingResources,
+                eq(bookingResources.id, adminUserResources.bookingResourceId),
+              )
+              .where(
+                and(
+                  eq(adminUserResources.adminUserId, employee.id),
+                  eq(bookingResources.kind, "provider"),
                 ),
-                eq(bookingResourceCalendarAssignments.status, "active"),
               ),
-            ),
-        ]);
+            tx
+              .select({
+                resourceId: bookingResourceCalendarAssignments.resourceId,
+              })
+              .from(bookingResourceCalendarAssignments)
+              .where(
+                and(
+                  eq(
+                    bookingResourceCalendarAssignments.calendarConnectionId,
+                    input.connectionId,
+                  ),
+                  eq(bookingResourceCalendarAssignments.status, "active"),
+                ),
+              ),
+          ]);
         const transferError = getCalendarOwnershipTransferError({
           activeAssignmentResourceIds: activeAssignments.map(
             (assignment) => assignment.resourceId,

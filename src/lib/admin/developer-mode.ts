@@ -1,3 +1,4 @@
+import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import "server-only";
 
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -43,10 +44,11 @@ export async function getAdminDeveloperActor(): Promise<AdminActor | null> {
   if (!user) return null;
 
   const store = getAdminUserStore();
-  const [bookingProviderResourceIds, bookingResourceIds] = await Promise.all([
-    store.listBookingProviderResourceIds(user.id),
-    store.listBookingResourceIds(user.id),
-  ]);
+  const [bookingProviderResourceIds, bookingResourceIds] =
+    await settleWriterEffects([
+      store.listBookingProviderResourceIds(user.id),
+      store.listBookingResourceIds(user.id),
+    ]);
 
   return createAdminDeveloperActor({
     bookingProviderResourceIds,

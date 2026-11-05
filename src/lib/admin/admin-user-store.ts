@@ -1,3 +1,4 @@
+import { withAdminUserWriterAdmission } from "./user-writer-admission";
 import "server-only";
 
 import { and, asc, eq } from "drizzle-orm";
@@ -46,7 +47,7 @@ const adminUserSelection = {
 export function createDrizzleAdminUserRepository(): AdminUserRepository {
   const db = getPrivateDb();
 
-  return {
+  return withAdminUserWriterAdmission({
     async bindIdentity(input) {
       return db.transaction(async (tx) => {
         const rows = await tx
@@ -182,7 +183,7 @@ export function createDrizzleAdminUserRepository(): AdminUserRepository {
         return rows[0];
       });
     },
-  };
+  });
 }
 
 export function getAdminUserStore(): AdminUserStore {

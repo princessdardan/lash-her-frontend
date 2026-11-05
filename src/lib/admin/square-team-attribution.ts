@@ -1,3 +1,4 @@
+import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import "server-only";
 
 import { eq, inArray, isNotNull } from "drizzle-orm";
@@ -251,7 +252,7 @@ export async function getSquareAttributionReadiness(): Promise<{
 }> {
   await requirePermission("staff:view");
   const db = getPrivateDb();
-  const [[settings], providers] = await Promise.all([
+  const [[settings], providers] = await settleWriterEffects([
     db
       .select({
         required: bookingBusinessSettings.requireSquareTeamAttribution,
@@ -322,7 +323,7 @@ async function buildSquareTeamVerificationSnapshot(input: {
       ),
     ),
   ];
-  const absentVerifications = await Promise.all(
+  const absentVerifications = await settleWriterEffects(
     absentMemberIds.map((memberId) =>
       input.client.retrieveLocationMember(memberId),
     ),

@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import "server-only";
 
 import {
@@ -110,6 +111,7 @@ export async function recordAdminAuditBestEffort(
   try {
     await recordAdminAudit(input);
   } catch {
+    markWriterOperationUncertain();
     console.error(
       "[admin:audit] Activity history entry could not be persisted",
       {
