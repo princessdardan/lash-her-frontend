@@ -24,7 +24,7 @@ import pg from "pg";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const courseSource =
   process.env.COURSE_AUTHORING_API_SOURCE ?? "/private/tmp/lash-phase2-course";
-const courseSha = "05ff0694349aa0ae606997b1338618b9fc73134f";
+const courseSha = "11ea33d085e277bf4d9517476b683b5389c8eaa8";
 const pgBin = process.env.PG16_BIN_DIR ?? "/opt/homebrew/opt/postgresql@16/bin";
 const temporary = await mkdtemp(join(tmpdir(), "lash-authoring-browser-"));
 const cluster = join(temporary, "postgres"),

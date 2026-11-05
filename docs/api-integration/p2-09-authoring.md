@@ -10,4 +10,16 @@ Each save carries the course aggregate revision captured by the open editor. Con
 
 Video bytes go directly to the one-off upload URL returned by the validated handler, with credentials omitted and redirects refused. The UI never receives Course signing keys or workload credentials. Failed or uncertain provider operations require status/reconciliation before another intent; the UI does not automatically repeat upload or caption mutations. Course media services own durable intent receipts and recovery, covered by their separate database qualification.
 
-Local evidence is tracked separately from deployed certification. Source type/lint checks and focused form/navigation/request-security tests do not establish real provider/browser staging certification. The final matching Course artifact, owned browser scenarios, repository build/checks and deployed authoring/learning certification remain required before closing P2-09 or G2.
+## Owned local qualification
+
+The browser driver is `node scripts/test-course-authoring-browser.mjs` under Node 24. It requires PostgreSQL 16 binaries, an available exact Course checkout (`COURSE_AUTHORING_API_SOURCE`, default `/private/tmp/lash-phase2-course`), matching dependencies, a clean committed frontend source, and local loopback/IPC access. It exports the pinned Course commit instead of running the mutable checkout, checks the contract artifact hash, creates two disposable databases, applies their migrations, and starts actual Next and Course HTTP servers. It accepts no external database URL. Its synthetic Auth.js cookies identify seeded local owner/non-editor records; workload verification at the gateway edge is a fixture. Frontend admission is disabled only in that spawned local fixture.
+
+Qualification on frontend `b3f909ce49d08e1ad3f9f2458efb19d32b37958b` consumed Course `05ff0694349aa0ae606997b1338618b9fc73134f`, artifact SHA-256 `798d9b721a9140113c5a8149b042b6dbf93848f50fdfcdf4ceb586f67c1d7f9a`, with 83 frontend and 22 Course migrations on owned PostgreSQL 16. All three Chromium scenarios passed:
+
+- Owner authoring through persisted draft, module, structured lesson/transcript, default-80 quiz, readiness diagnostics and publication; a competing real API edit produces a stale-revision conflict while preserving unsaved input. Missing CSRF is denied.
+- Unauthenticated requests and known non-editor staff cannot use authoring handlers or pages.
+- Keyboard ordering persists through the API/database, archival/restoration preserves IDs, dirty-editor cancellation preserves edits, confirmed discard works, and unavailable media shows a settled error with upload disabled. The 390-pixel mobile view has no horizontal overflow.
+
+The driver writes the exact source/artifact/migration manifest and mobile screenshot under `test-results/course-authoring-browser/`. These generated local artifacts are ignored by Git. It rejects unexpected external fetches; Sanity content and gateway workload proof are fixtures, while Course authentication, request contracts, handlers and persistence are real. No Mux upload/caption provider call, Google/Resend sign-in or deployed gateway workload verification is certified here.
+
+Local evidence does not establish deployed certification. The authoring provider/browser staging scenarios, matching deployed source/artifact references, required candidate CI/scans, complete admission qualification and G2 evidence remain open. No production capability is activated by this candidate.

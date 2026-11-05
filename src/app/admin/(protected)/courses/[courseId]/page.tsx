@@ -1,10 +1,9 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { CourseWorkspace } from "@/components/admin/course-authoring/course-workspace";
-import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
 import { getCourseClient } from "@/lib/api-integration/course-client";
 import { isIntegrationFeatureEnabled } from "@/lib/api-integration/rollout-flags";
-import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
+import { loadCourseAuthoringPage } from "@/lib/course-authoring/page-data";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export default async function CourseAdminPage({
@@ -13,15 +12,15 @@ export default async function CourseAdminPage({
   params: Promise<{ courseId: string }>;
 }) {
   if (!isIntegrationFeatureEnabled("courseReads")) notFound();
-  await requireAdminPagePermission("courses:edit");
   const { courseId } = await params;
   if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(courseId))
     notFound();
-  let result;
-  try {
-    result = await getCourseClient().getAdminCourse(courseId);
-  } catch (error) {
-    if (!(error instanceof IntegrationServiceError)) throw error;
+  const loaded = await loadCourseAuthoringPage(() =>
+    getCourseClient().getAdminCourse(courseId),
+  );
+  if (loaded.kind === "redirect") redirect(loaded.destination);
+  if (loaded.kind === "unavailable") {
+    const { error } = loaded;
     if (error.status === 404) notFound();
     return (
       <section className="space-y-3">
@@ -34,5 +33,5 @@ export default async function CourseAdminPage({
       </section>
     );
   }
-  return <CourseWorkspace initialCourse={result.course} />;
+  return <CourseWorkspace initialCourse={loaded.data.course} />;
 }

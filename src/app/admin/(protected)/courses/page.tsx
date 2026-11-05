@@ -1,10 +1,9 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { CreateCourseForm } from "@/components/admin/course-authoring/create-course-form";
-import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
 import { getCourseClient } from "@/lib/api-integration/course-client";
 import { isIntegrationFeatureEnabled } from "@/lib/api-integration/rollout-flags";
-import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
+import { loadCourseAuthoringPage } from "@/lib/course-authoring/page-data";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export default async function CoursesAdminPage({
@@ -13,16 +12,16 @@ export default async function CoursesAdminPage({
   searchParams: Promise<{ cursor?: string }>;
 }) {
   if (!isIntegrationFeatureEnabled("courseReads")) notFound();
-  await requireAdminPagePermission("courses:edit");
   const { cursor } = await searchParams;
-  let result;
-  try {
-    result = await getCourseClient().listAdminCourses({
+  const loaded = await loadCourseAuthoringPage(() =>
+    getCourseClient().listAdminCourses({
       limit: 100,
       ...(cursor ? { cursor } : {}),
-    });
-  } catch (error) {
-    if (!(error instanceof IntegrationServiceError)) throw error;
+    }),
+  );
+  if (loaded.kind === "redirect") redirect(loaded.destination);
+  if (loaded.kind === "unavailable") {
+    const { error } = loaded;
     return (
       <section className="space-y-3">
         <h1 className="font-heading text-4xl uppercase">Courses</h1>
@@ -34,6 +33,7 @@ export default async function CoursesAdminPage({
       </section>
     );
   }
+  const result = loaded.data;
   return (
     <div className="space-y-8">
       <header>
