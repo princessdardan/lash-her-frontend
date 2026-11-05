@@ -2,7 +2,7 @@
   "version": 1,
   "baseCommit": "8b248627d962771175947b2637881e2f1e4e313f",
   "baseSourceManifestSha256": "198cd2c2faac2f0dd39a51392df619eeb46b7f948db7462fd5f37f1c08fbd2fb",
-  "candidateSourceManifestSha256": "4a93c0be3d8216a9eb4d3b3a7d9deb6d83464d54aacf0ea56301c662a5353393",
+  "candidateSourceManifestSha256": "b43b1f73b5ce334046e46a071c771ad94573c79606ad290a8d62e359d9d17a51",
   "scope": "Product-stock reservation sweep cron delta; earlier classifications retain their original limits",
   "priorClassificationReference": "../2026-11-05-p2-00-customer-email-outbox/writer-classification.json",
   "releaseAuthority": false,

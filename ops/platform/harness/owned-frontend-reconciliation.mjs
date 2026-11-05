@@ -382,7 +382,7 @@ async function main() {
         status,destination,package_snapshot,customs_lines,rates,quote_expires_at)
         VALUES($1,'owned-stock-shipment','owned-stock-token','owned-stock-fingerprint','payment_pending','{}','{}','[]','[]',now()+interval '1 hour')`, [order]);
     };
-    const assertStockReceipt = async (released = true) => {
+    const assertStockReceipt = async (released = true, missingMovement = false) => {
       const orders = (await operator.query("SELECT status FROM checkout_orders WHERE order_id='owned-stock-order'")).rows;
       assert.equal(orders.length, 1); assert.equal(orders[0].status, released ? "cancelled" : "pending");
       const obligations = (await operator.query("SELECT status,idempotency_key FROM order_payment_obligations")).rows;
@@ -391,7 +391,7 @@ async function main() {
       const stock = (await operator.query("SELECT on_hand,reserved FROM product_stock")).rows;
       assert.deepEqual(stock, [{ on_hand: 10, reserved: released ? 0 : 2 }]);
       const movements = (await operator.query("SELECT kind,quantity FROM product_stock_movements ORDER BY kind::text")).rows;
-      assert.deepEqual(movements, released ? [{ kind: "release", quantity: 2 }, { kind: "reserve", quantity: 2 }] : [{ kind: "reserve", quantity: 2 }]);
+      assert.deepEqual(movements, released && !missingMovement ? [{ kind: "release", quantity: 2 }, { kind: "reserve", quantity: 2 }] : [{ kind: "reserve", quantity: 2 }]);
       const shipments = (await operator.query("SELECT status FROM product_shipments")).rows;
       assert.deepEqual(shipments, [{ status: released ? "abandoned" : "payment_pending" }]);
     };
@@ -407,15 +407,24 @@ async function main() {
     assert.equal((await stockRequest()).status, 200); assert.deepEqual((await since(before)).map(row => row.state), ["completed"]);
     assert.deepEqual(activeCalls, []); await reconcile(); checks.push("stock-empty-batch-completes-independent-recovery-entry");
 
-    for (const mode of ["absent", "captured", "provider-failure", "malformed", "bounded", "missing-stock-receipt"]) {
+    for (const mode of ["absent", "captured", "provider-failure", "malformed", "bounded", "missing-stock-receipt", "missing-movement-receipt"]) {
       phase = `stock-${mode}`;
       await seedStock(mode); await change(true); before = await operations();
       failProvider = mode === "provider-failure" ? "stock" : undefined;
-      const result = await stockRequest(); failProvider = undefined;
+      if (mode === "missing-movement-receipt") {
+        await operator.query("CREATE FUNCTION pg_temp.suppress_owned_release() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$");
+        await operator.query("CREATE TRIGGER owned_missing_release BEFORE INSERT ON product_stock_movements FOR EACH ROW WHEN (NEW.kind = 'release') EXECUTE FUNCTION pg_temp.suppress_owned_release()");
+      }
+      let result;
+      try { result = await stockRequest(); }
+      finally {
+        failProvider = undefined;
+        if (mode === "missing-movement-receipt") await operator.query("DROP TRIGGER owned_missing_release ON product_stock_movements");
+      }
       const completed = ["absent", "captured"].includes(mode);
       assert.equal(result.status, completed ? 200 : 503);
       assert.deepEqual((await since(before)).map(row => row.state), [completed ? "completed" : "uncertain"]);
-      await assertStockReceipt(mode !== "captured");
+      await assertStockReceipt(mode !== "captured", mode === "missing-movement-receipt");
       const expectedCalls = Array.from({ length: mode === "bounded" ? 4 : 1 }, () => ({ stage: "stock", method: "GET", path: "/v2/payments" }));
       assert.deepEqual(activeCalls, expectedCalls);
       if (mode === "absent") {

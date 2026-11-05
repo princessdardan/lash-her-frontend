@@ -318,38 +318,52 @@ test("bounded Square scans preserve legacy verdict but retain enforced uncertain
   );
   assert.deepEqual(f.state.outcomes, ["uncertain"]);
 });
-test("a missing stock release projection cannot settle as completed", async () => {
-  let selections = 0;
-  const tx = {
-    select: () => ({
-      from: () => ({
-        where: () => {
-          selections++;
-          return Object.assign(
-            Promise.resolve([{ productStockId: "owned-stock", quantity: 2 }]),
-            { limit: async () => [] },
-          );
-        },
+test("missing movement or stock release receipts cannot settle as completed", async () => {
+  for (const missing of ["movement", "stock"]) {
+    let selections = 0;
+    const tx = {
+      select: () => ({
+        from: () => ({
+          where: () => {
+            selections++;
+            return Object.assign(
+              Promise.resolve([{ productStockId: "owned-stock", quantity: 2 }]),
+              { limit: async () => [] },
+            );
+          },
+        }),
       }),
-    }),
-    insert: () => ({ values: () => ({ onConflictDoNothing: async () => {} }) }),
-    update: () => ({
-      set: () => ({ where: () => ({ returning: async () => [] }) }),
-    }),
-  };
-  const f = admission();
-  await assert.rejects(
-    f.run("recovery", () =>
-      releaseProductStockForOrderInTransaction(
-        tx as unknown as Parameters<
-          typeof releaseProductStockForOrderInTransaction
-        >[0],
-        "owned-order",
+      insert: () => ({
+        values: () => ({
+          onConflictDoNothing: () => ({
+            returning: async () =>
+              missing === "movement" ? [] : [{ id: "owned-movement" }],
+          }),
+        }),
+      }),
+      update: () => ({
+        set: () => ({
+          where: () => ({
+            returning: async () =>
+              missing === "stock" ? [] : [{ id: "owned-stock" }],
+          }),
+        }),
+      }),
+    };
+    const f = admission();
+    await assert.rejects(
+      f.run("recovery", () =>
+        releaseProductStockForOrderInTransaction(
+          tx as unknown as Parameters<
+            typeof releaseProductStockForOrderInTransaction
+          >[0],
+          "owned-order",
+        ),
       ),
-    ),
-  );
-  assert.equal(selections, 2);
-  assert.deepEqual(f.state.outcomes, ["uncertain"]);
+    );
+    assert.equal(selections, 2);
+    assert.deepEqual(f.state.outcomes, ["uncertain"]);
+  }
 });
 test("lost stock socket or settlement acknowledgement never replays cleanup", async () => {
   for (const fault of ["socket", "settlement"]) {

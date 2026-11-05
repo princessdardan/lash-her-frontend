@@ -7,16 +7,16 @@
   "files": {
     ".github/workflows/ci.yml": "a4dcbe5b848ccad1c644e6a6a4e3fb5ec2e3b70e497bc67c54477cb02454280d",
     "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/base-source-inventory.json": "de0ff4192b61109aa21ae41dbb86fba9a618c3577066b4d9717a8288552ee4e0",
-    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/candidate-source-inventory.json": "aff885fad0fc78ed52f64c695cf0ecc0bd4ec411ef12a252f83feaea8740ad06",
-    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/effect-audit.json": "c60edc417061d38c15d62e7558c0f9e7cde9348147bbda01618534aa5220c88a",
-    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/writer-classification.json": "4056b7aac43cf363a70bbdc14f68fce2f3aeae95b9dc2c7862df4057a64d5ab3",
-    "docs/api-integration/frontend-stock-sweep-recovery-admission.md": "02cf6815ff3be325cf1b8dcc375653adf1029e0a1f3a0e364c1741cffaa254a2",
-    "docs/api-integration/p2-00-frontend-quiescence.md": "517a1eda8bd8deef576bbe40766a36e575c93fbbdbb18800b18a38a5e2ae33aa",
+    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/candidate-source-inventory.json": "3b3c3b2d3665afd0e6362ef0a7042d783cb5f233bc0df69f4f9543bce8758f0a",
+    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/effect-audit.json": "7f3dad284343ea3cf7633369fa780e3101750389c38c00bd991a49a12375a2cc",
+    "docs/api-integration/baselines/2026-11-05-p2-00-stock-sweep/writer-classification.json": "e6fb73c6482a8de8cfb724bbe5dade11aed36b1fd0688b0d7f8cf0b169b31cb4",
+    "docs/api-integration/frontend-stock-sweep-recovery-admission.md": "0affcbdb4a0b829fe89ab6f5fdf127ca29ffc7c0263a46b139b59c650ec727d6",
+    "docs/api-integration/p2-00-frontend-quiescence.md": "bab60e9c1b86fc87125b612fb87bb44969175d59d2c1e03c489204d219169d76",
     "docs/scheduled-jobs-runbook.md": "2ceda082c7048a6442ab6a4e3c4327582c553aef61012837145f6dbcdad6af32",
     "ops/platform/frontend-admission.mjs": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
     "ops/platform/frontend-reconciliation.test.mjs": "571f0ab72ba17fc8734c8a248e5e5ab1aeae082ccd29a7a3e1aaed9c2c614378",
     "ops/platform/frontend-writer-inventory.mjs": "8b9d259f6ff4f666197c247248ae3d3948843d3c48aa67a39b7ef48347e9e9e5",
-    "ops/platform/harness/owned-frontend-reconciliation.mjs": "e2c86ebf1eb74faa1850c6ba2afdad840eb1c215c2ca0145658165d1b067ed78",
+    "ops/platform/harness/owned-frontend-reconciliation.mjs": "7763721f4909f47bd6bbfb4c2e41b8d51e7fb081c7ccb00ff99776636c126cfb",
     "ops/platform/harness/owned-reconciliation-providers.mjs": "851e033ff42243a87164dd125ade70c997194170adfdd7c31188e61308dc3e95",
     "ops/platform/harness/owned-reconciliation-rows.mjs": "bd51c6068b691c6a7be5591d10a6f0d0c4323e4b89cfc0371c44ac8cb2cf4537",
     "ops/platform/test-frontend-migration-local.mjs": "91f07d3e46f610e87cc1c4b830040a6179145e797b95fa4a0f1c6a9a46c9ecb5",
@@ -29,24 +29,24 @@
     "src/lib/commerce/product-stock-abandoned-sweep.db.test.ts": "11a6cdbf9ac30afb4def64da3496f2e64fb87e344fdb8ff015ff1ea4b6ae76d6",
     "src/lib/commerce/product-stock-abandoned-sweep.test.ts": "e18ec91fe51b765eb4ae39a3dab7eab31d4a1b20df31e13c4f8438f786438c22",
     "src/lib/commerce/product-stock-abandoned-sweep.ts": "34260d38521f6e85b064010ace3e5beae5b12f8eb0813e6da58baec5b6ca7802",
-    "src/lib/commerce/product-stock-store.ts": "ab4eda4c063b49cfd05c876795770f4ed691901f712fad7d5ada0ae6d6381d49",
+    "src/lib/commerce/product-stock-store.ts": "37d29e5d007e4f404c275dc8e178d7e8ee5973aecc13b56b8af0c5ab8fad957e",
     "src/lib/payments/square/payments-client.ts": "de098698dc55a2567767b1904754c6fce42c7a2df0229e9bb2bf2011979f4721",
     "src/lib/private-db/client.ts": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
     "src/lib/private-db/schema.ts": "210b802be6d6419c12b533de326a6db87780c475d4491fb06a192eea40a4baa9",
     "src/lib/writer-admission/config.ts": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
     "src/lib/writer-admission/context.ts": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
     "src/lib/writer-admission/runtime.ts": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
-    "src/lib/writer-admission/stock-sweep.test.ts": "6db283bfff7f633bb3c08b8b3c38a714f13412861b412e91deade64ddf806c7f"
+    "src/lib/writer-admission/stock-sweep.test.ts": "36b950374e3bd1a9923583935cea475935d5cef6a8fd5d0c14426df4b357b65b"
   },
-  "candidateSourceManifestSha256": "4a93c0be3d8216a9eb4d3b3a7d9deb6d83464d54aacf0ea56301c662a5353393",
+  "candidateSourceManifestSha256": "b43b1f73b5ce334046e46a071c771ad94573c79606ad290a8d62e359d9d17a51",
   "postgres": [
     {
       "major": 16,
-      "stockChecks": 10,
+      "stockChecks": 11,
       "existingChecks": 68,
-      "totalChecks": 78,
+      "totalChecks": 79,
       "clusterStoppedAndRemoved": true,
-      "resultSha256": "4ed6edfcc961cc00dba695978f926226dc4f487a74fbe1d31744a41f80d23ce6"
+      "resultSha256": "c4db3c34765970bb01f3fd8490e01589b9473d5a571e9921542e435324f0b77e"
     }
   ],
   "unitTests": {
@@ -100,5 +100,6 @@
     "Square responses and producer identities are synthetic; no live provider-drain claim.",
     "PostgreSQL 16 exercised locally; PostgreSQL 18 qualification runs in exact-head CI.",
     "Direct callers, other writers, actual producer/provider inventory, historical fencing/bootstrap and parent coordination remain open."
-  ]
+  ],
+  "reviewFix": "Missing release-movement inserts now retain uncertainty. Controlled loop tests and a real PostgreSQL trigger that suppresses the release insert cover stock/order cleanup completing without that receipt."
 }

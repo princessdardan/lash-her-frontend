@@ -26,7 +26,7 @@
     {
       "stage": "stock release",
       "source": "src/lib/commerce/product-stock-store.ts",
-      "accounting": "Await reserve/settlement reads, release movement insert and stock projection; missing stock update is uncertain."
+      "accounting": "Await reserve/settlement reads, release movement insert and stock projection; missing movement or stock update receipt is uncertain."
     },
     {
       "stage": "cancellation/abandonment",
