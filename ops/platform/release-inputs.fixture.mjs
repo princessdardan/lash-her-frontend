@@ -4,7 +4,8 @@ export function sourceFixture() {
   const now = new Date("2026-11-01T12:00:00.000Z"), sha = "a".repeat(40);
   const context = { repository: SOURCE_REPOSITORIES.frontend, repositoryId: SOURCE_REPOSITORY_IDS.frontend,
     ownerId: SOURCE_OPERATOR_ID, actorId: SOURCE_OPERATOR_ID, event: "workflow_dispatch", branch: "main", workflowRef: "refs/heads/main",
-    workflowSha: sha, runId: "9001", runAttempt: "1", revisions: { frontend: sha, course: sha, community: sha }, contractManifestSha256: `sha256:${"b".repeat(64)}` };
+    workflowSha: sha, runId: "9001", runAttempt: "1", revisions: { frontend: sha, course: sha, community: sha }, contractManifestSha256: `sha256:${"b".repeat(64)}`,
+    contractPhase: "p2", phase2ContractManifestSha256: `sha256:${"c".repeat(64)}`, phase2ContractRevisions: { course: sha, community: sha, enrollmentEvent: sha } };
   const responses = new Map([["/user", { id: Number(SOURCE_OPERATOR_ID) }]]);
   responses.set(`/repos/${context.repository}/actions/runs/${context.runId}`, { id: Number(context.runId), run_attempt: 1, path: SOURCE_WORKFLOW,
     event: "workflow_dispatch", head_sha: sha, head_branch: "main", actor: { id: Number(SOURCE_OPERATOR_ID) }, triggering_actor: { id: Number(SOURCE_OPERATOR_ID) },

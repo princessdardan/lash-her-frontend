@@ -1,0 +1,466 @@
+{
+  "schemaVersion": 1,
+  "component": "P2-10 learner local review",
+  "sourceCommit": "46e97473b8b18b440990308591438af5e7f724bf",
+  "runtimeFixCommit": "ab45210",
+  "dependencySourceAncestor": "191173f",
+  "scope": {
+    "frontendSessions": "actual isolated PostgreSQL 16.13",
+    "academyHandlers": "actual same-origin adapters",
+    "courseApi": "synthetic workload-authenticated responses",
+    "mux": "intercepted media and synthetic authorizations",
+    "providerCalls": "none",
+    "liveProviderCertification": false,
+    "productionActivated": false,
+    "g2Accepted": false
+  },
+  "checks": {
+    "learnerBrowser": {
+      "startTime": "2026-11-05T22:21:32.828Z",
+      "duration": 59889.733,
+      "expected": 28,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "legacyBrowser": {
+      "startTime": "2026-11-05T22:23:30.659Z",
+      "duration": 7252.627,
+      "expected": 4,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "focusedUnits": {
+      "sourceCommit": "0c1d20792e9b6daa7bd6e408ec75c265ef4a4400",
+      "passed": 20,
+      "failed": 0,
+      "exitCode": 0
+    },
+    "learnerLint": {
+      "sourceCommit": "0c1d20792e9b6daa7bd6e408ec75c265ef4a4400",
+      "exitCode": 0,
+      "finalBrowserTestLintExitCode": 0
+    },
+    "fullTypeScript": {
+      "sourceCommit": "46e97473b8b18b440990308591438af5e7f724bf",
+      "exitCode": 0
+    },
+    "securityForks": {
+      "sourceArchiveInstalledVerified": [
+        "braces",
+        "load-yaml-file",
+        "@auth/core"
+      ],
+      "exitCode": 0
+    }
+  },
+  "earlierFailures": [
+    {
+      "receipt": "empty-flush-before-44ef8f2.txt",
+      "sourceCommit": "44ef8f2c23a1949365e4f25d7e9835e1105d5857",
+      "expectedRegressionFailures": 2,
+      "reason": "Empty drain and completed drain settlement stranded a queued keepalive position. Both actual-module regressions pass after ab45210."
+    },
+    {
+      "receipt": "browser-failure-0c1d207.json",
+      "sourceCommit": "0c1d20792e9b6daa7bd6e408ec75c265ef4a4400",
+      "passed": 24,
+      "failed": 4,
+      "reason": "Both viewports: an unscoped text locator also matched the streamed hidden React buffer; the history assertion had not opened its details disclosure. Corrected in 46e97473 without weakening the asserted behavior."
+    }
+  ],
+  "commands": {
+    "units": "node --conditions=react-server --import tsx --test src/lib/learning/progress-sync.test.ts src/lib/learning/playback-lifetime.test.ts src/lib/learning/presentation.test.ts src/lib/learning/rollout.test.ts",
+    "typescript": "node node_modules/typescript/bin/tsc --noEmit --incremental false",
+    "learnerBrowser": "LEARNING_E2E_DATABASE_URL=<isolated-migrated-loopback> node node_modules/@playwright/test/cli.js test --config tests/learning.playwright.config.ts --reporter json",
+    "legacyBrowser": "node node_modules/@playwright/test/cli.js test --config tests/courses-mux.playwright.config.ts --project chromium --reporter json"
+  },
+  "nodeVersion": "24.18.0",
+  "browserCases": [
+    {
+      "project": "chromium",
+      "name": "anonymous catalog/detail reveal public metadata, keep canonical URL and direct protected learning to customer sign-in",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 1726
+        }
+      ]
+    },
+    {
+      "project": "chromium",
+      "name": "free enrollment, signed player, keyboard assessment and another-device resume use the server account",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 6168
+        }
+      ]
+    },
+    {
+      "project": "chromium",
+      "name": "stale progress reloads the other device revision and never silently overwrites its saved position",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 1233
+        }
+      ]
+    },
+    {
+      "project": "chromium",
+      "name": "media processing and access denial remain usable and provide explicit recovery",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 765
+        }
+      ]
+    },
+    {
+      "project": "chromium",
+      "name": "scheduled playback renewal rechecks access and removes the player when access ends",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 1973
+        }
+      ]
+    },
+    {
+      "project": "chromium",
+      "name": "failed completion read can be retried without another assessment or progress write",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 1101
+        }
+      ]
+    },
+    {
+      "project": "chromium",
+      "name": "page-exit flush keeps its final position request keepalive behind an active heartbeat",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 1467
+        }
+      ]
+    },
+    {
+      "project": "chromium",
+      "name": "authorization expiry removes the player while renewal is stalled and refuses a late expired response",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 4830
+        }
+      ]
+    },
+    {
+      "project": "chromium",
+      "name": "public preview does not offer assessment outage recovery or saved completion",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 470
+        }
+      ]
+    },
+    {
+      "project": "chromium",
+      "name": "SPA navigation flushes the latest played position before its player ref is detached",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 4226
+        }
+      ]
+    },
+    {
+      "project": "chromium",
+      "name": "another account cannot reuse learning state and a suspended session cannot renew playback",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 2180
+        }
+      ]
+    },
+    {
+      "project": "chromium",
+      "name": "practice completion is authoritative even with an incorrect score and supports retries",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 1190
+        }
+      ]
+    },
+    {
+      "project": "chromium",
+      "name": "explicit revised assessment refresh settles pending resume and removes old completion",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 1527
+        }
+      ]
+    },
+    {
+      "project": "chromium",
+      "name": "revised assessment refresh preserves an unknown progress outcome until explicit revision recovery",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 1612
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "anonymous catalog/detail reveal public metadata, keep canonical URL and direct protected learning to customer sign-in",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 732
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "free enrollment, signed player, keyboard assessment and another-device resume use the server account",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 2744
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "stale progress reloads the other device revision and never silently overwrites its saved position",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 1254
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "media processing and access denial remain usable and provide explicit recovery",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 785
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "scheduled playback renewal rechecks access and removes the player when access ends",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 2057
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "failed completion read can be retried without another assessment or progress write",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 1075
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "page-exit flush keeps its final position request keepalive behind an active heartbeat",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 1244
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "authorization expiry removes the player while renewal is stalled and refuses a late expired response",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 4885
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "public preview does not offer assessment outage recovery or saved completion",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 406
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "SPA navigation flushes the latest played position before its player ref is detached",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 4187
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "another account cannot reuse learning state and a suspended session cannot renew playback",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 2088
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "practice completion is authoritative even with an incorrect score and supports retries",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 1221
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "explicit revised assessment refresh settles pending resume and removes old completion",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 2167
+        }
+      ]
+    },
+    {
+      "project": "mobile",
+      "name": "revised assessment refresh preserves an unknown progress outcome until explicit revision recovery",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "durationMs": 1468
+        }
+      ]
+    }
+  ],
+  "sourceSha256": {
+    "package-lock.json": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886",
+    "package.json": "eb0a7c143e640fc3aa9a69944a4ffac1e21d7f2acc06661bb7d4cddb6fdcc9d3",
+    "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "71fef5cff4673dbad672881687cb2254d03bdf59fa148f95e4819acc02770462",
+    "src/app/(site)/academy/courses/[courseId]/page.tsx": "e8459a0b396095d2e427b9c207d15992fe142e40e626e76b7c34f8dc06db1f64",
+    "src/app/(site)/academy/error.tsx": "eb90f5c4852cb4693341ebd3c571e88aac9f1c74f4276286937a8f3a500e3175",
+    "src/app/(site)/academy/loading.tsx": "283e38f48051959a7a909a1d4c592ea1fe3856347c06afac41584d22b94a3027",
+    "src/app/(site)/academy/page.tsx": "86e0bcf871096483bb9dc4fae9cb74ee12e74b05d77def3922357043c82ca98b",
+    "src/app/(site)/courses/[slug]/error.tsx": "9ceeb6de74deccc23f932a86b6468132ca324ba921abb655c029000c94d62773",
+    "src/app/(site)/courses/[slug]/page.tsx": "eb93d297355e3df04c45f46d83468c6cf53e341827b8fcea349191325b61f949",
+    "src/app/(site)/courses/loading.tsx": "283e38f48051959a7a909a1d4c592ea1fe3856347c06afac41584d22b94a3027",
+    "src/app/(site)/courses/page.tsx": "482b5630b9d89562f79dbd819f8623a6b4398293d1a9d8ee54bc69b98100b4a0",
+    "src/components/learning/authorized-video.tsx": "099382c7f8f682acb38e8622a75a54f23d8cc3bd4f7757c2945bdabc71962288",
+    "src/components/learning/course-catalog.tsx": "e2f12c24992aef6faa65ee5c5c4477a46c428e8aaf74b8cc104f085701960560",
+    "src/components/learning/course-cover.tsx": "6c6753952774eab9ac870689e3ce72cd866ae1456894c675ef9be61ab68dc5c6",
+    "src/components/learning/course-detail.tsx": "550644483d3a53e5aa4c35b49a5c5ff57a61cddeb1743e79c32f36b73d068e49",
+    "src/components/learning/free-enrollment.tsx": "c4fab52c378129f973ee603520a123dc97a290f28d6ea70cbffeb197f0f64291",
+    "src/components/learning/lesson-content.tsx": "c25d4a6639a5f4b0034cd0fcd62aec56fd930477cdcbe27b1c941a525444eaef",
+    "src/components/learning/lesson-experience.tsx": "67c63a0e44bdae2dfd76af81fa3de9501ad53302f6a3d439528d1bc18fc3b854",
+    "src/components/learning/lesson-quiz.tsx": "fa9635551916a0fd39f53048e41967ef27e97047636aee0300d96ceb0935f763",
+    "src/components/learning/shared.tsx": "a4ee00f01d232caa169972474ec97ee79e977071155b86b3460db22cfb19887a",
+    "src/lib/learning/browser-request.ts": "14f6faa78aa20177d3f972d8a7230df9ee931cc16952e7b7e145d1d72397376a",
+    "src/lib/learning/page-result.ts": "6f38aade599e625e2d3f5f9225369962fac4bf800e20b1cc0bf646edb821287d",
+    "src/lib/learning/playback-lifetime.test.ts": "49a537bb7852c5d332c175baebb7e992e9ee84d3a5f6a27d65eb4739ecdeede9",
+    "src/lib/learning/playback-lifetime.ts": "f2d70adf065a41859a6b03ae25a80164f40672a57dba49393469aa95693580e0",
+    "src/lib/learning/presentation.test.ts": "c30d584f562c0c554f2549993dcaca8d25f2b807e438074a357ab0cb019f4b02",
+    "src/lib/learning/presentation.ts": "f4c62ec39adb57d519c30b67514720c2ab7a7927623116eecf067789ad3a637f",
+    "src/lib/learning/progress-sync.test.ts": "b5218101aa2a564178ff887fa70f26225427e8cc32bf98ccf8e8383ffb8416ab",
+    "src/lib/learning/progress-sync.ts": "f345af9290fe2cb4ec3e90a9a1e9b5f5f5631a87f4272a041d3d2940a355a58f",
+    "src/lib/learning/rollout.test.ts": "5eea704a1595369e1ffd335e453bf9b276376686f6613391942b2fc107fd82e3",
+    "src/lib/learning/rollout.ts": "69348fb0d48b3209db8e76ea5a95cc7f818f3a8f6c259453098e631c9f37c60c",
+    "src/lib/learning/types.ts": "64d8a1fecd17530ba76f0d08aaf60e84ab4fa4f51b18046a746ed6d7b2198f6b",
+    "tests/learning.playwright.config.ts": "e1780d5d5a653fcbba5961c59e49c79ab67e839bebe6acd5bafc12c9d45a7f34",
+    "tests/learning.spec.ts": "0a84c4db9e2cb553ece183a89e1ff1840ebb8d03e096eeb052f176895ef3ef9c",
+    "tests/support/learning-fetch-fixture.cjs": "be67d3c7ef5c34b5b2cc5f22248fe6a64c93ee320834c3c4f7e3cad3ed61e8f0",
+    "vendor/security/forks.json": "f9bcb1dc4deaa3d431c20eae2ea9dec6a64cbabecac509bb639cf7cf3b9da5f4"
+  },
+  "receiptSha256": {
+    "browser-failure-0c1d207.json": "f26e145f1905725e5c89c86b44a86399008e3ad88602fed7a258f8db9f380f9b",
+    "browser-success-46e97473.json": "663ed222d5e9b8a26f12fac211ad486ea7e709934df79311161163e02a96c18f",
+    "empty-flush-before-44ef8f2.txt": "7a70f1debcb3ab2fb9ea444f837e280b700cbf0b0857f3532d8812a7e922fddb",
+    "learner-desktop.png": "f243e3dc5f93766fec115a34808bf7b62e2e40915cf67c0333739b631f7718d2",
+    "learner-lint-0c1d207.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "learner-mobile.png": "a8a9c19338d8468e4403eab9e2658034e21ec41ff0222dad390604df5847565b",
+    "learner-units-0c1d207.txt": "2458afeba40d362d96fcbd61f0123f9e8635939098e63c05c049aa68ad469556",
+    "legacy-success-46e97473.json": "e1295a23015779e40e077619e5f3e13bcd868cd94050991a9f2d9e5638d137b8",
+    "typescript-46e97473.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

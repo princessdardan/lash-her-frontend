@@ -3,19 +3,34 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, chmodSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
 import { exerciseFrontendAdmission } from "./harness/owned-frontend-admission.mjs";
 
 const source = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const execute = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
+function dependencyBinding() {
+  const require = createRequire(import.meta.url), nextAuth = require.resolve("next-auth");
+  const authCore = createRequire(nextAuth).resolve("@auth/core");
+  const digest = file => createHash("sha256").update(readFileSync(file)).digest("hex");
+  const packageAt = entry => new URL("./package.json", pathToFileURL(entry));
+  return {
+    packageJsonSha256: digest(join(source, "package.json")), packageLockSha256: digest(join(source, "package-lock.json")),
+    nextAuth: JSON.parse(readFileSync(packageAt(nextAuth), "utf8")).version,
+    authCore: JSON.parse(readFileSync(packageAt(authCore), "utf8")).version,
+    installedAuthCorePackageSha256: digest(packageAt(authCore)),
+    installedAuthCoreAssertSha256: digest(new URL("./lib/utils/assert.js", pathToFileURL(authCore))),
+  };
+}
 let phase = "configuration";
 async function main() {
   assert.equal(process.env.FRONTEND_IDENTITY_LOCAL_TEST, "true");
+  const dependency = dependencyBinding();
   const binaries = process.env.PG_BIN;
   assert.ok(binaries?.startsWith("/"));
   const major = process.env.FRONTEND_IDENTITY_POSTGRES18_LOCAL_TEST === "true" ? 18 : 16;
@@ -85,9 +100,11 @@ async function main() {
     });
     assert.equal(regression.status, 0, regression.stderr + regression.stdout);
     const tests = Number(/^# tests (\d+)$/mu.exec(regression.stdout)?.[1]);
-    assert.ok(tests >= 7); assert.match(regression.stdout, /^# fail 0$/mu); assert.match(regression.stdout, /^# skipped 0$/mu);
+    assert.ok(tests >= 33, "All 17 identity and 16 lifecycle database regressions must execute");
+    assert.match(regression.stdout, /^# fail 0$/mu); assert.match(regression.stdout, /^# skipped 0$/mu);
+    assert.deepEqual(dependencyBinding(), dependency, "Identity qualification dependencies changed during the owned run");
     return { status: identity.findings.length ? "FRONTEND_IDENTITY_LOCAL_FINDINGS" : "FRONTEND_IDENTITY_LOCAL_PASS", postgresMajor: major, migrations: artifact.migrations.length,
-      sqlArtifactSha256: artifact.sqlArtifactSha256, admissionChecks, identity,
+      sqlArtifactSha256: artifact.sqlArtifactSha256, dependency, admissionChecks, identity,
       legacyDatabaseRegressions: { files: regressionFiles, tests, failures: 0, skipped: 0 }, providerTouched: false };
   } finally {
     for (const client of clients) { try { await client.end(); } catch { /* Owned cluster cleanup only. */ } }

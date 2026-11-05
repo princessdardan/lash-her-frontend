@@ -56,8 +56,15 @@ class RuntimeActionsTests(unittest.TestCase):
             header, body, signature = token.split(".")
             self.assertEqual(signature, base64.urlsafe_b64encode(hmac.new(self.secret.encode(), (header + "." + body).encode(), hashlib.sha256).digest()).rstrip(b"=").decode())
             claims = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
-            self.assertEqual(claims["role"], "courseAdmin"); self.assertEqual(claims["sub"], payload["actorUserId"])
-            self.assertEqual(claims["iss"], "owned-issuer"); self.assertEqual(claims["aud"], "owned-audience")
+            self.assertEqual(claims["sub"], payload["actorUserId"])
+            if payload["version"] == 2:
+                self.assertEqual(set(claims), {"version", "iss", "aud", "sub", "iat", "exp", "jti", "capabilities"})
+                self.assertEqual(claims["version"], 1)
+                self.assertEqual(claims["iss"], "lash-her-frontend"); self.assertEqual(claims["aud"], "lash-her-course-api:admin")
+                self.assertEqual(claims["capabilities"], ["course-editor", "course-support"])
+            else:
+                self.assertEqual(claims["role"], "courseAdmin")
+                self.assertEqual(claims["iss"], "owned-issuer"); self.assertEqual(claims["aud"], "owned-audience")
             self.assertEqual(claims["exp"] - claims["iat"], 300)
             course = str(uuid4())
             base = {"actionId": payload["actionId"], "environment": "staging", "courseId": course, "courseSlug": "p1-recovery-" + payload["nonce"]}
@@ -105,6 +112,24 @@ class RuntimeActionsTests(unittest.TestCase):
         outcome = migrate.read_json(self.output, "retained-work-outcome.json")
         self.assertEqual(outcome["status"], "STAGING_RETAINED_WORK_REQUIRES_REVIEW")
         self.assertNotIn("private-error-fixture", json.dumps(outcome))
+
+    def test_phase2_uses_only_the_current_admin_key_and_closed_capability_profile(self):
+        self.selected["contractPhase"] = "p2"
+        file = self.runtime.configuration / "course-api.env"
+        file.write_text(file.read_text() + "COURSE_ADMIN_JWT_CURRENT_SECRET=" + self.secret + "\n")
+        operator = self.operator()
+        with patch.object(actions.runtime, "command", side_effect=self.command), patch.object(actions.subprocess, "run", side_effect=self.child):
+            self.assertEqual(operator.prepare_retained("recovery-fixture-owned")["status"], "STAGING_DURABLE_WORK_RETAINED")
+        self.assertEqual(self.calls[0][1]["version"], 2)
+        for file in self.output.iterdir():
+            self.assertNotIn(self.tokens[0], file.read_text())
+
+    def test_phase2_never_falls_back_to_the_retired_first_party_key(self):
+        self.selected["contractPhase"] = "p2"
+        operator = self.operator()
+        with patch.object(actions.runtime, "command", side_effect=self.command), patch.object(actions.subprocess, "run", side_effect=AssertionError("child ran")):
+            with self.assertRaisesRegex(ValueError, "APPLICATION_SECRET_REQUIRED"):
+                operator.prepare_retained("recovery-fixture-owned")
 
     def test_changed_live_container_prevents_child_execution(self):
         operator = self.operator()

@@ -4,7 +4,9 @@ COPY ops/platform/frontend-migration-deps/package.json ops/platform/frontend-mig
 RUN npm ci --omit=dev --omit=optional --ignore-scripts && npm cache clean --force
 COPY ops/platform/frontend-migration.mjs ops/platform/frontend-schema.mjs ops/platform/frontend-image.mjs ops/platform/frontend-image-source.mjs ops/platform/source-checkout.mjs ops/platform/release-inputs.mjs ops/platform/source-policy.mjs ops/platform/release.mjs ./ops/platform/
 COPY src/lib/private-db/migration-lineage.ts ./src/lib/private-db/
+COPY scripts/api-contract-tools.mjs scripts/api-contract-compatibility-review.mjs ./scripts/
 COPY contracts/api-integration/v1/manifest.json ./contracts/api-integration/v1/
+COPY contracts/api-integration/p2-candidate/ ./contracts/api-integration/p2-candidate/
 COPY drizzle/*.sql ./drizzle/
 COPY drizzle/meta/_journal.json ./drizzle/meta/
 ARG FRONTEND_SOURCE_COMMIT

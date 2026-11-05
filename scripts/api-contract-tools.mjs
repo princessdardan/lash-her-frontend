@@ -173,3 +173,5 @@ function canonical(value) {
   }
   return JSON.stringify(sort(value));
 }
+
+export { canonical as canonicalContract };

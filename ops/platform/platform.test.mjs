@@ -187,6 +187,8 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   const crossContractIndex = steps.findIndex((step) => step.run?.includes("check-vendored-course-contract.mjs"));
   assert.ok(crossContractIndex > verifyIndex && crossContractIndex < steps.indexOf(builds[0]));
   assert.match(steps[crossContractIndex].run, /--release/u);
+  const phase2Index = steps.findIndex(step => step.run?.includes("source-checkout.mjs --phase2"));
+  assert.ok(phase2Index > crossContractIndex && phase2Index < steps.indexOf(builds[0]));
   assert.equal(steps.find((step) => step.with?.path === "sources/lash-her-community-api").with["fetch-depth"], 0);
   assert.equal(builds.length, 6);
   for (const build of builds) {
@@ -201,17 +203,23 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   assert.equal(scans.length, 6);
   for (const scan of scans) {
     assert.ok(scan.with["image-ref"].includes("@${{"));
-    if (scan.with.output.endsWith("-raw-scan.json")) {
-      assert.equal(scan.with["exit-code"], "0");
-      assert.equal(scan.env.TRIVY_LIST_ALL_PKGS, "true");
-      const next = steps[steps.indexOf(scan) + 1];
-      assert.match(next.run, /ops\/gateway\/runtime\/verify\.mjs/u);
-      assert.ok(next.run.includes(scan.with["image-ref"]));
-      assert.match(next.run, /cp .*runtime\/scan\.json.*-scan\.json/u);
-    } else {
-      assert.equal(scan.with["exit-code"], "1");
-      assert.equal(scan.with.severity, "CRITICAL,HIGH");
-    }
+    assert.ok(scan.with.output.endsWith("-raw-scan.json"));
+    assert.equal(scan.with["exit-code"], "0");
+    assert.equal(scan.with.severity, undefined);
+    assert.equal(scan.env.TRIVY_LIST_ALL_PKGS, "true");
+    const index = steps.indexOf(scan), next = steps[index + 1], retain = steps[index + 2];
+    const prefix = scan.with.output.split("/").at(-1).replace("-raw-scan.json", "");
+    const source = prefix.startsWith("course-") ? "course-api/ops" : prefix.startsWith("community-") ? "community-api/ops" : "frontend/ops/gateway";
+    assert.ok(next.run.startsWith(`node sources/lash-her-${source}/runtime/verify.mjs `));
+    assert.ok(next.run.includes(scan.with["image-ref"]));
+    assert.ok(next.run.includes(`"$RUNNER_TEMP/platform-evidence/${prefix}-raw-scan.json"`));
+    assert.match(next.run, /cp .*runtime\/scan\.json.*-scan\.json/u);
+    assert.equal(next["continue-on-error"], undefined);
+    assert.equal(retain.if, "${{ !cancelled() }}");
+    assert.ok(retain.uses.startsWith("actions/upload-artifact@"));
+    assert.ok(retain.with.path.includes(`${prefix}-raw-scan.json`));
+    assert.ok(retain.with.path.includes(`${prefix}-runtime/`));
+    assert.equal(retain.with["if-no-files-found"], "error");
     assert.equal(scan.with.version, "v0.76.1");
   }
   assert.ok(steps.some((step) => step.run?.includes("artifact-candidate.mjs --harness")));
@@ -219,6 +227,8 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   assert.equal(collectors.length, 2);
   for (const step of collectors) assert.match(step.run, /^node sources\/lash-her-frontend\/ops\/platform\/artifact-candidate\.mjs/u);
   const harnessIndex = steps.findIndex((step) => step.run?.includes("local-harness.mjs"));
+  assert.ok(steps[harnessIndex].run.includes("local-harness.mjs --phase p2"));
+  assert.ok(steps.some(step => step.run?.includes("contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly")));
   const finalCheckIndex = steps.findIndex((step) => step.run?.includes("source-checks.final.json"));
   const qualificationIndex = steps.findIndex((step) => step.run?.includes("artifact-candidate.mjs --harness"));
   assert.ok(harnessIndex > verifyIndex && finalCheckIndex > harnessIndex && qualificationIndex > finalCheckIndex);

@@ -7,20 +7,27 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { Client } from "pg";
 import { frontendWriterInventory } from "../frontend-writer-inventory.mjs";
 import { changeFrontendAdmission, observeFrontendDrain, reconcileFrontendOperation } from "../frontend-admission.mjs";
 
 let phase = "configuration";
 const completedChecks = [];
-async function main() {
-  assert.equal(process.env.FRONTEND_IDENTITY_OWNED_TEST, "true");
-  const port = Number(process.env.OWNED_RECONCILIATION_PORT), password = process.env.OWNED_RECONCILIATION_PASSWORD;
-  const major = Number(process.env.OWNED_RECONCILIATION_MAJOR);
+export function ownedIdentityTarget(environment) {
+  assert.equal(environment.FRONTEND_IDENTITY_OWNED_TEST, "true");
+  assert.ok(["16", "18"].includes(environment.OWNED_RECONCILIATION_MAJOR));
+  const port = Number(environment.OWNED_RECONCILIATION_PORT), major = Number(environment.OWNED_RECONCILIATION_MAJOR);
   assert.ok(Number.isInteger(port) && port > 0 && port < 65536);
-  assert.ok(/^owned-[a-f0-9-]{36}$/u.test(password ?? "")); assert.ok([16, 18].includes(major));
-  const target = { environment: "staging", host: "127.0.0.1", port, database: "frontend_admission_owned",
+  assert.ok(/^owned-[a-f0-9-]{36}$/u.test(environment.OWNED_RECONCILIATION_PASSWORD ?? ""));
+  assert.ok([16, 18].includes(major));
+  assert.ok(environment.NODE_EXTRA_CA_CERTS?.startsWith("/"));
+  return { environment: "staging", host: "127.0.0.1", port, database: "frontend_admission_owned",
     user: "frontend_admission_protocol", serverMajor: major, targetSha256: "a".repeat(64) };
+}
+async function main() {
+  const target = ownedIdentityTarget(process.env), password = process.env.OWNED_RECONCILIATION_PASSWORD;
+  const { port, serverMajor: major } = target;
   const url = `postgresql://${target.user}:${password}@127.0.0.1:${port}/${target.database}?sslmode=verify-full`;
   const origin = "https://customer.example.invalid", secret = "owned-customer-auth-fixture-secret-32";
   const { VERCEL_PROJECT_BINDINGS } = await import("../../../src/lib/env/application-environment.mjs");
@@ -45,7 +52,7 @@ async function main() {
   // implementation for exported account routes, without claiming native-server
   // or browser transport/cookie certification.
   globalThis.AsyncLocalStorage ??= AsyncLocalStorage;
-  const { NextRequest } = await import("next/server");
+  const { NextRequest } = await import("next/server.js");
   const { createRequestStoreForAPI } = await import("next/dist/server/async-storage/request-store.js");
   const { workAsyncStorage } = await import("next/dist/server/app-render/work-async-storage.external.js");
   const { workUnitAsyncStorage } = await import("next/dist/server/app-render/work-unit-async-storage.external.js");
@@ -70,6 +77,11 @@ async function main() {
     }
   };
   try {
+    assert.equal(operator.connection.stream.encrypted, true); assert.equal(operator.connection.stream.authorized, true);
+    assert.deepEqual((await operator.query(`SELECT current_user AS username,current_database() AS database,
+      current_setting('server_version_num')::int/10000 AS major,host(inet_server_addr()) AS host,
+      (SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()) AS ssl`)).rows,
+    [{ username: "frontend_test_admin", database: target.database, major, host: target.host, ssl: true }]);
     let epoch = (await operator.query("SELECT epoch::text FROM frontend_admission.control")).rows[0].epoch;
     const change = async (enabled, recovery = false) => { epoch = (await changeFrontendAdmission(operator, target, epoch, { newWork: enabled, recovery })).epoch; };
     const drain = () => observeFrontendDrain(operator, target, epoch);
@@ -555,13 +567,43 @@ async function main() {
       const actor = await seedAdmin(denied === "nonowner" ? "admin" : "owner", denied === "stale-google-proof" ? 3600 : 0);
       if (denied === "disabled-owner") await operator.query("UPDATE admin_users SET status='disabled' WHERE id=$1", [actor.id]);
       await change(true, true); before = await operations();
-      const result = await adminCommand(actor, customer); assert.ok([403, 503].includes(result.status));
-      const current = await since(before); assert.ok(current.length >= 2); assert.equal(current[0].kind, "new-work");
-      assert.ok(current.every(row => row.state !== "active")); assert.equal((await counts()).customer_account_commands, 0);
+      const result = await adminCommand(actor, customer);
+      assert.equal(result.status, 403);
+      assert.equal(JSON.parse(result.text).error, denied === "stale-google-proof" ? "fresh_sign_in_required" : "account_action_denied");
+      await entries(before, denied === "disabled-owner" ? ["completed", "completed"] : ["completed", "completed", "completed"],
+        denied === "disabled-owner" ? ["new-work", "recovery"] : ["new-work", "recovery", "recovery"]);
+      assert.equal((await counts()).customer_account_commands, 0);
       assert.equal((await counts()).customer_sessions, 1);
       assert.equal((await operator.query("SELECT status FROM customer_users WHERE id=$1", [customer.id])).rows[0].status, "active");
+      const deniedBusiness = await fingerprint(), deniedProviders = providerCalls.length;
+      await change(false); assert.equal((await adminCommand(actor, customer)).status, 503);
+      assert.equal(await fingerprint(), deniedBusiness); assert.equal(providerCalls.length, deniedProviders);
       await reconcile(); checks.push(`actual-admin-lifecycle-${denied}-real-auth-js-and-persistent-guard-deny-command-without-session-revocation`);
     }
+
+    phase = "admin-lifecycle-authorization-sql-commit-acknowledgement-loss";
+    await reset(); const uncertainAdminCustomer = await seedAccount(), uncertainOwner = await seedAdmin(); await change(true, true); before = await operations();
+    const adminQuery = Client.prototype.query, adminClients = new WeakSet(); let lostAdminCommit = false;
+    Client.prototype.query = function(...args) {
+      const text = (typeof args[0] === "string" ? args[0] : args[0]?.text)?.toLowerCase();
+      const result = Reflect.apply(adminQuery, this, args);
+      if (this.connectionParameters.user === target.user && text?.includes('update "admin_users"')) adminClients.add(this);
+      if (!lostAdminCommit && text === "commit" && adminClients.has(this)) {
+        lostAdminCommit = true; return result.then(() => { throw new Error("OWNED_IDENTITY_ADMIN_COMMIT_ACK_LOST"); });
+      }
+      return result;
+    };
+    let uncertainAdminResult;
+    try { uncertainAdminResult = await adminCommand(uncertainOwner, uncertainAdminCustomer); }
+    finally { Client.prototype.query = adminQuery; }
+    assert.equal(lostAdminCommit, true); assert.equal(uncertainAdminResult.status, 503);
+    await entries(before, ["uncertain", "uncertain", "uncertain"], ["new-work", "recovery", "recovery"]);
+    assert.ok((await operator.query("SELECT last_signed_in_at FROM admin_users WHERE id=$1", [uncertainOwner.id])).rows[0].last_signed_in_at);
+    assert.equal((await counts()).customer_account_commands, 0); assert.equal((await counts()).customer_sessions, 1);
+    assert.equal((await operator.query("SELECT status FROM customer_users WHERE id=$1", [uncertainAdminCustomer.id])).rows[0].status, "active");
+    beforeBusiness = await fingerprint(); await change(false); assert.equal((await adminCommand(uncertainOwner, uncertainAdminCustomer)).status, 503);
+    assert.equal(await fingerprint(), beforeBusiness); assert.deepEqual(providerCalls, []); await reconcile();
+    checks.push("actual-admin-lifecycle-lost-authorization-sql-commit-ack-retains-all-parent-uncertainty-and-committed-refresh-without-command-or-automatic-replay");
 
     phase = "admin-lifecycle-blocked-authorization-refresh";
     await reset(); const blockedCustomer = await seedAccount(), blockedOwner = await seedAdmin(); await change(true, true); before = await operations();
@@ -578,7 +620,16 @@ async function main() {
 
     phase = "lifecycle-cron-auth-and-closed-entry";
     await reset(); await seedAccount(); await change(false); before = await operations(); beforeBusiness = await fingerprint();
-    assert.equal((await recovery(false)).status, 401); assert.equal((await recovery()).status, 503);
+    assert.equal((await recovery(false)).status, 401);
+    for (const authorization of ["Bearer owned-wrong-secret", `bearer ${process.env.CRON_SECRET}`])
+      assert.equal((await request("/api/cron/account-lifecycle", { authorization })).status, 401);
+    process.env.CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED = "false";
+    try { assert.equal((await recovery()).status, 404); }
+    finally { process.env.CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED = "true"; }
+    const cronSecret = process.env.CRON_SECRET; delete process.env.CRON_SECRET;
+    try { assert.equal((await recovery()).status, 404); }
+    finally { process.env.CRON_SECRET = cronSecret; }
+    assert.equal((await recovery()).status, 503);
     await entries(before, []); assert.equal(await fingerprint(), beforeBusiness); assert.deepEqual(providerCalls, []);
     await change(false, true); before = await operations(); assert.equal((await recovery()).status, 200);
     await entries(before, ["completed"], ["recovery"]); await reconcile();
@@ -623,7 +674,7 @@ async function main() {
 
     assert.equal(unexpectedFetches, 0); if (invariantFailure) throw invariantFailure;
     assert.equal(frontendWriterInventory(fileURLToPath(new URL("../../../", import.meta.url))).sourceManifestSha256, sourceBefore.sourceManifestSha256);
-    return { status: findings.length ? "FRONTEND_IDENTITY_OWNED_FINDINGS" : "FRONTEND_IDENTITY_OWNED_PASS", postgresMajor: major, checks, findings, reconciliationEvidenceSha256: evidence,
+    return { status: findings.length ? "FRONTEND_IDENTITY_OWNED_FINDINGS" : "FRONTEND_IDENTITY_OWNED_PASS", postgresMajor: major, checks, executedChecks: checks.length, skipped: 0, findings, reconciliationEvidenceSha256: evidence,
       applicationSourceManifestSha256: sourceBefore.sourceManifestSha256, syntheticLedgerSourceIdentity: true, actualAuthRouteExport: true, actualAccountRouteExports: true,
       actualAuthJs: true, actualAdminLifecycleRouteExport: true, actualLifecycleCronExport: true, constructedNextRequestStorage: true, nativeNextServer: false, loopbackHttp: true, verifiedPostgresTls: true, realBusinessDatabase: true,
       providersIntercepted: true, providerTouched: false, historicalWritersFenced: false, migrationAuthorized: false, applicationLogsSuppressed: logCount > 0 };
@@ -634,7 +685,7 @@ async function main() {
     globalThis.fetch = nativeFetch; Object.assign(console, originalConsole);
   }
 }
-main().then(result => process.stdout.write(`${JSON.stringify(result)}\n`)).catch(error => {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().then(result => process.stdout.write(`${JSON.stringify(result)}\n`)).catch(error => {
   process.stderr.write(`${JSON.stringify({ status: "FRONTEND_IDENTITY_OWNED_FAILED", phase, completedChecks, code: /^[A-Z0-9_]+$/u.test(error.code ?? "") ? error.code : undefined,
     assertion: error instanceof assert.AssertionError ? error.message : undefined,
     frames: error.stack?.split("\n").filter(line => /owned-frontend-identity-admission\.mjs/u.test(line)) })}\n`); process.exitCode = 1;

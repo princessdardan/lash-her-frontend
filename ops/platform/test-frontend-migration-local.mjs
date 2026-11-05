@@ -14,6 +14,8 @@ import { verifyPackagedFrontendSource } from "./frontend-image-source.mjs";
 import { exerciseFrontendAdmission } from "./harness/owned-frontend-admission.mjs";
 import { exerciseHistoricalFrontendLogins } from "./harness/owned-frontend-historical-logins.mjs";
 import { exerciseFrontendWriterRoutes } from "./harness/owned-frontend-writer-routes.mjs";
+import { frontendWriterInventory } from "./frontend-writer-inventory.mjs";
+import { runOwnedIdentityChild } from "./harness/owned-frontend-identity-receipt.mjs";
 
 const source = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
@@ -67,11 +69,15 @@ async function main() {
       cli = "ops/platform/frontend-image.mjs";
     } else {
       mkdirSync(app); mkdirSync(join(app, "ops/platform"), { recursive: true }); mkdirSync(join(app, "src/lib/private-db"), { recursive: true });
+      mkdirSync(join(app, "scripts"), { recursive: true });
+      for (const name of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"])
+        copyFileSync(join(source, "scripts", name), join(app, "scripts", name));
       mkdirSync(join(app, "contracts/api-integration/v1"), { recursive: true });
       for (const name of ["frontend-migration.mjs", "frontend-schema.mjs", "source-checkout.mjs", "source-policy.mjs", "release-inputs.mjs", "release.mjs"])
         copyFileSync(join(source, "ops/platform", name), join(app, "ops/platform", name));
       copyFileSync(join(source, "src/lib/private-db/migration-lineage.ts"), join(app, "src/lib/private-db/migration-lineage.ts"));
       copyFileSync(join(source, "contracts/api-integration/v1/manifest.json"), join(app, "contracts/api-integration/v1/manifest.json"));
+      cpSync(join(source, "contracts/api-integration/p2-candidate"), join(app, "contracts/api-integration/p2-candidate"), { recursive: true });
       cpSync(join(source, "drizzle"), join(app, "drizzle"), { recursive: true });
       symlinkSync(join(source, "node_modules"), join(app, "node_modules"), "dir");
       writeFileSync(join(app, "package.json"), '{"type":"module","private":true}\n'); writeFileSync(join(app, ".gitignore"), "node_modules/\n");
@@ -95,15 +101,18 @@ async function main() {
     const baseline = { version: 1, serverMajor: major, sqlArtifactSha256: artifact.sqlArtifactSha256, catalog: await readMigrationCatalog(baselineClient) };
     await baselineClient.query("rollback"); const schemaFile = join(directory, "schema.json"); writeFileSync(schemaFile, JSON.stringify(baseline), { mode: 0o600 });
     const candidate = { version: 2, environment: "staging", releaseId: "frontend-owned", integration: { state: "passed" },
+      contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256,
       artifacts: { frontendMigration: { image: `ghcr.io/princessdardan/lash-her-platform-frontend-migration@${process.env.FRONTEND_MIGRATION_IMAGE_DIGEST ?? `sha256:${"b".repeat(64)}`}` } },
       sourceApproval: { mode: "single-operator-dispatch", operatorGithubUserId: "8996309" }, contractManifestSha256: artifact.contractManifestSha256,
       sources: { frontend: { repository: "https://github.com/princessdardan/lash-her-frontend.git", commit, requiredChecks: "passed" } } };
     const job = { version: 1, operator: "Dardan", releaseId: candidate.releaseId, environment: "staging", sourceCommit: commit,
+      contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256,
       migrationImageDigest: candidate.artifacts.frontendMigration.image.split("@")[1],
       contractManifestSha256: artifact.contractManifestSha256, sqlArtifactSha256: artifact.sqlArtifactSha256, schemaBaselineSha256: hash(JSON.stringify(baseline)), recoveryRef: "owned/recreation",
       target: { host: "127.0.0.1", port, database: "frontend_apply", user: "frontend_migration", runtimeRole: "frontend_runtime", serverMajor: major,
         allowEmptyBootstrap: true, approvedPendingTags: artifact.migrations.map(({ tag }) => tag) } };
     candidate.frontendMigration = { sourceCommit: commit, sqlArtifactSha256: artifact.sqlArtifactSha256,
+      contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256,
       contractManifestSha256: artifact.contractManifestSha256, schemaBaselines: { [major]: job.schemaBaselineSha256 } };
     const invoke = (label, selected = job, selectedCandidate = candidate, options = {}) => {
       const jobFile = join(directory, `${label}.job.json`), candidateFile = join(directory, `${label}.candidate.json`), output = join(directory, label); mkdirSync(output, { mode: 0o700 });
@@ -264,7 +273,9 @@ async function main() {
       cwd: source, encoding: "utf8", timeout: 120000,
       env: { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, NODE_ENV: "test", APP_ENV: "local",
         NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project", NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
-        TEST_DATABASE_URL: `postgresql://frontend_admission_protocol:${password}@127.0.0.1:${port}/frontend_admission_owned?sslmode=verify-full` },
+        // Trigger-based fault injection requires the disposable fixture owner;
+        // actual route qualification below still uses the admitted DML role.
+        TEST_DATABASE_URL: `postgresql://frontend_test_admin:${password}@127.0.0.1:${port}/frontend_admission_owned?sslmode=verify-full` },
     });
     assert.equal(customerIdentity.status, 0, `Owned customer identity failed: ${customerIdentity.stderr}\n${customerIdentity.stdout}`);
     const customerTests = Number(/^# tests (\d+)$/mu.exec(customerIdentity.stdout)?.[1]);
@@ -280,7 +291,7 @@ async function main() {
       env: { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, NODE_ENV: "test", APP_ENV: "local",
         FRONTEND_CUSTOMER_LIFECYCLE_OWNED_TEST: "true",
         NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project", NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
-        TEST_DATABASE_URL: `postgresql://frontend_admission_protocol:${password}@127.0.0.1:${port}/frontend_admission_owned?sslmode=verify-full` },
+        TEST_DATABASE_URL: `postgresql://frontend_test_admin:${password}@127.0.0.1:${port}/frontend_admission_owned?sslmode=verify-full` },
     });
     assert.equal(lifecycle.status, 0, `Owned customer lifecycle failed: ${lifecycle.stderr}\n${lifecycle.stdout}`);
     const lifecycleTests = Number(/^# tests (\d+)$/mu.exec(lifecycle.stdout)?.[1]);
@@ -289,6 +300,13 @@ async function main() {
     assert.match(lifecycle.stdout, /^# fail 0$/mu);
     assert.match(lifecycle.stdout, /^# skipped 0$/mu);
     const customerLifecycleDatabase = { status: "FRONTEND_CUSTOMER_LIFECYCLE_OWNED_PASS", tests: lifecycleTests, passed: lifecyclePassed, failures: 0, skipped: 0 };
+    // This child resets its own identity rows and scans lifecycle deliveries.
+    // Run it after all other children and DB regressions, so no later worker
+    // can consume its synthetic commands and no DB regressions are repeated.
+    phase = "frontend-identity-admin-lifecycle-owned-routes";
+    const identityRoutes = runOwnedIdentityChild(runOwnedChild, {
+      port, password, major, sourceManifestSha256: frontendWriterInventory(source).sourceManifestSha256,
+    });
     const result={status:"FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",postgresMajor:major,migrations:artifact.migrations.length,checks:records,providerTouched:false,
       admissionChecks,
       historicalLoginChecks,
@@ -299,8 +317,10 @@ async function main() {
       bootstrapProbe,
       customerIdentityDatabase,
       customerLifecycleDatabase,
+      identityRoutes,
       sourceCommit:commit,migrationImageDigest:job.migrationImageDigest,packagedCliVerified:cli.endsWith("frontend-image.mjs"),
-      sqlArtifactSha256:artifact.sqlArtifactSha256,contractManifestSha256:artifact.contractManifestSha256,schemaBaselineSha256:hash(JSON.stringify(baseline))};
+      sqlArtifactSha256:artifact.sqlArtifactSha256,contractManifestSha256:artifact.contractManifestSha256,
+      contractPhase:"p2",phase2ContractManifestSha256:artifact.phase2ContractManifestSha256,schemaBaselineSha256:hash(JSON.stringify(baseline))};
     if(process.env.FRONTEND_MIGRATION_EXPORT_SCHEMA==="true")result.schemaBaseline=baseline;
     console.log(JSON.stringify(result));
   } finally {
@@ -310,7 +330,7 @@ async function main() {
   }
 }
 main().catch((error)=>{console.error(JSON.stringify({status:"OWNED_FRONTEND_MIGRATION_FAILED",phase,providerTouched:false,
-  fixtureDetail:["frontend-reconciliation-owned-route", "frontend-interactive-owned-route", "frontend-worker-owned-route", "frontend-bootstrap-owned-probe", "customer-identity-owned-database", "customer-lifecycle-owned-database"].includes(phase) ? error.message : undefined,
+  fixtureDetail:["frontend-reconciliation-owned-route", "frontend-interactive-owned-route", "frontend-worker-owned-route", "frontend-bootstrap-owned-probe", "customer-identity-owned-database", "customer-lifecycle-owned-database", "frontend-identity-admin-lifecycle-owned-routes"].includes(phase) ? error.message : undefined,
   sqlState:/^[A-Z0-9]{5}$/u.test(error.code ?? "") ? error.code : undefined,
   sqlPosition:/^[0-9]+$/u.test(error.position ?? "") ? error.position : undefined,
   fixtureFrames:error.stack?.split("\n").filter(line=>/^\s+at .*owned-frontend-(?:admission|historical-logins|writer-routes)\.mjs/u.test(line))}));process.exitCode=1;});
