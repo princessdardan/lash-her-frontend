@@ -25,7 +25,7 @@ const cluster = join(temporary, "postgres"),
 const databasePort = await freePort(),
   coursePort = await freePort(),
   frontendPort = await freePort();
-const origin = `http://127.0.0.1:${frontendPort}`,
+const origin = `http://localhost:${frontendPort}`,
   apiOrigin = `http://127.0.0.1:${coursePort}`;
 const frontendUrl = `postgresql://postgres@127.0.0.1:${databasePort}/lash_authoring_frontend_integration?sslmode=disable`;
 const courseUrl = `postgresql://postgres@127.0.0.1:${databasePort}/lash_authoring_course_integration?sslmode=disable`;
@@ -159,7 +159,7 @@ try {
           {
             name: "authjs.session-token",
             value: token,
-            domain: "127.0.0.1",
+            domain: "localhost",
             path: "/",
             expires: Math.floor(Date.now() / 1000) + 3600,
             httpOnly: true,
@@ -228,7 +228,7 @@ try {
       [
         "node_modules/next/dist/bin/next",
         "dev",
-          "--hostname",
+        "--hostname",
         "127.0.0.1",
         "--port",
         String(frontendPort),
