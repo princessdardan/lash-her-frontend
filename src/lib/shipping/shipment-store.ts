@@ -1,5 +1,5 @@
 import "server-only";
-import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { assertWriterOperationCertain, markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -16,7 +16,9 @@ import {
   sql,
 } from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
-import { enqueueCustomerEmail } from "@/lib/commerce/customer-email-outbox";
+import { enqueueShippingEmail } from "./email-receipt";
+import { runShippingPiiAdmission } from "./admission";
+import type { WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 import {
   checkoutOrders,
   orderPaymentObligations,
@@ -49,6 +51,36 @@ export type ShipmentOperationStatus = ShipmentOperationRow["status"];
 type DbTransaction = Parameters<
   Parameters<ReturnType<typeof getPrivateDb>["transaction"]>[0]
 >[0];
+// Receipt mismatches stay local to admitted operations; ordinary callers retain
+// their return values and retry/idempotency behavior.
+function verifyMutationReceipt(
+  row: object | undefined | null,
+  expected: Record<string, unknown>,
+  fenceBeforeProvider = false,
+): void {
+  if (
+    !row ||
+    Object.entries(expected).some(([key, value]) => {
+      if (value === undefined) return false;
+      const actual = (row as Record<string, unknown>)[key];
+      return value instanceof Date
+        ? !(actual instanceof Date) || actual.getTime() !== value.getTime()
+        : actual === undefined ||
+            hashOperationPayload(actual) !== hashOperationPayload(value);
+    })
+  ) {
+    markWriterOperationUncertain();
+    if (fenceBeforeProvider) {
+      try { assertWriterOperationCertain(); }
+      catch {
+        const error = new Error("Shipment mutation receipt requires reconciliation");
+        error.name = "AmbiguousShipmentOperationError";
+        throw error;
+      }
+    }
+  }
+}
+
 export type ShipmentPurchaseClaim = ProductShipmentRow & {
   orderAtRiskValueCents: number;
   orderCustomerEmail: string;
@@ -307,7 +339,19 @@ export async function completeQuote(input: {
           : [eq(productShipments.stateVersion, input.expectedStateVersion)]),
       ),
     )
-    .returning({ id: productShipments.id });
+    .returning();
+  verifyMutationReceipt(updated[0], {
+    id: input.id,
+    providerStatus: input.providerStatus,
+    rates: input.rates,
+    rawShipment: input.rawShipment,
+    providerShipmentId: input.providerShipmentId,
+    status: "quoted",
+    stateVersion:
+      input.expectedStateVersion === undefined
+        ? undefined
+        : input.expectedStateVersion + 1,
+  });
   return updated.length === 1;
 }
 
@@ -340,7 +384,14 @@ export async function persistRefreshedProviderQuote(input: {
         eq(productShipments.stateVersion, input.expectedStateVersion),
       ),
     )
-    .returning({ id: productShipments.id });
+    .returning();
+  verifyMutationReceipt(updated[0], {
+    id: input.id,
+    providerStatus: input.providerStatus,
+    rates: input.rates,
+    rawShipment: input.rawShipment,
+    stateVersion: input.expectedStateVersion + 1,
+  }, true);
   return updated.length === 1;
 }
 
@@ -380,6 +431,13 @@ export async function persistKnownProviderDraft(input: {
         ),
       )
       .returning();
+    verifyMutationReceipt(updated, {
+      id: input.id,
+      providerShipmentId: input.providerShipmentId,
+      providerStatus: input.providerStatus,
+      rawShipment: input.rawShipment,
+      stateVersion: current.stateVersion + 1,
+    }, true);
     return updated ?? null;
   });
 }
@@ -434,12 +492,29 @@ export async function fenceProviderDraftAndEnqueueCleanup(input: {
       .digest("hex");
     const cleanupIdempotencyKey = `provider-draft-cleanup/${input.id}/${providerIdentityHash}`;
     const [existingCleanup] = await tx
-      .select({ status: productShipmentJobs.status })
+      .select()
       .from(productShipmentJobs)
       .where(eq(productShipmentJobs.idempotencyKey, cleanupIdempotencyKey))
       .for("update")
       .limit(1);
 
+    if (existingCleanup) {
+      verifyMutationReceipt(existingCleanup, {
+        shipmentId: input.id,
+        type: "cleanup",
+        idempotencyKey: cleanupIdempotencyKey,
+        operationPayloadHash: hashOperationPayload(
+          existingCleanup.payload ?? {},
+        ),
+      });
+      const version = existingCleanup.payload?.expectedShipmentStateVersion;
+      if (
+        !Number.isInteger(version) ||
+        Number(version) < 1 ||
+        Number(version) > current.stateVersion + 1
+      )
+        markWriterOperationUncertain();
+    }
     if (current.status === "manual_review") return "manual_review";
 
     if (existingCleanup?.status === "dead_letter") {
@@ -476,7 +551,12 @@ export async function fenceProviderDraftAndEnqueueCleanup(input: {
             eq(productShipments.stateVersion, current.stateVersion),
           ),
         )
-        .returning({ stateVersion: productShipments.stateVersion });
+        .returning();
+      verifyMutationReceipt(abandoned, {
+        id: input.id,
+        status: "abandoned",
+        stateVersion: current.stateVersion + 1,
+      });
       if (!abandoned) return "fenced";
       stateVersion = abandoned.stateVersion;
     }
@@ -504,7 +584,15 @@ export async function fenceProviderDraftAndEnqueueCleanup(input: {
         payload,
         availableAt: now,
       })
-      .returning({ id: productShipmentJobs.id });
+      .returning();
+    verifyMutationReceipt(created, {
+      shipmentId: input.id,
+      type: "cleanup",
+      status: "queued",
+      idempotencyKey: cleanupIdempotencyKey,
+      operationPayloadHash: hashOperationPayload(payload),
+      payload,
+    });
     return created ? "cleanup_enqueued" : "fenced";
   });
 }
@@ -547,7 +635,16 @@ export async function markShipmentOperationManualReview(input: {
           : [eq(productShipments.stateVersion, input.expectedStateVersion)]),
       ),
     )
-    .returning({ id: productShipments.id });
+    .returning();
+  verifyMutationReceipt(updated[0], {
+    id: input.shipmentId,
+    status: "manual_review",
+    rawShipment: input.rawShipment,
+    stateVersion:
+      input.expectedStateVersion === undefined
+        ? undefined
+        : input.expectedStateVersion + 1,
+  });
   return updated.length === 1;
 }
 
@@ -908,8 +1005,71 @@ export async function updateShipmentFromProvider(input: {
             : [eq(productShipments.stateVersion, input.expectedStateVersion)]),
         ),
       )
-      .returning({ id: productShipments.id });
+      .returning();
+    verifyMutationReceipt(updated, {
+      id: input.id,
+      status: input.status,
+      providerStatus: input.providerStatus,
+      stateVersion:
+        input.expectedStateVersion === undefined
+          ? undefined
+          : input.expectedStateVersion + 1,
+      rawShipment: input.rawShipment,
+      providerEventAt,
+      providerShipDateAt: input.providerShipDateAt ?? undefined,
+      providerCostCurrency:
+        input.actualPurchaseTotalCents === undefined ? undefined : "CAD",
+      latestEstimatedDeliveryAt:
+        input.estimatedDeliveryAt === undefined
+          ? undefined
+          : parseProviderDate(input.estimatedDeliveryAt),
+      lastPolledAt: now,
+      trackingNumber:
+        input.trackingNumber === undefined
+          ? undefined
+          : sanitizeTrackingNumber(input.trackingNumber),
+      trackingUrl:
+        input.trackingUrl === undefined
+          ? undefined
+          : sanitizeTrackingUrl(input.trackingUrl),
+      actualPostageCents: input.actualPostageCents ?? undefined,
+      actualInsuranceCents: input.actualInsuranceCents ?? undefined,
+      actualPurchaseTotalCents: input.actualPurchaseTotalCents ?? undefined,
+      actualDeliveryFeeCents: input.actualDeliveryFeeCents ?? undefined,
+      actualTariffFeeCents: input.actualTariffFeeCents ?? undefined,
+      actualFdaPriorNotificationFeeCents:
+        input.actualFdaPriorNotificationFeeCents ?? undefined,
+      actualFederalTaxCents: input.actualFederalTaxCents ?? undefined,
+      actualProvincialTaxCents: input.actualProvincialTaxCents ?? undefined,
+    });
     if (!updated) return false;
+    if (
+      input.actualPurchaseTotalCents !== undefined &&
+      input.actualPurchaseTotalCents !== null &&
+      updated.purchaseVarianceCents !==
+        input.actualPurchaseTotalCents -
+          (updated.quotedShippingCents ?? input.actualPurchaseTotalCents)
+    )
+      markWriterOperationUncertain();
+    if (
+      ["label_ready", "accepted", "in_transit", "delivered"].includes(
+        input.status,
+      ) &&
+      !updated.purchasedAt
+    )
+      markWriterOperationUncertain();
+    if (
+      ["accepted", "in_transit", "delivered"].includes(input.status) &&
+      !updated.acceptedAt
+    )
+      markWriterOperationUncertain();
+    if (input.status === "delivered" && !updated.deliveredAt)
+      markWriterOperationUncertain();
+    if (
+      ["delivered", "voided"].includes(input.status) &&
+      !updated.privacyTerminalAt
+    )
+      markWriterOperationUncertain();
 
     const notificationKind = shipmentNotificationKind(input.status);
     if (notificationKind) {
@@ -932,6 +1092,7 @@ export async function updateShipmentFromProvider(input: {
         )
         .where(eq(productShipments.id, input.id))
         .limit(1);
+      if (updated.orderId && !context) markWriterOperationUncertain();
       const alreadySent =
         notificationKind === "accepted"
           ? context?.acceptedEmailSentAt
@@ -939,7 +1100,7 @@ export async function updateShipmentFromProvider(input: {
             ? context?.exceptionEmailSentAt
             : context?.deliveredEmailSentAt;
       if (context && !alreadySent) {
-        await enqueueCustomerEmail(
+        await enqueueShippingEmail(
           {
             kind: "shipping_shipment_notification",
             orderDatabaseId: context.orderDatabaseId,
@@ -1003,7 +1164,22 @@ export async function recordUnsettledProviderAccountingEvidence(input: {
         eq(productShipments.stateVersion, input.expectedStateVersion),
       ),
     )
-    .returning({ id: productShipments.id });
+    .returning();
+  verifyMutationReceipt(updated[0], {
+    id: input.id,
+    status: "manual_review",
+    providerStatus: input.providerStatus,
+    stateVersion: input.expectedStateVersion + 1,
+    rawShipment: input.rawShipment,
+    actualPostageCents: input.actualPostageCents ?? undefined,
+    actualInsuranceCents: input.actualInsuranceCents ?? undefined,
+    actualDeliveryFeeCents: input.actualDeliveryFeeCents ?? undefined,
+    actualTariffFeeCents: input.actualTariffFeeCents ?? undefined,
+    actualFdaPriorNotificationFeeCents:
+      input.actualFdaPriorNotificationFeeCents ?? undefined,
+    actualFederalTaxCents: input.actualFederalTaxCents ?? undefined,
+    actualProvincialTaxCents: input.actualProvincialTaxCents ?? undefined,
+  });
   return updated.length === 1;
 }
 
@@ -1524,7 +1700,14 @@ export async function markShipmentPurchaseProviderCallIntent(input: {
           eq(productShipmentJobs.stateVersion, input.expectedStateVersion),
         ),
       )
-      .returning({ id: productShipmentJobs.id });
+      .returning();
+    verifyMutationReceipt(updated, {
+      id: input.operationId,
+      status: "processing",
+      leaseOwner: input.leaseOwner,
+      stateVersion: input.expectedStateVersion,
+      outcomeCode: "purchase_provider_call_intent_recorded",
+    }, true);
     return Boolean(updated);
   });
 }
@@ -1620,14 +1803,42 @@ export async function recordShipmentEvent(input: {
     .insert(productShipmentEvents)
     .values(input)
     .onConflictDoNothing({ target: productShipmentEvents.fingerprint })
-    .returning({ id: productShipmentEvents.id });
-  if (created)
-    await getPrivateDb()
+    .returning();
+  const [receipt] = created
+    ? [created]
+    : await getPrivateDb()
+        .select()
+        .from(productShipmentEvents)
+        .where(eq(productShipmentEvents.fingerprint, input.fingerprint))
+        .limit(1);
+  verifyMutationReceipt(receipt, {
+    shipmentId: input.shipmentId,
+    fingerprint: input.fingerprint,
+    providerStatus: input.providerStatus ?? null,
+    description: input.description ?? null,
+    payload: input.payload ?? null,
+    occurredAt: input.occurredAt,
+    normalizedStatus: created ? input.normalizedStatus : undefined,
+  });
+  if (created) {
+    const [movement] = await getPrivateDb()
       .update(productShipments)
       .set({
         lastCarrierMovementAt: sql`greatest(coalesce(${productShipments.lastCarrierMovementAt}, ${input.occurredAt}), ${input.occurredAt})`,
       })
-      .where(eq(productShipments.id, input.shipmentId));
+      .where(eq(productShipments.id, input.shipmentId))
+      .returning({
+        id: productShipments.id,
+        lastCarrierMovementAt: productShipments.lastCarrierMovementAt,
+      });
+    if (
+      !movement ||
+      movement.id !== input.shipmentId ||
+      !movement.lastCarrierMovementAt ||
+      movement.lastCarrierMovementAt < input.occurredAt
+    )
+      markWriterOperationUncertain();
+  }
   return Boolean(created);
 }
 
@@ -1952,7 +2163,7 @@ export async function claimShipmentOperationJobs(input: {
     if (input.types?.length)
       conditions.push(inArray(productShipmentJobs.type, input.types));
     const candidates = await tx
-      .select({ id: productShipmentJobs.id })
+      .select()
       .from(productShipmentJobs)
       .where(and(...conditions))
       .orderBy(
@@ -1963,7 +2174,7 @@ export async function claimShipmentOperationJobs(input: {
       .limit(limit);
     const ids = candidates.map(({ id }) => id);
     if (!ids.length) return [];
-    return tx
+    const claimed = await tx
       .update(productShipmentJobs)
       .set({
         status: "processing",
@@ -1982,6 +2193,39 @@ export async function claimShipmentOperationJobs(input: {
       })
       .where(inArray(productShipmentJobs.id, ids))
       .returning();
+    if (claimed.length !== candidates.length) markWriterOperationUncertain();
+    const byId = new Map(claimed.map((row) => [row.id, row]));
+    for (const before of candidates) {
+      verifyMutationReceipt(byId.get(before.id), {
+        id: before.id,
+        shipmentId: before.shipmentId,
+        type: before.type,
+        idempotencyKey: before.idempotencyKey,
+        operationPayloadHash: before.operationPayloadHash,
+        payload: before.payload,
+        status: "processing",
+        leaseOwner: input.workerId,
+        leaseExpiresAt,
+        attemptCount: before.attemptCount + 1,
+        stateVersion: before.stateVersion + 1,
+        outcomeUnknown:
+          before.outcomeUnknown ||
+          (before.status === "processing" &&
+            !!before.leaseExpiresAt &&
+            before.leaseExpiresAt < now &&
+            [
+              "create",
+              "quote_refresh",
+              "purchase",
+              "refund",
+              "delete",
+              "cleanup",
+              "replacement_prepare",
+              "address_replace",
+            ].includes(before.type)),
+      });
+    }
+    return claimed;
   });
 }
 
@@ -2007,7 +2251,14 @@ export async function markShipmentMutationIntent(input: {
         gt(productShipmentJobs.leaseExpiresAt, now),
       ),
     )
-    .returning({ id: productShipmentJobs.id });
+    .returning();
+  verifyMutationReceipt(updated[0], {
+    id: input.operationId,
+    status: "processing",
+    leaseOwner: input.leaseOwner,
+    stateVersion: input.expectedStateVersion,
+    outcomeCode: "provider_mutation_intent_recorded",
+  }, true);
   return updated.length === 1;
 }
 
@@ -2024,6 +2275,7 @@ export async function completeShipmentJob(
   id: string,
   input: {
     outcomeCode: string;
+    expectedOperation?: ShipmentOperationRow;
     manualReview?: boolean;
     lastError?: string;
     leaseOwner?: string;
@@ -2058,7 +2310,22 @@ export async function completeShipmentJob(
       updatedAt: new Date(),
     })
     .where(and(...conditions))
-    .returning({ id: productShipmentJobs.id });
+    .returning();
+  verifyMutationReceipt(updated[0], {
+    id,
+    status: input.manualReview ? "dead_letter" : "succeeded",
+    outcomeCode: input.outcomeCode,
+    leaseOwner: null,
+    leaseExpiresAt: null,
+    stateVersion: input.expectedStateVersion,
+    lastError: input.lastError?.slice(0, 1_000),
+    shipmentId: input.expectedOperation?.shipmentId,
+    type: input.expectedOperation?.type,
+    idempotencyKey: input.expectedOperation?.idempotencyKey,
+    operationPayloadHash: input.expectedOperation?.operationPayloadHash,
+    payload: input.expectedOperation?.payload,
+  });
+  if (updated[0] && !updated[0].completedAt) markWriterOperationUncertain();
   return updated.length === 1;
 }
 
@@ -2126,12 +2393,25 @@ export async function retryShipmentJob(
         updatedAt: now,
       })
       .where(and(...conditions))
-      .returning({ id: productShipmentJobs.id });
+      .returning();
+    verifyMutationReceipt(updated, {
+      id, shipmentId: current.shipmentId, type: current.type,
+      idempotencyKey: current.idempotencyKey,
+      operationPayloadHash: current.operationPayloadHash, payload: current.payload,
+      status: exhausted ? "dead_letter" : "retryable_failed",
+      stateVersion: current.stateVersion,
+      lastError: input.error.slice(0, 1_000),
+      nextAttemptAt: exhausted ? null : new Date(now.getTime() + delaySeconds * 1_000),
+      completedAt: exhausted ? now : undefined,
+      outcomeCode: exhausted ? "attempts_exhausted" : undefined,
+      outcomeUnknown, leaseOwner: null, leaseExpiresAt: null,
+    });
     if (!updated) return { status: "fenced" as const };
     if (!exhausted) return { status: "retried" as const, outcomeUnknown };
 
-    await tx
-      .update(productShipments)
+    const [shipment] = await tx.select().from(productShipments).where(eq(productShipments.id, current.shipmentId)).for("update").limit(1);
+    if (!shipment) markWriterOperationUncertain();
+    const [reviewed] = await tx.update(productShipments)
       .set({
         status: "manual_review",
         manualReviewStartedAt: sql`coalesce(${productShipments.manualReviewStartedAt}, ${now})`,
@@ -2143,7 +2423,13 @@ export async function retryShipmentJob(
           eq(productShipments.id, current.shipmentId),
           sql`${productShipments.status} not in ('delivered', 'voided', 'abandoned')`,
         ),
-      );
+      ).returning();
+    if (shipment && !["delivered", "voided", "abandoned"].includes(shipment.status)) {
+      verifyMutationReceipt(reviewed, {
+        id: shipment.id, status: "manual_review", stateVersion: shipment.stateVersion + 1,
+        manualReviewStartedAt: shipment.manualReviewStartedAt ?? now,
+      });
+    }
     // Funding reservations were removed; the dead-letter contract keeps the
     // field for callers but it is always "not_applicable".
     return {
@@ -2290,11 +2576,29 @@ export async function adoptPreparedShipmentGeneration(input: {
 
 export async function redactExpiredShipmentPii(
   now = new Date(),
+  run?: WriterAdmissionRunner,
+): Promise<number> {
+  return runShippingPiiAdmission(() => redactExpiredShipmentPiiInTransaction(now), run);
+}
+
+async function redactExpiredShipmentPiiInTransaction(
+  now: Date,
 ): Promise<number> {
   const quoteCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60_000);
-  const rows = await getPrivateDb()
-    .update(productShipments)
-    .set({
+  const eligible = and(
+    isNull(productShipments.redactedAt),
+    or(
+      and(eq(productShipments.status, "abandoned"), lte(productShipments.updatedAt, quoteCutoff)),
+      and(
+        inArray(productShipments.status, ["delivered", "voided"]),
+        sql`exists (select 1 from ${checkoutOrders} where ${checkoutOrders.id} = ${productShipments.orderId} and ${checkoutOrders.redactedAt} is not null)`,
+      ),
+    ),
+  );
+  return getPrivateDb().transaction(async (tx) => {
+    const selected = await tx.select({ id: productShipments.id }).from(productShipments).where(eligible).for("update");
+    if (!selected.length) return 0;
+    const rows = await tx.update(productShipments).set({
       destination: {
         line1: "[redacted]",
         city: "[redacted]",
@@ -2310,23 +2614,25 @@ export async function redactExpiredShipmentPii(
       redactedAt: now,
       updatedAt: now,
     })
-    .where(
-      and(
-        isNull(productShipments.redactedAt),
-        or(
-          and(
-            eq(productShipments.status, "abandoned"),
-            lte(productShipments.updatedAt, quoteCutoff),
-          ),
-          and(
-            inArray(productShipments.status, ["delivered", "voided"]),
-            sql`exists (select 1 from ${checkoutOrders} where ${checkoutOrders.id} = ${productShipments.orderId} and ${checkoutOrders.redactedAt} is not null)`,
-          ),
-        ),
-      ),
-    )
-    .returning({ id: productShipments.id });
-  return rows.length;
+      .where(and(eligible, inArray(productShipments.id, selected.map((row) => row.id))))
+      .returning();
+    if (rows.length !== selected.length) markWriterOperationUncertain();
+    // Read committed transaction state as well as RETURNING: a suppressed or
+    // altered update must not turn a nonempty selected batch into proof of zero.
+    const persisted = await tx.select().from(productShipments).where(inArray(productShipments.id, selected.map((row) => row.id)));
+    if (persisted.length !== selected.length) markWriterOperationUncertain();
+    const byId = new Map(persisted.map((row) => [row.id, row]));
+    for (const candidate of selected) {
+      verifyMutationReceipt(byId.get(candidate.id), {
+        id: candidate.id,
+        destination: { line1: "[redacted]", city: "[redacted]", province: "--", postalCode: "[redacted]", country: "[redacted]" },
+        customsLines: [], rates: [], rawShipment: null,
+        quoteTokenHash: `redacted:${candidate.id}`, trackingUrl: null,
+        redactedAt: now, updatedAt: now,
+      });
+    }
+    return rows.length;
+  });
 }
 
 export interface ShipmentNotificationContext {

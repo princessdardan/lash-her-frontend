@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { WriterAdmissionError } from "@/lib/writer-admission/config";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { isChitChatsShippingEnabled } from "@/lib/shipping/config";
 import { isSquareCommerceCheckoutEnabled } from "@/lib/env/private-checkout";
 import { runShippingOperationWorker } from "@/lib/shipping/operation-worker";
@@ -36,20 +37,30 @@ type ShippingPreparationResult = {
 type ShippingPreparationRecoveryRunner = (
   task: () => Promise<ShippingPreparationResult>,
 ) => Promise<ShippingPreparationResult>;
+type ShippingExecutionRecoveryRunner = (
+  task: () => ReturnType<typeof runShippingOperationWorker>,
+) => ReturnType<typeof runShippingOperationWorker>;
+type ShippingCronRecoveryRunner = (task: () => Promise<Response>) => Promise<Response>;
+type ShippingPiiRunner = (task: () => Promise<number>) => Promise<number>;
 
 export function createShippingWorkerCronHandler(
   dependencies: typeof defaultDependencies = defaultDependencies,
   runRefundRecovery: ProductRefundRecoveryRunner = (task) => task(),
   runPreparationRecovery: ShippingPreparationRecoveryRunner = (task) => task(),
+  runExecutionRecovery: ShippingExecutionRecoveryRunner = (task) => task(),
+  runCronRecovery: ShippingCronRecoveryRunner = (task) => task(),
+  runPiiMaintenance: ShippingPiiRunner = (task) => task(),
 ): (req: Request) => Promise<Response> {
   return async function shippingWorkerCron(req: Request): Promise<Response> {
     if (!authorized(req)) return new Response(null, { status: 401 });
     try {
-      return await runShippingWorkerCron(
+      return await runCronRecovery(() => runShippingWorkerCron(
         dependencies,
         runRefundRecovery,
         runPreparationRecovery,
-      );
+        runExecutionRecovery,
+        runPiiMaintenance,
+      ));
     } catch (error) {
       if (error instanceof WriterAdmissionError) {
         return NextResponse.json(
@@ -81,6 +92,8 @@ async function runShippingWorkerCron(
   dependencies: typeof defaultDependencies,
   runRefundRecovery: ProductRefundRecoveryRunner,
   runPreparationRecovery: ShippingPreparationRecoveryRunner,
+  runExecutionRecovery: ShippingExecutionRecoveryRunner,
+  runPiiMaintenance: ShippingPiiRunner,
 ): Promise<Response> {
   const now = dependencies.now();
   // Manual Square refunds queue a row (via the admin refund route) and are
@@ -105,10 +118,24 @@ async function runShippingWorkerCron(
     );
   }
   const { abandoned, queued } = preparation;
-  const operations = await dependencies.runShippingOperationWorker();
-  const redacted = await dependencies.redactExpiredShipmentPii(now);
+  const operations = await runExecutionRecovery(async () => {
+    const result = await dependencies.runShippingOperationWorker();
+    if (result.retried > 0 || result.deadLettered > 0 || result.fenced > 0) {
+      // The real worker marks these outcomes. Keep the complete cron boundary
+      // equally strict for any injected worker implementation.
+      markWriterOperationUncertain();
+    }
+    return result;
+  });
+  let redaction: { redacted: number } | { redactionSkipped: true };
+  try {
+    redaction = { redacted: await runPiiMaintenance(() => dependencies.redactExpiredShipmentPii(now)) };
+  } catch (error) {
+    if (!(error instanceof WriterAdmissionError && error.code === "unavailable")) throw error;
+    redaction = { redactionSkipped: true };
+  }
   return NextResponse.json(
-    { queued, abandoned, operations, redacted, refunds: refundSummary },
+    { queued, abandoned, operations, ...redaction, refunds: refundSummary },
     {
       status:
         operations.deadLettered > 0 ||
