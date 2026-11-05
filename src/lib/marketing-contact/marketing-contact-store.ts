@@ -1,4 +1,5 @@
 import "server-only";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import {
   sanitizeAttribution,
   type CampaignAttribution,
@@ -469,10 +470,12 @@ export async function recordInternalUnsubscribe(
   return defaultMarketingContactStore.recordInternalUnsubscribe(input);
 }
 
-function createDrizzleMarketingContactRepository(): MarketingContactRepository {
+export function createDrizzleMarketingContactRepository(
+  database = getPrivateDb,
+): MarketingContactRepository {
   return {
     async recordMarketingContact(input) {
-      return getPrivateDb().transaction(async (tx) => {
+      return database().transaction(async (tx) => {
         // Serialize consent transitions for one address. Unsubscribe uses the
         // same transaction-scoped lock, so a replay cannot race a re-consent
         // and incorrectly reuse or create an unsubscribe generation.
@@ -553,6 +556,7 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
             submissionId: submission.id,
           })
           .returning({ id: marketingConsentEvents.id });
+        if (!event?.id) markWriterOperationUncertain();
 
         if (input.smsConsent !== undefined)
           await recordSmsChoice(tx, {
@@ -608,6 +612,7 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
                 },
                 tx,
               );
+          if (!offerEmailResult.id) markWriterOperationUncertain();
         }
 
         if (input.contact !== null) {
@@ -642,6 +647,7 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
               },
             })
             .returning({ id: marketingContactSyncJobs.id });
+          if (!job?.id) markWriterOperationUncertain();
 
           return {
             submissionId: submission.id,
@@ -674,7 +680,7 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
     async recordMarketingUnsubscribe(input) {
       const origin = input.origin ?? "resend";
 
-      return getPrivateDb().transaction(async (tx) => {
+      return database().transaction(async (tx) => {
         // The advisory lock covers both an existing contact row and the
         // no-contact case. recordMarketingContact takes the same lock before
         // writing an opt-in, making the current consent generation stable for
@@ -823,7 +829,7 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
         // avoid a Resend -> DB -> Resend loop. Enqueued AFTER the sweep above so
         // this job is never caught by it.
         if (origin === "internal" && !existingEvent) {
-          await tx
+          const receipts = await tx
             .insert(marketingContactSyncJobs)
             .values({
               idempotencyKey: `mc-unsub:${event.id}`,
@@ -845,7 +851,21 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
             })
             .onConflictDoNothing({
               target: marketingContactSyncJobs.idempotencyKey,
-            });
+            })
+            .returning({ id: marketingContactSyncJobs.id });
+          if (receipts.length !== 1) {
+            const existingJobs = await tx
+              .select({ id: marketingContactSyncJobs.id })
+              .from(marketingContactSyncJobs)
+              .where(
+                eq(
+                  marketingContactSyncJobs.idempotencyKey,
+                  `mc-unsub:${event.id}`,
+                ),
+              )
+              .limit(1);
+            if (existingJobs.length !== 1) markWriterOperationUncertain();
+          }
         }
 
         return { eventId: event.id };

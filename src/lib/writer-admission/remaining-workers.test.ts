@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
 import {
   createHighLevelWorker,
   createCrmCronHandler,
@@ -47,6 +48,19 @@ import {
 } from "@/lib/marketing-campaign/marketing-campaign-store";
 import { accessToken } from "@/lib/highlevel/oauth";
 import { encryptCredential } from "@/lib/highlevel/crypto";
+import { backfillHighLevel } from "@/lib/highlevel/backfill";
+import { createMarketingContactSyncGetHandler } from "@/app/api/admin/marketing-contact-sync/handler";
+import { createPrivateDataRetentionGetHandler } from "@/app/api/admin/private-data-retention/handler";
+import {
+  createDrizzleMarketingContactRepository,
+  createMarketingContactStore,
+} from "@/lib/marketing-contact/marketing-contact-store";
+import {
+  marketingContacts,
+  marketingContactSubmissions,
+  marketingConsentEvents,
+  marketingContactSyncJobs,
+} from "@/lib/private-db/schema";
 
 function admission() {
   const url =
@@ -844,4 +858,187 @@ test("a caught OAuth refresh failure stays uncertain after reconnect persistence
       delete process.env.HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY;
     else process.env.HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY = key;
   }
+});
+
+test("HighLevel apply backfill refuses before business database access", async () => {
+  const f = admission();
+  await assert.rejects(backfillHighLevel(true, f.run));
+  assert.deepEqual(f.state.outcomes, []);
+});
+
+test("manual marketing write entries refuse malformed enforcement before any database or provider access", () => {
+  for (const file of [
+    "backfill-marketing-sync-jobs.ts",
+    "requeue-marketing-sync-failures.ts",
+    "backfill-marketing-contact-submissions.ts",
+    "highlevel-config-check.ts",
+  ]) {
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "./scripts/register-server-only-test.mjs",
+        "--import",
+        "tsx",
+        `scripts/${file}`,
+        "--execute",
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          FRONTEND_WRITER_ADMISSION_MODE: "invalid-owned-fixture",
+          NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
+          NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project",
+          DATABASE_URL:
+            "postgresql://owned_unused:owned_unused@db.owned.invalid/should_not_connect",
+        },
+      },
+    );
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, file);
+    assert.match(
+      result.stderr,
+      file === "highlevel-config-check.ts"
+        ? /highlevel_configuration_check_failed/
+        : /Writer admission configuration/,
+    );
+    assert.equal(result.stdout, "");
+    assert.doesNotMatch(
+      result.stderr,
+      /getaddrinfo|ECONNREFUSED|ENOTFOUND|Failed query/,
+    );
+  }
+});
+
+test("maintenance and marketing cron refusal is private and retryable after secret-only authentication", async () => {
+  const f = admission();
+  f.state.recovery = false;
+  const m = marketing();
+  const getMarketing = createMarketingContactSyncGetHandler({
+    getCronSecrets: () => ["owned-cron"],
+    getNow: () => now,
+    logError() {},
+    logWarn() {},
+    runWorker: () =>
+      createMarketingContactSyncWorker(m.dependencies, f.run).run(),
+  });
+  const getRetention = createPrivateDataRetentionGetHandler({
+    getCronSecret: () => "owned-cron",
+    getNow: () => now,
+    logError() {},
+    logWarn() {},
+    runCleanup: (input) => runPrivateDataRetentionCleanup(input, f.run),
+  });
+  for (const get of [getMarketing, getRetention]) {
+    const response = await get(
+      new Request("https://owned.invalid", {
+        headers: { authorization: "Bearer owned-cron" },
+      }),
+    );
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("retry-after"), "30");
+    assert.doesNotMatch(await response.text(), /owned-private-detail/);
+  }
+  assert.deepEqual(m.calls, []);
+  assert.deepEqual(f.state.outcomes, []);
+});
+
+function marketingStoreMissingReceipt(
+  missing: "event" | "job" | "unsubscribe",
+) {
+  const selections = () => {
+    const chain = {
+      from: () => chain,
+      where: () => chain,
+      orderBy: () => chain,
+      limit: () => chain,
+      for: async () => [],
+      then: (resolve: (value: unknown[]) => unknown) =>
+        Promise.resolve([]).then(resolve),
+    };
+    return chain;
+  };
+  const transaction = {
+    execute: async () => ({ rows: [] }),
+    select: selections,
+    insert: (table: unknown) => {
+      const chain = {
+        values: () => chain,
+        onConflictDoUpdate: () => chain,
+        onConflictDoNothing: () => chain,
+        returning: async () =>
+          table === marketingContacts
+            ? [{ id: "owned-contact" }]
+            : table === marketingContactSubmissions
+              ? [{ id: "owned-submission" }]
+              : table === marketingConsentEvents
+                ? missing === "event"
+                  ? []
+                  : [{ id: "owned-consent" }]
+                : table === marketingContactSyncJobs
+                  ? []
+                  : [],
+      };
+      return chain;
+    },
+    update: () => {
+      const chain = {
+        set: () => chain,
+        where: () => chain,
+        returning: async () => [],
+      };
+      return chain;
+    },
+  };
+  const database = (() => ({
+    transaction: async (run: (tx: typeof transaction) => unknown) =>
+      run(transaction),
+  })) as unknown as NonNullable<
+    Parameters<typeof createDrizzleMarketingContactRepository>[0]
+  >;
+  return createMarketingContactStore(
+    createDrizzleMarketingContactRepository(database),
+  );
+}
+
+test("actual marketing repository retains missing consent, opt-in job, and unsubscribe-job receipts", async () => {
+  for (const missing of ["event", "job", "unsubscribe"] as const) {
+    const f = admission(),
+      store = marketingStoreMissingReceipt(missing);
+    f.state.newWork = true;
+    const task: () => Promise<unknown> = () =>
+      missing === "unsubscribe"
+        ? store.recordInternalUnsubscribe({
+            email: "owned@example.invalid",
+            occurredAt: now,
+          })
+        : store.recordGeneralInquiry({
+            email: "owned@example.invalid",
+            message: "Owned",
+            marketingConsent: missing === "job",
+            submittedAt: now,
+          });
+    await assert.rejects(f.run("new-work", task));
+    assert.deepEqual(f.state.outcomes, ["uncertain"]);
+  }
+});
+
+test("off-mode marketing repository preserves legacy missing optional-job result", async () => {
+  const f = admission(),
+    store = marketingStoreMissingReceipt("job");
+  const result = await f.off("new-work", () =>
+    store.recordGeneralInquiry({
+      email: "owned@example.invalid",
+      message: "Owned",
+      marketingConsent: true,
+      submittedAt: now,
+    }),
+  );
+  assert.deepEqual(result, {
+    submissionId: "owned-submission",
+    syncJobId: undefined,
+  });
+  assert.deepEqual(f.calls, []);
 });

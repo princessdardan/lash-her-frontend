@@ -7,6 +7,7 @@ import { HighLevelError } from "./contract";
 import { claimJobs, finishJob, type CrmContact } from "./store";
 import { stopJourneys, syncJob } from "./sync";
 import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { WriterAdmissionError } from "@/lib/writer-admission/config";
 import {
   runWriterAdmission,
   type WriterAdmissionRunner,
@@ -140,8 +141,16 @@ export function createCrmCronHandler(run = runHighLevelWorker) {
         status:
           summary.retry + summary.review + summary.dead_letter ? 503 : 200,
       });
-    } catch {
-      return Response.json({ error: "crm_worker_failed" }, { status: 503 });
+    } catch (error) {
+      return Response.json(
+        { error: "crm_worker_failed" },
+        {
+          status: 503,
+          ...(error instanceof WriterAdmissionError
+            ? { headers: { "cache-control": "no-store", "retry-after": "30" } }
+            : {}),
+        },
+      );
     }
   };
 }
