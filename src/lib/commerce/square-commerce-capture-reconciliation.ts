@@ -1,6 +1,7 @@
 import type { UncapturedSquareCommerceOrder } from "@/lib/commerce/order-store";
 import type { SquarePaymentsClient } from "@/lib/payments/square/payments-client";
 import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import type { TrainingSplitRecoveryRunner } from "@/lib/commerce/square-training-split-live";
 
 const DEFAULT_GRACE_MS = 5 * 60 * 1000;
 const DEFAULT_LIMIT = 100;
@@ -41,7 +42,10 @@ export type SquareCaptureRecoveryRunner = (
 ) => Promise<SquareCaptureReconciliationSummary>;
 
 interface LiveCaptureReconciliationDependencies {
-  reconcileTrainingSplits: (now: Date) => Promise<void>;
+  reconcileTrainingSplits: (
+    now: Date,
+    runRecovery: TrainingSplitRecoveryRunner,
+  ) => Promise<void>;
   capture: SquareCaptureReconciliationDependencies;
 }
 
@@ -169,11 +173,15 @@ export async function runSquareCommerceCaptureReconciliation(
   input: { now: Date },
   runRecovery: SquareCaptureRecoveryRunner = (task) => task(),
   loadDependencies: () => Promise<LiveCaptureReconciliationDependencies | null> = loadLiveDependencies,
+  runTrainingSplitRecovery: TrainingSplitRecoveryRunner = (task) => task(),
 ): Promise<SquareCaptureReconciliationSummary | null> {
   const dependencies = await loadDependencies();
   if (dependencies === null) return null;
-  // This pre-existing sibling remains outside the selected capture boundary.
-  await dependencies.reconcileTrainingSplits(input.now);
+  // Each batch has independent admission; neither encloses its sibling.
+  await dependencies.reconcileTrainingSplits(
+    input.now,
+    runTrainingSplitRecovery,
+  );
   return runRecovery(() =>
     reconcileUncapturedSquareCommercePayments(input, dependencies.capture),
   );

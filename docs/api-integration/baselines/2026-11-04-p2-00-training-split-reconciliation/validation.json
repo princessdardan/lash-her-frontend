@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "date": "2026-11-04",
+  "runtime": "Node 24.18.0",
+  "status": "SOURCE_COMPONENT_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "d3e8a2d2d70eb0ca1d685e022c7a301221b740d0",
+  "sourceManifestSha256": "718e495ee38c4b78c5e35d293e6ed7c68894abb8a4134ddd9d99741ecad400de",
+  "files": {
+    "scripts/run-source-unit-tests.mjs": "3d5e5daff4ecd6d5023c2ef4d7268bf2b7360eb3e1aaf21ecfb42b8a548cfddb",
+    "src/app/api/admin/payment-reconciliation/handler.ts": "504d582956feb685f16f4ebec1b7d87c42770efacfe18b346b00546aedcd7317",
+    "src/app/api/admin/payment-reconciliation/route.ts": "8164c96396b27aca9658e19b498ff2e6da74b47e4fcb1aa4a284e2139a8f0a9c",
+    "src/lib/commerce/square-commerce-capture-reconciliation.ts": "96fcfa64db3e27ca6f98074ee3794f1fde6389650b64fa5df5518eb3acaa3930",
+    "src/lib/commerce/square-training-split-live.ts": "ce6d6d93a8ad5dd9eb1f4dccfa7cab4d9bfd173342a61a7bd3bad46ee1637ea8",
+    "src/lib/commerce/square-training-split.db.test.ts": "25c0f7f89ebeeef076cc89b5d8baa2ffaa238ac30c9a589e94b087f3f4dfeca1",
+    "src/lib/writer-admission/training-split-reconciliation.test.ts": "b546c6391eb8ce420a235ad1a6bac41f269185a1a00dd681b68569666ca46745"
+  },
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "deploymentPerformed": false,
+  "liveDatabaseOrProviderChanged": false,
+  "p200Complete": false,
+  "checks": {
+    "unit": {
+      "tests": 2260,
+      "pass": 2260,
+      "fail": 0,
+      "skipped": 0
+    },
+    "focused": {
+      "passed": 80,
+      "failed": 0,
+      "skipped": 0,
+      "newComponentTests": 11,
+      "admittedClosureStages": 8
+    },
+    "postgres16": {
+      "tests": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "fixture": "New disposable loopback cluster; all migrations applied; actual worker selection, advisory-lock/live-model recovery, paid receipt and cancellation with mock payments; cluster stopped"
+    },
+    "typescript": "PASS",
+    "targetedEslint": "PASS",
+    "gitDiffCheck": "PASS",
+    "sourceInventories": "Regenerated from base/candidate sources",
+    "httpMethods": 61,
+    "actions": 50,
+    "operationalScriptHashes": 21,
+    "fullBuildBrowsersAndPostgres18": "PENDING_EXACT_HEAD_CI",
+    "formatting": "PASS"
+  },
+  "review": {
+    "findingsAddressed": [
+      "Cancellation lookup and terminal acknowledgement previously ignored returned payment identity; both now require the requested ID.",
+      "The reconciliation worker swallowed caught failures and incomplete results; admitted batches now retain uncertainty while finishing later selected orders."
+    ],
+    "wholeRouteQualified": false
+  },
+  "limitations": [
+    "Controlled route/runtime/model terminals and actual Square client with controlled HTTP do not establish combined actual cron/TLS-ledger/business-database enforcement.",
+    "Disposable PostgreSQL16 checks use mock payments and operation context, not a combined actual TLS ledger or Square/Resend delivery.",
+    "No live database/provider/deployment/credential/scheduler/admission/pending-SQL/rollout-control changes."
+  ],
+  "predecessor": {
+    "pr": 84,
+    "mergedAtCommit": "d3e8a2d2d70eb0ca1d685e022c7a301221b740d0",
+    "reviewedHead": "4119c73ee25101fd6a76f81d0f9d75e1d4f34261",
+    "exactHeadCiRun": "https://github.com/princessdardan/lash-her-frontend/actions/runs/41956643654",
+    "passedJobs": 10
+  }
+}
