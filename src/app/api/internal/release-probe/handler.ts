@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { resolveApplicationEnvironment } from "@/lib/env/application-environment.mjs";
+import type { FrontendBootstrapProbe } from "@/lib/writer-admission/bootstrap-probe";
 
 const MAX_LIFETIME_MS = 60 * 60 * 1000;
 type Configuration = {
@@ -30,6 +31,7 @@ export function readReleaseProbeConfiguration(
 export function createReleaseProbeHandler(deps: {
   configuration(): Configuration | null;
   run(gatewayOrigin: string): Promise<{ ok: true; service: "course"; durationMs: number }>;
+  admission?(source: { environment: string; sourceCommit: string }): Promise<FrontendBootstrapProbe>;
 }) {
   return async (request: Request): Promise<Response> => {
     try {
@@ -40,12 +42,17 @@ export function createReleaseProbeHandler(deps: {
       if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return reply(401, { error: "Unauthorized" });
       const challenge = request.headers.get("x-lash-release-challenge") ?? "";
       if (!/^[a-f0-9]{64}$/u.test(challenge)) return reply(400, { error: "Invalid challenge" });
+      const mode = request.headers.get("x-lash-release-mode");
+      if (mode !== null && mode !== "admission-bootstrap") return reply(400, { error: "Invalid mode" });
+      if (mode && (config.environment !== "staging" || !deps.admission)) return reply(503, { error: "Release probe failed" });
       // No incoming credential is passed upstream. The ordinary transport gets
       // its workload token from this function's current Vercel execution.
       const result = await deps.run(config.gatewayOrigin);
+      const bootstrap = mode === "admission-bootstrap" ? await deps.admission!({ environment: config.environment, sourceCommit: config.sourceCommit }) : undefined;
       return reply(200, { version: 1, status: "FRONTEND_WORKLOAD_PROBE_PASS", challenge,
         environment: config.environment, projectId: config.projectId, sourceCommit: config.sourceCommit, gatewayOrigin: config.gatewayOrigin,
-        checks: ["gateway-course-catalog"], durationMs: result.durationMs });
+        checks: bootstrap ? ["gateway-course-catalog", "frontend-admission-bootstrap"] : ["gateway-course-catalog"], durationMs: result.durationMs,
+        ...(bootstrap ?? {}) });
     } catch { return reply(503, { error: "Release probe failed" }); }
   };
 }

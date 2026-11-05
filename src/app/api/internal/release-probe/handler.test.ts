@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
 import { createReleaseProbeHandler, readReleaseProbeConfiguration } from "./handler";
+import type { FrontendBootstrapProbe } from "@/lib/writer-admission/bootstrap-probe";
 
 const now = 1_794_000_000_000;
 const secret = "b".repeat(64), challenge = "c".repeat(64);
@@ -67,4 +68,31 @@ test("SDK, gateway and configuration errors return non-success without leaking d
     assert.equal(response.status, 503); assert.equal(response.headers.get("cache-control"), "no-store");
     assert.ok(!(await response.text()).includes("private-credential"));
   }
+});
+
+test("bootstrap mode is staging-only, requires its real admission reader and rejects unknown modes before outbound work", async () => {
+  let calls = 0;
+  const run = async () => { calls++; return { ok: true as const, service: "course" as const, durationMs: 1 }; };
+  const configuration = () => readReleaseProbeConfiguration(environment(), now);
+  const missing = createReleaseProbeHandler({ configuration, run });
+  assert.equal((await missing(request({ "x-lash-release-mode": "admission-bootstrap" }))).status, 503);
+  assert.equal((await missing(request({ "x-lash-release-mode": "other" }))).status, 400);
+  const production = createReleaseProbeHandler({ configuration: () => ({ ...configuration()!, environment: "production" }), run,
+    admission: async () => { throw new Error("must-not-read-production"); } });
+  assert.equal((await production(request({ "x-lash-release-mode": "admission-bootstrap" }))).status, 503);
+  assert.equal(calls, 0);
+});
+
+test("bootstrap response binds the ordinary workload proof and actual read-only admission observation to one challenge", async () => {
+  const observation: FrontendBootstrapProbe = { admission: { environment: "staging", targetSha256: "a".repeat(64), producerSha256: "b".repeat(64), sourceCommit: "a".repeat(40), epoch: "1", newWork: false, recovery: false }, schemaCatalogSha256: "d".repeat(64), featureControls: {} as FrontendBootstrapProbe["featureControls"] };
+  const handler = createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration(environment(), now),
+    run: async () => ({ ok: true, service: "course", durationMs: 1 }),
+    admission: async source => { assert.deepEqual(source, { environment: "staging", sourceCommit: "a".repeat(40) }); return observation; } });
+  const response = await handler(request({ "x-lash-release-mode": "admission-bootstrap" }));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.challenge, challenge);
+  assert.deepEqual(body.checks, ["gateway-course-catalog", "frontend-admission-bootstrap"]);
+  assert.deepEqual(body.admission, observation.admission); assert.equal(body.schemaCatalogSha256, observation.schemaCatalogSha256);
+  assert.equal("appliedLineageSha256" in body, false);
 });

@@ -253,6 +253,11 @@ async function main() {
       FRONTEND_WORKER_ADMISSION_OWNED_TEST: "true", OWNED_RECONCILIATION_PORT: String(port),
       OWNED_RECONCILIATION_PASSWORD: password, OWNED_RECONCILIATION_MAJOR: String(major),
     }, "FRONTEND_WORKER_ADMISSION_OWNED_PASS");
+    phase = "frontend-bootstrap-owned-probe";
+    const bootstrapProbe = runOwnedChild("ops/platform/harness/owned-frontend-bootstrap-probe.mjs", {
+      FRONTEND_BOOTSTRAP_PROBE_OWNED_TEST: "true", OWNED_RECONCILIATION_PORT: String(port),
+      OWNED_RECONCILIATION_PASSWORD: password, OWNED_RECONCILIATION_MAJOR: String(major),
+    }, "FRONTEND_BOOTSTRAP_PROBE_OWNED_PASS");
     phase = "customer-identity-owned-database";
     const customerIdentity = spawnSync(process.execPath, ["--import", "tsx", "--import", "./scripts/register-server-only-test.mjs",
       "--test", "--test-reporter=tap", "src/lib/customer-auth/store.db.test.ts"], {
@@ -290,6 +295,7 @@ async function main() {
       reconciliationRoute,
       interactiveRoute,
       workerRoutes,
+      bootstrapProbe,
       customerIdentityDatabase,
       customerLifecycleDatabase,
       sourceCommit:commit,migrationImageDigest:job.migrationImageDigest,packagedCliVerified:cli.endsWith("frontend-image.mjs"),
@@ -303,7 +309,7 @@ async function main() {
   }
 }
 main().catch((error)=>{console.error(JSON.stringify({status:"OWNED_FRONTEND_MIGRATION_FAILED",phase,providerTouched:false,
-  fixtureDetail:["frontend-reconciliation-owned-route", "frontend-interactive-owned-route", "frontend-worker-owned-route", "customer-identity-owned-database", "customer-lifecycle-owned-database"].includes(phase) ? error.message : undefined,
+  fixtureDetail:["frontend-reconciliation-owned-route", "frontend-interactive-owned-route", "frontend-worker-owned-route", "frontend-bootstrap-owned-probe", "customer-identity-owned-database", "customer-lifecycle-owned-database"].includes(phase) ? error.message : undefined,
   sqlState:/^[A-Z0-9]{5}$/u.test(error.code ?? "") ? error.code : undefined,
   sqlPosition:/^[0-9]+$/u.test(error.position ?? "") ? error.position : undefined,
   fixtureFrames:error.stack?.split("\n").filter(line=>/^\s+at .*owned-frontend-(?:admission|historical-logins|writer-routes)\.mjs/u.test(line))}));process.exitCode=1;});
