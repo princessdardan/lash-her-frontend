@@ -71,9 +71,10 @@ jobs:
             --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly" \
             --mount "type=bind,src=$PWD/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
-            --mount "type=bind,src=$PWD/src/lib/private-db/migration-lineage.ts,dst=/source/src/lib/private-db/migration-lineage.ts,readonly" \
-            --mount "type=bind,src=$PWD/src/lib/writer-admission,dst=/source/src/lib/writer-admission,readonly" \
-            --mount "type=bind,src=$PWD/src/lib/env/application-environment.mjs,dst=/source/src/lib/env/application-environment.mjs,readonly" \
+            --mount "type=bind,src=$PWD/src,dst=/source/src,readonly" \
+            --mount "type=bind,src=$PWD/scripts,dst=/source/scripts,readonly" \
+            --mount "type=bind,src=$PWD/tsconfig.json,dst=/source/tsconfig.json,readonly" \
+            --mount "type=bind,src=$PWD/package.json,dst=/source/package.json,readonly" \
             --mount "type=bind,src=$PWD/contracts/api-integration/v1/manifest.json,dst=/source/contracts/api-integration/v1/manifest.json,readonly" \
             lash-her-frontend-migration:postgres18-test > "$RUNNER_TEMP/frontend-schema/postgres18.json"
           node --input-type=module -e '

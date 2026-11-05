@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "date": "2026-11-04",
+  "status": "OWNED_ROUTE_FIXTURE_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "011d32923648aaaaafd8e215ba3169b4511a8f45",
+  "runtime": "Node 24.18.0",
+  "applicationSourceManifestSha256": "11173a06dc73859fd4b9543e63d1b421fc3b5b1b335681c0737e42a382c28a1a",
+  "files": {
+    ".github/workflows/ci.yml": "a4dcbe5b848ccad1c644e6a6a4e3fb5ec2e3b70e497bc67c54477cb02454280d",
+    "ops/platform/frontend-admission.mjs": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
+    "ops/platform/harness/owned-frontend-reconciliation.mjs": "c6d5b766b4196743d7453c0393a68ce350a7a59f93056f9c98538950e2bd859e",
+    "ops/platform/harness/owned-reconciliation-rows.mjs": "3d59017721125deefbf406d1082c76235471720ff90c26c0b400c818a0978bb4",
+    "ops/platform/test-frontend-migration-local.mjs": "91f07d3e46f610e87cc1c4b830040a6179145e797b95fa4a0f1c6a9a46c9ecb5",
+    "package-lock.json": "797605065847a24761babb8b541a63a31356c0d5163b8983e497abec2189ebe1",
+    "package.json": "9480b83d72bd25037f1d4b98c12ccb9f5cc4a6ea53d841b7bb2fb9bf4f170f3c",
+    "scripts/register-server-only-test.mjs": "b0d794ce98c9179660f01926d7a879fa61d2ebc5a7b1c539953e2a2d99af28c6",
+    "src/app/api/admin/payment-reconciliation/handler.ts": "4ea21dd451eef0199adb1aec8dbb9be8203e50855d3f8d06bef379dd3133a33b",
+    "src/app/api/admin/payment-reconciliation/route.ts": "08ba3b8d6b0e2d738dfabfa5800d71cb98077e81d71baaabed96dcb5292aa4d5",
+    "src/lib/booking/booking-model-version.ts": "ecd9d8969401c81b8193a5e57fb325fb096afcfd8fd6069d1c622eea804132cf",
+    "src/lib/booking/email.ts": "9663472ff0d31d4e03ebe03eab09efced535f3a5b0c07494cd86ae30dea945ce",
+    "src/lib/booking/holds.ts": "fc7de1e0bc768ae25bd1b4bf2def4ff8b523a96bc6d9f7cd13f8fe71755e7897",
+    "src/lib/booking/payments/service-no-show-invoice.ts": "2d8095949ac1f17a7c4252f002daf36513845df4c435f5c97dcfe5be9e772c79",
+    "src/lib/booking/payments/service-payment-alerts.ts": "6fb73c5c99a474b7013f6f64c541656ee093ae47054111703de175fe0610d25c",
+    "src/lib/booking/payments/service-reconciliation-monitor.ts": "f352b44d232dd8f15ab77f4063f1550be125f124f04ea8504221dffdc6d92ab6",
+    "src/lib/booking/provider-booking-email.ts": "58d7c37265d891fb60aebd4507428958ad794d2d06aef1cb4737ece08ee1fc03",
+    "src/lib/booking/square-runtime.ts": "dee156ab2ae11dfac9484e85af8cd9e4b5a6573f82f97c0535282e4970604c3e",
+    "src/lib/commerce/order-store.ts": "de233237db1cb59fc9c31b5490a31a2133a0d549ccf6b8f6e38aaf133699c21c",
+    "src/lib/commerce/square-commerce-capture-reconciliation.ts": "96fcfa64db3e27ca6f98074ee3794f1fde6389650b64fa5df5518eb3acaa3930",
+    "src/lib/commerce/square-training-split-live.ts": "ce6d6d93a8ad5dd9eb1f4dccfa7cab4d9bfd173342a61a7bd3bad46ee1637ea8",
+    "src/lib/commerce/square-training-split.ts": "7041de5496fca80062ad844cbf85c881b714837bbf5a946b906a164e16398038",
+    "src/lib/env/application-environment.mjs": "893934b2cf52c9a26fbdc50530ab413496862d832abcb321d2d7046bea2b9000",
+    "src/lib/env/private-checkout.ts": "e6d50773842ddc70b3d32422c41028f5214d4724ac519bceaadc4578226d8f04",
+    "src/lib/payments/square/payments-client.ts": "f02d73e3ba4fe0dc5cb28a43f2d180e83431f83faddca5e9167a5efd309017da",
+    "src/lib/private-db/appointment-finalization-repository.ts": "82b4447f6625ba313d5fa1ffcac36e419330e09cac6079a0d39f6c404780e09f",
+    "src/lib/private-db/booking-provider-email-repository.ts": "05af8d5547be21cc3804cb457c7725a25989c209052b7ce6c0c840c967d06c05",
+    "src/lib/private-db/client.ts": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+    "src/lib/private-db/pool-config.ts": "3b1b78c9ec4f3c2df472e18042c7c9bdc0dfc2ede45702505a7dc837c8bf85b6",
+    "src/lib/private-db/schema.ts": "210b802be6d6419c12b533de326a6db87780c475d4491fb06a192eea40a4baa9",
+    "src/lib/private-db/service-booking-payment-repository.ts": "cf23a4b59815ca0ff278557d26a2ca5c0f979a1b8ed8f490a7360261f489b780",
+    "src/lib/resend-platform.ts": "4a3528b39cab7b6667aaf0065bc22a3e967a5fca4613989184d3cdb0d8f1da03",
+    "src/lib/transactional-email.ts": "85f2960027a7d40ce3639a8c2c25a5d364d4c6731a981a3f26542e248da0e6ec",
+    "src/lib/writer-admission/config.ts": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
+    "src/lib/writer-admission/context.ts": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+    "src/lib/writer-admission/runtime.ts": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
+    "tsconfig.json": "e3c43a4c82025610ad2ed302775233919352a06aebb1f8c4dcc49a550b6309ea"
+  },
+  "postgres": [
+    {
+      "major": 16,
+      "newRouteChecks": 12,
+      "existingChecks": 48,
+      "clusterStoppedAndRemoved": true
+    },
+    {
+      "major": 18,
+      "newRouteChecks": 12,
+      "existingChecks": 48,
+      "clusterStoppedAndRemoved": true
+    }
+  ],
+  "platformTests": {
+    "passed": 178,
+    "failed": 0,
+    "skipped": 0
+  },
+  "focusedTests": {
+    "passed": 53,
+    "failed": 0,
+    "skipped": 0
+  },
+  "lint": "PASS",
+  "diffCheck": "PASS",
+  "actualRouteExport": true,
+  "loopbackHttp": true,
+  "verifiedPostgresTls": true,
+  "realBusinessDatabase": true,
+  "providersIntercepted": true,
+  "syntheticLedgerSourceIdentity": true,
+  "migrationFixtureCommitIsSynthetic": true,
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "providerTouched": false,
+  "deploymentPerformed": false,
+  "historicalWritersFenced": false,
+  "migrationAuthorized": false,
+  "p200Complete": false,
+  "predecessor": {
+    "pr": 86,
+    "reviewedHead": "a46385311c5821cb7fe084985744740a94e4bb41",
+    "mergedAt": "011d32923648aaaaafd8e215ba3169b4511a8f45",
+    "ci": "https://github.com/princessdardan/lash-her-frontend/actions/runs/41963571685",
+    "passedJobs": 10
+  },
+  "limitations": [
+    "The HTTP bridge invokes the actual GET export; it is not a deployed Next.js server or native cron invocation.",
+    "Square and Resend fetches are intercepted. No real provider delivery, provider queue bound or live provider-drain evidence.",
+    "The ledger producer uses a synthetic source identity. Application bytes are bound separately by the source inventory and file hashes; this is not immutable deployment identity qualification.",
+    "Application-wide and historical producers, bootstrap/fencing, remaining writers and the parent release/restoration coordinator remain open."
+  ]
+}
