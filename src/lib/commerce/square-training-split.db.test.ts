@@ -7,7 +7,7 @@ const scenario = String.raw`
   import { getPrivateDb, closePrivateDbPool } from "./src/lib/private-db/client.ts";
   import { checkoutOrders, trainingEnrollments } from "./src/lib/private-db/schema.ts";
   import { createPendingSquareTrainingCardOrder, findCheckoutOrderByOrderId } from "./src/lib/commerce/order-store.ts";
-  import { chargeLiveTrainingSplit } from "./src/lib/commerce/square-training-split-live.ts";
+  import { chargeLiveTrainingSplit, reconcileTrainingSplits } from "./src/lib/commerce/square-training-split-live.ts";
   import { withWriterOperationContext } from "./src/lib/writer-admission/context.ts";
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
   process.env.PAYMENT_GATEWAY_MODE = "mock";
@@ -65,6 +65,35 @@ const scenario = String.raw`
     })), /WRITER_OPERATION_REQUIRES_REVIEW/);
     const replayed = await findCheckoutOrderByOrderId(order.orderId);
     assert.deepEqual(replayed.providerMetadata.splitPayment, saved.providerMetadata.splitPayment);
+    // The actual cron query excludes reserved/fresh/terminal rows, then recovers
+    // stale state under its own operation context using the same payment IDs.
+    let summary;
+    const runner = async task => { summary = await task(); return summary; };
+    const future = new Date(Date.now() + 120000);
+    const reset = async stage => db.update(checkoutOrders).set({ status: "pending", paidAt: null,
+      providerStatus: "APPROVED", updatedAt: new Date(), providerMetadata: {
+        ...saved.providerMetadata, splitPayment: { ...saved.providerMetadata.splitPayment, stage },
+      } }).where(eq(checkoutOrders.id, order.databaseId));
+    await reset("reserved");
+    await reconcileTrainingSplits(future, runner);
+    assert.deepEqual(summary, { checked: 0, recovered: 0, canceled: 0, failed: 0 });
+    await reset("completing");
+    await reconcileTrainingSplits(new Date(), runner);
+    assert.equal(summary.checked, 0);
+    await assert.rejects(withWriterOperationContext(() => reconcileTrainingSplits(future, runner)), /WRITER_OPERATION_REQUIRES_REVIEW/);
+    assert.deepEqual(summary, { checked: 1, recovered: 1, canceled: 0, failed: 0 });
+    const recovered = await findCheckoutOrderByOrderId(order.orderId);
+    assert.equal(recovered.status, "paid");
+    assert.deepEqual(recovered.providerMetadata.splitPayment, saved.providerMetadata.splitPayment);
+    await reset("canceling");
+    await withWriterOperationContext(() => reconcileTrainingSplits(future, runner));
+    assert.deepEqual(summary, { checked: 1, recovered: 0, canceled: 1, failed: 0 });
+    const canceled = await findCheckoutOrderByOrderId(order.orderId);
+    assert.equal(canceled.providerMetadata.splitPayment.stage, "canceled");
+    assert.equal(canceled.providerMetadata.splitPayment.cardPaymentId, saved.providerMetadata.splitPayment.cardPaymentId);
+    assert.equal(canceled.providerMetadata.splitPayment.afterpayPaymentId, saved.providerMetadata.splitPayment.afterpayPaymentId);
+    await reconcileTrainingSplits(future, runner);
+    assert.equal(summary.checked, 0);
   } finally {
     if (order) {
       await db.delete(trainingEnrollments).where(eq(trainingEnrollments.checkoutOrderId, order.databaseId));

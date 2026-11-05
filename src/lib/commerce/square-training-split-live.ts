@@ -11,6 +11,7 @@ import {
   createSquarePaymentsClient,
   createSquareSplitOrdersClient,
   type SquarePayment,
+  type SquarePaymentsClient,
 } from "@/lib/payments/square/payments-client";
 import type { TrainingSplitPayment } from "@/lib/payments/square/training-split-policy";
 import {
@@ -20,6 +21,41 @@ import {
   type TrainingSplitState,
 } from "./square-training-split";
 import { notifyPaidTrainingOrder } from "./training-paid-notification";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+
+export interface TrainingSplitReconciliationSummary {
+  checked: number;
+  recovered: number;
+  canceled: number;
+  failed: number;
+}
+
+export type TrainingSplitRecoveryRunner = (
+  task: () => Promise<TrainingSplitReconciliationSummary>,
+) => Promise<TrainingSplitReconciliationSummary>;
+
+interface TrainingSplitReconciliationDependencies {
+  findPending: (input: {
+    updatedBefore: Date;
+    limit: number;
+  }) => Promise<{ orderId: string }[]>;
+  charge: (input: { orderReference: string }) => Promise<TrainingSplitResult>;
+  logError: (message: string, meta: Record<string, unknown>) => void;
+}
+
+export function createTrainingSplitCancellationOperation(
+  client: Pick<SquarePaymentsClient, "getPayment" | "cancelPayment">,
+): (paymentId: string) => Promise<void> {
+  return async (paymentId) => {
+    const existing = (await client.getPayment(paymentId)).payment;
+    if (existing.id !== paymentId)
+      throw new Error("Split payment cancellation lookup identity mismatch");
+    if (["FAILED", "CANCELED"].includes(existing.status)) return;
+    const canceled = (await client.cancelPayment(paymentId)).payment;
+    if (canceled.id !== paymentId || canceled.status !== "CANCELED")
+      throw new Error("Payment cancellation unconfirmed");
+  };
+}
 
 export async function chargeLiveTrainingSplit(input: {
   orderReference: string;
@@ -37,6 +73,7 @@ export async function chargeLiveTrainingSplit(input: {
   const db = getPrivateDb();
   const payments = createSquarePaymentsClient(env);
   const orders = createSquareSplitOrdersClient(env);
+  const cancelPayment = createTrainingSplitCancellationOperation(payments);
   // Transaction-scoped advisory lock works through transaction poolers. State
   // writes use the base DB and commit independently, surviving request crashes.
   // No row locks are held across Square calls. Contenders fail fast and retry.
@@ -159,11 +196,7 @@ export async function chargeLiveTrainingSplit(input: {
         },
         cancel: async (id) => {
           if (mock) return;
-          const existing = (await payments.getPayment(id)).payment;
-          if (["FAILED", "CANCELED"].includes(existing.status)) return;
-          const canceled = (await payments.cancelPayment(id)).payment;
-          if (canceled.status !== "CANCELED")
-            throw new Error("Payment cancellation unconfirmed");
+          await cancelPayment(id);
         },
         cancelByKey: (key) =>
           mock
@@ -214,38 +247,78 @@ export async function chargeLiveTrainingSplit(input: {
 }
 
 /** Recover interrupted requests even when neither browser nor webhook returns. */
-export async function reconcileTrainingSplits(now: Date): Promise<void> {
-  if (!getSquareCommerceEnv()) return;
-  const db = getPrivateDb();
-  const pending = await db
-    .select({ orderId: checkoutOrders.orderId })
-    .from(checkoutOrders)
-    .where(
-      and(
-        eq(checkoutOrders.paymentProvider, "square"),
-        eq(checkoutOrders.purpose, "training"),
-        eq(checkoutOrders.status, "pending"),
-        sql`${checkoutOrders.providerMetadata}->>'flow' = 'training_square_split'`,
-        sql`${checkoutOrders.providerMetadata}->'splitPayment'->>'stage' not in ('reserved', 'canceled', 'paid')`,
-        lt(checkoutOrders.updatedAt, new Date(now.getTime() - 60_000)),
-      ),
-    )
-    .orderBy(asc(checkoutOrders.updatedAt))
-    .limit(20);
-  for (const order of pending) {
-    try {
-      const result = await chargeLiveTrainingSplit({
-        orderReference: order.orderId,
-      });
-      if (!result.ok && !result.retryWithNewReservation)
-        console.error("[training-split] Reconciliation incomplete", {
+export async function reconcileTrainingSplits(
+  now: Date,
+  runRecovery: TrainingSplitRecoveryRunner = (task) => task(),
+  loadDependencies: () => Promise<TrainingSplitReconciliationDependencies | null> = loadTrainingSplitReconciliationDependencies,
+): Promise<void> {
+  const dependencies = await loadDependencies();
+  if (dependencies === null) return;
+  await runRecovery(async () => {
+    const pending = await dependencies.findPending({
+      updatedBefore: new Date(now.getTime() - 60_000),
+      limit: 20,
+    });
+    const summary: TrainingSplitReconciliationSummary = {
+      checked: pending.length,
+      recovered: 0,
+      canceled: 0,
+      failed: 0,
+    };
+    for (const order of pending) {
+      try {
+        // Recovery supplies no fresh authorization tokens or reservation keys.
+        const result = await dependencies.charge({
           orderReference: order.orderId,
-          reason: result.reason,
         });
-    } catch {
-      console.error("[training-split] Reconciliation failed", {
-        orderReference: order.orderId,
-      });
+        if (result.ok) {
+          summary.recovered++;
+        } else if (
+          result.reason === "split_payment_canceled" &&
+          result.retryWithNewReservation
+        ) {
+          summary.canceled++;
+        } else {
+          markWriterOperationUncertain();
+          summary.failed++;
+          dependencies.logError("[training-split] Reconciliation incomplete", {
+            orderReference: order.orderId,
+            reason: result.reason,
+          });
+        }
+      } catch {
+        markWriterOperationUncertain();
+        summary.failed++;
+        dependencies.logError("[training-split] Reconciliation failed", {
+          orderReference: order.orderId,
+        });
+      }
     }
-  }
+    return summary;
+  });
+}
+
+async function loadTrainingSplitReconciliationDependencies(): Promise<TrainingSplitReconciliationDependencies | null> {
+  if (!getSquareCommerceEnv()) return null;
+  const db = getPrivateDb();
+  return {
+    findPending: ({ updatedBefore, limit }) =>
+      db
+        .select({ orderId: checkoutOrders.orderId })
+        .from(checkoutOrders)
+        .where(
+          and(
+            eq(checkoutOrders.paymentProvider, "square"),
+            eq(checkoutOrders.purpose, "training"),
+            eq(checkoutOrders.status, "pending"),
+            sql`${checkoutOrders.providerMetadata}->>'flow' = 'training_square_split'`,
+            sql`${checkoutOrders.providerMetadata}->'splitPayment'->>'stage' not in ('reserved', 'canceled', 'paid')`,
+            lt(checkoutOrders.updatedAt, updatedBefore),
+          ),
+        )
+        .orderBy(asc(checkoutOrders.updatedAt))
+        .limit(limit),
+    charge: chargeLiveTrainingSplit,
+    logError: console.error,
+  };
 }

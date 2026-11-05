@@ -10,6 +10,7 @@ import {
   type SquareCaptureRecoveryRunner,
 } from "@/lib/commerce/square-commerce-capture-reconciliation";
 import { WriterAdmissionError } from "@/lib/writer-admission/config";
+import type { TrainingSplitRecoveryRunner } from "@/lib/commerce/square-training-split-live";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,7 @@ export function createPaymentReconciliationGetHandler(
   ) => ReturnType<typeof retryOperationalBookingOutcomeEmails> = (task) =>
     task(),
   runCommerceCaptureRecovery: SquareCaptureRecoveryRunner = (task) => task(),
+  runTrainingSplitRecovery: TrainingSplitRecoveryRunner = (task) => task(),
 ): (req: Request) => Promise<Response> {
   return async function paymentReconciliationGetHandler(
     req: Request,
@@ -86,6 +88,7 @@ export function createPaymentReconciliationGetHandler(
       dependencies,
       now,
       runCommerceCaptureRecovery,
+      runTrainingSplitRecovery,
     );
 
     if (emailAdmissionFailed || commerceAdmissionFailed) {
@@ -116,6 +119,7 @@ async function reconcileCommerceCapturesSafely(
   dependencies: PaymentReconciliationDependencies,
   now: Date,
   runRecovery: SquareCaptureRecoveryRunner,
+  runTrainingSplitRecovery: TrainingSplitRecoveryRunner,
 ): Promise<boolean> {
   if (dependencies.runCommerceCaptureReconciliation === undefined) {
     return false;
@@ -127,6 +131,8 @@ async function reconcileCommerceCapturesSafely(
         now,
       },
       runRecovery,
+      undefined,
+      runTrainingSplitRecovery,
     );
     if (summary !== null && summary.uncollected > 0) {
       dependencies.logWarn(

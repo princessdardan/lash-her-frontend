@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "baseCommit": "d3e8a2d2d70eb0ca1d685e022c7a301221b740d0",
+  "sourceManifestSha256": "718e495ee38c4b78c5e35d293e6ed7c68894abb8a4134ddd9d99741ecad400de",
+  "releaseAuthority": false,
+  "scope": "Authenticated cron training-split reconciliation batch only",
+  "nodes": [
+    {
+      "file": "src/app/api/admin/payment-reconciliation/route.ts",
+      "sourceSha256": "8164c96396b27aca9658e19b498ff2e6da74b47e4fcb1aa4a284e2139a8f0a9c",
+      "audit": "Supplies separate email, capture and split recovery runners. Failed split summaries retain uncertainty. Service monitor remains unqualified."
+    },
+    {
+      "file": "src/app/api/admin/payment-reconciliation/handler.ts",
+      "sourceSha256": "504d582956feb685f16f4ebec1b7d87c42770efacfe18b346b00546aedcd7317",
+      "audit": "Authenticates before all work; awaits independent batches and maps WriterAdmissionError to sanitized retryable no-store 503."
+    },
+    {
+      "file": "src/lib/commerce/square-commerce-capture-reconciliation.ts",
+      "sourceSha256": "96fcfa64db3e27ca6f98074ee3794f1fde6389650b64fa5df5518eb3acaa3930",
+      "audit": "Awaits the split runner before entering separate capture admission. Split errors retain the pre-existing sequence that prevents the later capture batch."
+    },
+    {
+      "file": "src/lib/commerce/square-training-split-live.ts",
+      "sourceSha256": "ce6d6d93a8ad5dd9eb1f4dccfa7cab4d9bfd173342a61a7bd3bad46ee1637ea8",
+      "audit": "Admission precedes bounded oldest-first stale-order query. Every charge runs under the existing advisory lock through durable state/finalization/notification work; no fresh payment input. Per-order failures and unknown results mark uncertainty. Cancellation lookup/acknowledgement validate payment identity."
+    },
+    {
+      "file": "src/lib/commerce/square-training-split.ts",
+      "sourceSha256": "7041de5496fca80062ad844cbf85c881b714837bbf5a946b906a164e16398038",
+      "audit": "Existing model awaits both payment observations and cancellations; validates full split evidence and retains original IDs/keys. Caught errors and ambiguous outcomes mark uncertainty."
+    },
+    {
+      "file": "src/lib/payments/square/payments-client.ts",
+      "sourceSha256": "f02d73e3ba4fe0dc5cb28a43f2d180e83431f83faddca5e9167a5efd309017da",
+      "audit": "Existing parsed HTTP calls are awaited. The selected cancellation adapter requires requested identity and a confirmed terminal status; completion is followed by model observations of both legs."
+    },
+    {
+      "file": "src/lib/commerce/training-paid-notification.ts",
+      "sourceSha256": "df68b5f510e73cf5e006e9be1b35a6a6f66fea873ad5220b1702581d6998a079",
+      "audit": "Awaits pending enrollment/token recovery and notifications. Missing/scheduled enrollment marks uncertainty; already notified enrollment provides positive completion evidence."
+    },
+    {
+      "file": "src/lib/commerce/training-enrollment-store.ts",
+      "sourceSha256": "0b86faeb6e4d38f3a09124db6bfb3d2821cdef3867930eae061d11558bccfc13",
+      "audit": "Selected pending lookup, token/claim/sent/failure persistence is awaited; no enrollment creation from this worker."
+    },
+    {
+      "file": "src/lib/commerce/training-payment-notifications.ts",
+      "sourceSha256": "8843de4c0191bec75ca3582e232062b9e0d3847e1dbb0a3898d78e824d46346c",
+      "audit": "Live bindings await shared notification service/store/provider functions."
+    },
+    {
+      "file": "src/lib/commerce/training-payment-notification-service.ts",
+      "sourceSha256": "644e498d9f638a0468859adf0b4627c33f7a0dba60ec43bac354528be6c527f9",
+      "audit": "Sequential student/staff claim/send/persistence; null claims and missing receipts remain uncertain."
+    },
+    {
+      "file": "src/lib/commerce/training-payment-email.ts",
+      "sourceSha256": "82058979d37f8cf67e1f895abadd2eeb1314144ea3e7ba65ccb9da696430fdaa",
+      "audit": "Existing awaited student/staff sends retain deterministic per-order idempotency keys."
+    },
+    {
+      "file": "src/lib/transactional-email.ts",
+      "sourceSha256": "85f2960027a7d40ce3639a8c2c25a5d364d4c6731a981a3f26542e248da0e6ec",
+      "audit": "Awaits provider sends and rejects failed/missing acknowledgements."
+    },
+    {
+      "file": "src/lib/resend-platform.ts",
+      "sourceSha256": "4a3528b39cab7b6667aaf0065bc22a3e967a5fca4613989184d3cdb0d8f1da03",
+      "audit": "Selected local template/environment preparation only."
+    },
+    {
+      "file": "src/lib/payments/square/training-split-policy.ts",
+      "sourceSha256": "4c4cd09518161d16dbf4a268c52255692ed5946aced156870dd4ee8ceaeb095d",
+      "audit": "Existing pure split amount and method validation."
+    },
+    {
+      "file": "src/lib/training-checkout.ts",
+      "sourceSha256": "77de2a9b5aeb18bbf25a7882fa8ad36627e86becfd4cb34e0ce6fd259ec3761b",
+      "audit": "Selected pure scheduling URL construction."
+    },
+    {
+      "file": "src/lib/env/private-checkout.ts",
+      "sourceSha256": "e6d50773842ddc70b3d32422c41028f5214d4724ac519bceaadc4578226d8f04",
+      "audit": "Existing enable/config lookup precedes admission without a provider/DB call; disabled commerce skips the worker."
+    },
+    {
+      "file": "src/lib/private-db/client.ts",
+      "sourceSha256": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+      "audit": "Existing pool/Drizzle operations and lock transaction are awaited; state saves use the existing independent application connection."
+    },
+    {
+      "file": "src/lib/private-db/pool-config.ts",
+      "sourceSha256": "3b1b78c9ec4f3c2df472e18042c7c9bdc0dfc2ede45702505a7dc837c8bf85b6",
+      "audit": "Unchanged pool target/TLS configuration."
+    },
+    {
+      "file": "src/lib/private-db/schema.ts",
+      "sourceSha256": "210b802be6d6419c12b533de326a6db87780c475d4491fb06a192eea40a4baa9",
+      "audit": "Unchanged static schema. No application migration."
+    },
+    {
+      "file": "src/lib/writer-admission/context.ts",
+      "sourceSha256": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+      "audit": "Unchanged operation-local sticky uncertainty; inert outside admission."
+    },
+    {
+      "file": "src/lib/writer-admission/config.ts",
+      "sourceSha256": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
+      "audit": "Unchanged source/producer/environment/target validation; disabled by default."
+    },
+    {
+      "file": "src/lib/env/application-environment.mjs",
+      "sourceSha256": "893934b2cf52c9a26fbdc50530ab413496862d832abcb321d2d7046bea2b9000",
+      "audit": "Unchanged local application binding."
+    },
+    {
+      "file": "src/lib/writer-admission/runtime.ts",
+      "sourceSha256": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
+      "audit": "Unchanged TLS/identity/current-policy binding and awaited durable begin/settlement without replay."
+    },
+    {
+      "file": "ops/platform/frontend-admission.mjs",
+      "sourceSha256": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
+      "audit": "Unchanged durable ledger; active/uncertain entries cannot expire into completion."
+    }
+  ],
+  "excluded": [
+    "Service reconciliation monitor and independent email/capture entries in the same route",
+    "Direct split helpers, checkout/status/admin executions and other writers",
+    "Actual producer/provider inventory, historical fencing/bootstrap and parent release/restoration coordinator"
+  ],
+  "limits": [
+    "Controlled route/runtime/model terminals and actual Square client with controlled HTTP do not establish combined actual cron/TLS-ledger/business-database enforcement.",
+    "Disposable PostgreSQL16 checks use mock payments and operation context, not a combined actual TLS ledger or Square/Resend delivery.",
+    "No live database/provider/deployment/credential/scheduler/admission/pending-SQL/rollout-control changes."
+  ]
+}
