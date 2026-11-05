@@ -41,7 +41,7 @@ async function runtime(context) {
 export async function runFrontendVercelWorker(operation, context) {
   let child, output, failed = false, deadline, killDeadline, received = false, bytes = 0, processing = Promise.resolve();
   try {
-    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments", "retire-resend", "observe-resend", "verify-square", "observe-square", "suspend-square", "observe-restoration"].includes(operation));
+    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments", "retire-resend", "observe-resend", "observe-resend-effects", "verify-square", "observe-square", "suspend-square", "suspend-sanity", "observe-sanity", "observe-restoration"].includes(operation));
     const { value, bindings, candidate } = await runtime(context);
     const payload = { operation, plan: fields(context.plan, ["environment", "actionId", "sourceCommit", "targetSha256", "bootstrapCompatibility", "restoration"]),
       candidate, bindings, directory: context.directory, vercelToken: value.vercelToken,
@@ -65,7 +65,13 @@ export async function runFrontendVercelWorker(operation, context) {
         payload.squareEffects = await observeFrontendSquareEffects(context.databaseClient, bindings.squareRetirement, context.verifyLockedSession);
       }
     }
-    if (bindings.resendRetirement && ["deploy-admission", "retire-resend", "observe-resend"].includes(operation)) {
+    if (bindings.sanityRetirement && ["suspend-sanity", "observe-sanity"].includes(operation)) {
+      for (const key of ["sanityReplacementToken", "sanityRetiredToken"]) {
+        demand(typeof value[key] === "string" && value[key].length > 0 && value[key].length <= 8192 && /^[!-~]+$/u.test(value[key]));
+        payload[key] = value[key];
+      }
+    }
+    if (bindings.resendRetirement && ["deploy-admission", "retire-resend", "observe-resend", "observe-resend-effects"].includes(operation)) {
       demand(typeof value.resendReplacementToken === "string" && value.resendReplacementToken.length > 0 && value.resendReplacementToken.length <= 8192 &&
         /^[!-~]+$/u.test(value.resendReplacementToken));
       payload.resendReplacementToken = value.resendReplacementToken;
@@ -194,6 +200,19 @@ export async function retireFrontendResendCredential(context) {
 
 export async function observeFrontendResendCredential(context) {
   return runFrontendVercelWorker("observe-resend", context);
+}
+
+export async function observeFrontendResendEffects(context) {
+  return runFrontendVercelWorker("observe-resend-effects", context);
+}
+
+export async function suspendFrontendSanityHooks(context) {
+  demand(context?.admissionObservation?.newWork === false);
+  return runFrontendVercelWorker("suspend-sanity", context);
+}
+
+export async function observeFrontendSanityScope(context) {
+  return runFrontendVercelWorker("observe-sanity", context);
 }
 
 export async function observeFrontendExternalFences(context) {

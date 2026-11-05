@@ -30,7 +30,7 @@ class Client:
             urllib.request.HTTPSHandler(context=ssl.create_default_context()))
 
     def request(self, method, path, body=None):
-        read = method == "GET" and body is None and (re.fullmatch(rf"/(api-keys|webhooks)\?limit=100(&after={UUID})?", path) or
+        read = method == "GET" and body is None and (re.fullmatch(rf"/(api-keys|webhooks|emails)\?limit=100(&after={UUID})?", path) or
             re.fullmatch(rf"/(domains|webhooks|emails)/{UUID}", path))
         remove = method == "DELETE" and body is None and re.fullmatch(rf"/api-keys/{UUID}", path)
         disable = method == "PATCH" and re.fullmatch(rf"/webhooks/{UUID}", path) and body == {"status": "disabled"}
@@ -58,7 +58,7 @@ def identifier(value):
 
 
 def pagination(client, resource):
-    demand(resource in ("api-keys", "webhooks"), "RESEND_INVENTORY_SCOPE_REFUSED")
+    demand(resource in ("api-keys", "webhooks", "emails"), "RESEND_INVENTORY_SCOPE_REFUSED")
     rows, seen, cursor = [], set(), None
     for _page in range(100):
         value = client.request("GET", "/" + resource + "?limit=100" + ("&after=" + cursor if cursor else ""))
@@ -169,3 +169,25 @@ def retire(client, retired_client, reviewed, selected, attempt):
         return outcome
     finally:
         migrate.write_json(attempt, "resend-retirement-outcome.json", outcome)
+
+
+def accepted_email_effects(client, reviewed):
+    """Exhaustive team inventory, including sends whose acknowledgements were lost.
+
+    The dedicated staging account is already checked by inventory(). Do not emit
+    provider payloads: list responses contain recipients, subjects and bodies.
+    """
+    selected_domain = domain(client, reviewed)
+    def read():
+        result = []
+        for row in pagination(client, "emails"):
+            state = row.get("last_event")
+            demand(isinstance(state, str) and re.fullmatch(r"[a-z_]{1,40}", state), "RESEND_ACCOUNT_EMAIL_STATE_REFUSED")
+            result.append({"emailId": row["id"], "lastEvent": state,
+                "outcomeTerminal": state in ("delivered", "opened", "clicked", "bounced", "complained", "failed", "canceled", "suppressed")})
+        return sorted(result, key=lambda row: row["emailId"])
+    first, second = read(), read()
+    demand(first == second and domain(client, reviewed) == selected_domain, "RESEND_ACCOUNT_EMAIL_INVENTORY_CHANGED")
+    demand(set(reviewed["knownEmailIds"]) <= {row["emailId"] for row in first}, "RESEND_KNOWN_EMAIL_ABSENT_FROM_ACCOUNT_INVENTORY")
+    return {"provider": "resend", "accountEmailPaginationComplete": True,
+        "acceptedEmails": first, "unresolvedEffects": sum(not row["outcomeTerminal"] for row in first)}
