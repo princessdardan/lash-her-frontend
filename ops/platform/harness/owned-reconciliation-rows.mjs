@@ -48,6 +48,7 @@ export async function seedReconciliationRows(db, selected = ["service", "email",
     }
   }
   for (const kind of ["split", "capture"].filter(kind => selected.includes(kind))) {
+    ids[kind] = `owned-${kind}`;
     await db.query(`INSERT INTO checkout_orders(order_id,purpose,status,payment_provider,provider_status,
       provider_payment_id,customer_name,customer_email,amount_cents,line_items,paid_at,updated_at,provider_metadata)
       VALUES($1,$2,$3,'square','APPROVED',$4,'Owned fixture','owned@example.invalid',1000,'[]',
@@ -75,12 +76,20 @@ export async function assertReconciliationReceipts(assert, db, ids, through = 4)
     assert.ok((await db.query("SELECT booking_confirmation_email_sent_at FROM appointments WHERE source_hold_id=$1", [ids.email])).rows[0].booking_confirmation_email_sent_at);
     assert.equal((await db.query("SELECT booking_confirmation_email_claimed_until FROM appointments WHERE source_hold_id=$1", [ids.email])).rows[0].booking_confirmation_email_claimed_until, null);
   }
-  if (through >= 3) {
-    const row = (await db.query("SELECT provider_metadata FROM checkout_orders WHERE order_id='owned-split'")).rows[0];
-    if (row) assert.equal(row.provider_metadata.splitPayment.stage, "canceled");
+  if (ids.split && through >= 3) {
+    const rows = (await db.query("SELECT status,provider_order_id,provider_metadata FROM checkout_orders WHERE order_id=$1", [ids.split])).rows;
+    assert.equal(rows.length, 1, "split receipt must survive reconciliation");
+    assert.equal(rows[0].status, "pending");
+    assert.equal(rows[0].provider_order_id, "owned-split-order");
+    assert.deepEqual(rows[0].provider_metadata.splitPayment, {
+      stage: "canceled", cardAmountCents: 400, afterpayAmountCents: 600,
+      cardPaymentId: "owned-split-card", afterpayPaymentId: "owned-split-afterpay",
+      squareOrderId: "owned-split-order",
+    });
   }
-  if (through >= 4) {
-    const row = (await db.query("SELECT provider_status FROM checkout_orders WHERE order_id='owned-capture'")).rows[0];
-    if (row) assert.equal(row.provider_status, "COMPLETED");
+  if (ids.capture && through >= 4) {
+    const rows = (await db.query("SELECT status,provider_status,provider_payment_id FROM checkout_orders WHERE order_id=$1", [ids.capture])).rows;
+    assert.equal(rows.length, 1, "capture receipt must survive reconciliation");
+    assert.deepEqual(rows[0], { status: "paid", provider_status: "COMPLETED", provider_payment_id: "owned-capture-payment" });
   }
 }

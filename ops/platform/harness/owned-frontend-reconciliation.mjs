@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { frontendWriterInventory } from "../frontend-writer-inventory.mjs";
 import { changeFrontendAdmission, observeFrontendDrain, reconcileFrontendOperation } from "../frontend-admission.mjs";
 import { seedReconciliationRows, assertReconciliationReceipts } from "./owned-reconciliation-rows.mjs";
+import { reconciliationProviderStage, assertReconciliationProviderCalls } from "./owned-reconciliation-providers.mjs";
 
 let phase = "configuration";
 async function main() {
@@ -80,10 +81,8 @@ async function main() {
       if (server && selected.origin === `http://127.0.0.1:${server.address().port}`)
         return nativeFetch(request);
       let stage;
-      if (selected.origin === "https://api.resend.com" && selected.pathname === "/emails" && request.method === "POST") stage = "email";
-      else if (selected.origin === "https://connect.squareupsandbox.com" && /^\/v2\/payments\/owned-/u.test(selected.pathname))
-        stage = selected.pathname.includes("owned-service") ? "service" : selected.pathname.includes("owned-split") ? "split" : "capture";
-      else { unexpectedFetches++; throw new Error("OWNED_UNEXPECTED_FETCH"); }
+      try { stage = reconciliationProviderStage(request); }
+      catch (error) { unexpectedFetches++; throw error; }
       const active = (await operations()).filter(row => row.state === "active");
       if (process.env.FRONTEND_WRITER_ADMISSION_MODE === "enforce") {
         try {
@@ -161,6 +160,7 @@ async function main() {
     await assert.rejects(runWriterAdmission("new-work", async () => { newWorkEffects++; })); assert.equal(newWorkEffects, 0);
     assert.equal((await request()).status, 200);
     assert.deepEqual((await since(before)).map(row => [row.kind, row.state]), Array.from({ length: 4 }, () => ["recovery", "completed"]));
+    assertReconciliationProviderCalls(assert, activeCalls, []);
     await reconcile();
     checks.push("recovery-only-policy-admits-four-independent-empty-batches-and-refuses-new-work");
 
@@ -169,7 +169,7 @@ async function main() {
     assert.equal((await request()).status, 503);
     assert.deepEqual((await since(before)).map(row => row.state), ["uncertain", "completed", "completed", "completed"]);
     await assertReconciliationReceipts(assert, operator, ids);
-    assert.deepEqual([...new Set(activeCalls.map(call => call.stage))], ["service", "email", "split", "capture"]);
+    assertReconciliationProviderCalls(assert, activeCalls, ["service", "email", "split", "capture"]);
     await reconcile();
     checks.push("four-nonempty-batches-retain-independent-ledger-outcomes-and-real-business-receipts");
 
@@ -188,7 +188,7 @@ async function main() {
       const rows = await since(before);
       assert.equal(rows.length, index + 1); assert.equal(rows.some(row => row.state === "active"), false);
       await assertReconciliationReceipts(assert, operator, ids, index + 1);
-      assert.equal(activeCalls.some(call => ["service", "email", "split", "capture"].indexOf(call.stage) > index), false);
+      assertReconciliationProviderCalls(assert, activeCalls, ["service", "email", "split", "capture"].slice(0, index + 1));
       await reconcile();
       checks.push(`policy-close-during-${stage}-retains-current-effects-refuses-new-entries-and-prevents-drain`);
     }
@@ -221,12 +221,13 @@ async function main() {
       assert.deepEqual(states, stage === "email" ? ["completed", "uncertain", "completed", "completed"] : ["completed", "completed", "uncertain"]);
       const capture = (await operator.query("SELECT provider_status FROM checkout_orders WHERE order_id='owned-capture'")).rows[0];
       assert.equal(capture.provider_status, stage === "email" ? "COMPLETED" : "APPROVED");
+      assertReconciliationProviderCalls(assert, activeCalls, stage === "email" ? ["email", "capture"] : ["split"], stage);
       await reconcile();
       checks.push(`caught-${stage}-provider-failure-retains-uncertainty-and-existing-sibling-order`);
     }
 
     phase = "actual-ledger-backend-death";
-    await seedReconciliationRows(operator, ["capture"]); activeCalls = []; await change(true); before = await operations();
+    ids = await seedReconciliationRows(operator, ["capture"]); activeCalls = []; await change(true); before = await operations();
     const held = holdProvider("capture"); pending = request();
     try {
       await held.entered(); await change(false);
@@ -238,8 +239,8 @@ async function main() {
     } finally { held.release(); }
     assert.equal((await pending).status, 503); gate = undefined;
     assert.deepEqual((await since(before)).map(row => row.state), ["completed", "completed", "completed", "active"]);
-    assert.equal(activeCalls.filter(call => call.path.endsWith("/complete")).length, 1);
-    await assertReconciliationReceipts(assert, operator, {}); await reconcile();
+    assertReconciliationProviderCalls(assert, activeCalls, ["capture"]);
+    await assertReconciliationReceipts(assert, operator, ids); await reconcile();
     checks.push("actual-ledger-backend-death-retains-active-operation-without-replaying-capture-or-receipt");
 
     phase = "invalid-intent-and-admission-off";
