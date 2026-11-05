@@ -555,6 +555,7 @@ test("production route passes independent split admission without covering monit
     logWarn() {},
     runMonitor: async () => {
       calls.push("monitor");
+      process.env.FRONTEND_WRITER_ADMISSION_MODE = "invalid-owned-fixture";
       return { findings: [], ok: true, checkedAt: now.toISOString() };
     },
     retryBookingOutcomeEmails: undefined,
@@ -572,7 +573,7 @@ test("production route passes independent split admission without covering monit
       throw new Error("unexpected capture");
     },
   });
-  process.env.FRONTEND_WRITER_ADMISSION_MODE = "invalid-owned-fixture";
+  process.env.FRONTEND_WRITER_ADMISSION_MODE = "off";
   try {
     assert.equal((await routeGet(request())).status, 503);
     assert.deepEqual(calls, ["monitor"]);

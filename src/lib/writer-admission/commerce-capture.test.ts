@@ -480,6 +480,7 @@ test("production route supplies separate capture admission and keeps siblings ou
     logWarn() {},
     runMonitor: async () => {
       calls.push("monitor");
+      process.env.FRONTEND_WRITER_ADMISSION_MODE = "invalid-owned-fixture";
       return { findings: [], ok: true, checkedAt: now.toISOString() };
     },
     retryBookingOutcomeEmails: async () => {
@@ -504,7 +505,7 @@ test("production route supplies separate capture admission and keeps siblings ou
       });
     },
   });
-  process.env.FRONTEND_WRITER_ADMISSION_MODE = "invalid-owned-fixture";
+  process.env.FRONTEND_WRITER_ADMISSION_MODE = "off";
   try {
     assert.equal((await routeGet(request())).status, 503);
     assert.deepEqual(calls, ["monitor", "training-splits"]);

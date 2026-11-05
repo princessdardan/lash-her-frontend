@@ -632,7 +632,7 @@ test("booking outcome actual provider claims distinguish sent receipts from busy
   }
 });
 
-test("production reconciliation route wires only booking outcome recovery and fails closed before its list", async () => {
+test("production reconciliation route separately admits booking outcome recovery before its list", async () => {
   const previous = { ...defaultDependencies },
     previousMode = process.env.FRONTEND_WRITER_ADMISSION_MODE;
   let retryCalls = 0,
@@ -645,6 +645,7 @@ test("production reconciliation route wires only booking outcome recovery and fa
     logWarn() {},
     runMonitor: async () => {
       monitors++;
+      process.env.FRONTEND_WRITER_ADMISSION_MODE = "invalid-owned-fixture";
       return { findings: [], ok: true, checkedAt: now.toISOString() };
     },
     retryBookingOutcomeEmails: async () => {
@@ -656,7 +657,7 @@ test("production reconciliation route wires only booking outcome recovery and fa
       return null;
     },
   });
-  process.env.FRONTEND_WRITER_ADMISSION_MODE = "invalid-owned-fixture";
+  process.env.FRONTEND_WRITER_ADMISSION_MODE = "off";
   try {
     assert.equal((await routeGet(request())).status, 503);
     assert.equal(retryCalls, 0);
