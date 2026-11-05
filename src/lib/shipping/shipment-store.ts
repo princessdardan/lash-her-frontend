@@ -1,4 +1,5 @@
 import "server-only";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -2337,10 +2338,12 @@ export async function markShipmentNotificationSent(
       : kind === "exception"
         ? { exceptionEmailSentAt: now }
         : { deliveredEmailSentAt: now };
-  await executor
+  const updated = await executor
     .update(productShipments)
     .set({ ...field, updatedAt: now })
-    .where(eq(productShipments.id, shipmentId));
+    .where(eq(productShipments.id, shipmentId))
+    .returning({ id: productShipments.id });
+  if (updated.length !== 1) markWriterOperationUncertain();
 }
 
 function sanitizeTrackingNumber(value: string | null): string | null {

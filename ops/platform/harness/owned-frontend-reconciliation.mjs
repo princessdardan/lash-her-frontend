@@ -38,12 +38,13 @@ async function main() {
     RESEND_API_KEY: "re_owned_unused", ADMIN_EMAIL: "owned@example.invalid", FROM_EMAIL: "owned@example.invalid",
     STAGING_EMAIL_RECIPIENT_ALLOWLIST: "owned@example.invalid", NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project",
     NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
+    CHECKOUT_SECRET_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"), CRON_SECRET: "owned-cron",
   });
   const operator = new Client({ host: target.host, port, database: target.database, user: "frontend_test_admin",
     password, ssl: { rejectUnauthorized: true, ca: readFileSync(process.env.NODE_EXTRA_CA_CERTS, "utf8") } });
   await operator.connect();
   const connections = [operator], checks = [], reconciliationEvidence = [], nativeFetch = globalThis.fetch;
-  let server, closePool, gate, failProvider, providerInvariantFailure, unexpectedFetches = 0, activeCalls = [], logCount = 0;
+  let server, closePool, gate, failProvider, providerInvariantFailure, expectedOutboxKey, unexpectedFetches = 0, activeCalls = [], logCount = 0;
   const requests = [];
   const originalConsole = { log: console.log, warn: console.warn, error: console.error };
   // Expected domain failures are inspected through durable rows and sanitized
@@ -68,7 +69,8 @@ async function main() {
       const inspected = { operations: await operations(),
         attempts: (await operator.query("SELECT id,status,idempotency_key,provider_payment_id FROM booking_payment_attempts ORDER BY id")).rows,
         appointments: (await operator.query("SELECT id,booking_confirmation_email_sent_at,booking_confirmation_email_claimed_until,booking_confirmation_email_last_error FROM appointments ORDER BY id")).rows,
-        orders: (await operator.query("SELECT order_id,status,provider_status,provider_metadata FROM checkout_orders ORDER BY order_id")).rows };
+        orders: (await operator.query("SELECT order_id,status,provider_status,provider_metadata FROM checkout_orders ORDER BY order_id")).rows,
+        outbox: (await operator.query("SELECT id,kind,status,provider_message_id,provider_idempotency_key,lease_owner,lease_expires_at FROM customer_email_outbox ORDER BY id")).rows };
       const evidence = createHash("sha256").update(JSON.stringify(inspected)).digest("hex");
       reconciliationEvidence.push(evidence);
       for (const row of unresolved) await reconcileFrontendOperation(operator, target, epoch, row.id, evidence);
@@ -91,6 +93,7 @@ async function main() {
           const sessions = (await operator.query(`SELECT ssl FROM pg_stat_ssl JOIN pg_stat_activity USING(pid)
             WHERE usename=$1`, [target.user])).rows;
           assert.ok(sessions.length >= 2 && sessions.every(row => row.ssl === true));
+          if (expectedOutboxKey) assert.equal(request.headers.get("idempotency-key"), expectedOutboxKey);
         } catch (error) { providerInvariantFailure = error; throw error; }
       }
       activeCalls.push({ stage, method: request.method, path: selected.pathname });
@@ -103,20 +106,22 @@ async function main() {
     };
     phase = "import-actual-route";
     const { GET } = await import("../../../src/app/api/admin/payment-reconciliation/route.ts");
+    const { GET: outboxGet } = await import("../../../src/app/api/cron/customer-email-outbox/route.ts");
     ({ closePrivateDbPool: closePool } = await import("../../../src/lib/private-db/client.ts"));
     const { runWriterAdmission } = await import("../../../src/lib/writer-admission/runtime.ts");
     server = createServer(async (request, response) => {
       try {
-        assert.equal(request.url, "/api/admin/payment-reconciliation"); assert.equal(request.method, "GET");
-        const result = await GET(new Request(`http://127.0.0.1${request.url}`, {
+        assert.ok(["/api/admin/payment-reconciliation", "/api/cron/customer-email-outbox"].includes(request.url)); assert.equal(request.method, "GET");
+        const selectedGet = request.url === "/api/cron/customer-email-outbox" ? outboxGet : GET;
+        const result = await selectedGet(new Request(`http://127.0.0.1${request.url}`, {
           headers: request.headers.authorization ? { authorization: request.headers.authorization } : {},
         }));
         response.writeHead(result.status, Object.fromEntries(result.headers)); response.end(await result.text());
       } catch { response.writeHead(500); response.end("OWNED_BRIDGE_FAILED"); }
     });
     await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
-    const performRequest = async (authorized = true) => {
-      const result = await nativeFetch(`http://127.0.0.1:${server.address().port}/api/admin/payment-reconciliation`, {
+    const performRequest = async (authorized = true, path = "/api/admin/payment-reconciliation") => {
+      const result = await nativeFetch(`http://127.0.0.1:${server.address().port}${path}`, {
         headers: authorized ? { authorization: "Bearer owned-cron" } : {}, signal: AbortSignal.timeout(15000),
       });
       const text = await result.text();
@@ -126,8 +131,8 @@ async function main() {
       }
       return { status: result.status, text };
     };
-    const request = (authorized = true) => {
-      const pending = performRequest(authorized); requests.push(pending);
+    const request = (authorized = true, path) => {
+      const pending = performRequest(authorized, path); requests.push(pending);
       pending.catch(() => {}); return pending;
     };
     const until = async (predicate) => {
@@ -252,6 +257,102 @@ async function main() {
       assert.deepEqual(activeCalls, []); await reconcile();
     }
     checks.push("actual-malformed-business-intent-remains-uncertain-under-enforcement-and-preserves-off-mode");
+
+    const { encryptCustomerEmailOutboxValue: encrypt } = await import("../../../src/lib/commerce/customer-email-outbox-cipher.ts");
+    const outboxRequest = (authorized = true) => request(authorized, "/api/cron/customer-email-outbox");
+    const seedOutbox = async (kind = "alert") => {
+      await operator.query("TRUNCATE customer_email_outbox");
+      await seedReconciliationRows(operator, []); activeCalls = [];
+      process.env.FRONTEND_WRITER_ADMISSION_MODE = "enforce";
+      expectedOutboxKey = kind === "product" ? "product-confirmation:owned-outbox-product" : "owned-outbox-alert-key";
+      if (kind === "empty") return;
+      if (kind === "product") {
+        await operator.query(`INSERT INTO checkout_orders(order_id,purpose,status,payment_provider,provider_status,
+          customer_name,customer_email,amount_cents,line_items,paid_at)
+          VALUES('owned-outbox-product','product','paid','square','COMPLETED','Owned fixture','owned@example.invalid',1000,'[]',now())`);
+        return;
+      }
+      await operator.query(`INSERT INTO customer_email_outbox(kind,recipient_ciphertext,template_data_ciphertext,
+        provider_idempotency_key,redaction_due_at) VALUES('shipping_policy_alert',$1,$2,$3,now()+interval '1 day')`,
+      [encrypt("owned@example.invalid", "recipient"), kind === "malformed" ? "owned-invalid-ciphertext" :
+        encrypt({ subject: "Owned fixture", message: "Owned fixture", critical: false }, "payload"), expectedOutboxKey]);
+    };
+    const outboxRows = async () => (await operator.query("SELECT status,provider_message_id,provider_idempotency_key,lease_owner,lease_expires_at,attempt_count FROM customer_email_outbox")).rows;
+    const assertOutboxSent = async () => {
+      const rows = await outboxRows(); assert.equal(rows.length, 1);
+      assert.equal(rows[0].status, "sent"); assert.equal(rows[0].provider_message_id, "owned-email-receipt");
+      assert.equal(rows[0].provider_idempotency_key, expectedOutboxKey);
+      assert.equal(rows[0].lease_owner, null); assert.equal(rows[0].lease_expires_at, null);
+      assertReconciliationProviderCalls(assert, activeCalls, ["email"]);
+    };
+
+    phase = "customer-email-authentication-and-closed-admission";
+    await seedOutbox(); before = await operations();
+    assert.equal((await outboxRequest(false)).status, 401);
+    delete process.env.CRON_SECRET; assert.equal((await outboxRequest()).status, 404); process.env.CRON_SECRET = "owned-cron";
+    assert.equal((await outboxRequest()).status, 503);
+    assert.deepEqual(await since(before), []); assert.deepEqual(activeCalls, []);
+    assert.equal((await outboxRows())[0].status, "queued");
+    checks.push("customer-email-authentication-and-closed-admission-refuse-before-claims-or-delivery");
+
+    phase = "customer-email-empty-and-product-backfill";
+    await seedOutbox("empty"); await change(true); before = await operations();
+    assert.equal((await outboxRequest()).status, 200);
+    assert.deepEqual((await since(before)).map(row => row.state), ["completed"]); assert.deepEqual(activeCalls, []); await reconcile();
+    checks.push("customer-email-empty-batch-completes-one-independent-recovery-entry");
+    await seedOutbox("product"); await change(true); before = await operations();
+    assert.equal((await outboxRequest()).status, 200); await assertOutboxSent();
+    const productReceipt = (await operator.query("SELECT product_confirmation_email_sent_at,product_confirmation_email_claimed_until FROM checkout_orders WHERE order_id='owned-outbox-product'")).rows[0];
+    assert.ok(productReceipt.product_confirmation_email_sent_at); assert.equal(productReceipt.product_confirmation_email_claimed_until, null);
+    assert.deepEqual((await since(before)).map(row => row.state), ["completed"]); await reconcile();
+    checks.push("customer-email-real-product-backfill-encrypted-claim-provider-key-and-atomic-order-receipt");
+
+    phase = "customer-email-policy-close-and-expired-lease";
+    await seedOutbox(); await change(true); before = await operations();
+    let outboxHeld = holdProvider("email"), outboxPending = outboxRequest();
+    try {
+      await outboxHeld.entered();
+      await operator.query("UPDATE customer_email_outbox SET lease_expires_at=now()-interval '1 hour'");
+      await change(false); assert.equal((await drain()).active, 1); assert.equal((await drain()).ledgerDrained, false);
+      assert.equal((await outboxRequest()).status, 503); assert.equal((await since(before)).length, 1);
+    } finally { outboxHeld.release(); }
+    assert.equal((await outboxPending).status, 200); gate = undefined;
+    await assertOutboxSent(); await reconcile();
+    checks.push("customer-email-close-refuses-new-claims-and-expired-business-lease-does-not-drain-active-delivery");
+
+    for (const kind of ["provider-failure", "malformed"]) {
+      phase = `customer-email-${kind}`;
+      await seedOutbox(kind); await change(true); before = await operations();
+      failProvider = kind === "provider-failure" ? "email" : undefined;
+      assert.equal((await outboxRequest()).status, 503); failProvider = undefined;
+      assert.deepEqual((await since(before)).map(row => row.state), ["uncertain"]);
+      const rows = await outboxRows(); assert.equal(rows.length, 1); assert.equal(rows[0].status, "failed");
+      assert.equal(rows[0].attempt_count, 1); assert.equal(rows[0].lease_owner, null);
+      assertReconciliationProviderCalls(assert, activeCalls, kind === "provider-failure" ? ["email"] : []);
+      await reconcile(); checks.push(`customer-email-${kind}-retains-real-failure-receipt-and-ledger-uncertainty`);
+    }
+
+    for (const fault of ["missing-receipt", "ledger-backend-death"]) {
+      phase = `customer-email-${fault}`;
+      await seedOutbox(); await change(true); before = await operations();
+      outboxHeld = holdProvider("email"); outboxPending = outboxRequest();
+      try {
+        await outboxHeld.entered(); await change(false);
+        if (fault === "missing-receipt") await operator.query("DELETE FROM customer_email_outbox");
+        else {
+          const sessions = (await operator.query(`SELECT pid FROM pg_stat_activity WHERE usename=$1
+            AND application_name='lash-her-frontend-writer-admission'`, [target.user])).rows;
+          assert.equal(sessions.length, 1); await operator.query("SELECT pg_terminate_backend($1,1000)", [sessions[0].pid]);
+          await delay(25);
+        }
+      } finally { outboxHeld.release(); }
+      assert.equal((await outboxPending).status, 503); gate = undefined;
+      assert.deepEqual((await since(before)).map(row => row.state), [fault === "missing-receipt" ? "uncertain" : "active"]);
+      if (fault === "missing-receipt") assert.deepEqual(await outboxRows(), []);
+      else await assertOutboxSent();
+      assertReconciliationProviderCalls(assert, activeCalls, ["email"]);
+      await reconcile(); checks.push(`customer-email-${fault}-refuses-success-without-replaying-real-delivery`);
+    }
     assert.equal(unexpectedFetches, 0);
     if (providerInvariantFailure) throw providerInvariantFailure;
     return { status: "FRONTEND_RECONCILIATION_OWNED_PASS", postgresMajor: major, checks, reconciliationEvidence,

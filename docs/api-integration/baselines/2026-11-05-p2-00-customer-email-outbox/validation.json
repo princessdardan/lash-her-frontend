@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "status": "LOCAL_CUSTOMER_EMAIL_RECOVERY_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "5135df5105efbfc08ec1585ff80b27ed216830ed",
+  "runtime": "Node 24.18.0",
+  "files": {
+    ".github/workflows/ci.yml": "a4dcbe5b848ccad1c644e6a6a4e3fb5ec2e3b70e497bc67c54477cb02454280d",
+    "docs/api-integration/baselines/2026-11-05-p2-00-customer-email-outbox/base-source-inventory.json": "d4cde600e49f70cc01c07d51f978ef2bf32728a91d31132e4e861f315294c457",
+    "docs/api-integration/baselines/2026-11-05-p2-00-customer-email-outbox/candidate-source-inventory.json": "de0ff4192b61109aa21ae41dbb86fba9a618c3577066b4d9717a8288552ee4e0",
+    "docs/api-integration/baselines/2026-11-05-p2-00-customer-email-outbox/effect-audit.json": "6c28c340cfa0ea47ef4a5e418fd6e452eca53029e906832cd13c2f57224ff4c4",
+    "docs/api-integration/baselines/2026-11-05-p2-00-customer-email-outbox/writer-classification.json": "008859c3afb1e572e11207e9b12eaab5f7731e99b54748afbd3d5193e9ffcb18",
+    "docs/api-integration/frontend-customer-email-outbox-recovery-admission.md": "11f44291d4a5445f907533d73ac36802c739cb369a56d774b2a696af9a581062",
+    "docs/api-integration/p2-00-frontend-quiescence.md": "64968b8f40fa9806214e4708029114c4ca674a86275e2e3c3f321cd5589fa560",
+    "docs/scheduled-jobs-runbook.md": "3814049bdcd9658ae1248fa478a1d85ded29c82c9b79dcb037f62287ffd9e318",
+    "ops/platform/frontend-admission.mjs": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
+    "ops/platform/harness/owned-frontend-reconciliation.mjs": "75a25846952386295b36ce2807f1bb10acb8efacdedb7eab0fbb7d27d5ec93a2",
+    "ops/platform/harness/owned-reconciliation-providers.mjs": "afa41ae30d03ef5cb0c83bf40225ad3822d0d235ffc92d14578f2195454545f6",
+    "ops/platform/harness/owned-reconciliation-rows.mjs": "bd51c6068b691c6a7be5591d10a6f0d0c4323e4b89cfc0371c44ac8cb2cf4537",
+    "ops/platform/test-frontend-migration-local.mjs": "91f07d3e46f610e87cc1c4b830040a6179145e797b95fa4a0f1c6a9a46c9ecb5",
+    "package-lock.json": "797605065847a24761babb8b541a63a31356c0d5163b8983e497abec2189ebe1",
+    "package.json": "9480b83d72bd25037f1d4b98c12ccb9f5cc4a6ea53d841b7bb2fb9bf4f170f3c",
+    "scripts/register-server-only-test.mjs": "b0d794ce98c9179660f01926d7a879fa61d2ebc5a7b1c539953e2a2d99af28c6",
+    "scripts/run-source-unit-tests.mjs": "6b11dfd1b1ad6211347dab6314ece23e166a3c69d077366e1662f42b7205eadf",
+    "src/app/api/cron/customer-email-outbox/route.ts": "b05f6a5130bbac35e28694022ca6f30a52755e2ddb8503263f9ca7d4688ba125",
+    "src/lib/commerce/customer-email-outbox-cipher.ts": "36e7e7c4819b847d5f59fca9f404c60a70532300b1683a330bba6f9b53e7ffc2",
+    "src/lib/commerce/customer-email-outbox-cron.ts": "ebf0220a68c1af2dcb05ca0776c3f7556c36df778d98272017def77299ae8792",
+    "src/lib/commerce/customer-email-outbox-worker.ts": "85d73feb10542c9a1606c34c0366774b49b81d52bbcadf126ce8016a45b02c4a",
+    "src/lib/commerce/customer-email-outbox.ts": "7ef68bdb0143c178fe2add3c91c70d54b185673c85c8010e09a1e7989586086c",
+    "src/lib/commerce/order-store.ts": "de233237db1cb59fc9c31b5490a31a2133a0d549ccf6b8f6e38aaf133699c21c",
+    "src/lib/commerce/product-order-email.ts": "5b1c14989702bab5ada6d70d683a04175e4e46f476a7de474b36d3c24bc7860b",
+    "src/lib/email.ts": "bcceb59161885b92597a282c72132119a14e1eaeb00fd3460deab91097476488",
+    "src/lib/env/private-checkout.ts": "e6d50773842ddc70b3d32422c41028f5214d4724ac519bceaadc4578226d8f04",
+    "src/lib/private-db/client.ts": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+    "src/lib/private-db/pool-config.ts": "3b1b78c9ec4f3c2df472e18042c7c9bdc0dfc2ede45702505a7dc837c8bf85b6",
+    "src/lib/private-db/schema.ts": "210b802be6d6419c12b533de326a6db87780c475d4491fb06a192eea40a4baa9",
+    "src/lib/resend-platform.ts": "4a3528b39cab7b6667aaf0065bc22a3e967a5fca4613989184d3cdb0d8f1da03",
+    "src/lib/shipping/customer-link-email.ts": "f57234406e5aca36329c0d4e67d067cfd2f3e705d58a55bc02abe9210874b97b",
+    "src/lib/shipping/notifications.ts": "5c4ba5a58ae1118bbd77ebd6299f0332c7581834cfa0f863afee6135abfe76fb",
+    "src/lib/shipping/policy-alerts.ts": "30922c93162371edc0417984d55c3d063b4fa8c2015ba80694bbd1f3625e921b",
+    "src/lib/shipping/shipment-store.ts": "2e3a74b9c3e67fcd91340d31424a5c81f523ad3a2c70b40095aa0042215a4e4e",
+    "src/lib/transactional-email.ts": "85f2960027a7d40ce3639a8c2c25a5d364d4c6731a981a3f26542e248da0e6ec",
+    "src/lib/writer-admission/config.ts": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
+    "src/lib/writer-admission/context.ts": "ac5de3bad83e4add4859f33e776eb634aff418e9b44038e2f546a0e3e972dc20",
+    "src/lib/writer-admission/customer-email-outbox.test.ts": "a32685bd744b593834eccd9ed8a3cb17697d8da4a5dcd4d237c00c016fce4783",
+    "src/lib/writer-admission/runtime.ts": "f67a100908080ada33668825c013fec181439f94f179eaa585b4ca811cec556b",
+    "src/sanity/env.ts": "3e96695fdfd4a1b8d4390725a85057be63aeed2466374ddaa7d00009b7058811",
+    "tsconfig.json": "e3c43a4c82025610ad2ed302775233919352a06aebb1f8c4dcc49a550b6309ea"
+  },
+  "candidateSourceManifestSha256": "198cd2c2faac2f0dd39a51392df619eeb46b7f948db7462fd5f37f1c08fbd2fb",
+  "postgres": [
+    {
+      "major": 16,
+      "customerEmailChecks": 8,
+      "existingReconciliationChecks": 12,
+      "otherFixtureChecks": 48,
+      "clusterStoppedAndRemoved": true,
+      "resultSha256": "d225837703ff9319ca3258c5929496f8bc4b1527fa47a340c46cb52e2575895a"
+    },
+    {
+      "major": 18,
+      "customerEmailChecks": 8,
+      "existingReconciliationChecks": 12,
+      "otherFixtureChecks": 48,
+      "clusterStoppedAndRemoved": true,
+      "resultSha256": "a74507cb667b78ad5e717155e61efa67becd4daceafa8527fb503685023a9c86"
+    }
+  ],
+  "unitTests": {
+    "passed": 2285,
+    "failed": 0,
+    "skipped": 0,
+    "scopes": {
+      "regularSource": 1850,
+      "serverOnlySource": 390,
+      "scripts": 31,
+      "securityDependencies": 14
+    }
+  },
+  "platformTests": {
+    "passed": 185,
+    "failed": 0,
+    "skipped": 0
+  },
+  "focusedTests": {
+    "passed": 16,
+    "newAdmissionTests": 11,
+    "failed": 0,
+    "skipped": 0
+  },
+  "typecheck": "PASS",
+  "lint": {
+    "status": "PASS",
+    "errors": 0,
+    "preExistingWarnings": [
+      "src/lib/shipping/shipment-store.ts: unused _input parameter"
+    ]
+  },
+  "formatting": "PASS",
+  "diffCheck": "PASS",
+  "actualRouteExport": true,
+  "loopbackHttp": true,
+  "verifiedPostgresTls": true,
+  "realBusinessDatabase": true,
+  "providersIntercepted": true,
+  "syntheticLedgerSourceIdentity": true,
+  "migrationFixtureCommitIsSynthetic": true,
+  "syntheticEncryptionMaterial": true,
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "providerTouched": false,
+  "deploymentPerformed": false,
+  "historicalWritersFenced": false,
+  "migrationAuthorized": false,
+  "p200Complete": false,
+  "predecessor": {
+    "pr": 87,
+    "head": "d1852a9510ea60fcd840b5a20e0606b80941257e",
+    "mergedAt": "5135df5105efbfc08ec1585ff80b27ed216830ed",
+    "ci": "https://github.com/princessdardan/lash-her-frontend/actions/runs/42053609735",
+    "passedJobs": 10
+  },
+  "limitations": [
+    "The actual GET runs through a loopback test bridge, not a deployed Next.js server/native cron.",
+    "Resend responses, encryption material and ledger producer identities are synthetic; no live provider delivery/drain claim.",
+    "The two new nonempty owned-database paths are product confirmation and shipping-policy alert; other delivery kinds retain existing component and controlled-loop tests.",
+    "Direct/deferred/admin executions are not admitted by this cron boundary. Other writers/workers, actual producer/provider inventory, historical fencing/bootstrap and parent coordination remain open."
+  ]
+}

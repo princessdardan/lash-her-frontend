@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "baseCommit": "5135df5105efbfc08ec1585ff80b27ed216830ed",
+  "baseSourceManifestSha256": "11173a06dc73859fd4b9543e63d1b421fc3b5b1b335681c0737e42a382c28a1a",
+  "candidateSourceManifestSha256": "198cd2c2faac2f0dd39a51392df619eeb46b7f948db7462fd5f37f1c08fbd2fb",
+  "scope": "customer-email outbox cron delta; prior source classifications remain bounded by their original evidence",
+  "priorClassificationReference": "../2026-11-04-p2-00-service-reconciliation/writer-classification.json",
+  "releaseAuthority": false,
+  "deploymentInventoryVerified": false,
+  "writerFenceVerified": false,
+  "drainVerified": false,
+  "candidateRoutes": [
+    {
+      "file": "src/app/api/cron/customer-email-outbox/route.ts",
+      "method": "GET",
+      "classification": "OPT_IN_RECOVERY",
+      "boundary": "After cron authentication; before backfill query/enqueue, encrypted claims, delivery, suppression, outbox/product/shipment receipts and awaited failure cleanup.",
+      "independentExecutionsQualified": false,
+      "ownedDatabaseQualifiedKinds": [
+        "product_order_confirmation",
+        "shipping_policy_alert"
+      ],
+      "providerDeliveryQualified": false,
+      "deployedRuntimeQualified": false
+    }
+  ],
+  "excludedExecutions": [
+    "Direct processCustomerEmailOutbox and processCustomerEmailOutboxJob callers",
+    "Deferred delivery and explicit admin retries",
+    "Other cron/worker/admin/action producers, historical URLs and manual wrappers"
+  ],
+  "remainingWork": [
+    "Qualify all affected producers and their actual database/provider bindings.",
+    "Bootstrap admission and retire historical deployments/credentials without uncoordinated application SQL.",
+    "Implement parent environment-lock release/drain/restoration coordinator and owned end-to-end failure qualification."
+  ]
+}

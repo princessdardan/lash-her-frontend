@@ -40,6 +40,7 @@ import {
 import { deliverShipmentNotification } from "@/lib/shipping/notifications";
 import { markShipmentNotificationSent } from "@/lib/shipping/shipment-store";
 import { checkoutOrders } from "@/lib/private-db/schema";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 export interface CustomerEmailOutboxWorkerResult {
   claimed: number;
@@ -49,65 +50,105 @@ export interface CustomerEmailOutboxWorkerResult {
   suppressed: number;
 }
 
+export interface CustomerEmailOutboxWorkerDependencies {
+  listMissing: typeof listPaidProductOrdersMissingConfirmationOutbox;
+  enqueue: typeof enqueuePaidProductOrderConfirmationEmail;
+  claim: typeof claimCustomerEmails;
+  claimById: typeof claimCustomerEmailById;
+  complete: typeof completeCustomerEmail;
+  fail: typeof failCustomerEmail;
+  suppress: typeof suppressCustomerEmail;
+  deliver: (
+    email: import("./customer-email-outbox").ClaimedCustomerEmail,
+  ) => ReturnType<typeof deliverClaimedCustomerEmail>;
+  recordProductFailure: typeof recordProductOrderConfirmationEmailFailure;
+}
+
+const defaultDependencies: CustomerEmailOutboxWorkerDependencies = {
+  listMissing: listPaidProductOrdersMissingConfirmationOutbox,
+  enqueue: enqueuePaidProductOrderConfirmationEmail,
+  claim: claimCustomerEmails,
+  claimById: claimCustomerEmailById,
+  complete: completeCustomerEmail,
+  fail: failCustomerEmail,
+  suppress: suppressCustomerEmail,
+  deliver: deliverClaimedCustomerEmail,
+  recordProductFailure: recordProductOrderConfirmationEmailFailure,
+};
+
 export async function processCustomerEmailOutbox(
   input: {
     limit?: number;
     leaseOwner?: string;
     now?: Date;
   } = {},
+  dependencies: CustomerEmailOutboxWorkerDependencies = defaultDependencies,
 ): Promise<CustomerEmailOutboxWorkerResult> {
   const leaseOwner =
     input.leaseOwner?.trim() || `customer-email/${randomUUID()}`;
-  const missingOrderIds = await listPaidProductOrdersMissingConfirmationOutbox({
+  const missingOrderIds = await dependencies.listMissing({
     limit: input.limit,
   });
   let enqueued = 0;
   for (const orderId of missingOrderIds) {
-    const queued = await enqueuePaidProductOrderConfirmationEmail({
+    const queued = await dependencies.enqueue({
       orderId,
       ...(input.now ? { now: input.now } : {}),
     });
     if (queued) enqueued += 1;
+    else markWriterOperationUncertain();
   }
-  const claimed = await claimCustomerEmails({
+  const claimed = await dependencies.claim({
     leaseOwner,
     ...(input.limit ? { limit: input.limit } : {}),
     ...(input.now ? { now: input.now } : {}),
   });
-  return processClaimedCustomerEmails({
-    claimed,
-    enqueued,
-    leaseOwner,
-    ...(input.now ? { now: input.now } : {}),
-  });
+  return processClaimedCustomerEmails(
+    {
+      claimed,
+      enqueued,
+      leaseOwner,
+      ...(input.now ? { now: input.now } : {}),
+    },
+    dependencies,
+  );
 }
 
-export async function processCustomerEmailOutboxJob(input: {
-  jobId: string;
-  leaseOwner?: string;
-  now?: Date;
-}): Promise<CustomerEmailOutboxWorkerResult> {
+export async function processCustomerEmailOutboxJob(
+  input: {
+    jobId: string;
+    leaseOwner?: string;
+    now?: Date;
+  },
+  dependencies: CustomerEmailOutboxWorkerDependencies = defaultDependencies,
+): Promise<CustomerEmailOutboxWorkerResult> {
   const leaseOwner =
     input.leaseOwner?.trim() || `customer-email/${randomUUID()}`;
-  const claimed = await claimCustomerEmailById({
+  const claimed = await dependencies.claimById({
     id: input.jobId,
     leaseOwner,
     ...(input.now ? { now: input.now } : {}),
   });
-  return processClaimedCustomerEmails({
-    claimed: claimed ? [claimed] : [],
-    enqueued: 0,
-    leaseOwner,
-    ...(input.now ? { now: input.now } : {}),
-  });
+  return processClaimedCustomerEmails(
+    {
+      claimed: claimed ? [claimed] : [],
+      enqueued: 0,
+      leaseOwner,
+      ...(input.now ? { now: input.now } : {}),
+    },
+    dependencies,
+  );
 }
 
-async function processClaimedCustomerEmails(input: {
-  claimed: import("./customer-email-outbox").ClaimedCustomerEmail[];
-  enqueued: number;
-  leaseOwner: string;
-  now?: Date;
-}): Promise<CustomerEmailOutboxWorkerResult> {
+async function processClaimedCustomerEmails(
+  input: {
+    claimed: import("./customer-email-outbox").ClaimedCustomerEmail[];
+    enqueued: number;
+    leaseOwner: string;
+    now?: Date;
+  },
+  dependencies: CustomerEmailOutboxWorkerDependencies,
+): Promise<CustomerEmailOutboxWorkerResult> {
   let sent = 0;
   let failed = 0;
   let suppressed = 0;
@@ -115,9 +156,9 @@ async function processClaimedCustomerEmails(input: {
   for (const email of input.claimed) {
     try {
       if (email.decodeError) throw new Error(email.decodeError);
-      const result = await deliverClaimedCustomerEmail(email);
+      const result = await dependencies.deliver(email);
       if (result.suppressed) {
-        const recorded = await suppressCustomerEmail({
+        const recorded = await dependencies.suppress({
           id: email.id,
           leaseOwner: input.leaseOwner,
           ...(input.now ? { now: input.now } : {}),
@@ -130,7 +171,8 @@ async function processClaimedCustomerEmails(input: {
         suppressed += 1;
         continue;
       }
-      const completed = await completeCustomerEmail({
+      if (!result.id?.trim()) markWriterOperationUncertain();
+      const completed = await dependencies.complete({
         id: email.id,
         leaseOwner: input.leaseOwner,
         providerMessageId: result.id,
@@ -140,7 +182,7 @@ async function processClaimedCustomerEmails(input: {
               onCompleted: async (tx) => {
                 const completedAt = input.now ?? new Date();
                 if (result.completion?.type === "product_confirmation") {
-                  await tx
+                  const updated = await tx
                     .update(checkoutOrders)
                     .set({
                       productConfirmationEmailClaimedUntil: null,
@@ -150,7 +192,9 @@ async function processClaimedCustomerEmails(input: {
                     })
                     .where(
                       eq(checkoutOrders.orderId, result.completion.orderId),
-                    );
+                    )
+                    .returning({ id: checkoutOrders.id });
+                  if (updated.length !== 1) markWriterOperationUncertain();
                 } else if (
                   result.completion?.type === "shipment_notification"
                 ) {
@@ -170,19 +214,23 @@ async function processClaimedCustomerEmails(input: {
       }
       sent += 1;
     } catch (error) {
+      markWriterOperationUncertain();
       failed += 1;
       const orderId =
         email.kind === "product_order_confirmation"
           ? getOrderId(email.payload)
           : null;
       if (orderId) {
-        await recordProductOrderConfirmationEmailFailure({
-          error: error instanceof Error ? error.message : "Unknown email error",
-          orderId,
-          ...(input.now ? { now: input.now } : {}),
-        }).catch(() => undefined);
+        await dependencies
+          .recordProductFailure({
+            error:
+              error instanceof Error ? error.message : "Unknown email error",
+            orderId,
+            ...(input.now ? { now: input.now } : {}),
+          })
+          .catch(() => undefined);
       }
-      await failCustomerEmail({
+      await dependencies.fail({
         id: email.id,
         leaseOwner: input.leaseOwner,
         error: error instanceof Error ? error.message : "Unknown email error",
