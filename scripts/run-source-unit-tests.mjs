@@ -87,6 +87,7 @@ const DB_TEST_FILES = new Set([
   "src/lib/customer-lifecycle/faults.db.test.ts",
   "src/lib/customer-lifecycle/store.db.test.ts",
   "src/lib/customer-auth/store.db.test.ts",
+  "src/lib/customer-auth/receipts.db.test.ts",
   "src/lib/customer-auth/session-issuance.db.test.ts",
   "src/lib/highlevel/retention.db.test.ts",
   "src/lib/highlevel/highlevel.db.test.ts",
