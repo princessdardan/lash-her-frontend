@@ -3,6 +3,8 @@ import test from "node:test";
 import { EventEmitter } from "node:events";
 import { createHmac } from "node:crypto";
 import { POST as routePost } from "@/app/api/webhooks/square/route";
+import { GET as returnRouteGet } from "@/app/api/booking/square/return/route";
+import { createSquareReturnGetHandler, defaultDependencies as returnDependencies } from "@/app/api/booking/square/return/handler";
 import { defaultDependencies, createSquareWebhookPostHandler } from "@/app/api/webhooks/square/handler";
 import { createSquarePaymentFinalizer } from "@/lib/booking/square-payment-finalizer";
 import { finalizePaidBooking, finalizeAppointmentPaymentWithLock, type FinalizePaidBookingResult } from "@/lib/booking/finalizer";
@@ -87,7 +89,7 @@ function business(f: ReturnType<typeof admission>, options: {
   status?: string; amount?: number; identity?: boolean; duplicate?: boolean; missingOrder?: boolean; missingHold?: boolean;
   holdState?: BookingHoldRecord["state"]; finalization?: FinalizePaidBookingResult; fail?: string;
   wait?: (stage: string) => Promise<void>; noFailedWriter?: boolean; off?: boolean;
-  paymentId?: string; providerOrderId?: string; returnedOrderId?: string; tenderPaymentId?: string;
+  paymentId?: string; providerOrderId?: string; returnedOrderId?: string; tenderPaymentId?: string; unboundPayment?: boolean;
 } = {}) {
   const calls: string[] = [], record = hold();
   if (options.duplicate) { record.state = options.holdState ?? "booked"; record.googleEventId = "owned-calendar-event"; }
@@ -103,7 +105,7 @@ function business(f: ReturnType<typeof admission>, options: {
     repository: {
       claimSquareEvent: async () => { await step("claim"); return options.duplicate ? { duplicate: true, processingStatus: "processed" } : { duplicate: false }; },
       findSquareOrder: async () => { await step("order"); return options.missingOrder ? null : {
-        id: "owned-order-db", orderId: "lh-sq-owned", amountCents: 10000, providerOrderId: options.providerOrderId ?? "owned-order", providerPaymentId: options.identity ? "other-payment" : options.paymentId ?? "owned-payment",
+        id: "owned-order-db", orderId: "lh-sq-owned", amountCents: 10000, providerOrderId: options.providerOrderId ?? "owned-order", providerPaymentId: options.unboundPayment ? null : options.identity ? "other-payment" : options.paymentId ?? "owned-payment",
         purpose: "appointment_full", squareLocationId: "owned-location", status: options.duplicate ? "paid" : "pending",
       }; },
       recordSquareEvent: async () => { await step("receipt"); return { duplicate: false }; },
@@ -345,5 +347,135 @@ test("ordinary provider email failure retains admission until its other recipien
     for (const [name, value] of Object.entries({ RESEND_API_KEY: previous.key, ADMIN_EMAIL: previous.admin, FROM_EMAIL: previous.from })) {
       if (value === undefined) delete process.env[name]; else process.env[name] = value;
     }
+  }
+});
+
+class ReturnRedirect extends Error {
+  constructor(readonly url: string) { super("owned redirect"); }
+}
+const returnUrl = "https://owned.invalid/api/booking/square/return";
+const returnRequest = (query = "orderId=lh-sq-owned&paymentId=owned-payment") => new Request(`${returnUrl}?${query}`);
+function returnHandler(run: WriterAdmissionRunner, finalize: typeof returnDependencies.finalizeSquarePayment, onRedirect?: () => void) {
+  return createSquareReturnGetHandler({ finalizeSquarePayment: finalize, redirectTo: url => {
+    onRedirect?.(); throw new ReturnRedirect(url);
+  } }, task => run("recovery", task));
+}
+async function expectReturnRedirect(task: Promise<Response>, status: string) {
+  await assert.rejects(task, error => error instanceof ReturnRedirect &&
+    error.url === `https://owned.invalid/booking/confirmation?payment=${status}`);
+}
+
+test("browser return admits actual finalization and settles before redirect for every supported lookup hint", async () => {
+  for (const query of ["orderId=lh-sq-owned&paymentId=owned-payment", "order_id=owned-order", "reference_id=lh-sq-owned",
+    "payment_id=owned-payment", "transaction_id=owned-payment", "transactionId=owned-payment"]) {
+    const f = admission(), b = business(f);
+    await expectReturnRedirect(returnHandler(f.run, b.run, () => {
+      assert.ok(f.calls.some(call => call.sql.includes("finish_operation")));
+      assert.equal(f.state.uncertain, false);
+    })(returnRequest(query)), "booked");
+    assert.equal(b.calls.includes("claim"), false);
+    assert.ok(b.calls.includes("provider-sent"));
+    assert.equal(f.calls.find(call => call.sql.includes("begin_operation"))?.values?.[1], "recovery");
+    assert.equal(JSON.stringify(f.calls).includes("owned-payment"), false);
+  }
+});
+
+test("closed browser return recovery refuses before lookup and never redirects", async () => {
+  const f = admission(), b = business(f); f.state.recovery = false;
+  const response = await returnHandler(f.run, b.run)(returnRequest());
+  assert.equal(response.status, 503); assert.equal(response.headers.get("retry-after"), "30");
+  assert.equal(response.headers.get("cache-control"), "no-store"); assert.equal(response.headers.has("location"), false);
+  assert.deepEqual(b.calls, []);
+});
+
+test("browser return keeps every admitted provider, Calendar, notification and cleanup stage active across closure", async () => {
+  for (const stage of ["payment", "provider-order", "order", "paid", "lock", "hold", "paid-hold", "calendar-find", "calendar-insert",
+    "booked", "release", "customer-claim", "customer-email", "customer-sent", "provider-claim", "provider-email", "provider-sent", "receipt", "failed"]) {
+    const f = admission(), gate = latch(), b = business(f, { status: stage === "failed" ? "FAILED" : undefined,
+      wait: name => name === stage ? gate.wait() : Promise.resolve() });
+    const get = returnHandler(f.run, b.run);
+    const pending = get(returnRequest(stage === "provider-order" ? "order_id=owned-order" : undefined));
+    const redirected = expectReturnRedirect(pending, stage === "failed" ? "unpaid" : "booked");
+    await gate.entered; f.state.recovery = false;
+    try { assert.equal(f.calls.some(call => call.sql.includes("finish_operation")), false); assert.equal((await get(returnRequest())).status, 503); }
+    finally { gate.release(); }
+    await redirected; assert.equal(f.state.uncertain, false, stage);
+  }
+});
+
+test("browser return caught failures remain uncertain instead of redirecting manual review under enforcement", async () => {
+  for (const fail of ["payment", "order", "paid", "lock", "hold", "paid-hold", "calendar-find", "calendar-insert", "booked", "release",
+    "customer-claim", "customer-email", "customer-sent", "provider-claim", "provider-email", "provider-sent", "receipt"]) {
+    const f = admission(), b = business(f, { fail });
+    const response = await returnHandler(f.run, b.run)(returnRequest());
+    assert.equal(response.status, 503, fail); assert.equal(f.state.uncertain, true, fail);
+    assert.equal((await response.text()).includes("owned-private-detail"), false);
+  }
+});
+
+test("browser return cannot complete missing, conflicting, authorization-only or deferred recovery", async () => {
+  for (const options of [{ amount: 1 }, { identity: true }, { missingOrder: true }, { missingHold: true }, { status: "UNKNOWN" },
+    { status: "APPROVED" }, { finalization: { ok: false as const, error: "owned", status: "manual_followup" as const } },
+    { finalization: { ok: false as const, error: "owned", status: "finalization_pending" as const } }]) {
+    const f = admission(), b = business(f, options);
+    assert.equal((await returnHandler(f.run, b.run)(returnRequest())).status, 503); assert.equal(f.state.uncertain, true);
+  }
+  for (const query of ["", "orderId=lh-sq-other&paymentId=owned-payment"]) {
+    const f = admission(), b = business(f);
+    assert.equal((await returnHandler(f.run, b.run)(returnRequest(query))).status, 503); assert.equal(f.state.uncertain, true);
+  }
+  const f = admission(), b = business(f, { unboundPayment: true });
+  assert.equal((await returnHandler(f.run, b.run)(returnRequest("orderId=lh-sq-owned"))).status, 503);
+  assert.equal(f.state.uncertain, true); assert.equal(b.calls.includes("payment"), false);
+});
+
+test("browser return known pending and persisted unpaid observations settle before redirect", async () => {
+  for (const status of ["PENDING", "FAILED", "CANCELED"]) {
+    const f = admission(), b = business(f, { status });
+    await expectReturnRedirect(returnHandler(f.run, b.run)(returnRequest()), "unpaid");
+    assert.equal(f.state.uncertain, false); assert.equal(b.calls.includes("paid"), false);
+  }
+});
+
+test("browser return lost socket or settlement acknowledgements suppress redirect without replaying effects", async () => {
+  for (const mode of ["socket", "settlement"]) {
+    const f = admission(); f.state.loseSettlement = mode === "settlement"; let effects = 0;
+    const response = await returnHandler(f.run, async () => {
+      effects++; if (mode === "socket") f.client.emit("error", new Error("owned-private-detail"));
+      return { finalized: true, duplicateEvent: false, status: "booked" };
+    })(returnRequest());
+    assert.equal(response.status, 503); assert.equal(effects, 1);
+  }
+});
+
+test("browser return admission-off preserves booked, ignored, pending and caught-error redirects", async () => {
+  for (const [options, query, status] of [
+    [{}, undefined, "booked"], [{ amount: 1 }, undefined, "ignored"], [{ fail: "payment" }, undefined, "manual_review"],
+    [{ missingOrder: true }, undefined, "ignored"], [{}, "orderId=lh-sq-other&paymentId=owned-payment", "booked"],
+    [{ unboundPayment: true }, "orderId=lh-sq-owned", "pending_verification"],
+  ] as const) {
+    const f = admission(), b = business(f, { ...options, off: true });
+    await expectReturnRedirect(returnHandler(f.off, b.run)(returnRequest(query)), status); assert.equal(f.calls.length, 0);
+  }
+});
+
+test("Next redirect control flow runs after successful browser return settlement", async () => {
+  const f = admission(), b = business(f);
+  const get = createSquareReturnGetHandler({ finalizeSquarePayment: b.run, redirectTo: returnDependencies.redirectTo }, task => f.run("recovery", task));
+  await assert.rejects(get(returnRequest()), { message: "NEXT_REDIRECT" });
+  assert.equal(f.state.uncertain, false);
+  assert.equal(f.calls.filter(call => call.sql.includes("finish_operation")).length, 1);
+  assert.equal(f.calls.find(call => call.sql.includes("finish_operation"))?.values?.[1], "completed");
+});
+
+test("production browser return route enforces admission before finalizer and redirect", async () => {
+  const previous = { finalize: returnDependencies.finalizeSquarePayment, mode: process.env.FRONTEND_WRITER_ADMISSION_MODE };
+  let effects = 0;
+  returnDependencies.finalizeSquarePayment = async () => { effects++; return { finalized: true, duplicateEvent: false, status: "booked" }; };
+  process.env.FRONTEND_WRITER_ADMISSION_MODE = "invalid-owned-fixture";
+  try { assert.equal((await returnRouteGet(returnRequest())).status, 503); assert.equal(effects, 0); }
+  finally {
+    returnDependencies.finalizeSquarePayment = previous.finalize;
+    if (previous.mode === undefined) delete process.env.FRONTEND_WRITER_ADMISSION_MODE; else process.env.FRONTEND_WRITER_ADMISSION_MODE = previous.mode;
   }
 });

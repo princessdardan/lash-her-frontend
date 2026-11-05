@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "date": "2026-11-04",
+  "runtime": "Node 24.18.0",
+  "status": "SOURCE_COMPONENT_VALIDATED_PENDING_EXACT_HEAD_CI",
+  "baseCommit": "78184e34dc538bfdfe2741a96ed83a0b17a376fa",
+  "sourceManifestSha256": "b31333f50a52a1e67e54fff90f26ad3e675a14798956892416631e4a61996c4c",
+  "files": {
+    "scripts/run-source-unit-tests.mjs": "5c9d3a88334dfcf9f30dbca473dfc3d2678a66437d69b6c19c09b04b2b469641",
+    "src/app/api/booking/square/return/handler.ts": "ac15012470a084bdabb1c8508afb48909bf611b56df9a41a2b2c9c4e56f81359",
+    "src/app/api/booking/square/return/route.ts": "cfd1aba7fda79cb251203a5280bce47b6d333a74c3b58a1a1e46b50c41a63a47",
+    "src/app/api/booking/square/return/route.test.ts": "6bf8e4c78cd11e7d8c0b79fdc320fc93e3bff95b0c0fb21fe0903e6c88b2530b",
+    "src/lib/booking/square-payment-finalizer.ts": "4e196f2aa47c796aa0bc387e1864cee022907536554d46e2fd41a2d78e2c82c6",
+    "src/lib/writer-admission/square-booking.test.ts": "24289deec01d08154d2b965c4c74338fe97199dd975ae47a0cef9ba6203582ed"
+  },
+  "admissionEnabled": false,
+  "pendingSqlEnabled": false,
+  "deploymentPerformed": false,
+  "liveDatabaseOrProviderChanged": false,
+  "p200Complete": false,
+  "checks": {
+    "unit": {
+      "passed": 2221,
+      "failed": 0,
+      "skipped": 0
+    },
+    "focusedSquareRegressions": {
+      "passed": 215,
+      "failed": 0,
+      "skipped": 0,
+      "browserReturnTests": 10,
+      "admittedClosureStages": 19
+    },
+    "typescript": "PASS",
+    "targetedEslint": "PASS",
+    "gitDiffCheck": "PASS",
+    "sourceBindings": 42,
+    "operationalScriptHashes": 21,
+    "httpMethods": 61,
+    "actions": 50,
+    "fullBuildBrowsersAndPostgres18": "PENDING_EXACT_HEAD_CI",
+    "inheritedBusinessDatabase": {
+      "locallyRerun": false,
+      "priorEvidence": "../2026-11-04-p2-00-square-booking/validation.json",
+      "repositorySourceUnchanged": true,
+      "combinedActualEnforcement": false
+    },
+    "inheritedProtocol": {
+      "locallyRerun": false,
+      "protocolSourceUnchanged": true,
+      "priorEvidence": "../2026-11-04-p2-00-square-operational/validation.json"
+    }
+  },
+  "review": {
+    "findingsAddressed": [
+      "Next redirect runs after settlement so its exception cannot create false uncertainty.",
+      "Caught finalizer errors retain uncertainty instead of completing with a manual-review redirect under enforcement.",
+      "Local order hints cannot establish completion when provider lookup resolves a different booking."
+    ],
+    "testRunnerCorrection": "Return handler now imports server-only admission configuration. Its existing tests were moved into the registered server-only group after the first full-suite run exposed the missing registration."
+  },
+  "limitations": [
+    "No combined actual browser-return/TLS-ledger/business-database enforcement proof or provider/runtime drain qualification.",
+    "Missing/conflicting/manual/unknown and ambiguous replay outcomes remain conservative unresolved obligations.",
+    "Independent initiation/confirmation/admin/reconciliation/workers, producer inventory, historical fencing/bootstrap and parent coordination remain separate."
+  ],
+  "predecessor": {
+    "pr": 81,
+    "mergedAtCommit": "78184e34dc538bfdfe2741a96ed83a0b17a376fa",
+    "reviewedHead": "df96611f77030da818b65be8330def96d801d0da",
+    "exactHeadCiRun": "https://github.com/princessdardan/lash-her-frontend/actions/runs/41946678904",
+    "passedJobs": 10
+  }
+}
