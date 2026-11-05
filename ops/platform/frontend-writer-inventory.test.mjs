@@ -26,8 +26,25 @@ test("inventory includes GET callbacks, re-exports, server actions, deferred wor
   assert.deepEqual(inventory.actionModules[0].exports, ["mutate", "renamed"]);
   assert.equal(inventory.inlineActions.length, 1); assert.equal(inventory.deferredSites[0].callee, "defer");
   assert.equal(inventory.databaseConstructors[0].file, "scripts/worker.ts");
+  assert.equal(inventory.version, 2);
+  assert.deepEqual(inventory.renderEntries.map(({file, exports, runtime}) => ({file, exports, runtime})),
+    [{file:"src/app/page.tsx", exports:["default"], runtime:"server"}]);
+  assert.equal(inventory.manualEntries[0].file, "scripts/worker.ts");
+  assert.deepEqual(inventory.manualEntries[0].exports, []);
   assert.deepEqual(inventory.schedules, [{ path: "/api/cron/worker", schedule: "* * * * *" }]);
   assert.equal(inventory.deploymentInventoryVerified, false); assert.equal(inventory.writerFenceVerified, false); assert.equal(inventory.drainVerified, false);
+});
+
+test("render generators, client pages and scripts without database constructors remain review surfaces", t => {
+  const { root, save } = fixture(t);
+  save("src/app/layout.tsx", 'export async function generateMetadata() {} export default function Layout() {}');
+  save("src/app/page.tsx", '\"use client\"; export default function Page() {}');
+  save("scripts/provider-only.mjs", 'await fetch(\"https://owned.invalid\", {method: \"POST\"});');
+  const inventory = frontendWriterInventory(root);
+  assert.deepEqual(inventory.renderEntries[0].exports, ["default", "generateMetadata"]);
+  assert.equal(inventory.renderEntries[1].runtime, "client");
+  assert.equal(inventory.manualEntries[0].file, "scripts/provider-only.mjs");
+  assert.equal(inventory.databaseConstructors.length, 0);
 });
 
 test("source changes change the inventory identity, including implementation-only changes", (t) => {

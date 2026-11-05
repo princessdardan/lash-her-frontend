@@ -44,7 +44,7 @@ function names(statement) {
 
 export function frontendWriterInventory(root) {
   root = resolve(root);
-  const entries = [], actionModules = [], inlineActions = [], deferredSites = [], databaseConstructors = [], schedules = [];
+  const entries = [], actionModules = [], renderEntries = [], manualEntries = [], inlineActions = [], deferredSites = [], databaseConstructors = [], schedules = [];
   const sourceFiles = [...files(root, "src"), ...files(root, "scripts"), join(root, "ops/platform/vercel-config.mjs")].sort();
   const manifest = {};
   for (const path of sourceFiles) {
@@ -54,13 +54,21 @@ export function frontendWriterInventory(root) {
     const tree = ts.createSourceFile(file, bytes.toString("utf8"), ts.ScriptTarget.Latest, true);
     demand(tree.parseDiagnostics.length === 0);
     const serverModule = directive(tree.statements), routeModule = /^src\/app\/(?:.*\/)?route\.[jt]s$/u.test(file);
-    const publicNames = serverModule || routeModule ? [...new Set(tree.statements.flatMap(names))].sort() : [];
+    const renderModule = /^src\/app\/(?:.*\/)?(?:page|layout)\.[jt]sx?$/u.test(file), manualModule = file.startsWith("scripts/");
+    const publicNames = serverModule || routeModule || renderModule || manualModule ? [...new Set(tree.statements.flatMap(names))].sort() : [];
     if (routeModule) {
       const exportedMethods = publicNames.filter((name) => methods.has(name));
       demand(exportedMethods.length > 0);
       entries.push({ file, methods: exportedMethods, sourceSha256: manifest[file], classification: "REVIEW_REQUIRED" });
     }
     if (serverModule) actionModules.push({ file, exports: publicNames, sourceSha256: manifest[file], classification: "REVIEW_REQUIRED" });
+    if (renderModule) {
+      demand(publicNames.includes("default"));
+      const client = tree.statements.some(node => ts.isExpressionStatement(node) && ts.isStringLiteral(node.expression) && node.expression.text === "use client");
+      renderEntries.push({ file, exports: publicNames.filter(name => ["default", "generateMetadata", "generateViewport", "generateStaticParams"].includes(name)),
+        runtime: client ? "client" : "server", sourceSha256: manifest[file], classification: "REVIEW_REQUIRED" });
+    }
+    if (manualModule) manualEntries.push({ file, exports: publicNames, sourceSha256: manifest[file], classification: "REVIEW_REQUIRED" });
     const deferredNames = new Set(["after", "waitUntil"]), constructorNames = new Set(["Pool", "Client"]);
     for (const statement of tree.statements) {
       if (!ts.isImportDeclaration(statement) || !statement.importClause?.namedBindings || !ts.isNamedImports(statement.importClause.namedBindings)) continue;
@@ -96,9 +104,9 @@ export function frontendWriterInventory(root) {
     };
     visit(tree);
   }
-  return { version: 1, scope: "candidate-source-only", sourceManifestSha256: hash(JSON.stringify(manifest)),
+  return { version: 2, scope: "candidate-source-only", sourceManifestSha256: hash(JSON.stringify(manifest)),
     deploymentInventoryVerified: false, writerFenceVerified: false, drainVerified: false,
-    routes: entries, actionModules, inlineActions, deferredSites, databaseConstructors, schedules };
+    routes: entries, actionModules, renderEntries, manualEntries, inlineActions, deferredSites, databaseConstructors, schedules };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

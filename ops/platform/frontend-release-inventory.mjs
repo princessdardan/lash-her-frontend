@@ -11,12 +11,23 @@ const oid = v => typeof v === "string" && /^[1-9][0-9]{0,9}$/u.test(v) && Number
 const roleName = v => typeof v === "string" && /^[a-z][a-z0-9_]{0,62}$/u.test(v);
 
 export function frontendCandidateSurfaces(source) {
-  demand(source?.version === 1 && source.scope === "candidate-source-only" && digest(source.sourceManifestSha256));
+  demand(source?.version === 2 && source.scope === "candidate-source-only" && digest(source.sourceManifestSha256));
   const surfaces = [];
   const add = (kind, value) => surfaces.push({ surfaceSha256: frontendCoordinationHash({ kind, ...value }), kind });
   for (const [key, names] of [["routes", "methods"], ["actionModules", "exports"]]) {
     demand(Array.isArray(source[key]));
     for (const entry of source[key]) for (const name of entry[names]) add(key, { file: entry.file, name, sourceSha256: entry.sourceSha256 });
+  }
+  for (const key of ["renderEntries", "manualEntries"]) {
+    demand(Array.isArray(source[key]));
+    for (const entry of source[key]) {
+      demand(typeof entry.file === "string" && digest(entry.sourceSha256) && Array.isArray(entry.exports));
+      if (key === "renderEntries") demand(["server", "client"].includes(entry.runtime) && entry.exports.includes("default"));
+      // Every script/module is a surface, including top-level invocations with
+      // no exported names. Render exports also bind metadata/static generators.
+      add(key, { file: entry.file, exports: entry.exports, sourceSha256: entry.sourceSha256,
+        ...(key === "renderEntries" ? { runtime: entry.runtime } : {}) });
+    }
   }
   for (const key of ["inlineActions", "deferredSites", "databaseConstructors", "schedules"]) {
     demand(Array.isArray(source[key]));
