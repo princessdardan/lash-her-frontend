@@ -22,6 +22,8 @@ This component adds disabled-by-default boundaries to public forms, legacy cours
 | Booking promotion mutation | New work | Before Redis rate limiting and hold snapshot updates |
 | Admin no-show initiation | New work | Before authentication/body and all invoice/charge/audit effects |
 | Manual transactional email retry | Recovery | Before authentication/body and all lookup/token/notification/persistence effects |
+| Product refund reservation, manual fulfillment, postage purchase/refund reservation, package-profile mutations | New work | Whole HTTP request before authorization and private transaction/audit work |
+| Existing postage-label download | Recovery | Whole authenticated provider lookup and bounded download; no detached response stream |
 
 Administrative renders are persistent producers because actor resolution refreshes the authenticated identity. Repository-level boundaries cover those writes even outside a server action. They do not qualify the whole render or unrelated helpers. Existing-user identity refresh is recovery so an already-authorized OAuth callback can finish while new work is closed; identity bootstrap/binding cannot use that permission.
 
@@ -39,4 +41,4 @@ Auditing failures remain non-blocking for the original application behavior when
 
 Focused tests exercise actual form/signup and Calendar callback control flow with injected domain dependencies, and the real admission runner against an in-memory protocol peer. Tests include policy refusal before effects, sibling settlement, caught failures, clean redirects, known-user recovery versus bootstrap gating and propagation from nested writer contexts. Existing authorization, step-up, revocation and OAuth regression tests are included.
 
-Actual exported actions/routes against the owned TLS ledger and migrated business database still require qualification by the integration fixture. Provider responses in focused tests are synthetic. Direct/manual callers of operational mutation helpers, shipping (including externally owned PR #91), remaining workers, provider inventories and historical sources remain separate requirements. No live provider, credential, schedule or admission state is changed.
+Actual exported actions/routes against the owned TLS ledger and migrated business database still require qualification by the integration fixture. Provider responses in focused tests are synthetic. Direct/manual callers of operational mutation helpers, shipping service internals and workers (including externally owned PR #91), remaining workers, provider inventories and historical sources remain separate requirements. No live provider, credential, schedule or admission state is changed.

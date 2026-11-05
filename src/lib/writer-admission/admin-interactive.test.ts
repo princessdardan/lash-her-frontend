@@ -226,3 +226,120 @@ test("OAuth provider denial with acknowledged cleanup settles cleanly", async ()
   assert.equal(response.status, 307);
   assert.equal(f.state.uncertain, false);
 });
+
+test("package-profile HTTP boundary refuses before auth/write, and retains unknown transaction errors", async () => {
+  const { createPackageProfileCreateHandler } =
+    await import("@/app/api/admin/shipping/package-profiles/handler");
+  const { NextRequest } = await import("next/server");
+  const f = interactiveAdmissionFixture();
+  let effects = 0;
+  const handler = createPackageProfileCreateHandler({
+    requireManage: async () => {
+      effects++;
+      return { user: { id: "owned" } };
+    },
+    requireConfiguredOwner: async () => ({}) as never,
+    createDraft: async () => {
+      throw new Error("owned-private-marker");
+    },
+  });
+  const request = () =>
+    new NextRequest(
+      "https://owned.invalid/api/admin/shipping/package-profiles",
+      {
+        method: "POST",
+        headers: {
+          origin: "https://owned.invalid",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          slug: "owned-box",
+          name: "Owned box",
+          packageType: "parcel",
+          rank: 1,
+          lengthCm: 30,
+          widthCm: 22,
+          heightCm: 5,
+          tareWeightGrams: 90,
+          maxWeightGrams: 2000,
+          acceptsRigid: true,
+        }),
+      },
+    );
+  f.state.open = false;
+  const closed = request();
+  assert.equal(
+    (await withWriterAdmission("new-work", handler, f.run)(closed)).status,
+    503,
+  );
+  assert.equal(closed.bodyUsed, false);
+  assert.equal(effects, 0);
+  f.state.open = true;
+  const response = await withWriterAdmission(
+    "new-work",
+    handler,
+    f.run,
+  )(request());
+  assert.equal(response.status, 503);
+  assert.equal(f.state.uncertain, true);
+  assert.equal((await response.text()).includes("owned-private-marker"), false);
+});
+
+test("existing label recovery waits for its entire bounded PDF download before settling admission", async () => {
+  const { createShippingLabelHandler } =
+    await import("@/app/api/admin/orders/[orderId]/shipping/label/handler");
+  const { NextRequest } = await import("next/server");
+  const f = interactiveAdmissionFixture();
+  let release!: () => void;
+  let entered!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const handler = createShippingLabelHandler({
+    requirePermission: async () => ({}) as never,
+    getShipmentForOrderReference: async () =>
+      ({ providerShipmentId: "owned-provider-shipment" }) as never,
+    getChitChatsConfig: () =>
+      ({ baseUrl: "https://carrier.owned.invalid" }) as never,
+    createChitChatsClient: () =>
+      ({
+        getShipment: async () => ({
+          postage_label_pdf_url:
+            "https://carrier.owned.invalid/labels/shipments/owned.pdf",
+        }),
+      }) as never,
+    fetch: async () =>
+      new Response(
+        new ReadableStream({
+          async start(controller) {
+            entered();
+            await held;
+            controller.enqueue(new TextEncoder().encode("%PDF-owned"));
+            controller.close();
+          },
+        }),
+        { headers: { "content-type": "application/pdf" } },
+      ),
+  });
+  const pending = withWriterAdmission(
+    "recovery",
+    handler,
+    f.run,
+  )(
+    new NextRequest(
+      "https://owned.invalid/api/admin/orders/owned/shipping/label?shipmentId=owned&expectedStateVersion=1",
+    ),
+    { params: Promise.resolve({ orderId: "owned" }) },
+  );
+  await started;
+  assert.equal(f.state.finished, false);
+  release();
+  const response = await pending;
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "%PDF-owned");
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.equal(f.state.uncertain, false);
+});
