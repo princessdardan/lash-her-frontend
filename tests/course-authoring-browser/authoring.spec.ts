@@ -1,0 +1,180 @@
+import { readFile } from "node:fs/promises";
+import { test, expect } from "@playwright/test";
+const enabled = process.env.COURSE_AUTHORING_BROWSER_FIXTURE === "1";
+test.skip(!enabled, "Run only through the owned authoring browser launcher.");
+const storagePath = process.env.COURSE_AUTHORING_STORAGE_PATH;
+test("owner authors, grades publication readiness and publishes with actual Course persistence", async ({
+  browser,
+}) => {
+  if (!storagePath) throw new Error("Owned storage fixture required");
+  const states = JSON.parse(await readFile(storagePath, "utf8"));
+  const context = await browser.newContext({ storageState: states.owner });
+  const page = await context.newPage();
+  try {
+    await page.goto("/admin/courses");
+    await expect(
+      page.getByRole("heading", { name: "Courses", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByLabel("Course title", { exact: true })
+      .fill("Browser authoring fixture");
+    await page
+      .getByLabel("URL name", { exact: true })
+      .fill("browser-authoring-fixture");
+    await page
+      .getByLabel("Approved tax classification")
+      .fill("fixture-reviewed");
+    await page
+      .getByRole("button", { name: "Create draft", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/admin\/courses\/[a-f0-9-]{36}$/);
+    const courseId = page.url().split("/").pop();
+    await page
+      .getByRole("button", { name: "Review publication readiness" })
+      .click();
+    await expect(
+      page.getByText("Resolve these items before publishing"),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Add module", exact: true }).click();
+    let editor = page.getByRole("region", { name: "Open course editor" });
+    await editor.getByLabel("Title", { exact: true }).fill("Foundations");
+    await editor.getByLabel("URL name", { exact: true }).fill("foundations");
+    await editor.getByRole("button", { name: "Save module" }).click();
+    await expect(
+      page.getByRole("status").getByText("Module saved."),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Add lesson", exact: true }).click();
+    editor = page.getByRole("region", { name: "Open course editor" });
+    await editor.getByLabel("Title", { exact: true }).fill("Safe technique");
+    await editor.getByLabel("URL name", { exact: true }).fill("safe-technique");
+    await editor.getByRole("button", { name: "Add content block" }).click();
+    await editor
+      .getByLabel("Text 1", { exact: true })
+      .fill("Practice the reviewed technique safely.");
+    await editor
+      .getByLabel("Transcript", { exact: true })
+      .fill("Practice the reviewed technique safely.");
+    await editor.getByRole("button", { name: "Save lesson" }).click();
+    await expect(
+      page.getByRole("status").getByText("Lesson saved."),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Assessment", exact: true }).click();
+    await editor
+      .getByRole("button", { name: "Add question", exact: true })
+      .click();
+    await editor
+      .getByLabel("Question", { exact: true })
+      .fill("Which technique is safe?");
+    await editor
+      .getByLabel("Question 1 option 1", { exact: true })
+      .fill("The reviewed technique");
+    await editor
+      .getByLabel("Question 1 option 2", { exact: true })
+      .fill("Skip the review");
+    await editor
+      .getByLabel("Feedback after answering", { exact: true })
+      .fill("Follow the reviewed technique.");
+    await editor
+      .getByRole("button", { name: "Save new quiz revision" })
+      .click();
+    await expect(
+      page.getByText(
+        "Quiz revision saved. Previous attempts remain in history.",
+      ),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Review publication readiness" })
+      .click();
+    await expect(
+      page.getByText("Ready to publish", { exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Publish course", exact: true })
+      .click();
+    await expect(
+      page.getByText("Course published.", { exact: true }),
+    ).toBeVisible();
+    const response = await page.request.get(`/api/admin/courses/${courseId}`);
+    expect(response.status()).toBe(200);
+    expect(response.headers()["cache-control"]).toBe("private, no-store");
+    const persisted = (await response.json()).course;
+    expect(persisted.status).toBe("published");
+    expect(
+      persisted.modules[0].lessons[0].contentDocument.blocks[0].children[0]
+        .text,
+    ).toBe("Practice the reviewed technique safely.");
+    const quiz = await page.request.get(
+      `/api/admin/lessons/${persisted.modules[0].lessons[0].id}/quiz`,
+    );
+    expect((await quiz.json()).quiz.document.passingPercent).toBe(80);
+    await page
+      .getByRole("button", { name: "Move to draft", exact: true })
+      .click();
+    await expect(
+      page.getByText("Course moved to draft.", { exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Course details", exact: true })
+      .click();
+    await page
+      .getByLabel("Course title", { exact: true })
+      .fill("Unsaved owner edit");
+    const current = (
+      await (await page.request.get(`/api/admin/courses/${courseId}`)).json()
+    ).course;
+    const concurrent = await page.request.patch(
+      `/api/admin/courses/${courseId}`,
+      {
+        headers: { origin: new URL(page.url()).origin, "x-lash-csrf": "1" },
+        data: {
+          expectedRevision: current.revision,
+          title: "Other editor commit",
+        },
+      },
+    );
+    expect(concurrent.status()).toBe(200);
+    await page
+      .getByRole("button", { name: "Save course details", exact: true })
+      .click();
+    await expect(page.getByRole("alert")).toContainText("changed");
+    await expect(page.getByLabel("Course title", { exact: true })).toHaveValue(
+      "Unsaved owner edit",
+    );
+    const missingCsrf = await page.request.post("/api/admin/courses", {
+      data: { title: "Forbidden" },
+    });
+    expect(missingCsrf.status()).toBe(403);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: "test-results/course-authoring-browser/mobile-authoring.png",
+      fullPage: true,
+    });
+  } finally {
+    await context.close();
+  }
+});
+test("customer-facing authoring routes isolate unauthenticated and non-editor staff", async ({
+  browser,
+  request,
+}) => {
+  expect((await request.get("/api/admin/courses")).status()).toBe(401);
+  if (!storagePath) throw new Error("Owned storage fixture required");
+  const states = JSON.parse(await readFile(storagePath, "utf8"));
+  const context = await browser.newContext({ storageState: states.admin });
+  try {
+    const response = await context.request.get("/api/admin/courses");
+    expect(response.status()).toBe(403);
+    const body = await response.json();
+    expect(body.error.code).toBe("forbidden");
+    const page = await context.newPage();
+    await page.goto("/admin/courses");
+    await expect(page).toHaveURL(/\/admin\/not-authorized$/);
+  } finally {
+    await context.close();
+  }
+});
