@@ -64,6 +64,8 @@ import {
   bookingSquareCustomers,
 } from "./schema";
 import * as schema from "./schema";
+import { isKnownOperationalSquarePayment, observeOperationalSquarePayment } from "./operational-square-payment-observer";
+import { withWriterOperationContext } from "@/lib/writer-admission/context";
 
 const TEST_PREFIX = "v2-final-test-";
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -74,6 +76,52 @@ const pool = testDatabaseUrl
   ? new Pool(createPrivateDbPoolConfig(testDatabaseUrl))
   : null;
 const db = pool ? drizzle({ client: pool, schema }) : null;
+
+test("operational recovery context preserves durable capture and replay while rejecting conflicting identity", { skip: skipReason }, async () => {
+  const database = requireDb();
+  const seeded = await seedOperationalHold();
+  const [hold] = await database.select().from(appointmentHolds).where(eq(appointmentHolds.id, seeded.holdId));
+  const repository = await createServiceBookingPaymentRepository(database);
+  assert.ok(repository.prepareOperationalPaymentIntent);
+  const now = new Date("2032-01-01T12:01:00.000Z");
+  const customerId = `${TEST_PREFIX}admission-customer-${randomUUID()}`;
+  const prepared = await repository.prepareOperationalPaymentIntent({
+    holdId: hold.id, referenceId: hold.publicReference, amountCents: 5650, currency: "CAD", now,
+    idempotencyKeyCandidate: `${TEST_PREFIX}admission-key-${randomUUID()}`,
+    leaseExpiresAt: new Date("2032-01-01T12:20:00.000Z"), requestBodyHash: "owned-request-hash", sourceIdHash: "owned-source-hash",
+    squareCustomerId: customerId,
+  });
+  assert.equal(prepared.status, "ready");
+  const payment = { id: `${TEST_PREFIX}admission-payment-${randomUUID()}`, status: "COMPLETED", reference_id: hold.publicReference,
+    customer_id: customerId, amount_money: { amount: 5650, currency: "CAD" } };
+  assert.equal(await isKnownOperationalSquarePayment(payment, database), true);
+  assert.equal(await isKnownOperationalSquarePayment({ ...payment, reference_id: "unknown-owned-reference" }, database), false);
+  const observe = (value = payment) => withWriterOperationContext(() => observeOperationalSquarePayment(value, now, database));
+  assert.equal((await observe()).status, "observed");
+  assert.equal((await observe()).status, "observed");
+  const attempts = await database.select().from(bookingPaymentAttempts).where(eq(bookingPaymentAttempts.holdId, hold.id));
+  const projected = await database.select().from(appointments).where(eq(appointments.sourceHoldId, hold.id));
+  assert.equal(attempts.length, 1); assert.equal(attempts[0].status, "captured"); assert.equal(attempts[0].providerPaymentId, payment.id);
+  assert.equal(projected.length, 1); assert.equal(projected[0].paymentStatus, "partially_paid");
+  await assert.rejects(() => observe({ ...payment, id: `${TEST_PREFIX}conflicting-payment` }), /WRITER_OPERATION_REQUIRES_REVIEW/);
+  await assert.rejects(() => observe({ ...payment, status: "FAILED" }), /WRITER_OPERATION_REQUIRES_REVIEW/);
+  const [preserved] = await database.select().from(bookingPaymentAttempts).where(eq(bookingPaymentAttempts.holdId, hold.id));
+  assert.equal(preserved.status, "captured"); assert.equal(preserved.providerPaymentId, payment.id);
+});
+
+test("operational recovery context cannot complete after a legacy model result", { skip: skipReason }, async () => {
+  const database = requireDb();
+  const seeded = await seedOperationalHold();
+  await database.update(appointmentHolds).set({ bookingModelVersion: 1 }).where(eq(appointmentHolds.id, seeded.holdId));
+  const repository = await createServiceBookingPaymentRepository(database);
+  assert.ok(repository.recordCapturedOperationalPayment);
+  await assert.rejects(() => withWriterOperationContext(() => repository.recordCapturedOperationalPayment!({
+    amountCents: 5650, currency: "CAD", holdId: seeded.holdId,
+    idempotencyKey: `${TEST_PREFIX}legacy-model-${randomUUID()}`, now: new Date("2032-01-01T12:01:00.000Z"),
+    squarePaymentId: `${TEST_PREFIX}legacy-payment-${randomUUID()}`,
+  })), /WRITER_OPERATION_REQUIRES_REVIEW/);
+  assert.equal((await database.select().from(bookingPaymentAttempts).where(eq(bookingPaymentAttempts.holdId, seeded.holdId))).length, 0);
+});
 
 afterEach(async () => {
   if (db) {

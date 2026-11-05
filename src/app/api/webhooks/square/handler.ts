@@ -104,6 +104,7 @@ interface SquareWebhookDependencies {
   isKnownNoShowChargeEvent?: (
     event: VerifiedSquareWebhookEvent,
   ) => Promise<boolean>;
+  isKnownOperationalPayment?: (payment: SquarePayment) => Promise<boolean>;
   observeOperationalPayment?: (input: {
     now: Date;
     payment: SquarePayment;
@@ -252,6 +253,11 @@ export const defaultDependencies: SquareWebhookDependencies = {
       await import("@/lib/private-db/operational-square-payment-observer");
     return observeOperationalSquarePayment(input.payment, input.now);
   },
+  async isKnownOperationalPayment(payment) {
+    const { isKnownOperationalSquarePayment } =
+      await import("@/lib/private-db/operational-square-payment-observer");
+    return isKnownOperationalSquarePayment(payment);
+  },
   async recordSquareRefundEvent(input) {
     const { recordSquareRefundEvent } =
       await import("@/lib/private-db/square-refund-event-repository");
@@ -347,6 +353,7 @@ export function createSquareWebhookPostHandler(
   runTrainingCardRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
   runTrainingSplitRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
   runNoShowRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
+  runOperationalRecovery: (task: () => Promise<Response>) => Promise<Response> = task => task(),
 ): (req: Request) => Promise<Response> {
   return async function postSquareWebhook(req) {
     const env = await dependencies.getEnv();
@@ -656,23 +663,21 @@ export function createSquareWebhookPostHandler(
     }
 
     const operationalPayment = getSquarePayment(event);
+    const observeOperationalPayment = dependencies.observeOperationalPayment;
     if (
       operationalPayment !== null &&
-      dependencies.observeOperationalPayment !== undefined
+      observeOperationalPayment !== undefined
     ) {
+      let known: boolean;
       try {
-        const observation = await dependencies.observeOperationalPayment({
-          now: event.createdAt ? new Date(event.createdAt) : new Date(),
-          payment: operationalPayment,
-        });
-        if (observation.status === "observed") {
-          return new Response(null, { status: 200 });
-        }
+        known = dependencies.isKnownOperationalPayment === undefined
+          ? true
+          : await dependencies.isKnownOperationalPayment(operationalPayment);
       } catch (error) {
         await dependencies.alerts.alert({
           category: "square_webhook_retryable_failure",
           severity: "error",
-          message: "Operational Square payment observation failed",
+          message: "Operational Square payment classification failed",
           context: {
             error:
               error instanceof Error
@@ -684,6 +689,37 @@ export function createSquareWebhookPostHandler(
           },
         });
         return new Response(null, { status: 503 });
+      }
+      if (known) {
+        let unmatched = false;
+        const response = await runOperationalRecovery(async () => {
+          try {
+            const observation = await observeOperationalPayment({
+              now: event.createdAt ? new Date(event.createdAt) : new Date(),
+              payment: operationalPayment,
+            });
+            if (observation.status === "not_operational") {
+              unmatched = true;
+              markWriterOperationUncertain();
+            }
+          } catch (error) {
+            await dependencies.alerts.alert({
+              category: "square_webhook_retryable_failure",
+              severity: "error",
+              message: "Operational Square payment observation failed",
+              context: {
+                error: error instanceof Error ? error.message : "Unknown observation error",
+                eventId: event.eventId,
+                eventType: event.eventType,
+                paymentId: event.paymentId,
+              },
+            });
+            return new Response(null, { status: 503 });
+          }
+          return new Response(null, { status: 200 });
+        });
+        // Only admission-off can preserve the legacy unmatched booking fallback.
+        if (!unmatched || response.status !== 200) return response;
       }
     }
 

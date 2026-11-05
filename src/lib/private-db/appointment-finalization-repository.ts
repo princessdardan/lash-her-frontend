@@ -329,16 +329,16 @@ export function createAppointmentFinalizationRepository(
             );
           }
 
-          await Promise.all([
-            tx
-              .update(bookingPolicyAcceptances)
-              .set({ appointmentId: appointment.id })
-              .where(eq(bookingPolicyAcceptances.holdId, hold.id)),
-            tx
-              .update(bookingNoShowChargeRecords)
-              .set({ appointmentId: appointment.id, updatedAt: input.now })
-              .where(eq(bookingNoShowChargeRecords.holdId, hold.id)),
-          ]);
+          // These writes share one transaction/session. Await each explicitly
+          // so a failed linkage cannot leave a sibling running at settlement.
+          await tx
+            .update(bookingPolicyAcceptances)
+            .set({ appointmentId: appointment.id })
+            .where(eq(bookingPolicyAcceptances.holdId, hold.id));
+          await tx
+            .update(bookingNoShowChargeRecords)
+            .set({ appointmentId: appointment.id, updatedAt: input.now })
+            .where(eq(bookingNoShowChargeRecords.holdId, hold.id));
 
           await tx.insert(appointmentEvents).values({
             appointmentId: appointment.id,
