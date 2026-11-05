@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, readdirSync, lstatSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, readdirSync, lstatSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
@@ -8,6 +8,7 @@ const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const demand = (ok) => { if (!ok) throw new Error("FRONTEND_PACKAGED_SOURCE_REFUSED"); };
 const fixed = ["package.json", "package-lock.json", "src/lib/private-db/migration-lineage.ts", "contracts/api-integration/v1/manifest.json",
+  "scripts/api-contract-tools.mjs", "scripts/api-contract-compatibility-review.mjs",
   ...["frontend-migration", "frontend-schema", "frontend-image", "frontend-image-source", "source-checkout", "release-inputs", "source-policy", "release"].map((name) => `ops/platform/${name}.mjs`),
   "drizzle/meta/_journal.json",
   ...["manifest.json", "course-api.json", "community-api.json", "enrollment-event.schema.json", "boundary-contracts.json", "README.md"]
@@ -19,7 +20,10 @@ function bytes(directory, relative) {
   return readFileSync(path);
 }
 function files(directory) {
-  return [...fixed, ...readdirSync(join(directory, "drizzle")).filter((name) => name.endsWith(".sql")).map((name) => `drizzle/${name}`)].sort();
+  const manifest = JSON.parse(bytes(directory, "contracts/api-integration/p2-candidate/manifest.json"));
+  const review = "contracts/api-integration/p2-candidate/compatibility-review.json";
+  return [...fixed, ...(manifest.status === "released" || existsSync(join(directory, review)) ? [review] : []),
+    ...readdirSync(join(directory, "drizzle")).filter((name) => name.endsWith(".sql")).map((name) => `drizzle/${name}`)].sort();
 }
 
 // This manifest is produced in the immutable image build. It is never accepted

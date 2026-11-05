@@ -229,6 +229,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -236,6 +237,15 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run contracts:check
+      - name: Verify the published P2 compatibility review against selected source
+        env:
+          FRONTEND_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |-
+          node --input-type=module -e '
+            import { readReviewBundle, verifyPublishedPhase2Contracts } from "./scripts/api-contract-compatibility-review.mjs";
+            const bundle = readReviewBundle("contracts/api-integration/p2-candidate");
+            if (bundle.manifest.status === "released") verifyPublishedPhase2Contracts(process.cwd(), process.env.FRONTEND_SOURCE_REVISION);
+          '
       - run: npm run test:staging-release
       - run: npx tsc --noEmit
       - run: npm run lint

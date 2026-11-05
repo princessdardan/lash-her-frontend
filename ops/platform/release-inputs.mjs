@@ -1,5 +1,6 @@
 import { writeFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { verifyPublishedPhase2Contracts } from "../../scripts/api-contract-compatibility-review.mjs";
 import { contractManifestHash, phase2ContractManifestBinding } from "./release.mjs";
 import { SOURCE_REPOSITORIES, SOURCE_REPOSITORY_IDS, SOURCE_OPERATOR_ID, SOURCE_WORKFLOW, REQUIRED_SOURCE_JOBS, SOURCE_APPROVAL_MODE, assertSourceContext, isRevision, sourceBranchFor } from "./source-policy.mjs";
 import { createHash } from "node:crypto";
@@ -101,6 +102,7 @@ export async function readBoundedJson(response, maximum = 2 * 1024 * 1024) {
 }
 
 export function sourceContextFromEnvironment(environment = process.env, sourceRoot = undefined, { historicalPhase1 = false } = {}) {
+  if (!historicalPhase1) verifyPublishedPhase2Contracts(sourceRoot ?? fileURLToPath(new URL("../..", import.meta.url)), environment.GITHUB_SHA);
   return { repository: environment.GITHUB_REPOSITORY, repositoryId: environment.GITHUB_REPOSITORY_ID,
     ownerId: environment.GITHUB_REPOSITORY_OWNER_ID, actorId: environment.GITHUB_ACTOR_ID, event: environment.GITHUB_EVENT_NAME,
     branch: environment.SOURCE_BRANCH, workflowRef: environment.GITHUB_REF, workflowSha: environment.GITHUB_SHA,

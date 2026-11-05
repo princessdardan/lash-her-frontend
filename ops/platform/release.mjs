@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { assertCompatibilityReviewRecord, compatibilityReviewFile } from "../../scripts/api-contract-compatibility-review.mjs";
 
 const REPOSITORIES = {
   frontend: "https://github.com/princessdardan/lash-her-frontend.git",
@@ -94,6 +95,10 @@ export function phase2ContractManifestBinding(sourceRoot = fileURLToPath(new URL
   }
   demand(digest(readFileSync(join(directory, "boundary-contracts.json"))) === manifest.boundarySha256);
   if (manifest.status === "released" || manifest.readmeSha256 !== undefined) demand(digest(readFileSync(join(directory, "README.md"))) === manifest.readmeSha256);
+  if (manifest.status === "released") {
+    const review = assertCompatibilityReviewRecord(JSON.parse(readFileSync(join(directory, compatibilityReviewFile))));
+    demand(review.candidate.manifestSha256 === digest(bytes));
+  }
   return { contractPhase: "p2", phase2ContractManifestSha256: `sha256:${digest(bytes)}`, phase2ContractRevisions: revisions };
 }
 

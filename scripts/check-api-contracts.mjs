@@ -6,6 +6,15 @@ import {
   contractDirectory,
   verifyBundleRevision,
 } from "./api-contract-tools.mjs";
+import { verifyCompatibilityReview } from "./api-contract-compatibility-review.mjs";
+
+const reviewIndex = process.argv.indexOf("--compatibility-review");
+const reviewRevisionIndex = process.argv.indexOf("--review-revision");
+if ((reviewIndex >= 0 || reviewRevisionIndex >= 0) && (!process.argv.includes("--release") || reviewIndex < 0 || reviewRevisionIndex < 0 ||
+  !process.argv[reviewIndex + 1] || process.argv[reviewIndex + 1].startsWith("--") ||
+  !process.argv[reviewRevisionIndex + 1] || process.argv[reviewRevisionIndex + 1].startsWith("--"))) {
+  throw new Error("Compatibility review requires --release, --compatibility-review and --review-revision");
+}
 
 const bundleIndex = process.argv.indexOf("--bundle");
 const bundleDirectory =
@@ -61,23 +70,29 @@ if (baselineIndex >= 0) {
     throw new Error(
       "Release verification requires --baseline-revision with the approved baseline commit",
     );
-  if (baselineRevisionIndex >= 0)
-    await verifyBundleRevision(
-      resolve(directory),
-      baseline.manifest,
-      process.argv[baselineRevisionIndex + 1],
-    );
-  for (const name of ["course", "community"])
-    assertCompatible(baseline.documents[name], documents[name]);
-  // Closed versioned identity/event contracts require coordinated version review.
-  for (const name of ["enrollmentEvent", "boundaries"]) {
-    if (
-      JSON.stringify(baseline.documents[name]) !==
-      JSON.stringify(documents[name])
-    ) {
-      throw new Error(
-        `Changed versioned boundary requires compatibility review: ${name}`,
+  if (reviewIndex >= 0) {
+    verifyCompatibilityReview({ reviewPath: resolve(process.argv[reviewIndex + 1]), reviewRevision: process.argv[reviewRevisionIndex + 1],
+      candidateDirectory: bundleDirectory ? resolve(bundleDirectory) : contractDirectory, candidateRevision: process.argv[releaseRevisionIndex + 1],
+      baselineDirectory: resolve(directory), baselineRevision: process.argv[baselineRevisionIndex + 1] });
+  } else {
+    if (baselineRevisionIndex >= 0)
+      await verifyBundleRevision(
+        resolve(directory),
+        baseline.manifest,
+        process.argv[baselineRevisionIndex + 1],
       );
+    for (const name of ["course", "community"])
+      assertCompatible(baseline.documents[name], documents[name]);
+    // Closed versioned identity/event contracts require coordinated version review.
+    for (const name of ["enrollmentEvent", "boundaries"]) {
+      if (
+        JSON.stringify(baseline.documents[name]) !==
+        JSON.stringify(documents[name])
+      ) {
+        throw new Error(
+          `Changed versioned boundary requires compatibility review: ${name}`,
+        );
+      }
     }
   }
 } else if (process.argv.includes("--release")) {

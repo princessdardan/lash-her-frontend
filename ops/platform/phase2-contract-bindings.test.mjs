@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { phase2ContractManifestBinding } from "./release.mjs";
 import { verifySourceCheckouts } from "./source-checkout.mjs";
+import { buildCompatibilityReview, readReviewBundle, readReviewBundleAtRevision } from "../../scripts/api-contract-compatibility-review.mjs";
 
 const frontend = fileURLToPath(new URL("../..", import.meta.url));
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
@@ -39,8 +40,18 @@ function fixture(run) {
     for (const [name, artifact] of Object.entries(manifest.artifacts)) artifact.revision = sources[name === "enrollmentEvent" ? "community" : name].commit;
     writeFileSync(join(bundle, "manifest.json"), JSON.stringify(manifest) + "\n");
     git(source, "init", "--quiet");
+    const archive = join(source, "contracts/api-integration/v1");
+    cpSync(bundle, archive, { recursive: true });
+    const baselineRevision = commit(source);
+    const reviewPath = join(bundle, "compatibility-review.json");
+    const review = buildCompatibilityReview(readReviewBundleAtRevision(source, baselineRevision), readReviewBundle(bundle), baselineRevision);
+    writeFileSync(reviewPath, JSON.stringify(review) + "\n");
     sources.frontend = { repository: "https://github.com/princessdardan/lash-her-frontend.git", commit: commit(source), requiredChecks: "passed" };
-    const retain = () => { writeFileSync(join(bundle, "manifest.json"), JSON.stringify(manifest) + "\n"); sources.frontend.commit = commit(source); };
+    const retain = () => {
+      const bytes = JSON.stringify(manifest) + "\n";
+      writeFileSync(join(bundle, "manifest.json"), bytes); review.candidate.manifestSha256 = hash(bytes);
+      writeFileSync(reviewPath, JSON.stringify(review) + "\n"); sources.frontend.commit = commit(source);
+    };
     run({ directory, source, bundle, sources, manifest, retain, commit });
   } finally { rmSync(directory, { recursive: true, force: true }); }
 }

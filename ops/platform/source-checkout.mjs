@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { SOURCE_REPOSITORIES } from "./release-inputs.mjs";
 import { phase2ContractManifestBinding } from "./release.mjs";
+import { verifyPublishedPhase2Contracts } from "../../scripts/api-contract-compatibility-review.mjs";
 
 const SOURCE_PATHS = ["src", "scripts", "contracts", "ops", "tests", "drizzle", "tools", ":(glob).env*"];
 
@@ -56,6 +57,7 @@ export function verifySourceCheckouts(sourceRoot, sources, { requirePhase2 = fal
       const bytes = readFileSync(join(sourceRoot, artifact.repository, artifact.sourcePath));
       if (createHash("sha256").update(bytes).digest("hex") !== artifact.sha256) throw new Error("Exact phase 2 API contract source required");
     }
+    verifyPublishedPhase2Contracts(frontend, sources.frontend.commit);
     return binding;
   }
 }
