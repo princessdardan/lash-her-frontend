@@ -1,5 +1,6 @@
 import "server-only";
 import { highLevelOwnsMarketing } from "@/lib/highlevel/config";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import {
   createResendBroadcast,
@@ -49,6 +50,32 @@ export interface SendCampaignResult {
   status: "sent" | "scheduled";
 }
 
+export interface CampaignSendDependencies {
+  getCampaignById: typeof getCampaignById;
+  claimCampaignForSending: typeof claimCampaignForSending;
+  countOptedInMarketingContacts: typeof countOptedInMarketingContacts;
+  getResendBroadcast: typeof getResendBroadcast;
+  createResendBroadcast: typeof createResendBroadcast;
+  recordCampaignBroadcast: typeof recordCampaignBroadcast;
+  sendResendBroadcast: typeof sendResendBroadcast;
+  markCampaignSent: typeof markCampaignSent;
+  markCampaignFailed: typeof markCampaignFailed;
+  getEmailConfig: typeof getEmailConfig;
+}
+
+const campaignSendDependencies: CampaignSendDependencies = {
+  getCampaignById,
+  claimCampaignForSending,
+  countOptedInMarketingContacts,
+  getResendBroadcast,
+  createResendBroadcast,
+  recordCampaignBroadcast,
+  sendResendBroadcast,
+  markCampaignSent,
+  markCampaignFailed,
+  getEmailConfig,
+};
+
 function getMarketingSegmentId(): string | undefined {
   return process.env[MARKETING_SEGMENT_ENV]?.trim() || undefined;
 }
@@ -91,10 +118,10 @@ export async function sendCampaignTestEmail(input: {
  * any Resend failure the campaign is moved to "failed" and a CampaignSendError is
  * thrown for the caller to surface.
  */
-export async function sendCampaign(input: {
-  campaignId: string;
-  scheduledAt?: Date;
-}): Promise<SendCampaignResult> {
+export async function sendCampaign(
+  input: { campaignId: string; scheduledAt?: Date },
+  dependencies: CampaignSendDependencies = campaignSendDependencies,
+): Promise<SendCampaignResult> {
   if (highLevelOwnsMarketing())
     throw new CampaignSendError(
       "provider_changed",
@@ -109,7 +136,7 @@ export async function sendCampaign(input: {
     );
   }
 
-  const existing = await getCampaignById(input.campaignId);
+  const existing = await dependencies.getCampaignById(input.campaignId);
 
   if (existing === null) {
     throw new CampaignSendError("not_found", "Campaign not found.");
@@ -123,7 +150,7 @@ export async function sendCampaign(input: {
   }
 
   // Claim BEFORE creating any broadcast so a lost race produces no orphan.
-  const campaign = await claimCampaignForSending(input.campaignId);
+  const campaign = await dependencies.claimCampaignForSending(input.campaignId);
 
   if (campaign === null) {
     throw new CampaignSendError(
@@ -132,7 +159,8 @@ export async function sendCampaign(input: {
     );
   }
 
-  const recipientCountEstimate = await countOptedInMarketingContacts();
+  const recipientCountEstimate =
+    await dependencies.countOptedInMarketingContacts();
 
   try {
     let broadcastId: string;
@@ -142,13 +170,20 @@ export async function sendCampaign(input: {
       // send whose HTTP response was lost, then retried after "failed"). Inspect
       // it rather than creating a second broadcast — creating a new one would
       // email the entire audience twice.
-      const existing = await getResendBroadcast(campaign.resendBroadcastId);
+      const existing = await dependencies.getResendBroadcast(
+        campaign.resendBroadcastId,
+      );
       broadcastId = campaign.resendBroadcastId;
+      if (
+        existing.id !== broadcastId ||
+        !["draft", "sent", "queued"].includes(existing.status)
+      )
+        markWriterOperationUncertain();
 
       if (existing.status !== "draft") {
         // Already dispatched (sent/queued/scheduled). Finalize as success
         // without re-sending.
-        await markCampaignSent(campaign.id, {
+        await dependencies.markCampaignSent(campaign.id, {
           scheduledAt: input.scheduledAt,
           sentAt: new Date(),
         });
@@ -162,9 +197,9 @@ export async function sendCampaign(input: {
       }
       // Broadcast exists but was never sent — fall through and send it.
     } else {
-      const broadcast = await createResendBroadcast({
+      const broadcast = await dependencies.createResendBroadcast({
         segmentId,
-        from: getEmailConfig().fromEmail,
+        from: dependencies.getEmailConfig().fromEmail,
         replyTo: CUSTOMER_REPLY_TO_EMAIL,
         subject: campaign.subject,
         ...(campaign.previewText ? { previewText: campaign.previewText } : {}),
@@ -173,8 +208,9 @@ export async function sendCampaign(input: {
       });
 
       broadcastId = broadcast.id;
+      if (!broadcastId) markWriterOperationUncertain();
 
-      await recordCampaignBroadcast(campaign.id, {
+      await dependencies.recordCampaignBroadcast(campaign.id, {
         resendBroadcastId: broadcastId,
         resendSegmentId: segmentId,
         recipientCountEstimate,
@@ -182,14 +218,15 @@ export async function sendCampaign(input: {
       });
     }
 
-    await sendResendBroadcast(
+    const acknowledgement = await dependencies.sendResendBroadcast(
       broadcastId,
       input.scheduledAt
         ? { scheduledAt: input.scheduledAt.toISOString() }
         : undefined,
     );
+    if (acknowledgement?.id !== broadcastId) markWriterOperationUncertain();
 
-    await markCampaignSent(campaign.id, {
+    await dependencies.markCampaignSent(campaign.id, {
       scheduledAt: input.scheduledAt,
       sentAt: new Date(),
     });
@@ -200,10 +237,11 @@ export async function sendCampaign(input: {
       status: input.scheduledAt ? "scheduled" : "sent",
     };
   } catch (error) {
+    markWriterOperationUncertain();
     const message =
       error instanceof Error ? error.message : "Unknown broadcast error";
 
-    await markCampaignFailed(campaign.id, {
+    await dependencies.markCampaignFailed(campaign.id, {
       error: message,
       errorContext: { segmentId },
     });

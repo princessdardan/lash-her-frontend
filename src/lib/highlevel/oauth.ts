@@ -2,6 +2,7 @@ import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import {
   callbackUrl,
   HIGHLEVEL_ORIGIN,
@@ -30,9 +31,11 @@ export async function createInstallation(
 ): Promise<{ url: string; state: string }> {
   locationId();
   const state = randomBytes(32).toString("base64url");
-  await getPrivateDb().execute(
-    sql`insert into highlevel_oauth_states (hash, actor_id, expires_at) values (${stateHash(state)}, ${actorId}::uuid, now() + interval '10 minutes')`,
+  const receipt = await getPrivateDb().execute<{ hash: string }>(
+    sql`insert into highlevel_oauth_states (hash, actor_id, expires_at) values (${stateHash(state)}, ${actorId}::uuid, now() + interval '10 minutes') returning hash`,
   );
+  if (receipt.rows.length !== 1 || receipt.rows[0].hash !== stateHash(state))
+    markWriterOperationUncertain();
   const url = new URL(
     "https://marketplace.gohighlevel.com/oauth/chooselocation",
   );
@@ -99,16 +102,18 @@ export async function completeInstallation(
     { access_token: token.access_token, refresh_token: token.refresh_token },
     locationId(),
   );
-  await getPrivateDb()
+  const receipt = await getPrivateDb()
     .execute(sql`insert into highlevel_connections (location_id, credentials_ciphertext, expires_at, installed_by) values (${locationId()}, ${ciphertext}, ${new Date(Date.now() + token.expires_in * 1000)}, ${actorId}::uuid)
-    on conflict (location_id) do update set credentials_ciphertext = excluded.credentials_ciphertext, expires_at = excluded.expires_at, installed_by = excluded.installed_by, refresh_state = 'ready', updated_at = now()`);
+    on conflict (location_id) do update set credentials_ciphertext = excluded.credentials_ciphertext, expires_at = excluded.expires_at, installed_by = excluded.installed_by, refresh_state = 'ready', updated_at = now() returning location_id`);
+  if (receipt.rows.length !== 1 || receipt.rows[0].location_id !== locationId())
+    markWriterOperationUncertain();
 }
 
 export async function accessToken(
   exchangeToken: typeof exchange = exchange,
+  db = getPrivateDb(),
 ): Promise<string> {
   const id = locationId();
-  const db = getPrivateDb();
   const result = await db.execute<{
     credentials_ciphertext: string;
     expires_at: Date;
@@ -154,6 +159,7 @@ export async function accessToken(
       throw new HighLevelError("oauth_installation_changed");
     return token.access_token;
   } catch {
+    markWriterOperationUncertain();
     await db.execute(
       sql`update highlevel_connections set refresh_state = 'reconnect', updated_at = now() where location_id = ${id} and credentials_ciphertext = ${row.credentials_ciphertext}`,
     );

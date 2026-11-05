@@ -1,4 +1,5 @@
 import "server-only";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
 
@@ -164,8 +165,9 @@ export async function claimCampaignForSending(
 export async function recordCampaignBroadcast(
   id: string,
   input: RecordCampaignBroadcastInput,
+  database = db(),
 ): Promise<void> {
-  await db()
+  const receipts = await database
     .update(marketingCampaigns)
     .set({
       resendBroadcastId: input.resendBroadcastId,
@@ -174,28 +176,36 @@ export async function recordCampaignBroadcast(
       scheduledAt: input.scheduledAt ?? null,
       updatedAt: new Date(),
     })
-    .where(eq(marketingCampaigns.id, id));
+    .where(eq(marketingCampaigns.id, id))
+    .returning({ id: marketingCampaigns.id });
+  if (receipts.length !== 1 || receipts[0].id !== id)
+    markWriterOperationUncertain();
 }
 
 export async function markCampaignSent(
   id: string,
   input: { scheduledAt?: Date; sentAt: Date },
+  database = db(),
 ): Promise<void> {
-  await db()
+  const receipts = await database
     .update(marketingCampaigns)
     .set({
       status: input.scheduledAt ? "scheduled" : "sent",
       sentAt: input.scheduledAt ? null : input.sentAt,
       updatedAt: new Date(),
     })
-    .where(eq(marketingCampaigns.id, id));
+    .where(eq(marketingCampaigns.id, id))
+    .returning({ id: marketingCampaigns.id });
+  if (receipts.length !== 1 || receipts[0].id !== id)
+    markWriterOperationUncertain();
 }
 
 export async function markCampaignFailed(
   id: string,
   input: { error: string; errorContext?: Record<string, unknown> },
+  database = db(),
 ): Promise<void> {
-  await db()
+  const receipts = await database
     .update(marketingCampaigns)
     .set({
       status: "failed",
@@ -203,5 +213,8 @@ export async function markCampaignFailed(
       lastErrorContext: input.errorContext ?? null,
       updatedAt: new Date(),
     })
-    .where(eq(marketingCampaigns.id, id));
+    .where(eq(marketingCampaigns.id, id))
+    .returning({ id: marketingCampaigns.id });
+  if (receipts.length !== 1 || receipts[0].id !== id)
+    markWriterOperationUncertain();
 }

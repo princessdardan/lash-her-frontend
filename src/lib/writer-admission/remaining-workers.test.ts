@@ -35,6 +35,18 @@ import { createInventorySyncPostHandler } from "@/app/api/webhooks/sanity/invent
 import type { NextRequest } from "next/server";
 import type { TProduct } from "@/types";
 import { WriterAdmissionError } from "./config";
+import {
+  sendCampaign,
+  type CampaignSendDependencies,
+} from "@/lib/marketing-campaign/send-campaign";
+import {
+  recordCampaignBroadcast,
+  markCampaignSent,
+  markCampaignFailed,
+  type MarketingCampaign,
+} from "@/lib/marketing-campaign/marketing-campaign-store";
+import { accessToken } from "@/lib/highlevel/oauth";
+import { encryptCredential } from "@/lib/highlevel/crypto";
 
 function admission() {
   const url =
@@ -628,4 +640,208 @@ test("Sanity inventory callbacks return retryable private refusal and unrelated 
     200,
   );
   assert.deepEqual(f.state.outcomes, []);
+});
+
+function campaignSend(fault?: "ack" | "failure" | "existing") {
+  const calls: string[] = [];
+  const campaign = {
+    id: "owned-campaign",
+    status: "draft",
+    subject: "Owned subject",
+    bodyHtml: "<p>Owned</p>",
+    resendBroadcastId: fault === "existing" ? "owned-broadcast" : null,
+  } as MarketingCampaign;
+  const dependencies: CampaignSendDependencies = {
+    getCampaignById: async () => campaign,
+    claimCampaignForSending: async () => {
+      calls.push("claim");
+      return campaign;
+    },
+    countOptedInMarketingContacts: async () => 1,
+    getEmailConfig: () =>
+      ({ fromEmail: "owned@example.invalid" }) as ReturnType<
+        CampaignSendDependencies["getEmailConfig"]
+      >,
+    getResendBroadcast: async () =>
+      ({ id: "unrelated-broadcast", status: "sent" }) as Awaited<
+        ReturnType<CampaignSendDependencies["getResendBroadcast"]>
+      >,
+    createResendBroadcast: async () => {
+      calls.push("create");
+      return { id: "owned-broadcast" };
+    },
+    recordCampaignBroadcast: async () => {
+      calls.push("broadcast-receipt");
+    },
+    sendResendBroadcast: async () => {
+      calls.push("send");
+      if (fault === "failure") throw new Error("owned-private-detail");
+      return fault === "ack"
+        ? { id: "unrelated-broadcast" }
+        : { id: "owned-broadcast" };
+    },
+    markCampaignSent: async () => {
+      calls.push("sent-receipt");
+    },
+    markCampaignFailed: async () => {
+      calls.push("failed-receipt");
+    },
+  };
+  return { calls, dependencies };
+}
+
+test("campaign provider acknowledgement and domain catches cannot hide uncertainty", async () => {
+  const segment = process.env.RESEND_SEGMENT_MARKETING_ID;
+  process.env.RESEND_SEGMENT_MARKETING_ID = "owned-segment";
+  try {
+    for (const fault of ["ack", "failure", "existing"] as const) {
+      const f = admission(),
+        c = campaignSend(fault);
+      f.state.newWork = true;
+      await assert.rejects(
+        f.run("new-work", async () => {
+          try {
+            await sendCampaign(
+              { campaignId: "owned-campaign" },
+              c.dependencies,
+            );
+          } catch {
+            /* The admin may convert this domain failure to a response. */
+          }
+        }),
+      );
+      assert.deepEqual(f.state.outcomes, ["uncertain"]);
+      assert.equal(
+        c.calls.filter((c) => c === "send").length,
+        fault === "existing" ? 0 : 1,
+      );
+      if (fault === "failure") assert.equal(c.calls.at(-1), "failed-receipt");
+    }
+  } finally {
+    if (segment === undefined) delete process.env.RESEND_SEGMENT_MARKETING_ID;
+    else process.env.RESEND_SEGMENT_MARKETING_ID = segment;
+  }
+});
+
+test("campaign normal completion awaits both provider and local receipts and off mode keeps existing outcomes", async () => {
+  const segment = process.env.RESEND_SEGMENT_MARKETING_ID;
+  process.env.RESEND_SEGMENT_MARKETING_ID = "owned-segment";
+  try {
+    const f = admission(),
+      c = campaignSend();
+    f.state.newWork = true;
+    assert.equal(
+      (
+        await f.run("new-work", () =>
+          sendCampaign({ campaignId: "owned-campaign" }, c.dependencies),
+        )
+      ).status,
+      "sent",
+    );
+    assert.deepEqual(c.calls, [
+      "claim",
+      "create",
+      "broadcast-receipt",
+      "send",
+      "sent-receipt",
+    ]);
+    assert.deepEqual(f.state.outcomes, ["completed"]);
+    assert.equal(
+      (
+        await f.off("new-work", () =>
+          sendCampaign(
+            { campaignId: "owned-campaign" },
+            campaignSend("ack").dependencies,
+          ),
+        )
+      ).status,
+      "sent",
+    );
+  } finally {
+    if (segment === undefined) delete process.env.RESEND_SEGMENT_MARKETING_ID;
+    else process.env.RESEND_SEGMENT_MARKETING_ID = segment;
+  }
+});
+
+test("missing campaign broadcast, sent, or failure receipts retain uncertainty", async () => {
+  const database = {
+    update: () => ({
+      set: () => ({ where: () => ({ returning: async () => [] }) }),
+    }),
+  } as unknown as NonNullable<Parameters<typeof markCampaignSent>[2]>;
+  for (const run of [
+    () =>
+      recordCampaignBroadcast(
+        "owned-campaign",
+        {
+          resendBroadcastId: "owned-broadcast",
+          resendSegmentId: "owned-segment",
+          recipientCountEstimate: 1,
+        },
+        database,
+      ),
+    () => markCampaignSent("owned-campaign", { sentAt: now }, database),
+    () =>
+      markCampaignFailed(
+        "owned-campaign",
+        { error: "owned-fixture" },
+        database,
+      ),
+  ]) {
+    const f = admission();
+    f.state.newWork = true;
+    await assert.rejects(f.run("new-work", run));
+    assert.deepEqual(f.state.outcomes, ["uncertain"]);
+  }
+});
+
+test("a caught OAuth refresh failure stays uncertain after reconnect persistence", async () => {
+  const location = process.env.HIGHLEVEL_LOCATION_ID,
+    key = process.env.HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY;
+  process.env.HIGHLEVEL_LOCATION_ID = "owned-location";
+  process.env.HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY = "a".repeat(64);
+  try {
+    const f = admission();
+    let calls = 0;
+    const envelope = encryptCredential(
+      { access_token: "owned-access", refresh_token: "owned-refresh" },
+      "owned-location",
+    );
+    const database = {
+      execute: async () => {
+        calls++;
+        if (calls === 1)
+          return {
+            rows: [
+              {
+                credentials_ciphertext: envelope,
+                expires_at: new Date(0),
+                refresh_state: "ready",
+                updated_at: now,
+              },
+            ],
+          };
+        return { rows: [{ location_id: "owned-location" }] };
+      },
+    } as unknown as NonNullable<Parameters<typeof accessToken>[1]>;
+    await assert.rejects(
+      f.run("recovery", async () => {
+        try {
+          await accessToken(async () => {
+            throw new Error("owned-private-detail");
+          }, database);
+        } catch {
+          /* Existing callers may classify this as a domain-level failure. */
+        }
+      }),
+    );
+    assert.equal(calls, 3);
+    assert.deepEqual(f.state.outcomes, ["uncertain"]);
+  } finally {
+    if (location === undefined) delete process.env.HIGHLEVEL_LOCATION_ID;
+    else process.env.HIGHLEVEL_LOCATION_ID = location;
+    if (key === undefined)
+      delete process.env.HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY;
+    else process.env.HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY = key;
+  }
 });
