@@ -5,9 +5,13 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { processCustomerEmailOutbox } from "./customer-email-outbox-worker";
+import { WriterAdmissionError } from "@/lib/writer-admission/config";
 
 export function createCustomerEmailOutboxCronHandler(
   processOutbox: typeof processCustomerEmailOutbox = processCustomerEmailOutbox,
+  runRecovery: (
+    task: () => ReturnType<typeof processCustomerEmailOutbox>,
+  ) => ReturnType<typeof processCustomerEmailOutbox> = (task) => task(),
 ): (request: Request) => Promise<Response> {
   return async function customerEmailOutboxCronHandler(
     request: Request,
@@ -18,10 +22,24 @@ export function createCustomerEmailOutboxCronHandler(
     if (!safeEqual(authorization, `Bearer ${secret}`)) {
       return new Response("Unauthorized", { status: 401 });
     }
-    const result = await processOutbox();
-    return NextResponse.json(result, {
-      status: result.failed > 0 ? 503 : 200,
-    });
+    try {
+      const result = await runRecovery(() => processOutbox());
+      return NextResponse.json(result, {
+        status: result.failed > 0 ? 503 : 200,
+      });
+    } catch (error) {
+      if (!(error instanceof WriterAdmissionError)) throw error;
+      return NextResponse.json(
+        {
+          error:
+            "This operation is temporarily unavailable. Please retry shortly.",
+        },
+        {
+          status: 503,
+          headers: { "cache-control": "no-store", "retry-after": "30" },
+        },
+      );
+    }
   };
 }
 

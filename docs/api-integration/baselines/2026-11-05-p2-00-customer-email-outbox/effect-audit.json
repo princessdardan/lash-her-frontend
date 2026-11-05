@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "scope": "Authenticated customer-email-outbox cron batch only",
+  "admissionEnabled": false,
+  "effects": [
+    {
+      "stage": "authentication",
+      "source": "src/lib/commerce/customer-email-outbox-cron.ts",
+      "accounting": "404/401 before admission or worker invocation; existing cron bearer rules unchanged."
+    },
+    {
+      "stage": "backfill",
+      "source": "src/lib/commerce/customer-email-outbox-worker.ts",
+      "accounting": "Await paid-product list and each enqueue inside recovery entry; null/ambiguous enqueue is sticky uncertainty."
+    },
+    {
+      "stage": "claim/decode",
+      "source": "src/lib/commerce/customer-email-outbox.ts",
+      "accounting": "Real transactional skip-locked batch claims and authenticated ciphertext decoding. Decode failures pass to awaited failure cleanup."
+    },
+    {
+      "stage": "delivery/suppression",
+      "source": "src/lib/commerce/customer-email-outbox-worker.ts",
+      "accounting": "All six existing delivery branches and consent suppression remain awaited and sequential. Empty acknowledgements and lost suppression claims remain uncertain."
+    },
+    {
+      "stage": "atomic receipt",
+      "source": "src/lib/commerce/customer-email-outbox-worker.ts",
+      "accounting": "Await outbox completion transaction and product/shipment onCompleted callbacks. Missing projection or lease receipt cannot complete a success-shaped batch."
+    },
+    {
+      "stage": "shipment projection",
+      "source": "src/lib/shipping/shipment-store.ts",
+      "accounting": "Returning-row observation marks missing shipment uncertain without changing off-mode control flow."
+    },
+    {
+      "stage": "caught failures",
+      "source": "src/lib/commerce/customer-email-outbox-worker.ts",
+      "accounting": "Mark uncertain before existing product-failure recording and outbox failure receipt; await both, including swallowed product errors. Later jobs continue under existing behavior."
+    },
+    {
+      "stage": "terminal result",
+      "source": "src/app/api/cron/customer-email-outbox/route.ts",
+      "accounting": "Failed summary, sticky uncertainty, socket loss or settlement failure returns sanitized retryable no-store 503; no replay."
+    }
+  ],
+  "deferredWorkInCron": false,
+  "businessLeaseExpiryIsDrainProof": false,
+  "productionDependenciesReplacedInOwnedFixture": false,
+  "providerResponsesIntercepted": true,
+  "ownedNonemptyPaths": [
+    "Product confirmation backfill/delivery/atomic order receipt",
+    "Shipping-policy alert delivery and failure/receipt loss"
+  ],
+  "limitations": [
+    "Other nonempty kinds retain controlled/component coverage rather than a new owned-database delivery claim.",
+    "Independent job/deferred/admin callers are not admitted by this cron boundary.",
+    "Synthetic producer bindings, interception and a test HTTP bridge do not qualify immutable deployment, native cron or real provider drain."
+  ]
+}
