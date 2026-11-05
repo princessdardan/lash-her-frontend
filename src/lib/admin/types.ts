@@ -45,3 +45,10 @@ export class AdminAuthError extends Error {
     this.name = "AdminAuthError";
   }
 }
+
+export class AdminAuthenticationFreshnessError extends Error {
+  constructor(readonly code: "required" | "expired") {
+    super(code === "expired" ? "Step-up authentication has expired" : "Step-up authentication is required");
+    this.name = "AdminAuthenticationFreshnessError";
+  }
+}
