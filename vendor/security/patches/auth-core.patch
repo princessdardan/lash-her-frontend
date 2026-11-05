@@ -1,0 +1,44 @@
+--- a/lib/utils/assert.js
++++ b/lib/utils/assert.js
+@@ -12,9 +12,6 @@
+ function isSemverString(version) {
+     return /^v\d+(?:\.\d+){0,2}$/.test(version);
+ }
+-let hasCredentials = false;
+-let hasEmail = false;
+-let hasWebAuthn = false;
+ const emailMethods = [
+     "createVerificationToken",
+     "useVerificationToken",
+@@ -49,6 +46,9 @@
+  * This is invoked before the init method, so default values are not available yet.
+  */
+ export function assertConfig(request, options) {
++    let hasCredentials = false;
++    let hasEmail = false;
++    let hasWebAuthn = false;
+     const { url } = request;
+     const warnings = [];
+     if (!warned && options.debug)
+--- a/src/lib/utils/assert.ts
++++ b/src/lib/utils/assert.ts
+@@ -44,9 +44,6 @@
+   return /^v\d+(?:\.\d+){0,2}$/.test(version)
+ }
+ 
+-let hasCredentials = false
+-let hasEmail = false
+-let hasWebAuthn = false
+ 
+ const emailMethods: (keyof Adapter)[] = [
+   "createVerificationToken",
+@@ -88,6 +85,9 @@
+   request: RequestInternal,
+   options: AuthConfig
+ ): ConfigError | WarningCode[] {
++  let hasCredentials = false
++  let hasEmail = false
++  let hasWebAuthn = false
+   const { url } = request
+   const warnings: WarningCode[] = []
+ 

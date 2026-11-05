@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { resolveCustomerAuthConfiguration } from "@/lib/customer-auth/policy";
 import { WriterAdmissionError } from "@/lib/writer-admission/config";
 import { hasConfiguredRequestOrigin } from "@/lib/api-integration/request-origin";
+import { AdminAuthError, AdminAuthenticationFreshnessError } from "@/lib/admin/types";
 import { runAccountWriter } from "./context";
 import { AccountLifecycleError, canonicalUuid, parseAccountRequest, type AccountAction } from "./policy";
 import { getAccountCustomerSession, type AccountCustomerSession } from "./session";
@@ -82,10 +83,16 @@ export async function requestAdminAccountAction(input: { userId: string; action:
   if (!isAccountLifecycleEnabled() || !canonicalUuid(input.userId)) throw new AccountLifecycleError(404, "unavailable");
   const parsed = parseAccountRequest({ action: input.action, idempotencyKey: input.idempotencyKey });
   return runAccountWriter("new-work", async () => {
+    try {
     const { requireAdminActor, requireFreshAdminGoogleAuthentication } = await import("@/lib/admin/auth");
     const actor = await requireAdminActor();
     if (actor.user.role !== "owner" || actor.user.status !== "active" || actor.developerMode) throw new AccountLifecycleError(403, "account_action_denied");
     await requireFreshAdminGoogleAuthentication();
     return createAccountLifecycleStore().request({ ...parsed, userId: input.userId, requester: { kind: "admin", adminId: actor.user.id } });
+    } catch (error) {
+      if (error instanceof AdminAuthenticationFreshnessError) throw new AccountLifecycleError(403, "fresh_sign_in_required");
+      if (error instanceof AdminAuthError) throw new AccountLifecycleError(403, "account_action_denied");
+      throw error;
+    }
   });
 }

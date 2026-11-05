@@ -108,7 +108,8 @@
     "server-only": "^0.0.1",
     "styled-components": "^6.1.18",
     "tailwind-merge": "^3.5.0",
-    "@vercel/oidc": "4.0.5"
+    "@vercel/oidc": "4.0.5",
+    "@auth/core": "file:vendor/security/lash-her-auth-core-0.41.3-lash-her.1.tgz"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -185,7 +186,8 @@
     "glob@>=9 <15": "14.0.2",
     "rimraf@>=4": {
       "glob": "14.0.2"
-    }
+    },
+    "@auth/core": "$@auth/core"
   },
   "allowScripts": {
     "esbuild@0.25.12": true,
