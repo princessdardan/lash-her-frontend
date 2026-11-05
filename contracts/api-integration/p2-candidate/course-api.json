@@ -78,7 +78,7 @@
       },
       "userBearerAuth": {
         "bearerFormat": "JWT",
-        "description": "First-party end-user or administrator session JWT",
+        "description": "Canonical first-party learner session JWT; not accepted by administrator routes",
         "scheme": "bearer",
         "type": "http"
       }
@@ -945,7 +945,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       },
@@ -1895,7 +1895,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }
@@ -2693,7 +2693,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       },
@@ -3659,7 +3659,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }
@@ -4339,7 +4339,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }
@@ -5168,7 +5168,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }
@@ -5466,7 +5466,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }
@@ -6020,7 +6020,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ],
         "summary": "Inspect immutable administrator entitlement commands and effects"
@@ -6488,7 +6488,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ],
         "summary": "Inspect enrollment projection records"
@@ -7167,7 +7167,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ],
         "summary": "Inspect entitlement grant ledger records"
@@ -7866,7 +7866,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ],
         "summary": "Create an audited administrator entitlement grant"
@@ -8319,7 +8319,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ],
         "summary": "Inspect immutable internal entitlement revocation commands"
@@ -8858,7 +8858,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ],
         "summary": "Create an audited administrator entitlement revocation"
@@ -9719,7 +9719,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }
@@ -11222,7 +11222,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }
@@ -11653,7 +11653,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }
@@ -12094,7 +12094,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }
@@ -12527,7 +12527,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }
@@ -12928,7 +12928,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }
@@ -13609,7 +13609,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }
@@ -14468,7 +14468,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }
@@ -15127,7 +15127,7 @@
         },
         "security": [
           {
-            "userBearerAuth": []
+            "adminBearerAuth": []
           }
         ]
       }

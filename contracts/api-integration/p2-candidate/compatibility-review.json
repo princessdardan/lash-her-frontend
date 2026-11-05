@@ -7,7 +7,7 @@
     "manifestSha256": "da0288b3897d36fbffd7b1557bf2d5d68a0130a3de27147d29b84c481dcb8488"
   },
   "candidate": {
-    "manifestSha256": "9d998158361cf0d7126cf7e910a42fcda1d75383f8727104e4f9f0dca67a079f"
+    "manifestSha256": "38d1d343cc697583977c88f5023845453a986c0637e09afc081045aee41895b1"
   },
   "changes": [
     {
@@ -76,12 +76,14 @@
       "location": "delete /v1/admin/lessons/{lessonId}/video/{videoAssetId}/captions/{trackId}",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "91efa8b39025b273078e709f354db5074197082bf0206a7614d93ab58ba8fb2e",
+      "afterSha256": "00a2d9c69e37e41296b5ac834a47b8bb53e7b07b095d3712dae93f5720c23fc2",
       "requirementIds": [
         "P2-06",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Add explicit capability-protected media status/recovery/caption operations with aggregate revision and effective-access checks."
+      "reason": "Add explicit capability-protected media status/recovery/caption operations with aggregate revision and effective-access checks. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -89,12 +91,14 @@
       "location": "get /v1/admin/courses",
       "change": "changed",
       "beforeSha256": "3ad1a65c008aecb07ea8f5cd73ff3b4efd43ecd86cafe8cac8c5c70348980968",
-      "afterSha256": "6f72351f01a38bee5048b38200d099bdc15b03ce5029bbaa3bbe46a7fa6c8901",
+      "afterSha256": "9ff97264ead08076f3100428230456cafd73b9b8715de389a02ccccb1ac46ff9",
       "requirementIds": [
         "P2-05",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Return paginated versioned authoring aggregates with CAD access/tax metadata, Portable Text, captions/transcripts, archival and aggregate revision fields; document bounded query validation and safe operation failures."
+      "reason": "Return paginated versioned authoring aggregates with CAD access/tax metadata, Portable Text, captions/transcripts, archival and aggregate revision fields; document bounded query validation and safe operation failures. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -102,12 +106,14 @@
       "location": "get /v1/admin/courses/{courseId}",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "89a9924f77e4e29b3c7b54987dcba1e79840cee0c8d5604acec344fadc8c0037",
+      "afterSha256": "a6935a4c9ac44a7cd15e3de4285063bbaa29d2edfa2192816eb1edb2ceb10f0e",
       "requirementIds": [
         "P2-05",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring."
+      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -115,12 +121,27 @@
       "location": "get /v1/admin/courses/{courseId}/publication-readiness",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "3d091e754c43454582564680fb5e0f3dabfeab730e6773aff958d3e577d439c1",
+      "afterSha256": "595f75c966521b5918715f33d0d80d178afc3676567f4e476c57e6f86e468dcf",
       "requirementIds": [
         "P2-05",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring."
+      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+    },
+    {
+      "document": "course",
+      "kind": "operation",
+      "location": "get /v1/admin/entitlements/commands",
+      "change": "changed",
+      "beforeSha256": "180625cfba654897f55eb03943e218456d61d08cedaf82efa3f5e49113b68809",
+      "afterSha256": "786f525789c00dafa933c2c62bd32f624c9c972dd07439cdb73146324c8e9a32",
+      "requirementIds": [
+        "P2-02",
+        "P2-04"
+      ],
+      "reason": "Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -128,11 +149,13 @@
       "location": "get /v1/admin/entitlements/enrollments",
       "change": "changed",
       "beforeSha256": "c65ea401803cd8cc845ae30ba3ba7cbdedd4554b339ae5dbbbfd0855aa524269",
-      "afterSha256": "fd5ec25a5e894d086d40b4d88abf552c6b1d0bf647437c209591b4800d615d29",
+      "afterSha256": "e2ee74a6eac82e26906a6d7616c6118b32cffbebaef6265094bb1ff822fd0152",
       "requirementIds": [
-        "P2-08"
+        "P2-08",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Include the explicit free-enrollment source in enrollment query filtering and results without changing existing order-scoped enrollment authority."
+      "reason": "Include the explicit free-enrollment source in enrollment query filtering and results without changing existing order-scoped enrollment authority. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -140,11 +163,26 @@
       "location": "get /v1/admin/entitlements/grants",
       "change": "changed",
       "beforeSha256": "cf4ec419fd40a5f090007bfc4500879731fd3142cc6808cc45e145c90c7eaf97",
-      "afterSha256": "139271d106b3d525cfd725c932ece58d73aa4bf19d5f36cb8752f9ed294f7e7d",
+      "afterSha256": "b802d300558078af0031b19aa2311af2642fdd20f2c501329ec2cb06fd90c7d4",
       "requirementIds": [
-        "P2-08"
+        "P2-08",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Include the explicit free-enrollment reason in grant query filtering and results while preserving independent grants and order-scoped revocation."
+      "reason": "Include the explicit free-enrollment reason in grant query filtering and results while preserving independent grants and order-scoped revocation. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+    },
+    {
+      "document": "course",
+      "kind": "operation",
+      "location": "get /v1/admin/entitlements/revocations",
+      "change": "changed",
+      "beforeSha256": "ce34f4a3f31e4d9cb6a8b6909933ac628e861cd95989921f9e3d6b96a7510c1f",
+      "afterSha256": "2a254c17e99d3456288cfb4fe0875336a836ddbadd2b0f854b70f303d0aa52e6",
+      "requirementIds": [
+        "P2-02",
+        "P2-04"
+      ],
+      "reason": "Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -155,9 +193,11 @@
       "afterSha256": "189f7bc3ebbe06bcd345146ca1f9c2dfdea731ec9f9ba75b943a7890abe5035e",
       "requirementIds": [
         "P2-07",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Add named revisioned quiz authoring, safe learner retrieval or immutable server-graded attempt operations; these do not permit generic graded completion."
+      "reason": "Add named revisioned quiz authoring, safe learner retrieval or immutable server-graded attempt operations; these do not permit generic graded completion. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -165,12 +205,14 @@
       "location": "get /v1/admin/lessons/{lessonId}/video",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "4aab91a17798b182773205c3d3b8ea3d869c4bd8a33cf6d20c6e1b9da1e81681",
+      "afterSha256": "f45e1776959bfa97fbfb299add4f51b94a42057571a2dd0be03f83ff5482abe4",
       "requirementIds": [
         "P2-05",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring."
+      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -326,12 +368,14 @@
       "location": "patch /v1/admin/courses/{courseId}",
       "change": "changed",
       "beforeSha256": "fd64415e4b3f992e8f377428d33365ff9f0b4a07086f0a9a6983992e3d446d13",
-      "afterSha256": "237474f74551e7a282aa3abc855ef2927e5bb06cb66d108c61e9eddb7b3b1e83",
+      "afterSha256": "368451872a0819ab49eb73069f868d654305ae76c5d2ba38bee544656414e956",
       "requirementIds": [
         "P2-05",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Require expected aggregate revision and a nonempty closed patch; validate CAD pricing, access/tax/SEO/cover fields, preserve stable identity and return the revised curriculum with explicit operation failures."
+      "reason": "Require expected aggregate revision and a nonempty closed patch; validate CAD pricing, access/tax/SEO/cover fields, preserve stable identity and return the revised curriculum with explicit operation failures. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -339,12 +383,14 @@
       "location": "patch /v1/admin/lessons/{lessonId}",
       "change": "changed",
       "beforeSha256": "194e69552fa67292fdc3bd2309ad41e87fa24c901308e896f59a2216a79c182b",
-      "afterSha256": "99fdabd5abd4d383788649c73bfd55f8de5316f42f9716ca4f9e713546e6f754",
+      "afterSha256": "77975ed5fec06fae6869d70ff0cffac1f90ac0e5c6590ae88d73b5d367293a74",
       "requirementIds": [
         "P2-05",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Require expected course revision and a nonempty closed patch; bound lesson identity/content and support validated Portable Text, captions/transcripts and archival with stable historical identity."
+      "reason": "Require expected course revision and a nonempty closed patch; bound lesson identity/content and support validated Portable Text, captions/transcripts and archival with stable historical identity. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -352,12 +398,14 @@
       "location": "patch /v1/admin/modules/{moduleId}",
       "change": "changed",
       "beforeSha256": "9de75aefdb16db5975ccd603a93bb91e766ec16f7e3e0217057a00287ea43457",
-      "afterSha256": "939e530dd0cabf5a0f566d1b57f201530e4449873ff396b9d17b5e2096670fe9",
+      "afterSha256": "92c5767d58faf656b5e61698c2929b30e3b390480969e87f3acd8f27be22aa9a",
       "requirementIds": [
         "P2-05",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Require expected course revision and a nonempty closed patch; bound module fields, support archival and return the updated versioned module/curriculum."
+      "reason": "Require expected course revision and a nonempty closed patch; bound module fields, support archival and return the updated versioned module/curriculum. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -365,12 +413,14 @@
       "location": "post /v1/admin/courses",
       "change": "changed",
       "beforeSha256": "7e7d3db125cfda25b3d881fa397b633f67b194a68f02f9699e8728264548a6b3",
-      "afterSha256": "2fe7265a931b26b5f4134c3297ded12a5ff5f0003260c8d7573e90999bfdae0c",
+      "afterSha256": "aa0498c5a18fd35a8d26e18741d73ecdfa423e3a339f978cabdba254a2e11039",
       "requirementIds": [
         "P2-05",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Validate closed bounded course creation with CAD access/tax/SEO/cover metadata and return the initial versioned authoring aggregate."
+      "reason": "Validate closed bounded course creation with CAD access/tax/SEO/cover metadata and return the initial versioned authoring aggregate. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -378,12 +428,14 @@
       "location": "post /v1/admin/courses/{courseId}/modules",
       "change": "changed",
       "beforeSha256": "670c0d99d7325ad44d77d41d4655238b38b1c1f7324df28b1c27ad80a2a9afa1",
-      "afterSha256": "f569ad38cb89484c1ebad8cc70b27927ea892f6fe869504baebbde370ea4d436",
+      "afterSha256": "d761ea9e2403d65520970267fa03b7e46b70f38ae72c5c7070f8a655a76adc3e",
       "requirementIds": [
         "P2-05",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Require expected course revision for module creation and validate bounded closed input before returning the revised module/curriculum."
+      "reason": "Require expected course revision for module creation and validate bounded closed input before returning the revised module/curriculum. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -391,12 +443,40 @@
       "location": "post /v1/admin/courses/{courseId}/modules/reorder",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "95eea6f32c7e2ccc63721680bab53cdfcfbb3afd4fba0a896fa197aff51d7660",
+      "afterSha256": "e74f4838ab9f0c68861f5e8ea084575c705dd823ee8c6c4afa4c22d0b1e24305",
       "requirementIds": [
         "P2-05",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring."
+      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+    },
+    {
+      "document": "course",
+      "kind": "operation",
+      "location": "post /v1/admin/entitlements/grants",
+      "change": "changed",
+      "beforeSha256": "3d5dc3cea6c245fde67b41852497d55eb777c54aee822b67af88b33541cad231",
+      "afterSha256": "522b03ce5400f28d17f8e25ab40a48b75c08ab9e4609d54073cc2a9732f8a1e9",
+      "requirementIds": [
+        "P2-02",
+        "P2-04"
+      ],
+      "reason": "Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
+    },
+    {
+      "document": "course",
+      "kind": "operation",
+      "location": "post /v1/admin/entitlements/revocations",
+      "change": "changed",
+      "beforeSha256": "f1f4dd1ba716df9aea2cfee875fcb8d8a9ab5ea99c0697e5a77c389ccfc3769b",
+      "afterSha256": "28f5f7c99a8af4e51c1478cd64446f7b9fc1c0e56ab835201737b6211537a357",
+      "requirementIds": [
+        "P2-02",
+        "P2-04"
+      ],
+      "reason": "Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -404,12 +484,14 @@
       "location": "post /v1/admin/lessons/{lessonId}/video-upload",
       "change": "changed",
       "beforeSha256": "0ed4c2387566366f13b85d062c99cb0de15962ada70cdfe7adc61785bec0155c",
-      "afterSha256": "6ff4ffb3205bed90ec06b32c13ba5fa3edbac2aeb2b10d68b9d45a8a01a500ca",
+      "afterSha256": "669f18667e5de3d42378a130fd0b62df84b381242e3154d9ca52eefaf35d7f8f",
       "requirementIds": [
         "P2-06",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Require the expected course revision and optional expected current video-asset UUID to fence concurrent upload/replacement; document unavailable media-provider responses rather than presenting a false successful upload."
+      "reason": "Require the expected course revision and optional expected current video-asset UUID to fence concurrent upload/replacement; document unavailable media-provider responses rather than presenting a false successful upload. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -417,12 +499,14 @@
       "location": "post /v1/admin/lessons/{lessonId}/video/{videoAssetId}/captions",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "cdb8793568ac6ce1fd17a91b2ddbbc54efda07467f8c639e71a91bf5569767ef",
+      "afterSha256": "8194341f02ebb1b12a7d70dbae68b566889e212069aeb3d1c488c89bf2a7d61a",
       "requirementIds": [
         "P2-06",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Add explicit capability-protected media status/recovery/caption operations with aggregate revision and effective-access checks."
+      "reason": "Add explicit capability-protected media status/recovery/caption operations with aggregate revision and effective-access checks. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -430,12 +514,14 @@
       "location": "post /v1/admin/lessons/{lessonId}/video/{videoAssetId}/refresh",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "a2844ac5ee7cbd89a8a2503af9ef7856f345152268b64f102236b8d0b13e46ae",
+      "afterSha256": "b8d00d949e88c8f663bcda0011fad8620c9887da9dca8845ffb4c81ba31a3dca",
       "requirementIds": [
         "P2-06",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Add explicit capability-protected media status/recovery/caption operations with aggregate revision and effective-access checks."
+      "reason": "Add explicit capability-protected media status/recovery/caption operations with aggregate revision and effective-access checks. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -443,12 +529,14 @@
       "location": "post /v1/admin/modules/{moduleId}/lessons",
       "change": "changed",
       "beforeSha256": "4ebb9904bf391958d8244fead0733778b712e36c36b52a134960e22fe7c12b67",
-      "afterSha256": "f982eda75e28e4d03955c1b4a1da6907f0903212b8471fbe5c7b3b1e4944edf8",
+      "afterSha256": "794bbdd4b45ff54c4bef91a134a5c7f43696ea0c875e14eff04be6155a26b2e5",
       "requirementIds": [
         "P2-05",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Require expected course revision for lesson creation and validate bounded closed content, versioned Portable Text, captions and transcript fields."
+      "reason": "Require expected course revision for lesson creation and validate bounded closed content, versioned Portable Text, captions and transcript fields. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -456,12 +544,14 @@
       "location": "post /v1/admin/modules/{moduleId}/lessons/reorder",
       "change": "added",
       "beforeSha256": null,
-      "afterSha256": "f9bb42d70422e50511037179ab2a84c689748bf7a56674ee7f4fff02aa932c84",
+      "afterSha256": "e2bfb43215bddcb6f128375f7ca69639d54241231b723c3a5e7db63497a5e3f1",
       "requirementIds": [
         "P2-05",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring."
+      "reason": "Add named versioned aggregate retrieval, publication-readiness or atomic ordering operations required by frontend authoring. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     },
     {
       "document": "course",
@@ -524,9 +614,11 @@
       "afterSha256": "ed7e4ca686c8f915ada7894e7a8f8fbe7c1264a389c7fdd1d4aacc6206dd241e",
       "requirementIds": [
         "P2-07",
-        "P2-09"
+        "P2-09",
+        "P2-02",
+        "P2-04"
       ],
-      "reason": "Add named revisioned quiz authoring, safe learner retrieval or immutable server-graded attempt operations; these do not permit generic graded completion."
+      "reason": "Add named revisioned quiz authoring, safe learner retrieval or immutable server-graded attempt operations; these do not permit generic graded completion. Advertise the separate adminBearerAuth profile that runtime requires, including its canonical administrator audience and explicit capability enforcement; learner credentials remain denied."
     }
   ],
   "versionedDocuments": {
