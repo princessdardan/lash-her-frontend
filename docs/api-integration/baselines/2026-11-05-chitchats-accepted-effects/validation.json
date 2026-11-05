@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "date": "2026-11-05",
+  "status": "OWNED_ACKNOWLEDGED_SHIPPING_EFFECT_SCOPE_VALIDATED",
+  "baseCommit": "629cdff0b8a845f5182695c2c2c1aee45049e6f1",
+  "files": {
+    "ops/platform/host/frontend_crm_shipping_retirement.py": "20da5e76ab2bc85ee5ad3178186589984ccf781e3e3793b8b6c8fcb53c090155",
+    "ops/platform/host/frontend_crm_shipping_retirement_test.py": "a9d6be1992e2ac546a14d5b541461e8fbd6b16f898013319d39336341d67bfdd",
+    "docs/api-integration/frontend-crm-shipping-retirement.md": "e8f36f42a0d86847b540ad03eb7b1c2ad21a51e82f98224a2339da0e869e8c84"
+  },
+  "artifacts": {
+    "owned-21-tests.log": {
+      "sha256": "576f35e154f5a1859ef07f97228e18ac49c342ae9ff255cf732bc607e03dc502"
+    }
+  },
+  "checks": [
+    {
+      "command": "FRONTEND_CRM_SHIPPING_POSTGRES_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin python3 -m unittest frontend_crm_shipping_retirement_test -v",
+      "result": "PASS",
+      "tests": 21,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "migrations": 83
+    },
+    {
+      "check": "Fixed database_queries AST unchanged from base",
+      "result": "PASS"
+    },
+    {
+      "check": "Original CRM/shipping validation artifacts unchanged",
+      "result": "PASS"
+    },
+    {
+      "check": "Disposable loopback TLS/SCRAM PostgreSQL cluster stopped and removed",
+      "result": "PASS"
+    }
+  ],
+  "observations": {
+    "ownedHttps": true,
+    "verifiedPostgresTlsScram": true,
+    "actual83Migrations": true,
+    "actualNonterminalAcknowledgedShipmentAndJobReceipts": true,
+    "activeExecutionCountUsesProcessingJobs": true,
+    "immutableOrderPostageCadMoneyAndNormalizedStatusRequired": true,
+    "successfulOperationReceiptRequired": true,
+    "unknownPendingRefundLeaseAndPayloadGapsRemainUnresolved": true,
+    "physicalCarrierStatesDeferredToCompatiblePolling": true,
+    "futurePollingAuthorized": false,
+    "initialHistoricalEvidencePreserved": true
+  },
+  "scope": "Counts reconcile accepted API effects and database operations. Physical carrier delivery is a deferred business continuation, not an active old API writer.",
+  "limitations": [
+    "The coordinator must independently prove exact retired-credential, deployment, database-role, ingress and historical-producer fences.",
+    "The module does not activate polling, infer unrecorded in-flight absence or settle financial obligations.",
+    "HighLevel historical workflow/ingress gaps remain unresolved.",
+    "No live provider, database, secret retrieval, scheduler, deployment or admission changes occurred."
+  ],
+  "historicalWritersFenced": false,
+  "trafficAuthorized": false,
+  "p200Complete": false,
+  "g2Complete": false
+}

@@ -1,14 +1,14 @@
 {
   "version": 1,
   "status": "released",
-  "frontendBaseRevision": "b707937b62f5bd5144cc269d09677b5f34a6005f",
+  "frontendBaseRevision": "a824b8f84d4b386921556c47c918952fe3a4b173",
   "artifacts": {
     "course": {
       "repository": "lash-her-course-api",
-      "revision": "2847d953771adc8e8be287f9512b3003af94f190",
+      "revision": "5c23b8c53f7849426cf8a71703cc6a5c84fef3d7",
       "sourcePath": "openapi/course-api.json",
       "file": "course-api.json",
-      "sha256": "0ebc41df298a5d515cde6a5d70f9428bfbc20058cfeedb8470d77debc0b95186"
+      "sha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d"
     },
     "community": {
       "repository": "lash-her-community-api",
@@ -26,5 +26,5 @@
     }
   },
   "boundarySha256": "3a2c75cafceb92f48bb3a2aaaa69edc687d341d9a5bb015e3b11a17e2013ae8d",
-  "readmeSha256": "0cdee61117f9d1146cf75f5d5fa05c29fc8d5f5c417b4b22758bd0c51e6099cf"
+  "readmeSha256": "0a7ae93d5601029146be323b36db68eefd062a49090edc55cc7d4ae2da96bd24"
 }
