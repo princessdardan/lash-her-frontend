@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { SOURCE_REPOSITORIES, sourceContextFromEnvironment } from "./release-inputs.mjs";
@@ -66,6 +66,24 @@ function command(program, args) {
   return execFileSync(program, args, { encoding: "utf8", timeout: 120_000, maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
 }
 
+// Source checkouts must be verified before running their repository-owned CLI.
+export function verifyArtifactRuntime(directory, sourceRoot, component, image) {
+  const scan = JSON.parse(readFileSync(join(directory, `${component.local}-scan.json`), "utf8"));
+  if (scan.ArtifactName !== image || scan.Metadata?.ImageConfig?.architecture !== "amd64" || !Array.isArray(scan.Results) || scan.Results.length === 0 ||
+      scan.Results.some((item) => item.Vulnerabilities?.some((v) => ["HIGH", "CRITICAL"].includes(v.Severity)))) throw new Error("Artifact scan required");
+  const sourceDirectory = join(sourceRoot, SOURCE_REPOSITORIES[component.source].split("/")[1]);
+  if (component.source === "frontend") {
+    verifyRecordedRuntime(directory, component.local, image, sourceDirectory);
+  } else {
+    const apiSourceDirectory = realpathSync(sourceDirectory);
+    const receipt = command(process.execPath, [join(apiSourceDirectory, "ops/runtime/verify.mjs"), "--recorded",
+      directory, component.local, image, apiSourceDirectory]);
+    if (receipt.trim() !== "PATCHED_RUNTIME_RECORD_VERIFIED") throw new Error("Repository-owned runtime verification required");
+    const record = JSON.parse(readFileSync(join(directory, `${component.local}-runtime/verification.json`), "utf8"));
+    if (!record.image?.RepoDigests?.includes(image)) throw new Error("Exact candidate runtime image proof required");
+  }
+}
+
 export function assertCandidateSourceApproval(proof, context) {
   assertSourceContext(context);
   const approval = proof?.sourceApproval;
@@ -124,13 +142,7 @@ export function collectArtifactCandidate(directory, sourceRoot, environment = pr
     const digest = environment[`${component.env}_DIGEST`];
     if (!/^sha256:[0-9a-f]{64}$/u.test(digest ?? "") || /^sha256:0+$/u.test(digest)) throw new Error("Immutable artifact digest required");
     const image = `ghcr.io/princessdardan/${component.image}@${digest}`;
-    const scan = JSON.parse(readFileSync(join(directory, `${component.local}-scan.json`), "utf8"));
-    if (scan.ArtifactName !== image || scan.Metadata?.ImageConfig?.architecture !== "amd64" || !Array.isArray(scan.Results) || scan.Results.length === 0 || scan.Results.some((item) => item.Vulnerabilities?.some((v) => ["HIGH", "CRITICAL"].includes(v.Severity)))) throw new Error("Artifact scan required");
-    if (["gateway", "frontendMigration"].includes(component.key)) {
-      verifyRecordedRuntime(directory, component.local, image, join(sourceRoot, "lash-her-frontend"));
-    } else if (scan.Results.some(item => item.ExperimentalModifiedFindings?.length)) {
-      throw new Error("Unsupported artifact scan filtering");
-    }
+    verifyArtifactRuntime(directory, sourceRoot, component, image);
     const bundlePath = environment[`${component.env}_BUNDLE`];
     if (!bundlePath || !environment.RUNNER_TEMP || !resolve(bundlePath).startsWith(`${resolve(environment.RUNNER_TEMP)}/`)) throw new Error("Runner-owned attestation bundle required");
     const verifier = ["attestation", "verify", `oci://${image}`, "--repo", SOURCE_REPOSITORIES.frontend,
