@@ -3,6 +3,7 @@ import test from "node:test";
 import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
 import { createReleaseProbeHandler, readReleaseProbeConfiguration } from "./handler";
 import type { FrontendBootstrapProbe } from "@/lib/writer-admission/bootstrap-probe";
+import { createFrontendGoogleBindingProbe } from "@/lib/writer-admission/google-binding-probe";
 
 const now = 1_794_000_000_000;
 const secret = "b".repeat(64), challenge = "c".repeat(64);
@@ -159,5 +160,31 @@ test("P2 mode authenticates before work, refuses missing/production configuratio
   assert.equal(calls, 0);
   const failed = await handler(request({ "x-lash-release-mode": "phase2" }));
   assert.equal(failed.status, 503); assert.deepEqual(await failed.json(), { error: "Release probe failed" });
+  assert.equal(calls, 1);
+});
+
+test("Google binding requires staging bootstrap and issues transient runtime proofs for only the authenticated challenge", async () => {
+  const configuration = () => readReleaseProbeConfiguration(environment(), now);
+  const observation: FrontendBootstrapProbe = { admission: { environment: "staging", targetSha256: "a".repeat(64), producerSha256: "b".repeat(64), sourceCommit: "a".repeat(40), epoch: "1", newWork: false, recovery: false }, schemaCatalogSha256: "d".repeat(64), featureControls: {} as FrontendBootstrapProbe["featureControls"] };
+  const binding = createFrontendGoogleBindingProbe({ environment: () => ({ APP_ENV: "staging", VERCEL_GIT_COMMIT_SHA: "a".repeat(40),
+    AUTH_GOOGLE_ID: "185770842371-d3thak0b2btgb77pngj968nvhpjkqmgf.apps.googleusercontent.com", AUTH_GOOGLE_SECRET: "synthetic-identity".repeat(3),
+    GOOGLE_CLIENT_ID: "185770842371-lg0fktlf96u88pnqjnoom83st75btv4d.apps.googleusercontent.com", GOOGLE_CLIENT_SECRET: "synthetic-calendar".repeat(3) }) });
+  let calls = 0;
+  const dependencies = { configuration, run: async () => ({ ok: true as const, service: "course" as const, durationMs: 1 }),
+    admission: async () => observation, google: async (...args: Parameters<typeof binding>) => {
+      assert.deepEqual(args, [{ environment: "staging", sourceCommit: "a".repeat(40) }, challenge]); calls++; return binding(...args);
+    } };
+  const handler = createReleaseProbeHandler(dependencies);
+  assert.equal((await handler(request({ "x-lash-release-mode": "google-binding", authorization: "Bearer invalid" }))).status, 401);
+  const response = await handler(request({ "x-lash-release-mode": "google-binding", "x-lash-workload-token": "forged", cookie: "private-cookie" }));
+  assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "private, no-store");
+  const body = await response.json(); assert.equal(body.challenge, challenge);
+  assert.deepEqual(body.checks, ["gateway-course-catalog", "frontend-admission-bootstrap", "google-binding"]);
+  assert.deepEqual(body.admission, observation.admission); assert.match(body.googleBinding.identity.proof, /^[a-f0-9]{64}$/u);
+  assert.match(body.googleBinding.calendar.proof, /^[a-f0-9]{64}$/u);
+  assert.equal(JSON.stringify(body).includes("synthetic-identity"), false); assert.equal(JSON.stringify(body).includes("private-cookie"), false);
+  assert.equal((await createReleaseProbeHandler({ ...dependencies, google: undefined })(request({ "x-lash-release-mode": "google-binding" }))).status, 503);
+  assert.equal((await createReleaseProbeHandler({ ...dependencies, admission: undefined })(request({ "x-lash-release-mode": "google-binding" }))).status, 503);
+  assert.equal((await createReleaseProbeHandler({ ...dependencies, configuration: () => ({ ...configuration()!, environment: "production" }) })(request({ "x-lash-release-mode": "google-binding" }))).status, 503);
   assert.equal(calls, 1);
 });

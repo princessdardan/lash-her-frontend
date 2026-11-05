@@ -28,3 +28,7 @@ PHASE2_COURSE_SOURCE_COMMIT=<reviewed-40-hex> \
 PHASE2_COMMUNITY_SOURCE_COMMIT=<reviewed-40-hex> \
 node --import ./scripts/register-server-only-test.mjs --import tsx ops/platform/test-phase2-platform-local.mjs
 ```
+
+## Private Google runtime replacement proof
+
+The pre-SQL `google-binding` mode retains staging bootstrap checks and the legacy catalog path. It binds each fixed staging administrator-identity and Calendar client ID to a transient HMAC-SHA256 proof using that deployment's current client secret and `lash-her:frontend-google-binding:v1:<kind>:<challenge>`. The protected response is private and not cacheable. The host privately compares each challenge proof with the reviewed replacement key and retains only sanitized client IDs and a verified boolean. Secrets, challenge proofs and proof digests must not enter common receipts. No extra refresh-grant environment variable, provider exchange or customer Google binding is introduced. Thirteen focused handler/helper tests, ESLint and TypeScript passed for this seam.

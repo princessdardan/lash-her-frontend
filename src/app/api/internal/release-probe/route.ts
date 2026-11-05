@@ -5,6 +5,7 @@ import { createGatewayTransport } from "@/lib/api-integration/gateway-transport"
 import { runFrontendBootstrapProbe } from "@/lib/writer-admission/bootstrap-probe";
 import { runFrontendSquareBindingProbe } from "@/lib/writer-admission/square-binding-probe";
 import { runFrontendResendBindingProbe } from "@/lib/writer-admission/resend-binding-probe";
+import { runFrontendGoogleBindingProbe } from "@/lib/writer-admission/google-binding-probe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ export const GET = createReleaseProbeHandler({
   admission: runFrontendBootstrapProbe,
   resend: runFrontendResendBindingProbe,
   square: runFrontendSquareBindingProbe,
+  google: runFrontendGoogleBindingProbe,
 });
 
 // Framework-generated HEAD would otherwise execute the upstream GET probe.

@@ -95,7 +95,7 @@ class ProbeClient:
 
     def request(self, url, secret, bypass, challenge, mode=None):
         demand(isinstance(url, str) and DEPLOYMENT_URL.fullmatch(url), "FRONTEND_PROBE_ORIGIN_REFUSED")
-        demand(mode in (None, "admission-bootstrap", "resend-binding", "square-binding", "phase2"), "FRONTEND_PROBE_MODE_REFUSED")
+        demand(mode in (None, "admission-bootstrap", "resend-binding", "square-binding", "google-binding", "phase2"), "FRONTEND_PROBE_MODE_REFUSED")
         request = urllib.request.Request(url + "/api/internal/release-probe", method="GET", headers={
             "Authorization": "Bearer " + secret, "x-vercel-protection-bypass": bypass,
             "x-lash-release-challenge": challenge, "Accept": "application/json", "Cache-Control": "no-cache",
