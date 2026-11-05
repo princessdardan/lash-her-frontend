@@ -260,7 +260,7 @@ async function main() {
     }, "FRONTEND_BOOTSTRAP_PROBE_OWNED_PASS");
     phase = "customer-identity-owned-database";
     const customerIdentity = spawnSync(process.execPath, ["--import", "tsx", "--import", "./scripts/register-server-only-test.mjs",
-      "--test", "--test-reporter=tap", "src/lib/customer-auth/store.db.test.ts"], {
+      "--test", "--test-concurrency=1", "--test-reporter=tap", "src/lib/customer-auth/store.db.test.ts", "src/lib/customer-auth/session-issuance.db.test.ts"], {
       cwd: source, encoding: "utf8", timeout: 120000,
       env: { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, NODE_ENV: "test", APP_ENV: "local",
         NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project", NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
@@ -269,22 +269,23 @@ async function main() {
     assert.equal(customerIdentity.status, 0, `Owned customer identity failed: ${customerIdentity.stderr}\n${customerIdentity.stdout}`);
     const customerTests = Number(/^# tests (\d+)$/mu.exec(customerIdentity.stdout)?.[1]);
     const customerPassed = Number(/^# pass (\d+)$/mu.exec(customerIdentity.stdout)?.[1]);
-    assert.ok(customerTests >= 7 && customerTests === customerPassed);
+    assert.ok(customerTests >= 10 && customerTests === customerPassed);
     assert.match(customerIdentity.stdout, /^# fail 0$/mu);
     assert.match(customerIdentity.stdout, /^# skipped 0$/mu);
     const customerIdentityDatabase = { status: "FRONTEND_CUSTOMER_IDENTITY_OWNED_PASS", tests: customerTests, passed: customerPassed, failures: 0, skipped: 0 };
     phase = "customer-lifecycle-owned-database";
     const lifecycle = spawnSync(process.execPath, ["--import", "tsx", "--import", "./scripts/register-server-only-test.mjs",
-      "--test", "--test-reporter=tap", "src/lib/customer-lifecycle/store.db.test.ts"], {
+      "--test", "--test-concurrency=1", "--test-reporter=tap", "src/lib/customer-lifecycle/store.db.test.ts", "src/lib/customer-lifecycle/faults.db.test.ts"], {
       cwd: source, encoding: "utf8", timeout: 120000,
       env: { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, NODE_ENV: "test", APP_ENV: "local",
+        FRONTEND_CUSTOMER_LIFECYCLE_OWNED_TEST: "true",
         NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project", NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
         TEST_DATABASE_URL: `postgresql://frontend_admission_protocol:${password}@127.0.0.1:${port}/frontend_admission_owned?sslmode=verify-full` },
     });
     assert.equal(lifecycle.status, 0, `Owned customer lifecycle failed: ${lifecycle.stderr}\n${lifecycle.stdout}`);
     const lifecycleTests = Number(/^# tests (\d+)$/mu.exec(lifecycle.stdout)?.[1]);
     const lifecyclePassed = Number(/^# pass (\d+)$/mu.exec(lifecycle.stdout)?.[1]);
-    assert.ok(lifecycleTests >= 6 && lifecycleTests === lifecyclePassed);
+    assert.ok(lifecycleTests >= 16 && lifecycleTests === lifecyclePassed);
     assert.match(lifecycle.stdout, /^# fail 0$/mu);
     assert.match(lifecycle.stdout, /^# skipped 0$/mu);
     const customerLifecycleDatabase = { status: "FRONTEND_CUSTOMER_LIFECYCLE_OWNED_PASS", tests: lifecycleTests, passed: lifecyclePassed, failures: 0, skipped: 0 };

@@ -21,7 +21,7 @@ export function AccountControls({ learningUpdates }: { learningUpdates: boolean 
       const data: unknown = await response.json();
       if (!response.ok) {
         const code = data && typeof data === "object" && "error" in data ? data.error : "";
-        throw new Error(code === "fresh_sign_in_required" ? "Sign out and sign in again, then retry within 15 minutes." : "This request could not be completed. Retry with the same request or return later.");
+        throw new Error(code === "fresh_sign_in_required" ? "Sign out and sign in again, then retry within 15 minutes." : code === "export_pending" || code === "export_rate_limited" ? "An export is already pending or was recently requested. Check recent requests; new exports are limited to one every 15 minutes." : "This request could not be completed. Retry with the same request or return later.");
       }
       if (action === "delete") { router.replace("/sign-in?account-deleted=1"); router.refresh(); return; }
       if (action === "export") keys.current.export = undefined;

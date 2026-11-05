@@ -5,20 +5,22 @@ import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "@/lib/private-db/schema";
-import { customerSessions, customerUsers } from "@/lib/customer-auth/schema";
+import { customerProviderLinks, customerSessions, customerUsers, customerVerificationTokens } from "@/lib/customer-auth/schema";
 import { withWriterOperationContext } from "@/lib/writer-admission/context";
 import { runAccountWriter } from "./context";
 import { AccountLifecycleError, type AccountCommand } from "./policy";
-import { customerAccountCommands as commands, customerAccountDeliveries as deliveries, customerAccountExports as exports } from "./schema";
+import { customerAccountCommands as commands, customerAccountDeliveries as deliveries, customerAccountExports as exports, customerAccountPreferences as preferences } from "./schema";
 import { createAccountLifecycleStore } from "./store";
 import { processAccountLifecycle } from "./worker";
 
 const url = process.env.TEST_DATABASE_URL;
 if (url) {
-  const parsed = new URL(url), segments = decodeURIComponent(parsed.pathname.slice(1)).toLowerCase().split(/[^a-z0-9]+/u);
+  const parsed = new URL(url), databaseName = decodeURIComponent(parsed.pathname.slice(1));
+  const segments = databaseName.toLowerCase().split(/[^a-z0-9]+/u);
+  const ownedParent = databaseName === "frontend_admission_owned" && process.env.FRONTEND_CUSTOMER_LIFECYCLE_OWNED_TEST === "true";
   if (!["postgres:", "postgresql:"].includes(parsed.protocol) || !["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname) ||
       segments.some(segment => ["prod", "production", "staging", "stage", "live", "main"].includes(segment)) ||
-      !segments.some(segment => ["test", "ci", "integration", "audit", "roundtrip", "scratch"].includes(segment)))
+      (!ownedParent && !segments.some(segment => ["test", "ci", "integration", "audit", "roundtrip", "scratch"].includes(segment))))
     throw new Error("Lifecycle fault tests require an owned disposable loopback database");
 }
 const pool = url ? new Pool({ connectionString: url, max: 8 }) : null;
@@ -32,6 +34,36 @@ after(async () => {
   else process.env.FRONTEND_WRITER_ADMISSION_MODE = originalAdmissionMode;
 });
 const admitted = <T>(task: () => Promise<T>) => runAccountWriter("new-work", task);
+type Database = NonNullable<typeof db>;
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+function transactionFault(intercept: (tx: Transaction, member: PropertyKey) => unknown): Database {
+  assert.ok(db);
+  return new Proxy(db, { get(target, property) {
+    if (property === "transaction") return <T>(task: (tx: Transaction) => Promise<T>) => target.transaction(tx => task(new Proxy(tx, { get(transaction, member) {
+      const overridden = intercept(transaction, member);
+      if (overridden !== undefined) return overridden;
+      const value: unknown = Reflect.get(transaction, member);
+      return typeof value === "function" ? value.bind(transaction) : value;
+    } })));
+    const value: unknown = Reflect.get(target, property);
+    return typeof value === "function" ? value.bind(target) : value;
+  } });
+}
+function noOpMutation() {
+  const query = { where() { return query; }, set() { return query; }, returning() { return query; },
+    then(fulfilled?: (rows: unknown[]) => unknown, rejected?: (error: unknown) => unknown) { return Promise.resolve([]).then(fulfilled, rejected); } };
+  return query;
+}
+function invoke(tx: Transaction, member: PropertyKey, argument: unknown): unknown {
+  const method: unknown = Reflect.get(tx, member);
+  if (typeof method !== "function") throw new Error("Missing owned fault mutation");
+  const value: unknown = Reflect.apply(method, tx, [argument]);
+  return value;
+}
+async function uncertainRefusal(task: () => Promise<unknown>) {
+  await assert.rejects(withWriterOperationContext(async () => { await assert.rejects(admitted(task)); }), /WRITER_OPERATION_REQUIRES_REVIEW/u);
+}
+
 
 async function fixture() {
   assert.ok(db);
@@ -116,8 +148,6 @@ test("missing export receiver prevents assembly until both expected receivers ac
 test("a one-row delivery insertion receipt rolls back state, session revocation and command allocation", skipped, async () => {
   const f = await fixture();
   assert.ok(db);
-  type Database = NonNullable<typeof db>;
-  type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
   const interceptedDatabase = new Proxy(db, { get(target, property) {
     if (property === "transaction") return <T>(task: (tx: Transaction) => Promise<T>) => target.transaction(tx => task(new Proxy(tx, { get(transaction, member) {
       if (member === "insert") return (table: unknown) => {
@@ -141,6 +171,46 @@ test("a one-row delivery insertion receipt rolls back state, session revocation 
     const [user] = await db.select().from(customerUsers).where(eq(customerUsers.id, f.user.id)); assert.equal(user.status, "active"); assert.equal(user.accountVersion, 0);
     assert.equal((await db.select().from(customerSessions).where(eq(customerSessions.userId, f.user.id))).length, 1);
   } finally { await f.quarantine(); }
+});
+
+test("suppressed session deletion rolls back suspension instead of preserving a restorable old session", skipped, async () => {
+  const f = await fixture();
+  const intercepted = transactionFault((tx, member) => member === "delete" ? (table: unknown) => table === customerSessions ? noOpMutation() : invoke(tx, member, table) : undefined);
+  const faultyStore = createAccountLifecycleStore(() => intercepted, f.now);
+  try {
+    await uncertainRefusal(() => faultyStore.request({ userId: f.user.id, action: "suspend", idempotencyKey: randomUUID(), requester: { kind: "admin", adminId: randomUUID() } }));
+    const [user] = await db!.select().from(customerUsers).where(eq(customerUsers.id, f.user.id));
+    assert.equal(user.status, "active"); assert.equal(user.accountVersion, 0);
+    assert.equal((await db!.select().from(commands).where(eq(commands.userId, f.user.id))).length, 0);
+    assert.equal((await db!.select().from(customerSessions).where(eq(customerSessions.userId, f.user.id))).length, 1);
+  } finally { await f.quarantine(); }
+});
+
+test("suppressed eligible PII deletion or export redaction rolls back terminal deletion", skipped, async () => {
+  for (const fault of ["provider-link-delete", "export-redaction"]) {
+    const f = await fixture();
+    try {
+      await db!.insert(customerProviderLinks).values({ userId: f.user.id, provider: "google", providerAccountId: randomUUID(), type: "oidc" });
+      await db!.insert(customerVerificationTokens).values({ token: randomUUID(), identifier: f.user.email, expires: new Date(f.now().getTime() + 900_000) });
+      await db!.insert(preferences).values({ userId: f.user.id, learningUpdates: true });
+      const exported = await f.customerExport();
+      await admitted(() => acknowledge(exported, f.store));
+      await admitted(() => f.store.completeExport(exported, { private: "owned-profile-bytes" }, [new Date(f.now().getTime() + 86_400_000)]));
+      const intercepted = transactionFault((tx, member) => {
+        if (fault === "provider-link-delete" && member === "delete") return (table: unknown) => table === customerProviderLinks ? noOpMutation() : invoke(tx, member, table);
+        if (fault === "export-redaction" && member === "update") return (table: unknown) => table === exports ? noOpMutation() : invoke(tx, member, table);
+        return undefined;
+      });
+      const faultyStore = createAccountLifecycleStore(() => intercepted, f.now);
+      await uncertainRefusal(() => faultyStore.request({ userId: f.user.id, action: "delete", idempotencyKey: randomUUID(), requester: { kind: "admin", adminId: randomUUID() } }));
+      const [user] = await db!.select().from(customerUsers).where(eq(customerUsers.id, f.user.id));
+      assert.equal(user.status, "active"); assert.equal(user.accountVersion, 1); assert.equal(user.email, f.user.email); assert.equal(user.name, f.user.name);
+      assert.equal((await db!.select().from(commands).where(eq(commands.userId, f.user.id))).length, 1);
+      for (const table of [customerSessions, customerProviderLinks, preferences]) assert.equal((await db!.select().from(table).where(eq(table.userId, f.user.id))).length, 1);
+      assert.equal((await db!.select().from(customerVerificationTokens).where(eq(customerVerificationTokens.identifier, f.user.email))).length, 1);
+      assert.deepEqual(await f.store.getExport(f.user.id, exported.commandId), { private: "owned-profile-bytes" });
+    } finally { await f.quarantine(); }
+  }
 });
 
 test("concurrent fresh export keys allocate one pending command while exact replay bypasses quota", skipped, async () => {

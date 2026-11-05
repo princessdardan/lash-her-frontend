@@ -50,7 +50,11 @@ export function createAccountHandler(dependencies: {
       const command = await (dependencies.run ?? runAccountWriter)("new-work", () => store.request({ userId: session.userId, ...input, requester: { kind: "customer", session } }));
       return response({ commandId: command.commandId, action: command.action, accountVersion: command.accountVersion, status: "pending" }, 202, requestId);
     } catch (error) {
-      if (error instanceof AccountLifecycleError) return response({ error: error.code, requestId }, error.status, requestId);
+      if (error instanceof AccountLifecycleError) {
+        const result = response({ error: error.code, requestId }, error.status, requestId);
+        if (error.status === 429) result.headers.set("retry-after", "900");
+        return result;
+      }
       if (error instanceof WriterAdmissionError) return response({ error: "temporarily_unavailable", requestId }, 503, requestId);
       return response({ error: "temporarily_unavailable", requestId }, 503, requestId);
     }

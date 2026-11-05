@@ -37,3 +37,13 @@ The typed production recovery transport is wired to both receivers using their d
 For a reviewed staging certification build, `LASH_P2_CERTIFICATION_SCHEDULES=account-lifecycle` selects only this recovery schedule, requires the exact staging project/Production target/source and recovery flag, and rejects production or native-qualification mixing. This does not enable the project's native scheduler. Ordinary schedules remain unchanged unless lifecycle recovery is explicitly enabled; production activation is outside this goal.
 
 P2-11 remains in progress until downstream integration, required checks and deployment/scheduling are certified. P2-00 still requires whole-release and historical/provider fencing evidence. P2-12/G2 require actual staging evidence; these local checks do not establish either gate.
+
+## Independent review corrections
+
+Review reproduced lost local acknowledgment/export SQL receipts being caught as a retry, missing receiver rows satisfying negative readiness checks, and unbounded fresh-key export allocation. Recovery now lets local persistence failures escape its receiver-error catch and preserves uncertainty even if a caller handles the error. Expected domain refusals settle outside the admission callback; they do not fabricate uncertainty.
+
+Command/delivery insertion, claim leases, state changes, session revocation, eligible PII removal and export writes require positive receipts and persisted-state checks. Restore requires both Course and Community acknowledgments for every predecessor; missing delivery rows block the corresponding receiver's later claim and cannot make an export ready. A lost lease is distinguished from an independently observed already-acknowledged delivery.
+
+Exact replay precedes export allocation limits. Each account permits one pending export and at most one new export every 15 minutes; suspension/deletion remain available. Frontend snapshots include at most 100 recent minimal lifecycle commands, explicitly identified in their scope, rather than copying an unbounded full history for every request. Learning record exports retain their receiver-defined scope.
+
+Three new lost-receipt/domain-denial unit regressions pass. Ten additional real-database fault/quota cases are prepared, including suppressed session deletion and eligible PII erasure; their integrated owned run is VERIFYING. The previously recorded six database cases remain scoped to their original run until the corrected source is requalified. No deployed completion is claimed.
