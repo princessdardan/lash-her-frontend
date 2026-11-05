@@ -45,7 +45,7 @@ async function main() {
   // implementation for exported account routes, without claiming native-server
   // or browser transport/cookie certification.
   globalThis.AsyncLocalStorage ??= AsyncLocalStorage;
-  const { NextRequest } = await import("next/server");
+  const { NextRequest } = await import("next/server.js");
   const { createRequestStoreForAPI } = await import("next/dist/server/async-storage/request-store.js");
   const { workAsyncStorage } = await import("next/dist/server/app-render/work-async-storage.external.js");
   const { workUnitAsyncStorage } = await import("next/dist/server/app-render/work-unit-async-storage.external.js");
@@ -555,13 +555,43 @@ async function main() {
       const actor = await seedAdmin(denied === "nonowner" ? "admin" : "owner", denied === "stale-google-proof" ? 3600 : 0);
       if (denied === "disabled-owner") await operator.query("UPDATE admin_users SET status='disabled' WHERE id=$1", [actor.id]);
       await change(true, true); before = await operations();
-      const result = await adminCommand(actor, customer); assert.ok([403, 503].includes(result.status));
-      const current = await since(before); assert.ok(current.length >= 2); assert.equal(current[0].kind, "new-work");
-      assert.ok(current.every(row => row.state !== "active")); assert.equal((await counts()).customer_account_commands, 0);
+      const result = await adminCommand(actor, customer);
+      assert.equal(result.status, 403);
+      assert.equal(JSON.parse(result.text).error, denied === "stale-google-proof" ? "fresh_sign_in_required" : "account_action_denied");
+      await entries(before, denied === "disabled-owner" ? ["completed", "completed"] : ["completed", "completed", "completed"],
+        denied === "disabled-owner" ? ["new-work", "recovery"] : ["new-work", "recovery", "recovery"]);
+      assert.equal((await counts()).customer_account_commands, 0);
       assert.equal((await counts()).customer_sessions, 1);
       assert.equal((await operator.query("SELECT status FROM customer_users WHERE id=$1", [customer.id])).rows[0].status, "active");
+      const deniedBusiness = await fingerprint(), deniedProviders = providerCalls.length;
+      await change(false); assert.equal((await adminCommand(actor, customer)).status, 503);
+      assert.equal(await fingerprint(), deniedBusiness); assert.equal(providerCalls.length, deniedProviders);
       await reconcile(); checks.push(`actual-admin-lifecycle-${denied}-real-auth-js-and-persistent-guard-deny-command-without-session-revocation`);
     }
+
+    phase = "admin-lifecycle-authorization-sql-commit-acknowledgement-loss";
+    await reset(); const uncertainAdminCustomer = await seedAccount(), uncertainOwner = await seedAdmin(); await change(true, true); before = await operations();
+    const adminQuery = Client.prototype.query, adminClients = new WeakSet(); let lostAdminCommit = false;
+    Client.prototype.query = function(...args) {
+      const text = (typeof args[0] === "string" ? args[0] : args[0]?.text)?.toLowerCase();
+      const result = Reflect.apply(adminQuery, this, args);
+      if (this.connectionParameters.user === target.user && text?.includes('update "admin_users"')) adminClients.add(this);
+      if (!lostAdminCommit && text === "commit" && adminClients.has(this)) {
+        lostAdminCommit = true; return result.then(() => { throw new Error("OWNED_IDENTITY_ADMIN_COMMIT_ACK_LOST"); });
+      }
+      return result;
+    };
+    let uncertainAdminResult;
+    try { uncertainAdminResult = await adminCommand(uncertainOwner, uncertainAdminCustomer); }
+    finally { Client.prototype.query = adminQuery; }
+    assert.equal(lostAdminCommit, true); assert.equal(uncertainAdminResult.status, 503);
+    await entries(before, ["uncertain", "uncertain", "uncertain"], ["new-work", "recovery", "recovery"]);
+    assert.ok((await operator.query("SELECT last_signed_in_at FROM admin_users WHERE id=$1", [uncertainOwner.id])).rows[0].last_signed_in_at);
+    assert.equal((await counts()).customer_account_commands, 0); assert.equal((await counts()).customer_sessions, 1);
+    assert.equal((await operator.query("SELECT status FROM customer_users WHERE id=$1", [uncertainAdminCustomer.id])).rows[0].status, "active");
+    beforeBusiness = await fingerprint(); await change(false); assert.equal((await adminCommand(uncertainOwner, uncertainAdminCustomer)).status, 503);
+    assert.equal(await fingerprint(), beforeBusiness); assert.deepEqual(providerCalls, []); await reconcile();
+    checks.push("actual-admin-lifecycle-lost-authorization-sql-commit-ack-retains-all-parent-uncertainty-and-committed-refresh-without-command-or-automatic-replay");
 
     phase = "admin-lifecycle-blocked-authorization-refresh";
     await reset(); const blockedCustomer = await seedAccount(), blockedOwner = await seedAdmin(); await change(true, true); before = await operations();
@@ -578,7 +608,16 @@ async function main() {
 
     phase = "lifecycle-cron-auth-and-closed-entry";
     await reset(); await seedAccount(); await change(false); before = await operations(); beforeBusiness = await fingerprint();
-    assert.equal((await recovery(false)).status, 401); assert.equal((await recovery()).status, 503);
+    assert.equal((await recovery(false)).status, 401);
+    for (const authorization of ["Bearer owned-wrong-secret", `bearer ${process.env.CRON_SECRET}`])
+      assert.equal((await request("/api/cron/account-lifecycle", { authorization })).status, 401);
+    process.env.CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED = "false";
+    try { assert.equal((await recovery()).status, 404); }
+    finally { process.env.CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED = "true"; }
+    const cronSecret = process.env.CRON_SECRET; delete process.env.CRON_SECRET;
+    try { assert.equal((await recovery()).status, 404); }
+    finally { process.env.CRON_SECRET = cronSecret; }
+    assert.equal((await recovery()).status, 503);
     await entries(before, []); assert.equal(await fingerprint(), beforeBusiness); assert.deepEqual(providerCalls, []);
     await change(false, true); before = await operations(); assert.equal((await recovery()).status, 200);
     await entries(before, ["completed"], ["recovery"]); await reconcile();
