@@ -1,0 +1,23 @@
+{
+  "frontendSource": "6ed7825c192b1652827b64ffe5f51544fc7c8f33",
+  "frontendSourceDirectory": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-learner",
+  "courseSource": "5c23b8c53f7849426cf8a71703cc6a5c84fef3d7",
+  "courseSourceDirectory": "/Users/dardan/workspace/lash-her-course-api/.worktrees/phase2-course",
+  "courseArtifactSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+  "postgresMajor": 16,
+  "migrationsApplied": {
+    "frontend": 83,
+    "course": 22
+  },
+  "gatewayWorkloadVerification": "fixture",
+  "frontendAdmission": "off-in-owned-local-only",
+  "liveProvidersCertified": false,
+  "stagingCertified": false,
+  "externalFonts": "bundled-local-fixture",
+  "nextBundler": "webpack-development",
+  "customerSessions": "owned synthetic SQL sessions, actual frontend validation and fenced signer",
+  "courseBackend": "actual selected server, JWT verifier, routes and PostgreSQL",
+  "muxSigning": "actual SDK with generated owned RSA key; no provider HTTP",
+  "mediaAssets": "synthetic ready rows and local intercepted HLS/captions",
+  "muxPublicKeySha256": "c1f7ada924f368f5da43673bf9d0b2a026491c39b597fe848f29abb3da48207c"
+}
