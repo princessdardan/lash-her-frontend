@@ -19,7 +19,7 @@ test("owner authors, grades publication readiness and publishes with actual Cour
       .getByLabel("Course title", { exact: true })
       .fill("Browser authoring fixture");
     await page
-      .getByLabel("URL name", { exact: true })
+      .getByRole("textbox", { name: /^URL name/ })
       .fill("browser-authoring-fixture");
     await page
       .getByLabel("Approved tax classification")
@@ -38,7 +38,9 @@ test("owner authors, grades publication readiness and publishes with actual Cour
     await page.getByRole("button", { name: "Add module", exact: true }).click();
     let editor = page.getByRole("region", { name: "Open course editor" });
     await editor.getByLabel("Title", { exact: true }).fill("Foundations");
-    await editor.getByLabel("URL name", { exact: true }).fill("foundations");
+    await editor
+      .getByRole("textbox", { name: /^URL name/ })
+      .fill("foundations");
     await editor.getByRole("button", { name: "Save module" }).click();
     await expect(
       page.getByRole("status").getByText("Module saved."),
@@ -46,7 +48,9 @@ test("owner authors, grades publication readiness and publishes with actual Cour
     await page.getByRole("button", { name: "Add lesson", exact: true }).click();
     editor = page.getByRole("region", { name: "Open course editor" });
     await editor.getByLabel("Title", { exact: true }).fill("Safe technique");
-    await editor.getByLabel("URL name", { exact: true }).fill("safe-technique");
+    await editor
+      .getByRole("textbox", { name: /^URL name/ })
+      .fill("safe-technique");
     await editor.getByRole("button", { name: "Add content block" }).click();
     await editor
       .getByLabel("Text 1", { exact: true })
@@ -155,7 +159,7 @@ test("owner authors, grades publication readiness and publishes with actual Cour
       fullPage: true,
     });
   } finally {
-    await context.close();
+    await context.close().catch(() => {});
   }
 });
 test("customer-facing authoring routes isolate unauthenticated and non-editor staff", async ({
@@ -175,6 +179,6 @@ test("customer-facing authoring routes isolate unauthenticated and non-editor st
     await page.goto("/admin/courses");
     await expect(page).toHaveURL(/\/admin\/not-authorized$/);
   } finally {
-    await context.close();
+    await context.close().catch(() => {});
   }
 });
