@@ -1,4 +1,5 @@
 import "server-only";
+import { enqueueShippingEmail } from "./email-receipt";
 
 import { and, eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
@@ -6,10 +7,7 @@ import { getPrivateDb } from "@/lib/private-db/client";
 import { adminUsers, type ShippingPolicyDuty } from "@/lib/private-db/schema";
 import { configuredOwnerEmails } from "@/lib/shipping/configured-owner";
 import { escapeHtml, sendTransactionalEmail } from "@/lib/transactional-email";
-import {
-  enqueueCustomerEmail,
-  type CustomerEmailOutboxTransaction,
-} from "@/lib/commerce/customer-email-outbox";
+import { type CustomerEmailOutboxTransaction } from "@/lib/commerce/customer-email-outbox";
 
 /**
  * Shipping policy alerts route to the fulfillment owner.
@@ -53,7 +51,7 @@ export async function sendShippingPolicyAlert(input: {
     throw new Error("No active fulfillment owner to receive shipping alerts");
   const results = await Promise.allSettled(
     recipients.map((recipient) =>
-      enqueueCustomerEmail(
+      enqueueShippingEmail(
         {
           kind: "shipping_policy_alert",
           recipient,
@@ -86,7 +84,7 @@ export async function sendShippingCustomerUpdate(input: {
   now?: Date;
   executor?: CustomerEmailOutboxTransaction;
 }): Promise<void> {
-  await enqueueCustomerEmail(
+  await enqueueShippingEmail(
     {
       kind: "shipping_customer_update",
       recipient: input.to,

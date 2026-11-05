@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "pr": 91,
+  "url": "https://github.com/princessdardan/lash-her-frontend/pull/91",
+  "reviewedHead": "6705a8d8a1d84573f2ee67c94772cdc27fcb68f8",
+  "mergeCommit": "0d45f462c92a3de0af700e6f246bc4c57c8617b3",
+  "mergeParents": [
+    "412f3a3401815e46f67b05b128d7306af6400183",
+    "6705a8d8a1d84573f2ee67c94772cdc27fcb68f8"
+  ],
+  "base": "staging",
+  "mergedAt": "2026-11-05T19:59:34Z",
+  "merged": true,
+  "mergeMethod": "merge",
+  "expectedHeadChecked": true,
+  "ci": {
+    "url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/42096750740",
+    "passedJobs": 10,
+    "allJobsPassed": true
+  },
+  "verifiedArtifactArchives": [
+    {
+      "name": "frontend-runtime-qualification",
+      "id": 13446274754,
+      "sha256": "081b8af395c2e0169133e9d962d800f60c6bb8e6edf569b14b79cb22e387a348"
+    },
+    {
+      "name": "gateway-runtime-qualification",
+      "id": 13446039845,
+      "sha256": "99879cb00ebd90171e881fb7d29243f6106bb38208a5ace1efb4d34865a52e2f"
+    },
+    {
+      "name": "frontend-schema-summary",
+      "id": 13446039700,
+      "sha256": "eedc21d780302a378a317e7eaa3e6f2f591cf3c777b9d318806e8852dfd2cf84"
+    }
+  ],
+  "deploymentPerformed": false,
+  "admissionEnabled": false
+}

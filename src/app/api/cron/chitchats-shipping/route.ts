@@ -12,4 +12,9 @@ export const GET = createShippingWorkerCronHandler(
         result.refunds.some((refund) => refund.status !== "succeeded"),
     }),
   (task) => runWriterAdmission("recovery", task),
+  (task) =>
+    runWriterAdmission("recovery", task, {
+      uncertainResult: (result) =>
+        result.retried > 0 || result.deadLettered > 0 || result.fenced > 0,
+    }),
 );
