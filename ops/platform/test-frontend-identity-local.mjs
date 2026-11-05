@@ -75,7 +75,7 @@ async function main() {
     await owner.query("UPDATE customer_account_deliveries SET status='blocked',lease_id=NULL,lease_until=NULL,last_error='owned_fixture_quarantined' WHERE status<>'acknowledged'");
     await owner.query("UPDATE customer_account_exports SET status='failed',frontend_data=NULL,data=NULL WHERE status='pending'");
     phase = "regressions";
-    const regressionFiles = ["src/lib/customer-auth/store.db.test.ts", "src/lib/customer-auth/session-issuance.db.test.ts",
+    const regressionFiles = ["src/lib/customer-auth/store.db.test.ts", "src/lib/customer-auth/receipts.db.test.ts", "src/lib/customer-auth/session-issuance.db.test.ts",
       "src/lib/customer-lifecycle/store.db.test.ts", "src/lib/customer-lifecycle/faults.db.test.ts"];
     const regression = spawnSync(process.execPath, ["--import", "tsx", "--import", "./scripts/register-server-only-test.mjs", "--test", "--test-concurrency=1", "--test-reporter=tap", ...regressionFiles], {
       cwd: source, encoding: "utf8", timeout: 120_000,

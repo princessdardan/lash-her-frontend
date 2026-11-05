@@ -2,7 +2,7 @@
 // TLS/SCRAM PostgreSQL; no configured URL or external connection is accepted.
 import assert from "node:assert/strict";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
@@ -29,6 +29,13 @@ async function main() {
     APP_ENV: "staging", VERCEL: "1", VERCEL_ENV: "production", VERCEL_TARGET_ENV: "production",
     VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.stagingProjectId, APP_VERCEL_TEAM_ID: VERCEL_PROJECT_BINDINGS.teamId,
     CUSTOMER_AUTH_ENABLED: "true", INTEGRATION_CUSTOMER_ACCESS_ENABLED: "true", CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED: "true",
+    AUTH_URL: origin, AUTH_SECRET: "owned-admin-auth-fixture-distinct-secret-32", AUTH_TRUST_HOST: "true",
+    AUTH_GOOGLE_ID: "owned-admin-google-client", AUTH_GOOGLE_SECRET: "owned-admin-google-fixture-secret",
+    CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED: "true", CRON_SECRET: "owned-identity-lifecycle-cron-secret-32",
+    API_GATEWAY_STAGING_ORIGIN: "https://gateway.owned.invalid",
+    COURSE_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET: "owned-course-lifecycle-fixture-distinct-key-32",
+    COMMUNITY_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET: "owned-community-lifecycle-fixture-distinct-key-32",
+    VERCEL_OIDC_TOKEN: `${Buffer.from('{"alg":"HS256"}').toString("base64url")}.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.owned`,
     CUSTOMER_AUTH_URL: origin, CUSTOMER_AUTH_SECRET: secret, CUSTOMER_AUTH_GOOGLE_ID: "owned-google-client",
     CUSTOMER_AUTH_GOOGLE_SECRET: "owned-google-secret", CUSTOMER_AUTH_RESEND_KEY: "owned-resend-key", CUSTOMER_AUTH_EMAIL_FROM: "owned@example.invalid",
     STAGING_EMAIL_RECIPIENT_ALLOWLIST: "owned@example.invalid", NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project", NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
@@ -48,26 +55,28 @@ async function main() {
   const originalConsole = { log: console.log, warn: console.warn, error: console.error };
   const sourceBefore = frontendWriterInventory(fileURLToPath(new URL("../../../", import.meta.url)));
   let server, closePool, gate, providerMode = "success", verificationUrl, providerCalls = [], unexpectedFetches = 0, logCount = 0;
+  let expectedLifecycleCommand, lifecycleMode = "success";
+  const lifecycleSeen = new Map();
   let nonce, googleEmail = "owned@example.invalid", googleSubject = "owned-google-subject", invariantFailure;
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const jwk = { ...publicKey.export({ format: "jwk" }), kid: "owned-identity-key", alg: "RS256", use: "sig" };
   console.log = console.warn = console.error = () => { logCount++; };
   try {
     let epoch = (await operator.query("SELECT epoch::text FROM frontend_admission.control")).rows[0].epoch;
-    const change = async enabled => { epoch = (await changeFrontendAdmission(operator, target, epoch, { newWork: enabled, recovery: false })).epoch; };
+    const change = async (enabled, recovery = false) => { epoch = (await changeFrontendAdmission(operator, target, epoch, { newWork: enabled, recovery })).epoch; };
     const drain = () => observeFrontendDrain(operator, target, epoch);
     const operations = async () => (await operator.query("SELECT id,kind,state FROM frontend_admission.operations ORDER BY started_at,id")).rows;
     const since = async before => (await operations()).filter(row => !before.some(old => old.id === row.id));
-    const entries = async (before, states) => { const rows = await since(before); assert.deepEqual(rows.map(row => row.state), states); assert.ok(rows.every(row => row.kind === "new-work")); return rows; };
+    const entries = async (before, states, kinds = states.map(() => "new-work")) => { const rows = await since(before); assert.deepEqual(rows.map(row => row.state), states); assert.deepEqual(rows.map(row => row.kind), kinds); return rows; };
     const counts = async () => {
       const result = {};
-      for (const table of ["customer_users", "customer_provider_links", "customer_sessions", "customer_verification_tokens", "customer_auth_throttle", "customer_account_commands", "customer_account_deliveries", "customer_account_exports", "customer_account_preferences"])
+      for (const table of ["customer_users", "customer_provider_links", "customer_sessions", "customer_verification_tokens", "customer_auth_throttle", "customer_account_commands", "customer_account_deliveries", "customer_account_exports", "customer_account_preferences", "admin_users"])
         result[table] = (await operator.query(`SELECT count(*)::int AS count FROM ${table}`)).rows[0].count;
       return result;
     };
     const fingerprint = async () => {
       const result = {};
-      for (const table of ["customer_users", "customer_provider_links", "customer_sessions", "customer_verification_tokens", "customer_auth_throttle", "customer_account_commands", "customer_account_deliveries", "customer_account_exports", "customer_account_preferences"])
+      for (const table of ["customer_users", "customer_provider_links", "customer_sessions", "customer_verification_tokens", "customer_auth_throttle", "customer_account_commands", "customer_account_deliveries", "customer_account_exports", "customer_account_preferences", "admin_users"])
         result[table] = (await operator.query(`SELECT to_jsonb(t) AS row FROM ${table} t ORDER BY to_jsonb(t)::text`)).rows;
       return createHash("sha256").update(JSON.stringify(result)).digest("hex");
     };
@@ -81,8 +90,9 @@ async function main() {
       assert.equal((await drain()).ledgerDrained, true);
       assert.equal((await drain()).historicalWritersFenced, false); assert.equal((await drain()).migrationAuthorized, false);
     };
-    const reset = async () => { await operator.query("TRUNCATE customer_users,customer_auth_throttle,customer_verification_tokens CASCADE");
-      providerCalls = []; providerMode = "success"; verificationUrl = undefined; invariantFailure = undefined; gate = undefined; };
+    const reset = async () => { await operator.query("TRUNCATE customer_users,customer_auth_throttle,customer_verification_tokens,admin_users CASCADE");
+      providerCalls = []; providerMode = "success"; verificationUrl = undefined; invariantFailure = undefined; gate = undefined;
+      expectedLifecycleCommand = undefined; lifecycleMode = "success"; lifecycleSeen.clear(); };
     const until = async predicate => { for (let n = 0; n < 250; n++) { if (await predicate()) return; await delay(20); } throw new Error("OWNED_IDENTITY_OBSERVATION_TIMEOUT"); };
     const hold = stage => {
       let entered, release; const started = new Promise(resolve => { entered = resolve; }), wait = new Promise(resolve => { release = resolve; });
@@ -101,13 +111,34 @@ async function main() {
       else if (selected.href === "https://accounts.google.com/.well-known/openid-configuration") stage = "google-discovery";
       else if (selected.href === "https://www.googleapis.com/oauth2/v3/certs") stage = "google-keys";
       else if (selected.href === "https://oauth2.googleapis.com/token" && req.method === "POST") stage = "google-token";
+      else if (selected.origin === "https://gateway.owned.invalid" && /^\/(course|community)\/v1\/internal\/accounts\/commands$/u.test(selected.pathname) && req.method === "POST") stage = `lifecycle-${selected.pathname.split("/")[1]}`;
       else { unexpectedFetches++; throw new Error("OWNED_IDENTITY_UNEXPECTED_PROVIDER"); }
       try {
         const active = (await operations()).filter(row => row.state === "active");
-        assert.equal(active.length, 1); assert.equal(active[0].kind, "new-work");
+        assert.equal(active.length, 1); assert.equal(active[0].kind, stage.startsWith("lifecycle-") ? "recovery" : "new-work");
         const sessions = (await operator.query("SELECT ssl FROM pg_stat_ssl JOIN pg_stat_activity USING(pid) WHERE usename=$1", [target.user])).rows;
         assert.ok(sessions.length >= 2 && sessions.every(row => row.ssl));
       } catch (error) { invariantFailure = error; throw error; }
+      if (stage.startsWith("lifecycle-")) {
+        const receiver = stage.slice("lifecycle-".length), command = await req.json();
+        assert.deepEqual(command, expectedLifecycleCommand);
+        assert.equal(req.headers.get("x-idempotency-key"), command.commandId);
+        assert.equal(req.headers.get("x-lash-workload-token"), process.env.VERCEL_OIDC_TOKEN);
+        const bearer = req.headers.get("authorization").slice(7), parts = bearer.split(".");
+        const key = process.env[`${receiver.toUpperCase()}_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET`];
+        assert.equal(parts[2], createHmac("sha256", key).update(`${parts[0]}.${parts[1]}`).digest("base64url"));
+        const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+        assert.equal(claims.aud, `lash-her-${receiver}-api:account-lifecycle`); assert.equal(claims.sub, "frontend-account-lifecycle");
+        assert.equal(claims.exp - claims.iat, 300);
+        const identity = `${receiver}:${command.commandId}`, digest = createHash("sha256").update(JSON.stringify(command)).digest("hex");
+        const previous = lifecycleSeen.get(identity); if (previous) assert.equal(previous, digest);
+        lifecycleSeen.set(identity, digest);
+        providerCalls.push({ stage, commandSha256: digest, method: req.method, path: selected.pathname });
+        if (gate?.stage === stage && !gate.used) { gate.used = true; gate.entered(); await gate.wait; }
+        if (lifecycleMode === "outage") return Response.json({ error: { code: "UNAVAILABLE", message: "owned-private-provider-detail" } }, { status: 500 });
+        if (lifecycleMode === "missing-receipt") return Response.json({});
+        return Response.json({ commandId: command.commandId, accountVersion: command.accountVersion, status: previous ? "duplicate" : "accepted" });
+      }
       if (stage === "resend") {
         const body = await req.json(); assert.equal(body.to, "owned@example.invalid");
         verificationUrl = body.text.split("\n\n")[1];
@@ -128,6 +159,9 @@ async function main() {
     const auth = await import("../../../src/app/api/customer-auth/[...nextauth]/route.ts");
     const { POST: accountCommand } = await import("../../../src/app/api/account/commands/route.ts");
     const { POST: accountPreferences } = await import("../../../src/app/api/account/preferences/route.ts");
+    const { POST: adminAccountCommand } = await import("../../../src/app/api/admin/customer-accounts/[userId]/commands/route.ts");
+    const { GET: lifecycleCron } = await import("../../../src/app/api/cron/account-lifecycle/route.ts");
+    const { encode } = await import("next-auth/jwt");
     ({ closePrivateDbPool: closePool } = await import("../../../src/lib/private-db/client.ts"));
     server = createServer(async (incoming, outgoing) => {
       try {
@@ -139,9 +173,11 @@ async function main() {
         const req = new NextRequest(`${origin}${incoming.url}`, { method: incoming.method, headers, ...(body.length ? { body } : {}) });
         let result;
         if (incoming.url.startsWith("/api/customer-auth/")) result = await auth[incoming.method](req);
+        else if (incoming.url === "/api/cron/account-lifecycle") result = await lifecycleCron(req);
         else {
-          assert.ok(["/api/account/commands", "/api/account/preferences"].includes(incoming.url));
-          const route = incoming.url === "/api/account/commands" ? accountCommand : accountPreferences;
+          const adminMatch = /^\/api\/admin\/customer-accounts\/([a-f0-9-]+)\/commands$/u.exec(incoming.url);
+          assert.ok(adminMatch || ["/api/account/commands", "/api/account/preferences"].includes(incoming.url));
+          const route = adminMatch ? request => adminAccountCommand(request, { params: Promise.resolve({ userId: adminMatch[1] }) }) : incoming.url === "/api/account/commands" ? accountCommand : accountPreferences;
           const store = createRequestStoreForAPI(req, new URL(req.url));
           result = await workAsyncStorage.run({ route: incoming.url, isStaticGeneration: false }, () => workUnitAsyncStorage.run(store, () => route(req)));
         }
@@ -150,8 +186,9 @@ async function main() {
       } catch { outgoing.writeHead(500); outgoing.end("OWNED_IDENTITY_BRIDGE_FAILED"); }
     });
     await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
-    const perform = async (path, { method = "GET", cookie = "", body, requestOrigin = origin, clientIp = "198.51.100.1" } = {}) => {
+    const perform = async (path, { method = "GET", cookie = "", body, requestOrigin = origin, clientIp = "198.51.100.1", authorization } = {}) => {
       const headers = { host: new URL(origin).host, cookie, ...(clientIp ? { "x-vercel-forwarded-for": clientIp } : {}) };
+      if (authorization) headers.authorization = authorization;
       if (method === "POST") { headers.origin = requestOrigin; headers["content-type"] = body instanceof URLSearchParams ? "application/x-www-form-urlencoded" : "application/json"; }
       const response = await nativeFetch(`http://127.0.0.1:${server.address().port}${path}`, { method, headers, redirect: "manual", ...(body === undefined ? {} : { body: body instanceof URLSearchParams ? body : JSON.stringify(body) }), signal: AbortSignal.timeout(15000) });
       const text = await response.text(); assert.equal(text.includes(password), false); assert.equal(text.includes("owned-private-provider-detail"), false);
@@ -170,6 +207,21 @@ async function main() {
       await operator.query("INSERT INTO customer_sessions(token_hash,user_id,expires) VALUES($1,$2,now()+interval '1 day')", [tokenHash, user.id]);
       return { id: user.id, tokenHash, cookie: `__Host-lash-customer.session-token=${token}` }; };
     const account = (path, fixture, body) => request(`/api/account/${path}`, { method: "POST", cookie: fixture.cookie, body });
+    const seedAdmin = async (role = "owner", ageSeconds = 0) => {
+      const id = randomUUID(), providerUserId = `owned-admin-${id}`, email = `${id}@example.invalid`;
+      await operator.query("INSERT INTO admin_users(id,provider_user_id,email,email_normalized,display_name,role,status) VALUES($1,$2,$3,$3,'Owned admin fixture',$4,'active')", [id, providerUserId, email, role]);
+      const token = await encode({ secret: process.env.AUTH_SECRET, salt: "__Secure-authjs.session-token", maxAge: 3600,
+        token: { sub: providerUserId, providerUserId, email, name: "Owned admin fixture", googleEmailVerified: true, adminAuthenticatedAt: Math.floor(Date.now() / 1000) - ageSeconds } });
+      return { id, cookie: `__Secure-authjs.session-token=${token}` };
+    };
+    const adminCommand = (fixture, customer, action = "suspend") => request(`/api/admin/customer-accounts/${customer.id}/commands`, { method: "POST", cookie: fixture.cookie, body: { action, idempotencyKey: randomUUID() } });
+    const recovery = (authorized = true) => request("/api/cron/account-lifecycle", { authorization: authorized ? `Bearer ${process.env.CRON_SECRET}` : undefined });
+    const loadLifecycleCommand = async () => {
+      const rows = (await operator.query("SELECT command FROM customer_account_commands ORDER BY account_version")).rows;
+      assert.equal(rows.length, 1); expectedLifecycleCommand = rows[0].command;
+      assert.equal((await counts()).customer_account_deliveries, 2); return expectedLifecycleCommand;
+    };
+
 
     phase = "closed-auth-routes";
     await reset(); await seedAccount();
@@ -468,11 +520,93 @@ async function main() {
     assert.equal((await account("preferences", deleted, { learningUpdates: true })).status, 401); await entries(before, []); await reconcile();
     checks.push("actual-account-delete-requires-fresh-real-session-creates-both-receiver-commands-and-revoked-session-cannot-write");
 
+    phase = "admin-lifecycle-closed-before-authorization-writes";
+    await reset(); const adminCustomer = await seedAccount(), owner = await seedAdmin(); await change(false); before = await operations(); beforeBusiness = await fingerprint();
+    assert.equal((await adminCommand(owner, adminCustomer)).status, 503); await entries(before, []); assert.equal(await fingerprint(), beforeBusiness);
+    await change(true, true); before = await operations();
+    const ownerCommand = await adminCommand(owner, adminCustomer); assert.equal(ownerCommand.status, 202);
+    await entries(before, ["completed", "completed", "completed"], ["new-work", "recovery", "recovery"]);
+    assert.equal((await operator.query("SELECT status FROM customer_users WHERE id=$1", [adminCustomer.id])).rows[0].status, "suspended");
+    assert.equal((await counts()).customer_sessions, 0); await loadLifecycleCommand();
+    assert.ok((await operator.query("SELECT last_signed_in_at FROM admin_users WHERE id=$1", [owner.id])).rows[0].last_signed_in_at);
+    await reconcile(); checks.push("actual-admin-lifecycle-command-closed-before-auth-refresh-fresh-owner-whole-authorization-and-session-revocation-accounted");
+
+    for (const denied of ["nonowner", "stale-google-proof", "disabled-owner"]) {
+      phase = `admin-lifecycle-${denied}`; await reset(); const customer = await seedAccount();
+      const actor = await seedAdmin(denied === "nonowner" ? "admin" : "owner", denied === "stale-google-proof" ? 3600 : 0);
+      if (denied === "disabled-owner") await operator.query("UPDATE admin_users SET status='disabled' WHERE id=$1", [actor.id]);
+      await change(true, true); before = await operations();
+      const result = await adminCommand(actor, customer); assert.ok([403, 503].includes(result.status));
+      const current = await since(before); assert.ok(current.length >= 2); assert.equal(current[0].kind, "new-work");
+      assert.ok(current.every(row => row.state !== "active")); assert.equal((await counts()).customer_account_commands, 0);
+      assert.equal((await counts()).customer_sessions, 1);
+      assert.equal((await operator.query("SELECT status FROM customer_users WHERE id=$1", [customer.id])).rows[0].status, "active");
+      await reconcile(); checks.push(`actual-admin-lifecycle-${denied}-real-auth-js-and-persistent-guard-deny-command-without-session-revocation`);
+    }
+
+    phase = "admin-lifecycle-blocked-authorization-refresh";
+    await reset(); const blockedCustomer = await seedAccount(), blockedOwner = await seedAdmin(); await change(true, true); before = await operations();
+    const adminBlocker = await connect(); await adminBlocker.query("BEGIN"); await adminBlocker.query("SELECT id FROM admin_users WHERE id=$1 FOR UPDATE", [blockedOwner.id]);
+    const blockedAdmin = adminCommand(blockedOwner, blockedCustomer);
+    try {
+      await until(async () => (await operator.query("SELECT 1 FROM pg_stat_activity WHERE usename=$1 AND wait_event_type='Lock'", [target.user])).rows.length === 1);
+      await entries(before, ["active", "active", "active"], ["new-work", "recovery", "recovery"]);
+      await change(false); assert.equal((await drain()).ledgerDrained, false); assert.equal((await adminCommand(blockedOwner, blockedCustomer)).status, 503);
+    } finally { await adminBlocker.query("ROLLBACK"); }
+    assert.equal((await blockedAdmin).status, 202); await entries(before, ["completed", "completed", "completed"], ["new-work", "recovery", "recovery"]);
+    assert.equal((await counts()).customer_sessions, 0); await reconcile();
+    checks.push("actual-admin-lifecycle-parent-and-full-authorization-stay-active-through-blocked-refresh-and-final-command");
+
+    phase = "lifecycle-cron-auth-and-closed-entry";
+    await reset(); await seedAccount(); await change(false); before = await operations(); beforeBusiness = await fingerprint();
+    assert.equal((await recovery(false)).status, 401); assert.equal((await recovery()).status, 503);
+    await entries(before, []); assert.equal(await fingerprint(), beforeBusiness); assert.deepEqual(providerCalls, []);
+    await change(false, true); before = await operations(); assert.equal((await recovery()).status, 200);
+    await entries(before, ["completed"], ["recovery"]); await reconcile();
+    checks.push("actual-lifecycle-cron-bearer-and-closed-recovery-refuse-before-claims-empty-positive-entry-completes");
+
+    for (const mode of ["success", "outage", "missing-receipt"]) {
+      phase = `lifecycle-cron-${mode}`; await reset(); const customer = await seedAccount(), actor = await seedAdmin(); await change(true, true);
+      assert.equal((await adminCommand(actor, customer)).status, 202); await loadLifecycleCommand(); lifecycleMode = mode; before = await operations();
+      const result = await recovery(); assert.equal(result.status, mode === "success" ? 200 : 503);
+      await entries(before, [mode === "success" ? "completed" : "uncertain"], ["recovery"]);
+      let deliveries = (await operator.query("SELECT receiver,status,attempts,lease_id FROM customer_account_deliveries ORDER BY receiver")).rows;
+      if (mode === "success") { assert.equal(providerCalls.length, 2); assert.ok(deliveries.every(row => row.status === "acknowledged" && row.attempts === 1 && row.lease_id === null)); }
+      else {
+        assert.equal(providerCalls.length, 1); assert.equal(deliveries.filter(row => row.status === "pending" && row.attempts === 1 && row.lease_id === null).length, 1);
+        const originalDigest = providerCalls[0].commandSha256;
+        await reconcile(); lifecycleMode = "success";
+        await operator.query("UPDATE customer_account_deliveries SET next_run_at=now() WHERE status='pending'");
+        await change(false, true); before = await operations(); assert.equal((await recovery()).status, 200); await entries(before, ["completed"], ["recovery"]);
+        assert.equal(providerCalls.length, 3); assert.ok(providerCalls.every(row => row.commandSha256 === originalDigest));
+        deliveries = (await operator.query("SELECT status FROM customer_account_deliveries")).rows; assert.ok(deliveries.every(row => row.status === "acknowledged"));
+      }
+      assert.equal((await counts()).customer_account_commands, 1); await reconcile();
+      checks.push(`actual-lifecycle-cron-${mode}-whole-claim-delivery-settlement-and-owner-reconciled-exact-command-recovery`);
+    }
+
+    for (const fault of ["close", "ledger-death"]) {
+      phase = `lifecycle-cron-blocked-settlement-${fault}`; await reset(); const customer = await seedAccount(), actor = await seedAdmin(); await change(true, true);
+      assert.equal((await adminCommand(actor, customer)).status, 202); await loadLifecycleCommand(); before = await operations();
+      const held = hold("lifecycle-community"), pending = recovery(), blocker = await connect();
+      try {
+        await held.entered(); await blocker.query("BEGIN"); await blocker.query("SELECT command_id FROM customer_account_deliveries WHERE receiver='community' FOR UPDATE"); held.release();
+        await until(async () => (await operator.query("SELECT 1 FROM pg_stat_activity WHERE usename=$1 AND wait_event_type='Lock'", [target.user])).rows.length === 1);
+        await entries(before, ["active"], ["recovery"]); await change(false); assert.equal((await drain()).ledgerDrained, false);
+        assert.equal((await recovery()).status, 503); assert.equal(providerCalls.length, 1);
+        if (fault === "ledger-death") await killLedger();
+      } finally { held.release(); await blocker.query("ROLLBACK"); }
+      assert.equal((await pending).status, fault === "close" ? 200 : 503); gate = undefined;
+      await entries(before, [fault === "close" ? "completed" : "active"], ["recovery"]);
+      assert.equal(providerCalls.length, 2); assert.ok((await operator.query("SELECT status,lease_id FROM customer_account_deliveries")).rows.every(row => row.status === "acknowledged" && row.lease_id === null));
+      await reconcile(); checks.push(`actual-lifecycle-cron-blocked-settlement-${fault}-awaits-all-receiver-effects-and-preserves-original-receipts`);
+    }
+
     assert.equal(unexpectedFetches, 0); if (invariantFailure) throw invariantFailure;
     assert.equal(frontendWriterInventory(fileURLToPath(new URL("../../../", import.meta.url))).sourceManifestSha256, sourceBefore.sourceManifestSha256);
     return { status: findings.length ? "FRONTEND_IDENTITY_OWNED_FINDINGS" : "FRONTEND_IDENTITY_OWNED_PASS", postgresMajor: major, checks, findings, reconciliationEvidenceSha256: evidence,
       applicationSourceManifestSha256: sourceBefore.sourceManifestSha256, syntheticLedgerSourceIdentity: true, actualAuthRouteExport: true, actualAccountRouteExports: true,
-      actualAuthJs: true, constructedNextRequestStorage: true, nativeNextServer: false, loopbackHttp: true, verifiedPostgresTls: true, realBusinessDatabase: true,
+      actualAuthJs: true, actualAdminLifecycleRouteExport: true, actualLifecycleCronExport: true, constructedNextRequestStorage: true, nativeNextServer: false, loopbackHttp: true, verifiedPostgresTls: true, realBusinessDatabase: true,
       providersIntercepted: true, providerTouched: false, historicalWritersFenced: false, migrationAuthorized: false, applicationLogsSuppressed: logCount > 0 };
   } finally {
     gate?.release(); await Promise.allSettled(requests);
