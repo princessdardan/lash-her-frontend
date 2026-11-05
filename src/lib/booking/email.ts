@@ -182,6 +182,8 @@ export async function sendBookingConfirmationEmailForHold(
   try {
     await sendCustomerBookingConfirmationEmailForHold(holdId, dependencies);
   } catch (error) {
+    // Cleanup can reject without an error value; that is still uncertainty.
+    markWriterOperationUncertain();
     customerError = error;
   }
 
@@ -189,6 +191,7 @@ export async function sendBookingConfirmationEmailForHold(
   try {
     await dependencies.sendProviderBookingEmailForHold?.(holdId);
   } catch (error) {
+    markWriterOperationUncertain();
     providerError = error;
   }
 
@@ -218,6 +221,7 @@ export async function retryOperationalBookingOutcomeEmails(
       processed += 1;
     } catch (error) {
       failed += 1;
+      markWriterOperationUncertain();
       dependencies.logError(
         "[booking-email] Scheduled booking outcome retry failed",
         { error: getErrorMessage(error), holdId },

@@ -6,6 +6,7 @@ import runServiceReconciliationMonitor, {
 } from "@/lib/booking/payments/service-reconciliation-monitor";
 import { retryOperationalBookingOutcomeEmails } from "@/lib/booking/email";
 import { runSquareCommerceCaptureReconciliation } from "@/lib/commerce/square-commerce-capture-reconciliation";
+import { WriterAdmissionError } from "@/lib/writer-admission/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ interface PaymentReconciliationDependencies {
   runCommerceCaptureReconciliation?: typeof runSquareCommerceCaptureReconciliation;
 }
 
-const defaultDependencies: PaymentReconciliationDependencies = {
+export const defaultDependencies: PaymentReconciliationDependencies = {
   getCronSecrets: getConfiguredPaymentReconciliationCronSecrets,
   getNow: () => new Date(),
   logError: console.error,
@@ -34,6 +35,10 @@ export const GET = createPaymentReconciliationGetHandler(defaultDependencies);
 
 export function createPaymentReconciliationGetHandler(
   dependencies: PaymentReconciliationDependencies,
+  runBookingOutcomeRecovery: (
+    task: () => ReturnType<typeof retryOperationalBookingOutcomeEmails>,
+  ) => ReturnType<typeof retryOperationalBookingOutcomeEmails> = (task) =>
+    task(),
 ): (req: Request) => Promise<Response> {
   return async function paymentReconciliationGetHandler(
     req: Request,
@@ -68,8 +73,25 @@ export function createPaymentReconciliationGetHandler(
       );
     }
 
-    await retryBookingOutcomeEmailsSafely(dependencies, now);
+    const emailAdmissionFailed = await retryBookingOutcomeEmailsSafely(
+      dependencies,
+      now,
+      runBookingOutcomeRecovery,
+    );
     await reconcileCommerceCapturesSafely(dependencies, now);
+
+    if (emailAdmissionFailed) {
+      return Response.json(
+        {
+          error:
+            "This operation is temporarily unavailable. Please retry shortly.",
+        },
+        {
+          status: 503,
+          headers: { "cache-control": "no-store", "retry-after": "30" },
+        },
+      );
+    }
 
     if (monitorFailed || summary === null) {
       return Response.json(
@@ -111,13 +133,17 @@ async function reconcileCommerceCapturesSafely(
 async function retryBookingOutcomeEmailsSafely(
   dependencies: PaymentReconciliationDependencies,
   now: Date,
-): Promise<void> {
+  runRecovery: (
+    task: () => ReturnType<typeof retryOperationalBookingOutcomeEmails>,
+  ) => ReturnType<typeof retryOperationalBookingOutcomeEmails>,
+): Promise<boolean> {
   if (dependencies.retryBookingOutcomeEmails === undefined) {
-    return;
+    return false;
   }
 
   try {
-    const emailRetry = await dependencies.retryBookingOutcomeEmails({ now });
+    const retry = dependencies.retryBookingOutcomeEmails;
+    const emailRetry = await runRecovery(() => retry({ now }));
     if (emailRetry.failed > 0) {
       dependencies.logWarn(
         "[payment-reconciliation] Some booking outcome emails remain retryable",
@@ -129,7 +155,9 @@ async function retryBookingOutcomeEmailsSafely(
       "[payment-reconciliation] Booking outcome email retry failed",
       buildReconciliationErrorContext(error),
     );
+    return error instanceof WriterAdmissionError;
   }
+  return false;
 }
 
 function isAuthorizedCronRequest(req: Request, cronSecrets: string[]): boolean {
