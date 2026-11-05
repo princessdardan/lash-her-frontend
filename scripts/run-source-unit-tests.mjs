@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
+  "src/lib/customer-lifecycle/cron.test.ts",
   "src/lib/api-integration/course-admin-handler.test.ts",
   "src/lib/customer-lifecycle/handler.test.ts",
   "src/lib/api-integration/lifecycle-service-jwt.test.ts",

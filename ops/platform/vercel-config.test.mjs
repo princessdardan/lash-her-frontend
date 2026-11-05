@@ -46,3 +46,15 @@ test("wrong target, source, expiry or malformed mode stops qualification configu
     { LASH_RELEASE_PROBE_EXPIRES_AT: undefined }, { LASH_RELEASE_SCHEDULER_QUALIFICATION: "yes" },
   ]) assert.throws(() => createVercelConfiguration({ ...qualification(), ...changed }, now));
 });
+
+test("Phase 2 certification schedules only lifecycle recovery on the reviewed staging source", () => {
+  const input = { ...qualification(), LASH_RELEASE_SCHEDULER_QUALIFICATION: "false", CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED: "true", LASH_P2_CERTIFICATION_SCHEDULES: "account-lifecycle" };
+  assert.deepEqual(createVercelConfiguration(input, now).crons, [{ path: "/api/cron/account-lifecycle", schedule: "* * * * *" }]);
+  for (const changed of [
+    { APP_ENV: "production", VERCEL_PROJECT_ID: ids.productionProjectId },
+    { VERCEL_TARGET_ENV: "preview" }, { VERCEL_GIT_COMMIT_SHA: undefined },
+    { CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED: "false" },
+    { LASH_P2_CERTIFICATION_SCHEDULES: "all" }, { LASH_RELEASE_SCHEDULER_QUALIFICATION: "true" },
+  ]) assert.throws(() => createVercelConfiguration({ ...input, ...changed }, now));
+  assert.equal(createVercelConfiguration({ LASH_P2_CERTIFICATION_SCHEDULES: "off" }).crons.length, 9);
+});

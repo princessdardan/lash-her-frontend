@@ -12,8 +12,10 @@ export interface LifecycleClient {
  * unknown receiver result is retried with the exact durable command and ID. */
 export async function processAccountLifecycle(dependencies: { store: AccountLifecycleStore; client: (receiver: AccountReceiver) => LifecycleClient }) {
   assertAccountWriter();
+  const deadline = performance.now() + 60_000;
   const result = { acknowledged: 0, retrying: 0, blocked: 0, exportsReady: 0, expired: await dependencies.store.expireExports() };
   for (let index = 0; index < 20; index++) {
+    if (performance.now() >= deadline) break;
     const claim = await dependencies.store.claimDelivery();
     if (!claim) break;
     try {
@@ -30,6 +32,7 @@ export async function processAccountLifecycle(dependencies: { store: AccountLife
     }
   }
   for (const pending of await dependencies.store.pendingExports()) {
+    if (performance.now() >= deadline) break;
     try {
       const course = await dependencies.client("course").getExport(pending.command);
       const community = await dependencies.client("community").getExport(pending.command);
