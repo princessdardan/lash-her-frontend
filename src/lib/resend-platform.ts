@@ -1,5 +1,6 @@
 import { assertStagingBulkEmailDisabled } from "@/lib/env/staging-email-policy.mjs";
 import "server-only";
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 import type {
   AddContactSegmentOptions,
@@ -265,6 +266,8 @@ export async function syncResendMarketingContact(
   const updateResult = await resolvedDependencies.updateContact(
     plan.updateContact,
   );
+  if (updateResult.error === null && !updateResult.data?.id)
+    markWriterOperationUncertain();
 
   if (updateResult.error !== null) {
     if (!isNotFoundError(updateResult.error)) {
@@ -278,6 +281,8 @@ export async function syncResendMarketingContact(
     const createResult = await resolvedDependencies.createContact(
       plan.createContact,
     );
+    if (createResult.error === null && !createResult.data?.id)
+      markWriterOperationUncertain();
 
     if (createResult.error !== null) {
       throw new ResendContactSyncError(
@@ -315,6 +320,8 @@ export async function syncResendMarketingContact(
 
       const addResult =
         await resolvedDependencies.addContactSegment(segmentAdd);
+      if (addResult.error === null && !addResult.data?.id)
+        markWriterOperationUncertain();
 
       if (
         addResult.error !== null &&
@@ -337,6 +344,8 @@ export async function syncResendMarketingContact(
     const topicResult = await resolvedDependencies.updateContactTopics(
       plan.topicUpdate,
     );
+    if (topicResult.error === null && !topicResult.data?.id)
+      markWriterOperationUncertain();
 
     if (topicResult.error !== null) {
       throw new ResendContactSyncError(
@@ -352,8 +361,11 @@ export async function syncResendMarketingContact(
   // marketing segment — which is what campaigns need — so a failed (or
   // unconfigured) event must NOT fail the sync and dead-letter the contact.
   try {
-    await resolvedDependencies.sendEvent(plan.event);
+    const result = await resolvedDependencies.sendEvent(plan.event);
+    if (result.error !== null || !result.data?.event)
+      markWriterOperationUncertain();
   } catch {
+    markWriterOperationUncertain();
     // swallow — event delivery is non-critical to the sync
   }
 }
@@ -376,6 +388,7 @@ export async function unsubscribeResendMarketingContact(input: {
     email,
     unsubscribed: true,
   });
+  if (result.error === null && !result.data?.id) markWriterOperationUncertain();
 
   if (result.error !== null && !isNotFoundError(result.error)) {
     throw new ResendContactSyncError(

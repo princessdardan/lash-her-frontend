@@ -1,0 +1,9 @@
+# CRM and marketing sync recovery admission
+
+This source component covers `runHighLevelWorker` and the marketing contact-sync worker. Both acquire independent recovery admission before pause-cancellation queries, job claims, provider calls, compensation, or receipts. Their authenticated cron handlers invoke these boundaries after authentication; direct exported worker calls use the same boundary. Admission remains disabled by default.
+
+CRM retries/reviews and marketing claim/provider failures retain uncertainty even when the domain catches the error and persists a retry. A missing lock-qualified CRM completion, effect/contact/offer projection, marketing completion, or Resend contact/segment/topic acknowledgement also retains uncertainty. Best-effort Resend event failures retain uncertainty without changing off-mode behavior. Worker loops and unsubscribe compensation finish before settlement; worker-path consent queries run sequentially so a rejected sibling cannot outlive the operation.
+
+The focused `remaining-workers.test.ts` uses the real admission runner with an intercepted ledger transport and injected worker repositories/providers. It covers closed recovery, independent new-work closure, caught errors, absent receipts, unsubscribe compensation in flight, connection/settlement loss, authentication, and off-mode summaries. These are source-level tests, not owned PostgreSQL or deployed worker qualification. Existing HighLevel and marketing worker regression tests also run.
+
+Still required: actual business/ledger database receipts and race qualification, provider acknowledgement contracts for existing opaque HighLevel projection writes, immutable deployment execution, complete producer/provider inventory, historical fencing/bootstrap, and parent release coordination. This component neither enables admission nor authorizes pending SQL or staging release. P2-00 remains incomplete.
