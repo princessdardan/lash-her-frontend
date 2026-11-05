@@ -57,12 +57,8 @@ if (process.env.COURSE_AUTHORING_BROWSER_FIXTURE === "1") {
       );
     }
     if (
-      [
-        "127.0.0.1",
-        "localhost",
-        "fonts.googleapis.com",
-        "fonts.gstatic.com",
-      ].includes(url.hostname)
+      url.origin === course.origin ||
+      url.origin === new URL(process.env.AUTH_URL).origin
     )
       return original(input, options);
     throw new Error("Unexpected external request in authoring browser fixture");

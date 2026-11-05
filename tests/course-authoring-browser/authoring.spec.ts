@@ -1,14 +1,48 @@
 import { readFile } from "node:fs/promises";
-import { test, expect } from "@playwright/test";
+import {
+  test,
+  expect,
+  type Browser,
+  type BrowserContext,
+} from "@playwright/test";
 const enabled = process.env.COURSE_AUTHORING_BROWSER_FIXTURE === "1";
 test.skip(!enabled, "Run only through the owned authoring browser launcher.");
 const storagePath = process.env.COURSE_AUTHORING_STORAGE_PATH;
+const externalOrigins = new Set<string>();
+async function ownedContext(
+  browser: Browser,
+  storageState: Awaited<ReturnType<BrowserContext["storageState"]>>,
+) {
+  const origin = process.env.COURSE_AUTHORING_BROWSER_ORIGIN;
+  if (!origin || !/^http:\/\/localhost:\d+$/u.test(origin))
+    throw new Error("Owned browser origin required");
+  const context = await browser.newContext({ storageState });
+  await context.route("**/*", async (route) => {
+    const requested = new URL(route.request().url());
+    if (requested.origin === origin) await route.continue();
+    else {
+      externalOrigins.add(requested.origin);
+      await route.abort("blockedbyclient");
+    }
+  });
+  return context;
+}
+test.afterEach(() => {
+  try {
+    expect(
+      [...externalOrigins],
+      "Browser must not request external providers",
+    ).toEqual([]);
+  } finally {
+    externalOrigins.clear();
+  }
+});
 test("owner authors, grades publication readiness and publishes with actual Course persistence", async ({
   browser,
 }) => {
   if (!storagePath) throw new Error("Owned storage fixture required");
   const states = JSON.parse(await readFile(storagePath, "utf8"));
-  const context = await browser.newContext({ storageState: states.owner });
+  const context = await ownedContext(browser, states.owner);
   const page = await context.newPage();
   try {
     await page.goto("/admin/courses");
@@ -157,7 +191,7 @@ test("owner authors, grades publication readiness and publishes with actual Cour
       ),
     ).toBe(true);
     await page.screenshot({
-      path: "test-results/course-authoring-browser/mobile-authoring.png",
+      path: test.info().outputPath("mobile-authoring.png"),
       fullPage: true,
     });
   } finally {
@@ -171,7 +205,7 @@ test("customer-facing authoring routes isolate unauthenticated and non-editor st
   expect((await request.get("/api/admin/courses")).status()).toBe(401);
   if (!storagePath) throw new Error("Owned storage fixture required");
   const states = JSON.parse(await readFile(storagePath, "utf8"));
-  const context = await browser.newContext({ storageState: states.admin });
+  const context = await ownedContext(browser, states.admin);
   try {
     const response = await context.request.get("/api/admin/courses");
     expect(response.status()).toBe(403);
@@ -192,7 +226,7 @@ test("keyboard ordering, archival identity and dirty-editor cancellation remain 
   if (!storagePath || !baseURL)
     throw new Error("Owned browser fixture required");
   const states = JSON.parse(await readFile(storagePath, "utf8"));
-  const context = await browser.newContext({ storageState: states.owner });
+  const context = await ownedContext(browser, states.owner);
   const page = await context.newPage();
   const headers = { origin: baseURL, "x-lash-csrf": "1" };
   async function post(path: string, data: object) {
