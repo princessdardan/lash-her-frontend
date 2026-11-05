@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import {
   isSquareAfterpayAmountEligible,
   matchesSquarePaymentMethod,
@@ -401,6 +402,7 @@ export async function confirmChargeAndStoreBooking(
       now,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       dependencies,
       "Failed to claim booking hold",
@@ -472,6 +474,7 @@ export async function confirmChargeAndStoreBooking(
         squarePaymentId: claimResult.payment.squarePaymentId,
       });
     } catch (error) {
+      markWriterOperationUncertain();
       await alertInfrastructureError(
         dependencies,
         "Failed to resume captured operational appointment projection",
@@ -658,6 +661,7 @@ export async function confirmChargeAndStoreBooking(
       now,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       dependencies,
       "Failed to persist customer and payment selection",
@@ -716,6 +720,7 @@ export async function confirmChargeAndStoreBooking(
             : undefined,
       });
     } catch (error) {
+      markWriterOperationUncertain();
       await alertInfrastructureError(
         dependencies,
         "Failed to persist marketing choice",
@@ -760,6 +765,7 @@ export async function confirmChargeAndStoreBooking(
       now,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       dependencies,
       "Failed to persist policy acceptance",
@@ -788,6 +794,7 @@ export async function confirmChargeAndStoreBooking(
       squareCustomers: dependencies.squareCustomers,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     const isInfrastructure = error instanceof ChargeAndStoreInfrastructureError;
     await dependencies.alerts.alert({
       category: isInfrastructure
@@ -884,6 +891,7 @@ export async function confirmChargeAndStoreBooking(
     try {
       prepared = await prepareIntent(intentInput);
     } catch (error) {
+      markWriterOperationUncertain();
       await alertInfrastructureError(
         dependencies,
         "Failed to persist Square request intent and capture lease",
@@ -902,6 +910,7 @@ export async function confirmChargeAndStoreBooking(
           prepared.idempotencyKey,
         );
       } catch {
+        markWriterOperationUncertain();
         return {
           ok: false,
           error: "infrastructure_error",
@@ -932,6 +941,7 @@ export async function confirmChargeAndStoreBooking(
           ),
         });
       } catch (error) {
+        markWriterOperationUncertain();
         await alertInfrastructureError(
           dependencies,
           "Failed to replace a cancelled Square request intent",
@@ -967,6 +977,7 @@ export async function confirmChargeAndStoreBooking(
       },
     );
   } catch {
+    markWriterOperationUncertain();
     await dependencies.alerts.alert({
       category: "square_webhook_retryable_failure",
       severity: "warning",
@@ -1078,6 +1089,7 @@ export async function confirmChargeAndStoreBooking(
       },
     });
   } catch (error) {
+    markWriterOperationUncertain();
     await dependencies.alerts.alert({
       category: "square_card_save_failed",
       severity: "warning",
@@ -1095,6 +1107,7 @@ export async function confirmChargeAndStoreBooking(
         paymentResponse.payment.id,
       );
     } catch {
+      markWriterOperationUncertain();
       await dependencies.alerts.alert({
         category: "square_webhook_retryable_failure",
         severity: "warning",
@@ -1146,6 +1159,7 @@ export async function confirmChargeAndStoreBooking(
         now,
       });
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       dependencies,
       "Failed to persist saved payment method after Square payment approval",
@@ -1160,6 +1174,7 @@ export async function confirmChargeAndStoreBooking(
         paymentResponse.payment.id,
       );
     } catch {
+      markWriterOperationUncertain();
       await dependencies.alerts.alert({
         category: "square_webhook_retryable_failure",
         severity: "warning",
@@ -1220,6 +1235,7 @@ export async function confirmChargeAndStoreBooking(
       },
     );
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       dependencies,
       "Failed to create no-show charge record",
@@ -1231,6 +1247,7 @@ export async function confirmChargeAndStoreBooking(
         paymentResponse.payment.id,
       );
     } catch {
+      markWriterOperationUncertain();
       await dependencies.alerts.alert({
         category: "square_webhook_retryable_failure",
         severity: "warning",
@@ -1285,6 +1302,7 @@ export async function confirmChargeAndStoreBooking(
         },
       );
     } catch (error) {
+      markWriterOperationUncertain();
       const reason =
         error instanceof Error
           ? error.message
@@ -1308,6 +1326,7 @@ export async function confirmChargeAndStoreBooking(
           paymentResponse.payment.id,
         );
       } catch {
+        markWriterOperationUncertain();
         await dependencies.alerts.alert({
           category: "square_webhook_retryable_failure",
           severity: "warning",
@@ -1369,6 +1388,7 @@ export async function confirmChargeAndStoreBooking(
       versionToken: paymentResponse.payment.version_token,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       dependencies,
       "Failed to persist Square authorization before capture",
@@ -1403,6 +1423,7 @@ export async function confirmChargeAndStoreBooking(
           squarePaymentId,
         });
       } catch (error) {
+        markWriterOperationUncertain();
         await alertInfrastructureError(
           dependencies,
           "Failed to revalidate operational capture lease",
@@ -1431,6 +1452,7 @@ export async function confirmChargeAndStoreBooking(
       paymentResponse.payment.version_token,
     );
   } catch {
+    markWriterOperationUncertain();
     // Capture failed before we received a final response. Query Square to
     // determine whether the payment was actually completed so we know whether
     // to request a refund or leave the hold for manual follow-up.
@@ -1439,6 +1461,7 @@ export async function confirmChargeAndStoreBooking(
       lookupPayment =
         await dependencies.squarePayments.getPayment(squarePaymentId);
     } catch (lookupError) {
+      markWriterOperationUncertain();
       await dependencies.alerts.alert({
         category: "square_webhook_retryable_failure",
         severity: "warning",
@@ -1587,6 +1610,7 @@ async function resumeAuthorizedChargeAndStorePayment(input: {
       input.payment.squarePaymentId,
     );
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       input.dependencies,
       "Failed to query durable Square authorization during recovery",
@@ -1713,6 +1737,7 @@ async function resumeAuthorizedChargeAndStorePayment(input: {
         };
       }
     } catch (error) {
+      markWriterOperationUncertain();
       await alertInfrastructureError(
         input.dependencies,
         "Failed to persist terminal Square authorization status",
@@ -1759,6 +1784,7 @@ async function resumeAuthorizedChargeAndStorePayment(input: {
         squarePaymentId: input.payment.squarePaymentId,
       });
     } catch (error) {
+      markWriterOperationUncertain();
       await alertInfrastructureError(
         input.dependencies,
         "Failed to revalidate recovered operational capture lease",
@@ -1789,6 +1815,7 @@ async function resumeAuthorizedChargeAndStorePayment(input: {
       observed.payment.version_token ?? input.payment.versionToken,
     );
   } catch (completeError) {
+    markWriterOperationUncertain();
     try {
       const afterError = await input.dependencies.squarePayments.getPayment(
         input.payment.squarePaymentId,
@@ -1800,6 +1827,7 @@ async function resumeAuthorizedChargeAndStorePayment(input: {
         completed = afterError;
       }
     } catch (lookupError) {
+      markWriterOperationUncertain();
       await input.dependencies.alerts.alert({
         category: "square_webhook_retryable_failure",
         severity: "warning",
@@ -1902,6 +1930,7 @@ async function persistCapturedPaymentAndFinalize(input: {
       squarePaymentId: payment.id,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       input.dependencies,
       "Failed to persist captured payment before Calendar finalization",
@@ -2067,6 +2096,7 @@ async function finalizeCapturedChargeAndStoreBooking(input: {
       now: input.now,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     calendarResult = {
       ok: false,
       status: "manual_followup",
@@ -2091,6 +2121,7 @@ async function finalizeCapturedChargeAndStoreBooking(input: {
         },
       );
     } catch (error) {
+      markWriterOperationUncertain();
       await alertInfrastructureError(
         input.dependencies,
         "Failed to mark hold for manual follow-up after calendar failure",
@@ -2155,6 +2186,7 @@ async function finalizeCapturedChargeAndStoreBooking(input: {
     });
     return effectiveConfirmation;
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       input.dependencies,
       "Failed to finalize booking after Calendar success",
@@ -2191,6 +2223,7 @@ async function finalizeCapturedChargeAndStoreBooking(input: {
       });
       return effectiveConfirmation;
     } catch (manualError) {
+      markWriterOperationUncertain();
       await alertInfrastructureError(
         input.dependencies,
         "Failed to mark hold manual follow-up after calendar booking failure",
@@ -2289,6 +2322,7 @@ async function createOrReuseSquareCustomer(input: {
       return existing;
     }
   } catch (error) {
+    markWriterOperationUncertain();
     throw new ChargeAndStoreInfrastructureError(getErrorMessage(error));
   }
 
@@ -2306,6 +2340,7 @@ async function createOrReuseSquareCustomer(input: {
       reference_id: input.hold.publicReference,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     throw new Error(getErrorMessage(error));
   }
 
@@ -2318,6 +2353,7 @@ async function createOrReuseSquareCustomer(input: {
       now: input.now,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     const existingAfterError = await safeFindSquareCustomerByEmail(
       input.repository,
       input.hold.customer.email,
@@ -2336,6 +2372,7 @@ async function safeFindSquareCustomerByEmail(
   try {
     return await repository.findSquareCustomerByEmail(email);
   } catch {
+    markWriterOperationUncertain();
     return null;
   }
 }
@@ -2673,7 +2710,7 @@ async function alertInfrastructureError(
   message: string,
   context: Record<string, unknown>,
 ): Promise<void> {
-  dependencies.alerts.alert({
+  await dependencies.alerts.alert({
     category: "stuck_payment_state",
     severity: "error",
     message,
@@ -2694,6 +2731,7 @@ async function markHoldPaymentFailedSafe(
       now,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       dependencies,
       "Failed to mark hold payment failed",
@@ -2772,6 +2810,7 @@ async function cancelSquarePaymentSafe(
         }
       }
     } catch (ledgerError) {
+      markWriterOperationUncertain();
       // Square is definitively canceled. Keep any durable authorization row
       // recoverable; a retry can observe CANCELED and repeat this DB step.
       await alertInfrastructureError(
@@ -2787,6 +2826,7 @@ async function cancelSquarePaymentSafe(
     }
     return { ok: true };
   } catch {
+    markWriterOperationUncertain();
     await dependencies.alerts.alert({
       category: "square_webhook_retryable_failure",
       severity: "warning",
@@ -2830,6 +2870,7 @@ async function markRefundRequiredAndReturnFailure(
       return outcome.confirmation;
     }
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       dependencies,
       "Failed to mark hold refund required after capture failure",
@@ -2854,7 +2895,8 @@ async function sendBookingSchedulingFailureAdminEmailSafe(
   try {
     await dependencies.sendBookingSchedulingFailureAdminEmail(input);
   } catch (emailError) {
-    dependencies.alerts.alert({
+    markWriterOperationUncertain();
+    await dependencies.alerts.alert({
       category: "stuck_payment_state",
       severity: "error",
       message: "Failed to send admin alert for booking scheduling failure",
@@ -2878,7 +2920,8 @@ async function sendBookingConfirmationEmailForHoldSafe(
   try {
     await dependencies.sendBookingConfirmationEmailForHold(holdId);
   } catch (emailError) {
-    dependencies.alerts.alert({
+    markWriterOperationUncertain();
+    await dependencies.alerts.alert({
       category: "stuck_payment_state",
       severity: "error",
       message: "Failed to send customer booking outcome email",

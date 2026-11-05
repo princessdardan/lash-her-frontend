@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 export const runtime = "nodejs";
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -57,7 +58,7 @@ export function createServiceBookingPaymentConfirmPostHandler(
       }
 
       if (result.error === "square_api_error") {
-        dependencies.alerts.alert({
+        await dependencies.alerts.alert({
           category: "square_card_save_failed",
           severity: "warning",
           message:
@@ -68,7 +69,7 @@ export function createServiceBookingPaymentConfirmPostHandler(
         return badGatewayResponse("Unable to process payment with provider");
       }
 
-      dependencies.alerts.alert({
+      await dependencies.alerts.alert({
         category: "stuck_payment_state",
         severity: "error",
         message:
@@ -81,6 +82,8 @@ export function createServiceBookingPaymentConfirmPostHandler(
       );
     }
 
+    if (result.bookingStatus === "manual_followup")
+      markWriterOperationUncertain();
     return Response.json({
       bookingStatus: result.bookingStatus,
       card: pickCardResponseFields(result.card),

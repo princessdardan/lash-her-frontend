@@ -75,7 +75,10 @@ export async function signOutAdminAction(): Promise<void> {
     const hadDeveloperSession = await hasAdminDeveloperSession();
     await clearAdminDeveloperSession();
     if (hadDeveloperSession) return "/admin/sign-in";
-    return signOut({ redirectTo: "/admin/sign-in", redirect: false });
+    // The installed Auth.js version returns its raw response when redirect is
+    // disabled, unlike signIn which returns a URL.
+    await signOut({ redirectTo: "/admin/sign-in", redirect: false });
+    return "/admin/sign-in";
   });
   redirect(url);
 }

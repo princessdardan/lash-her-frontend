@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 export const runtime = "nodejs";
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -65,7 +66,7 @@ export function createCardOnFilePostHandler(
       }
 
       if (result.error === "square_api_error") {
-        dependencies.alerts.alert({
+        await dependencies.alerts.alert({
           category: "square_card_save_failed",
           severity: "warning",
           message: "Card-on-file booking Square API failure surfaced to client",
@@ -75,7 +76,7 @@ export function createCardOnFilePostHandler(
         return badGatewayResponse("Unable to save card with payment provider");
       }
 
-      dependencies.alerts.alert({
+      await dependencies.alerts.alert({
         category: "stuck_payment_state",
         severity: "error",
         message:
@@ -97,6 +98,7 @@ export function createCardOnFilePostHandler(
           result.holdReference,
         );
       } catch (error) {
+        markWriterOperationUncertain();
         await dependencies.alerts.alert({
           category: "provider_booking_email_failed",
           severity: "warning",
@@ -109,6 +111,8 @@ export function createCardOnFilePostHandler(
       }
     }
 
+    if (result.bookingStatus === "manual_followup")
+      markWriterOperationUncertain();
     return Response.json({
       bookingStatus: result.bookingStatus,
       card: result.card,

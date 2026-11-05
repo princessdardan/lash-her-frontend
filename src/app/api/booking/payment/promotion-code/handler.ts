@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 export const runtime = "nodejs";
 
 import { eq, and, gt } from "drizzle-orm";
@@ -377,6 +378,7 @@ function createDefaultUpdateHoldPromotionSnapshot(): ServiceBookingPromotionCode
         .returning();
 
       if (updated === undefined) {
+        markWriterOperationUncertain();
         return { ok: false, reason: "unavailable" };
       }
 
@@ -430,6 +432,7 @@ async function enforcePromotionCodeRateLimit(input: {
       ? null
       : rateLimitedResponse(decision.retryAfterSeconds);
   } catch (error) {
+    markWriterOperationUncertain();
     console.warn("[booking promotion code] Rate limiter unavailable", {
       error: getErrorMessage(error),
     });

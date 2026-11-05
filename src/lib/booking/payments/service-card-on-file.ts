@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { createHash } from "node:crypto";
 
 import { resolveBookingModelVersion } from "@/lib/booking/booking-model-version";
@@ -299,6 +300,7 @@ export async function confirmCardOnFileBooking(
       now,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       dependencies,
       "Failed to load booking hold",
@@ -496,6 +498,7 @@ export async function confirmCardOnFileBooking(
       now,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       dependencies,
       "Failed to persist policy acceptance",
@@ -530,6 +533,7 @@ export async function confirmCardOnFileBooking(
       },
     );
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       dependencies,
       "Failed to create no-show charge record",
@@ -579,6 +583,7 @@ export async function confirmCardOnFileBooking(
       });
     }
   } catch (error) {
+    markWriterOperationUncertain();
     noShowInstrumentStatus = "manual_followup";
 
     const message =
@@ -605,6 +610,7 @@ export async function confirmCardOnFileBooking(
         ...providerContext,
       });
     } catch {
+      markWriterOperationUncertain();
       // Best-effort update; the response will still indicate manual follow-up.
     }
 
@@ -625,6 +631,7 @@ export async function confirmCardOnFileBooking(
       now,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     calendarResult = {
       ok: false,
       status: "manual_followup",
@@ -668,6 +675,7 @@ export async function confirmCardOnFileBooking(
         now,
       });
     } catch (error) {
+      markWriterOperationUncertain();
       await alertInfrastructureError(
         dependencies,
         "Failed to mark hold for manual follow-up",
@@ -708,6 +716,7 @@ export async function confirmCardOnFileBooking(
       holdReference: bookedHold.publicReference,
     };
   } catch (error) {
+    markWriterOperationUncertain();
     await alertInfrastructureError(
       dependencies,
       "Failed to finalize booking after Calendar success",
@@ -744,6 +753,7 @@ async function createOrReuseSquareCustomer(input: {
       return { ok: true, customer: existing };
     }
   } catch (error) {
+    markWriterOperationUncertain();
     return {
       ok: false,
       error: new CardOnFileInfrastructureError(getErrorMessage(error)),
@@ -764,6 +774,7 @@ async function createOrReuseSquareCustomer(input: {
       reference_id: input.hold.publicReference,
     });
   } catch (error) {
+    markWriterOperationUncertain();
     return {
       ok: false,
       error: new CardOnFileSquareApiError(getErrorMessage(error)),
@@ -786,6 +797,7 @@ async function createOrReuseSquareCustomer(input: {
 
     return { ok: true, customer };
   } catch (error) {
+    markWriterOperationUncertain();
     const existingAfterError = await safeFindSquareCustomerByEmail(
       input.repository,
       input.hold.customer.email,
@@ -831,6 +843,7 @@ async function createOrReuseSquareCard(input: {
         return { ok: true, paymentMethod: existing };
       }
     } catch (error) {
+      markWriterOperationUncertain();
       return {
         ok: false,
         error: new CardOnFileInfrastructureError(getErrorMessage(error)),
@@ -861,6 +874,7 @@ async function createOrReuseSquareCard(input: {
 
         return { ok: true, paymentMethod };
       } catch (error) {
+        markWriterOperationUncertain();
         const existingAfterError =
           await input.repository.findSavedPaymentMethodBySquareCardId(
             checkpointSquareCardId,
@@ -894,6 +908,7 @@ async function createOrReuseSquareCard(input: {
       },
     });
   } catch (error) {
+    markWriterOperationUncertain();
     return {
       ok: false,
       error: new CardOnFileSquareApiError(getErrorMessage(error)),
@@ -918,6 +933,7 @@ async function createOrReuseSquareCard(input: {
       now: new Date(),
     });
   } catch (error) {
+    markWriterOperationUncertain();
     return {
       ok: false,
       error: new CardOnFileInfrastructureError(
@@ -944,6 +960,7 @@ async function createOrReuseSquareCard(input: {
 
     return { ok: true, paymentMethod };
   } catch (error) {
+    markWriterOperationUncertain();
     const existingAfterError =
       await input.repository.findSavedPaymentMethodBySquareCardId(
         response.card.id,
@@ -986,6 +1003,7 @@ async function resolvePolicyAcceptance(
   try {
     return await repository.persistPolicyAcceptance(input);
   } catch (error) {
+    markWriterOperationUncertain();
     const afterError = await safeFindPolicyAcceptanceForHold(
       repository,
       input.holdId,
@@ -1022,6 +1040,7 @@ async function resolveNoShowChargeRecordSummary(
   try {
     return await repository.createNoShowChargeRecord(input);
   } catch (error) {
+    markWriterOperationUncertain();
     const afterError = await safeFindNoShowChargeRecordSummaryForHold(
       repository,
       input.holdId,
@@ -1055,6 +1074,7 @@ async function loadCheckpoint(
   try {
     return (await repository.loadCardOnFileProgress(holdId)) ?? {};
   } catch {
+    markWriterOperationUncertain();
     return {};
   }
 }
@@ -1071,6 +1091,7 @@ async function saveCheckpoint(
       now: new Date(),
     });
   } catch {
+    markWriterOperationUncertain();
     // Checkpoint is best-effort; record-level idempotency still protects against duplicates.
   }
 }
@@ -1082,6 +1103,7 @@ async function safeFindSquareCustomerByEmail(
   try {
     return await repository.findSquareCustomerByEmail(email);
   } catch {
+    markWriterOperationUncertain();
     return null;
   }
 }
@@ -1093,6 +1115,7 @@ async function safeFindPolicyAcceptanceForHold(
   try {
     return await repository.findPolicyAcceptanceForHold(holdId);
   } catch {
+    markWriterOperationUncertain();
     return null;
   }
 }
@@ -1104,6 +1127,7 @@ async function safeFindNoShowChargeRecordSummaryForHold(
   try {
     return await repository.findNoShowChargeRecordForHold(holdId);
   } catch {
+    markWriterOperationUncertain();
     return null;
   }
 }
@@ -1252,7 +1276,7 @@ async function alertInfrastructureError(
   message: string,
   context: Record<string, unknown>,
 ): Promise<void> {
-  dependencies.alerts.alert({
+  await dependencies.alerts.alert({
     category: "stuck_payment_state",
     severity: "error",
     message,

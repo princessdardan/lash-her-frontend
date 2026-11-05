@@ -1,3 +1,4 @@
+import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import "server-only";
 
 import { timingSafeEqual } from "node:crypto";
@@ -199,6 +200,7 @@ export function createAdminNoShowPostHandler(
           dependencies.getNow(),
         )
       ) {
+        markWriterOperationUncertain();
         return Response.json(
           {
             appointmentId: appointment.appointmentId,
@@ -234,6 +236,7 @@ export function createAdminNoShowPostHandler(
         reason: parsedBody.reason,
       });
     } catch (error) {
+      markWriterOperationUncertain();
       if (
         error instanceof NoShowInvoiceAmountError ||
         (error instanceof Error && error.name === "NoShowInvoiceAmountError")
@@ -266,6 +269,7 @@ export function createAdminNoShowPostHandler(
       };
     }
 
+    if (result.chargeStatus !== "charged") markWriterOperationUncertain();
     const responseStatus =
       result.chargeStatus === "manual_followup" ||
       result.chargeStatus === "charge_failed"
@@ -465,6 +469,7 @@ async function defaultFindBookedAppointmentWithNoShowRecord(
       updatedAt,
     };
   } catch (error) {
+    markWriterOperationUncertain();
     console.error("[admin:no-show] Failed to load booked appointment", {
       appointmentId,
       error: error instanceof Error ? error.message : "unknown",
@@ -578,6 +583,7 @@ export async function defaultChargeNoShowCommand(
       noShowChargeRecordId: commandResult.noShowChargeRecordId,
     };
   } catch (error) {
+    markWriterOperationUncertain();
     logError("[admin:no-show] Default charge command failed", {
       appointmentId: input.appointmentId,
       noShowChargeRecordId: input.noShowChargeRecordId,
