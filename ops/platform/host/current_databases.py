@@ -44,6 +44,8 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
     """
     demand(selected.get("environment") == "staging" and set(jobs) == {"frontend", "course", "community"},
            "CURRENT_DATABASES_THREE_STAGING_TARGETS_REQUIRED")
+    for info in jobs.values():
+        migrate.require_contract_identity(selected, info["job"])
     demand(set(credentials) == set(jobs) and all(isinstance(value, str) and value for value in credentials.values()),
            "CURRENT_DATABASES_NAMED_PRIVATE_CREDENTIALS_REQUIRED")
     demand(jobs["frontend"]["job"]["target"].get("approvedPendingTags") == [],
@@ -60,6 +62,7 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
     records = {}
     outcome = {"status": "CURRENT_DATABASES_REQUIRES_REVIEW", "releaseId": selected["releaseId"], "environment": "staging",
                "checkerSha256": checker_sha256, "migrationsExecuted": False, "trafficAuthorized": False}
+    outcome.update(migrate.contract_identity(selected))
     try:
         for name in ("frontend", "course", "community"):
             info = jobs[name]
@@ -106,6 +109,7 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
                 if name == "frontend":
                     record = migrate.read_json(receipts, "database-receipt.json")
                     terminal = migrate.read_json(receipts, "job-outcome.json")
+                    migrate.require_contract_identity(selected, record, terminal)
                     demand(record.get("status") == terminal.get("status") == "DATABASE_VERIFIED"
                            and record.get("readOnlyVerified") is True and terminal.get("readOnlyVerified") is True
                            and record.get("applied") == [] and record.get("migrationMode") == "verify-current-only"
@@ -117,6 +121,7 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
                            "CURRENT_DATABASES_FRONTEND_READ_ONLY_PROOF_REQUIRED")
                 else:
                     record = json.loads(result.stdout)
+                    migrate.require_contract_identity(selected, record)
                     demand(record.get("status") == "CURRENT_API_DATABASE_READ_ONLY_PASS" and record.get("environment") == "staging"
                            and record.get("migrationsExecuted") is False and record.get("pendingTags") == []
                            and record.get("service") == info["service"] and type(record.get("appliedCount")) is int and record["appliedCount"] > 0

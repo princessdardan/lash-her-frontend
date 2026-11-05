@@ -30,6 +30,9 @@ export function prepareMigrationBundle(candidate, settings, schemas) {
     demand(candidate.sources?.[name]?.repository === `https://github.com/${repository}.git` &&
       isRevision(candidate.sources[name].commit) && candidate.sources[name].requiredChecks === "passed");
   }
+  if (candidate.contractPhase !== undefined || candidate.phase2ContractManifestSha256 !== undefined) demand(candidate.contractPhase === "p2" &&
+    /^sha256:[a-f0-9]{64}$/u.test(candidate.phase2ContractManifestSha256 ?? "") && !/^sha256:0+$/u.test(candidate.phase2ContractManifestSha256) &&
+    candidate.frontendMigration?.contractPhase === "p2" && candidate.frontendMigration.phase2ContractManifestSha256 === candidate.phase2ContractManifestSha256);
   if (settings.environment === "production") demand(settings.workload?.environment === "production" &&
     /^prj_[A-Za-z0-9]+$/u.test(settings.workload?.projectId ?? "") && settings.workload.projectId !== candidate.workload?.projectId);
   const release = { ...structuredClone(candidate), environment: settings.environment,
@@ -58,6 +61,7 @@ export function prepareMigrationBundle(candidate, settings, schemas) {
       artifactSha256: baseline.artifactSha256 };
     demand(Object.values(targetDescriptor).every((value) => value !== undefined) && typeof target.runtimeRole === "string" && typeof target.recoveryRef === "string");
     const job = { schemaVersion: 1, kind: "operator-migration", releaseId: release.releaseId, operator: "Dardan", environment: settings.environment,
+      ...(candidate.contractPhase === "p2" ? { contractPhase: "p2", phase2ContractManifestSha256: candidate.phase2ContractManifestSha256 } : {}),
       sourceCommit: candidate.sources[name].commit, migrationImageDigest: image(`${name}Migration`, "migration"), runtimeImageDigest: image(`${name}Runtime`, "runtime"),
       contractSha256: candidate.contractManifestSha256.slice(7), target: targetDescriptor, runtimeRole: target.runtimeRole,
       schemaBaselineSha256: hash(baselines[name]), recoveryRef: target.recoveryRef, stagingVerification: null,

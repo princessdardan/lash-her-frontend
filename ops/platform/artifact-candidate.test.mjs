@@ -19,6 +19,10 @@ test("frontend CI schema evidence must match source SQL, contracts and the full 
     { sourceCommit: "b".repeat(40) }, { packagedCliVerified: false }]) {
     assert.throws(() => verifyFrontendSchemaSummary({ ...summary, ...change }, artifact, "a".repeat(40)));
   }
+  artifact.contractPhase = summary.contractPhase = "p2";
+  artifact.phase2ContractManifestSha256 = summary.phase2ContractManifestSha256 = `sha256:${"b".repeat(64)}`;
+  assert.doesNotThrow(() => verifyFrontendSchemaSummary(summary, artifact, "a".repeat(40)));
+  for (const value of [undefined, `sha256:${"c".repeat(64)}`]) assert.throws(() => verifyFrontendSchemaSummary({ ...summary, phase2ContractManifestSha256: value }, artifact, "a".repeat(40)));
 });
 
 test("builder evidence requires the exact repository and source revision", () => {
@@ -60,11 +64,18 @@ test("candidate collection and final qualification bind the operator dispatch, s
     (p) => { p.sources.course.commit = "b".repeat(40); },
     (p) => { p.contractManifestSha256 = `sha256:${"0".repeat(64)}`; },
     (p) => { p.sources.course.requiredChecks = "pending"; },
+    (p) => { delete p.phase2ContractManifestSha256; },
+    (p) => { p.phase2ContractManifestSha256 = `sha256:${"b".repeat(64)}`; },
   ]) {
     const tampered = structuredClone(proof); change(tampered);
     assert.throws(() => assertCandidateSourceApproval(tampered, f.context));
   }
   assert.throws(() => assertCandidateSourceApproval(proof, { ...f.context, runId: "9002" }));
+  const legacy = { ...proof, version: 3 }, legacyContext = { ...f.context };
+  for (const value of [legacy, legacyContext]) for (const key of ["contractPhase", "phase2ContractManifestSha256", "phase2ContractRevisions"]) delete value[key];
+  assert.doesNotThrow(() => assertCandidateSourceApproval(legacy, legacyContext));
+  assert.throws(() => assertCandidateSourceApproval(legacy, legacyContext, { requirePhase2: true }));
+  assert.throws(() => assertCandidateSourceApproval({ ...proof, version: 3 }, legacyContext));
 });
 
 // The fixture CLI exercises the repository-owned API interface using the shared

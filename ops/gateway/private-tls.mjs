@@ -13,7 +13,7 @@ export function createPrivateTlsProxy(config) {
   if (upstream.protocol !== "http:" || upstream.username || upstream.password || upstream.pathname !== "/" || upstream.search || upstream.hash) throw new Error("Invalid private backend");
   if (!Array.isArray(config.peers) || config.peers.length === 0 || config.peers.some((peer) =>
     !isIP(peer.address) || !Array.isArray(peer.routes) || peer.routes.length === 0 ||
-    peer.routes.some((route) => !["GET", "POST", "PATCH"].includes(route.method) || !/^\/[A-Za-z0-9/{}_-]+$/u.test(route.path)))) throw new Error("Invalid private peer policy");
+    peer.routes.some((route) => !["GET", "POST", "PATCH", "PUT", "DELETE"].includes(route.method) || !/^\/[A-Za-z0-9/{}_-]+$/u.test(route.path)))) throw new Error("Invalid private peer policy");
   const agent = new Agent({ keepAlive: true, maxSockets: 32, maxFreeSockets: 4 });
   const server = createServer({ key: readFileSync(config.keyFile), cert: readFileSync(config.certFile),
     minVersion: "TLSv1.2", maxHeaderSize: 24 * 1024, headersTimeout: 5000, requestTimeout: 10_000,

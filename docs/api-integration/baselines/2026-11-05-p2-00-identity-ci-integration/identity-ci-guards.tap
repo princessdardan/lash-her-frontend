@@ -1,0 +1,58 @@
+TAP version 13
+# Subtest: installed Auth.js isolates customer email and administrator JWT profiles in both orders
+ok 1 - installed Auth.js isolates customer email and administrator JWT profiles in both orders
+  ---
+  duration_ms: 177.897
+  type: 'test'
+  ...
+# Subtest: identity entry qualification accepts explicit PostgreSQL 16/18 loopback bindings and ignores caller database URLs
+ok 2 - identity entry qualification accepts explicit PostgreSQL 16/18 loopback bindings and ignores caller database URLs
+  ---
+  duration_ms: 3.409417
+  type: 'test'
+  ...
+# Subtest: identity child refuses missing ownership before application imports or any database connection
+ok 3 - identity child refuses missing ownership before application imports or any database connection
+  ---
+  duration_ms: 150.767167
+  type: 'test'
+  ...
+# Subtest: owned CI identity runner invokes the actual child once with the parent PostgreSQL major
+ok 4 - owned CI identity runner invokes the actual child once with the parent PostgreSQL major
+  ---
+  duration_ms: 0.669708
+  type: 'test'
+  ...
+# Subtest: owned CI rejects absent, empty, partial, duplicate, skipped and finding-bearing identity receipts
+ok 5 - owned CI rejects absent, empty, partial, duplicate, skipped and finding-bearing identity receipts
+  ---
+  duration_ms: 0.81625
+  type: 'test'
+  ...
+# Subtest: owned CI rejects a wrong server major, candidate source or substituted authentication/effect boundary
+ok 6 - owned CI rejects a wrong server major, candidate source or substituted authentication/effect boundary
+  ---
+  duration_ms: 1.16925
+  type: 'test'
+  ...
+# Subtest: the migration parent executes the mandatory identity child after the 33 existing DB regressions and returns its receipt
+ok 7 - the migration parent executes the mandatory identity child after the 33 existing DB regressions and returns its receipt
+  ---
+  duration_ms: 12.239958
+  type: 'test'
+  ...
+# Subtest: required PostgreSQL 18 CI invokes the migration parent containing the identity qualification
+ok 8 - required PostgreSQL 18 CI invokes the migration parent containing the identity qualification
+  ---
+  duration_ms: 11.53475
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 349.542625

@@ -40,6 +40,20 @@ test("current database verification uses one read-only snapshot without migratio
   assert.equal(f.queries.at(-1), "ROLLBACK");
   assert.equal(f.queries.filter((q) => q.startsWith("BEGIN")).length, 1);
   assert.ok(f.queries.every((q) => /^(SELECT|BEGIN TRANSACTION|SET LOCAL|ROLLBACK)\b/u.test(q)));
+  assert.equal(Object.hasOwn(result, "contractPhase"), false);
+  assert.equal(Object.hasOwn(result, "phase2ContractManifestSha256"), false);
+});
+
+test("current P2 database verification binds both fields and rejects partial or malformed bindings before SQL", async () => {
+  const f = fixture(); Object.assign(f.prepared.manifest, { contractPhase: "p2", phase2ContractManifestSha256: `sha256:${"d".repeat(64)}` });
+  const result = await checkCurrentDatabase(f);
+  assert.equal(result.contractPhase, "p2"); assert.equal(result.phase2ContractManifestSha256, f.prepared.manifest.phase2ContractManifestSha256);
+  for (const fields of [{ contractPhase: "p2" }, { phase2ContractManifestSha256: `sha256:${"d".repeat(64)}` },
+    { contractPhase: "p1", phase2ContractManifestSha256: `sha256:${"d".repeat(64)}` },
+    ...["d".repeat(64), `sha256:${"0".repeat(64)}`, `sha256:${"D".repeat(64)}`].map(phase2ContractManifestSha256 => ({ contractPhase: "p2", phase2ContractManifestSha256 }))]) {
+    const invalid = fixture(); Object.assign(invalid.prepared.manifest, fields);
+    await assert.rejects(checkCurrentDatabase(invalid), /PHASE2_BINDING_REQUIRED/u); assert.deepEqual(invalid.queries, []);
+  }
 });
 
 test("production and non-dedicated identities stop before database access", async () => {

@@ -100,6 +100,10 @@ jobs:
           node sources/lash-her-community-api/scripts/check-vendored-course-contract.mjs
           "$GITHUB_WORKSPACE/sources/lash-her-course-api" --release
           > "$RUNNER_TEMP/platform-evidence/course-community-contract.txt"
+      - name: Verify exact released P2 contract source bindings
+        run: >-
+          node sources/lash-her-frontend/ops/platform/source-checkout.mjs --phase2
+          "$GITHUB_WORKSPACE/sources" "$RUNNER_TEMP/platform-evidence/source-checks.json"
       - name: Install isolated harness dependencies
         run: |-
           npm ci --prefix sources/lash-her-frontend
@@ -474,12 +478,13 @@ jobs:
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/src/lib/writer-admission,dst=/source/src/lib/writer-admission,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/src/lib/env/application-environment.mjs,dst=/source/src/lib/env/application-environment.mjs,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/v1/manifest.json,dst=/source/contracts/api-integration/v1/manifest.json,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
             lash-her-frontend-migration:postgres18-test > "$RUNNER_TEMP/platform-evidence/frontend-migration-rehearsal.json"
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node \
             lash-her-course-migration:p1-local dist-migration/scripts/check-migration-lineage.js --manifest-only
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node \
             lash-her-community-migration:p1-local dist-migration/scripts/check-migration-lineage.js --manifest-only
-          node sources/lash-her-frontend/ops/platform/local-harness.mjs > "$RUNNER_TEMP/platform-evidence/container-harness.json"
+          node sources/lash-her-frontend/ops/platform/local-harness.mjs --phase p2 > "$RUNNER_TEMP/platform-evidence/container-harness.json"
       - name: Recheck source revisions and CI after the harness
         env:
           SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}

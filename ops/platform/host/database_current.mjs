@@ -36,6 +36,10 @@ const grantsSql = `SELECT bool_and(has_table_privilege($1,c.oid,'SELECT') AND ha
  * This function has no migration, advisory-lock, DDL, DML or repair path. */
 export async function checkCurrentDatabase({ client, prepared, assertAppliedLineage, readMigrationCatalog, hasVerifiedMigrationTransport }) {
   const { manifest, artifact, target, baseline } = prepared;
+  const phase2 = Object.hasOwn(manifest, "contractPhase") || Object.hasOwn(manifest, "phase2ContractManifestSha256");
+  demand(!phase2 || manifest.contractPhase === "p2" && typeof manifest.phase2ContractManifestSha256 === "string"
+    && /^sha256:[a-f0-9]{64}$/u.test(manifest.phase2ContractManifestSha256)
+    && manifest.phase2ContractManifestSha256 !== `sha256:${"0".repeat(64)}`, "CURRENT_CHECK_PHASE2_BINDING_REQUIRED");
   demand(manifest.environment === "staging" && target.environment === "staging", "CURRENT_CHECK_STAGING_REQUIRED");
   demand(/^lash_her_(course|community)_staging_migration$/u.test(target.user)
     && manifest.runtimeRole === target.user.replace(/_migration$/u, "_runtime"), "CURRENT_CHECK_DEDICATED_ROLES_REQUIRED");
@@ -77,6 +81,7 @@ export async function checkCurrentDatabase({ client, prepared, assertAppliedLine
     return { status: "CURRENT_API_DATABASE_READ_ONLY_PASS", environment: "staging", service: artifact.service,
       appliedCount: journal.length, pendingTags: [], artifactSha256: artifact.artifactSha256,
       schemaBaselineSha256: manifest.schemaBaselineSha256,
+      ...(phase2 ? { contractPhase: "p2", phase2ContractManifestSha256: manifest.phase2ContractManifestSha256 } : {}),
       target: { host: target.host, port: target.port, database: target.database, user: target.user, serverMajor: target.serverMajor },
       checks: ["verified-tls", "server-enforced-read-only", "complete-lineage", "exact-schema-catalog",
         "dedicated-role-isolation", "runtime-future-dml", "runtime-journal-isolation"],

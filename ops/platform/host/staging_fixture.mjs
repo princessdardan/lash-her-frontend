@@ -10,7 +10,7 @@ const demand = (value, code) => { if (!value) throw new Error(code); };
 export function validateInput(input, now = Date.now()) {
   demand(input && typeof input === "object" && !Array.isArray(input)
     && Object.keys(input).sort().join(",") === "actionId,actorUserId,applicationToken,environment,nonce,userIds,version"
-    && input.version === 1 && input.environment === "staging", "STAGING_FIXTURE_EXACT_INPUT_REQUIRED");
+    && [1, 2].includes(input.version) && input.environment === "staging", "STAGING_FIXTURE_EXACT_INPUT_REQUIRED");
   demand(typeof input.actionId === "string" && /^recovery-fixture-[a-z0-9][a-z0-9-]{0,64}$/u.test(input.actionId)
     && typeof input.nonce === "string" && /^[a-f0-9]{32}$/u.test(input.nonce)
     && uuid.test(input.actorUserId) && Array.isArray(input.userIds) && input.userIds.length === 2
@@ -23,11 +23,17 @@ export function validateInput(input, now = Date.now()) {
   // This bounds a token minted privately by the parent. The actual Course API
   // still verifies its signature, issuer, audience and administrator authority.
   const seconds = Math.floor(now / 1000);
-  demand(claims && claims.sub === input.actorUserId && claims.role === "courseAdmin"
+  const profile = input.version === 2
+    ? claims && claims.version === 1 && claims.iss === "lash-her-frontend" && claims.aud === "lash-her-course-api:admin"
+      && uuid.test(claims.jti) && Array.isArray(claims.capabilities) && claims.capabilities.length === 2
+      && new Set(claims.capabilities).size === 2 && ["course-editor", "course-support"].every(capability => claims.capabilities.includes(capability))
+      && Object.keys(claims).sort().join(",") === "aud,capabilities,exp,iat,iss,jti,sub,version"
+    : claims && claims.role === "courseAdmin"
+      && Object.keys(claims).every(key => ["sub", "role", "iat", "exp", "jti", "iss", "aud"].includes(key));
+  demand(profile && claims.sub === input.actorUserId
     && Number.isSafeInteger(claims.iat) && Number.isSafeInteger(claims.exp)
     && claims.iat <= seconds && claims.iat >= seconds - 30
-    && claims.exp > seconds + 30 && claims.exp <= claims.iat + 300
-    && Object.keys(claims).every(key => ["sub", "role", "iat", "exp", "jti", "iss", "aud"].includes(key)),
+    && claims.exp > seconds + 30 && claims.exp <= claims.iat + 300,
   "STAGING_FIXTURE_BOUNDED_ADMIN_TOKEN_REQUIRED");
   return { courseSlug: `p1-recovery-${input.nonce}`,
     idempotencyKeys: input.userIds.map((_, index) => `${input.actionId}-${input.nonce}-grant-${index + 1}`) };

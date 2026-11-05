@@ -71,7 +71,8 @@ def identity(context):
            and binding.get("teamId") == vercel.TEAM and binding.get("repositoryId") == vercel.REPOSITORY_ID,
            "FRONTEND_PROVIDER_ACTION_BINDING_REFUSED")
     return {"version": 1, "environment": environment, "projectId": project_id,
-            "actionId": plan["actionId"], "sourceCommit": commit, "targetSha256": plan["targetSha256"]}
+            "actionId": plan["actionId"], "sourceCommit": commit, "targetSha256": plan["targetSha256"],
+            **migrate.contract_identity(release)}
 
 
 def deployment_metadata(row):
@@ -247,6 +248,7 @@ def configure_pending_source_pins(context, client, attempt, parent_directory):
     database = context["database"]
     raw = migrate.read_input(parent_directory, "database-receipt.json")
     stored = json.loads(raw)
+    migrate.require_contract_identity(context["candidate"], database, stored)
     fields = ("version", "service", "environment", "releaseId", "sourceCommit", "migrationImageDigest", "sqlArtifactSha256",
               "schemaBaselineSha256", "contractManifestSha256", "target", "after", "applied")
     demand(all(stored.get(key) == database.get(key) and stored.get(key) is not None for key in fields)

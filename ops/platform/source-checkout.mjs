@@ -1,7 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { realpathSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { SOURCE_REPOSITORIES } from "./release-inputs.mjs";
+import { phase2ContractManifestBinding } from "./release.mjs";
 
 const SOURCE_PATHS = ["src", "scripts", "contracts", "ops", "tests", "drizzle", "tools", ":(glob).env*"];
 
@@ -37,11 +40,32 @@ export function assertSourceCheckout(directory, commit) {
   } catch { throw new Error("Pinned source checkout is missing, dirty or contains unexpected source/configuration"); }
 }
 
-export function verifySourceCheckouts(sourceRoot, sources) {
+export function verifySourceCheckouts(sourceRoot, sources, { requirePhase2 = false } = {}) {
   for (const [name, repository] of Object.entries(SOURCE_REPOSITORIES)) {
     if (sources?.[name]?.repository !== `https://github.com/${repository}.git` || sources[name].requiredChecks !== "passed") {
       throw new Error("Verified source repository pins required");
     }
     assertSourceCheckout(join(sourceRoot, repository.split("/")[1]), sources[name].commit);
   }
+  if (requirePhase2) {
+    const frontend = join(sourceRoot, "lash-her-frontend"), binding = phase2ContractManifestBinding(frontend, { requireReleased: true });
+    if (binding.phase2ContractRevisions.course !== sources.course.commit || binding.phase2ContractRevisions.community !== sources.community.commit ||
+      binding.phase2ContractRevisions.enrollmentEvent !== sources.community.commit) throw new Error("Exact phase 2 source contract pins required");
+    const manifest = JSON.parse(readFileSync(join(frontend, "contracts/api-integration/p2-candidate/manifest.json")));
+    for (const artifact of Object.values(manifest.artifacts)) {
+      const bytes = readFileSync(join(sourceRoot, artifact.repository, artifact.sourcePath));
+      if (createHash("sha256").update(bytes).digest("hex") !== artifact.sha256) throw new Error("Exact phase 2 API contract source required");
+    }
+    return binding;
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  try {
+    if (process.argv.length !== 5 || process.argv[2] !== "--phase2") throw new Error();
+    const proof = JSON.parse(readFileSync(process.argv[4]));
+    const binding = verifySourceCheckouts(resolve(process.argv[3]), proof.sources, { requirePhase2: true });
+    if (proof.version !== 4 || proof.contractPhase !== "p2" || proof.phase2ContractManifestSha256 !== binding.phase2ContractManifestSha256) throw new Error();
+    console.log("PHASE2_CONTRACT_SOURCE_VERIFIED");
+  } catch { console.error("PHASE2_CONTRACT_SOURCE_REFUSED"); process.exitCode = 1; }
 }
