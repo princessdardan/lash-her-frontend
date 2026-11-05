@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runAdminAuthorizationOperation } from "./authorization-operation";
+import { getAdminAuthorizationActor, runAdminAuthorizationOperation } from "./authorization-operation";
 import { AdminAuthError } from "./types";
 import { markWriterOperationUncertain, withWriterOperationContext } from "@/lib/writer-admission/context";
 import { WriterAdmissionError } from "@/lib/writer-admission/config";
@@ -51,5 +51,25 @@ test("only a matching authorization parent can reuse admission", async () => {
   const fixture = interactiveAdmissionFixture();
   await withWriterOperationContext(() => runAdminAuthorizationOperation(() =>
     runAdminAuthorizationOperation(async () => "actor", async () => { throw new Error("redundant admission"); }), fixture.run));
+  assert.deepEqual(fixture.events, ["admitted", "settled"]);
+});
+
+test("actor resolution requires an admitted authorization operation", async () => {
+  let calls = 0;
+  const resolve = async () => { calls++; throw new Error("must not resolve outside admission"); };
+  assert.throws(() => getAdminAuthorizationActor(resolve), /ADMIN_AUTHORIZATION_OPERATION_REQUIRED/u);
+  const fixture = interactiveAdmissionFixture(); fixture.state.open = false;
+  await assert.rejects(runAdminAuthorizationOperation(() => getAdminAuthorizationActor(resolve), fixture.run), WriterAdmissionError);
+  assert.equal(calls, 0);
+});
+
+test("a shared rejected actor promise cannot hide unknown persistence or audit outcomes", async () => {
+  const fixture = interactiveAdmissionFixture(); let calls = 0;
+  await assert.rejects(runAdminAuthorizationOperation(async () => {
+    const resolve = async () => { calls++; markWriterOperationUncertain(); throw new AdminAuthError("disabled"); };
+    const results = await Promise.allSettled([getAdminAuthorizationActor(resolve), getAdminAuthorizationActor(resolve)]);
+    assert.ok(results.every(result => result.status === "rejected"));
+  }, fixture.run), WriterAdmissionError);
+  assert.equal(calls, 1); assert.equal(fixture.state.uncertain, true);
   assert.deepEqual(fixture.events, ["admitted", "settled"]);
 });

@@ -1,13 +1,12 @@
 import { runAdminIdentityWriter } from "./user-writer-admission";
 import "server-only";
 
-import { cookies, headers } from "next/headers";
-import { after } from "next/server";
+import { cookies } from "next/headers";
 
 import { getAdminOwnerEmails } from "@/lib/env/admin";
 
 import { getAdminUserStore } from "./admin-user-store";
-import { runAdminAuthorizationOperation } from "./authorization-operation";
+import { getAdminAuthorizationActor, runAdminAuthorizationOperation } from "./authorization-operation";
 import { assertFreshAdminAuthenticationTimestamp } from "./authentication-freshness";
 import {
   createAdminAuth,
@@ -32,9 +31,6 @@ export {
   type AdminAuthService,
   type AdminPermissionContext,
 } from "./auth-service";
-
-const ADMIN_REQUEST_ID_HEADER = "x-lash-admin-request-id";
-const requestActors = new Map<string, Promise<AdminActor>>();
 
 export function getAdminAuth(): AdminAuthService {
   const service = createAdminAuth({
@@ -109,25 +105,7 @@ export async function requireRecentAdminAuthentication(input: {
 }
 
 async function getRequestActor(): Promise<AdminActor> {
-  const requestId = (await headers()).get(ADMIN_REQUEST_ID_HEADER);
-
-  if (!requestId) {
-    return resolveRequestActor();
-  }
-
-  const cached = requestActors.get(requestId);
-
-  if (cached) {
-    return cached;
-  }
-
-  const actorPromise = resolveRequestActor();
-  requestActors.set(requestId, actorPromise);
-  after(() => {
-    requestActors.delete(requestId);
-  });
-
-  return actorPromise;
+  return getAdminAuthorizationActor(resolveRequestActor);
 }
 
 async function resolveRequestActor(): Promise<AdminActor> {
