@@ -34,6 +34,8 @@ export function MediaEditor({
   onBusy: (value: boolean) => void;
   onChanged: () => Promise<void>;
 }) {
+  const [loading, setLoading] = useState(true),
+    [failed, setFailed] = useState(false);
   const [status, setStatus] = useState<Status | null>(null),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState<string | null>(null);
@@ -48,10 +50,15 @@ export function MediaEditor({
         if (!disposed) setStatus(value);
       })
       .catch(() => {
-        if (!disposed)
+        if (!disposed) {
+          setFailed(true);
           setMessage(
             "Video status could not be loaded. Reload before uploading or replacing media.",
           );
+        }
+      })
+      .finally(() => {
+        if (!disposed) setLoading(false);
       });
     return () => {
       disposed = true;
@@ -62,10 +69,12 @@ export function MediaEditor({
     setBusy(true);
     onBusy(true);
     setMessage(null);
+    setFailed(false);
     try {
       await work();
       await load();
     } catch (error) {
+      setFailed(true);
       setMessage(
         `${error instanceof Error ? error.message : "The media operation could not be confirmed."} Refresh status before starting another upload or caption request.`,
       );
@@ -133,12 +142,14 @@ export function MediaEditor({
         </p>
       )}
       {message && (
-        <p role="status" className="text-sm">
+        <p role={failed ? "alert" : "status"} className="text-sm">
           {message}
         </p>
       )}
       {status === null ? (
-        <p role="status">Waiting for video status.</p>
+        loading ? (
+          <p role="status">Waiting for video status.</p>
+        ) : null
       ) : (
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
           <dt>Current video</dt>

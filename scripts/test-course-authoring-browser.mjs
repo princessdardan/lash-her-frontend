@@ -1,9 +1,16 @@
 // Owns both disposable PostgreSQL16 databases, a fixed Course source export and
 // loopback Next/Course servers. Accepts no database URL or live provider config.
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -50,8 +57,25 @@ try {
       "Commit the exact frontend source before browser qualification",
     );
   const frontendSha = (await run("git", ["rev-parse", "HEAD"], root)).trim();
-  await run("mkdir", [courseExport]);
+  await mkdir(courseExport);
   await exportSource();
+  const candidateHash = createHash("sha256")
+    .update(
+      await readFile(
+        join(root, "contracts/api-integration/p2-candidate/course-api.json"),
+      ),
+    )
+    .digest("hex");
+  if (
+    candidateHash !==
+    createHash("sha256")
+      .update(await readFile(join(courseExport, "openapi/course-api.json")))
+      .digest("hex")
+  )
+    throw new Error(
+      "Frontend candidate must match the exact exported Course artifact",
+    );
+  const migrationsApplied = {};
   if (
     (await readFile(join(courseExport, "package-lock.json"), "utf8")) !==
     (await readFile(join(courseSource, "package-lock.json"), "utf8"))
@@ -125,6 +149,11 @@ try {
           }
         }
       } else await migrate(drizzle(client), { migrationsFolder });
+      migrationsApplied[url === frontendUrl ? "frontend" : "course"] = (
+        await client.query(
+          "select count(*)::int count from drizzle.__drizzle_migrations",
+        )
+      ).rows[0].count;
     } finally {
       await client.end();
     }
@@ -254,6 +283,27 @@ try {
     root,
     testEnvironment,
     true,
+  );
+  await mkdir(join(root, "test-results/course-authoring-browser"), {
+    recursive: true,
+  });
+  await writeFile(
+    join(root, "test-results/course-authoring-browser/evidence.json"),
+    JSON.stringify(
+      {
+        frontendSource: frontendSha,
+        courseSource: courseSha,
+        courseArtifactSha256: candidateHash,
+        postgresMajor: 16,
+        migrationsApplied,
+        gatewayWorkloadVerification: "fixture",
+        frontendAdmission: "off-in-owned-local-only",
+        liveProvidersCertified: false,
+        stagingCertified: false,
+      },
+      null,
+      2,
+    ) + "\n",
   );
   process.stdout.write(
     "Owned Next/Course/PostgreSQL16 authoring browser checks passed; gateway workload verification and live providers remain outside this fixture\n",

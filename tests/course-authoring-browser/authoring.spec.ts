@@ -140,7 +140,9 @@ test("owner authors, grades publication readiness and publishes with actual Cour
     await page
       .getByRole("button", { name: "Save course details", exact: true })
       .click();
-    await expect(page.getByRole("alert")).toContainText("changed");
+    await expect(page.getByRole("main").getByRole("alert")).toContainText(
+      "changed",
+    );
     await expect(page.getByLabel("Course title", { exact: true })).toHaveValue(
       "Unsaved owner edit",
     );
@@ -178,6 +180,173 @@ test("customer-facing authoring routes isolate unauthenticated and non-editor st
     const page = await context.newPage();
     await page.goto("/admin/courses");
     await expect(page).toHaveURL(/\/admin\/not-authorized$/);
+  } finally {
+    await context.close().catch(() => {});
+  }
+});
+
+test("keyboard ordering, archival identity and dirty-editor cancellation remain consistent", async ({
+  browser,
+  baseURL,
+}) => {
+  if (!storagePath || !baseURL)
+    throw new Error("Owned browser fixture required");
+  const states = JSON.parse(await readFile(storagePath, "utf8"));
+  const context = await browser.newContext({ storageState: states.owner });
+  const page = await context.newPage();
+  const headers = { origin: baseURL, "x-lash-csrf": "1" };
+  async function post(path: string, data: object) {
+    const response = await context.request.post(path, { headers, data });
+    expect(response.status()).toBe(200);
+    return response.json();
+  }
+  try {
+    const created = await post("/api/admin/courses", {
+      title: "Ordering fixture",
+      slug: "ordering-fixture",
+      status: "draft",
+      taxClassification: "fixture-reviewed",
+    });
+    const courseId = created.course.id;
+    const first = (
+      await post(`/api/admin/courses/${courseId}/modules`, {
+        expectedCourseRevision: 1,
+        title: "First module",
+        slug: "first",
+        position: 1,
+      })
+    ).module;
+    const second = (
+      await post(`/api/admin/courses/${courseId}/modules`, {
+        expectedCourseRevision: 2,
+        title: "Second module",
+        slug: "second",
+        position: 2,
+      })
+    ).module;
+    for (const [index, title] of ["Lesson A", "Lesson B"].entries())
+      await post(`/api/admin/modules/${first.id}/lessons`, {
+        expectedCourseRevision: 3 + index,
+        title,
+        slug: `lesson-${index}`,
+        position: index + 1,
+        contentDocument: {
+          version: 1,
+          blocks: [
+            {
+              _type: "block",
+              _key: "fixture-block",
+              children: [
+                {
+                  _type: "span",
+                  _key: "fixture-text",
+                  text: "Reviewed lesson text",
+                },
+              ],
+            },
+          ],
+        },
+      });
+    await page.goto(`/admin/courses/${courseId}`);
+    const moveModule = page.getByRole("button", {
+      name: "Move module Second module up",
+      exact: true,
+    });
+    await moveModule.focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByText("Curriculum order saved.", { exact: true }),
+    ).toBeVisible();
+    const modules = (
+      await (await context.request.get(`/api/admin/courses/${courseId}`)).json()
+    ).course.modules;
+    expect(modules.map((module: { id: string }) => module.id)).toEqual([
+      second.id,
+      first.id,
+    ]);
+    const moveLesson = page.getByRole("button", {
+      name: "Move lesson Lesson B up",
+      exact: true,
+    });
+    await moveLesson.focus();
+    await page.keyboard.press("Space");
+    await expect
+      .poll(async () =>
+        (
+          await (
+            await context.request.get(`/api/admin/courses/${courseId}`)
+          ).json()
+        ).course.modules
+          .find((module: { id: string }) => module.id === first.id)
+          .lessons.map((lesson: { title: string }) => lesson.title),
+      )
+      .toEqual(["Lesson B", "Lesson A"]);
+    const lessonRow = page
+      .getByRole("heading", { name: "Lesson A", exact: true })
+      .locator("..");
+    await lessonRow
+      .getByRole("button", { name: "Archive", exact: true })
+      .click();
+    await expect(
+      page.getByText("Lesson archived.", { exact: true }),
+    ).toBeVisible();
+    const archivedRow = page
+      .getByRole("heading", { name: "Lesson A (archived)", exact: true })
+      .locator("..");
+    await archivedRow
+      .getByRole("button", { name: "Restore", exact: true })
+      .click();
+    await expect(
+      page.getByText("Lesson restored.", { exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("heading", { name: "Lesson A", exact: true })
+      .locator("..")
+      .getByRole("button", { name: "Edit lesson", exact: true })
+      .click();
+    const editor = page.getByRole("region", { name: "Open course editor" });
+    await editor
+      .getByLabel("Title", { exact: true })
+      .fill("Unsaved lesson title");
+    page.once("dialog", (dialog) => dialog.dismiss());
+    await page
+      .getByRole("button", { name: "Course details", exact: true })
+      .click();
+    await expect(editor.getByLabel("Title", { exact: true })).toHaveValue(
+      "Unsaved lesson title",
+    );
+    page.once("dialog", (dialog) => dialog.accept());
+    await page
+      .getByRole("button", { name: "Course details", exact: true })
+      .click();
+    await expect(
+      editor.getByLabel("Course title", { exact: true }),
+    ).toHaveValue("Ordering fixture");
+    const after = (
+      await (await context.request.get(`/api/admin/courses/${courseId}`)).json()
+    ).course.modules.find((module: { id: string }) => module.id === first.id);
+    expect(
+      after.lessons.map((lesson: { id: string }) => lesson.id).sort(),
+    ).toEqual(
+      modules
+        .find((module: { id: string }) => module.id === first.id)
+        .lessons.map((lesson: { id: string }) => lesson.id)
+        .sort(),
+    );
+    await page
+      .getByRole("heading", { name: "Lesson A", exact: true })
+      .locator("..")
+      .getByRole("button", { name: "Video and captions", exact: true })
+      .click();
+    await expect(editor.getByRole("alert")).toContainText(
+      "Video status could not be loaded",
+    );
+    await expect(
+      editor.getByText("Waiting for video status.", { exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      editor.getByRole("button", { name: "Upload video", exact: true }),
+    ).toBeDisabled();
   } finally {
     await context.close().catch(() => {});
   }
