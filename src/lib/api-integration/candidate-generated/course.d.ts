@@ -80,6 +80,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/courses/{courseId}/publication-readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAdminCoursePublicationReadiness"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/entitlements/commands": {
         parameters: {
             query?: never;
@@ -1973,6 +1989,132 @@ export interface operations {
             };
         };
     };
+    getAdminCoursePublicationReadiness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                courseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        courseId: string;
+                        courseRevision: number;
+                        issues: {
+                            code: string;
+                            field: string;
+                            /** Format: uuid */
+                            lessonId?: string;
+                            message: string;
+                        }[];
+                        ready: boolean;
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Default Response */
+            500: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
     get_v1_admin_entitlements_commands: {
         parameters: {
             query?: {
@@ -3389,6 +3531,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        courseRevision: number;
                         current: {
                             captionTracks: {
                                 closedCaptions: boolean;
@@ -3561,6 +3704,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    expectedCourseRevision: number;
                     expectedCurrentVideoAssetId?: string | null;
                 };
             };
@@ -3725,6 +3869,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    expectedCourseRevision: number;
                     label: string;
                     language: string;
                     /** Format: uri */
@@ -3893,7 +4038,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    expectedCourseRevision: number;
+                };
+            };
+        };
         responses: {
             /** @description Default Response */
             200: {

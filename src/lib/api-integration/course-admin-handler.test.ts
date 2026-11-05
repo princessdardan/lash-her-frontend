@@ -48,3 +48,18 @@ test("quiz PUT passes only validated aggregate revision/document and admits one 
   assert.equal((await handler(req(`/api/admin/lessons/${id}/quiz`, "PUT", { ...body, userId: id }), { lessonId: id })).status, 400);
   assert.equal(writes, 1); assert.equal(invalidated, 1);
 });
+
+test("media authoring requires the current aggregate revision before admission and forwards exact DELETE bodies", async () => {
+  const calls: Array<{ method: string; body?: string }> = [];
+  const state = { id, lessonId: id, status: "ready", generation: 1, isCurrent: true, lastErrorCode: null, captionTracks: [] };
+  const client = createCourseClient({ enabled: () => true, getAdmin: async () => actor, mintToken: () => "admin.jwt", invalidateCatalog: () => {}, run: async (_kind, work) => work(), getTransport: () => async input => {
+    calls.push(input); return Response.json(state);
+  } });
+  await assert.rejects(client.createVideoUpload(id, {} as never), { code: "invalid_request" });
+  await assert.rejects(client.addVideoCaption(id, id, { url: "https://media.example.invalid/caption.vtt", language: "en", label: "English" } as never), { code: "invalid_request" });
+  await assert.rejects(client.deleteVideoCaption(id, id, "mux_track", {} as never), { code: "invalid_request" });
+  assert.equal(calls.length, 0);
+  const handler = createCourseAdminHandler("delete-caption", { client: () => client, origin: () => origin });
+  assert.equal((await handler(req(`/api/admin/lessons/${id}/video/${id}/captions/mux_track`, "DELETE", { expectedCourseRevision: 3 }), { lessonId: id, videoAssetId: id, trackId: "mux_track" })).status, 200);
+  assert.equal(calls[0].method, "DELETE"); assert.deepEqual(JSON.parse(calls[0].body!), { expectedCourseRevision: 3 });
+});

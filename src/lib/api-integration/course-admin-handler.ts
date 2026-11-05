@@ -5,15 +5,15 @@ import { readSameOriginJson } from "./same-origin-json";
 import { integrationErrorResponse, IntegrationServiceError, safeIntegrationRequestId } from "./service-errors";
 
 type Client = ReturnType<typeof createCourseClient>;
-export type CourseAdminOperation = "list-courses" | "get-course" | "create-course" | "update-course" | "create-module" | "update-module" | "reorder-modules" | "create-lesson" | "update-lesson" | "reorder-lessons" | "create-video-upload" | "get-quiz" | "update-quiz" | "video-status" | "refresh-video" | "add-caption" | "delete-caption";
+export type CourseAdminOperation = "list-courses" | "get-course" | "create-course" | "update-course" | "create-module" | "update-module" | "reorder-modules" | "create-lesson" | "update-lesson" | "reorder-lessons" | "create-video-upload" | "get-quiz" | "update-quiz" | "video-status" | "refresh-video" | "add-caption" | "delete-caption" | "publication-readiness";
 const methods: Record<CourseAdminOperation, string> = {
   "list-courses": "GET", "get-course": "GET", "create-course": "POST", "update-course": "PATCH", "create-module": "POST", "update-module": "PATCH",
   "reorder-modules": "POST", "create-lesson": "POST", "update-lesson": "PATCH", "reorder-lessons": "POST", "create-video-upload": "POST",
-  "get-quiz": "GET", "update-quiz": "PUT", "video-status": "GET", "refresh-video": "POST", "add-caption": "POST", "delete-caption": "DELETE",
+  "get-quiz": "GET", "update-quiz": "PUT", "video-status": "GET", "refresh-video": "POST", "add-caption": "POST", "delete-caption": "DELETE", "publication-readiness": "GET",
 };
 const parameter: Record<CourseAdminOperation, string[]> = { "list-courses": [], "get-course": ["courseId"], "create-course": [], "update-course": ["courseId"], "create-module": ["courseId"],
   "update-module": ["moduleId"], "reorder-modules": ["courseId"], "create-lesson": ["moduleId"], "update-lesson": ["lessonId"], "reorder-lessons": ["moduleId"], "create-video-upload": ["lessonId"],
-  "get-quiz": ["lessonId"], "update-quiz": ["lessonId"], "video-status": ["lessonId"], "refresh-video": ["lessonId", "videoAssetId"], "add-caption": ["lessonId", "videoAssetId"], "delete-caption": ["lessonId", "videoAssetId", "trackId"] };
+  "get-quiz": ["lessonId"], "update-quiz": ["lessonId"], "video-status": ["lessonId"], "refresh-video": ["lessonId", "videoAssetId"], "add-caption": ["lessonId", "videoAssetId"], "delete-caption": ["lessonId", "videoAssetId", "trackId"], "publication-readiness": ["courseId"] };
 
 export function createCourseAdminHandler(operation: CourseAdminOperation, dependencies: { client?: () => Client; origin?: () => string | undefined } = {}) {
   return async (request: Request, params: Record<string, string> = {}): Promise<Response> => {
@@ -36,6 +36,7 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
       switch (operation) {
         case "list-courses": result = await course.listAdminCourses(query); break;
         case "get-course": result = await course.getAdminCourse(params.courseId); break;
+        case "publication-readiness": result = await course.getPublicationReadiness(params.courseId); break;
         case "create-course": result = await course.createCourse(body as Parameters<Client["createCourse"]>[0]); break;
         case "update-course": result = await course.updateCourse(params.courseId, body as Parameters<Client["updateCourse"]>[1]); break;
         case "create-module": result = await course.createModule(params.courseId, body as Parameters<Client["createModule"]>[1]); break;
@@ -49,9 +50,10 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
         case "update-quiz": result = await course.updateQuiz(params.lessonId, body as Parameters<Client["updateQuiz"]>[1]); break;
         case "video-status": result = await course.getVideoStatus(params.lessonId); break;
         case "add-caption": result = await course.addVideoCaption(params.lessonId, params.videoAssetId, body as Parameters<Client["addVideoCaption"]>[2]); break;
-        case "refresh-video": case "delete-caption": {
+        case "delete-caption": result = await course.deleteVideoCaption(params.lessonId, params.videoAssetId, params.trackId, body as Parameters<Client["deleteVideoCaption"]>[3]); break;
+        case "refresh-video": {
           if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length) throw new IntegrationServiceError("invalid_request", 400);
-          result = operation === "refresh-video" ? await course.refreshVideo(params.lessonId, params.videoAssetId) : await course.deleteVideoCaption(params.lessonId, params.videoAssetId, params.trackId); break;
+          result = await course.refreshVideo(params.lessonId, params.videoAssetId); break;
         }
       }
       return Response.json(result, { headers: { "cache-control": "private, no-store", "x-request-id": requestId, "x-content-type-options": "nosniff" } });
