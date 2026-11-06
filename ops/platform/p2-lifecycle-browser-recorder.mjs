@@ -106,13 +106,26 @@ export async function recordP2SuspensionBrowser(input, pages, control) {
 
 async function childMain() {
   demand(process.versions.node.split(".")[0] === "24" && typeof process.send === "function" && process.argv.length === 1);
+  let authCheck;
   const next = type => new Promise((done, fail) => {
     const timer = setTimeout(() => { process.off("message", receive); fail(new Error("P2_BROWSER_PARENT_TIMEOUT")); }, type === "initialize" ? 30_000 : 900_000);
-    const receive = message => { if (!closed(message, ["type", "input"]) || message.type !== type) { clearTimeout(timer); process.off("message", receive); fail(new Error("P2_BROWSER_PROTOCOL")); return; }
+    let checking = false;
+    const receive = message => {
+      if (type === "arm" && closed(message, ["type", "input"]) && message.type === "check-authentication" && message.input === input.challenge && authCheck && !checking) {
+        checking = true;
+        void authCheck().then(value => new Promise((resolve, reject) => process.send({ type: "authentication-current", challenge: input.challenge, value }, error => error ? reject(error) : resolve())))
+          .catch(error => { clearTimeout(timer); process.off("message", receive); fail(error); }).finally(() => { checking = false; });
+        return;
+      }
+      if (!closed(message, ["type", "input"]) || message.type !== type || checking) { clearTimeout(timer); process.off("message", receive); fail(new Error("P2_BROWSER_PROTOCOL")); return; }
       clearTimeout(timer); process.off("message", receive); done(message.input); };
     process.on("message", receive);
   });
   const input = validateP2LifecycleBrowserInput(await next("initialize"));
+  process.send({ type: "initialized", challenge: input.challenge });
+  // Only the fixed armed auth-preparation parent may release this barrier.
+  // No browser or authentication request exists before that source capability.
+  demand((await next("authenticate")) === input.challenge);
   const { chromium } = await import("playwright");
   const browser = await chromium.launch({ headless: false });
   process.once("disconnect", () => { void browser.close().finally(() => process.exit(1)); });
@@ -122,16 +135,22 @@ async function childMain() {
     const customer = await customerContext.newPage(), owner = await ownerContext.newPage();
     await customer.goto(`${input.deploymentUrl}/sign-in`, { waitUntil: "domcontentloaded" });
     await owner.goto(`${input.deploymentUrl}/admin/sign-in`, { waitUntil: "domcontentloaded" });
-    // Manual normal sign-in completes BEFORE the parent arms its bounded window.
-    const loginDeadline = performance.now() + 900_000;
-    await until(async () => {
+    authCheck = async () => {
       const learner = await customer.request.get(`${input.deploymentUrl}/api/customer-auth/session`, { maxRedirects: 0, timeout: 15_000 });
       const admin = await owner.request.get(`${input.deploymentUrl}/api/auth/session`, { maxRedirects: 0, timeout: 15_000 });
-      if (learner.status() !== 200 || admin.status() !== 200) return false;
+      if (learner.status() !== 200 || admin.status() !== 200) return { customerAuthenticated: false, ownerFresh: false, observedAt: new Date().toISOString() };
       const learnerSession = await learner.json(), adminSession = await admin.json(), at = adminSession?.user?.authenticatedAt;
-      return learnerSession?.user?.id === input.userId && Number.isInteger(at) && Date.now() - at * 1000 >= 0 && Date.now() - at * 1000 < 180_000;
+      return { customerAuthenticated: learnerSession?.user?.id === input.userId,
+        ownerFresh: Number.isInteger(at) && Date.now()-at*1000 >= 0 && Date.now()-at*1000 < 240000, observedAt: new Date().toISOString() };
+    };
+    // The parent's auth-preparation action bounds the normal manual sign-in.
+    // This longer child timeout is only process liveness, never admission proof.
+    const loginDeadline = performance.now() + 900_000;
+    const ready = await until(async () => {
+      const current = await authCheck(); if (current.customerAuthenticated && current.ownerFresh) return current;
+      await pause(750); return false;
     }, loginDeadline);
-    process.send({ type: "authenticated", challenge: input.challenge });
+    process.send({ type: "authenticated", challenge: input.challenge, value: ready });
     demand((await next("arm")) === input.challenge);
     result = await recordP2SuspensionBrowser(input, { customer, owner }, {
       baseline: async value => { const waiting = next("suspend"); process.send({ type: "baseline", challenge: input.challenge, value }); demand(await waiting === input.challenge); },

@@ -21,12 +21,18 @@ blobs. No supplemental operator is eligible for this reader-dependent case.
 The fixed source browser uses the exact retained program bytes plus
 `P2_LIFECYCLE_BROWSER_LAUNCHER`, passed to Node 24 over its fixed source launcher.
 This avoids rereading a mutable script after the parent hashes it. It creates two
-fresh isolated Playwright contexts. Dardan completes normal customer and owner
-Google/Resend sign-in; no credentials, storage state or session are fabricated.
-Authentication has a separate fifteen-minute timeout and completes before ARM.
-The already-qualified current deployment must allow normal new work while
-recovery and native scheduling are disabled. The parent must verify the actual
-deployment/source/configuration before opening the sign-in pages.
+fresh isolated Playwright contexts only after a source capability releases the
+authentication barrier. Initially it reports `initialized()` without opening a
+browser or sending HTTP. The fixed parent arms a separate 300-second
+authentication-preparation action, verifies actual `newWork:true,recovery:false`
+and native scheduling off, then issues its process-local authentication handle.
+Only `beginAuthentication(handle)` can open the normal sign-in pages. Dardan
+completes customer and owner Google/Resend sign-in; no credentials, storage state
+or session are fabricated. The parent's actual deployment/source/configuration
+checks precede those pages. The child's fifteen-minute authentication wait and
+thirty-minute overall wait are process liveness bounds, not authorization to
+leave admission open. The parent closes both gates and proves zero work after
+the 300-second action, retaining the same live opaque child for the next action.
 
 After ARM, the fixed 840-second browser window allows normal authentication and
 learning/progress writers with `newWork:true,recovery:false`, native scheduling
@@ -53,13 +59,17 @@ The parent sequence is fixed:
 
 ```js
 const browser = launchP2LifecycleBrowserRecorder(plan, privateBrowserDirectory);
-await browser.authenticated();
-// Fixed parent performs its fresh current checks, binds the controller's actual
-// challenge, arms the held physical scope and opens only the reviewed window.
+await browser.initialized(); // no browser/HTTP yet
+// Fixed parent arms auth300, checks actual newWork true/recovery false/native off.
+await browser.beginAuthentication(actualAuthenticationStageHandle);
+readP2LifecycleBrowserAuthentication(plan, await browser.authenticated());
+// Parent closes both gates/drains and ends auth300. Same live child is retained.
+// A new current physical scope arms browser840 and opens only its reviewed window.
 const stage = host.suspensionEvidenceStage(plan, browser);
-await browser.start();
+readP2LifecycleBrowserAuthentication(plan, await browser.recheckAuthenticated());
+await browser.start(stage);
 const controlled = await captureP2SuspensionControlledAuthority(plan, stage);
-await browser.suspend();
+await browser.suspend(controlled);
 const observing = observeP2SuspensionControlledAuthority(plan, controlled);
 const browserArtifact = await browser.complete();
 const naturalArtifact = await observing;

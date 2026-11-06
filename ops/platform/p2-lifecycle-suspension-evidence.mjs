@@ -13,6 +13,7 @@ import { p2SuspensionEvidenceSha256 as hash, observeP2SuspensionPending } from "
 
 const plans = new WeakMap(), controllers = new WeakMap(), artifacts = new WeakMap();
 const controlledCaptures = new WeakMap(), naturalArtifacts = new WeakMap(), pendingArtifacts = new WeakMap();
+const authenticationArtifacts = new WeakMap();
 const demand = condition => { if (!condition) throw new Error("P2_LIFECYCLE_SUSPENSION_EVIDENCE_REFUSED"); };
 const sha = value => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(value);
@@ -111,14 +112,21 @@ export function launchP2LifecycleBrowserRecorder(plan, directory) {
     sourceCommit: plan.sourceCommit, deploymentId: plan.deploymentId, deploymentUrl: plan.deploymentUrl, ...reviewed.resources, windowSeconds: 840 };
   const child = spawn(process.execPath, ["--input-type=module", "--eval", program.toString("utf8")], { cwd: sourceRoot, stdio: ["ignore", "ignore", "ignore", "ipc"],
     env: Object.fromEntries(["PATH", "HOME", "LANG", "TMPDIR"].filter(name => process.env[name] !== undefined).map(name => [name, process.env[name]])) });
-  const waiting = new Map(), values = new Map(); let failed = false, ended = false, armed = false, suspended = false, closePromise;
-  const fail = () => { if (failed) return; failed = true; for (const { reject } of waiting.values()) reject(new Error("P2_BROWSER_SOURCE_CHILD_FAILED")); waiting.clear(); };
+  const waiting = new Map(), values = new Map(); let failed = false, ended = false, armed = false, suspended = false, authenticationStarted = false, closePromise, authenticationWaiter;
+  const fail = () => { if (failed) return; failed = true; for (const { reject } of waiting.values()) reject(new Error("P2_BROWSER_SOURCE_CHILD_FAILED")); waiting.clear(); authenticationWaiter?.reject(new Error("P2_BROWSER_SOURCE_CHILD_FAILED")); };
   child.on("error", fail);
   child.on("message", message => {
     try {
-      demand(!failed && message && message.challenge === challenge && ["authenticated", "baseline", "suspended", "complete"].includes(message.type)
+      if (message?.type === "authentication-current") {
+        demand(!failed && !armed && message.challenge === challenge && authenticationWaiter
+          && closed(message.value, ["customerAuthenticated", "ownerFresh", "observedAt"])
+          && typeof message.value.customerAuthenticated === "boolean" && typeof message.value.ownerFresh === "boolean"
+          && Number.isFinite(Date.parse(message.value.observedAt)));
+        const waiter = authenticationWaiter; authenticationWaiter = undefined; waiter.resolve(message.value); return;
+      }
+      demand(!failed && message && message.challenge === challenge && ["initialized", "authenticated", "baseline", "suspended", "complete"].includes(message.type)
         && !values.has(message.type));
-      const expected = ["authenticated", "baseline", "suspended", "complete"][values.size]; demand(message.type === expected);
+      const expected = ["initialized", "authenticated", "baseline", "suspended", "complete"][values.size]; demand(message.type === expected);
       values.set(message.type, message.value ?? true); const waiter = waiting.get(message.type); if (waiter) { waiting.delete(message.type); waiter.resolve(message.value ?? true); }
     } catch { fail(); }
   });
@@ -132,10 +140,29 @@ export function launchP2LifecycleBrowserRecorder(plan, directory) {
   const close = () => closePromise ??= (async () => {
     clearTimeout(overall); if (!ended) { child.kill("SIGTERM"); const timer = setTimeout(() => child.kill("SIGKILL"), 5000); try { await exit; } finally { clearTimeout(timer); } }
   })();
+  const authentication = value => {
+    demand(closed(value, ["customerAuthenticated", "ownerFresh", "observedAt"]) && typeof value.customerAuthenticated === "boolean"
+      && typeof value.ownerFresh === "boolean" && Number.isFinite(Date.parse(value.observedAt)));
+    const handle = freeze({ version: 1, status: "P2_BROWSER_AUTHENTICATION_SOURCE_ISSUED", customerAuthenticated: value.customerAuthenticated, ownerFresh: value.ownerFresh });
+    authenticationArtifacts.set(handle, { plan, controller, value }); return handle;
+  };
   const controller = Object.freeze({
-    authenticated: () => wait("authenticated"),
-    start: async () => { demand(!armed); await wait("authenticated"); armed = true; send("arm", challenge); return wait("baseline"); },
-    suspend: async () => { demand(armed && !suspended); await wait("baseline"); suspended = true; send("suspend", challenge); return wait("suspended"); },
+    initialized: () => wait("initialized"),
+    beginAuthentication: async authStageHandle => {
+      demand(!authenticationStarted && !armed); await wait("initialized");
+      const { readP2CertificationAuthenticationStage } = await import("./p2-certification-transport.mjs");
+      const held = readP2CertificationAuthenticationStage(authStageHandle, plan);
+      demand(held?.status === "P2_CERTIFICATION_AUTHENTICATION_STAGE_HELD" && held.bindingSha256 === hash(plan));
+      authenticationStarted = true; send("authenticate", challenge);
+    },
+    authenticated: async () => authentication(await wait("authenticated")),
+    recheckAuthenticated: async () => { demand(!armed && !authenticationWaiter); await wait("authenticated");
+      const result = new Promise((resolve, reject) => { authenticationWaiter = { resolve, reject }; }); send("check-authentication", challenge); return authentication(await result); },
+    start: async stageHandle => { demand(!armed); await wait("authenticated"); await actualSuspensionStage(plan, stageHandle);
+      controllers.get(controller).stageHandle = stageHandle; armed = true; send("arm", challenge); return wait("baseline"); },
+    suspend: async controlledHandle => { const captured = controlledCaptures.get(controlledHandle);
+      demand(armed && !suspended && captured?.plan === plan && captured.stageHandle === controllers.get(controller).stageHandle);
+      await wait("baseline"); await actualSuspensionStage(plan, captured.stageHandle); suspended = true; send("suspend", challenge); return wait("suspended"); },
     complete: async () => {
       const record = validateP2SuspensionBrowserRecord(await wait("complete"), input), result = await exit;
       demand(!failed && result.code === 0 && !result.signal); clearTimeout(overall);
@@ -151,6 +178,10 @@ export function launchP2LifecycleBrowserRecorder(plan, directory) {
 export function readP2LifecycleBrowserControllerBinding(plan, controller) {
   const source = controllers.get(controller); demand(plans.has(plan) && source?.plan === plan);
   return { challenge: source.input.challenge, bindingSha256: source.input.bindingSha256 };
+}
+export function readP2LifecycleBrowserAuthentication(plan, handle) {
+  const source = authenticationArtifacts.get(handle); demand(plans.has(plan) && source?.plan === plan && controllers.get(source.controller)?.plan === plan);
+  return structuredClone(source.value);
 }
 export function readP2LifecycleBrowserSuspensionEvent(plan, controller) {
   const source = controllers.get(controller); demand(plans.has(plan) && source?.plan === plan && source.values.has("suspended"));
