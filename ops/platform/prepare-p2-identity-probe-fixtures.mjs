@@ -17,12 +17,19 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  P2_LIFECYCLE_OWNED_API_REVISIONS,
+  p2LifecycleOwnedSourceFileMap,
+  verifyP2LifecycleOwnedSourceManifest,
+} from "./p2-lifecycle-owned-source-manifest.mjs";
 
 const ROOT = realpathSync(fileURLToPath(new URL("../..", import.meta.url)));
 const MANIFEST = "contracts/api-integration/p2-candidate/manifest.json";
 const TEST_FILE = "ops/platform/p2-identity-negative-probe.test.mjs";
 const RECOVERY_MODE = "--recovery-postgres18";
+const LIFECYCLE_MODE = "--lifecycle-postgres18";
 const RECOVERY_IMAGE = "lash-her-frontend-migration:postgres18-test";
+const FRONTEND_REPOSITORY = Object.freeze({ name: "lash-her-frontend", url: "https://github.com/princessdardan/lash-her-frontend.git" });
 const RECOVERY_PRIVILEGE_FAULTS = Object.freeze([
   "frontend-runtime-inbound", "frontend-runtime-outbound", "frontend-runtime-rogue-admin", "frontend-owner-inbound",
   "frontend-owner-outbound", "frontend-sequence-update", "frontend-default-unexpected-grantee", "frontend-global-default",
@@ -62,6 +69,39 @@ const RECOVERY_MOUNTS = Object.freeze([
   Object.freeze({ source: "contracts/api-integration/v1", target: "/source/contracts/api-integration/v1", kind: "directory" }),
   Object.freeze({ source: "contracts/api-integration/p2-candidate", target: "/source/contracts/api-integration/p2-candidate", kind: "directory" }),
 ]);
+const LIFECYCLE_FRONTEND_MOUNTS = Object.freeze([
+  Object.freeze({ source: "ops/platform", target: "/source/ops/platform", kind: "directory" }),
+  Object.freeze({ source: "drizzle", target: "/source/drizzle", kind: "directory" }),
+  Object.freeze({ source: "node_modules", target: "/source/node_modules", kind: "directory" }),
+  Object.freeze({ source: "src", target: "/source/src", kind: "directory" }),
+  Object.freeze({ source: "scripts", target: "/source/scripts", kind: "directory" }),
+  Object.freeze({ source: "package.json", target: "/source/package.json", kind: "file" }),
+  Object.freeze({ source: "package-lock.json", target: "/source/package-lock.json", kind: "file" }),
+  Object.freeze({ source: "contracts/api-integration/v1", target: "/source/contracts/api-integration/v1", kind: "directory" }),
+  Object.freeze({ source: "contracts/api-integration/p2-candidate", target: "/source/contracts/api-integration/p2-candidate", kind: "directory" }),
+]);
+const LIFECYCLE_API_MOUNTS = Object.freeze([
+  Object.freeze({ source: "drizzle", kind: "directory" }), Object.freeze({ source: "src", kind: "directory" }),
+  Object.freeze({ source: "dist", kind: "directory" }), Object.freeze({ source: "openapi", kind: "directory" }),
+  Object.freeze({ source: "contracts", kind: "directory" }), Object.freeze({ source: "node_modules", kind: "directory" }),
+  Object.freeze({ source: "package.json", kind: "file" }), Object.freeze({ source: "package-lock.json", kind: "file" }),
+]);
+const LIFECYCLE_CHECKS = Object.freeze([
+  "actual-three-domain-export-ready-observed", "actual-24-hour-schema-bound-export-scrub-observed",
+  "actual-delete-field-removal-and-retention-observed", "wrong-original-email-refused", "missing-receiver-ack-refused",
+  "identified-attempt-refused", "retained-community-export-refused", "common-output-private-values-absent",
+  "requested-command-version-refused", "unlisted-account-attempt-refused", "expired-ready-export-refused",
+  "missing-export-history-refused", "cross-bound-prior-refused",
+]);
+const LIFECYCLE_SOURCE_FILES = Object.freeze([
+  "p2-lifecycle-state-witness.mjs", "p2-lifecycle-persistence-probe.mjs", "p2-lifecycle-owned-source-manifest.mjs",
+  "harness/owned-p2-lifecycle-persistence.mjs", "test-p2-lifecycle-persistence-local.mjs",
+]);
+const LIFECYCLE_RECEIPT_KEYS = Object.freeze([
+  "checks", "communityMigrations", "courseMigrations", "fixtureOnly", "frontendMigrations", "liveCertification",
+  "postgresMajor", "providerTouched", "readOnly", "skipped", "sourceCommits", "sourceManifestSha256", "sourceMode",
+  "sourceSha256", "status", "version",
+].sort());
 const REPOSITORIES = Object.freeze({
   course: Object.freeze({
     name: "lash-her-course-api",
@@ -80,13 +120,17 @@ const ARTIFACTS = Object.freeze({
   enrollmentEvent: Object.freeze({ repository: "lash-her-community-api", sourcePath: "contracts/course-enrollment/v1/enrollment-event.schema.json", file: "enrollment-event.schema.json" }),
 });
 const FAILURE_PHASES = Object.freeze(["preflight", "source-fetch", "npm-ci", "build", "exact-source-proof", "identity-tests",
-  "recovery-postgres18", "cleanup"]);
-const FAILURE_STAGES = Object.freeze(["frontend", "workspace", "course", "community", "identity", "recovery"]);
+  "recovery-postgres18", "lifecycle-postgres18", "cleanup"]);
+const FAILURE_STAGES = Object.freeze(["frontend", "workspace", "course", "community", "identity", "recovery", "lifecycle"]);
 const RECOVERY_FAILURES = Object.freeze(["docker-transport", "child-exit", "receipt-invalid"]);
-const RECOVERY_QUALIFICATIONS = Object.freeze(["current", "forward"]);
+const RECOVERY_QUALIFICATIONS = Object.freeze(["current", "forward", "persistence"]);
 const demand = condition => { if (!condition) throw new Error("P2_IDENTITY_FIXTURE_PREPARATION_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
 const hash = value => createHash("sha256").update(value).digest("hex");
+const canonical = value => JSON.stringify(value, (_key, child) => child && typeof child === "object" && !Array.isArray(child)
+  ? Object.fromEntries(Object.entries(child).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : child);
+const exactKeys = (value, keys) => Boolean(value && typeof value === "object" && !Array.isArray(value) &&
+  JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort()));
 const safeRelative = value => typeof value === "string" && value.length <= 200 && /^[A-Za-z0-9_./-]+$/u.test(value) && !value.split("/").includes("..");
 const validSourceReadToken = value => typeof value === "string" && value.length >= 20 && value.length <= 512 && !/[\u0000-\u0020\u007f]/u.test(value);
 const mark = (diagnostic, phase, stage) => { demand(FAILURE_PHASES.includes(phase) && FAILURE_STAGES.includes(stage)); diagnostic.phase = phase; diagnostic.stage = stage; };
@@ -131,7 +175,8 @@ function defaultTemporaryDirectory() {
 
 function defaultRun(file, args, options) {
   return spawnSync(file, args, { cwd: options.cwd, env: options.env, encoding: "utf8", timeout: options.timeout,
-    maxBuffer: options.maxBuffer ?? 8 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+    input: options.input, maxBuffer: options.maxBuffer ?? 8 * 1024 * 1024,
+    stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
 }
 
 function fixedEnvironment(workspace, nodeEnvironment = "development") {
@@ -258,7 +303,7 @@ function recoveryDockerArguments(frontendRoot, directories) {
   const mounts = RECOVERY_MOUNTS.map(({ source, target, kind }) => mount(join(frontendRoot, source), target, kind, frontendRoot));
   mounts.push(mount(directories.course, "/exact-sources/lash-her-course-api", "directory", directories.course));
   mounts.push(mount(directories.community, "/exact-sources/lash-her-community-api", "directory", directories.community));
-  return ["run", "--rm", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+  return ["run", "--rm", "-i", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
     "--memory=1g", "--pids-limit=256", "--shm-size=256m", "--tmpfs=/tmp:rw,nosuid,nodev,size=512m,mode=1777", "--workdir=/source",
     "--env=PG_BIN=/usr/lib/postgresql/18/bin", "--env=OWNED_POSTGRES_MAJOR=18", "--env=P2_RECOVERY_OWNED_TEST=true",
     "--env=NODE_BIN=/usr/local/bin/node", "--env=COURSE_RECOVERY_SOURCE_ROOT=/exact-sources/lash-her-course-api",
@@ -268,6 +313,71 @@ function recoveryDockerArguments(frontendRoot, directories) {
 
 function forwardRecoveryDockerArguments(frontendRoot, directories) {
   return [...recoveryDockerArguments(frontendRoot, directories), "--forward-brand"];
+}
+
+function lifecyclePersistenceDockerArguments(frontendRoot, directories) {
+  for (const file of ["ops/platform/test-p2-lifecycle-persistence-local.mjs", "ops/platform/p2-lifecycle-owned-source-manifest.mjs"])
+    readBounded(join(frontendRoot, file), 1_000_000);
+  const mounts = LIFECYCLE_FRONTEND_MOUNTS.map(({ source, target, kind }) => mount(join(frontendRoot, source), target, kind, frontendRoot));
+  for (const [service, directory] of Object.entries(directories)) {
+    const targetRoot = `/exact-sources/lash-her-${service}-api`;
+    for (const { source, kind } of LIFECYCLE_API_MOUNTS)
+      mounts.push(mount(join(directory, source), `${targetRoot}/${source}`, kind, directory));
+  }
+  return ["run", "--rm", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+    "--memory=1g", "--pids-limit=256", "--shm-size=256m", "--tmpfs=/tmp:rw,nosuid,nodev,size=512m,mode=1777", "--workdir=/source",
+    "--env=PG_BIN=/usr/lib/postgresql/18/bin", "--env=OWNED_POSTGRES_MAJOR=18", "--env=P2_LIFECYCLE_PERSISTENCE_OWNED_TEST=true",
+    ...mounts.flatMap(value => ["--mount", value]), "--entrypoint=/usr/local/bin/node", RECOVERY_IMAGE, "--import", "tsx",
+    "ops/platform/test-p2-lifecycle-persistence-local.mjs", "--postgres18-manifest"];
+}
+
+export function buildP2LifecyclePersistencePostgres18Input(input) {
+  demand(exactKeys(input, ["frontendRoot", "directories", "frontendSource", "sources", "identityManifestSha256", "currentReceipt", "forwardReceipt"])
+    && exactKeys(input.directories, ["course", "community"]) && exactKeys(input.sources, ["course", "community"])
+    && input.sources.course.revision === P2_LIFECYCLE_OWNED_API_REVISIONS.course &&
+    input.sources.community.revision === P2_LIFECYCLE_OWNED_API_REVISIONS.community &&
+    digest(input.identityManifestSha256) && typeof input.currentReceipt === "string" && typeof input.forwardReceipt === "string");
+  const roots = { frontend: input.frontendRoot, course: input.directories.course, community: input.directories.community };
+  const files = Object.fromEntries(Object.entries(roots).map(([service, directory]) =>
+    [service, p2LifecycleOwnedSourceFileMap(service, directory)]));
+  const sourceMetadata = { frontend: input.frontendSource, course: input.sources.course, community: input.sources.community };
+  const manifestSources = Object.fromEntries(Object.entries(sourceMetadata).map(([service, source]) => {
+    demand(exactKeys(source, ["repository", "revision", "gitTree", "packageSha256", "packageLockSha256", "artifactSha256"]));
+    return [service, { ...structuredClone(source), files: files[service] }];
+  }));
+  const parentProof = { version: 1, status: "P2_LIFECYCLE_PERSISTENCE_PARENT_PROOF", identityManifestSha256: input.identityManifestSha256,
+    currentReceiptSha256: hash(input.currentReceipt), forwardReceiptSha256: hash(input.forwardReceipt),
+    sources: Object.fromEntries(Object.entries(sourceMetadata).map(([service, source]) => [service,
+      { ...structuredClone(source), filesSha256: hash(canonical(files[service])) }])) };
+  const parentProofSha256 = hash(canonical(parentProof));
+  const manifest = { version: 1, status: "P2_LIFECYCLE_OWNED_SOURCE_MANIFEST", mode: "postgres18-container", parentProofSha256,
+    identityManifestSha256: input.identityManifestSha256, sources: manifestSources };
+  const manifestBytes = Buffer.from(canonical(manifest));
+  const verified = verifyP2LifecycleOwnedSourceManifest(manifestBytes, roots);
+  const sourceCommits = Object.fromEntries(Object.entries(verified.manifest.sources).map(([service, source]) => [service, source.revision]));
+  const sourceSha256 = Object.fromEntries(LIFECYCLE_SOURCE_FILES.map(name =>
+    [name, verified.manifest.sources.frontend.files[`ops/platform/${name}`]]));
+  demand(Object.values(sourceSha256).every(value => digest(value)));
+  return Object.freeze({ manifestBytes, sourceManifestSha256: verified.sourceManifestSha256, parentProofSha256,
+    expectedReceipt: Object.freeze({ sourceCommits: Object.freeze(sourceCommits), sourceSha256: Object.freeze(sourceSha256),
+      sourceManifestSha256: verified.sourceManifestSha256 }) });
+}
+
+export function parseP2LifecyclePersistencePostgres18Receipt(output, expected) {
+  demand(typeof output === "string" && output.length > 0 && output.length <= 1_000_000 &&
+    exactKeys(expected, ["sourceCommits", "sourceSha256", "sourceManifestSha256"]) && digest(expected.sourceManifestSha256));
+  const lines = output.trim().split("\n");
+  demand(lines.length === 1);
+  const receipt = JSON.parse(lines[0]);
+  demand(exactKeys(receipt, LIFECYCLE_RECEIPT_KEYS) && receipt.version === 1 &&
+    receipt.status === "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES18_PASS" && receipt.postgresMajor === 18 &&
+    receipt.frontendMigrations === 83 && receipt.courseMigrations === 22 && receipt.communityMigrations === 11 &&
+    JSON.stringify(receipt.checks) === JSON.stringify(LIFECYCLE_CHECKS) && receipt.skipped === 0 && receipt.readOnly === true &&
+    receipt.fixtureOnly === true && receipt.providerTouched === false && receipt.liveCertification === false &&
+    receipt.sourceMode === "parent-issued-manifest-and-mounted-readback" &&
+    receipt.sourceManifestSha256 === expected.sourceManifestSha256 &&
+    canonical(receipt.sourceCommits) === canonical(expected.sourceCommits) && canonical(receipt.sourceSha256) === canonical(expected.sourceSha256));
+  return receipt;
 }
 
 export function parseP2RecoveryPostgres18Receipt(output) {
@@ -312,13 +422,13 @@ export function parseP2ForwardRecoveryPostgres18Receipt(output) {
   return receipt;
 }
 
-function runRecoveryQualification(run, dockerEndpoint, args, frontendRoot, environment, diagnostic, qualification) {
+function runRecoveryQualification(run, dockerEndpoint, args, frontendRoot, environment, diagnostic, qualification, input) {
   demand(RECOVERY_QUALIFICATIONS.includes(qualification));
   diagnostic.recoveryQualification = qualification;
   diagnostic.recoveryFailure = "docker-transport";
   diagnostic.recoveryStarted = true;
   const result = run("docker", ["--host", dockerEndpoint, ...args],
-    { cwd: frontendRoot, env: environment, timeout: 600_000, maxBuffer: 4 * 1024 * 1024 });
+    { cwd: frontendRoot, env: environment, timeout: 600_000, maxBuffer: 4 * 1024 * 1024, input });
   if (!(result && !result.error && result.status === 0 && result.signal == null &&
     typeof result.stdout === "string" && typeof result.stderr === "string")) {
     diagnostic.recoveryFailure = result?.status === 125 || result?.error ? "docker-transport" : "child-exit";
@@ -348,6 +458,29 @@ function verifyArtifacts(directory, manifest, repository) {
   return proofs;
 }
 
+function frontendPackageProof(directory) {
+  return { packageSha256: hash(readBounded(join(directory, "package.json"), 256_000)),
+    packageLockSha256: hash(readBounded(join(directory, "package-lock.json"), 2_000_000)) };
+}
+
+function verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources, manifest,
+  environment, sourceReadToken, expectedFiles) {
+  demand(sourceProof(run, frontendRoot, frontendSource.revision, FRONTEND_REPOSITORY.url, environment) === frontendSource.gitTree &&
+    canonical(frontendPackageProof(frontendRoot)) === canonical({ packageSha256: frontendSource.packageSha256,
+      packageLockSha256: frontendSource.packageLockSha256 }));
+  for (const [service, definition] of Object.entries(REPOSITORIES)) {
+    verifyApiSourceForMount(run, directories[service], sources[service].revision, definition, environment, sourceReadToken);
+    demand(canonical(validatePackage(directories[service], definition)) === canonical({ packageSha256: sources[service].packageSha256,
+      packageLockSha256: sources[service].packageLockSha256 }) &&
+      canonical(verifyArtifacts(directories[service], manifest, definition.name)) === canonical(sources[service].artifactSha256));
+  }
+  const files = { frontend: p2LifecycleOwnedSourceFileMap("frontend", frontendRoot),
+    course: p2LifecycleOwnedSourceFileMap("course", directories.course),
+    community: p2LifecycleOwnedSourceFileMap("community", directories.community) };
+  if (expectedFiles !== undefined) demand(canonical(files) === canonical(expectedFiles));
+  return files;
+}
+
 export function parseP2IdentityProbeTap(output) {
   const fields = {};
   for (const name of ["tests", "pass", "fail", "cancelled", "skipped", "todo"]) {
@@ -368,7 +501,9 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
   const sourceReadToken = process.env.PLATFORM_SOURCE_READ_TOKEN;
   demand(typeof run === "function" && typeof makeTemporaryDirectory === "function" &&
     typeof dockerSocketStat === "function" && (options.dockerSocketStat === undefined || options.run !== undefined) &&
-    [undefined, true, false].includes(options.recoveryPostgres18) && Number((options.nodeVersion ?? process.versions.node).split(".")[0]) === 24);
+    [undefined, true, false].includes(options.recoveryPostgres18) && [undefined, true, false].includes(options.lifecyclePostgres18) &&
+    (options.lifecyclePostgres18 !== true || options.recoveryPostgres18 === true));
+  demand(Number((options.nodeVersion ?? process.versions.node).split(".")[0]) === 24);
   demand(validSourceReadToken(sourceReadToken));
   const manifestBytes = readBounded(join(frontendRoot, MANIFEST), 512_000);
   const manifest = validateP2IdentityFixtureManifest(manifestBytes);
@@ -385,7 +520,9 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
     mark(diagnostic, "exact-source-proof", "frontend");
     const frontendCommit = git(run, frontendRoot, ["rev-parse", "HEAD"], installEnvironment);
     demand(digest(frontendCommit, 40));
-    cleanSource(run, frontendRoot, installEnvironment);
+    const frontendTree = sourceProof(run, frontendRoot, frontendCommit, FRONTEND_REPOSITORY.url, installEnvironment);
+    const frontendSource = { repository: FRONTEND_REPOSITORY.name, revision: frontendCommit, gitTree: frontendTree,
+      ...frontendPackageProof(frontendRoot), artifactSha256: {} };
     const npmVersion = execute(run, "npm", ["--version"], { cwd: frontendRoot, env: installEnvironment, timeout: 30_000 }).trim();
     demand(/^11\.[0-9]+\.[0-9]+$/u.test(npmVersion));
     const sources = {};
@@ -421,7 +558,7 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
     const output = execute(run, process.execPath, ["--test", "--test-reporter=tap", TEST_FILE],
       { cwd: frontendRoot, env: testEnvironment, timeout: 180_000, maxBuffer: 8 * 1024 * 1024 });
     const tests = parseP2IdentityProbeTap(output);
-    let recovery, forwardRecovery;
+    let recovery, forwardRecovery, lifecyclePersistence;
     if (options.recoveryPostgres18 === true) {
       mark(diagnostic, "recovery-postgres18", "recovery");
       for (const [service, definition] of Object.entries(REPOSITORIES))
@@ -433,8 +570,13 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
       diagnostic.recoveryFailure = "docker-transport";
       const dockerEndpoint = currentDockerContextEndpoint(run, dockerSocketStat, frontendRoot);
       const recoveryEnvironment = dockerEnvironment(workspace);
-      const receipt = parseP2RecoveryPostgres18Receipt(runRecoveryQualification(run, dockerEndpoint, recoveryArguments,
-        frontendRoot, recoveryEnvironment, diagnostic, "current"));
+      mark(diagnostic, "exact-source-proof", "frontend");
+      const qualificationFiles = verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
+        manifest, installEnvironment, sourceReadToken);
+      mark(diagnostic, "recovery-postgres18", "recovery");
+      const currentOutput = runRecoveryQualification(run, dockerEndpoint, recoveryArguments,
+        frontendRoot, recoveryEnvironment, diagnostic, "current");
+      const receipt = parseP2RecoveryPostgres18Receipt(currentOutput);
       recovery = { status: receipt.status, serverMajor: receipt.serverMajor, frontendMigrations: receipt.frontendMigrations,
         courseMigrations: receipt.courseMigrations, communityMigrations: receipt.communityMigrations, skipped: receipt.skipped,
         fixtureOnly: receipt.fixtureOnly, providerTouched: receipt.providerTouched, checks: receipt.checks,
@@ -444,8 +586,13 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
         frontendCreatorMemberships: receipt.frontendCreatorMemberships,
         frontendOperatorSearchPathPinned: receipt.frontendOperatorSearchPathPinned, environmentIsolation: receipt.environmentIsolation,
         noSqlReplay: receipt.noSqlReplay, originalFrontendTerminalRecreated: receipt.originalFrontendTerminalRecreated };
-      const forwardReceipt = parseP2ForwardRecoveryPostgres18Receipt(runRecoveryQualification(run, dockerEndpoint, forwardArguments,
-        frontendRoot, recoveryEnvironment, diagnostic, "forward"));
+      mark(diagnostic, "exact-source-proof", "frontend");
+      verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
+        manifest, installEnvironment, sourceReadToken, qualificationFiles);
+      mark(diagnostic, "recovery-postgres18", "recovery");
+      const forwardOutput = runRecoveryQualification(run, dockerEndpoint, forwardArguments,
+        frontendRoot, recoveryEnvironment, diagnostic, "forward");
+      const forwardReceipt = parseP2ForwardRecoveryPostgres18Receipt(forwardOutput);
       const apiSourcePins = Object.fromEntries(["course", "community"].map(service => [service, {
         revision: sources[service].revision, gitTree: sources[service].gitTree, packageSha256: sources[service].packageSha256,
         packageLockSha256: sources[service].packageLockSha256, artifactSha256: structuredClone(sources[service].artifactSha256),
@@ -461,13 +608,35 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
         fixtureOnly: forwardReceipt.fixtureOnly, providerTouched: forwardReceipt.providerTouched,
         actualRuntimeContainers: forwardReceipt.actualRuntimeContainers, environmentIsolation: forwardReceipt.environmentIsolation,
         apiSourcePins };
+      mark(diagnostic, "exact-source-proof", "frontend");
+      verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
+        manifest, installEnvironment, sourceReadToken, qualificationFiles);
+      if (options.lifecyclePostgres18 === true) {
+        const lifecycleInput = buildP2LifecyclePersistencePostgres18Input({ frontendRoot, directories, frontendSource, sources,
+          identityManifestSha256: hash(manifestBytes), currentReceipt: currentOutput, forwardReceipt: forwardOutput });
+        mark(diagnostic, "lifecycle-postgres18", "lifecycle");
+        const lifecycleOutput = runRecoveryQualification(run, dockerEndpoint, lifecyclePersistenceDockerArguments(frontendRoot, directories),
+          frontendRoot, recoveryEnvironment, diagnostic, "persistence", lifecycleInput.manifestBytes);
+        const lifecycleReceipt = parseP2LifecyclePersistencePostgres18Receipt(lifecycleOutput, lifecycleInput.expectedReceipt);
+        mark(diagnostic, "exact-source-proof", "frontend");
+        verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
+          manifest, installEnvironment, sourceReadToken, qualificationFiles);
+        lifecyclePersistence = { status: lifecycleReceipt.status, postgresMajor: lifecycleReceipt.postgresMajor,
+          frontendMigrations: lifecycleReceipt.frontendMigrations, courseMigrations: lifecycleReceipt.courseMigrations,
+          communityMigrations: lifecycleReceipt.communityMigrations, checks: lifecycleReceipt.checks, skipped: lifecycleReceipt.skipped,
+          fixtureOnly: lifecycleReceipt.fixtureOnly, providerTouched: lifecycleReceipt.providerTouched,
+          sourceMode: lifecycleReceipt.sourceMode, sourceManifestSha256: lifecycleReceipt.sourceManifestSha256,
+          parentProofSha256: lifecycleInput.parentProofSha256, sourceCommits: lifecycleReceipt.sourceCommits,
+          sourceSha256: lifecycleReceipt.sourceSha256 };
+      }
     }
     mark(diagnostic, "exact-source-proof", "frontend");
-    cleanSource(run, frontendRoot, installEnvironment);
-    return { version: 1, status: recovery ? "P2_IDENTITY_AND_RECOVERY_FIXTURES_PASS" : "P2_IDENTITY_PROBE_FIXTURES_PASS", frontendSourceCommit: frontendCommit,
+    demand(sourceProof(run, frontendRoot, frontendCommit, FRONTEND_REPOSITORY.url, installEnvironment) === frontendTree);
+    return { version: 1, status: lifecyclePersistence ? "P2_IDENTITY_RECOVERY_AND_LIFECYCLE_FIXTURES_PASS" :
+      recovery ? "P2_IDENTITY_AND_RECOVERY_FIXTURES_PASS" : "P2_IDENTITY_PROBE_FIXTURES_PASS", frontendSourceCommit: frontendCommit,
       manifestSha256: hash(manifestBytes), nodeMajor: 24, npmMajor: 11, sources, tests,
-      ...(recovery ? { recovery, forwardRecovery } : {}),
-      skipped: tests.skipped + (recovery?.skipped ?? 0) + (forwardRecovery?.skipped ?? 0), fixtureOnly: true, privateSourceFetch: true,
+      ...(recovery ? { recovery, forwardRecovery } : {}), ...(lifecyclePersistence ? { lifecyclePersistence } : {}),
+      skipped: tests.skipped + (recovery?.skipped ?? 0) + (forwardRecovery?.skipped ?? 0) + (lifecyclePersistence?.skipped ?? 0), fixtureOnly: true, privateSourceFetch: true,
       fetchCredentialForwardedBeyondGit: false, scriptsIgnoredDuringInstall: true, providerTouched: false,
       stagingTouched: false, databaseConnected: recovery !== undefined, sqlExecuted: recovery !== undefined,
       ownedDisposableDatabase: recovery !== undefined, releaseAccepted: false };
@@ -510,8 +679,10 @@ export function p2IdentityFixtureFailureReceipt(error) {
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   try {
-    demand(process.argv.length === 2 || (process.argv.length === 3 && process.argv[2] === RECOVERY_MODE));
-    process.stdout.write(JSON.stringify(prepareP2IdentityProbeFixtures({ recoveryPostgres18: process.argv[2] === RECOVERY_MODE })) + "\n");
+    demand(process.argv.length === 2 || (process.argv.length === 3 && process.argv[2] === RECOVERY_MODE) ||
+      (process.argv.length === 4 && process.argv[2] === RECOVERY_MODE && process.argv[3] === LIFECYCLE_MODE));
+    process.stdout.write(JSON.stringify(prepareP2IdentityProbeFixtures({ recoveryPostgres18: process.argv[2] === RECOVERY_MODE,
+      lifecyclePostgres18: process.argv[3] === LIFECYCLE_MODE })) + "\n");
   } catch (error) {
     process.stdout.write(JSON.stringify(p2IdentityFixtureFailureReceipt(error)) + "\n");
     process.exitCode = 1;
