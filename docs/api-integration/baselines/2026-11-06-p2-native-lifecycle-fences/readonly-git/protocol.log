@@ -1,0 +1,25 @@
+✔ fixed native Git reads ignore ambient repository/configuration overrides and bind the canonical selected source (129.485125ms)
+✔ plan requires exact qualified P2/staging/ten-control lifecycle-only profile and explicit closed final disposition (66.119042ms)
+✔ finite native request witnesses join exact admitted recovery operations, ordered effects, and actual source closure without a cancellation claim (285.760333ms)
+✔ extra/changed cron, runtime flags or immutable writer binding refuse before enable (904.383708ms)
+✔ caller complete booleans, manual request classification and unrelated source/epoch/UUID cannot replace provider request-scoped trace evidence (1615.818041ms)
+✔ unmatched recovery operations or reordered receiver effects remain OPEN even after a clean close (561.25ms)
+✔ active and uncertain outcomes are retained rather than settled/replayed by the qualifier (543.472459ms)
+✔ lost enable/disable acknowledgments are not retried and never produce qualification (542.892667ms)
+✔ a delayed native request after admission closure can be observed without inventing an admitted operation or queue zero (286.45375ms)
+✔ later receipt loss still attempts mandatory disable/admission closure and cannot return a success receipt (268.879458ms)
+✔ original intent with missing outcome after process death refuses automatic replay (283.529958ms)
+✔ actual SIGKILL after enable preserves intent; fresh explicit containment disables/closes without replay or qualification (617.512833ms)
+✔ a policy changed during operator observation invalidates the final fence instead of qualifying a stale closed snapshot (264.630833ms)
+✔ delivery acknowledgements interleaved with the epoch barrier cannot count as native window effects (253.322958ms)
+✔ receiver attempts must advance from the retained post-barrier snapshot, not the earlier start (274.423125ms)
+✔ a final native enable or source drift invalidates the main qualifier disabled claim (550.136958ms)
+✔ containment rechecks exact disabled metadata after draining and never reports a stale source fence (4022.436084ms)
+ℹ tests 17
+ℹ suites 0
+ℹ pass 17
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11510.990167

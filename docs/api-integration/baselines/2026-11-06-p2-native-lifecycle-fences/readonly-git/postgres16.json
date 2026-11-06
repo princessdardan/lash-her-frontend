@@ -1,0 +1,935 @@
+{
+  "status": "P2_LIFECYCLE_NATIVE_OWNED_PASS",
+  "actualTlsPostgres": true,
+  "actualTlsReceivers": true,
+  "actualAppCron": true,
+  "actualRuntimeTrace": true,
+  "actualProvider": false,
+  "modeledProviderNativeClassification": true,
+  "executedChecks": 9,
+  "skipped": 0,
+  "checks": [
+    "actual-physical-release-lock-contention",
+    "actual-delayed-after-disable-request-is-fenced-after-closure-with-no-new-ledger-row-or-trace",
+    "actual-postgres-barrier-update-interleaving-acknowledgements-refuse-before-native-enable",
+    "actual-exported-cron-full-runtime-admission-context-and-opaque-trace",
+    "actual-nonempty-and-empty-http-cron-invocations",
+    "actual-course-community-https-service-jwt-idempotency-and-ordered-command-effects",
+    "actual-event-uuid-source-producer-epoch-role-joins-completed-ledger",
+    "actual-source-admission-closure-and-global-active-uncertain-zero",
+    "private-credentials-not-in-common-evidence"
+  ],
+  "result": {
+    "version": 1,
+    "actionId": "owned-native",
+    "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+    "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "deploymentId": "dpl_ownedNative",
+    "planSha256": "01226e0fa08ad328f76ded5deb475abf2d7964dd751320cbe8b251854e679d25",
+    "status": "P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED",
+    "phase": "final-closed-boundary",
+    "windowEpoch": "3",
+    "nativeEnableAttempted": true,
+    "nativeDisableAttempted": true,
+    "enableMutationOutcome": "observed-enabled",
+    "disableMutationOutcome": "observed-disabled",
+    "failurePhases": [],
+    "nativeEnabled": false,
+    "finalAdmission": {
+      "epoch": "4",
+      "newWork": false,
+      "recovery": false,
+      "active": 0,
+      "uncertain": 0
+    },
+    "nativeInvocationObserved": true,
+    "nativeLedgerCorrelationVerified": true,
+    "orderedReceiverPersistenceVerified": true,
+    "sourceAdmissionFenceVerified": true,
+    "providerQueuedInvocations": null,
+    "providerActiveInvocations": null,
+    "providerCancellationVerified": false,
+    "admissionMutationUnknown": false,
+    "automaticReplayAllowed": false,
+    "finalDisposition": "disabled-and-admission-closed",
+    "wholeReleaseAccepted": false,
+    "migrationAuthorized": false
+  },
+  "barrierInterleaving": {
+    "version": 1,
+    "actionId": "owned-native",
+    "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+    "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "deploymentId": "dpl_ownedNative",
+    "planSha256": "fe963db13185cca4d343d25ec205ab734a9e031e2f30d4a2ccd82b7c7dc10587",
+    "status": "P2_LIFECYCLE_NATIVE_OPEN_REQUIRES_REVIEW",
+    "phase": "provider-request-correlation",
+    "windowEpoch": "6",
+    "nativeEnableAttempted": false,
+    "nativeDisableAttempted": false,
+    "enableMutationOutcome": "not-started",
+    "disableMutationOutcome": "not-started",
+    "failurePhases": [
+      "recovery-only-epoch-barrier"
+    ],
+    "nativeEnabled": null,
+    "finalAdmission": {
+      "epoch": "7",
+      "newWork": false,
+      "recovery": false,
+      "active": 0,
+      "uncertain": 0
+    },
+    "nativeInvocationObserved": false,
+    "nativeLedgerCorrelationVerified": false,
+    "orderedReceiverPersistenceVerified": false,
+    "sourceAdmissionFenceVerified": false,
+    "providerQueuedInvocations": null,
+    "providerActiveInvocations": null,
+    "providerCancellationVerified": false,
+    "admissionMutationUnknown": false,
+    "automaticReplayAllowed": false,
+    "finalDisposition": "disabled-and-admission-closed",
+    "wholeReleaseAccepted": false,
+    "migrationAuthorized": false
+  },
+  "barrierReceipts": [
+    {
+      "name": "p2-native-admission-close-intent.json",
+      "sha256": "c66a957abb066cac98ead20061ee914ef3044a81651174928f5ade9f96ebb860",
+      "value": {
+        "planSha256": "fe963db13185cca4d343d25ec205ab734a9e031e2f30d4a2ccd82b7c7dc10587",
+        "epoch": "6",
+        "newWork": false,
+        "recovery": false
+      }
+    },
+    {
+      "name": "p2-native-closed-ledger-observed.json",
+      "sha256": "acc63821d921e8254604e7769fa040a0463b777f323c8cbbaa412fb1f542757b",
+      "value": {
+        "epoch": "7",
+        "newWork": false,
+        "recovery": false,
+        "active": 0,
+        "uncertain": 0,
+        "operations": [],
+        "commands": [
+          {
+            "command_id": "917c42ff-5bd2-4715-8eae-4143e0f602ef",
+            "account_version": "3",
+            "action": "suspend"
+          }
+        ],
+        "deliveries": [
+          {
+            "command_id": "917c42ff-5bd2-4715-8eae-4143e0f602ef",
+            "receiver": "community",
+            "status": "acknowledged",
+            "attempts": 1,
+            "acknowledged_at": "2026-11-06T03:14:10.726Z",
+            "lease_until": null
+          },
+          {
+            "command_id": "917c42ff-5bd2-4715-8eae-4143e0f602ef",
+            "receiver": "course",
+            "status": "acknowledged",
+            "attempts": 1,
+            "acknowledged_at": "2026-11-06T03:14:10.726Z",
+            "lease_until": null
+          }
+        ],
+        "orderViolations": []
+      }
+    },
+    {
+      "name": "p2-native-outcome.json",
+      "sha256": "d04cb3de756265f55d59556641631827684d08be598cb5a76af734f16c0bc79e",
+      "value": {
+        "version": 1,
+        "actionId": "owned-native",
+        "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+        "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+        "deploymentId": "dpl_ownedNative",
+        "planSha256": "fe963db13185cca4d343d25ec205ab734a9e031e2f30d4a2ccd82b7c7dc10587",
+        "status": "P2_LIFECYCLE_NATIVE_OPEN_REQUIRES_REVIEW",
+        "phase": "provider-request-correlation",
+        "windowEpoch": "6",
+        "nativeEnableAttempted": false,
+        "nativeDisableAttempted": false,
+        "enableMutationOutcome": "not-started",
+        "disableMutationOutcome": "not-started",
+        "failurePhases": [
+          "recovery-only-epoch-barrier"
+        ],
+        "nativeEnabled": null,
+        "finalAdmission": {
+          "epoch": "7",
+          "newWork": false,
+          "recovery": false,
+          "active": 0,
+          "uncertain": 0
+        },
+        "nativeInvocationObserved": false,
+        "nativeLedgerCorrelationVerified": false,
+        "orderedReceiverPersistenceVerified": false,
+        "sourceAdmissionFenceVerified": false,
+        "providerQueuedInvocations": null,
+        "providerActiveInvocations": null,
+        "providerCancellationVerified": false,
+        "admissionMutationUnknown": false,
+        "automaticReplayAllowed": false,
+        "finalDisposition": "disabled-and-admission-closed",
+        "wholeReleaseAccepted": false,
+        "migrationAuthorized": false
+      }
+    },
+    {
+      "name": "p2-native-recovery-only-intent.json",
+      "sha256": "a4f19e17f5a4e182ca3f669026952215dbb9e7b6d5cf8188af01cd9329c6b0a7",
+      "value": {
+        "planSha256": "fe963db13185cca4d343d25ec205ab734a9e031e2f30d4a2ccd82b7c7dc10587",
+        "epoch": "5",
+        "newWork": false,
+        "recovery": true
+      }
+    },
+    {
+      "name": "p2-native-recovery-only-observed.json",
+      "sha256": "ae9097c2a3789335f025cf0ac0c7d23dfa2140a5185b94203bf358dba194711c",
+      "value": {
+        "epoch": "6",
+        "newWork": false,
+        "recovery": true,
+        "active": 0,
+        "uncertain": 0,
+        "operations": [],
+        "commands": [
+          {
+            "command_id": "917c42ff-5bd2-4715-8eae-4143e0f602ef",
+            "account_version": "3",
+            "action": "suspend"
+          }
+        ],
+        "deliveries": [
+          {
+            "command_id": "917c42ff-5bd2-4715-8eae-4143e0f602ef",
+            "receiver": "community",
+            "status": "acknowledged",
+            "attempts": 1,
+            "acknowledged_at": "2026-11-06T03:14:10.726Z",
+            "lease_until": null
+          },
+          {
+            "command_id": "917c42ff-5bd2-4715-8eae-4143e0f602ef",
+            "receiver": "course",
+            "status": "acknowledged",
+            "attempts": 1,
+            "acknowledged_at": "2026-11-06T03:14:10.726Z",
+            "lease_until": null
+          }
+        ],
+        "orderViolations": []
+      }
+    },
+    {
+      "name": "p2-native-runtime-preflight.json",
+      "sha256": "6f827f5fc0e584159a9028db330a561a5dc2646836a2872c3521e01fa7ad4076",
+      "value": {
+        "planSha256": "fe963db13185cca4d343d25ec205ab734a9e031e2f30d4a2ccd82b7c7dc10587",
+        "observation": {
+          "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+          "deploymentId": "dpl_ownedNative",
+          "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+          "deploymentUrl": "https://owned-native.vercel.app",
+          "configurationRecordSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "nativeEnabled": false,
+          "schedule": {
+            "path": "/api/cron/account-lifecycle",
+            "schedule": "* * * * *"
+          },
+          "featureControls": {
+            "INTEGRATION_CUSTOMER_ACCESS_ENABLED": true,
+            "INTEGRATION_COURSE_READS_ENABLED": true,
+            "INTEGRATION_CHECKOUT_ENABLED": false,
+            "INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED": true,
+            "INTEGRATION_COMMUNITY_READS_ENABLED": true,
+            "INTEGRATION_COMMUNITY_WRITES_ENABLED": true,
+            "INTEGRATION_LEARNING_ROUTES_ENABLED": true,
+            "CUSTOMER_AUTH_ENABLED": true,
+            "CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED": true,
+            "CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED": true
+          },
+          "writerAdmissionBinding": {
+            "mode": "enforce",
+            "targetSha256": "cd02ef8692aa848526700879a87196133a9661fca5ce0b6063509614258b11d9",
+            "producerSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+            "roleName": "frontend_runtime"
+          }
+        }
+      }
+    },
+    {
+      "name": "p2-native-started.json",
+      "sha256": "edb01bcb6e662264490fc97303207028f32c562c4ec0655009c092624dc8958f",
+      "value": {
+        "version": 1,
+        "environment": "staging",
+        "actionId": "owned-native",
+        "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+        "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+        "candidateSha256": "f208ad4e9bd5309ad6683a23ec707e2246e620d7e82fcc495760132fcbca7b3d",
+        "phase2ContractManifestSha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "sourcePolicy": {
+          "src/app/api/cron/account-lifecycle/route.ts": "a42e9786c20525a9d2a1a6c574913f841d14c37ab9ce54e00f2ad15c424b1a1b",
+          "src/lib/customer-lifecycle/cron.ts": "a5c122cd7e8bb1ac663a1b36e628d24b44fe01407fac43674c992cc5a705d4f1",
+          "src/lib/customer-lifecycle/context.ts": "c88a1cc943fc8403e4aa8ff225a79cd2c86746d605ae41261c4457574a990a24",
+          "src/lib/customer-lifecycle/worker.ts": "6ba8a493f9267bab172cbce9899644a4c298758a8ada5e5d5f1aa09ef6d7f90e",
+          "src/lib/customer-lifecycle/store.ts": "6dd02a6006432fbfe4184dd44e58ffbbeae28760df2a9a355328297d36d42bcc",
+          "src/lib/writer-admission/runtime.ts": "b3939e6cc76c028137b7e28cb21c0bf89e36a8d67c2b5e6503c20aebb032c376",
+          "src/lib/writer-admission/context.ts": "79999820266972cbe58881ce58099198c5d47de8461808ffa002e99b8d3dee38",
+          "src/lib/writer-admission/config.ts": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
+          "src/lib/api-integration/account-lifecycle-client.ts": "756fa4eb0c5ef24cc9b8143855cae64d7eeaaa4e3c3e32a06382412272a0ad3b",
+          "ops/platform/frontend-admission.mjs": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
+          "ops/platform/frontend-admission.sql": "b8ec48242871a6e44fef415b127709e9b107a60751e47bc0fa328b99244ab6ab",
+          "src/lib/customer-lifecycle/native-trace.ts": "3c88d9f7e81e9951b3e0df67f2401bdbe8c973c63823ceb9eea2b58ec3a3bf08",
+          "src/app/api/internal/release-probe/handler.ts": "b480f6e4dbcc1b6349c2f6078f29837bbc55650b7f0ebf86fd219fae9c9ad12d"
+        },
+        "deploymentId": "dpl_ownedNative",
+        "deploymentUrl": "https://owned-native.vercel.app",
+        "configurationRecordSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "featureControls": {
+          "INTEGRATION_CUSTOMER_ACCESS_ENABLED": true,
+          "INTEGRATION_COURSE_READS_ENABLED": true,
+          "INTEGRATION_CHECKOUT_ENABLED": false,
+          "INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED": true,
+          "INTEGRATION_COMMUNITY_READS_ENABLED": true,
+          "INTEGRATION_COMMUNITY_WRITES_ENABLED": true,
+          "INTEGRATION_LEARNING_ROUTES_ENABLED": true,
+          "CUSTOMER_AUTH_ENABLED": true,
+          "CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED": true,
+          "CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED": true
+        },
+        "targetSha256": "cd02ef8692aa848526700879a87196133a9661fca5ce0b6063509614258b11d9",
+        "target": {
+          "host": "127.0.0.1",
+          "port": 64790,
+          "database": "frontend_admission_owned",
+          "user": "frontend_test_admin",
+          "serverMajor": 16
+        },
+        "owner": {
+          "name": "admission_owner",
+          "oid": "16385"
+        },
+        "producer": {
+          "producerSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "role": {
+            "name": "frontend_runtime",
+            "oid": "16386"
+          }
+        },
+        "initialEpoch": "5",
+        "schedule": {
+          "path": "/api/cron/account-lifecycle",
+          "schedule": "* * * * *"
+        },
+        "windowSeconds": 60,
+        "drainSeconds": 2,
+        "commandWitnesses": [
+          {
+            "commandId": "917c42ff-5bd2-4715-8eae-4143e0f602ef",
+            "accountVersion": "3",
+            "action": "suspend"
+          }
+        ],
+        "writerAdmissionBinding": {
+          "mode": "enforce",
+          "targetSha256": "cd02ef8692aa848526700879a87196133a9661fca5ce0b6063509614258b11d9",
+          "producerSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+          "roleName": "frontend_runtime"
+        },
+        "finalDisposition": "disabled-and-admission-closed",
+        "providerQueuedInventory": null,
+        "automaticReplayAllowed": false,
+        "migrationAuthorized": false,
+        "wholeReleaseAccepted": false,
+        "planSha256": "fe963db13185cca4d343d25ec205ab734a9e031e2f30d4a2ccd82b7c7dc10587",
+        "status": "P2_LIFECYCLE_NATIVE_STARTED"
+      }
+    }
+  ],
+  "operations": [
+    {
+      "id": "cb0d22d2-1a7b-43c2-a508-e0f24e11e61f",
+      "kind": "recovery",
+      "state": "completed",
+      "epoch": "3"
+    },
+    {
+      "id": "23e313a9-8ade-4876-8f4f-c8d5327841ee",
+      "kind": "recovery",
+      "state": "completed",
+      "epoch": "3"
+    }
+  ],
+  "receiverCalls": [
+    {
+      "receiver": "community",
+      "commandId": "500f4f74-3a47-43f5-a5f0-efe442de9b05",
+      "accountVersion": 1,
+      "operationId": "cb0d22d2-1a7b-43c2-a508-e0f24e11e61f"
+    },
+    {
+      "receiver": "course",
+      "commandId": "500f4f74-3a47-43f5-a5f0-efe442de9b05",
+      "accountVersion": 1,
+      "operationId": "cb0d22d2-1a7b-43c2-a508-e0f24e11e61f"
+    },
+    {
+      "receiver": "community",
+      "commandId": "98289e61-85d3-4e48-a61f-7b4c504e853a",
+      "accountVersion": 2,
+      "operationId": "cb0d22d2-1a7b-43c2-a508-e0f24e11e61f"
+    },
+    {
+      "receiver": "course",
+      "commandId": "98289e61-85d3-4e48-a61f-7b4c504e853a",
+      "accountVersion": 2,
+      "operationId": "cb0d22d2-1a7b-43c2-a508-e0f24e11e61f"
+    }
+  ],
+  "stageReceipts": [
+    {
+      "name": "p2-native-admission-close-intent.json",
+      "sha256": "d0d433a9465c3d1399f2096ab3c51e69a07dbae7d382e10593f6c0057e71d319",
+      "value": {
+        "planSha256": "01226e0fa08ad328f76ded5deb475abf2d7964dd751320cbe8b251854e679d25",
+        "epoch": "3",
+        "newWork": false,
+        "recovery": false
+      }
+    },
+    {
+      "name": "p2-native-closed-ledger-observed.json",
+      "sha256": "deec40521c60dc91febb6aff59c981a3df73b64caf3b64111c1d23a3417fa603",
+      "value": {
+        "epoch": "4",
+        "newWork": false,
+        "recovery": false,
+        "active": 0,
+        "uncertain": 0,
+        "operations": [
+          {
+            "id": "cb0d22d2-1a7b-43c2-a508-e0f24e11e61f",
+            "producer_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "source_sha": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+            "role_oid": "16386",
+            "epoch": "3",
+            "kind": "recovery",
+            "state": "completed",
+            "started_at": "2026-11-06T03:14:10.227Z",
+            "completed_at": "2026-11-06T03:14:10.303Z",
+            "reconciliation_sha256": null
+          },
+          {
+            "id": "23e313a9-8ade-4876-8f4f-c8d5327841ee",
+            "producer_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "source_sha": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+            "role_oid": "16386",
+            "epoch": "3",
+            "kind": "recovery",
+            "state": "completed",
+            "started_at": "2026-11-06T03:14:10.314Z",
+            "completed_at": "2026-11-06T03:14:10.316Z",
+            "reconciliation_sha256": null
+          }
+        ],
+        "commands": [
+          {
+            "command_id": "500f4f74-3a47-43f5-a5f0-efe442de9b05",
+            "account_version": "1",
+            "action": "suspend"
+          },
+          {
+            "command_id": "98289e61-85d3-4e48-a61f-7b4c504e853a",
+            "account_version": "2",
+            "action": "restore"
+          }
+        ],
+        "deliveries": [
+          {
+            "command_id": "500f4f74-3a47-43f5-a5f0-efe442de9b05",
+            "receiver": "community",
+            "status": "acknowledged",
+            "attempts": 1,
+            "acknowledged_at": "2026-11-06T03:14:10.272Z",
+            "lease_until": null
+          },
+          {
+            "command_id": "500f4f74-3a47-43f5-a5f0-efe442de9b05",
+            "receiver": "course",
+            "status": "acknowledged",
+            "attempts": 1,
+            "acknowledged_at": "2026-11-06T03:14:10.281Z",
+            "lease_until": null
+          },
+          {
+            "command_id": "98289e61-85d3-4e48-a61f-7b4c504e853a",
+            "receiver": "community",
+            "status": "acknowledged",
+            "attempts": 1,
+            "acknowledged_at": "2026-11-06T03:14:10.291Z",
+            "lease_until": null
+          },
+          {
+            "command_id": "98289e61-85d3-4e48-a61f-7b4c504e853a",
+            "receiver": "course",
+            "status": "acknowledged",
+            "attempts": 1,
+            "acknowledged_at": "2026-11-06T03:14:10.298Z",
+            "lease_until": null
+          }
+        ],
+        "orderViolations": []
+      }
+    },
+    {
+      "name": "p2-native-disable-intent.json",
+      "sha256": "307d86e830337eb7af32b34edebd3c4103aa5c2f63cf755d794212db9d069c02",
+      "value": {
+        "planSha256": "01226e0fa08ad328f76ded5deb475abf2d7964dd751320cbe8b251854e679d25",
+        "windowEpoch": "3"
+      }
+    },
+    {
+      "name": "p2-native-enable-intent.json",
+      "sha256": "c30b105590c760c69a1697220a93d845e7c3c9f6071ea4975f8e43f477a27928",
+      "value": {
+        "planSha256": "01226e0fa08ad328f76ded5deb475abf2d7964dd751320cbe8b251854e679d25",
+        "windowEpoch": "3",
+        "schedule": {
+          "path": "/api/cron/account-lifecycle",
+          "schedule": "* * * * *"
+        }
+      }
+    },
+    {
+      "name": "p2-native-final-ledger-observed.json",
+      "sha256": "deec40521c60dc91febb6aff59c981a3df73b64caf3b64111c1d23a3417fa603",
+      "value": {
+        "epoch": "4",
+        "newWork": false,
+        "recovery": false,
+        "active": 0,
+        "uncertain": 0,
+        "operations": [
+          {
+            "id": "cb0d22d2-1a7b-43c2-a508-e0f24e11e61f",
+            "producer_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "source_sha": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+            "role_oid": "16386",
+            "epoch": "3",
+            "kind": "recovery",
+            "state": "completed",
+            "started_at": "2026-11-06T03:14:10.227Z",
+            "completed_at": "2026-11-06T03:14:10.303Z",
+            "reconciliation_sha256": null
+          },
+          {
+            "id": "23e313a9-8ade-4876-8f4f-c8d5327841ee",
+            "producer_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "source_sha": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+            "role_oid": "16386",
+            "epoch": "3",
+            "kind": "recovery",
+            "state": "completed",
+            "started_at": "2026-11-06T03:14:10.314Z",
+            "completed_at": "2026-11-06T03:14:10.316Z",
+            "reconciliation_sha256": null
+          }
+        ],
+        "commands": [
+          {
+            "command_id": "500f4f74-3a47-43f5-a5f0-efe442de9b05",
+            "account_version": "1",
+            "action": "suspend"
+          },
+          {
+            "command_id": "98289e61-85d3-4e48-a61f-7b4c504e853a",
+            "account_version": "2",
+            "action": "restore"
+          }
+        ],
+        "deliveries": [
+          {
+            "command_id": "500f4f74-3a47-43f5-a5f0-efe442de9b05",
+            "receiver": "community",
+            "status": "acknowledged",
+            "attempts": 1,
+            "acknowledged_at": "2026-11-06T03:14:10.272Z",
+            "lease_until": null
+          },
+          {
+            "command_id": "500f4f74-3a47-43f5-a5f0-efe442de9b05",
+            "receiver": "course",
+            "status": "acknowledged",
+            "attempts": 1,
+            "acknowledged_at": "2026-11-06T03:14:10.281Z",
+            "lease_until": null
+          },
+          {
+            "command_id": "98289e61-85d3-4e48-a61f-7b4c504e853a",
+            "receiver": "community",
+            "status": "acknowledged",
+            "attempts": 1,
+            "acknowledged_at": "2026-11-06T03:14:10.291Z",
+            "lease_until": null
+          },
+          {
+            "command_id": "98289e61-85d3-4e48-a61f-7b4c504e853a",
+            "receiver": "course",
+            "status": "acknowledged",
+            "attempts": 1,
+            "acknowledged_at": "2026-11-06T03:14:10.298Z",
+            "lease_until": null
+          }
+        ],
+        "orderViolations": []
+      }
+    },
+    {
+      "name": "p2-native-outcome.json",
+      "sha256": "26467e02927bfe35ef027c3674892228c8e4ec4389253ad68f99644407b660f4",
+      "value": {
+        "version": 1,
+        "actionId": "owned-native",
+        "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+        "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+        "deploymentId": "dpl_ownedNative",
+        "planSha256": "01226e0fa08ad328f76ded5deb475abf2d7964dd751320cbe8b251854e679d25",
+        "status": "P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED",
+        "phase": "final-closed-boundary",
+        "windowEpoch": "3",
+        "nativeEnableAttempted": true,
+        "nativeDisableAttempted": true,
+        "enableMutationOutcome": "observed-enabled",
+        "disableMutationOutcome": "observed-disabled",
+        "failurePhases": [],
+        "nativeEnabled": false,
+        "finalAdmission": {
+          "epoch": "4",
+          "newWork": false,
+          "recovery": false,
+          "active": 0,
+          "uncertain": 0
+        },
+        "nativeInvocationObserved": true,
+        "nativeLedgerCorrelationVerified": true,
+        "orderedReceiverPersistenceVerified": true,
+        "sourceAdmissionFenceVerified": true,
+        "providerQueuedInvocations": null,
+        "providerActiveInvocations": null,
+        "providerCancellationVerified": false,
+        "admissionMutationUnknown": false,
+        "automaticReplayAllowed": false,
+        "finalDisposition": "disabled-and-admission-closed",
+        "wholeReleaseAccepted": false,
+        "migrationAuthorized": false
+      }
+    },
+    {
+      "name": "p2-native-recovery-only-intent.json",
+      "sha256": "8745ae29d9c86200b5b234c9d8b64569b543705aa294a73ef91704ec48895504",
+      "value": {
+        "planSha256": "01226e0fa08ad328f76ded5deb475abf2d7964dd751320cbe8b251854e679d25",
+        "epoch": "2",
+        "newWork": false,
+        "recovery": true
+      }
+    },
+    {
+      "name": "p2-native-recovery-only-observed.json",
+      "sha256": "eafff41e6212dacf5136f1ff905ad8a17ebef9341cab1b7e945b457bb12523b8",
+      "value": {
+        "epoch": "3",
+        "newWork": false,
+        "recovery": true,
+        "active": 0,
+        "uncertain": 0,
+        "operations": [],
+        "commands": [
+          {
+            "command_id": "500f4f74-3a47-43f5-a5f0-efe442de9b05",
+            "account_version": "1",
+            "action": "suspend"
+          },
+          {
+            "command_id": "98289e61-85d3-4e48-a61f-7b4c504e853a",
+            "account_version": "2",
+            "action": "restore"
+          }
+        ],
+        "deliveries": [
+          {
+            "command_id": "500f4f74-3a47-43f5-a5f0-efe442de9b05",
+            "receiver": "community",
+            "status": "pending",
+            "attempts": 0,
+            "acknowledged_at": null,
+            "lease_until": null
+          },
+          {
+            "command_id": "500f4f74-3a47-43f5-a5f0-efe442de9b05",
+            "receiver": "course",
+            "status": "pending",
+            "attempts": 0,
+            "acknowledged_at": null,
+            "lease_until": null
+          },
+          {
+            "command_id": "98289e61-85d3-4e48-a61f-7b4c504e853a",
+            "receiver": "community",
+            "status": "pending",
+            "attempts": 0,
+            "acknowledged_at": null,
+            "lease_until": null
+          },
+          {
+            "command_id": "98289e61-85d3-4e48-a61f-7b4c504e853a",
+            "receiver": "course",
+            "status": "pending",
+            "attempts": 0,
+            "acknowledged_at": null,
+            "lease_until": null
+          }
+        ],
+        "orderViolations": []
+      }
+    },
+    {
+      "name": "p2-native-request-observations.json",
+      "sha256": "36c43d3f3df340bf8f35071e19163d8beeee7b5bf45e9cbddf3156b55f5a6333",
+      "value": [
+        {
+          "version": 1,
+          "kind": "vercel-native-request-details",
+          "reviewerGithubUserId": "8996309",
+          "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+          "deploymentId": "dpl_ownedNative",
+          "path": "/api/cron/account-lifecycle",
+          "method": "GET",
+          "providerRequestTypeFilter": "cron",
+          "providerRequestId": "owned-provider-8266f830-19d1-475f-a4fc-fd1fcf69a388",
+          "startedAt": "2026-11-06T03:14:10.219Z",
+          "completedAt": "2026-11-06T03:14:10.303Z",
+          "httpStatus": 200,
+          "logScope": "this-provider-request-details",
+          "admittedLogLine": "{\"version\":1,\"status\":\"P2_LIFECYCLE_CRON_ADMITTED\",\"environment\":\"staging\",\"projectId\":\"prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM\",\"operationId\":\"cb0d22d2-1a7b-43c2-a508-e0f24e11e61f\",\"kind\":\"recovery\",\"epoch\":\"3\",\"producerSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"sourceCommit\":\"5d26e3e53e923d9dc942940cad2284a328c10fbf\",\"targetSha256\":\"cd02ef8692aa848526700879a87196133a9661fca5ce0b6063509614258b11d9\"}",
+          "event": {
+            "version": 1,
+            "status": "P2_LIFECYCLE_CRON_ADMITTED",
+            "environment": "staging",
+            "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+            "operationId": "cb0d22d2-1a7b-43c2-a508-e0f24e11e61f",
+            "kind": "recovery",
+            "epoch": "3",
+            "producerSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+            "targetSha256": "cd02ef8692aa848526700879a87196133a9661fca5ce0b6063509614258b11d9"
+          },
+          "observationSha256": "595c70c3d8e8c189fe51d68bd1d3c2d1c252a46439ca7b54f33b2294240248ac"
+        },
+        {
+          "version": 1,
+          "kind": "vercel-native-request-details",
+          "reviewerGithubUserId": "8996309",
+          "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+          "deploymentId": "dpl_ownedNative",
+          "path": "/api/cron/account-lifecycle",
+          "method": "GET",
+          "providerRequestTypeFilter": "cron",
+          "providerRequestId": "owned-provider-26f45cf5-911b-4bb7-999d-f5e80bb4bad6",
+          "startedAt": "2026-11-06T03:14:10.306Z",
+          "completedAt": "2026-11-06T03:14:10.317Z",
+          "httpStatus": 200,
+          "logScope": "this-provider-request-details",
+          "admittedLogLine": "{\"version\":1,\"status\":\"P2_LIFECYCLE_CRON_ADMITTED\",\"environment\":\"staging\",\"projectId\":\"prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM\",\"operationId\":\"23e313a9-8ade-4876-8f4f-c8d5327841ee\",\"kind\":\"recovery\",\"epoch\":\"3\",\"producerSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"sourceCommit\":\"5d26e3e53e923d9dc942940cad2284a328c10fbf\",\"targetSha256\":\"cd02ef8692aa848526700879a87196133a9661fca5ce0b6063509614258b11d9\"}",
+          "event": {
+            "version": 1,
+            "status": "P2_LIFECYCLE_CRON_ADMITTED",
+            "environment": "staging",
+            "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+            "operationId": "23e313a9-8ade-4876-8f4f-c8d5327841ee",
+            "kind": "recovery",
+            "epoch": "3",
+            "producerSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+            "targetSha256": "cd02ef8692aa848526700879a87196133a9661fca5ce0b6063509614258b11d9"
+          },
+          "observationSha256": "389f1acf83e80a89ae509035bebd33b254116c25532ff0d68b45dc95a2c4fc1e"
+        },
+        {
+          "version": 1,
+          "kind": "vercel-native-request-details",
+          "reviewerGithubUserId": "8996309",
+          "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+          "deploymentId": "dpl_ownedNative",
+          "path": "/api/cron/account-lifecycle",
+          "method": "GET",
+          "providerRequestTypeFilter": "cron",
+          "providerRequestId": "owned-provider-9bbe248f-c190-4d74-a938-a751b6e486b4",
+          "startedAt": "2026-11-06T03:14:10.368Z",
+          "completedAt": "2026-11-06T03:14:10.375Z",
+          "httpStatus": 503,
+          "logScope": "this-provider-request-details",
+          "admittedLogLine": null,
+          "event": null,
+          "observationSha256": "84a2bab134276265bf29997e6f4210cf3fdf886e00c1bf7b05f5c4c057b9b71e"
+        }
+      ]
+    },
+    {
+      "name": "p2-native-runtime-preflight.json",
+      "sha256": "c54a6b367954ec64c0f54b116f1ecf9363547aaa232aafdc85ed12e80eeac85e",
+      "value": {
+        "planSha256": "01226e0fa08ad328f76ded5deb475abf2d7964dd751320cbe8b251854e679d25",
+        "observation": {
+          "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+          "deploymentId": "dpl_ownedNative",
+          "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+          "deploymentUrl": "https://owned-native.vercel.app",
+          "configurationRecordSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "nativeEnabled": false,
+          "schedule": {
+            "path": "/api/cron/account-lifecycle",
+            "schedule": "* * * * *"
+          },
+          "featureControls": {
+            "INTEGRATION_CUSTOMER_ACCESS_ENABLED": true,
+            "INTEGRATION_COURSE_READS_ENABLED": true,
+            "INTEGRATION_CHECKOUT_ENABLED": false,
+            "INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED": true,
+            "INTEGRATION_COMMUNITY_READS_ENABLED": true,
+            "INTEGRATION_COMMUNITY_WRITES_ENABLED": true,
+            "INTEGRATION_LEARNING_ROUTES_ENABLED": true,
+            "CUSTOMER_AUTH_ENABLED": true,
+            "CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED": true,
+            "CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED": true
+          },
+          "writerAdmissionBinding": {
+            "mode": "enforce",
+            "targetSha256": "cd02ef8692aa848526700879a87196133a9661fca5ce0b6063509614258b11d9",
+            "producerSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+            "roleName": "frontend_runtime"
+          }
+        }
+      }
+    },
+    {
+      "name": "p2-native-started.json",
+      "sha256": "fa8202570308f9d03af01355f8000423ba652e544826a5f6012d91734d5aea3b",
+      "value": {
+        "version": 1,
+        "environment": "staging",
+        "actionId": "owned-native",
+        "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+        "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+        "candidateSha256": "f208ad4e9bd5309ad6683a23ec707e2246e620d7e82fcc495760132fcbca7b3d",
+        "phase2ContractManifestSha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "sourcePolicy": {
+          "src/app/api/cron/account-lifecycle/route.ts": "a42e9786c20525a9d2a1a6c574913f841d14c37ab9ce54e00f2ad15c424b1a1b",
+          "src/lib/customer-lifecycle/cron.ts": "a5c122cd7e8bb1ac663a1b36e628d24b44fe01407fac43674c992cc5a705d4f1",
+          "src/lib/customer-lifecycle/context.ts": "c88a1cc943fc8403e4aa8ff225a79cd2c86746d605ae41261c4457574a990a24",
+          "src/lib/customer-lifecycle/worker.ts": "6ba8a493f9267bab172cbce9899644a4c298758a8ada5e5d5f1aa09ef6d7f90e",
+          "src/lib/customer-lifecycle/store.ts": "6dd02a6006432fbfe4184dd44e58ffbbeae28760df2a9a355328297d36d42bcc",
+          "src/lib/writer-admission/runtime.ts": "b3939e6cc76c028137b7e28cb21c0bf89e36a8d67c2b5e6503c20aebb032c376",
+          "src/lib/writer-admission/context.ts": "79999820266972cbe58881ce58099198c5d47de8461808ffa002e99b8d3dee38",
+          "src/lib/writer-admission/config.ts": "da308d0aef19c443d0f4d1ee7f52244ce11e60aee943ebbadd576b097cbc3c1b",
+          "src/lib/api-integration/account-lifecycle-client.ts": "756fa4eb0c5ef24cc9b8143855cae64d7eeaaa4e3c3e32a06382412272a0ad3b",
+          "ops/platform/frontend-admission.mjs": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
+          "ops/platform/frontend-admission.sql": "b8ec48242871a6e44fef415b127709e9b107a60751e47bc0fa328b99244ab6ab",
+          "src/lib/customer-lifecycle/native-trace.ts": "3c88d9f7e81e9951b3e0df67f2401bdbe8c973c63823ceb9eea2b58ec3a3bf08",
+          "src/app/api/internal/release-probe/handler.ts": "b480f6e4dbcc1b6349c2f6078f29837bbc55650b7f0ebf86fd219fae9c9ad12d"
+        },
+        "deploymentId": "dpl_ownedNative",
+        "deploymentUrl": "https://owned-native.vercel.app",
+        "configurationRecordSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "featureControls": {
+          "INTEGRATION_CUSTOMER_ACCESS_ENABLED": true,
+          "INTEGRATION_COURSE_READS_ENABLED": true,
+          "INTEGRATION_CHECKOUT_ENABLED": false,
+          "INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED": true,
+          "INTEGRATION_COMMUNITY_READS_ENABLED": true,
+          "INTEGRATION_COMMUNITY_WRITES_ENABLED": true,
+          "INTEGRATION_LEARNING_ROUTES_ENABLED": true,
+          "CUSTOMER_AUTH_ENABLED": true,
+          "CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED": true,
+          "CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED": true
+        },
+        "targetSha256": "cd02ef8692aa848526700879a87196133a9661fca5ce0b6063509614258b11d9",
+        "target": {
+          "host": "127.0.0.1",
+          "port": 64790,
+          "database": "frontend_admission_owned",
+          "user": "frontend_test_admin",
+          "serverMajor": 16
+        },
+        "owner": {
+          "name": "admission_owner",
+          "oid": "16385"
+        },
+        "producer": {
+          "producerSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "role": {
+            "name": "frontend_runtime",
+            "oid": "16386"
+          }
+        },
+        "initialEpoch": "2",
+        "schedule": {
+          "path": "/api/cron/account-lifecycle",
+          "schedule": "* * * * *"
+        },
+        "windowSeconds": 60,
+        "drainSeconds": 2,
+        "commandWitnesses": [
+          {
+            "commandId": "500f4f74-3a47-43f5-a5f0-efe442de9b05",
+            "accountVersion": "1",
+            "action": "suspend"
+          },
+          {
+            "commandId": "98289e61-85d3-4e48-a61f-7b4c504e853a",
+            "accountVersion": "2",
+            "action": "restore"
+          }
+        ],
+        "writerAdmissionBinding": {
+          "mode": "enforce",
+          "targetSha256": "cd02ef8692aa848526700879a87196133a9661fca5ce0b6063509614258b11d9",
+          "producerSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "sourceCommit": "5d26e3e53e923d9dc942940cad2284a328c10fbf",
+          "roleName": "frontend_runtime"
+        },
+        "finalDisposition": "disabled-and-admission-closed",
+        "providerQueuedInventory": null,
+        "automaticReplayAllowed": false,
+        "migrationAuthorized": false,
+        "wholeReleaseAccepted": false,
+        "planSha256": "01226e0fa08ad328f76ded5deb475abf2d7964dd751320cbe8b251854e679d25",
+        "status": "P2_LIFECYCLE_NATIVE_STARTED"
+      }
+    }
+  ],
+  "sourceModuleSha256": "ea5467ef9f5980e1a96cc61f9648390bc4cb9a41d765af30c2d1577a3e3404dd",
+  "postgresMajor": 16,
+  "migrations": 83,
+  "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+  "fixtureOnly": true,
+  "actualVercelNativeEvidence": false,
+  "providerTouched": false
+}
