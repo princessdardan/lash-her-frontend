@@ -593,7 +593,8 @@ class P2CertificationBroker(Broker):
         if operation=='known-arm':
             recorder._verify();known.validate_baseline(recorder.plan,recorder._snapshot())
             require(self._native_observe()['nativeEnabled'] is False,'P2_CERTIFICATION_KNOWN_ACK_NATIVE_OFF_BEFORE_ARM')
-            return self.fault_stage.arm({'commandId':recorder.command['commandId'],'accountVersion':int(recorder.command['accountVersion']),'canonicalSha256':recorder.plan['commandSha256']})
+            observed=self.fault_stage.arm({'commandId':recorder.command['commandId'],'accountVersion':int(recorder.command['accountVersion']),'canonicalSha256':recorder.plan['commandSha256']})
+            recorder._verify();return observed
         if operation=='known-start-window':recorder.start_native_window();return {'status':'P2_KNOWN_ACK_NATIVE_WINDOW_STARTED'}
         if operation=='known-domain':return recorder.observe_domain()
         if operation=='known-requests':return recorder.retain_request_details(value.get('requestArtifact'))

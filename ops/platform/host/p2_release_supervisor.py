@@ -56,14 +56,24 @@ def action_id(initial):
 
 
 def cleanup_recovery_current_containers():
-    # Only the recovery helper's fixed read-only container names. Matching IDs
-    # are read from Docker, never supplied by an operator packet.
-    pattern = '^/lash-p2-recovery-current-(course|community)-[a-f0-9]{32}$'
-    query = ['docker', 'container', 'ls', '--all', '--filter', 'name=' + pattern, '--format', '{{.ID}}']
-    for identity in runtime.command(query, runtime.SAFE_ENV, 15).splitlines():
-        require(re.fullmatch(r'[a-f0-9]{12,64}', identity), 'P2_GUARD_RECOVERY_CONTAINER_ID_REFUSED')
-        runtime.command(['docker', 'rm', '--force', identity], runtime.SAFE_ENV, 30)
-    require(not runtime.command(query, runtime.SAFE_ENV, 15), 'P2_GUARD_RECOVERY_CONTAINER_REMAINS')
+    # Both source-fixed read-only namespaces are independent of a revoked
+    # mutator scope. Never accept a prefix or container ID from operator JSON.
+    failed=None
+    for pattern in ('^/lash-p2-recovery-current-(course|community)-[a-f0-9]{32}$',
+                    '^/lash-p2-certification-observer-[a-f0-9]{32}$'):
+        query=['docker','container','ls','--all','--filter','name='+pattern,'--format','{{.ID}}']
+        try:
+            for identity in runtime.command(query,runtime.SAFE_ENV,15).splitlines():
+                if not re.fullmatch(r'[a-f0-9]{12,64}',identity):
+                    failed=failed or 'P2_GUARD_RECOVERY_CONTAINER_ID_REFUSED';continue
+                try:runtime.command(['docker','rm','--force',identity],runtime.SAFE_ENV,30)
+                except BaseException:failed=failed or 'P2_GUARD_READONLY_CONTAINER_CLEANUP_UNKNOWN'
+        except BaseException:failed=failed or 'P2_GUARD_READONLY_CONTAINER_CLEANUP_UNKNOWN'
+        # Even a failed rm does not skip absence readback or the other namespace.
+        try:
+            if runtime.command(query,runtime.SAFE_ENV,15):failed=failed or 'P2_GUARD_RECOVERY_CONTAINER_REMAINS'
+        except BaseException:failed=failed or 'P2_GUARD_READONLY_CONTAINER_CLEANUP_UNKNOWN'
+    if failed:raise ValueError(failed)
 
 
 def cleanup_rotation_readonly_containers():

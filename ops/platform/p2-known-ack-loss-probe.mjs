@@ -37,11 +37,27 @@ const BACKEND_PROJECTIONS=Object.freeze({
     exports:"SELECT command_id,account_version,ready_at,expires_at FROM public.account_lifecycle_exports ORDER BY command_id LIMIT 1001"
   })
 });
-export async function observeKnownAckBackend(client,service,deadline){
-  demand(Object.hasOwn(BACKEND_PROJECTIONS,service)&&typeof deadline==='string'&&iso(deadline)===deadline);
+export async function observeKnownAckBackend(client,service,deadline,selected){
+  demand(Object.hasOwn(BACKEND_PROJECTIONS,service)&&typeof deadline==='string'&&iso(deadline)===deadline&&uuid(selected?.commandId)&&
+    /^[1-9][0-9]{0,17}$/u.test(selected.accountVersion??'')&&/^[a-f0-9]{64}$/u.test(selected.commandSha256??'')&&/^[a-f0-9]{64}$/u.test(selected.userBindingSha256??''));
   const clock=(await client.query('SELECT pg_catalog.clock_timestamp() AS now')).rows[0].now;
   const end=Date.parse(deadline),now=new Date(clock).getTime();demand(end>now&&end<=now+905000);
   const rows={};for(const [key,sql]of Object.entries(BACKEND_PROJECTIONS[service])){rows[key]=(await client.query(sql)).rows;demand(rows[key].length<=1000);}
+  const commands=(await client.query('SELECT command_id::text,user_id::text,account_version::text,action,canonical_digest,issued_at,accepted_at FROM public.account_lifecycle_commands ORDER BY command_id LIMIT 1001')).rows;
+  const states=(await client.query('SELECT user_id::text,account_version::text,status,updated_at FROM public.account_lifecycle_states ORDER BY user_id LIMIT 1001')).rows;
+  demand(commands.length<=1000&&states.length<=1000);
+  const known=commands.filter(row=>row.command_id===selected.commandId),state=states.filter(row=>sha(row.user_id)===selected.userBindingSha256);
+  demand(known.length<=1&&state.length<=1);
+  if(known.length)demand(sha(known[0].user_id)===selected.userBindingSha256&&known[0].account_version===selected.accountVersion&&known[0].action==='suspend'&&
+    known[0].canonical_digest===selected.commandSha256&&state.length===1&&state[0].status==='suspended'&&state[0].account_version===selected.accountVersion&&iso(state[0].updated_at)===iso(known[0].accepted_at));
+  else demand(state.length===0&&selected.accountVersion==='1'||state.length===1&&BigInt(state[0].account_version)+1n===BigInt(selected.accountVersion)&&['active','suspended'].includes(state[0].status));
+  rows.lifecycleCommands=commands.filter(row=>row.command_id!==selected.commandId);
+  rows.lifecycleStates=states.filter(row=>sha(row.user_id)!==selected.userBindingSha256);
+  // Only this exact source-bound expected transition is projected separately.
+  // All unrelated immutable commands and mutable states remain in the digest.
+  const selectedLifecycleCommand=known.length?{commandId:known[0].command_id,userBindingSha256:sha(known[0].user_id),accountVersion:known[0].account_version,
+    action:known[0].action,commandSha256:known[0].canonical_digest,acceptedAt:iso(known[0].accepted_at)}:null;
+  const selectedLifecycleState=state.length?{userBindingSha256:sha(state[0].user_id),accountVersion:state[0].account_version,status:state[0].status,updatedAt:iso(state[0].updated_at)}:null;
   const at=value=>value===null?null:new Date(value).getTime();
   const due=value=>value!==null&&at(value)<=end;
   let eligible;
@@ -62,7 +78,7 @@ export async function observeKnownAckBackend(client,service,deadline){
       reconciliationSchedule:reconciliation===null||reconciliation>now||reconciliation+86400000<=end?1:0,
       retentionSchedule:retention===null||retention>now||retention+86400000<=end?1:0};
   }
-  return{version:1,status:'P2_KNOWN_ACK_BACKEND_OBSERVED',deadline,eligible,rowCounts:Object.fromEntries(Object.entries(rows).map(([key,value])=>[key,value.length])),snapshotSha256:sha(rows)};
+  return{version:1,status:'P2_KNOWN_ACK_BACKEND_OBSERVED',deadline,eligible,rowCounts:Object.fromEntries(Object.entries(rows).map(([key,value])=>[key,value.length])),snapshotSha256:sha(rows),selectedLifecycleCommand,selectedLifecycleState};
 }
 export function readKnownAckRuntimeDatabaseUrl(environment=process.env){
   demand(environment.NODE_ENV==='production'&&environment.DATABASE_TARGET==='staging'&&typeof environment.STAGING_DATABASE_URL==='string'&&
@@ -104,7 +120,7 @@ export async function observeKnownAckSql(input,{getUrl}){
         return{version:1,status:'P2_KNOWN_ACK_SQL_CURRENT',service:'frontend',roleOid:actual.role_oid,commandId:input.commandId,userBindingSha256:sha(row.user_id),accountVersion:row.account_version,commandSha256:sha(row.command),
           accountStatus:user[0].status,deliveries:deliveries.map(dates),outstanding:outstanding.map(dates),exports,later,admission:{epoch:control[0].epoch,newWork:control[0].new_work,recovery:control[0].recovery,...global},operations:operations.map(dates),readOnly:true};
       }
-      const backend=await observeKnownAckBackend(client,input.service,input.backendDeadline);
+      const backend=await observeKnownAckBackend(client,input.service,input.backendDeadline,{commandId:input.commandId,accountVersion:input.accountVersion,commandSha256:input.commandSha256,userBindingSha256:input.selectedUserBindingSha256});
       const rows=(await client.query('SELECT command_id::text,user_id::text,account_version::text,action,canonical_digest,accepted_at FROM public.account_lifecycle_commands WHERE command_id=$1::uuid',[input.commandId])).rows;
       demand(rows.length<=1);
       if(!rows.length)return{version:1,status:'P2_KNOWN_ACK_SQL_CURRENT',service:input.service,roleOid:actual.role_oid,commandId:input.commandId,command:null,backend,readOnly:true};

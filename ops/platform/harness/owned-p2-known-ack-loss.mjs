@@ -14,7 +14,7 @@ import {Client} from 'pg';
 import {createGateway} from '../../gateway/server.mjs';
 import {createP2CertificationFault,p2GatewayProcessBinding} from '../../gateway/p2-certification-fault.mjs';
 import {changeFrontendAdmission,reconcileFrontendOperation} from '../frontend-admission.mjs';
-import {observeKnownAckSql,observeKnownAckBackend,readKnownAckRuntimeDatabaseUrl} from '../p2-known-ack-loss-probe.mjs';
+import {observeKnownAckSql,observeKnownAckBackend as observeBackendSource,readKnownAckRuntimeDatabaseUrl} from '../p2-known-ack-loss-probe.mjs';
 let phase='owned-input',observed;
 async function main(){
  assert.equal(process.env.P2_NATIVE_OWNED_CHILD,'true');const input=JSON.parse(readFileSync(0));const {target,port,password,runtime,owner,targetSha256,certificate,key,sourceCommit,directory}=input;
@@ -60,6 +60,8 @@ async function main(){
   const save=recovery=>writeFileSync(admissionFile,JSON.stringify({version:1,environment:'staging',candidateSha256,releaseId,actionId:'owned-known-ack',newWork:false,recovery}));save(true);
   const canonical=value=>JSON.stringify(value,(_key,child)=>child&&typeof child==='object'&&!Array.isArray(child)?Object.fromEntries(Object.entries(child).sort(([a],[b])=>a.localeCompare(b))):child);
   const hash=value=>createHash('sha256').update(value).digest('hex');
+  const selectedLifecycle={commandId:command.commandId,accountVersion:'1',commandSha256:hash(canonical(command)),userBindingSha256:hash(customerId)};
+  const observeKnownAckBackend=(client,service,deadline)=>observeBackendSource(client,service,deadline,selectedLifecycle);
   const config={issuer:'https://oidc.vercel.com/test-team',audience:'https://vercel.com/test-team',subject:'owner:test-team:project:test-project:environment:production',ownerId:VERCEL_PROJECT_BINDINGS.teamId,projectId:VERCEL_PROJECT_BINDINGS.stagingProjectId,
    environment:'production',appEnv:'staging',publicHost:'api-staging.lashher.com',courseOrigin:origins.course,communityOrigin:origins.community,tlsKeyFile:key,tlsCertFile:certificate,upstreamCaFile:certificate,admission:{file:admissionFile,candidateSha256,releaseId}};
   const now=Date.now();let faultEnabled=true;
@@ -174,7 +176,23 @@ async function main(){
   await fault('completed-community-effect-projection','community',client=>client.query("INSERT INTO course_enrollment_projections(stream_id,user_id,course_id,state,applied_version,highest_observed_version,status,source,effective_at) VALUES($1,$2,$3,'active',1,1,'current','event',now())",[randomUUID(),randomUUID(),randomUUID()]),false);
   await fault('community-reconciliation-work','community',client=>client.query("UPDATE course_enrollment_reconciliations SET status='running'"),'reconciliations');
   await fault('community-reconciliation-schedule-horizon','community',client=>client.query("UPDATE course_enrollment_reconciliations SET requested_at=now()-interval '24 hours'+interval '5 minutes'"),'reconciliationSchedule');
-  const projection={version:1,commandId:command.commandId,commandSha256:hash(canonical(command)),accountVersion:'1',windowEpoch:opened.epoch,backendDeadline};
+  for(const service of ['course','community']){
+   phase='backend-unrelated-'+service+'-lifecycle-command';const rollback=new Error('OWNED_BACKEND_ROLLBACK');
+   assert.deepEqual(await observeKnownAckBackend(databases[service],service,backendDeadline),backendBefore[service]);
+   try{await models[service].transaction(async tx=>{
+    const repository=(await load(service,'src/accounts/lifecycle-repository.ts')).createAccountLifecycleRepository(tx);
+    await repository.receive({version:1,commandId:randomUUID(),userId:randomUUID(),accountVersion:1,action:'suspend',issuedAt:new Date().toISOString()});
+    const actual=await observeKnownAckBackend(databases[service],service,backendDeadline);
+    assert.ok(Object.values(actual.eligible).every(value=>value===0));assert.notEqual(actual.snapshotSha256,backendBefore[service].snapshotSha256);
+    assert.equal(actual.rowCounts.lifecycleCommands,backendBefore[service].rowCounts.lifecycleCommands+1);
+    assert.equal(actual.rowCounts.lifecycleStates,backendBefore[service].rowCounts.lifecycleStates+1);
+    backendFaults.push({name:'unrelated-'+service+'-lifecycle-command',service,backend:actual});throw rollback;
+   });}catch(error){assert.equal(error,rollback);}
+   assert.deepEqual(await observeKnownAckBackend(databases[service],service,backendDeadline),backendBefore[service]);
+  }
+  for(const service of ['course','community'])await fault('unrelated-'+service+'-mutable-lifecycle-state',service,
+   client=>client.query("INSERT INTO account_lifecycle_states(user_id,account_version,status,updated_at) VALUES($1,1,'suspended',now())",[randomUUID()]),false);
+  const projection={version:1,commandId:command.commandId,commandSha256:hash(canonical(command)),accountVersion:'1',windowEpoch:opened.epoch,backendDeadline,selectedUserBindingSha256:hash(customerId)};
   const readAll=async()=>{
    const frontend={...projection,service:'frontend',target,owner,marker,backendPid:backend.pid,backendStart:backend.started,targetSha256};
    const front=await observeKnownAckSql(frontend,{getUrl:()=>`postgresql://${target.user}:${password}@127.0.0.1:${port}/${target.database}?sslmode=verify-full`});

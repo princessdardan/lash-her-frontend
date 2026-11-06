@@ -1,6 +1,7 @@
 import fcntl
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import subprocess
@@ -14,6 +15,8 @@ from p2_release_broker import Broker
 from p2_release_scope import P2ReleaseScope
 from p2_release_supervisor import stop_group, watch_broker, close_gateway, fail_closed, sticky_cleanup_signals, finish_failure_cleanup, RECOVERY_LAYOUT, CERTIFICATION_LAYOUT
 import staging_admission
+import p2_release_scope_test as scope_fixture
+import p2_release_supervisor as supervisor
 from unittest.mock import patch
 
 
@@ -180,7 +183,7 @@ class IndependentGuardTests(unittest.TestCase):
         self.assertNotIn('nativeDisabled', result)
 
     def failure_closure_case(self, group=None, repeated_signal=False, retry=False, recovery=False, certification=False,
-                             native_result=None, native_error=False):
+                             native_result=None, native_error=False, helper_cleanup=None):
         results = self.root / 'results'; results.mkdir(mode=0o700)
         receipt_name = 'p2-certification-deliberate' if certification else 'p2-recovery-deliberate' if recovery else 'p2-owned'
         runtime_name = 'runtime-recovery-deliberate' if recovery else 'runtime-owned'
@@ -219,7 +222,7 @@ class IndependentGuardTests(unittest.TestCase):
         with patch('p2_release_supervisor.PhysicalObserver', Observer), \
              patch('p2_release_supervisor.private_observer_program', return_value=self.root / 'owned-program'), \
              patch('p2_release_supervisor.runtime.command', return_value=''), \
-             patch('p2_release_supervisor.cleanup_recovery_current_containers') as cleanup_current, \
+             patch('p2_release_supervisor.cleanup_recovery_current_containers',side_effect=helper_cleanup) as cleanup_current, \
              patch('p2_release_supervisor.stop_group', side_effect=[False, True, True] if retry else lambda *_: False), \
              patch('p2_release_supervisor.migrate.suspend_runtime', side_effect=stop), \
              patch.object(staging_admission.Host, 'state', side_effect=ValueError('unavailable')), sticky_cleanup_signals():
@@ -246,6 +249,28 @@ class IndependentGuardTests(unittest.TestCase):
         if recovery:
             self.assertTrue((results / receipt_name / 'p2-independent-guard-outcome.json').exists())
             self.assertFalse((results / 'p2-owned').exists())
+
+    def test_independent_certification_cleanup_runs_after_actual_scope_revocation(self):
+        owned=scope_fixture.P2ScopeTests();owned.setUp();self.addCleanup(owned.tearDown)
+        owned.scope.revoke()
+        with self.assertRaisesRegex(ValueError,'SCOPE_CLOSED'):owned.scope.run(['unreachable'],timeout=1)
+        names={'a'*12:'/lash-p2-certification-observer-'+'1'*32,'b'*12:'/lash-p2-certification-observer-'+'1'*31}
+        actual=supervisor.cleanup_recovery_current_containers
+        def command(args,*_):
+            if args[:3]==['docker','rm','--force']:names.pop(args[-1]);return ''
+            pattern=next(value[5:] for value in args if value.startswith('name='))
+            return '\n'.join(identity for identity,name in names.items() if re.fullmatch(pattern,name))
+        def cleanup():
+            with self.assertRaisesRegex(ValueError,'SCOPE_CLOSED'):owned.scope.verify()
+            with patch.object(supervisor.runtime,'command',side_effect=command):actual()
+        self.failure_closure_case(certification=True,helper_cleanup=cleanup)
+        self.assertEqual(set(names),{'b'*12})
+
+    def test_independent_unknown_helper_cleanup_does_not_skip_runtime_stop(self):
+        def cleanup():raise ValueError('P2_GUARD_READONLY_CONTAINER_CLEANUP_UNKNOWN')
+        self.failure_closure_case(certification=True,helper_cleanup=cleanup)
+        value=json.loads((self.root/'results/p2-certification-deliberate/p2-independent-guard-outcome.json').read_bytes())
+        self.assertTrue(value['recoveryCurrentContainerCleanupUncertain']);self.assertTrue(value['runtimeStopped'])
 
     def test_abort_notifies_independent_guard_before_fallible_process_cleanup(self):
         safety_r, safety_w = os.pipe(); health_r, health_w = os.pipe()

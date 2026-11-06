@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "status": "P2_KNOWN_ACK_B_REVIEW_CORRECTIONS_SOURCE_PREPARED",
+  "baseCommit": "696974c0502231d3196b1dcc02551d06d76ca6dc",
+  "findings": [
+    "B-PY-01-input-mounted-snapshot-compose-bytes",
+    "B-PY-02-independent-fixed-observer-cleanup",
+    "B-SQL-01-global-lifecycle-effects"
+  ],
+  "checks": {
+    "node": 23,
+    "host": 62,
+    "skipped": 0,
+    "ownedPostgresMajors": [
+      16,
+      18
+    ],
+    "migrations": {
+      "frontend": 83,
+      "course": 22,
+      "community": 11
+    },
+    "domainFaultRefusals": 11,
+    "backendFaultRefusals": 21,
+    "allThreeJournalsUnchanged": true
+  },
+  "fixtureOnly": true,
+  "providerTouched": false,
+  "actualHostDocker": false,
+  "sourceAuthorityIssuedByStandaloneFixture": false,
+  "sqlReplayed": false,
+  "roleChanged": false,
+  "unchangedGenericFiles": [
+    "ops/platform/host/p2_recovery_runtime.py",
+    "ops/platform/host/p2_recovery_scope.py",
+    "ops/platform/host/p2_release_scope.py",
+    "ops/platform/host/p2_prior_gateway.py"
+  ],
+  "onlySharedProductionChange": "ops/platform/host/p2_release_supervisor.py::cleanup_recovery_current_containers",
+  "newOpsFiles": 0,
+  "changedOpsFiles": 9,
+  "sourceDeltaBytes": 18117,
+  "open": [
+    "independent-committed-B-re-review",
+    "later-interrupted-known-ACK-fresh-action-C",
+    "real-backend-idle-prerequisites",
+    "Linux-Docker-SSH-replacement-containment",
+    "actual-native-and-staging-qualification",
+    "G2-S14"
+  ],
+  "sha256": {
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-b-corrections/README.md": "f30195681e5e0ca3de849b9a1170ca310b522af898a62e3d847fb4a79ea8ea96",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-b-corrections/host-tests.log": "4c2b14d8cd6efb064cbcc2edf9f0cfb39801bb7dd5c5e9049a09a01efd6e4e8b",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-b-corrections/node-tests.log": "efa1fbb33210ae970823b599ca7e09bd4360a1e8153abb7b5151ca8132ea59d1",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-b-corrections/owned-postgres16.json": "6ea595c5827d58ffb7a5cc38ea6dacb927026ceb36636548317ea5c5c062ce1f",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-b-corrections/owned-postgres18.json": "67b70d03282ae38e254cdf79ab91590f32640ed94ffac1cdcac96e69116ace43",
+    "ops/platform/harness/owned-p2-known-ack-loss.mjs": "eb1149fd634e263d04c421ccf92fd3ec9362432eaf11a14db080d771e8c0d8fe",
+    "ops/platform/host/p2_certification_parent.py": "ae098e31af01e1dfd10fe60850b2c3ad41f85adc625e8c26fc7a472cc2ef6b5a",
+    "ops/platform/host/p2_certification_parent_test.py": "a9a102a54184ad00db8d411a6623d7ccacb3b2f8aec169c1d9d76c902227a567",
+    "ops/platform/host/p2_known_ack_loss.py": "df4aa0aa6673eab6da2529435f3964f65786366f06383bd04bff9375d2d4b09f",
+    "ops/platform/host/p2_known_ack_loss_test.py": "541adb43e5be8d57dec256208906a2749cffd7f98189b5b897dc437e3573ce21",
+    "ops/platform/host/p2_release_guard_test.py": "0b6a3b41a9ebe2813f6c1ff3043f0e1fa6d591565e52b3813119fc1b16b709b9",
+    "ops/platform/host/p2_release_supervisor.py": "f00312d58067f063c452868756485e61086c3714b645c08e549635e870ce413a",
+    "ops/platform/host/p2_supervisor_dispatch_test.py": "9e33b291a40d2c972210005e074bd9b68a30bc09eceb7cf3b27ea9f3b239dab4",
+    "ops/platform/p2-known-ack-loss-probe.mjs": "1b685b6c2ea7c40bb129f92d05fb88a3a81eceb2a90f3fec90d9239a451c7991"
+  }
+}

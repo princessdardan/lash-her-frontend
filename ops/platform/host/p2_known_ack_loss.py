@@ -157,6 +157,7 @@ class P2KnownAckLossRecorder:
         require(self.broker.scope is self.scope and self.broker.fault_stage.plan==self.fault_plan and self.broker.initial['nativePlan']==self.plan['nativePlan'] and
             self.broker.initial['certificationPlan']['knownAckRecovery']==self.selection,'P2_KNOWN_ACK_SOURCE_INSTANCE_CHANGED')
         self.scope.require_frontend(self.broker.selected,self.broker.jobs['frontend']);self.scope.require_configuration(self.broker.configuration)
+        self.scope.require_configuration(self.configuration_input)
         require(digest(migrate.read_input(self.broker.source,MODULE))==self.source_sha256,'P2_KNOWN_ACK_READER_CHANGED')
 
     def _gateway(self):
@@ -166,7 +167,7 @@ class P2KnownAckLossRecorder:
             'P2_KNOWN_ACK_CURRENT_CANDIDATE_REQUIRED')
         return value
 
-    def _sql(self,service):
+    def _sql(self,service,selected_user_binding=None):
         self._verify();broker=self.broker
         payload={'version':1,'service':service,'commandId':self.command['commandId'],'accountVersion':self.command['accountVersion'],
             'commandSha256':self.plan['commandSha256'],'windowEpoch':self.window_epoch,'backendDeadline':self.backend_deadline}
@@ -180,6 +181,8 @@ class P2KnownAckLossRecorder:
             environment={**runtime.SAFE_ENV,'FRONTEND_STAGING_MIGRATION_DATABASE_URL':broker.initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL']}
         else:
             payload['target']=self.receiver_targets[service]
+            payload['selectedUserBindingSha256']=selected_user_binding or self.baseline['frontend']['userBindingSha256']
+            require(re.fullmatch(r'[a-f0-9]{64}',payload['selectedUserBindingSha256'] or ''),'P2_KNOWN_ACK_FRONTEND_USER_BINDING_REQUIRED')
             values=runtime.environment_values(migrate.read_input(self.configuration_input,service+'-api.env'),'staging',service+'-api',broker.jobs)
             identifier='lash-p2-certification-observer-'+uuid.uuid4().hex
             args=['docker','run','--rm','--name',identifier,'--interactive','--network','host','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges',
@@ -197,7 +200,7 @@ class P2KnownAckLossRecorder:
             self.scope.run(['docker','rm','--force',identifier],env=runtime.SAFE_ENV,timeout=15,capture_output=True,check=False)
 
     def _snapshot(self,allow_pending=False):
-        first=self._sql('frontend');receivers={service:self._sql(service) for service in ('course','community')};last=self._sql('frontend')
+        first=self._sql('frontend');receivers={service:self._sql(service,first['userBindingSha256']) for service in ('course','community')};last=self._sql('frontend')
         if first!=last:
             require(allow_pending,'P2_KNOWN_ACK_FRONTEND_CHANGED_DURING_RECEIVER_READ')
             validate_frontend_scope(self.plan,first);validate_frontend_scope(self.plan,last)
@@ -318,17 +321,28 @@ def validate_known_configuration_input(directory,mounted,selected,jobs,expected)
 def validate_backend_idle(snapshot,baseline=None):
     fields={'course':{'outbox','snapshots','media','exports','retention'},
         'community':{'repairs','reconciliations','exports','reconciliationSchedule','retentionSchedule'}}
-    projections={'course':{'control','outbox','operations','snapshots','snapshotItems','streams','media','exports'},
-        'community':{'repairs','reconciliations','operations','projections','inbox','tombstones','baselines','sourceItems','exports'}}
+    projections={'course':{'control','outbox','operations','snapshots','snapshotItems','streams','media','exports','lifecycleCommands','lifecycleStates'},
+        'community':{'repairs','reconciliations','operations','projections','inbox','tombstones','baselines','sourceItems','exports','lifecycleCommands','lifecycleStates'}}
     for service,expected in fields.items():
         value=snapshot[service].get('backend')
-        require(isinstance(value,dict) and set(value)=={'version','status','deadline','eligible','rowCounts','snapshotSha256'} and
+        require(isinstance(value,dict) and set(value)=={'version','status','deadline','eligible','rowCounts','snapshotSha256','selectedLifecycleCommand','selectedLifecycleState'} and
             value['version']==1 and value['status']=='P2_KNOWN_ACK_BACKEND_OBSERVED' and isinstance(value['deadline'],str) and
             set(value['eligible'])==expected and all(type(count) is int and count==0 for count in value['eligible'].values()) and
             set(value['rowCounts'])==projections[service] and all(type(count) is int and 0<=count<=1000 for count in value['rowCounts'].values()) and
             re.fullmatch(r'[a-f0-9]{64}',value['snapshotSha256'] or ''),'P2_KNOWN_ACK_UNRELATED_BACKEND_WORK_REFUSED')
         if baseline is not None:
-            require(value==baseline[service]['backend'],'P2_KNOWN_ACK_BACKEND_PROJECTION_CHANGED')
+            before=baseline[service]['backend'];changing={'selectedLifecycleCommand','selectedLifecycleState'}
+            require({key:item for key,item in value.items() if key not in changing}=={key:item for key,item in before.items() if key not in changing},'P2_KNOWN_ACK_BACKEND_PROJECTION_CHANGED')
+            known,state=value['selectedLifecycleCommand'],value['selectedLifecycleState']
+            if known is None:require(snapshot[service]['command'] is None and state==before['selectedLifecycleState'],'P2_KNOWN_ACK_UNDECLARED_SELECTED_STATE_CHANGED')
+            else:
+                command=snapshot[service]['command']
+                front=snapshot.get('frontend',baseline['frontend'])
+                require(command is not None and known=={'commandId':front['commandId'],'userBindingSha256':command['userBindingSha256'],
+                    'accountVersion':command['accountVersion'],'action':'suspend','commandSha256':command['commandSha256'],'acceptedAt':command['acceptedAt']} and
+                    isinstance(state,dict) and set(state)=={'userBindingSha256','accountVersion','status','updatedAt'} and state['userBindingSha256']==command['userBindingSha256'] and
+                    state['accountVersion']==command['accountVersion'] and state['status']=='suspended' and state['updatedAt']==known['acceptedAt'],
+                    'P2_KNOWN_ACK_SELECTED_SOURCE_TRANSITION_REQUIRED')
 
 
 def validate_baseline(plan,snapshot):
@@ -453,6 +467,9 @@ class KnownAckLossBoundary:
         self.output.mkdir(mode=0o700)
         self.runtime_output=self.output/'runtime-known-ack';self.runtime_output.mkdir(mode=0o700)
         self.snapshot=self.runtime_output/'configuration'
+        self.snapshot_bound=False
+        self.compose_bytes=migrate.read_input(broker.source,'ops/platform/compose.yaml')
+        require(self.selected['runtime']['composeSha256']=='sha256:'+digest(self.compose_bytes),'P2_KNOWN_ACK_EXACT_COMPOSE_SOURCE_REQUIRED')
         self.initial={key:copy.deepcopy(broker.initial[key]) for key in ('candidateSha256','hostMachineId','configurationSha256')}
         self.initial['recoveryActionId']=self.action
         self.command=_source_command(self.parent)
@@ -535,6 +552,10 @@ class KnownAckLossBoundary:
         with self.mutex:
             require(self in _BOUNDARIES and self.broker.scope is self.parent and self.broker.known_ack_recorder is self.recorder,'P2_KNOWN_ACK_SOURCE_BOUNDARY_CHANGED')
             self.parent.require_release(self.selected,self.jobs);self.parent.require_configuration(self.old_configuration);self.parent.require_configuration(self.input_configuration)
+            require(migrate.read_input(self.broker.source,'ops/platform/compose.yaml')==self.compose_bytes,'P2_KNOWN_ACK_COMPOSE_SOURCE_CHANGED')
+            if self.snapshot_bound:
+                self.parent.require_configuration(self.snapshot)
+                require(migrate.read_input(self.snapshot,'compose.yaml')==self.compose_bytes,'P2_KNOWN_ACK_RENDERED_COMPOSE_CHANGED')
             actual=self.broker.observer.probe('observe')['admission']
             require(actual['newWork'] is False and actual['recovery'] is False and actual['active']==actual['uncertain']==0 and
                 actual['epoch']==self.recorder.settlement['epoch'],'P2_KNOWN_ACK_PHYSICAL_CLOSED_ZERO_REQUIRED')
@@ -568,9 +589,16 @@ class KnownAckLossBoundary:
                     digest(migrate.read_input(self.output,prior.BEFORE_STOP))==self.before_stop_sha256 and prior._read_lineage()==self.stop_lineage,
                     'P2_KNOWN_ACK_STOP_RECEIPT_OR_LINEAGE_CHANGED')
 
+    def bind_snapshot(self,snapshot):
+        with self.mutex:
+            self.verify();require(not self.snapshot_bound and not self.started and snapshot==self.snapshot,'P2_KNOWN_ACK_EXACT_NEW_SNAPSHOT_REQUIRED')
+            self.parent.require_configuration(snapshot)
+            require(migrate.read_input(snapshot,'compose.yaml')==self.compose_bytes,'P2_KNOWN_ACK_RENDERED_COMPOSE_CHANGED')
+            self.snapshot_bound=True;self.verify()
+
     def before_stage(self,stage):
         with self.mutex:
-            self.verify();require(self.stage_active is None and self.stage_index<len(runtime.STAGES) and tuple(stage)==runtime.STAGES[self.stage_index] and not self.finished,
+            self.verify();require(self.snapshot_bound and self.stage_active is None and self.stage_index<len(runtime.STAGES) and tuple(stage)==runtime.STAGES[self.stage_index] and not self.finished,
                 'P2_KNOWN_ACK_FIXED_STAGE_ORDER_REQUIRED')
             self.recorder.verify_backend_idle()
             self._cache_environment(self.snapshot)
@@ -681,6 +709,7 @@ class KnownAckRecoveryScope(P2ReleaseScope):
     def initialize_runtime(self,snapshot,release):
         import staging_admission
         self.verify();require(snapshot==self.boundary.snapshot and release==self.release,'P2_KNOWN_ACK_EXACT_SNAPSHOT_REQUIRED')
+        self.boundary.bind_snapshot(snapshot)
         gateway=json.loads(migrate.read_input(snapshot,'gateway.json'))
         require(gateway.get('admission')=={'file':'/admission/state.json','releaseId':release['releaseId'],'candidateSha256':self.candidate_sha256},
             'P2_KNOWN_ACK_NEW_ADMISSION_BINDING_REQUIRED')

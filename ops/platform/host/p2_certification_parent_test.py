@@ -4,6 +4,7 @@ import copy
 import fcntl
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -15,6 +16,7 @@ from unittest.mock import patch
 import migrate
 import p2_release_scope_test as scope_fixture
 import p2_certification_parent as parent
+import p2_release_supervisor as supervisor
 
 
 class CertificationScopeTests(unittest.TestCase):
@@ -126,6 +128,21 @@ class CertificationProtocolTests(unittest.TestCase):
             aborted=threading.Thread(target=broker.abort);aborted.start();time.sleep(0.02);self.assertNotIn('disable',events);release.set()
             worker.join(2);aborted.join(2);self.assertFalse(aborted.is_alive())
         self.assertEqual(events,['toggle-start','toggle-end','disable']);self.assertTrue(broker.outcome['nativeDisabled'])
+
+    def test_surviving_broker_cleanup_uses_independent_fixed_namespace_after_scope_revocation(self):
+        owned=CertificationScopeTests();owned.setUp();self.addCleanup(owned.tearDown);scope=owned.certification()
+        broker=self.broker;broker.failed=threading.Event();broker.guard_alive=False;broker.native_mutex=threading.Lock()
+        broker.outcome={};broker.armed_probe={};broker.source=self.directory;broker.scope=scope
+        names={'a'*12:'/lash-p2-certification-observer-'+'1'*32,'b'*12:'/lash-p2-certification-observer-foreign'}
+        def failed(_):broker.failed.set();scope.revoke()
+        def command(args,*_):
+            with self.assertRaisesRegex(ValueError,'SCOPE_CLOSED'):scope.verify()
+            if args[:3]==['docker','rm','--force']:names.pop(args[-1]);return ''
+            pattern=next(value[5:] for value in args if value.startswith('name='))
+            return '\n'.join(identity for identity,name in names.items() if re.fullmatch(pattern,name))
+        with patch.object(parent.Broker,'abort',failed),patch.object(parent,'contain_certification_native',return_value={'nativeDisabled':True,'nativeDisableAttempted':True}),\
+                patch.object(supervisor.runtime,'command',side_effect=command):broker.abort()
+        self.assertEqual(set(names),{'b'*12});self.assertNotIn('recoveryCurrentContainerCleanupUncertain',broker.outcome)
 
     def test_continuous_boundary_requires_full_features_writer_and_source_selected_native_state(self):
         broker=self.broker;broker.native_mutex=threading.Lock();broker.native_expected=False

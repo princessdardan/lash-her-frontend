@@ -30,10 +30,10 @@ def fixture():
         'exports':0,'later':0,'operations':[],'deliveries':copy.deepcopy(deliveries),'outstanding':copy.deepcopy(deliveries),
         'admission':{'epoch':'2','newWork':False,'recovery':True,'active':0,'uncertain':0}}
     baseline={'frontend':front,'course':{'command':None},'community':{'command':None}}
-    for service,fields,projections in [('course',('outbox','snapshots','media','exports','retention'),('control','outbox','operations','snapshots','snapshotItems','streams','media','exports')),
-            ('community',('repairs','reconciliations','exports','reconciliationSchedule','retentionSchedule'),('repairs','reconciliations','operations','projections','inbox','tombstones','baselines','sourceItems','exports'))]:
+    for service,fields,projections in [('course',('outbox','snapshots','media','exports','retention'),('control','outbox','operations','snapshots','snapshotItems','streams','media','exports','lifecycleCommands','lifecycleStates')),
+            ('community',('repairs','reconciliations','exports','reconciliationSchedule','retentionSchedule'),('repairs','reconciliations','operations','projections','inbox','tombstones','baselines','sourceItems','exports','lifecycleCommands','lifecycleStates'))]:
         baseline[service]['backend']={'version':1,'status':'P2_KNOWN_ACK_BACKEND_OBSERVED','deadline':'2026-11-06T01:15:00.000Z',
-            'eligible':dict.fromkeys(fields,0),'rowCounts':dict.fromkeys(projections,0),'snapshotSha256':'a'*64}
+            'eligible':dict.fromkeys(fields,0),'rowCounts':dict.fromkeys(projections,0),'snapshotSha256':'a'*64,'selectedLifecycleCommand':None,'selectedLifecycleState':None}
     domain=copy.deepcopy(baseline);front=domain['frontend'];front['admission'].update(epoch='3',uncertain=1);front['outstanding']=[]
     for row in front['deliveries']:
         row.update(status='acknowledged',attempts=2 if row['receiver']=='course' else 1,acknowledged_at='2026-11-06T01:00:03.000Z')
@@ -43,6 +43,8 @@ def fixture():
             ('00000000-0000-4000-8000-000000000003','completed','2026-11-06T01:00:02.000Z')]]
     for name in ('course','community'):
         domain[name]['command']={'userBindingSha256':'d'*64,'accountVersion':'1','commandSha256':'a'*64,'acceptedAt':'2026-11-06T01:00:01.000Z','accountStatus':'suspended'}
+        domain[name]['backend']['selectedLifecycleCommand']={'commandId':command,'userBindingSha256':'d'*64,'accountVersion':'1','action':'suspend','commandSha256':'a'*64,'acceptedAt':'2026-11-06T01:00:01.000Z'}
+        domain[name]['backend']['selectedLifecycleState']={'userBindingSha256':'d'*64,'accountVersion':'1','status':'suspended','updatedAt':'2026-11-06T01:00:01.000Z'}
     gateway={'admission':{'newWork':False,'recovery':True,'active':{'newWork':0,'recovery':0},'uncertain':{'newWork':0,'recovery':1}}}
     effect={'mode':'drop-after-ack','receiver':'course','sourceWitnessSha256':'a'*64,'upstreamReceiptVerified':True,
         'upstreamStarted':True,'upstreamStatus':200,'downstreamBytesStarted':False,'downstreamDisposition':'dropped-before-any-response-bytes'}
@@ -64,7 +66,7 @@ class KnownAckSourceTests(unittest.TestCase):
             recorder.configuration_input=root
             recorder.broker=Mock(source=root,jobs={},selected={'artifacts':{'courseRuntime':{'image':'registry.invalid/course@sha256:'+'b'*64}}})
             private='postgresql://runtime:owned-private-password@owned.invalid/owned?sslmode=verify-full'
-            with patch.object(source.runtime,'environment_values',return_value={'STAGING_DATABASE_URL':private}):recorder._sql('course')
+            with patch.object(source.runtime,'environment_values',return_value={'STAGING_DATABASE_URL':private}):recorder._sql('course','d'*64)
         args,options=calls[0]
         self.assertEqual(args[:2],['docker','run']);self.assertIn('--read-only',args);self.assertIn('--network',args)
         self.assertIn('registry.invalid/course@sha256:'+'b'*64,args);self.assertNotIn(private,' '.join(args))
@@ -83,6 +85,18 @@ class KnownAckSourceTests(unittest.TestCase):
                 bad=copy.deepcopy(domain);bad[service]['backend']['snapshotSha256']='f'*64
                 with self.subTest(service=service,key='completed-projection'),self.assertRaisesRegex(ValueError,'PROJECTION_CHANGED'):
                     source.validate_domain(plan,baseline,bad,gateway,effects)
+
+    def test_only_exact_selected_lifecycle_source_transition_can_be_normalized(self):
+        plan,baseline,domain,gateway,effects=fixture();source.validate_domain(plan,baseline,domain,gateway,effects)
+        for kind in ('missing-command','other-user','other-version','mutable-timestamp','premature-state'):
+            actual=copy.deepcopy(domain)
+            if kind=='missing-command':actual['course']['backend']['selectedLifecycleCommand']=None
+            elif kind=='other-user':actual['course']['backend']['selectedLifecycleCommand']['userBindingSha256']='f'*64
+            elif kind=='other-version':actual['course']['backend']['selectedLifecycleState']['accountVersion']='2'
+            elif kind=='mutable-timestamp':actual['course']['backend']['selectedLifecycleState']['updatedAt']='2026-11-06T01:00:05.000Z'
+            else:
+                actual=copy.deepcopy(baseline);actual['course']['backend']['selectedLifecycleState']={'userBindingSha256':'d'*64,'accountVersion':'1','status':'suspended','updatedAt':'2026-11-06T01:00:01.000Z'}
+            with self.subTest(kind=kind),self.assertRaises(ValueError):source.validate_backend_idle(actual,baseline)
 
     def test_two_untouched_pending_deliveries_are_required_before_fault(self):
         plan,baseline,_,_,_=fixture();source.validate_baseline(plan,baseline)
@@ -213,6 +227,8 @@ class KnownTransitionTests(unittest.TestCase):
 
     def setUp(self):
         scope_fixture.P2ScopeTests.setUp(self)
+        compose=self.root/'ops/platform/compose.yaml';compose.parent.mkdir(parents=True);compose.write_bytes(b'owned-compose')
+        self.release['runtime']={'composeSha256':'sha256:'+source.digest(compose.read_bytes())}
         self.release['artifacts']['gateway']={'image':'ghcr.io/princessdardan/lash-her-platform-gateway@sha256:'+'e'*64};self.save()
         self.scope=cert_fixture.CertificationScopeTests.certification(self)
         self.configuration=self.root/'configuration';self.configuration.mkdir(mode=0o700)
@@ -256,6 +272,8 @@ class KnownTransitionTests(unittest.TestCase):
         self.snapshot=self.boundary.snapshot;self.snapshot.mkdir(mode=0o700)
         for name in staging_state.CONFIGURATION_FILES:
             path=self.snapshot/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes((self.configuration/name).read_bytes());path.chmod(0o600)
+        (self.snapshot/'compose.yaml').write_bytes(compose.read_bytes())
+        self.boundary.bind_snapshot(self.snapshot)
         self.known_scope=source.KnownAckRecoveryScope(self.boundary)
 
     def tearDown(self):scope_fixture.P2ScopeTests.tearDown(self)
@@ -381,6 +399,30 @@ class KnownTransitionTests(unittest.TestCase):
         with patch.object(prior,'observe_prior_gateway',return_value=observed):
             with self.assertRaisesRegex(ValueError,'OLD_ONE_CHANGED'):self.boundary.verify()
 
+    def test_completed_stage_mounted_bytes_input_and_compose_remain_bound(self):
+        stage=source.runtime.STAGES[0];self.boundary.before_stage(stage);self.replace(stage);self.boundary.after_stage(stage)
+        for directory,name,code in [(self.snapshot,'tls/ca.pem','CONFIGURATION_CHANGED'),(self.snapshot,'community-api.env','CONFIGURATION_CHANGED'),
+                (self.configuration,'course-api.env','CONFIGURATION_CHANGED'),(self.snapshot,'compose.yaml','RENDERED_COMPOSE_CHANGED')]:
+            path=directory/name;before=path.read_bytes();path.write_bytes(before+b'\n')
+            with self.subTest(path=name),self.assertRaisesRegex(ValueError,code):self.boundary.verify()
+            path.write_bytes(before);self.boundary.verify()
+        compose=self.root/'ops/platform/compose.yaml';before=compose.read_bytes();compose.write_bytes(before+b'\n')
+        with self.assertRaisesRegex(ValueError,'COMPOSE_SOURCE_CHANGED'):self.boundary.verify()
+        compose.write_bytes(before);self.boundary.verify()
+
+    def test_recorder_rechecks_separate_source_input_before_any_new_observation(self):
+        recorder=source.P2KnownAckLossRecorder.__new__(source.P2KnownAckLossRecorder)
+        recorder.broker=self.broker;recorder.scope=self.scope;recorder.fault_plan={'owned':'fault'};recorder.plan={'nativePlan':{'owned':'native'}}
+        recorder.selection={'owned':'intent'};self.broker.fault_stage=Mock(plan=recorder.fault_plan)
+        self.broker.initial.update(nativePlan=recorder.plan['nativePlan']);self.broker.initial['certificationPlan']['knownAckRecovery']=recorder.selection
+        recorder.configuration_input=self.root/'separate-input';recorder.configuration_input.mkdir(mode=0o700)
+        for name in staging_state.CONFIGURATION_FILES:
+            path=recorder.configuration_input/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes((self.configuration/name).read_bytes());path.chmod(0o600)
+        program=self.root/source.MODULE;program.write_bytes(b'owned-reader');recorder.source_sha256=source.digest(program.read_bytes())
+        recorder._verify();path=recorder.configuration_input/'community-api.env';before=path.read_bytes();path.write_bytes(before+b'\n')
+        with self.assertRaisesRegex(ValueError,'CONFIGURATION_CHANGED'):recorder._verify()
+        path.write_bytes(before);recorder._verify()
+
     def test_unknown_stop_receipt_refuses_before_gateway_recreation(self):
         for stage in source.runtime.STAGES[:-1]:
             self.boundary.before_stage(stage);self.replace(stage);self.boundary.after_stage(stage)
@@ -410,7 +452,10 @@ class KnownTransitionTests(unittest.TestCase):
 
     def test_reused_actual_restore_method_composes_all_stage_guards_and_final_current_proofs(self):
         component=source.KnownAckRecoveryRuntime(self.known_scope);order=[]
-        compose=self.root/'ops/platform/compose.yaml';compose.parent.mkdir(parents=True);compose.write_bytes(b'owned-compose')
+        compose=self.root/'ops/platform/compose.yaml'
+        # This transport fixture precreated its files; exercise the actual
+        # source bind again at the base restore's initialize_runtime hook.
+        self.boundary.snapshot_bound=False
         component.selected['runtime']={'composeSha256':'sha256:'+source.digest(compose.read_bytes())}
         self.scope.release['runtime']=copy.deepcopy(component.selected['runtime'])
         component.scope.release['runtime']=copy.deepcopy(component.selected['runtime'])

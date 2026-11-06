@@ -1,6 +1,7 @@
 """Fixed source dispatch checks. Full recovery is qualified by its owned harness."""
 from pathlib import Path
 from unittest.mock import patch
+import re
 import unittest
 from p2_release_broker import Broker, PhysicalObserver
 from p2_release_supervisor import supervise, DEFAULT_LAYOUT, RECOVERY_LAYOUT, CERTIFICATION_LAYOUT, ROTATION_LAYOUT, cleanup_recovery_current_containers, cleanup_rotation_readonly_containers
@@ -121,3 +122,35 @@ class FixedDispatchTests(unittest.TestCase):
         with patch('p2_release_supervisor.runtime.command', return_value='not-an-id'):
             with self.assertRaisesRegex(ValueError, 'ROTATION_CONTAINER_ID_REFUSED'):
                 cleanup_rotation_readonly_containers()
+
+    def test_both_fixed_namespaces_are_cleaned_after_scope_loss_and_foreign_names_are_preserved(self):
+        names={'a'*12:'/lash-p2-recovery-current-course-'+'1'*32,'b'*12:'/lash-p2-certification-observer-'+'2'*32,
+            'c'*12:'/lash-p2-certification-observer-'+'2'*31,'d'*12:'/lash-p2-certification-observer-'+'A'*32,
+            'e'*12:'/lash-p2-certification-observer-'+'3'*32+'-foreign','f'*12:'/lash-her-staging-gateway'}
+        calls=[]
+        def command(args,*_):
+            calls.append(args)
+            if args[:3]==['docker','rm','--force']:names.pop(args[-1]);return ''
+            pattern=next(value.removeprefix('name=') for value in args if value.startswith('name='))
+            return '\n'.join(identity for identity,name in names.items() if re.fullmatch(pattern,name))
+        # Neither cleanup branch receives or calls a mutator scope. Docker
+        # daemon inventory/removal is source-fixed and independently observed.
+        with patch('p2_release_supervisor.runtime.command',side_effect=command):cleanup_recovery_current_containers()
+        self.assertEqual(set(names),{'c'*12,'d'*12,'e'*12,'f'*12})
+        self.assertEqual(sum(args[:3]==['docker','rm','--force'] for args in calls),2)
+        self.assertEqual(sum(args[:3]==['docker','container','ls'] for args in calls),4)
+
+    def test_failed_removal_or_readback_stays_unknown_and_does_not_skip_other_namespace(self):
+        for kind in ('rm','readback'):
+            calls=[];seen={'recovery':0,'certification':0}
+            def command(args,*_):
+                calls.append(args)
+                if args[:3]==['docker','rm','--force']:
+                    if args[-1]=='a'*12 and kind=='rm':raise RuntimeError('private error must not escape')
+                    return ''
+                mode='certification' if 'certification-observer' in ' '.join(args) else 'recovery';seen[mode]+=1
+                if mode=='recovery' and seen[mode]==2 and kind=='readback':raise RuntimeError('private readback')
+                return ('a'*12 if mode=='recovery' else 'b'*12) if seen[mode]==1 else ''
+            with self.subTest(kind=kind),patch('p2_release_supervisor.runtime.command',side_effect=command):
+                with self.assertRaisesRegex(ValueError,'CLEANUP_UNKNOWN'):cleanup_recovery_current_containers()
+            self.assertEqual(seen,{'recovery':2,'certification':2});self.assertIn(['docker','rm','--force','b'*12],calls)
