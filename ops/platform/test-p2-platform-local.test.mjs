@@ -63,6 +63,7 @@ test('child failure preserves fixed status/phase/checkpoint without echoing mess
     phase: 'same-action-role-abort-blocked-query', failureCode: 'OWNED_CHECK_FAILED', checkpoint: 'session-close' }]);
   assert.equal(JSON.stringify(actual).includes('must-not-echo-secret'), false);
   assert.deepEqual(p2OwnedFixtureFailure(fixture, { status: 0, stdout: '', stderr: '' }).observedChildFailures, []);
+  assert.deepEqual(p2OwnedFixtureFailure(fixture, { status: 1, stdout: '', stderr: JSON.stringify({ status: 'UNREVIEWED_SECRET_VALUE', phase: 'secret-value' }) }).observedChildFailures, []);
 });
 
 test('wrapper rejects arbitrary arguments before running a PostgreSQL or fixture program', () => {

@@ -10,6 +10,8 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
 const hash = value => createHash('sha256').update(value).digest('hex');
 const require = ok => { if (!ok) throw new Error('P2_PLATFORM_OWNED_FIXTURE_REFUSED'); };
 const maximumOutput = 4_000_000;
+const failureStatuses = new Set(['FRONTEND_ROLES_OWNED_FAILED', 'FRONTEND_RELEASE_OWNED_POSTGRES_FAILED',
+  'OWNED_ROLE_COMPOSITION_DETAIL', 'P2_LIFECYCLE_NATIVE_OWNED_FAILED', 'P2_NATIVE_OWNED_CHILD_FAILED']);
 export const P2_OWNED_FIXTURES = Object.freeze([
   Object.freeze({ id: 'roles', file: 'test-frontend-roles-local.mjs', flag: 'FRONTEND_ROLES_OWNED_TEST', status: 'FRONTEND_ROLES_OWNED_PASS', required: Object.freeze([
     'actual-environment-flock-contention-refuses-second-parent',
@@ -40,6 +42,7 @@ export const P2_OWNED_FIXTURES = Object.freeze([
   Object.freeze({ id: 'native', file: 'test-p2-lifecycle-native-local.mjs', flag: 'P2_NATIVE_OWNED_TEST', status: 'P2_LIFECYCLE_NATIVE_OWNED_PASS', required: Object.freeze([
     'actual-physical-release-lock-contention',
     'actual-delayed-after-disable-request-is-fenced-after-closure-with-no-new-ledger-row-or-trace',
+    'actual-postgres-barrier-update-interleaving-acknowledgements-refuse-before-native-enable',
     'actual-exported-cron-full-runtime-admission-context-and-opaque-trace',
     'actual-nonempty-and-empty-http-cron-invocations',
     'actual-course-community-https-service-jwt-idempotency-and-ordered-command-effects',
@@ -88,7 +91,7 @@ function parsedFailure(raw) {
 export function p2OwnedFixtureFailure(fixture, child) {
   require(P2_OWNED_FIXTURES.includes(fixture));
   const observed = [...parsedFailure(child.stdout), ...parsedFailure(child.stderr)].filter(value =>
-    value && typeof value === 'object' && typeof value.status === 'string' && /^[A-Z][A-Z0-9_]{0,100}$/u.test(value.status));
+    value && typeof value === 'object' && failureStatuses.has(value.status));
   const failures = observed.filter(value => !value.status.endsWith('_PASS')).map(value => Object.fromEntries(
     ['status', 'phase', 'failureCode', 'checkpoint'].filter(key => typeof value[key] === 'string' &&
       (key === 'status' || key === 'failureCode' ? /^[A-Z][A-Z0-9_]{0,100}$/u : /^[a-z][a-z0-9-]{0,100}$/u).test(value[key]))
@@ -113,14 +116,16 @@ export function runP2PlatformOwned() {
     const program = join(root, 'ops/platform', fixture.file);
     const child = spawnSync(process.execPath, [program], { cwd: root,
       env: p2OwnedFixtureEnvironment(process.env, fixture, major), encoding: 'utf8', timeout: 240_000, maxBuffer: maximumOutput });
+    let failureCode = 'P2_OWNED_CHILD_EXECUTION_FAILED';
     try {
       require(child.status === 0 && child.signal === null && !child.error && typeof child.stdout === 'string' && child.stdout.trim().length > 0);
+      failureCode = 'P2_OWNED_CHILD_RECEIPT_INVALID';
       const summary = validateP2FixtureReceipt(fixture, JSON.parse(child.stdout), major);
       summaries.push({ ...summary, fixtureProgramSha256: hash(readFileSync(program)),
         stdoutSha256: hash(child.stdout), stderrSha256: hash(child.stderr ?? '') });
     } catch {
       return { status: 'P2_PLATFORM_OWNED_FAILED', fixtureOnly: true, postgresMajor: major, completed: summaries,
-        ...p2OwnedFixtureFailure(fixture, child), providerTouched: false, imagesQualified: false, releaseAccepted: false, g2Accepted: false };
+        failureCode, ...p2OwnedFixtureFailure(fixture, child), providerTouched: false, imagesQualified: false, releaseAccepted: false, g2Accepted: false };
     }
   }
   return { status: 'P2_PLATFORM_OWNED_PASS', fixtureOnly: true, postgresMajor: major, executedFixtures: summaries.length,
