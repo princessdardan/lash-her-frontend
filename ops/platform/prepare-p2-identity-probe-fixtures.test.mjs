@@ -526,6 +526,7 @@ test("lifecycle mode sends one internally built exact source manifest to an isol
     assert.deepEqual(interrupted.args.slice(-3), ["--import", "tsx", "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs"]);
     assert.equal(interrupted.input, undefined);
     assert.deepEqual(interrupted.args.filter(arg => arg.startsWith("--env=")), [
+      "--env=TMPDIR=/var/tmp",
       "--env=PG_BIN=/usr/lib/postgresql/18/bin", "--env=OWNED_POSTGRES_MAJOR=18", "--env=P2_INTERRUPTED_OWNED_TEST=true",
       "--env=P2_KNOWN_ACK_COURSE_SOURCE_ROOT=/exact-sources/lash-her-course-api",
       "--env=P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT=/exact-sources/lash-her-community-api",
@@ -556,6 +557,15 @@ test("lifecycle mode sends one internally built exact source manifest to an isol
     assert.deepEqual(negative.args.slice(-4), [...interrupted.args.slice(-3), "--negative-cases"]);
     assert.deepEqual(negative.args.slice(0, -1), interrupted.args); assert.equal(negative.input, undefined);
     assert.deepEqual(negative.env, interrupted.env);
+    for (const call of [interrupted, negative]) {
+      assert.deepEqual(call.args.filter(argument => argument.startsWith("--tmpfs=")), ["--tmpfs=/var/tmp:rw,nosuid,nodev,size=512m,mode=1777"]);
+      assert.equal(call.args.filter(argument => argument === "--env=TMPDIR=/var/tmp").length, 1);
+      assert.equal(call.args.includes("--tmpfs=/tmp:rw,nosuid,nodev,size=512m,mode=1777"), false);
+    }
+    for (const call of dockerCalls.slice(0, 4)) {
+      assert.deepEqual(call.args.filter(argument => argument.startsWith("--tmpfs=")), ["--tmpfs=/tmp:rw,nosuid,nodev,size=512m,mode=1777"]);
+      assert.equal(call.args.some(argument => argument.startsWith("--env=TMPDIR=")), false);
+    }
     assert.equal(negativeSummary.status, "P2_INTERRUPTED_NEGATIVES_OWNED_PASS"); assert.equal(negativeSummary.serverMajor, 18);
     assert.equal(negativeSummary.cases.length, 7); assert.equal(negativeSummary.skipped, 0);
     assert.equal(negativeSummary.parentSourceProvenance, "parent-before-and-after-verified-readonly-mounts");

@@ -430,7 +430,8 @@ function interruptedRestorationDockerArguments(frontendRoot, directories) {
   for (const [service, directory] of Object.entries(directories))
     mounts.push(mount(directory, `/exact-sources/lash-her-${service}-api`, "directory", directory));
   return ["run", "--rm", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
-    "--memory=1g", "--pids-limit=256", "--shm-size=256m", "--tmpfs=/tmp:rw,nosuid,nodev,size=512m,mode=1777", "--workdir=/source",
+    "--memory=1g", "--pids-limit=256", "--shm-size=256m", "--tmpfs=/var/tmp:rw,nosuid,nodev,size=512m,mode=1777", "--workdir=/source",
+    "--env=TMPDIR=/var/tmp",
     "--env=PG_BIN=/usr/lib/postgresql/18/bin", "--env=OWNED_POSTGRES_MAJOR=18", "--env=P2_INTERRUPTED_OWNED_TEST=true",
     "--env=P2_KNOWN_ACK_COURSE_SOURCE_ROOT=/exact-sources/lash-her-course-api",
     "--env=P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT=/exact-sources/lash-her-community-api",
