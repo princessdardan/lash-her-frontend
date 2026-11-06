@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "status": "P2_KNOWN_ACK_READONLY_AND_WHOLE_ROUTE_SOURCE_PROOF_PASS",
+  "ownedPostgresMajor": 16,
+  "migrations": {
+    "frontend": 83,
+    "course": 22,
+    "community": 11
+  },
+  "canonicalBindingRefusals": 2,
+  "immutableRewriteRefusals": 2,
+  "fixtureOnly": true,
+  "providerTouched": false,
+  "recoveryAuthorizationIssued": false,
+  "independentReview": "OPEN",
+  "liveParentQualification": "OPEN",
+  "files": {
+    "ops/platform/p2-known-ack-loss-probe.mjs": "bf84f7490a3f802792263ae5d92997e56c141581f595d5877047eb60a87f85e8",
+    "ops/platform/harness/owned-p2-known-ack-loss.mjs": "6b204d123f7a4b776131d090da2492ef5f368d3fdb9c1b040152b356a05434b7",
+    "ops/platform/test-p2-known-ack-loss-local.mjs": "0d91ffe36b32960a023b35d06d07de7817f8dab78e07051095c719c358a8640c",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-loss/README.md": "b87e2edc28cf9b3b89f7c54448a12d582eec14595679dbcbc9d807a5628e79e3",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-loss/setup-refusal-421.json": "166a1abf64f8be2f01ab2a328ac0e357b9a6e79b6d542eaeb35f410c9a4c9f40",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-loss/original-source-owned-postgres16.json": "748a69efe24f4d26cbff0f6b25c1c98a6fab8e60094a7fd140021ab9a7932783",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-loss/current-source-owned-postgres16.json": "74debf6740b84b3a8749266fdbc8f0fb7ae6e674e8d8a931748bdcba30b2b853"
+  }
+}
