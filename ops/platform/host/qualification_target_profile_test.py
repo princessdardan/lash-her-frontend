@@ -2,7 +2,10 @@ import hashlib
 import importlib.util
 import inspect
 import json
+import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 import uuid
@@ -22,7 +25,7 @@ CURRENT_REGISTRY = b'{"version":1,"profiles":[' + CURRENT_CANONICAL + b']}\n'
 
 
 class QualificationTargetProfileTest(unittest.TestCase):
-    def load_module(self, registry=CURRENT_REGISTRY):
+    def make_layout(self, registry=CURRENT_REGISTRY, registry_writer=None):
         temporary = tempfile.TemporaryDirectory(prefix="qualification-target-profile-")
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name).resolve()
@@ -30,7 +33,15 @@ class QualificationTargetProfileTest(unittest.TestCase):
         host.mkdir(parents=True)
         module_path = host / SOURCE.name
         shutil.copyfile(SOURCE, module_path)
-        (host.parent / "qualification-target-profiles.json").write_bytes(registry)
+        registry_path = host.parent / "qualification-target-profiles.json"
+        if registry_writer is None:
+            registry_path.write_bytes(registry)
+        else:
+            registry_writer(registry_path)
+        return module_path
+
+    def load_module(self, registry=CURRENT_REGISTRY, registry_writer=None):
+        module_path = self.make_layout(registry, registry_writer)
         name = f"qualification_target_profile_{uuid.uuid4().hex}"
         spec = importlib.util.spec_from_file_location(name, module_path)
         self.assertIsNotNone(spec)
@@ -117,13 +128,13 @@ class QualificationTargetProfileTest(unittest.TestCase):
         escaped_path = self.raw_carrier("1.0", profile_key="qualificationTarget\\u0050rofile")
         self.assert_code(module, module.QUALIFICATION_TARGET_PROFILE_REFUSED,
                          lambda: module.decode_qualification_target_json(escaped_path, "carrier"))
-        boolean_carrier = module.decode_qualification_target_json(self.raw_carrier("true"), "carrier")
-        self.assert_code(
-            module,
-            module.QUALIFICATION_TARGET_PROFILE_REFUSED,
-            lambda: module.parse_qualification_target_profile_ref(
-                boolean_carrier["qualificationTargetProfile"]),
-        )
+        for invalid_type in ("true", "null", '"1"', "{}", "[]"):
+            self.assert_code(
+                module,
+                module.QUALIFICATION_TARGET_PROFILE_REFUSED,
+                lambda invalid_type=invalid_type: module.decode_qualification_target_json(
+                    self.raw_carrier(invalid_type), "carrier"),
+            )
 
     def test_raw_registry_rejects_noncanonical_or_unsafe_numbers(self):
         module = self.load_module()
@@ -142,6 +153,19 @@ class QualificationTargetProfileTest(unittest.TestCase):
         self.assertEqual(decoded["ratio"], 1.5)
         self.assertEqual(decoded["negativeZero"], 0)
         self.assertEqual(decoded["large"], 9007199254740992)
+        self.assertEqual(
+            module.decode_qualification_target_json('{"value":"\\ud83d\\ude00"}', "private-packet")["value"],
+            "😀",
+        )
+
+    def test_escaped_lone_surrogates_in_values_and_keys_refuse(self):
+        module = self.load_module()
+        for raw in ('{"value":"\\ud800"}', '{"\\udfff":"value"}'):
+            self.assert_code(
+                module,
+                module.QUALIFICATION_TARGET_PROFILE_REFUSED,
+                lambda raw=raw: module.decode_qualification_target_json(raw, "private-packet"),
+            )
 
     def test_strict_utf8_bom_constants_bounds_and_depth_refuse(self):
         module = self.load_module()
@@ -251,6 +275,40 @@ class QualificationTargetProfileTest(unittest.TestCase):
                  module.QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED),
             )
         self.assertEqual(envelope["profiles"][0]["id"], "staging-current")
+
+    def test_fixed_registry_refuses_symlink_fifo_empty_and_oversize_sources(self):
+        module = self.load_module()
+
+        def symlink_writer(path):
+            target = path.with_name("canonical-registry.json")
+            target.write_bytes(CURRENT_REGISTRY)
+            path.symlink_to(target.name)
+
+        with self.assertRaisesRegex(Exception, f"^{module.QUALIFICATION_TARGET_PROFILE_REFUSED}$"):
+            self.load_module(registry_writer=symlink_writer)
+        for raw in (b"", b" " * 131_073):
+            with self.assertRaisesRegex(Exception, f"^{module.QUALIFICATION_TARGET_PROFILE_REFUSED}$"):
+                self.load_module(raw)
+
+        module_path = self.make_layout(registry_writer=lambda path: os.mkfifo(path, 0o600))
+        script = (
+            "import importlib.util,sys,uuid;"
+            "p=sys.argv[1];s=importlib.util.spec_from_file_location('q'+uuid.uuid4().hex,p);"
+            "m=importlib.util.module_from_spec(s);"
+            "\ntry:s.loader.exec_module(m)\n"
+            "except Exception as e:print(str(e));sys.exit(0)\n"
+            "sys.exit(2)"
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script, str(module_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(completed.stdout.strip(), module.QUALIFICATION_TARGET_PROFILE_REFUSED)
+        self.assertEqual(completed.stderr, "")
 
     @staticmethod
     def thaw(value):

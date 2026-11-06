@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
+import stat
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -103,6 +105,14 @@ def _number(token: _NumberToken, force_canonical_integer: bool) -> int | float:
     return value
 
 
+def _validate_unicode_scalar(value: str) -> str:
+    try:
+        value.encode("utf-8", "strict")
+    except UnicodeEncodeError as error:
+        raise QualificationTargetProfileError(QUALIFICATION_TARGET_PROFILE_REFUSED) from error
+    return value
+
+
 def _convert_json(
     value: Any,
     *,
@@ -119,7 +129,10 @@ def _convert_json(
             _raise()
         result: dict[str, Any] = {}
         for key, child in value:
+            _validate_unicode_scalar(key)
             if key in result:
+                _raise()
+            if profile_object and key == "version" and not isinstance(child, _NumberToken):
                 _raise()
             result[key] = _convert_json(
                 child,
@@ -134,6 +147,8 @@ def _convert_json(
         if current_depth > _MAX_DEPTH:
             _raise()
         return [_convert_json(child, kind=kind, depth=current_depth) for child in value]
+    if type(value) is str:
+        return _validate_unicode_scalar(value)
     return value
 
 
@@ -210,11 +225,48 @@ def _freeze(value: Any) -> Any:
     return value
 
 
-def _load_registry() -> tuple[dict[str, tuple[str, Any]], Any]:
+def _read_fixed_registry() -> bytes:
+    flags = os.O_RDONLY | os.O_NONBLOCK
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if nofollow is None:
+        _raise()
+    descriptor = None
     try:
-        raw = _REGISTRY_PATH.read_bytes()
+        descriptor = os.open(_REGISTRY_PATH, flags | nofollow)
+        before = os.fstat(descriptor)
+        bound = _RAW_BOUNDS["registry"]
+        if not stat.S_ISREG(before.st_mode) or before.st_size <= 0 or before.st_size > bound:
+            _raise()
+        chunks: list[bytes] = []
+        remaining = before.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(65_536, remaining))
+            if not chunk:
+                _raise()
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if os.read(descriptor, 1):
+            _raise()
+        after = os.fstat(descriptor)
+        if (
+            after.st_dev != before.st_dev
+            or after.st_ino != before.st_ino
+            or after.st_mode != before.st_mode
+            or after.st_size != before.st_size
+        ):
+            _raise()
+        return b"".join(chunks)
+    except QualificationTargetProfileError:
+        raise
     except OSError as error:
         raise QualificationTargetProfileError(QUALIFICATION_TARGET_PROFILE_REFUSED) from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _load_registry() -> tuple[dict[str, tuple[str, Any]], Any]:
+    raw = _read_fixed_registry()
     registry = decode_qualification_target_json(raw, "registry")
     envelope = _exact_dict(registry, {"version", "profiles"})
     profiles = envelope["profiles"]
