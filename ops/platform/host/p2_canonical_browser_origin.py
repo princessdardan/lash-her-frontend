@@ -94,8 +94,9 @@ def observe(context, client, probe=None):
         "P2_CANONICAL_WORKLOAD_BINDING_REFUSED")
     demand(_alias(client, plan) == alias and native.observe_metadata(context, client) == before, "P2_CANONICAL_PROVIDER_CHANGED")
     # Re-read the existing private input at the final boundary; never extend it.
-    frontend_probe._private_input(Path(context["privateProbeDirectory"]), {
+    final_private = frontend_probe._private_input(Path(context["privateProbeDirectory"]), {
         "environment": "staging", "projectId": PROJECT, "sourceCommit": plan["sourceCommit"], "releaseId": plan["actionId"]})
+    demand(final_private == private, "P2_CANONICAL_PRIVATE_INPUT_CHANGED")
     return {"version": 1, "status": "P2_CANONICAL_BROWSER_ORIGIN_VERIFIED", "environment": "staging", "browserOrigin": ORIGIN,
         "projectId": PROJECT, "deploymentId": plan["deploymentId"], "deploymentUrl": plan["deploymentUrl"], "sourceCommit": plan["sourceCommit"],
         "releaseId": plan["actionId"], "configurationRecordSha256": plan["configurationRecordSha256"],
