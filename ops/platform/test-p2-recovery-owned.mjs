@@ -10,27 +10,64 @@ import { withRecoveryFrontendSession, observeRecoveryPhysical } from './p2-recov
 import { observeRecoveryApiCurrent } from './p2-recovery-api-current-probe.mjs';
 import { frontendCoordinationHash as hash } from './frontend-release-inventory.mjs';
 assert.equal(process.env.P2_RECOVERY_OWNED_TEST,'true');
+const assertOwnedEnvironment=()=>assert.deepEqual(Object.keys(process.env).filter(key=>!['PATH','HOME','LANG','TMPDIR','NODE_EXTRA_CA_CERTS','P2_RECOVERY_OWNED_TEST','P2_RECOVERY_OWNED_CONNECTIONS'].includes(key)&&!key.startsWith('LC_')&&
+  // macOS inserts this CoreFoundation encoding metadata after exec; it is not
+  // inherited by the Python allowlist and cannot select a loader or database.
+  !(process.platform==='darwin'&&key==='__CF_USER_TEXT_ENCODING'&&/^0x[0-9a-f]+:0x[0-9a-f]+:0x[0-9a-f]+$/iu.test(process.env[key]))),[],'ambient configuration entered owned child (names only)');
+assertOwnedEnvironment();
 const privateInput=JSON.parse(process.env.P2_RECOVERY_OWNED_CONNECTIONS);const serverMajor=privateInput.serverMajor;assert.ok([16,18].includes(serverMajor));
 assert.equal(new URL(privateInput.frontend).hostname,'127.0.0.1');
 const connect=async url=>{const client=new Client({connectionString:url,ssl:{rejectUnauthorized:true}});await client.connect();return client;};
 const admin=await connect(privateInput.frontend),artifact=frontendMigrationArtifact();
-let checks=0;
+let checks=0,legacyApiVerifierRefusals=0;
+const privilegeFaults=[];
 try{
   await admin.query('CREATE SCHEMA drizzle; CREATE TABLE drizzle.__drizzle_migrations(id serial PRIMARY KEY,hash text NOT NULL,created_at bigint)');
   for(const migration of artifact.migrations)await admin.query('INSERT INTO drizzle.__drizzle_migrations(hash,created_at) VALUES($1,$2)',[migration.hash,migration.folderMillis]);
-  await admin.query("CREATE ROLE recovery_owner NOLOGIN NOINHERIT; CREATE ROLE recovery_runtime LOGIN NOINHERIT; CREATE ROLE recovery_retired LOGIN NOINHERIT; GRANT CREATE ON DATABASE postgres TO recovery_owner");
+  assert.match(privateInput.password,/^owned-[a-f0-9-]+$/u);
+  await admin.query("CREATE ROLE recovery_creator LOGIN CREATEROLE NOINHERIT PASSWORD '"+privateInput.password+"'; GRANT CREATE ON DATABASE postgres TO recovery_creator; GRANT USAGE,CREATE ON SCHEMA public TO recovery_creator");
+  await admin.query('SET ROLE recovery_creator');
+  await admin.query("CREATE ROLE recovery_owner NOLOGIN NOINHERIT; CREATE ROLE recovery_runtime LOGIN NOINHERIT; GRANT recovery_owner TO recovery_creator WITH INHERIT FALSE, SET TRUE, ADMIN FALSE");
+  await admin.query('RESET ROLE');
+  await admin.query("CREATE ROLE recovery_retired NOLOGIN NOINHERIT; GRANT CREATE ON DATABASE postgres TO recovery_owner; GRANT USAGE ON SCHEMA drizzle TO recovery_creator; GRANT SELECT ON ALL TABLES IN SCHEMA drizzle TO recovery_creator");
+  await admin.query('CREATE SEQUENCE public.recovery_acl_probe');
   await admin.query('SET ROLE recovery_owner');await admin.query(readFileSync(new URL('./frontend-admission.sql',import.meta.url),'utf8'));await admin.query('RESET ROLE');
-  await admin.query("GRANT USAGE ON SCHEMA public,frontend_admission TO recovery_runtime; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO recovery_runtime; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO recovery_runtime; GRANT EXECUTE ON ALL ROUTINES IN SCHEMA frontend_admission TO recovery_runtime; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO recovery_runtime; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE,SELECT ON SEQUENCES TO recovery_runtime; REVOKE ALL ON SCHEMA drizzle FROM PUBLIC; ALTER ROLE recovery_retired NOLOGIN");
+  await admin.query("GRANT USAGE ON SCHEMA public,frontend_admission TO recovery_runtime; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO recovery_runtime; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO recovery_runtime; GRANT EXECUTE ON ALL ROUTINES IN SCHEMA frontend_admission TO recovery_runtime; SET ROLE recovery_creator; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO recovery_runtime; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE,SELECT ON SEQUENCES TO recovery_runtime; RESET ROLE; REVOKE ALL ON SCHEMA drizzle FROM PUBLIC");
   const roles=Object.fromEntries((await admin.query("SELECT rolname,oid::text FROM pg_roles WHERE rolname=ANY($1::text[])",[['recovery_owner','recovery_runtime','recovery_retired']])).rows.map(row=>[row.rolname,row.oid]));
   const targetSha256='a'.repeat(64),sourceCommit='b'.repeat(40),producerSha256='c'.repeat(64);
   await admin.query("INSERT INTO frontend_admission.control(singleton,environment,target_sha256) VALUES(true,'staging',$1)",[targetSha256]);
   await admin.query('INSERT INTO frontend_admission.producers VALUES($1,$2,$3,true)',[producerSha256,sourceCommit,roles.recovery_runtime]);
-  const url=new URL(privateInput.frontend),target={host:url.hostname,port:Number(url.port),database:'postgres',user:decodeURIComponent(url.username),runtimeRole:'recovery_runtime',serverMajor,approvedPendingTags:artifact.migrations.map(row=>row.tag)};
+  const url=new URL(privateInput.frontend);url.username='recovery_creator';url.password=privateInput.password;
+  const target={host:url.hostname,port:Number(url.port),database:'postgres',user:'recovery_creator',runtimeRole:'recovery_runtime',serverMajor,approvedPendingTags:artifact.migrations.map(row=>row.tag)};
   const job={environment:'staging',releaseId:'original-qualified',sourceCommit,target,contractPhase:'p2',phase2ContractManifestSha256:'sha256:'+'d'.repeat(64),sqlArtifactSha256:artifact.sqlArtifactSha256,migrationImageDigest:'sha256:'+'e'.repeat(64),schemaBaselineSha256:'f'.repeat(64),contractManifestSha256:artifact.contractManifestSha256};
   const plan={environment:'staging',sourceCommit,targetSha256,owner:{name:'recovery_owner',oid:roles.recovery_owner},producers:[{producerSha256,role:{name:'recovery_runtime',oid:roles.recovery_runtime}}],historicalLogins:{retiredLogins:[{name:'recovery_retired',oid:roles.recovery_retired}]}};
   const prepared={migration:{job,artifact,baseline:{catalog:await readMigrationCatalog(admin)}},plan};
   const action={recoveryActionId:'deliberate-recovery',candidateSha256:'1'.repeat(64),originalReceiptSha256:{'job-outcome.json':null}};
-  const deps={getUrl:()=>privateInput.frontend,verifyEnvironment:async()=>{}};
+  const deps={getUrl:()=>url.href,verifyEnvironment:async()=>{}};
+  const creatorMemberships=(await admin.query("SELECT m.admin_option,m.inherit_option,m.set_option,g.rolsuper AS grantor_super FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.roleid JOIN pg_roles g ON g.oid=m.grantor WHERE r.rolname IN ('recovery_owner','recovery_runtime') ORDER BY m.admin_option,m.roleid")).rows;
+  assert.equal(creatorMemberships.length,3);assert.equal(creatorMemberships.filter(row=>row.admin_option&&row.grantor_super&&!row.inherit_option&&!row.set_option).length,2);
+  const checkFrontendFault=async(id,install,remove)=>{
+    const checkpoint=/inbound|outbound|rogue-admin/u.test(id)?'role-memberships':/default/u.test(id)?'runtime-default-grants':'runtime-extra-privileges';
+    await withRecoveryFrontendSession(prepared,action,deps,async({probe})=>{
+      assert.equal((await observeRecoveryPhysical({...probe,operation:'verify-schema'},deps)).status,'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED');
+      await admin.query(install);
+      try{
+        let continuousRefused=false;
+        try{await observeRecoveryPhysical({...probe,operation:'verify-schema'},deps);}catch(error){continuousRefused=error.checkpoint===checkpoint;}
+        privilegeFaults.push({id,continuousRefused});
+      }finally{await admin.query(remove);}
+      assert.equal((await observeRecoveryPhysical({...probe,operation:'verify-schema'},deps)).status,'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED');
+    });
+    await admin.query(install);
+    try{
+      let initialRefused=false,restorationEntered=false;
+      try{await withRecoveryFrontendSession(prepared,action,deps,async()=>{restorationEntered=true;});}catch(error){initialRefused=error.checkpoint===checkpoint;}
+      privilegeFaults.at(-1).initialRefused=initialRefused;privilegeFaults.at(-1).restorationEntered=restorationEntered;
+      assert.deepEqual((await admin.query('SELECT new_work,recovery FROM frontend_admission.control WHERE singleton')).rows,[{new_work:false,recovery:false}]);
+    }finally{await admin.query(remove);}
+    await withRecoveryFrontendSession(prepared,action,deps,async({receipt})=>assert.equal(receipt.status,'P2_RECOVERY_DATABASE_CURRENT'));
+    checks++;
+  };
   assert.deepEqual((await admin.query("SELECT proname FROM pg_proc WHERE pronamespace='frontend_admission'::regnamespace ORDER BY proname")).rows.map(row=>row.proname),['admit','begin_operation','current_policy','finish_operation','settle']);
   await withRecoveryFrontendSession(prepared,action,deps,async({receipt,probe,verify})=>{
     assert.equal(receipt.status,'P2_RECOVERY_DATABASE_CURRENT');assert.equal(receipt.originalReceiptSha256['job-outcome.json'],null);assert.equal(receipt.sqlReplayed,false);
@@ -38,6 +75,24 @@ try{
     const actual=await observeRecoveryPhysical({...probe,operation:'verify-schema'},deps);assert.equal(actual.status,'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED');
     assert.equal(actual.admission.newWork,false);await verify();checks++;
   });
+  await admin.query('CREATE ROLE recovery_rogue LOGIN NOINHERIT');
+  const sequence=(await admin.query("SELECT quote_ident(n.nspname)||'.'||quote_ident(c.relname) AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='S' ORDER BY c.oid LIMIT 1")).rows[0].name;
+  await checkFrontendFault('frontend-runtime-inbound','GRANT recovery_runtime TO recovery_rogue','REVOKE recovery_runtime FROM recovery_rogue');
+  await checkFrontendFault('frontend-runtime-outbound','GRANT recovery_rogue TO recovery_runtime','REVOKE recovery_rogue FROM recovery_runtime');
+  await checkFrontendFault('frontend-runtime-rogue-admin','GRANT recovery_runtime TO recovery_rogue WITH ADMIN TRUE, INHERIT FALSE, SET FALSE','REVOKE recovery_runtime FROM recovery_rogue');
+  await checkFrontendFault('frontend-owner-inbound','GRANT recovery_owner TO recovery_rogue','REVOKE recovery_owner FROM recovery_rogue');
+  await checkFrontendFault('frontend-owner-outbound','GRANT recovery_rogue TO recovery_owner','REVOKE recovery_rogue FROM recovery_owner');
+  await checkFrontendFault('frontend-sequence-update','GRANT UPDATE ON SEQUENCE '+sequence+' TO recovery_runtime','REVOKE UPDATE ON SEQUENCE '+sequence+' FROM recovery_runtime');
+  await checkFrontendFault('frontend-default-unexpected-grantee','ALTER DEFAULT PRIVILEGES FOR ROLE recovery_creator IN SCHEMA public GRANT SELECT ON TABLES TO recovery_rogue','ALTER DEFAULT PRIVILEGES FOR ROLE recovery_creator IN SCHEMA public REVOKE SELECT ON TABLES FROM recovery_rogue');
+  await checkFrontendFault('frontend-global-default','ALTER DEFAULT PRIVILEGES FOR ROLE recovery_creator GRANT SELECT ON TABLES TO recovery_rogue','ALTER DEFAULT PRIVILEGES FOR ROLE recovery_creator REVOKE SELECT ON TABLES FROM recovery_rogue');
+  const frontendTable=(await admin.query("SELECT quote_ident(n.nspname)||'.'||quote_ident(c.relname) AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' ORDER BY c.oid LIMIT 1")).rows[0].name;
+  await checkFrontendFault('frontend-table-grant-option','GRANT SELECT ON TABLE '+frontendTable+' TO recovery_runtime WITH GRANT OPTION','REVOKE GRANT OPTION FOR SELECT ON TABLE '+frontendTable+' FROM recovery_runtime');
+  await checkFrontendFault('frontend-default-grant-option','ALTER DEFAULT PRIVILEGES FOR ROLE recovery_creator IN SCHEMA public GRANT SELECT ON TABLES TO recovery_runtime WITH GRANT OPTION','ALTER DEFAULT PRIVILEGES FOR ROLE recovery_creator IN SCHEMA public REVOKE GRANT OPTION FOR SELECT ON TABLES FROM recovery_runtime');
+  for(const privilege of ['REFERENCES','TRIGGER']){
+    await checkFrontendFault('frontend-table-'+privilege.toLowerCase(),'GRANT '+privilege+' ON TABLE '+frontendTable+' TO recovery_runtime','REVOKE '+privilege+' ON TABLE '+frontendTable+' FROM recovery_runtime');
+  }
+  console.log(JSON.stringify({status:'OWNED_P2_RECOVERY_FRONTEND_PRIVILEGE_RESULTS',nonSuperuserCreatorMemberships:creatorMemberships,faults:privilegeFaults}));
+  assert.ok(privilegeFaults.every(row=>row.initialRefused===true&&row.continuousRefused===true&&row.restorationEntered===false),'frontend privilege drift entered restoration');
   const stale=structuredClone(prepared);stale.plan.owner.oid='9999999';
   await assert.rejects(withRecoveryFrontendSession(stale,action,deps,async()=>assert.fail('stale prepared owner OID accepted')));checks++;
   await admin.query('ALTER ROLE recovery_owner CREATEROLE');
@@ -76,16 +131,50 @@ try{
         target:{schemaVersion:1,service:'lash-her-'+service+'-api',environment:'staging',host:connection.hostname,port:Number(connection.port),database:service+'_recovery_owned',user:service+'_recovery_migration',serverMajor,artifactSha256:apiArtifact.artifactSha256,approvedPendingTags:apiArtifact.entries.map(row=>row.tag),allowEmptyBootstrap:false,providerIdentityEvidenceRef:'owned/provider'}};
       const request={version:1,service:'lash-her-'+service+'-api',job:apiJob,schemaBytes,candidateSha256:action.candidateSha256,recoveryActionId:action.recoveryActionId};
       const modules=async()=>({...api,prepareOperatorMigration:(job,schema,_directory,service)=>api.prepareOperatorMigration(job,schema,join(apiRoot,'drizzle'),service)});
+      const legacyModules=async()=>({...await modules(),verifyOperatorRoles:undefined});
       const actual=await observeRecoveryApiCurrent(request,{getUrl:()=>privateInput[service],modules});assert.equal(actual.status,'P2_RECOVERY_API_DATABASE_CURRENT');assert.deepEqual(actual.pendingTags,[]);checks++;
+      await assert.rejects(observeRecoveryApiCurrent(request,{getUrl:()=>privateInput[service],modules:legacyModules}),error=>error.checkpoint==='api-role-export');legacyApiVerifierRefusals++;checks++;
+      assert.equal((await observeRecoveryApiCurrent(request,{getUrl:()=>privateInput[service],modules})).status,'P2_RECOVERY_API_DATABASE_CURRENT');
       // Original manifest remains nonempty while current-only verification is
       // independent. Removing a committed journal row never invokes apply.
       assert.equal(request.job.target.approvedPendingTags.length,apiArtifact.entries.length);
       const privileged=await connect(privateInput[service+'Admin']);
       try{
+        const runtime=apiJob.runtimeRole,migration=apiJob.target.user;
+        const table=(await privileged.query("SELECT quote_ident(n.nspname)||'.'||quote_ident(c.relname) AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' ORDER BY c.oid LIMIT 1")).rows[0].name;
+        const seq=(await privileged.query("SELECT quote_ident(n.nspname)||'.'||quote_ident(c.relname) AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='S' ORDER BY c.oid LIMIT 1")).rows[0].name;
+        const faults=[
+          ['runtime-inbound','GRANT '+runtime+' TO recovery_rogue','REVOKE '+runtime+' FROM recovery_rogue'],
+          ['migration-inbound','GRANT '+migration+' TO recovery_rogue','REVOKE '+migration+' FROM recovery_rogue'],
+          ['runtime-outbound','GRANT recovery_rogue TO '+runtime,'REVOKE recovery_rogue FROM '+runtime],
+          ['sequence-update','GRANT UPDATE ON SEQUENCE '+seq+' TO '+runtime,'REVOKE UPDATE ON SEQUENCE '+seq+' FROM '+runtime],
+          ...['TRIGGER','REFERENCES'].map(privilege=>['table-'+privilege.toLowerCase(),'GRANT '+privilege+' ON TABLE '+table+' TO '+runtime,'REVOKE '+privilege+' ON TABLE '+table+' FROM '+runtime]),
+          ['default-unexpected-grantee','ALTER DEFAULT PRIVILEGES FOR ROLE '+migration+' IN SCHEMA public GRANT SELECT ON TABLES TO recovery_rogue','ALTER DEFAULT PRIVILEGES FOR ROLE '+migration+' IN SCHEMA public REVOKE SELECT ON TABLES FROM recovery_rogue'],
+          ['default-sequence-update','ALTER DEFAULT PRIVILEGES FOR ROLE '+migration+' IN SCHEMA public GRANT UPDATE ON SEQUENCES TO '+runtime,'ALTER DEFAULT PRIVILEGES FOR ROLE '+migration+' IN SCHEMA public REVOKE UPDATE ON SEQUENCES FROM '+runtime],
+          ['global-default','ALTER DEFAULT PRIVILEGES FOR ROLE '+migration+' GRANT SELECT ON TABLES TO recovery_rogue','ALTER DEFAULT PRIVILEGES FOR ROLE '+migration+' REVOKE SELECT ON TABLES FROM recovery_rogue'],
+          ['table-grant-option','GRANT SELECT ON TABLE '+table+' TO '+runtime+' WITH GRANT OPTION','REVOKE GRANT OPTION FOR SELECT ON TABLE '+table+' FROM '+runtime],
+          ['default-grant-option','ALTER DEFAULT PRIVILEGES FOR ROLE '+migration+' IN SCHEMA public GRANT SELECT ON TABLES TO '+runtime+' WITH GRANT OPTION','ALTER DEFAULT PRIVILEGES FOR ROLE '+migration+' IN SCHEMA public REVOKE GRANT OPTION FOR SELECT ON TABLES FROM '+runtime],
+        ];
+        for(const[id,install,remove]of faults){
+          assert.equal((await observeRecoveryApiCurrent(request,{getUrl:()=>privateInput[service],modules})).status,'P2_RECOVERY_API_DATABASE_CURRENT');
+          await privileged.query(install);
+          try{let refused=false;try{await observeRecoveryApiCurrent(request,{getUrl:()=>privateInput[service],modules});}catch(error){refused=error.checkpoint==='api-role-policy';}
+            privilegeFaults.push({id:service+'-'+id,initialRefused:refused});checks++;
+          }finally{await privileged.query(remove);}
+          assert.equal((await observeRecoveryApiCurrent(request,{getUrl:()=>privateInput[service],modules})).status,'P2_RECOVERY_API_DATABASE_CURRENT');
+        }
         await privileged.query('DELETE FROM drizzle.__drizzle_migrations WHERE id=(SELECT max(id) FROM drizzle.__drizzle_migrations)');
-        await assert.rejects(observeRecoveryApiCurrent(request,{getUrl:()=>privateInput[service],modules}));checks++;
+        await assert.rejects(observeRecoveryApiCurrent(request,{getUrl:()=>privateInput[service],modules}),error=>error.checkpoint==='api-lineage');checks++;
       }finally{await privileged.end();}
     }finally{await apiAdmin.end();}
   }
-  console.log(JSON.stringify({status:'OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS',checks,frontendMigrations:artifact.migrations.length,courseMigrations:JSON.parse(readFileSync(join(privateInput.apiRoots.course,'drizzle/meta/_journal.json'))).entries.length,communityMigrations:JSON.parse(readFileSync(join(privateInput.apiRoots.community,'drizzle/meta/_journal.json'))).entries.length,serverMajor,noSqlReplay:true,originalFrontendTerminalRecreated:false}));
+  console.log(JSON.stringify({status:'OWNED_P2_RECOVERY_PRIVILEGE_FAULT_RESULTS',faults:privilegeFaults}));
+  assert.ok(privilegeFaults.every(row=>row.initialRefused===true&&row.continuousRefused!==false&&row.restorationEntered!==true),'unsafe privilege fault was accepted');
+  assertOwnedEnvironment();
+  console.log(JSON.stringify({status:'OWNED_P2_RECOVERY_DATABASE_SOURCE_CHECKS_PASS',checks,frontendMigrations:artifact.migrations.length,courseMigrations:JSON.parse(readFileSync(join(privateInput.apiRoots.course,'drizzle/meta/_journal.json'))).entries.length,communityMigrations:JSON.parse(readFileSync(join(privateInput.apiRoots.community,'drizzle/meta/_journal.json'))).entries.length,serverMajor,noSqlReplay:true,originalFrontendTerminalRecreated:false,
+    skipped:0,fixtureOnly:true,providerTouched:false,privilegeFaults:privilegeFaults.map(row=>row.id).sort(),
+    frontendInitialPrivilegeRefusals:privilegeFaults.filter(row=>row.id.startsWith('frontend-')&&row.initialRefused).length,
+    frontendContinuousPrivilegeRefusals:privilegeFaults.filter(row=>row.id.startsWith('frontend-')&&row.continuousRefused).length,
+    apiPrivilegeRefusals:privilegeFaults.filter(row=>!row.id.startsWith('frontend-')&&row.initialRefused).length,
+    legacyApiVerifierRefusals,frontendCreatorPolicy:'actual-non-superuser-automatic-admin-plus-explicit-owner-set',frontendCreatorMemberships:creatorMemberships.length,childEnvironmentAllowlistEnforced:true}));
 }finally{await admin.end();}

@@ -19,6 +19,22 @@ export const RECOVERY_HELD_LOCK = `SELECT EXISTS(SELECT 1 FROM pg_locks WHERE lo
  AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND classid=((hashtext($1)::bigint>>32)&4294967295)::oid
  AND objid=(hashtext($1)::bigint&4294967295)::oid AND objsubid=1 AND mode='ExclusiveLock' AND granted) AS held`;
 
+async function verifyRecoveryMemberships(client, runtimeOid, owner) {
+  require(owner && /^[1-9][0-9]*$/u.test(owner.oid));
+  const operator = (await client.query("SELECT session_user::regrole::oid::text AS oid,(SELECT rolsuper FROM pg_roles WHERE rolname=session_user) AS super")).rows[0];
+  const rows = (await client.query(`SELECT m.roleid::text,m.member::text,m.grantor::text,m.admin_option,m.inherit_option,m.set_option,g.rolsuper AS grantor_super
+    FROM pg_auth_members m JOIN pg_roles g ON g.oid=m.grantor WHERE m.roleid=ANY($1::oid[]) OR m.member=ANY($1::oid[])
+    ORDER BY m.roleid,m.member,m.grantor`, [[owner.oid,runtimeOid]])).rows;
+  // Exact frontend-role-preparation policy, bound to the authenticated original
+  // operator. Only its explicit owner SET grant and PG16+ creator administration
+  // survive. No selected role has an outbound membership or another member.
+  const creators=rows.filter(row=>row.admin_option===true),ownerSet=rows.filter(row=>row.admin_option===false);
+  require(operator && rows.length===(operator.super?1:3) && creators.length===(operator.super?0:2) &&
+    creators.every(row=>row.member===operator.oid && [owner.oid,runtimeOid].includes(row.roleid) && row.grantor_super===true && row.inherit_option===false && row.set_option===false) &&
+    new Set(creators.map(row=>row.roleid)).size===creators.length && ownerSet.length===1 && ownerSet[0].roleid===owner.oid &&
+    ownerSet[0].member===operator.oid && ownerSet[0].grantor===operator.oid && ownerSet[0].inherit_option===false && ownerSet[0].set_option===true,'role-memberships');
+}
+
 export async function verifyRecoveryRuntimeGrants(client, target, owner) {
   let checkpoint='runtime-role-flags';
   try {
@@ -26,6 +42,7 @@ export async function verifyRecoveryRuntimeGrants(client, target, owner) {
     pg_has_role($1,$2,'MEMBER') AS migration_member,has_schema_privilege($1,'public','CREATE') AS ddl
     FROM pg_roles WHERE rolname=$1`, [target.runtimeRole, target.user])).rows;
   require(roles.length === 1 && roles[0].rolcanlogin === true && ['rolinherit','rolsuper','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls','migration_member','ddl'].every(key => roles[0][key] === false));
+  checkpoint='role-memberships';await verifyRecoveryMemberships(client,roles[0].oid,owner);
   checkpoint='runtime-ownership';require((await client.query(`SELECT 1 WHERE has_database_privilege($1,current_database(),'CREATE') OR
     EXISTS(SELECT 1 FROM pg_database WHERE datname=current_database() AND pg_has_role($1,datdba,'MEMBER')) OR
     EXISTS(SELECT 1 FROM pg_namespace WHERE nspname IN ('public','drizzle','frontend_admission') AND pg_has_role($1,nspowner,'MEMBER')) OR
@@ -37,10 +54,38 @@ export async function verifyRecoveryRuntimeGrants(client, target, owner) {
   require((await client.query("SELECT has_schema_privilege($1,'drizzle','USAGE') AS journal_access", [target.runtimeRole])).rows[0]?.journal_access === false);
   checkpoint='runtime-extra-privileges';require((await client.query(`SELECT 1 FROM pg_auth_members WHERE member=$1::oid UNION ALL
     SELECT 1 FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relkind IN ('r','p') AND
-      EXISTS(SELECT 1 FROM unnest(ARRAY['TRUNCATE','REFERENCES','TRIGGER']) p WHERE has_table_privilege($2,c.oid,p))`, [roles[0].oid,target.runtimeRole])).rows.length===0);
-  checkpoint='runtime-default-grants';const defaults = (await client.query(`SELECT d.defaclobjtype AS kind,a.privilege_type AS privilege FROM pg_default_acl d
-    CROSS JOIN LATERAL aclexplode(d.defaclacl) a WHERE d.defaclrole=current_user::regrole AND d.defaclnamespace='public'::regnamespace AND a.grantee=$1::regrole`, [target.runtimeRole])).rows;
-  require([...['SELECT','INSERT','UPDATE','DELETE'].map(privilege => ['r',privilege]),['S','SELECT'],['S','USAGE']].every(([kind, privilege]) => defaults.some(row => row.kind === kind && row.privilege === privilege)));
+      (EXISTS(SELECT 1 FROM unnest(ARRAY['TRUNCATE','REFERENCES','TRIGGER']) p WHERE has_table_privilege($2,c.oid,p)) OR
+       EXISTS(SELECT 1 FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE']) p WHERE has_table_privilege($2,c.oid,p||' WITH GRANT OPTION')) OR
+       CASE WHEN current_setting('server_version_num')::int>=170000 THEN has_table_privilege($2,c.oid,'MAINTAIN') ELSE false END) UNION ALL
+    SELECT 1 FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relkind='S' AND
+      (has_sequence_privilege($2,c.oid,'UPDATE') OR EXISTS(SELECT 1 FROM unnest(ARRAY['SELECT','USAGE','UPDATE']) p WHERE has_sequence_privilege($2,c.oid,p||' WITH GRANT OPTION')))`, [roles[0].oid,target.runtimeRole])).rows.length===0);
+  checkpoint='runtime-default-grants';const defaults = (await client.query(`SELECT d.defaclobjtype AS kind,n.nspname AS schema,a.grantee::text,a.grantor::text,a.privilege_type AS privilege,a.is_grantable FROM pg_default_acl d
+    LEFT JOIN pg_namespace n ON n.oid=d.defaclnamespace CROSS JOIN LATERAL aclexplode(d.defaclacl) a WHERE d.defaclrole=session_user::regrole
+    ORDER BY kind,privilege,grantee`, [])).rows;
+  const operatorOid=(await client.query('SELECT session_user::regrole::oid::text AS oid')).rows[0].oid;
+  require(defaults.length===6 && defaults.every(row=>row.schema==='public' && row.grantee===roles[0].oid && row.grantor===operatorOid && !row.is_grantable) &&
+    isDeepStrictEqual(defaults.map(row=>row.kind+':'+row.privilege).sort(),['r:SELECT','r:INSERT','r:UPDATE','r:DELETE','S:SELECT','S:USAGE'].sort()));
+  require((await client.query(`SELECT 1 FROM pg_default_acl d CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+    WHERE d.defaclrole<>session_user::regrole AND a.grantee=ANY($1::oid[])`, [[owner.oid,roles[0].oid]])).rows.length===0);
+  checkpoint='selected-direct-acl';const directAcl=(await client.query(`WITH entries AS (
+    SELECT 'database' AS kind,d.datname AS scope,d.datdba::text AS owner,a.* FROM pg_database d CROSS JOIN LATERAL aclexplode(d.datacl) a
+    UNION ALL SELECT 'schema',n.nspname,n.nspowner::text,a.* FROM pg_namespace n CROSS JOIN LATERAL aclexplode(n.nspacl) a
+    UNION ALL SELECT CASE WHEN c.relkind='S' THEN 'sequence' ELSE 'table' END,n.nspname,c.relowner::text,a.* FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(c.relacl) a
+    UNION ALL SELECT 'column',n.nspname,c.relowner::text,a.* FROM pg_attribute t JOIN pg_class c ON c.oid=t.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(t.attacl) a
+    UNION ALL SELECT 'routine',n.nspname,p.proowner::text,a.* FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace CROSS JOIN LATERAL aclexplode(p.proacl) a
+    UNION ALL SELECT 'type',n.nspname,t.typowner::text,a.* FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace CROSS JOIN LATERAL aclexplode(t.typacl) a
+  ) SELECT kind,scope,owner,grantee::text,privilege_type,is_grantable FROM entries WHERE grantee=ANY($1::oid[])`, [[owner.oid,roles[0].oid]])).rows;
+  require(directAcl.every(row=>!row.is_grantable && (row.grantee===owner.oid ?
+    row.kind==='database' ? row.scope===target.database && row.privilege_type==='CREATE' :
+      row.scope==='frontend_admission' && row.owner===owner.oid && ['schema','table','sequence','routine'].includes(row.kind) :
+    row.kind==='database' ? row.scope===target.database && row.privilege_type==='CONNECT' :
+      row.kind==='schema' ? ['public','frontend_admission'].includes(row.scope) && row.privilege_type==='USAGE' :
+        row.scope==='frontend_admission' ? row.kind==='routine' && row.privilege_type==='EXECUTE' :
+          row.scope==='public' && (row.kind==='table' ? ['SELECT','INSERT','UPDATE','DELETE'].includes(row.privilege_type) :
+            row.kind==='sequence' && ['SELECT','USAGE'].includes(row.privilege_type)))));
+  require((await client.query(`SELECT 1 FROM pg_shdepend WHERE refclassid='pg_authid'::regclass AND refobjid=ANY($1::oid[]) AND deptype IN ('a','i')
+    AND ((dbid<>0 AND dbid<>(SELECT oid FROM pg_database WHERE datname=current_database())) OR
+      classid NOT IN ('pg_database'::regclass,'pg_namespace'::regclass,'pg_class'::regclass,'pg_proc'::regclass,'pg_default_acl'::regclass)) LIMIT 1`, [[owner.oid,roles[0].oid]])).rows.length===0);
   checkpoint='runtime-admission-privileges';const admission = (await client.query(`SELECT has_schema_privilege($1,'frontend_admission','USAGE') AS usage,
     has_schema_privilege($1,'frontend_admission','CREATE') AS ddl,
     EXISTS(SELECT 1 FROM pg_class c CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p
