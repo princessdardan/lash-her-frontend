@@ -1,0 +1,48 @@
+{
+  "c07KeyCounts": {
+    "buildKeyCatalog": 228,
+    "keyCatalog": 228,
+    "runtimeKeyCatalog": 228
+  },
+  "capabilityClosuresProduced": false,
+  "collectionPreparationCorrection": "The initial runner looked for old row fields id/uid; prior sanitized inventory uses deploymentId. Offline reconciliation corrected prior counts and verified all81IDs/source/creation against fresh lists and actual ownerGETs. No missing ID, extra observation request or absent-catalog inference resulted.",
+  "explicitProviderGetCalls": 87,
+  "fileSha256": {
+    "README.md": "4e0ce4c1deefe6eb211fd6d40263322ffd3ee2338fab4b6454776801a24c2fc4",
+    "focused-eslint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "key-name-sets.json": "ac766bc235bd37830bcaff9d8a22311165eb7afba23af9755f869d51e675fd12",
+    "observations.json": "4402700ecf1b6a88cac0b7168294736838f63f5d15e4a1543e1506f87ad19128",
+    "unit.log": "05016c27fdc94fc41a232c9a09c6f5d835fb07997a56d2feb9ef91621c9df229"
+  },
+  "finalDeploymentListPages": 2,
+  "finalRepositoryProjectPages": 1,
+  "initialDeploymentListPages": 2,
+  "initialRepositoryProjectPages": 1,
+  "nonsecretKeyNameEntriesAcrossUniqueSets": 7255,
+  "normalizerCommit": "1b1b3378b08fc1e4807f50c809c9e54724931c45",
+  "originalValuesRecovered": false,
+  "ownerDeploymentGets": 81,
+  "privatePermissionViolations": 0,
+  "privateRawDirectoryMode": "0700",
+  "privateRawFileMode": "0600",
+  "privateRawFilesRetained": true,
+  "retainedSurfaces": 81,
+  "sourceAdmissionFenceVerified": false,
+  "sourceBoundCatalogs": 76,
+  "sourceFiles": {
+    "ops/platform/frontend-deployment-key-catalog.mjs": "398202efeebe2800c8a08549c19cdaa46ec3707e828d96599e28233817ff8d81",
+    "ops/platform/frontend-deployment-key-catalog.test.mjs": "e5a68b5212d25c7051eb8ba168d192f0be55caae63f0c34d0d9372abf0b56d48"
+  },
+  "status": "READ_ONLY_KEY_NAME_CATALOG_OBSERVATIONS_RETAINED",
+  "tests": {
+    "actualOwnerPayloadsNormalized": 76,
+    "canonicalOfflineNormalizationCount": 76,
+    "focusedEslint": "passed",
+    "unitFailed": 0,
+    "unitPassed": 8
+  },
+  "uniqueNonsecretKeySets": 31,
+  "unknownMissingSourceSha": 5,
+  "version": 1,
+  "wholeReleaseAccepted": false
+}
