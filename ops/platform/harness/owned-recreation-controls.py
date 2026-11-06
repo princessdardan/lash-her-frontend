@@ -56,6 +56,22 @@ def main():
     target.parent.chmod(0o777)
     receiver(False, "ROOT_OWNED_EXISTING_SOURCE_REQUIRED"); target.parent.chmod(0o755)
     records.append("writable-source-directory-refused")
+    # Exercise the real fixed receiver above the former 16 MB source bound.
+    # All entries are public synthetic source; validation precedes any writes.
+    large = b'x' * 1_500_000
+    payload = {"commit": "2" * 40, "files": [{"path": f"ops/owned-{index}.mjs",
+        "sha256": hashlib.sha256(large).hexdigest(), "data": base64.b64encode(large).decode()}
+        for index in range(12)]}
+    assert receiver()["files"] == 12
+    assert receiver()["existingSourceVerified"] is True
+    records.append("bounded-public-source-above-sixteen-megabytes-installed-and-rechecked")
+    payload["commit"] = "3" * 40
+    large = b'x' * 2_000_000
+    payload["files"] = [{"path": f"ops/owned-{index}.mjs", "sha256": hashlib.sha256(large).hexdigest(),
+        "data": base64.b64encode(large).decode()} for index in range(21)]
+    receiver(False, "SOURCE_HASH_REFUSED")
+    assert not (Path("/opt/lash-her/operators") / payload["commit"]).exists()
+    records.append("public-source-over-forty-megabytes-refused-before-installation")
     units = Path("/tmp/recreation-systemd-owned"); units.mkdir(mode=0o700)
     (units / "docker.service").write_text("[Service]\nType=oneshot\nExecStart=/bin/true\n")
     names = ["lash-her-watchdog.service", "lash-her-watchdog.timer", "lash-her-certificates-staging.service", "lash-her-certificates-staging.timer"]

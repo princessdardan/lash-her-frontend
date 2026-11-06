@@ -38,7 +38,7 @@ def verify_source_closure(initial, root):
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022 or not 0 < info.st_size <= 2_000_000:
             raise ValueError('P2_SOURCE_PERMISSIONS_REFUSED')
         raw = path.read_bytes(); total += len(raw)
-        if hashlib.sha256(raw).hexdigest() != expected or total > 16_000_000:
+        if hashlib.sha256(raw).hexdigest() != expected or total > 40_000_000:
             raise ValueError('P2_SOURCE_CONTENT_CHANGED')
     return digest
 

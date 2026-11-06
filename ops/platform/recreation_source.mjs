@@ -60,6 +60,21 @@ export async function verifyOperatorCi({api,sourceCommit,branch,workflowBytes}) 
     ciUrl:`https://github.com/${repository}/actions/runs/${run.id}`,applicationCandidateRebuilt:false};
 }
 
+export function readOperatorSourceFiles(source) {
+  const git=args=>execFileSync("git",["-C",source,...args],{encoding:"utf8",timeout:10000,maxBuffer:16_000_000,
+    stdio:["ignore","pipe","pipe"]});
+  const paths=git(["ls-files","-z","--","ops"]).split("\0").filter(path=>path&&/\.(?:py|mjs|json|yaml|yml|service|timer|sh|guard)$/u.test(path));
+  assert.ok(paths.length>0&&paths.length<=400);
+  let total=0;
+  return paths.map(path=> {
+    assert.ok(path.startsWith("ops/")&&!path.split("/").includes(".."));
+    const raw=readFileSync(join(source,path));total+=raw.length;
+    // The 33 immutable historical source profiles consume 31.8 MB. Keep a
+    // measured bound for the complete public source, including those profiles.
+    assert.ok(raw.length<=2_000_000&&total<=40_000_000);
+    return {path,sha256:sha256(raw),data:raw.toString("base64")};
+  });
+}
 export function committedOperatorSource(source,sourceCommit) {
   const git=args=>execFileSync("git",["-C",source,...args],{encoding:"utf8",timeout:10000,maxBuffer:16_000_000,
     stdio:["ignore","pipe","pipe"]});
@@ -67,15 +82,7 @@ export function committedOperatorSource(source,sourceCommit) {
   assert.equal(realpathSync(git(["rev-parse","--show-toplevel"]).trim()),realpathSync(source));
   assertSourceCheckout(source,sourceCommit);
   const branch=git(["branch","--show-current"]).trim();
-  const paths=git(["ls-files","-z","--","ops"]).split("\0").filter(path=>path&&/\.(?:py|mjs|json|yaml|yml|service|timer|sh|guard)$/u.test(path));
-  assert.ok(paths.length>0&&paths.length<=400);
-  let total=0;
-  const files=paths.map(path=> {
-    assert.ok(path.startsWith("ops/")&&!path.split("/").includes(".."));
-    const raw=readFileSync(join(source,path));total+=raw.length;
-    assert.ok(raw.length<=2_000_000&&total<=16_000_000);
-    return {path,sha256:sha256(raw),data:raw.toString("base64")};
-  });
+  const files=readOperatorSourceFiles(source);
   // A public source handoff never includes dotenv, dependencies or private
   // retained receipts. Git cleanliness is checked again before returning.
   assertSourceCheckout(source,sourceCommit);

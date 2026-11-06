@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {verifyOperatorCi,verifyExactHeadWorkflow} from "./recreation_source.mjs";
+import {execFileSync} from "node:child_process";
+import {fileURLToPath} from "node:url";
+import {verifyOperatorCi,verifyExactHeadWorkflow,readOperatorSourceFiles} from "./recreation_source.mjs";
 import {REQUIRED_SOURCE_JOBS} from "./source-policy.mjs";
 
 function fixture() {
@@ -52,4 +54,11 @@ test("real CI workflow pins every checkout to exact PR source and never persists
   assert.equal(verifyExactHeadWorkflow(raw).length,64);
   const changed=raw.toString().replaceAll("          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n","");
   assert.throws(()=>verifyExactHeadWorkflow(Buffer.from(changed)));
+});
+test("the complete committed operator source fits the real public installation envelope",()=> {
+  const root=fileURLToPath(new URL("../..",import.meta.url));
+  const sourceCommit=execFileSync("git",["-C",root,"rev-parse","HEAD"],{encoding:"utf8"}).trim();
+  const files=readOperatorSourceFiles(root);
+  assert.equal(files.filter(file=>file.path.startsWith("ops/platform/profiles/frontend-historical-sources/")).length,33);
+  assert.ok(Buffer.byteLength(JSON.stringify({commit:sourceCommit,files}))<=56_000_000);
 });

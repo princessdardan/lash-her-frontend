@@ -39,7 +39,7 @@ for f in files:
  if not name.startswith('ops/') or rel.is_absolute() or '..' in rel.parts or name in seen: raise ValueError('SOURCE_PATH_REFUSED')
  if not name.endswith(('.py','.mjs','.json','.yaml','.yml','.service','.timer','.sh','.guard')): raise ValueError('SOURCE_TYPE_REFUSED')
  raw=base64.b64decode(f['data'],validate=True); total+=len(raw)
- if len(raw)>2000000 or total>16000000 or hashlib.sha256(raw).hexdigest()!=f['sha256']: raise ValueError('SOURCE_HASH_REFUSED')
+ if len(raw)>2000000 or total>40000000 or hashlib.sha256(raw).hexdigest()!=f['sha256']: raise ValueError('SOURCE_HASH_REFUSED')
  seen.add(name); verified.append((rel,raw))
 if root.exists():
  if not root.is_dir() or root.stat().st_uid!=0 or root.stat().st_mode & 0o022: raise ValueError('ROOT_OWNED_EXISTING_SOURCE_REQUIRED')
@@ -113,10 +113,10 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
   }
   const env=Object.fromEntries(["PATH","HOME","TMPDIR","LANG"].filter(k=>environment[k]!==undefined).map(k=>[k,environment[k]]));
   let sequence=0;
-  async function run(remote,payload,timeout=120_000,maxOutput=4_000_000,readAfterAbort=false) {
+  async function run(remote,payload,timeout=120_000,maxOutput=4_000_000,readAfterAbort=false,maxInput=24_000_000) {
     assert.ok(timeout>=1000 && timeout<=3_600_000);
     const raw=payload===undefined?Buffer.alloc(0):Buffer.from(JSON.stringify(payload));
-    assert.ok(raw.length<=24_000_000,"Bounded SSH input required");
+    assert.ok(raw.length<=maxInput,"Bounded SSH input required");
     // Persist a public command identifier before an uncertain remote mutation;
     // neither the caller nor transport automatically repeats it.
     const id=String(++sequence).padStart(3,"0");
@@ -139,7 +139,9 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
   return {
     machine:()=>run(["sudo","-n","/usr/bin/python3","-c",inspect]),
     bareRuntime:()=>run(["sudo","-n","/usr/bin/python3","-c",bareRuntime]),
-    installSource:payload=>run(["sudo","-n","/usr/bin/python3","-c",sourceInstall],payload),
+    // Only public source installation needs room for the 40 MB decoded bound
+    // plus base64/JSON. Private action inputs retain their existing 24 MB cap.
+    installSource:payload=>run(["sudo","-n","/usr/bin/python3","-c",sourceInstall],payload,120_000,4_000_000,false,56_000_000),
     phase:(commit,payload)=> {
       assert.match(commit,/^[a-f0-9]{40}$/u);
       assert.ok(["rollback","retire","restore"].includes(payload.operation));

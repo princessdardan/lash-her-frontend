@@ -54,3 +54,16 @@ test("a missing or permissive trust file refuses before SSH starts",async t=> {
   await assert.rejects(recreationSsh({...f,execute:async()=>{calls++;}}),/permissions required/u);
   assert.equal(calls,0);
 });
+test("large public source handoff does not expand private phase input limits",async t=> {
+  const calls=[];
+  const f=await fixture(t,async(args,stdin)=> {
+    calls.push({args,bytes:stdin.length});
+    return {exitCode:0,stdout:Buffer.from('{"status":"owned"}'),stderr:Buffer.alloc(0)};
+  });
+  const file={path:"ops/owned.mjs",sha256:"b".repeat(64),data:Buffer.alloc(1_500_000,120).toString("base64")};
+  const payload={commit:"a".repeat(40),files:Array.from({length:12},(_,index)=>({...file,path:`ops/owned-${index}.mjs`}))};
+  await f.ssh.installSource(payload);
+  assert.equal(calls.length,1);assert.ok(calls[0].bytes>24_000_000);
+  await assert.rejects(f.ssh.phase("a".repeat(40),{operation:"rollback",...payload}),/Bounded SSH input required/u);
+  assert.equal(calls.length,1);
+});
