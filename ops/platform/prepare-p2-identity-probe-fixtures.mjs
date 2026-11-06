@@ -22,6 +22,7 @@ const ROOT = realpathSync(fileURLToPath(new URL("../..", import.meta.url)));
 const MANIFEST = "contracts/api-integration/p2-candidate/manifest.json";
 const TEST_FILE = "ops/platform/p2-identity-negative-probe.test.mjs";
 const SOURCE_PATHS = Object.freeze(["src", "scripts", "contracts", "ops", "tests", "openapi", ":(glob).env*", ":(glob)tsconfig*.json"]);
+const DEPENDENCY_ROOTS = Object.freeze(["ops/gateway", "tools/api-contract-toolchain"]);
 const REPOSITORIES = Object.freeze({
   course: Object.freeze({
     name: "lash-her-course-api",
@@ -129,7 +130,15 @@ function cleanSource(run, directory, environment) {
   git(run, directory, ["diff", "--quiet", "--no-ext-diff", "--no-textconv", "HEAD", "--"], environment);
   git(run, directory, ["diff", "--cached", "--quiet", "--no-ext-diff", "--no-textconv", "HEAD", "--"], environment);
   demand(git(run, directory, ["ls-files", "--others", "--exclude-standard", "-z"], environment) === "");
-  demand(git(run, directory, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", ...SOURCE_PATHS], environment) === "");
+  const ignored = git(run, directory, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", ...SOURCE_PATHS], environment)
+    .split("\0").filter(Boolean);
+  if (ignored.length === 0) return;
+  const installedDependencies = DEPENDENCY_ROOTS.filter(path => {
+    try { git(run, directory, ["ls-files", "--error-unmatch", "--", `${path}/package-lock.json`], environment); return true; }
+    catch { return false; }
+  }).map(path => `${path}/node_modules/`);
+  demand(ignored.every(path => installedDependencies.some(root => path.startsWith(root)) ||
+    (path.split("/").includes("__pycache__") && path.endsWith(".pyc"))));
 }
 
 function sourceProof(run, directory, revision, url, environment) {

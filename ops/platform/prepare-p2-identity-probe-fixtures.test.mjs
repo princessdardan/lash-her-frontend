@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -38,9 +38,9 @@ function tap(changes = {}) {
   return `TAP version 13\n1..${fields.tests}\n${Object.entries(fields).map(([name, value]) => `# ${name} ${value}`).join("\n")}\n`;
 }
 
-function harness(testOutput = tap()) {
-  const root = mkdtempSync(join(tmpdir(), "p2-identity-prep-root-"));
-  const workspace = mkdtempSync(join(tmpdir(), "p2-identity-prep-work-"));
+function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDependencyRoots = ["ops/gateway", "tools/api-contract-toolchain"]) {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "p2-identity-prep-root-")));
+  const workspace = realpathSync(mkdtempSync(join(tmpdir(), "p2-identity-prep-work-")));
   chmodSync(root, 0o700); chmodSync(workspace, 0o700);
   mkdirSync(join(root, "contracts/api-integration/p2-candidate"), { recursive: true });
   writeFileSync(join(root, "contracts/api-integration/p2-candidate/manifest.json"), JSON.stringify(fixtureManifest()));
@@ -53,6 +53,11 @@ function harness(testOutput = tap()) {
     if (file !== "git") {
       assert.deepEqual(args, ["--test", "--test-reporter=tap", "ops/platform/p2-identity-negative-probe.test.mjs"]);
       return ok(testOutput);
+    }
+    if (options.cwd === root && args.includes("--ignored")) return ok(ignoredFrontendOutputs.join("\0") + (ignoredFrontendOutputs.length ? "\0" : ""));
+    if (options.cwd === root && args.includes("--error-unmatch")) {
+      const tracked = trackedDependencyRoots.some(path => args.at(-1) === `${path}/package-lock.json`);
+      return tracked ? ok(args.at(-1) + "\n") : { status: 1, signal: null, stdout: "", stderr: "not tracked" };
     }
     if (args[0] === "checkout") assert.fail("checkout must retain the fixed -c prefix");
     if (args.includes("checkout")) {
@@ -81,7 +86,8 @@ function harness(testOutput = tap()) {
 }
 
 test("prepares exact manifest sources with fixed clean builds and requires all 19 actual tests", () => {
-  const value = harness();
+  const value = harness(tap(), ["ops/gateway/node_modules/typescript/lib/typescript.js",
+    "tools/api-contract-toolchain/node_modules/ajv/dist/ajv.js", "ops/platform/host/__pycache__/probe.cpython-312.pyc"]);
   try {
     const result = withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: value.root, nodeVersion: "24.18.0",
       run: value.run, makeTemporaryDirectory: () => value.workspace }));
@@ -118,6 +124,23 @@ test("prepares exact manifest sources with fixed clean builds and requires all 1
     for (const call of value.calls) for (const forbidden of ["DATABASE_URL", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "CRON_SECRET", "VERCEL_TOKEN", "NODE_OPTIONS"])
       assert.equal(Object.hasOwn(call.env, forbidden), false, `${forbidden} must not enter ${call.file}`);
   } finally { value.cleanup(); }
+});
+
+test("refuses ignored source, environment configuration, and unreviewed dependency roots", () => {
+  for (const ignored of ["src/auth/foreign.ts", ".env.staging", "ops/foreign/node_modules/runtime/index.js", "tsconfig.hidden.json"]) {
+    const value = harness(tap(), [ignored]);
+    try {
+      assert.throws(() => withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: value.root, nodeVersion: "24.18.0",
+        run: value.run, makeTemporaryDirectory: () => value.workspace })), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u, ignored);
+      assert.equal(value.calls.some(call => call.file === "git" && call.args[0] === "fetch"), false);
+    } finally { value.cleanup(); }
+  }
+  const missingLock = harness(tap(), ["ops/gateway/node_modules/runtime/index.js"], []);
+  try {
+    assert.throws(() => withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: missingLock.root, nodeVersion: "24.18.0",
+      run: missingLock.run, makeTemporaryDirectory: () => missingLock.workspace })), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
+    assert.equal(missingLock.calls.some(call => call.file === "git" && call.args[0] === "fetch"), false);
+  } finally { missingLock.cleanup(); }
 });
 
 test("refuses a noncanonical repository, mismatched event revision, or artifact digest", () => {
