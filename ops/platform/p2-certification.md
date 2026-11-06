@@ -197,7 +197,21 @@ probe never selects a fallback branch.
 
 Gateway-last uses the existing source capture_before_stop and retain_ordered_stop
 functions, preserving old1, exact source-module hashes and latest lineage before
-the one replacement. The new gateway must have a different actual container ID,
+the one replacement. Before returning to the inherited Compose recreation it
+atomically persists and rereads the source `replacement-in-progress` lineage,
+then exclusively retains `known-ack-gateway-replacement-started.json`. This binds
+the installed helper/operator closure, action/candidate, authorization, original
+stop hashes/process/binding, original stopped pointer and pending pointer.
+Write, acknowledgement, existence or readback ambiguity refuses before recreation;
+the source never reconstructs a marker or silently retries it. Pending pointer,
+original stop receipts and marker bytes remain pinned through the gateway stage.
+Only a fresh exact different new process with source/config/mount/health and
+closed0 proof can publish the new `running-observed` lineage. The outcome binds
+the raw marker SHA as `gatewayReplacementStartedSha256`. Pending/no new readback
+is unknown; retained old1 cannot authorize another recreation. Older B gateway
+intents without this source-qualified frontier remain ineligible for automatic
+or inferred restoration. A later deliberate C action is separately qualified.
+The new gateway must have a different actual container ID,
 closed gates and zero counters. All ten current process checks then rebind to
 fresh observed identities, followed by full protected readiness and fresh current
 three-target/physical proofs. The terminal remains closed with native disabled;

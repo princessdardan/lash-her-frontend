@@ -15,6 +15,7 @@ import p2_certification_parent as parent
 import p2_certification_parent_test as cert_fixture
 import p2_release_scope_test as scope_fixture
 import p2_prior_gateway as prior
+import p2_prior_gateway_test as prior_fixture
 import release_test
 import unittest
 from unittest.mock import Mock
@@ -241,6 +242,8 @@ class KnownTransitionTests(unittest.TestCase):
         self.broker=parent.P2CertificationBroker.__new__(parent.P2CertificationBroker)
         b=self.broker;b.scope=self.scope;b.selected=self.scope.release;b.jobs=self.scope.jobs;b.configuration=self.configuration;b.source=self.root
         b.initial={'candidateSha256':'a'*64,'hostMachineId':'f'*64,'configurationSha256':self.scope.configuration_sha256,'certificationPlan':{'mode':'known-ack-recovery'}}
+        helper=self.root/source.HOST_MODULE;helper.parent.mkdir(parents=True);helper.write_bytes(b'owned-source-helper-transport-fixture')
+        b.initial['sourceSha256']={source.HOST_MODULE:source.digest(helper.read_bytes())}
         b.native_mutex=threading.Lock();b.full_calls=0
         def full():b.full_calls+=1;return {'nativeEnabled':False}
         b.initial['privateProbe']={'owned':'modeled-unexpired-original-probe'}
@@ -254,7 +257,7 @@ class KnownTransitionTests(unittest.TestCase):
         recorder._verify_authorization.side_effect=lambda _:self.scope.verify();recorder._gateway.side_effect=lambda:copy.deepcopy(self.old_gateway)
         b.known_ack_recorder=recorder
         authorization=source.KnownAckLossRecoveryAuthorization(source._ISSUER,recorder,{'recoveryActionId':'known-replacement','candidateSha256':'a'*64,
-            'operationId':'00000000-0000-4000-8000-000000000002','recoveryIntentSha256':'e'*64})
+            'operationId':'00000000-0000-4000-8000-000000000002','recoveryIntentSha256':'e'*64,'operatorSourceClosureSha256':'f'*64})
         actual_run=self.scope.run
         def run(args,**kwargs):
             if args[0]!='docker':return actual_run(args,**kwargs)
@@ -262,11 +265,12 @@ class KnownTransitionTests(unittest.TestCase):
             raw=result if isinstance(result,str) else json.dumps(result)
             return subprocess.CompletedProcess(args,0,stdout=raw if kwargs.get('text') else raw.encode(),stderr='' if kwargs.get('text') else b'')
         self.scope.run=run
+        self.real_remember=prior._remember;self.real_read_lineage=prior._read_lineage
         patches=[patch.object(source,'ROOT',self.root),patch.object(source.runtime,'runtime_environment',return_value={}),
             patch.object(prior,'observe_prior_gateway',side_effect=lambda *_args,**_kwargs:self.gateway()),
             patch.object(prior,'capture_before_stop',side_effect=self.capture_stop),patch.object(prior,'retain_ordered_stop',side_effect=self.retain_stop),
             patch.object(prior,'observe_stopped_prior_gateway',side_effect=lambda *_args,**_kwargs:copy.deepcopy(self.old_gateway)),
-            patch.object(prior,'_read_lineage',side_effect=lambda:copy.deepcopy(self.lineage)),patch.object(prior,'_remember',side_effect=lambda *_args,**_kwargs:self.lineage.update(state='running-observed'))]
+            patch.object(prior,'_read_lineage',side_effect=lambda:copy.deepcopy(self.lineage)),patch.object(prior,'_remember',side_effect=self.remember)]
         for item in patches:item.start();self.addCleanup(item.stop)
         self.boundary=source.issue_known_ack_loss_boundary(b,authorization)
         self.snapshot=self.boundary.snapshot;self.snapshot.mkdir(mode=0o700)
@@ -298,13 +302,21 @@ class KnownTransitionTests(unittest.TestCase):
             return row
         if 'config' in args:return {'services':{name:{'environment':{'MODEL_SERVICE':name}} for name in source.runtime.SERVICES}}
         if 'up' in args:
-            stage=tuple(args[args.index('90')+1:]);self.assertEqual(stage,self.boundary.stage_active);self.replace(stage);return ''
+            stage=tuple(args[args.index('90')+1:]);self.assertEqual(stage,self.boundary.stage_active)
+            if stage==('gateway',):
+                self.assertTrue(self.boundary.gateway_frontier_ready);self.assertEqual(prior._read_lineage()['state'],'replacement-in-progress')
+                self.assertEqual(source.digest(migrate.read_input(self.boundary.output,source.GATEWAY_STARTED)),self.boundary.gateway_started_sha256)
+            self.replace(stage);return ''
         if 'ps' in args:return '\n'.join(row['Id'] for row in self.model[args[-1]])
         if 'release-probe.mjs' in args:return {'status':'API_RUNTIME_BOUNDARIES_PASS','checks':sorted(source.runtime.PROBE_CHECKS)}
         if args[1]=='stop':
             row=next(row for rows in self.model.values() for row in rows if row['Id'].startswith(args[-1]));row['State'].update(Running=False,Pid=0)
             return args[-1]
         raise AssertionError('unreviewed modeled Docker operation')
+
+    def remember(self,initial,observation,state='running-observed',**extra):
+        self.lineage={'protocol':prior.PROTOCOL,'state':state,'actionId':initial['recoveryActionId'],'candidateSha256':initial['candidateSha256'],
+            'process':copy.deepcopy(observation['process']),'binding':copy.deepcopy(observation['binding']),**extra}
 
     def gateway(self):
         row=self.model['gateway'][0]
@@ -327,6 +339,85 @@ class KnownTransitionTests(unittest.TestCase):
     def replace(self,stage):
         for service in stage:
             self.model[service]=[self.metadata(service,1000+source.runtime.SERVICES.index(service),self.snapshot)]
+
+    def advance_to_gateway(self):
+        for stage in source.runtime.STAGES[:-1]:
+            self.boundary.before_stage(stage);self.replace(stage);self.boundary.after_stage(stage)
+
+    def test_actual_durable_pending_pointer_and_exclusive_marker_precede_gateway_up(self):
+        self.advance_to_gateway();retained=self.retain_stop
+        def stop(before,output,verify,command):
+            result=retained(before,output,verify,command)
+            self.real_remember(self.boundary.initial,before['observation'],'stopped-observed',
+                stopReceiptDirectory=str(output),stopReceiptSha256=source.digest(migrate.read_input(output,prior.STOPPED)))
+            return result
+        with patch.object(prior,'ROOT',self.root.resolve()),patch.object(prior,'_remember',side_effect=self.real_remember),\
+                patch.object(prior,'_read_lineage',side_effect=self.real_read_lineage),patch.object(prior,'retain_ordered_stop',side_effect=stop):
+            self.boundary.before_stage(('gateway',))
+            pointer=json.loads((self.root/'.p2-gateway-lineage.json').read_bytes())
+            self.assertEqual(pointer['state'],'replacement-in-progress');self.assertEqual(pointer,self.boundary.pending_lineage)
+            self.assertEqual((self.root/'.p2-gateway-lineage.json').stat().st_mode&0o777,0o600)
+            marker=json.loads(migrate.read_input(self.boundary.output,source.GATEWAY_STARTED))
+            self.assertEqual(marker['pendingLineage'],pointer);self.assertEqual(marker['sourceStopLineage']['state'],'stopped-observed')
+            self.assertEqual(marker['oldProcess'],self.old_gateway['process']);self.assertEqual(marker['orderedStopSha256'],self.boundary.stopped_sha256)
+            self.assertFalse(any('up' in call and 'gateway' in call for call in self.calls))
+            self.known_scope.run(['docker','compose','up','--wait-timeout','90','gateway'],env={},timeout=120,capture_output=True,check=True)
+            self.boundary.after_stage(('gateway',))
+            self.assertEqual(self.real_read_lineage()['state'],'running-observed');self.assertTrue(self.boundary.finished)
+
+    def test_pending_and_marker_write_or_ack_ambiguity_never_returns_to_gateway_up(self):
+        for mode in ('pending-before','pending-after','pending-readback','marker-before','marker-after','marker-readback','marker-existing'):
+            owned=KnownTransitionTests();owned.setUp()
+            try:
+                owned.advance_to_gateway();actual_write=migrate.write_json;actual_read=migrate.read_input
+                def remember(initial,observation,state='running-observed',**extra):
+                    if state=='replacement-in-progress' and mode=='pending-before':raise ValueError('OWNED_PENDING_WRITE_FAILURE')
+                    owned.remember(initial,observation,state,**extra)
+                    if state=='replacement-in-progress' and mode=='pending-after':raise ValueError('OWNED_PENDING_ACK_LOSS')
+                def lineage():
+                    result=copy.deepcopy(owned.lineage)
+                    if mode=='pending-readback' and result.get('state')=='replacement-in-progress':result['expectedCandidateSha256']='e'*64
+                    return result
+                def write(directory,name,value):
+                    if name==source.GATEWAY_STARTED and mode=='marker-before':raise ValueError('OWNED_MARKER_WRITE_FAILURE')
+                    result=actual_write(directory,name,value)
+                    if name==source.GATEWAY_STARTED and mode=='marker-after':raise ValueError('OWNED_MARKER_ACK_LOSS')
+                    return result
+                def read(directory,name,*args):
+                    raw=actual_read(directory,name,*args)
+                    return b'{}' if name==source.GATEWAY_STARTED and mode=='marker-readback' else raw
+                if mode=='marker-existing':actual_write(owned.boundary.output,source.GATEWAY_STARTED,{'owned':'preexisting'})
+                with self.subTest(mode=mode),patch.object(prior,'_remember',side_effect=remember),patch.object(prior,'_read_lineage',side_effect=lineage),\
+                        patch.object(migrate,'write_json',side_effect=write),patch.object(migrate,'read_input',side_effect=read):
+                    with self.assertRaises((ValueError,FileExistsError)):owned.boundary.before_stage(('gateway',))
+                self.assertFalse(owned.boundary.gateway_frontier_ready);self.assertFalse(owned.boundary.finished)
+                self.assertFalse(any('up' in call and 'gateway' in call for call in owned.calls))
+                with self.assertRaises(ValueError):owned.boundary.verify()
+            finally:owned.tearDown();owned.doCleanups()
+
+    def test_pending_pointer_marker_and_original_stop_drift_revoke_before_recreation(self):
+        self.advance_to_gateway();self.boundary.before_stage(('gateway',))
+        for name,code in ((source.GATEWAY_STARTED,'START_MARKER_CHANGED'),(prior.STOPPED,'STOP_RECEIPT_CHANGED'),(prior.BEFORE_STOP,'STOP_RECEIPT_CHANGED')):
+            path=self.boundary.output/name;raw=path.read_bytes();path.write_bytes(raw+b'\n')
+            with self.subTest(name=name),self.assertRaisesRegex(ValueError,code):self.known_scope.verify()
+            path.write_bytes(raw);self.known_scope.verify()
+        original=copy.deepcopy(self.lineage);self.lineage['state']='stopped-observed'
+        with self.assertRaisesRegex(ValueError,'PENDING_REPLACEMENT_REQUIRED'):self.known_scope.verify()
+        self.lineage=original;self.known_scope.verify()
+        self.assertFalse(any('up' in call and 'gateway' in call for call in self.calls))
+
+    def test_unknown_or_new_uncertain_gateway_cannot_resolve_pending_lineage(self):
+        for mode in ('unknown','new-one','same-id'):
+            owned=KnownTransitionTests();owned.setUp()
+            try:
+                owned.advance_to_gateway();owned.boundary.before_stage(('gateway',));owned.replace(('gateway',))
+                observed=owned.gateway()
+                if mode=='new-one':observed['admission']['uncertain']['recovery']=1
+                if mode=='same-id':owned.model['gateway'][0]['Id']=owned.old_gateway['process']['containerId']
+                with self.subTest(mode=mode),patch.object(prior,'observe_prior_gateway',side_effect=ValueError('OWNED_UNKNOWN') if mode=='unknown' else None,return_value=observed):
+                    with self.assertRaises(ValueError):owned.boundary.after_stage(('gateway',))
+                self.assertFalse(owned.boundary.finished);self.assertEqual(owned.lineage['state'],'replacement-in-progress')
+            finally:owned.tearDown();owned.doCleanups()
 
     def test_fixed_stages_preserve_old_one_and_require_distinct_new_zero(self):
         for stage in source.runtime.STAGES:
@@ -471,10 +562,29 @@ class KnownTransitionTests(unittest.TestCase):
             patch.object(source.runtime,'preflight',side_effect=lambda *_args:order.append(('preflight','source-fixed'))),patch('staging_admission.persist_state',side_effect=closed):
             actual=component.restore()
         self.assertEqual(actual['status'],'P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED');self.assertFalse(actual['ordinaryClosedZeroGate'])
+        self.assertEqual(actual['gatewayReplacementStartedSha256'],source.digest(migrate.read_input(self.boundary.output,source.GATEWAY_STARTED)))
         self.assertEqual(order[-2:],[('current','course','current-api-after'),('current','community','current-api-after')])
         self.assertEqual(len(actual['containers']),10);self.assertTrue(actual['originalGatewayUncertaintyPreserved'])
         self.assertEqual([tuple(call[call.index('90')+1:]) for call in self.calls if 'up' in call],source.runtime.STAGES)
         self.assertFalse(any('--execute' in call for call in self.calls));self.assertTrue((self.boundary.runtime_output/'known-ack-runtime-outcome.json').is_file())
+
+
+class KnownAckFrontierLineageTests(unittest.TestCase):
+    def test_actual_old_gateway_one_stop_proof_becomes_ineligible_after_pending_frontier(self):
+        fixture=prior_fixture.PriorGatewayTests();fixture.setUp()
+        try:
+            fixture.control({'mode':'drop'});before=fixture.stop_proof()
+            stopped=prior.observe_stopped_prior_gateway(fixture.initial,fixture.selected,fixture.verify,fixture.command)
+            self.assertEqual(stopped['admission']['uncertain'],{'newWork':0,'recovery':1})
+            original={name:migrate.read_input(fixture.output,name) for name in (prior.BEFORE_STOP,prior.STOPPED)}
+            prior._remember(fixture.initial,before['observation'],'replacement-in-progress',expectedCandidateSha256=fixture.initial['candidateSha256'])
+            with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
+                prior.observe_stopped_prior_gateway(fixture.initial,fixture.selected,fixture.verify,fixture.command)
+            with self.assertRaisesRegex(ValueError,'CONTAINMENT_LATEST_REQUIRED'):
+                prior._stopped_for_containment(fixture.initial,fixture.selected,fixture.verify,fixture.command)
+            self.assertEqual(prior._read_lineage()['state'],'replacement-in-progress')
+            self.assertEqual({name:migrate.read_input(fixture.output,name) for name in original},original)
+        finally:fixture.tearDown()
 
 
 class KnownConfigurationInputTests(unittest.TestCase):

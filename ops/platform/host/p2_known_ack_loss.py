@@ -23,6 +23,8 @@ from p2_release_scope import P2ReleaseScope
 
 ROOT=Path('/var/lib/lash-her/releases/staging')
 MODULE='ops/platform/p2-known-ack-loss-probe.mjs'
+GATEWAY_STARTED='known-ack-gateway-replacement-started.json'
+HOST_MODULE='ops/platform/host/p2_known_ack_loss.py'
 require=migrate.demand
 _ISSUER=object()
 _AUTHORIZATIONS=weakref.WeakKeyDictionary()
@@ -475,6 +477,7 @@ class KnownAckLossBoundary:
         self.command=_source_command(self.parent)
         self.old_gateway=copy.deepcopy(self.recorder._gateway())
         self.stage_index=0;self.stage_active=None;self.stage_deadline=None;self.finished=False
+        self.gateway_frontier_ready=False;self.gateway_started_sha256=None;self.pending_lineage=None;self.running_lineage=None
         self.started=False;self.new_gateway=None;self.new_rows={};self.new_metadata={}
         self.mutex=threading.RLock();self.expected_environments={};self.image_ids={}
         self.old_rows={row['service']:copy.deepcopy(row) for row in broker.runtime_current}
@@ -556,6 +559,12 @@ class KnownAckLossBoundary:
             if self.snapshot_bound:
                 self.parent.require_configuration(self.snapshot)
                 require(migrate.read_input(self.snapshot,'compose.yaml')==self.compose_bytes,'P2_KNOWN_ACK_RENDERED_COMPOSE_CHANGED')
+            if hasattr(self,'stopped_sha256'):
+                import p2_prior_gateway as prior
+                require(digest(migrate.read_input(self.output,prior.STOPPED))==self.stopped_sha256 and
+                    digest(migrate.read_input(self.output,prior.BEFORE_STOP))==self.before_stop_sha256,'P2_KNOWN_ACK_STOP_RECEIPT_CHANGED')
+            if self.gateway_started_sha256 is not None:
+                require(digest(migrate.read_input(self.output,GATEWAY_STARTED))==self.gateway_started_sha256,'P2_KNOWN_ACK_GATEWAY_START_MARKER_CHANGED')
             actual=self.broker.observer.probe('observe')['admission']
             require(actual['newWork'] is False and actual['recovery'] is False and actual['active']==actual['uncertain']==0 and
                 actual['epoch']==self.recorder.settlement['epoch'],'P2_KNOWN_ACK_PHYSICAL_CLOSED_ZERO_REQUIRED')
@@ -580,14 +589,14 @@ class KnownAckLossBoundary:
                 gateway=prior.observe_prior_gateway(self.initial,self.selected,self.parent.verify,self.command)
                 require(_same_process(gateway,self.new_gateway) and gateway['admission']['newWork'] is False and gateway['admission']['recovery'] is False and
                     _zero(gateway['admission']['active']) and _zero(gateway['admission']['uncertain']),'P2_KNOWN_ACK_NEW_GATEWAY_DRIFT')
+                require(prior._read_lineage()==self.running_lineage,'P2_KNOWN_ACK_NEW_RUNNING_LINEAGE_CHANGED')
             elif self.stage_active!=('gateway',):
                 gateway=prior.observe_prior_gateway(self.initial,self.selected,self.parent.verify,self.command)
                 require(_same_process(gateway,self.old_gateway) and gateway['admission']['newWork'] is False and gateway['admission']['recovery'] is False and
                     _zero(gateway['admission']['active']) and gateway['admission']['uncertain']=={'newWork':0,'recovery':1},'P2_KNOWN_ACK_OLD_ONE_CHANGED')
             elif hasattr(self,'stopped_sha256'):
-                require(digest(migrate.read_input(self.output,prior.STOPPED))==self.stopped_sha256 and
-                    digest(migrate.read_input(self.output,prior.BEFORE_STOP))==self.before_stop_sha256 and prior._read_lineage()==self.stop_lineage,
-                    'P2_KNOWN_ACK_STOP_RECEIPT_OR_LINEAGE_CHANGED')
+                require(self.gateway_frontier_ready and self.gateway_started_sha256 is not None and prior._read_lineage()==self.pending_lineage,
+                    'P2_KNOWN_ACK_PENDING_REPLACEMENT_REQUIRED')
 
     def bind_snapshot(self,snapshot):
         with self.mutex:
@@ -622,6 +631,27 @@ class KnownAckLossBoundary:
                 require(_same_process(self.old_gateway,observed) and observed['admission']['uncertain']=={'newWork':0,'recovery':1},'P2_KNOWN_ACK_STOPPED_ONE_RECEIPT_REQUIRED')
                 self.stopped_sha256=digest(migrate.read_input(self.output,prior.STOPPED));self.before_stop_sha256=digest(migrate.read_input(self.output,prior.BEFORE_STOP))
                 self.stop_lineage=prior._read_lineage()
+                require(isinstance(self.stop_lineage,dict) and self.stop_lineage.get('state')=='stopped-observed','P2_KNOWN_ACK_SOURCE_STOP_LINEAGE_REQUIRED')
+                # This durable frontier precedes return to the inherited Compose
+                # up. An uncertain write/ACK can never be read as old stopped1.
+                prior._remember(self.initial,self.old_gateway,'replacement-in-progress',expectedCandidateSha256=self.initial['candidateSha256'])
+                pending=prior._read_lineage()
+                require(pending=={'protocol':prior.PROTOCOL,'state':'replacement-in-progress','actionId':self.action,
+                    'candidateSha256':self.initial['candidateSha256'],'process':self.old_gateway['process'],'binding':self.old_gateway['binding'],
+                    'expectedCandidateSha256':self.initial['candidateSha256']},'P2_KNOWN_ACK_PENDING_LINEAGE_READBACK_REQUIRED')
+                self.pending_lineage=copy.deepcopy(pending)
+                helper_sha=digest(migrate.read_input(self.broker.source,HOST_MODULE))
+                require(helper_sha==self.broker.initial['sourceSha256'][HOST_MODULE],'P2_KNOWN_ACK_INSTALLED_HELPER_REQUIRED')
+                marker={'version':1,'status':'P2_KNOWN_ACK_GATEWAY_REPLACEMENT_STARTED',
+                    'recoveryActionId':self.action,'candidateSha256':self.initial['candidateSha256'],
+                    'operatorSourceClosureSha256':self.record['operatorSourceClosureSha256'],'sourceModuleSha256':helper_sha,
+                    'authorizationReceiptSha256':digest(canonical(self.record)),'beforeStopSha256':self.before_stop_sha256,'orderedStopSha256':self.stopped_sha256,
+                    'oldProcess':self.old_gateway['process'],'oldBinding':self.old_gateway['binding'],'sourceStopLineage':self.stop_lineage,'pendingLineage':pending}
+                migrate.write_json(self.output,GATEWAY_STARTED,marker)
+                marker_raw=migrate.read_input(self.output,GATEWAY_STARTED)
+                require(json.loads(marker_raw)==marker,'P2_KNOWN_ACK_GATEWAY_START_READBACK_REQUIRED')
+                self.gateway_started_sha256=digest(marker_raw)
+                self.gateway_frontier_ready=True;self.verify()
 
     def verify_healthy_boundary(self):
         # Only these literal, actively held stages can interrupt the catalog.
@@ -661,7 +691,12 @@ class KnownAckLossBoundary:
                 require(actual['process']['containerId']!=self.old_gateway['process']['containerId'] and actual['binding']['configurationDirectory']==str(self.snapshot) and
                     actual['admission']['newWork'] is False and actual['admission']['recovery'] is False and _zero(actual['admission']['active']) and _zero(actual['admission']['uncertain']),
                     'P2_KNOWN_ACK_NEW_GATEWAY_CLOSED_ZERO_REQUIRED')
-                prior._remember(self.initial,actual);self.new_gateway=actual;self.finished=True
+                prior._remember(self.initial,actual)
+                self.running_lineage=prior._read_lineage()
+                require(self.running_lineage=={'protocol':prior.PROTOCOL,'state':'running-observed','actionId':self.action,
+                    'candidateSha256':self.initial['candidateSha256'],'process':actual['process'],'binding':actual['binding']},
+                    'P2_KNOWN_ACK_NEW_RUNNING_LINEAGE_REQUIRED')
+                self.new_gateway=actual;self.finished=True
             self.stage_active=None;self.stage_deadline=None;self.stage_index+=1
             self.verify()
             self.recorder.verify_backend_idle()
@@ -748,5 +783,6 @@ class KnownAckRecoveryRuntime(P2RecoveryRuntime):
             'originalGateway':boundary.old_gateway,'newGateway':boundary.new_gateway,'currentApiDatabasesAfter':current,
             'ordinaryClosedZeroGate':False,'originalGatewayUncertaintyPreserved':True,'frontendOperationId':boundary.record['operationId'],
             'recoveryIntentSha256':boundary.record['recoveryIntentSha256'],'runtimeReplacements':1,'nativeDisabled':True,'trafficAuthorized':False,
+            'gatewayReplacementStartedSha256':boundary.gateway_started_sha256,
             'readinessReceiptSha256':digest(migrate.read_input(self.output,'p2-recovery-runtime-ready.json'))}
         migrate.write_json(self.output,'known-ack-runtime-outcome.json',outcome);return outcome
