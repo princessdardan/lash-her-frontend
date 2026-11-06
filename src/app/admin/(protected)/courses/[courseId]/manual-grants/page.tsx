@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AdminAuthError } from "@/lib/admin/types";
 import { requirePermission } from "@/lib/admin/auth";
 import { ManualGrantForm } from "@/components/admin/course-authoring/manual-grant-form";
 import { getCourseClient } from "@/lib/api-integration/course-client";
@@ -13,7 +14,7 @@ export default async function ManualGrantPage({ params }: { params: Promise<{ co
   const { courseId } = await params;
   if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(courseId)) notFound();
   const course = await runCourseAdminOperation(async () => {
-    const actor = await requirePermission("courses:support");
+    const actor = await requirePermission("courses:support").catch(error => { if (error instanceof AdminAuthError) notFound(); throw error; });
     if (actor.user.role !== "owner" || actor.user.status !== "active" || actor.developerMode) notFound();
     return (await getCourseClient().getAdminCourse(courseId)).course;
   });

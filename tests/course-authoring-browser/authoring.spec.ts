@@ -74,15 +74,15 @@ test("owner manual access uses real auth/Course SQL audit and explicit lost-ack 
     await page.getByLabel("Customer UUID").fill(states.manualGrantCustomerIds[0]);
     await page.getByLabel("Grant reason").fill("Owned normal owner support");
     await page.getByRole("button", { name: "Grant manual access", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText("Manual grant and audit confirmed");
+    await expect(page.getByRole("region", { name: "Manual course access" }).getByRole("status")).toContainText("Manual grant and audit confirmed");
     await expect(page.getByRole("button", { name: "Grant manual access", exact: true })).toBeDisabled();
     const rows = (await sql.query("select g.id,g.external_order_id,g.external_payment_id,g.provider,g.grant_reason,c.id command_id,c.effect_count,e.effect_type from entitlement_grants g join admin_entitlement_commands c on c.idempotency_key=g.idempotency_key join admin_entitlement_command_effects e on e.command_id=c.id where g.user_id=$1 and g.course_id=$2", [states.manualGrantCustomerIds[0], id])).rows;
     expect(rows).toHaveLength(1); expect(rows[0]).toMatchObject({ external_order_id: null, external_payment_id: null, provider: null, grant_reason: "manual", effect_count: 1, effect_type: "grant_created" });
     const events = (await sql.query("select o.canonical_body,o.state,o.attempts_in_cycle from community_enrollment_outbox o join community_enrollment_streams s on s.id=o.stream_id where s.user_id=$1 and s.course_id=$2", [states.manualGrantCustomerIds[0], id])).rows;
     expect(events).toHaveLength(1); expect(events[0]).toMatchObject({ state: "pending", attempts_in_cycle: 0 });
-    expect(JSON.parse(events[0].canonical_body)).toMatchObject({ userId: states.manualGrantCustomerIds[0], courseId: id });
+    expect(JSON.parse(events[0].canonical_body)).toMatchObject({ eventType: "enrollment.activated", data: { userId: states.manualGrantCustomerIds[0], courseId: id, state: "active" } });
     await page.reload(); await page.getByRole("button", { name: "Check recorded outcome" }).click();
-    await expect(page.getByRole("status")).toContainText("Manual grant and audit confirmed");
+    await expect(page.getByRole("region", { name: "Manual course access" }).getByRole("status")).toContainText("Manual grant and audit confirmed");
     expect((await sql.query("select id from entitlement_grants where user_id=$1 and course_id=$2", [states.manualGrantCustomerIds[0], id])).rows).toHaveLength(1);
     await page.getByRole("button", { name: "Prepare another grant" }).click();
     await page.getByLabel("Customer UUID").fill(states.manualGrantCustomerIds[1]); await page.getByLabel("Grant reason").fill("Owned response loss");
@@ -91,8 +91,8 @@ test("owner manual access uses real auth/Course SQL audit and explicit lost-ack 
       if (route.request().method() === "POST") { posts++; await route.fetch(); await route.abort("failed"); } else await route.continue();
     });
     await page.getByRole("button", { name: "Grant manual access", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText(/fetch|unknown|outcome/i);
-    await page.getByRole("button", { name: "Check recorded outcome" }).click(); await expect(page.getByRole("status")).toContainText("Manual grant and audit confirmed");
+    await expect(page.getByRole("region", { name: "Manual course access" }).getByRole("status")).toContainText(/fetch|unknown|outcome/i);
+    await page.getByRole("button", { name: "Check recorded outcome" }).click(); await expect(page.getByRole("region", { name: "Manual course access" }).getByRole("status")).toContainText("Manual grant and audit confirmed");
     expect(posts).toBe(1); expect((await sql.query("select id from entitlement_grants where user_id=$1 and course_id=$2", [states.manualGrantCustomerIds[1], id])).rows).toHaveLength(1);
     const staff = await ownedContext(browser, states.admin);
     try {
@@ -101,7 +101,9 @@ test("owner manual access uses real auth/Course SQL audit and explicit lost-ack 
     } finally { await staff.close(); }
     expect((await context.request.post(`/api/admin/courses/${id}/manual-grants`, { headers: { origin: baseURL }, data: {} })).status()).toBe(403);
     const anonymous = await ownedContext(browser, { cookies: [], origins: [] });
-    try { expect((await anonymous.request.get(`/api/admin/courses/${id}/manual-grants?idempotencyKey=${crypto.randomUUID()}`)).status()).toBe(401); }
+    try {
+      expect((await anonymous.request.post(`/api/admin/courses/${id}/manual-grants`, { headers, data: { userId: states.manualGrantCustomerIds[0], reason: "Unauthorized customer", expectedCourseRevision: 4, idempotencyKey: crypto.randomUUID() } })).status()).toBe(401);
+      expect((await anonymous.request.get(`/api/admin/courses/${id}/manual-grants?idempotencyKey=${crypto.randomUUID()}`)).status()).toBe(401); }
     finally { await anonymous.close(); }
   } finally { await sql.end(); await context.close(); }
 });
