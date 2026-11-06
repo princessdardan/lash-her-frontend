@@ -80,7 +80,7 @@ test("profiled preparation emits only v2 API carriers and uses the source-select
   assert.throws(() => migrationOperatorCommand(current, "other"));
 });
 
-test("profiled preparation refuses stripped, mixed, source-graph and legacy frontend consumers", () => {
+test("profiled preparation refuses stripped, mixed, source-graph and incomplete frontend consumers", () => {
   for (const mutate of [
     (f) => { delete f.candidate.integration.qualificationTargetProfile; },
     (f) => { delete f.settings.qualificationTargetProfile; },
@@ -174,36 +174,48 @@ test("fixed profiled preparation CLI binds raw carriers before output and refuse
 });
 
 test("real bundle CLI includes optional frontend bindings and refuses a substituted CI schema", () => {
-  const root = mkdtempSync(join(tmpdir(), "frontend-bundle-test-"));
-  try {
-    const f = fixture(), artifact = frontendMigrationArtifact();
-    f.candidate.artifacts.frontendMigration = { image: `ghcr.io/princessdardan/lash-her-platform-frontend-migration@sha256:${"b".repeat(64)}`,
-      scan: "passed", sbomSha256: `sha256:${"d".repeat(64)}`, provenanceSha256: `sha256:${"e".repeat(64)}` };
-    const baseline = { version: 1, serverMajor: 18, sqlArtifactSha256: artifact.sqlArtifactSha256,
-      catalog: Object.fromEntries(["relations", "columns", "constraints", "indexes", "triggers", "functions", "enums", "sequences", "policies"].map((key) => [key, []])) };
-    f.candidate.contractManifestSha256 = artifact.contractManifestSha256;
-    f.candidate.frontendMigration = { sourceCommit: f.candidate.sources.frontend.commit, sqlArtifactSha256: artifact.sqlArtifactSha256,
-      contractManifestSha256: artifact.contractManifestSha256, schemaBaselines: { 18: createHash("sha256").update(JSON.stringify(baseline)).digest("hex") } };
-    for (const value of [f.candidate, f.candidate.frontendMigration]) Object.assign(value, { contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 });
-    f.settings.frontend = { ...f.settings.services.course, host: "frontend.example.invalid", approvedPendingTags: artifact.migrations.map(({ tag }) => tag), password: "must-not-copy" };
-    f.schemas.frontend = { status: "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS", postgresMajor: 18, providerTouched: false, schemaBaseline: baseline, contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 };
-    assert.doesNotThrow(() => prepareMigrationBundle(f.candidate, f.settings, f.schemas));
-    assert.doesNotThrow(() => decodeQualificationTargetJson(JSON.stringify(f.candidate), "carrier"));
-    assert.doesNotThrow(() => decodeQualificationTargetJson(JSON.stringify(f.settings), "carrier"));
-    for (const schema of Object.values(f.schemas)) assert.doesNotThrow(() => decodeQualificationTargetJson(JSON.stringify(schema), "private-packet"));
-    const schemas = join(root, "schemas"); mkdirSync(schemas);
-    for (const [name, schema] of Object.entries(f.schemas)) { mkdirSync(join(schemas, name)); writeFileSync(join(schemas, name, "operator-schema-postgres18.json"), JSON.stringify(schema)); }
-    const candidate = join(root, "candidate.json"), settings = join(root, "targets.json"), output = join(root, "bundle");
-    writeFileSync(candidate, JSON.stringify(f.candidate)); writeFileSync(settings, JSON.stringify(f.settings));
-    const run = (out) => spawnSync(process.execPath, ["ops/platform/prepare-migrations.mjs", candidate, settings, schemas, out],
-      { encoding: "utf8", timeout: 10_000 });
-    const prepared = run(output); assert.equal(prepared.status, 0, prepared.stderr);
-    const job = readFileSync(join(output, "jobs/frontend.json"), "utf8");
-    assert.equal(JSON.parse(job).sourceCommit, f.candidate.sources.frontend.commit); assert.ok(!job.includes("must-not-copy"));
-    const check = spawnSync(process.execPath, ["ops/platform/frontend-migration.mjs", "--check", join(output, "release.candidate.json"), join(output, "jobs/frontend.json"), join(output, "schema/frontend.json")], { encoding: "utf8", timeout: 10_000 });
-    assert.equal(check.status, 0, check.stderr); assert.equal(JSON.parse(check.stdout).credentialsRead, false);
-    f.schemas.frontend.schemaBaseline.catalog.relations.push({ unexpected: true });
-    writeFileSync(join(schemas, "frontend/operator-schema-postgres18.json"), JSON.stringify(f.schemas.frontend));
-    assert.equal(run(join(root, "refused")).status, 1);
-  } finally { rmSync(root, { recursive: true, force: true }); }
+  for (const profiledCurrent of [false, true]) {
+    const root = mkdtempSync(join(tmpdir(), "frontend-bundle-test-"));
+    try {
+      const f = fixture(), artifact = frontendMigrationArtifact();
+      f.candidate.artifacts.frontendMigration = { image: `ghcr.io/princessdardan/lash-her-platform-frontend-migration@sha256:${"b".repeat(64)}`,
+        scan: "passed", sbomSha256: `sha256:${"d".repeat(64)}`, provenanceSha256: `sha256:${"e".repeat(64)}` };
+      const baseline = { version: 1, serverMajor: 18, sqlArtifactSha256: artifact.sqlArtifactSha256,
+        catalog: Object.fromEntries(["relations", "columns", "constraints", "indexes", "triggers", "functions", "enums", "sequences", "policies"].map((key) => [key, []])) };
+      f.candidate.contractManifestSha256 = artifact.contractManifestSha256;
+      f.candidate.frontendMigration = { sourceCommit: f.candidate.sources.frontend.commit, sqlArtifactSha256: artifact.sqlArtifactSha256,
+        contractManifestSha256: artifact.contractManifestSha256, schemaBaselines: { 18: createHash("sha256").update(JSON.stringify(baseline)).digest("hex") } };
+      for (const value of [f.candidate, f.candidate.frontendMigration]) Object.assign(value, { contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 });
+      f.settings.frontend = { ...f.settings.services.course, host: "frontend.example.invalid", approvedPendingTags: artifact.migrations.map(({ tag }) => tag), password: "must-not-copy" };
+      f.schemas.frontend = { status: "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS", postgresMajor: 18, providerTouched: false, schemaBaseline: baseline, contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 };
+      if (profiledCurrent) {
+        profiled(f);
+        f.candidate.frontendMigration.qualificationTargetProfile = current;
+        f.settings.frontend.qualificationTargetProfile = current;
+      }
+      assert.doesNotThrow(() => (profiledCurrent ? prepareProfiledCurrentMigrationBundle : prepareMigrationBundle)(f.candidate, f.settings, f.schemas));
+      assert.doesNotThrow(() => decodeQualificationTargetJson(JSON.stringify(f.candidate), "carrier"));
+      assert.doesNotThrow(() => decodeQualificationTargetJson(JSON.stringify(f.settings), "carrier"));
+      for (const schema of Object.values(f.schemas)) assert.doesNotThrow(() => decodeQualificationTargetJson(JSON.stringify(schema), "private-packet"));
+      const schemas = join(root, "schemas"); mkdirSync(schemas);
+      for (const [name, schema] of Object.entries(f.schemas)) { mkdirSync(join(schemas, name)); writeFileSync(join(schemas, name, "operator-schema-postgres18.json"), JSON.stringify(schema)); }
+      const candidate = join(root, "candidate.json"), settings = join(root, "targets.json"), output = join(root, "bundle");
+      writeFileSync(candidate, JSON.stringify(f.candidate)); writeFileSync(settings, JSON.stringify(f.settings));
+      const run = (out) => spawnSync(process.execPath, ["ops/platform/prepare-migrations.mjs", ...(profiledCurrent ? ["--prepare-profiled-current"] : []), candidate, settings, schemas, out],
+        { encoding: "utf8", timeout: 10_000 });
+      const prepared = run(output); assert.equal(prepared.status, 0, prepared.stderr);
+      const job = readFileSync(join(output, "jobs/frontend.json"), "utf8");
+      assert.equal(JSON.parse(job).sourceCommit, f.candidate.sources.frontend.commit); assert.ok(!job.includes("must-not-copy"));
+      assert.equal(JSON.parse(job).version, profiledCurrent ? 2 : 1);
+      if (profiledCurrent) {
+        assert.deepEqual(JSON.parse(job).qualificationTargetProfile, current);
+        assert.deepEqual(JSON.parse(job).target.qualificationTargetProfile, current);
+      } else assert.equal(Object.hasOwn(JSON.parse(job), "qualificationTargetProfile"), false);
+      const check = spawnSync(process.execPath, ["ops/platform/frontend-migration.mjs", profiledCurrent ? "--check-profiled-current" : "--check", join(output, "release.candidate.json"), join(output, "jobs/frontend.json"), join(output, "schema/frontend.json")], { encoding: "utf8", timeout: 10_000 });
+      assert.equal(check.status, 0, check.stderr); assert.equal(JSON.parse(check.stdout).credentialsRead, false);
+      f.schemas.frontend.schemaBaseline.catalog.relations.push({ unexpected: true });
+      writeFileSync(join(schemas, "frontend/operator-schema-postgres18.json"), JSON.stringify(f.schemas.frontend));
+      assert.equal(run(join(root, "refused")).status, 1);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
 });

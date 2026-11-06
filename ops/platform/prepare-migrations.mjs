@@ -69,9 +69,8 @@ function prepareMigrationBundleForContext(candidate, settings, schemas, expected
       profile.environment === "staging" && settings?.environment === profile.environment && candidate?.environment === profile.environment &&
       candidate?.workload?.environment === profile.frontend.workloadEnvironment && candidate?.workload?.projectId === profile.frontend.projectId &&
       candidate?.sourceGraph === undefined);
-    // The frontend migration consumer remains legacy-only until its owner
-    // supplies an explicit expected-context entrypoint. Never normalize it.
-    demand(candidate?.artifacts?.frontendMigration === undefined && settings?.frontend === undefined && candidate?.frontendMigration === undefined);
+    if (candidate?.artifacts?.frontendMigration !== undefined || settings?.frontend !== undefined || candidate?.frontendMigration !== undefined)
+      demand(candidate?.artifacts?.frontendMigration && settings?.frontend && candidate?.frontendMigration);
   } else demand(!candidateCarriers(candidate).some(ownProfile) && !targetCarriers(settings).some(ownProfile));
   demand(candidate?.version === (profiled ? 3 : 2) && ["staging", "production"].includes(settings?.environment) &&
     typeof candidate.releaseId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(candidate.releaseId) &&
@@ -160,7 +159,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const exported = read(join(schemaDirectory, "frontend", `operator-schema-postgres${settings.frontend.serverMajor}.json`), "private-packet");
       const prior = stagingDirectory ? { database: read(join(stagingDirectory, "frontend/database-receipt.json"), "private-packet"),
         terminal: read(join(stagingDirectory, "frontend/job-outcome.json"), "private-packet") } : undefined;
-      frontend = prepareFrontendMigrationJob(release, settings.frontend, exported, prior);
+      frontend = prepareFrontendMigrationJob(release, settings.frontend, exported, prior, expected);
       if (prior) {
         evidence["staging/frontend/database-receipt.json"] = prior.database;
         evidence["staging/frontend/job-outcome.json"] = prior.terminal;
