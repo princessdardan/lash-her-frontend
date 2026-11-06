@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "status": "PLANNING_PROPOSAL_ONLY",
+  "preparedOn": "2026-11-06",
+  "sourceCommitReadInitially": "82ac48366ac8a39701b483819c5773b409d7877a",
+  "scope": "Private proposal files only; no repository edits, resource/account/API/credential/billing calls, contacts or mutation. Public official documentation reads only.",
+  "inputs": [
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/docs/api-integration/decisions/2026-11-06-isolated-p2-qualification-lane.md",
+      "sha256": "5f7f14e7027f2ae93ebf8a7e2cab4088da4a07af63f9ca967c273c11b4fc2c0f"
+    },
+    {
+      "path": "/private/tmp/p2q-creation-authority-spec-20261106/design.md",
+      "sha256": "85d0288cbe3eaaf67555c26856b5bc3a67712c217d7a7cf7e7c57e33779212d3"
+    },
+    {
+      "path": "/private/tmp/p2q-interface-freeze-20261106/design.md",
+      "sha256": "af863c7b4a3b99a7492c9d0b73d306f42d5ce413ebe2b077387cab662e41e1d3"
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/ops/aws/lightsail-host.cfn.json",
+      "sha256": "fd26139efb1d5d648a0f8539315bc3b607bee16e6dc3d0fb2b822bd7581289f9"
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/docs/api-integration/decisions/2026-11-01-affordability-without-billing-gates.md",
+      "sha256": "820f261c3db86e24768fc4fd2481db93251fabfcb966a20464be81061b5a019f"
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/docs/api-integration/p2-staging-certification.md",
+      "sha256": "ffdf693227ba52ce34724951f40fdd1fb01f411c7a688025ba446d3296a98d02"
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/src/lib/courses/rate-limit.ts",
+      "sha256": "ec23f4089f2c9775669940a33f1dc1ea3494eaf8a006b62f8deebef3075a8ae3"
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/src/lib/forms/public-actions.ts",
+      "sha256": "7620bb481f54fe842687b28eb7f7fdcd04b38584db8a99466ca2fa0b7fc2dad7"
+    },
+    {
+      "path": "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/ops/aws/deployment-role.cfn.json",
+      "sha256": "c6b9f7525241df512b55bd513d0d103ee11278d72c067ecad6cc3380a708b22e"
+    }
+  ],
+  "artifacts": {
+    "control-reach-analysis.json": {
+      "sha256": "41c970f3f51acae2a2255ce56e4092b75a822c85888606adc78d94d634af20b8",
+      "bytes": 1667
+    },
+    "control-reach-analysis.md": {
+      "sha256": "cc1f817bd91abad520e1eef107db104b846ca1b7a9dd3854aa0be69c4e993332",
+      "bytes": 11006
+    },
+    "cost-model.json": {
+      "sha256": "64717252f0117ba3b3c4beedb9ba90ec4b7ecdae3d0fbbe7d151fa77028088ce",
+      "bytes": 2308
+    },
+    "prices-and-sources.json": {
+      "sha256": "cbe4c3f703c16d8860cb62a580721d6dda02415b305c8cffaec346715664e651",
+      "bytes": 11632
+    },
+    "proposal.md": {
+      "sha256": "e81959a28172f6410ff941f84bc2b3506d442cde9f530cfe297a9ccec1a8498e",
+      "bytes": 24580
+    },
+    "resources.json": {
+      "sha256": "b760affbfc958226aab695874a518fd03782c3f134a24f08dcd91b49e7e071ef",
+      "bytes": 10115
+    }
+  },
+  "resourceAllocationAuthorized": false,
+  "spendingAuthorized": false,
+  "allocatedResourceIdsKnown": false,
+  "firstUseAuthorityIssued": false,
+  "independentReviewClaimed": false,
+  "validation": {
+    "jsonParsePassed": true,
+    "allAllocatedIdsNull": true,
+    "costArithmeticComputed": true,
+    "knownMonthlySubtotalUsd": "47.10",
+    "unknownCostsExcludedExplicitly": true,
+    "noProductionCommandOrProvisioningScript": true,
+    "offlineAwsSourceStatementSelectionTests": {
+      "allow": true,
+      "fourHostControlActionsIncluded": true,
+      "instanceResourceWildcard": true,
+      "projectTagMatches": true,
+      "environmentTagMatches": true
+    },
+    "sameAccountIsolationAssumed": false,
+    "actualCredentialProbes": 0
+  }
+}

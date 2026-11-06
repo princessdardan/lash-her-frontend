@@ -2,7 +2,7 @@
 
 Source checkpoint updated November 6, 2026 (Toronto). Accepted live admission completed November 4 at 01:27:39 UTC, with independent postflight at 01:29:33 UTC. [The tracker](../../API-INTEGRATION-EXECUTION.md) owns task status; [release policy](release-policy.md) governs future releases.
 
-Latest source position: Course `0bb054d5` and Community `8594d953` have passing merged-source CI. Frontend source checks through `5e007c44` pass locally; reviewed profile preparation is integrated at `b26e98a1`. Fresh Linux CI for the C child TMPDIR correction remains required. Approved P2Q/G2-Q source work is active; allocation, candidate publication and live release remain unapproved. Old P2-00 stays open outside the amended claim; accepted G1 is preserved.
+Latest source position: reviewed profile components and both DB review corrections are integrated through `c3d82d6e`. Local gateway/platform: 673 passed with 17 conditional skips; host: 854 passed with eight conditional skips; lint zero errors. Current fixture API pins now match the selected 0bb/859 sources. Fresh owned C and exact Linux CI remain required. P2Q/G2-Q stays OPEN; resources/control setup, first-use authority, candidate and live release remain unapproved/unqualified. Old P2-00 stays separately open; accepted G1 is preserved.
 
 ## Accepted P1 state
 
@@ -241,3 +241,11 @@ Course `0bb054d5` and Community `8594d953` merged with reviewed-tree equality an
 At frontend `839d6a68`, all eight ordinary CI jobs passed, including all three browser suites; operator/aggregate failed because the actual C child omitted TMPDIR. The reviewed minimal correction `a5769701`, integrated at `b8832e7e`, passes the actual owned PG18 route. Fresh exact Linux CI is still required; E7 remains the last all-ten-job pass. The observer explicitly proves only core catalog counts, not complete emptiness or first-use authority.
 
 The approved P2Q/G2-Q claim remains open. Real IDs/profile registration, source propagation through remaining host/frontend consumers, complete first-install authority, allocated-target G1, real providers/learning/lifecycle/export expiry and candidate/live approval remain outstanding. Old P2-00 and accepted S17 exclusions stay separately open. No new resource, candidate publication, staging SQL, provider change or live action occurred. See [the source checkpoint](baselines/2026-11-06-p2q-source-integration/README.md).
+
+## Corrected profile source union — November 6, 2026
+
+Reviewed profile components are integrated through `c3d82d6e`. Root gateway/platform: **673 passed, zero failed, 17 conditional skips**; full host suite after host integration: **862 tests, eight conditional skips**; lint: zero errors, 13 warnings. Independent review closes both unpublished frontend DB findings: profiled pending SQL now refuses pre-effects, and v2 role reuse authenticates the original public/private record pair before hooks/SQL. Corrected PG16/18 role fixtures pass 29 checks each; migration fixtures pass all 83 migrations and 18 checks each.
+
+The prior `82ac4836` CI passed seven ordinary jobs, including all three actual browser suites. Its gateway copied-dependency failure is corrected at `ccc4f8fc`. The distinct operator failure was a deterministic old/current API-pin mismatch after successful forward parsing; `f755b205` reconciles five current selectors and removes stale success diagnostics. Original D5 source/receipt bytes remain historical and unchanged. Fresh owned C and exact Linux CI are required. E7 remains the last all-ten-job pass.
+
+The scope amendment is merged in all three repositories. API documentation mains `997b2f1f`/`52492aa7` passed push CI and differ only in the plan document; selected artifact pins remain qualified `0bb054d5`/`8594d953`. Independent administrative scopes are UNKNOWN. Allocation, spending, candidate publication and live release remain unapproved. Complete profiled execution/first-install authority and G2-Q remain open. [Source-union evidence](baselines/2026-11-06-p2q-profile-source-union/validation.json).
