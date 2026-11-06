@@ -167,6 +167,13 @@ class OwnedRecoveryDiagnosticsTests(unittest.TestCase):
         self.assertEqual(value['counts'],{'seen':4,'accepted':0,'rejected':4})
         self.assertEqual(value['rejections'],{'schema':1,'stage':1,'frame-binding':1,'json':1});self.assertNotIn('PRIVATE_',json.dumps(value))
 
+    def test_node_bound_keeps_final_uncaught_record_after_nested_causes(self):
+        row={'status':'OWNED_P2_RECOVERY_NODE_DIAGNOSTIC','phase':'forward-shared-vercel-observation','stage':'forward-callback','kind':'Error','guardCode':'unknown','checkpoint':'unknown','systemCode':'unknown','frames':[]}
+        rows=[row for _ in range(8)]+[{**row,'stage':'uncaught-final','guardCode':'P2_RECOVERY_FRONTEND_CLEANUP_UNCERTAIN'}]
+        value=NS['owned_node_projection']('\n'.join(json.dumps(record)for record in rows))
+        self.assertEqual(value['counts'],{'seen':9,'accepted':9,'rejected':0});self.assertEqual(len(value['records']),8)
+        self.assertEqual(value['records'][-1]['stage'],'uncaught-final');self.assertEqual(value['records'][-1]['guardCode'],'P2_RECOVERY_FRONTEND_CLEANUP_UNCERTAIN')
+
     def test_node_emission_summary_keeps_projection_failure_visible(self):
         raw=json.dumps({'status':'OWNED_P2_NODE_EMISSION_SUMMARY','attempted':1,'emitted':0,'projectionFailures':1,'uncaughtMonitor':1,'origin':'unknown'})
         value=NS['owned_node_projection'](raw)

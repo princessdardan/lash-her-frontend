@@ -173,7 +173,8 @@ def owned_node_projection(stderr):
         if not isinstance(value['frames'],list) or len(value['frames'])>12:reject('frames');continue
         if any(not isinstance(row,dict) or set(row)!={'source','file','line','column'} or row['source'] not in ('frontend','frontend-fixture') or type(row['file']) is not str or row['file'] not in OWNED_NODE_SOURCE_FILES or type(row['line']) is not int or not 1<=row['line']<=1000000 or type(row['column']) is not int or not 1<=row['column']<=100000 for row in value['frames']):reject('frame-binding');continue
         counts['accepted']+=1
-        if len(result)<8:result.append(value)
+        result.append(value)
+        if len(result)>8:result.pop(0)
     return {'records':result,'counts':counts,'rejections':reasons,'emission':summary}
 
 
