@@ -40,6 +40,8 @@ ROTATION_LAYOUT = {'actionIdKey': 'rotationActionId', 'receiptPrefix': 'p2-ident
                    'runtimePrefix': 'runtime-identity-key-rotation-',
                    'terminalName': 'p2-identity-key-rotation-outcome.json',
                    'terminalStatus': 'P2_IDENTITY_KEY_ROTATION_QUALIFIED'}
+C_LAYOUT = {**RECOVERY_LAYOUT, 'terminalName': 'p2-known-ack-interrupted-restoration-outcome.json',
+            'terminalStatus': 'P2_KNOWN_ACK_INTERRUPTED_RUNTIME_RESTORED_FENCED'}
 
 
 def fixed_layout(initial):
@@ -233,7 +235,7 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
     # reason to skip closure of an already-running release.
     selected = initial['candidate']
     layout, identity = fixed_layout(initial), action_id(initial)
-    if layout == CERTIFICATION_LAYOUT:
+    if layout in (CERTIFICATION_LAYOUT, C_LAYOUT):
         # The fixed source entry supplies this callable before forking. No
         # operator JSON field selects code or a provider action. Reaping the
         # mutator precedes disable; failed/unknown disable must not skip either
@@ -297,7 +299,7 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
             require(not runtime.command(query, runtime.SAFE_ENV, 15), 'P2_GUARD_MIGRATION_CONTAINER_REMAINS')
         except BaseException:
             result['migrationContainerCleanupUncertain'] = True
-    if layout in (RECOVERY_LAYOUT, CERTIFICATION_LAYOUT):
+    if layout in (RECOVERY_LAYOUT, CERTIFICATION_LAYOUT, C_LAYOUT):
         try:
             cleanup_recovery_current_containers()
         except BaseException:
@@ -349,6 +351,12 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
     if layout == ROTATION_LAYOUT:
         from p2_identity_key_rotation_parent import P2IdentityRotationBroker, P2IdentityRotationPhysicalObserver
         rotation_types = (P2IdentityRotationBroker, P2IdentityRotationPhysicalObserver)
+    interrupted = False
+    if initial.get('mode') == 'known-ack-interrupted-restoration':
+        from p2_known_ack_interrupted_restoration import InterruptedKnownAckRestorationBroker, InterruptedRestorationPhysicalObserver, contain_interrupted_native
+        interrupted = (layout == C_LAYOUT and broker_type is InterruptedKnownAckRestorationBroker and
+                       observer_type is InterruptedRestorationPhysicalObserver and
+                       observer_source == 'ops/platform/p2-recovery-current-probe.mjs' and native_containment is contain_interrupted_native)
     require((layout == DEFAULT_LAYOUT and broker_type is Broker and observer_type is PhysicalObserver
              and observer_source == 'ops/platform/p2-frontend-live-probe.mjs' and native_containment is None) or
             (layout == RECOVERY_LAYOUT and initial.get('mode') == 'p2-post-sql-recovery'
@@ -357,7 +365,7 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
              and observer_source == 'ops/platform/p2-certification-current-probe.mjs' and callable(native_containment)) or
             (layout == ROTATION_LAYOUT and initial.get('mode') == 'p2-identity-key-rotation'
              and rotation_types == (broker_type, observer_type)
-             and observer_source == 'ops/platform/p2-recovery-current-probe.mjs' and native_containment is None),
+             and observer_source == 'ops/platform/p2-recovery-current-probe.mjs' and native_containment is None) or interrupted,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     initial['_guardLayout'], initial['_guardObserverSource'] = layout, observer_source
     identity = action_id(initial)

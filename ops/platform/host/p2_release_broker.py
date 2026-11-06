@@ -231,7 +231,7 @@ class Broker:
         migrate.write_json(self.directory, 'p2-release-started.json', self.outcome)
         self.check()
         self.prior_gateway = None
-        self.prior_gateway_preflight = p2_prior_gateway.preflight_prior_gateway(p, self.selected, self.check)
+        self.prior_gateway_preflight = self.preflight_prior_gateway()
         migrate.write_json(self.directory, 'prior-gateway-preflight.json', self.prior_gateway_preflight)
         def parent_watch():
             while not self.committed.wait(1):
@@ -266,6 +266,9 @@ class Broker:
             self.observer.verify()
         if self.closing_at is not None and not self.finished:
             require(time.monotonic() - self.closing_at < 10, 'P2_FRONTEND_CLOSE_TIMEOUT')
+
+    def preflight_prior_gateway(self):
+        return p2_prior_gateway.preflight_prior_gateway(self.initial, self.selected, self.check)
 
     def prepare_prior_gateway(self):
         self.check()
