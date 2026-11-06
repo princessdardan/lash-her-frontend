@@ -1,0 +1,15 @@
+{
+  "commit": "5e007c4447cb1070c8718fa16bb0ca73e0b69213",
+  "files": 502,
+  "decodedBytes": 40571233,
+  "publicBytes": 54168384,
+  "publicPayloadShape": "{commit,files}",
+  "maxFileBytes": 1113573,
+  "fileLimit": 512,
+  "decodedLimit": 41000000,
+  "publicLimit": 56000000,
+  "perFileLimit": 2000000,
+  "privateLimit": 24000000,
+  "gatewayRuntimeDiffBytes": 0,
+  "fullProfilesDiffBytes": 0
+}

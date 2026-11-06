@@ -16,6 +16,8 @@ function fixture() {
   for (const file of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"]) copyFileSync(join(source, "scripts", file), join(root, "scripts", file));
   for (const name of ["frontend-migration", "frontend-schema", "frontend-image", "frontend-image-source", "source-checkout", "release-inputs", "source-policy", "release"])
     copyFileSync(join(source, `ops/platform/${name}.mjs`), join(root, `ops/platform/${name}.mjs`));
+  for (const name of ["qualification-target-profile.mjs", "qualification-target-profiles.json"])
+    copyFileSync(join(source, "ops/platform", name), join(root, "ops/platform", name));
   for (const name of ["package.json", "package-lock.json"]) copyFileSync(join(source, "ops/platform/frontend-migration-deps", name), join(root, name));
   for (const name of ["src/lib/private-db/migration-lineage.ts", "contracts/api-integration/v1/manifest.json"]) copyFileSync(join(source, name), join(root, name));
   cpSync(join(source, "contracts/api-integration/p2-candidate"), join(root, "contracts/api-integration/p2-candidate"), { recursive: true });
@@ -49,6 +51,28 @@ test("extra SQL or omitted source cannot silently enter a packaged image", () =>
     } finally { rmSync(root, { recursive: true, force: true }); }
   }
 });
+
+for (const name of ["qualification-target-profile.mjs", "qualification-target-profiles.json"]) {
+  test(`packaged image binds the original qualification selector ${name}`, () => {
+    for (const mode of ["modified", "omitted", "unlisted"]) {
+      const root = fixture(), file = `ops/platform/${name}`;
+      try {
+        const manifest = writePackagedFrontendSource("a".repeat(40), root);
+        assert.equal(manifest.files[file], sha256(readFileSync(join(source, file))));
+        if (mode === "modified") writeFileSync(join(root, file), "changed\n");
+        else if (mode === "omitted") rmSync(join(root, file));
+        else {
+          delete manifest.files[file];
+          rmSync(join(root, "migration-source.json"));
+          writeFileSync(join(root, "migration-source.json"), JSON.stringify(manifest) + "\n");
+        }
+        assert.throws(() => verifyPackagedFrontendSource(root));
+      } finally { rmSync(root, { recursive: true, force: true }); }
+    }
+    assert.ok(readFileSync(join(source, "ops/platform/Dockerfile.frontend-migration"), "utf8").includes(
+      "COPY ops/platform/qualification-target-profile.mjs ops/platform/qualification-target-profiles.json ./ops/platform/"));
+  });
+}
 
 for (const file of ["manifest.json", "course-api.json", "community-api.json", "enrollment-event.schema.json", "boundary-contracts.json", "README.md"]) {
   test(`packaged image refuses modified P2 ${file}`, () => {

@@ -1,0 +1,78 @@
+{
+  "canonicalProfileBytes": 371,
+  "canonicalProfileSha256": "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba",
+  "closedFindings": [
+    {
+      "id": "QTP-01",
+      "issue": "Python decoded escaped lone surrogate keys/values and nonnumber profile versions diverged from JS",
+      "resolution": "recursive Unicode-scalar validation; profile version requires a canonical numeric token before conversion"
+    },
+    {
+      "id": "QTP-02",
+      "issue": "JS numeric overflow yielded Infinity and nonstring kind coerced to accepted enum",
+      "resolution": "all numeric tokens must be finite; kind must already be primitive string; coercion canary is not invoked"
+    },
+    {
+      "id": "QTP-03",
+      "issue": "Python fixed registry followed symlink and blocked indefinitely on FIFO; source reads were not bounded before allocation",
+      "resolution": "both use fixed O_NOFOLLOW|O_NONBLOCK descriptor, regular/positive/bounded fstat, bounded exact reads/EOF and readback; symlink/FIFO/oversize refuse"
+    },
+    {
+      "id": "QTP-04",
+      "issue": "JS raw canonical profile version guard ignored strings/objects/arrays",
+      "resolution": "early numeric token-type guard matches corrected Python and shared TS core"
+    }
+  ],
+  "correctedRepro": {
+    "resultSha256": "6f166197749df25065ca6e2589bed5bec76c5da54785d2b77c02c73c85b8f116",
+    "scriptSha256": "42e2dcb7203fdfb3edb1f04b6ef9b07bb6db45eaeec0531465c010edd1b8be4f"
+  },
+  "credentialReads": false,
+  "designSha256": "af863c7b4a3b99a7492c9d0b73d306f42d5ce413ebe2b077387cab662e41e1d3",
+  "integrationPrerequisites": [
+    "source count497 already exceeds existing496; explicit reviewed finitecap update and complete union checks required before new bundle publication",
+    "schema/dispatch/consumer integration, SQL image packaging/module closure, actual Linux/current runtime qualification not covered by this helper-only review",
+    "isolated profile and positive creation/first-use authority remain unavailable"
+  ],
+  "liveCalls": false,
+  "originalRepro": {
+    "resultSha256": "118a3f20e0542b6947df1bc1511ea4b65ef74c4d4676d026da384548e035014f",
+    "scriptSha256": "e6fbefba4ea49b93338f5a8f11e53a6dd73a44dfee65b2b4ea2e0c5b0f3aca67"
+  },
+  "outstandingHelperFindings": [],
+  "pythonCommit": "cd5cf6b8091b80ced6af4cd96f825cb97ce55816",
+  "repositoryEdits": false,
+  "rootBaseCommit": "96df28f3eedffa5607637f4f2fa3b48f9489c3f1",
+  "rootJavaScriptFilesUncommittedAtReview": true,
+  "sourceSha256": {
+    "js/qualification-target-profile.mjs": "3ac2394a914e44ecbfa3ee84adc00fcb9afa23e968a102e2be30e1141174d8c4",
+    "js/qualification-target-profile.test.mjs": "d2193a5b1ba3f0b907fbe805b565f25c115580c822256e6e26e4ea97942fc9da",
+    "js/qualification-target-profiles.json": "002f4421c9b577c4f25157ba2036e37c7f837107aba12eddfa71d2dbff377956",
+    "python/qualification_target_profile.py": "41d8b94c199aa179c39def688e59b4b010a074ddf72f38a86cd0c73082d99a86",
+    "python/qualification_target_profile_test.py": "7a374ae9bf93ae240e418a0430471d52c8bda4d47f440ee03f3241609cb02c83"
+  },
+  "status": "HELPER_SOURCE_CLEARED",
+  "testsExecuted": [
+    {
+      "command": "Node24 --test ops/platform/qualification-target-profile.test.mjs",
+      "failed": 0,
+      "passed": 9,
+      "skipped": 0
+    },
+    {
+      "command": "python3 -B -m unittest qualification_target_profile_test",
+      "failed": 0,
+      "passed": 14,
+      "skipped": 0
+    }
+  ],
+  "verifiedSemantics": [
+    "duplicates use decoded keys at all depths",
+    "strict UTF8 and valid Unicode pairs preserved",
+    "profile/registry canonical integer lexemes and finite numbers",
+    "strict own reference fields/no getters/unknown target/no zero carrier joins",
+    "fixed closed current-only source registry and canonical vector",
+    "resolved definitions/references immutable; profile is policy identity, never target/live authority"
+  ],
+  "version": 1
+}

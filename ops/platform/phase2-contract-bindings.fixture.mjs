@@ -34,7 +34,8 @@ export function phase2SourceFixture(run) {
       }
       sources[name] = { repository: `https://github.com/princessdardan/lash-her-${name}-api.git`, commit: commit(repo), requiredChecks: "passed" };
     }
-    for (const file of ["release-inputs.mjs", "source-policy.mjs", "release.mjs", "source-checkout.mjs"]) {
+    for (const file of ["release-inputs.mjs", "source-policy.mjs", "release.mjs", "source-checkout.mjs",
+      "qualification-target-profile.mjs", "qualification-target-profiles.json"]) {
       mkdirSync(join(source, "ops/platform"), { recursive: true });
       writeFileSync(join(source, "ops/platform", file), readFileSync(join(frontend, "ops/platform", file)));
     }

@@ -1,5 +1,9 @@
 # Phase 2 goal execution
 
+## Approved isolated-lane execution amendment — November 6, 2026
+
+Dardan approved the revised `p2q-20261106` scope and source implementation in the [isolated qualification plan](https://github.com/princessdardan/lash-her-frontend/blob/96df28f3eedffa5607637f4f2fa3b48f9489c3f1/docs/api-integration/decisions/2026-11-06-isolated-p2-qualification-lane.md). The active goal seeks P2Q/G2-Q on a newly isolated target. Original P2-00, retained financial-history live smoke, and functional integrations without isolated setup remain separately OPEN and outside that amended completion claim. Paid-course manual-grant certification remains mandatory. Accepted G1 evidence retains its original recovery-only scope; affected G1 checks must qualify the new target. Resource allocation, spending, candidate publication and live release are not approved by this source authorization. The original implementation plan and historical evidence below remain unchanged.
+
 Started November 5, 2026 (America/Toronto). The accepted goal completes remaining P2-00, P2-01 through P2-12 and G2. It excludes PR #91's shipping-preparation implementation/review/publication, Phase 3 cutover, paid-course checkout, Community member features, production activation and deferred monitoring.
 
 ## Baseline reconciliation

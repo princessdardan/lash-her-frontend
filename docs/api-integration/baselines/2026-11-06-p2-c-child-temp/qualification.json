@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "status": "C_FIXTURE_CHILD_TEMP_ROOT_OWNED_PASS",
+  "sourceCommit": "a57697019a4d124eac38aa5b7a7054dc03d3f272",
+  "baseCommit": "839d6a68ee6c45acdcb344cc3849b69c22ddbc7a",
+  "runtimeDelta": "One generated C Node child environment gains fixed TMPDIR equal to the source-created canonical owned folder.",
+  "sourceSha256": {
+    "ops/platform/p2-known-ack-interrupted-restoration.mjs": "001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802",
+    "ops/platform/host/p2_known_ack_interrupted_restoration.py": "a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90",
+    "ops/platform/host/p2_release_broker.py": "e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d",
+    "ops/platform/host/p2_release_supervisor.py": "b0c448e3e9bc65bc90477dbb1f528797a55f9b0c93171f922597cf19e74e771e",
+    "ops/gateway/server.mjs": "3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d",
+    "ops/gateway/p2-certification-fault.mjs": "bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52",
+    "ops/gateway/package.json": "753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805",
+    "ops/gateway/package-lock.json": "def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs": "98ff1da3069c7c06cf3ecdd0615a33ae2201a0af108bfc18d646ec15a2bd0504",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs": "8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py": "a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314"
+  },
+  "unchangedBaseSourceSha256": {
+    "ops/platform/test-p2-known-ack-loss-local.mjs": "050f146711a60f8812748e0677a952c0bf3e7610d86f1c48aeed33c09ea55e67",
+    "ops/platform/harness/owned-p2-known-ack-loss.mjs": "eb1149fd634e263d04c421ccf92fd3ec9362432eaf11a14db080d771e8c0d8fe",
+    "ops/platform/harness/owned-phase2-lifecycle-receiver.mjs": "65e9e483cb4eba3b1804ac4725d15e0ffea13fa6703a7af877f9882129fc3c44",
+    "ops/platform/host/p2_known_ack_interrupted_restoration.py": "a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90",
+    "ops/platform/p2-known-ack-interrupted-restoration.mjs": "001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs": "8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py": "a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314"
+  },
+  "actualPg18": {
+    "stdoutSha256": "fdaf00b9ea4db9f9d1bcfc8c8e0449c3af7ab4c6cd7801c250db784df4adb9be",
+    "stdoutBytes": 22251,
+    "stderrBytes": 0,
+    "elapsedSeconds": 142.5,
+    "migrations": {
+      "frontend": 83,
+      "course": 22,
+      "community": 11
+    },
+    "apiSourceCommits": {
+      "course": "a447bfde20299e12afab68a3331b3792ddd07598",
+      "community": "939de65dd52f0b1a43993a25c7c428dce6e2bb43"
+    },
+    "platform": "macOS PG18.6, Node24.18.0; not Linux CI",
+    "rootJose": "6.2.15",
+    "gatewayJose": "6.2.3"
+  },
+  "nodeTests": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "logSha256": "57b820e40cc7c02375adf1492bece5ad3fd5981f41ab645915108c312c0b4c68"
+  },
+  "lintExitCode": 0,
+  "originalLinuxFailure": {
+    "sourceCommit": "839d6a68ee6c45acdcb344cc3849b69c22ddbc7a",
+    "runId": "42267467663",
+    "jobId": "128063014240",
+    "artifactBytes": 4937,
+    "artifactSha256": "41cb39e9f810298b895006acee6d9444a562063ce23e58cd69d2d7597928796a",
+    "phase": "actual-cron-stage",
+    "error": "TSX cache ENOENT under /tmp/tsx-999 before C module entry"
+  },
+  "originalControlledRepro": {
+    "scope": "Actual839-generated child spawn expression and real TSX4.23.4 with only missing default /tmp cache mkdir projected. Not an actual Linux container run.",
+    "originalHelperSha256": "8c047cb1ecc1c68e7374c73b8be2eb077c1a62572fdc87c62031b71194134241",
+    "testSha256": "d2ba2edf3c25cacc39ed9a1b817af96d6cbbc1052101dae7adc8ea9b01be55cf",
+    "redLogSha256": "7674e05012ac05ad46fbc8652cd42ec1177d9702580e6a9cece915299560eb5f"
+  },
+  "actualLinuxQualification": "OPEN; fresh CI required",
+  "providerTouched": false,
+  "actualDocker": false,
+  "productionOrBChanged": false,
+  "mountOrByteBudgetChanged": false,
+  "successReceiptSchemaChanged": false
+}

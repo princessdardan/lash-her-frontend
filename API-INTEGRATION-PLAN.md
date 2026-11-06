@@ -1,5 +1,9 @@
 # Unified Course and Community Platform Integration Plan
 
+## Approved isolated-lane execution amendment — November 6, 2026
+
+Dardan approved the revised `p2q-20261106` scope and source implementation in the [isolated qualification plan](https://github.com/princessdardan/lash-her-frontend/blob/96df28f3eedffa5607637f4f2fa3b48f9489c3f1/docs/api-integration/decisions/2026-11-06-isolated-p2-qualification-lane.md). The active goal seeks P2Q/G2-Q on a newly isolated target. Original P2-00, retained financial-history live smoke, and functional integrations without isolated setup remain separately OPEN and outside that amended completion claim. Paid-course manual-grant certification remains mandatory. Accepted G1 evidence retains its original recovery-only scope; affected G1 checks must qualify the new target. Resource allocation, spending, candidate publication and live release are not approved by this source authorization. The original implementation plan and historical evidence below remain unchanged.
+
 Build one account-based learning platform in `lash-her-frontend`, backed by the Course API for education and access, and the Community API for course-linked discussion.
 
 Current operator decision (October 29, 2026): **Dardan is the sole operator; protected credential/release handoff proceeds through the operator checklist. Operational monitoring and alerting are deferred until after this integration plan is complete and do not gate the current release.** P1-08 is DEFERRED. Existing readiness, safe diagnostics/audit, capacity tests, recovery and protected release requirements remain. See the [scope decision](/Users/dardan/workspace/lash-her-frontend/docs/api-integration/decisions/2026-10-29-sole-operator-and-monitoring-deferral.md).
