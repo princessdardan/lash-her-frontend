@@ -2,7 +2,7 @@
 
 Source checkpoint updated November 6, 2026 (Toronto). Accepted live admission completed November 4 at 01:27:39 UTC, with independent postflight at 01:29:33 UTC. [The tracker](../../API-INTEGRATION-EXECUTION.md) owns task status; [release policy](release-policy.md) governs future releases.
 
-Latest source position: Course `a447bfde` and Community `939de65d` pass merged-main CI; frontend `b347ca58193252b8863057c7d5a05812edcbc0c3` passes all ten required jobs in CI 42227517719, including actual Linux forward/persistence/receiver checks and all browsers. Separate interrupted-restoration C and durable gateway frontier follow-up remain in implementation/review. Final union/CI/candidate, historical configuration/provider effects and deployed certification remain open. Historical sections retain their original source scope.
+Latest source position: Course `a447bfde` and Community `939de65d` pass merged-main CI; frontend `b347ca58193252b8863057c7d5a05812edcbc0c3` passes all ten required jobs in CI 42227517719, including actual Linux forward/persistence/receiver checks and all browsers. The independently cleared durable gateway frontier is integrated locally as `91d44bd2` for fresh CI; separate interrupted-restoration C remains in implementation. Final union/CI/candidate, historical configuration/provider effects and deployed certification remain open. Historical sections retain their original source scope.
 
 ## Accepted P1 state
 
@@ -189,3 +189,7 @@ CI47 passes eight ordinary jobs, including build/all three browsers with the can
 [Frontend b347ca58](baselines/2026-11-06-p2-linux-forward-qualified/README.md) passes all ten required jobs, including all browsers and actual Linux/PostgreSQL18 roles 24/release 18/native 9/certification 10 plus identity 19/recovery 55/forward 19/persistence 13/receiver 12, zero skips. Original artifact/log/raw JSON bytes are retained and API/source/contract pins match. The prior relay failure is independently reproduced and corrected without weakening production guards.
 
 [Fresh metadata](baselines/2026-11-06-p2-deployment-metadata-refresh/README.md) confirms 81 deployments; five authoritative CLI source identities remain missing. Conditional certification ordering puts known-ACK recovery before new Mux assets only if complete global 900-second backend/schedule eligibility passes. All 17 cases remain required. Interrupted-restoration C/frontier source follow-up, final source/CI/candidate, actual historical configuration/provider effects, Dardan-started staging and real 24-hour cleanup remain open. G1 stays accepted; no live mutation or G2 closure is claimed.
+
+## Gateway frontier source follow-up — November 6, 2026
+
+[Integrated 91d44bd2](baselines/2026-11-06-p2-known-ack-frontier/root-integration.json) adds the independently cleared durable pending gateway marker; 61 focused root host checks pass without skips. Old stopped1 cannot qualify after replacement starts, and only actual distinct new0 can resolve it. Ordinary recovery/shared files are unchanged. Source fits 488 files/40,202,944 decoded bytes, all 33 profiles and PR91 runtime unchanged. Earlier b347 all-ten-job CI remains exact-source evidence; this follow-up needs fresh CI. Separate interrupted-restoration C and final candidate/live evidence remain open. No staging mutation or G2 acceptance occurred.
