@@ -48,8 +48,10 @@ def _safe_errors(function):
     return safe
 
 
-def _review(value):
-    shipping.review("chitchats", value)
+def _review(value, principals=True):
+    demand(isinstance(value, dict) and value.get("environment") == "staging", "CHITCHATS_TRANSIENT_STAGING_REQUIRED")
+    if principals:
+        shipping.review("chitchats", value)
     demand(isinstance(value.get("sourceCommit"), str) and re.fullmatch(r"[a-f0-9]{40}", value["sourceCommit"]) and
         all(shipping.digest(value.get(key)) for key in ("sourceInventorySha256", "requirementsSha256")), "CHITCHATS_TRANSIENT_SOURCE_BINDING_REQUIRED")
     return value
@@ -98,7 +100,7 @@ def database_queries(reviewed):
     These tables have no tenant column; all Chit Chats rows are conservatively
     selected, including unattached quotes and superseded/replacement generations.
     """
-    _review(reviewed)
+    _review(reviewed, principals=False)
     return [
         ("shipments", "SELECT id::text, order_id::text, public_reference, provider_shipment_id, provider_status, status::text, state_version, flat_rate, purpose::text, supersedes_shipment_id::text, quote_fingerprint, quote_expires_at::text, selected_postage_type, actual_purchase_total_cents, provider_cost_currency, purchased_at::text, signature_requested, destination, package_snapshot, customs_lines, rates, raw_shipment, created_at::text, updated_at::text FROM product_shipments WHERE provider='chitchats' ORDER BY id LIMIT 4097", []),
         ("jobs", "SELECT j.id::text, j.shipment_id::text, j.type::text, j.status::text, j.state_version, encode(sha256(convert_to(j.idempotency_key,'UTF8')),'hex') AS idempotency_sha256, j.attempt_count, j.operation_payload_hash, j.payload, j.outcome_unknown, (j.lease_owner IS NOT NULL) AS lease_owner_present, j.lease_expires_at::text, j.available_at::text, j.next_attempt_at::text, j.outcome_code, j.completed_at::text, j.created_at::text, j.updated_at::text FROM product_shipment_jobs j JOIN product_shipments s ON s.id=j.shipment_id WHERE s.provider='chitchats' ORDER BY j.id LIMIT 4097", []),
@@ -248,6 +250,10 @@ def _source_requirements(reviewed, verified):
         demand(len(matches) <= 1, "CHITCHATS_TRANSIENT_DUPLICATE_SOURCE_CLOSURE")
         if matches:
             closure = matches[0]
+            context = ("sourceCommit", "surfaceSha256", "configurationRecordSha256", "provenanceSha256")
+            demand(all((re.fullmatch(r"[a-f0-9]{40}", verified.get(key, "")) if key == "sourceCommit" else shipping.digest(verified.get(key))) for key in context) and
+                set(closure) == {"familyId", "disposition", "requirementIds", "evidenceIds", *context} and
+                all(closure.get(key) == verified[key] for key in context), "CHITCHATS_TRANSIENT_SOURCE_CLOSURE_CONTEXT_REFUSED")
             demand(closure.get("disposition") in ("no-capability-observed", "absent-from-verified-source") and
                 isinstance(closure.get("requirementIds"), list) and closure["requirementIds"] == sorted(required[family_id]) and
                 isinstance(closure.get("evidenceIds"), list) and bool(closure["evidenceIds"]) and closure["evidenceIds"] == sorted(set(closure["evidenceIds"])) and
@@ -329,11 +335,28 @@ def _probe_body(reference, remote):
 
 
 @_safe_errors
-def observe_scoped_effects(privateLockedClient, reviewed, actualRows, verifiedSourceRequirements):
-    _review(reviewed)
+def observe_scoped_effects(privateLockedClient, reviewed, actualRows, verifiedSourceRequirements, before=None):
+    _review(reviewed, principals=False)
     families, profile_known, closures, required = _source_requirements(reviewed, verifiedSourceRequirements)
     actual = normalize_snapshot(actualRows)
+    original = before if before is not None else reviewed.get("transientSnapshot")
+    original_empty = isinstance(original, dict) and set(original) == set(COLUMNS) and all(isinstance(rows, list) and not rows for rows in original.values())
+    if set(closures) == set(FAMILIES) and not any(actual.values()) and original_empty:
+        return {"provider": "chitchats", "status": "STAGING_CHITCHATS_TRANSIENT_EFFECTS_OBSERVED", "clientId": None,
+            "sourceCommit": reviewed["sourceCommit"], "sourceInventorySha256": reviewed["sourceInventorySha256"], "requirementsSha256": reviewed["requirementsSha256"],
+            "surfaceSha256": verifiedSourceRequirements["surfaceSha256"], "configurationRecordSha256": verifiedSourceRequirements["configurationRecordSha256"],
+            "provenanceSha256": verifiedSourceRequirements["provenanceSha256"], "disposition": "source-inapplicable-and-effects-reconciled",
+            "providerRequestsRequired": False, "transientDatabaseSnapshotSha256": sha(actual), "beforeDatabaseSnapshotSha256": sha(original),
+            "providerInventorySha256": None, "providerInventoryComplete": False, "coveredFamilyIds": sorted(FAMILIES),
+            "coveredRequirementIds": sorted(set().union(*required.values())), "missingRequirementIds": [],
+            "capabilityClosures": [closures[key] for key in sorted(closures)], "effects": [], "operations": [], "rateCacheReceipts": [], "eventReceipts": [],
+            "sourceGaps": [], "knownActiveExecutions": 0, "knownUncertainEffects": 0, "activeExecutions": 0, "uncertainEffects": 0,
+            "deferredCompatibleWorkRequired": False, "futurePollingAuthorized": False, "historicalWritersFenced": False, "trafficAuthorized": False}
+    _review(reviewed)
     providers = _inventory(privateLockedClient, reviewed)
+    contradicted_closures = closures if any(actual.values()) or providers else {}
+    if contradicted_closures:
+        closures = {}
     jobs = {row["id"]: row for row in actual["jobs"]}
     by_shipment = {}
     for job in jobs.values():
@@ -386,6 +409,8 @@ def observe_scoped_effects(privateLockedClient, reviewed, actualRows, verifiedSo
     gaps = [{"familyId": row["familyId"], "reason": "source-allows-requests-without-an-exhaustive-durable-intent-receipt" if row["untrackedPotentialRequests"] else "original-source-configuration-and-credential-closure-missing",
         "missingRequirementIds": sorted(item["requirementId"] for item in row["untrackedPotentialRequests"]) if row["untrackedPotentialRequests"] else sorted(required[row["familyId"]])}
         for row in families if row["familyId"] not in closures and (row["untrackedPotentialRequests"] or row["sourceDisposition"] == "absent-from-verified-source")]
+    gaps += [{"familyId": family, "reason": "original-no-capability-closure-contradicted-by-actual-scope",
+        "missingRequirementIds": sorted(required[family])} for family in contradicted_closures]
     covered = sorted({item["requirementId"] for row in families for item in row.get("sqlIntentRequirements", [])} |
         {item for closure in closures.values() for item in closure["requirementIds"]})
     missing = sorted({item for gap in gaps for item in gap["missingRequirementIds"]})

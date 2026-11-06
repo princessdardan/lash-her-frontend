@@ -3,6 +3,7 @@ from copy import deepcopy
 import hashlib
 import json
 import os
+from pathlib import Path
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -40,6 +41,7 @@ class TransientTests(unittest.TestCase):
         self.actual_rows = {"shipments": [shipment], "jobs": [job], "rateCache": [], "events": []}
         self.shipping.update(sourceCommit="f"*40, sourceInventorySha256="1"*64, requirementsSha256="2"*64)
         self.requirements = {"version": 1, "status": "FRONTEND_HISTORICAL_SOURCE_VERIFIED", "sourceCommit": "f"*40, "sourceInventorySha256": "1"*64, "requirementsSha256": "2"*64,
+            "surfaceSha256": "3" * 64, "configurationRecordSha256": "4" * 64, "provenanceSha256": "5" * 64,
             "providerFamilies": [{"familyId": family, "provider": "chitchats", "sourceDisposition": "reachable", "untrackedPotentialRequests": [], "configurationConditions": [{"requirementId": family + ".original-configuration"}], "sqlIntentRequirements": [{"requirementId": family + ".durable-intents"}], "annotations": []} for family in component.FAMILIES]}
         self.private_markers += ["Private Person", "Private Address", "Private Unit", "Private City", "Private Product", "Private Rate", "private-phone", "private-fingerprint"]
 
@@ -176,11 +178,11 @@ class TransientTests(unittest.TestCase):
         draft = self.requirements["providerFamilies"][0]
         draft["untrackedPotentialRequests"] = [{"requirementId": "chitchats.drafts.accepted-request-completeness"}]
         required = sorted(["sql-credentials.DATABASE_URL", "chitchats.drafts.original-configuration", "chitchats.drafts.durable-intents", "chitchats.drafts.accepted-request-completeness"])
-        self.requirements["capabilityClosures"] = [{"familyId": "chitchats.drafts", "disposition": "no-capability-observed", "requirementIds": required, "evidenceIds": ["a" * 64], "extraPrivateData": "private-email@example.test"}]
+        self.requirements["capabilityClosures"] = [{"familyId": "chitchats.drafts", "disposition": "no-capability-observed", "requirementIds": required, "evidenceIds": ["a" * 64], **{key: self.requirements[key] for key in ("sourceCommit", "surfaceSha256", "configurationRecordSha256", "provenanceSha256")}}]
         result = self.observe()
-        self.assertEqual(result["uncertainEffects"], 0)
-        self.assertEqual(result["missingRequirementIds"], [])
-        self.assertIn("chitchats.drafts.accepted-request-completeness", result["coveredRequirementIds"])
+        self.assertGreater(result["knownUncertainEffects"], -1)
+        self.assertIn("chitchats.drafts.accepted-request-completeness", result["missingRequirementIds"])
+        self.assertIsNone(result["uncertainEffects"])
         self.requirements["capabilityClosures"][0]["requirementIds"].remove("sql-credentials.DATABASE_URL")
         with self.assertRaisesRegex(ValueError, "CLOSURE_COVERAGE"):
             self.observe()
@@ -189,8 +191,65 @@ class TransientTests(unittest.TestCase):
         family = self.requirements["providerFamilies"][0]
         family.update(sourceDisposition="absent-from-verified-source", configurationConditions=[], sqlIntentRequirements=[], untrackedPotentialRequests=[])
         self.assertIsNone(self.observe()["uncertainEffects"])
-        self.requirements["capabilityClosures"] = [{"familyId": "chitchats.drafts", "disposition": "absent-from-verified-source", "requirementIds": [], "evidenceIds": ["a" * 64]}]
-        self.assertEqual(self.observe()["uncertainEffects"], 0)
+        self.requirements["capabilityClosures"] = [{"familyId": "chitchats.drafts", "disposition": "absent-from-verified-source", "requirementIds": [], "evidenceIds": ["a" * 64], **{key: self.requirements[key] for key in ("sourceCommit", "surfaceSha256", "configurationRecordSha256", "provenanceSha256")}}]
+        self.assertIsNone(self.observe()["uncertainEffects"])
+
+    def closed_source(self):
+        self.requirements["sqlCredentialRequirements"] = [{"requirementId": "sql-credentials.DATABASE_URL"}]
+        self.requirements["capabilityClosures"] = [{"familyId": family["familyId"], "disposition": "no-capability-observed",
+            **{key: self.requirements[key] for key in ("sourceCommit", "surfaceSha256", "configurationRecordSha256", "provenanceSha256")},
+            "requirementIds": sorted({item["requirementId"] for key in ("configurationConditions", "sqlIntentRequirements", "untrackedPotentialRequests") for item in family[key]} | {"sql-credentials.DATABASE_URL"}),
+            "evidenceIds": ["a" * 64]} for family in self.requirements["providerFamilies"]]
+
+    def test_all_source_closures_and_original_current_empty_sql_need_no_client_or_fabricated_principal(self):
+        self.closed_source()
+        rows = {name: [] for name in component.COLUMNS}
+        reviewed = {key: self.shipping[key] for key in ("environment", "sourceCommit", "sourceInventorySha256", "requirementsSha256")}
+        result = component.observe_scoped_effects(None, reviewed, rows, self.requirements, before=rows)
+        self.assertEqual((result["activeExecutions"], result["uncertainEffects"]), (0, 0))
+        self.assertIsNone(result["clientId"]); self.assertFalse(result["providerRequestsRequired"])
+        self.assertIn("sql-credentials.DATABASE_URL", result["coveredRequirementIds"])
+        self.assertEqual(len(component.database_queries(reviewed)), 4)
+        with self.assertRaises(ValueError):
+            component.observe_scoped_effects(None, reviewed, rows, self.requirements)
+        with self.assertRaises(ValueError):
+            component.observe_scoped_effects(None, reviewed, self.actual_rows, self.requirements, before=rows)
+        self.requirements["capabilityClosures"].pop()
+        with self.assertRaises(ValueError):
+            component.observe_scoped_effects(None, reviewed, rows, self.requirements, before=rows)
+
+    def test_closure_context_transplant_and_missing_global_requirement_refuse(self):
+        self.closed_source(); original = deepcopy(self.requirements)
+        rows = {name: [] for name in component.COLUMNS}
+        for key in ("sourceCommit", "surfaceSha256", "configurationRecordSha256", "provenanceSha256"):
+            self.requirements = deepcopy(original)
+            self.requirements["capabilityClosures"][0][key] = "9" * (40 if key == "sourceCommit" else 64)
+            with self.assertRaisesRegex(ValueError, "CLOSURE_CONTEXT"):
+                component.observe_scoped_effects(None, self.shipping, rows, self.requirements, before=rows)
+        self.requirements = deepcopy(original)
+        self.requirements["capabilityClosures"][0]["requirementIds"].remove("sql-credentials.DATABASE_URL")
+        with self.assertRaisesRegex(ValueError, "CLOSURE_COVERAGE"):
+            component.observe_scoped_effects(None, self.shipping, rows, self.requirements, before=rows)
+
+    def test_actual_c07_source_pipeline_matches_no_client_empty_scope(self):
+        root = Path(__file__).resolve().parents[3]
+        program = r"""
+import {verifiedSourceRequirements,historicalSourceSha256 as sha,prepareHistoricalSourceOriginalConfiguration as prepare,observeHistoricalSourceSqlCredentials as observe,deriveHistoricalSourceCapabilityClosures as derive} from './ops/platform/frontend-historical-source.mjs';
+const source=verifiedSourceRequirements(process.cwd(),'b99d4f346696f897fa6a6729dfcc52d6503fe8d6');
+const surfaceSha256=sha({fixture:'owned-chitchats-empty'}),configurationRecordSha256=sha({fixture:'owned-chitchats-original'}),keyCatalog=[];
+const provenance={surfaceSha256,sourceCommit:source.sourceCommit,configurationRecordSha256,kind:'deployment',immutableReference:'owned:chitchats-original',entrypoint:null,keyCatalogSha256:sha(keyCatalog)};
+const binding={surfaceSha256,sourceCommit:source.sourceCommit,configurationRecordSha256,sourceConfiguration:{...provenance,provenanceSha256:sha(provenance),databaseRoles:[]}};
+const original={sourceCommit:source.sourceCommit,configurationRecordSha256,provenance,keyCatalog,environment:{}};
+prepare(source,binding,original);const sql=await observe(source,{binding,originalConfiguration:original,clientsByKey:new Map(),physicalDatabasesByKey:new Map(),verifySession:async()=>{}});
+console.log(JSON.stringify({...source,...derive(source,binding,original,sql)}));
+"""
+        source = json.loads(subprocess.run([os.environ.get("NODE_BINARY", "/Users/dardan/.nvm/versions/node/v24.18.0/bin/node"), "--input-type=module", "-e", program],
+            cwd=root, check=True, capture_output=True, text=True).stdout)
+        reviewed = {"environment": "staging", **{key: source[key] for key in ("sourceCommit", "sourceInventorySha256", "requirementsSha256")}}
+        rows = {name: [] for name in component.COLUMNS}
+        result = component.observe_scoped_effects(None, reviewed, rows, source, before=rows)
+        self.assertEqual((result["activeExecutions"], result["uncertainEffects"]), (0, 0))
+        self.assertEqual(len([item for item in result["coveredRequirementIds"] if item.startswith("sql-credentials.")]), 4)
 
     def test_cross_border_customs_mismatch_is_not_a_draft_receipt(self):
         row = self.actual_rows["shipments"][0]
