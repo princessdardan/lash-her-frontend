@@ -1,0 +1,9 @@
+# Actual Linux composition passes; forward recovery remains open
+
+[CI 42210725374](https://github.com/princessdardan/lash-her-frontend/actions/runs/42210725374), exact source `c7ae8e9fd16c1332d520e08e0b052bded019a934`, retains an actual Linux/Docker/PostgreSQL18 composition receipt with all four fixtures passing: 24 roles, 18 release, nine native-fixture and nine certification checks, zero skips. This verifies the exact nine-case consumer correction on Linux within its owned fixture scope. Actual provider-native and staging qualification remain separate requirements.
+
+The operator job then reaches forward recovery and fails at `forward-new-build-probe-promote`. The retained diagnostic still reports `Error`, unknown code, no eligible source frames and no bridge errors, with 1545 inner stderr bytes and zero stdout. The new Node/Python diagnostic record did not expose the cause. Its end-to-end failure propagation needs a composed regression; the actual Linux forward failure remains unresolved. No production guard is relaxed and no workaround is substituted.
+
+Original artifact 13499790528 is 3925 bytes/SHA-256 `965678488af9be4074b6eff05e6e6e36d0345899a12ad4e18213813cb7a93e58`. It includes the actual 60-check wrapper receipt and the unchanged private forward-failure files. Six originals including the complete operator log are retained beneath `/Users/dardan/.local/share/lash-her/phase2-goal-evidence/2026-11-06/ci-c7-forward/`; the retention manifest is `d753fba300ef85248122e8821560119740c4d58b7c30f8f7ad02df10a072dd32`. The checked-in wrapper stdout is byte-identical to the original artifact.
+
+Typed known-ACK runtime integration, complete final-source CI/candidate, original historical configuration/provider effects and five missing source identities, Dardan-started deployed certification, real 24-hour export cleanup and G2 remain open. No staging SQL mutation, provider control, deployment, schedule or admission change occurred.
