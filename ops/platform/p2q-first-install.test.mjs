@@ -57,7 +57,7 @@ async function googleFixture(){
   .replace("const OWNER_UID=0,CASE_ROOT='/var/lib/lash-her/p2q/google-projects';",`const OWNER_UID=${process.getuid()},CASE_ROOT=${JSON.stringify(cases)};`)
   .replace("privatePath(path);let current='/';\n  for(const part of path.split('/').filter(Boolean))",`privatePath(path);demand(path===${JSON.stringify(root)}||path.startsWith(${JSON.stringify(root+'/')}),'PRIVATE_DIRECTORY_REQUIRED');let current=${JSON.stringify(root)};\n  for(const part of relative(current,path).split('/').filter(Boolean))`)
   .replace("'/run/lash-her-p2q-private/'",JSON.stringify(handoff+'/'));
- const path=join(root,'producer.mjs');file.writeFileSync(path,projected+'\nexport const ownedPrivate={casePlan,PrivateCase,execute,cleanAmbient,route,cliArgs,childEnvironment,request,physicalTree,verifyToolchain,readFile,writeFile,parse,principalClaim,claimMayClose,UMASK_WRAPPER};\n');
+ const path=join(root,'producer.mjs');file.writeFileSync(path,projected+'\nexport const ownedPrivate={casePlan,PrivateCase,execute,cleanAmbient,route,cliArgs,childEnvironment,request,physicalTree,verifyToolchain,readFile,writeFile,parse,principalClaim,claimMayClose,UMASK_WRAPPER,verifySdkInputs,SDK_CA_RELATIVE};\n');
  const api=(await import(pathToFileURL(path).href)).ownedPrivate;
  const principalPath=join(handoff,'principal.json'),principal='new-owner@example.test';
  const bytes=Buffer.from(JSON.stringify({version:1,principal})+'\n');file.writeFileSync(principalPath,bytes,{mode:0o600});
@@ -65,6 +65,8 @@ async function googleFixture(){
   principal:{path:principalPath,sha256:hash(bytes)},bootstrapQuotaProject:null,caseRoot:cases,
   toolchain:{sdk:{root:join(root,'sdk'),device:'1',inode:'1',closureSha256:'b'.repeat(64),approvedSymlinks:{}},
    python:{root:join(root,'python'),device:'1',inode:'2',closureSha256:'c'.repeat(64),approvedSymlinks:{},executable:join(root,'python/bin/python3')},launcher:{relativePath:'bin/gcloud',sha256:'d'.repeat(64)}}};
+ const ca=join(plan.toolchain.sdk.root,api.SDK_CA_RELATIVE);file.mkdirSync(join(plan.toolchain.sdk.root,'lib/third_party/certifi'),{recursive:true,mode:0o700});
+ file.writeFileSync(ca,'owned public CA placeholder; not a real trust bundle',{mode:0o600});file.mkdirSync(join(plan.toolchain.python.root,'lib/openssl/ossl-modules'),{recursive:true,mode:0o700});
  return {root,cases,plan:api.casePlan(plan,plan.actionId),principal,api,close:()=>rmSync(root,{recursive:true,force:true})};
 }
 function googleModel(fixture,options={}){
@@ -74,6 +76,7 @@ function googleModel(fixture,options={}){
  const raw=(status,value)=>({status,raw:Buffer.from(JSON.stringify(value))});
  const rt={now:()=>clock,wait:async()=>{events.push(['wait']);},verify:async()=>{events.push(['verify']);return {sourceCommit:'e'.repeat(40),sourceClosureSha256:'f'.repeat(64),sourceFiles:512};},
   principal:()=>principal,command:async(kind,expected)=>{events.push(['cli',kind]);assert.equal(expected,principal);
+   const path=join(fixture.cases,plan.actionId);assert.equal(file.statSync(join(path,'sdk.netrc')).mode&0o777,0o600);assert.deepEqual(file.readdirSync(join(path,'empty-ca')),[]);
    if(kind==='login')return Buffer.alloc(0);
    if(kind==='list')return Buffer.from(JSON.stringify(revoked?[]:options.accounts??[{account:principal,status:'ACTIVE'}]));
    if(kind==='token')return Buffer.from('owned-not-a-real-access-token-0000\n');
@@ -163,7 +166,7 @@ test('Google ALREADY_EXISTS, foreign operation/project/parent/owner and operatio
 });
 test('Google clean child environment rejects ambient auth/ADC/impersonation/Python/browser/proxy overrides',async()=>{
  const f=await googleFixture();try{
-  for(const key of ['CLOUDSDK_CONFIG','CLOUDSDK_AUTH_ACCESS_TOKEN','GOOGLE_APPLICATION_CREDENTIALS','GCLOUD_PROJECT','CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT','PYTHONPATH','VIRTUAL_ENV','BROWSER','NODE_TLS_REJECT_UNAUTHORIZED','HTTPS_PROXY'])
+  for(const key of ['CLOUDSDK_CONFIG','CLOUDSDK_AUTH_ACCESS_TOKEN','GOOGLE_APPLICATION_CREDENTIALS','GCLOUD_PROJECT','CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT','PYTHONPATH','VIRTUAL_ENV','BROWSER','NODE_TLS_REJECT_UNAUTHORIZED','HTTPS_PROXY','NETRC','OPENSSL_CONF','OPENSSL_MODULES','OPENSSL_ENGINES','SSL_CERT_FILE','SSL_CERT_DIR','SSLKEYLOGFILE','REQUESTS_CA_BUNDLE','CURL_CA_BUNDLE','HTTPLIB2_CA_CERTS'])
    assert.throws(()=>f.api.cleanAmbient({[key]:'PRIVATE_CREDENTIAL_CANARY'}),{code:'P2Q_GOOGLE_AMBIENT_OVERRIDE_REFUSED'});
   f.api.cleanAmbient({PATH:'ambient-not-forwarded',HOME:'ambient-not-forwarded'});const store=new f.api.PrivateCase(f.plan,'create'),env=f.api.childEnvironment(f.plan,store);
   assert.equal(Object.hasOwn(env,'HOME'),false);assert.equal(Object.hasOwn(env,'GOOGLE_APPLICATION_CREDENTIALS'),false);assert.equal(env.CLOUDSDK_CONFIG,join(store.path,'config'));
@@ -208,7 +211,7 @@ test('Google principal claims serialize cases and never expire or clear an unkno
  }finally{f.close();}
 });
 test('Google tool closure pins only exact internal vendor symlinks and actual target bytes',async()=>{
- const f=await googleFixture();try{const root=join(f.root,'sdk');file.mkdirSync(root,{mode:0o700});file.mkdirSync(join(root,'real'),{mode:0o700});
+ const f=await googleFixture();try{const root=join(f.root,'vendor-links');file.mkdirSync(root,{mode:0o700});file.mkdirSync(join(root,'real'),{mode:0o700});
   file.writeFileSync(join(root,'real','module.py'),'owned source',{mode:0o600});file.symlinkSync('real',join(root,'docs'));
   const links={docs:'real'},first=f.api.physicalTree(root,links);assert.match(first,/^[a-f0-9]{64}$/u);
   assert.throws(()=>f.api.physicalTree(root,{}));assert.throws(()=>f.api.physicalTree(root,{docs:'elsewhere'}));
@@ -305,5 +308,37 @@ test('Google tool files include empty SDK modules and larger binaries without ch
   file.writeFileSync(binary,Buffer.alloc(2_000_001),{mode:0o600});assert.match(f.api.physicalTree(root,{}),/^[a-f0-9]{64}$/u);
   assert.throws(()=>f.api.readFile(empty,4096,true),{code:'P2Q_GOOGLE_PRIVATE_FILE_BOUND'});assert.throws(()=>f.api.readFile(binary,2_000_000),{code:'P2Q_GOOGLE_PRIVATE_FILE_BOUND'});
   file.truncateSync(binary,128_000_001);assert.throws(()=>f.api.physicalTree(root,{}),{code:'P2Q_GOOGLE_PRIVATE_FILE_BOUND'});
+ }finally{f.close();}
+});
+test('Google source-owned NETRC, empty CA and fixed SDK trust/OpenSSL paths exist before SDK calls',async()=>{
+ const f=await googleFixture();try{const store=new f.api.PrivateCase(f.plan,'create');f.api.verifySdkInputs(f.plan,store);const env=f.api.childEnvironment(f.plan,store);
+  assert.equal(env.NETRC,join(store.path,'sdk.netrc'));assert.equal(file.statSync(env.NETRC).mode&0o777,0o600);
+  assert.equal(env.OPENSSL_CONF,'/dev/null');assert.equal(env.OPENSSL_MODULES,join(f.plan.toolchain.python.root,'lib/openssl/ossl-modules'));
+  for(const name of ['SSL_CERT_FILE','REQUESTS_CA_BUNDLE','HTTPLIB2_CA_CERTS','CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE'])assert.equal(env[name],join(f.plan.toolchain.sdk.root,'lib/third_party/certifi/cacert.pem'));
+  assert.equal(env.SSL_CERT_DIR,join(store.path,'empty-ca'));assert.equal(file.statSync(env.SSL_CERT_DIR).mode&0o777,0o700);assert.deepEqual(file.readdirSync(env.SSL_CERT_DIR),[]);
+  assert.equal(env.CLOUDSDK_AUTH_DISABLE_SSL_VALIDATION,'false');assert.equal(Object.hasOwn(env,'HOME'),false);assert.equal(Object.hasOwn(env,'CODEX_HOME'),false);
+  const result=spawnSync('python3',['-I','-B','-S','-c','import netrc,sys;assert not netrc.netrc(sys.argv[1]).hosts;print("EMPTY_NETRC")',env.NETRC],{env:{PATH:process.env.PATH,LANG:'C',LC_ALL:'C'},encoding:'utf8',timeout:5000});
+  assert.equal(result.status,0,result.stderr);assert.equal(result.stdout,'EMPTY_NETRC\n');assert.equal(result.stderr,'');
+  const model=googleModel(f),value=await f.api.execute(f.plan,'create',store,model.rt);publicGoogleSafe(value);assert.equal(value.code,null);
+ }finally{f.close();}
+});
+test('Google NETRC/empty-CA identity or content drift and trusted input symlinks refuse',async()=>{
+ for(const change of ['netrc-content','netrc-link','empty-ca-file','empty-ca-link','ca-link','modules-link','modules-file']){const f=await googleFixture();try{
+  const store=new f.api.PrivateCase(f.plan,'create'),netrc=join(store.path,'sdk.netrc'),empty=join(store.path,'empty-ca'),ca=join(f.plan.toolchain.sdk.root,f.api.SDK_CA_RELATIVE),modules=join(f.plan.toolchain.python.root,'lib/openssl/ossl-modules');
+  if(change==='netrc-content')file.writeFileSync(netrc,'# changed marker\n');
+  if(change==='netrc-link'){file.unlinkSync(netrc);file.symlinkSync(ca,netrc);}
+  if(change==='empty-ca-file')file.writeFileSync(join(empty,'unexpected.pem'),'owned fixture');
+  if(change==='empty-ca-link'){file.rmdirSync(empty);file.symlinkSync(modules,empty);}
+  if(change==='ca-link'){file.unlinkSync(ca);file.symlinkSync(netrc,ca);}
+  if(change==='modules-link'){file.rmdirSync(modules);file.symlinkSync(empty,modules);}
+  if(change==='modules-file')file.writeFileSync(join(modules,'unexpected-provider'),'owned fixture');
+  assert.throws(()=>f.api.verifySdkInputs(f.plan,store));
+ }finally{f.close();}}
+});
+test('Google physical closure pins empty OpenSSL directory existence, identity and permissions',async()=>{
+ const f=await googleFixture();try{const root=f.plan.toolchain.python.root,modules=join(root,'lib/openssl/ossl-modules');const initial=f.api.physicalTree(root,{});
+  file.chmodSync(modules,0o755);assert.notEqual(f.api.physicalTree(root,{}),initial);file.chmodSync(modules,0o700);
+  file.renameSync(modules,join(f.root,'retained-original-modules'));assert.notEqual(f.api.physicalTree(root,{}),initial);
+  file.mkdirSync(modules,{mode:0o700});assert.notEqual(f.api.physicalTree(root,{}),initial);
  }finally{f.close();}
 });

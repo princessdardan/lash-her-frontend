@@ -12,6 +12,8 @@ const OWNER_UID=0,CASE_ROOT='/var/lib/lash-her/p2q/google-projects';
 const PROGRAM=fileURLToPath(import.meta.url),SOURCE_ROOT=resolve(dirname(PROGRAM),'../..');
 const HOST='cloudresourcemanager.googleapis.com',MAX_RAW=262144,MAX_TOTAL=4_000_000,MAX_RESPONSES=64;
 const UMASK_WRAPPER='import os,sys\nos.umask(0o077)\nos.execve(sys.argv[1],sys.argv[1:],dict(os.environ))\n';
+const NETRC_MARKER=Buffer.from('# Source-owned empty netrc: no authentication entries.\n');
+const SDK_CA_RELATIVE='lib/third_party/certifi/cacert.pem';
 const SUFFIX=/\.(?:py|mjs|json|yaml|yml|service|timer|sh|guard)$/u;
 const flags=Object.freeze({allocationAuthorityIssued:false,firstUseAuthorized:false,administrativeBoundaryComplete:false,
   recoveryBoundaryComplete:false,profileRegistered:false,oauthClientCreated:false});
@@ -77,7 +79,7 @@ function casePlan(value,actionId){
   return Object.freeze(structuredClone(value));
 }
 function cleanAmbient(environment){
-  demand(!Object.keys(environment).some(k=>/^(?:CLOUDSDK_|GCLOUD_|GOOGLE_|GCE_|GCP_|PYTHON|VIRTUAL_ENV$|BROWSER$|NODE_|SSL_CERT_|LD_|DYLD_|HTTP_PROXY$|HTTPS_PROXY$|ALL_PROXY$|NO_PROXY$)/iu.test(k)||/CREDENTIAL|ACCESS.?TOKEN|IMPERSONAT/iu.test(k)),'AMBIENT_OVERRIDE_REFUSED');
+  demand(!Object.keys(environment).some(k=>/^(?:CLOUDSDK_|GCLOUD_|GOOGLE_|GCE_|GCP_|PYTHON|VIRTUAL_ENV$|BROWSER$|NODE_|NETRC$|OPENSSL_|REQUESTS_CA_BUNDLE$|CURL_CA_BUNDLE$|HTTPLIB2_|SSL|LD_|DYLD_|HTTP_PROXY$|HTTPS_PROXY$|ALL_PROXY$|NO_PROXY$)/iu.test(k)||/CREDENTIAL|ACCESS.?TOKEN|IMPERSONAT/iu.test(k)),'AMBIENT_OVERRIDE_REFUSED');
 }
 function sourceObservation(plan){
   demand(digest(readFile(PROGRAM,2_000_000))===plan.programSha256,'SOURCE_REQUIRED');
@@ -95,6 +97,7 @@ function physicalTree(root,approved){
   demand(approved&&Object.getPrototypeOf(approved)===Object.prototype&&Object.keys(approved).length<=128&&Object.entries(approved).every(([k,v])=>
     k!==''&&!isAbsolute(k)&&relative(root,resolve(root,k))===k&&typeof v==='string'&&v!==''&&!isAbsolute(v)&&!v.includes('\0')),'TOOLCHAIN_REQUIRED');
   directory(root);const records=[];let bytes=0;
+  const record=value=>{demand(records.length<100000,'TOOLCHAIN_REQUIRED');records.push(value);};
   const found=new Set();
   function target(path,seen=new Set()){
     demand(path===root||path.startsWith(root+'/'),'TOOLCHAIN_REQUIRED');let current=root;const parts=relative(root,path).split('/').filter(Boolean);
@@ -103,12 +106,13 @@ function physicalTree(root,approved){
       const next=new Set(seen);next.add(current);return target(resolve(dirname(current),text,...parts.slice(i+1)),next);
     }}return current;
   }
-  function walk(path){for(const item of fs.readdirSync(path).sort()){const name=join(path,item),s=fs.lstatSync(name);demand(s.uid===OWNER_UID,'TOOLCHAIN_REQUIRED');
+  function walk(path){const parent=fs.lstatSync(path);record([relative(root,path)||'.','directory',String(parent.dev),String(parent.ino),parent.mode&0o777]);
+    for(const item of fs.readdirSync(path).sort()){const name=join(path,item),s=fs.lstatSync(name);demand(s.uid===OWNER_UID,'TOOLCHAIN_REQUIRED');
     if(s.isSymbolicLink()){const key=relative(root,name),text=fs.readlinkSync(name);demand(Object.hasOwn(approved,key)&&approved[key]===text,'TOOLCHAIN_REQUIRED');found.add(key);
       const resolved=target(name);demand(!(fs.lstatSync(resolved).isDirectory()&&(dirname(name)===resolved||dirname(name).startsWith(resolved+'/'))),'TOOLCHAIN_REQUIRED');
-      records.push([key,'symlink',String(s.dev),String(s.ino),text,relative(root,resolved)]);
+      record([key,'symlink',String(s.dev),String(s.ino),text,relative(root,resolved)]);
     }else{demand((s.mode&0o022)===0,'TOOLCHAIN_REQUIRED');if(s.isDirectory())walk(name);else{demand(s.isFile()&&records.length<100000,'TOOLCHAIN_REQUIRED');
-      const raw=readFile(name,128_000_000,false,true);bytes+=raw.length;demand(bytes<=2_000_000_000,'TOOLCHAIN_REQUIRED');records.push([relative(root,name),String(s.dev),String(s.ino),s.mode&0o777,raw.length,digest(raw)]);}}
+      const raw=readFile(name,128_000_000,false,true);bytes+=raw.length;demand(bytes<=2_000_000_000,'TOOLCHAIN_REQUIRED');record([relative(root,name),String(s.dev),String(s.ino),s.mode&0o777,raw.length,digest(raw)]);}}
   }}
   walk(root);demand(records.length>0&&Object.keys(approved).length===found.size,'TOOLCHAIN_REQUIRED');return digest(encoded(records));
 }
@@ -117,20 +121,30 @@ function verifyToolchain(plan){
   const launcher=join(plan.toolchain.sdk.root,'bin/gcloud'),python=plan.toolchain.python.executable;
   demand(python.startsWith(plan.toolchain.python.root+'/')&&(fs.lstatSync(python).mode&0o111)!==0&&(fs.lstatSync(launcher).mode&0o111)!==0&&digest(readFile(launcher,2_000_000))===plan.toolchain.launcher.sha256,'TOOLCHAIN_REQUIRED');
 }
+function isolationIdentity(path){
+  const marker=join(path,'sdk.netrc'),empty=join(path,'empty-ca');directory(empty,true);
+  demand(readFile(marker,1024,true).equals(NETRC_MARKER)&&fs.readdirSync(empty).length===0,'PRIVATE_FILE_REQUIRED');
+  const m=fs.lstatSync(marker),d=fs.lstatSync(empty);
+  return {netrcDevice:String(m.dev),netrcInode:String(m.ino),emptyCaDevice:String(d.dev),emptyCaInode:String(d.ino)};
+}
 class PrivateCase {
   constructor(plan,mode){
     directory(CASE_ROOT,true);this.path=join(CASE_ROOT,plan.actionId);this.total=0;this.count=0;this.mode=mode;
     if(mode==='create'){try{fs.mkdirSync(this.path,{mode:0o700});syncDirectory(CASE_ROOT);}catch{throw error('CASE_ALREADY_BURNED');}}
     directory(this.path,true);this.identity=fs.lstatSync(this.path);this.parentIdentity=fs.lstatSync(CASE_ROOT);this.planSha256=digest(encoded(plan));
     const identity={rootDevice:String(this.parentIdentity.dev),rootInode:String(this.parentIdentity.ino),caseDevice:String(this.identity.dev),caseInode:String(this.identity.ino)};
-    if(mode==='create'){this.write('case.json',encoded({version:1,actionId:plan.actionId,planSha256:this.planSha256,programSha256:plan.programSha256,identity}));
-      for(const name of ['config','xdg','tmp','responses']){fs.mkdirSync(join(this.path,name),{mode:0o700});syncDirectory(this.path);}}
-    else{const record=parse(this.read('case.json'));demand(record.version===1&&record.actionId===plan.actionId&&record.planSha256===this.planSha256&&record.programSha256===plan.programSha256&&isDeepStrictEqual(record.identity,identity),'ORIGINAL_INTENT_REQUIRED');
+    if(mode==='create'){
+      for(const name of ['config','xdg','tmp','responses','empty-ca']){fs.mkdirSync(join(this.path,name),{mode:0o700});syncDirectory(this.path);}
+      writeFile(join(this.path,'sdk.netrc'),NETRC_MARKER);this.isolation=isolationIdentity(this.path);
+      this.write('case.json',encoded({version:1,actionId:plan.actionId,planSha256:this.planSha256,programSha256:plan.programSha256,identity,isolation:this.isolation}));}
+    else{const record=parse(this.read('case.json'));this.isolation=isolationIdentity(this.path);
+      demand(record.version===1&&record.actionId===plan.actionId&&record.planSha256===this.planSha256&&record.programSha256===plan.programSha256&&isDeepStrictEqual(record.identity,identity)&&isDeepStrictEqual(record.isolation,this.isolation),'ORIGINAL_INTENT_REQUIRED');
       const response=fs.readdirSync(join(this.path,'responses'));this.count=response.filter(x=>x.endsWith('.raw')).length;for(const name of response){const s=fs.lstatSync(join(this.path,'responses',name));this.total+=s.size;}
       // A deliberate GET-only reconciliation uses a fresh empty private auth config.
       demand(!fs.existsSync(join(this.path,'config')),'AUTH_PRINCIPAL_REQUIRED');fs.mkdirSync(join(this.path,'config'),{mode:0o700});syncDirectory(this.path);}
   }
-  verify(){directory(CASE_ROOT,true);directory(this.path,true);const s=fs.lstatSync(this.path),p=fs.lstatSync(CASE_ROOT);demand(s.dev===this.identity.dev&&s.ino===this.identity.ino&&p.dev===this.parentIdentity.dev&&p.ino===this.parentIdentity.ino,'PRIVATE_DIRECTORY_REQUIRED');}
+  verify(){directory(CASE_ROOT,true);directory(this.path,true);const s=fs.lstatSync(this.path),p=fs.lstatSync(CASE_ROOT);demand(s.dev===this.identity.dev&&s.ino===this.identity.ino&&p.dev===this.parentIdentity.dev&&p.ino===this.parentIdentity.ino,'PRIVATE_DIRECTORY_REQUIRED');
+    if(this.isolation)demand(isDeepStrictEqual(isolationIdentity(this.path),this.isolation),'PRIVATE_FILE_REQUIRED');}
   write(name,raw){this.verify();demand(/^(?:[a-z0-9-]+\.json|responses\/[0-9]{3}-[a-z-]+\.(?:raw|json))$/u.test(name),'PRIVATE_FILE_REQUIRED');writeFile(join(this.path,name),raw);}
   read(name){this.verify();demand(/^[a-z0-9-]+\.json$/u.test(name),'PRIVATE_FILE_REQUIRED');return readFile(join(this.path,name),MAX_RAW,true);}
   response(kind,status,raw){demand(/^[a-z-]+$/u.test(kind)&&Number.isInteger(status)&&status>=100&&status<=599&&Buffer.isBuffer(raw),'RESPONSE_REFUSED');
@@ -142,8 +156,17 @@ class PrivateCase {
 }
 function principal(plan){directory(dirname(plan.principal.path),true);const raw=readFile(plan.principal.path,4096,true);demand(digest(raw)===plan.principal.sha256,'AUTH_PRINCIPAL_REQUIRED');
   const value=parse(raw);closed(value,['version','principal']);demand(value.version===1&&account(value.principal),'AUTH_PRINCIPAL_REQUIRED');return value.principal;}
+function verifySdkInputs(plan,store){
+  store.verify();const ca=join(plan.toolchain.sdk.root,SDK_CA_RELATIVE),modules=join(plan.toolchain.python.root,'lib/openssl/ossl-modules');
+  directory(dirname(ca));readFile(ca,2_000_000);directory(modules);demand(fs.readdirSync(modules).length===0,'TOOLCHAIN_REQUIRED');
+  const nullDevice=fs.lstatSync('/dev/null');demand(nullDevice.isCharacterDevice()&&!nullDevice.isSymbolicLink()&&nullDevice.uid===0,'TOOLCHAIN_REQUIRED');
+}
 function childEnvironment(plan,store){return {PATH:'/usr/bin:/bin',LANG:'C.UTF-8',LC_ALL:'C.UTF-8',XDG_CONFIG_HOME:join(store.path,'xdg'),XDG_CACHE_HOME:join(store.path,'tmp'),TMPDIR:join(store.path,'tmp'),
+  NETRC:join(store.path,'sdk.netrc'),OPENSSL_CONF:'/dev/null',OPENSSL_MODULES:join(plan.toolchain.python.root,'lib/openssl/ossl-modules'),
+  SSL_CERT_FILE:join(plan.toolchain.sdk.root,SDK_CA_RELATIVE),REQUESTS_CA_BUNDLE:join(plan.toolchain.sdk.root,SDK_CA_RELATIVE),SSL_CERT_DIR:join(store.path,'empty-ca'),
+  HTTPLIB2_CA_CERTS:join(plan.toolchain.sdk.root,SDK_CA_RELATIVE),CLOUDSDK_AUTH_DISABLE_SSL_VALIDATION:'false',
   CLOUDSDK_CONFIG:join(store.path,'config'),CLOUDSDK_PYTHON:plan.toolchain.python.executable,CLOUDSDK_PYTHON_ARGS:'-B -s',
+  CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE:join(plan.toolchain.sdk.root,SDK_CA_RELATIVE),
   CLOUDSDK_CORE_DISABLE_USAGE_REPORTING:'true',CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK:'true',CLOUDSDK_CORE_LOG_HTTP:'false',
   CLOUDSDK_CORE_DISABLE_FILE_LOGGING:'true',CLOUDSDK_CORE_CHECK_GCE_METADATA:'false',NO_GCE_CHECK:'true',PYTHONDONTWRITEBYTECODE:'1',PYTHONNOUSERSITE:'1'};}
 function cliArgs(kind,expected){
@@ -155,6 +178,7 @@ function cliArgs(kind,expected){
 }
 async function cli(plan,store,kind,expected){
   const interactive=kind==='login';demand(!interactive||process.stdin.isTTY===true&&process.stdout.isTTY===true&&process.stderr.isTTY===true,'AUTH_TTY_REQUIRED');
+  verifySdkInputs(plan,store);
   return new Promise((accept,reject)=>{const child=spawn(plan.toolchain.python.executable,['-I','-B','-S','-c',UMASK_WRAPPER,join(plan.toolchain.sdk.root,'bin/gcloud'),...cliArgs(kind,expected)],
     {cwd:store.path,env:childEnvironment(plan,store),stdio:interactive?'inherit':['ignore','pipe','pipe'],shell:false});
     let output=Buffer.alloc(0),failed=false;const stop=()=>{failed=true;child.kill('SIGKILL');};const timer=setTimeout(stop,interactive?300000:15000);
@@ -203,7 +227,7 @@ function iam(value,expected){
 function safeCode(e){return e&&typeof e.code==='string'&&e.code.startsWith('P2Q_GOOGLE_')&&codes.has(e.code.slice(11))?e.code:'P2Q_GOOGLE_OBSERVATION_UNKNOWN';}
 function receipt(plan,status,details){return Object.freeze({version:1,actionId:plan.actionId,projectId:plan.project.projectId,status,...flags,...details});}
 function productionRuntime(plan,store){let baseline;
-  const verify=()=>{store.verify();principal(plan);verifyToolchain(plan);const current=sourceObservation(plan);if(baseline)demand(isDeepStrictEqual(current,baseline),'SOURCE_REQUIRED');else baseline=current;return current;};
+  const verify=()=>{store.verify();principal(plan);verifyToolchain(plan);verifySdkInputs(plan,store);const current=sourceObservation(plan);if(baseline)demand(isDeepStrictEqual(current,baseline),'SOURCE_REQUIRED');else baseline=current;return current;};
   return {now:()=>new Date().toISOString(),wait:()=>new Promise(r=>setTimeout(r,2000)),verify,
   command:(kind,expected)=>{verify();return cli(plan,store,kind,expected);},http:(kind,name,token,body)=>request(plan,kind,name,token,body),
   principal:()=>principal(plan),
