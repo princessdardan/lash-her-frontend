@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { parseP2OwnerSuspensionResponse, parseP2PlaybackObservation, validateP2LifecycleBrowserInput } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
-import { launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact } from "./p2-lifecycle-suspension-evidence.mjs";
+import { launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
 import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { prepareP2LifecyclePersistencePlan, p2LifecyclePersistenceTargetSha256 } from "./p2-lifecycle-persistence-probe.mjs";
@@ -124,4 +125,17 @@ test("browser schema requires ordered source response and DOM events plus actual
 test("standalone source child without parentIPC refuses before browser or network", () => {
   const result = spawnSync(process.execPath, [new URL("./p2-lifecycle-browser-recorder.mjs", import.meta.url).pathname], { encoding: "utf8", timeout: 5000, env: { PATH: process.env.PATH } });
   assert.equal(result.status, 1); assert.equal(result.stdout, ""); assert.equal(result.stderr, "");
+});
+
+test("actual immutable-bytes NodeIPC launcher refuses malformed input without browser, token or artifact", async () => {
+  const bytes = readFileSync(new URL("./p2-lifecycle-browser-recorder.mjs", import.meta.url), "utf8") + P2_LIFECYCLE_BROWSER_LAUNCHER;
+  const child = spawn(process.execPath, ["--input-type=module", "--eval", bytes], { stdio: ["ignore", "pipe", "pipe", "ipc"], env: { PATH: process.env.PATH } });
+  const messages = []; let output = "";
+  child.stdout.on("data", value => { output += value; }); child.stderr.on("data", value => { output += value; }); child.on("message", value => messages.push(value));
+  const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
+  try {
+    const exited = new Promise((done, fail) => { child.once("error", fail); child.once("exit", code => done(code)); });
+    child.send({ type: "initialize", input: { privateMarker: "OWNED-PRIVATE-MARKER" } });
+    assert.equal(await exited, 1); assert.deepEqual(messages, [{ type: "failed" }]); assert.equal(output, "");
+  } finally { clearTimeout(timer); if (child.exitCode === null) child.kill("SIGKILL"); }
 });
