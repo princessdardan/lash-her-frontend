@@ -1,0 +1,147 @@
+{
+  "classificationCorrections": {
+    "gatewayProcessHashIsRealBootIdPidStartTicksNotDockerProjection": true,
+    "incorrectDockerHashProposalRetracted": true,
+    "newLoaderReceiverEqualityIsEarlierRefusalNotAuthorityBypassClosure": true,
+    "receiverTargetsHashWasAlreadyCheckedBeforeAuthorityInFrozen269": true
+  },
+  "closedFindings": [
+    {
+      "id": "C-FINAL-01",
+      "issue": "actual isolated main-entry canonical class identity",
+      "resolution": "canonical module registration before imports with foreign-module refusal; actual -I entry reaches the next platform/root guard"
+    },
+    {
+      "id": "C-FINAL-02",
+      "issue": "surviving broker missed native/observer containment and could race FD cleanup",
+      "resolution": "C-only serialized abort/close; guarded delegation plus exact fixed fallback; reaping/readback uncertainty retained; actual FD held until registered children are known exited"
+    },
+    {
+      "id": "C-FINAL-03",
+      "issue": "fresh configuration19 map could differ from original reviewed B bytes",
+      "resolution": "original insertion-order intent digest and canonical fault-plan digest join the exact fresh19 map, with continuous original/input/new snapshot/Compose checks; both pure-loader repro and actual PG18 drift case refuse"
+    },
+    {
+      "id": "RETAINED_CONTEXT_COMPLEMENT",
+      "issue": "original B predicates and typed process context could be inconsistent",
+      "resolution": "strict versions/counts, one suspend/drop-after-ACK/native-plan/intent joins, exact original runtime inventory, actual original fault-arm lease/readback canonical+newline hash joined to typed effect, and continuous raw pins; role reviewer independently covered seven original mutations"
+    }
+  ],
+  "evidenceLimits": [
+    "Reviewer inspected and hash-verified owner actual PG receipts; did not rerun PostgreSQL fixtures",
+    "Owned fixtures use actual new host processes/flock/frontend physical backend/TLS three databases and83/22/11 migrations; Docker/runtime/provider/root installation are projected",
+    "Actual committedOperatorSource callback/whole production CLI transport are not qualified by the no-op fixture callback",
+    "Actual Linux/container/SSH/native-provider/browser/OIDC/staging/G2 qualification remains open",
+    "Later C interruption with unknown newer gateway cannot fall back to old one; no automatic replay or generic-zero relaxation is introduced",
+    "Final portable documentation manifest is a separate hash follow-up and is not yet frozen at this report"
+  ],
+  "helperSha256": "a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90",
+  "independentExecution": [
+    {
+      "command": "python3 -B -m unittest p2_known_ack_interrupted_restoration_test p2_supervisor_dispatch_test p2_recovery_test.RecoveryScopeTests",
+      "failed": 0,
+      "passed": 39,
+      "scope": "owned process/flock and source guards; no live calls",
+      "skipped": 0,
+      "sourceCommit": "d5ee9bee1d3ef6ba23774bb41883eb3c8fb605c7"
+    },
+    {
+      "command": "Node24 --test ops/platform/p2-known-ack-interrupted-restoration.test.mjs",
+      "executedSourceCommit": "131d67e5b4d8822eb8ccba562d80341dad4f8825",
+      "failed": 0,
+      "passed": 5,
+      "skipped": 0,
+      "sourceByteIdenticalAtReviewedTip": [
+        "ops/platform/p2-known-ack-interrupted-restoration.mjs",
+        "ops/platform/p2-known-ack-interrupted-restoration.test.mjs"
+      ]
+    }
+  ],
+  "ordinaryFilesByteIdenticalToB26845": {
+    "ops/platform/host/p2_prior_gateway.py": "6194be98bbfd8d52465b77d0c8119dd21b7535d717387be165caefeffb4f04c5",
+    "ops/platform/host/p2_recovery_runtime.py": "c5967015713301cc9dd282d54f4b5d39e159a38f1def7037c29edfff3b43d55d",
+    "ops/platform/host/p2_recovery_scope.py": "85e8a6c55bc24899ee2c93cb6431bdd11b2c827348a80cc8e40a56906c7f1ad8",
+    "ops/platform/host/p2_release_scope.py": "a79f68f4dad764e1a6bd66b3dd74a0dbac5347aae1115436da8aaabf524de182"
+  },
+  "originalFailuresPreserved": true,
+  "outstandingFindings": [],
+  "ownedEvidenceInspected": [
+    {
+      "checks": {
+        "actualOwnedProcessPhysicalTls": true,
+        "allTenServices": true,
+        "gatewayNewDistinct": true,
+        "independentOriginalCausalMap": true,
+        "journals": true,
+        "major18": true,
+        "migrations": true,
+        "newClosedZero": true,
+        "noFalseLiveQualification": true,
+        "oldOnePreserved": true,
+        "restoration": true,
+        "sourceHashes": true,
+        "status": true,
+        "stderrEmpty": true,
+        "terminalHash": true
+      },
+      "kind": "exact corrected PG18 positive",
+      "path": "/private/tmp/p2-interrupted-pg18-context-final.stdout",
+      "sha256": "758c9690999f214ae438db105e72dcaa9ff0bbf80b93fdbbe23b3d4dec295eec",
+      "sourceFilesHashVerified": 11
+    },
+    {
+      "activeTwoReplacementCommandsEach": 1,
+      "allNoTerminalsOldOneRetainedJournalsUnchanged": true,
+      "caseNames": [
+        "original-bytes",
+        "original-config-drift",
+        "missing-lineage",
+        "pending-lineage",
+        "backend-effect",
+        "active-backend-loss",
+        "active-guard-loss"
+      ],
+      "firstFiveReplacementCommands": 0,
+      "kind": "exact corrected PG18 seven negatives",
+      "path": "/private/tmp/p2-interrupted-pg18-context-negatives-final.stdout",
+      "sha256": "5fedd2f860724846ca2235faf19e9b69c1472c3fa329ff9393481957465629d8",
+      "sourceFilesHashVerifiedPerCase": 11
+    },
+    {
+      "applicability": "actual retained lease already has the required staging/profile values; not relabeled exact d5 execution",
+      "kind": "51d PG16 positive before final two lease predicates",
+      "path": "/private/tmp/p2-interrupted-pg16-context-final-1.stdout",
+      "sha256": "b7373b1668e116f921dd6b43ac2267d0a7fd1ae4ee3fbddab5bdf91a2e1c857e"
+    }
+  ],
+  "privateVerificationArtifacts": {
+    "corrected-original-configuration-binding.json": "1343839b4e290a459ae150063157acc57693367941c8240b423522975f22f6d2",
+    "corrected-pg18-negative-verification.json": "6098036b3e41ada294d9d1cad3005a161ec884d76a5cbcaca34090e26d0338fb",
+    "corrected-pg18-positive-verification.json": "5f3e8dd17bb06603a33d5c555e1f4550919cebb9df738175043c697968f12d98",
+    "moving-context-classification.json": "432fad876e01577dc02d142ea045fa2e5ed8c0418ef067187fc9d4b823fdb246",
+    "original-abort-fallback-repro.py": "3f6732167878925a08d9a6b74cc204d49ac9e349704f677631b0beac42d0a379",
+    "original-abort-fallback.json": "e07bda52474a4eaefb7443c645a33c93272b72dae7ce2c2bd0bd23e6287dc047",
+    "original-configuration-binding-repro.py": "2434008fa84ab031405c68d6d5f7d85f60e1cfbf3ddf2338a8ef6e4392724a46",
+    "original-configuration-binding.json": "8cea6fe68a8df4d91745ee163c42f94f531b10ef1de6c059e2ad50c936fbd88e",
+    "original-entry-identity-repro.py": "7b1d3cd19f1b874239e49f71dfd9da648b6c8a64e624f007290c1a787c2aef36",
+    "original-entry-identity.json": "2d0c859bf5eb66f4685174746a974aa6cc6a6db831885296d8c061e4e3c8c8cc"
+  },
+  "repositoryEdits": false,
+  "reviewedCommit": "d5ee9bee1d3ef6ba23774bb41883eb3c8fb605c7",
+  "scope": "C explicit interrupted known-ACK restoration source and corrected owned evidence; no deployed acceptance",
+  "sourceSha256": {
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py": "a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs": "8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs": "2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c",
+    "ops/gateway/p2-certification-fault.mjs": "bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52",
+    "ops/gateway/package-lock.json": "def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0",
+    "ops/gateway/package.json": "753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805",
+    "ops/gateway/server.mjs": "3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d",
+    "ops/platform/host/p2_known_ack_interrupted_restoration.py": "a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90",
+    "ops/platform/host/p2_release_broker.py": "e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d",
+    "ops/platform/host/p2_release_supervisor.py": "349ddaaf2eb1206b864daf147fd21283f52813ec678b17f0ed05e38ade18151a",
+    "ops/platform/p2-known-ack-interrupted-restoration.mjs": "001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802"
+  },
+  "status": "SOURCE_PREPARATION_CLEARED",
+  "version": 1
+}

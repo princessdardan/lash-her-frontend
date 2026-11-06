@@ -1,0 +1,308 @@
+{
+  "apiSourceArchives": {
+    "community": {
+      "lockSha256": "03e332482b3f4d4f1a572a8ba00d79a0e7d9a27497e67973103fbdc2833e4bfe",
+      "sha256": "616d8f504481ab24d4335bce3ebdd42b9ff2bc75f2ec47321b48d56d42ea14d1"
+    },
+    "course": {
+      "lockSha256": "0153a941a3e767889cc356b1d3cc72823b03a7d46f97fd07f66b7e53f3e8c8fa",
+      "sha256": "84ff026ee80024fc0890e2ade42a692c5cf2072010aa428b6472e34d46702d51"
+    }
+  },
+  "apiSourceCommits": {
+    "community": "939de65dd52f0b1a43993a25c7c428dce6e2bb43",
+    "course": "a447bfde20299e12afab68a3331b3792ddd07598"
+  },
+  "checks": {
+    "causalPrefixEqualsTerminal": true,
+    "hostTests": 24,
+    "hostWithSharedTests": 39,
+    "independentCausalPrefixFiles": 6,
+    "lintExitCode": 0,
+    "nodeTests": 5,
+    "ownedArgumentGuards": 2,
+    "skipped": 0
+  },
+  "evidenceSha256": {
+    "README.md": "ff4a65ebeaa093cdab1db0f61e468a99e3cc82336cfe6014bc3f85fb49cea328",
+    "host-and-shared-tests.log": "929cb8defc74aa3e926750b52771fda7be03fb2d19bb123457d09f57b3dd78e2",
+    "host-tests.log": "512dff5c3494bbcb48f70c9c24442270699a4b643e5fd5a868f0e2c376d19c7a",
+    "independent-artifact-source-review.json": "27701e21eaa0d4eba740fac3bb2e24b18f98aefe6c329aec28a96dda8efb5a74",
+    "initial-owned-pg16-refusal.stderr": "c39df6cbe884345968ffa3f1cf495fadc730a2bdd67ccaac471f898392078338",
+    "lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "node-tests.log": "b955b6d13ba71b0a776772961ba0e9f07c7979f9adabd388974b680395739aed",
+    "original-abort-fallback-repro.py": "3f6732167878925a08d9a6b74cc204d49ac9e349704f677631b0beac42d0a379",
+    "original-abort-fallback.json": "e07bda52474a4eaefb7443c645a33c93272b72dae7ce2c2bd0bd23e6287dc047",
+    "original-c-frontier-refusal-failure.log": "ade4ce6f1a4da5b98d2844acec60a6aaeb55cc5e150cbad8cefcd22d651edfa8",
+    "original-configuration-binding-repro.py": "2434008fa84ab031405c68d6d5f7d85f60e1cfbf3ddf2338a8ef6e4392724a46",
+    "original-configuration-binding.json": "8cea6fe68a8df4d91745ee163c42f94f531b10ef1de6c059e2ad50c936fbd88e",
+    "original-entry-identity-repro.py": "7b1d3cd19f1b874239e49f71dfd9da648b6c8a64e624f007290c1a787c2aef36",
+    "original-entry-identity.json": "2d0c859bf5eb66f4685174746a974aa6cc6a6db831885296d8c061e4e3c8c8cc",
+    "original-retained-context-repro.py": "f3498ef3df8a7ff398839fe907ff480cf9bb1112a5baada5b9abfcc5113e5d93",
+    "original-retained-context-result.json": "525278b600791715afc9c4c5fe4a7ab176e6e25731557e019da95cace328293c",
+    "owned-api-role-precondition-refusal.stderr": "d2c26d7fbca671c11b7f292e0776a78f5f4dc0edc4ca3e34b68586d14b691de7",
+    "owned-cleanup-refusal.stderr": "3c873004bcc46e2a79a177d5952972ab34fd13acd7d4245915980d3d2d3c6ed5",
+    "owned-engine.py": "a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314",
+    "owned-entry-guards.json": "f179ae5f935bb3d3a5a21cb386608cc5e0639c39844bf4ba8a55090cca92750f",
+    "owned-negative-lineage-setup-refusal.stderr": "6a5f9f4340db0080099cf284b63f7c107f8c3e49060e019985d38567fe195392",
+    "owned-process.mjs": "8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7",
+    "pg16-applicability.patch": "a5c0c96430f7f08fbcabb417bf3e6be3ca52c81640b924182ba13b1c260b1bf4",
+    "pg16-source-context-positive.json": "b7373b1668e116f921dd6b43ac2267d0a7fd1ae4ee3fbddab5bdf91a2e1c857e",
+    "pg18-positive.json": "758c9690999f214ae438db105e72dcaa9ff0bbf80b93fdbbe23b3d4dec295eec",
+    "pg18-seven-negatives.json": "5fedd2f860724846ca2235faf19e9b69c1472c3fa329ff9393481957465629d8",
+    "pre-context-pg18.json": "64b7c36bf992bb1deedc9a5c97474e055f5bf6c0fa9bb669b4af39822f99a46d",
+    "pre-context-six-negatives-pg16.json": "8484411c12f55de10bd5f653e31e5be57b6a47984f59993888674e555eafb585",
+    "pre-context-six-negatives-pg18.json": "ce44337a9f6d60597ca4cd047c44c6bf0ba1a4af1d6f4a3886dbbca8069e96a5",
+    "pre-review-pg16.json": "2b946f43f62c4168f132ac69bec47891dd50c11abef8a6f18f49403f83863dbe",
+    "pre-review-pg18.json": "182bb12577b8570a87de144574dee15999e3a751fb0902e22dc7846708e735c4",
+    "retained-record-audit.md": "11b2a999a72e1f865a8aabb8c03d01356ef01ab2cd346914535629b32b368ae7",
+    "run-owned.mjs": "2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c",
+    "source-269-six-case/README.md": "8df3f71b46e60bfb0164b007e09d0a8dace4089950e86485c9958bd4acdadd0d",
+    "source-269-six-case/owned-engine.py": "d5bc2af364aa818162a0550f4c4184f5c17e0616550aa1dabb50864f8eb67e88",
+    "source-269-six-case/owned-process.mjs": "39b4ea95841bca7974e707466d731382582d0ed5cbf19bd03f69a4b096d73ec0",
+    "source-269-six-case/run-owned.mjs": "1c8ef1418698ab2762ad21b152bc7e40c3b235161b6463053b8953d8f9a1cf74"
+  },
+  "gatewayDependency": {
+    "package": "jose",
+    "packageSha256": "cbd17f658085419b9ee540e78e40cbe4d4f7916a51578af1d650c84d49525fdf",
+    "resolution": "ops/gateway/node_modules/jose",
+    "version": "6.2.3"
+  },
+  "independentReports": {
+    "artifactSourceReview": {
+      "author": "/root/artifact_runtime",
+      "file": "independent-artifact-source-review.json",
+      "sha256": "27701e21eaa0d4eba740fac3bb2e24b18f98aefe6c329aec28a96dda8efb5a74"
+    },
+    "roleSourceReview": "separately authored by /root/p2_role_review; not synthesized here"
+  },
+  "inheritedBFixtureSourceSha256": {
+    "harness/owned-p2-known-ack-loss.mjs": "eb1149fd634e263d04c421ccf92fd3ec9362432eaf11a14db080d771e8c0d8fe",
+    "harness/owned-phase2-lifecycle-receiver.mjs": "65e9e483cb4eba3b1804ac4725d15e0ffea13fa6703a7af877f9882129fc3c44",
+    "host/p2_known_ack_loss.py": "445fe8aba68bb4e708e4777c936466f6c5fd54b5500f7160664cf43cd1ddf3db",
+    "p2-known-ack-loss-probe.mjs": "1b685b6c2ea7c40bb129f92d05fb88a3a81eceb2a90f3fec90d9239a451c7991"
+  },
+  "migrations": {
+    "community": 11,
+    "course": 22,
+    "frontend": 83
+  },
+  "negativeCases": [
+    {
+      "Bterminal": false,
+      "Cterminal": false,
+      "allThreeJournalsUnchanged": true,
+      "authorityIssued": false,
+      "case": "original-bytes",
+      "cleanedNamespaces": [],
+      "nativeDisabled": null,
+      "newFrontendBackend": false,
+      "oldOneRetained": true,
+      "runtimeStopped": null,
+      "upCommands": 0
+    },
+    {
+      "Bterminal": false,
+      "Cterminal": false,
+      "allThreeJournalsUnchanged": true,
+      "authorityIssued": false,
+      "case": "original-config-drift",
+      "cleanedNamespaces": [],
+      "nativeDisabled": null,
+      "newFrontendBackend": false,
+      "oldOneRetained": true,
+      "runtimeStopped": null,
+      "upCommands": 0
+    },
+    {
+      "Bterminal": false,
+      "Cterminal": false,
+      "allThreeJournalsUnchanged": true,
+      "authorityIssued": false,
+      "case": "missing-lineage",
+      "cleanedNamespaces": [],
+      "nativeDisabled": null,
+      "newFrontendBackend": false,
+      "oldOneRetained": true,
+      "runtimeStopped": null,
+      "upCommands": 0
+    },
+    {
+      "Bterminal": false,
+      "Cterminal": false,
+      "allThreeJournalsUnchanged": true,
+      "authorityIssued": false,
+      "case": "pending-lineage",
+      "cleanedNamespaces": [],
+      "nativeDisabled": null,
+      "newFrontendBackend": false,
+      "oldOneRetained": true,
+      "runtimeStopped": null,
+      "upCommands": 0
+    },
+    {
+      "Bterminal": false,
+      "Cterminal": false,
+      "allThreeJournalsUnchanged": true,
+      "authorityIssued": false,
+      "case": "backend-effect",
+      "cleanedNamespaces": [
+        "certification",
+        "recovery"
+      ],
+      "nativeDisabled": true,
+      "newFrontendBackend": true,
+      "oldOneRetained": true,
+      "runtimeStopped": true,
+      "upCommands": 0
+    },
+    {
+      "Bterminal": false,
+      "Cterminal": false,
+      "allThreeJournalsUnchanged": true,
+      "authorityIssued": true,
+      "case": "active-backend-loss",
+      "cleanedNamespaces": [
+        "certification",
+        "recovery"
+      ],
+      "nativeDisabled": true,
+      "newFrontendBackend": true,
+      "oldOneRetained": true,
+      "runtimeStopped": true,
+      "upCommands": 1
+    },
+    {
+      "Bterminal": false,
+      "Cterminal": false,
+      "allThreeJournalsUnchanged": true,
+      "authorityIssued": true,
+      "case": "active-guard-loss",
+      "cleanedNamespaces": [
+        "certification",
+        "recovery"
+      ],
+      "nativeDisabled": true,
+      "newFrontendBackend": true,
+      "oldOneRetained": true,
+      "runtimeStopped": true,
+      "upCommands": 1
+    }
+  ],
+  "ownedCSourceSha256": {
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py": "a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs": "8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs": "2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c",
+    "ops/gateway/p2-certification-fault.mjs": "bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52",
+    "ops/gateway/package-lock.json": "def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0",
+    "ops/gateway/package.json": "753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805",
+    "ops/gateway/server.mjs": "3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d",
+    "ops/platform/host/p2_known_ack_interrupted_restoration.py": "a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90",
+    "ops/platform/host/p2_release_broker.py": "e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d",
+    "ops/platform/host/p2_release_supervisor.py": "349ddaaf2eb1206b864daf147fd21283f52813ec678b17f0ed05e38ade18151a",
+    "ops/platform/p2-known-ack-interrupted-restoration.mjs": "001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802"
+  },
+  "productionCommit": "d5ee9bee1d3ef6ba23774bb41883eb3c8fb605c7",
+  "runbookSha256": "954a3d5b41642a2bd3986e7ed89bff67973a955f3bfb1c0387a5d0d644ff0145",
+  "runs": [
+    {
+      "command": [
+        "node",
+        "--import",
+        "tsx",
+        "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs"
+      ],
+      "elapsedSeconds": 146,
+      "environment": {
+        "OWNED_POSTGRES_MAJOR": "18",
+        "P2_INTERRUPTED_OWNED_TEST": "true",
+        "P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT": "/Users/dardan/workspace/lash-her-community-api/.worktrees/phase2-community",
+        "P2_KNOWN_ACK_COURSE_SOURCE_ROOT": "/Users/dardan/workspace/lash-her-course-api/.worktrees/phase2-course",
+        "PATH": "/Users/dardan/.nvm/versions/node/v24.18.0/bin:/opt/homebrew/bin:/usr/bin:/bin",
+        "PG_BIN": "/private/tmp/pg18-forward-owned-u5qd0tla/prefix/bin"
+      },
+      "exitCode": 0,
+      "receipt": "pg18-positive.json",
+      "sourceCommit": "d5ee9bee1d3ef6ba23774bb41883eb3c8fb605c7",
+      "stderrBytes": 0
+    },
+    {
+      "command": [
+        "node",
+        "--import",
+        "tsx",
+        "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs",
+        "--negative-cases"
+      ],
+      "elapsedSeconds": 173.7,
+      "environment": {
+        "OWNED_POSTGRES_MAJOR": "18",
+        "P2_INTERRUPTED_OWNED_TEST": "true",
+        "P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT": "/Users/dardan/workspace/lash-her-community-api/.worktrees/phase2-community",
+        "P2_KNOWN_ACK_COURSE_SOURCE_ROOT": "/Users/dardan/workspace/lash-her-course-api/.worktrees/phase2-course",
+        "PATH": "/Users/dardan/.nvm/versions/node/v24.18.0/bin:/opt/homebrew/bin:/usr/bin:/bin",
+        "PG_BIN": "/private/tmp/pg18-forward-owned-u5qd0tla/prefix/bin"
+      },
+      "exitCode": 0,
+      "receipt": "pg18-seven-negatives.json",
+      "sourceCommit": "d5ee9bee1d3ef6ba23774bb41883eb3c8fb605c7",
+      "stderrBytes": 0
+    },
+    {
+      "command": [
+        "node",
+        "--import",
+        "tsx",
+        "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs"
+      ],
+      "elapsedSeconds": 139.4,
+      "environment": {
+        "OWNED_POSTGRES_MAJOR": "16",
+        "P2_INTERRUPTED_OWNED_TEST": "true",
+        "P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT": "/Users/dardan/workspace/lash-her-community-api/.worktrees/phase2-community",
+        "P2_KNOWN_ACK_COURSE_SOURCE_ROOT": "/Users/dardan/workspace/lash-her-course-api/.worktrees/phase2-course",
+        "PATH": "/Users/dardan/.nvm/versions/node/v24.18.0/bin:/opt/homebrew/bin:/usr/bin:/bin",
+        "PG_BIN": "/opt/homebrew/opt/postgresql@16/bin"
+      },
+      "exitCode": 0,
+      "finalSourceApplicability": "Only existing plan/lease environment+profile narrowing plus its tests differ; see pg16-applicability.patch. No exact final PG16 rerun claimed.",
+      "receipt": "pg16-source-context-positive.json",
+      "sourceCommit": "51d0385ce71be0de40c766851cac2666460792ee",
+      "stderrBytes": 0
+    }
+  ],
+  "sharedSeamsCommit": "aff6ef68c4871816f0215fca82462bd5bd595548",
+  "sourceFileSha256": {
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py": "a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs": "8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7",
+    "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs": "2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c",
+    "ops/gateway/p2-certification-fault.mjs": "bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52",
+    "ops/gateway/package-lock.json": "def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0",
+    "ops/gateway/package.json": "753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805",
+    "ops/gateway/server.mjs": "3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d",
+    "ops/platform/host/p2_known_ack_interrupted_restoration.py": "a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90",
+    "ops/platform/host/p2_known_ack_interrupted_restoration_test.py": "a3d8f9fddee8fb9128347a4e27a7fc35f1603dda6a18d079fb30dce4fde929f7",
+    "ops/platform/host/p2_known_ack_loss.py": "445fe8aba68bb4e708e4777c936466f6c5fd54b5500f7160664cf43cd1ddf3db",
+    "ops/platform/host/p2_prior_gateway.py": "6194be98bbfd8d52465b77d0c8119dd21b7535d717387be165caefeffb4f04c5",
+    "ops/platform/host/p2_recovery_runtime.py": "c5967015713301cc9dd282d54f4b5d39e159a38f1def7037c29edfff3b43d55d",
+    "ops/platform/host/p2_recovery_scope.py": "85e8a6c55bc24899ee2c93cb6431bdd11b2c827348a80cc8e40a56906c7f1ad8",
+    "ops/platform/host/p2_release_broker.py": "e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d",
+    "ops/platform/host/p2_release_supervisor.py": "349ddaaf2eb1206b864daf147fd21283f52813ec678b17f0ed05e38ade18151a",
+    "ops/platform/p2-known-ack-interrupted-restoration.mjs": "001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802",
+    "ops/platform/p2-known-ack-interrupted-restoration.test.mjs": "26ab361613c7d68acb50452c7d67deea341624d66002e369751929d9d2c3a651",
+    "ops/platform/p2-known-ack-loss-probe.mjs": "1b685b6c2ea7c40bb129f92d05fb88a3a81eceb2a90f3fec90d9239a451c7991"
+  },
+  "status": "OWNED_SOURCE_QUALIFICATION_PASS_REVIEW_EXTERNAL",
+  "unqualified": {
+    "actualCiOfFinalUnion": false,
+    "actualDocker": false,
+    "actualNativeProvider": false,
+    "frontendReadinessVerified": false,
+    "linuxRootInstallation": false,
+    "liveActionPerformed": false,
+    "nodeCommittedSourceCallbackInOwnedFixture": false,
+    "sshInstallation": false,
+    "trafficAuthorized": false
+  },
+  "version": 1
+}
