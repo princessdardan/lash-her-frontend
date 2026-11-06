@@ -94,13 +94,22 @@ test("profiled FE job preparation preserves immutable SQL identity and requires 
   }
 });
 
-test("profiled SQL continuation and all versioned outcomes retain the same source profile and physical lock", async () => {
-  const f = profiledFixture(); let before = 0, after = 0;
+test("profiled read-only continuation and all versioned outcomes retain the same source profile and physical lock", async () => {
+  const f = profiledFixture(); f.job.target.approvedPendingTags = []; f.job.target.allowEmptyBootstrap = false;
+  let before = 0, after = 0;
   const r = runner(f, { beforeDatabasePreflight: async context => {
     before++; assert.deepEqual(context.qualificationTargetProfile, current); assert.equal(context.client, r.client); await context.verifySession();
   }, afterDatabaseVerified: async (receipt, verify) => {
     after++; assert.equal(r.state.locked, true); assert.equal(receipt.version, 2); assert.deepEqual(receipt.qualificationTargetProfile, current); await verify();
   } }, current);
+  const query = r.client.query;
+  r.client.query = async (sql, values) => {
+    if (sql.startsWith("select to_regclass")) return { rows: [{ present: true }] };
+    const result = await query(sql, values);
+    if (sql.startsWith("select pg_backend_pid")) result.rows[0].default_read_only = "on";
+    assert.ok(!/^\s*(create|alter|drop|insert|update|delete|truncate)\b/iu.test(sql));
+    return result;
+  };
   await r.run(); assert.equal(before, 1); assert.equal(after, 1);
   assert.ok(r.records.length >= 4);
   for (const row of r.records) { assert.equal(row.value.version, 2); assert.deepEqual(row.value.qualificationTargetProfile, current); }
@@ -111,7 +120,12 @@ test("profiled pending SQL and stripped or missing expected contexts refuse befo
   const f = profiledFixture(), prepared = prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact, current);
   let hooks = 0; const dependencies = { get confirmation() { hooks++; throw new Error("hook-before-refusal"); },
     assertSource() { hooks++; }, getUrl() { hooks++; }, createClient() { hooks++; }, record() { hooks++; } };
-  await assert.rejects(runFrontendMigration(prepared, dependencies, current), /IN_PROCESS_FRONTEND_CONTINUATION_REQUIRED/u);
+  await assert.rejects(runFrontendMigration(prepared, dependencies, current), /QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED/u);
+  for (const callbacks of [{ beforeDatabasePreflight: async () => {}, afterDatabaseVerified: async () => {} },
+    { beforeDatabasePreflight: () => { hooks++; }, afterDatabaseVerified: () => { hooks++; }, afterContinuationVerified: () => { hooks++; } }]) {
+    await assert.rejects(runFrontendMigration(prepared, { ...callbacks, get confirmation() { hooks++; throw new Error("callback-shaped-authority"); },
+      assertSource() { hooks++; }, getUrl() { hooks++; }, createClient() { hooks++; }, record() { hooks++; } }, current), /QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED/u);
+  }
   await assert.rejects(runFrontendMigration(prepared, dependencies), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
   await assert.rejects(runFrontendMigration(prepared, dependencies, null), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
   const legacy = fixture();

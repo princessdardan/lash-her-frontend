@@ -219,7 +219,9 @@ export async function runFrontendMigration(prepared, dependencies, expectedProfi
   if (profile) prepared = prepareFrontendMigration(prepared.candidate, prepared.job, prepared.baseline, prepared.artifact, profile);
   const { job, artifact, baseline } = prepared, target = job.target;
   const readOnlyExpected = target.approvedPendingTags.length === 0;
-  demand(!profile || readOnlyExpected || typeof dependencies?.beforeDatabasePreflight === "function" && typeof dependencies?.afterDatabaseVerified === "function", "IN_PROCESS_FRONTEND_CONTINUATION_REQUIRED");
+  // The profiled coordinating parent does not yet have an independently
+  // source-issued, unforgeable authority. Callback presence is not authority.
+  if (profile && !readOnlyExpected) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
   demand(dependencies.confirmation === `${job.environment}/${job.releaseId}`, "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED");
   demand(dependencies.afterDatabaseVerified === undefined || typeof dependencies.afterDatabaseVerified === "function",
     "IN_PROCESS_FRONTEND_CONTINUATION_REQUIRED");
@@ -379,7 +381,7 @@ export async function frontendMigrationCli(argv, options = {}) {
       const check = mode === "--check" || mode === "--check-profiled-current", execute = mode === "--execute" || mode === "--execute-profiled-current";
       demand((check && argv.length === 4) || (execute && argv.length === 7 && flag === "--confirm"), "ARGUMENTS_REFUSED");
       const prepared = prepareFrontendMigration(decodeQualificationTargetJson(read(candidateFile), "carrier"), decodeQualificationTargetJson(read(jobFile), "carrier"), decodeQualificationTargetJson(read(schemaFile), "carrier"), undefined, profile);
-      demand(!profile || !execute || prepared.job.target.approvedPendingTags.length === 0, "IN_PROCESS_FRONTEND_CONTINUATION_REQUIRED");
+      if (profile && execute && prepared.job.target.approvedPendingTags.length > 0) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
       if (options.assertSource) options.assertSource(root, prepared.job.sourceCommit);
       if (check) console.log(JSON.stringify({ ...(profile ? { qualificationTargetProfile: profile } : {}), status: "FRONTEND_INPUTS_CHECKED", credentialsRead: false, migrationAuthorized: false, sqlArtifactSha256: prepared.artifact.sqlArtifactSha256 }));
       else {

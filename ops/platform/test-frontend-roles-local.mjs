@@ -208,6 +208,20 @@ async function main() {
       assert.deepEqual(profileReuseProof.owner, profileProof.owner); assert.deepEqual(profileReuseProof.runtime, profileProof.runtime);
       assert.equal(profileReuseProof.version, 2); assert.deepEqual(profileReuseProof.qualificationTargetProfile, current);
       record("profiled-current-roles-reuse-original-v2-receipts-and-actual-oid-readback");
+      phase = "profiled-same-target-private-record-swap";
+      const secondCredential = JSON.parse(readFileSync(join(profiledAgain.privateDirectory, "frontend-role-credentials.json")));
+      assert.ok(secondCredential.runtimeDatabaseUrl === profileCredential.runtimeDatabaseUrl);
+      assert.ok(secondCredential.planSha256 !== profileCredential.planSha256);
+      const swappedPrivate = fixture("profiled-swapped-private", profileReuse, current); let swappedQueries = 0, swappedHooks = 0;
+      await assert.rejects(applyPreparedFrontendRoles(swappedPrivate.plan,
+        { query: async () => { swappedQueries++; throw Error("owned-swapped-private-query-tripwire"); } },
+        { ...swappedPrivate, confirmation: `staging/${swappedPrivate.plan.actionId}`,
+          verifyEnvironment: async () => { swappedHooks++; throw Error("owned-swapped-private-environment-tripwire"); },
+          verifySession: async () => { swappedHooks++; throw Error("owned-swapped-private-session-tripwire"); },
+          reuseDirectory: profiled.directory, reusePrivateDirectory: profiledAgain.privateDirectory }, current));
+      assert.equal(swappedQueries, 0); assert.equal(swappedHooks, 0);
+      assert.deepEqual(readdirSync(swappedPrivate.directory), []); assert.deepEqual(readdirSync(swappedPrivate.privateDirectory), []);
+      record("profiled-current-same-profile-same-target-private-plan-swap-refused-before-hooks-sql-or-intent");
       const oldProofAttempt = fixture("profiled-old-proof", reuse, current); let oldProofQueries = 0;
       const noOldProofQuery = { query: async () => { oldProofQueries++; throw Error("owned-old-proof-reached-sql"); } };
       await assert.rejects(applyPreparedFrontendRoles(oldProofAttempt.plan, noOldProofQuery,

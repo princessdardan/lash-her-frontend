@@ -210,10 +210,21 @@ export async function applyPreparedFrontendRoles(plan, client, dependencies, exp
   demand(!existsSync(join(directory, "roles-preparation-started.json")) && !existsSync(join(directory, "roles-preparation-outcome.json")) && !existsSync(join(privatePath, "frontend-role-credentials.json")));
   // Refuse a legacy reuse graph before any physical-session/SQL work. Genuine
   // original records remain unmodified; profile identity is never inferred.
+  let profiledReuse;
   if (profile && plan.reuse) {
     const previous = readPrivate(dependencies.reuseDirectory, "roles-preparation-outcome.json"), priorPrivate = readPrivate(dependencies.reusePrivateDirectory, "frontend-role-credentials.json");
     profileContext(profile, previous, previous.target, priorPrivate);
-    demand(previous.version === 2 && priorPrivate.version === 2);
+    const { proofSha256: previousSha256, ...previousProof } = previous;
+    demand(previous.version === 2 && priorPrivate.version === 2 && digest(previous.planSha256) && priorPrivate.planSha256 === previous.planSha256 &&
+      previous.status === "FRONTEND_ROLES_PREPARED" && previousSha256 === frontendRolesHash(previousProof) && previousSha256 === plan.reuse.proofSha256 &&
+      previous.targetSha256 === plan.targetSha256 && previous.owner?.name === FRONTEND_PREPARATION_ROLES.owner && previous.owner.oid === plan.reuse.ownerOid &&
+      previous.runtime?.name === FRONTEND_PREPARATION_ROLES.runtime && previous.runtime.oid === plan.reuse.runtimeOid &&
+      priorPrivate.targetSha256 === plan.targetSha256 && priorPrivate.role === FRONTEND_PREPARATION_ROLES.runtime &&
+      typeof priorPrivate.password === "string" && priorPrivate.password.length >= 64);
+    demand(priorPrivate.runtimeDatabaseUrl === credentials(plan, priorPrivate.password).runtimeDatabaseUrl);
+    // Use this authenticated pair after physical verification. A second read
+    // must not replace it with different same-target records after the gate.
+    profiledReuse = { previous, priorPrivate };
   }
   let phase = "locked-target-preflight", started = false, transaction = false, commitAttempted = false, committed = false, rollbackAcknowledged = false, roleSqlAttempted = false, physicalPid;
   const base = { ...plan, admissionChanged: false, featuresEnabled: false, providerTouched: false };
@@ -233,12 +244,12 @@ export async function applyPreparedFrontendRoles(plan, client, dependencies, exp
     demand(plan.reuse ? existing.length === 2 : existing.length === 0);
     let privateRecord;
     if (plan.reuse) {
-      const previous = readPrivate(dependencies.reuseDirectory, "roles-preparation-outcome.json");
+      const previous = profiledReuse?.previous ?? readPrivate(dependencies.reuseDirectory, "roles-preparation-outcome.json");
       profileContext(profile, previous, previous.target);
       const { proofSha256: previousSha256, ...previousProof } = previous;
       demand(previous.status === "FRONTEND_ROLES_PREPARED" && previousSha256 === frontendRolesHash(previousProof) && previousSha256 === plan.reuse.proofSha256 && previous.targetSha256 === plan.targetSha256 &&
         previous.owner?.name === FRONTEND_PREPARATION_ROLES.owner && previous.owner.oid === plan.reuse.ownerOid && previous.runtime?.name === FRONTEND_PREPARATION_ROLES.runtime && previous.runtime.oid === plan.reuse.runtimeOid);
-      const priorPrivate = readPrivate(dependencies.reusePrivateDirectory, "frontend-role-credentials.json");
+      const priorPrivate = profiledReuse?.priorPrivate ?? readPrivate(dependencies.reusePrivateDirectory, "frontend-role-credentials.json");
       profileContext(profile, priorPrivate); demand(!profile || priorPrivate.version === plan.version);
       demand(priorPrivate.targetSha256 === plan.targetSha256 && priorPrivate.role === FRONTEND_PREPARATION_ROLES.runtime && typeof priorPrivate.password === "string" && priorPrivate.password.length >= 64);
       privateRecord = credentials(plan, priorPrivate.password);
