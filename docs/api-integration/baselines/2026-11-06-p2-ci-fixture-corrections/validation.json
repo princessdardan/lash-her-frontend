@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "status": "REQUIRED_CI_FAILURES_PRESERVED_CORRECTED_SOURCE_UNQUALIFIED",
+  "repository": "princessdardan/lash-her-frontend",
+  "sourceCommit": "ef90e0295f8871619b6593f892ba682459f967ba",
+  "runId": 42164666326,
+  "privateOriginalDirectory": "/private/tmp/p2-ef90-original-ci-logs-s27jys9n",
+  "originalLogs": [
+    {
+      "jobId": 127718221857,
+      "jobName": "frontend-operator-migrations",
+      "bytes": 219747,
+      "sha256": "7a1a3f6b4c951a207a05577242945fc7f861b0c6d071df691bc262e9027900d5",
+      "retrievalExitCode": 0,
+      "retrievalStderrBytes": 0,
+      "failurePhase": "recovery-postgres18"
+    },
+    {
+      "jobId": 127718222284,
+      "jobName": "gateway-and-platform",
+      "bytes": 121209,
+      "sha256": "3b7b8521ea5e12a0d3a357548a473cc1d8c5b9708bad89047ed74021bd214566",
+      "retrievalExitCode": 0,
+      "retrievalStderrBytes": 0,
+      "failurePhase": "host-hash-fixture-node-resolution"
+    }
+  ],
+  "localCorrections": {
+    "hostNodeResolutionCommit": "5569d78a",
+    "hostModuleTests": { "run": 22, "failed": 0, "declaredSkipped": 1 },
+    "dockerContextCommit": "ac36ca15",
+    "helperTests": { "run": 15, "failed": 0, "declaredSkipped": 0 },
+    "integratedAdapterSourceAndHelperTests": { "run": 43, "failed": 0, "declaredSkipped": 0 },
+    "strictSingleReceiptProducerCommit": "d9004f23",
+    "integratedPartialValuesAdaptersAndHelpers": { "run": 67, "failed": 0, "declaredSkipped": 0 }
+  },
+  "correctedSourceCiQualified": false,
+  "recoveryStdoutCorrectionPending": false,
+  "stagingTouched": false,
+  "wholeReleaseAccepted": false,
+  "g2Accepted": false
+}

@@ -1,8 +1,8 @@
 # Current integration checkpoint
 
-Source checkpoint updated November 5, 2026 (Toronto). Accepted live admission completed November 4 at 01:27:39 UTC, with independent postflight at 01:29:33 UTC. [The tracker](../../API-INTEGRATION-EXECUTION.md) owns task status; [release policy](release-policy.md) governs future releases.
+Source checkpoint updated November 6, 2026 (Toronto). Accepted live admission completed November 4 at 01:27:39 UTC, with independent postflight at 01:29:33 UTC. [The tracker](../../API-INTEGRATION-EXECUTION.md) owns task status; [release policy](release-policy.md) governs future releases.
 
-Latest source position: Course `a447bfde` and Community `939de65d` pass merged-main CI; frontend PR93 has fresh CI running at `ef90e029`. See the final milestone below. Historical sections preserve their original source scope and do not describe current qualification.
+Latest source position: Course `a447bfde` and Community `939de65d` pass merged-main CI. Frontend `ef90e029` passed application/database/browser checks but failed required platform fixtures; corrections are integrated for fresh PR93 CI. See the final milestone below. Historical sections preserve their original source scope and do not describe current qualification.
 
 ## Accepted P1 state
 
@@ -111,3 +111,11 @@ Normal PR merges produced Course `a447bfde20299e12afab68a3331b3792ddd07598` and 
 The [final recovery closure](baselines/2026-11-05-p2-recovery-role-correction/role-closure.md) passes 55 owned PostgreSQL16 groups with 39 named faults. Original failures and earlier corrections remain unchanged. The [adapter-context fix](baselines/2026-11-05-p2-recovery-provider-context/README.md) passes actual JavaScript/Python/owned HTTPS qualification. A [single composed run](baselines/2026-11-06-p2-platform-composed-pg16/README.md) passes role24/release17/native9, zero skips, with source changes outside the executed dependencies disclosed. New-build recovery remains in implementation. [Frontend CI](https://github.com/princessdardan/lash-her-frontend/actions/runs/42164666326) is running at `ef90e0295f8871619b6593f892ba682459f967ba`, including exact API identity and PostgreSQL18 current-only recovery; later source still requires its own checks.
 
 The [readonly owner catalog](baselines/2026-11-06-vercel-deployment-key-catalogs/README.md) reconciles all 81 retained deployment IDs, recovering 76 source-bound key-name catalogs. Five production-target records lack source identity and remain UNKNOWN. Names do not recover original values or qualify a fence. Source-aware partial-value selection and configured historical/provider reconciliation remain open. Two initial readonly managed API connections authenticated and stopped at their initial identity guard, before roles/schema queries; this supplies no successful managed metadata qualification. No staging SQL, provider/credential control, deployment, scheduler or admission mutation occurred. Accepted G1 remains preserved; P2-00, P2-12 and G2 remain open.
+
+## Latest metadata and fixture corrections — November 6, 2026
+
+[Actual bounded API metadata](baselines/2026-11-06-managed-api-role-metadata/metadata-pass-3.md) now records the two selected PostgreSQL18 role/membership/schema scopes with stable rereads and awaited closes. Client TLS verification remains strict; the backend SSL view is a separate observation. Original guard failures remain retained. This read no application/journal rows and qualifies neither frontend bindings nor a migration/release.
+
+The independently reviewed partial-original-value interface is integrated at `78490db9`. It requires the full bound key catalog and exactly the source-selected private values: 14 for the actual 228-name C07 catalog. Missing required values refuse; omission from the partial map never proves absence. The integration root passes 67 focused Node24 checks without skips. Original configuration/provenance and configured provider reconciliation remain open.
+
+[CI correction evidence](baselines/2026-11-06-p2-ci-fixture-corrections/README.md) preserves `ef90e029` failures and successful application/database/browser subchecks. Mac-only Node resolution, isolated Docker context selection and recovery stdout are corrected; required fresh Linux/Docker/PostgreSQL18 CI remains open. Shared forward-recovery observation is reviewed, while its complete new-build controller remains in implementation. No live SQL, provider/credential control, deployment, schedule or admission mutation occurred; P2-00, P2-12 and G2 remain open.
