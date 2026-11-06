@@ -95,7 +95,7 @@ export async function readP2RecoveryForwardScope(scope,context){
 }
 
 export async function verifyP2RecoveryForwardMutation(session){
-  const record=recoverySessions.get(session);require(record,'forward-session');await record.verify();
+  const record=recoverySessions.get(session);require(record&&record.action.frontendMode==='reviewed-new-build','forward-session');await record.verify();
   const actual=await readRecoveryFrontendCurrent(record.client,record.prepared,record.action,record.verify);
   require(actual.admissionEpoch===record.receipt.admissionEpoch,'forward-admission-drift');await record.verify();
 }

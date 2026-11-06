@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fresh GET-only retained-deployment verification; no build/promotion mutation."""
+"""Retained READY verification and one explicitly reviewed forward build."""
 import json
 from pathlib import Path
 import re
@@ -148,8 +148,22 @@ def build_forward(context,client,verify,probe_client=None):
     require(not attempt.exists(),'P2_FORWARD_NEW_ATTEMPT_REQUIRED');attempt.mkdir(mode=0o700)
     intent_raw=migrate.read_input(directory,'p2-recovery-forward-started.json');intent=json.loads(intent_raw)
     selected=frontend_release_adapters.identity(context)
-    require(intent.get('status')=='P2_RECOVERY_NEW_BUILD_INTENT' and all(intent.get(key)==action.get(key) for key in ('recoveryActionId','originalReleaseId','candidateSha256','sourceCommit','configurationSha256','originalReceiptSha256')),'P2_FORWARD_EXCLUSIVE_INTENT_REQUIRED')
+    require(action.get('frontendMode')=='reviewed-new-build' and intent.get('status')=='P2_RECOVERY_NEW_BUILD_INTENT' and
+        intent.get('reason')==action.get('forwardReason') and intent.get('targetSha256')==selected['targetSha256'] and
+        all(intent.get(key)==action.get(key) for key in ('recoveryActionId','originalReleaseId','candidateSha256','sourceCommit','inventorySha256','configurationSha256','originalReceiptSha256')),'P2_FORWARD_EXCLUSIVE_INTENT_REQUIRED')
     prior=migrate.read_json(directory,'p2-recovery-forward-original.json')
+    current_raw=migrate.read_input(directory,'p2-recovery-current-database.json');current=json.loads(current_raw)
+    api_raw=migrate.read_input(directory,'p2-recovery-api-runtime.json');api=json.loads(api_raw)
+    require(current.get('status')=='P2_RECOVERY_DATABASE_CURRENT' and current.get('migrationMode')=='recovery-current-only' and
+        current.get('sqlReplayed') is False and current.get('candidateSha256')==action['candidateSha256'] and current.get('recoveryActionId')==action['recoveryActionId'] and
+        current.get('sourceCommit')==selected['sourceCommit'] and current.get('releaseId')==selected['actionId'] and
+        api.get('status')=='P2_RECOVERY_API_RUNTIME_READY' and api.get('sqlReplayed') is False and
+        api.get('candidateSha256')==action['candidateSha256'] and api.get('recoveryActionId')==action['recoveryActionId'] and len(api.get('containers',[]))==10 and
+        all(api.get('apiDatabases',{}).get(key,{}).get('status')=='P2_RECOVERY_API_DATABASE_CURRENT' for key in ('course','community')) and
+        intent.get('currentDatabaseReceiptSha256')==migrate.file_hash(current_raw) and intent.get('apiRuntimeReceiptSha256')==migrate.file_hash(api_raw) and
+        intent.get('priorReconciliationReceiptSha256')==migrate.file_hash(migrate.read_input(directory,'p2-recovery-forward-original.json')) and
+        intent.get('expectedWriterAdmissionBinding')==frontend_release_adapters.compatible_writer_admission_binding(context) and
+        intent.get('featureControls')==p2_certification_profile.require_profile(context['plan']['certification'])['featureControls'],'P2_FORWARD_CURRENT_INTENT_REQUIRED')
     require(reconcile_forward(context,client,verify)==prior,'P2_FORWARD_ORIGINAL_RECONCILIATION_CHANGED')
     outcome={**action,'targetSha256':selected['targetSha256'],'reason':action['forwardReason'],'status':'P2_RECOVERY_NEW_BUILD_REQUIRES_REVIEW',
         'intentSha256':migrate.file_hash(intent_raw),'deploymentId':None,'receiptSha256':{},'sqlReplayed':False,'trafficAuthorized':False,'phase':'configuration'}

@@ -2,6 +2,7 @@
 import copy
 import fcntl
 import json
+import io
 import os
 from pathlib import Path
 import subprocess
@@ -230,6 +231,197 @@ class RecoveryLiveFrontendTests(unittest.TestCase):
         flags=copy.deepcopy(provider_adapter.p2_certification_profile.FEATURE_CONTROLS);flags['CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED']=False
         with self.assertRaisesRegex(ValueError,'ACTUAL_FRONTEND_BINDING'):
             self.actual({'featureControls':flags})
+
+
+class RecoveryForwardBuildTests(RecoveryProviderReadTests):
+    """Actual owned TLS requests through the named production provider helpers."""
+    def setUp(self):
+        super().setUp()
+        owner=self;original_handler=self.server.RequestHandlerClass
+        class ForwardHandler(original_handler):
+            def do_GET(self):
+                path=self.path.split('?',1)[0]
+                if self.command=='POST' and path=='/v13/deployments':
+                    raw=self.rfile.read(int(self.headers.get('Content-Length','0')))
+                    body=json.loads(raw);self.rfile=io.BytesIO(raw)
+                    super().do_GET()
+                    owner.deployments[-1]['meta'].update(body.get('meta') or {})
+                    return
+                if self.command=='GET' and path.startswith('/v13/deployments/'):
+                    deployment_id=path.rsplit('/',1)[-1]
+                    row=next(row for row in owner.deployments if row['uid']==deployment_id)
+                    owner.calls.append({'method':'GET','path':self.path,'body':None})
+                    owner.assertEqual(self.headers.get('Authorization'),'Bearer owned-token-marker')
+                    owner.probed_deployment=deployment_id
+                    result={'id':deployment_id,'projectId':vercel.PROJECTS['staging'],'target':row['target'],
+                        'readyState':row['state'],'url':'owned.vercel.app',
+                        'gitSource':{'type':'github','repoId':vercel.REPOSITORY_ID,'sha':row['meta']['githubCommitSha']},
+                        'meta':{'lashReleaseId':'adapter-owned',**row['meta']}}
+                    self.send_response(200);self.send_header('Content-Type','application/json');self.end_headers()
+                    self.wfile.write(json.dumps(result).encode());return
+                super().do_GET()
+            do_POST=do_GET
+            do_PATCH=do_GET
+            do_DELETE=do_GET
+        self.server.RequestHandlerClass=ForwardHandler
+
+    def prepare_forward(self,reason='prior-build-failed'):
+        self.bootstrap_context()
+        pair={'contractPhase':'p2','phase2ContractManifestSha256':'sha256:'+'9'*64}
+        self.context['candidate'].update(pair);self.database.update(pair)
+        self.context['plan']['certification']=provider_adapter.p2_certification_profile.PROFILE
+        self.execute('deploy-admission');migrate.write_json(self.parent,'database-receipt.json',self.database)
+        if reason=='retained-ready-probe-expired':
+            now=time.time()
+            with patch.object(live_recovery.time,'time',return_value=now-3600):self.execute('deploy-compatible')
+        else:
+            self.failed_build=True
+            with self.assertRaisesRegex(ValueError,'BUILD_FAILED'):self.execute('deploy-compatible')
+            self.failed_build=False
+            if reason=='prior-build-canceled':self.deployments[-1]['state']='CANCELED'
+        original_directory=self.parent
+        self.original={str(path):path.read_bytes() for path in original_directory.rglob('*.json')}
+        original_hashes={str(path.relative_to(original_directory)):migrate.file_hash(raw) for path,raw in
+            ((Path(path),raw) for path,raw in self.original.items())
+            if len(path.relative_to(original_directory).parts)==1 or
+               path.relative_to(original_directory).parts[0]=='vercel' and len(path.relative_to(original_directory).parts)==2}
+        for name in ('frontend-promotion-started.json','frontend-promotion-outcome.json','frontend-workload-outcome.json'):
+            original_hashes.setdefault('vercel/'+name,None)
+        recovery=original_directory.parent/'new-recovery';recovery.mkdir(mode=0o700)
+        new_private=original_directory.parent/'new-private';new_private.mkdir(mode=0o700)
+        action={'version':1,'environment':'staging','recoveryActionId':'reviewed-forward','originalReleaseId':'adapter-owned',
+            'candidateSha256':'1'*64,'sourceCommit':'a'*40,'inventorySha256':'2'*64,'configurationSha256':'3'*64,
+            'originalReceiptSha256':original_hashes,'frontendMode':'reviewed-new-build','forwardReason':reason}
+        self.context.update(originalDirectory=str(original_directory),directory=str(recovery),action=action,
+                            newPrivateConfigurationDirectory=str(new_private))
+        self.before_calls=len(self.calls)
+        prior=live_recovery.reconcile_forward(self.context,self.client,self.verify)
+        self.assertTrue(all(call['method']=='GET' for call in self.calls[self.before_calls:]))
+        migrate.write_json(recovery,'p2-recovery-forward-original.json',prior)
+        base={**action,'targetSha256':self.context['plan']['targetSha256']}
+        migrate.write_json(recovery,'p2-recovery-started.json',{**base,'status':'P2_POST_SQL_RECOVERY_STARTED'})
+        current={**base,'releaseId':action['originalReleaseId'],'status':'P2_RECOVERY_DATABASE_CURRENT',
+                 'migrationMode':'recovery-current-only','sqlReplayed':False}
+        migrate.write_json(recovery,'p2-recovery-current-database.json',current)
+        api={**base,'status':'P2_RECOVERY_API_RUNTIME_READY','sqlReplayed':False,'containers':[{'name':str(i)} for i in range(10)],
+             'apiDatabases':{key:{'status':'P2_RECOVERY_API_DATABASE_CURRENT'} for key in ('course','community')}}
+        migrate.write_json(recovery,'p2-recovery-api-runtime.json',api)
+        migrate.write_json(recovery,'p2-recovery-forward-started.json',{**base,'reason':reason,'status':'P2_RECOVERY_NEW_BUILD_INTENT',
+            'currentDatabaseReceiptSha256':migrate.file_hash(migrate.read_input(recovery,'p2-recovery-current-database.json')),
+            'apiRuntimeReceiptSha256':migrate.file_hash(migrate.read_input(recovery,'p2-recovery-api-runtime.json')),
+            'priorReconciliationReceiptSha256':migrate.file_hash(migrate.read_input(recovery,'p2-recovery-forward-original.json')),
+            'expectedWriterAdmissionBinding':provider_adapter.compatible_writer_admission_binding(self.context),
+            'featureControls':provider_adapter.p2_certification_profile.FEATURE_CONTROLS})
+        self.scope={key:action[key] for key in ('recoveryActionId','originalReleaseId','candidateSha256','sourceCommit',
+                    'inventorySha256','configurationSha256','originalReceiptSha256')}
+        self.scope.update(version=1,mode='reviewed-new-build',targetSha256=base['targetSha256'],originalDirectory=str(original_directory),directory=str(recovery))
+        return recovery
+
+    def build(self):
+        return live_recovery.build_forward(self.context,self.client,self.verify,self.mapped_probe())
+
+    def preserved(self):
+        for path,raw in self.original.items():self.assertEqual(Path(path).read_bytes(),raw)
+
+    def rewrite(self,directory,name,change):
+        value=migrate.read_json(directory,name);change(value)
+        (directory/name).write_text(json.dumps(value)+'\n');(directory/name).chmod(0o600)
+
+    def test_reviewed_failed_build_creates_one_same_source_deployment_and_actual_private_probe(self):
+        recovery=self.prepare_forward();result=self.build()
+        self.assertEqual(result['status'],'P2_RECOVERY_NEW_BUILD_VERIFIED');self.assertFalse(result['sqlReplayed'])
+        self.context['forwardRecoveryScope']=self.scope
+        before=len(self.calls);actual=live_recovery.require_forward_scope(self.context,self.client,self.verify)
+        self.assertEqual(actual['recoveryActionId'],'reviewed-forward')
+        self.assertTrue(all(call['method']=='GET' for call in self.calls[before:]))
+        creates=[call for call in self.calls[self.before_calls:] if call['method']=='POST' and call['path'].split('?',1)[0]=='/v13/deployments']
+        self.assertEqual(len(creates),1);self.assertEqual(creates[0]['body']['meta']['lashRecoveryActionId'],'reviewed-forward')
+        self.assertEqual(creates[0]['body']['gitSource']['sha'],'a'*40)
+        posts=[call for call in self.calls[self.before_calls:] if call['method']=='POST']
+        self.assertEqual(len(list((recovery/'vercel').glob('provider-post-*-started.json'))),len(posts))
+        self.assertTrue(any(call['path']=='/api/internal/release-probe' for call in self.calls[self.before_calls:]))
+        common=''.join(path.read_text() for path in recovery.rglob('*.json'))
+        for secret in ('owned-token-marker','owned-runtime-marker',self.variables['LASH_RELEASE_PROBE_SECRET']['value']):self.assertNotIn(secret,common)
+        self.preserved()
+
+    def test_reviewed_canceled_build_uses_same_candidate_without_replaying_original(self):
+        self.prepare_forward('prior-build-canceled');self.assertEqual(self.build()['status'],'P2_RECOVERY_NEW_BUILD_VERIFIED');self.preserved()
+
+    def test_expired_ready_uses_fresh_probe_without_extending_original_probe(self):
+        self.prepare_forward('retained-ready-probe-expired');self.assertEqual(self.build()['status'],'P2_RECOVERY_NEW_BUILD_VERIFIED');self.preserved()
+
+    def test_lost_create_ack_is_retained_unknown_and_second_invocation_never_posts(self):
+        recovery=self.prepare_forward();self.lost_build=True
+        with self.assertRaises(ValueError):self.build()
+        result=migrate.read_json(recovery,'p2-recovery-forward-outcome.json')
+        self.assertEqual(result['status'],'P2_RECOVERY_NEW_BUILD_REQUIRES_REVIEW');self.assertIsNone(result['deploymentId'])
+        before=len(self.calls)
+        with self.assertRaisesRegex(ValueError,'NEW_PRIVATE_PROBE|NEW_ATTEMPT'):self.build()
+        self.assertFalse(any(call['method']=='POST' for call in self.calls[before:]));self.preserved()
+
+    def test_original_changed_to_building_refuses_before_any_new_post(self):
+        self.prepare_forward();self.deployments[-1]['state']='BUILDING';before=len(self.calls)
+        with self.assertRaisesRegex(ValueError,'CONCLUSIVE_FAILED'):self.build()
+        self.assertTrue(all(call['method']=='GET' for call in self.calls[before:]));self.preserved()
+
+    def test_current_database_or_api_receipt_drift_refuses_before_any_new_post(self):
+        recovery=self.prepare_forward();before=len(self.calls)
+        self.rewrite(recovery,'p2-recovery-api-runtime.json',lambda row:row['apiDatabases']['community'].update(status='PENDING'))
+        with self.assertRaisesRegex(ValueError,'CURRENT_INTENT'):self.build()
+        self.assertFalse(any(call['method']=='POST' for call in self.calls[before:]));self.preserved()
+
+    def test_intent_writer_or_candidate_drift_refuses_before_any_new_post(self):
+        recovery=self.prepare_forward();before=len(self.calls)
+        self.rewrite(recovery,'p2-recovery-forward-started.json',lambda row:row.update(candidateSha256='f'*64))
+        with self.assertRaisesRegex(ValueError,'EXCLUSIVE_INTENT'):self.build()
+        self.assertFalse(any(call['method']=='POST' for call in self.calls[before:]));self.preserved()
+
+    def test_original_unknown_create_without_bound_id_never_invents_a_new_build(self):
+        self.prepare_forward();attempt=Path(self.context['originalDirectory'])/'vercel'
+        (attempt/'frontend-build-created.json').unlink();before=len(self.calls)
+        with self.assertRaises((ValueError,OSError)):self.build()
+        self.assertFalse(any(call['method']=='POST' for call in self.calls[before:]))
+
+    def test_original_unsettled_alias_refuses_before_any_new_post(self):
+        self.prepare_forward();self.alias={'jobStatus':'pending','requestedAt':200,'toDeploymentId':self.current,'type':'promote'}
+        before=len(self.calls)
+        with self.assertRaisesRegex(ValueError,'SETTLED_ALIAS'):self.build()
+        self.assertTrue(all(call['method']=='GET' for call in self.calls[before:]));self.preserved()
+
+    def test_lost_new_promotion_ack_remains_review_required_and_never_reposts(self):
+        recovery=self.prepare_forward();self.lost_promotion=True
+        with self.assertRaises(ValueError):self.build()
+        value=migrate.read_json(recovery,'p2-recovery-forward-outcome.json')
+        self.assertEqual(value['status'],'P2_RECOVERY_NEW_BUILD_REQUIRES_REVIEW')
+        self.assertEqual(value['phase'],'promotion');self.assertIsNotNone(value['deploymentId'])
+        self.assertEqual(self.alias['jobStatus'],'succeeded')
+        before=len(self.calls);self.context['forwardRecoveryScope']=self.scope
+        with self.assertRaisesRegex(ValueError,'ROOT_CHAIN'):live_recovery.require_forward_scope(self.context,self.client,self.verify)
+        with self.assertRaises(ValueError):self.build()
+        self.assertFalse(any(call['method']=='POST' for call in self.calls[before:]));self.preserved()
+
+    def test_guard_loss_after_build_prevents_probe_and_promotion(self):
+        recovery=self.prepare_forward();owner=self
+        def guard():
+            owner.verify()
+            if len([row for row in owner.deployments if row['uid'].startswith('dpl_candidate')])>=3:
+                raise ValueError('OWNED_PARENT_LOCK_LOST')
+        with self.assertRaisesRegex(ValueError,'OWNED_PARENT_LOCK_LOST'):
+            live_recovery.build_forward(self.context,self.client,guard,self.mapped_probe())
+        result=migrate.read_json(recovery,'p2-recovery-forward-outcome.json')
+        self.assertEqual(result['status'],'P2_RECOVERY_NEW_BUILD_REQUIRES_REVIEW')
+        self.assertFalse(any('/promote/' in row['path'] for row in self.calls[self.before_calls:]));self.preserved()
+
+    def test_completed_chain_requires_exact_metadata_and_immutable_original_receipts(self):
+        recovery=self.prepare_forward();self.build();self.context['forwardRecoveryScope']=self.scope
+        live_recovery.require_forward_scope(self.context,self.client,self.verify)
+        deployment=self.deployments[-1];deployment['meta']['lashRecoveryActionId']='another-action'
+        before=len(self.calls)
+        with self.assertRaisesRegex(ValueError,'NEW_ACTION_METADATA'):live_recovery.require_forward_scope(self.context,self.client,self.verify)
+        deployment['meta']['lashRecoveryActionId']='reviewed-forward'
+        self.rewrite(Path(self.context['originalDirectory']),'database-receipt.json',lambda row:row.update(sourceCommit='c'*40))
+        with self.assertRaisesRegex(ValueError,'ORIGINAL_RECEIPT_CHANGED'):live_recovery.require_forward_scope(self.context,self.client,self.verify)
+        self.assertTrue(all(call['method']=='GET' for call in self.calls[before:]))
 
 if __name__=='__main__':
     unittest.main()

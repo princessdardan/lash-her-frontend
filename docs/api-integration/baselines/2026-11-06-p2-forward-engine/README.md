@@ -1,0 +1,9 @@
+# Forward recovery engine component evidence
+
+This is component qualification for an unintegrated implementation. It does not qualify the complete new-build recovery controller, shared live session scope, CI, or staging execution.
+
+`python3 -m unittest p2_recovery_test -v` from `ops/platform/host` passed 28 tests against disposable private receipt directories, actual loopback TLS provider/probe servers, and physical POSIX locks. Twelve new forward cases cover failed/canceled originals, expired retained READY probe, exact current FE/API and intent receipt bindings before POST, one same-source deployment, fresh authenticated private probe, promotion, original receipt preservation, metadata changes, missing original create acknowledgement, unsettled alias, lost new create/promotion acknowledgements, and guard loss. Three retained-read cases also run through the extended TLS handler.
+
+The provider harness is synthetic and owned by the test. It preserves metadata from actual create request bodies and serves actual GET readbacks. The production named source-pin, feature/runtime configuration, stage, probe, and promotion helpers execute without replacement success callbacks. No provider, application database, or secret retrieval is contacted. The API-current inputs in this host component fixture are generated fixture receipts; actual physical FE/API qualification remains the separately recorded current-only PostgreSQL fixture. A real physical-session brand and shared adapter handoff, integrated forward controller, fresh CI and independent final review are still OPEN.
+
+Lost acknowledgements remain `P2_RECOVERY_NEW_BUILD_REQUIRES_REVIEW`. The existing exclusive directory prevents replay. No successful original terminal is created and no original receipt is rewritten. A new recovery build has its own action metadata and preserves the original candidate release/source.
