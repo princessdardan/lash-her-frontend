@@ -48,6 +48,11 @@ def _read(source, name, bound=524_288):
     return migrate.read_input(source, name, bound)
 
 
+def operator_hashes(source):
+    """Compatibility helper only; execution authority is the full source closure."""
+    return {name: _hash(_read(source, name)) for name in PROGRAM_FILES}
+
+
 def private_program(source):
     witness = base64.b64encode(_read(source, PROGRAM_FILES[0])).decode()
     probe = _read(source, PROGRAM_FILES[1]).decode().replace("./p2-lifecycle-state-witness.mjs", "data:text/javascript;base64," + witness)
@@ -118,7 +123,7 @@ def _join_selected(reviewed, selected, jobs, runtime_plan):
     demand(all(row["image"] == expected[row["service"]] for row in reviewed["containers"]), "P2_PERSISTENCE_IMAGE_BINDING_REQUIRED")
 
 
-def make_plan(bundle, configuration, reviewed, source):
+def _make_plan_details(bundle, configuration, reviewed, source):
     reviewed = _reviewed(reviewed)
     demand(source == OPERATOR_ROOT / reviewed["plan"]["sources"]["frontend"] and identity_probe.source_closure(source) == reviewed["operatorSourceFiles"]
         and _hash(private_program(source)) == reviewed["programSha256"], "P2_PERSISTENCE_OPERATOR_SOURCE_CHANGED")
@@ -135,6 +140,11 @@ def make_plan(bundle, configuration, reviewed, source):
         "candidateSha256": reviewed["plan"]["candidateSha256"], "configurationSha256": reviewed["plan"]["configurationSha256"],
         "programSha256": reviewed["programSha256"], "stages": ["capture-export-ready", "capture-delete-baseline", "verify-delete", "lifecycle-account"],
         "credentialsRead": False, "networkCalled": False, "readOnly": True, "releaseAccepted": False}, selected, jobs, runtime_plan
+
+
+def make_plan(bundle, configuration, reviewed, source):
+    receipt, selected, _jobs, _runtime_plan = _make_plan_details(bundle, configuration, reviewed, source)
+    return receipt, selected
 
 
 def _private(value, operation):
@@ -269,7 +279,7 @@ def observe_with_scope(reviewed_plan, private_witness, scope, frontend_runtime_d
 
 def execute(bundle, configuration, reviewed, source, private, release_evidence):
     reviewed = _reviewed(reviewed); operation = private["witness"].get("stage"); _private(private, operation)
-    plan_receipt, selected, jobs, runtime_plan = make_plan(bundle, configuration, reviewed, source)
+    plan_receipt, selected, jobs, runtime_plan = _make_plan_details(bundle, configuration, reviewed, source)
     demand(_closed(release_evidence, ("originalReleaseReceipt", "frontendDeploymentRecord")), "P2_PERSISTENCE_RELEASE_EVIDENCE_REQUIRED")
     evidence = {}
     for name, encoded in release_evidence.items():
@@ -285,7 +295,7 @@ def execute(bundle, configuration, reviewed, source, private, release_evidence):
             "P2_PERSISTENCE_OPERATOR_SOURCE_CHANGED")
         demand(identity_probe._configuration_hash(Path(configuration)) == reviewed["plan"]["configurationSha256"],
             "P2_PERSISTENCE_CONFIGURATION_CHANGED")
-        _receipt, fresh, fresh_jobs, fresh_runtime = make_plan(bundle, configuration, reviewed, source)
+        _receipt, fresh, fresh_jobs, fresh_runtime = _make_plan_details(bundle, configuration, reviewed, source)
         demand(fresh == selected and fresh_jobs == jobs and fresh_runtime == runtime_plan, "P2_PERSISTENCE_RELEASE_CHANGED")
     scope = CurrentLifecyclePersistenceScope(selected, reviewed, configuration, program, verify_inputs)
     try:
