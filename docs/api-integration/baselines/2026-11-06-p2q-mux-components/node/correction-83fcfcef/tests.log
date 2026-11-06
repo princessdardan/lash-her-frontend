@@ -1,0 +1,26 @@
+✔ Node24 and combined source budget (0.575333ms)
+✔ canonical hashes/private refusal (0.964167ms)
+✔ seven safe kinds round trip (2.69925ms)
+✔ noncanonical bytes refused (0.37ms)
+✔ closed own data (0.311875ms)
+✔ non-enumerable data refused (0.361334ms)
+✔ reference syntax only (0.252542ms)
+✔ bounded scalar and identity types (1.140667ms)
+✔ calendar/nanoseconds (0.649458ms)
+✔ R1 strict event ordering; A1 no B proof (1.267583ms)
+✔ lifetime budgets (0.673625ms)
+✔ budget case/selection binding (1.430917ms)
+✔ global counter consistency (0.9805ms)
+✔ count and byte limits are conjunctive (10.210708ms)
+✔ fixed intent bounds (0.766584ms)
+✔ public dispatch always unavailable (0.377333ms)
+✔ owned child refusal (55.982042ms)
+✔ fresh import/dispatch has zero registry IO; prior dependency trips the same guard (27.744ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 146.014125
