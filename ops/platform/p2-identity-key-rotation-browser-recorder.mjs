@@ -45,9 +45,10 @@ async function ordinaryRead(page, url, courseId, profile) {
 
 export async function recordP2IdentityRotationBrowserReads(input, pages) {
   demand(closed(input, ["version", "environment", "actionId", "challenge", "bindingSha256", "sourceCommit", "candidateSha256", "phase",
-    "configurationSha256", "deploymentId", "deploymentUrl", "workloadReceiptSha256", "courseId", "customerId", "adminId"])
+    "configurationSha256", "deploymentId", "deploymentUrl", "workloadReceiptSha256", "browserProgramSha256", "courseId", "customerId", "adminId"])
     && input.version === 1 && input.environment === "staging" && ["overlap", "current-only"].includes(input.phase)
-    && [input.challenge, input.bindingSha256, input.candidateSha256, input.configurationSha256, input.workloadReceiptSha256].every(value => SHA.test(value))
+    && [input.challenge, input.bindingSha256, input.candidateSha256, input.configurationSha256, input.workloadReceiptSha256,
+      input.browserProgramSha256].every(value => SHA.test(value))
     && COMMIT.test(input.sourceCommit) && [input.courseId, input.customerId, input.adminId].every(value => UUID.test(value))
     && /^dpl_[A-Za-z0-9]+$/u.test(input.deploymentId) && /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/u.test(input.deploymentUrl)
     && pages?.customer && pages.admin);
@@ -69,7 +70,8 @@ export async function recordP2IdentityRotationBrowserReads(input, pages) {
   return { version: 1, status: "P2_IDENTITY_ROTATION_BROWSER_READS_RECORDED", environment: "staging", actionId: input.actionId,
     bindingSha256: input.bindingSha256, sourceCommit: input.sourceCommit, candidateSha256: input.candidateSha256, phase: input.phase,
     configurationSha256: input.configurationSha256, deploymentId: input.deploymentId, deploymentUrl: input.deploymentUrl,
-    workloadReceiptSha256: input.workloadReceiptSha256, windowStartedAt, windowCompletedAt,
+    workloadReceiptSha256: input.workloadReceiptSha256, browserProgramSha256: input.browserProgramSha256,
+    windowStartedAt, windowCompletedAt,
     evidenceClass: "actual-frontend-normal-course-signer-protected-http", profiles,
     contextsIsolated: true, sessionsFabricated: false, requestsIntercepted: false, storageInjected: false,
     tokenBytesOutput: false, credentialHashesOutput: false, releaseAccepted: false };
@@ -81,6 +83,7 @@ async function childMain() {
     const listener = message => { clearTimeout(timer); process.off("message", listener); if (!closed(message, ["type", "input"]) || message.type !== type) fail(new Error("protocol")); else done(message.input); };
     process.on("message", listener); });
   const input = await receive("initialize"); process.send({ type: "initialized", challenge: input.challenge });
+  demand(await receive("authenticate") === input.challenge);
   const { chromium } = await import("playwright"), browser = await chromium.launch({ headless: false }); process.once("disconnect", () => { void browser.close().finally(() => process.exit(1)); });
   let record;
   try { const customerContext = await browser.newContext(), adminContext = await browser.newContext(), customer = await customerContext.newPage(), admin = await adminContext.newPage();
@@ -110,10 +113,11 @@ export function launchP2IdentityRotationBrowserReadRecorder(plan) {
   const challenge = randomBytes(32).toString("hex"), input = { version: 1, environment: "staging", actionId: plan.actionId, challenge,
     bindingSha256: plan.bindingSha256, sourceCommit: plan.sourceCommit, candidateSha256: plan.candidateSha256, phase: plan.phase,
     configurationSha256: plan.configurationSha256, deploymentId: plan.deploymentId, deploymentUrl: plan.deploymentUrl,
-    workloadReceiptSha256: plan.workloadReceiptSha256, courseId: plan.courseId, customerId: subjects.customerId, adminId: subjects.adminId };
+    workloadReceiptSha256: plan.workloadReceiptSha256, browserProgramSha256: plan.browserProgramSha256,
+    courseId: plan.courseId, customerId: subjects.customerId, adminId: subjects.adminId };
   const child = spawn(process.execPath, ["--input-type=module", "--eval", program.toString("utf8")], { stdio: ["ignore", "ignore", "ignore", "ipc"],
     env: Object.fromEntries(["PATH", "HOME", "LANG", "TMPDIR"].filter(name => process.env[name] !== undefined).map(name => [name, process.env[name]])) });
-  let failed = false, ended = false, initialized, authenticated, complete;
+  let failed = false, ended = false, authenticationStarted = false, readArmed = false, initialized, authenticated, complete;
   const initializedPromise = new Promise((done, fail) => { initialized = { done, fail }; }), authenticatedPromise = new Promise((done, fail) => { authenticated = { done, fail }; }),
     completePromise = new Promise((done, fail) => { complete = { done, fail }; });
   // Every phase promise remains observable by its explicit controller method,
@@ -124,8 +128,9 @@ export function launchP2IdentityRotationBrowserReadRecorder(plan) {
     (message.type === "initialized" ? initialized : message.type === "authenticated" ? authenticated : complete).done(message.value ?? true); } catch { reject(); } });
   const exit = new Promise(done => child.once("exit", (code, signal) => { ended = true; if (code !== 0 || signal) reject(); done({ code, signal }); })); child.send({ type: "initialize", input }, error => { if (error) reject(); });
   const controller = Object.freeze({ initialized: () => initializedPromise, authenticated: () => authenticatedPromise,
-    async arm() { const auth = await authenticatedPromise; demand(!failed && auth?.customerAuthenticated === true && auth.adminFresh === true); child.send({ type: "arm", input: challenge }, error => { if (error) reject(); }); },
-    async complete() { const record = await completePromise, result = await exit; demand(!failed && result.code === 0 && !result.signal && record?.status === "P2_IDENTITY_ROTATION_BROWSER_READS_RECORDED"
+    async authenticate() { await initializedPromise; demand(!failed && !authenticationStarted); authenticationStarted = true; child.send({ type: "authenticate", input: challenge }, error => { if (error) reject(); }); },
+    async arm() { const auth = await authenticatedPromise; demand(!failed && authenticationStarted && !readArmed && auth?.customerAuthenticated === true && auth.adminFresh === true); readArmed = true; child.send({ type: "arm", input: challenge }, error => { if (error) reject(); }); },
+    async complete() { demand(readArmed); const record = await completePromise, result = await exit; demand(!failed && result.code === 0 && !result.signal && record?.status === "P2_IDENTITY_ROTATION_BROWSER_READS_RECORDED"
         && record.bindingSha256 === plan.bindingSha256 && record.phase === plan.phase && record.configurationSha256 === plan.configurationSha256 && record.deploymentId === plan.deploymentId);
       const handle = Object.freeze({}); artifacts.set(handle, { plan, record: structuredClone(record) }); return handle; },
     async close() {
@@ -139,7 +144,7 @@ export function launchP2IdentityRotationBrowserReadRecorder(plan) {
   controllers.set(controller, { plan, challenge }); return controller;
 }
 
-export function readP2IdentityRotationBrowserControllerBinding(plan, controller) { const selected = controllers.get(controller); demand(plans.has(plan) && selected?.plan === plan); return { challenge: selected.challenge, bindingSha256: plan.bindingSha256 }; }
+export function readP2IdentityRotationBrowserControllerBinding(plan, controller) { const selected = controllers.get(controller); demand(plans.has(plan) && selected?.plan === plan); return { challenge: selected.challenge, bindingSha256: plan.bindingSha256, browserProgramSha256: plan.browserProgramSha256 }; }
 export function readP2IdentityRotationBrowserReadArtifact(plan, handle) { const selected = artifacts.get(handle); demand(plans.has(plan) && selected?.plan === plan); return structuredClone(selected.record); }
 export async function runP2IdentityRotationBrowserChild() { try { await childMain(); } catch { process.exitCode = 1; process.disconnect?.(); } }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await runP2IdentityRotationBrowserChild();

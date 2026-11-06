@@ -40,3 +40,36 @@ test("caller objects cannot stand in for the fixed single-use SSH transport", as
   /P2_IDENTITY_ROTATION_TRANSPORT_REFUSED/u);
   assert.equal(sessionCalls, 0);
 });
+
+test("terminal protocol closes the actual frontend session before the host proves closure and commits", async () => {
+  const preparedParent = { ...prepared, plan: { environment: "staging", targetSha256: sha("target"),
+    owner: { name: "frontend_migration_owner", oid: "42" } } };
+  const selected = prepareP2IdentityRotationParent(plan, preparedParent, action, bindings, dependencies);
+  let sessionOpen = false, finishWhileOpen = false, closureAfterSession = false;
+  const preparedReceipt = { status: "P2_IDENTITY_KEY_ROTATION_QUALIFIED", keyRemovalVerified: true,
+    actionId: plan.actionId, bindingSha256: plan.bindingSha256, sourceCommit: plan.sourceCommit,
+    candidateSha256: plan.candidateSha256, sqlExecuted: false, rolesPrepared: false, loginChanged: false,
+    trafficAuthorized: false, tokenBytesOutput: false, credentialHashesOutput: false,
+    communityMemberFeatureAdded: false, newPublicEndpoint: false };
+  const host = { active: () => true, check: async () => {},
+    arm: async () => ({ status: "P2_IDENTITY_ROTATION_PARENT_ARMED", bindingSha256: plan.bindingSha256 }),
+    finish: async () => { finishWhileOpen = sessionOpen; return preparedReceipt; },
+    frontendSessionClosed: async () => { closureAfterSession = !sessionOpen;
+      return { ...preparedReceipt, frontendSessionCloseReceiptSha256: sha("frontend-session-closed") }; } };
+  const withTransport = async (_transport, _plan, task) => task(host);
+  const withSession = async (_prepared, _action, _dependencies, task) => {
+    sessionOpen = true;
+    try { return await task({ client: {}, verify: async () => {}, receipt: { admissionEpoch: "1" }, probe: {} }); }
+    finally { sessionOpen = false; }
+  };
+  const runController = async (_plan, _parent, _dependencies, options) => {
+    assert.equal(options.fixture, true);
+    return { status: "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED", sourceMechanicsQualified: true };
+  };
+  const result = await runP2IdentityRotationParent(selected, { confirmation: `staging/${selected.actionId}`, transport: {} },
+    { fixture: true, fixtureTerminal: true, withTransport, withSession, observePhysical: async () => {}, runController });
+  assert.equal(finishWhileOpen, true);
+  assert.equal(closureAfterSession, true);
+  assert.equal(result.status, "P2_IDENTITY_KEY_ROTATION_PARENT_FIXTURE_JOINED");
+  assert.equal(result.keyRemovalVerified, false);
+});

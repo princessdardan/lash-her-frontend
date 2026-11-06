@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+from uuid import uuid4
 
 import frontend_probe
 import migrate
@@ -63,10 +64,11 @@ def _phase_hash(directory):
 
 class P2IdentityRotationScope(P2ReleaseScope):
     def __init__(self, descriptor, path, verify_frontend, receipt, candidate_sha256, *, action_id, binding_sha256,
-                 source_commit, release, jobs, configuration_sha256, private_configuration_sha256):
+                 source_commit, browser_program_sha256, release, jobs, configuration_sha256, private_configuration_sha256):
         demand(isinstance(action_id, str) and re.fullmatch(r"p2-key-rotation-[a-z0-9-]{1,40}", action_id)
                and isinstance(binding_sha256, str) and re.fullmatch(r"[a-f0-9]{64}", binding_sha256)
                and isinstance(source_commit, str) and re.fullmatch(r"[a-f0-9]{40}", source_commit)
+               and isinstance(browser_program_sha256, str) and re.fullmatch(r"[a-f0-9]{64}", browser_program_sha256)
                and release.get("environment") == "staging" and vercel.release_identity(release)[2] == source_commit
                and set(configuration_sha256) == set(private_configuration_sha256) == set(PHASES)
                and all(re.fullmatch(r"[a-f0-9]{64}", value or "") for value in configuration_sha256.values()),
@@ -75,6 +77,7 @@ class P2IdentityRotationScope(P2ReleaseScope):
                and all(configuration_sha256[phase] != private_configuration_sha256[phase] for phase in PHASES),
                "P2_ROTATION_PRIVATE_CONFIGURATION_BINDING_REQUIRED")
         self.action_id, self.binding_sha256, self.source_commit = action_id, binding_sha256, source_commit
+        self.browser_program_sha256 = browser_program_sha256
         self.rotation_configuration_sha256 = copy.deepcopy(configuration_sha256)
         self.private_rotation_configuration_sha256 = copy.deepcopy(private_configuration_sha256)
         super().__init__(descriptor, path, verify_frontend, receipt, candidate_sha256, release=release, jobs=jobs)
@@ -177,6 +180,7 @@ class P2IdentityRotationHostAdapter:
                and operator_source == Path("/opt/lash-her/operators") / scope.source_commit
                and not any(parent.is_symlink() for parent in (operator_source, *operator_source.parents) if parent.exists()),
                "P2_ROTATION_OPERATOR_SOURCE_CHANGED")
+        self.operator_source = operator_source
         self.operator_program = rotation_source.private_program(operator_source)
         demand(migrate.file_hash(self.operator_program) == operator_program_sha256,
                "P2_ROTATION_OPERATOR_PROGRAM_CHANGED")
@@ -342,46 +346,56 @@ class P2IdentityRotationHostAdapter:
             "receipts": receipts})
         return receipts
 
-    def qualified_profile_evidence(self):
+    def _retained_profile_rows(self, phase):
+        demand(phase in ("overlap", "current-only"), "ROTATION_RETAINED_PROFILE_PHASE_REQUIRED")
         expected_profiles = {"course-learner", "course-admin", "community-member", "community-admin"}
-        evidence = {}
-        timing = {}
+        value = migrate.read_json(self.output, f"rotation-{phase}-profile-observations.json")
+        demand(isinstance(value, dict) and set(value) == {"version", "status", "actionId", "bindingSha256",
+            "configurationSha256", "receipts"} and value.get("version") == 1
+            and value.get("status") == "P2_IDENTITY_ROTATION_PROFILE_OBSERVATIONS_RETAINED"
+            and value.get("actionId") == self.scope.action_id
+            and value.get("bindingSha256") == self.scope.binding_sha256
+            and value.get("configurationSha256") == self.configurations.hashes[phase]
+            and isinstance(value.get("receipts"), list) and len(value["receipts"]) == 4
+            and {row.get("profile") for row in value["receipts"]} == expected_profiles,
+            "ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED")
+        for row in value["receipts"]:
+            profile = row["profile"]
+            expected_class = "actual-protected-course-http" if profile.startswith("course-") else "deployed-private-community-verifier"
+            demand(row.get("status") == "P2_IDENTITY_ROTATION_PRIVATE_OBSERVED"
+                   and row.get("phase") == phase and row.get("bindingSha256") == self.scope.binding_sha256
+                   and row.get("configurationSha256") == self.configurations.hashes[phase]
+                   and row.get("evidenceClass") == expected_class
+                   and row.get("oldResult") == ("accepted" if phase == "overlap" else "rejected")
+                   and row.get("newResult") == "accepted" and row.get("retainedTokenContinuityVerified") is True
+                   and row.get("capabilityEnforced") is True and row.get("tokenBytesOutput") is False
+                   and row.get("credentialHashesOutput") is False and row.get("releaseAccepted") is False,
+                   "ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED")
+            try:
+                issued = datetime.fromisoformat(row["oldTokenIssuedAt"].replace("Z", "+00:00"))
+                expires = datetime.fromisoformat(row["oldTokenExpiresAt"].replace("Z", "+00:00"))
+                observed = datetime.fromisoformat(row["observedAt"].replace("Z", "+00:00"))
+            except (KeyError, TypeError, ValueError):
+                raise ValueError("ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED") from None
+            demand((expires - issued).total_seconds() == 300 and issued <= observed < expires,
+                   "ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED")
+        return value["receipts"]
+
+    def retained_profile_evidence(self, phase):
+        return {row["profile"]: migrate.file_hash(json.dumps(row, sort_keys=True, separators=(",", ":")).encode())
+                for row in self._retained_profile_rows(phase)}
+
+    def qualified_profile_evidence(self):
+        evidence, timing = {}, {}
         for phase in ("overlap", "current-only"):
-            value = migrate.read_json(self.output, f"rotation-{phase}-profile-observations.json")
-            demand(isinstance(value, dict) and set(value) == {"version", "status", "actionId", "bindingSha256",
-                "configurationSha256", "receipts"} and value.get("version") == 1
-                and value.get("status") == "P2_IDENTITY_ROTATION_PROFILE_OBSERVATIONS_RETAINED"
-                and value.get("actionId") == self.scope.action_id
-                and value.get("bindingSha256") == self.scope.binding_sha256
-                and value.get("configurationSha256") == self.configurations.hashes[phase]
-                and isinstance(value.get("receipts"), list) and len(value["receipts"]) == 4
-                and {row.get("profile") for row in value["receipts"]} == expected_profiles,
-                "ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED")
-            for row in value["receipts"]:
+            for row in self._retained_profile_rows(phase):
                 profile = row["profile"]
-                expected_class = "actual-protected-course-http" if profile.startswith("course-") else "deployed-private-community-verifier"
-                demand(row.get("status") == "P2_IDENTITY_ROTATION_PRIVATE_OBSERVED"
-                       and row.get("phase") == phase and row.get("bindingSha256") == self.scope.binding_sha256
-                       and row.get("configurationSha256") == self.configurations.hashes[phase]
-                       and row.get("evidenceClass") == expected_class
-                       and row.get("oldResult") == ("accepted" if phase == "overlap" else "rejected")
-                       and row.get("newResult") == "accepted" and row.get("retainedTokenContinuityVerified") is True
-                       and row.get("capabilityEnforced") is True and row.get("tokenBytesOutput") is False
-                       and row.get("credentialHashesOutput") is False and row.get("releaseAccepted") is False,
-                       "ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED")
-                try:
-                    issued = datetime.fromisoformat(row["oldTokenIssuedAt"].replace("Z", "+00:00"))
-                    expires = datetime.fromisoformat(row["oldTokenExpiresAt"].replace("Z", "+00:00"))
-                    observed = datetime.fromisoformat(row["observedAt"].replace("Z", "+00:00"))
-                except (KeyError, TypeError, ValueError):
-                    raise ValueError("ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED") from None
-                demand((expires - issued).total_seconds() == 300 and issued <= observed < expires,
-                       "ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED")
                 previous = timing.setdefault(profile, (row["oldTokenIssuedAt"], row["oldTokenExpiresAt"]))
                 demand(previous == (row["oldTokenIssuedAt"], row["oldTokenExpiresAt"]),
                        "ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED")
                 evidence.setdefault(profile, {})[phase] = migrate.file_hash(
                     json.dumps(row, sort_keys=True, separators=(",", ":")).encode())
+        expected_profiles = {"course-learner", "course-admin", "community-member", "community-admin"}
         demand(set(evidence) == expected_profiles and all(set(value) == {"overlap", "current-only"}
                for value in evidence.values()), "ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED")
         return evidence
@@ -392,22 +406,127 @@ class P2IdentityRotationHostAdapter:
         prefix, environment = runtime.compose_command(snapshot, "staging"), runtime.runtime_environment(self.selected, snapshot)
         for service in API_SERVICES:
             expected = self.configurations.api[phase][service]
-            selected = {key: value for key, value in expected.items() if key in PROFILE_KEYS}
             relevant_prefixes = PROFILE_PREFIXES[:2] if service == "course-api" else PROFILE_PREFIXES[2:]
             inventory = sorted(f"{prefix}_JWT_{slot}_SECRET" for prefix in relevant_prefixes for slot in ("CURRENT", "PREVIOUS"))
             program = ("import{readFileSync}from'node:fs';import{timingSafeEqual}from'node:crypto';"
                        "const x=JSON.parse(readFileSync(0,'utf8')),a=x.inventory.filter(k=>process.env[k]!==undefined).sort(),"
+                       "p=Object.keys(x.desired).filter(k=>k.endsWith('_JWT_CURRENT_SECRET')||k.endsWith('_JWT_PREVIOUS_SECRET')).sort(),"
                        "b=Object.keys(x.desired).sort(),eq=(l,r)=>Buffer.byteLength(l)===Buffer.byteLength(r)&&timingSafeEqual(Buffer.from(l),Buffer.from(r));"
-                       "if(JSON.stringify(a)!==JSON.stringify(b)||b.some(k=>!eq(process.env[k]??'',x.desired[k])))process.exit(9)")
+                       "if(JSON.stringify(a)!==JSON.stringify(p)||b.some(k=>!eq(process.env[k]??'',x.desired[k])))process.exit(9)")
             self._command([*prefix, "exec", "-T", service, "node", "--input-type=module", "--eval", program],
-                          environment, 30, json.dumps({"desired": selected, "inventory": inventory}))
+                          environment, 30, json.dumps({"desired": expected, "inventory": inventory}))
         token = runtime._command_scope.set(self.scope)
         try:
             containers = runtime.check_containers(self.selected, snapshot)
         finally:
             runtime._command_scope.reset(token)
+        self._validate_runtime_mounts(snapshot, containers)
         self.scope.verify()
         return {"configurationSha256": self.configurations.hashes[phase], "containers": containers, "runtimeVerified": True}
+
+    def _validate_runtime_mounts(self, snapshot, containers):
+        expected = {
+            "gateway": {"/config/gateway.json": snapshot / "gateway.json", "/admission": snapshot / "admission",
+                        "/tls": snapshot / "tls/gateway"},
+            "course-api": {}, "course-tls": {"/config/course-tls.json": snapshot / "course-tls.json",
+                                               "/tls": snapshot / "tls/course"},
+            "course-publisher": {"/tls/ca.pem": snapshot / "tls/ca.pem"}, "course-snapshot": {},
+            "course-media": {}, "course-export-cleanup": {},
+            "community-api": {"/tls/ca.pem": snapshot / "tls/ca.pem"},
+            "community-tls": {"/config/community-tls.json": snapshot / "community-tls.json",
+                                "/tls": snapshot / "tls/community"},
+            "community-worker": {"/tls/ca.pem": snapshot / "tls/ca.pem"},
+        }
+        demand({item.get("service") for item in containers} == set(expected), "ROTATION_RUNTIME_MOUNT_INVENTORY_REFUSED")
+        for container in containers:
+            raw = self._command(["docker", "inspect", "--format", "{{.HostConfig.ReadonlyRootfs}}|{{json .Mounts}}",
+                                 container["containerId"]], runtime.SAFE_ENV, 15)
+            demand(raw.startswith("true|") and len(raw.encode()) <= 16_384, "ROTATION_RUNTIME_IMMUTABILITY_REFUSED")
+            try:
+                mounts = json.loads(raw.split("|", 1)[1])
+            except (TypeError, ValueError):
+                raise ValueError("ROTATION_RUNTIME_MOUNTS_REFUSED") from None
+            demand(isinstance(mounts, list), "ROTATION_RUNTIME_MOUNTS_REFUSED")
+            required, seen = expected[container["service"]], set()
+            for row in mounts:
+                destination = row.get("Destination") if isinstance(row, dict) else None
+                demand(isinstance(destination, str) and destination not in seen, "ROTATION_RUNTIME_MOUNTS_REFUSED")
+                seen.add(destination)
+                if row.get("Type") == "tmpfs" and destination == "/tmp":
+                    continue
+                demand(destination in required and row.get("Type") == "bind" and row.get("RW") is False
+                       and row.get("Source") == str(required[destination]), "ROTATION_RUNTIME_MOUNTS_REFUSED")
+            demand(set(required) == seen - ({"/tmp"} if "/tmp" in seen else set()), "ROTATION_RUNTIME_MOUNTS_REFUSED")
+
+    def observe_continuous_runtime(self, phase, expected_containers):
+        demand(phase in PHASES and isinstance(expected_containers, list) and len(expected_containers) == len(runtime.SERVICES),
+               "ROTATION_CONTINUOUS_RUNTIME_EXPECTATION_REQUIRED")
+        observed = self.observe_api_configuration(phase)
+        demand(observed.get("containers") == expected_containers and observed.get("runtimeVerified") is True,
+               "ROTATION_RUNTIME_IDENTITIES_CHANGED")
+        return observed
+
+    def _observe_api_database_current(self, name):
+        demand(name in ("course", "community"), "ROTATION_API_CURRENT_SCOPE_REQUIRED")
+        info = self.jobs[name]
+        external, internal = migrate.credential_names(name, "staging")
+        credential = os.environ.get(external)
+        demand(isinstance(credential, str) and credential, "ROTATION_API_CURRENT_CREDENTIAL_REQUIRED")
+        program = self.operator_source / "ops/platform/p2-recovery-api-current-probe.mjs"
+        payload = {"version": 1, "service": info["service"], "job": info["job"],
+                   "schemaBytes": info["schema"].decode(), "candidateSha256": self.scope.candidate_sha256,
+                   "recoveryActionId": self.scope.action_id}
+        container = "lash-p2-rotation-current-" + name + "-" + uuid4().hex
+        args = ["docker", "run", "--rm", "--name", container, "--interactive", "--network", "host", "--read-only",
+                "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "256m", "--pids-limit", "64",
+                "--env", internal, "--mount", f"type=bind,src={program},dst=/app/p2-recovery-api-current-probe.mjs,readonly",
+                "--entrypoint", "node", info["image"], "/app/p2-recovery-api-current-probe.mjs"]
+        try:
+            raw = self._command(args, {**runtime.SAFE_ENV, internal: credential}, 60, json.dumps(payload))
+            demand(len(raw.encode()) <= 16_384, "ROTATION_API_CURRENT_RECEIPT_BOUNDS")
+            proof = json.loads(raw)
+            keys = ("environment", "releaseId", "sourceCommit", "migrationImageDigest", "runtimeImageDigest",
+                    "schemaBaselineSha256", "contractSha256")
+            demand(proof.get("status") == "P2_RECOVERY_API_DATABASE_CURRENT" and proof.get("service") == info["service"]
+                   and all(proof.get(key) == info["job"].get(key) for key in keys)
+                   and proof.get("candidateSha256") == self.scope.candidate_sha256
+                   and proof.get("recoveryActionId") == self.scope.action_id
+                   and proof.get("pendingTags") == [] and proof.get("readOnlyVerified") is True
+                   and proof.get("schemaVerified") is True and proof.get("runtimeRoleVerified") is True
+                   and proof.get("sqlReplayed") is False, "ROTATION_API_DATABASE_NOT_CURRENT")
+            migrate.require_contract_identity(self.selected, proof)
+            return proof
+        finally:
+            self.scope.run(["docker", "rm", "--force", container], env=runtime.SAFE_ENV, timeout=30,
+                           check=False, capture_output=True, text=True)
+            remaining = self._command(["docker", "container", "ls", "--all", "--filter", "name=^/" + container + "$",
+                                       "--format", "{{.ID}}"], runtime.SAFE_ENV, 15)
+            demand(not remaining, "ROTATION_API_CURRENT_CONTAINER_CLEANUP_UNVERIFIED")
+
+    def observe_runtime_boundary(self, phase):
+        runtime_state = self.observe_api_configuration(phase)
+        current = {name: self._observe_api_database_current(name) for name in ("course", "community")}
+        snapshot = self._snapshot(phase)
+        prefix, environment = runtime.compose_command(snapshot, "staging"), runtime.runtime_environment(self.selected, snapshot)
+        probe = json.loads(self._command([*prefix, "exec", "-T", "gateway", "node", "release-probe.mjs"], environment, 30))
+        demand(probe.get("status") == "API_RUNTIME_BOUNDARIES_PASS" and isinstance(probe.get("checks"), list)
+               and len(probe["checks"]) == len(runtime.PROBE_CHECKS) and set(probe["checks"]) == runtime.PROBE_CHECKS,
+               "ROTATION_RUNTIME_BOUNDARY_PROBE_REFUSED")
+        project = vercel.release_identity(self.selected)[1]
+        provider = vercel.promotion_state(self.client, project)
+        demand(provider.get("cronsEnabled") is False, "ROTATION_NATIVE_SCHEDULES_NOT_DISABLED")
+        for unit in ("lash-her-watchdog.timer", "lash-her-certificates-staging.timer"):
+            raw = self._command(["systemctl", "show", "--property=LoadState,ActiveState,UnitFileState", unit],
+                                runtime.SAFE_ENV, 15)
+            state = dict(line.split("=", 1) for line in raw.splitlines() if "=" in line)
+            demand(state.get("LoadState") == "loaded" and state.get("ActiveState") == "inactive"
+                   and state.get("UnitFileState") in ("disabled", "static"),
+                   "ROTATION_BUSINESS_SCHEDULES_NOT_DISABLED")
+        return {"configurationSha256": self.configurations.hashes[phase], "nativeSchedulesEnabled": False,
+                "businessSchedulesEnabled": False, "containers": runtime_state["containers"],
+                "courseCurrent": current["course"]["status"] == "P2_RECOVERY_API_DATABASE_CURRENT",
+                "communityCurrent": current["community"]["status"] == "P2_RECOVERY_API_DATABASE_CURRENT",
+                "boundaryChecks": sorted(probe["checks"])}
 
     def observe_closed_gateway_and_native(self, phase):
         demand(phase in PHASES, "ROTATION_GUARD_PHASE_REQUIRED")
@@ -640,7 +759,7 @@ class P2IdentityRotationHostAdapter:
         deployment = self.frontend_deployment(phase)
         fields = {"version", "status", "environment", "actionId", "bindingSha256", "sourceCommit",
                   "candidateSha256", "phase", "configurationSha256", "deploymentId", "deploymentUrl",
-                  "workloadReceiptSha256", "windowStartedAt", "windowCompletedAt", "evidenceClass", "profiles",
+                  "workloadReceiptSha256", "browserProgramSha256", "windowStartedAt", "windowCompletedAt", "evidenceClass", "profiles",
                   "contextsIsolated", "sessionsFabricated", "requestsIntercepted", "storageInjected",
                   "tokenBytesOutput", "credentialHashesOutput", "releaseAccepted"}
         demand(isinstance(source_record, dict) and set(source_record) == fields and source_record.get("version") == 1
@@ -651,6 +770,7 @@ class P2IdentityRotationHostAdapter:
                and source_record.get("sourceCommit") == self.scope.source_commit and source_record.get("phase") == phase
                and all(source_record.get(key) == deployment[key] for key in ("configurationSha256", "deploymentId",
                     "deploymentUrl", "workloadReceiptSha256"))
+               and source_record.get("browserProgramSha256") == self.scope.browser_program_sha256
                and source_record.get("evidenceClass") == "actual-frontend-normal-course-signer-protected-http"
                and all(source_record.get(key) is expected for key, expected in {
                     "contextsIsolated": True, "sessionsFabricated": False, "requestsIntercepted": False,
@@ -695,6 +815,22 @@ class P2IdentityRotationHostAdapter:
         deployment = self.frontend_deployment(phase)
         signer = migrate.read_json(self.output / f"frontend-{phase}", "rotation-frontend-signer.json")
         return copy.deepcopy(self._validate_frontend_signer(signer, phase, deployment["deploymentId"]))
+
+    def retained_frontend_signer(self, phase):
+        demand(phase in ("overlap", "current-only"), "ROTATION_FRONTEND_PHASE_REQUIRED")
+        attempt = self.output / f"frontend-{phase}"
+        source = migrate.read_json(attempt, "rotation-frontend-browser-source.json")
+        signer = migrate.read_json(attempt, "rotation-frontend-signer.json")
+        demand(isinstance(source, dict) and source.get("status") == "P2_IDENTITY_ROTATION_BROWSER_READS_RECORDED"
+               and source.get("actionId") == self.scope.action_id and source.get("bindingSha256") == self.scope.binding_sha256
+               and source.get("candidateSha256") == self.scope.candidate_sha256
+               and source.get("sourceCommit") == self.scope.source_commit and source.get("phase") == phase
+               and source.get("configurationSha256") == self.configurations.hashes[phase]
+               and source.get("browserProgramSha256") == self.scope.browser_program_sha256
+               and source.get("deploymentId") == signer.get("deploymentId")
+               and migrate.file_hash(json.dumps(source, sort_keys=True, separators=(",", ":")).encode())
+                   == signer.get("receiptSha256"), "ROTATION_RETAINED_FRONTEND_SIGNER_CHANGED")
+        return copy.deepcopy(self._validate_frontend_signer(signer, phase, source["deploymentId"]))
 
     def _validate_frontend_signer(self, signer, phase, deployment_id):
         fields = {"version", "status", "phase", "bindingSha256", "candidateSha256", "sourceCommit",

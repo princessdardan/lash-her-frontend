@@ -46,7 +46,7 @@ export function p2IdentityRotationEnvironmentLock(settings, initial) {
     try {
       await ready; const check = async () => { await request("check", "HELD", {}, 15_000); };
       heartbeat = setInterval(() => { if (!failed) void check().catch(fail); }, 1_000);
-      let armed = false, finished = false;
+      let armed = false, closePrepared = false, finished = false;
       const call = async (operation, status, data = {}, timeout) => (await request(operation, status, data, timeout)).receipt;
       const host = Object.freeze({
         active: () => active && !failed && armed && !finished,
@@ -68,7 +68,8 @@ export function p2IdentityRotationEnvironmentLock(settings, initial) {
         retainFrontendSigner: (phase, record) => call("rotation-retain-signer", "ROTATION_SIGNER_RETAINED", { phase, record }),
         failClosed: state => call("rotation-fail-closed", "ROTATION_CONTAINED", { state }, 120_000),
         restoreQualified: (phase, configuration) => call("rotation-restore", "ROTATION_RESTORED", { phase, configuration }, 300_000),
-        async finish(outcome) { demand(armed && !finished); joined = await call("rotation-finish", "ROTATION_JOINED", { outcome }); finished = true; return joined; },
+        async finish(outcome) { demand(armed && !closePrepared && !finished); const value = await call("rotation-prepare-close", "ROTATION_CLOSE_PREPARED", { outcome }); closePrepared = true; return value; },
+        async frontendSessionClosed() { demand(armed && closePrepared && !finished); joined = await call("rotation-session-closed", "ROTATION_JOINED", {}, 120_000); finished = true; return joined; },
       });
       await check(); result = await task(host); demand(finished && joined && !failed);
       const committed = await request("commit", "COMMITTED", {}, 120_000); demand(JSON.stringify(committed.receipt) === JSON.stringify(joined));

@@ -124,7 +124,7 @@ class AdapterTest(unittest.TestCase):
         adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
         adapter.output = output
         adapter.scope = types.SimpleNamespace(action_id="p2-key-rotation-owned", binding_sha256="b" * 64,
-            candidate_sha256="c" * 64, source_commit="a" * 40)
+            candidate_sha256="c" * 64, source_commit="a" * 40, browser_program_sha256="f" * 64)
         adapter.configurations = types.SimpleNamespace(hashes={"overlap": "d" * 64})
         adapter.frontend_deployment = lambda _phase: {"phase": "overlap", "deploymentId": "dpl_owned",
             "deploymentUrl": "https://owned.vercel.app", "sourceCommit": "a" * 40,
@@ -133,6 +133,7 @@ class AdapterTest(unittest.TestCase):
             "actionId": "p2-key-rotation-owned", "bindingSha256": "b" * 64, "sourceCommit": "a" * 40,
             "candidateSha256": "c" * 64, "phase": "overlap", "configurationSha256": "d" * 64,
             "deploymentId": "dpl_owned", "deploymentUrl": "https://owned.vercel.app", "workloadReceiptSha256": "e" * 64,
+            "browserProgramSha256": "f" * 64,
             "windowStartedAt": "2027-01-15T07:00:00.000Z", "windowCompletedAt": "2027-01-15T07:00:30.000Z",
             "evidenceClass": "actual-frontend-normal-course-signer-protected-http",
             "profiles": [{"profile": profile, "httpStatus": 200,
@@ -148,6 +149,8 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(adapter.observe_frontend_signer("overlap"), signer)
         with self.assertRaises(ValueError):
             adapter.retain_frontend_signer("overlap", {**source, "deploymentId": "dpl_other"})
+        adapter.frontend_deployment = lambda _phase: (_ for _ in ()).throw(AssertionError("historical signer queried current provider"))
+        self.assertEqual(adapter.retained_frontend_signer("overlap"), signer)
 
     def test_frontend_inventory_never_requests_secret_values(self):
         adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
@@ -251,13 +254,83 @@ class AdapterTest(unittest.TestCase):
         containers = [{"service": service} for service in runtime.SERVICES]
         with patch.object(runtime, "compose_command", return_value=["docker", "compose"]), \
              patch.object(runtime, "runtime_environment", return_value={}), \
-             patch.object(runtime, "check_containers", return_value=containers):
+             patch.object(runtime, "check_containers", return_value=containers), \
+             patch.object(adapter, "_validate_runtime_mounts") as mounts:
             observed = adapter.observe_api_configuration("overlap")
         self.assertEqual(observed["containers"], containers)
+        mounts.assert_called_once_with(Path("/private/snapshot"), containers)
         self.assertEqual(len(adapter.scope.calls), 2)
         for args, options in adapter.scope.calls:
             self.assertNotIn("x" * 40, " ".join(args)); self.assertNotIn("y" * 40, " ".join(args))
             self.assertIn("_JWT_CURRENT_SECRET", options["input"])
+
+    def test_continuous_runtime_rejects_replaced_container_identity(self):
+        adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
+        expected = [{"service": service, "containerId": str(index)} for index, service in enumerate(runtime.SERVICES)]
+        adapter.observe_api_configuration = lambda _phase: {"containers": expected, "runtimeVerified": True}
+        self.assertEqual(adapter.observe_continuous_runtime("overlap", expected)["containers"], expected)
+        adapter.observe_api_configuration = lambda _phase: {"containers": [{**expected[0], "containerId": "other"}, *expected[1:]],
+                                                               "runtimeVerified": True}
+        with self.assertRaises(ValueError):
+            adapter.observe_continuous_runtime("overlap", expected)
+
+    def test_runtime_mount_guard_requires_exact_readonly_snapshot_sources(self):
+        adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
+        adapter.scope = Scope(); snapshot = Path("/private/runtime-overlap")
+        containers = [{"service": service, "containerId": str(index)} for index, service in enumerate(runtime.SERVICES)]
+        expected = {
+            "gateway": [("/config/gateway.json", snapshot / "gateway.json"), ("/admission", snapshot / "admission"),
+                        ("/tls", snapshot / "tls/gateway")],
+            "course-tls": [("/config/course-tls.json", snapshot / "course-tls.json"), ("/tls", snapshot / "tls/course")],
+            "course-publisher": [("/tls/ca.pem", snapshot / "tls/ca.pem")],
+            "community-api": [("/tls/ca.pem", snapshot / "tls/ca.pem")],
+            "community-tls": [("/config/community-tls.json", snapshot / "community-tls.json"), ("/tls", snapshot / "tls/community")],
+            "community-worker": [("/tls/ca.pem", snapshot / "tls/ca.pem")],
+        }
+        by_id = {row["containerId"]: row["service"] for row in containers}
+        def command(arguments, _environment, _timeout=15, _input=None):
+            service = by_id[arguments[-1]]
+            mounts = [{"Type": "tmpfs", "Destination": "/tmp", "RW": True},
+                      *({"Type": "bind", "Destination": destination, "Source": str(source), "RW": False}
+                        for destination, source in expected.get(service, []))]
+            return "true|" + json.dumps(mounts)
+        adapter._command = command
+        adapter._validate_runtime_mounts(snapshot, containers)
+        def changed(arguments, environment, timeout=15, input=None):
+            raw = command(arguments, environment, timeout, input)
+            return raw.replace(str(snapshot), "/foreign", 1) if by_id[arguments[-1]] == "gateway" else raw
+        adapter._command = changed
+        with self.assertRaises(ValueError):
+            adapter._validate_runtime_mounts(snapshot, containers)
+
+    def test_runtime_boundary_joins_exact_containers_api_current_proofs_release_probe_and_disabled_schedules(self):
+        adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
+        adapter.selected = {}; adapter.client = object(); adapter.scope = Scope()
+        adapter.configurations = types.SimpleNamespace(hashes={"overlap": "a" * 64})
+        containers = [{"service": service, "containerId": f"{index + 1:064x}",
+            "image": "ghcr.io/princessdardan/lash-her-platform-test@sha256:" + "b" * 64}
+            for index, service in enumerate(runtime.SERVICES)]
+        adapter.observe_api_configuration = lambda _phase: {"configurationSha256": "a" * 64,
+            "containers": containers, "runtimeVerified": True}
+        adapter._observe_api_database_current = lambda name: {"status": "P2_RECOVERY_API_DATABASE_CURRENT", "service": name}
+        adapter._snapshot = lambda _phase: Path("/private/runtime")
+        calls = []
+        def command(arguments, _environment, _timeout=30, _input=None):
+            calls.append(arguments)
+            if arguments[0] == "systemctl":
+                return "LoadState=loaded\nActiveState=inactive\nUnitFileState=disabled\n"
+            return json.dumps({"status": "API_RUNTIME_BOUNDARIES_PASS", "checks": sorted(runtime.PROBE_CHECKS)})
+        adapter._command = command
+        with patch.object(runtime, "compose_command", return_value=["docker", "compose"]), \
+             patch.object(runtime, "runtime_environment", return_value={}), \
+             patch.object(rotation.vercel, "release_identity", return_value=("staging", "project", "a" * 40)), \
+             patch.object(rotation.vercel, "promotion_state", return_value={"cronsEnabled": False}):
+            result = adapter.observe_runtime_boundary("overlap")
+        self.assertEqual(set(result), {"configurationSha256", "nativeSchedulesEnabled", "businessSchedulesEnabled",
+            "containers", "courseCurrent", "communityCurrent", "boundaryChecks"})
+        self.assertTrue(result["courseCurrent"]); self.assertTrue(result["communityCurrent"])
+        self.assertFalse(result["nativeSchedulesEnabled"]); self.assertFalse(result["businessSchedulesEnabled"])
+        self.assertEqual(len([call for call in calls if call[0] == "systemctl"]), 2)
 
     def test_api_recreation_is_one_registered_compose_mutation_without_sql_or_roles(self):
         adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)

@@ -75,8 +75,10 @@ metadata inventory and remains closed for review.
 ## Fixed order
 
 1. Verify the exact source, candidate, host, ten-container inventory, runtime
-   target, current frontend deployment, closed native schedules, and both held
-   locks. Retain mutation intent before any provider or Compose call.
+   target, current frontend deployment, closed native schedules, exact
+   read-only runtime mounts, complete in-container API environment values, both
+   API database-current receipts, and both held locks. Retain mutation intent
+   before any provider or Compose call.
 2. Recreate Course and Community with one registered Compose mutation on the
    exact same images using `overlap`.
    Prove old and new controlled tokens for both API profiles are accepted. The
@@ -113,8 +115,11 @@ metadata inventory and remains closed for review.
    verifies moderator capability enforcement. It is not a Community member UI
    or HTTP-journey claim.
 8. Re-prove actual frontend protected Course operations and qualified
-   restoration readiness. Only the final joined receipt may set
-   `keyRemovalVerified: true`.
+   restoration readiness. Prepare the terminal receipt while the frontend
+   session is still held, stop the observers, close that session, and use an
+   independent exact-image proof that its backend is absent, both advisory
+   locks are acquirable, and frontend admission remains closed and drained.
+   Only the final joined receipt may set `keyRemovalVerified: true`.
 
 Outside the source-fixed authentication and signer-read windows, frontend
 admission remains closed. Each authentication window is fixed at 300 seconds;
@@ -159,7 +164,8 @@ node --test ops/platform/p2-identity-key-rotation.test.mjs
 node --test ops/platform/p2-identity-key-rotation-controller.test.mjs
 node --test \
   ops/platform/p2-identity-key-rotation-parent.test.mjs \
-  ops/platform/p2-identity-key-rotation-browser-recorder.test.mjs
+  ops/platform/p2-identity-key-rotation-browser-recorder.test.mjs \
+  ops/platform/p2-identity-key-rotation-session-closed.test.mjs
 python3 -m unittest \
   ops/platform/host/p2_identity_key_rotation_test.py \
   ops/platform/host/p2_identity_key_rotation_adapter_test.py \

@@ -32,6 +32,7 @@ test("ordinary isolated customer/admin contexts exercise exact same-origin Cours
     bindingSha256: rotation.bindingSha256, sourceCommit: rotation.sourceCommit, candidateSha256: rotation.candidateSha256,
     phase: "overlap", configurationSha256: deployment.configurationSha256, deploymentId: deployment.deploymentId,
     deploymentUrl: deployment.deploymentUrl, workloadReceiptSha256: deployment.workloadReceiptSha256,
+    browserProgramSha256: prepareP2IdentityRotationBrowserReadPlan(rotation, "overlap", deployment).browserProgramSha256,
     courseId: rotation.courseId, customerId: rotation.subjects["course-learner"], adminId: rotation.subjects["course-admin"] };
   const record = await recordP2IdentityRotationBrowserReads(input,
     { customer: page("customer", input.customerId), admin: page("admin", input.adminId) });
@@ -47,6 +48,7 @@ test("redirects, non-private responses, wrong subjects and non-200 reads refuse"
   const input = { version: 1, environment: "staging", actionId: rotation.actionId, challenge: sha("challenge"), bindingSha256: rotation.bindingSha256,
     sourceCommit: rotation.sourceCommit, candidateSha256: rotation.candidateSha256, phase: "overlap", configurationSha256: deployment.configurationSha256,
     deploymentId: deployment.deploymentId, deploymentUrl: deployment.deploymentUrl, workloadReceiptSha256: deployment.workloadReceiptSha256,
+    browserProgramSha256: prepareP2IdentityRotationBrowserReadPlan(rotation, "overlap", deployment).browserProgramSha256,
     courseId: rotation.courseId, customerId: rotation.subjects["course-learner"], adminId: rotation.subjects["course-admin"] };
   const bad = { request: { get: async url => url.endsWith("session")
     ? response(200, {}, { user: { id: "wrong", authenticatedAt: Math.floor(Date.now() / 1000) } })

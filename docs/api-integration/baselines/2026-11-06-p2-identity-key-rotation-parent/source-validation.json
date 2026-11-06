@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "status": "P2_IDENTITY_KEY_ROTATION_SOURCE_PREPARATION_VALIDATED",
+  "environment": "staging",
+  "baseCommit": "55efd154151d94ac4955e6e03e31afdb1e999d00",
+  "sourceSha256": {
+    "ops/platform/p2-identity-key-rotation-parent.mjs": "eb182df71f1146f72963ccd4f931ad9fc3d4d8491601588434edc15387765b43",
+    "ops/platform/p2-identity-key-rotation-transport.mjs": "27f7b7a5d591a612eca6cbe17b1435f942e4de9e12893a66548b4e6d06d26ff3",
+    "ops/platform/p2-identity-key-rotation-browser-recorder.mjs": "381fda76ced17d93e5d4946d359819f550572b04d3a7b3c26a68a55d84a32c7d",
+    "ops/platform/p2-identity-key-rotation-session-closed.mjs": "f337a18b900507fa9dca3f4ffd0608f9bad7ad5a09494adb31c79c3679f5666a",
+    "ops/platform/host/p2_identity_key_rotation_parent.py": "aed5591439682b13ee575a7aaec9de2c73a75b21d84c1110cfb4b185a0d1c151",
+    "ops/platform/host/p2_identity_key_rotation_adapter.py": "932b07a8e63eaff632edaf0b5270a93dec79faad7e39ebb8b19a9197c5cf08c8"
+  },
+  "checks": {
+    "nodeOwned": { "passed": 25, "failed": 0, "skipped": 0 },
+    "pythonOwned": { "passed": 26, "failed": 0, "skipped": 0 },
+    "eslintSelected": "passed",
+    "pythonCompile": "passed",
+    "diffCheck": "passed"
+  },
+  "proved": {
+    "browserAuthenticationStartsAfterBoundedWindowAcknowledgement": true,
+    "runtimeContainersAndReadonlyMountsBound": true,
+    "apiEnvironmentAndDatabaseCurrentBound": true,
+    "restorationUsesSourceDerivedQualifiedPhase": true,
+    "frontendSessionClosedBeforeTerminalCommit": true,
+    "sqlExecuted": false,
+    "rolesPrepared": false,
+    "loginChanged": false,
+    "trafficAuthorized": false
+  },
+  "open": {
+    "independentCorrectionReview": true,
+    "sharedSupervisorLayoutAndDispatch": true,
+    "actualLinuxContainerAndPostgresScopeQualification": true,
+    "actualVercelAndStagingRotation": true,
+    "sourceFileCapIntegration": true,
+    "keyRemovalVerified": false,
+    "releaseAccepted": false,
+    "g2Accepted": false
+  }
+}

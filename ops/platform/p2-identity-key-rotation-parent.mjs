@@ -76,8 +76,9 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
   const physical = options.fixture === true ? options.observePhysical : observeRecoveryPhysical;
   demand(typeof withTransport === "function" && typeof withSession === "function" && typeof physical === "function",
     "P2_IDENTITY_ROTATION_PARENT_FIXED_DEPENDENCY_REQUIRED");
-  return withTransport(input.transport, plan, async host => withSession(context.prepared, context.recoveryAction,
-    context.dependencies, async ({ client, verify, receipt, probe }) => {
+  return withTransport(input.transport, plan, async host => {
+    const preparedClose = await withSession(context.prepared, context.recoveryAction,
+      context.dependencies, async ({ client, verify, receipt, probe }) => {
       await verify();
       const armed = await host.arm({ receipt, probe });
       demand(armed?.status === "P2_IDENTITY_ROTATION_PARENT_ARMED" && armed.bindingSha256 === plan.bindingSha256,
@@ -168,7 +169,7 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
         try {
           await controller.initialized();
           await withBrowserWindow(browserPlan, controller, "authentication", 300,
-            async () => controller.authenticated());
+            async () => { await controller.authenticate(); return controller.authenticated(); });
           const artifact = await withBrowserWindow(browserPlan, controller, "signer-read", 60, async () => {
             await controller.arm(); return controller.complete();
           });
@@ -181,7 +182,9 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
         } finally { await controller.close().catch(() => {}); }
       };
       try {
-        const { runIdentityKeyRotationController } = await import("./p2-identity-key-rotation-controller.mjs");
+        const { runIdentityKeyRotationController: sourceController } = await import("./p2-identity-key-rotation-controller.mjs");
+        const runIdentityKeyRotationController = options.fixture === true && typeof options.runController === "function"
+          ? options.runController : sourceController;
         const outcome = await runIdentityKeyRotationController(plan, parent, {
           frontendSession, hostScope, physicalDependencies: { getUrl: context.dependencies.getUrl }, observePhysical: physical,
           observeRuntime: () => host.observeRuntime(), observeFrontendProvider: () => host.observeFrontendProvider(),
@@ -191,24 +194,36 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
           failClosed: state => host.failClosed(state), restoreQualified: (phase, configuration) => host.restoreQualified(phase, configuration),
         }, { parentAuthority: authority, ...(options.fixture === true ? { fixture: true, nowMs: options.nowMs } : {}) });
         await verify(); await host.check();
-        if (options.fixture === true) return Object.freeze({ version: 1,
+        if (options.fixture === true && options.fixtureTerminal !== true) return Object.freeze({ version: 1,
           status: "P2_IDENTITY_KEY_ROTATION_PARENT_FIXTURE_VALIDATED", actionId: plan.actionId,
           bindingSha256: plan.bindingSha256, sourceCommit: plan.sourceCommit, candidateSha256: plan.candidateSha256,
           sourceMechanicsQualified: outcome.sourceMechanicsQualified === true, sourceParentDispatchIntegrated: false,
           keyRemovalVerified: false, liveEligible: false, releaseAccepted: false, trafficAuthorized: false });
-        const qualified = await host.finish(outcome);
-        demand(qualified?.status === "P2_IDENTITY_KEY_ROTATION_QUALIFIED" && qualified.keyRemovalVerified === true
-          && qualified.actionId === plan.actionId && qualified.bindingSha256 === plan.bindingSha256
-          && qualified.sourceCommit === plan.sourceCommit && qualified.candidateSha256 === plan.candidateSha256
-          && qualified.sqlExecuted === false && qualified.rolesPrepared === false && qualified.loginChanged === false
-          && qualified.trafficAuthorized === false && qualified.tokenBytesOutput === false
-          && qualified.credentialHashesOutput === false && qualified.communityMemberFeatureAdded === false
-          && qualified.newPublicEndpoint === false, "P2_IDENTITY_ROTATION_PARENT_TERMINAL_REFUSED");
-        return Object.freeze(qualified);
+        const prepared = await host.finish(outcome);
+        demand(prepared?.status === "P2_IDENTITY_KEY_ROTATION_QUALIFIED" && prepared.keyRemovalVerified === true
+          && prepared.actionId === plan.actionId && prepared.bindingSha256 === plan.bindingSha256
+          && prepared.sourceCommit === plan.sourceCommit && prepared.candidateSha256 === plan.candidateSha256
+          && prepared.sqlExecuted === false && prepared.rolesPrepared === false && prepared.loginChanged === false
+          && prepared.trafficAuthorized === false && prepared.tokenBytesOutput === false
+          && prepared.credentialHashesOutput === false && prepared.communityMemberFeatureAdded === false
+          && prepared.newPublicEndpoint === false && prepared.frontendSessionCloseReceiptSha256 === undefined,
+        "P2_IDENTITY_ROTATION_PARENT_TERMINAL_REFUSED");
+        return Object.freeze(prepared);
       } finally {
         active = false; authorities.delete(authority);
       }
-    }));
+    });
+    const joined = await host.frontendSessionClosed();
+    const { frontendSessionCloseReceiptSha256, ...retained } = joined ?? {};
+    demand(SHA.test(frontendSessionCloseReceiptSha256 ?? "")
+      && isDeepStrictEqual(retained, preparedClose), "P2_IDENTITY_ROTATION_PARENT_CLOSE_REFUSED");
+    if (options.fixture === true) return Object.freeze({ version: 1,
+      status: "P2_IDENTITY_KEY_ROTATION_PARENT_FIXTURE_JOINED", actionId: plan.actionId,
+      bindingSha256: plan.bindingSha256, sourceCommit: plan.sourceCommit, candidateSha256: plan.candidateSha256,
+      frontendSessionClosed: true, keyRemovalVerified: false, liveEligible: false,
+      releaseAccepted: false, trafficAuthorized: false });
+    return Object.freeze(joined);
+  });
 }
 
 export const P2_IDENTITY_ROTATION_PARENT = Object.freeze({ sourceDispatchIntegrated: false,
