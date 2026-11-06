@@ -1,0 +1,68 @@
+{
+  "status": "P1_C04_C07_VERIFIED_G1_RECOVERY_ONLY_PROFILE_ACCEPTED",
+  "releaseId": "p1-41748860504-1",
+  "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "hostMachineId": "ec2146be041cf26fda0a7986db4be3b6",
+  "frontendDeploymentId": "dpl_Bqc171V1RouKNkjcrnVtWB1imwKH",
+  "candidateSha256": "09f2935fcac8130b6abfdfb0814e8da104106efe6ca9243de3a3e5553d16cce5",
+  "qualifiedBuildManifestSha256": "5e72781adc30a726c8ec42b6989af2dd71c999693fe18996cadf88536894c65b",
+  "criteria": [
+    "P1-C01",
+    "P1-C02",
+    "P1-C03",
+    "P1-C04",
+    "P1-C05",
+    "P1-C06",
+    "P1-C07"
+  ],
+  "P1C04C05Reuse": "Original passed live rounds remain original; identical API filesystem layers/source/execution and unchanged inputs/schema support applicability with current non-overlap/preservation/transport verification.",
+  "P1C06NativeCancellation": {
+    "providerClassifiedInvocations": 3,
+    "requestsAfterInitialDrain": 1,
+    "measuredCompletionAfterDisableMs": 17875,
+    "quietObservedAfterLastCompletionMs": 288684,
+    "initial16SecondWaitAloneQualified": false
+  },
+  "gatewayAdmission": {
+    "newWork": false,
+    "recovery": true
+  },
+  "sixFeaturesOff": true,
+  "nativeAndBusinessSchedulesDisabled": true,
+  "maintenanceTimersEnabled": true,
+  "healthyRuntimeServices": 8,
+  "currentContainerStartsAndRestartCountsUnchangedAfterAcceptance": true,
+  "businessPreservation": {
+    "course": {
+      "status": "STAGING_PRIOR_BUSINESS_ROWS_PRESERVED",
+      "service": "course",
+      "preservedRows": 39
+    },
+    "community": {
+      "status": "STAGING_PRIOR_BUSINESS_ROWS_PRESERVED",
+      "service": "community",
+      "preservedRows": 12
+    }
+  },
+  "migrationsExecuted": false,
+  "newFixturesCreated": false,
+  "productionChanged": false,
+  "originalQualificationReceipts": 34,
+  "originalFinalReceipts": 7,
+  "postflightObservedAt": "2026-11-04T01:29:33.334828+00:00",
+  "finalAdmissionCompletedAt": 1793755659727,
+  "validatedAt": "2026-11-04T01:30:48.849767+00:00",
+  "remainingScope": "Customer/media/commerce feature certification and frontend pending-SQL writer fencing remain later phases; monitoring stays deferred.",
+  "operatorDirectoryModeSourceFix": {
+    "commit": "4bb7324457b2229f174c594916c1b057d7e0e28a",
+    "hostTestsPassed": 282,
+    "liveDirectoryAlignedToDocumented0755": true,
+    "applicationCandidateChanged": false,
+    "pullRequest": "https://github.com/princessdardan/lash-her-frontend/pull/67",
+    "status": "draft; host tests passed locally; separate source CI recorded when complete"
+  },
+  "publishedGatewayChecksPassed": 27,
+  "pipelineIntegrationChecksPassed": 15,
+  "readOnlyDatabaseVerificationLegs": 2,
+  "readOnlyDatabaseChecksPerLeg": 3
+}

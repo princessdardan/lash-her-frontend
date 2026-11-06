@@ -9,5 +9,6 @@ Start with the [execution tracker](../../API-INTEGRATION-EXECUTION.md) and [curr
 - [Frontend SQL coordination](p2-00-frontend-quiescence.md), [render/manual inventory](frontend-manual-and-render-inventory.md), and [historical provider fencing](frontend-historical-provider-fencing.md)
 - [Customer identity](customer-identity.md), [account lifecycle](frontend-account-lifecycle.md), [authoring](p2-09-authoring.md), and [learner experience](learner-experience.md)
 - [Frontend migration procedure](operator-frontend-migrations.md), [API migrations](operator-migrations.md), and [runtime release](operator-runtime-release.md)
+- [Prepared P2 staging certification matrix](p2-staging-certification.md), with release-driver and live-evidence prerequisites still open
 
 Source fixtures, published candidates and actual deployed provider/browser observations are distinct evidence classes. No local source result enables pending SQL, staging features or production traffic.

@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "status": "ORIGINAL_ACCEPTED_G1_RECEIPTS_PRESERVED_UNCHANGED",
+  "originalOwnerDirectory": "/Users/dardan/workspace/lash-her-frontend/docs/api-integration/baselines/2026-11-03-p1-c07-verified",
+  "originalReceiptsModified": false,
+  "freshLiveObservation": false,
+  "phase2Accepted": false,
+  "scope": "Five sanitized original accepted recovery-only G1 records copied into the Phase 2 source to resolve current checkpoint evidence references. Full historical receipt sets remain in the original owner directory.",
+  "files": [
+    {
+      "file": "validation.json",
+      "sha256": "b25cba0de782a08929b5df2fd4f053572c476ec05a74e84bac17bc00e4d97996",
+      "bytes": 2699
+    },
+    {
+      "file": "final-receipts/admission/admission-outcome.json",
+      "sha256": "3a1b187e57b200582e65272b74bef94d428f7a99db5485eafbc654e0a47e707a",
+      "bytes": 17654
+    },
+    {
+      "file": "final-receipts/admission/independent-postflight.json",
+      "sha256": "8189f766dd3fc4febbe292b4f6b0bbd218f2e60e6f569b71d0e071052d411974",
+      "bytes": 3927
+    },
+    {
+      "file": "native-verification.json",
+      "sha256": "1c21c7f0b5335549c1d33d5c0cc7d0684a93580d765b1ace54371d37b6985b26",
+      "bytes": 3886
+    },
+    {
+      "file": "acceptance-evidence/applicability.json",
+      "sha256": "c2ba2e42a6abeb0ac6b57cd3a0fc326237ed80d50586a870ab7f0c994a716887",
+      "bytes": 4776
+    }
+  ]
+}
