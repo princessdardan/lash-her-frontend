@@ -24,9 +24,10 @@ UUID = r"[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}
 PROFILES = {"course-learner": "COURSE_LEARNER", "course-admin": "COURSE_ADMIN",
     "community-member": "COMMUNITY_MEMBER", "community-admin": "COMMUNITY_ADMIN"}
 SERVICES = ("gateway", "course-api", "community-api")
-SOURCE_FILES = tuple(sorted((PROGRAM, "ops/platform/compose.yaml", *("ops/platform/host/" + name for name in (
+SOURCE_SUFFIXES = frozenset((".py", ".mjs", ".json", ".yaml", ".yml", ".service", ".timer", ".sh", ".guard"))
+SOURCE_ANCHORS = frozenset((PROGRAM, "ops/platform/compose.yaml", *("ops/platform/host/" + name for name in (
     "p2_identity_negative_probe.py", "p2_identity_probe_scope.py", "p2_identity_probe_current.py", "certificates.py", "migrate.py",
-    "release.py", "staging_state.py", "docker_inspect.py")))))
+    "release.py", "staging_state.py", "docker_inspect.py"))))
 NEGATIVES = ("missing-token", "wrong-issuer", "wrong-audience", "array-audience", "wrong-profile", "invalid-subject", "uppercase-subject",
     "invalid-jti", "wrong-version", "overlong-lifetime", "nonpositive-lifetime", "expired-outside-skew", "future-iat-outside-skew", "fractional-iat", "extra-pii-claim",
     "wrong-signature", "cross-profile-key", "cross-service-key", "wrong-algorithm", "unsigned-token", "missing-iss", "missing-aud", "missing-sub",
@@ -73,7 +74,8 @@ def validate_reviewed(value):
         "P2_IDENTITY_ACTION_ID_REQUIRED")
     demand(all(_digest(value[name]) for name in ("candidateSha256", "configurationSha256", "programSha256")) and
         _digest(value["hostMachineId"], 32), "P2_IDENTITY_EXACT_BINDINGS_REQUIRED")
-    demand(_closed(value["operatorSourceFiles"], SOURCE_FILES) and all(_digest(item) for item in value["operatorSourceFiles"].values()) and
+    demand(isinstance(value["operatorSourceFiles"], dict) and 1 <= len(value["operatorSourceFiles"]) <= 400 and
+        SOURCE_ANCHORS.issubset(value["operatorSourceFiles"]) and all(_source_path(name) and _digest(item) for name, item in value["operatorSourceFiles"].items()) and
         value["operatorSourceSha256"] == _hash(_canonical(value["operatorSourceFiles"])), "P2_IDENTITY_SOURCE_CLOSURE_REQUIRED")
     demand(_closed(value["priorEvidence"], ("originalReleaseReceiptSha256", "frontendDeploymentRecordSha256")) and
         all(_digest(item) for item in value["priorEvidence"].values()), "P2_IDENTITY_ORIGINAL_EVIDENCE_REFERENCES_REQUIRED")
@@ -105,8 +107,22 @@ def program_bytes(operator_source=None):
     return migrate.read_input(source, PROGRAM, 65_536) + LAUNCHER
 
 
+def _source_path(name):
+    return (isinstance(name, str) and name.startswith("ops/") and len(name) <= 250 and ".." not in Path(name).parts and
+        not name.startswith("ops/platform/evidence/") and Path(name).suffix in SOURCE_SUFFIXES and re.fullmatch(r"[A-Za-z0-9_./-]+", name))
+
+
 def source_closure(source):
-    return {name: _hash(migrate.read_input(Path(source), name)) for name in SOURCE_FILES}
+    # Conservative closure, including lazy/dynamic local imports: every public
+    # operator code/config file installed from the exact committed ops tree.
+    # Evidence records are never imported/executed by this fixed observer.
+    source = Path(source)
+    entries = list((source / "ops").rglob("*"))
+    demand(not any(file.is_symlink() for file in entries), "P2_IDENTITY_OPERATOR_SYMLINK_REFUSED")
+    paths = sorted(file.relative_to(source).as_posix() for file in entries if file.is_file() and
+        file.suffix in SOURCE_SUFFIXES and not file.relative_to(source).as_posix().startswith("ops/platform/evidence/"))
+    demand(1 <= len(paths) <= 400 and SOURCE_ANCHORS.issubset(paths) and all(_source_path(name) for name in paths), "P2_IDENTITY_SOURCE_CLOSURE_REQUIRED")
+    return {name: _hash(migrate.read_input(source, name)) for name in paths}
 
 
 def make_plan(bundle, configuration, reviewed, operator_source=None):
@@ -276,13 +292,7 @@ def _validate_receipt(value, binding, mode, check=None, previous_profiles=(), se
 def _execute_scoped(bundle, configuration, reviewed_probe, operator_source, lease):
     """Only called by the existing reviewed broker under its actual live scope."""
     from p2_identity_probe_scope import CurrentIdentityProbeScope
-    current = isinstance(lease, CurrentIdentityProbeScope)
-    if not current:
-        try:
-            from p2_release_scope import P2ReleaseScope
-        except ImportError:
-            raise ValueError("P2_IDENTITY_ACTUAL_RELEASE_SCOPE_REQUIRED") from None
-        demand(isinstance(lease, P2ReleaseScope), "P2_IDENTITY_ACTUAL_RELEASE_SCOPE_REQUIRED")
+    demand(isinstance(lease, CurrentIdentityProbeScope), "P2_IDENTITY_ACTUAL_RELEASE_SCOPE_REQUIRED")
     lease.verify()
     reviewed = validate_reviewed(reviewed_probe)
     demand(lease.candidate_sha256 == reviewed["candidateSha256"], "P2_IDENTITY_LIVE_CANDIDATE_SCOPE_REQUIRED")
@@ -294,10 +304,6 @@ def _execute_scoped(bundle, configuration, reviewed_probe, operator_source, leas
         not any(path.is_symlink() for path in (configuration, *configuration.parents)), "P2_IDENTITY_STAGING_RUNTIME_PATH_REQUIRED")
     _guard(lease, lambda: staging_state.outside_checkout(configuration))
     plan, selected, jobs, runtime_plan = _guard(lease, lambda: make_plan(bundle, configuration, reviewed, source))
-    if not current:
-        _guard(lease, lambda: lease.require_frontend(selected, jobs["frontend"]))
-    if not current:
-        _guard(lease, lambda: runtime.assert_host(runtime_plan))
     code = _guard(lease, lambda: program_bytes(source))
     keys, service_keys, environments = _keys(configuration, jobs, reviewed, lease)
     _containers(selected, configuration, reviewed, lease)

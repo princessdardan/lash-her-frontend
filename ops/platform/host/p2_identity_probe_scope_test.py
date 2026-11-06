@@ -162,10 +162,37 @@ class CurrentIdentityProbeScopeTests(unittest.TestCase):
     def test_source_closure_is_exact_and_contains_all_fixed_transitive_host_imports(self):
         source = Path(probe.__file__).resolve().parents[3]
         files = probe.source_closure(source)
-        self.assertEqual(set(files), set(probe.SOURCE_FILES))
+        self.assertTrue(probe.SOURCE_ANCHORS.issubset(files))
+        self.assertGreater(len(files), len(probe.SOURCE_ANCHORS))
         self.assertIn("ops/platform/host/p2_identity_probe_current.py", files)
         self.assertIn("ops/platform/host/docker_inspect.py", files)
         self.assertTrue(all(len(value) == 64 for value in files.values()))
+
+    def test_fixed_execution_budget_blocks_new_children_without_extending_approval(self):
+        scope = self.scope()
+        with patch.object(current.time, "monotonic", return_value=scope.deadline), patch.object(current.subprocess, "Popen") as spawn:
+            with self.assertRaisesRegex(ValueError, "EXECUTION_TIMEOUT"):
+                scope.run(self.args(), env=current.runtime.SAFE_ENV, input=b'{}', timeout=1)
+            spawn.assert_not_called()
+
+    def test_source_inventory_detects_new_imported_helpers_and_refuses_symlink_omissions(self):
+        source = Path(probe.__file__).resolve().parents[3]
+        destination = self.root / "source"
+        import shutil
+        for name in probe.SOURCE_ANCHORS:
+            target = destination / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / name, target)
+        first = probe.source_closure(destination)
+        helper = destination / "ops/platform/host/new_supervisor_dependency.py"
+        helper.write_text("# future shared release/migrate dependency\n")
+        second = probe.source_closure(destination)
+        self.assertNotEqual(first, second)
+        self.assertIn("ops/platform/host/new_supervisor_dependency.py", second)
+        helper.unlink()
+        helper.symlink_to(self.input_file)
+        with self.assertRaisesRegex(ValueError, "OPERATOR_SYMLINK_REFUSED"):
+            probe.source_closure(destination)
 
     def test_fixed_current_stage_entry_malformed_private_packet_never_prints_input(self):
         entry = Path(probe.__file__).with_name("p2_identity_probe_current.py")

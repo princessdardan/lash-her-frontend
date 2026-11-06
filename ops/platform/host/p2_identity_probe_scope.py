@@ -9,12 +9,14 @@ import stat
 import subprocess
 import sys
 import threading
+import time
 
 import docker_inspect
 import migrate
 import release as runtime
 
 LOCK = Path("/run/lock/lash-her-release.lock")
+MAX_SCOPE_SECONDS = 600
 IDENTITY_FIELDS = '{{.Config.Image}}|{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}'
 SECURITY_FIELDS = '{{.HostConfig.ReadonlyRootfs}}|{{json .Mounts}}'
 demand = migrate.demand
@@ -33,6 +35,7 @@ class CurrentIdentityProbeScope:
         self.verify_inputs = verify_inputs
         self.mutex, self.processes = threading.RLock(), set()
         self.closed, self.revoked, self.cleanup_uncertain = False, False, False
+        self.deadline = time.monotonic() + MAX_SCOPE_SECONDS
         self.ids = {row["containerId"] for row in reviewed["containers"]}
         self.descriptor = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         try:
@@ -48,6 +51,7 @@ class CurrentIdentityProbeScope:
 
     def verify(self):
         demand(not self.closed and not self.revoked, "P2_IDENTITY_READONLY_SCOPE_CLOSED")
+        demand(time.monotonic() < self.deadline, "P2_IDENTITY_READONLY_EXECUTION_TIMEOUT")
         current, opened = os.lstat(self.path), os.fstat(self.descriptor)
         demand(stat.S_ISREG(current.st_mode) and not stat.S_ISLNK(current.st_mode) and
             current.st_uid == os.getuid() and not current.st_mode & 0o077 and
