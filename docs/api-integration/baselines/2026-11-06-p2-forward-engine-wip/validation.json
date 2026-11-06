@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "status": "IMPLEMENTATION_ONLY_QUALIFICATION_OPEN",
+  "sharedDependency": "c6a18afec21467f499151840fb3f54c5c32a0203",
+  "checks": {
+    "syntax": true,
+    "serializedScopeRejected": true,
+    "positiveForwardChain": false,
+    "forwardBuilderFaults": false,
+    "liveOperations": false
+  },
+  "fileSha256": {
+    "ops/platform/p2-recovery-current-probe.mjs": "07141cb0f9672a27911878c232b6bfa214c4c5c5288048cd06786ad5c4369941",
+    "ops/platform/p2-recovery-frontend-observation.mjs": "bb18ee7811e80b1966cbe054c97076b8045f841a245ac05def62a78b777e41e8",
+    "ops/platform/host/p2_recovery_frontend_observation.py": "e6cb9cd01310e042578d9f44a681304a137829730667bfc1492f481f86b600da",
+    "docs/api-integration/baselines/2026-11-06-p2-forward-engine-wip/README.md": "4fe43c86836fd1aa0afcb0cf0e8644a9fc94c1d2f528059a1d8b5ee2ca3375d2",
+    "docs/api-integration/baselines/2026-11-06-p2-forward-engine-wip/boundary-check.log": "5f8ad5dbcfab83f82780363f4ea9dc989cd6ca816e20170c8a29bb00700e9484"
+  }
+}

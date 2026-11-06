@@ -10,6 +10,8 @@ import { readMigrationCatalog } from './frontend-schema.mjs';
 
 const require = (ok,checkpoint) => { if (!ok) { const error=new Error('P2_RECOVERY_CURRENT_DATABASE_REFUSED');if(checkpoint)error.checkpoint=checkpoint;throw error;} };
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const rawHash=value=>createHash('sha256').update(value).digest('hex');
+const recoverySessions=new WeakMap(),forwardScopes=new WeakMap();
 const name = value => typeof value === 'string' && /^[a-z][a-z0-9_]{0,62}$/u.test(value);
 // Catalog builtins resolve first; public visibility preserves original baseline
 // regtype/expression rendering. No operator-selected schema is searched.
@@ -21,6 +23,82 @@ const expectedRoutineBodies = Object.freeze({"admit": "e8efe70da1fabe4381d640e73
 export const RECOVERY_HELD_LOCK = `SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND pid=pg_backend_pid()
  AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND classid=((hashtext($1)::bigint>>32)&4294967295)::oid
  AND objid=(hashtext($1)::bigint&4294967295)::oid AND objsubid=1 AND mode='ExclusiveLock' AND granted) AS held`;
+
+const forwardRootFiles=['p2-recovery-started.json','p2-recovery-current-database.json','p2-recovery-api-runtime.json','p2-recovery-forward-original.json','p2-recovery-forward-started.json','p2-recovery-forward-outcome.json'];
+const forwardVercelFiles=['frontend-build-started.json','frontend-build-created.json','frontend-build-outcome.json','frontend-workload-outcome.json','frontend-promotion-started.json','frontend-promotion-outcome.json'];
+async function forwardSession(session,context){
+  const record=recoverySessions.get(session);require(record,'forward-session');
+  const {target}=record.prepared.migration.job,plan=record.prepared.plan;
+  const runtimeTarget={environment:plan.environment,targetSha256:plan.targetSha256,host:target.host,port:target.port,database:target.database,user:target.runtimeRole,serverMajor:target.serverMajor};
+  require(context.databaseClient===record.client && context.verifyLockedSession===record.verify &&
+    isDeepStrictEqual(context.candidate,record.candidate) && isDeepStrictEqual(context.plan,record.plan) &&
+    isDeepStrictEqual(context.bootstrapRuntimeTarget,runtimeTarget),'forward-context');
+  await record.verify();return record;
+}
+async function forwardReceipts(projection,record){
+  // Lazy operator-only dependency: original migration images run only the
+  // self-contained observer and do not need the operator receipt module.
+  const {frontendPrivateReceiptDirectory,readFrontendReleaseEvidence}=await import('./frontend-release-receipts.mjs');
+  const {join}=await import('node:path');
+  const {lstatSync}=await import('node:fs');
+  frontendPrivateReceiptDirectory(projection.directory);frontendPrivateReceiptDirectory(projection.originalDirectory);
+  require(projection.directory!==projection.originalDirectory,'forward-directories');
+  for(const [file,expected]of Object.entries(projection.originalReceiptSha256)){
+    require(/^(?:vercel\/)?[a-z0-9][a-z0-9.-]{0,180}\.json$/u.test(file),'forward-original-path');
+    const parts=file.split('/'),parent=parts.length===2?join(projection.originalDirectory,parts[0]):projection.originalDirectory;
+    if(expected===null)require(lstatSync(join(parent,parts.at(-1)),{throwIfNoEntry:false})===undefined,'forward-original-absence');
+    else require(rawHash(readFrontendReleaseEvidence(parent,parts.at(-1)))===expected,'forward-original-drift');
+  }
+  const newReceiptSha256={},documents={};
+  for(const file of forwardRootFiles){const bytes=readFrontendReleaseEvidence(projection.directory,file);newReceiptSha256[file]=rawHash(bytes);documents[file]=JSON.parse(bytes);}
+  for(const file of forwardVercelFiles){const bytes=readFrontendReleaseEvidence(join(projection.directory,'vercel'),file);newReceiptSha256['vercel/'+file]=rawHash(bytes);documents[file]=JSON.parse(bytes);}
+  const start=documents['p2-recovery-forward-started.json'],outcome=documents['p2-recovery-forward-outcome.json'],original=documents['p2-recovery-forward-original.json'];
+  const identity=value=>value.recoveryActionId===projection.recoveryActionId && value.originalReleaseId===projection.originalReleaseId &&
+    value.candidateSha256===projection.candidateSha256 && value.sourceCommit===projection.sourceCommit && value.targetSha256===projection.targetSha256 &&
+    value.inventorySha256===projection.inventorySha256 && value.configurationSha256===projection.configurationSha256 && isDeepStrictEqual(value.originalReceiptSha256,projection.originalReceiptSha256);
+  require(identity(start)&&identity(outcome)&&identity(original)&&start.status==='P2_RECOVERY_NEW_BUILD_INTENT'&&
+    outcome.status==='P2_RECOVERY_NEW_BUILD_VERIFIED'&&original.status==='P2_RECOVERY_FORWARD_ORIGINAL_RECONCILED'&&
+    start.reason===record.action.forwardReason&&original.reason===start.reason&&outcome.reason===start.reason,'forward-root-chain');
+  require(isDeepStrictEqual(documents['p2-recovery-current-database.json'],record.receipt) &&
+    start.currentDatabaseReceiptSha256===newReceiptSha256['p2-recovery-current-database.json'] &&
+    start.apiRuntimeReceiptSha256===newReceiptSha256['p2-recovery-api-runtime.json'] &&
+    start.priorReconciliationReceiptSha256===newReceiptSha256['p2-recovery-forward-original.json'] &&
+    outcome.intentSha256===newReceiptSha256['p2-recovery-forward-started.json'],'forward-proof-chain');
+  const api=documents['p2-recovery-api-runtime.json'];
+  require(api.status==='P2_RECOVERY_API_RUNTIME_READY'&&api.recoveryActionId===projection.recoveryActionId&&api.candidateSha256===projection.candidateSha256&&api.sqlReplayed===false&&
+    api.apiDatabases?.course?.status==='P2_RECOVERY_API_DATABASE_CURRENT'&&api.apiDatabases.community?.status==='P2_RECOVERY_API_DATABASE_CURRENT'&&api.containers?.length===10,'forward-api-current');
+  for(const file of forwardVercelFiles)require(outcome.receiptSha256?.['vercel/'+file]===newReceiptSha256['vercel/'+file],'forward-provider-receipts');
+  require(/^dpl_[A-Za-z0-9]+$/u.test(outcome.deploymentId??'')&&forwardVercelFiles.every(file=>{
+    const value=documents[file];return value.environment==='staging'&&value.projectId===record.candidate.workload.projectId&&value.sourceCommit===projection.sourceCommit&&value.releaseId===projection.originalReleaseId&&
+      (file==='frontend-build-started.json'||value.deploymentId===outcome.deploymentId);
+  })&&documents['frontend-build-outcome.json'].status==='FRONTEND_STAGED'&&documents['frontend-workload-outcome.json'].status==='FRONTEND_VERIFIED'&&
+    documents['frontend-promotion-outcome.json'].status==='FRONTEND_DOMAINS_PROMOTED','forward-provider-chain');
+  return newReceiptSha256;
+}
+
+export async function issueP2RecoveryForwardScope(session,context){
+  const record=await forwardSession(session,context),action=record.action;
+  require(action.frontendMode==='reviewed-new-build'&&['prior-build-failed','prior-build-canceled','retained-ready-probe-expired'].includes(action.forwardReason),'forward-mode');
+  const projection={version:1,mode:'reviewed-new-build',recoveryActionId:action.recoveryActionId,originalReleaseId:action.originalReleaseId,
+    candidateSha256:action.candidateSha256,sourceCommit:action.sourceCommit,targetSha256:record.plan.targetSha256,inventorySha256:action.inventorySha256,
+    configurationSha256:action.configurationSha256,originalDirectory:context.originalDirectory,directory:context.directory,originalReceiptSha256:structuredClone(action.originalReceiptSha256)};
+  const receipts=await forwardReceipts(projection,record),scope=Object.freeze({});
+  forwardScopes.set(scope,{session,projection,receipts,environmentSignal:context.environmentSignal});return scope;
+}
+
+export async function readP2RecoveryForwardScope(scope,context){
+  const selected=forwardScopes.get(scope);require(selected,'forward-brand');
+  const record=await forwardSession(selected.session,context);
+  require(context.directory===selected.projection.directory&&context.originalDirectory===selected.projection.originalDirectory&&context.environmentSignal===selected.environmentSignal,'forward-path-binding');
+  require(isDeepStrictEqual(await forwardReceipts(selected.projection,record),selected.receipts),'forward-receipt-drift');
+  return structuredClone(selected.projection);
+}
+
+export async function verifyP2RecoveryForwardMutation(session){
+  const record=recoverySessions.get(session);require(record,'forward-session');await record.verify();
+  const actual=await readRecoveryFrontendCurrent(record.client,record.prepared,record.action,record.verify);
+  require(actual.admissionEpoch===record.receipt.admissionEpoch,'forward-admission-drift');await record.verify();
+}
 
 async function verifyRecoveryMemberships(client, runtimeOid, owner) {
   require(owner && /^[1-9][0-9]*$/u.test(owner.oid));
@@ -154,7 +232,7 @@ export async function readRecoveryFrontendCurrent(client, prepared, action, veri
 export async function withRecoveryFrontendSession(prepared, action, dependencies, task) {
   const target = prepared.migration.job.target;
   const client = (dependencies.createClient ?? (options => new Client(options)))({ ...recoveryConnectionOptions(await dependencies.getUrl(), target),application_name: RECOVERY_LOCK_APPLICATION });
-  let lost = false, locked = false, identity;
+  let lost = false, locked = false, identity,session;
   client.on('error', () => { lost = true; });
   const verify = async () => {
     await dependencies.verifyEnvironment(); require(!lost && client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true);
@@ -169,11 +247,13 @@ export async function withRecoveryFrontendSession(prepared, action, dependencies
     const marker = randomBytes(32).toString('hex'); await client.query('SELECT pg_advisory_lock(hashtext($1))', [marker]);
     const backendStart = (await client.query('SELECT backend_start::text FROM pg_stat_activity WHERE pid=pg_backend_pid()')).rows[0]?.backend_start; require(typeof backendStart === 'string');
     const receipt = await readRecoveryFrontendCurrent(client, prepared, action, verify);
-    const result = await task({ client, verify, receipt, probe: { version: 1, marker, backendPid: identity.pid, backendStart, applicationName: RECOVERY_LOCK_APPLICATION,
+    session=Object.freeze({});recoverySessions.set(session,{client,verify,prepared,action:structuredClone(action),receipt:structuredClone(receipt),candidate:structuredClone(prepared.migration.candidate),plan:structuredClone(prepared.plan)});
+    const result = await task({ client, verify, receipt,session, probe: { version: 1, marker, backendPid: identity.pid, backendStart, applicationName: RECOVERY_LOCK_APPLICATION,
       job: prepared.migration.job, baseline: prepared.migration.baseline, targetSha256: prepared.plan.targetSha256, owner: prepared.plan.owner, receipt } });
     await verify(); return result;
   } catch(error) { const safe=new Error('P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW');if(/^[a-z-]{1,60}$/u.test(error?.checkpoint??''))safe.checkpoint=error.checkpoint;throw safe; }
   finally {
+    if(session)recoverySessions.delete(session);
     try { if (locked) await client.query('SELECT pg_advisory_unlock_all()'); } catch { lost = true; }
     try { await client.end(); } catch { lost = true; }
     if (lost) throw new Error('P2_RECOVERY_FRONTEND_CLEANUP_UNCERTAIN');
