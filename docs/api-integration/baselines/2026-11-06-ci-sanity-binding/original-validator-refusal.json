@@ -1,0 +1,13 @@
+{
+  "sourceCommit": "138d01187160d18167376bd2ae8b396423b89284",
+  "sourceSha256": "1629f3d4b76e2883a6a2eeefb2c6509d0d5c7786f7c03950a65f6a2dff2198af",
+  "publicBinding": {
+    "NEXT_PUBLIC_SANITY_PROJECT_ID": "7o23yrvk",
+    "NEXT_PUBLIC_SANITY_DATASET": "staging-2026-05-10",
+    "NEXT_PUBLIC_SANITY_API_VERSION": "2026-03-24"
+  },
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "[sanity-env] Environment validation failed:\nMalformed env var: NEXT_PUBLIC_SANITY_PROJECT_ID must match launch project ID\n",
+  "providerRequests": 0
+}

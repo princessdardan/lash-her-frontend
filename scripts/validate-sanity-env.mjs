@@ -406,6 +406,21 @@ function hasValue(value) {
 }
 
 function validateProjectId(value) {
+  // Non-hosted builds may read the reviewed staging CMS without claiming a
+  // hosted application environment or a Vercel/gateway identity.
+  if (
+    appEnv === "local" &&
+    !isLaunchEnvironment &&
+    value === SANITY_PROJECT_BINDINGS.stagingProjectId
+  ) {
+    if (process.env.NEXT_PUBLIC_SANITY_DATASET !== expectedDatasets.staging) {
+      errors.push(
+        "Invalid env var: NEXT_PUBLIC_SANITY_DATASET for local staging Sanity project; expected staging-2026-05-10",
+      );
+    }
+    return;
+  }
+
   const expectedProject = appEnv === "staging"
     ? SANITY_PROJECT_BINDINGS.stagingProjectId
     : SANITY_PROJECT_BINDINGS.productionProjectId;

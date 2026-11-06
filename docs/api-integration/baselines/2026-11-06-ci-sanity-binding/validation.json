@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "status": "OFFLINE_CI_SANITY_BINDING_CORRECTION_PASS",
+  "baseCommit": "138d01187160d18167376bd2ae8b396423b89284",
+  "reviewStatus": "independent-review-pending",
+  "nodeVersion": "v24.18.0",
+  "nextVersion": "16.4.3",
+  "sourceSha256": {
+    ".github/workflows/ci.yml": "dea32f0126b04abada38769837bb60e999c5e2e67ba48eed1562dbf3ab28500c",
+    "playwright.config.ts": "16fe198323f1768299a3eb1b2c8ea329d187b5ca8631771d250c69531e183057",
+    "scripts/validate-sanity-env.mjs": "deecd4ebbbbf469831f8e2d1537ef31305a04508f6ea5e19ac3a386c592c3149",
+    "src/lib/env/validate-sanity-env.test.ts": "05e29df94f8c3e41a1727b3457a1c5cbf3103e9ae34efbdd80e829c240ef030e",
+    "README.md": "052a12d574fb5bd08cf97aa3fca69a6734e31f1f3667d740612fbcf484dcd9cd"
+  },
+  "unchangedSourceSha256": {
+    "src/lib/env/application-environment.mjs": "893934b2cf52c9a26fbdc50530ab413496862d832abcb321d2d7046bea2b9000",
+    "src/lib/api-integration/gateway-transport.ts": "6d63d120f508fdb4a5e2499c69ddc494dcb0b984076114f966dc3e21d729ebee",
+    "src/data/loaders.ts": "08e8584693d4cde08f79e616a30fffe6b66c75c7dc5a259beaa64f06104277b1",
+    "src/sanity/lib/client.ts": "1f11272e0579012a75196fb05be9f9404d64eb3b664b006d141c9f424276e126"
+  },
+  "acceptedBindingEvidenceSha256": {
+    "docs/api-integration/p1-environments.md": "56452617b6b0d96d67f8db5b96908eceff1940f79919c461336ebc6f4cc9241a",
+    "docs/api-integration/baselines/2026-10-22-p1-02-deployment-preparation.md": "3f2df51e6cf3758bf30518c211445fb5b1f4a8c1ca669c3e6009e5be8afccd45",
+    "docs/api-integration/baselines/2026-10-23-p1-02-first-deployment.md": "b4796782d1a58b3b82d59c4c63e20002c6b34c1feb73527bc8b19b4cdbf252c1"
+  },
+  "checks": {
+    "offlineFocusedTests": {
+      "passed": 53,
+      "failed": 0,
+      "skipped": 0
+    },
+    "targetedEslintExitCode": 0,
+    "fullTypecheckExitCode": 0,
+    "gitDiffCheckExitCode": 0,
+    "originalExactValidatorRefusalReproduced": true,
+    "actualLocalGatewayTransportRefusal": {
+      "environment": "local",
+      "errorCode": "configuration",
+      "outboundRequests": 0
+    }
+  },
+  "liveClaims": {
+    "sanityRequestsPerformed": 0,
+    "providerAvailability": "unverified-requires-fresh-CI",
+    "buildPerformed": false,
+    "browserPerformed": false,
+    "billingReadOrChanged": false,
+    "secretValuesFetched": false,
+    "deploymentPerformed": false
+  },
+  "suppliedCIFailure": {
+    "sourceCommit": "138d01187160d18167376bd2ae8b396423b89284",
+    "runId": "42214656961",
+    "buildJobId": "127881543288",
+    "webkitJobId": "127881543790",
+    "observationSource": "Root supplied retained CI inspection; not repeated by this correction",
+    "providerCode": "plan_limit_reached",
+    "failedBuildPhase": "page-data /products/[slug]"
+  },
+  "notes": [
+    "The first typecheck caught two new test-array type inferences; explicit Record<string,string>[] annotations corrected them before final checks.",
+    "No runtime loader/client, application identity resolver, provider quota handling, cache/CDN behavior, or content fixtures were changed."
+  ]
+}

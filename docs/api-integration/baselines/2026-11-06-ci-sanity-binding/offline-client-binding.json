@@ -1,0 +1,9 @@
+{
+  "projectId": "7o23yrvk",
+  "dataset": "staging-2026-05-10",
+  "apiVersion": "2026-03-24",
+  "useCdn": false,
+  "tokenPresent": false,
+  "queryUrl": "https://7o23yrvk.api.sanity.io/v2026-03-24/data/query/staging-2026-05-10",
+  "requests": 0
+}

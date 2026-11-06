@@ -4,7 +4,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { VERCEL_PROJECT_BINDINGS, SANITY_PROJECT_BINDINGS } from "./application-environment.mjs";
+import {
+  VERCEL_PROJECT_BINDINGS,
+  SANITY_PROJECT_BINDINGS,
+  resolveApplicationEnvironment,
+} from "./application-environment.mjs";
 
 const scriptPath = join(process.cwd(), "scripts/validate-sanity-env.mjs");
 const checkoutKey = Buffer.alloc(32, 7).toString("base64");
@@ -56,6 +60,113 @@ test("validates local public Sanity environment", () => {
 
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Local environment validated/);
+});
+
+test("non-hosted local and CI builds accept only the reviewed staging Sanity pair", () => {
+  const contexts: Record<string, string>[] = [
+    {}, { CI: "true", NODE_ENV: "production", APP_ENV: "local" },
+  ];
+  for (const context of contexts) {
+    const env = {
+      ...publicSanityEnv,
+      NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
+      NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+      ...context,
+    };
+    const result = runValidator(env);
+    assert.equal(result.status, 0, result.combinedOutput);
+    assert.match(result.stdout, /Local environment validated/);
+    assert.equal(resolveApplicationEnvironment(env), "local");
+  }
+
+  for (const dataset of ["production", "local-dev", "staging", ""]) {
+    const result = runValidator({
+      ...publicSanityEnv,
+      CI: "true",
+      NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
+      NEXT_PUBLIC_SANITY_DATASET: dataset,
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.combinedOutput, /NEXT_PUBLIC_SANITY_DATASET/);
+  }
+});
+
+test("existing local production-project datasets remain supported", () => {
+  for (const dataset of ["production", "staging-2026-05-10", "local-dev"]) {
+    const result = runValidator({
+      ...publicSanityEnv,
+      NEXT_PUBLIC_SANITY_DATASET: dataset,
+    });
+    assert.equal(result.status, 0, result.combinedOutput);
+    assert.match(result.stdout, /Local environment validated/);
+  }
+});
+
+test("the local staging CMS pair cannot authorize the actual gateway transport", () => {
+  const script = `
+    const { resolveApplicationEnvironment } = await import(${JSON.stringify(join(process.cwd(), "src/lib/env/application-environment.mjs"))});
+    const { getGatewayTransport, GatewayTransportError } = await import(${JSON.stringify(join(process.cwd(), "src/lib/api-integration/gateway-transport.ts"))});
+    let outboundRequests = 0;
+    globalThis.fetch = async () => { outboundRequests++; throw new Error("Unexpected network call"); };
+    let gatewayError = null;
+    try { getGatewayTransport(); }
+    catch (error) {
+      if (!(error instanceof GatewayTransportError)) throw error;
+      gatewayError = error.code;
+    }
+    console.log(JSON.stringify({ environment: resolveApplicationEnvironment(process.env), gatewayError, outboundRequests }));
+  `;
+  const result = spawnSync(process.execPath, [
+    "--conditions=react-server", "--import", "tsx", "--input-type=module", "-e", script,
+  ], {
+    cwd: process.cwd(),
+    env: {
+      PATH: process.env.PATH ?? "",
+      NODE_ENV: "test",
+      CI: "true",
+      ...publicSanityEnv,
+      NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
+      NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+      API_GATEWAY_STAGING_ORIGIN: "https://gateway-ci.example.invalid",
+      API_GATEWAY_PRODUCTION_ORIGIN: "https://gateway-ci.example.invalid",
+    },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    environment: "local", gatewayError: "configuration", outboundRequests: 0,
+  });
+});
+
+test("the staging CMS pair does not bypass hosted identity or require a forged APP_ENV", () => {
+  const localEnv = {
+    ...publicSanityEnv,
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+  };
+  const invalidLocal = runValidator({ ...localEnv, APP_ENV: "staging" });
+  assert.notEqual(invalidLocal.status, 0);
+  assert.match(invalidLocal.combinedOutput, /verified Vercel deployment/);
+
+  const hostedEnv = {
+    ...launchEnv,
+    ...localEnv,
+    APP_ENV: "staging",
+    VERCEL_ENV: "production",
+    VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.stagingProjectId,
+    NEXT_PUBLIC_SITE_URL: "https://staging.lashher.com",
+  };
+  const invalidIdentities: Record<string, string>[] = [
+    { APP_VERCEL_TEAM_ID: "team_unreviewed" },
+    { VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.productionProjectId },
+    { VERCEL_TARGET_ENV: "preview" },
+    { APP_ENV: "local" },
+  ];
+  for (const overrides of invalidIdentities) {
+    const result = runValidator({ ...hostedEnv, ...overrides });
+    assert.notEqual(result.status, 0);
+    assert.match(result.combinedOutput, /APP_VERCEL_TEAM_ID|project\/target binding|VERCEL_TARGET_ENV|require APP_ENV/);
+  }
 });
 
 test("loads local public Sanity values from .env.local", () => {

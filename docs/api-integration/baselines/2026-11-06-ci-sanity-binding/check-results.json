@@ -1,0 +1,36 @@
+[
+  {
+    "log": "offline-tests.log",
+    "exitCode": 0,
+    "command": [
+      "--conditions=react-server",
+      "--import",
+      "tsx",
+      "--test",
+      "src/lib/env/validate-sanity-env.test.ts",
+      "src/lib/env/application-environment.test.ts",
+      "src/lib/api-integration/gateway-transport.test.ts",
+      "src/data/commerce-e2e-catalog-fixture.test.ts"
+    ]
+  },
+  {
+    "log": "lint.log",
+    "exitCode": 0,
+    "command": [
+      "node_modules/eslint/bin/eslint.js",
+      "scripts/validate-sanity-env.mjs",
+      "src/lib/env/validate-sanity-env.test.ts",
+      "playwright.config.ts"
+    ]
+  },
+  {
+    "log": "typecheck.log",
+    "exitCode": 0,
+    "command": [
+      "node_modules/typescript/bin/tsc",
+      "--noEmit",
+      "--incremental",
+      "false"
+    ]
+  }
+]
