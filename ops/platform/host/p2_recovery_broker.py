@@ -1,6 +1,7 @@
 """Recovery hooks for the shared supervised broker; no second flock or SQL apply."""
 import base64
 import json
+import re
 from pathlib import Path
 import threading
 import migrate
@@ -37,6 +38,7 @@ class P2RecoveryBroker(Broker):
         selected, jobs, plan, compose = runtime.make_plan(Path(initial['bundle']), Path(initial['configuration']), self.source / 'ops/platform/compose.yaml')
         require(initial.get('recoveryActionId') != selected['releaseId'] and migrate.source_commit(initial.get('sourceCommit')) and
                 selected == initial['candidate'] and selected['environment'] == 'staging' and selected.get('contractPhase') == 'p2' and
+                re.fullmatch(r'[a-f0-9]{64}',initial.get('inventorySha256','')) and
                 initial.get('confirmation') == 'staging/' + initial['recoveryActionId'] and
                 initial.get('originalReleaseId') == selected['releaseId'] and set(jobs) == {'frontend','course','community'}, 'P2_RECOVERY_ORIGINAL_CANDIDATE_REQUIRED')
         require(migrate.file_hash(json.dumps(initial['configurationSha256'],separators=(',',':'),ensure_ascii=False).encode()) == initial.get('configurationBindingSha256'), 'P2_RECOVERY_REVIEWED_CONFIGURATION_REQUIRED')
@@ -108,8 +110,12 @@ class P2RecoveryBroker(Broker):
         require(outcome.get('status') == 'P2_STAGING_RECOVERY_RESTORATION_VERIFIED' and outcome.get('recoveryActionId') == self.action_id() and
                 outcome.get('originalReleaseId') == self.selected['releaseId'] and outcome.get('candidateSha256') == self.initial['candidateSha256'] and
                 outcome.get('sourceCommit') == self.selected['sources']['frontend']['commit'] and outcome.get('admissionRestored') is True and
+                outcome.get('inventorySha256') == self.initial['inventorySha256'] and outcome.get('targetSha256') == self.initial['targetSha256'] and
+                outcome.get('configurationSha256') == self.initial['configurationBindingSha256'] and outcome.get('contractPhase') == 'p2' and
                 outcome.get('originalReceiptSha256') == self.initial['originalReceiptSha256'] and outcome.get('originalFrontendTerminalRecreated') is False and
-                outcome.get('sqlReplayed') is False and outcome.get('frontendMode','reuse-retained-ready')==self.initial.get('frontendMode','reuse-retained-ready') and
+                outcome.get('sqlReplayed') is False and outcome.get('rolePreparationAuthorized') is False and outcome.get('historicalLoginsRestored') is False and
+                outcome.get('frontendMode','reuse-retained-ready')==self.initial.get('frontendMode','reuse-retained-ready') and
+                (self.initial.get('frontendMode')!='reviewed-new-build' or outcome.get('forwardReason')==self.initial.get('forwardReason')) and
                 outcome.get('failedBuildForwardAction')==('COMPLETED' if self.initial.get('frontendMode')=='reviewed-new-build' else 'OPEN'), 'P2_RECOVERY_TERMINAL_BINDING_REFUSED')
         require(self.worker_done.is_set() and not self.failed.is_set() and self.promoted is not None and getattr(self,'gateway_flags',None) == {'newWork':True,'recovery':True}, 'P2_RECOVERY_RUNTIME_NOT_READY')
         migrate.write_json(self.directory, 'p2-recovery-frontend-verification.json', outcome)

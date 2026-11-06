@@ -4,6 +4,7 @@ import { spawn,spawnSync } from 'node:child_process';
 import { mkdtempSync,mkdirSync,realpathSync,writeFileSync,readFileSync,rmSync,existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { p2RecoveryEnvironmentLock } from './p2-recovery-transport.mjs';
 const program=String.raw`
 import fcntl,json,os,sys
@@ -32,26 +33,49 @@ for raw in sys.stdin:
  print(json.dumps(v),flush=True)
 os.close(fd)
 `;
-function fixture(mode='ready'){
+const sha256=value=>createHash('sha256').update(value).digest('hex');
+function fixture(mode='ready',{frontendMode='reuse-retained-ready'}={}){
  const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-recovery-pipe-'))),original=join(directory,'original'),work=join(directory,'fresh');
  mkdirSync(original,{mode:0o700});mkdirSync(join(original,'vercel'),{mode:0o700});mkdirSync(work,{mode:0o700});
- writeFileSync(join(original,'vercel/frontend-workload-outcome.json'),'{}',{mode:0o600});
+ const originalWorkload=Buffer.from('{"workload":"original"}\n');
+ writeFileSync(join(original,'vercel/frontend-workload-outcome.json'),originalWorkload,{mode:0o600});
  const receipt={status:'P2_RECOVERY_DATABASE_CURRENT',originalReceiptSha256:{'job-outcome.json':null}},outcome={status:'P2_STAGING_RECOVERY_RESTORATION_VERIFIED',originalFrontendTerminalRecreated:false};
  writeFileSync(join(work,'p2-recovery-current-database.json'),JSON.stringify(receipt),{mode:0o600});writeFileSync(join(work,'p2-recovery-outcome.json'),JSON.stringify(outcome),{mode:0o600});
- const initial={environment:'staging',sourceCommit:'a'.repeat(40),mode:'p2-post-sql-recovery',recoveryActionId:'fresh-recovery',credentials:{privateMarker:'private-never-in-arguments-or-env'}};
+ const initial={environment:'staging',sourceCommit:'a'.repeat(40),mode:'p2-post-sql-recovery',frontendMode,recoveryActionId:'fresh-recovery',credentials:{privateMarker:'private-never-in-arguments-or-env'}};
  const lock=join(directory,'actual-host-lock');let captured;
  const factory=p2RecoveryEnvironmentLock({knownHosts:'/owned/hosts',sshKey:'/owned/key',originalDirectory:original},initial,work,{launch(executable,args,options){captured={executable,args,options};return spawn('python3',['-I','-u','-c',program,lock,mode],options);}});
- return{directory,original,work,receipt,outcome,lock,factory,getCaptured:()=>captured,cleanup:()=>rmSync(directory,{recursive:true,force:true})};
+ return{directory,original,work,receipt,outcome,lock,factory,originalWorkload,getCaptured:()=>captured,cleanup:()=>rmSync(directory,{recursive:true,force:true})};
 }
 test('retained READY recovery uses actual inherited pipe/flock without needing or creating old terminal',async()=>{
  const f=fixture();try{
   await f.factory(async(verify,_signal,host)=>{
    await verify();const contender=spawnSync('python3',['-I','-c',"import os,fcntl,sys;f=os.open(sys.argv[1],os.O_RDWR);fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)",f.lock]);assert.notEqual(contender.status,0);
-   await host.armRecovery({receipt:f.receipt,probe:{}});await host.restoreCurrent({receipt:f.receipt,probe:{}});await host.frontendVerified({});await host.restoreGatewayStage('recovery',{newWork:false,recovery:true});await host.restoreGatewayStage('new-work',{newWork:true,recovery:true});await host.prepareClose(verify);await host.finish(f.outcome,verify);
+   await host.armRecovery({receipt:f.receipt,probe:{}});await host.restoreCurrent({receipt:f.receipt,probe:{}});await host.frontendVerified({workloadReceiptSha256:sha256(f.originalWorkload)});await host.restoreGatewayStage('recovery',{newWork:false,recovery:true});await host.restoreGatewayStage('new-work',{newWork:true,recovery:true});await host.prepareClose(verify);await host.finish(f.outcome,verify);
   });
   assert.equal(existsSync(join(f.original,'job-outcome.json')),false);assert.equal(JSON.parse(readFileSync(join(f.work,'p2-host-recovery-outcome.json'))).sqlReplayed,false);
   assert.equal(JSON.stringify(f.getCaptured()).includes('private-never-in-arguments-or-env'),false);
  }finally{f.cleanup();}
+});
+test('reviewed forward recovery transmits only the newly verified workload bytes',async()=>{
+ const f=fixture('ready',{frontendMode:'reviewed-new-build'}),selected=Buffer.from('{"workload":"new-reviewed-build"}\n');try{
+  await f.factory(async(verify,_signal,host)=>{
+   await host.armRecovery({receipt:f.receipt,probe:{}});await host.restoreCurrent({receipt:f.receipt,probe:{}});
+   await host.frontendVerified({workloadReceiptSha256:sha256(selected)},selected);
+   await host.restoreGatewayStage('recovery',{newWork:false,recovery:true});await host.restoreGatewayStage('new-work',{newWork:true,recovery:true});await host.prepareClose(verify);await host.finish(f.outcome,verify);
+  });
+  assert.equal(existsSync(join(f.work,'p2-host-recovery-outcome.json')),true);
+ }finally{f.cleanup();}
+});
+test('reviewed forward recovery refuses omitted or mismatched new workload bytes before host verification',async()=>{
+ for(const selected of [undefined,Buffer.from('different')]){
+  const f=fixture('ready',{frontendMode:'reviewed-new-build'}),expected=Buffer.from('{"workload":"expected"}\n');try{
+   await assert.rejects(f.factory(async(_verify,_signal,host)=>{
+    await host.armRecovery({receipt:f.receipt,probe:{}});await host.restoreCurrent({receipt:f.receipt,probe:{}});
+    await host.frontendVerified({workloadReceiptSha256:sha256(expected)},selected);
+   }));
+   assert.equal(existsSync(join(f.work,'p2-host-recovery-outcome.json')),false);
+  }finally{f.cleanup();}
+ }
 });
 test('remote process death aborts recovery before frontend/promotion/admission work',async()=>{
  const f=fixture('death');let afterApi=false;try{await assert.rejects(f.factory(async(_verify,_signal,host)=>{await host.armRecovery({receipt:f.receipt,probe:{}});await host.restoreCurrent({receipt:f.receipt,probe:{}});afterApi=true;}));assert.equal(afterApi,false);assert.equal(existsSync(join(f.work,'p2-host-recovery-outcome.json')),false);}finally{f.cleanup();}

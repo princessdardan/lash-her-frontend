@@ -14,9 +14,10 @@ import {readCompatibleFrontendWorkloadReceipt} from './frontend-release-adapters
 
 const require = ok => { if (!ok) throw new Error('P2_POST_SQL_RECOVERY_REFUSED'); };
 const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value) && !/^0+$/u.test(value);
-export function p2RecoveryProviderContext(prepared,dependencies,{client,verify,environmentSignal}){
+export function p2RecoveryProviderContext(prepared,dependencies,{client,verify,environmentSignal,action}){
   const {plan,migration}=prepared,target=migration.job.target;
   return {candidate:migration.candidate,directory:dependencies.directory,originalDirectory:dependencies.originalDirectory,
+    inventorySha256:prepared.inventorySha256,...(action?{action,recoveryActionId:action.recoveryActionId}:{}),
     bootstrapRuntimeTarget:{environment:plan.environment,targetSha256:plan.targetSha256,host:target.host,port:target.port,database:target.database,user:target.runtimeRole,serverMajor:target.serverMajor},
     getProviderContext:dependencies.getProviderContext,databaseClient:client,verifyLockedSession:verify,environmentSignal};
 }
@@ -85,7 +86,7 @@ export async function runP2PostSqlRecovery(input, dependencies) {
         // Restoration primitives own their transaction; SET ROLE is session-local
         // only during the bounded call and always reset before verification.
         const restorationOwner = async task => { await verify(); await client.query(`SET ROLE "${plan.owner.name}"`); try { return await task(); } finally { await client.query('RESET ROLE'); await verify(); } };
-        const providerContext={...p2RecoveryProviderContext(prepared,dependencies,{client,verify,environmentSignal}),action};
+        const providerContext=p2RecoveryProviderContext(prepared,dependencies,{client,verify,environmentSignal,action});
         const fences = async checkpoint => {
           await verify(); bindOriginalRecoveryReceipts(dependencies.originalDirectory, action, prepared);
           const nonce = randomBytes(32).toString('hex');
@@ -131,7 +132,11 @@ export async function runP2PostSqlRecovery(input, dependencies) {
           providerContext.forwardRecoveryScope=await issueP2RecoveryForwardScope(session,{...providerContext,plan});
           observed=await adapters.observeCompatibleFrontend({plan,inventorySha256,checkpoint:'recovery',...providerContext,admissionObservation:{newWork:false,recovery:false,active:0,uncertain:0}});
         }
-        require(observed?.readyState==='READY'&&observed.aliasJobMatchesIntent===true&&observed.aliasJobType==='promote'&&observed.aliasDeploymentId===observed.deploymentId&&observed.aliasJobDeploymentId===observed.deploymentId&&observed.workloadVerified===true&&observed.nativeSchedulesEnabled===false);
+        require(observed?.readyState==='READY'&&observed.actionId===plan.actionId&&observed.sourceCommit===plan.sourceCommit&&
+          observed.aliasJobState==='succeeded'&&observed.aliasJobMatchesIntent===true&&observed.aliasJobType==='promote'&&
+          observed.aliasDeploymentId===observed.deploymentId&&observed.aliasJobDeploymentId===observed.deploymentId&&
+          observed.workloadVerified===true&&observed.admissionNewWork===false&&observed.admissionRecovery===false&&
+          observed.nativeSchedulesEnabled===false&&isDeepStrictEqual(observed.featureControls,plan.certification.featureControls));
         const actualRuntime=await observeP2RecoveryFrontend({ ...providerContext, plan, job:migration.job });
         require(actualRuntime.deploymentId===observed.deploymentId);await store.record('p2-recovery-frontend-runtime.json',actualRuntime);
         const workload=await readCompatibleFrontendWorkloadReceipt({...providerContext,plan},observed);

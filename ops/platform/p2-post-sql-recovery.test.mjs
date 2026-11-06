@@ -27,12 +27,59 @@ function fixture(){
   const action={version:1,environment:'staging',recoveryActionId:'fresh-recovery',originalReleaseId:plan.actionId,sourceCommit:plan.sourceCommit,candidateSha256:hash(candidateBytes),inventorySha256:hash(plan),configurationSha256:'9'.repeat(64),frontendMode:'reuse-retained-ready',originalReceiptSha256:{'frontend-release-started.json':hash(original),'job-outcome.json':null,'database-receipt.json':null,...Object.fromEntries(['frontend-build-started.json','frontend-build-created.json','frontend-build-outcome.json','frontend-promotion-started.json','frontend-workload-outcome.json'].map(name=>['vercel/'+name,hash(Buffer.from('{}'))]))}};
   return{prepared,action,candidateBytes,original};
 }
+function forwardAction(f,reason='prior-build-failed'){
+  const originalReceiptSha256=structuredClone(f.action.originalReceiptSha256);
+  if(reason==='retained-ready-probe-expired')originalReceiptSha256['vercel/frontend-probe-preparation.json']=hash(Buffer.from('{"probe":"expired"}'));
+  else{
+    originalReceiptSha256['vercel/frontend-promotion-started.json']=null;
+    originalReceiptSha256['vercel/frontend-workload-outcome.json']=null;
+  }
+  return {...f.action,recoveryActionId:'fresh-forward-'+reason,frontendMode:'reviewed-new-build',forwardReason:reason,
+    forwardPrivateConfigurationDirectory:'/private/tmp/p2-forward-'+reason,originalReceiptSha256};
+}
 
 test('post-SQL recovery preserves original candidate and pending chain without fabricating absent terminal',()=>{
   const f=fixture(),before=JSON.stringify(f.prepared.migration.job),checked=prepareP2PostSqlRecovery(f.prepared,f.action,f.candidateBytes);
   assert.equal(JSON.stringify(f.prepared.migration.job),before);assert.notEqual(checked.action.recoveryActionId,checked.action.originalReleaseId);
   assert.equal(checked.action.originalReceiptSha256['job-outcome.json'],null);assert.equal(checked.action.failedBuildForwardAction,'OPEN');
   assert.equal(checked.action.sqlReplayAuthorized,false);assert.ok(checked.prepared.migration.job.target.approvedPendingTags.length>0);
+});
+
+test('reviewed new build eligibility is exact for failed, canceled and expired retained READY sources',()=>{
+  for(const reason of ['prior-build-failed','prior-build-canceled','retained-ready-probe-expired']){
+    const f=fixture(),checked=prepareP2PostSqlRecovery(f.prepared,forwardAction(f,reason),f.candidateBytes);
+    assert.equal(checked.action.frontendMode,'reviewed-new-build');assert.equal(checked.action.forwardReason,reason);
+    assert.equal(checked.action.failedBuildForwardAction,'REVIEWED_NEW_BUILD');assert.equal(checked.action.sqlReplayAuthorized,false);
+    assert.equal(checked.action.rolePreparationAuthorized,false);assert.equal(checked.action.historicalLoginsRestored,false);
+    assert.equal(checked.action.originalReceiptSha256['job-outcome.json'],null);
+  }
+});
+
+test('reviewed new build refuses incomplete source history, fabricated prior terminals and unreviewed mode inputs',()=>{
+  const f=fixture();
+  for(const reason of ['prior-build-failed','prior-build-canceled']){
+    const action=forwardAction(f,reason);
+    for(const name of ['frontend-build-started.json','frontend-build-created.json','frontend-build-outcome.json']){
+      const changed=structuredClone(action);delete changed.originalReceiptSha256['vercel/'+name];
+      assert.throws(()=>prepareP2PostSqlRecovery(f.prepared,changed,f.candidateBytes));
+    }
+    for(const name of ['frontend-promotion-started.json','frontend-workload-outcome.json']){
+      const changed=structuredClone(action);changed.originalReceiptSha256['vercel/'+name]='b'.repeat(64);
+      assert.throws(()=>prepareP2PostSqlRecovery(f.prepared,changed,f.candidateBytes));
+    }
+  }
+  const expired=forwardAction(f,'retained-ready-probe-expired');delete expired.originalReceiptSha256['vercel/frontend-probe-preparation.json'];
+  assert.throws(()=>prepareP2PostSqlRecovery(f.prepared,expired,f.candidateBytes));
+  for(const changes of [{forwardReason:'lost-post-without-id'},{forwardPrivateConfigurationDirectory:'relative/path'},{frontendMode:'retry-build'}]){
+    assert.throws(()=>prepareP2PostSqlRecovery(f.prepared,{...forwardAction(f),...changes},f.candidateBytes));
+  }
+});
+
+test('forward provider context binds the reviewed action and inventory at the adapter boundary',()=>{
+  const f=fixture(),checked=prepareP2PostSqlRecovery(f.prepared,forwardAction(f),f.candidateBytes),action=checked.action;
+  const context=p2RecoveryProviderContext(checked.prepared,{directory:'/private/tmp/current',originalDirectory:'/private/tmp/original',getProviderContext:async()=>({})},{client:{},verify:async()=>{},environmentSignal:new AbortController().signal,action});
+  assert.equal(context.recoveryActionId,action.recoveryActionId);assert.equal(context.action,action);
+  assert.equal(context.inventorySha256,checked.prepared.inventorySha256);assert.equal(context.bootstrapRuntimeTarget.user,f.prepared.migration.job.target.runtimeRole);
 });
 
 test('serialized forward scope cannot replace a live source-issued recovery session',async()=>{

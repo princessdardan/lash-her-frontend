@@ -2,7 +2,7 @@
 // child retains the actual selected Linux host flock and API continuation.
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { randomBytes, createHash } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sshCommand } from './recreation_ssh.mjs';
@@ -81,6 +81,7 @@ export function p2RecoveryEnvironmentLock(settings, initial, directory, { launch
         async frontendVerified(observed,selectedWorkload) {
           require(apiStarted && !preparedClose); await verifyEnvironment();
           const proof = Object.fromEntries(Object.entries(observed).filter(([key]) => !['evidence','evidenceSha256'].includes(key)));
+          if(initial.frontendMode==='reviewed-new-build')require(Buffer.isBuffer(selectedWorkload));
           const workload=selectedWorkload??readFrontendReleaseEvidence(join(settings.originalDirectory,'vercel'),'frontend-workload-outcome.json');
           require(Buffer.isBuffer(workload)&&workload.length>0&&workload.length<=2_000_000&&createHash('sha256').update(workload).digest('hex')===proof.workloadReceiptSha256);
           await request('frontend-verified','FRONTEND_VERIFIED',{ proof, workload: workload.toString('base64') });

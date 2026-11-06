@@ -61,6 +61,7 @@ export async function p2RecoveryOperator(settings,{apply=false,confirmation}={})
     sourceSha256:Object.fromEntries(committed.files.map(file=>[file.path,file.sha256])),
     sourceClosureSha256:hash(JSON.stringify(committed.files.map(file=>[file.path,file.sha256]).sort(([a],[b])=>a<b?-1:a>b?1:0))),
     hostMachineId:settings.host.machineId,candidate:checked.original.candidate,candidateSha256:checked.action.candidateSha256,
+    inventorySha256:checked.action.inventorySha256,
     bundle:settings.host.bundle,configuration:settings.host.configuration,results:settings.host.results,
     configurationSha256:checked.original.configurationSha256,configurationBindingSha256:checked.action.configurationSha256,
     confirmation,credentials,vercelToken:context.vercelToken,recoveryActionId:checked.action.recoveryActionId,originalReleaseId:checked.action.originalReleaseId,
