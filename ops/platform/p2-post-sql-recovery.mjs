@@ -13,6 +13,12 @@ import { observeP2RecoveryFrontend } from './p2-recovery-frontend-observation.mj
 
 const require = ok => { if (!ok) throw new Error('P2_POST_SQL_RECOVERY_REFUSED'); };
 const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value) && !/^0+$/u.test(value);
+export function p2RecoveryProviderContext(prepared,dependencies,{client,verify,environmentSignal}){
+  const {plan,migration}=prepared,target=migration.job.target;
+  return {candidate:migration.candidate,directory:dependencies.directory,originalDirectory:dependencies.originalDirectory,
+    bootstrapRuntimeTarget:{environment:plan.environment,targetSha256:plan.targetSha256,host:target.host,port:target.port,database:target.database,user:target.runtimeRole,serverMajor:target.serverMajor},
+    getProviderContext:dependencies.getProviderContext,databaseClient:client,verifyLockedSession:verify,environmentSignal};
+}
 export function prepareP2PostSqlRecovery(prepared, input, candidateBytes) {
   require(Buffer.isBuffer(candidateBytes) && candidateBytes.length <= 2_000_000 && isDeepStrictEqual(JSON.parse(candidateBytes), prepared.migration.candidate));
   const checked = prepareFrontendReleaseCoordination(prepared.migration.candidate, prepared.migration.job, prepared.migration.baseline, prepared.plan, prepared.sourceInventory);
@@ -72,8 +78,7 @@ export async function runP2PostSqlRecovery(input, dependencies) {
         // Restoration primitives own their transaction; SET ROLE is session-local
         // only during the bounded call and always reset before verification.
         const restorationOwner = async task => { await verify(); await client.query(`SET ROLE "${plan.owner.name}"`); try { return await task(); } finally { await client.query('RESET ROLE'); await verify(); } };
-        const providerContext = { candidate: migration.candidate, directory: dependencies.directory, originalDirectory: dependencies.originalDirectory,
-          getProviderContext: dependencies.getProviderContext, databaseClient: client, verifyLockedSession: verify, environmentSignal };
+        const providerContext=p2RecoveryProviderContext(prepared,dependencies,{client,verify,environmentSignal});
         const fences = async checkpoint => {
           await verify(); bindOriginalRecoveryReceipts(dependencies.originalDirectory, action, prepared);
           const nonce = randomBytes(32).toString('hex');

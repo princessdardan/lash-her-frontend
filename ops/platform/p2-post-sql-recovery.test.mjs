@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync,mkdirSync,realpathSync,writeFileSync,chmodSync,rmSync,readFileSync } from 'node:fs';
+import { mkdtempSync,mkdirSync,realpathSync,writeFileSync,chmodSync,rmSync,readFileSync,copyFileSync,readdirSync,symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createServer } from 'node:https';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath,pathToFileURL } from 'node:url';
 import { frontendMigrationArtifact,prepareFrontendMigration } from './frontend-migration.mjs';
 import { frontendAdmissionTargetSha256 } from './frontend-admission-bootstrap.mjs';
 import { frontendCandidateSurfaces,frontendCoordinationHash as hash,prepareFrontendReleaseInventory } from './frontend-release-inventory.mjs';
 import { P2_CERTIFICATION_PROFILE } from './p2-certification-profile.mjs';
-import { prepareP2PostSqlRecovery,bindOriginalRecoveryReceipts } from './p2-post-sql-recovery.mjs';
+import { prepareP2PostSqlRecovery,bindOriginalRecoveryReceipts,p2RecoveryProviderContext } from './p2-post-sql-recovery.mjs';
+import { frontendProviderBindingsArtifact,FRONTEND_VERCEL_PROJECT,FRONTEND_VERCEL_TEAM,FRONTEND_VERCEL_REPOSITORY } from './frontend-provider-bindings.mjs';
 
 function fixture(){
   const sourceInventory={version:2,scope:'candidate-source-only',sourceManifestSha256:'1'.repeat(64),routes:[{file:'src/app/api/owned/route.ts',methods:['POST'],sourceSha256:'2'.repeat(64)}],actionModules:[],renderEntries:[],manualEntries:[],inlineActions:[],deferredSites:[],databaseConstructors:[],schedules:[]};
@@ -42,4 +46,50 @@ test('actual retained receipt hashes and actual missing terminal cannot be stale
     writeFileSync(join(directory,'job-outcome.json'),'{}',{mode:0o600});assert.throws(()=>bindOriginalRecoveryReceipts(directory,f.action,f.prepared));
     rmSync(join(directory,'job-outcome.json'));writeFileSync(join(directory,'frontend-release-started.json'),Buffer.from('{}'),{mode:0o600});assert.throws(()=>bindOriginalRecoveryReceipts(directory,f.action,f.prepared));
   }finally{rmSync(directory,{recursive:true,force:true});}
+});
+
+test('recovery runtime target reaches the actual shared adapter and Python worker over owned HTTPS',async()=>{
+  const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-recovery-adapter-context-'))),source=fileURLToPath(new URL('.',import.meta.url));
+  chmodSync(directory,0o700);let server;
+  try{
+    const cert=join(directory,'ca.pem'),key=join(directory,'key.pem');
+    execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1','-keyout',key,'-out',cert],{stdio:'ignore'});
+    const f=fixture(),identities=[{kind:'deployment',identity:{provider:'vercel',teamId:FRONTEND_VERCEL_TEAM,projectId:FRONTEND_VERCEL_PROJECT,deploymentId:'dpl_previous'}},
+      {kind:'scheduler',identity:{provider:'vercel',teamId:FRONTEND_VERCEL_TEAM,projectId:FRONTEND_VERCEL_PROJECT,scheduler:'native-crons'}},
+      {kind:'provider',identity:{provider:'square',accountSha256:'c'.repeat(64),credentialBindingSha256:'d'.repeat(64)}},
+      {kind:'direct-caller',identity:{provider:'manual',accountSha256:'e'.repeat(64),credentialBindingSha256:'f'.repeat(64)}}];
+    const plan={...f.prepared.plan,externalSurfaces:identities.map(row=>({kind:row.kind,identitySha256:hash(row.identity),surfaceSha256:hash({kind:row.kind,identitySha256:hash(row.identity)})})).sort((a,b)=>a.surfaceSha256.localeCompare(b.surfaceSha256))};
+    const gatewayObservation={hostMachineId:'1'.repeat(32),releaseId:plan.actionId,candidateSha256:'2'.repeat(64),gatewayConfigurationSha256:'3'.repeat(64),runtimeConfigurationSha256:'4'.repeat(64),gatewayImage:'ghcr.io/princessdardan/lash-her-platform-gateway@sha256:'+'5'.repeat(64)};
+    plan.restoration={...plan.restoration,gatewayBindingSha256:hash(gatewayObservation)};
+    const deployment={deploymentId:'dpl_previous',sourceCommit:'c'.repeat(40),target:'production',createdAt:10,url:'previous.vercel.app',state:'READY'};
+    const bindings=frontendProviderBindingsArtifact({version:1,environment:'staging',actionId:plan.actionId,sourceCommit:plan.sourceCommit,targetSha256:plan.targetSha256,
+      teamId:FRONTEND_VERCEL_TEAM,projectId:FRONTEND_VERCEL_PROJECT,repositoryId:FRONTEND_VERCEL_REPOSITORY,projectState:{productionDeploymentId:'dpl_previous',nativeSchedulesEnabled:false},deployments:[deployment],gatewayObservation,
+      surfaces:identities.map(row=>({...row,surfaceSha256:plan.externalSurfaces.find(surface=>surface.kind===row.kind).surfaceSha256}))},plan);
+    plan.providerBindingsSha256=hash(bindings);
+    const prepared={...f.prepared,plan,migration:{...f.prepared.migration,candidate:{...f.prepared.migration.candidate,workload:{projectId:FRONTEND_VERCEL_PROJECT,environment:'production'}}}};
+    const requests=[];server=createServer({cert:readFileSync(cert),key:readFileSync(key)},(request,response)=>{
+      requests.push([request.method,new URL(request.url,'https://owned.invalid').pathname]);
+      assert.equal(request.headers.authorization,'Bearer owned-adapter-context');
+      const path=new URL(request.url,'https://owned.invalid').pathname;
+      const project={id:FRONTEND_VERCEL_PROJECT,accountId:FRONTEND_VERCEL_TEAM,link:{type:'github',repoId:FRONTEND_VERCEL_REPOSITORY},targets:{production:{id:'dpl_previous'}},crons:{disabledAt:1}};
+      response.setHeader('content-type','application/json');
+      if(path==='/v9/projects/'+FRONTEND_VERCEL_PROJECT)response.end(JSON.stringify(project));
+      else if(path==='/v9/projects')response.end(JSON.stringify({projects:[project],pagination:{count:1,next:null}}));
+      else if(path==='/v7/deployments')response.end(JSON.stringify({deployments:[{uid:'dpl_previous',created:10,url:deployment.url,target:'production',state:'READY',gitSource:{sha:deployment.sourceCommit}}],pagination:{count:1,next:null}}));
+      else{response.statusCode=404;response.end('{}');}
+    });
+    await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+    const platform=join(directory,'app/ops/platform'),host=join(platform,'host');mkdirSync(host,{recursive:true});writeFileSync(join(directory,'app/package.json'),'{"type":"module"}\n');
+    for(const name of readdirSync(source).filter(name=>name.endsWith('.mjs'))){if(name==='frontend-release-adapters.mjs')copyFileSync(join(source,name),join(platform,name));else symlinkSync(join(source,name),join(platform,name));}
+    const receipts=join(directory,'receipts');mkdirSync(receipts,{mode:0o700});let verified=0;
+    const context={plan,...p2RecoveryProviderContext(prepared,{directory:receipts,getProviderContext:async()=>({bindings,vercelToken:'owned-adapter-context'})},{client:{},verify:async()=>{verified++;}})};
+    const expected=context.bootstrapRuntimeTarget;
+    writeFileSync(join(host,'frontend_release_adapters.py'),`import sys,json,ssl\nsys.path.insert(0,${JSON.stringify(join(source,'host'))})\nimport frontend_release_adapters as actual\nactual.vercel.API_ORIGIN=${JSON.stringify('https://127.0.0.1:'+server.address().port)}\noriginal_ssl=ssl.create_default_context\nssl.create_default_context=lambda *args,**kwargs: original_ssl(cafile=${JSON.stringify(cert)})\noriginal_execute=actual.execute\ndef checked(context,client,verify,probe=None):\n    assert context['writerTarget']==json.loads(${JSON.stringify(JSON.stringify(expected))})\n    return original_execute(context,client,verify,probe)\nactual.execute=checked\nactual.main()\n`);
+    const adapter=await import(pathToFileURL(join(platform,'frontend-release-adapters.mjs')).href);
+    let observed;try{observed=await adapter.runFrontendVercelWorker('observe-vercel',context);}catch(error){throw new Error('OWNED_ADAPTER_CONTEXT_FAILURE '+JSON.stringify({verified,requests}),{cause:error});}
+    assert.equal(observed.status,'VERCEL_STAGING_METADATA_OBSERVED');assert.equal(observed.reviewedInventoryMatches,true);assert.equal(observed.reviewedProjectMatches,true);
+    assert.ok(verified>=3);assert.ok(requests.length>=4);assert.ok(requests.every(([method])=>method==='GET'));
+    const count=requests.length;await assert.rejects(adapter.runFrontendVercelWorker('observe-vercel',{...context,bootstrapRuntimeTarget:undefined}));assert.equal(requests.length,count);
+    assert.equal(expected.user,prepared.migration.job.target.runtimeRole);assert.notEqual(expected.user,prepared.migration.job.target.user);
+  }finally{if(server)await new Promise(resolve=>server.close(resolve));rmSync(directory,{recursive:true,force:true});}
 });
