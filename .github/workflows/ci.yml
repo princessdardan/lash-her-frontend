@@ -110,10 +110,12 @@ jobs:
             --mount "type=bind,src=$PWD/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
             --entrypoint node lash-her-frontend-migration:postgres18-test \
             ops/platform/test-p2-platform-local.mjs > "$RUNNER_TEMP/p2-platform-postgres18.json"
-      - name: Exercise exact API identity, recovery, lifecycle persistence, and receiver negatives on owned PostgreSQL 18
+      - name: Exercise exact identity, recovery, lifecycle and interrupted-restoration fixtures on owned PostgreSQL 18
         env:
           PLATFORM_SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
-        run: node ops/platform/prepare-p2-identity-probe-fixtures.mjs --recovery-postgres18 --lifecycle-postgres18
+        run: >-
+          node ops/platform/prepare-p2-identity-probe-fixtures.mjs --recovery-postgres18 --lifecycle-postgres18
+          > "$RUNNER_TEMP/p2-identity-recovery-lifecycle-postgres18.json"
       - name: Retain private owned fixture failure diagnostics
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
@@ -122,6 +124,7 @@ jobs:
           path: |
             ${{ runner.temp }}/p2-owned-fixture-failure/
             ${{ runner.temp }}/p2-platform-postgres18.json
+            ${{ runner.temp }}/p2-identity-recovery-lifecycle-postgres18.json
           if-no-files-found: ignore
           retention-days: 3
       - name: Verify initial Course logins on owned PostgreSQL 18
@@ -151,6 +154,7 @@ jobs:
           path: |
             ${{ runner.temp }}/frontend-schema-summary.json
             ${{ runner.temp }}/p2-platform-postgres18.json
+            ${{ runner.temp }}/p2-identity-recovery-lifecycle-postgres18.json
           if-no-files-found: error
           retention-days: 10
       - name: Retain raw frontend-runtime scan

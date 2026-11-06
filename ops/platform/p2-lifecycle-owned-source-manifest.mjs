@@ -14,6 +14,17 @@ const REPOSITORIES = Object.freeze({
   course: "lash-her-course-api",
   community: "lash-her-community-api",
 });
+export const P2_INTERRUPTED_OWNED_SOURCE_FILES = Object.freeze([
+  "ops/platform/p2-known-ack-interrupted-restoration.mjs", "ops/platform/host/p2_known_ack_interrupted_restoration.py",
+  "ops/platform/host/p2_release_broker.py", "ops/platform/host/p2_release_supervisor.py",
+  "ops/gateway/server.mjs", "ops/gateway/p2-certification-fault.mjs", "ops/gateway/package.json", "ops/gateway/package-lock.json",
+  ...["run-owned.mjs", "owned-process.mjs", "owned-engine.py"].map(name =>
+    `docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/${name}`),
+]);
+export const P2_KNOWN_ACK_OWNED_SOURCE_FILES = Object.freeze([
+  "p2-known-ack-loss-probe.mjs", "host/p2_known_ack_loss.py", "harness/owned-p2-known-ack-loss.mjs",
+  "harness/owned-phase2-lifecycle-receiver.mjs",
+]);
 const FRONTEND_DIRECTORIES = Object.freeze(["drizzle", "contracts/api-integration/p2-candidate"]);
 const FRONTEND_FILES = Object.freeze([
   "package.json", "package-lock.json", "contracts/api-integration/v1/manifest.json",

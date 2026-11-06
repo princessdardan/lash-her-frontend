@@ -15,10 +15,13 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   P2_LIFECYCLE_OWNED_API_REVISIONS,
+  P2_INTERRUPTED_OWNED_SOURCE_FILES,
+  P2_KNOWN_ACK_OWNED_SOURCE_FILES,
   p2LifecycleOwnedSourceFileMap,
   verifyP2LifecycleOwnedSourceManifest,
 } from "./p2-lifecycle-owned-source-manifest.mjs";
@@ -29,6 +32,12 @@ const TEST_FILE = "ops/platform/p2-identity-negative-probe.test.mjs";
 const RECOVERY_MODE = "--recovery-postgres18";
 const LIFECYCLE_MODE = "--lifecycle-postgres18";
 const RECOVERY_IMAGE = "lash-her-frontend-migration:postgres18-test";
+const INTERRUPTED_ENTRY = "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs";
+const INTERRUPTED_HELPERS = P2_INTERRUPTED_OWNED_SOURCE_FILES.filter(name => name.startsWith("docs/"));
+const INTERRUPTED_SERVICES = Object.freeze(["community-api", "course-api", "community-tls", "course-tls", "course-snapshot",
+  "community-worker", "course-media", "course-export-cleanup", "course-publisher", "gateway"]);
+const INTERRUPTED_BOUNDARIES = Object.freeze(["private-application-credential-required", "private-community-peer-denied",
+  "private-course-tls-catalog", "public-metrics-hidden", "public-tls-missing-workload-denied"]);
 const FRONTEND_REPOSITORY = Object.freeze({ name: "lash-her-frontend", url: "https://github.com/princessdardan/lash-her-frontend.git" });
 const RECOVERY_PRIVILEGE_FAULTS = Object.freeze([
   "frontend-runtime-inbound", "frontend-runtime-outbound", "frontend-runtime-rogue-admin", "frontend-owner-inbound",
@@ -140,9 +149,9 @@ const ARTIFACTS = Object.freeze({
 });
 const FAILURE_PHASES = Object.freeze(["preflight", "source-fetch", "npm-ci", "build", "exact-source-proof", "identity-tests",
   "recovery-postgres18", "lifecycle-postgres18", "cleanup"]);
-const FAILURE_STAGES = Object.freeze(["frontend", "workspace", "course", "community", "identity", "recovery", "lifecycle", "receivers"]);
+const FAILURE_STAGES = Object.freeze(["frontend", "workspace", "course", "community", "identity", "recovery", "lifecycle", "receivers", "interrupted-restoration", "interrupted-negatives"]);
 const RECOVERY_FAILURES = Object.freeze(["docker-transport", "child-exit", "receipt-invalid"]);
-const RECOVERY_QUALIFICATIONS = Object.freeze(["current", "forward", "persistence", "receivers"]);
+const RECOVERY_QUALIFICATIONS = Object.freeze(["current", "forward", "persistence", "receivers", "interrupted-restoration", "interrupted-negatives"]);
 const PRIVATE_FAILURE_DIRECTORY = "p2-owned-fixture-failure";
 const PRIVATE_FAILURE_MAX_BYTES = 4 * 1024 * 1024;
 const demand = condition => { if (!condition) throw new Error("P2_IDENTITY_FIXTURE_PREPARATION_REFUSED"); };
@@ -411,6 +420,54 @@ function lifecycleReceiversDockerArguments(frontendRoot, directories) {
     "ops/platform/test-p2-lifecycle-receivers-local.mjs", "--postgres18-manifest"];
 }
 
+function interruptedRestorationDockerArguments(frontendRoot, directories) {
+  const frontend = [...LIFECYCLE_FRONTEND_MOUNTS.filter(value => value.source !== "ops/platform"),
+    { source: ".git", target: "/source/.git", kind: "directory" },
+    { source: "ops", target: "/source/ops", kind: "directory" },
+    { source: "tsconfig.json", target: "/source/tsconfig.json", kind: "file" },
+    ...INTERRUPTED_HELPERS.map(source => ({ source, target: `/source/${source}`, kind: "file" }))];
+  const mounts = frontend.map(({ source, target, kind }) => mount(join(frontendRoot, source), target, kind, frontendRoot));
+  for (const [service, directory] of Object.entries(directories))
+    mounts.push(mount(directory, `/exact-sources/lash-her-${service}-api`, "directory", directory));
+  return ["run", "--rm", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+    "--memory=1g", "--pids-limit=256", "--shm-size=256m", "--tmpfs=/tmp:rw,nosuid,nodev,size=512m,mode=1777", "--workdir=/source",
+    "--env=PG_BIN=/usr/lib/postgresql/18/bin", "--env=OWNED_POSTGRES_MAJOR=18", "--env=P2_INTERRUPTED_OWNED_TEST=true",
+    "--env=P2_KNOWN_ACK_COURSE_SOURCE_ROOT=/exact-sources/lash-her-course-api",
+    "--env=P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT=/exact-sources/lash-her-community-api",
+    ...mounts.flatMap(value => ["--mount", value]), "--entrypoint=/usr/local/bin/node", RECOVERY_IMAGE, "--import", "tsx", INTERRUPTED_ENTRY];
+}
+
+function interruptedNegativesDockerArguments(frontendRoot, directories) {
+  return [...interruptedRestorationDockerArguments(frontendRoot, directories), "--negative-cases"];
+}
+
+export function buildP2InterruptedRestorationExpected(frontendRoot, frontendSource, sources) {
+  demand(digest(frontendSource?.revision, 40) && exactKeys(sources, ["course", "community"]));
+  const ownedSourceSha256 = Object.fromEntries(P2_INTERRUPTED_OWNED_SOURCE_FILES.map(name => [name, hash(readBounded(join(frontendRoot, name)))]));
+  const fixtureSourceSha256 = Object.fromEntries(P2_KNOWN_ACK_OWNED_SOURCE_FILES.map(name =>
+    [name, hash(readBounded(join(frontendRoot, "ops/platform", name)))]));
+  const gateway = join(frontendRoot, "ops/gateway"), packagePath = join(gateway, "node_modules/jose/package.json");
+  const gatewayRequire = createRequire(join(gateway, "package.json"));
+  demand(realpathSync(gatewayRequire.resolve("jose/package.json")) === packagePath &&
+    realpathSync(gatewayRequire.resolve("jose")).startsWith(join(gateway, "node_modules/jose") + "/"));
+  const packageBytes = readBounded(packagePath, 256_000), definition = JSON.parse(readBounded(join(gateway, "package.json"))),
+    lock = JSON.parse(readBounded(join(gateway, "package-lock.json")));
+  demand(JSON.parse(packageBytes).name === "jose" && JSON.parse(packageBytes).version === "6.2.3" &&
+    definition.dependencies?.jose === "6.2.3" && lock.lockfileVersion === 3 && lock.packages?.["node_modules/jose"]?.version === "6.2.3");
+  const candidate = { version: 2, environment: "staging", contractPhase: "p2", phase2ContractManifestSha256: "sha256:" + "d".repeat(64),
+    releaseId: "owned-known-ack", workload: { projectId: "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM", environment: "production" },
+    sources: { frontend: { commit: frontendSource.revision, repository: FRONTEND_REPOSITORY.url, requiredChecks: "passed" } }, artifacts: {},
+    runtime: { composeSha256: "sha256:" + hash(readBounded(join(frontendRoot, "ops/platform/compose.yaml"))) } };
+  ["gateway", "frontendMigration", "courseMigration", "courseRuntime", "communityMigration", "communityRuntime"].forEach((name, index) => {
+    candidate.artifacts[name] = { image: `ghcr.io/princessdardan/owned-${name.toLowerCase()}@sha256:${String(index + 1).repeat(64)}` };
+  });
+  return { frontendSourceCommit: frontendSource.revision,
+    apiSourceCommits: Object.fromEntries(["course", "community"].map(service => [service, sources[service].revision])),
+    apiSourceLocks: Object.fromEntries(["course", "community"].map(service => [service, sources[service].packageLockSha256])),
+    ownedSourceSha256, fixtureSourceSha256, candidate,
+    gatewayDependency: { package: "jose", version: "6.2.3", resolution: "ops/gateway/node_modules/jose", packageSha256: hash(packageBytes) } };
+}
+
 export function buildP2LifecyclePersistencePostgres18Input(input) {
   demand(exactKeys(input, ["frontendRoot", "directories", "frontendSource", "sources", "identityManifestSha256", "currentReceipt", "forwardReceipt"])
     && exactKeys(input.directories, ["course", "community"]) && exactKeys(input.sources, ["course", "community"])
@@ -523,6 +580,176 @@ export function parseP2ForwardRecoveryPostgres18Receipt(output) {
     receipt.noSqlReplay === true && receipt.journalDigestsUnchanged === true && receipt.originalFrontendTerminalRecreated === false &&
     receipt.skipped === 0 && receipt.fixtureOnly === true && receipt.providerTouched === false &&
     receipt.actualRuntimeContainers === false && isolationMatches);
+  return receipt;
+}
+
+const INTERRUPTED_OUTER_KEYS = ("version status actualAppCron actualDispatcher actualTlsGateway actualTlsReceivers actualCanonicalApiReceivers " +
+  "actualThreeDatabaseDomainProof actualTlsPostgres actualProvider modeledOidc firstHttpStatus firstFrontendLedgerState firstFrontendUncertain " +
+  "firstGatewayUncertain firstDeliveries replayHttpStatus finalFrontendUncertain finalGatewayUncertain finalDeliveries sourceTraceMatchesOperation " +
+  "settledFrontendUncertain specificFrontendOperationReconciled gatewayCounterReset domainProofSha256 canonicalFaultRefusals immutableReceiptRewriteRefusals " +
+  "sourceDomainReducer sourceSettlementReducer backendEligibility journalSha256Before journalSha256After allThreeJournalsUnchanged noSqlReplay noRoleChange " +
+  "noRuntimeRestart fixtureOnly restoration postgresMajor migrations frontendSourceCommit apiSourceCommits apiSourceArchives fixtureSourceSha256 " +
+  "sqlArtifactSha256 actualVercelNativeEvidence providerTouched").split(" ");
+const INTERRUPTED_RESTORATION_KEYS = ("status serverMajor migrations actualThreeDatabases actualTlsScram oldProcessExited oldBackendEnded newFrontendBackend " +
+  "newHostProcess actualHostFlock newSourceCapability oldOneRetained newZeroVerifiedInProjectedRuntime allTenSourceStages allThreeJournalsUnchanged " +
+  "sqlReplayed frontendReadinessVerified trafficAuthorized providerTouched actualDocker runtimeTransportProjected requestCount terminalReceiptSha256 " +
+  "terminalReceipt elapsedSeconds ownedSourceSha256 gatewayDependency originalCausalReceiptSha256").split(" ");
+const INTERRUPTED_CAUSAL_NAMES = Object.freeze(["recovery-intent.json", "baseline.json", "domain.json", "request-details.json", "settlement.json", "replacement-authorization.json"]);
+const INTERRUPTED_TERMINAL_KEYS = ("status environment releaseId recoveryActionId candidateSha256 apiDatabases containers boundaryChecks sqlReplayed " +
+  "rolePreparationRepeated trafficAuthorized contractPhase phase2ContractManifestSha256 restorationActionId originalCertificationActionId originalRecoveryActionId " +
+  "oldGateway newGateway apiDatabasesAfter originalGatewayUncertaintyPreserved ordinaryClosedZeroGate runtimeReplacements nativeDisabled frontendReadinessVerified " +
+  "frontendWorkloadProbePerformed originalTerminalRecreated frontendJournalSha256 originalCausalReceiptSha256").split(" ");
+const KNOWN_ACK_BACKEND_FAULTS = Object.freeze(["missing-scheduler-receipts", "community-retention-schedule-horizon", "missing-course-control",
+  "projection-completeness-bound", "future-course-outbox", "course-outbox-lease", "completed-course-effect-projection", "course-snapshot-work",
+  "course-snapshot-expiry-horizon", "course-retention-horizon", "course-media-horizon", "course-export-expiry-horizon", "community-export-expiry-horizon",
+  "future-community-repair", "completed-community-effect-projection", "community-reconciliation-work", "community-reconciliation-schedule-horizon",
+  "unrelated-course-lifecycle-command", "unrelated-community-lifecycle-command", "unrelated-course-mutable-lifecycle-state", "unrelated-community-mutable-lifecycle-state"]);
+const same = (first, second) => canonical(first) === canonical(second);
+const valuesMatch = (value, expected) => Object.entries(expected).every(([key, selected]) => value[key] === selected);
+const migrationCounts = value => exactKeys(value, ["frontend", "course", "community"]) && valuesMatch(value, { frontend: 83, course: 22, community: 11 });
+const positiveInteger = value => Number.isSafeInteger(value) && value > 0 && value <= 1_000_000;
+const domainHashes = value => exactKeys(value, ["frontend", "course", "community"]) && Object.values(value).every(item => digest(item));
+
+function validateInterruptedGateway(value, expected, previous) {
+  demand(exactKeys(value, ["status", "binding", "process", "admission"]) && value.status === "PRIOR_GATEWAY_OBSERVED");
+  const binding = value.binding, process = value.process, admission = value.admission;
+  demand(exactKeys(binding, ["releaseId", "candidateSha256", "hostMachineId", "gatewayImage", "runtimeConfigurationSha256", "gatewayConfigurationSha256", "configurationDirectory"]) &&
+    binding.releaseId === expected.releaseId && binding.candidateSha256 === expected.candidateSha256 &&
+    binding.hostMachineId === "1".repeat(32) && binding.gatewayImage === expected.gatewayImage &&
+    digest(binding.runtimeConfigurationSha256) && digest(binding.gatewayConfigurationSha256) &&
+    typeof binding.configurationDirectory === "string" && /^\/[A-Za-z0-9_./-]{1,1024}$/u.test(binding.configurationDirectory) &&
+    !binding.configurationDirectory.split("/").includes(".."));
+  demand(exactKeys(process, ["containerId", "imageId", "running", "pid", "startedAt", "restartCount"]) && digest(process.containerId) &&
+    process.imageId === expected.gatewayImage.split("@")[1] && process.running === true && positiveInteger(process.pid) &&
+    process.restartCount === 0 && typeof process.startedAt === "string" && process.startedAt.length <= 40 && Number.isFinite(Date.parse(process.startedAt)));
+  demand(exactKeys(admission, ["newWork", "recovery", "active", "uncertain", "sha256"]) && admission.newWork === false && admission.recovery === false &&
+    same(admission.active, { newWork: 0, recovery: 0 }) && same(admission.uncertain, { newWork: 0, recovery: previous ? 1 : 0 }) && digest(admission.sha256));
+}
+
+function validateInterruptedApi(value, service, expected, terminal, journals) {
+  const keys = ("version status service environment releaseId sourceCommit migrationImageDigest runtimeImageDigest schemaBaselineSha256 contractSha256 " +
+    "contractPhase phase2ContractManifestSha256 candidateSha256 recoveryActionId journalSha256 artifactSha256 pendingTags readOnlyVerified schemaVerified runtimeRoleVerified sqlReplayed").split(" ");
+  demand(exactKeys(value, keys) && valuesMatch(value, { version: 1, status: "P2_RECOVERY_API_DATABASE_CURRENT", service: `lash-her-${service}-api`,
+    environment: "staging", releaseId: terminal.releaseId, sourceCommit: expected.apiSourceCommits[service], contractPhase: "p2",
+    phase2ContractManifestSha256: terminal.phase2ContractManifestSha256, candidateSha256: terminal.candidateSha256,
+    recoveryActionId: terminal.restorationActionId, journalSha256: journals[service], readOnlyVerified: true, schemaVerified: true,
+    runtimeRoleVerified: true, sqlReplayed: false }) && same(value.pendingTags, []) &&
+    value.migrationImageDigest === expected.candidate.artifacts[service + "Migration"].image.split("@")[1] &&
+    value.runtimeImageDigest === expected.candidate.artifacts[service + "Runtime"].image.split("@")[1] &&
+    ["schemaBaselineSha256", "contractSha256", "artifactSha256"].every(key => digest(value[key])));
+}
+
+function validateInterruptedExpected(expected) {
+  demand(exactKeys(expected, ["frontendSourceCommit", "apiSourceCommits", "apiSourceLocks", "ownedSourceSha256", "fixtureSourceSha256", "candidate", "gatewayDependency"]) &&
+    digest(expected.frontendSourceCommit, 40) && same(expected.apiSourceCommits, P2_LIFECYCLE_OWNED_API_REVISIONS) &&
+    exactKeys(expected.apiSourceLocks, ["course", "community"]) && Object.values(expected.apiSourceLocks).every(value => digest(value)) &&
+    exactKeys(expected.ownedSourceSha256, P2_INTERRUPTED_OWNED_SOURCE_FILES) && Object.values(expected.ownedSourceSha256).every(value => digest(value)) &&
+    exactKeys(expected.fixtureSourceSha256, P2_KNOWN_ACK_OWNED_SOURCE_FILES) && Object.values(expected.fixtureSourceSha256).every(value => digest(value)) &&
+    exactKeys(expected.gatewayDependency, ["package", "version", "resolution", "packageSha256"]) &&
+    valuesMatch(expected.gatewayDependency, { package: "jose", version: "6.2.3", resolution: "ops/gateway/node_modules/jose" }) &&
+    digest(expected.gatewayDependency.packageSha256) && expected.candidate?.environment === "staging" && expected.candidate.contractPhase === "p2" &&
+    expected.candidate.sources?.frontend?.commit === expected.frontendSourceCommit);
+}
+
+export function parseP2InterruptedRestorationPostgres18Receipt(output, expected) {
+  demand(typeof output === "string" && output.length > 0 && Buffer.byteLength(output) <= 1_000_000);
+  validateInterruptedExpected(expected);
+  const receipt = JSON.parse(output), restoration = receipt?.restoration, terminal = restoration?.terminalReceipt;
+  demand(exactKeys(receipt, INTERRUPTED_OUTER_KEYS) && exactKeys(restoration, INTERRUPTED_RESTORATION_KEYS) && exactKeys(terminal, INTERRUPTED_TERMINAL_KEYS));
+  demand(valuesMatch(receipt, { version: 1, status: "P2_KNOWN_ACK_WHOLE_ROUTE_PASS", postgresMajor: 18, fixtureOnly: true,
+    actualAppCron: true, actualDispatcher: true, actualTlsGateway: true, actualTlsReceivers: true, actualCanonicalApiReceivers: true,
+    actualThreeDatabaseDomainProof: true, actualTlsPostgres: true, actualProvider: false, modeledOidc: true,
+    firstHttpStatus: 503, firstFrontendLedgerState: "uncertain", firstFrontendUncertain: 1, firstGatewayUncertain: 1,
+    replayHttpStatus: 200, finalFrontendUncertain: 1, finalGatewayUncertain: 1, sourceTraceMatchesOperation: true,
+    settledFrontendUncertain: 0, specificFrontendOperationReconciled: true, gatewayCounterReset: false,
+    canonicalFaultRefusals: 2, immutableReceiptRewriteRefusals: 2, allThreeJournalsUnchanged: true, noSqlReplay: true,
+    noRoleChange: true, noRuntimeRestart: true, actualVercelNativeEvidence: false, providerTouched: false,
+    frontendSourceCommit: expected.frontendSourceCommit }) && migrationCounts(receipt.migrations) && digest(receipt.domainProofSha256) && digest(receipt.sqlArtifactSha256));
+  const deliveries = (value, replay) => same(value, [
+    { receiver: "community", status: "acknowledged", attempts: 1, lease_id: null, lease_until: null },
+    { receiver: "course", status: replay ? "acknowledged" : "pending", attempts: replay ? 2 : 1, lease_id: null, lease_until: null },
+  ]);
+  demand(deliveries(receipt.firstDeliveries, false) && deliveries(receipt.finalDeliveries, true) &&
+    domainHashes(receipt.journalSha256Before) && same(receipt.journalSha256Before, receipt.journalSha256After) &&
+    same(receipt.apiSourceCommits, expected.apiSourceCommits) && exactKeys(receipt.apiSourceArchives, ["course", "community"]) &&
+    same(receipt.fixtureSourceSha256, expected.fixtureSourceSha256));
+  for (const service of ["course", "community"]) demand(exactKeys(receipt.apiSourceArchives[service], ["sha256", "lockSha256"]) &&
+    digest(receipt.apiSourceArchives[service].sha256) && receipt.apiSourceArchives[service].lockSha256 === expected.apiSourceLocks[service]);
+  demand(exactKeys(receipt.sourceDomainReducer, ["status", "faultRefusals", "backendFaultRefusals", "plainReceiptAuthorityRefused", "authorityIssued"]) &&
+    valuesMatch(receipt.sourceDomainReducer, { status: "P2_KNOWN_ACK_SOURCE_DOMAIN_REDUCER_PASS", faultRefusals: 11, backendFaultRefusals: 21,
+      plainReceiptAuthorityRefused: true, authorityIssued: false }) &&
+    exactKeys(receipt.sourceSettlementReducer, ["status", "extraCompletedOperationRefused", "authorityIssued"]) &&
+    valuesMatch(receipt.sourceSettlementReducer, { status: "P2_KNOWN_ACK_SPECIFIC_SETTLEMENT_REDUCER_PASS", extraCompletedOperationRefused: true, authorityIssued: false }) &&
+    exactKeys(receipt.backendEligibility, ["actualReadOnlyProjections", "sourceSchedulerBaseline", "sourceRetentionBaseline", "faultRefusals", "faultNames", "entireParentHorizonSeconds", "liveWorkerProcesses"]) &&
+    valuesMatch(receipt.backendEligibility, { actualReadOnlyProjections: true, sourceSchedulerBaseline: true, sourceRetentionBaseline: true,
+      faultRefusals: 21, entireParentHorizonSeconds: 900, liveWorkerProcesses: false }) && same(receipt.backendEligibility.faultNames, KNOWN_ACK_BACKEND_FAULTS));
+  demand(valuesMatch(restoration, { status: "P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS", serverMajor: 18, actualThreeDatabases: true,
+    actualTlsScram: true, oldProcessExited: true, oldBackendEnded: true, newFrontendBackend: true, newHostProcess: true,
+    actualHostFlock: true, newSourceCapability: true, oldOneRetained: true, newZeroVerifiedInProjectedRuntime: true,
+    allTenSourceStages: true, allThreeJournalsUnchanged: true, sqlReplayed: false, frontendReadinessVerified: false,
+    trafficAuthorized: false, providerTouched: false, actualDocker: false, runtimeTransportProjected: true }) && migrationCounts(restoration.migrations) &&
+    positiveInteger(restoration.requestCount) && Number.isFinite(restoration.elapsedSeconds) && restoration.elapsedSeconds > 0 && restoration.elapsedSeconds <= 1200 &&
+    same(restoration.ownedSourceSha256, expected.ownedSourceSha256) && same(restoration.gatewayDependency, expected.gatewayDependency) &&
+    restoration.terminalReceiptSha256 === hash(JSON.stringify(terminal) + "\n"));
+  const candidateSha256 = hash(JSON.stringify(expected.candidate) + "\n");
+  demand(valuesMatch(terminal, { status: "P2_KNOWN_ACK_INTERRUPTED_RUNTIME_RESTORED_FENCED", environment: "staging",
+    releaseId: expected.candidate.releaseId, candidateSha256, recoveryActionId: "owned-interrupted-restoration-c",
+    restorationActionId: "owned-interrupted-restoration-c", originalCertificationActionId: "owned-b-certification", originalRecoveryActionId: "owned-b-replacement",
+    sqlReplayed: false, rolePreparationRepeated: false, trafficAuthorized: false, contractPhase: "p2",
+    phase2ContractManifestSha256: expected.candidate.phase2ContractManifestSha256, originalGatewayUncertaintyPreserved: true,
+    ordinaryClosedZeroGate: false, runtimeReplacements: 1, nativeDisabled: true, frontendReadinessVerified: false,
+    frontendWorkloadProbePerformed: false, originalTerminalRecreated: false, frontendJournalSha256: receipt.journalSha256Before.frontend }) &&
+    same(terminal.boundaryChecks, INTERRUPTED_BOUNDARIES) && exactKeys(terminal.apiDatabases, ["course", "community"]) &&
+    same(terminal.apiDatabases, terminal.apiDatabasesAfter));
+  for (const service of ["course", "community"]) validateInterruptedApi(terminal.apiDatabases[service], service, expected, terminal, receipt.journalSha256Before);
+  demand(Array.isArray(terminal.containers) && same(terminal.containers.map(value => value.service), INTERRUPTED_SERVICES) &&
+    new Set(terminal.containers.map(value => value.containerId)).size === 10);
+  for (const row of terminal.containers) {
+    const artifact = row.service === "gateway" || row.service.endsWith("-tls") ? "gateway" : row.service.startsWith("community-") ? "communityRuntime" : "courseRuntime";
+    demand(exactKeys(row, ["service", "containerId", "image", "health"]) && digest(row.containerId) &&
+      row.image === expected.candidate.artifacts[artifact].image && row.health === (row.service.endsWith("-tls") ? "none" : "healthy"));
+  }
+  const gatewayExpected = { releaseId: terminal.releaseId, candidateSha256, gatewayImage: expected.candidate.artifacts.gateway.image };
+  validateInterruptedGateway(terminal.oldGateway, gatewayExpected, true); validateInterruptedGateway(terminal.newGateway, gatewayExpected, false);
+  demand(terminal.oldGateway.process.containerId !== terminal.newGateway.process.containerId &&
+    terminal.oldGateway.binding.configurationDirectory !== terminal.newGateway.binding.configurationDirectory &&
+    same(Object.fromEntries(Object.entries(terminal.oldGateway.binding).filter(([name]) => name !== "configurationDirectory")),
+      Object.fromEntries(Object.entries(terminal.newGateway.binding).filter(([name]) => name !== "configurationDirectory"))) &&
+    terminal.containers.at(-1).containerId === terminal.newGateway.process.containerId &&
+    exactKeys(restoration.originalCausalReceiptSha256, INTERRUPTED_CAUSAL_NAMES) &&
+    Object.values(restoration.originalCausalReceiptSha256).every(value => digest(value)) &&
+    same(terminal.originalCausalReceiptSha256, restoration.originalCausalReceiptSha256));
+  return receipt;
+}
+
+const INTERRUPTED_NEGATIVE_CASES = Object.freeze(["original-bytes", "original-config-drift", "missing-lineage", "pending-lineage", "backend-effect", "active-backend-loss", "active-guard-loss"]);
+const INTERRUPTED_NEGATIVE_KEYS = ("status case actualThreeDatabases actualTlsScram newHostProcess newFrontendBackend actualHostFlock Bterminal Cterminal " +
+  "actualGuardWriterExited authorityIssued cleanedNamespaces nativeDisabled oldOneRetained runtimeStopped upCommands allThreeJournalsUnchanged providerTouched " +
+  "actualDocker runtimeTransportProjected frontendReadinessVerified trafficAuthorized elapsedSeconds ownedSourceSha256 gatewayDependency").split(" ");
+
+export function parseP2InterruptedNegativesPostgres18Receipt(output, expected) {
+  demand(typeof output === "string" && output.length > 0 && Buffer.byteLength(output) <= 1_000_000);
+  validateInterruptedExpected(expected);
+  const receipt = JSON.parse(output);
+  demand(exactKeys(receipt, ["version", "status", "serverMajor", "cases", "elapsedSeconds"]) &&
+    valuesMatch(receipt, { version: 1, status: "P2_INTERRUPTED_NEGATIVES_OWNED_PASS", serverMajor: 18 }) &&
+    Array.isArray(receipt.cases) && same(receipt.cases.map(value => value?.case), INTERRUPTED_NEGATIVE_CASES) &&
+    Number.isFinite(receipt.elapsedSeconds) && receipt.elapsedSeconds > 0 && receipt.elapsedSeconds <= 1200);
+  let previous = 0;
+  for (const row of receipt.cases) {
+    const active = ["active-backend-loss", "active-guard-loss"].includes(row.case), current = active || row.case === "backend-effect";
+    demand(exactKeys(row, INTERRUPTED_NEGATIVE_KEYS) && valuesMatch(row, {
+      status: "P2_INTERRUPTED_NEGATIVE_OWNED_PASS", actualThreeDatabases: true, actualTlsScram: true,
+      newHostProcess: true, newFrontendBackend: current, actualHostFlock: true, Bterminal: false, Cterminal: false,
+      actualGuardWriterExited: row.case === "active-guard-loss", authorityIssued: active, nativeDisabled: current ? true : null,
+      oldOneRetained: true, runtimeStopped: current ? true : null, upCommands: active ? 1 : 0,
+      allThreeJournalsUnchanged: true, providerTouched: false, actualDocker: false, runtimeTransportProjected: true,
+      frontendReadinessVerified: false, trafficAuthorized: false }) &&
+      same(row.cleanedNamespaces, current ? ["certification", "recovery"] : []) &&
+      same(row.ownedSourceSha256, expected.ownedSourceSha256) && same(row.gatewayDependency, expected.gatewayDependency) &&
+      Number.isFinite(row.elapsedSeconds) && row.elapsedSeconds > previous && row.elapsedSeconds <= receipt.elapsedSeconds);
+    previous = row.elapsedSeconds;
+  }
   return receipt;
 }
 
@@ -671,7 +898,7 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
     const output = execute(run, process.execPath, ["--test", "--test-reporter=tap", TEST_FILE],
       { cwd: frontendRoot, env: testEnvironment, timeout: 180_000, maxBuffer: 8 * 1024 * 1024 });
     const tests = parseP2IdentityProbeTap(output);
-    let recovery, forwardRecovery, lifecyclePersistence, lifecycleReceivers;
+    let recovery, forwardRecovery, lifecyclePersistence, lifecycleReceivers, interruptedRestoration, interruptedRestorationNegatives;
     if (options.recoveryPostgres18 === true) {
       mark(diagnostic, "recovery-postgres18", "recovery");
       for (const [service, definition] of Object.entries(REPOSITORIES))
@@ -765,6 +992,55 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
           providerTouched: receiverReceipt.providerTouched, sourceMode: receiverReceipt.sourceMode,
           sourceManifestSha256: receiverReceipt.sourceManifestSha256, parentProofSha256: lifecycleInput.parentProofSha256,
           sourceCommits: receiverReceipt.sourceCommits, sourceSha256: receiverReceipt.sourceSha256 };
+        mark(diagnostic, "exact-source-proof", "frontend");
+        verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
+          manifest, installEnvironment, sourceReadToken, qualificationFiles);
+        const expectedInterrupted = buildP2InterruptedRestorationExpected(frontendRoot, frontendSource, sources);
+        mark(diagnostic, "lifecycle-postgres18", "interrupted-restoration");
+        const interruptedResult = runRecoveryQualification(run, dockerEndpoint, interruptedRestorationDockerArguments(frontendRoot, directories),
+          frontendRoot, recoveryEnvironment, diagnostic, "interrupted-restoration", frontendCommit);
+        const interruptedReceipt = parseRecoveryQualification(output =>
+          parseP2InterruptedRestorationPostgres18Receipt(output, expectedInterrupted), interruptedResult, "interrupted-restoration", frontendCommit);
+        mark(diagnostic, "exact-source-proof", "frontend");
+        verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
+          manifest, installEnvironment, sourceReadToken, qualificationFiles);
+        demand(same(buildP2InterruptedRestorationExpected(frontendRoot, frontendSource, sources), expectedInterrupted));
+        const restored = interruptedReceipt.restoration;
+        interruptedRestoration = { status: restored.status, serverMajor: restored.serverMajor, migrations: restored.migrations,
+          sourceMode: "exact-source-owned-interrupted-restoration", frontendSourceCommit: interruptedReceipt.frontendSourceCommit,
+          frontendSourceProof: frontendSource, apiSourcePins, ownedSourceSha256: restored.ownedSourceSha256, fixtureSourceSha256: interruptedReceipt.fixtureSourceSha256,
+          gatewayDependency: restored.gatewayDependency, receiptSha256: hash(interruptedResult.stdout), terminalReceiptSha256: restored.terminalReceiptSha256,
+          originalCausalReceiptSha256: restored.originalCausalReceiptSha256,
+          knownAckPrefix: Object.fromEntries(["status", "noSqlReplay", "noRoleChange", "noRuntimeRestart", "firstHttpStatus", "replayHttpStatus",
+            "specificFrontendOperationReconciled", "gatewayCounterReset"].map(key => [key, interruptedReceipt[key]])),
+          actualThreeDatabases: true, actualTlsScram: true, oldProcessExited: true, oldBackendEnded: true, newFrontendBackend: true,
+          newHostProcess: true, actualHostFlock: true, newSourceCapability: true, oldGatewayUncertainty: { newWork: 0, recovery: 1 },
+          frontendUncertaintyAfterSettlement: 0, newGatewayUncertainty: { newWork: 0, recovery: 0 }, runtimeServices: 10,
+          allThreeJournalsUnchanged: true, apiCurrentBeforeAfterVerified: true, sqlReplayed: false, frontendReadinessVerified: false,
+          trafficAuthorized: false, fixtureOnly: true, providerTouched: false, actualProviderNativeEvidence: false, actualHostDocker: false,
+          actualRootOperatorInstall: false, nodeCommittedSourceCallbackVerified: false, runtimeTransportProjected: true,
+          nativeMetadataProjected: true, modeledOidc: true, skipped: 0 };
+        mark(diagnostic, "exact-source-proof", "frontend");
+        verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
+          manifest, installEnvironment, sourceReadToken, qualificationFiles);
+        demand(same(buildP2InterruptedRestorationExpected(frontendRoot, frontendSource, sources), expectedInterrupted));
+        mark(diagnostic, "lifecycle-postgres18", "interrupted-negatives");
+        const negativeResult = runRecoveryQualification(run, dockerEndpoint, interruptedNegativesDockerArguments(frontendRoot, directories),
+          frontendRoot, recoveryEnvironment, diagnostic, "interrupted-negatives", frontendCommit);
+        const negativeReceipt = parseRecoveryQualification(output =>
+          parseP2InterruptedNegativesPostgres18Receipt(output, expectedInterrupted), negativeResult, "interrupted-negatives", frontendCommit);
+        mark(diagnostic, "exact-source-proof", "frontend");
+        verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
+          manifest, installEnvironment, sourceReadToken, qualificationFiles);
+        demand(same(buildP2InterruptedRestorationExpected(frontendRoot, frontendSource, sources), expectedInterrupted));
+        interruptedRestorationNegatives = { status: negativeReceipt.status, serverMajor: negativeReceipt.serverMajor,
+          cases: negativeReceipt.cases.map(row => Object.fromEntries(Object.entries(row).filter(([key]) => !["ownedSourceSha256", "gatewayDependency"].includes(key)))),
+          frontendSourceCommit: frontendCommit, frontendSourceProof: frontendSource, apiSourcePins, fixtureSourceSha256: expectedInterrupted.fixtureSourceSha256,
+          parentSourceProvenance: "parent-before-and-after-verified-readonly-mounts", childOwnedSourceReadback: true,
+          ownedSourceSha256: expectedInterrupted.ownedSourceSha256, gatewayDependency: expectedInterrupted.gatewayDependency,
+          receiptSha256: hash(negativeResult.stdout), fixtureOnly: true, skipped: 0, providerTouched: false,
+          actualProviderNativeEvidence: false, actualHostDocker: false, actualRootOperatorInstall: false,
+          nodeCommittedSourceCallbackVerified: false, runtimeTransportProjected: true, nativeMetadataProjected: true };
       }
     }
     mark(diagnostic, "exact-source-proof", "frontend");
@@ -772,9 +1048,10 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
     return { version: 1, status: lifecyclePersistence ? "P2_IDENTITY_RECOVERY_AND_LIFECYCLE_FIXTURES_PASS" :
       recovery ? "P2_IDENTITY_AND_RECOVERY_FIXTURES_PASS" : "P2_IDENTITY_PROBE_FIXTURES_PASS", frontendSourceCommit: frontendCommit,
       manifestSha256: hash(manifestBytes), nodeMajor: 24, npmMajor: 11, sources, tests,
-      ...(recovery ? { recovery, forwardRecovery } : {}), ...(lifecyclePersistence ? { lifecyclePersistence, lifecycleReceivers } : {}),
+      ...(recovery ? { recovery, forwardRecovery } : {}), ...(lifecyclePersistence ? { lifecyclePersistence, lifecycleReceivers, interruptedRestoration, interruptedRestorationNegatives } : {}),
       skipped: tests.skipped + (recovery?.skipped ?? 0) + (forwardRecovery?.skipped ?? 0) +
-        (lifecyclePersistence?.skipped ?? 0) + (lifecycleReceivers?.skipped ?? 0), fixtureOnly: true, privateSourceFetch: true,
+        (lifecyclePersistence?.skipped ?? 0) + (lifecycleReceivers?.skipped ?? 0) + (interruptedRestoration?.skipped ?? 0) +
+        (interruptedRestorationNegatives?.skipped ?? 0), fixtureOnly: true, privateSourceFetch: true,
       fetchCredentialForwardedBeyondGit: false, scriptsIgnoredDuringInstall: true, providerTouched: false,
       stagingTouched: false, databaseConnected: recovery !== undefined, sqlExecuted: recovery !== undefined,
       ownedDisposableDatabase: recovery !== undefined, releaseAccepted: false };

@@ -1,17 +1,19 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { parse } from "yaml";
 import { p2IdentityFixtureFailureReceipt, parseP2DockerContextEndpoint,
   parseP2ForwardRecoveryPostgres18Receipt, parseP2IdentityProbeTap, parseP2LifecyclePersistencePostgres18Receipt,
-  parseP2LifecycleReceiversPostgres18Receipt,
+  parseP2LifecycleReceiversPostgres18Receipt, buildP2InterruptedRestorationExpected, parseP2InterruptedRestorationPostgres18Receipt, parseP2InterruptedNegativesPostgres18Receipt,
   parseP2RecoveryPostgres18Receipt, prepareP2IdentityProbeFixtures,
   validateP2IdentityFixtureManifest, verifyP2FrontendSourceProof } from "./prepare-p2-identity-probe-fixtures.mjs";
-import { P2_LIFECYCLE_OWNED_SOURCE_CLOSURE, verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
+import { P2_LIFECYCLE_OWNED_SOURCE_CLOSURE, P2_INTERRUPTED_OWNED_SOURCE_FILES, P2_KNOWN_ACK_OWNED_SOURCE_FILES,
+  verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
 const revisions = { course: "a447bfde20299e12afab68a3331b3792ddd07598", community: "939de65dd52f0b1a43993a25c7c428dce6e2bb43" };
@@ -164,6 +166,37 @@ function lifecycleReceiversReceipt(manifestBytes, changes = {}) {
     sourceManifestSha256: sha(manifestBytes), sourceSha256, ...changes }) + "\n";
 }
 
+// Actual owned PG18 positive from C d5ee9bee, SHA256
+// 758c9690999f214ae438db105e72dcaa9ff0bbf80b93fdbbe23b3d4dec295eec.
+// This retained database/fixture receipt makes no Linux Docker or live release claim.
+const retainedInterruptedReceipt = {"version":1,"status":"P2_KNOWN_ACK_WHOLE_ROUTE_PASS","actualAppCron":true,"actualDispatcher":true,"actualTlsGateway":true,"actualTlsReceivers":true,"actualCanonicalApiReceivers":true,"actualThreeDatabaseDomainProof":true,"actualTlsPostgres":true,"actualProvider":false,"modeledOidc":true,"firstHttpStatus":503,"firstFrontendLedgerState":"uncertain","firstFrontendUncertain":1,"firstGatewayUncertain":1,"firstDeliveries":[{"receiver":"community","status":"acknowledged","attempts":1,"lease_id":null,"lease_until":null},{"receiver":"course","status":"pending","attempts":1,"lease_id":null,"lease_until":null}],"replayHttpStatus":200,"finalFrontendUncertain":1,"finalGatewayUncertain":1,"finalDeliveries":[{"receiver":"community","status":"acknowledged","attempts":1,"lease_id":null,"lease_until":null},{"receiver":"course","status":"acknowledged","attempts":2,"lease_id":null,"lease_until":null}],"sourceTraceMatchesOperation":true,"settledFrontendUncertain":0,"specificFrontendOperationReconciled":true,"gatewayCounterReset":false,"domainProofSha256":"25ac365409cb5749aa719167fd5b4e9f2229dceb489fa000e968c90e125c55aa","canonicalFaultRefusals":2,"immutableReceiptRewriteRefusals":2,"sourceDomainReducer":{"status":"P2_KNOWN_ACK_SOURCE_DOMAIN_REDUCER_PASS","faultRefusals":11,"backendFaultRefusals":21,"plainReceiptAuthorityRefused":true,"authorityIssued":false},"sourceSettlementReducer":{"status":"P2_KNOWN_ACK_SPECIFIC_SETTLEMENT_REDUCER_PASS","extraCompletedOperationRefused":true,"authorityIssued":false},"backendEligibility":{"actualReadOnlyProjections":true,"sourceSchedulerBaseline":true,"sourceRetentionBaseline":true,"faultRefusals":21,"faultNames":["missing-scheduler-receipts","community-retention-schedule-horizon","missing-course-control","projection-completeness-bound","future-course-outbox","course-outbox-lease","completed-course-effect-projection","course-snapshot-work","course-snapshot-expiry-horizon","course-retention-horizon","course-media-horizon","course-export-expiry-horizon","community-export-expiry-horizon","future-community-repair","completed-community-effect-projection","community-reconciliation-work","community-reconciliation-schedule-horizon","unrelated-course-lifecycle-command","unrelated-community-lifecycle-command","unrelated-course-mutable-lifecycle-state","unrelated-community-mutable-lifecycle-state"],"entireParentHorizonSeconds":900,"liveWorkerProcesses":false},"journalSha256Before":{"frontend":"79216f67827004f1cb69a623110a07d11568c84c73b61e2e7d56d078c1a48dab","course":"e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899","community":"b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a"},"journalSha256After":{"frontend":"79216f67827004f1cb69a623110a07d11568c84c73b61e2e7d56d078c1a48dab","course":"e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899","community":"b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a"},"allThreeJournalsUnchanged":true,"noSqlReplay":true,"noRoleChange":true,"noRuntimeRestart":true,"fixtureOnly":true,"restoration":{"status":"P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS","serverMajor":18,"migrations":{"frontend":83,"course":22,"community":11},"actualThreeDatabases":true,"actualTlsScram":true,"oldProcessExited":true,"oldBackendEnded":true,"newFrontendBackend":true,"newHostProcess":true,"actualHostFlock":true,"newSourceCapability":true,"oldOneRetained":true,"newZeroVerifiedInProjectedRuntime":true,"allTenSourceStages":true,"allThreeJournalsUnchanged":true,"sqlReplayed":false,"frontendReadinessVerified":false,"trafficAuthorized":false,"providerTouched":false,"actualDocker":false,"runtimeTransportProjected":true,"requestCount":6286,"originalCausalReceiptSha256":{"recovery-intent.json":"922c29f078984430837dbad929d4d2f97a7ff67bf3523075b85957c645781847","baseline.json":"c37d0d030688b78b91a2833fe7ad65be3698f91c659d5242b0e68e09f65d2256","request-details.json":"2da96bba01e232bcbbd956586aa4879d1c4a52f728e156155367ea7387e1f319","domain.json":"300e91def08eb96d78bd932572b9f27774fcf52cc445850e60f5f0fa24ffe13f","settlement.json":"83a4b5d6e81f10377656c15f58aa11d6415f7fc3b10e8b8766113f4339afd48a","replacement-authorization.json":"1ac058e3cd8678afc4b5610f13b5d6a77ea6f423c5809676342a61a53ac7c9b3"},"terminalReceiptSha256":"4f43fc7e1cdff184cc341f611140e01676a8dec51ba138632c8936f1b72654c5","terminalReceipt":{"status":"P2_KNOWN_ACK_INTERRUPTED_RUNTIME_RESTORED_FENCED","environment":"staging","releaseId":"owned-known-ack","recoveryActionId":"owned-interrupted-restoration-c","candidateSha256":"dca3a9a3b852e3d65a183d1a6c7fc6f2c9e51d87335882bd8db84989d9bdbe76","apiDatabases":{"course":{"version":1,"status":"P2_RECOVERY_API_DATABASE_CURRENT","service":"lash-her-course-api","environment":"staging","releaseId":"owned-known-ack","sourceCommit":"a447bfde20299e12afab68a3331b3792ddd07598","migrationImageDigest":"sha256:3333333333333333333333333333333333333333333333333333333333333333","runtimeImageDigest":"sha256:4444444444444444444444444444444444444444444444444444444444444444","schemaBaselineSha256":"1a176b23c239e94dd7f3de49073c4c01a4c0560ebf9db37ec954c6d2f457e553","contractSha256":"7777777777777777777777777777777777777777777777777777777777777777","contractPhase":"p2","phase2ContractManifestSha256":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","candidateSha256":"dca3a9a3b852e3d65a183d1a6c7fc6f2c9e51d87335882bd8db84989d9bdbe76","recoveryActionId":"owned-interrupted-restoration-c","journalSha256":"e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899","artifactSha256":"9dda27357f6bf42bd8232f91c027e8d9ec67b7f8b977bd88ea58a3f1960b4749","pendingTags":[],"readOnlyVerified":true,"schemaVerified":true,"runtimeRoleVerified":true,"sqlReplayed":false},"community":{"version":1,"status":"P2_RECOVERY_API_DATABASE_CURRENT","service":"lash-her-community-api","environment":"staging","releaseId":"owned-known-ack","sourceCommit":"939de65dd52f0b1a43993a25c7c428dce6e2bb43","migrationImageDigest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","runtimeImageDigest":"sha256:6666666666666666666666666666666666666666666666666666666666666666","schemaBaselineSha256":"38f62c85f007cb57f66fec6243cd66fdf6134dd0a8a1d0e9801bdd1e3758da99","contractSha256":"7777777777777777777777777777777777777777777777777777777777777777","contractPhase":"p2","phase2ContractManifestSha256":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","candidateSha256":"dca3a9a3b852e3d65a183d1a6c7fc6f2c9e51d87335882bd8db84989d9bdbe76","recoveryActionId":"owned-interrupted-restoration-c","journalSha256":"b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a","artifactSha256":"58d3f193626720d700da9b07babd32792731e5ed670789ea043a2d094050e851","pendingTags":[],"readOnlyVerified":true,"schemaVerified":true,"runtimeRoleVerified":true,"sqlReplayed":false}},"containers":[{"service":"community-api","containerId":"00000000000000000000000000000000000000000000000000000000000007d0","image":"ghcr.io/princessdardan/owned-communityruntime@sha256:6666666666666666666666666666666666666666666666666666666666666666","health":"healthy"},{"service":"course-api","containerId":"00000000000000000000000000000000000000000000000000000000000007d1","image":"ghcr.io/princessdardan/owned-courseruntime@sha256:4444444444444444444444444444444444444444444444444444444444444444","health":"healthy"},{"service":"community-tls","containerId":"00000000000000000000000000000000000000000000000000000000000007d2","image":"ghcr.io/princessdardan/owned-gateway@sha256:1111111111111111111111111111111111111111111111111111111111111111","health":"none"},{"service":"course-tls","containerId":"00000000000000000000000000000000000000000000000000000000000007d3","image":"ghcr.io/princessdardan/owned-gateway@sha256:1111111111111111111111111111111111111111111111111111111111111111","health":"none"},{"service":"course-snapshot","containerId":"00000000000000000000000000000000000000000000000000000000000007d4","image":"ghcr.io/princessdardan/owned-courseruntime@sha256:4444444444444444444444444444444444444444444444444444444444444444","health":"healthy"},{"service":"community-worker","containerId":"00000000000000000000000000000000000000000000000000000000000007d5","image":"ghcr.io/princessdardan/owned-communityruntime@sha256:6666666666666666666666666666666666666666666666666666666666666666","health":"healthy"},{"service":"course-media","containerId":"00000000000000000000000000000000000000000000000000000000000007d6","image":"ghcr.io/princessdardan/owned-courseruntime@sha256:4444444444444444444444444444444444444444444444444444444444444444","health":"healthy"},{"service":"course-export-cleanup","containerId":"00000000000000000000000000000000000000000000000000000000000007d7","image":"ghcr.io/princessdardan/owned-courseruntime@sha256:4444444444444444444444444444444444444444444444444444444444444444","health":"healthy"},{"service":"course-publisher","containerId":"00000000000000000000000000000000000000000000000000000000000007d8","image":"ghcr.io/princessdardan/owned-courseruntime@sha256:4444444444444444444444444444444444444444444444444444444444444444","health":"healthy"},{"service":"gateway","containerId":"00000000000000000000000000000000000000000000000000000000000007d9","image":"ghcr.io/princessdardan/owned-gateway@sha256:1111111111111111111111111111111111111111111111111111111111111111","health":"healthy"}],"boundaryChecks":["private-application-credential-required","private-community-peer-denied","private-course-tls-catalog","public-metrics-hidden","public-tls-missing-workload-denied"],"sqlReplayed":false,"rolePreparationRepeated":false,"trafficAuthorized":false,"contractPhase":"p2","phase2ContractManifestSha256":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","restorationActionId":"owned-interrupted-restoration-c","originalCertificationActionId":"owned-b-certification","originalRecoveryActionId":"owned-b-replacement","oldGateway":{"admission":{"active":{"newWork":0,"recovery":0},"newWork":false,"recovery":false,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","uncertain":{"newWork":0,"recovery":1}},"binding":{"candidateSha256":"dca3a9a3b852e3d65a183d1a6c7fc6f2c9e51d87335882bd8db84989d9bdbe76","configurationDirectory":"/private/tmp/p2-known-ack-owned-tUfXSf/c-operator/root/original-runtime/configuration","gatewayConfigurationSha256":"d4aa15cfd32d069ef2f56e4fd10990ef011b6e4c9d5164b820104d8c1a3788dd","gatewayImage":"ghcr.io/princessdardan/owned-gateway@sha256:1111111111111111111111111111111111111111111111111111111111111111","hostMachineId":"11111111111111111111111111111111","releaseId":"owned-known-ack","runtimeConfigurationSha256":"3672805edb06a4c6a886c684568fccf934f43e57a0e0e79fdb5f306cbc000856"},"process":{"containerId":"000000000000000000000000000000000000000000000000000000000000000a","imageId":"sha256:1111111111111111111111111111111111111111111111111111111111111111","pid":88949,"restartCount":0,"running":true,"startedAt":"2026-11-06T01:00:00.000000000Z"},"status":"PRIOR_GATEWAY_OBSERVED"},"newGateway":{"status":"PRIOR_GATEWAY_OBSERVED","binding":{"releaseId":"owned-known-ack","candidateSha256":"dca3a9a3b852e3d65a183d1a6c7fc6f2c9e51d87335882bd8db84989d9bdbe76","hostMachineId":"11111111111111111111111111111111","gatewayImage":"ghcr.io/princessdardan/owned-gateway@sha256:1111111111111111111111111111111111111111111111111111111111111111","runtimeConfigurationSha256":"3672805edb06a4c6a886c684568fccf934f43e57a0e0e79fdb5f306cbc000856","gatewayConfigurationSha256":"d4aa15cfd32d069ef2f56e4fd10990ef011b6e4c9d5164b820104d8c1a3788dd","configurationDirectory":"/private/tmp/p2-known-ack-owned-tUfXSf/c-operator/root/runtime-recovery-owned-interrupted-restoration-c/configuration"},"process":{"containerId":"00000000000000000000000000000000000000000000000000000000000007d9","imageId":"sha256:1111111111111111111111111111111111111111111111111111111111111111","running":true,"pid":2009,"startedAt":"2026-11-06T01:00:00.000000000Z","restartCount":0},"admission":{"newWork":false,"recovery":false,"active":{"newWork":0,"recovery":0},"uncertain":{"newWork":0,"recovery":0},"sha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}},"apiDatabasesAfter":{"course":{"version":1,"status":"P2_RECOVERY_API_DATABASE_CURRENT","service":"lash-her-course-api","environment":"staging","releaseId":"owned-known-ack","sourceCommit":"a447bfde20299e12afab68a3331b3792ddd07598","migrationImageDigest":"sha256:3333333333333333333333333333333333333333333333333333333333333333","runtimeImageDigest":"sha256:4444444444444444444444444444444444444444444444444444444444444444","schemaBaselineSha256":"1a176b23c239e94dd7f3de49073c4c01a4c0560ebf9db37ec954c6d2f457e553","contractSha256":"7777777777777777777777777777777777777777777777777777777777777777","contractPhase":"p2","phase2ContractManifestSha256":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","candidateSha256":"dca3a9a3b852e3d65a183d1a6c7fc6f2c9e51d87335882bd8db84989d9bdbe76","recoveryActionId":"owned-interrupted-restoration-c","journalSha256":"e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899","artifactSha256":"9dda27357f6bf42bd8232f91c027e8d9ec67b7f8b977bd88ea58a3f1960b4749","pendingTags":[],"readOnlyVerified":true,"schemaVerified":true,"runtimeRoleVerified":true,"sqlReplayed":false},"community":{"version":1,"status":"P2_RECOVERY_API_DATABASE_CURRENT","service":"lash-her-community-api","environment":"staging","releaseId":"owned-known-ack","sourceCommit":"939de65dd52f0b1a43993a25c7c428dce6e2bb43","migrationImageDigest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","runtimeImageDigest":"sha256:6666666666666666666666666666666666666666666666666666666666666666","schemaBaselineSha256":"38f62c85f007cb57f66fec6243cd66fdf6134dd0a8a1d0e9801bdd1e3758da99","contractSha256":"7777777777777777777777777777777777777777777777777777777777777777","contractPhase":"p2","phase2ContractManifestSha256":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","candidateSha256":"dca3a9a3b852e3d65a183d1a6c7fc6f2c9e51d87335882bd8db84989d9bdbe76","recoveryActionId":"owned-interrupted-restoration-c","journalSha256":"b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a","artifactSha256":"58d3f193626720d700da9b07babd32792731e5ed670789ea043a2d094050e851","pendingTags":[],"readOnlyVerified":true,"schemaVerified":true,"runtimeRoleVerified":true,"sqlReplayed":false}},"originalGatewayUncertaintyPreserved":true,"ordinaryClosedZeroGate":false,"runtimeReplacements":1,"nativeDisabled":true,"frontendReadinessVerified":false,"frontendWorkloadProbePerformed":false,"originalTerminalRecreated":false,"frontendJournalSha256":"79216f67827004f1cb69a623110a07d11568c84c73b61e2e7d56d078c1a48dab","originalCausalReceiptSha256":{"recovery-intent.json":"922c29f078984430837dbad929d4d2f97a7ff67bf3523075b85957c645781847","baseline.json":"c37d0d030688b78b91a2833fe7ad65be3698f91c659d5242b0e68e09f65d2256","request-details.json":"2da96bba01e232bcbbd956586aa4879d1c4a52f728e156155367ea7387e1f319","domain.json":"300e91def08eb96d78bd932572b9f27774fcf52cc445850e60f5f0fa24ffe13f","settlement.json":"83a4b5d6e81f10377656c15f58aa11d6415f7fc3b10e8b8766113f4339afd48a","replacement-authorization.json":"1ac058e3cd8678afc4b5610f13b5d6a77ea6f423c5809676342a61a53ac7c9b3"}},"elapsedSeconds":146,"ownedSourceSha256":{"ops/platform/p2-known-ack-interrupted-restoration.mjs":"001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802","ops/platform/host/p2_known_ack_interrupted_restoration.py":"a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90","ops/platform/host/p2_release_broker.py":"e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d","ops/platform/host/p2_release_supervisor.py":"349ddaaf2eb1206b864daf147fd21283f52813ec678b17f0ed05e38ade18151a","ops/gateway/server.mjs":"3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d","ops/gateway/p2-certification-fault.mjs":"bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52","ops/gateway/package.json":"753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805","ops/gateway/package-lock.json":"def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs":"2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs":"8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py":"a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314"},"gatewayDependency":{"package":"jose","version":"6.2.3","resolution":"ops/gateway/node_modules/jose","packageSha256":"cbd17f658085419b9ee540e78e40cbe4d4f7916a51578af1d650c84d49525fdf"}},"postgresMajor":18,"migrations":{"frontend":83,"course":22,"community":11},"frontendSourceCommit":"d5ee9bee1d3ef6ba23774bb41883eb3c8fb605c7","apiSourceCommits":{"course":"a447bfde20299e12afab68a3331b3792ddd07598","community":"939de65dd52f0b1a43993a25c7c428dce6e2bb43"},"apiSourceArchives":{"course":{"sha256":"84ff026ee80024fc0890e2ade42a692c5cf2072010aa428b6472e34d46702d51","lockSha256":"0153a941a3e767889cc356b1d3cc72823b03a7d46f97fd07f66b7e53f3e8c8fa"},"community":{"sha256":"616d8f504481ab24d4335bce3ebdd42b9ff2bc75f2ec47321b48d56d42ea14d1","lockSha256":"03e332482b3f4d4f1a572a8ba00d79a0e7d9a27497e67973103fbdc2833e4bfe"}},"fixtureSourceSha256":{"p2-known-ack-loss-probe.mjs":"1b685b6c2ea7c40bb129f92d05fb88a3a81eceb2a90f3fec90d9239a451c7991","host/p2_known_ack_loss.py":"445fe8aba68bb4e708e4777c936466f6c5fd54b5500f7160664cf43cd1ddf3db","harness/owned-p2-known-ack-loss.mjs":"eb1149fd634e263d04c421ccf92fd3ec9362432eaf11a14db080d771e8c0d8fe","harness/owned-phase2-lifecycle-receiver.mjs":"65e9e483cb4eba3b1804ac4725d15e0ffea13fa6703a7af877f9882129fc3c44"},"sqlArtifactSha256":"28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef","actualVercelNativeEvidence":false,"providerTouched":false};
+// Actual C d5ee9bee PostgreSQL 18 seven-case fixed --negative-cases command.
+// Raw SHA256 5fedd2f860724846ca2235faf19e9b69c1472c3fa329ff9393481957465629d8; no Docker/live claim.
+const retainedInterruptedNegatives = {"version":1,"status":"P2_INTERRUPTED_NEGATIVES_OWNED_PASS","serverMajor":18,"cases":[{"status":"P2_INTERRUPTED_NEGATIVE_OWNED_PASS","case":"original-bytes","actualThreeDatabases":true,"actualTlsScram":true,"newHostProcess":true,"newFrontendBackend":false,"actualHostFlock":true,"Bterminal":false,"Cterminal":false,"actualGuardWriterExited":false,"authorityIssued":false,"cleanedNamespaces":[],"nativeDisabled":null,"oldOneRetained":true,"runtimeStopped":null,"upCommands":0,"allThreeJournalsUnchanged":true,"providerTouched":false,"actualDocker":false,"runtimeTransportProjected":true,"frontendReadinessVerified":false,"trafficAuthorized":false,"elapsedSeconds":17,"ownedSourceSha256":{"ops/platform/p2-known-ack-interrupted-restoration.mjs":"001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802","ops/platform/host/p2_known_ack_interrupted_restoration.py":"a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90","ops/platform/host/p2_release_broker.py":"e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d","ops/platform/host/p2_release_supervisor.py":"349ddaaf2eb1206b864daf147fd21283f52813ec678b17f0ed05e38ade18151a","ops/gateway/server.mjs":"3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d","ops/gateway/p2-certification-fault.mjs":"bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52","ops/gateway/package.json":"753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805","ops/gateway/package-lock.json":"def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs":"2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs":"8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py":"a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314"},"gatewayDependency":{"package":"jose","version":"6.2.3","resolution":"ops/gateway/node_modules/jose","packageSha256":"cbd17f658085419b9ee540e78e40cbe4d4f7916a51578af1d650c84d49525fdf"}},{"status":"P2_INTERRUPTED_NEGATIVE_OWNED_PASS","case":"original-config-drift","actualThreeDatabases":true,"actualTlsScram":true,"newHostProcess":true,"newFrontendBackend":false,"actualHostFlock":true,"Bterminal":false,"Cterminal":false,"actualGuardWriterExited":false,"authorityIssued":false,"cleanedNamespaces":[],"nativeDisabled":null,"oldOneRetained":true,"runtimeStopped":null,"upCommands":0,"allThreeJournalsUnchanged":true,"providerTouched":false,"actualDocker":false,"runtimeTransportProjected":true,"frontendReadinessVerified":false,"trafficAuthorized":false,"elapsedSeconds":34,"ownedSourceSha256":{"ops/platform/p2-known-ack-interrupted-restoration.mjs":"001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802","ops/platform/host/p2_known_ack_interrupted_restoration.py":"a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90","ops/platform/host/p2_release_broker.py":"e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d","ops/platform/host/p2_release_supervisor.py":"349ddaaf2eb1206b864daf147fd21283f52813ec678b17f0ed05e38ade18151a","ops/gateway/server.mjs":"3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d","ops/gateway/p2-certification-fault.mjs":"bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52","ops/gateway/package.json":"753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805","ops/gateway/package-lock.json":"def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs":"2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs":"8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py":"a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314"},"gatewayDependency":{"package":"jose","version":"6.2.3","resolution":"ops/gateway/node_modules/jose","packageSha256":"cbd17f658085419b9ee540e78e40cbe4d4f7916a51578af1d650c84d49525fdf"}},{"status":"P2_INTERRUPTED_NEGATIVE_OWNED_PASS","case":"missing-lineage","actualThreeDatabases":true,"actualTlsScram":true,"newHostProcess":true,"newFrontendBackend":false,"actualHostFlock":true,"Bterminal":false,"Cterminal":false,"actualGuardWriterExited":false,"authorityIssued":false,"cleanedNamespaces":[],"nativeDisabled":null,"oldOneRetained":true,"runtimeStopped":null,"upCommands":0,"allThreeJournalsUnchanged":true,"providerTouched":false,"actualDocker":false,"runtimeTransportProjected":true,"frontendReadinessVerified":false,"trafficAuthorized":false,"elapsedSeconds":51.4,"ownedSourceSha256":{"ops/platform/p2-known-ack-interrupted-restoration.mjs":"001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802","ops/platform/host/p2_known_ack_interrupted_restoration.py":"a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90","ops/platform/host/p2_release_broker.py":"e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d","ops/platform/host/p2_release_supervisor.py":"349ddaaf2eb1206b864daf147fd21283f52813ec678b17f0ed05e38ade18151a","ops/gateway/server.mjs":"3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d","ops/gateway/p2-certification-fault.mjs":"bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52","ops/gateway/package.json":"753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805","ops/gateway/package-lock.json":"def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs":"2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs":"8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py":"a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314"},"gatewayDependency":{"package":"jose","version":"6.2.3","resolution":"ops/gateway/node_modules/jose","packageSha256":"cbd17f658085419b9ee540e78e40cbe4d4f7916a51578af1d650c84d49525fdf"}},{"status":"P2_INTERRUPTED_NEGATIVE_OWNED_PASS","case":"pending-lineage","actualThreeDatabases":true,"actualTlsScram":true,"newHostProcess":true,"newFrontendBackend":false,"actualHostFlock":true,"Bterminal":false,"Cterminal":false,"actualGuardWriterExited":false,"authorityIssued":false,"cleanedNamespaces":[],"nativeDisabled":null,"oldOneRetained":true,"runtimeStopped":null,"upCommands":0,"allThreeJournalsUnchanged":true,"providerTouched":false,"actualDocker":false,"runtimeTransportProjected":true,"frontendReadinessVerified":false,"trafficAuthorized":false,"elapsedSeconds":68.8,"ownedSourceSha256":{"ops/platform/p2-known-ack-interrupted-restoration.mjs":"001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802","ops/platform/host/p2_known_ack_interrupted_restoration.py":"a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90","ops/platform/host/p2_release_broker.py":"e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d","ops/platform/host/p2_release_supervisor.py":"349ddaaf2eb1206b864daf147fd21283f52813ec678b17f0ed05e38ade18151a","ops/gateway/server.mjs":"3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d","ops/gateway/p2-certification-fault.mjs":"bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52","ops/gateway/package.json":"753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805","ops/gateway/package-lock.json":"def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs":"2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs":"8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py":"a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314"},"gatewayDependency":{"package":"jose","version":"6.2.3","resolution":"ops/gateway/node_modules/jose","packageSha256":"cbd17f658085419b9ee540e78e40cbe4d4f7916a51578af1d650c84d49525fdf"}},{"status":"P2_INTERRUPTED_NEGATIVE_OWNED_PASS","case":"backend-effect","actualThreeDatabases":true,"actualTlsScram":true,"newHostProcess":true,"newFrontendBackend":true,"actualHostFlock":true,"Bterminal":false,"Cterminal":false,"actualGuardWriterExited":false,"authorityIssued":false,"cleanedNamespaces":["certification","recovery"],"nativeDisabled":true,"oldOneRetained":true,"runtimeStopped":true,"upCommands":0,"allThreeJournalsUnchanged":true,"providerTouched":false,"actualDocker":false,"runtimeTransportProjected":true,"frontendReadinessVerified":false,"trafficAuthorized":false,"elapsedSeconds":87.2,"ownedSourceSha256":{"ops/platform/p2-known-ack-interrupted-restoration.mjs":"001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802","ops/platform/host/p2_known_ack_interrupted_restoration.py":"a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90","ops/platform/host/p2_release_broker.py":"e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d","ops/platform/host/p2_release_supervisor.py":"349ddaaf2eb1206b864daf147fd21283f52813ec678b17f0ed05e38ade18151a","ops/gateway/server.mjs":"3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d","ops/gateway/p2-certification-fault.mjs":"bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52","ops/gateway/package.json":"753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805","ops/gateway/package-lock.json":"def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs":"2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs":"8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py":"a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314"},"gatewayDependency":{"package":"jose","version":"6.2.3","resolution":"ops/gateway/node_modules/jose","packageSha256":"cbd17f658085419b9ee540e78e40cbe4d4f7916a51578af1d650c84d49525fdf"}},{"status":"P2_INTERRUPTED_NEGATIVE_OWNED_PASS","case":"active-backend-loss","actualThreeDatabases":true,"actualTlsScram":true,"newHostProcess":true,"newFrontendBackend":true,"actualHostFlock":true,"Bterminal":false,"Cterminal":false,"actualGuardWriterExited":false,"authorityIssued":true,"cleanedNamespaces":["certification","recovery"],"nativeDisabled":true,"oldOneRetained":true,"runtimeStopped":true,"upCommands":1,"allThreeJournalsUnchanged":true,"providerTouched":false,"actualDocker":false,"runtimeTransportProjected":true,"frontendReadinessVerified":false,"trafficAuthorized":false,"elapsedSeconds":131,"ownedSourceSha256":{"ops/platform/p2-known-ack-interrupted-restoration.mjs":"001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802","ops/platform/host/p2_known_ack_interrupted_restoration.py":"a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90","ops/platform/host/p2_release_broker.py":"e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d","ops/platform/host/p2_release_supervisor.py":"349ddaaf2eb1206b864daf147fd21283f52813ec678b17f0ed05e38ade18151a","ops/gateway/server.mjs":"3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d","ops/gateway/p2-certification-fault.mjs":"bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52","ops/gateway/package.json":"753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805","ops/gateway/package-lock.json":"def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs":"2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs":"8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py":"a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314"},"gatewayDependency":{"package":"jose","version":"6.2.3","resolution":"ops/gateway/node_modules/jose","packageSha256":"cbd17f658085419b9ee540e78e40cbe4d4f7916a51578af1d650c84d49525fdf"}},{"status":"P2_INTERRUPTED_NEGATIVE_OWNED_PASS","case":"active-guard-loss","actualThreeDatabases":true,"actualTlsScram":true,"newHostProcess":true,"newFrontendBackend":true,"actualHostFlock":true,"Bterminal":false,"Cterminal":false,"actualGuardWriterExited":true,"authorityIssued":true,"cleanedNamespaces":["certification","recovery"],"nativeDisabled":true,"oldOneRetained":true,"runtimeStopped":true,"upCommands":1,"allThreeJournalsUnchanged":true,"providerTouched":false,"actualDocker":false,"runtimeTransportProjected":true,"frontendReadinessVerified":false,"trafficAuthorized":false,"elapsedSeconds":173.7,"ownedSourceSha256":{"ops/platform/p2-known-ack-interrupted-restoration.mjs":"001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802","ops/platform/host/p2_known_ack_interrupted_restoration.py":"a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90","ops/platform/host/p2_release_broker.py":"e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d","ops/platform/host/p2_release_supervisor.py":"349ddaaf2eb1206b864daf147fd21283f52813ec678b17f0ed05e38ade18151a","ops/gateway/server.mjs":"3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d","ops/gateway/p2-certification-fault.mjs":"bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52","ops/gateway/package.json":"753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805","ops/gateway/package-lock.json":"def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs":"2cae572e88ad1648e1419035376ee34795623b1ce26e1c53a8cebbdb7d66141c","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs":"8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7","docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py":"a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314"},"gatewayDependency":{"package":"jose","version":"6.2.3","resolution":"ops/gateway/node_modules/jose","packageSha256":"cbd17f658085419b9ee540e78e40cbe4d4f7916a51578af1d650c84d49525fdf"}}],"elapsedSeconds":173.7};
+function interruptedNegativeOutput(expected) {
+  const value = structuredClone(retainedInterruptedNegatives);
+  for (const row of value.cases) { row.ownedSourceSha256 = structuredClone(expected.ownedSourceSha256); row.gatewayDependency = structuredClone(expected.gatewayDependency); }
+  return JSON.stringify(value) + "\n";
+}
+function interruptedExpected(root, workspace) {
+  return buildP2InterruptedRestorationExpected(root, { revision: "d".repeat(40) }, Object.fromEntries(["course", "community"].map(service =>
+    [service, { revision: revisions[service], packageLockSha256: sha(readFileSync(join(workspace, `lash-her-${service}-api/package-lock.json`))) }])));
+}
+function interruptedReceipt(expected) {
+  const value = structuredClone(retainedInterruptedReceipt), restored = value.restoration, terminal = restored.terminalReceipt;
+  value.frontendSourceCommit = expected.frontendSourceCommit; value.apiSourceCommits = structuredClone(expected.apiSourceCommits);
+  for (const service of ["course", "community"]) value.apiSourceArchives[service].lockSha256 = expected.apiSourceLocks[service];
+  value.fixtureSourceSha256 = structuredClone(expected.fixtureSourceSha256);
+  restored.ownedSourceSha256 = structuredClone(expected.ownedSourceSha256); restored.gatewayDependency = structuredClone(expected.gatewayDependency);
+  const candidateSha256 = sha(JSON.stringify(expected.candidate) + "\n"); terminal.candidateSha256 = candidateSha256;
+  for (const service of ["course", "community"]) terminal.apiDatabases[service].candidateSha256 = candidateSha256;
+  terminal.apiDatabasesAfter = structuredClone(terminal.apiDatabases);
+  terminal.oldGateway.binding.candidateSha256 = terminal.newGateway.binding.candidateSha256 = candidateSha256;
+  restored.terminalReceiptSha256 = sha(JSON.stringify(terminal) + "\n");
+  return value;
+}
+function interruptedOutput(root, workspace) { return JSON.stringify(interruptedReceipt(interruptedExpected(root, workspace))) + "\n"; }
+
 function populateSourceClosure(root, service) {
   const closure = service === "frontend" ? P2_LIFECYCLE_OWNED_SOURCE_CLOSURE.frontend : P2_LIFECYCLE_OWNED_SOURCE_CLOSURE.api;
   for (const directory of closure.directories) {
@@ -178,21 +211,54 @@ function populateSourceClosure(root, service) {
   mkdirSync(join(root, "node_modules"), { recursive: true });
 }
 
+// Recreate only the files selected by the real readonly descriptors. This tests
+// child source-manifest verification against the mounted filesystem projection,
+// rather than incorrectly verifying the parent's complete source tree.
+function verifyProjectedLifecycleMounts(manifestBytes, args) {
+  const projection = realpathSync(mkdtempSync(join(tmpdir(), "p2-lifecycle-mount-projection-")));
+  try {
+    for (const [index, argument] of args.entries()) {
+      if (args[index - 1] !== "--mount") continue;
+      const fields = Object.fromEntries(argument.split(",").filter(value => value.includes("=")).map(value => value.split("=")));
+      assert.equal(argument.endsWith(",readonly"), true);
+      assert.equal(fields.type, "bind");
+      assert.match(fields.dst, /^\/(?:source|exact-sources)\//u);
+      const target = join(projection, fields.dst.slice(1));
+      mkdirSync(dirname(target), { recursive: true });
+      cpSync(fields.src, target, { recursive: true, dereference: false });
+    }
+    return verifyP2LifecycleOwnedSourceManifest(manifestBytes, { frontend: join(projection, "source"),
+      course: join(projection, "exact-sources/lash-her-course-api"), community: join(projection, "exact-sources/lash-her-community-api") });
+  } finally { rmSync(projection, { recursive: true, force: true }); }
+}
+
 function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDependencyRoots = ["ops/gateway", "tools/api-contract-toolchain"], settings = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "p2-identity-prep-root-")));
   const workspace = realpathSync(mkdtempSync(join(tmpdir(), "p2-identity-prep-work-")));
   chmodSync(root, 0o700); chmodSync(workspace, 0o700);
   for (const directory of ["contracts/api-integration/p2-candidate", "contracts/api-integration/v1", "ops/platform", "ops/gateway", "drizzle",
-    "node_modules", "src", "scripts"]) mkdirSync(join(root, directory), { recursive: true });
+    "node_modules", "src", "scripts", ".git"]) mkdirSync(join(root, directory), { recursive: true });
   populateSourceClosure(root, "frontend");
+  for (const name of [...P2_INTERRUPTED_OWNED_SOURCE_FILES, ...P2_KNOWN_ACK_OWNED_SOURCE_FILES.map(name => `ops/platform/${name}`),
+    "ops/platform/compose.yaml"]) {
+    const path = join(root, name); mkdirSync(dirname(path), { recursive: true });
+    if (!existsSync(path)) writeFileSync(path, `fixed interrupted fixture ${name}\n`);
+  }
   writeFileSync(join(root, "contracts/api-integration/p2-candidate/manifest.json"), JSON.stringify(fixtureManifest()));
   writeFileSync(join(root, "ops/platform/test-p2-recovery-owned.py"), "# owned fixture\n");
   writeFileSync(join(root, "ops/platform/test-p2-recovery-owned.mjs"), "// owned fixture\n");
   writeFileSync(join(root, "ops/gateway/routes.json"), "{}\n");
+  writeFileSync(join(root, "ops/gateway/package.json"), JSON.stringify({ name: "lash-her-gateway", dependencies: { jose: "6.2.3" } }));
+  writeFileSync(join(root, "ops/gateway/package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: { "node_modules/jose": { version: "6.2.3" } } }));
+  mkdirSync(join(root, "ops/gateway/node_modules/jose"), { recursive: true });
+  writeFileSync(join(root, "ops/gateway/node_modules/jose/package.json"), JSON.stringify({ name: "jose", version: "6.2.3" }));
+  writeFileSync(join(root, "ops/gateway/node_modules/jose/index.js"), "// owned dependency-resolution fixture\n");
+
   writeFileSync(join(root, "package.json"), '{"type":"module"}\n');
   writeFileSync(join(root, "package-lock.json"), '{"lockfileVersion":3}\n');
   writeFileSync(join(root, "tsconfig.json"), "{}\n");
   const calls = [];
+  let capturedInterruptedExpected;
   const dockerModes = [];
   const dockerSocketPath = join(workspace, "docker.sock");
   const dockerSocketStat = path => {
@@ -215,8 +281,7 @@ function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDepende
         if (settings.persistenceSourceMutation === "extra") writeFileSync(join(workspace, "lash-her-course-api/src/owned-extra.ts"), "extra\n");
         if (settings.persistenceSourceMutation === "missing") rmSync(courseSource);
         try {
-          verifyP2LifecycleOwnedSourceManifest(options.input, { frontend: root, course: join(workspace, "lash-her-course-api"),
-            community: join(workspace, "lash-her-community-api") });
+          verifyProjectedLifecycleMounts(options.input, args);
         } catch {
           return { status: 1, signal: null, stdout: "private-source-refusal", stderr: "private-source-refusal" };
         }
@@ -224,6 +289,14 @@ function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDepende
         return settings[`${prefix}Result`] ?? { status: settings[`${prefix}Status`] ?? 0, signal: settings[`${prefix}Signal`] ?? null,
           stdout: settings[`${prefix}Output`] ?? (receivers ? lifecycleReceiversReceipt(options.input) : lifecyclePersistenceReceipt(options.input)),
           stderr: settings[`${prefix}Stderr`] ?? "" };
+      }
+      if (args.includes("docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs")) {
+        capturedInterruptedExpected = interruptedExpected(root, workspace);
+        const negative = args.at(-1) === "--negative-cases", prefix = negative ? "interruptedNegative" : "interrupted";
+        const stdout = settings[`${prefix}Output`] ?? (negative ? interruptedNegativeOutput(capturedInterruptedExpected) : interruptedOutput(root, workspace));
+        if (settings[`${prefix}SourceMutation`]) writeFileSync(join(root, "ops/gateway/package-lock.json"), "changed after C\n");
+        return settings[`${prefix}Result`] ?? { status: settings[`${prefix}Status`] ?? 0, signal: settings[`${prefix}Signal`] ?? null,
+          stdout, stderr: settings[`${prefix}Stderr`] ?? "" };
       }
       const forward = args.at(-1) === "--forward-brand", prefix = forward ? "forwardRecovery" : "recovery";
       return settings[`${prefix}Result`] ?? { status: settings[`${prefix}Status`] ?? 0, signal: settings[`${prefix}Signal`] ?? null,
@@ -272,6 +345,7 @@ function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDepende
     return ok("");
   };
   return { root, workspace, calls, dockerModes, dockerSocketPath, dockerSocketStat, run,
+    interruptedExpected: () => structuredClone(capturedInterruptedExpected),
     cleanup: () => { rmSync(root, { recursive: true, force: true }); rmSync(workspace, { recursive: true, force: true }); } };
 }
 
@@ -410,7 +484,7 @@ test("lifecycle mode sends one internally built exact source manifest to an isol
     assert.equal(result.lifecycleReceivers.parentProofSha256, result.lifecyclePersistence.parentProofSha256);
     assert.equal(Object.keys(result.lifecycleReceivers.sourceSha256).length, 7);
     const dockerCalls = value.calls.filter(call => call.file === "docker" && call.args[0] === "--host");
-    assert.equal(dockerCalls.length, 4);
+    assert.equal(dockerCalls.length, 6);
     assert.equal(dockerCalls[0].args.includes("-i"), false); assert.equal(dockerCalls[1].args.includes("-i"), false);
     const persistence = dockerCalls[2];
     assert.equal(Buffer.isBuffer(persistence.input), true);
@@ -448,9 +522,302 @@ test("lifecycle mode sends one internally built exact source manifest to an isol
     const receiverMounts = receivers.args.filter((argument, index) => receivers.args[index - 1] === "--mount");
     assert.equal(receiverMounts.length, 25); assert.equal(receiverMounts.every(mount => mount.endsWith(",readonly")), true);
     assert.deepEqual(Object.keys(receivers.env).sort(), ["DOCKER_CONFIG", "HOME", "LANG", "LC_ALL", "PATH"]);
+    const interrupted = dockerCalls[4], summary = result.interruptedRestoration;
+    assert.deepEqual(interrupted.args.slice(-3), ["--import", "tsx", "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs"]);
+    assert.equal(interrupted.input, undefined);
+    assert.deepEqual(interrupted.args.filter(arg => arg.startsWith("--env=")), [
+      "--env=PG_BIN=/usr/lib/postgresql/18/bin", "--env=OWNED_POSTGRES_MAJOR=18", "--env=P2_INTERRUPTED_OWNED_TEST=true",
+      "--env=P2_KNOWN_ACK_COURSE_SOURCE_ROOT=/exact-sources/lash-her-course-api",
+      "--env=P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT=/exact-sources/lash-her-community-api",
+    ]);
+    const interruptedMounts = interrupted.args.filter((_arg, index) => interrupted.args[index - 1] === "--mount");
+    for (const target of ["/source/.git", "/source/ops", "/source/tsconfig.json", "/exact-sources/lash-her-course-api", "/exact-sources/lash-her-community-api",
+      ...P2_INTERRUPTED_OWNED_SOURCE_FILES.filter(name => name.startsWith("docs/")).map(name => `/source/${name}`)])
+      assert.equal(interruptedMounts.some(mount => mount.endsWith(`,dst=${target},readonly`)), true, target);
+    assert.equal(interruptedMounts.length, 16); assert.equal(interruptedMounts.every(mount => mount.endsWith(",readonly")), true);
+    for (const target of ["/source/ops/platform", "/source/ops/gateway"])
+      assert.equal(interruptedMounts.some(mount => mount.endsWith(`,dst=${target},readonly`)), false);
+    assert.deepEqual(Object.keys(interrupted.env).sort(), ["DOCKER_CONFIG", "HOME", "LANG", "LC_ALL", "PATH"]);
+    assert.equal(summary.status, "P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS"); assert.equal(summary.serverMajor, 18);
+    assert.deepEqual(summary.oldGatewayUncertainty, { newWork: 0, recovery: 1 }); assert.equal(summary.frontendUncertaintyAfterSettlement, 0);
+    assert.deepEqual(summary.newGatewayUncertainty, { newWork: 0, recovery: 0 }); assert.equal(summary.runtimeServices, 10);
+    for (const key of ["actualHostDocker", "providerTouched", "actualRootOperatorInstall", "nodeCommittedSourceCallbackVerified", "trafficAuthorized", "frontendReadinessVerified"])
+      assert.equal(summary[key], false, key);
+    for (const key of ["runtimeTransportProjected", "nativeMetadataProjected", "modeledOidc", "apiCurrentBeforeAfterVerified", "allThreeJournalsUnchanged"])
+      assert.equal(summary[key], true, key);
+    assert.equal(Object.keys(summary.ownedSourceSha256).length, 11); assert.equal(Object.keys(summary.fixtureSourceSha256).length, 4);
+    assert.equal(summary.gatewayDependency.version, "6.2.3"); assert.equal(summary.gatewayDependency.resolution, "ops/gateway/node_modules/jose");
+    assert.equal(summary.skipped, 0); assert.equal(summary.fixtureOnly, true);
+    assert.equal(summary.frontendSourceProof.revision, summary.frontendSourceCommit);
+    assert.equal(summary.frontendSourceProof.packageLockSha256, sha(readFileSync(join(value.root, "package-lock.json"))));
+    assert.equal(Object.hasOwn(summary, "noRuntimeRestart"), false); assert.equal(summary.knownAckPrefix.noRuntimeRestart, true);
+    assert.equal(JSON.stringify(summary).includes("/private/tmp/"), false); assert.equal(JSON.stringify(summary).includes(value.workspace), false);
+    const negative = dockerCalls[5], negativeSummary = result.interruptedRestorationNegatives;
+    assert.deepEqual(negative.args.slice(-4), [...interrupted.args.slice(-3), "--negative-cases"]);
+    assert.deepEqual(negative.args.slice(0, -1), interrupted.args); assert.equal(negative.input, undefined);
+    assert.deepEqual(negative.env, interrupted.env);
+    assert.equal(negativeSummary.status, "P2_INTERRUPTED_NEGATIVES_OWNED_PASS"); assert.equal(negativeSummary.serverMajor, 18);
+    assert.equal(negativeSummary.cases.length, 7); assert.equal(negativeSummary.skipped, 0);
+    assert.equal(negativeSummary.parentSourceProvenance, "parent-before-and-after-verified-readonly-mounts");
+    assert.equal(negativeSummary.childOwnedSourceReadback, true);
+    assert.deepEqual(negativeSummary.fixtureSourceSha256, summary.fixtureSourceSha256);
+    assert.deepEqual(negativeSummary.apiSourcePins, summary.apiSourcePins);
+    assert.deepEqual(negativeSummary.frontendSourceProof, summary.frontendSourceProof);
+    for (const row of negativeSummary.cases) { assert.equal(Object.hasOwn(row, "ownedSourceSha256"), false); assert.equal(Object.hasOwn(row, "apiSourcePins"), false); }
+    for (const key of ["actualHostDocker", "providerTouched", "actualRootOperatorInstall", "nodeCommittedSourceCallbackVerified"])
+      assert.equal(negativeSummary[key], false);
     assert.equal(JSON.stringify(result).includes(sourceReadToken), false);
     assert.equal(value.calls.filter(call => call.file === "git" && call.args.join(" ") === "remote get-url origin").length >= 12, true);
   } finally { value.cleanup(); }
+});
+
+function runLifecycle(value) {
+  return withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: value.root, nodeVersion: "24.18.0",
+    recoveryPostgres18: true, lifecyclePostgres18: true, run: value.run, dockerSocketStat: value.dockerSocketStat,
+    makeTemporaryDirectory: () => value.workspace }));
+}
+
+test("legacy lifecycle manifests verify against only their actual mounts while C keeps its separate fixed readset", () => {
+  const value = harness(), originalRun = value.run;
+  let verified = 0;
+  try {
+    value.run = (file, args, options) => {
+      if (file === "docker" && args.includes("--postgres18-manifest")) {
+        verifyProjectedLifecycleMounts(options.input, args);
+        const changed = JSON.parse(options.input.toString("utf8"));
+        const cHelper = P2_INTERRUPTED_OWNED_SOURCE_FILES.find(name => name.startsWith("docs/"));
+        assert.equal(Object.hasOwn(changed.sources.frontend.files, cHelper), false);
+        changed.sources.frontend.files[cHelper] = sha(readFileSync(join(value.root, cHelper)));
+        assert.throws(() => verifyProjectedLifecycleMounts(Buffer.from(JSON.stringify(changed)), args));
+        const withoutPlatform = args.filter((argument, index) =>
+          !(argument === "--mount" && args[index + 1].includes("dst=/source/ops/platform,")) &&
+          !(args[index - 1] === "--mount" && argument.includes("dst=/source/ops/platform,")));
+        assert.throws(() => verifyProjectedLifecycleMounts(options.input, withoutPlatform));
+        verified++;
+      }
+      return originalRun(file, args, options);
+    };
+    runLifecycle(value); assert.equal(verified, 2);
+  } finally { value.cleanup(); }
+});
+
+test("actual C entry rejects unknown arguments and missing ownership before dependency or PostgreSQL work", () => {
+  const entry = fileURLToPath(new URL("../../docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs", import.meta.url));
+  for (const [args, owned, code] of [
+    [["--PRIVATE_CALLER_MODE"], true, "P2_INTERRUPTED_OWNED_ARGUMENTS_REFUSED"],
+    [["--negative-cases", "PRIVATE_EXTRA_ARGUMENT"], true, "P2_INTERRUPTED_OWNED_ARGUMENTS_REFUSED"],
+    [["--negative-cases"], false, "P2_INTERRUPTED_OWNED_SCOPE_REQUIRED"],
+    [[], false, "P2_INTERRUPTED_OWNED_SCOPE_REQUIRED"],
+  ]) {
+    const child = spawnSync(process.execPath, ["--import", "tsx", entry, ...args], { encoding: "utf8", timeout: 10_000, maxBuffer: 64_000,
+      env: { PATH: process.env.PATH, PG_BIN: "/must-not-execute", OWNED_POSTGRES_MAJOR: "18", ...(owned ? { P2_INTERRUPTED_OWNED_TEST: "true" } : {}) } });
+    assert.ifError(child.error); assert.equal(child.status, 1); assert.equal(child.signal, null); assert.equal(child.stdout, "");
+    assert.deepEqual(JSON.parse(child.stderr), { version: 1, status: "P2_INTERRUPTED_OWNED_REFUSED", code });
+    assert.doesNotMatch(child.stderr, /PRIVATE_CALLER_MODE|PRIVATE_EXTRA_ARGUMENT|must-not-execute/u);
+  }
+});
+
+test("actual final PG18 C receipt qualifies only against its source pins and independent B prefix", () => {
+  const value = harness();
+  try {
+    runLifecycle(value);
+    const expected = value.interruptedExpected(), retained = structuredClone(retainedInterruptedReceipt);
+    expected.frontendSourceCommit = retained.frontendSourceCommit;
+    expected.apiSourceLocks = Object.fromEntries(Object.entries(retained.apiSourceArchives).map(([service, archive]) => [service, archive.lockSha256]));
+    expected.ownedSourceSha256 = retained.restoration.ownedSourceSha256; expected.fixtureSourceSha256 = retained.fixtureSourceSha256;
+    expected.gatewayDependency = retained.restoration.gatewayDependency;
+    expected.candidate.sources.frontend.commit = retained.frontendSourceCommit;
+    expected.candidate.runtime.composeSha256 = "sha256:" + sha(readFileSync(new URL("./compose.yaml", import.meta.url)));
+    const raw = JSON.stringify(retained, null, 2) + "\n";
+    assert.equal(sha(raw), "758c9690999f214ae438db105e72dcaa9ff0bbf80b93fdbbe23b3d4dec295eec");
+    assert.equal(parseP2InterruptedRestorationPostgres18Receipt(raw, expected).restoration.status, "P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS");
+    const missingPrefix = structuredClone(retained); delete missingPrefix.restoration.originalCausalReceiptSha256;
+    assert.throws(() => parseP2InterruptedRestorationPostgres18Receipt(JSON.stringify(missingPrefix), expected));
+    assert.throws(() => parseP2InterruptedRestorationPostgres18Receipt(raw, value.interruptedExpected()));
+  } finally { value.cleanup(); }
+});
+
+test("C parser refuses partial B proof, source substitution, skips and projected-runtime overclaims", () => {
+  const value = harness();
+  try {
+    runLifecycle(value); const expected = value.interruptedExpected(), valid = interruptedReceipt(expected);
+    const reject = mutate => { const changed = structuredClone(valid); mutate(changed); assert.throws(() => parseP2InterruptedRestorationPostgres18Receipt(JSON.stringify(changed), expected)); };
+    for (const mutate of [
+      item => { delete item.restoration; }, item => { item.skipped = 1; }, item => { item.extra = "PRIVATE_EXTRA"; },
+      item => { item.postgresMajor = 16; }, item => { item.migrations.frontend = 82; }, item => { item.firstHttpStatus = 200; },
+      item => { item.firstFrontendUncertain = 0; }, item => { item.finalGatewayUncertain = 0; }, item => { item.settledFrontendUncertain = 1; },
+      item => { item.gatewayCounterReset = true; }, item => { item.finalDeliveries[1].attempts = 1; }, item => { item.finalDeliveries[0].lease_id = "inflight"; },
+      item => { item.backendEligibility.faultNames.pop(); }, item => { item.backendEligibility.liveWorkerProcesses = true; },
+      item => { item.sourceDomainReducer.faultRefusals = 0; }, item => { item.sourceSettlementReducer.authorityIssued = true; },
+      item => { item.frontendSourceCommit = "f".repeat(40); }, item => { item.apiSourceCommits.course = "f".repeat(40); },
+      item => { item.apiSourceArchives.course.lockSha256 = "f".repeat(64); }, item => { delete item.fixtureSourceSha256["p2-known-ack-loss-probe.mjs"]; },
+      item => { item.fixtureSourceSha256["host/p2_known_ack_loss.py"] = "f".repeat(64); },
+      item => { item.restoration.ownedSourceSha256["ops/gateway/server.mjs"] = "f".repeat(64); },
+      item => { item.restoration.gatewayDependency.version = "6.2.15"; }, item => { item.restoration.gatewayDependency.resolution = "node_modules/jose"; },
+      item => { item.restoration.gatewayDependency.packageSha256 = "f".repeat(64); },
+      ...["oldProcessExited", "oldBackendEnded", "newFrontendBackend", "newHostProcess", "newSourceCapability", "oldOneRetained", "allTenSourceStages", "allThreeJournalsUnchanged"].map(key => item => { item.restoration[key] = false; }),
+      ...["actualDocker", "providerTouched", "frontendReadinessVerified", "trafficAuthorized", "sqlReplayed"].map(key => item => { item.restoration[key] = true; }),
+      item => { item.restoration.runtimeTransportProjected = false; }, item => { item.restoration.extra = true; },
+    ]) reject(mutate);
+    for (const output of ["", "{}", "[]", "not-json", JSON.stringify(valid) + "\n{}", " ".repeat(1_000_001)])
+      assert.throws(() => parseP2InterruptedRestorationPostgres18Receipt(output, expected));
+  } finally { value.cleanup(); }
+});
+
+test("C terminal is independently closed and joined to all three journals, current APIs and fenced old/new gateways", () => {
+  const value = harness();
+  try {
+    runLifecycle(value); const expected = value.interruptedExpected(), valid = interruptedReceipt(expected);
+    for (const mutate of [
+      terminal => { terminal.extra = true; }, terminal => { terminal.candidateSha256 = "f".repeat(64); },
+      terminal => { terminal.ordinaryClosedZeroGate = true; }, terminal => { terminal.runtimeReplacements = 2; },
+      terminal => { terminal.nativeDisabled = false; }, terminal => { terminal.sqlReplayed = true; },
+      terminal => { terminal.frontendJournalSha256 = "f".repeat(64); }, terminal => { terminal.boundaryChecks.pop(); },
+      terminal => { terminal.apiDatabasesAfter.community.pendingTags = ["unapplied"]; },
+      terminal => { terminal.apiDatabases.course.readOnlyVerified = false; terminal.apiDatabasesAfter = structuredClone(terminal.apiDatabases); },
+      terminal => { terminal.apiDatabases.course.sourceCommit = "f".repeat(40); terminal.apiDatabasesAfter = structuredClone(terminal.apiDatabases); },
+      terminal => { terminal.apiDatabases.community.journalSha256 = "f".repeat(64); terminal.apiDatabasesAfter = structuredClone(terminal.apiDatabases); },
+      terminal => { terminal.oldGateway.admission.uncertain.recovery = 0; }, terminal => { terminal.newGateway.admission.uncertain.recovery = 1; },
+      terminal => { terminal.newGateway.admission.newWork = true; }, terminal => { terminal.newGateway.admission.active.recovery = 1; },
+      terminal => { terminal.newGateway.process.containerId = terminal.oldGateway.process.containerId; },
+      terminal => { terminal.newGateway.binding.runtimeConfigurationSha256 = "f".repeat(64); },
+      terminal => { terminal.containers.pop(); }, terminal => { terminal.containers[0].image = terminal.containers[1].image; },
+      terminal => { terminal.containers[2].health = "healthy"; }, terminal => { terminal.containers[1].containerId = terminal.containers[0].containerId; },
+      terminal => { terminal.originalCausalReceiptSha256.extra = "f".repeat(64); },
+    ]) {
+      const changed = structuredClone(valid); mutate(changed.restoration.terminalReceipt);
+      changed.restoration.terminalReceiptSha256 = sha(JSON.stringify(changed.restoration.terminalReceipt) + "\n");
+      assert.throws(() => parseP2InterruptedRestorationPostgres18Receipt(JSON.stringify(changed), expected));
+    }
+    const changed = structuredClone(valid); changed.restoration.terminalReceiptSha256 = "f".repeat(64);
+    assert.throws(() => parseP2InterruptedRestorationPostgres18Receipt(JSON.stringify(changed), expected));
+    for (const name of Object.keys(valid.restoration.originalCausalReceiptSha256)) {
+      const terminalSplice = structuredClone(valid); terminalSplice.restoration.terminalReceipt.originalCausalReceiptSha256[name] = "f".repeat(64);
+      terminalSplice.restoration.terminalReceiptSha256 = sha(JSON.stringify(terminalSplice.restoration.terminalReceipt) + "\n");
+      assert.throws(() => parseP2InterruptedRestorationPostgres18Receipt(JSON.stringify(terminalSplice), expected), name);
+      const prefixSplice = structuredClone(valid); prefixSplice.restoration.originalCausalReceiptSha256[name] = "f".repeat(64);
+      assert.throws(() => parseP2InterruptedRestorationPostgres18Receipt(JSON.stringify(prefixSplice), expected), name);
+    }
+    assert.notEqual(valid.domainProofSha256, valid.restoration.originalCausalReceiptSha256["settlement.json"]);
+    assert.equal(parseP2InterruptedRestorationPostgres18Receipt(JSON.stringify(valid), expected).status, "P2_KNOWN_ACK_WHOLE_ROUTE_PASS");
+  } finally { value.cleanup(); }
+});
+
+test("fixed C negatives require every named refusal and actual active-loss containment condition", () => {
+  const value = harness();
+  try {
+    runLifecycle(value); const expected = value.interruptedExpected(), valid = JSON.parse(interruptedNegativeOutput(expected));
+    assert.equal(parseP2InterruptedNegativesPostgres18Receipt(JSON.stringify(valid), expected).cases.length, 7);
+    const recordedExpected = { ...expected, ownedSourceSha256: retainedInterruptedNegatives.cases[0].ownedSourceSha256,
+      gatewayDependency: retainedInterruptedNegatives.cases[0].gatewayDependency };
+    const recordedRaw = JSON.stringify(retainedInterruptedNegatives, null, 2) + "\n";
+    assert.equal(sha(recordedRaw), "5fedd2f860724846ca2235faf19e9b69c1472c3fa329ff9393481957465629d8");
+    assert.equal(parseP2InterruptedNegativesPostgres18Receipt(recordedRaw, recordedExpected).cases.length, 7);
+    const row = (item, name) => item.cases.find(value => value.case === name);
+    for (const mutate of [
+      item => { item.serverMajor = 16; }, item => { item.extra = true; }, item => { item.skipped = 1; },
+      item => { item.cases.pop(); }, item => { item.cases.reverse(); }, item => { item.cases[1] = structuredClone(item.cases[0]); },
+      item => { row(item, "original-bytes").case = "caller-selected-case"; }, item => { row(item, "original-bytes").extra = true; },
+      item => { item.cases.splice(1, 1); }, item => { row(item, "original-config-drift").upCommands = 1; },
+      item => { row(item, "original-config-drift").authorityIssued = true; },
+      item => { row(item, "original-bytes").newFrontendBackend = true; }, item => { row(item, "original-bytes").nativeDisabled = true; },
+      item => { row(item, "missing-lineage").upCommands = 1; }, item => { row(item, "pending-lineage").authorityIssued = true; },
+      item => { row(item, "backend-effect").newFrontendBackend = false; }, item => { row(item, "backend-effect").nativeDisabled = false; },
+      item => { row(item, "backend-effect").runtimeStopped = null; }, item => { row(item, "backend-effect").cleanedNamespaces = ["recovery"]; },
+      item => { row(item, "active-backend-loss").upCommands = 0; }, item => { row(item, "active-backend-loss").upCommands = 2; },
+      item => { row(item, "active-backend-loss").authorityIssued = false; }, item => { row(item, "active-backend-loss").actualGuardWriterExited = true; },
+      item => { row(item, "active-guard-loss").actualGuardWriterExited = false; }, item => { row(item, "active-guard-loss").Bterminal = true; },
+      item => { row(item, "active-guard-loss").Cterminal = true; }, item => { row(item, "active-guard-loss").oldOneRetained = false; },
+      item => { row(item, "active-guard-loss").allThreeJournalsUnchanged = false; }, item => { row(item, "active-guard-loss").actualDocker = true; },
+      item => { row(item, "active-guard-loss").providerTouched = true; }, item => { row(item, "active-guard-loss").trafficAuthorized = true; },
+      item => { row(item, "active-guard-loss").ownedSourceSha256["ops/gateway/server.mjs"] = "f".repeat(64); },
+      item => { row(item, "active-guard-loss").gatewayDependency.version = "6.2.15"; }, item => { row(item, "active-guard-loss").elapsedSeconds = item.elapsedSeconds + 1; },
+      item => { row(item, "active-backend-loss").elapsedSeconds = row(item, "backend-effect").elapsedSeconds; },
+    ]) {
+      const changed = structuredClone(valid); mutate(changed);
+      assert.throws(() => parseP2InterruptedNegativesPostgres18Receipt(JSON.stringify(changed), expected));
+    }
+    for (const output of ["", "{}", "[]", JSON.stringify(valid) + "\n{}", " ".repeat(1_000_001)])
+      assert.throws(() => parseP2InterruptedNegativesPostgres18Receipt(output, expected));
+  } finally { value.cleanup(); }
+});
+
+test("negative C failures and post-run source drift refuse before checkout cleanup completes", () => {
+  for (const [settings, failure] of [
+    [{ interruptedNegativeStatus: 1 }, "child-exit"], [{ interruptedNegativeStatus: 125 }, "docker-transport"],
+    [{ interruptedNegativeOutput: "{}" }, "receipt-invalid"],
+  ]) {
+    const value = harness(tap(), [], undefined, settings), runner = realpathSync(mkdtempSync(join(tmpdir(), "p2-c-negative-failure-")));
+    try {
+      let observed;
+      withRunnerTemp(runner, () => { try { runLifecycle(value); } catch (error) { observed = p2IdentityFixtureFailureReceipt(error); } });
+      assert.equal(observed.stage, "interrupted-negatives"); assert.equal(observed.recoveryQualification, "interrupted-negatives");
+      assert.equal(observed.recoveryFailure, failure); assert.equal(existsSync(value.workspace), false);
+      assert.ok(existsSync(join(runner, "p2-owned-fixture-failure/interrupted-negatives", "d".repeat(40) + ".json")));
+    } finally { value.cleanup(); rmSync(runner, { recursive: true, force: true }); }
+  }
+  const value = harness(tap(), [], undefined, { interruptedNegativeSourceMutation: true });
+  try { assert.throws(() => runLifecycle(value)); assert.equal(existsSync(value.workspace), false); }
+  finally { value.cleanup(); }
+});
+
+test("C dependency eligibility rejects root fallback, wrong gateway version and changed source before cleanup", () => {
+  for (const mutate of [
+    value => { rmSync(join(value.root, "ops/gateway/node_modules"), { recursive: true }); mkdirSync(join(value.root, "node_modules/jose"), { recursive: true }); writeFileSync(join(value.root, "node_modules/jose/package.json"), '{"name":"jose","version":"6.2.15"}'); },
+    value => { writeFileSync(join(value.root, "ops/gateway/node_modules/jose/package.json"), '{"name":"jose","version":"6.2.15"}'); },
+    value => { writeFileSync(join(value.root, "ops/gateway/package-lock.json"), '{"lockfileVersion":3,"packages":{"node_modules/jose":{"version":"6.2.15"}}}'); },
+    value => { rmSync(join(value.root, P2_INTERRUPTED_OWNED_SOURCE_FILES[0])); },
+  ]) {
+    const value = harness();
+    try { mutate(value); assert.throws(() => runLifecycle(value)); assert.equal(existsSync(value.workspace), false); }
+    finally { value.cleanup(); }
+  }
+  const changed = harness(tap(), [], undefined, { interruptedSourceMutation: true });
+  try { assert.throws(() => runLifecycle(changed)); assert.equal(existsSync(changed.workspace), false); }
+  finally { changed.cleanup(); }
+});
+
+test("C nonzero, transport and malformed receipts refuse and retain only bounded private diagnostics", () => {
+  for (const [settings, failure] of [
+    [{ interruptedStatus: 1 }, "child-exit"], [{ interruptedStatus: 125 }, "docker-transport"],
+    [{ interruptedSignal: "SIGTERM" }, "child-exit"], [{ interruptedOutput: "" }, "receipt-invalid"],
+    [{ interruptedOutput: "{}" }, "receipt-invalid"], [{ interruptedOutput: JSON.stringify({ ...retainedInterruptedReceipt, restoration: undefined }) }, "receipt-invalid"],
+  ]) {
+    const value = harness(tap(), [], undefined, settings), runner = realpathSync(mkdtempSync(join(tmpdir(), "p2-c-failure-runner-")));
+    try {
+      let observed;
+      withRunnerTemp(runner, () => { try { runLifecycle(value); } catch (error) { observed = p2IdentityFixtureFailureReceipt(error); } });
+      assert.equal(observed.phase, "lifecycle-postgres18"); assert.equal(observed.stage, "interrupted-restoration");
+      assert.equal(observed.recoveryQualification, "interrupted-restoration"); assert.equal(observed.recoveryFailure, failure);
+      assert.equal(JSON.stringify(observed).includes(sourceReadToken), false); assert.equal(existsSync(value.workspace), false);
+      const directory = join(runner, "p2-owned-fixture-failure/interrupted-restoration"), name = "d".repeat(40);
+      assert.equal(lstatSync(directory).mode & 0o777, 0o700);
+      for (const suffix of ["json", "stdout.log", "stderr.log"]) assert.equal(lstatSync(join(directory, `${name}.${suffix}`)).mode & 0o777, 0o600);
+      const metadata = JSON.parse(readFileSync(join(directory, `${name}.json`)));
+      assert.equal(metadata.qualification, "interrupted-restoration"); assert.equal(metadata.sourceCommit, name); assert.equal(metadata.failure, failure);
+    } finally { value.cleanup(); rmSync(runner, { recursive: true, force: true }); }
+  }
+  const stdout = "OWNED_PRIVATE_DIAGNOSTIC".repeat(200_000), value = harness(tap(), [], undefined,
+    { interruptedStatus: 1, interruptedOutput: stdout, interruptedStderr: "OWNED_PRIVATE_STDERR" }),
+    runner = realpathSync(mkdtempSync(join(tmpdir(), "p2-c-bounded-failure-")));
+  try {
+    withRunnerTemp(runner, () => assert.throws(() => runLifecycle(value)));
+    const base = join(runner, "p2-owned-fixture-failure/interrupted-restoration", "d".repeat(40)), metadata = JSON.parse(readFileSync(base + ".json"));
+    assert.equal(lstatSync(base + ".stdout.log").size, 4 * 1024 * 1024); assert.equal(metadata.stdoutTruncated, true);
+    assert.equal(metadata.stderrTruncated, false); assert.equal(metadata.stderrBytes, 20);
+  } finally { value.cleanup(); rmSync(runner, { recursive: true, force: true }); }
+});
+
+test("operator CI installs exact gateway dependencies and retains the fifth-stage aggregate on success and failure", () => {
+  const job = parse(readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8")).jobs["frontend-operator-migrations"];
+  const gateway = job.steps.findIndex(step => step.run === "npm ci --ignore-scripts --prefix ops/gateway"),
+    fixture = job.steps.findIndex(step => step.run?.includes("prepare-p2-identity-probe-fixtures.mjs"));
+  assert.ok(gateway >= 0 && gateway < fixture); assert.equal(job["timeout-minutes"], 20);
+  assert.match(job.steps[fixture].run, /--recovery-postgres18 --lifecycle-postgres18\s+> "\$RUNNER_TEMP\/p2-identity-recovery-lifecycle-postgres18.json"/u);
+  const success = job.steps.find(step => step.with?.name === "frontend-operator-schema-summary"),
+    failure = job.steps.find(step => step.name === "Retain private owned fixture failure diagnostics");
+  for (const step of [success, failure]) assert.ok(step.with.path.trim().split(/\r?\n/u).includes("${{ runner.temp }}/p2-identity-recovery-lifecycle-postgres18.json"));
+  assert.equal(success.with["retention-days"], 10); assert.equal(failure.with["retention-days"], 3);
 });
 
 test("lifecycle receipt parser refuses missing, extra, drifted, skipped and partial source evidence", () => {
@@ -609,7 +976,8 @@ test("CI uploads only the fixed private failure directory and wrapper receipt fo
   const step = parse(workflow).jobs["frontend-operator-migrations"].steps.find(step => step.name === "Retain private owned fixture failure diagnostics");
   assert.equal(step.if, "failure()");
   assert.equal(step.with.name, "p2-owned-fixture-failure-${{ github.event.pull_request.head.sha || github.sha }}");
-  assert.deepEqual(step.with.path.trim().split(/\r?\n/u), ["${{ runner.temp }}/p2-owned-fixture-failure/", "${{ runner.temp }}/p2-platform-postgres18.json"]);
+  assert.deepEqual(step.with.path.trim().split(/\r?\n/u), ["${{ runner.temp }}/p2-owned-fixture-failure/", "${{ runner.temp }}/p2-platform-postgres18.json",
+    "${{ runner.temp }}/p2-identity-recovery-lifecycle-postgres18.json"]);
   assert.equal(step.with["if-no-files-found"], "ignore");assert.equal(step.with["retention-days"], 3);
   assert.deepEqual(Object.keys(step.with).sort(), ["name", "path", "if-no-files-found", "retention-days"].sort());
 });
