@@ -1,8 +1,8 @@
 # Staging deployed identity negative probes
 
-`host/p2_identity_negative_probe.py` prepares a plan by default. Its in-process `execute(bundle, configuration, reviewed_probe, operator_source, lease)` is a source-owned continuation for the existing reviewed staging certification driver. It creates no account, grant, assessment, progress, lifecycle command, key, schedule or provider state. No browser receives signing material. There is no token-minting or proxy endpoint.
+`host/p2_identity_negative_probe.py` prepares a plan by default. Its `execute_current_stage(bundle, configuration, reviewed_probe, operator_source, prior_evidence)` runs the fixed observer under a fresh read-only host scope, after the initial release scope has closed. The lower-level `execute(..., lease)` also accepts an existing genuine scoped continuation. It creates no account, grant, assessment, progress, lifecycle command, key, schedule or provider state. No browser receives signing material. There is no token-minting or proxy endpoint.
 
-The deployed continuation is not wired by this package. Linux/container execution, final operator-source CI/publication, actual test records and deployed results remain certification gates. An owned fixture pass is not P2-12/G2 acceptance.
+The fixed current-stage host entry is executable independently of the initial release coordinator. Its transport wrapper is not wired by this package. Linux/container execution, final operator-source CI/publication, actual test records and deployed results remain certification gates. An owned fixture pass is not P2-12/G2 acceptance.
 
 ## Prerequisites and order
 
@@ -27,17 +27,25 @@ The closed version-1 record contains exactly:
 | `containers` | Exactly gateway, course-api and community-api; full IDs and immutable GHCR image references |
 | `configurationSha256` | SHA-256 of compact sorted ASCII JSON mapping the existing fixed `staging_state.CONFIGURATION_FILES` to their byte SHA-256 values |
 | `programSha256` | SHA-256 of the committed `p2-identity-negative-probe.mjs` bytes followed by `\nawait runPrivateProbeFromStdin();\n` |
+| `operatorSourceFiles`, `operatorSourceSha256` | Exactly the ten fixed transitive source files in `SOURCE_FILES`, mapped to byte SHA-256; hash of compact sorted ASCII JSON of that map |
+| `priorEvidence` | Exactly `originalReleaseReceiptSha256` and `frontendDeploymentRecordSha256`, retaining the existing original records as provenance |
 | `subjects` | Exactly `learnerA`, `learnerB`, `admin` UUIDs |
 | `resources` | Exactly `courseA`, `courseB`, `sharedCourse`, `lesson`, `completedAttempt` UUIDs |
 | `previousProfiles` | Sorted configured subset of `course-learner`, `course-admin`, `community-member`, `community-admin` |
 
 There is no public key, token, URL, hostname override, path, command, callback or arbitrary header field. These bindings are prepared within the existing authorized certification scope; they add no approval/signing ceremony. Changed candidate, configuration or resources require the corresponding normal reviewed scope update.
 
-The CLI accepts only `--bundle`, `--configuration` and `--reviewed`. It prints the plan and consumes no credentials or network capability. It has no standalone apply flag. The existing supervisor/broker later invokes `execute` under its actual `P2ReleaseScope`; JSON flags cannot construct that capability.
+The CLI accepts only `--bundle`, `--configuration` and `--reviewed`. It prints the plan and consumes no credentials or network capability. It has no apply flag. JSON flags cannot construct a held process-local scope.
 
 ## Guarded execution and private input
 
-The continuation requires the actual process-local scope, its exact candidate, original verified frontend receipt and live physical frontend observer. It acquires no second lock. It reuses `release.make_plan`, the current full runtime inventory and exact candidate/source/job bindings. The fixed public host is `api-staging.lashher.com`; private target is exclusively `https://course-tls:8443`. Production and foreign targets refuse.
+The current-stage API acquires the actual shared `/run/lock/lash-her-release.lock` on the selected Linux root host. `CurrentIdentityProbeScope` verifies that same descriptor, path/device/inode, ownership, private permissions and nonblocking flock before and after protected operations. It reuses `release.make_plan`, the current full runtime inventory and exact candidate/source/job bindings. The fixed public host is `api-staging.lashher.com`; private target is exclusively `https://course-tls:8443`. Production and foreign targets refuse.
+
+This narrow lease needs no initial release process, pending migration session or frontend advisory-lock observer. It opens no database connection and has no SQL, migration, restart, admission or arbitrary-command method. It binds the supplied original release/frontend record bytes to their reviewed hashes, with `priorEvidenceBytesBound: true` and `frontendSqlVerified: false`. Existing physical frontend/deployment certification remains separate evidence. This is not a request to reapply SQL, edit pending tags, reopen a dead session or restart services.
+
+`host/p2_identity_probe_current.py` is the fixed SSH entry. Invoke it through the existing pinned `sshCommand` transport with `sudo -n /usr/bin/python3 -I -u /opt/lash-her/operators/<exact frontend commit>/ops/platform/host/p2_identity_probe_current.py`; install the exact public committed source first using the existing `committedOperatorSource` / `installSource` handoff. The caller prepares the ten-file map from that same committed source; source bytes are checked again in-process before every child. There is no runtime source URL, command or signer override.
+
+The bounded stdin packet has exactly `version: 1`, `operation`, `bundleDirectory`, `configurationDirectory`, `reviewed`, and `priorEvidence`. `operation: "plan"` requires `priorEvidence: null` and consumes no credentials or network. The explicitly invoked `operation: "execute-current-readonly"` consumes two existing sanitized JSON records, base64 encoded under `priorEvidence.originalReleaseReceipt` and `priorEvidence.frontendDeploymentRecord`; their exact decoded bytes must match the public hashes. No key material belongs in this packet. Bundle and configuration must be private nonsymlink staging paths. An authorized certification invocation needs no extra approval click.
 
 Operator source must be installed at `/opt/lash-her/operators/<selected frontend commit>`. Runtime input must be a private nonsymlink path beneath `/var/lib/lash-her/releases/staging`. Program bytes, original configuration digests and selected container identity are checked before and after each operation. All selected containers require read-only roots. API containers cannot overlay `/app` or modules; the gateway's only bind mounts are the exact reviewed read-only gateway configuration, admission directory and TLS directory. The full ten-service runtime inventory is checked at entry and exit.
 
@@ -45,9 +53,9 @@ The parent privately consumes the fixed existing `course-api.env` and `community
 
 Only the source-owned child receives the required key subset through stdin. Keys are never command arguments, files produced by this tool, receipts or logs. User/profile keys must be distinct from each other and from configured service credentials. The probe requires 32–8192-byte printable nonwhitespace key material and refuses ambiguous configuration rather than trimming it. Each API child privately compares the original configuration with its actual process and parsed runtime keys before using the actual verifier factory. The gateway child verifies actual mounted configuration and CA byte hashes. No tokens, cookies, claims, certificate bodies, connection strings, question/answer content or upstream error bodies enter common output.
 
-The Node 24 program uses built-in crypto, filesystem and HTTPS, plus fixed imports of the actual API image's verifier/runtime modules. Its source is passed nonsecretly to the exact existing container. It assumes no host Node installation. `P2ReleaseScope.run` must include the stdin-capable interface from driver commit `05c20e5b`; the original scope/observer controls remain authoritative.
+The Node 24 program uses built-in crypto, filesystem and HTTPS, plus fixed imports of the actual API image's verifier/runtime modules. Its source is passed nonsecretly to the exact existing container. It assumes no host Node installation. The new read-only scope registers stdin-capable children itself; it has no dependency on `P2ReleaseScope` for the current-stage path. The optional initial-broker continuation still requires that broker's stdin-capable interface.
 
-Each deployed HTTP child performs **one** allowlisted GET. Lease loss starts no subsequent request; an already-issued bounded read may finish. This does not claim cancellation of an in-flight effect. Children are registered with the existing scope and cannot authorize work or admission. Requests reject redirects, foreign paths, unverified TLS and bodies above 65,536 bytes. There is no automatic retry.
+Each deployed HTTP child performs **one** allowlisted GET. Lease loss starts no subsequent request; an already-issued bounded read may finish. This does not claim cancellation of an in-flight effect. Children run in registered process groups; revocation/timeout kills and reaps the owned local group before releasing the lock, and uncertain cleanup refuses a pass. Docker metadata and fixed Node exec are the scope's only allowed commands. Requests reject redirects, foreign paths, unverified TLS and bodies above 65,536 bytes. There is no automatic retry.
 
 ## Checks and limits
 
@@ -68,7 +76,7 @@ P2_IDENTITY_COURSE_RUNTIME_DIR=/absolute/qualified-course-source \
 P2_IDENTITY_COMMUNITY_RUNTIME_DIR=/absolute/qualified-community-source \
 node --test ops/platform/p2-identity-negative-probe.test.mjs
 cd ops/platform/host
-python3 -m unittest p2_identity_negative_probe_test -v
+python3 -m unittest p2_identity_negative_probe_test p2_identity_probe_scope_test -v
 ```
 
-The owned fixtures verify API Git heads against the selected contract pins and compare compiled modules with in-memory compilation using each API's actual compiler settings. They run actual Course app/auth/student/quiz modules behind owned verified HTTPS, with immutable in-memory business records and synthetic keys. They do not use live SQL or deployed images. Missing runtime directories cause an explicit optional-fixture skip, never a deployed qualification. Host tests cover actual plan parsing and private bridge/receipt guards with owned test seams; the complete Linux broker/container continuation remains unexecuted locally because no Docker daemon is available.
+The owned fixtures verify API Git heads against the selected contract pins and compare compiled modules with in-memory compilation using each API's actual compiler settings. They run actual Course app/auth/student/quiz modules behind owned verified HTTPS, with immutable in-memory business records and synthetic keys. They do not use live SQL or deployed images. Missing runtime directories cause an explicit optional-fixture skip, never a deployed qualification. Host tests cover actual plan parsing, the fixed current-stage entry, private bridge/receipt guards, real POSIX flock contention/replacement and real stdin/timeout/revocation process cleanup. Linux/root target and Docker execution use explicit owned test seams in those local tests; the complete selected Linux/container invocation remains unexecuted locally because no Docker daemon is available.

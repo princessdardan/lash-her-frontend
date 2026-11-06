@@ -56,6 +56,9 @@ class IdentityNegativeProbeTests(unittest.TestCase):
             "subjects": {name: str(uuid.UUID(int=index + 1, version=4)) for index, name in enumerate(("learnerA", "learnerB", "admin"))},
             "resources": {name: str(uuid.UUID(int=index + 10, version=4)) for index, name in enumerate(("courseA", "courseB", "sharedCourse", "lesson", "completedAttempt"))},
             "programSha256": probe._hash(probe.program_bytes(self.source)), "previousProfiles": sorted(probe.PROFILES)}
+        self.reviewed["operatorSourceFiles"] = probe.source_closure(self.source)
+        self.reviewed["operatorSourceSha256"] = probe._hash(probe._canonical(self.reviewed["operatorSourceFiles"]))
+        self.reviewed["priorEvidence"] = {"originalReleaseReceiptSha256": "6" * 64, "frontendDeploymentRecordSha256": "7" * 64}
         self.observer = Observer()
 
     def plan(self):
@@ -217,3 +220,33 @@ class IdentityNegativeProbeTests(unittest.TestCase):
         file.write_text(file.read_text() + "SAFE_NONSECRET_CHANGE=owned\n")
         self.assertNotEqual(first, probe._configuration_hash(self.configuration, self.observer))
         self.assertRegex(first, r"^[a-f0-9]{64}$")
+
+    def test_current_stage_cli_defaults_to_actual_plan_without_runtime_or_sql_execution(self):
+        packet = {"version": 1, "operation": "plan", "bundleDirectory": str(self.bundle), "configurationDirectory": str(self.configuration),
+            "reviewed": self.reviewed, "priorEvidence": None}
+        result = subprocess.run(["python3", "-I", "-B", str(Path(probe.__file__).with_name("p2_identity_probe_current.py"))],
+            input=json.dumps(packet).encode(), capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = json.loads(result.stdout)
+        self.assertEqual(value["status"], "P2_IDENTITY_NEGATIVE_PROBE_PLAN")
+        self.assertFalse(value["credentialsRead"])
+        self.assertFalse(value["networkCalled"])
+        self.assertFalse(value["frontendSqlVerified"])
+        self.assertEqual(value["priorEvidence"], self.reviewed["priorEvidence"])
+
+    def test_operator_closure_and_original_evidence_are_closed_exact_bindings(self):
+        original = deepcopy(self.reviewed)
+        for name in ("operatorSourceFiles", "priorEvidence"):
+            for mutation in ("missing", "extra"):
+                self.reviewed = deepcopy(original)
+                if mutation == "missing":
+                    self.reviewed[name].pop(next(iter(self.reviewed[name])))
+                else:
+                    self.reviewed[name]["unreviewed"] = "f" * 64
+                with self.assertRaises(ValueError):
+                    self.plan()
+        self.reviewed = deepcopy(original)
+        self.reviewed["operatorSourceFiles"][probe.PROGRAM] = "f" * 64
+        self.reviewed["operatorSourceSha256"] = probe._hash(probe._canonical(self.reviewed["operatorSourceFiles"]))
+        with self.assertRaisesRegex(ValueError, "OPERATOR_SOURCE_CHANGED"):
+            self.plan()
