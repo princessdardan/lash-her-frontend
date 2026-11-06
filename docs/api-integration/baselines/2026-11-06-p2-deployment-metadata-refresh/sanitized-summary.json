@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "status": "VERCEL_DEPLOYMENT_METADATA_REFRESHED_READ_ONLY",
+  "observedAt": "2026-11-06T13:45:21Z",
+  "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+  "projects": [
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "projectName": "lash-her-frontend-staging",
+      "deploymentCount": 25,
+      "pages": 1,
+      "paginationComplete": true
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "projectName": "lash-her-frontend",
+      "deploymentCount": 56,
+      "pages": 1,
+      "paginationComplete": true
+    }
+  ],
+  "registerComparison": {
+    "priorDeploymentCount": 81,
+    "currentDeploymentCount": 81,
+    "newDeploymentIds": [],
+    "noLongerListedDeploymentIds": []
+  },
+  "previouslyMissingSourceCommits": [
+    {
+      "deploymentId": "dpl_5JDDu6BaZcM4sg9wip65MKCwmhuL",
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "createdAt": "2026-10-29T19:04:10.975Z",
+      "state": "READY",
+      "target": "production",
+      "source": "cli",
+      "gitSourcePresent": false,
+      "metadataFieldCount": 0,
+      "authoritativeSourceCommit": null
+    },
+    {
+      "deploymentId": "dpl_7mG5ncqdKCBhpxNJ281Amqw9upe4",
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "createdAt": "2026-10-29T18:25:00.270Z",
+      "state": "READY",
+      "target": "production",
+      "source": "cli",
+      "gitSourcePresent": false,
+      "metadataFieldCount": 0,
+      "authoritativeSourceCommit": null
+    },
+    {
+      "deploymentId": "dpl_7odqGL3divDTEMqdBbkZWu2FzqX4",
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "createdAt": "2026-10-29T17:21:09.166Z",
+      "state": "READY",
+      "target": "production",
+      "source": "cli",
+      "gitSourcePresent": false,
+      "metadataFieldCount": 0,
+      "authoritativeSourceCommit": null
+    },
+    {
+      "deploymentId": "dpl_BYQiXkALFy2hjG2KVKUG7XEgYpyE",
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "createdAt": "2026-10-29T19:19:24.076Z",
+      "state": "READY",
+      "target": "production",
+      "source": "cli",
+      "gitSourcePresent": false,
+      "metadataFieldCount": 0,
+      "authoritativeSourceCommit": null
+    },
+    {
+      "deploymentId": "dpl_rzM1LuvDQzn4N1hKouWRymhPqf7j",
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "createdAt": "2026-10-29T18:59:14.952Z",
+      "state": "READY",
+      "target": "production",
+      "source": "cli",
+      "gitSourcePresent": false,
+      "metadataFieldCount": 0,
+      "authoritativeSourceCommit": null
+    }
+  ],
+  "collection": {
+    "listFilters": {
+      "state": null,
+      "target": null
+    },
+    "missingSourceDetailReads": 5,
+    "withGitRepoInfo": true,
+    "environmentValuesRead": false,
+    "sourceFilesRead": false,
+    "configurationRead": false,
+    "mutationsPerformed": false
+  },
+  "limitations": {
+    "sourceCommitStillUnknownForFiveCliDeployments": true,
+    "capabilityOrFenceConclusionProduced": false
+  }
+}
