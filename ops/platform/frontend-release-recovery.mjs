@@ -110,7 +110,7 @@ export async function observeFrontendReleaseRecovery(input, dependencies) {
         const nonce = randomBytes(32).toString("hex");
         const providerContext = { candidate: migration.candidate, directory: dependencies.directory,
           originalDirectory: dependencies.originalDirectory,
-          getProviderContext: dependencies.getProviderContext, verifyLockedSession: verify, environmentSignal };
+          getProviderContext: dependencies.getProviderContext, databaseClient: client, verifyLockedSession: verify, environmentSignal };
         const external = await adapters.observeFrontendExternalFences(Object.freeze({ plan, inventorySha256, nonce, checkpoint: "recovery", recoveryActionId: action.actionId, ...providerContext }));
         const proof = await validateFrontendFenceObservation(plan, nonce, external, store.retain, { requireFenced: false });
         await store.record("frontend-recovery-external-observed.json", { ...base, proof });

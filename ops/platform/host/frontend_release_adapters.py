@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import secrets
 import sys
+import time
 
 import frontend_probe
 import frontend_resend_retirement
@@ -63,6 +64,25 @@ class LockedProbe:
         value = self.client.request(*args)
         self.verify()
         return value
+
+
+def wait_for_supported_retirement(task, denied, verify, seconds):
+    """Read only while the existing operator retires the selected credential.
+
+    The same private client instance is retained. Access denial never substitutes
+    for the subsequent selected refresh/effect verification.
+    """
+    demand(type(seconds) is int and 1 <= seconds <= 300, "RETIREMENT_OBSERVATION_BUDGET_REFUSED")
+    deadline = time.monotonic() + seconds
+    while True:
+        verify()
+        try:
+            task()
+        except denied:
+            verify()
+            return
+        demand(time.monotonic() < deadline, "SUPPORTED_CONSOLE_RETIREMENT_NOT_OBSERVED")
+        time.sleep(min(1, max(0, deadline - time.monotonic())))
 
 
 def identity(context):
@@ -618,7 +638,7 @@ def execute(context, client, verify, probe=None):
     locked = LockedClient(client, verify)
     source_attempt = attempt
     if context.get("originalDirectory") is not None:
-        demand(operation in ("observe-vercel", "observe-compatible", "observe-admission", "observe-resend", "observe-resend-effects", "observe-square", "observe-sanity", "observe-google", "observe-highlevel", "observe-chitchats"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
+        demand(operation in ("observe-vercel", "observe-retired-capabilities", "observe-compatible", "observe-admission", "observe-resend", "observe-resend-effects", "observe-square", "observe-sanity", "observe-google", "observe-highlevel", "observe-chitchats"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
         original = Path(context["originalDirectory"])
         migrate.private_directory(original)
         source_attempt = original / attempt.name
@@ -640,13 +660,46 @@ def execute(context, client, verify, probe=None):
         return deploy_admission(context, locked, attempt, parent, LockedProbe(verify, probe))
     if operation == "retire-deployments":
         return retire_deployments(context, locked, attempt)
-    crm_shipping = re.fullmatch(r"(suspend|verify|observe)-(highlevel|chitchats)", operation)
+    if operation == "observe-retired-capabilities":
+        providers = {}
+        reviewed = context["bindings"].get("googleRetirement")
+        if reviewed is not None:
+            replacements = {kind: frontend_google_fencing.Client(kind, context["google" + kind.title() + "ReplacementSecret"], verify) for kind in ("identity", "calendar")}
+            retired = {kind: frontend_google_fencing.Client(kind, context["google" + kind.title() + "RetiredSecret"], verify) for kind in ("identity", "calendar")}
+            for client in replacements.values():
+                frontend_google_fencing.calibrate_client(client)
+            rows = frontend_google_fencing.observe_clients(replacements, retired, reviewed, {"verificationGrants": {}})
+            providers["google"] = {"provider": "google", "clients": rows, "historicalCapabilitiesDenied": all(row["retiredSecretDenied"] and
+                row["replacementClientAuthenticationVerified"] for row in rows), "rawInvocationCount": None}
+        reviewed = context["bindings"].get("chitchatsRetirement")
+        if reviewed is not None:
+            replacement = LockedClient(frontend_crm_shipping_retirement.Client("chitchats", context["chitchatsReplacementToken"], reviewed), verify)
+            retired = LockedClient(frontend_crm_shipping_retirement.Client("chitchats", context["chitchatsRetiredToken"], reviewed), verify)
+            path = "/api/v1/clients/" + reviewed["clientId"] + "/shipments/count"
+            value = replacement.request("GET", path)
+            demand(isinstance(value, dict) and type(value.get("count")) is int and value["count"] >= 0, "CHITCHATS_CURRENT_REPLACEMENT_READ_UNVERIFIED")
+            denied = False
+            try:
+                retired.request("GET", path)
+            except frontend_crm_shipping_retirement.AuthenticationDenied:
+                denied = True
+            providers["chitchats"] = {"provider": "chitchats", "clientId": reviewed["clientId"], "historicalCapabilitiesDenied": denied,
+                "replacementReadVerified": True, "currentProviderObjectCount": value["count"], "rawInvocationCount": None}
+        reviewed = context["bindings"].get("sanityRetirement")
+        if reviewed is not None:
+            replacement = LockedClient(frontend_sanity_fencing.Client(context["sanityReplacementToken"]), verify)
+            retired = LockedClient(frontend_sanity_fencing.Client(context["sanityRetiredToken"]), verify)
+            value = frontend_sanity_fencing.observe(replacement, retired, reviewed)
+            providers["sanity"] = {**value, "historicalCapabilitiesDenied": all(row["disabled"] and row["disabledByUser"] for row in value["hooks"]) and
+                value["activeExecutions"] == 0 and value["uncertainEffects"] == 0}
+        return {**selected, "status": "HISTORICAL_PROVIDER_CAPABILITIES_OBSERVED", "providers": providers}
+    crm_shipping = re.fullmatch(r"(suspend|verify|retire|observe)-(highlevel|chitchats)", operation)
     if crm_shipping:
         task, provider = crm_shipping.groups()
         reviewed = context["bindings"].get(provider + "Retirement")
         demand(reviewed is not None, "REVIEWED_CRM_SHIPPING_RETIREMENT_REQUIRED")
         replacement = LockedClient(frontend_crm_shipping_retirement.Client(provider, context[provider + "ReplacementToken"], reviewed), verify)
-        refresh = context.get("highlevelRetiredRefreshCredentials") if provider == "highlevel" and task == "verify" else None
+        refresh = context.get("highlevelRetiredRefreshCredentials") if provider == "highlevel" and task in ("verify", "retire") else None
         retired = LockedClient(frontend_crm_shipping_retirement.Client(provider, context[provider + "RetiredToken"], reviewed, refresh_credentials=refresh), verify)
         actual = context["crmShippingActual"]
         if task == "observe":
@@ -656,6 +709,14 @@ def execute(context, client, verify, probe=None):
         if task == "suspend":
             return frontend_crm_shipping_retirement.suspend(provider, replacement, retired, reviewed, actual, selected, attempt)
         demand(admission.get("recovery") is False and admission.get("ledgerDrained") is True, "CRM_SHIPPING_RECOVERY_MUST_BE_CLOSED_DRAINED")
+        if task == "retire":
+            before = migrate.read_json(attempt, provider + "-retirement-before.json")
+            demand(before.get("retiredCredentialWasUsable") is True and all(before.get(key) == value for key, value in selected.items()),
+                "CRM_SHIPPING_PRE_RETIREMENT_RECEIPT_REQUIRED")
+            migrate.write_json(attempt, provider + "-console-observation-started.json", {**selected, "provider": provider})
+            probe_path = "/locations/" + reviewed["locationId"] if provider == "highlevel" else "/api/v1/clients/" + reviewed["clientId"] + "/shipments/count"
+            wait_for_supported_retirement(lambda: retired.request("GET", probe_path), frontend_crm_shipping_retirement.AuthenticationDenied,
+                verify, context["retirementObservationSeconds"])
         return frontend_crm_shipping_retirement.verify_retirement(provider, replacement, retired, reviewed, actual, selected, attempt)
     if operation in ("retire-google", "observe-google"):
         reviewed = context["bindings"].get("googleRetirement")
@@ -677,7 +738,7 @@ def execute(context, client, verify, probe=None):
         runtime = verify_google_runtime(context, locked, attempt, LockedProbe(verify, probe))
         migrate.write_json(attempt, "google-runtime-after-retirement.json", runtime)
         return {**outcome, "runtimeReplacementBindingVerified": True, "customerIdentityBindingVerified": False}
-    if operation in ("verify-square", "observe-square", "suspend-square"):
+    if operation in ("verify-square", "retire-square", "observe-square", "suspend-square"):
         reviewed = context["bindings"].get("squareRetirement")
         demand(reviewed is not None, "REVIEWED_SQUARE_SANDBOX_RETIREMENT_REQUIRED")
         replacement = LockedClient(frontend_square_retirement.Client(context["squareReplacementToken"]), verify)
@@ -685,7 +746,7 @@ def execute(context, client, verify, probe=None):
         if operation == "observe-square":
             return {**selected, **frontend_square_retirement.observe(replacement, retired, reviewed, context["squareEffects"])}
         runtime = verify_square_runtime(context, locked, attempt, LockedProbe(verify, probe))
-        if operation == "suspend-square":
+        if operation in ("suspend-square", "retire-square"):
             demand(frontend_square_retirement.binding(retired, reviewed) == frontend_square_retirement.binding(replacement, reviewed),
                 "SQUARE_OLD_CREDENTIAL_SCOPE_UNVERIFIED")
             migrate.write_json(attempt, "square-runtime-before-retirement.json", {**runtime, "retiredCredentialWasUsable": True})
@@ -696,7 +757,10 @@ def execute(context, client, verify, probe=None):
             after = frontend_square_retirement.webhook(replacement)
             demand(after == {**before, "enabled": False}, "SQUARE_CALLBACK_DISABLE_READBACK_UNVERIFIED")
             migrate.write_json(attempt, "square-callback-suspension-verified.json", {**selected, **after})
-            return {**selected, **after, "status": "SQUARE_SANDBOX_CALLBACK_DISABLED_DASHBOARD_RETIREMENT_PENDING", "activeExecutions": None, "uncertainEffects": None}
+            if operation == "suspend-square":
+                return {**selected, **after, "status": "SQUARE_SANDBOX_CALLBACK_DISABLED_DASHBOARD_RETIREMENT_PENDING", "activeExecutions": None, "uncertainEffects": None}
+            wait_for_supported_retirement(lambda: frontend_square_retirement.binding(retired, reviewed),
+                frontend_square_retirement.AuthenticationDenied, verify, context["retirementObservationSeconds"])
         previous = migrate.read_json(attempt, "square-runtime-before-retirement.json")
         demand(all(previous.get(key) == runtime[key] for key in ("actionId", "sourceCommit", "targetSha256", "deploymentId", "locationId", "merchantId", "applicationId")) and
             previous.get("retiredCredentialWasUsable") is True, "SQUARE_PRE_RETIREMENT_RUNTIME_EVIDENCE_REQUIRED")

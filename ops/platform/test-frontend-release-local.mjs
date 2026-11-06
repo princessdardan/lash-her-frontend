@@ -35,6 +35,7 @@ async function call(method,path,value) {
   });
 }
 export async function fenceFrontendExternalProducers(c){await c.verifyLockedSession();await call('POST','/fence',{actionId:c.plan.actionId});await c.verifyLockedSession();await c.record('owned-provider-fenced.json',{status:'OWNED_FENCED',actionId:c.plan.actionId});}
+export async function reconcileFrontendExternalProducers(c){await c.verifyLockedSession();if(!c.admissionObservation.ledgerDrained||c.admissionObservation.newWork||c.admissionObservation.recovery)throw new Error('OWNED_DRAIN_REQUIRED');}
 export async function deployAdmissionCompatibleFrontend(c){
  await c.verifyLockedSession();await call('POST','/bootstrap-build',{actionId:c.plan.actionId,sourceCommit:c.plan.sourceCommit,schema:c.preapplicationSchema});
  await c.verifyLockedSession();await call('POST','/bootstrap-promote',{actionId:c.plan.actionId});await c.verifyLockedSession();
@@ -177,22 +178,23 @@ async function main() {
     const baseline = { version: 1, serverMajor: major, sqlArtifactSha256: artifact.sqlArtifactSha256, catalog: await readMigrationCatalog(baselineClient) };
     const sourceInventory = frontendWriterInventory(app), candidateSurfaces = frontendCandidateSurfaces(sourceInventory);
     const adapterSha256 = hash(readFileSync(join(app, "ops/platform/frontend-release-adapters.mjs")));
+    const contractIdentity = artifact.contractPhase === "p2" ? { contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 } : {};
     const make = async (suffix, admissionMode = "bootstrap", budget = 300, recoveryAfterCompatibleBuild = false) => {
       const actionId = `owned-${suffix}`, database = `release_${suffix.replaceAll("-", "_")}`, historicalRole = `old_${suffix.replaceAll("-", "_")}`;
       const client = await createDatabase(database);
       await admin.query(`CREATE ROLE ${historicalRole} LOGIN NOINHERIT PASSWORD '${password}'`);
       const historicalOid = (await admin.query("SELECT oid::text FROM pg_roles WHERE rolname=$1", [historicalRole])).rows[0].oid;
       const old = await connect(database, historicalRole); let historicalEnded = false; old.once("end", () => { historicalEnded = true; });
-      const job = { version: 1, operator: "Dardan", environment: "staging", releaseId: actionId, sourceCommit: commit,
+      const job = { version: 1, ...contractIdentity, operator: "Dardan", environment: "staging", releaseId: actionId, sourceCommit: commit,
         migrationImageDigest: `sha256:${"b".repeat(64)}`, contractManifestSha256: artifact.contractManifestSha256,
         sqlArtifactSha256: artifact.sqlArtifactSha256, schemaBaselineSha256: hash(baseline), recoveryRef: "owned/recovery",
         target: { host: "127.0.0.1", port, database, user: "release_test_admin", runtimeRole: "release_runtime", serverMajor: major,
           allowEmptyBootstrap: true, approvedPendingTags: artifact.migrations.map(m => m.tag) } };
-      const candidate = { version: 2, environment: "staging", releaseId: actionId, integration: { state: "passed" },
+      const candidate = { version: 2, ...contractIdentity, environment: "staging", releaseId: actionId, integration: { state: "passed" },
         sourceApproval: { mode: "single-operator-dispatch", operatorGithubUserId: "8996309" },
         sources: { frontend: { repository: "https://github.com/princessdardan/lash-her-frontend.git", commit, requiredChecks: "passed" } },
         artifacts: { frontendMigration: { image: `ghcr.io/princessdardan/lash-her-platform-frontend-migration@${job.migrationImageDigest}` } },
-        contractManifestSha256: artifact.contractManifestSha256, frontendMigration: { sourceCommit: commit, sqlArtifactSha256: artifact.sqlArtifactSha256,
+        contractManifestSha256: artifact.contractManifestSha256, frontendMigration: { ...contractIdentity, sourceCommit: commit, sqlArtifactSha256: artifact.sqlArtifactSha256,
           contractManifestSha256: artifact.contractManifestSha256, schemaBaselines: { [major]: job.schemaBaselineSha256 } } };
       const producerSha256 = "5".repeat(64), targetSha256 = frontendAdmissionTargetSha256("staging", job.target);
       const inventory = { version: 1, environment: "staging", actionId, sourceCommit: commit, targetSha256,
