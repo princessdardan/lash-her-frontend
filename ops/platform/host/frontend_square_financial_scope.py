@@ -473,6 +473,30 @@ def _join(family, provider, references, rows):
                     reasons.append("order-mismatch")
                 if row.get("invoice_version") is not None and int(row["invoice_version"]) > provider["version"]:
                     reasons.append("invoice-version-regressed")
+                state = provider.get("status")
+                if group == "holds":
+                    stored = context.get("no_show_invoice_status")
+                    if not isinstance(stored, str) or stored.upper() != state:
+                        reasons.append("database-invoice-provider-status-mismatch")
+                elif group == "orders":
+                    # These are the source's normalized invoice lifecycle
+                    # labels, not literal Square invoice status strings.
+                    expected = {"draft": {"DRAFT"}, "published": {"UNPAID", "SCHEDULED", "PARTIALLY_PAID", "PAYMENT_PENDING"},
+                        "paid": {"PAID", "PARTIALLY_REFUNDED", "REFUNDED"}, "cancelled": {"CANCELED"}, "canceled": {"CANCELED"},
+                        "refunded": {"REFUNDED"}}
+                    if state not in expected.get(context.get("provider_status"), set()):
+                        reasons.append("database-invoice-provider-status-mismatch")
+                    business = {"paid": {"PAID", "PARTIALLY_REFUNDED"}, "refunded": {"REFUNDED"}, "cancelled": {"CANCELED"},
+                        "pending": {"DRAFT", "UNPAID", "SCHEDULED", "PARTIALLY_PAID", "PAYMENT_PENDING"}}
+                    if state not in business.get(context.get("status"), set()):
+                        reasons.append("database-invoice-order-status-mismatch")
+                elif group in ("noShowRecords", "noShowAttempts"):
+                    if context.get("provider_status") != state:
+                        reasons.append("database-invoice-provider-status-mismatch")
+                    expected = {"charged": {"PAID"}, "charge_failed": {"CANCELED", "FAILED"}, "voided": {"CANCELED"},
+                        "provider_draft_created": {"DRAFT"}, "charge_pending": {"DRAFT", "UNPAID", "SCHEDULED", "PARTIALLY_PAID", "PAYMENT_PENDING"}}
+                    if state not in expected.get(context.get("status"), set()):
+                        reasons.append("database-invoice-business-status-mismatch")
             elif group == "cards" and ((row["status"] == "active" and not provider["enabled"]) or
                     (row["status"] in ("disabled", "deleted") and provider["enabled"])):
                 reasons.append("card-state-mismatch")
@@ -483,6 +507,18 @@ def _join(family, provider, references, rows):
                 reasons.append("reference-mismatch")
             if group in ("orders", "noShowRecords") and (provider.get("amountCents") != row["amount_cents"] or row["currency"] != "CAD"):
                 reasons.append("money-mismatch")
+            expected = None
+            if group == "orders":
+                expected = {"paid": {"COMPLETED"}, "refunded": {"COMPLETED"}, "cancelled": {"CANCELED"},
+                    "pending": {"DRAFT", "OPEN"}}.get(row.get("status"), set())
+            elif group == "noShowRecords":
+                expected = {"charged": {"COMPLETED"}, "charge_failed": {"CANCELED"}, "voided": {"CANCELED"},
+                    "provider_draft_created": {"DRAFT", "OPEN"}, "charge_pending": {"DRAFT", "OPEN"}}.get(row.get("status"), set())
+            elif group == "holds" and field == "invoice_order_id":
+                expected = {"PAID": {"COMPLETED"}, "CANCELED": {"CANCELED"}, "DRAFT": {"DRAFT", "OPEN"},
+                    "UNPAID": {"OPEN"}, "SCHEDULED": {"OPEN"}, "PAYMENT_PENDING": {"OPEN"}}.get(row.get("no_show_invoice_status"), set())
+            if expected is not None and provider.get("status") not in expected:
+                reasons.append("database-provider-order-status-mismatch")
         elif family == "checkout":
             if row.get("provider_order_id") and provider.get("order_id") != row["provider_order_id"]:
                 reasons.append("order-mismatch")
@@ -631,9 +667,12 @@ def observe_scoped_effects(client, reviewed, actual_rows, verified_source_requir
                 if family == "refunds" and summary["status"] not in ("COMPLETED", "FAILED", "REJECTED"):
                     active += 1
                     reasons.append("refund-not-terminal")
-                if family == "invoices" and summary["status"] not in ("PAID", "CANCELED", "REFUNDED", "PARTIALLY_REFUNDED", "FAILED", "DRAFT"):
+                if family == "invoices" and summary["status"] not in ("PAID", "CANCELED", "REFUNDED", "PARTIALLY_REFUNDED", "FAILED"):
                     active += 1
                     reasons.append("invoice-can-create-future-payment")
+                if family == "orders" and summary["status"] not in ("COMPLETED", "CANCELED"):
+                    active += 1
+                    reasons.append("order-can-create-future-payment")
                 if family == "checkout":
                     reasons.append("hosted-checkout-acceptance-capability-unresolved")
                 result = {"familyId": full_id, **summary, "sqlReceipts": joins, "immutableMatch": not reasons,

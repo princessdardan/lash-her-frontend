@@ -277,7 +277,7 @@ class ScopeTests(unittest.TestCase):
     def test_all_optional_families_have_exact_reads_and_safe_private_projections(self):
         self.rows["orders"] = [row("orders", reference_id="owned-public-order-reference", status="paid", initialization_status="ready", provider_checkout_id="owned-invoice",
             provider_order_id="owned-order", amount_cents=100, currency="CAD", flow="training_square_invoice", correlation_id="owned-correlation",
-            customer_id="owned-customer", invoice_version="1")]
+            customer_id="owned-customer", provider_status="paid", invoice_version="1")]
         self.rows["cards"] = [row("cards", provider_card_id="ccof:owned-card", customer_id="owned-customer", status="active")]
         self.rows["holds"] = [row("holds", reference_id="owned-hold-reference", status="booked", booking_model_version=1,
             square_payment_link_id="owned-link", provider_order_id="owned-order", lease_held=False)]
@@ -475,6 +475,61 @@ class HttpsScopeTests(unittest.TestCase):
                 with self.assertRaises(ValueError) as caught:
                     component.observe_scoped_effects(self.client, self.reviewed, self.rows, self.verified)
                 self.assertNotIn("private-", str(caught.exception))
+
+    def invoice_scope(self):
+        self.rows = empty()
+        self.rows["orders"] = [row("orders", reference_id="owned-public-order-reference", status="paid", provider_status="paid",
+            initialization_status="ready", provider_checkout_id="owned-invoice", provider_order_id="owned-order", amount_cents=100,
+            currency="CAD", flow="training_square_invoice", correlation_id="owned-correlation", customer_id="owned-customer", invoice_version="1")]
+        self.memory.provider["customers"]["owned-customer"] = {"id": "owned-customer"}
+        self.memory.provider["orders"]["owned-order"] = {"id": "owned-order", "location_id": component.LOCATION,
+            "reference_id": "owned-correlation", "state": "COMPLETED", "created_at": TIME, "total_money": {"amount": 100, "currency": "CAD"}}
+        self.memory.provider["invoices"]["owned-invoice"] = {"id": "owned-invoice", "location_id": component.LOCATION,
+            "order_id": "owned-order", "status": "PAID", "version": 1, "primary_recipient": {"customer_id": "owned-customer"}}
+        self.reviewed, self.verified = review(self.rows), closures(source())
+        self.client.reviewed = self.reviewed
+
+    def test_actual_https_paid_invoice_receipt_cannot_match_draft_unpaid_or_pending_provider_state(self):
+        self.invoice_scope()
+        baseline = component.observe_scoped_effects(self.client, self.reviewed, self.rows, self.verified)
+        self.assertEqual((baseline["activeExecutions"], baseline["uncertainEffects"]), (0, 0))
+        for state in ("DRAFT", "UNPAID", "SCHEDULED", "PAYMENT_PENDING", "PARTIALLY_PAID"):
+            with self.subTest(state=state):
+                self.memory.provider["invoices"]["owned-invoice"]["status"] = state
+                result = component.observe_scoped_effects(self.client, self.reviewed, self.rows, self.verified)
+                invoice = next(item for item in result["effects"] if item["familyId"] == "square.invoices")
+                self.assertFalse(invoice["immutableMatch"])
+                self.assertIn("database-invoice-provider-status-mismatch", invoice["unresolvedReasons"])
+                self.assertIn("database-invoice-order-status-mismatch", invoice["unresolvedReasons"])
+                self.assertGreater(result["activeExecutions"], 0)
+                self.assertGreater(result["uncertainEffects"], 0)
+
+    def test_actual_https_paid_or_cancelled_order_and_invoice_status_mismatches_refuse_zero(self):
+        self.invoice_scope()
+        for state in ("OPEN", "DRAFT", "CANCELED"):
+            with self.subTest(state=state):
+                self.memory.provider["orders"]["owned-order"]["state"] = state
+                result = component.observe_scoped_effects(self.client, self.reviewed, self.rows, self.verified)
+                order = next(item for item in result["effects"] if item["familyId"] == "square.orders")
+                self.assertIn("database-provider-order-status-mismatch", order["unresolvedReasons"])
+                self.assertGreater(result["uncertainEffects"], 0)
+        self.memory.provider["orders"]["owned-order"]["state"] = "COMPLETED"
+        self.rows["orders"][0].update(status="cancelled", provider_status="cancelled")
+        self.reviewed = review(self.rows); self.client.reviewed = self.reviewed
+        result = component.observe_scoped_effects(self.client, self.reviewed, self.rows, self.verified)
+        self.assertGreater(result["uncertainEffects"], 0)
+
+    def test_stored_legacy_and_no_show_invoice_states_are_compared_with_the_actual_provider(self):
+        self.invoice_scope()
+        provider = component._provider_summary("invoices", self.memory.provider["invoices"]["owned-invoice"], self.reviewed)
+        for group, values in (("holds", {"reference_id": "owned-hold", "status": "booked", "booking_model_version": 1,
+                "invoice_id": "owned-invoice", "invoice_order_id": "owned-order", "no_show_invoice_status": "CANCELED"}),
+            ("noShowRecords", {"hold_id": "owned-hold", "status": "charge_failed", "provider_status": "FAILED", "amount_cents": 100,
+                "currency": "CAD", "invoice_id": "owned-invoice", "provider_order_id": "owned-order"})):
+            with self.subTest(group=group):
+                stored = row(group, **values)
+                _joins, reasons = component._join("invoices", provider, [(group, stored, "invoice_id")], self.rows)
+                self.assertIn("database-invoice-provider-status-mismatch", reasons)
 
     def test_actual_https_nonempty_financial_and_private_customer_receipts(self):
         self.rows["attempts"] = [row("attempts", status="captured", operation="square_charge_and_store", provider_payment_id="owned-payment",
