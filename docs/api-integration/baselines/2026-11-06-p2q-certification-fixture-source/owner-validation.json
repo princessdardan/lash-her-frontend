@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "status": "P2_CERTIFICATION_TRACKED_SOURCE_FIXTURE_VERIFIED",
+  "sourceCommit": "5533e9cc99c79a0abb460a688e18972a193f0a62",
+  "sourceBase": "ea4d9cd1f78a63063bd94f087565e4962a579b2b",
+  "changedFiles": {
+    "ops/platform/host/p2_certification_parent_test.py": "792a3f7174aa751a59278b1de1bdc7d6537f92884a460b3eae51a06730874391"
+  },
+  "originalFileSha256": "acaf46a8979e1223861bc9d1a2f7ab92f64242983ff1c5555285697a79bb5504",
+  "unchangedProductionGuard": {
+    "ops/platform/host/p2_source_closure.py": "ae29dcca21713637f658bf8d7026776f697f69e995cc300d321ea71f52af9dba"
+  },
+  "runtime": {
+    "python": "3.14.3",
+    "platform": "darwin"
+  },
+  "controlledContext": {
+    "trackedPublicOpsFiles": 511,
+    "onDiskPublicOpsFiles": 513,
+    "ignoredNpmMetadataFiles": [
+      "ops/gateway/node_modules/jose/package.json",
+      "ops/gateway/node_modules/.package-lock.json"
+    ],
+    "ignoredFixtureBytesSha256": "e74669798da4c6ce861d1e1ca4eaba8fe62be552a6dc2d997f719eb3ab267380"
+  },
+  "verification": {
+    "before": {
+      "source": "ea4d9cd1f78a63063bd94f087565e4962a579b2b",
+      "entryTests": 2,
+      "modeSubtestErrors": 8,
+      "exitCode": 1,
+      "log": "before.log"
+    },
+    "after": {
+      "source": "5533e9cc99c79a0abb460a688e18972a193f0a62",
+      "tests": 16,
+      "failed": 0,
+      "exitCode": 0,
+      "log": "parent-tests.log",
+      "command": "python3 -I -B -c 'import sys,unittest;sys.path.insert(0,\"ops/platform/host\");import p2_certification_parent_test as t;unittest.main(module=t,argv=[\"owned\"],verbosity=2)'"
+    },
+    "productionClosureTests": {
+      "tests": 7,
+      "failed": 0,
+      "exitCode": 0,
+      "log": "closure-tests.log"
+    },
+    "gitDiffCheck": true,
+    "pythonAstParse": true
+  },
+  "boundaries": {
+    "fixtureOnly": true,
+    "actualPosixEntry": true,
+    "actualGitTrackedCopy": true,
+    "sourceFileCap": 512,
+    "sourceByteCap": 41000000,
+    "productionGuardChanged": false,
+    "LinuxCiRun": false,
+    "providerCalls": false,
+    "liveSql": false,
+    "docker": false,
+    "resourceChanges": false
+  }
+}

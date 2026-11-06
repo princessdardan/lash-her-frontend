@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "status": "DESIGN_ONLY_NOT_IMPLEMENTED",
+  "actionClass": "google.oauth-web-client-capture-v1",
+  "provider": "google",
+  "operation": "create-and-capture-web-oauth-client",
+  "allowedClientRoles": [
+    "admin",
+    "customer"
+  ],
+  "oneClientPerAction": true,
+  "qualificationTargetProfilePresentAtCapture": false,
+  "sourceSelectedPlanRequired": true,
+  "opaqueProcessHandleRequired": true,
+  "callerJsonCanIssueAuthority": false,
+  "downloadedJsonCanIssueAuthority": false,
+  "publicReceiptCanIssueAuthority": false,
+  "allocationAuthorityIssued": false,
+  "firstInstallAuthorityIssued": false,
+  "implemented": false,
+  "consoleDomValidated": false,
+  "browserTransportValidated": false,
+  "providerCallsPerformed": 0,
+  "providerMutationsPerformed": 0,
+  "credentialValuesRead": false,
+  "privateRecord": {
+    "rootOwnedCaseDirectoryMode": "0700",
+    "recordMode": "0600",
+    "exclusiveCreateRequired": true,
+    "descriptorRelativeNoFollowRequired": true,
+    "boundedReadRequired": true,
+    "fileAndDirectoryFsyncRequired": true,
+    "rawCredentialBytesCommon": false,
+    "rawCredentialDigestCommon": false
+  },
+  "fixedTransportStates": [
+    "INITIALIZED",
+    "AUTHENTICATED_PROJECT_OBSERVED",
+    "CLIENT_FORM_READY",
+    "CREATE_SUBMITTED",
+    "DOWNLOAD_CAPTURED",
+    "POST_READBACK_OBSERVED",
+    "COMMIT",
+    "ABORT"
+  ],
+  "coveredOnSuccessfulCapture": [
+    "google.oauth-client.creation-action",
+    "google.oauth-client.settings",
+    "google.oauth-client.download-custody"
+  ],
+  "alwaysMissingFromThisContract": [
+    "google.account.creation-chain",
+    "google.project.creation-chain",
+    "google.administrative-boundary",
+    "google.principal-recovery-boundary",
+    "google.project-ancestor-control-completeness",
+    "google.universal-non-copy-history",
+    "google.runtime-delivery",
+    "google.accepted-effect-start",
+    "qualification-target-profile-registration",
+    "allocation-authority",
+    "first-install-authority"
+  ],
+  "uncertainMutationDisposition": "UNKNOWN_AFTER_MUTATION_NO_AUTOMATIC_RETRY",
+  "primaryDocumentation": [
+    "https://developers.google.com/workspace/guides/create-credentials",
+    "https://developers.google.com/workspace/chat/authenticate-authorize-chat-user",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/get",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v1/projects/getIamPolicy",
+    "https://www.mux.com/docs/core/mux-fundamentals",
+    "https://www.mux.com/docs/guides/dashboard-environment-restrictions",
+    "https://www.mux.com/docs/core/make-api-requests"
+  ]
+}

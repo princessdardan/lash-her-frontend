@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "files": {
+    "before.log": {
+      "sha256": "7a5d8908b2ca0d35ed4e96ce0e13f3b47ecaf45f5ccbc73ebdef67b2b8afc1f5",
+      "bytes": 9397
+    },
+    "closure-tests.log": {
+      "sha256": "5bb5aa78b8b1b3af390ca8b47064d55536cb93018bc31bbdcc50510e2e8166b5",
+      "bytes": 1449
+    },
+    "parent-tests.log": {
+      "sha256": "ce46777361c5738ed0c1bcac2d57023d59b64d33c4d906003b70b58ee45e3a94",
+      "bytes": 3723
+    },
+    "validation.json": {
+      "sha256": "9d59f806ce3fee4d0002cfc52b72de62d537b66507cdc6821ed38e235dced4b7",
+      "bytes": 2095
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "status": "CLEAR_BOUNDED_FIXTURE_SOURCE_REVIEW",
+  "reviewedCommit": "5533e9cc99c79a0abb460a688e18972a193f0a62",
+  "baseCommit": "ea4d9cd1f78a63063bd94f087565e4962a579b2b",
+  "changedPaths": [
+    "ops/platform/host/p2_certification_parent_test.py"
+  ],
+  "testSourceSha256": "792a3f7174aa751a59278b1de1bdc7d6537f92884a460b3eae51a06730874391",
+  "findings": [],
+  "verifiedFacts": [
+    "511 tracked selected files vs513 filesystem files with two actual controlled untracked npm metadata files present",
+    "tracked git ls-files copy into private resolved context matches producer extension selection",
+    "no filesystem fallback on git failure",
+    "actual unchanged production closure accepts tracked copy then refuses an extra installed selected file specifically P2_SOURCE_CLOSURE_INCOMPLETE",
+    "all8 actual isolated main modes still reach unchanged root guard; foreign canonical module refusal preserved",
+    "production512 count and byte limits, profiles and PR91 runtime unchanged"
+  ],
+  "independentTests": {
+    "command": "python3 -m unittest -v p2_certification_parent_test p2_source_closure_test",
+    "passed": 23,
+    "skipped": 0,
+    "elapsedSeconds": 2.349,
+    "logPath": "/private/tmp/p2-certification-fixture-independent-review.log",
+    "logSha256": "114878610061d5d2b416b5172e908e4b4c5b5b6892fdb2cc1b04b5ef1125b069"
+  },
+  "scopeLimits": [
+    "Local source/fixture review and actual owned subprocess/filesystem tests only; no fresh Linux CI run",
+    "No provider, SQL, live host or deployment action"
+  ],
+  "repositoryEdits": false
+}

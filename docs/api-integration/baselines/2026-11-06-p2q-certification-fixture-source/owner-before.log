@@ -1,0 +1,87 @@
+test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) ... 
+  test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='auth-preparation') ... ERROR
+  test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='browser-pending') ... ERROR
+  test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='direct-worker') ... ERROR
+  test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='native-window') ... ERROR
+  test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='fault-before-upstream') ... ERROR
+  test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='fault-drop-after-ack') ... ERROR
+  test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='known-ack-recovery') ... ERROR
+  test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='contain-native') ... ERROR
+test_foreign_canonical_module_is_refused_without_replacement_before_source_cache_or_dispatch (p2_certification_parent_test.ActualCertificationEntryTests.test_foreign_canonical_module_is_refused_without_replacement_before_source_cache_or_dispatch) ... ok
+
+======================================================================
+ERROR: test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='auth-preparation')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2-certification-fixture-source/ops/platform/host/p2_certification_parent_test.py", line 313, in test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard
+    self.assertEqual(value['brokerModule'],'__main__');self.assertEqual(value['sourceClosureCalls'],1)
+                     ~~~~~^^^^^^^^^^^^^^^^
+KeyError: 'brokerModule'
+
+======================================================================
+ERROR: test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='browser-pending')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2-certification-fixture-source/ops/platform/host/p2_certification_parent_test.py", line 313, in test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard
+    self.assertEqual(value['brokerModule'],'__main__');self.assertEqual(value['sourceClosureCalls'],1)
+                     ~~~~~^^^^^^^^^^^^^^^^
+KeyError: 'brokerModule'
+
+======================================================================
+ERROR: test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='direct-worker')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2-certification-fixture-source/ops/platform/host/p2_certification_parent_test.py", line 313, in test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard
+    self.assertEqual(value['brokerModule'],'__main__');self.assertEqual(value['sourceClosureCalls'],1)
+                     ~~~~~^^^^^^^^^^^^^^^^
+KeyError: 'brokerModule'
+
+======================================================================
+ERROR: test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='native-window')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2-certification-fixture-source/ops/platform/host/p2_certification_parent_test.py", line 313, in test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard
+    self.assertEqual(value['brokerModule'],'__main__');self.assertEqual(value['sourceClosureCalls'],1)
+                     ~~~~~^^^^^^^^^^^^^^^^
+KeyError: 'brokerModule'
+
+======================================================================
+ERROR: test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='fault-before-upstream')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2-certification-fixture-source/ops/platform/host/p2_certification_parent_test.py", line 313, in test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard
+    self.assertEqual(value['brokerModule'],'__main__');self.assertEqual(value['sourceClosureCalls'],1)
+                     ~~~~~^^^^^^^^^^^^^^^^
+KeyError: 'brokerModule'
+
+======================================================================
+ERROR: test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='fault-drop-after-ack')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2-certification-fixture-source/ops/platform/host/p2_certification_parent_test.py", line 313, in test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard
+    self.assertEqual(value['brokerModule'],'__main__');self.assertEqual(value['sourceClosureCalls'],1)
+                     ~~~~~^^^^^^^^^^^^^^^^
+KeyError: 'brokerModule'
+
+======================================================================
+ERROR: test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='known-ack-recovery')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2-certification-fixture-source/ops/platform/host/p2_certification_parent_test.py", line 313, in test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard
+    self.assertEqual(value['brokerModule'],'__main__');self.assertEqual(value['sourceClosureCalls'],1)
+                     ~~~~~^^^^^^^^^^^^^^^^
+KeyError: 'brokerModule'
+
+======================================================================
+ERROR: test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard (p2_certification_parent_test.ActualCertificationEntryTests.test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard) (mode='contain-native')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/p2-certification-fixture-source/ops/platform/host/p2_certification_parent_test.py", line 313, in test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard
+    self.assertEqual(value['brokerModule'],'__main__');self.assertEqual(value['sourceClosureCalls'],1)
+                     ~~~~~^^^^^^^^^^^^^^^^
+KeyError: 'brokerModule'
+
+----------------------------------------------------------------------
+Ran 2 tests in 1.627s
+
+FAILED (errors=8)

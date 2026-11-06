@@ -1,0 +1,12 @@
+test_certification_source_file_bound_is_finite_and_keeps_complete_coverage (p2_source_closure_test.SourceClosureTests.test_certification_source_file_bound_is_finite_and_keeps_complete_coverage) ... ok
+test_closed_manifest_rejects_empty_partial_and_omitted_altered_dependency (p2_source_closure_test.SourceClosureTests.test_closed_manifest_rejects_empty_partial_and_omitted_altered_dependency) ... ok
+test_complete_installed_closure_accepts_41mb_and_refuses_one_extra_byte (p2_source_closure_test.SourceClosureTests.test_complete_installed_closure_accepts_41mb_and_refuses_one_extra_byte) ... ok
+test_continuous_source_check_refuses_change_after_initial_qualification (p2_source_closure_test.SourceClosureTests.test_continuous_source_check_refuses_change_after_initial_qualification) ... ok
+test_fixed_certification_observer_requires_its_exact_mode_and_cached_bytes (p2_source_closure_test.SourceClosureTests.test_fixed_certification_observer_requires_its_exact_mode_and_cached_bytes) ... ok
+test_fixed_recovery_observer_uses_its_own_exact_cached_source (p2_source_closure_test.SourceClosureTests.test_fixed_recovery_observer_uses_its_own_exact_cached_source) ... ok
+test_guard_observer_uses_exact_cached_source_when_original_is_lost (p2_source_closure_test.SourceClosureTests.test_guard_observer_uses_exact_cached_source_when_original_is_lost) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.208s
+
+OK
