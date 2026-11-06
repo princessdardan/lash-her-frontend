@@ -26,7 +26,7 @@ const reviewedSource = {
   "ops/platform/frontend-admission.mjs": "9ebc4b95fced781a4150d4bca2fab9e01ef9189a839cbe6d6c782c1e5a6bba34",
   "ops/platform/frontend-admission.sql": "b8ec48242871a6e44fef415b127709e9b107a60751e47bc0fa328b99244ab6ab",
   "src/lib/customer-lifecycle/native-trace.ts": "3c88d9f7e81e9951b3e0df67f2401bdbe8c973c63823ceb9eea2b58ec3a3bf08",
-  "src/app/api/internal/release-probe/handler.ts": "b480f6e4dbcc1b6349c2f6078f29837bbc55650b7f0ebf86fd219fae9c9ad12d"
+  "src/app/api/internal/release-probe/handler.ts": "e2ee81c21bc158a19eeb0fb5ca14f4f35b7828919fc02f4272341bbefd3835c9"
 };
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
