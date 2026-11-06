@@ -8,6 +8,7 @@ const ACTION = /^p2-key-rotation-[a-z0-9-]{1,40}$/u;
 const PHASES = Object.freeze(["baseline", "overlap", "current-only"]);
 const MUTATIONS = Object.freeze({ overlap: ["api", "frontend"], "current-only": ["frontend", "api"] });
 const DRAIN_MS = 330_000;
+const TOKEN_CLOCK_RESOLUTION_MS = 1_000;
 
 export class RotationControllerFailure extends Error {
   constructor(check) { super("P2_IDENTITY_KEY_ROTATION_CONTROLLER_REFUSED"); this.check = check; }
@@ -90,6 +91,14 @@ function retainedMutation(records, plan, phase, kind) {
   return true;
 }
 
+function pendingMutation(records, plan, phase, kind) {
+  const intent = records.read(`${phase}-${kind}-intent.json`);
+  const result = records.read(`${phase}-${kind}-qualified.json`);
+  if (intent === null || result !== null) return false;
+  demand(canonical(intent) === canonical(mutationIntent(plan, phase, kind)), "retained-mutation-intent");
+  return true;
+}
+
 function retainedOverlapPhase(records, plan) {
   const value = records.read("overlap-qualified.json");
   if (value === null) return null;
@@ -101,7 +110,9 @@ function retainedOverlapPhase(records, plan) {
     && value.profiles.map(row => row.profile).sort().join() === ["community-admin", "community-member", "course-admin", "course-learner"].join()
     && value.profiles.every(row => closed(row, ["profile", "observedAt", "oldTokenIssuedAt", "oldTokenExpiresAt"])
       && Number.isFinite(Date.parse(row.observedAt)) && Number.isFinite(Date.parse(row.oldTokenIssuedAt))
-      && Date.parse(row.oldTokenExpiresAt) - Date.parse(row.oldTokenIssuedAt) === 300_000), "retained-overlap-phase");
+      && Date.parse(row.oldTokenExpiresAt) - Date.parse(row.oldTokenIssuedAt) === 300_000
+      && Date.parse(row.oldTokenIssuedAt) <= Date.parse(row.observedAt)
+      && Date.parse(row.observedAt) < Date.parse(row.oldTokenExpiresAt)), "retained-overlap-phase");
   return value;
 }
 
@@ -128,13 +139,38 @@ async function runMutation(records, plan, phase, kind, dependencies) {
   return records.create(`${stem}-qualified.json`, result);
 }
 
-function profileEvidence(receipts, phase) {
+function capturedProfiles(captures, cutoff, startedAt, completedAt, fresh) {
+  const expected = ["community-admin", "community-member", "course-admin", "course-learner"];
+  demand(Array.isArray(captures) && captures.length === expected.length
+    && captures.map(row => row.profile).sort().join() === expected.join()
+    && captures.every(row => row.status === "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED"
+      && Number.isFinite(Date.parse(row.tokenIssuedAt)) && Number.isFinite(Date.parse(row.tokenExpiresAt))
+      && Date.parse(row.tokenExpiresAt) - Date.parse(row.tokenIssuedAt) === 300_000
+      && Date.parse(row.tokenIssuedAt) >= cutoff + DRAIN_MS
+      && (!fresh || Date.parse(row.tokenIssuedAt) >= startedAt - TOKEN_CLOCK_RESOLUTION_MS
+        && Date.parse(row.tokenIssuedAt) <= completedAt)
+      && Date.parse(row.tokenExpiresAt) > completedAt), "retained-token-capture");
+  return new Map(captures.map(row => [row.profile, row]));
+}
+
+function profileEvidence(receipts, phase, captures, startedAt, completedAt) {
   demand(Array.isArray(receipts) && receipts.length === 4, "profile-evidence-count");
   const expected = ["community-admin", "community-member", "course-admin", "course-learner"];
   demand(receipts.map(row => row.profile).sort().join() === expected.join()
     && receipts.every(row => row.status === "P2_IDENTITY_ROTATION_PRIVATE_OBSERVED" && row.phase === phase
-      && row.retainedTokenContinuityVerified === true && row.releaseAccepted === false), "profile-evidence");
+      && row.retainedTokenContinuityVerified === true && row.releaseAccepted === false
+      && Number.isFinite(Date.parse(row.observedAt)) && Date.parse(row.observedAt) >= startedAt
+      && Date.parse(row.observedAt) <= completedAt
+      && row.oldTokenIssuedAt === captures.get(row.profile)?.tokenIssuedAt
+      && row.oldTokenExpiresAt === captures.get(row.profile)?.tokenExpiresAt
+      && Date.parse(row.oldTokenIssuedAt) <= Date.parse(row.observedAt)
+      && Date.parse(row.observedAt) < Date.parse(row.oldTokenExpiresAt)), "profile-evidence");
   return receipts;
+}
+
+function retainedEvidenceMatchesCaptures(receipts, captures) {
+  demand(receipts.every(row => row.oldTokenIssuedAt === captures.get(row.profile)?.tokenIssuedAt
+    && row.oldTokenExpiresAt === captures.get(row.profile)?.tokenExpiresAt), "retained-token-continuity");
 }
 
 export async function runIdentityKeyRotationController(planValue, parent, dependencies, options = {}) {
@@ -151,24 +187,14 @@ export async function runIdentityKeyRotationController(planValue, parent, depend
   "controller-dependencies");
   const records = new Records(plan.privateDirectory, options);
   const final = records.read("rotation-controller-qualified.json");
-  if (final !== null) {
-    demand(closed(final, ["version", "status", "environment", "actionId", "bindingSha256", "candidateSha256", "sourceCommit",
-      "baselineConfigurationSha256", "overlapConfigurationSha256", "currentOnlyConfigurationSha256", "lastFullyQualifiedPhase",
-      "profileCount", "overlapDrainSeconds", "keyRemovalVerified", "sourceMechanicsQualified",
-      "sourceParentDispatchIntegrated", "liveEligible", "sqlExecuted", "rolesPrepared", "loginChanged", "trafficAuthorized"])
-      && final.version === 1 && final.environment === "staging"
-      && final.status === "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED" && final.actionId === plan.actionId
-      && final.bindingSha256 === plan.bindingSha256 && final.candidateSha256 === plan.candidateSha256
-      && final.sourceCommit === plan.sourceCommit && final.currentOnlyConfigurationSha256 === plan.configuration["current-only"].sha256
-      && final.sourceParentDispatchIntegrated === false && final.liveEligible === false && final.keyRemovalVerified === false,
-    "retained-controller-result");
-    return Object.freeze(final);
-  }
   const overlapPhase = retainedOverlapPhase(records, plan);
-  const overlapApi = retainedMutation(records, plan, "overlap", "api");
-  const overlapFrontend = retainedMutation(records, plan, "overlap", "frontend");
-  const currentFrontend = retainedMutation(records, plan, "current-only", "frontend");
-  const currentApi = retainedMutation(records, plan, "current-only", "api");
+  let overlapApi = retainedMutation(records, plan, "overlap", "api");
+  let overlapFrontend = retainedMutation(records, plan, "overlap", "frontend");
+  let currentFrontend = retainedMutation(records, plan, "current-only", "frontend");
+  let currentApi = retainedMutation(records, plan, "current-only", "api");
+  const pending = [["overlap", "api"], ["overlap", "frontend"], ["current-only", "frontend"], ["current-only", "api"]]
+    .filter(([phase, kind]) => pendingMutation(records, plan, phase, kind));
+  demand(pending.length <= 1, "retained-mutation-order");
   demand(!overlapFrontend || overlapApi, "retained-phase-order");
   demand(!overlapPhase || overlapApi && overlapFrontend, "retained-phase-order");
   demand(!currentFrontend && !currentApi || overlapPhase !== null, "retained-phase-order");
@@ -182,7 +208,37 @@ export async function runIdentityKeyRotationController(planValue, parent, depend
     runtimeConfigurationSha256: plan.configuration[runtimePhase].sha256,
     frontendConfigurationSha256: plan.configuration[frontendPhase].sha256,
     frontendSession: dependencies.frontendSession, hostScope: dependencies.hostScope }, dependencies);
+  if (final !== null) {
+    demand(closed(final, ["version", "status", "environment", "actionId", "bindingSha256", "candidateSha256", "sourceCommit",
+      "baselineConfigurationSha256", "overlapConfigurationSha256", "currentOnlyConfigurationSha256", "lastFullyQualifiedPhase",
+      "profileCount", "overlapDrainSeconds", "keyRemovalVerified", "sourceMechanicsQualified",
+      "sourceParentDispatchIntegrated", "liveEligible", "sqlExecuted", "rolesPrepared", "loginChanged", "trafficAuthorized"])
+      && final.version === 1 && final.environment === "staging"
+      && final.status === "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED" && final.actionId === plan.actionId
+      && final.bindingSha256 === plan.bindingSha256 && final.candidateSha256 === plan.candidateSha256
+      && final.sourceCommit === plan.sourceCommit && final.currentOnlyConfigurationSha256 === plan.configuration["current-only"].sha256
+      && final.sourceParentDispatchIntegrated === false && final.liveEligible === false && final.keyRemovalVerified === false
+      && pending.length === 0 && overlapPhase !== null && overlapApi && overlapFrontend && currentFrontend && currentApi
+      && runtimePhase === "current-only" && frontendPhase === "current-only", "retained-controller-result");
+    try { await verifyBoundary("current-only"); }
+    catch {
+      try { await dependencies.failClosed({ phase: "current-only", mutationUncertain: false }); } catch {}
+      throw new RotationControllerFailure("retained-result-current-state-unverified");
+    }
+    return Object.freeze(final);
+  }
   try {
+    if (pending.length === 1) {
+      const [[phase, kind]] = pending;
+      demand(phase === "overlap" && kind === "api" || phase === "overlap" && kind === "frontend" && overlapApi
+        || phase === "current-only" && kind === "frontend" && overlapPhase !== null
+        || phase === "current-only" && kind === "api" && currentFrontend, "retained-mutation-order");
+      await runMutation(records, plan, phase, kind, dependencies);
+      if (phase === "overlap" && kind === "api") { overlapApi = true; runtimePhase = "overlap"; }
+      else if (phase === "overlap") { overlapFrontend = true; frontendPhase = "overlap"; }
+      else if (kind === "frontend") { currentFrontend = true; frontendPhase = "current-only"; }
+      else { currentApi = true; runtimePhase = "current-only"; }
+    }
     await verifyBoundary(frontendPhase === "current-only" || runtimePhase === "current-only" ? "current-only"
       : frontendPhase === "overlap" || runtimePhase === "overlap" ? "overlap" : "baseline");
     let selectedOverlap = overlapPhase;
@@ -203,14 +259,17 @@ export async function runIdentityKeyRotationController(planValue, parent, depend
         frontendSignerReceiptSha256: frontendOverlap.receiptSha256 };
     }
     const cutoff = Date.parse(selectedOverlap.frontendIssuanceCutoffAt);
+    const captureStartedAt = (options.nowMs ?? Date.now)();
     const captures = await dependencies.captureTokens();
-    demand(Array.isArray(captures) && captures.length === 4 && captures.every(row => row.status === "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED"
-      && Number.isFinite(Date.parse(row.tokenIssuedAt)) && Date.parse(row.tokenIssuedAt) >= cutoff + DRAIN_MS
-      && Date.parse(row.tokenExpiresAt) - Date.parse(row.tokenIssuedAt) === 300_000
-      && Date.parse(row.tokenExpiresAt) > (options.nowMs ?? Date.now)()),
-      "retained-token-capture");
+    const captureCompletedAt = (options.nowMs ?? Date.now)();
+    const captureByProfile = capturedProfiles(captures, cutoff, captureStartedAt, captureCompletedAt, overlapPhase === null);
+    const overlapObservationStartedAt = (options.nowMs ?? Date.now)();
+    const observedOverlap = overlapPhase === null ? await dependencies.observeProfiles("overlap", captures) : null;
+    const overlapObservationCompletedAt = (options.nowMs ?? Date.now)();
     const overlapEvidence = overlapPhase === null
-      ? profileEvidence(await dependencies.observeProfiles("overlap", captures), "overlap") : overlapPhase.profiles;
+      ? profileEvidence(observedOverlap, "overlap", captureByProfile, overlapObservationStartedAt, overlapObservationCompletedAt)
+      : overlapPhase.profiles;
+    retainedEvidenceMatchesCaptures(overlapEvidence, captureByProfile);
     if (overlapPhase === null) records.create("overlap-qualified.json", { version: 1,
       status: "P2_IDENTITY_ROTATION_PHASE_QUALIFIED", phase: "overlap",
       configurationSha256: plan.configuration.overlap.sha256,
@@ -227,12 +286,17 @@ export async function runIdentityKeyRotationController(planValue, parent, depend
     demand(frontendCurrent?.status === "P2_IDENTITY_ROTATION_FRONTEND_SIGNER_VERIFIED"
       && frontendCurrent.configurationSha256 === plan.configuration["current-only"].sha256 && SHA.test(frontendCurrent.receiptSha256),
     "frontend-current-signer");
-    const currentEvidence = profileEvidence(await dependencies.observeProfiles("current-only", captures), "current-only");
+    const currentObservationStartedAt = (options.nowMs ?? Date.now)();
+    const observedCurrent = await dependencies.observeProfiles("current-only", captures);
+    const currentObservationCompletedAt = (options.nowMs ?? Date.now)();
+    const currentEvidence = profileEvidence(observedCurrent, "current-only", captureByProfile,
+      currentObservationStartedAt, currentObservationCompletedAt);
     for (const before of overlapEvidence) {
       const after = currentEvidence.find(row => row.profile === before.profile);
       demand(after.oldTokenIssuedAt === before.oldTokenIssuedAt && after.oldTokenExpiresAt === before.oldTokenExpiresAt,
         "retained-token-continuity");
     }
+    await verifyBoundary("current-only");
     lastQualified = "current-only";
     const outcome = { version: 1, status: "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED", environment: "staging",
       actionId: plan.actionId, bindingSha256: plan.bindingSha256, candidateSha256: plan.candidateSha256, sourceCommit: plan.sourceCommit,

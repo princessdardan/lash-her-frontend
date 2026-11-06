@@ -82,6 +82,14 @@ class RotationConfigurationTest(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         rotation.RotationConfigurationSet(copy_root, self.fixture.hashes, private_hashes, fixture=True)
 
+    def test_configuration_bytes_cannot_change_after_reviewed_set_is_constructed(self):
+        selected = rotation.RotationConfigurationSet(self.temp.name, self.fixture.hashes,
+                                                     self.fixture.private_hashes, fixture=True)
+        path = Path(self.temp.name) / "overlap" / "course-api.env"
+        path.write_text(path.read_text() + "POST_REVIEW_DRIFT=refused\n"); path.chmod(0o600)
+        with self.assertRaises(ValueError):
+            selected.directory("overlap")
+
 
 class Scope:
     action_id = "p2-key-rotation-owned"
@@ -100,13 +108,14 @@ class AdapterTest(unittest.TestCase):
         adapter.client = types.SimpleNamespace(request=lambda method, path: (
             calls.append((method, path)) or {"envs": [
                 {"key": "COURSE_LEARNER_JWT_CURRENT_SECRET", "id": "env_current", "type": "sensitive",
-                 "target": ["production"], "gitBranch": None, "customEnvironmentIds": []},
+                 "target": ["production"], "gitBranch": None, "customEnvironmentIds": [], "value": "opaque"},
                 {"key": "IGNORED_PREVIEW", "id": "env_preview", "type": "plain",
                  "target": ["preview"], "gitBranch": None, "customEnvironmentIds": []}]}) )
         with patch.object(rotation.vercel, "release_identity", return_value=("staging", "project", "a" * 40)):
             project, rows = adapter._frontend_environment()
         self.assertEqual(project, "project")
         self.assertEqual(set(rows), {"COURSE_LEARNER_JWT_CURRENT_SECRET"})
+        self.assertNotIn("value", rows["COURSE_LEARNER_JWT_CURRENT_SECRET"])
         self.assertEqual(calls, [("GET", "/v10/projects/project/env?decrypt=false")])
 
     def test_frontend_overlap_writes_every_fixed_secret_and_retains_ack_without_secret_readback(self):
@@ -121,7 +130,7 @@ class AdapterTest(unittest.TestCase):
         overlap.update({f"{prefix}_JWT_PREVIOUS_SECRET": old[f"{prefix}_JWT_CURRENT_SECRET"]
                         for prefix in rotation.PROFILE_PREFIXES})
         adapter.configurations = types.SimpleNamespace(frontend={"baseline": {"APP_ENV": "staging", **old},
-            "overlap": {"APP_ENV": "staging", **overlap}}, hashes={"overlap": "a" * 64})
+            "overlap": {"APP_ENV": "staging", **overlap}}, hashes={"overlap": "a" * 64}, directory=lambda _phase: output)
         def metadata(values):
             return {"APP_ENV": {"id": "env_app", "type": "plain", "target": ["production"], "updatedAt": 1},
                     **{key: {"id": "env_" + str(index), "type": "sensitive", "target": ["production"], "updatedAt": 1}
@@ -154,7 +163,7 @@ class AdapterTest(unittest.TestCase):
         community = {**values, "DATABASE_TARGET": "staging"}
         adapter.configurations = types.SimpleNamespace(hashes={"overlap": "b" * 64, "current-only": "c" * 64},
             frontend={"overlap": values}, api={"overlap": {"course-api": course, "community-api": community},
-            "current-only": {"course-api": course, "community-api": community}})
+            "current-only": {"course-api": course, "community-api": community}}, directory=lambda _phase: directory)
         adapter._snapshot = lambda _phase: snapshot
         captured = {}
         def child(_phase, _service, payload):
@@ -205,7 +214,7 @@ class AdapterTest(unittest.TestCase):
     def test_api_recreation_is_one_registered_compose_mutation_without_sql_or_roles(self):
         adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
         adapter.scope, adapter.selected, adapter.jobs = Scope(), {}, {}
-        adapter.configurations = types.SimpleNamespace(hashes={"overlap": "a" * 64})
+        adapter.configurations = types.SimpleNamespace(hashes={"overlap": "a" * 64}, directory=lambda _phase: Path("/private/snapshot"))
         adapter._snapshot = lambda _phase: Path("/private/snapshot")
         adapter.observe_api_configuration = lambda _phase: {"containers": [], "runtimeVerified": True}
         with patch.object(runtime, "preflight"), patch.object(runtime, "compose_command", return_value=["docker", "compose"]), \
@@ -246,6 +255,33 @@ class AdapterTest(unittest.TestCase):
             result = adapter.rollout_frontend("overlap", {}, {})
         self.assertEqual(calls, ["prepare", "stage", "promote"])
         self.assertEqual(result["mutationCount"], 1)
+
+    def test_missing_local_promotion_outcome_uses_read_only_provider_reconciliation(self):
+        output = Path(tempfile.mkdtemp()); os.chmod(output, 0o700)
+        attempt = output / "frontend-overlap"; attempt.mkdir(mode=0o700)
+        for name, value in {
+            "frontend-workload-outcome.json": {"status": "FRONTEND_VERIFIED", "deploymentId": "dpl_owned"},
+            "rotation-frontend-signer.json": {"owned": True},
+            "rotation-frontend-configuration.json": {"owned": True},
+        }.items():
+            (attempt / name).write_text(json.dumps(value)); (attempt / name).chmod(0o600)
+        adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
+        adapter.output = output; adapter.selected = {}; adapter.client = object()
+        adapter.configurations = types.SimpleNamespace(hashes={"overlap": "a" * 64})
+        adapter._intent = lambda intent: intent
+        adapter._validate_frontend_signer = lambda value, phase, deployment: True
+        adapter._validate_frontend_configuration_receipt = lambda value, phase: value
+        adapter.observe_frontend_configuration = lambda phase: {
+            "configurationSha256": "a" * 64, "deploymentId": "dpl_owned"}
+        observed = []
+        with patch.object(rotation.vercel, "_staged_identity", return_value={"deploymentId": "dpl_owned"}), \
+             patch.object(rotation.vercel, "observe_frontend_promotion", side_effect=lambda *_args: (
+                 observed.append(True) or {"status": "FRONTEND_DOMAINS_PROMOTED", "frontendDomainsPromoted": True,
+                                           "deploymentId": "dpl_owned"})):
+            result = adapter.reconcile_mutation({"actionId": "p2-key-rotation-owned", "phase": "overlap", "kind": "frontend",
+                "fromConfigurationSha256": "b" * 64, "toConfigurationSha256": "a" * 64})
+        self.assertTrue(result["getFirstReconciled"])
+        self.assertEqual(observed, [True])
 
 
 if __name__ == "__main__":

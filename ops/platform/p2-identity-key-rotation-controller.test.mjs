@@ -23,8 +23,9 @@ const parent = { sourceOwnedFixedAction: true, hostLockHeld: true, frontendPhysi
   nativeSchedulesEnabled: false, businessSchedulesEnabled: false, sqlAuthorized: false, rolePreparationAuthorized: false,
   loginChangeAuthorized: false };
 
-function harness(selected, { failFirst = false, failAt = failFirst ? 1 : null, initialRuntime = "baseline", initialFrontend = "baseline" } = {}) {
-  let runtime = initialRuntime, frontend = initialFrontend, clock = Date.parse("2027-01-15T07:10:00.000Z"), failed = false;
+function harness(selected, { failFirst = false, failAt = failFirst ? 1 : null, initialRuntime = "baseline", initialFrontend = "baseline",
+  initialClock = "2027-01-15T07:00:00.000Z" } = {}) {
+  let runtime = initialRuntime, frontend = initialFrontend, clock = Date.parse(initialClock), failed = false;
   const calls = [], restored = [], failClosed = [];
   const containers = ["community-api", "community-tls", "community-worker", "course-api", "course-export-cleanup", "course-media",
     "course-publisher", "course-snapshot", "course-tls", "gateway"].map((service, index) => ({ service,
@@ -35,8 +36,9 @@ function harness(selected, { failFirst = false, failAt = failFirst ? 1 : null, i
     toConfigurationSha256: intent.toConfigurationSha256, mutationCount: 1, getFirstReconciled: reconciled,
     runtimeVerified: true, sqlExecuted: false, rolesPrepared: false, loginChanged: false });
   const applyState = intent => { if (intent.kind === "api") runtime = intent.phase; else frontend = intent.phase; };
+  let guardCalls = 0;
   const dependencies = {
-    frontendSession: { verify: async () => {}, receipt: { candidateSha256: selected.candidateSha256 },
+    frontendSession: { verify: async () => { guardCalls += 1; }, receipt: { candidateSha256: selected.candidateSha256 },
       probe: { receipt: { sourceCommit: selected.sourceCommit } } },
     hostScope: { verify() {}, sourceCommit: selected.sourceCommit, candidateSha256: selected.candidateSha256,
       bindingSha256: selected.bindingSha256 },
@@ -56,10 +58,13 @@ function harness(selected, { failFirst = false, failAt = failFirst ? 1 : null, i
     reconcileMutation: async intent => { calls.push(`reconcile:${intent.phase}:${intent.kind}`); applyState(intent); return result(intent, true); },
     captureTokens: async () => profiles.map(profile => ({ status: "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED", profile,
       tokenIssuedAt: "2027-01-15T07:05:30.000Z", tokenExpiresAt: "2027-01-15T07:10:30.000Z" })),
-    observeProfiles: async (phase, captures) => captures.map(({ profile }) => ({ status: "P2_IDENTITY_ROTATION_PRIVATE_OBSERVED",
-      profile, phase, retainedTokenContinuityVerified: true, releaseAccepted: false,
-      oldTokenIssuedAt: "2027-01-15T07:02:00.000Z", oldTokenExpiresAt: "2027-01-15T07:07:00.000Z",
-      observedAt: phase === "overlap" ? "2027-01-15T07:02:10.000Z" : "2027-01-15T07:06:00.000Z" })),
+    observeProfiles: async (phase, captures) => {
+      clock += 10_000;
+      return captures.map(({ profile, tokenIssuedAt, tokenExpiresAt }) => ({ status: "P2_IDENTITY_ROTATION_PRIVATE_OBSERVED",
+        profile, phase, retainedTokenContinuityVerified: true, releaseAccepted: false,
+        oldTokenIssuedAt: tokenIssuedAt, oldTokenExpiresAt: tokenExpiresAt,
+        observedAt: new Date(clock).toISOString() }));
+    },
     observeFrontendSigner: async phase => ({ status: "P2_IDENTITY_ROTATION_FRONTEND_SIGNER_VERIFIED",
       configurationSha256: selected.configuration[phase].sha256, issuanceCutoffAt: "2027-01-15T07:00:00.000Z",
       receiptSha256: sha(`frontend-${phase}`) }),
@@ -67,7 +72,7 @@ function harness(selected, { failFirst = false, failAt = failFirst ? 1 : null, i
     failClosed: async value => { failClosed.push(value); },
     restoreQualified: async phase => { restored.push(phase); runtime = phase; frontend = phase; },
   };
-  return { dependencies, calls, restored, failClosed, nowMs: () => clock };
+  return { dependencies, calls, restored, failClosed, nowMs: () => clock, guardCalls: () => guardCalls };
 }
 
 test("fixed controller orders API/frontend phases, verifies every split state and retains same-token evidence", async () => {
@@ -83,6 +88,30 @@ test("fixed controller orders API/frontend phases, verifies every split state an
     assert.equal((await runIdentityKeyRotationController(selected, parent, retained.dependencies,
       { fixture: true, nowMs: retained.nowMs })).status, "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED");
     assert.deepEqual(retained.calls, []);
+    assert.ok(retained.guardCalls() > 0);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("successful lost API acknowledgement is reconciled before the split-state boundary is evaluated", async () => {
+  const directory = `/private/tmp/p2-rotation-controller-${process.pid}-post-effect`; mkdirSync(directory, { mode: 0o700 });
+  try {
+    const selected = plan(directory), first = harness(selected, { failFirst: true });
+    const apply = first.dependencies.applyMutation;
+    first.dependencies.applyMutation = async intent => {
+      try { return await apply(intent); } finally { first.dependencies.observeRuntime = async () => ({
+        configurationSha256: selected.configuration.overlap.sha256, nativeSchedulesEnabled: false,
+        businessSchedulesEnabled: false, containers: (await harness(selected).dependencies.observeRuntime()).containers,
+        courseCurrent: true, communityCurrent: true,
+        boundaryChecks: ["private-application-credential-required", "private-community-peer-denied", "private-course-tls-catalog",
+          "public-metrics-hidden", "public-tls-missing-workload-denied"] }); }
+    };
+    await assert.rejects(() => runIdentityKeyRotationController(selected, parent, first.dependencies,
+      { fixture: true, nowMs: first.nowMs }), error => error.check === "rotation-failure-uncertain");
+    const resumed = harness(selected, { initialRuntime: "overlap", initialFrontend: "baseline" });
+    const outcome = await runIdentityKeyRotationController(selected, parent, resumed.dependencies,
+      { fixture: true, nowMs: resumed.nowMs });
+    assert.equal(outcome.status, "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED");
+    assert.equal(resumed.calls[0], "reconcile:overlap:api");
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -93,7 +122,8 @@ test("resume after overlap qualification reuses retained phase and reconciles on
     await assert.rejects(() => runIdentityKeyRotationController(selected, parent, first.dependencies,
       { fixture: true, nowMs: first.nowMs }), error => error.check === "rotation-failure-uncertain");
     assert.deepEqual(first.calls, ["apply:overlap:api", "apply:overlap:frontend", "apply:current-only:frontend"]);
-    const resumed = harness(selected, { initialRuntime: "overlap", initialFrontend: "overlap" });
+    const resumed = harness(selected, { initialRuntime: "overlap", initialFrontend: "overlap",
+      initialClock: "2027-01-15T07:06:00.000Z" });
     const outcome = await runIdentityKeyRotationController(selected, parent, resumed.dependencies,
       { fixture: true, nowMs: resumed.nowMs });
     assert.equal(outcome.status, "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED");
@@ -128,5 +158,61 @@ test("controller rejects caller-shaped authority and does not start a mutation",
     await assert.rejects(() => runIdentityKeyRotationController(selected, parent, owned.dependencies),
       error => error.check === "source-parent-dispatch-not-integrated");
     assert.deepEqual(owned.calls, []);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("controller refuses observation timestamps not joined to the retained capture and actual phase window", async () => {
+  for (const variant of ["capture", "window"]) {
+    const directory = `/private/tmp/p2-rotation-controller-${process.pid}-time-${variant}`; mkdirSync(directory, { mode: 0o700 });
+    try {
+      const selected = plan(directory), owned = harness(selected);
+      const original = owned.dependencies.observeProfiles;
+      owned.dependencies.observeProfiles = async (phase, captures) => {
+        const receipts = await original(phase, captures);
+        if (phase === "overlap") receipts[0] = { ...receipts[0],
+          ...(variant === "capture" ? { oldTokenIssuedAt: "2027-01-15T07:02:00.000Z",
+            oldTokenExpiresAt: "2027-01-15T07:07:00.000Z" } : { observedAt: "2027-01-15T07:02:10.000Z" }) };
+        return receipts;
+      };
+      await assert.rejects(() => runIdentityKeyRotationController(selected, parent, owned.dependencies,
+        { fixture: true, nowMs: owned.nowMs }), error => error.check === "rotation-failure-contained");
+      assert.deepEqual(owned.calls, ["apply:overlap:api", "apply:overlap:frontend"]);
+      assert.deepEqual(owned.restored, ["baseline"]);
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  }
+});
+
+test("controller performs a final boundary read and refuses drift after the last profile observation", async () => {
+  const directory = `/private/tmp/p2-rotation-controller-${process.pid}-final-boundary`; mkdirSync(directory, { mode: 0o700 });
+  try {
+    const selected = plan(directory), owned = harness(selected);
+    const observeProfiles = owned.dependencies.observeProfiles;
+    owned.dependencies.observeProfiles = async (phase, captures) => {
+      const rows = await observeProfiles(phase, captures);
+      if (phase === "current-only") {
+        const observeRuntime = owned.dependencies.observeRuntime;
+        owned.dependencies.observeRuntime = async () => ({ ...await observeRuntime(),
+          configurationSha256: selected.configuration.overlap.sha256 });
+      }
+      return rows;
+    };
+    await assert.rejects(() => runIdentityKeyRotationController(selected, parent, owned.dependencies,
+      { fixture: true, nowMs: owned.nowMs }), error => error.check === "rotation-failure-uncertain");
+    assert.equal(owned.failClosed.length, 1);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("retained controller result is historical until current guards pass again", async () => {
+  const directory = `/private/tmp/p2-rotation-controller-${process.pid}-retained-read`; mkdirSync(directory, { mode: 0o700 });
+  try {
+    const selected = plan(directory), first = harness(selected);
+    await runIdentityKeyRotationController(selected, parent, first.dependencies, { fixture: true, nowMs: first.nowMs });
+    const retained = harness(selected, { initialRuntime: "current-only", initialFrontend: "current-only",
+      initialClock: "2027-01-15T07:06:00.000Z" });
+    retained.dependencies.hostScope.verify = () => { throw new Error("lost host lock"); };
+    await assert.rejects(() => runIdentityKeyRotationController(selected, parent, retained.dependencies,
+      { fixture: true, nowMs: retained.nowMs }), error => error.check === "retained-result-current-state-unverified");
+    assert.equal(retained.failClosed.length, 1);
+    assert.deepEqual(retained.calls, []);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

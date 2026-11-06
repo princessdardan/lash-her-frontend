@@ -28,10 +28,18 @@ Owned validation covers:
   state verification, GET-first reconciliation, one API recreation and one
   frontend build/promotion per phase, and restoration only to the last fully
   qualified phase;
+- controller joins from each captured profile timestamp to the exact retained
+  observation and actual capture/observation window, plus a final current-state
+  boundary on both new completion and retained-result reads;
 - a typed host adapter that compares all non-profile base environment values,
   keeps private credential-bearing byte hashes out of common evidence, admits
   only the existing fresh release-probe overlay, and passes child credentials
   over private stdin rather than process arguments;
+- repeated reviewed private-configuration byte validation before and after
+  copies, mutations, and observations, with copied snapshots joined to the
+  same reviewed byte hash;
+- Vercel `decrypt=false` opaque secret values are discarded as non-authority;
+  supported sensitive/encrypted response shapes do not imply secret readback;
 - refusal of incomplete profiles, short drain, grace acceptance, configured
   previous keys, mutable parent claims, arbitrary commands, and malformed
   packets;

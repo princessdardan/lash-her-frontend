@@ -150,6 +150,8 @@ class RotationConfigurationSet:
 
     def directory(self, phase):
         demand(phase in PHASES, "ROTATION_PHASE_REQUIRED")
+        demand(_phase_hash(self.directories[phase]) == self.private_hashes[phase],
+               "ROTATION_CONFIGURATION_HASH_CHANGED")
         return self.directories[phase]
 
 
@@ -206,16 +208,20 @@ class P2IdentityRotationHostAdapter:
                 "sqlExecuted": False, "rolesPrepared": False, "loginChanged": False}
 
     def _snapshot(self, phase):
+        source = self.configurations.directory(phase)
         destination = self.output / f"runtime-{phase}"
         if not destination.exists():
             compose = migrate.read_input(self.compose_file.parent, self.compose_file.name)
-            runtime.snapshot_configuration(self.configurations.directory(phase), destination, self.selected, self.jobs, compose)
+            runtime.snapshot_configuration(source, destination, self.selected, self.jobs, compose)
         else:
-            expected = staging_state.configuration_hashes(self.configurations.directory(phase))
+            expected = staging_state.configuration_hashes(source)
             demand(staging_state.configuration_hashes(destination) == expected
                    and migrate.file_hash(migrate.read_input(destination, "compose.yaml"))
                        == migrate.file_hash(migrate.read_input(self.compose_file.parent, self.compose_file.name)),
                    "ROTATION_RETAINED_SNAPSHOT_CHANGED")
+        self.configurations.directory(phase)
+        demand(_phase_hash(destination) == self.configurations.private_hashes[phase],
+               "ROTATION_SNAPSHOT_CONFIGURATION_CHANGED")
         return destination
 
     def _private_child(self, phase, service, payload):
@@ -270,6 +276,7 @@ class P2IdentityRotationHostAdapter:
         return copy.deepcopy(captures)
 
     def _retained_captures(self):
+        self.configurations.directory("overlap")
         record = migrate.read_json(self.output, "rotation-token-captures.json")
         demand(isinstance(record, dict) and set(record) == {"version", "status", "actionId", "bindingSha256",
             "configurationSha256", "captures"} and record.get("version") == 1
@@ -362,6 +369,7 @@ class P2IdentityRotationHostAdapter:
             observed = self.observe_api_configuration(phase)
         finally:
             runtime._command_scope.reset(token)
+        self.configurations.directory(phase)
         return {"status": "P2_IDENTITY_ROTATION_API_RECREATED", "phase": phase,
                 "configurationSha256": self.configurations.hashes[phase], "containers": observed["containers"],
                 "mutationCount": 1, "runtimeVerified": True, "sqlExecuted": False,
@@ -379,7 +387,7 @@ class P2IdentityRotationHostAdapter:
             demand(isinstance(key, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", key) and key not in selected
                    and row.get("type") in ("sensitive", "encrypted", "plain")
                    and isinstance(row.get("id"), str) and re.fullmatch(r"[A-Za-z0-9_-]+", row["id"])
-                   and ("value" not in row or row.get("type") == "plain" and isinstance(row.get("value"), str)),
+                   and ("value" not in row or isinstance(row.get("value"), str)),
                    "ROTATION_FRONTEND_ENVIRONMENT_AMBIGUOUS")
             selected[key] = {field: row.get(field) for field in ("id", "type", "target", "updatedAt")}
         return project, selected
@@ -413,16 +421,19 @@ class P2IdentityRotationHostAdapter:
                 "environment": metadata})
 
     def observe_frontend_configuration(self, phase):
+        self.configurations.directory(phase)
         project, actual = self._frontend_environment()
         self._assert_frontend_inventory(actual, phase)
         self._retain_frontend_base_metadata(actual)
         state = vercel.promotion_state(self.client, project)
         demand(state["cronsEnabled"] is False and (state["aliasJob"] is None or state["aliasJob"]["jobStatus"] in ("succeeded", "failed", "skipped")),
                "ROTATION_FRONTEND_PROVIDER_BUSY")
+        self.configurations.directory(phase)
         return {"configurationSha256": self.configurations.hashes[phase], "deploymentId": state["productionDeploymentId"],
                 "cronsEnabled": False, "aliasJobActive": False}
 
     def _configure_frontend(self, phase, attempt):
+        self.configurations.directory(phase)
         project, before = self._frontend_environment()
         self._assert_frontend_inventory(before, "baseline" if phase == "overlap" else "overlap", require_overlay=False)
         self._retain_frontend_base_metadata(before)
@@ -454,6 +465,7 @@ class P2IdentityRotationHostAdapter:
             "configurationSha256": self.configurations.hashes[phase], "acknowledgements": acknowledgements,
             "readback": [{"key": key, "environmentId": after[key]["id"], "type": after[key]["type"]}
                          for key in sorted(desired)], "secretValuesReadBack": False})
+        self.configurations.directory(phase)
         return {"configurationSha256": self.configurations.hashes[phase]}
 
     def rollout_frontend(self, phase, expected_feature_controls, expected_writer_binding):
@@ -509,6 +521,7 @@ class P2IdentityRotationHostAdapter:
         return signer
 
     def _validate_frontend_configuration_receipt(self, value, phase):
+        self.configurations.directory(phase)
         fields = {"version", "status", "actionId", "phase", "configurationSha256", "acknowledgements",
                   "readback", "secretValuesReadBack"}
         desired = {key for key in self.configurations.frontend[phase] if key in PROFILE_KEYS}
@@ -552,8 +565,9 @@ class P2IdentityRotationHostAdapter:
         attempt = self.output / f"frontend-{phase}"
         migrate.private_directory(attempt)
         staged = vercel._staged_identity(self.selected, attempt)
-        promotion = migrate.read_json(attempt, "frontend-promotion-outcome.json")
-        if not (promotion.get("status") == "FRONTEND_DOMAINS_PROMOTED"
+        promotion = (migrate.read_json(attempt, "frontend-promotion-outcome.json")
+                     if (attempt / "frontend-promotion-outcome.json").exists() else None)
+        if not (isinstance(promotion, dict) and promotion.get("status") == "FRONTEND_DOMAINS_PROMOTED"
                 and promotion.get("frontendDomainsPromoted") is True):
             try:
                 promotion = vercel.observe_frontend_promotion(self.client, self.selected, attempt)

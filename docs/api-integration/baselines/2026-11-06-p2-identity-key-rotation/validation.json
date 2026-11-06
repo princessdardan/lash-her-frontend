@@ -1,18 +1,18 @@
 {
-  "version": 2,
+  "version": 3,
   "status": "SOURCE_MECHANICS_VALIDATED_LIVE_OPEN",
   "baseCommit": "caea30f6297a0da0b441c20cc9598ab1e798e192",
   "preparationCommit": "7ac1f859abe75561cf538d63d867517f20a8b9b7",
   "sourceFiles": {
     "ops/platform/p2-identity-key-rotation.mjs": "45d89633b0e6a194974fc9750661f2ea08799dc1c7b41b391269905f4bcb8558",
     "ops/platform/p2-identity-key-rotation.test.mjs": "02790b8e5ed9d0a9f0a7013e2408678ba399b56521c0833c7e8498cff1f6155c",
-    "ops/platform/p2-identity-key-rotation-controller.mjs": "9d4f3a8477b311aad1607630450ea4b349691ea95765d0a604e300ce46415d42",
-    "ops/platform/p2-identity-key-rotation-controller.test.mjs": "0803060ec2e70670fb4dfe165d7a8b86e7b9a4caecaa396d4685f921ac87d054",
+    "ops/platform/p2-identity-key-rotation-controller.mjs": "2adbf12f9ef85ddc3052461ee628d7a3e75e0f6999bd39354401d3a9ad464c3d",
+    "ops/platform/p2-identity-key-rotation-controller.test.mjs": "2bdfd1b68d2c9cd2edfe81dcbd900974eeefa6229e7e6cc690f61c075689b450",
     "ops/platform/p2-identity-key-rotation-observer.mjs": "73cbf46a51b241168921d986be93107c03f3c62d679e314de12004e5726e10bb",
     "ops/platform/host/p2_identity_key_rotation.py": "178f63244c90cc3683e11917e02e77d77dd40f6a61f8fabe0f24c3d035705d61",
     "ops/platform/host/p2_identity_key_rotation_test.py": "11380fdf9558c5d05629091486183fb71e791714afb736d1649245787806597d",
-    "ops/platform/host/p2_identity_key_rotation_adapter.py": "6b6f7ccfac81c1a789c36f02e96a239b84ec94e5e53e5d72f8cc3615a354c2d8",
-    "ops/platform/host/p2_identity_key_rotation_adapter_test.py": "87821456244df57b9e06be8ed02ba195314e98dbc40fbac007158ec7a9b808a0",
+    "ops/platform/host/p2_identity_key_rotation_adapter.py": "437e18bd42be6bc6ad6888d6d18a59a0a76142b1a7fc3a0005032c1cd113cdb0",
+    "ops/platform/host/p2_identity_key_rotation_adapter_test.py": "e1cddff10c21eb8215bc7e2ac281e31973e140aabc834a4977433a6990195098",
     "ops/platform/p2-identity-key-rotation.md": "ad72fa0f6723d538634a91e6b7f3bfbb3c9f99c267770c7319d507988af69e0b"
   },
   "embeddedProgram": {
@@ -22,8 +22,8 @@
   },
   "verification": {
     "rotationObserverNode": { "passed": 6, "failed": 0, "skipped": 0, "realLoopbackVerifiedTls": true },
-    "rotationControllerNode": { "passed": 4, "failed": 0, "skipped": 0 },
-    "python": { "passed": 13, "failed": 0, "skipped": 0 },
+    "rotationControllerNode": { "passed": 8, "failed": 0, "skipped": 0 },
+    "python": { "passed": 15, "failed": 0, "skipped": 0 },
     "eslint": "passed",
     "javascriptSyntax": "passed",
     "pythonCompile": "passed",
