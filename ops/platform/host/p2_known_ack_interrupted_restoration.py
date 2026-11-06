@@ -190,6 +190,36 @@ def require_gateway_counts(value):
             'P2_INTERRUPTED_INTEGER_GATEWAY_COUNTS_REQUIRED')
 
 
+def original_fault_receipts(selection, selected, plan, effect):
+    directory = root_path(str(ROOT / ('p2-certification-' + selection['originalCertificationActionId']) / 'fault'))
+    names = ('fault-arm-intent.json', 'fault-arm-observed.json')
+    raw = {name: migrate.read_input(directory, name, 2_000_000) for name in names}
+    intent, observed = (json.loads(raw[name]) for name in names)
+    lease = intent.get('lease')
+    require(set(intent) == {'version', 'stageId', 'leaseSha256', 'lease'} and one(intent['version']) and
+            isinstance(lease, dict) and set(lease) == {'version', 'environment', 'profile', 'stageId', 'candidateSha256', 'configurationSha256',
+            'gatewayConfigurationSha256', 'gatewayProcessSha256', 'gatewayImageSha256', 'mode', 'receiver', 'releaseId',
+            'sourceWitnessSha256', 'issuedAt', 'expiresAt', 'maxMatches', 'record'} and
+            sha(canonical(lease) + b'\n') == intent['leaseSha256'] == effect.get('leaseSha256') and
+            one(lease['version']) and one(lease['maxMatches']) and lease['releaseId'] == selected['releaseId'] and
+            all(lease[key] == plan[key] for key in ('stageId', 'candidateSha256', 'configurationSha256', 'gatewayConfigurationSha256',
+                'gatewayProcessSha256', 'gatewayImageSha256', 'mode', 'receiver')) and
+            lease['sourceWitnessSha256'] == plan['commandSha256'] and intent['stageId'] == plan['stageId'],
+            'P2_INTERRUPTED_ORIGINAL_FAULT_LEASE_REQUIRED')
+    record, command = lease['record'], plan['nativePlan']['commandWitnesses'][0]
+    require(set(record) == {'commandId', 'accountVersion', 'canonicalSha256'} and type(record['accountVersion']) is int and
+            1 <= record['accountVersion'] <= 9007199254740991 and record['commandId'] == command['commandId'] and
+            str(record['accountVersion']) == command['accountVersion'] and record['canonicalSha256'] == plan['commandSha256'],
+            'P2_INTERRUPTED_ORIGINAL_FAULT_COMMAND_REQUIRED')
+    from p2_certification_parent import _iso
+    require(_iso(lease['expiresAt']) - _iso(lease['issuedAt']) == 120 and
+            set(observed) == {'version', 'status', 'stageId', 'leaseSha256', 'expiresAt', 'maxMatches', 'gatewayProcessSha256'} and
+            one(observed['version']) and one(observed['maxMatches']) and observed['status'] == 'P2_FAULT_LEASE_ARMED' and
+            all(observed[key] == lease[key] for key in ('stageId', 'expiresAt', 'gatewayProcessSha256')) and
+            observed['leaseSha256'] == intent['leaseSha256'], 'P2_INTERRUPTED_ORIGINAL_FAULT_READBACK_REQUIRED')
+    return {name: sha(raw[name]) for name in names}
+
+
 def load_retained(initial, selected, jobs, verify, command=None):
     """Read-only reconstruction of source facts, never old capability state."""
     verify()
@@ -262,6 +292,7 @@ def load_retained(initial, selected, jobs, verify, command=None):
             effect.get('profile') == plan.get('profile') == 'lifecycle-known-command-v1' and
             effect.get('environment') == 'staging' and effect.get('status') == 'P2_TRANSPORT_FAULT_INJECTED',
             'P2_INTERRUPTED_ORIGINAL_PROCESS_EFFECT_REQUIRED')
+    fault_pins = original_fault_receipts(selection, selected, plan, effect)
     original_gateway = settlement['gateway']
     require(known._same_process(baseline['gateway'], original_gateway) and original_gateway['admission']['newWork'] is False and
             original_gateway['admission']['recovery'] is False and known._zero(original_gateway['admission']['active']) and
@@ -324,7 +355,7 @@ def load_retained(initial, selected, jobs, verify, command=None):
     verify()
     return {'selection': selection, 'plan': plan, 'values': values, 'stages': stages, 'originalGateway': observation,
             'inputDirectory': input_directory, 'replacementDirectory': replacement, 'activeStage': active, 'completedStages': completed,
-            'oldProcesses': output['oldProcesses'], 'originalReadySha256': sha(ready_raw), 'originalSource': source, 'originalSourceManifest': manifest}
+            'oldProcesses': output['oldProcesses'], 'originalReadySha256': sha(ready_raw), 'originalFaultReceiptSha256': fault_pins, 'originalSource': source, 'originalSourceManifest': manifest}
 
 
 def validate_fresh_settled(retained, snapshot):
@@ -824,6 +855,9 @@ class InterruptedKnownAckRestorationBroker(Broker):
         require(sha(stop_raw) == stop_ref['stopReceiptSha256'] and
                 sha(migrate.read_input(Path(stop_ref['stopReceiptDirectory']), prior.BEFORE_STOP)) == json.loads(stop_raw)['beforeSha256'],
                 'P2_INTERRUPTED_ORIGINAL_STOP_BYTES_CHANGED')
+        fault = ROOT / ('p2-certification-' + selection['originalCertificationActionId']) / 'fault'
+        require({name: sha(migrate.read_input(fault, name, 2_000_000)) for name in retained['originalFaultReceiptSha256']} == retained['originalFaultReceiptSha256'],
+                'P2_INTERRUPTED_ORIGINAL_FAULT_BYTES_CHANGED')
         require(sha(migrate.read_input(ROOT / ('p2-certification-' + selection['originalCertificationActionId']),
                 'p2-certification-current-ready.json', 2_000_000)) == retained['originalReadySha256'], 'P2_INTERRUPTED_ORIGINAL_READY_CHANGED')
         verify_source_closure({'sourceSha256': retained['originalSourceManifest'],

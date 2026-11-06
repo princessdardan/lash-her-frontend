@@ -42,6 +42,17 @@ class RetainedChainTests(unittest.TestCase):
         plan.update(version=1,maxMatches=1,leaseMilliseconds=120000,mode='drop-after-ack',nativePlanSha256='d'*64,stageId='owned-stage',profile='lifecycle-known-command-v1',gatewayProcessSha256=c.sha(c.canonical(process)))
         effects[0].update(version=1,status='P2_TRANSPORT_FAULT_INJECTED',environment='staging',profile=plan['profile'],stageId=plan['stageId'],
           candidateSha256='a'*64,configurationSha256=plan['configurationSha256'],gatewayProcessSha256=plan['gatewayProcessSha256'],gatewayImageSha256=self.selected['artifacts']['gateway']['image'].split(':')[-1])
+        plan.update(gatewayConfigurationSha256=config['gateway.json'],gatewayImageSha256=self.selected['artifacts']['gateway']['image'].split(':')[-1])
+        command=plan['nativePlan']['commandWitnesses'][0]
+        lease={'version':1,'environment':'staging','profile':plan['profile'],'stageId':plan['stageId'],'candidateSha256':'a'*64,
+          'configurationSha256':plan['configurationSha256'],'gatewayConfigurationSha256':plan['gatewayConfigurationSha256'],
+          'gatewayProcessSha256':plan['gatewayProcessSha256'],'gatewayImageSha256':plan['gatewayImageSha256'],'mode':'drop-after-ack','receiver':plan['receiver'],
+          'releaseId':self.selected['releaseId'],'sourceWitnessSha256':plan['commandSha256'],'issuedAt':'2026-11-06T01:00:00.000Z','expiresAt':'2026-11-06T01:02:00.000Z','maxMatches':1,
+          'record':{'commandId':command['commandId'],'accountVersion':int(command['accountVersion']),'canonicalSha256':plan['commandSha256']}}
+        effects[0]['leaseSha256']=c.sha(c.canonical(lease)+b'\n');fault=self.original/'fault';fault.mkdir(mode=0o700)
+        (fault/'fault-arm-intent.json').write_bytes(c.canonical({'version':1,'stageId':plan['stageId'],'leaseSha256':effects[0]['leaseSha256'],'lease':lease})+b'\n')
+        (fault/'fault-arm-observed.json').write_bytes(c.canonical({'version':1,'status':'P2_FAULT_LEASE_ARMED','stageId':plan['stageId'],'leaseSha256':effects[0]['leaseSha256'],
+          'expiresAt':lease['expiresAt'],'maxMatches':1,'gatewayProcessSha256':plan['gatewayProcessSha256']})+b'\n')
         original_processes={name:{**process,'containerId':format(index+2,'064x'),'pid':20+index} for index,name in enumerate(c.runtime.SERVICES)}
         original_processes['gateway']=process
         ready=[{'service':name,'containerId':original_processes[name]['containerId'],'image':self.selected['artifacts'][c.runtime.IMAGE_KEYS[name]]['image'],
@@ -109,7 +120,7 @@ class RetainedChainTests(unittest.TestCase):
 
     def test_all_original_B_predicates_reject_otherwise_valid_repinned_chains(self):
         original=copy.deepcopy(self.values);original_selection=copy.deepcopy(self.selection)
-        cases=('fault-mode','command-action','extra-command','native-plan-sha','inner-version','inner-boolean-version','gateway-process-sha','runtime-inventory-sha','receiver-targets-sha','canonical-config-sha','boolean-backend-count','boolean-gateway-count')
+        cases=('fault-mode','command-action','extra-command','native-plan-sha','inner-version','inner-boolean-version','gateway-process-sha','consistent-process-sha','runtime-inventory-sha','receiver-targets-sha','canonical-config-sha','boolean-backend-count','boolean-gateway-count')
         for kind in cases:
             self.values=copy.deepcopy(original);self.selection=copy.deepcopy(original_selection);self.initial['interruptedRestoration']=self.selection
             plan=self.values['baseline.json']['plan'];intent=self.values['recovery-intent.json']['intent']
@@ -120,6 +131,7 @@ class RetainedChainTests(unittest.TestCase):
             elif kind=='inner-version':intent['version']=2
             elif kind=='inner-boolean-version':intent['version']=True
             elif kind=='gateway-process-sha':intent['gatewayProcessSha256']='f'*64
+            elif kind=='consistent-process-sha':intent['gatewayProcessSha256']=plan['gatewayProcessSha256']=self.values['domain.json']['effect']['gatewayProcessSha256']='f'*64
             elif kind=='runtime-inventory-sha':intent['runtimeInventorySha256']='f'*64
             elif kind=='receiver-targets-sha':intent['receiverTargetsSha256']='f'*64
             elif kind=='canonical-config-sha':plan['configurationSha256']='f'*64

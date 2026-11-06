@@ -41,6 +41,13 @@ try{
   const preparedConfiguration=spawnSync('python3',['-B',${JSON.stringify(engine)},'configuration'],{input:JSON.stringify({root:${JSON.stringify(root)},work,input,candidate:input.candidate,candidateSha256:input.candidateSha256,jobs:minimalJobs,receiverTargets,oldPid:process.pid,apiProofs:originalApi.proofs,actionId:'owned-interrupted-restoration-c',gatewayConfiguration:Buffer.from(JSON.stringify(rootGateway)).toString('base64')}),encoding:'utf8',timeout:30000,env:{PATH:process.env.PATH,PYTHONDONTWRITEBYTECODE:'1'}});
   for(const client of originalApi.clients)await client.end();assert.equal(preparedConfiguration.status,0);const originalConfiguration=JSON.parse(preparedConfiguration.stdout);
   const now=Date.now();let faultEnabled=true;`],
+  ["const raw=Buffer.from(JSON.stringify(reviewed)),processBinding=", "const raw=Buffer.from(JSON.stringify(rootGateway)),processBinding="],
+  ["return createP2CertificationFault({...reviewed", `const faultDirectory=join(work,'root','p2-certification-owned-b-certification','fault');mkdirSync(faultDirectory,{mode:0o700});
+   const leaseRaw=Buffer.from(canonical(lease)+'\\n'),leaseSha256=hash(leaseRaw);
+   writeFileSync(join(faultDirectory,'fault-arm-intent.json'),canonical({version:1,stageId:lease.stageId,leaseSha256,lease})+'\\n',{mode:0o600,flag:'wx'});
+   writeFileSync(join(faultDirectory,'fault-arm-observed.json'),canonical({version:1,status:'P2_FAULT_LEASE_ARMED',stageId:lease.stageId,leaseSha256,expiresAt:lease.expiresAt,maxMatches:1,gatewayProcessSha256:lease.gatewayProcessSha256})+'\\n',{mode:0o600,flag:'wx'});
+   return createP2CertificationFault({...reviewed`],
+  ["readLease:()=>faultEnabled?Buffer.from(JSON.stringify(lease)):null", "readLease:()=>faultEnabled?leaseRaw:null"],
   ["configurationSha256:'b'.repeat(64)","configurationSha256:originalConfiguration.configurationCanonicalSha256"],
   ["gatewayImageSha256:'c'.repeat(64)","gatewayImageSha256:input.candidate.artifacts.gateway.image.split(':').at(-1)"],
 
