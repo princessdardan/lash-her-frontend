@@ -66,7 +66,7 @@ export function readOperatorSourceFiles(source) {
   const paths=git(["ls-files","-z","--","ops"]).split("\0").filter(path=>path&&/\.(?:py|mjs|json|yaml|yml|service|timer|sh|guard)$/u.test(path));
   // Current source plus the lifecycle certification packages exceeds
   // 400 files. Keep the complete-source count bounded; byte limits are separate.
-  assert.ok(paths.length>0&&paths.length<=448);
+  assert.ok(paths.length>0&&paths.length<=480);
   let total=0;
   return paths.map(path=> {
     assert.ok(path.startsWith("ops/")&&!path.split("/").includes(".."));

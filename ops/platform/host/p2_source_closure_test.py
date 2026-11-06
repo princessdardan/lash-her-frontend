@@ -37,7 +37,7 @@ class SourceClosureTests(unittest.TestCase):
 
     def test_certification_source_file_bound_is_finite_and_keeps_complete_coverage(self):
         manifest = dict(self.manifest)
-        while len(manifest) < 448:
+        while len(manifest) < 480:
             name = f'ops/platform/harness/owned-count-{len(manifest)}.mjs'
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)

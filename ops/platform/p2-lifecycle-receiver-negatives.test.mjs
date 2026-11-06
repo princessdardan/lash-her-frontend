@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -64,6 +65,21 @@ test("plan leaves the live future gap OPEN and exposes no command or credential"
   assert.equal(plan.operatorSourceEligibility, "same-as-immutable-frontend-candidate");
   assert.equal(JSON.stringify(plan).includes(receiverWitnessFixture().userId), false);
   const changed = receiverReviewedFixture(); changed.quiescence = { held: true }; assert.throws(() => prepareP2LifecycleReceiverPlan(changed));
+});
+
+test("receiver reviewed source count accepts 480 and refuses 481 without weakening the source digest", () => {
+  const reviewed = structuredClone(receiverReviewedFixture());
+  const files = reviewed.operatorSourceFiles;
+  while (Object.keys(files).length < 480) files[`ops/platform/count-bound-${Object.keys(files).length}.mjs`] = "a".repeat(64);
+  reviewed.persistence.operatorSourceFiles = structuredClone(files);
+  const bind = () => {
+    reviewed.persistence.plan.operatorSourceSha256 = createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.keys(files).sort()
+      .map(name => [name, files[name]])))).digest("hex");
+  };
+  bind(); prepareP2LifecycleReceiverPlan(reviewed);
+  files["ops/platform/count-overflow.mjs"] = "b".repeat(64);
+  reviewed.persistence.operatorSourceFiles = structuredClone(files); bind();
+  assert.throws(() => prepareP2LifecycleReceiverPlan(reviewed));
 });
 
 test("even the private POST entry refuses a future gap without making a network request", async () => {
