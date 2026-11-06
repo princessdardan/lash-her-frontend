@@ -15,6 +15,15 @@ LIFETIME_MS = 3_600_000
 DEPLOYMENT_URL = re.compile(r"https://[a-z0-9][a-z0-9-]*\.vercel\.app")
 PRIVATE_FILE = "frontend-probe-private.json"
 demand = migrate.demand
+FEATURE_CONTROL_NAMES = (
+    "INTEGRATION_CUSTOMER_ACCESS_ENABLED", "INTEGRATION_COURSE_READS_ENABLED", "INTEGRATION_CHECKOUT_ENABLED",
+    "INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED", "INTEGRATION_COMMUNITY_READS_ENABLED", "INTEGRATION_COMMUNITY_WRITES_ENABLED",
+    "INTEGRATION_LEARNING_ROUTES_ENABLED", "CUSTOMER_AUTH_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED",
+)
+
+
+def valid_feature_controls(value):
+    return isinstance(value, dict) and set(value) == set(FEATURE_CONTROL_NAMES) and all(type(item) is bool for item in value.values())
 
 
 def _private_configuration(directory):
@@ -126,7 +135,7 @@ def _automation_bypass(project):
     return bypass
 
 
-def verify(client, release, attempt, private_configuration, probe_client=None):
+def verify(client, release, attempt, private_configuration, probe_client=None, expected_feature_controls=None):
     """A real HTTP callback for promote_frontend, not a success-file input.
 
     The selected deployment must execute its server-only SDK transport and
@@ -138,6 +147,8 @@ def verify(client, release, attempt, private_configuration, probe_client=None):
                "trafficAuthorized": False, "nativeSchedulerVerified": False}
     try:
         phase2 = "contractPhase" in release or "phase2ContractManifestSha256" in release
+        demand((not phase2 and expected_feature_controls is None) or (phase2 and valid_feature_controls(expected_feature_controls)),
+               "FRONTEND_FEATURE_PROFILE_REFUSED")
         demand(not phase2 or (release.get("contractPhase") == "p2"
                and isinstance(release.get("phase2ContractManifestSha256"), str)
                and re.fullmatch(r"sha256:[a-f0-9]{64}", release["phase2ContractManifestSha256"])
@@ -156,13 +167,15 @@ def verify(client, release, attempt, private_configuration, probe_client=None):
         observed = requester.request(state["url"], private["secret"], bypass, challenge, mode="phase2") if phase2 else requester.request(state["url"], private["secret"], bypass, challenge)
         demand(type(observed.get("version")) is int and observed["version"] == 1 and observed.get("status") == "FRONTEND_WORKLOAD_PROBE_PASS"
                and observed.get("challenge") == challenge and observed.get("checks") == ["gateway-course-catalog-p2" if phase2 else "gateway-course-catalog"]
-               and (not phase2 or observed.get("contractPhase") == "p2")
+               and (not phase2 or (observed.get("contractPhase") == "p2" and valid_feature_controls(observed.get("featureControls"))
+                   and observed["featureControls"] == expected_feature_controls))
                and observed.get("gatewayOrigin") == private.get("gatewayOrigin")
                and all(observed.get(key) == identity[key] for key in ("environment", "projectId", "sourceCommit"))
                and int(time.time() * 1000) < private["expiresAt"], "FRONTEND_WORKLOAD_PROBE_UNVERIFIED")
         outcome.update(status="FRONTEND_VERIFIED", phase="completed", checks=["frontend-server-gateway-course-catalog-p2" if phase2 else "frontend-server-gateway-course-catalog"])
         if phase2:
-            outcome.update(contractPhase="p2", phase2ContractManifestSha256=release["phase2ContractManifestSha256"])
+            outcome.update(contractPhase="p2", phase2ContractManifestSha256=release["phase2ContractManifestSha256"],
+                           featureControls=observed["featureControls"])
         return outcome
     except BaseException:
         raise ValueError("FRONTEND_WORKLOAD_VERIFICATION_FAILED") from None

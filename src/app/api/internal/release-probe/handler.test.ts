@@ -4,6 +4,7 @@ import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
 import { createReleaseProbeHandler, readReleaseProbeConfiguration } from "./handler";
 import type { FrontendBootstrapProbe } from "@/lib/writer-admission/bootstrap-probe";
 import { createFrontendGoogleBindingProbe } from "@/lib/writer-admission/google-binding-probe";
+import { RELEASE_FEATURE_CONTROL_NAMES, readReleaseFeatureControls } from "@/lib/api-integration/release-feature-controls";
 
 const now = 1_794_000_000_000;
 const secret = "b".repeat(64), challenge = "c".repeat(64);
@@ -142,8 +143,28 @@ test("explicit P2 mode uses only its current catalog parser and requires no boot
   assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "private, no-store");
   assert.deepEqual(await response.json(), { version: 1, status: "FRONTEND_WORKLOAD_PROBE_PASS", challenge, environment: "staging",
     projectId: VERCEL_PROJECT_BINDINGS.stagingProjectId, sourceCommit: "a".repeat(40), gatewayOrigin: "https://gateway.example.invalid",
-    checks: ["gateway-course-catalog-p2"], contractPhase: "p2", durationMs: 2 });
+    checks: ["gateway-course-catalog-p2"], contractPhase: "p2", featureControls: readReleaseFeatureControls(environment()), durationMs: 2 });
   assert.equal(calls, 1);
+});
+
+test("P2 probe reports only actual runtime feature booleans and ignores caller feature claims", async () => {
+  const env: Record<string, string | undefined> = { ...environment(), PRIVATE_ENV_CREDENTIAL: "private-value" };
+  for (const name of RELEASE_FEATURE_CONTROL_NAMES) env[name] = "false";
+  for (const name of ["INTEGRATION_CUSTOMER_ACCESS_ENABLED", "INTEGRATION_COURSE_READS_ENABLED", "INTEGRATION_LEARNING_ROUTES_ENABLED",
+    "CUSTOMER_AUTH_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED"]) env[name] = "true";
+  const handler = createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration(env, now),
+    run: async () => assert.fail("legacy parser called"), phase2: async () => ({ ok: true, service: "course", durationMs: 1 }) });
+  const response = await handler(request({ "x-lash-release-mode": "phase2", "x-lash-feature-controls": "all-enabled" }));
+  assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "private, no-store");
+  const body = await response.json();
+  assert.deepEqual(body.featureControls, readReleaseFeatureControls(env));
+  assert.equal(Object.values(body.featureControls).filter(Boolean).length, 6);
+  assert.equal(JSON.stringify(body).includes("private-value"), false);
+  env.CUSTOMER_AUTH_ENABLED = "TRUE";
+  delete env.CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED;
+  const changed = await (await handler(request({ "x-lash-release-mode": "phase2" }))).json();
+  assert.equal(changed.featureControls.CUSTOMER_AUTH_ENABLED, false);
+  assert.equal(changed.featureControls.CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED, false);
 });
 
 test("P2 mode authenticates before work, refuses missing/production configuration and never falls back after parser failure", async () => {
