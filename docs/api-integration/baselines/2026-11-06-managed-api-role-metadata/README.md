@@ -31,3 +31,7 @@ The new diagnostic output contains only match booleans, actual nonsecret major/r
 Across these two explicitly authorized stages, four managed connections and four identity SELECTs ran, one per target in each stage. Zero managed role, membership, schema, ACL, setting-name, application or migration-journal queries ran. There was no automatic retry, repair, credential fallback, SQL mutation, explicit lock or control operation. Any later metadata observation remains a separate decision following provider-policy review; the observer has not been relaxed.
 
 Validation after the diagnostic addition: **10/10 tests passed**, with no skips, including all six literal queries twice against an actual disposable PostgreSQL 16 cluster and actual-production-guard refusal for every changed identity field. ESLint and JavaScript syntax checks passed. The original nine-test result and failed initial token-check attempt above remain part of the history.
+
+## Final separately authorized metadata pass 3
+
+The reviewed observer-only TLS correction and actual successful API metadata pass are recorded in [metadata-pass-3.md](metadata-pass-3.md), with a [summary](metadata-pass-3-summary.json) and [complete sanitized evidence](metadata-pass-3-sanitized.json). Earlier refusals above and their JSON files remain unchanged. The final pass does not qualify frontend bindings or authorize a release.

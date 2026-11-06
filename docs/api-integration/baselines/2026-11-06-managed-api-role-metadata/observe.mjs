@@ -156,7 +156,7 @@ function credentials() {
 }
 
 export function identityDiagnostic(rows, context, client) {
-  const row = rows.length === 1 ? rows[0] : {}, stream = client.connection?.stream;
+  const row = rows.length === 1 ? rows[0] : {}, stream = client.connection?.stream, ssl = client.connectionParameters?.ssl;
   const protocol = stream?.getProtocol?.();
   return {
     matches: {
@@ -164,14 +164,18 @@ export function identityDiagnostic(rows, context, client) {
       authenticatedRole: row.authenticated_role === context.runtimeRole, sessionRole: row.session_role === context.runtimeRole,
       serverMajor: row.server_major === context.serverMajor, readOnly: row.read_only === "on",
       searchPath: typeof row.session_search_path === "string" && /^\s*pg_catalog\s*,\s*public\s*$/u.test(row.session_search_path),
-      serverReportsTls: row.server_reports_tls === true, positiveBackendPid: Number.isInteger(row.backend_pid) && row.backend_pid > 0,
+      positiveBackendPid: Number.isInteger(row.backend_pid) && row.backend_pid > 0,
       clientEncrypted: stream?.encrypted === true, clientAuthorized: stream?.authorized === true,
       selectedHost: client.connectionParameters?.host === context.host, selectedPort: client.connectionParameters?.port === context.port,
+      explicitBuiltinCa: Boolean(ssl && isDeepStrictEqual(ssl.ca, [...rootCertificates])), explicitSni: ssl?.servername === context.host,
+      rejectUnauthorized: ssl?.rejectUnauthorized === true,
     },
     observed: {
       serverMajor: Number.isInteger(row.server_major) && row.server_major > 0 && row.server_major < 100 ? row.server_major : null,
       transactionReadOnly: ["on", "off"].includes(row.read_only) ? row.read_only : null,
       clientTlsProtocol: ["TLSv1.2", "TLSv1.3"].includes(protocol) ? protocol : null,
+      backendReportsTls: typeof row.server_reports_tls === "boolean" ? row.server_reports_tls : null,
+      backendTlsProtocol: ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"].includes(row.tls_protocol) ? row.tls_protocol : null,
     },
   };
 }
@@ -187,7 +191,7 @@ async function snapshot(client, context) {
   const roles = (await client.query(SQL.roles, [[context.runtimeRole, context.migrationRole, "pg_database_owner"]])).rows;
   demand(roles.length < 65 && [context.runtimeRole, context.migrationRole].every(name => roles.some(row => row.role_name === name)), "ROLE_BOUND_OR_IDENTITY_UNKNOWN");
   const oids = roles.map(row => row.role_oid); demand(oids.every(value => typeof value === "string" && /^[1-9][0-9]*$/u.test(value)), "ROLE_OID_REQUIRED");
-  const result = { identity, roles };
+  const result = { identity, identityVerification: identityDiagnostic(identityRows, context, client), roles };
   for (const [name, parameters, limit] of [["memberships", [oids], 4097], ["schemas", [], 257], ["schemaAcl", [], 4097], ["databaseRoleSettings", [oids], 4097]]) {
     result[name] = (await client.query(SQL[name], parameters)).rows; demand(result[name].length < limit, "METADATA_ROW_BOUND_UNKNOWN");
   }
@@ -202,6 +206,8 @@ async function runObservation(identityOnly) {
     !/^(?:PG|NODE_OPTIONS$|NODE_EXTRA_CA_CERTS$|NODE_TLS_|SSL_CERT_|LD_|DYLD_)/u.test(name)), "CLOSED_PINNED_RUNTIME_REQUIRED");
   const lock = JSON.parse(readBounded(join(repository, "package-lock.json"))), pgVersion = require("pg/package.json").version;
   demand(lock.packages["node_modules/pg"].version === pgVersion && rootCertificates.length > 0, "PINNED_PG_AND_CA_REQUIRED");
+  const sourcePaths = [fileURLToPath(import.meta.url), join(repository, "package-lock.json"), acceptedRecord];
+  const sourceFingerprints = sourcePaths.map(path => fingerprint(readBounded(path)));
   const groups = credentials(); // Validate ALL five inputs before any connection.
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "lash-p2-managed-api-role-metadata-"))); chmodSync(directory, 0o700);
   const results = [];
@@ -225,7 +231,11 @@ async function runObservation(identityOnly) {
       }
     } catch (error) { failure = { phase, code: error.publicCode ?? "MANAGED_API_METADATA_UNKNOWN" }; }
     finally {
-      try { credentials(); sourceReadbackVerified = true; }
+      try {
+        credentials();
+        demand(sourcePaths.every((path, index) => fingerprint(readBounded(path)) === sourceFingerprints[index]), "OBSERVER_SOURCE_READBACK_CHANGED");
+        sourceReadbackVerified = true;
+      }
       catch { failure = { phase: "source-readback", code: "ACCEPTED_RUNTIME_READBACK_UNKNOWN" }; }
       if (client) {
         let timer;
@@ -235,8 +245,8 @@ async function runObservation(identityOnly) {
       }
     }
     if (idleError) failure = { phase: "connection", code: "CONNECTION_ERROR_OBSERVED" };
-    const raw = { context: context.context, target: scopeFields(context), connected, initial, final, failure, closeAwaited,
-      ...(identityOnly ? { identityDiagnostic: diagnostic, strictIdentityAccepted: Boolean(diagnostic && Object.values(diagnostic.matches).every(Boolean)), sourceReadbackVerified } : {}) };
+    const raw = { context: context.context, target: scopeFields(context), connected, initial, final, failure, closeAwaited, sourceReadbackVerified,
+      ...(identityOnly ? { identityDiagnostic: diagnostic, strictIdentityAccepted: Boolean(diagnostic && Object.values(diagnostic.matches).every(Boolean)) } : {}) };
     record(directory, context.context + "-private-raw.json", raw);
     const diagnosticRecorded = Boolean(identityOnly && diagnostic && sourceReadbackVerified && closeAwaited && !idleError);
     const sanitized = sanitizeMetadata({ version: 1, status: identityOnly ? (diagnosticRecorded ? "P2_MANAGED_API_IDENTITY_DIAGNOSTIC_RECORDED" : "P2_MANAGED_API_IDENTITY_DIAGNOSTIC_UNKNOWN") :

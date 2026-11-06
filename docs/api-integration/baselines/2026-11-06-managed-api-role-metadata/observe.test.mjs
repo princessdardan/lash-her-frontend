@@ -7,6 +7,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { createServer } from "node:net";
+import { rootCertificates } from "node:tls";
 import { Client } from "pg";
 import { CONTEXTS, SQL, STARTUP_OPTIONS, parseGroup, sanitizeMetadata, identityDiagnostic, checkIdentity } from "./observe.mjs";
 
@@ -96,28 +97,35 @@ test("literal SQL closure contains catalog reads only and startup settings prece
   assert.match(SQL.databaseRoleSettings, /split_part\(config.setting, '=', 1\)/u);
 });
 
-test("production identity diagnostics retain safe per-field booleans while the exact guard still refuses every mismatch", () => {
+test("observer identity accepts authorized client TLS independently of backend metadata and refuses every required mismatch", () => {
   const context = CONTEXTS[0];
   const row = { database_name: context.database, authenticated_role: context.runtimeRole, session_role: context.runtimeRole, server_major: 18,
     read_only: "on", session_search_path: "pg_catalog,public", server_reports_tls: true, backend_pid: 123 };
-  const client = { connection: { stream: { encrypted: true, authorized: true, getProtocol: () => "TLSv1.3" } }, connectionParameters: { host: context.host, port: context.port } };
+  const client = { connection: { stream: { encrypted: true, authorized: true, getProtocol: () => "TLSv1.3" } },
+    connectionParameters: { host: context.host, port: context.port, ssl: { ca: [...rootCertificates], servername: context.host, rejectUnauthorized: true } } };
   assert.equal(checkIdentity([row], context, client), row);
   for (const [field, value, failed] of [["database_name", "private-db", "database"], ["authenticated_role", "private-person@example.invalid", "authenticatedRole"],
     ["session_role", "private-session", "sessionRole"], ["server_major", 19, "serverMajor"], ["read_only", "off", "readOnly"],
-    ["session_search_path", "private-setting-value", "searchPath"], ["server_reports_tls", false, "serverReportsTls"], ["backend_pid", 0, "positiveBackendPid"]]) {
+    ["session_search_path", "private-setting-value", "searchPath"], ["backend_pid", 0, "positiveBackendPid"]]) {
     const modified = { ...row, [field]: value }, diagnostic = identityDiagnostic([modified], context, client);
     assert.deepEqual(Object.entries(diagnostic.matches).filter(([, matched]) => !matched).map(([name]) => name), [failed]);
     assert.throws(() => checkIdentity([modified], context, client), code("EXACT_READONLY_IDENTITY_REQUIRED"));
     assert.doesNotMatch(JSON.stringify(diagnostic), /private-db|private-person|private-session|private-setting-value/u);
   }
   const serverTlsFalse = identityDiagnostic([{ ...row, server_reports_tls: false }], context, client);
-  assert.equal(serverTlsFalse.matches.serverReportsTls, false); assert.equal(serverTlsFalse.matches.clientAuthorized, true);
-  assert.deepEqual(serverTlsFalse.observed, { serverMajor: 18, transactionReadOnly: "on", clientTlsProtocol: "TLSv1.3" });
+  assert.equal(serverTlsFalse.observed.backendReportsTls, false); assert.equal(serverTlsFalse.matches.clientAuthorized, true);
+  assert.equal(checkIdentity([{ ...row, server_reports_tls: false }], context, client).server_reports_tls, false);
+  assert.deepEqual(serverTlsFalse.observed, { serverMajor: 18, transactionReadOnly: "on", clientTlsProtocol: "TLSv1.3", backendReportsTls: false, backendTlsProtocol: null });
   for (const [container, field] of [[client.connection.stream, "encrypted"], [client.connection.stream, "authorized"]]) {
     container[field] = false; assert.throws(() => checkIdentity([row], context, client), code("EXACT_READONLY_IDENTITY_REQUIRED")); container[field] = true;
   }
   client.connectionParameters.host = "foreign.invalid"; assert.throws(() => checkIdentity([row], context, client), code("EXACT_READONLY_IDENTITY_REQUIRED")); client.connectionParameters.host = context.host;
-  client.connectionParameters.port = "5432"; assert.throws(() => checkIdentity([row], context, client), code("EXACT_READONLY_IDENTITY_REQUIRED"));
+  client.connectionParameters.port = "5432"; assert.throws(() => checkIdentity([row], context, client), code("EXACT_READONLY_IDENTITY_REQUIRED")); client.connectionParameters.port = context.port;
+  const acceptedSsl = client.connectionParameters.ssl;
+  for (const changedSsl of [{ ...acceptedSsl, ca: [] }, { ...acceptedSsl, servername: "foreign.invalid" }, { ...acceptedSsl, rejectUnauthorized: false }, false]) {
+    client.connectionParameters.ssl = changedSsl; assert.throws(() => checkIdentity([row], context, client), code("EXACT_READONLY_IDENTITY_REQUIRED"));
+  }
+  client.connectionParameters.ssl = acceptedSsl;
   assert.throws(() => checkIdentity([], context, client), code("IDENTITY_ROW_REQUIRED"));
 });
 

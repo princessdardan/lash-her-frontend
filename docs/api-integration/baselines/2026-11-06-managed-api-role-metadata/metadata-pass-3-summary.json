@@ -1,0 +1,465 @@
+{
+  "version": 1,
+  "status": "P2_MANAGED_API_METADATA_OBSERVED",
+  "observedAt": "2026-11-06T04:58:17.157Z",
+  "attemptId": "managed-api-metadata-pass-3",
+  "observerProgramSha256": "sha256:527854b17cc28bb71cf3f510d5c4f5f33b13d70fc2ec28b415dd84c1c01bac57",
+  "contexts": [
+    {
+      "context": "course",
+      "target": {
+        "context": "course",
+        "host": "ep-sparkling-moon-b4htlczb.c-6.us-east-2.aws.neon.tech",
+        "port": 5432,
+        "database": "neondb",
+        "serverMajor": 18,
+        "runtimeRole": "lash_her_course_staging_runtime",
+        "migrationRole": "lash_her_course_staging_migration"
+      },
+      "status": "P2_MANAGED_API_ROLE_METADATA_OBSERVED",
+      "tlsAuthorized": true,
+      "closeAwaited": true,
+      "sourceReadbackVerified": true,
+      "rowBoundsComplete": true,
+      "readbackStable": true,
+      "identityVerification": {
+        "matches": {
+          "singleton": true,
+          "database": true,
+          "authenticatedRole": true,
+          "sessionRole": true,
+          "serverMajor": true,
+          "readOnly": true,
+          "searchPath": true,
+          "positiveBackendPid": true,
+          "clientEncrypted": true,
+          "clientAuthorized": true,
+          "selectedHost": true,
+          "selectedPort": true,
+          "explicitBuiltinCa": true,
+          "explicitSni": true,
+          "rejectUnauthorized": true
+        },
+        "observed": {
+          "serverMajor": 18,
+          "transactionReadOnly": "on",
+          "clientTlsProtocol": "TLSv1.3",
+          "backendReportsTls": false,
+          "backendTlsProtocol": null
+        }
+      },
+      "selectedRoles": [
+        {
+          "role_oid": "24576",
+          "role_name": "lash_her_course_staging_migration",
+          "rolcanlogin": true,
+          "rolsuper": false,
+          "rolcreatedb": false,
+          "rolcreaterole": false,
+          "rolreplication": false,
+          "rolbypassrls": false,
+          "rolinherit": false,
+          "rolconnlimit": -1,
+          "role_valid_until": null,
+          "role_config_is_null": true,
+          "role_setting_names": [],
+          "runtime_member": false,
+          "runtime_inherits": false,
+          "runtime_can_set": false,
+          "database_connect": true,
+          "database_create": true,
+          "database_temporary": true
+        },
+        {
+          "role_oid": "24578",
+          "role_name": "lash_her_course_staging_runtime",
+          "rolcanlogin": true,
+          "rolsuper": false,
+          "rolcreatedb": false,
+          "rolcreaterole": false,
+          "rolreplication": false,
+          "rolbypassrls": false,
+          "rolinherit": false,
+          "rolconnlimit": -1,
+          "role_valid_until": null,
+          "role_config_is_null": true,
+          "role_setting_names": [],
+          "runtime_member": true,
+          "runtime_inherits": true,
+          "runtime_can_set": true,
+          "database_connect": true,
+          "database_create": false,
+          "database_temporary": true
+        }
+      ],
+      "schemas": [
+        {
+          "schema_oid": "32768",
+          "schema_name": "drizzle",
+          "owner_oid": "24576",
+          "owner_name": "lash_her_course_staging_migration",
+          "default_acl": true,
+          "runtime_usage": false,
+          "runtime_create": false,
+          "extension_names": "{}"
+        },
+        {
+          "schema_oid": "13273",
+          "schema_name": "information_schema",
+          "owner_oid": "10",
+          "owner_name": "cloud_admin",
+          "default_acl": false,
+          "runtime_usage": true,
+          "runtime_create": false,
+          "extension_names": "{}"
+        },
+        {
+          "schema_oid": "11",
+          "schema_name": "pg_catalog",
+          "owner_oid": "10",
+          "owner_name": "cloud_admin",
+          "default_acl": false,
+          "runtime_usage": true,
+          "runtime_create": false,
+          "extension_names": "{plpgsql}"
+        },
+        {
+          "schema_oid": "99",
+          "schema_name": "pg_toast",
+          "owner_oid": "10",
+          "owner_name": "cloud_admin",
+          "default_acl": true,
+          "runtime_usage": false,
+          "runtime_create": false,
+          "extension_names": "{}"
+        },
+        {
+          "schema_oid": "2200",
+          "schema_name": "public",
+          "owner_oid": "6171",
+          "owner_name": "pg_database_owner",
+          "default_acl": false,
+          "runtime_usage": true,
+          "runtime_create": false,
+          "extension_names": "{}"
+        }
+      ],
+      "rowCounts": {
+        "roles": 15,
+        "memberships": 15,
+        "schemas": 5,
+        "schemaAcl": 16,
+        "databaseRoleSettings": 0
+      },
+      "redactions": {
+        "roleNames": 2,
+        "identifiers": 0
+      },
+      "observerImposed": {
+        "searchPath": "pg_catalog,public",
+        "defaultTransactionReadOnly": "on",
+        "statementTimeoutMs": 5000,
+        "lockTimeoutMs": 1000,
+        "idleInTransactionSessionTimeoutMs": 5000
+      },
+      "scopedDatabaseRoleSettingsRows": 0,
+      "providerRoles": [
+        {
+          "role_oid": "6171",
+          "role_name": "pg_database_owner",
+          "rolcanlogin": false,
+          "rolsuper": false,
+          "rolcreatedb": false,
+          "rolcreaterole": false,
+          "rolreplication": false,
+          "rolbypassrls": false,
+          "rolinherit": true,
+          "rolconnlimit": -1,
+          "role_valid_until": null,
+          "role_config_is_null": true,
+          "role_setting_names": [],
+          "runtime_member": false,
+          "runtime_inherits": false,
+          "runtime_can_set": false,
+          "database_connect": true,
+          "database_create": false,
+          "database_temporary": true
+        },
+        {
+          "role_oid": "16384",
+          "role_name": "neon_superuser",
+          "rolcanlogin": false,
+          "rolsuper": false,
+          "rolcreatedb": true,
+          "rolcreaterole": true,
+          "rolreplication": true,
+          "rolbypassrls": true,
+          "rolinherit": true,
+          "rolconnlimit": -1,
+          "role_valid_until": null,
+          "role_config_is_null": true,
+          "role_setting_names": [],
+          "runtime_member": false,
+          "runtime_inherits": false,
+          "runtime_can_set": false,
+          "database_connect": true,
+          "database_create": true,
+          "database_temporary": true
+        },
+        {
+          "role_oid": "16393",
+          "role_name": "neondb_owner",
+          "rolcanlogin": true,
+          "rolsuper": false,
+          "rolcreatedb": true,
+          "rolcreaterole": true,
+          "rolreplication": true,
+          "rolbypassrls": true,
+          "rolinherit": true,
+          "rolconnlimit": -1,
+          "role_valid_until": null,
+          "role_config_is_null": true,
+          "role_setting_names": [],
+          "runtime_member": false,
+          "runtime_inherits": false,
+          "runtime_can_set": false,
+          "database_connect": true,
+          "database_create": true,
+          "database_temporary": true
+        }
+      ],
+      "redactedRoleOids": [
+        "6392"
+      ]
+    },
+    {
+      "context": "community",
+      "target": {
+        "context": "community",
+        "host": "ep-fancy-glitter-b81a2g6r.c-14.us-east-1.aws.neon.tech",
+        "port": 5432,
+        "database": "neondb",
+        "serverMajor": 18,
+        "runtimeRole": "lash_her_community_staging_runtime",
+        "migrationRole": "lash_her_community_staging_migration"
+      },
+      "status": "P2_MANAGED_API_ROLE_METADATA_OBSERVED",
+      "tlsAuthorized": true,
+      "closeAwaited": true,
+      "sourceReadbackVerified": true,
+      "rowBoundsComplete": true,
+      "readbackStable": true,
+      "identityVerification": {
+        "matches": {
+          "singleton": true,
+          "database": true,
+          "authenticatedRole": true,
+          "sessionRole": true,
+          "serverMajor": true,
+          "readOnly": true,
+          "searchPath": true,
+          "positiveBackendPid": true,
+          "clientEncrypted": true,
+          "clientAuthorized": true,
+          "selectedHost": true,
+          "selectedPort": true,
+          "explicitBuiltinCa": true,
+          "explicitSni": true,
+          "rejectUnauthorized": true
+        },
+        "observed": {
+          "serverMajor": 18,
+          "transactionReadOnly": "on",
+          "clientTlsProtocol": "TLSv1.3",
+          "backendReportsTls": false,
+          "backendTlsProtocol": null
+        }
+      },
+      "selectedRoles": [
+        {
+          "role_oid": "24576",
+          "role_name": "lash_her_community_staging_runtime",
+          "rolcanlogin": true,
+          "rolsuper": false,
+          "rolcreatedb": false,
+          "rolcreaterole": false,
+          "rolreplication": false,
+          "rolbypassrls": false,
+          "rolinherit": false,
+          "rolconnlimit": -1,
+          "role_valid_until": null,
+          "role_config_is_null": true,
+          "role_setting_names": [],
+          "runtime_member": true,
+          "runtime_inherits": true,
+          "runtime_can_set": true,
+          "database_connect": true,
+          "database_create": false,
+          "database_temporary": true
+        },
+        {
+          "role_oid": "32768",
+          "role_name": "lash_her_community_staging_migration",
+          "rolcanlogin": true,
+          "rolsuper": false,
+          "rolcreatedb": false,
+          "rolcreaterole": false,
+          "rolreplication": false,
+          "rolbypassrls": false,
+          "rolinherit": false,
+          "rolconnlimit": -1,
+          "role_valid_until": null,
+          "role_config_is_null": true,
+          "role_setting_names": [],
+          "runtime_member": false,
+          "runtime_inherits": false,
+          "runtime_can_set": false,
+          "database_connect": true,
+          "database_create": true,
+          "database_temporary": true
+        }
+      ],
+      "schemas": [
+        {
+          "schema_oid": "40960",
+          "schema_name": "drizzle",
+          "owner_oid": "32768",
+          "owner_name": "lash_her_community_staging_migration",
+          "default_acl": true,
+          "runtime_usage": false,
+          "runtime_create": false,
+          "extension_names": "{}"
+        },
+        {
+          "schema_oid": "13273",
+          "schema_name": "information_schema",
+          "owner_oid": "10",
+          "owner_name": "cloud_admin",
+          "default_acl": false,
+          "runtime_usage": true,
+          "runtime_create": false,
+          "extension_names": "{}"
+        },
+        {
+          "schema_oid": "11",
+          "schema_name": "pg_catalog",
+          "owner_oid": "10",
+          "owner_name": "cloud_admin",
+          "default_acl": false,
+          "runtime_usage": true,
+          "runtime_create": false,
+          "extension_names": "{plpgsql}"
+        },
+        {
+          "schema_oid": "99",
+          "schema_name": "pg_toast",
+          "owner_oid": "10",
+          "owner_name": "cloud_admin",
+          "default_acl": true,
+          "runtime_usage": false,
+          "runtime_create": false,
+          "extension_names": "{}"
+        },
+        {
+          "schema_oid": "2200",
+          "schema_name": "public",
+          "owner_oid": "6171",
+          "owner_name": "pg_database_owner",
+          "default_acl": false,
+          "runtime_usage": true,
+          "runtime_create": false,
+          "extension_names": "{}"
+        }
+      ],
+      "rowCounts": {
+        "roles": 15,
+        "memberships": 14,
+        "schemas": 5,
+        "schemaAcl": 16,
+        "databaseRoleSettings": 0
+      },
+      "redactions": {
+        "roleNames": 2,
+        "identifiers": 0
+      },
+      "observerImposed": {
+        "searchPath": "pg_catalog,public",
+        "defaultTransactionReadOnly": "on",
+        "statementTimeoutMs": 5000,
+        "lockTimeoutMs": 1000,
+        "idleInTransactionSessionTimeoutMs": 5000
+      },
+      "scopedDatabaseRoleSettingsRows": 0,
+      "providerRoles": [
+        {
+          "role_oid": "6171",
+          "role_name": "pg_database_owner",
+          "rolcanlogin": false,
+          "rolsuper": false,
+          "rolcreatedb": false,
+          "rolcreaterole": false,
+          "rolreplication": false,
+          "rolbypassrls": false,
+          "rolinherit": true,
+          "rolconnlimit": -1,
+          "role_valid_until": null,
+          "role_config_is_null": true,
+          "role_setting_names": [],
+          "runtime_member": false,
+          "runtime_inherits": false,
+          "runtime_can_set": false,
+          "database_connect": true,
+          "database_create": false,
+          "database_temporary": true
+        },
+        {
+          "role_oid": "16384",
+          "role_name": "neon_superuser",
+          "rolcanlogin": false,
+          "rolsuper": false,
+          "rolcreatedb": true,
+          "rolcreaterole": true,
+          "rolreplication": true,
+          "rolbypassrls": true,
+          "rolinherit": true,
+          "rolconnlimit": -1,
+          "role_valid_until": null,
+          "role_config_is_null": true,
+          "role_setting_names": [],
+          "runtime_member": false,
+          "runtime_inherits": false,
+          "runtime_can_set": false,
+          "database_connect": true,
+          "database_create": true,
+          "database_temporary": true
+        },
+        {
+          "role_oid": "16393",
+          "role_name": "neondb_owner",
+          "rolcanlogin": true,
+          "rolsuper": false,
+          "rolcreatedb": true,
+          "rolcreaterole": true,
+          "rolreplication": true,
+          "rolbypassrls": true,
+          "rolinherit": true,
+          "rolconnlimit": -1,
+          "role_valid_until": null,
+          "role_config_is_null": true,
+          "role_setting_names": [],
+          "runtime_member": false,
+          "runtime_inherits": false,
+          "runtime_can_set": false,
+          "database_connect": true,
+          "database_create": true,
+          "database_temporary": true
+        }
+      ],
+      "redactedRoleOids": [
+        "6392"
+      ]
+    }
+  ],
+  "frontendQualified": false,
+  "wholeReleaseAccepted": false
+}
