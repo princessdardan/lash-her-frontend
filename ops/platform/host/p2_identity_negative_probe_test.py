@@ -2,6 +2,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 import uuid
@@ -250,3 +251,26 @@ class IdentityNegativeProbeTests(unittest.TestCase):
         self.reviewed["operatorSourceSha256"] = probe._hash(probe._canonical(self.reviewed["operatorSourceFiles"]))
         with self.assertRaisesRegex(ValueError, "OPERATOR_SOURCE_CHANGED"):
             self.plan()
+
+    def test_source_closure_count_bound_agrees_for_reviewed_and_installed_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            for name in probe.SOURCE_ANCHORS:
+                file = source / name
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_bytes((self.source / name).read_bytes())
+            for index in range(448 - len(probe.SOURCE_ANCHORS)):
+                (source / "ops" / f"owned-source-{index}.mjs").write_text("// owned fixture\n")
+            files = probe.source_closure(source)
+            self.assertEqual(len(files), 448)
+            reviewed = deepcopy(self.reviewed)
+            reviewed["operatorSourceFiles"] = files
+            reviewed["operatorSourceSha256"] = probe._hash(probe._canonical(files))
+            probe.validate_reviewed(reviewed)
+            (source / "ops" / "overflow.mjs").write_text("// owned fixture\n")
+            with self.assertRaisesRegex(ValueError, "SOURCE_CLOSURE_REQUIRED"):
+                probe.source_closure(source)
+            files["ops/overflow.mjs"] = probe._hash(b"// owned fixture\n")
+            reviewed["operatorSourceSha256"] = probe._hash(probe._canonical(files))
+            with self.assertRaisesRegex(ValueError, "SOURCE_CLOSURE_REQUIRED"):
+                probe.validate_reviewed(reviewed)
