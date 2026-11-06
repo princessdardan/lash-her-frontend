@@ -281,7 +281,7 @@ console.log(JSON.stringify({...source,...derive(source,binding,original,sql)}));
         payload = {"expectedShipmentStateVersion": 2, "signatureRequested": False, "merchandiseValueCents": 6000,
             "address": {"name": "Private Référence", "ab": 1, "aX": 2}}
         javascript = "const crypto=require('node:crypto');let s='';process.stdin.on('data',v=>s+=v).on('end',()=>{const canonical=v=>Array.isArray(v)?'['+v.map(canonical).join(',')+']':v&&typeof v==='object'?'{'+Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,x])=>JSON.stringify(k)+':'+canonical(x)).join(',')+'}':JSON.stringify(v);process.stdout.write(crypto.createHash('sha256').update(canonical(JSON.parse(s))).digest('hex'));});"
-        actual = subprocess.run([os.environ.get("NODE_BIN", "/Users/dardan/.nvm/versions/node/v24.18.0/bin/node"), "-e", javascript], input=json.dumps(payload), text=True, capture_output=True, check=True)
+        actual = subprocess.run([os.environ.get("NODE_BINARY", "node"), "-e", javascript], input=json.dumps(payload), text=True, capture_output=True, check=True)
         self.assertEqual(actual.stdout, component._operation_hash(payload))
 
     def test_json_payload_unicode_uses_source_utf8_and_unsafe_number_refuses(self):
