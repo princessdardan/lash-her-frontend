@@ -218,6 +218,18 @@ class TransientTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             component.observe_scoped_effects(None, reviewed, rows, self.requirements, before=rows)
 
+    def test_nonempty_immutable_original_intents_cannot_disappear_into_empty_current_lists(self):
+        self.closed_source()
+        original = component.normalize_snapshot(self.actual_rows)
+        current = {name: [] for name in component.COLUMNS}
+        self.shipments = []; self.shipping["expectedProviderShipmentIds"] = []
+        result = component.observe_scoped_effects(self.clients("chitchats", self.shipping)[0], self.shipping, current, self.requirements, before=original)
+        self.assertIsNone(result["uncertainEffects"])
+        self.assertGreater(result["knownUncertainEffects"], 0)
+        self.assertTrue(any(row["reason"] == "immutable-original-intents-disappeared-without-terminal-reconciliation" for row in result["sourceGaps"]))
+        self.assertTrue(result["missingRequirementIds"])
+        self.assertFalse(result["capabilityClosures"])
+
     def test_closure_context_transplant_and_missing_global_requirement_refuse(self):
         self.closed_source(); original = deepcopy(self.requirements)
         rows = {name: [] for name in component.COLUMNS}
@@ -243,7 +255,7 @@ const original={sourceCommit:source.sourceCommit,configurationRecordSha256,prove
 prepare(source,binding,original);const sql=await observe(source,{binding,originalConfiguration:original,clientsByKey:new Map(),physicalDatabasesByKey:new Map(),verifySession:async()=>{}});
 console.log(JSON.stringify({...source,...derive(source,binding,original,sql)}));
 """
-        source = json.loads(subprocess.run([os.environ.get("NODE_BINARY", "/Users/dardan/.nvm/versions/node/v24.18.0/bin/node"), "--input-type=module", "-e", program],
+        source = json.loads(subprocess.run([os.environ.get("NODE_BINARY", "node"), "--input-type=module", "-e", program],
             cwd=root, check=True, capture_output=True, text=True).stdout)
         reviewed = {"environment": "staging", **{key: source[key] for key in ("sourceCommit", "sourceInventorySha256", "requirementsSha256")}}
         rows = {name: [] for name in component.COLUMNS}

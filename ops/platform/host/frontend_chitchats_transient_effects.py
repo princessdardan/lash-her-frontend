@@ -259,7 +259,7 @@ def _source_requirements(reviewed, verified):
                 isinstance(closure.get("evidenceIds"), list) and bool(closure["evidenceIds"]) and closure["evidenceIds"] == sorted(set(closure["evidenceIds"])) and
                 all(shipping.digest(item) for item in closure["evidenceIds"]), "CHITCHATS_TRANSIENT_SOURCE_CLOSURE_COVERAGE_REFUSED")
             demand(closure["disposition"] != "absent-from-verified-source" or family["sourceDisposition"] == "absent-from-verified-source", "CHITCHATS_TRANSIENT_SOURCE_CLOSURE_DISPOSITION_REFUSED")
-            closed[family_id] = {key: deepcopy(closure[key]) for key in ("familyId", "disposition", "requirementIds", "evidenceIds")}
+            closed[family_id] = {key: deepcopy(closure[key]) for key in ("familyId", "disposition", "requirementIds", "evidenceIds", *context)}
         elif family["sourceDisposition"] == "absent-from-verified-source":
             # Source absence alone cannot erase a credential capable of having
             # accepted historical requests; original SQL provenance is required.
@@ -340,7 +340,14 @@ def observe_scoped_effects(privateLockedClient, reviewed, actualRows, verifiedSo
     families, profile_known, closures, required = _source_requirements(reviewed, verifiedSourceRequirements)
     actual = normalize_snapshot(actualRows)
     original = before if before is not None else reviewed.get("transientSnapshot")
-    original_empty = isinstance(original, dict) and set(original) == set(COLUMNS) and all(isinstance(rows, list) and not rows for rows in original.values())
+    if original is not None:
+        demand(isinstance(original, dict) and set(original) == set(COLUMNS) and all(isinstance(rows, list) and len(rows) <= 4096 for rows in original.values()),
+            "CHITCHATS_TRANSIENT_ORIGINAL_SNAPSHOT_REQUIRED")
+    original_empty = original is not None and not any(original.values())
+    original_nonempty = original is not None and any(original.values())
+    missing_original_rows = original_nonempty and any(
+        any(not isinstance(row, dict) or not shipping.identifier(row.get("id")) or row["id"] not in {item["id"] for item in actual[name]} for row in rows)
+        for name, rows in original.items())
     if set(closures) == set(FAMILIES) and not any(actual.values()) and original_empty:
         return {"provider": "chitchats", "status": "STAGING_CHITCHATS_TRANSIENT_EFFECTS_OBSERVED", "clientId": None,
             "sourceCommit": reviewed["sourceCommit"], "sourceInventorySha256": reviewed["sourceInventorySha256"], "requirementsSha256": reviewed["requirementsSha256"],
@@ -354,7 +361,7 @@ def observe_scoped_effects(privateLockedClient, reviewed, actualRows, verifiedSo
             "deferredCompatibleWorkRequired": False, "futurePollingAuthorized": False, "historicalWritersFenced": False, "trafficAuthorized": False}
     _review(reviewed)
     providers = _inventory(privateLockedClient, reviewed)
-    contradicted_closures = closures if any(actual.values()) or providers else {}
+    contradicted_closures = closures if any(actual.values()) or providers or original_nonempty else {}
     if contradicted_closures:
         closures = {}
     jobs = {row["id"]: row for row in actual["jobs"]}
@@ -411,13 +418,16 @@ def observe_scoped_effects(privateLockedClient, reviewed, actualRows, verifiedSo
         for row in families if row["familyId"] not in closures and (row["untrackedPotentialRequests"] or row["sourceDisposition"] == "absent-from-verified-source")]
     gaps += [{"familyId": family, "reason": "original-no-capability-closure-contradicted-by-actual-scope",
         "missingRequirementIds": sorted(required[family])} for family in contradicted_closures]
+    if missing_original_rows:
+        gaps += [{"familyId": family["familyId"], "reason": "immutable-original-intents-disappeared-without-terminal-reconciliation",
+            "missingRequirementIds": sorted(required[family["familyId"]])} for family in families]
     covered = sorted({item["requirementId"] for row in families for item in row.get("sqlIntentRequirements", [])} |
         {item for closure in closures.values() for item in closure["requirementIds"]})
     missing = sorted({item for gap in gaps for item in gap["missingRequirementIds"]})
     # A complete current list is a consistency check, not a historical request
     # completion oracle. Pre-acknowledgement requests may not be visible yet.
     demand(providers == _inventory(privateLockedClient, reviewed), "CHITCHATS_TRANSIENT_PROVIDER_CHANGED_DURING_OBSERVATION")
-    known_unknown = sum(not row["reconciled"] for row in receipts) + sum(not row["settled"] for row in job_receipts)
+    known_unknown = sum(not row["reconciled"] for row in receipts) + sum(not row["settled"] for row in job_receipts) + bool(missing_original_rows)
     active = sum(row["status"] == "processing" or row["lease_owner_present"] or row["lease_expires_at"] is not None for row in jobs.values())
     return {"provider": "chitchats", "status": "STAGING_CHITCHATS_TRANSIENT_EFFECTS_OBSERVED", "clientId": reviewed["clientId"],
         "sourceCommit": reviewed["sourceCommit"], "sourceInventorySha256": reviewed["sourceInventorySha256"], "requirementsSha256": reviewed["requirementsSha256"],
