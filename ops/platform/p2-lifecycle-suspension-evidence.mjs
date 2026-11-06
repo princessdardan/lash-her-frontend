@@ -172,19 +172,20 @@ export function launchP2LifecycleBrowserRecorder(plan, directory) {
       artifacts.set(handle, { plan, record, directory }); return handle;
     }, close,
   });
-  controllers.set(controller, { plan, input, values }); send("initialize", input); return controller;
+  controllers.set(controller, { plan, input, values, active: () => !failed && !ended }); send("initialize", input); return controller;
 }
 
 export function readP2LifecycleBrowserControllerBinding(plan, controller) {
-  const source = controllers.get(controller); demand(plans.has(plan) && source?.plan === plan);
+  const source = controllers.get(controller); demand(plans.has(plan) && source?.plan === plan && source.active());
   return { challenge: source.input.challenge, bindingSha256: source.input.bindingSha256 };
 }
 export function readP2LifecycleBrowserAuthentication(plan, handle) {
-  const source = authenticationArtifacts.get(handle); demand(plans.has(plan) && source?.plan === plan && controllers.get(source.controller)?.plan === plan);
+  const source = authenticationArtifacts.get(handle), controller = controllers.get(source?.controller);
+  demand(plans.has(plan) && source?.plan === plan && controller?.plan === plan && controller.active());
   return structuredClone(source.value);
 }
 export function readP2LifecycleBrowserSuspensionEvent(plan, controller) {
-  const source = controllers.get(controller); demand(plans.has(plan) && source?.plan === plan && source.values.has("suspended"));
+  const source = controllers.get(controller); demand(plans.has(plan) && source?.plan === plan && source.active() && source.values.has("suspended"));
   return structuredClone(source.values.get("suspended"));
 }
 
