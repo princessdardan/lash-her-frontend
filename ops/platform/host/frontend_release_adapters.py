@@ -12,6 +12,7 @@ import re
 import secrets
 import sys
 import time
+import urllib.parse
 
 import frontend_probe
 import frontend_resend_retirement
@@ -680,33 +681,65 @@ def compatible_feature_controls(context):
     return {key: False for key in BOOTSTRAP_FLAGS}
 
 
+def compatible_writer_admission_binding(context):
+    if migrate.contract_identity(context["candidate"]).get("contractPhase") != "p2":
+        return None
+    target = context.get("writerTarget") or {}
+    result = {"mode": "enforce", "targetSha256": context["plan"]["targetSha256"],
+        "producerSha256": context["plan"].get("runtimeProducerSha256") or (context["plan"].get("bootstrapCompatibility") or {}).get("runtimeProducerSha256"),
+        "sourceCommit": context["plan"]["sourceCommit"], "roleName": target.get("user")}
+    demand(target.get("environment") == "staging" and target.get("targetSha256") == result["targetSha256"] and
+        frontend_probe.valid_writer_admission_binding(result), "P2_REVIEWED_WRITER_ADMISSION_BINDING_REQUIRED")
+    return result
+
+
+def require_runtime_database_binding(context):
+    try:
+        target, raw = context["writerTarget"], context["frontendRuntimeDatabaseUrl"]
+        url = urllib.parse.urlsplit(raw)
+        demand(url.scheme in ("postgres", "postgresql") and url.hostname == target["host"] and (url.port or 5432) == target["port"] and
+            urllib.parse.unquote(url.path) == "/" + target["database"] and urllib.parse.unquote(url.username or "") == target["user"] and
+            bool(url.password) and not url.fragment and urllib.parse.parse_qsl(url.query, keep_blank_values=True) == [("sslmode", "verify-full")],
+            "P2_RUNTIME_DATABASE_BINDING_REQUIRED")
+        return raw
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("P2_RUNTIME_DATABASE_BINDING_REQUIRED") from None
+
+
 def configure_compatible_features(context, client, attempt):
     # Only the reviewed post-SQL certification profile may enable these flags.
     # The bootstrap build remains all-false and project native crons stay off.
     controls = compatible_feature_controls(context)
-    if context["plan"].get("certification") is None:
+    if migrate.contract_identity(context["candidate"]).get("contractPhase") != "p2":
         return
     selected = identity(context)
-    variables = [(key, "true" if value else "false") for key, value in controls.items()] + [("LASH_P2_CERTIFICATION_SCHEDULES", "account-lifecycle")]
+    expected_writer = compatible_writer_admission_binding(context)
+    runtime_url = require_runtime_database_binding(context)
+    variables = [(key, "true" if value else "false", "plain") for key, value in controls.items()] + [
+        ("LASH_P2_CERTIFICATION_SCHEDULES", "account-lifecycle" if context["plan"].get("certification") else "off", "plain"),
+        ("FRONTEND_WRITER_ADMISSION_MODE", "enforce", "plain"),
+        ("FRONTEND_WRITER_ADMISSION_TARGET_JSON", json.dumps(context["writerTarget"], separators=(",", ":")), "plain"),
+        ("FRONTEND_WRITER_PRODUCER_SHA256", expected_writer["producerSha256"], "plain"),
+        ("FRONTEND_WRITER_ADMISSION_DATABASE_URL", runtime_url, "sensitive"), ("DATABASE_URL", runtime_url, "sensitive")]
     outcome = {**selected, "status": "P2_FEATURE_CONFIGURATION_REQUIRES_REVIEW", "featureControls": controls,
-        "nativeSchedulesEnabled": False, "trafficAuthorized": False}
+        "nativeSchedulesEnabled": False, "expectedWriterAdmissionBinding": expected_writer, "trafficAuthorized": False}
     migrate.write_json(attempt, "certification-features-started.json", outcome)
     try:
         demand(vercel.promotion_state(client, selected["projectId"])["cronsEnabled"] is False, "P2_NATIVE_SCHEDULES_MUST_REMAIN_OFF")
-        for key, value in variables:
+        for key, value, kind in variables:
             result = client.request("POST", f'/v10/projects/{selected["projectId"]}/env?upsert=true', {
-                "key": key, "value": value, "type": "plain", "target": ["production"], "gitBranch": None,
+                "key": key, "value": value, "type": kind, "target": ["production"], "gitBranch": None,
                 "customEnvironmentIds": [], "comment": "Reviewed P2 staging certification " + selected["actionId"]})
             row = result.get("created")
-            demand(result.get("failed") == [] and isinstance(row, dict) and row.get("key") == key and row.get("type") == "plain"
+            demand(result.get("failed") == [] and isinstance(row, dict) and row.get("key") == key and row.get("type") == kind
                 and row.get("target") == ["production"] and not row.get("gitBranch") and not row.get("customEnvironmentIds"),
                 "P2_FEATURE_CONFIGURATION_UNVERIFIED")
         rows = client.request("GET", f'/v10/projects/{selected["projectId"]}/env?decrypt=false').get("envs")
         demand(isinstance(rows, list), "P2_FEATURE_CONFIGURATION_UNVERIFIED")
-        for key, value in variables:
+        for key, value, kind in variables:
             found = [row for row in rows if row.get("key") == key and row.get("target") == ["production"] and
                 not row.get("gitBranch") and not row.get("customEnvironmentIds")]
-            demand(len(found) == 1 and found[0].get("type") == "plain" and found[0].get("value") == value,
+            demand(len(found) == 1 and found[0].get("type") == kind and (kind == "sensitive" or found[0].get("value") == value),
                 "P2_FEATURE_CONFIGURATION_UNVERIFIED")
         demand(vercel.promotion_state(client, selected["projectId"])["cronsEnabled"] is False, "P2_NATIVE_SCHEDULES_MUST_REMAIN_OFF")
         outcome["status"] = "P2_FEATURE_CONFIGURATION_VERIFIED"
@@ -724,13 +757,17 @@ def deploy_compatible(context, client, attempt, parent_directory, probe=None):
     frontend_probe._private_configuration(private)
     # This source-only component does not establish historical fencing. The
     # parent must already hold its complete live-qualified drain before entry.
+    if migrate.contract_identity(context["candidate"]).get("contractPhase") == "p2":
+        compatible_writer_admission_binding(context)
+        require_runtime_database_binding(context)
     configure_pending_source_pins(context, client, attempt, parent_directory)
     configure_compatible_features(context, client, attempt)
     frontend_probe.prepare(client, context["candidate"], private, attempt, context["gatewayHost"], scheduler_qualification=False)
     vercel.stage_frontend(client, context["candidate"], attempt)
     return vercel.promote_frontend(client, context["candidate"], attempt,
         lambda release, _deployment: frontend_probe.verify(client, release, attempt, private, probe,
-            expected_feature_controls=compatible_feature_controls(context) if migrate.contract_identity(release).get("contractPhase") == "p2" else None))
+            expected_feature_controls=compatible_feature_controls(context) if migrate.contract_identity(release).get("contractPhase") == "p2" else None,
+            expected_writer_admission_binding=compatible_writer_admission_binding(context)))
 
 
 def observe_compatible(context, client, attempt):
@@ -784,6 +821,13 @@ def observe_compatible(context, client, attempt):
             controls = {key: False for key in BOOTSTRAP_FLAGS} if workload.get("bootstrapAdmissionVerified") is True else compatible_feature_controls(context)
             outcome["workloadVerified"] = outcome["workloadVerified"] and workload.get("featureControls") == controls
             outcome["featureControls"] = workload.get("featureControls")
+            if workload.get("bootstrapAdmissionVerified") is not True:
+                expected_writer = compatible_writer_admission_binding(context)
+                outcome["workloadVerified"] = outcome["workloadVerified"] and workload.get("writerAdmissionBinding") == expected_writer
+                outcome["writerAdmissionBinding"] = workload.get("writerAdmissionBinding")
+                # This is the actual source-produced nonsecret runtime-config
+                # observation, already bound to this exact deployed workload.
+                outcome["configurationRecordSha256"] = migrate.file_hash(raw)
         if workload.get("bootstrapAdmissionVerified") is True:
             outcome.update(bootstrapAdmissionVerified=True, schemaCatalogSha256=workload.get("schemaCatalogSha256"),
                 appliedLineageSha256=workload.get("appliedLineageSha256"))
@@ -840,6 +884,8 @@ def execute(context, client, verify, probe=None):
             "REVIEWED_PROVIDER_EFFECT_SCOPE_REQUIRED")
         module = modules[provider]
         requirements = context["scopedSourceRequirements"]
+        demand(all(isinstance(requirements.get(key), list) for key in ("unresolvedFrontendSqlFamilyIds", "unresolvedExternalCapabilityFamilyIds", "unresolvedFamilyIds")),
+            "PROVIDER_EFFECT_SCOPED_RESIDUAL_CHANNELS_REQUIRED")
         demand(all(scope[key] == requirements[key] for key in ("sourceCommit", "surfaceSha256", "sourceInventorySha256", "requirementsSha256")),
             "PROVIDER_EFFECT_SOURCE_BINDING_REFUSED")
         class UnavailableReadClient:

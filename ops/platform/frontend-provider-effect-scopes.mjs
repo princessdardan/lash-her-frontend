@@ -20,6 +20,9 @@ try:
  elif value['task']=='normalize':
   snapshot=module.normalize_snapshot(value['rows'])
   result={'snapshot':snapshot,'snapshotSha256':hashlib.sha256(json.dumps(snapshot,sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False).encode()).hexdigest()}
+ elif value['task']=='source-absence':
+  args=[None,value['reviewed'],value['rows'],value['source']]
+  result={'observation':module.observe_scoped_effects(*args,before=value['before']) if value['provider'] in ('resend','chitchats') else module.observe_scoped_effects(*args)}
  else: raise ValueError('FIXED_TASK_REQUIRED')
  print(json.dumps({'version':1,'moduleSha256':digest,**result},separators=(',',':'),ensure_ascii=True,allow_nan=False))
 except BaseException:
@@ -80,4 +83,14 @@ export async function observeFrontendScopedProviderDatabase(client, provider, re
     try { await client.query("ROLLBACK"); } catch { /* no partial observation authorizes SQL */ }
     throw new Error("FRONTEND_PROVIDER_EFFECT_SCOPE_REFUSED");
   }
+}
+
+// Concrete source-absence preflight. None is the only client: a scope needing
+// a provider read cannot be qualified by this path. Actual SQL rows are still
+// obtained by observeFrontendScopedProviderDatabase under the parent lock.
+export function observeFrontendScopedProviderAbsence(provider, reviewed, rows, source, before, dependencies = {}) {
+  const result = invoke(provider, "source-absence", { reviewed, rows, source, before }, dependencies);
+  demand(result.observation?.activeExecutions === 0 && result.observation.uncertainEffects === 0 &&
+    Array.isArray(result.observation.missingRequirementIds) && result.observation.missingRequirementIds.length === 0);
+  return result;
 }

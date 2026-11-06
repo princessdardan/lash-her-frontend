@@ -36,7 +36,7 @@ async function runtime(context) {
   for (const key of ["squareRetiredToken", "squareReplacementToken", "resendRetiredToken", "resendReplacementToken",
     "highlevelRetiredToken", "highlevelReplacementToken", "chitchatsRetiredToken", "chitchatsReplacementToken",
     "googleIdentityRetiredSecret", "googleIdentityReplacementSecret", "googleCalendarRetiredSecret", "googleCalendarReplacementSecret",
-    "sanityRetiredToken", "sanityReplacementToken"]) {
+    "sanityRetiredToken", "sanityReplacementToken", "frontendRuntimeDatabaseUrl"]) {
     if (fixed.has(key)) demand(value[key] === fixed.get(key));
     else if (typeof value[key] === "string") fixed.set(key, value[key]);
   }
@@ -63,12 +63,18 @@ export async function runFrontendVercelWorker(operation, context) {
   try {
     demand(["retire-related-previews", "observe-provider-effects", "observe-vercel", "observe-retired-capabilities", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments", "retire-resend", "observe-resend", "observe-resend-effects", "verify-square", "retire-square", "observe-square", "suspend-square", "suspend-sanity", "observe-sanity", "retire-google", "observe-google", "suspend-highlevel", "verify-highlevel", "retire-highlevel", "observe-highlevel", "suspend-chitchats", "verify-chitchats", "retire-chitchats", "observe-chitchats", "observe-restoration"].includes(operation));
     const { value, bindings, candidate } = await runtime(context);
-    const payload = { operation, plan: fields(context.plan, ["environment", "actionId", "sourceCommit", "targetSha256", "bootstrapCompatibility", "restoration", "certification"]),
+    const payload = { operation, plan: fields(context.plan, ["environment", "actionId", "sourceCommit", "targetSha256", "bootstrapCompatibility", "restoration", "certification", "runtimeProducerSha256"]),
       candidate, bindings, directory: context.directory, vercelToken: value.vercelToken,
       ...(context.originalDirectory ? { originalDirectory: frontendPrivateReceiptDirectory(context.originalDirectory) } : {}),
       ...(context.database ? { database: context.database } : {}),
       ...(context.preapplicationSchema ? { preapplicationSchema: context.preapplicationSchema } : {}),
       ...(context.admissionObservation ? { admissionObservation: context.admissionObservation } : {}) };
+    if (candidate.contractPhase === "p2") {
+      const target = context.bootstrapRuntimeTarget;
+      demand(target?.environment === "staging" && target.targetSha256 === context.plan.targetSha256 &&
+        typeof target.user === "string" && /^[a-z_][a-z0-9_]{0,62}$/u.test(target.user));
+      payload.writerTarget = target;
+    }
     if (operation === "retire-related-previews") {
       const before = readHistoricalSourceContexts(context, bindings, JSON.parse(readFrontendReleaseEvidence(context.directory, "historical-capability-bindings-before.json").toString("utf8")));
       demand(["actionId", "sourceCommit", "targetSha256"].every(key => before[key] === context.plan[key]));
@@ -82,7 +88,7 @@ export async function runFrontendVercelWorker(operation, context) {
         demand(requirements.providerFamilies.every(family => {
           if (requirements.capabilityClosures.some(row => row.familyId === family.familyId)) return true;
           const keys = family.provider === "google" ? [family.familyId === "google.identity" ? "googleIdentityRetiredSecret" : "googleCalendarRetiredSecret"] : capabilityKeys[family.provider];
-          return keys?.length > 0 && keys.every(key => selected.providerCredentialBindings.some(row => row.runtimeKey === key && row.originalCredentialEqualityVerified === true &&
+          return keys?.length > 0 && keys.every(key => selected.providerCredentialBindings.some(row => row.runtimeKey === key && row.originalCredentialEqualityVerified === true && row.originalProviderSelectionVerified === true &&
             bindings.surfaces.some(provider => provider.surfaceSha256 === row.providerSurfaceSha256 &&
               (provider.identity.provider === family.provider || family.provider === "google" && ["google", "google-identity", "google-calendar"].includes(provider.identity.provider)))));
         }));
@@ -207,10 +213,10 @@ export async function runFrontendVercelWorker(operation, context) {
       payload.privateConfigurationDirectory = privateDirectory; payload.gatewayHost = value.gatewayHost;
       const control = context.admissionObservation;
       demand(control?.ledgerDrained === true && control.newWork === false && control.recovery === false && control.active === 0 && control.uncertain === 0);
-      if (operation === "deploy-admission") {
+      if (operation === "deploy-admission" || candidate.contractPhase === "p2") {
         const target = context.bootstrapRuntimeTarget;
         demand(target?.environment === "staging" && target.targetSha256 === context.plan.targetSha256 &&
-          context.plan.bootstrapCompatibility?.runtimeProducerSha256 && typeof value.frontendRuntimeDatabaseUrl === "string");
+          (context.plan.runtimeProducerSha256 ?? context.plan.bootstrapCompatibility?.runtimeProducerSha256) && typeof value.frontendRuntimeDatabaseUrl === "string");
         const url = new URL(value.frontendRuntimeDatabaseUrl);
         demand(["postgres:", "postgresql:"].includes(url.protocol) && url.hostname === target.host &&
           Number(url.port || 5432) === target.port && decodeURIComponent(url.pathname) === `/${target.database}` &&
@@ -277,9 +283,12 @@ async function retainHistoricalSourceContexts(context, before) {
   const index = { ...before, sourceContextsVersion: 1, bindings: [] };
   for (const row of before.bindings) {
     const source = row.requirements;
+    demand(["unresolvedFrontendSqlFamilyIds", "unresolvedExternalCapabilityFamilyIds", "unresolvedFamilyIds"].every(key => Array.isArray(source[key])));
     const compact = { ...row, requirements: { sourceCommit: source.sourceCommit, surfaceSha256: source.surfaceSha256,
       configurationRecordSha256: source.configurationRecordSha256, provenanceSha256: source.provenanceSha256,
-      sourceInventorySha256: source.sourceInventorySha256, requirementsSha256: source.requirementsSha256, capabilityClosures: source.capabilityClosures },
+      sourceInventorySha256: source.sourceInventorySha256, requirementsSha256: source.requirementsSha256, capabilityClosures: source.capabilityClosures,
+      unresolvedFrontendSqlFamilyIds: source.unresolvedFrontendSqlFamilyIds, unresolvedExternalCapabilityFamilyIds: source.unresolvedExternalCapabilityFamilyIds,
+      unresolvedFamilyIds: source.unresolvedFamilyIds },
       sqlEvidence: { ...row.sqlEvidence, facts: row.sqlEvidence.facts.map(fact => fields(fact,
         ["key", "requirementId", "disposition", "role", "database", "major"])) } };
     const name = `historical-source-context-${row.surfaceSha256}.json`;
@@ -304,7 +313,7 @@ function readHistoricalSourceContexts(context, bindings, index) {
       row.provenanceSha256 === selected.sourceConfiguration.provenanceSha256);
     if (!cache.has(selected.sourceCommit)) cache.set(selected.sourceCommit, frontendHistoricalSourceRequirements(selected));
     const source = cache.get(selected.sourceCommit);
-    demand(JSON.stringify(Object.keys(row.requirements).sort()) === JSON.stringify(["sourceCommit", "surfaceSha256", "configurationRecordSha256", "provenanceSha256", "sourceInventorySha256", "requirementsSha256", "capabilityClosures"].sort()));
+    demand(JSON.stringify(Object.keys(row.requirements).sort()) === JSON.stringify(["sourceCommit", "surfaceSha256", "configurationRecordSha256", "provenanceSha256", "sourceInventorySha256", "requirementsSha256", "capabilityClosures", "unresolvedFrontendSqlFamilyIds", "unresolvedExternalCapabilityFamilyIds", "unresolvedFamilyIds"].sort()));
     demand(source.sourceInventorySha256 === row.sourceInventorySha256 && source.requirementsSha256 === row.requirementsSha256);
     return { ...row, sourceContextReceiptSha256: reference.receiptSha256, requirements: { ...source, ...row.requirements } };
   }) };
@@ -361,8 +370,11 @@ function scopedSource(bindings, before, scope) {
   demand(observed && observed.sourceCommit === binding.sourceCommit && observed.configurationRecordSha256 === binding.configurationRecordSha256 &&
     observed.provenanceSha256 === binding.sourceConfiguration.provenanceSha256 && observed.sourceInventorySha256 === source.sourceInventorySha256 &&
     observed.requirementsSha256 === source.requirementsSha256);
+  demand(["unresolvedFrontendSqlFamilyIds", "unresolvedExternalCapabilityFamilyIds", "unresolvedFamilyIds"].every(key => Array.isArray(observed.requirements[key])));
   const requirements = { ...source, surfaceSha256: binding.surfaceSha256, configurationRecordSha256: binding.configurationRecordSha256,
-    provenanceSha256: binding.sourceConfiguration.provenanceSha256, capabilityClosures: observed.requirements.capabilityClosures };
+    provenanceSha256: binding.sourceConfiguration.provenanceSha256, capabilityClosures: observed.requirements.capabilityClosures,
+    unresolvedFrontendSqlFamilyIds: observed.requirements.unresolvedFrontendSqlFamilyIds,
+    unresolvedExternalCapabilityFamilyIds: observed.requirements.unresolvedExternalCapabilityFamilyIds, unresolvedFamilyIds: observed.requirements.unresolvedFamilyIds };
   return requirements;
 }
 
@@ -599,6 +611,11 @@ export async function observeCompatibleFrontend(context) {
         "INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED", "INTEGRATION_COMMUNITY_READS_ENABLED", "INTEGRATION_COMMUNITY_WRITES_ENABLED",
         "INTEGRATION_LEARNING_ROUTES_ENABLED", "CUSTOMER_AUTH_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED"].map(key => [key, false]));
     demand(JSON.stringify(Object.entries(result.featureControls ?? {}).sort()) === JSON.stringify(Object.entries(expected).sort()));
+    const writer = { mode: "enforce", targetSha256: context.plan.targetSha256,
+      producerSha256: context.plan.runtimeProducerSha256 ?? context.plan.bootstrapCompatibility?.runtimeProducerSha256, sourceCommit: context.plan.sourceCommit,
+      roleName: context.bootstrapRuntimeTarget?.user };
+    demand(JSON.stringify(Object.entries(result.writerAdmissionBinding ?? {}).sort()) === JSON.stringify(Object.entries(writer).sort()) &&
+      result.configurationRecordSha256 === result.workloadReceiptSha256);
     if (context.plan.certification) demand(result.certificationSchedule?.path === "/api/cron/account-lifecycle" &&
       result.certificationSchedule.schedule === "* * * * *" && result.certificationSchedule.deploymentId === result.deploymentId &&
       result.certificationSchedule.nativeEnabled === false && /^[a-f0-9]{64}$/u.test(result.certificationSchedule.definitionsSha256));

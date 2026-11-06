@@ -12,8 +12,9 @@ import { observeFrontendOperationalProviderInventory } from "./frontend-operatio
 import { observeFrontendGoogleDatabase, frontendGoogleSnapshotSha256 } from "./frontend-google-effects.mjs";
 import { observeFrontendCrmShippingDatabase, frontendCrmShippingSnapshotSha256 } from "./frontend-crm-shipping-effects.mjs";
 import { historicalSourceSha256 as sourceHash, verifiedSourceRequirements } from "./frontend-historical-source.mjs";
-import { observeFrontendHistoricalSourceContexts } from "./frontend-historical-source-observer.mjs";
-import { observeFrontendScopedProviderDatabase } from "./frontend-provider-effect-scopes.mjs";
+import { observeFrontendHistoricalSourceContexts, observeFrontendHistoricalSourceIntentCounts } from "./frontend-historical-source-observer.mjs";
+import { observeFrontendScopedProviderDatabase, observeFrontendScopedProviderAbsence } from "./frontend-provider-effect-scopes.mjs";
+import { deriveFrontendProviderFence } from "./frontend-provider-fence-join.mjs";
 import { observeHistoricalFrontendCapabilityBindings, observeHistoricalFrontendDatabaseFence } from "./frontend-historical-capabilities.mjs";
 
 assert.equal(process.env.FRONTEND_PROVIDER_INVENTORY_LOCAL_TEST, "true");
@@ -126,6 +127,63 @@ try {
   assert.equal(actualDatabaseFence.retiredRolesDedicated, true);
   assert.equal(actualDatabaseFence.selectedSessions, 0);
   assert.deepEqual(actualDatabaseFence.admission, { newWork: false, recovery: false, active: 0, uncertain: 0 });
+  const emptyProvenance = { ...sourceProvenance, keyCatalogSha256: sourceHash([]), configurationRecordSha256: sourceHash("owned-empty-original") };
+  const emptyBinding = { ...sourceBinding, configurationRecordSha256: emptyProvenance.configurationRecordSha256,
+    sourceConfiguration: { ...emptyProvenance, provenanceSha256: sourceHash(emptyProvenance), databaseRoles: [] } };
+  const emptyContext = await observeFrontendHistoricalSourceContexts({ ...sourceContext, getProviderContext: async () => {} },
+    { ...sourceBindings, historicalRuntimeBindings: [emptyBinding] }, { historicalRuntimeConfigurations: { [sourceSurface]: {
+      sourceCommit: historicalSource.sourceCommit, configurationRecordSha256: emptyProvenance.configurationRecordSha256,
+      provenance: emptyProvenance, keyCatalog: [], environment: {} } } });
+  const emptySource = emptyContext.bindings[0].requirements;
+  assert.equal(emptySource.capabilityClosures.length, emptySource.providerFamilies.length);
+  assert.deepEqual(emptySource.unresolvedFrontendSqlFamilyIds, []);
+  assert.deepEqual(emptySource.unresolvedExternalCapabilityFamilyIds, ["mux.studio", "sanity.editorial"]);
+  assert.deepEqual(emptySource.unresolvedFamilyIds, emptySource.unresolvedExternalCapabilityFamilyIds);
+  const scopeResults = [];
+  for (const provider of ["square", "resend", "highlevel", "chitchats"]) {
+    const common = { environment: "staging", sourceBindingSha256: emptyProvenance.configurationRecordSha256 };
+    const reviewed = provider === "square" ? { ...common, environment: "sandbox", locationId: "LE2H76M5V90AM", apiVersion: "2026-05-20",
+      databaseSnapshotSha256: "a".repeat(64), operationBeginTime: "2026-11-04T00:00:00Z", observationEndTime: "2026-11-05T00:00:00Z", operationLifetimeEvidenceIds: ["owned-lifetime"] } :
+      provider === "resend" ? { resendMarketing: { ...scopedReviewed.resendMarketing, configurationSha256: emptyProvenance.configurationRecordSha256 } } :
+      provider === "highlevel" ? { ...common, historicalSourceCommit: historicalSource.sourceCommit, historyDatabaseSnapshotSha256: "a".repeat(64) } :
+      { ...common, sourceCommit: historicalSource.sourceCommit, sourceInventorySha256: historicalSource.sourceInventorySha256, requirementsSha256: historicalSource.requirementsSha256 };
+    const snapshot = await observeFrontendScopedProviderDatabase(client, provider, reviewed, verify);
+    if (provider === "square") Object.assign(reviewed, { databaseSnapshot: snapshot.normalizedSnapshot, databaseSnapshotSha256: snapshot.snapshotSha256 });
+    if (provider === "resend") reviewed.resendMarketing.databaseSnapshotSha256 = snapshot.snapshotSha256;
+    if (provider === "highlevel") reviewed.historyDatabaseSnapshotSha256 = snapshot.snapshotSha256;
+    const effect = observeFrontendScopedProviderAbsence(provider, reviewed, snapshot.actualRows, emptySource, snapshot.normalizedSnapshot);
+    scopeResults.push({ provider, surfaceSha256: sourceSurface, historicalSourceCommit: historicalSource.sourceCommit,
+      configurationRecordSha256: emptySource.configurationRecordSha256, provenanceSha256: emptySource.provenanceSha256,
+      sourceInventorySha256: emptySource.sourceInventorySha256, requirementsSha256: emptySource.requirementsSha256,
+      databaseRereadVerified: true, observation: effect.observation });
+  }
+  const absenceBindings = { ...sourceBindings, historicalRuntimeBindings: [emptyBinding], surfaces: [
+    { surfaceSha256: sourceSurface, kind: "deployment", identity: { projectId: "owned-stage", deploymentId: "dpl_owned" } },
+    { surfaceSha256: sourceHash("owned-scheduler"), kind: "scheduler", identity: { provider: "vercel" } },
+    ...[...new Set(emptySource.providerFamilies.map(row => row.provider))].map(provider => ({ surfaceSha256: sourceHash(provider), kind: "provider", identity: { provider } }))] };
+  const sourceIntentCounts = await observeFrontendHistoricalSourceIntentCounts({ databaseClient: client, verifyLockedSession: verify }, emptyContext);
+  const absenceObservations = { scopedEffects: scopeResults, sourceIntentCounts, retirements: {},
+    vercel: { reviewedInventoryMatches: true, reviewedProjectMatches: true, projectPaginationComplete: true, aliasJobActive: false,
+      projectState: { cronsEnabled: false }, historicalIngressRetiredDeploymentIds: ["dpl_owned"] } };
+  const completeAbsence = deriveFrontendProviderFence(sourceContext.plan, absenceBindings, absenceObservations, actualDatabaseFence, emptyContext);
+  assert.ok(completeAbsence.every(row => row.activeExecutions === 0 && row.uncertainEffects === 0), JSON.stringify({
+    sql: actualDatabaseFence, coverage: completeAbsence[0].reconciliation.historicalSourceCoverageVerified,
+    missing: completeAbsence[0].reconciliation.missingBindingSurfaceSha256, counts: sourceIntentCounts,
+    families: completeAbsence[0].reconciliation.sourceFamilies.filter(row => !row.settled), domains: scopeResults.map(row => ({ provider: row.provider,
+      active: row.observation.activeExecutions, uncertain: row.observation.uncertainEffects, missing: row.observation.missingRequirementIds })) }));
+  assert.ok(completeAbsence.filter(row => absenceBindings.surfaces.find(surface => surface.surfaceSha256 === row.surfaceSha256).kind === "provider")
+    .every(row => row.state === "source-inapplicable-and-effects-reconciled"));
+  assert.ok(completeAbsence.every(row => row.reconciliation.rawInvocationCount === null));
+  const muxScope = completeAbsence.find(row => row.surfaceSha256 === sourceHash("mux")).reconciliation.sourceFamilies.find(row => row.familyId === "mux.studio");
+  assert.equal(muxScope.externalProviderCapability, "not-declared-absent");
+  assert.equal(muxScope.effectScope, "frontend-private-sql-and-protected-continuations");
+  const muxReconciliation = completeAbsence.find(row => row.surfaceSha256 === sourceHash("mux")).reconciliation;
+  assert.deepEqual(muxReconciliation.unresolvedExternalCapabilityFamilyIds, ["mux.studio"]);
+  assert.deepEqual(muxReconciliation.unresolvedFamilyIds, ["mux.studio"]);
+  assert.deepEqual(muxReconciliation.unresolvedFrontendSqlFamilyIds, []);
+  const brokenSource = structuredClone(emptyContext);
+  brokenSource.bindings[0].requirements.capabilityClosures.find(row => row.familyId === "google.calendar").requirementIds.pop();
+  assert.ok(deriveFrontendProviderFence(sourceContext.plan, absenceBindings, absenceObservations, actualDatabaseFence, brokenSource).every(row => row.state === "unfenced"));
   await client.query("INSERT INTO frontend_admission.producers(producer_sha256,source_sha,database_role) VALUES($1,$2,$3::oid)",
     ["f".repeat(64), capabilityPlan.sourceCommit, retiredOid]);
   await client.query("INSERT INTO frontend_admission.operations(id,producer_sha256,source_sha,database_role,epoch,kind,state) VALUES($1::uuid,$2,$3,$4::oid,1,'recovery','uncertain')",
@@ -181,7 +239,7 @@ try {
     error => error.message === "FRONTEND_OPERATIONAL_PROVIDER_INVENTORY_REFUSED");
   assert.equal((await client.query("SELECT 1 AS value")).rows[0].value, 1);
   console.log(JSON.stringify({ status: "FRONTEND_PROVIDER_INVENTORY_OWNED_POSTGRES_PASS", migrations: artifact.migrations.length,
-    tables: actual.tables.length, originalSourceSqlPeers: 4, alternateMetadataPeers: 1, scopedResendQueries: 6, googleCredentialAndEventQueries: 5, crmShippingQueries: 8, providerTouched: false, liveQualified: false }));
+    tables: actual.tables.length, actualC07SourceFamilies: emptySource.providerFamilies.length, completeOwnedSourceAbsenceJoin: true, providerIngressFixtureOnly: true, originalSourceSqlPeers: 4, alternateMetadataPeers: 1, scopedResendQueries: 6, googleCredentialAndEventQueries: 5, crmShippingQueries: 8, providerTouched: false, liveQualified: false }));
 } finally {
   if (client) await client.end().catch(() => {});
   if (running) { try { run(join(binaries, "pg_ctl"), ["-D", data, "-m", "immediate", "-w", "stop"]); } catch { /* owned cleanup */ } }

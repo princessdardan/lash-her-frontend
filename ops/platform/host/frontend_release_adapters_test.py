@@ -49,7 +49,7 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                        "url": "failed.vercel.app", "meta": {"githubCommitSha": "c" * 40}}
         self.deployments = [self.previous, self.failed]
         self.related_deployments, self.related_current, self.related_disabled = [], "dpl_production", False
-        self.built_features, self.built_crons, self.probed_deployment = {}, {}, None
+        self.built_features, self.built_crons, self.built_writer, self.probed_deployment = {}, {}, {}, None
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -70,7 +70,7 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                                   "environment": "staging", "projectId": vercel.PROJECTS["staging"], "sourceCommit": "a" * 40}
                         if self.headers.get("x-lash-release-mode") == "phase2":
                             result.update(contractPhase="p2", checks=["gateway-course-catalog-p2"],
-                                featureControls=owner.built_features[owner.probed_deployment])
+                                featureControls=owner.built_features[owner.probed_deployment], writerAdmissionBinding=owner.built_writer[owner.probed_deployment])
                         if self.headers.get("x-lash-release-mode") in ("admission-bootstrap", "resend-binding", "square-binding", "google-binding"):
                             result.update(checks=["gateway-course-catalog", "frontend-admission-bootstrap"],
                                 schemaCatalogSha256="f" * 64 if owner.bootstrap_probe_wrong else owner.context["preapplicationSchema"]["schemaCatalogSha256"],
@@ -125,6 +125,10 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                         owner.deployments.append({"uid": deployment_id, "state": "READY", "target": "production", "created": 30,
                                                   "url": "owned.vercel.app", "meta": {"githubCommitSha": "a" * 40}})
                         owner.built_features[deployment_id] = {key: owner.variables.get(key, {}).get("value") == "true" for key in adapter.BOOTSTRAP_FLAGS}
+                        target = json.loads(owner.variables.get("FRONTEND_WRITER_ADMISSION_TARGET_JSON", {}).get("value", "{}"))
+                        owner.built_writer[deployment_id] = {"mode": "enforce", "targetSha256": target.get("targetSha256"),
+                            "producerSha256": owner.variables.get("FRONTEND_WRITER_PRODUCER_SHA256", {}).get("value"),
+                            "sourceCommit": "a" * 40, "roleName": target.get("user")} if owner.variables.get("FRONTEND_WRITER_ADMISSION_MODE", {}).get("value") == "enforce" else None
                         owner.built_crons[deployment_id] = ([{"host": "owned.vercel.app", "path": "/api/cron/account-lifecycle", "schedule": "* * * * *"}]
                             if owner.variables.get("LASH_P2_CERTIFICATION_SCHEDULES", {}).get("value") == "account-lifecycle" else [])
                         if owner.lost_build:
@@ -291,9 +295,11 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
         self.assertTrue(self.disabled)
 
     def test_reviewed_p2_feature_profile_is_installed_before_build_and_actual_probe_matches(self):
+        self.bootstrap_context()
         pair = {"contractPhase": "p2", "phase2ContractManifestSha256": "sha256:" + "9" * 64}
         self.context["candidate"].update(pair); self.database.update(pair)
         self.context["plan"]["certification"] = adapter.p2_certification_profile.PROFILE
+        self.execute("deploy-admission")
         migrate.write_json(self.parent, "database-receipt.json", self.database)
         self.assertEqual(self.execute("deploy-compatible")["status"], "FRONTEND_DOMAINS_PROMOTED")
         observed = self.execute("observe-compatible")
@@ -307,11 +313,35 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
         self.assertFalse(any(row["method"] == "PATCH" for row in self.calls))
         self.assertEqual(observed["certificationSchedule"]["path"], "/api/cron/account-lifecycle")
         self.assertFalse(observed["certificationSchedule"]["nativeEnabled"])
+        self.assertEqual(observed["writerAdmissionBinding"], adapter.compatible_writer_admission_binding(self.context))
+        self.assertEqual(observed["configurationRecordSha256"], observed["workloadReceiptSha256"])
+        actual_writer = dict(self.built_writer[observed["deploymentId"]])
+        self.built_writer[observed["deploymentId"]]["roleName"] = "wrong_role"
+        # A later project env edit is not the immutable built/probed binding.
+        self.assertEqual(self.execute("observe-compatible")["writerAdmissionBinding"], actual_writer)
+        self.built_writer[observed["deploymentId"]] = actual_writer
         self.variables["LASH_P2_CERTIFICATION_SCHEDULES"]["value"] = "off"
         self.assertEqual(self.execute("observe-compatible")["certificationSchedule"], observed["certificationSchedule"])
-        self.built_crons["dpl_candidate"].append({"host": "owned.vercel.app", "path": "/api/cron/highlevel-sync", "schedule": "* * * * *"})
+        self.built_crons[observed["deploymentId"]].append({"host": "owned.vercel.app", "path": "/api/cron/highlevel-sync", "schedule": "* * * * *"})
         with self.assertRaisesRegex(ValueError, "P2_EXACT_DEPLOYMENT_LIFECYCLE_SCHEDULE_REQUIRED"):
             self.execute("observe-compatible")
+
+    def test_existing_admission_new_action_configures_explicit_reviewed_runtime_producer_before_final_build(self):
+        self.bootstrap_context()
+        del self.context["plan"]["bootstrapCompatibility"]
+        self.context["plan"]["runtimeProducerSha256"] = "4" * 64
+        self.context["plan"]["certification"] = adapter.p2_certification_profile.PROFILE
+        pair = {"contractPhase": "p2", "phase2ContractManifestSha256": "sha256:" + "9" * 64}
+        self.context["candidate"].update(pair); self.database.update(pair)
+        self.variables["FRONTEND_WRITER_ADMISSION_MODE"] = {"key": "FRONTEND_WRITER_ADMISSION_MODE", "value": "off", "type": "plain", "target": ["production"]}
+        migrate.write_json(self.parent, "database-receipt.json", self.database)
+        self.assertEqual(self.execute("deploy-compatible")["status"], "FRONTEND_DOMAINS_PROMOTED")
+        observed = self.execute("observe-compatible")
+        self.assertEqual(observed["writerAdmissionBinding"]["producerSha256"], "4" * 64)
+        self.assertEqual(observed["writerAdmissionBinding"]["roleName"], "runtime")
+        self.assertEqual(self.variables["FRONTEND_WRITER_ADMISSION_MODE"]["value"], "enforce")
+        self.assertEqual(self.variables["DATABASE_URL"]["value"], self.context["frontendRuntimeDatabaseUrl"])
+        self.assertTrue(observed["workloadVerified"])
 
     def test_p2_bootstrap_keeps_all_features_false_before_post_sql_certification(self):
         self.bootstrap_context()

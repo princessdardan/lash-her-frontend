@@ -10,11 +10,23 @@ function exactClosure(source, family) {
   const rows = source.capabilityClosures.filter(row => row.familyId === family.familyId);
   if (rows.length !== 1) return false;
   const row = rows[0], ids = [...requirementIds(family), ...source.sqlCredentialRequirements.map(row => row.requirementId)].sort();
+  const predicate = family.configurationConditions[0]?.privateSqlPredicate;
+  if (predicate && !(row.effectScope === "frontend-private-sql-and-protected-continuations" && row.sourcePredicate === predicate &&
+      row.externalProviderCapability === (["sanity.editorial", "mux.studio"].includes(family.familyId) ? "not-declared-absent" : "not-a-provider-retirement-receipt"))) return false;
   return ["sourceCommit", "surfaceSha256", "configurationRecordSha256", "provenanceSha256"].every(key => row[key] === source[key]) &&
     ["no-capability-observed", "absent-from-verified-source"].includes(row.disposition) &&
     (row.disposition !== "absent-from-verified-source" || family.sourceDisposition === "absent-from-verified-source") &&
     equal(row.requirementIds, ids) && new Set(ids).size === ids.length && Array.isArray(row.evidenceIds) && row.evidenceIds.length > 0 &&
     row.evidenceIds.every(digest) && equal(row.evidenceIds, [...new Set(row.evidenceIds)].sort());
+}
+
+function validSourceResiduals(source) {
+  const privateIds = source.providerFamilies.filter(family => !exactClosure(source, family)).map(family => family.familyId).sort();
+  const predicates = { "sanity.editorial": "sanity-editorial-private-sql-scope-v1", "mux.studio": "mux-public-editorial-private-sql-scope-v1" };
+  const externalIds = source.providerFamilies.filter(family => family.sourceDisposition === "reachable" && predicates[family.familyId] &&
+    family.configurationConditions[0]?.privateSqlPredicate === predicates[family.familyId]).map(family => family.familyId).sort();
+  return equal(source.unresolvedFrontendSqlFamilyIds, privateIds) && equal(source.unresolvedExternalCapabilityFamilyIds, externalIds) &&
+    equal(source.unresolvedFamilyIds, [...new Set([...privateIds, ...externalIds])].sort());
 }
 
 export function deriveFrontendProviderFence(plan, bindings, observations, database, capabilityBefore) {
@@ -32,6 +44,7 @@ export function deriveFrontendProviderFence(plan, bindings, observations, databa
       source.provenanceSha256 === binding.sourceConfiguration.provenanceSha256 && observed.provenanceSha256 === source.provenanceSha256 &&
       source.sourceInventorySha256 === observed.sourceInventorySha256 && source.requirementsSha256 === observed.requirementsSha256 &&
       Array.isArray(source.providerFamilies) && Array.isArray(source.capabilityClosures) && Array.isArray(source.sqlCredentialRequirements) &&
+      validSourceResiduals(source) &&
       sql?.sourceCommit === source.sourceCommit && sql.surfaceSha256 === source.surfaceSha256 &&
       sql.configurationRecordSha256 === source.configurationRecordSha256 && sql.provenanceSha256 === source.provenanceSha256 &&
       digest(sql.evidenceSha256) && equal(sql.facts?.map(row => row.requirementId).sort(), source.sqlCredentialRequirements.map(row => row.requirementId).sort()) &&
@@ -50,22 +63,29 @@ export function deriveFrontendProviderFence(plan, bindings, observations, databa
     const tables = [...new Set(family.sqlIntentRequirements.flatMap(row => row.tables ?? []))];
     const empty = tables.every(table => observations.sourceIntentCounts?.[table] === 0);
     const closure = exactClosure(source, family);
+    const sourceClosure = source.capabilityClosures.find(row => row.familyId === family.familyId);
     const scoped = observations.scopedEffects?.find(row => row.surfaceSha256 === source.surfaceSha256 && row.provider === family.provider &&
       row.historicalSourceCommit === source.sourceCommit && row.configurationRecordSha256 === source.configurationRecordSha256 &&
       row.provenanceSha256 === source.provenanceSha256 && row.sourceInventorySha256 === source.sourceInventorySha256 &&
       row.requirementsSha256 === source.requirementsSha256 && row.databaseRereadVerified === true);
     const effect = scoped?.observation;
     const ids = requirementIds(family), covered = new Set(effect?.coveredRequirementIds ?? []);
-    const domainZero = effect?.activeExecutions === 0 && effect?.uncertainEffects === 0 &&
-      Array.isArray(effect.missingRequirementIds) && effect.missingRequirementIds.length === 0 && ids.every(id => covered.has(id));
+    const domainSettled = effect?.activeExecutions === 0 && effect?.uncertainEffects === 0 &&
+      Array.isArray(effect.missingRequirementIds) && effect.missingRequirementIds.length === 0;
+    const domainZero = domainSettled && ids.every(id => covered.has(id));
+    const componentFamily = family.provider !== "resend" || ["resend.contacts", "resend.segments", "resend.topics", "resend.broadcasts", "resend.events"].includes(family.familyId);
     // Known-scope absence requires both original no-capability proof and actual
     // source-declared intent contradiction checks. Domain receipts never erase
     // a different historical surface's accepted-request requirements.
-    const noCapability = closure && empty && (!["square", "resend", "highlevel", "chitchats"].includes(family.provider) || domainZero);
+    const noCapability = closure && empty && (!["square", "resend", "highlevel", "chitchats"].includes(family.provider) ||
+      (componentFamily ? domainZero : domainSettled));
     const retained = continuation && (noCapability || effect === undefined);
     const settled = continuation ? retained : noCapability || domainZero && !(closure && !empty);
     return { surfaceSha256: source.surfaceSha256, sourceCommit: source.sourceCommit, provider: family.provider, familyId: family.familyId,
       sourceInventorySha256: source.sourceInventorySha256, requirementsSha256: source.requirementsSha256,
+      effectScope: sourceClosure?.effectScope ?? "selected-historical-source-provider-and-sql-effects",
+      sourcePredicate: sourceClosure?.sourcePredicate ?? null,
+      externalProviderCapability: sourceClosure?.externalProviderCapability ?? "no-global-provider-absence-claim",
       disposition: noCapability ? "source-inapplicable-and-effects-reconciled" : settled ? "observed-effects-reconciled" : "source-requirements-unresolved",
       coveredRequirementIds: settled ? ids : ids.filter(id => covered.has(id)), missingRequirementIds: settled ? [] : ids.filter(id => !covered.has(id)),
       sqlContradictionCheckVerified: empty, settled };
@@ -105,13 +125,18 @@ export function deriveFrontendProviderFence(plan, bindings, observations, databa
     const name = ["google-identity", "google-calendar"].includes(surface.identity.provider) ? "google" : surface.identity.provider;
     const relevant = families.filter(row => surface.kind === "provider" ? row.provider === name :
       ["deployment", "direct-caller"].includes(surface.kind) ? row.surfaceSha256 === surface.surfaceSha256 : true);
+    const relevantIds = new Set(relevant.map(row => row.familyId));
+    const externalResiduals = [...new Set(sources.flatMap(source => source.unresolvedExternalCapabilityFamilyIds).filter(id => relevantIds.has(id)))].sort();
+    const privateResiduals = [...new Set(relevant.filter(row => !row.settled).map(row => row.familyId))].sort();
     const absence = relevant.length > 0 && relevant.every(row => row.disposition === "source-inapplicable-and-effects-reconciled");
     const retired = surface.kind !== "deployment" || observations.vercel.historicalIngressRetiredDeploymentIds?.includes(surface.identity.deploymentId);
     return { surfaceSha256: surface.surfaceSha256, state: !all ? "unfenced" : surface.kind === "provider" ?
       (absence ? "source-inapplicable-and-effects-reconciled" : "credentials-retired-and-effects-reconciled") : surface.kind === "scheduler" ?
         "disabled-and-running-executions-reconciled" : retired ? "retired-and-effects-reconciled" : "admission-bound-and-effects-reconciled",
       activeExecutions: all ? 0 : null, uncertainEffects: all ? 0 : null,
-      reconciliation: { rawInvocationCount: null, executionScope: "source-specific-effect-capable-historical-writers",
+      reconciliation: { rawInvocationCount: null, executionScope: "frontend-private-sql-and-protected-continuations",
+        unresolvedFrontendSqlFamilyIds: privateResiduals, unresolvedExternalCapabilityFamilyIds: externalResiduals,
+        unresolvedFamilyIds: [...new Set([...privateResiduals, ...externalResiduals])].sort(),
         physicalDatabaseLoginsDenied: sqlDenied, admittedActiveAndUncertainZero: ledgerZero, currentAdmittedActive: database.admission.active,
         historicalAcceptedEffectDrainVerified: ledgerZero || continuation, historicalIngressVerified: ingress,
         historicalSourceCoverageVerified: coverage, missingBindingSurfaceSha256: missing,

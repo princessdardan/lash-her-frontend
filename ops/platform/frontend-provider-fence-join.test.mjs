@@ -100,6 +100,7 @@ function sourceFixture() {
   source.capabilityClosures = source.providerFamilies.map(family => ({ familyId: family.familyId, disposition: "no-capability-observed",
     ...Object.fromEntries(["sourceCommit", "surfaceSha256", "configurationRecordSha256", "provenanceSha256"].map(key => [key, source[key]])),
     requirementIds: [...["configurationConditions", "sqlIntentRequirements", "untrackedPotentialRequests"].flatMap(key => family[key].map(row => row.requirementId)), "sql-credentials.DATABASE_URL"].sort(), evidenceIds: ["a".repeat(64)] }));
+  source.unresolvedFrontendSqlFamilyIds = []; source.unresolvedExternalCapabilityFamilyIds = []; source.unresolvedFamilyIds = [];
   const binding = f.bindings.historicalRuntimeBindings[0]; binding.sourceCommit = source.sourceCommit;
   binding.sourceConfiguration = { provenanceSha256: source.provenanceSha256 };
   f.before = { bindings: [{ ...binding, provenanceSha256: source.provenanceSha256,
@@ -125,6 +126,8 @@ test("historical source scope can close a positively excluded provider without u
 test("source scope exact requirements, actual SQL contradictions and per-surface context cannot be overridden by counts or flags", () => {
   for (const change of [
     f => { f.before.bindings[0].requirements.capabilityClosures[0].surfaceSha256 = "peer"; },
+    f => { delete f.before.bindings[0].requirements.unresolvedExternalCapabilityFamilyIds; },
+    f => { f.before.bindings[0].requirements.unresolvedFamilyIds = ["caller-added-residual"]; },
     f => { f.before.bindings[0].requirements.capabilityClosures[0].requirementIds.pop(); },
     f => { f.before.bindings[0].sqlEvidence.facts = []; },
     f => { f.before.bindings[0].sqlPhysicalBindings[0].role.oid = "999"; },
@@ -147,5 +150,19 @@ test("new admitted replacement objects do not mutate a retained strict historica
   f.observations.establishedHistoricalFence = { proofSha256: "9".repeat(64), strictEvidenceSha256: f.bindings.surfaces.map(() => "8".repeat(64)), retiredCapabilities: {} };
   assert.equal(join(f).every(row => row.activeExecutions === 0 && row.reconciliation.currentAdmittedActive === 3), true);
   f.database.admission.uncertain = 1;
+  assert.equal(join(f).every(row => row.state === "unfenced"), true);
+});
+
+test("extra Resend families require their own exact source exclusion rather than invented marketing receipts", () => {
+  const f = sourceFixture(), source = f.before.bindings[0].requirements;
+  const family = { familyId: "resend.templates", provider: "resend", sourceDisposition: "reachable",
+    configurationConditions: [{ requirementId: "resend.templates.original-configuration" }],
+    sqlIntentRequirements: [{ requirementId: "resend.templates.durable-intents", tables: ["marketing_contacts"] }],
+    untrackedPotentialRequests: [{ requirementId: "resend.templates.accepted-request-completeness" }] };
+  source.providerFamilies.push(family);
+  source.capabilityClosures.push({ ...source.capabilityClosures[0], familyId: family.familyId,
+    requirementIds: ["resend.templates.accepted-request-completeness", "resend.templates.durable-intents", "resend.templates.original-configuration", "sql-credentials.DATABASE_URL"] });
+  assert.equal(join(f).every(row => row.activeExecutions === 0), true);
+  source.capabilityClosures.pop(); source.unresolvedFrontendSqlFamilyIds = [family.familyId]; source.unresolvedFamilyIds = [family.familyId];
   assert.equal(join(f).every(row => row.state === "unfenced"), true);
 });
