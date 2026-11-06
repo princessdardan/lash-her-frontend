@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "status": "EXACT_HISTORICAL_SOURCE_ALIASES_VALIDATED",
+  "sourceCommit": "e99975b8ba1aa971dc9f3481f9d73499b43bf753",
+  "storedProfileFiles": 33,
+  "exactAliases": 7,
+  "supportedExactRevisions": 40,
+  "newAliases": [
+    {
+      "sourceCommit": "0678e16109425247047865e4aef0b7393d73dc15",
+      "sourceProfileCommit": "6d5845a8b6d5ff8f27ac7512d72075328233d0ec",
+      "treeOid": "018682cf10f5bf938b66cd0d885f0b5b0f5a2286",
+      "sourceInventorySha256": "4bca018ed773161c828f5170ab12751a4fc64b4d22c429fc0b7bfe1b73032f85",
+      "profileSha256": "b972824c0305e556a190ba06ed894f7f2b6d0334a953bc48495516b2571ed342"
+    },
+    {
+      "sourceCommit": "122ea515aba5042ac3f4b7fa63090963bade899d",
+      "sourceProfileCommit": "b1f46feadab04e5e0934f5c63b9333837b48f56c",
+      "treeOid": "6f3e765ccb66a375f962466585ccd1ea6aefa884",
+      "sourceInventorySha256": "a688825718692f8de1c2e5e9e75370a520353a56803b4eccc6324db8692b09e4",
+      "profileSha256": "0f24a07fca7e2dfc84f0069768a31d7f9415e8bf523b61f29a41132d17c477c0"
+    },
+    {
+      "sourceCommit": "3e105d4d54d77a7ca0f28607bfc9202107e3259e",
+      "sourceProfileCommit": "b2ce650791fca81674f10bd4f9dd768d53efd185",
+      "treeOid": "e05e49fa001204d93f1467736c44602d68311ed6",
+      "sourceInventorySha256": "fc083550c79beb2f143ce7bdef7ac9d3a6cfbf13eb9d70465cac0dfea043d5b7",
+      "profileSha256": "9e4cb033b96836645b0421e12bf4c087d068ce624654390ab2d3288cb6a78cd3"
+    },
+    {
+      "sourceCommit": "5e5c46c42332671945e3a240513194453c477b78",
+      "sourceProfileCommit": "1d8342ab93b6713bebbb3a9caabaa54a246f9957",
+      "treeOid": "7ee5cdb0ce0eca84f7707e95e687514c5b217482",
+      "sourceInventorySha256": "74fa1a35cc2bc3107741b2b13ed1773d6f3bd9da3f017d07113bd37fcacb5c13",
+      "profileSha256": "05f84ac2bd7bc33354d0c38e151529d5afed9814269f4379c709e041f7668f8a"
+    },
+    {
+      "sourceCommit": "89d2aba195741c62c56c3de8d8a7d90cdaf2da19",
+      "sourceProfileCommit": "273a9821a097a7a0beeb918e8b1c4c51932f73ab",
+      "treeOid": "1741d96a9466ccee1c4a9ebb8ff70adae95fe335",
+      "sourceInventorySha256": "87a5c08a9b5b76bf8f145377bc9733f607bcda17aa800170361db9aa423ed71d",
+      "profileSha256": "af9abd573778c0de9051fd609fb68a2ee3eb330cd66316372db05b0e674e6b32"
+    }
+  ],
+  "verification": {
+    "completeTreeOidEquality": true,
+    "completeTreeDiffEmpty": true,
+    "srcScriptsOpsDiffEmpty": true,
+    "commitEnvironmentBranchingAbsent": true,
+    "historicalSourceTestsPassed": 25,
+    "observerAndInstallationTestsPassed": 11,
+    "failed": 0,
+    "skipped": 0,
+    "liveCalls": false
+  },
+  "fileSha256": {
+    "ops/platform/frontend-historical-source.mjs": "ae4d9df9dd908fc7b53c4a433f08a7f5e729df2ea90b52a927797e9cadab372b",
+    "ops/platform/frontend-historical-source.test.mjs": "887ef2cfd6f3f8e71340eb46aeccfd361ea90ac27571aad12be76f477540ed6b"
+  },
+  "open": {
+    "unmatchedRevisions": 7,
+    "retainedSurfacesCoveredByUnmatchedRevisions": 8,
+    "surfacesMissingSourceSha": 5
+  }
+}
