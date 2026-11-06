@@ -1,5 +1,6 @@
 // Source-parent browser/pending composition. A plan or caller JSON is not an
 // issued browser artifact. Live authority comes from this fixed child process.
+import { P2_CANONICAL_BROWSER_ORIGIN } from "./p2-canonical-browser-origin.mjs";
 import { spawn, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
@@ -73,7 +74,8 @@ export function prepareP2LifecycleSuspensionPlan(candidate, input) {
     configurationSha256: persistencePlan.configurationSha256, configurationRecordSha256: deployment.configurationRecordSha256,
     resourceBindingSha256: hash(input.resources),
     targetSha256: expectedBinding.targetSha256, hostMachineId: persistencePlan.hostMachineId, deploymentId: deployment.deploymentId,
-    deploymentUrl: deployment.deploymentUrl, browserProgramSha256: hash(Buffer.concat([committedProgramBytes(sourceCommit, "ops/platform/p2-lifecycle-browser-recorder.mjs"), Buffer.from(P2_LIFECYCLE_BROWSER_LAUNCHER)])),
+    deploymentUrl: deployment.deploymentUrl, browserOrigin: P2_CANONICAL_BROWSER_ORIGIN, featureControls: deployment.featureControls,
+    writerAdmissionBinding: deployment.writerAdmissionBinding, browserProgramSha256: hash(Buffer.concat([committedProgramBytes(sourceCommit, "ops/platform/p2-lifecycle-browser-recorder.mjs"), Buffer.from(P2_LIFECYCLE_BROWSER_LAUNCHER)])),
     pendingProgramSha256: hash(committedProgramBytes(sourceCommit, "ops/platform/p2-lifecycle-pending-probe.mjs")),
     parentProgramSha256: hash(committedProgramBytes(sourceCommit, "ops/platform/p2-lifecycle-suspension-evidence.mjs")),
     hostProgramSha256: hash(committedProgramBytes(sourceCommit, "ops/platform/host/p2_lifecycle_suspension_evidence.py")),
@@ -86,7 +88,7 @@ export function prepareP2LifecycleSuspensionPlan(candidate, input) {
 export function validateP2SuspensionBrowserRecord(record, input) {
   demand(record?.version === 1 && record.status === "P2_LIFECYCLE_BROWSER_SOURCE_RECORDED" && record.environment === "staging"
     && record.actionId === input.actionId && record.challenge === input.challenge && record.bindingSha256 === input.bindingSha256
-    && record.sourceCommit === input.sourceCommit && record.deploymentId === input.deploymentId && record.deploymentUrl === input.deploymentUrl
+    && record.sourceCommit === input.sourceCommit && record.deploymentId === input.deploymentId && record.deploymentUrl === input.deploymentUrl && record.browserOrigin === P2_CANONICAL_BROWSER_ORIGIN && record.browserOrigin === input.browserOrigin
     && record.userId === input.userId && record.courseId === input.courseId && record.lessonId === input.lessonId
     && record.contextsIsolated === true && record.sessionsFabricated === false && record.clockChanged === false && record.requestsIntercepted === false
     && record.tokensRetained === false && record.rawHarRetained === false && record.releaseAccepted === false
@@ -109,7 +111,7 @@ export function launchP2LifecycleBrowserRecorder(plan, directory) {
   demand(hash(program) === plan.browserProgramSha256);
   const store = frontendReleaseReceiptStore(directory), challenge = randomBytes(32).toString("hex");
   const input = { version: 1, environment: "staging", actionId: plan.actionId, challenge, bindingSha256: hash(plan),
-    sourceCommit: plan.sourceCommit, deploymentId: plan.deploymentId, deploymentUrl: plan.deploymentUrl, ...reviewed.resources, windowSeconds: 840 };
+    sourceCommit: plan.sourceCommit, deploymentId: plan.deploymentId, deploymentUrl: plan.deploymentUrl, browserOrigin: plan.browserOrigin, ...reviewed.resources, windowSeconds: 840 };
   const child = spawn(process.execPath, ["--input-type=module", "--eval", program.toString("utf8")], { cwd: sourceRoot, stdio: ["ignore", "ignore", "ignore", "ipc"],
     env: Object.fromEntries(["PATH", "HOME", "LANG", "TMPDIR"].filter(name => process.env[name] !== undefined).map(name => [name, process.env[name]])) });
   const waiting = new Map(), values = new Map(); let failed = false, ended = false, armed = false, suspended = false, authenticationStarted = false, closePromise, authenticationWaiter;

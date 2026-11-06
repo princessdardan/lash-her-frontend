@@ -22,6 +22,7 @@ import p2_lifecycle_persistence_probe as persistence
 import p2_lifecycle_authority_timing as timing
 from p2_certification_fault import bind_frontend_scope
 from p2_release_scope import P2ReleaseScope
+from p2_canonical_browser_origin import ORIGIN as BROWSER_ORIGIN
 
 ROOT = Path("/var/lib/lash-her/releases/staging")
 PRIVATE_ROOT = Path("/run/lash-her-p2-suspension-private")
@@ -78,7 +79,7 @@ class P2LifecycleSuspensionEvidenceStage:
         demand(isinstance(scope, P2ReleaseScope) and scope.path == LOCK and scope.release is not None and scope.jobs is not None,
             "P2_SUSPENSION_ACTUAL_PHYSICAL_PARENT_SCOPE_REQUIRED")
         demand(os.geteuid() == 0 and plan.get("version") == 1 and plan.get("environment") == "staging"
-            and plan.get("profile") == "normal-ui-suspension-pending-v1" and plan.get("windowSeconds") == 840
+            and plan.get("browserOrigin") == BROWSER_ORIGIN and plan.get("profile") == "normal-ui-suspension-pending-v1" and plan.get("windowSeconds") == 840
             and plan.get("initialAdmission") == {"newWork": True, "recovery": False}
             and plan.get("finalDisposition") == "native-off-and-admission-closed"
             and plan.get("workerInvocationAuthorized") is False and plan.get("automaticReplayAllowed") is False,
@@ -295,7 +296,7 @@ console.log(JSON.stringify({status:'P2_SUSPENSION_COURSE_RUNTIME_BOUND'}))}catch
         demand(record.get("status") == "P2_LIFECYCLE_BROWSER_SOURCE_RECORDED" and record.get("challenge") == self.challenge
             and record.get("bindingSha256") == digest(canonical(self.plan)) and record.get("sourceCommit") == self.plan["sourceCommit"]
             and record.get("actionId") == self.plan["actionId"] and record.get("deploymentId") == self.plan["deploymentId"]
-            and record.get("deploymentUrl") == self.plan["deploymentUrl"] and record.get("contextsIsolated") is True
+            and record.get("deploymentUrl") == self.plan["deploymentUrl"] and record.get("browserOrigin") == BROWSER_ORIGIN and record.get("contextsIsolated") is True
             and all(record.get(name) is False for name in ("sessionsFabricated", "clockChanged", "requestsIntercepted", "tokensRetained", "rawHarRetained", "releaseAccepted")),
             "P2_SUSPENSION_SOURCE_CHILD_CONTEXT_REQUIRED")
         result = private_record(self.directory, "p2-lifecycle-browser-source.json", record)
@@ -379,7 +380,8 @@ def load_retained_suspension(scope, selected, jobs, configuration, source, plan,
         and all(pending.get(name) == plan[name] for name in ("candidateSha256", "configurationSha256", "sourceCommit", "targetSha256", "pendingProgramSha256"))
         and public.get("controlledCaptureMetadataSha256") == digest(canonical(public["capturePublic"]))
         and browser.get("status") == "P2_LIFECYCLE_BROWSER_SOURCE_RECORDED" and browser.get("bindingSha256") == pending["planSha256"]
-        and browser.get("sourceCommit") == plan["sourceCommit"] and browser.get("deploymentId") == plan["deploymentId"],
+        and browser.get("sourceCommit") == plan["sourceCommit"] and browser.get("deploymentId") == plan["deploymentId"]
+        and browser.get("deploymentUrl") == plan["deploymentUrl"] and browser.get("browserOrigin") == plan.get("browserOrigin") == BROWSER_ORIGIN,
         "P2_SUSPENSION_RETAINED_SOURCE_AUTHORITY_REFUSED")
     accepted = next(row for row in browser["events"] if row["type"] == "ordinary-owner-suspension-accepted")
     command = pending["pending"]["command"]

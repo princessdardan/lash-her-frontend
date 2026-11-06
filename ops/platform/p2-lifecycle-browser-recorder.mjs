@@ -13,11 +13,11 @@ const pause = milliseconds => new Promise(done => setTimeout(done, milliseconds)
 const privateNoStore = headers => /(?:^|,)\s*private\s*(?:,|$)/iu.test(headers["cache-control"] ?? "")
   && /(?:^|,)\s*no-store\s*(?:,|$)/iu.test(headers["cache-control"] ?? "");
 export function validateP2LifecycleBrowserInput(input) {
-  demand(closed(input, ["version", "environment", "actionId", "challenge", "bindingSha256", "sourceCommit", "deploymentId", "deploymentUrl", "userId", "courseId", "lessonId", "windowSeconds"])
+  demand(closed(input, ["version", "environment", "actionId", "challenge", "bindingSha256", "sourceCommit", "deploymentId", "deploymentUrl", "browserOrigin", "userId", "courseId", "lessonId", "windowSeconds"])
     && input.version === 1 && input.environment === "staging" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.actionId)
     && sha(input.challenge) && sha(input.bindingSha256) && /^[a-f0-9]{40}$/u.test(input.sourceCommit)
     && /^dpl_[A-Za-z0-9]+$/u.test(input.deploymentId) && /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/u.test(input.deploymentUrl)
-    && [input.userId, input.courseId, input.lessonId].every(uuid) && input.windowSeconds === 840);
+    && input.browserOrigin === "https://staging.lashher.com" && [input.userId, input.courseId, input.lessonId].every(uuid) && input.windowSeconds === 840);
   return input;
 }
 
@@ -64,7 +64,7 @@ async function until(check, deadline) {
 // callback, browser endpoint, storage state or launch argument over IPC.
 export async function recordP2SuspensionBrowser(input, pages, control) {
   validateP2LifecycleBrowserInput(input);
-  const { customer, owner } = pages, origin = input.deploymentUrl, started = performance.now(), deadline = started + 840_000;
+  const { customer, owner } = pages, origin = input.browserOrigin, started = performance.now(), deadline = started + 840_000;
   const events = [], event = (type, detail) => { const value = { type, observedAt: new Date().toISOString(), elapsedMs: Math.round(performance.now() - started), ...detail }; events.push(value); return value; };
   const playbackPath = `/api/academy/lessons/${input.lessonId}/playback`;
   const initialResponse = customer.waitForResponse(response => exactResponse(response, customer, origin, playbackPath, "GET"), { timeout: 60_000 });
@@ -98,7 +98,7 @@ export async function recordP2SuspensionBrowser(input, pages, control) {
   demand(denial.elapsedMs > suspension.elapsedMs && denial.elapsedMs - baseline.elapsedMs > 0 && performance.now() < deadline);
   return { version: 1, status: "P2_LIFECYCLE_BROWSER_SOURCE_RECORDED", environment: "staging", actionId: input.actionId,
     challenge: input.challenge, bindingSha256: input.bindingSha256, sourceCommit: input.sourceCommit, deploymentId: input.deploymentId,
-    deploymentUrl: origin, userId: input.userId, courseId: input.courseId, lessonId: input.lessonId, events,
+    deploymentUrl: input.deploymentUrl, browserOrigin: origin, userId: input.userId, courseId: input.courseId, lessonId: input.lessonId, events,
     contextsIsolated: true, sessionsFabricated: false, clockChanged: false, requestsIntercepted: false,
     playbackRemovalAfterSuspensionMs: events.at(-1).elapsedMs - suspension.elapsedMs,
     tokensRetained: false, rawHarRetained: false, nativeInvocationQualified: false, releaseAccepted: false };
@@ -133,11 +133,11 @@ async function childMain() {
   try {
     const customerContext = await browser.newContext(), ownerContext = await browser.newContext();
     const customer = await customerContext.newPage(), owner = await ownerContext.newPage();
-    await customer.goto(`${input.deploymentUrl}/sign-in`, { waitUntil: "domcontentloaded" });
-    await owner.goto(`${input.deploymentUrl}/admin/sign-in`, { waitUntil: "domcontentloaded" });
+    await customer.goto(`${input.browserOrigin}/sign-in`, { waitUntil: "domcontentloaded" });
+    await owner.goto(`${input.browserOrigin}/admin/sign-in`, { waitUntil: "domcontentloaded" });
     authCheck = async () => {
-      const learner = await customer.request.get(`${input.deploymentUrl}/api/customer-auth/session`, { maxRedirects: 0, timeout: 15_000 });
-      const admin = await owner.request.get(`${input.deploymentUrl}/api/auth/session`, { maxRedirects: 0, timeout: 15_000 });
+      const learner = await customer.request.get(`${input.browserOrigin}/api/customer-auth/session`, { maxRedirects: 0, timeout: 15_000 });
+      const admin = await owner.request.get(`${input.browserOrigin}/api/auth/session`, { maxRedirects: 0, timeout: 15_000 });
       if (learner.status() !== 200 || admin.status() !== 200) return { customerAuthenticated: false, ownerFresh: false, observedAt: new Date().toISOString() };
       const learnerSession = await learner.json(), adminSession = await admin.json(), at = adminSession?.user?.authenticatedAt;
       return { customerAuthenticated: learnerSession?.user?.id === input.userId,

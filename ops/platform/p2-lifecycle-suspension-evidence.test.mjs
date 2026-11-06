@@ -14,7 +14,7 @@ import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mj
 const at = "2026-11-06T12:00:00.000Z", userId = randomUUID(), commandId = randomUUID(), adminId = randomUUID();
 const headers = { "cache-control": "private, no-store", "x-request-id": randomUUID(), date: at };
 function input() { return { version: 1, environment: "staging", actionId: "owned-browser", challenge: "a".repeat(64), bindingSha256: "b".repeat(64),
-  sourceCommit: "1".repeat(40), deploymentId: "dpl_ownedBrowser", deploymentUrl: "https://owned-browser.vercel.app", userId, courseId: randomUUID(), lessonId: randomUUID(), windowSeconds: 840 }; }
+  sourceCommit: "1".repeat(40), deploymentId: "dpl_ownedBrowser", deploymentUrl: "https://owned-browser.vercel.app", browserOrigin: "https://staging.lashher.com", userId, courseId: randomUUID(), lessonId: randomUUID(), windowSeconds: 840 }; }
 function pending() {
   const command = { version: 1, commandId, userId, accountVersion: 1, action: "suspend", issuedAt: at };
   return { selection: { userId, commandId, accountVersion: 1, requestId: headers["x-request-id"], responseObservedAt: at, controlledDenialObservedAt: "2026-11-06T12:05:31.000Z" },
@@ -26,7 +26,7 @@ function pending() {
 function browserRecord(selected) {
   const event = (type, elapsedMs, extra) => ({ type, observedAt: new Date(Date.parse(at) + elapsedMs).toISOString(), elapsedMs, ...extra });
   return { version: 1, status: "P2_LIFECYCLE_BROWSER_SOURCE_RECORDED", environment: "staging", actionId: selected.actionId, challenge: selected.challenge,
-    bindingSha256: selected.bindingSha256, sourceCommit: selected.sourceCommit, deploymentId: selected.deploymentId, deploymentUrl: selected.deploymentUrl,
+    bindingSha256: selected.bindingSha256, sourceCommit: selected.sourceCommit, deploymentId: selected.deploymentId, deploymentUrl: selected.deploymentUrl, browserOrigin: selected.browserOrigin,
     userId: selected.userId, courseId: selected.courseId, lessonId: selected.lessonId,
     events: [event("ordinary-playback-authorized", 1, { httpStatus: 200, lifetimeMs: 600000, privateNoStore: true }), event("player-present", 2, { muxPlayerCount: 1 }),
       event("ordinary-owner-suspension-accepted", 3000, { commandId, accountVersion: 1, action: "suspend", status: "pending", requestId: headers["x-request-id"] }),
@@ -74,7 +74,7 @@ test("browser plan has no invented command witnesses and requires same-source ex
 test("fixed browser input has no injection, storage, clock, credential, URL or command hook", () => {
   validateP2LifecycleBrowserInput(input());
   for (const change of [row => { row.context = {}; }, row => { row.storageState = {}; }, row => { row.deploymentUrl = "http://localhost:3000"; },
-    row => { row.windowSeconds = 60; }, row => { row.environment = "production"; }, row => { row.commandId = commandId; }]) {
+    row => { row.browserOrigin = "https://foreign.invalid"; }, row => { row.windowSeconds = 60; }, row => { row.environment = "production"; }, row => { row.commandId = commandId; }]) {
     const value = input(); change(value); assert.throws(() => validateP2LifecycleBrowserInput(value));
   }
   assert.throws(() => launchP2LifecycleBrowserRecorder({ version: 1 }, "/private/tmp/foreign"));

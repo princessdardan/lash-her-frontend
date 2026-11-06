@@ -222,3 +222,36 @@ observer over disposable TLS PostgreSQL with all 83 frontend migrations. They
 do not establish an actual headed browser, Linux/Docker parent path, real Google,
 Mux expiry or deployed worker outcome. Those require the operator-started exact
 source candidate and retained deployed evidence.
+
+## Canonical browser origin
+
+Normal UI authentication uses the fixed approved staging origin
+`https://staging.lashher.com`. `deploymentUrl` remains the separate immutable
+`https://<deployment>.vercel.app` provenance; it is never relabeled as the browser
+origin. The child accepts only this one canonical browser origin and captures
+same-origin response/DOM evidence there. It does not spoof Host, fabricate
+cookies, or accept an arbitrary origin.
+
+The source parent must invoke `p2_canonical_browser_origin.observe` before ARM and
+throughout its actual current-state verifier. The fixed read-only helper brackets
+an authenticated phase2 workload challenge **on the canonical alias** with two
+provider alias readbacks and immutable READY/source/project/release/current-target
+checks. Promotion metadata alone does not prove the custom alias. Redirected,
+deleted, foreign or microfrontend aliases refuse. The common Node validator is a
+schema/binding check, not an authority-issuing callback or caller JSON importer.
+
+The API shape was verified against Vercel's primary documentation on 2026-11-06:
+[Get an Alias](https://vercel.com/docs/rest-api/aliases/get-an-alias) documents
+`GET /v4/aliases/{idOrAlias}` and its required `alias`, `projectId` and
+`deploymentId`. The helper reads only the fixed staging hostname and uses the
+existing team-scoped private provider client. It never assigns an alias.
+
+The existing app release-probe handler has no incoming host restriction. Its
+source secret, challenge, exact P2 flags/admission binding and one-hour expiry
+still apply. The existing Python immutable-deployment probe is unchanged; the
+new fixed canonical-origin HTTPS client uses normal verified TLS and refuses
+redirects. No lifetime extension or automatic probe regeneration is provided.
+Expired original private probe input makes this observation ineligible.
+Actual canonical auth settings and Google/Resend callback configuration still
+require source-bound runtime/provider qualification at apply. Owned HTTPS
+responses are not deployed evidence.
