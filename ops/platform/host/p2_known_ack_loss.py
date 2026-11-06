@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import time
+import threading
 import uuid
 import weakref
 
@@ -24,6 +25,7 @@ MODULE='ops/platform/p2-known-ack-loss-probe.mjs'
 require=migrate.demand
 _ISSUER=object()
 _AUTHORIZATIONS=weakref.WeakKeyDictionary()
+_AUTHORIZATION_LOCK=threading.Lock()
 
 
 def canonical(value):return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
@@ -46,16 +48,25 @@ class KnownAckLossRecoveryAuthorization:
         self._recorder=recorder
         self._record=copy.deepcopy(record)
         self._used=False
-        _AUTHORIZATIONS[self]={'recorder':recorder,'record':copy.deepcopy(record),'used':False}
+        with _AUTHORIZATION_LOCK:
+            _AUTHORIZATIONS[self]={'recorder':recorder,'record':copy.deepcopy(record),'state':'unused'}
+
+
+def _authorization(value,scope,recovery_action_id):
+    """Call only while holding the private registry mutex."""
+    state=_AUTHORIZATIONS.get(value) if type(value) is KnownAckLossRecoveryAuthorization else None
+    require(state is not None and state['recorder'].scope is scope and state['state']=='unused' and
+        recovery_action_id==state['record']['recoveryActionId'],'P2_KNOWN_ACK_OPAQUE_AUTHORIZATION_REQUIRED')
+    return state
 
 
 def require_known_ack_loss_authorization(value,scope,recovery_action_id):
     """Fresh same-process validation. A copied receipt can never invoke this."""
-    state=_AUTHORIZATIONS.get(value) if type(value) is KnownAckLossRecoveryAuthorization else None
-    require(state is not None and state['recorder'].scope is scope and not state['used'] and
-        recovery_action_id==state['record']['recoveryActionId'],'P2_KNOWN_ACK_OPAQUE_AUTHORIZATION_REQUIRED')
+    with _AUTHORIZATION_LOCK:state=_authorization(value,scope,recovery_action_id)
     state['recorder']._verify_authorization(state['record'])
-    return copy.deepcopy(state['record'])
+    with _AUTHORIZATION_LOCK:
+        require(_authorization(value,scope,recovery_action_id) is state,'P2_KNOWN_ACK_AUTHORIZATION_CHANGED')
+        return copy.deepcopy(state['record'])
 
 
 def consume_known_ack_loss_authorization(value,scope,recovery_action_id):
@@ -64,9 +75,19 @@ def consume_known_ack_loss_authorization(value,scope,recovery_action_id):
     This is deliberately not an ordinary PriorGatewayBoundary. No serialized
     receipt or counter claim can be consumed by the ordinary zero factory.
     """
-    record=require_known_ack_loss_authorization(value,scope,recovery_action_id)
-    _AUTHORIZATIONS[value]['used']=True;value._used=True
-    return record
+    with _AUTHORIZATION_LOCK:
+        state=_authorization(value,scope,recovery_action_id)
+        # Reserve before any verifier I/O. A failed or interrupted verification
+        # is an attempted consumption and never restores unused authority.
+        state['state']='consuming';value._used=True
+    try:state['recorder']._verify_authorization(state['record'])
+    except BaseException:
+        with _AUTHORIZATION_LOCK:state['state']='poisoned'
+        raise
+    with _AUTHORIZATION_LOCK:
+        require(state['state']=='consuming','P2_KNOWN_ACK_CONSUMPTION_STATE_REQUIRED')
+        state['state']='used'
+        return copy.deepcopy(state['record'])
 
 
 class P2KnownAckLossRecorder:
@@ -284,7 +305,7 @@ def validate_frontend_scope(plan,front):
     native=plan['nativePlan'];operations=front['operations'];admission=front['admission']
     require(front['commandSha256']==plan['commandSha256'] and front['commandId']==native['commandWitnesses'][0]['commandId'] and
         front['accountVersion']==native['commandWitnesses'][0]['accountVersion'] and front['accountStatus']=='suspended' and front['exports']==front['later']==0 and
-        admission['newWork'] is False and admission['active'] in (0,1) and admission['uncertain'] in (0,1) and len(operations)<=4,
+        admission['newWork'] is False and admission['active'] in (0,1) and admission['uncertain'] in (0,1) and len(operations)<=2 and len({row['id'] for row in operations})==len(operations),
         'P2_KNOWN_ACK_UNRELATED_EFFECT_REFUSED')
     require(all(row['producer_sha256']==native['producer']['producerSha256'] and row['source_sha']==native['sourceCommit'] and row['role_oid']==native['producer']['role']['oid'] and
         row['epoch']==str(int(native['initialEpoch'])+1) and row['kind']=='recovery' and row['state'] in ('active','uncertain','completed') and row['reconciliation_sha256'] is None for row in operations),
@@ -294,7 +315,8 @@ def validate_frontend_scope(plan,front):
 
 
 def validate_request_operations(plan,artifact,operations):
-    require(isinstance(artifact,dict) and isinstance(artifact.get('observations'),list),'P2_KNOWN_ACK_REQUEST_ARTIFACT_REQUIRED')
+    require(isinstance(artifact,dict) and isinstance(artifact.get('observations'),list) and len(operations)==2 and
+        sorted(row['state'] for row in operations)==['completed','uncertain'],'P2_KNOWN_ACK_REQUEST_ARTIFACT_REQUIRED')
     actual=[]
     for row in artifact['observations']:
         require(isinstance(row.get('admittedLogLine'),str),'P2_KNOWN_ACK_ALL_REQUESTS_MUST_BE_JOINED')
@@ -317,7 +339,8 @@ def validate_settled(plan,before,actual,operation_id,settlement_sha256):
         all(front[key]==prior[key] for key in ('commandId','accountVersion','accountStatus','commandSha256','userBindingSha256')) and
         all(actual[service]==before[service] for service in ('course','community')),'P2_KNOWN_ACK_SETTLED_CONTEXT_CHANGED')
     old=prior['operations'];rows=front['operations']
-    require(sum(row['id']==operation_id for row in old)==1 and len(rows)==len(old) and len({row['id'] for row in rows})==len(rows) and {row['id'] for row in rows}=={row['id'] for row in old},
+    require(len(old)==len(rows)==2 and sorted(row['state'] for row in old)==['completed','uncertain'] and
+        sum(row['id']==operation_id for row in old)==1 and len({row['id'] for row in rows})==len(rows) and {row['id'] for row in rows}=={row['id'] for row in old},
         'P2_KNOWN_ACK_SETTLED_OPERATION_SET_CHANGED')
     for row in rows:
         expected=next(value for value in old if value['id']==row['id'])
@@ -338,7 +361,7 @@ def validate_domain(plan,baseline,snapshot,gateway,effects,closed=False):
         row['epoch']==str(int(native['initialEpoch'])+1) and row['kind']=='recovery' and row['reconciliation_sha256'] is None for row in operations),'P2_KNOWN_ACK_UNRELATED_OPERATION_REFUSED')
     unknown=[row for row in operations if row['state']=='uncertain'];completed=[row for row in operations if row['state']=='completed']
     if admission['active'] or not _zero(gateway['admission']['active']) or not effects or not unknown or not completed:return None
-    require(len(unknown)==1 and admission['uncertain']==1 and gateway['admission']['uncertain']=={'newWork':0,'recovery':1},'P2_KNOWN_ACK_EXACT_ONE_REQUIRED')
+    require(len(unknown)==len(completed)==1 and len(operations)==2 and admission['uncertain']==1 and gateway['admission']['uncertain']=={'newWork':0,'recovery':1},'P2_KNOWN_ACK_EXACT_ONE_REQUIRED')
     effect=effects[0]
     require(effect['mode']=='drop-after-ack' and effect['receiver']==plan['receiver'] and effect['sourceWitnessSha256']==plan['commandSha256'] and effect['upstreamReceiptVerified'] is True and
         effect['upstreamStarted'] is True and effect['upstreamStatus']==200 and effect['downstreamBytesStarted'] is False and

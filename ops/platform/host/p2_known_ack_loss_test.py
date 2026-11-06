@@ -1,6 +1,7 @@
 """Source state/opaque-authority regressions; actual three-DB fixture is separate."""
 import copy
 import json
+import threading
 import unittest
 from unittest.mock import Mock
 import p2_known_ack_loss as source
@@ -99,6 +100,38 @@ class KnownAckSourceTests(unittest.TestCase):
     def test_source_constructor_rejects_json_and_foreign_parent_before_io(self):
         for broker in ({'mode':'known-ack-recovery'},object(),Mock()):
             with self.assertRaises(ValueError):source.P2KnownAckLossRecorder(broker,'owned-replacement',{})
+
+    def test_concurrent_consumption_reserves_before_verifier_io(self):
+        scope=object();entered=threading.Event();release=threading.Event();results=[]
+        recorder=Mock();recorder.scope=scope
+        def verify(_):entered.set();self.assertTrue(release.wait(2))
+        recorder._verify_authorization.side_effect=verify
+        value=source.KnownAckLossRecoveryAuthorization(source._ISSUER,recorder,{'recoveryActionId':'owned-replacement'})
+        def consume():
+            try:source.consume_known_ack_loss_authorization(value,scope,'owned-replacement');results.append('accepted')
+            except ValueError:results.append('refused')
+        first=threading.Thread(target=consume);first.start();self.assertTrue(entered.wait(1))
+        second=threading.Thread(target=consume);second.start();second.join(1)
+        self.assertFalse(second.is_alive());self.assertEqual(results,['refused'])
+        release.set();first.join(1);self.assertFalse(first.is_alive());self.assertCountEqual(results,['accepted','refused'])
+        recorder._verify_authorization.assert_called_once()
+
+    def test_failed_verification_poisons_consumption_and_cannot_retry(self):
+        scope=object();recorder=Mock();recorder.scope=scope;recorder._verify_authorization.side_effect=ValueError('ACTUAL_SCOPE_LOST')
+        value=source.KnownAckLossRecoveryAuthorization(source._ISSUER,recorder,{'recoveryActionId':'owned-replacement'})
+        with self.assertRaisesRegex(ValueError,'ACTUAL_SCOPE_LOST'):source.consume_known_ack_loss_authorization(value,scope,'owned-replacement')
+        with self.assertRaisesRegex(ValueError,'OPAQUE_AUTHORIZATION'):source.consume_known_ack_loss_authorization(value,scope,'owned-replacement')
+        recorder._verify_authorization.assert_called_once()
+
+    def test_extra_completed_request_before_settlement_refuses_all_authority_boundaries(self):
+        plan,baseline,domain,gateway,effects=fixture();extra=copy.deepcopy(domain['frontend']['operations'][1])
+        extra['id']='00000000-0000-4000-8000-000000000099';domain['frontend']['operations'].append(extra)
+        with self.assertRaises(ValueError):source.validate_domain(plan,baseline,domain,gateway,effects)
+        observations={'observations':[{'admittedLogLine':json.dumps({'operationId':row['id']}),'httpStatus':503 if row['state']=='uncertain' else 200} for row in domain['frontend']['operations']]}
+        with self.assertRaises(ValueError):source.validate_request_operations(plan,observations,domain['frontend']['operations'])
+        domain['frontend']['admission'].update(recovery=False,epoch='4');actual=copy.deepcopy(domain)
+        actual['frontend']['admission']['uncertain']=0;actual['frontend']['operations'][0].update(state='completed',completed_at='2026-11-06T01:00:06.000Z',reconciliation_sha256='e'*64)
+        with self.assertRaises(ValueError):source.validate_settled(plan,domain,actual,domain['frontend']['operations'][0]['id'],'e'*64)
 
     def test_specific_settlement_cannot_hide_new_completed_operations_or_other_changed_receipts(self):
         plan,_,before,_,_=fixture();before['frontend']['admission'].update(epoch='4',recovery=False)

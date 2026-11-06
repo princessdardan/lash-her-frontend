@@ -74,6 +74,16 @@ async function main(){
   });};
   await operator.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))',['lash-her:private-db:migrations']);
   const journal=hash(JSON.stringify((await operator.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows));
+  const allJournals=async()=>{
+   const result={frontend:hash(JSON.stringify((await operator.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows))};
+   for(const service of ['course','community']){
+    const client=new Client({host:target.host,port,database:input.apis[service].database.database,user:target.user,password,ssl:{rejectUnauthorized:true,ca:readFileSync(certificate,'utf8')}});
+    try{await client.connect();result[service]=hash(JSON.stringify((await client.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows));}
+    finally{await client.end();}
+   }
+   return result;
+  };
+  const journalsBefore=await allJournals();
   let opened=await withOwner(()=>changeFrontendAdmission(operator,{environment:'staging',targetSha256},'1',{newWork:false,recovery:true}));
   const marker=randomUUID().replaceAll('-','')+randomUUID().replaceAll('-','');await operator.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))',[marker]);
   const backend=(await operator.query('SELECT pg_catalog.pg_backend_pid() AS pid,backend_start::text AS started FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()')).rows[0];
@@ -115,7 +125,7 @@ value=json.load(sys.stdin);plan=value['plan'];before=value['before'];domain=valu
 source.validate_baseline(plan,before)
 assert source.validate_domain(plan,before,domain,gateway,effects)=={'operationId':value['operationId']}
 faults=0
-for kind in ('other-work','later-version','extra-effect','producer','command','missing-ack','extra-attempt','canonical-receiver','global-unknown','gateway-unknown'):
+for kind in ('other-work','later-version','extra-effect','producer','command','missing-ack','extra-attempt','canonical-receiver','global-unknown','gateway-unknown','extra-prior-completed'):
     actual=copy.deepcopy(domain);observed=copy.deepcopy(gateway);injected=copy.deepcopy(effects)
     if kind=='other-work':actual['frontend']['exports']=1
     elif kind=='later-version':actual['frontend']['later']=1
@@ -127,10 +137,12 @@ for kind in ('other-work','later-version','extra-effect','producer','command','m
     elif kind=='canonical-receiver':actual['course']['command']['commandSha256']='f'*64
     elif kind=='global-unknown':actual['frontend']['admission']['uncertain']=2
     elif kind=='gateway-unknown':observed['admission']['uncertain']['recovery']=2
+    elif kind=='extra-prior-completed':
+        extra=copy.deepcopy(actual['frontend']['operations'][1]);extra['id']='00000000-0000-4000-8000-000000000098';actual['frontend']['operations'].append(extra)
     try:source.validate_domain(plan,before,actual,observed,injected)
     except ValueError:faults+=1
     else:raise AssertionError('owned reducer accepted '+kind)
-assert faults==10
+assert faults==11
 try:source.require_known_ack_loss_authorization({'status':'P2_KNOWN_ACK_REPLACEMENT_AUTHORIZED'},object(),'owned-replacement')
 except ValueError:pass
 else:raise AssertionError('plain receipt issued replacement authority')
@@ -173,11 +185,13 @@ print(json.dumps({'status':'P2_KNOWN_ACK_SPECIFIC_SETTLEMENT_REDUCER_PASS','extr
   const settlementResult=spawnSync('python3',['-I','-c',settlementProgram,fileURLToPath(new URL('../host/',import.meta.url))],{input:JSON.stringify({plan:reducerPlan,before:beforeSettlement,after:settled,operationId:firstLedger[0].id,receiptSha256:evidenceSha256}),encoding:'utf8',timeout:10000,env:{PATH:process.env.PATH,LANG:'C',LC_ALL:'C'}});
   assert.equal(settlementResult.status,0);const settlementProof=JSON.parse(settlementResult.stdout);assert.equal(settlementProof.status,'P2_KNOWN_ACK_SPECIFIC_SETTLEMENT_REDUCER_PASS');
   assert.equal(hash(JSON.stringify((await operator.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows)),journal);
+  const journalsAfter=await allJournals();assert.deepEqual(journalsAfter,journalsBefore);
   return{version:1,status:'P2_KNOWN_ACK_WHOLE_ROUTE_PASS',actualAppCron:true,actualDispatcher:true,actualTlsGateway:true,actualTlsReceivers:true,actualCanonicalApiReceivers:true,actualThreeDatabaseDomainProof:true,actualTlsPostgres:true,actualProvider:false,modeledOidc:true,
    firstHttpStatus:first.status,firstFrontendLedgerState:firstState,firstFrontendUncertain:firstLedger.filter(row=>row.state==='uncertain').length,firstGatewayUncertain:1,firstDeliveries,
    replayHttpStatus:second.status,finalFrontendUncertain:finalLedger.filter(row=>row.state==='uncertain').length,finalGatewayUncertain:1,finalDeliveries,sourceTraceMatchesOperation:traces.length===2&&traces.every((row,index)=>row.operationId===finalLedger[index].id),
    settledFrontendUncertain:settled.frontend.admission.uncertain,specificFrontendOperationReconciled:true,gatewayCounterReset:false,domainProofSha256:hash(canonical(domain)),
    canonicalFaultRefusals,immutableReceiptRewriteRefusals,sourceDomainReducer:reducerResult,sourceSettlementReducer:settlementProof,
+   journalSha256Before:journalsBefore,journalSha256After:journalsAfter,allThreeJournalsUnchanged:true,
    noSqlReplay:true,noRoleChange:true,noRuntimeRestart:true,fixtureOnly:true};
  }finally{console.info=originalInfo;globalThis.fetch=originalFetch;for(const server of servers){server.closeAllConnections();await new Promise(done=>server.close(done));}for(const receiver of children){try{await receiver.request('stop');}catch{receiver.child.kill('SIGKILL');}}await closePool?.();await operator.end();}
 }
