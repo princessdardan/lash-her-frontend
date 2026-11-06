@@ -21,6 +21,31 @@ const script = fileURLToPath(new URL("./host/frontend_release_adapters.py", impo
 const fields = (value, keys) => Object.fromEntries(keys.map(key => [key, value?.[key]]));
 const privateActionCredentials = new WeakMap();
 
+// The recovery owner issues this opaque value only inside its live, locked
+// session. A private JSON object cannot select a new attempt directory.
+async function forwardRecoveryScope(context) {
+  if (context.forwardRecoveryScope === undefined) return undefined;
+  demand(context.candidate?.contractPhase === "p2" && context.originalDirectory && context.databaseClient);
+  const { readP2RecoveryForwardScope } = await import("./p2-recovery-current-probe.mjs");
+  demand(typeof readP2RecoveryForwardScope === "function");
+  const selected = await readP2RecoveryForwardScope(context.forwardRecoveryScope, context);
+  demand(selected && Object.keys(selected).sort().join(",") === ["version", "mode", "recoveryActionId", "originalReleaseId", "candidateSha256",
+    "sourceCommit", "targetSha256", "inventorySha256", "configurationSha256", "originalDirectory", "directory", "originalReceiptSha256"].sort().join(",") &&
+    selected.version === 1 && selected.mode === "reviewed-new-build" && selected.recoveryActionId === context.recoveryActionId &&
+    selected.recoveryActionId !== context.plan.actionId && selected.originalReleaseId === context.plan.actionId &&
+    selected.sourceCommit === context.plan.sourceCommit && selected.targetSha256 === context.plan.targetSha256 &&
+    selected.inventorySha256 === context.inventorySha256 && [selected.candidateSha256, selected.configurationSha256].every(value =>
+      typeof value === "string" && /^[a-f0-9]{64}$/u.test(value) && !/^0+$/u.test(value)) &&
+    frontendPrivateReceiptDirectory(selected.originalDirectory) === frontendPrivateReceiptDirectory(context.originalDirectory) &&
+    frontendPrivateReceiptDirectory(selected.directory) === frontendPrivateReceiptDirectory(context.directory) &&
+    resolve(selected.directory) !== resolve(selected.originalDirectory));
+  const pins = selected.originalReceiptSha256;
+  demand(pins && typeof pins === "object" && !Array.isArray(pins) && Object.keys(pins).length > 0 && Object.keys(pins).length <= 128 &&
+    Object.entries(pins).every(([name, value]) => /^(?:vercel\/)?[a-z0-9][a-z0-9.-]{0,180}\.json$/u.test(name) &&
+      (value === null || typeof value === "string" && /^[a-f0-9]{64}$/u.test(value) && !/^0+$/u.test(value))));
+  return selected;
+}
+
 async function runtime(context) {
   try {
   demand(typeof context?.verifyLockedSession === "function" && typeof context.getProviderContext === "function");
@@ -69,6 +94,11 @@ export async function runFrontendVercelWorker(operation, context) {
       ...(context.database ? { database: context.database } : {}),
       ...(context.preapplicationSchema ? { preapplicationSchema: context.preapplicationSchema } : {}),
       ...(context.admissionObservation ? { admissionObservation: context.admissionObservation } : {}) };
+    if (context.forwardRecoveryScope !== undefined) {
+      demand(["observe-vercel", "observe-compatible", "observe-retired-capabilities", "observe-provider-effects", "observe-resend", "observe-resend-effects",
+        "observe-square", "observe-sanity", "observe-google", "observe-highlevel", "observe-chitchats"].includes(operation));
+      payload.forwardRecoveryScope = await forwardRecoveryScope(context);
+    }
     if (candidate.contractPhase === "p2") {
       const target = context.bootstrapRuntimeTarget;
       demand(target?.environment === "staging" && target.targetSha256 === context.plan.targetSha256 &&
@@ -605,7 +635,7 @@ export async function observeCompatibleFrontend(context) {
     result.aliasDeploymentId === result.deploymentId && result.aliasJobDeploymentId === result.deploymentId &&
     result.aliasJobMatchesIntent === true && result.aliasJobType === "promote" &&
     result.nativeSchedulesEnabled === false && result.workloadVerified === true && result.admissionNewWork === false && result.admissionRecovery === false);
-  if (context.candidate?.contractPhase === "p2" && context.checkpoint !== "recovery") {
+  if (context.candidate?.contractPhase === "p2" && (context.checkpoint !== "recovery" || context.forwardRecoveryScope !== undefined)) {
     const expected = context.plan.certification ? prepareP2CertificationProfile(context.plan.certification).featureControls :
       Object.fromEntries(["INTEGRATION_CUSTOMER_ACCESS_ENABLED", "INTEGRATION_COURSE_READS_ENABLED", "INTEGRATION_CHECKOUT_ENABLED",
         "INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED", "INTEGRATION_COMMUNITY_READS_ENABLED", "INTEGRATION_COMMUNITY_WRITES_ENABLED",
@@ -623,8 +653,9 @@ export async function observeCompatibleFrontend(context) {
   const evidence = Buffer.from(JSON.stringify(result)); return { ...result, evidence, evidenceSha256: hash(evidence) };
 }
 
-export function readCompatibleFrontendWorkloadReceipt(context, observation) {
-  const bytes = readFrontendReleaseEvidence(resolve(context.originalDirectory ?? context.directory, "vercel"), "frontend-workload-outcome.json");
+export async function readCompatibleFrontendWorkloadReceipt(context, observation) {
+  const scope = await forwardRecoveryScope(context);
+  const bytes = readFrontendReleaseEvidence(resolve(scope?.directory ?? context.originalDirectory ?? context.directory, "vercel"), "frontend-workload-outcome.json");
   demand(hash(bytes) === observation.workloadReceiptSha256);
   return bytes;
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { frontendProviderBindingsArtifact, prepareFrontendProviderBindings, FRONTEND_VERCEL_PROJECT as PROJECT,
@@ -9,7 +9,7 @@ import { frontendProviderBindingsArtifact, prepareFrontendProviderBindings, FRON
 import { frontendCoordinationHash as hash, validateFrontendFenceObservation } from "./frontend-release-inventory.mjs";
 import { frontendGoogleSnapshotSha256 } from "./frontend-google-effects.mjs";
 import { frontendReleaseReceiptStore } from "./frontend-release-receipts.mjs";
-import { fenceFrontendExternalProducers, runFrontendVercelWorker, observeFrontendExternalFences, observeCompatibleFrontend, readFrontendEstablishedFence } from "./frontend-release-adapters.mjs";
+import { fenceFrontendExternalProducers, runFrontendVercelWorker, observeFrontendExternalFences, observeCompatibleFrontend, readCompatibleFrontendWorkloadReceipt, readFrontendEstablishedFence } from "./frontend-release-adapters.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 function fixture(provider = "square") {
@@ -255,7 +255,7 @@ async function protocolFixture(code, task) {
     mkdirSync(join(app, "scripts"), { recursive: true });
     for (const name of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"])
       copyFileSync(join(root, "scripts", name), join(app, "scripts", name));
-    const modules = ["frontend-provider-effect-scopes", "frontend-historical-source-observer", "frontend-historical-source", "p2-certification-profile", "frontend-release-restoration", "frontend-admission", "frontend-square-effects", "frontend-google-effects", "frontend-crm-shipping-effects", "frontend-historical-capabilities", "frontend-provider-fence-join", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
+    const modules = ["p2-recovery-current-probe", "frontend-provider-effect-scopes", "frontend-historical-source-observer", "frontend-historical-source", "p2-certification-profile", "frontend-release-restoration", "frontend-admission", "frontend-square-effects", "frontend-google-effects", "frontend-crm-shipping-effects", "frontend-historical-capabilities", "frontend-provider-fence-join", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
       "frontend-migration", "frontend-schema", "source-checkout", "source-policy", "release-inputs", "release"];
     for (const name of modules) copyFileSync(join(root, "ops/platform", `${name}.mjs`), join(app, "ops/platform", `${name}.mjs`));
     copyFileSync(join(root, "src/lib/private-db/migration-lineage.ts"), join(app, "src/lib/private-db/migration-lineage.ts"));
@@ -283,6 +283,42 @@ print(json.dumps({'type':'result','value':{'status':'OWNED_PROTOCOL_PASS'}}),flu
     assert.equal(result.status, "OWNED_PROTOCOL_PASS"); assert.equal(count() >= 4, true);
     assert.equal(JSON.stringify(result).includes("owned-protocol-private-marker"), false);
   });
+});
+
+test("private JSON cannot select a forward recovery attempt or authorize a shared mutation", async () => {
+  await protocolFixture("import json,sys,pathlib\nvalue=json.loads(sys.stdin.buffer.readline())\npathlib.Path(value['directory'],'untrusted-worker-ran.json').write_text('{}')\nraise RuntimeError('UNTRUSTED_FORWARD_SCOPE_STARTED_WORKER')\n", async (adapter, context) => {
+    context.candidate.contractPhase = "p2"; context.candidate.phase2ContractManifestSha256 = `sha256:${"1".repeat(64)}`;
+    const original = join(dirname(context.directory), "original"); mkdirSync(original, { mode: 0o700 });
+    context.originalDirectory = original; context.databaseClient = {}; context.recoveryActionId = "reviewed-forward";
+    context.inventorySha256 = "2".repeat(64);
+    context.bootstrapRuntimeTarget = { environment: "staging", targetSha256: context.plan.targetSha256, user: "runtime" };
+    context.forwardRecoveryScope = { version: 1, mode: "reviewed-new-build", originalDirectory: original, directory: context.directory,
+      recoveryActionId: context.recoveryActionId, originalReleaseId: context.plan.actionId, candidateSha256: "3".repeat(64),
+      sourceCommit: context.plan.sourceCommit, targetSha256: context.plan.targetSha256, inventorySha256: context.inventorySha256,
+      configurationSha256: "4".repeat(64), originalReceiptSha256: { "frontend-release-started.json": "5".repeat(64) } };
+    for (const operation of ["observe-vercel", "observe-compatible", "deploy-compatible", "retire-deployments"]) {
+      await assert.rejects(adapter.runFrontendVercelWorker(operation, context), /FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED/u);
+    }
+    await assert.rejects(adapter.readCompatibleFrontendWorkloadReceipt(context, { workloadReceiptSha256: "6".repeat(64) }));
+    assert.equal(existsSync(join(context.directory, "untrusted-worker-ran.json")), false);
+  });
+});
+
+test("recovery workload reader keeps original exact bytes unless the live source selects a new attempt", async () => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "frontend-original-workload-")));
+  try {
+    const originalDirectory = join(directory, "original"), recoveryDirectory = join(directory, "recovery");
+    for (const parent of [originalDirectory, recoveryDirectory]) {
+      mkdirSync(parent, { mode: 0o700 }); mkdirSync(join(parent, "vercel"), { mode: 0o700 });
+    }
+    const original = Buffer.from('{"status":"FRONTEND_VERIFIED","deploymentId":"dpl_original"}\n');
+    const unrelated = Buffer.from('{"status":"FRONTEND_VERIFIED","deploymentId":"dpl_unrelated"}\n');
+    writeFileSync(join(originalDirectory, "vercel/frontend-workload-outcome.json"), original, { mode: 0o600 });
+    writeFileSync(join(recoveryDirectory, "vercel/frontend-workload-outcome.json"), unrelated, { mode: 0o600 });
+    const context = { originalDirectory, directory: recoveryDirectory };
+    assert.deepEqual(await readCompatibleFrontendWorkloadReceipt(context, { workloadReceiptSha256: hash(original) }), original);
+    await assert.rejects(readCompatibleFrontendWorkloadReceipt(context, { workloadReceiptSha256: hash(unrelated) }));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("provider worker refusal or lost parent checkpoint cannot pass through private stderr/error payloads", async () => {

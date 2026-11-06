@@ -165,6 +165,52 @@ def action_build(context, attempt):
     return {"status": value["status"], "deploymentId": deployment_id, "receiptSha256": migrate.file_hash(raw)}
 
 
+def terminal_action_build(context, client, attempt, action):
+    """Recognize an acknowledged terminal sibling without staging/promoting it.
+
+    An outcome alone cannot associate an unacknowledged create with an observed
+    deployment. The original exclusive intent and accepted-ID receipt must join.
+    """
+    if action is None or action["status"] != "FRONTEND_BUILD_FAILED_REQUIRES_REVIEW" or action["deploymentId"] is None:
+        return None
+    intent = migrate.read_json(attempt, "frontend-build-started.json")
+    created = migrate.read_json(attempt, "frontend-build-created.json")
+    outcome = migrate.read_json(attempt, "frontend-build-outcome.json")
+    keys = {"environment", "projectId", "sourceCommit", "releaseId", "previousDeploymentId", "trafficAuthorized", "promotionAuthorized"}
+    demand(set(intent) == keys and set(created) == keys | {"deploymentId"} and
+        all(created.get(key) == value == outcome.get(key) for key, value in intent.items()) and
+        created.get("deploymentId") == action["deploymentId"] and outcome.get("phase") == "build" and
+        intent["previousDeploymentId"] != action["deploymentId"], "VERCEL_TERMINAL_BUILD_RECEIPT_REFUSED")
+    state = vercel.deployment_state(client, action["deploymentId"], intent["projectId"], intent["sourceCommit"], intent["releaseId"])
+    if state["readyState"] not in ("ERROR", "CANCELED"):
+        return None
+    return {**action, "readyState": state["readyState"]}
+
+
+def require_forward_recovery_scope(context, client, verify):
+    if "forwardRecoveryScope" not in context:
+        return None
+    demand(context.get("originalDirectory") is not None and context["candidate"].get("contractPhase") == "p2",
+        "RECOVERY_FORWARD_SCOPE_REFUSED")
+    # The source-owned recovery module validates original/new exclusive receipt
+    # chains and actual deployment metadata. Never trust a private JSON selector.
+    from p2_recovery_frontend_observation import require_forward_scope
+    scope = require_forward_scope(context, client, verify)
+    demand(isinstance(scope, dict) and scope.get("version") == 1 and scope.get("mode") == "reviewed-new-build" and
+        scope.get("directory") == context["directory"] and scope.get("originalDirectory") == context["originalDirectory"] and
+        scope.get("originalReleaseId") == context["plan"]["actionId"] and scope.get("sourceCommit") == context["plan"]["sourceCommit"] and
+        scope.get("targetSha256") == context["plan"]["targetSha256"] and
+        scope.get("recoveryActionId") != scope.get("originalReleaseId"), "RECOVERY_FORWARD_SCOPE_REFUSED")
+    demand(all(scope.get(key) == value for key, value in context["forwardRecoveryScope"].items()),
+        "RECOVERY_FORWARD_SCOPE_REFUSED")
+    return scope
+
+
+def forward_recovery_evidence(scope):
+    return {key: scope[key] for key in ("version", "mode", "recoveryActionId", "originalReleaseId", "candidateSha256",
+        "sourceCommit", "targetSha256", "inventorySha256", "configurationSha256", "originalReceiptSha256")}
+
+
 def retired_deployments(context, attempt):
     if attempt is None:
         return []
@@ -289,7 +335,7 @@ def retire_related_previews(context, client, attempt):
         migrate.write_json(attempt, "related-preview-retirements-outcome.json", outcome)
 
 
-def observe_vercel(context, client, attempt=None):
+def observe_vercel(context, client, attempt=None, forward_scope=None):
     selected = identity(context)
     before = vercel.promotion_state(client, selected["projectId"])
     first = deployment_inventory(client, selected["projectId"])
@@ -301,10 +347,12 @@ def observe_vercel(context, client, attempt=None):
     known_ids = {row["deploymentId"] for row in expected}
     # One build created by this action may appear after the reviewed initial
     # inventory. Verify it through the existing exact source/project binding.
-    staged, build = [], action_build(context, attempt)
+    staged, terminal, build = [], [], action_build(context, attempt)
     attempts = [attempt] if attempt is not None else []
     if attempt is not None and attempt.name != "vercel-bootstrap":
         attempts.append(attempt.parent / "vercel-bootstrap")
+    if forward_scope is not None:
+        attempts.append(Path(forward_scope["directory"]) / "vercel")
     for source_attempt in attempts:
         action = action_build(context, source_attempt)
         if action is not None and action["status"] == "FRONTEND_STAGED":
@@ -312,10 +360,16 @@ def observe_vercel(context, client, attempt=None):
             state = vercel.deployment_state(client, item["deploymentId"], item["projectId"], item["sourceCommit"], item["releaseId"])
             if state["readyState"] == "READY":
                 staged.append(item)
+        elif action is not None:
+            settled = terminal_action_build(context, client, source_attempt, action)
+            if settled is not None:
+                terminal.append(settled)
     baseline = [row for row in first if row["deploymentId"] in known_ids]
     extras = [row for row in first if row["deploymentId"] not in known_ids]
-    inventory_matches = baseline == expected and all(any(row["deploymentId"] == item["deploymentId"] and
-        row["sourceCommit"] == selected["sourceCommit"] for item in staged) for row in extras)
+    inventory_matches = baseline == expected and all(row["sourceCommit"] == selected["sourceCommit"] and row["target"] == "production" and
+        (any(row["deploymentId"] == item["deploymentId"] and row["state"] == "READY" for item in staged) or
+         any(row["deploymentId"] == item["deploymentId"] and row["state"] == item["readyState"] and
+             row["deploymentId"] != after["productionDeploymentId"] for item in terminal)) for row in extras)
     original = context["bindings"]["projectState"]
     allowed_current = [original["productionDeploymentId"]] + [item["deploymentId"] for item in staged]
     project_matches = after["productionDeploymentId"] in allowed_current
@@ -329,8 +383,11 @@ def observe_vercel(context, client, attempt=None):
               "reviewedInventoryMatches": inventory_matches, "reviewedProjectMatches": project_matches and cron_matches,
               "historicalWritersFenced": False, "activeExecutions": None, "uncertainEffects": None,
               "actionBuild": build,
+              "knownTerminalActionBuilds": terminal,
               "historicalIngressRetiredDeploymentIds": retired,
               "aliasJobActive": alias is not None and alias["jobStatus"] in ("pending", "in-progress")}
+    if forward_scope is not None:
+        result["forwardRecovery"] = forward_recovery_evidence(forward_scope)
     if "relatedProjects" in context["bindings"] or any(row.get("sourceConfiguration") for row in context["bindings"].get("historicalRuntimeBindings", [])):
         projects = repository_project_inventory(client)
         demand(projects == repository_project_inventory(client), "REPOSITORY_PROJECT_INVENTORY_DRIFT")
@@ -864,12 +921,14 @@ def execute(context, client, verify, probe=None):
     locked = LockedClient(client, verify)
     source_attempt = attempt
     if context.get("originalDirectory") is not None:
-        demand(operation in ("observe-vercel", "observe-retired-capabilities", "observe-compatible", "observe-admission", "observe-resend", "observe-resend-effects", "observe-square", "observe-sanity", "observe-google", "observe-highlevel", "observe-chitchats"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
+        demand(operation in ("observe-vercel", "observe-retired-capabilities", "observe-provider-effects", "observe-compatible", "observe-admission", "observe-resend", "observe-resend-effects", "observe-square", "observe-sanity", "observe-google", "observe-highlevel", "observe-chitchats"), "RECOVERY_PROVIDER_MUTATION_REFUSED")
         original = Path(context["originalDirectory"])
         migrate.private_directory(original)
         source_attempt = original / attempt.name
         if source_attempt.exists():
             migrate.private_directory(source_attempt)
+    forward_scope = require_forward_recovery_scope(context, locked, verify)
+    compatible_attempt = Path(forward_scope["directory"]) / "vercel" if forward_scope is not None else source_attempt
     if operation == "observe-provider-effects":
         import frontend_scoped_provider_client
         import frontend_square_financial_scope
@@ -909,7 +968,7 @@ def execute(context, client, verify, probe=None):
         frontend = observe_compatible(context, locked, source_attempt)
         return {**selected, "status": "FRONTEND_RESTORATION_BOUNDARY_OBSERVED", "gateway": gateway, "frontend": frontend}
     if operation == "observe-vercel":
-        return observe_vercel(context, locked, source_attempt)
+        return observe_vercel(context, locked, source_attempt, forward_scope)
     if operation == "suspend-schedules":
         return suspend_schedules(context, locked, attempt)
     if operation == "deploy-compatible":
@@ -1088,7 +1147,9 @@ def execute(context, client, verify, probe=None):
         migrate.write_json(attempt, "resend-runtime-binding-verified.json", verified)
         return {**outcome, "runtimeReplacementBindingVerified": True}
     if operation in ("observe-compatible", "observe-admission"):
-        result = observe_compatible(context, locked, source_attempt)
+        result = observe_compatible(context, locked, compatible_attempt if operation == "observe-compatible" else source_attempt)
+        if forward_scope is not None and operation == "observe-compatible":
+            result["forwardRecovery"] = forward_recovery_evidence(forward_scope)
         if operation == "observe-compatible" and (source_attempt.parent / "vercel-bootstrap").exists():
             result["bootstrapFrontend"] = observe_compatible(context, locked, source_attempt.parent / "vercel-bootstrap")
         return result

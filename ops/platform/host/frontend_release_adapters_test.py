@@ -122,7 +122,7 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                         owner.assertFalse(body["autoAssignCustomDomains"])
                         deployment_id = "dpl_candidate" + (str(len([row for row in owner.deployments if row["uid"].startswith("dpl_candidate")]) + 1)
                             if any(row["uid"].startswith("dpl_candidate") for row in owner.deployments) else "")
-                        owner.deployments.append({"uid": deployment_id, "state": "READY", "target": "production", "created": 30,
+                        owner.deployments.append({"uid": deployment_id, "state": "ERROR" if owner.failed_build else "READY", "target": "production", "created": 30,
                                                   "url": "owned.vercel.app", "meta": {"githubCommitSha": "a" * 40}})
                         owner.built_features[deployment_id] = {key: owner.variables.get(key, {}).get("value") == "true" for key in adapter.BOOTSTRAP_FLAGS}
                         target = json.loads(owner.variables.get("FRONTEND_WRITER_ADMISSION_TARGET_JSON", {}).get("value", "{}"))
@@ -156,7 +156,7 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                             source = related_row["meta"]["githubCommitSha"]
                         result = {"id": deployment_id, "projectId": vercel.PROJECTS["production"] if related_row else vercel.PROJECTS["staging"],
                                   "target": related_row["target"] if related_row else "production",
-                                  "readyState": "ERROR" if deployment_id == "dpl_candidate" and owner.failed_build else "READY",
+                                  "readyState": next((row["state"] for row in owner.deployments if row["uid"] == deployment_id), "READY"),
                                   "url": "owned.vercel.app", "gitSource": {"type": "github", "repoId": vercel.REPOSITORY_ID, "sha": source},
                                   "meta": {"lashReleaseId": "adapter-owned"}}
                         owner.probed_deployment = deployment_id
@@ -401,6 +401,40 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
         self.assertFalse(any("/promote/" in row["path"] for row in self.mutations()))
         self.assertFalse(migrate.read_json(self.parent / "vercel-bootstrap", "frontend-workload-outcome.json")["bootstrapAdmissionVerified"])
 
+    def test_terminal_original_build_requires_ack_chain_and_current_provider_terminal_state(self):
+        migrate.write_json(self.parent, "database-receipt.json", self.database); self.failed_build = True
+        with self.assertRaisesRegex(ValueError, "VERCEL_BUILD_FAILED_REQUIRES_REVIEW"):
+            self.execute("deploy-compatible")
+        original = {path: path.read_bytes() for path in self.parent.rglob("*.json")}
+        recovery = self.parent.parent / "recovery"; recovery.mkdir(mode=0o700)
+        self.context.update(originalDirectory=str(self.parent), directory=str(recovery))
+        writes = len(self.mutations())
+        inventory = self.execute("observe-vercel")
+        self.assertTrue(inventory["reviewedInventoryMatches"])
+        self.assertEqual([row["deploymentId"] for row in inventory["knownTerminalActionBuilds"]], ["dpl_candidate"])
+        self.assertFalse(self.execute("observe-compatible")["workloadVerified"])
+        row = next(row for row in self.deployments if row["uid"] == "dpl_candidate")
+        row["state"] = "CANCELED"
+        self.assertTrue(self.execute("observe-vercel")["reviewedInventoryMatches"])
+        row["state"] = "BUILDING"
+        self.assertFalse(self.execute("observe-vercel")["reviewedInventoryMatches"])
+        row["state"] = "ERROR"
+        self.current = "dpl_candidate"
+        inventory = self.execute("observe-vercel")
+        self.assertFalse(inventory["reviewedInventoryMatches"])
+        self.assertFalse(inventory["reviewedProjectMatches"])
+        self.current = "dpl_previous"
+        created_path = self.parent / "vercel" / "frontend-build-created.json"
+        created = json.loads(created_path.read_bytes()); created["deploymentId"] = "dpl_unrelated"
+        created_path.write_text(json.dumps(created))
+        with self.assertRaisesRegex(ValueError, "VERCEL_TERMINAL_BUILD_RECEIPT_REFUSED"):
+            self.execute("observe-vercel")
+        created_path.write_bytes(original[created_path])
+        self.assertTrue(self.execute("observe-vercel")["reviewedInventoryMatches"])
+        self.assertEqual(len(self.mutations()), writes)
+        for path, raw in original.items():
+            self.assertEqual(path.read_bytes(), raw)
+
     def test_bootstrap_lost_promotion_is_observed_readonly_without_sql_or_reopening_controls(self):
         self.bootstrap_context(); self.lost_promotion = True
         with self.assertRaises(ValueError):
@@ -637,7 +671,9 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
         self.assertEqual(observed["actionBuild"]["deploymentId"], "dpl_candidate")
         self.assertEqual(observed["unstagedActionDeployment"]["readyState"], "ERROR")
         self.assertIsNone(observed["deploymentId"]); self.assertFalse(observed["workloadVerified"])
-        self.assertFalse(self.execute("observe-vercel")["reviewedInventoryMatches"])
+        inventory = self.execute("observe-vercel")
+        self.assertTrue(inventory["reviewedInventoryMatches"])
+        self.assertEqual(inventory["knownTerminalActionBuilds"][0]["readyState"], "ERROR")
         self.assertEqual(len(self.mutations()), writes)
         self.assertFalse(any("/promote/" in row["path"] for row in self.mutations()))
 
