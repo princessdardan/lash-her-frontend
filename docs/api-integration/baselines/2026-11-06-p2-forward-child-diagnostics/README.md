@@ -1,0 +1,9 @@
+# Owned forward child diagnostics
+
+The retained Linux CI artifact for source `1ebd4855ebdbde972e7e6dc46e51f54d760dd6a5` contains outer exit status 1, zero stdout bytes, and only the fixed 31-byte failure marker in stderr. Its underlying Node error was discarded by the Python fixture. The artifact zip SHA256 is `ce9d8d64185d004e4ab9423a660fc34be2f35f066a513baf4d42fb0fc2a6a01a`. This evidence does not diagnose that underlying error; an instrumented Linux CI rerun remains required.
+
+The change is restricted to the owned fixture and its diagnostic tests. Inner Node emits source-selected phase markers to its captured stderr. On child failure, Python reports only a bounded closed record: last valid phase, exit status/signal, allowlisted error kind/code, at most twelve existing source-relative file/line frames, and byte counts. Error messages, assertion values, commands, environments, SQL, absolute paths and URLs are not forwarded. Raw inner output remains discarded. The existing fixed CI parent privately retains the outer record through its unchanged 4 MiB-per-stream mechanism. Success stdout, strict receipts, assertion behavior, output bounds, and environment allowlist are unchanged.
+
+Six targeted tests pass, including an actual inner source assertion with a private canary in raw stderr; the emitted record preserves its phase/frame and omits canaries and URLs. The existing fixed parent passes all 28 tests, including private retention and ordinary-output suppression. ESLint passes.
+
+The final owned macOS run used official PostgreSQL 18.6 and Node 24.18.0 with clean exact API mains. Both modes pass: current55 and forward19, with strict forward18-key receipt, nine runtime-credential refusals, zero provider calls during those faults, and empty outer stderr. These are local source/fixture results, not Linux Docker, staging, provider, or candidate qualification. No Docker daemon was started and no production source or assertions were weakened.

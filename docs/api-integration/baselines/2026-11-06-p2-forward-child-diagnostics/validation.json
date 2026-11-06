@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "status": "OWNED_FORWARD_CHILD_DIAGNOSTICS_QUALIFIED",
+  "baseCommit": "196ca0e2772707051cef21cae582d282f621c5be",
+  "sourceSha256": {
+    "ops/platform/test-p2-recovery-owned.py": "903eeef7b07b18e67b4de27cd67a95aa50b7f4ba3b38b604e669b7bfe8eec55b",
+    "ops/platform/test-p2-recovery-owned.mjs": "7be5ea63fae8c9dd89e64c6553bc48f878f32a5f94d50bacdb2391110a747117",
+    "ops/platform/host/p2_recovery_owned_diagnostics_test.py": "5cb06de1e5326c02800ff7d7c1d3f548e911e587399a82fe49e7566c0c676031"
+  },
+  "newOpsFiles": 1,
+  "diagnosticFields": [
+    "fixed source phase",
+    "numeric exit status and allowlisted signal",
+    "allowlisted error kind/code",
+    "bounded source-relative frames",
+    "byte counts"
+  ],
+  "rawChildOutputForwarded": false,
+  "diagnosticMaxBytes": 8192,
+  "framesMax": 12,
+  "unchangedBounds": {
+    "innerCombinedOutputCharacters": 1000000,
+    "outerPrivateArtifactBytesPerStream": 4194304
+  },
+  "tests": {
+    "diagnosticUnit": 6,
+    "fixedCiParent": 28,
+    "eslintPassed": true,
+    "actualSourceFailureAndCanarySuppression": true
+  },
+  "localPostgres": {
+    "platform": "macOS",
+    "major": 18,
+    "version": "postgres (PostgreSQL) 18.6",
+    "currentChecks": 55,
+    "forwardChecks": 19,
+    "forwardReceiptKeys": 18,
+    "forwardRuntimeCredentialRefusals": 9,
+    "forwardRuntimeCredentialFaultProviderCalls": 0,
+    "outerStderrBytes": {
+      "current": 0,
+      "forward": 0
+    },
+    "courseCommit": "a447bfde20299e12afab68a3331b3792ddd07598",
+    "communityCommit": "939de65dd52f0b1a43993a25c7c428dce6e2bb43",
+    "nodeVersion": "v24.18.0"
+  },
+  "linuxCiOriginal": {
+    "runId": "42195819888",
+    "jobId": "127818701540",
+    "sourceCommit": "1ebd4855ebdbde972e7e6dc46e51f54d760dd6a5",
+    "artifactId": "13492645602",
+    "artifactZipSha256": "ce9d8d64185d004e4ab9423a660fc34be2f35f066a513baf4d42fb0fc2a6a01a",
+    "outerExitStatus": 1,
+    "outerSignal": null,
+    "outerStdoutBytes": 0,
+    "outerStderrBytes": 31,
+    "underlyingError": "unknown-discarded-by-original-fixture",
+    "instrumentedRerunRequired": true
+  },
+  "linuxDockerExecuted": false,
+  "productionSourcesChanged": false,
+  "liveActionsPerformed": false,
+  "independentReviewPending": true,
+  "artifactSha256": {
+    "diagnostic-tests.log": "c48d7092b4a6d7831074841a1ffe819ca85fdb38d1dc240b0b415e7654d09bf5",
+    "forward-postgres18.json": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
+    "README.md": "541ce6dbf42cac6e96eb18e71d66125680b7fbba30f33b03dd8ec854519ca3db",
+    "current-postgres18.json": "c447dbbdbbc96a9b412c72f53feb0d4962fa5a7d4410bd1f04c83a278847c8c0",
+    "fixed-parent-tests.log": "0f45833f3bcf008df0d18d3ce900ecb77314b72779b062b33d84a34acad69db5"
+  }
+}

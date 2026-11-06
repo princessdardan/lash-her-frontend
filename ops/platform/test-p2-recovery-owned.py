@@ -7,6 +7,7 @@ import shutil
 import socket
 import socketserver
 import select
+import signal
 import threading
 import tempfile
 import uuid
@@ -14,6 +15,68 @@ import re
 import subprocess
 import sys
 import urllib.parse
+
+# Failure-only metadata. Raw inner output is never forwarded; the outer fixed
+# CI parent privately retains this bounded record without changing its receipt.
+OWNED_CHILD_PHASES = frozenset((
+    'boot','frontend-connect','frontend-owner-roles','frontend-recovery-session',
+    'forward-prior-reconciliation','forward-api-course-current','forward-api-community-current',
+    'forward-runtime-credential-negatives','forward-new-build-probe-promote','forward-source-scope',
+    'forward-shared-compatible-observation','forward-shared-vercel-observation',
+    'forward-open-admission-and-receipt-negatives','forward-journal-preservation','forward-scope-expired','forward-result',
+    'current-frontend-privileges','current-api-privileges','current-result'))
+OWNED_CHILD_ERROR_CODES = frozenset((
+    'ERR_ASSERTION','ERR_MODULE_NOT_FOUND','ERR_INVALID_URL','ERR_TLS_CERT_ALTNAME_INVALID',
+    'SELF_SIGNED_CERT_IN_CHAIN','DEPTH_ZERO_SELF_SIGNED_CERT','CERT_HAS_EXPIRED','UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    'ECONNREFUSED','ECONNRESET','ETIMEDOUT','EADDRINUSE','EPIPE','ENOENT','EACCES','EPERM','ENOMEM',
+    '42501','28P01','28000','3D000','53300','57P01'))
+
+
+def child_failure_diagnostic(result, source_roots, forward_mode):
+    stderr = result.stderr if isinstance(result.stderr,str) else ''
+    stdout = result.stdout if isinstance(result.stdout,str) else ''
+    phase = 'unknown'
+    for line in stderr.splitlines():
+        if not 0 < len(line) <= 4096:continue
+        try:value=json.loads(line)
+        except (ValueError,TypeError):continue
+        if isinstance(value,dict) and set(value)=={'status','phase'} and value.get('status')=='OWNED_P2_RECOVERY_PHASE' and value.get('phase') in OWNED_CHILD_PHASES:
+            phase=value['phase']
+    kind = 'unknown'
+    match=re.search(r'(?:^|\n)(AssertionError|TypeError|RangeError|SyntaxError|ReferenceError|Error)(?:\b|\[)',stderr)
+    if match:kind=match.group(1)
+    code='unknown'
+    for match in re.finditer(r"(?:code\s*:\s*['\"]|Error\s*\[)([A-Z0-9_]+)",stderr):
+        if match.group(1) in OWNED_CHILD_ERROR_CODES:
+            code=match.group(1);break
+    frames=[]
+    for source,directory in source_roots.items():
+        if source not in ('frontend','frontend-fixture','course','community'):continue
+        prefix=str(Path(directory).resolve())
+        pattern=re.escape(prefix)+r'/((?:ops|src|drizzle)/[A-Za-z0-9_./-]+\.(?:mjs|cjs|js|ts|py)):(\d{1,8}):(\d{1,6})'
+        for match in re.finditer(pattern,stderr):
+            file,line,column=match.groups()
+            if len(file)>256 or '..' in Path(file).parts or not (Path(prefix)/file).is_file():continue
+            frame={'source':source,'file':file,'line':int(line),'column':int(column)}
+            if frame not in frames and len(frames)<12:frames.append(frame)
+    returncode=result.returncode if type(result.returncode) is int else None
+    signal_name=None
+    if returncode is not None and returncode<0:
+        try:signal_name=signal.Signals(-returncode).name
+        except ValueError:pass
+        if signal_name not in ('SIGABRT','SIGKILL','SIGTERM','SIGSEGV','SIGBUS','SIGILL','SIGFPE','SIGXCPU','SIGXFSZ'):signal_name=None
+    return {'version':1,'status':'OWNED_P2_RECOVERY_CHILD_DIAGNOSTIC','fixture':'forward' if forward_mode else 'current',
+        'phase':phase,'exitStatus':returncode,'signal':signal_name,'errorKind':kind,'errorCode':code,'frames':frames,
+        'stdoutBytes':len(stdout.encode('utf8')),'stderrBytes':len(stderr.encode('utf8')),'rawChildOutputRetained':False}
+
+
+def report_child_failure(result, source_roots, forward_mode):
+    diagnostic=child_failure_diagnostic(result,source_roots,forward_mode)
+    encoded=json.dumps(diagnostic,separators=(',',':'))
+    if len(encoded.encode('utf8'))>8192:raise ValueError('OWNED_CHILD_DIAGNOSTIC_BOUND_REFUSED')
+    print('OWNED_P2_RECOVERY_CHILD_FAILED',file=sys.stderr,flush=True)
+    print(encoded,file=sys.stderr,flush=True)
+
 
 forward_mode=sys.argv[1:]==['--forward-brand']
 if os.environ.get('P2_RECOVERY_OWNED_TEST') != 'true' or (len(sys.argv) != 1 and not forward_mode):
@@ -175,7 +238,9 @@ try:
         if len(result.stdout)+len(result.stderr)>1_000_000:
             raise ValueError('OWNED_RECOVERY_TEST_OUTPUT_LIMIT')
         if result.returncode:
-            print('OWNED_P2_RECOVERY_CHILD_FAILED',file=sys.stderr,flush=True)
+            diagnostic_roots={'frontend':root,**api_roots}
+            if forward_mode:diagnostic_roots['frontend-fixture']=graph
+            report_child_failure(result,diagnostic_roots,forward_mode)
         else:
             if forward_mode:
                 if provider_fixture.runtime_fault_calls!=0:raise ValueError('OWNED_RUNTIME_CREDENTIAL_FAULT_PROVIDER_CALL')
