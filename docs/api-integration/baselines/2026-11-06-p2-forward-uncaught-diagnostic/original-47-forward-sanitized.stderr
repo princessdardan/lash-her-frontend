@@ -1,0 +1,2 @@
+OWNED_P2_RECOVERY_CHILD_FAILED
+{"version":1,"status":"OWNED_P2_RECOVERY_CHILD_DIAGNOSTIC","fixture":"forward","phase":"forward-shared-vercel-observation","nodeErrors":[],"exitStatus":1,"signal":null,"errorKind":"Error","errorCode":"unknown","frames":[],"stdoutBytes":0,"stderrBytes":1873,"rawChildOutputRetained":false,"bridgeErrors":[]}

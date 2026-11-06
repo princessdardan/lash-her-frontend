@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "sourceCommit": "0ccec707ffd4ccf074bec2a4acdcbb8e379f3898",
+  "baseCommit": "47d5b6a19c8f2d7f14335ce0a5c6d5a49100395b",
+  "ownedSources": {
+    "ops/platform/test-p2-recovery-owned.mjs": "125a4e90c66a93d3fdf03d6d8a07b1daa1651af2e567f80a77584d216a49a9c3",
+    "ops/platform/test-p2-recovery-owned.py": "9c0016308787a5e2d1e693fcf8825b1c31ea0ee9a47c93c7c3b7b8649a251d80",
+    "ops/platform/host/p2_recovery_owned_diagnostics_test.py": "1a459f281bffbbe6b452ed81cd0234b064d35639a03b377795ea06a15be218b2"
+  },
+  "files": {
+    "README.md": "914fb0cdee1829dc3a681037c1bb1ecbbee7e774ce08e74ba5c743f91711a67a",
+    "actual-late-session-envelopes.json": "d546060d6c98f0537b918fe9a7beda2dbf129573553d82103bfed6fa61a0d918",
+    "flat-composed-envelopes.json": "fd6fbc2fb793dd24ddef0a66950e209cbe5af6921827097f9062d59eba3ac226",
+    "flat-composed-envelopes.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "original-47-ci-artifact.zip": "d5c8539e4f4abbd2a33c616e65cf7791dc6cf872f5a33a9f1c2982d2591cb0a2",
+    "original-47-forward-failure.json": "2ef478f505938760d17478e233596884aaee852f1a3d25732602eacee55b9571",
+    "original-47-forward-sanitized.stderr": "5eb33e0b19c6bda570e7125760c6efb44f3d95333a7be995501d9113b2561c30",
+    "original-47-linux-platform-pg18.json": "41bcf78e731dff103790ef79aaaf8a12348470da86d088222fabb5d2aefaae9b",
+    "owned-pg18-forward.json": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
+    "owned-pg18-forward.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "unit.log": "86f606660ae3670aab29c5e28c3670786384b15a08025e1939eb01588e8402fa"
+  },
+  "qualification": {
+    "focusedTests": 14,
+    "normalForwardChecks": 19,
+    "lateActualSessionControls": 2,
+    "flatComposedControls": 6,
+    "fixtureOnly": true,
+    "actualLinuxCauseResolved": false,
+    "liveProviders": false
+  }
+}
