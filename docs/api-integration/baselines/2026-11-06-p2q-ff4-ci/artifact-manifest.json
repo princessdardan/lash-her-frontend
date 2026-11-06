@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "runId": 42283615401,
+  "runAttempt": 1,
+  "sourceCommit": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c",
+  "status": "ARTIFACT_ZIPS_VERIFIED",
+  "archives": [
+    {
+      "artifactId": 13536538677,
+      "name": "frontend-runtime-qualification",
+      "file": "frontend-runtime-qualification.zip",
+      "apiDigest": "sha256:2a135aa61a404bb6aac9fdbe45144c63d33877a9e5c565f8022e32eebdbaed97",
+      "fileSha256": "2a135aa61a404bb6aac9fdbe45144c63d33877a9e5c565f8022e32eebdbaed97",
+      "zipBytes": 61040,
+      "entries": 5,
+      "uncompressedBytes": 448495,
+      "maxExpansionRatio": 7.44,
+      "safePaths": true,
+      "noSymlinks": true,
+      "crcVerified": true
+    },
+    {
+      "artifactId": 13537241025,
+      "name": "gateway-runtime-qualification",
+      "file": "gateway-runtime-qualification.zip",
+      "apiDigest": "sha256:a9f53d850b2a2121c648530fe1b2c025657379638c2ae23e6fd78aa91126a326",
+      "fileSha256": "a9f53d850b2a2121c648530fe1b2c025657379638c2ae23e6fd78aa91126a326",
+      "zipBytes": 59453,
+      "entries": 5,
+      "uncompressedBytes": 418753,
+      "maxExpansionRatio": 7.13,
+      "safePaths": true,
+      "noSymlinks": true,
+      "crcVerified": true
+    },
+    {
+      "artifactId": 13536548560,
+      "name": "frontend-operator-schema-summary",
+      "file": "frontend-operator-schema-summary.zip",
+      "apiDigest": "sha256:88d363ccfe509d3343d159201b9db39e75028f9d9496920c6335e86a8aa91337",
+      "fileSha256": "88d363ccfe509d3343d159201b9db39e75028f9d9496920c6335e86a8aa91337",
+      "zipBytes": 19865,
+      "entries": 3,
+      "uncompressedBytes": 60849,
+      "maxExpansionRatio": 3.14,
+      "safePaths": true,
+      "noSymlinks": true,
+      "crcVerified": true
+    }
+  ],
+  "extractedFiles": {
+    "frontend-operator/frontend-schema-summary.json": "21002b29427efd8a015bccd4c35fba8460054235e7f2df8dde9a4864e719b518",
+    "frontend-operator/p2-identity-recovery-lifecycle-postgres18.json": "b4ba08ed2f3aa04bbdccf6a405cd44ae47c4ad62eb94633c40455621bd3f3de0",
+    "frontend-operator/p2-platform-postgres18.json": "eb5d586954b40ac295033a19eefb017de6cba571fadd00c191d77ac644730bcb",
+    "frontend-runtime/frontend-runtime-raw.json": "c144548d5bdf372b9036770c8254cc95ecdde1f2ad7896e175d91c99727e1d2c",
+    "frontend-runtime/frontend-runtime/fixed.vex.json": "b352cd70000d325f83543b7ec6fc1f05ba9a0c9d5a30399002204bcad3583a36",
+    "frontend-runtime/frontend-runtime/sbom.json": "3ccf89048d0e68c4aab76036bdd0a44d47a0227b97104f40e2090123ef6928c5",
+    "frontend-runtime/frontend-runtime/scan.json": "ac578465beae45d6b6ac1f73dbe4c647dcec03dc7a2acd7d9c1d8d1efddbe5a5",
+    "frontend-runtime/frontend-runtime/verification.json": "8413571efdeb903f061fd105fa06f1da6167cf28869a13ce762db73b7856c278",
+    "gateway-runtime/gateway-runtime-raw.json": "ccfa230e854928d45ac286ff163cb51b0316615360feb32642a7ac1f0d19b219",
+    "gateway-runtime/gateway-runtime/fixed.vex.json": "36be182f5627f012af8de22f4a40a53982d3156ed0a586b167ba8f38766dca41",
+    "gateway-runtime/gateway-runtime/sbom.json": "d902006cf3adb4b4bcf9fd5bbad60b7d3629733c61f4dc5edf8e441035cc088d",
+    "gateway-runtime/gateway-runtime/scan.json": "37a69ec954e7566161195577aebe587df918b39d9430279fd9d056d2a7099e56",
+    "gateway-runtime/gateway-runtime/verification.json": "dfb4cc21578fde9b948e3907b6a7fc5ff7f4dff93888125115680ff219856673"
+  }
+}

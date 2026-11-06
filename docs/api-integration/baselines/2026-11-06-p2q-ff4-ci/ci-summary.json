@@ -1,0 +1,44 @@
+{
+  "runId": 42283615401,
+  "attempt": 1,
+  "event": "pull_request",
+  "headSha": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c",
+  "status": "completed",
+  "conclusion": "success",
+  "createdAt": "2026-11-06T19:53:42Z",
+  "updatedAt": "2026-11-06T20:06:57Z",
+  "jobs": [
+    {"id":128118670336,"name":"gateway-and-platform","conclusion":"success"},
+    {"id":128118670393,"name":"quality-and-unit","conclusion":"success"},
+    {"id":128118670449,"name":"browser (chromium)","conclusion":"success"},
+    {"id":128118670473,"name":"browser (firefox)","conclusion":"success"},
+    {"id":128118670598,"name":"audit","conclusion":"success"},
+    {"id":128118670631,"name":"browser (webkit)","conclusion":"success"},
+    {"id":128118670646,"name":"frontend-operator-migrations","conclusion":"success"},
+    {"id":128118670660,"name":"build","conclusion":"success"},
+    {"id":128118670811,"name":"database","conclusion":"success"},
+    {"id":128124917053,"name":"browser","conclusion":"success"}
+  ],
+  "apiPins": {
+    "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+    "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+  },
+  "operatorAssertions": {
+    "frontendMigrations": 83,
+    "courseMigrations": 22,
+    "communityMigrations": 11,
+    "sourceManifestValidated": true,
+    "sourceReadbackBeforeAfterValidated": true,
+    "interruptedNegativeCasesValidated": ["original-bytes","original-config-drift","missing-lineage","pending-lineage","backend-effect","active-backend-loss","active-guard-loss"],
+    "failureDiagnosticsArtifactAbsent": true
+  },
+  "artifacts": {
+    "frontend-operator-schema-summary": {"id":13536548560,"digest":"sha256:88d363ccfe509d3343d159201b9db39e75028f9d9496920c6335e86a8aa91337"},
+    "frontend-runtime-qualification": {"id":13536538677,"digest":"sha256:2a135aa61a404bb6aac9fdbe45144c63d33877a9e5c565f8022e32eebdbaed97"},
+    "gateway-runtime-qualification": {"id":13537241025,"digest":"sha256:a9f53d850b2a2121c648530fe1b2c025657379638c2ae23e6fd78aa91126a326"}
+  },
+  "nativeScans": {
+    "frontend": {"os":"debian","version":"13.7","osPackageCount":14,"languageFiles":1,"rawAndVerifiedBackportSteps":"success"},
+    "gateway": {"os":"debian","version":"13.7","osPackageCount":14,"languageFiles":1,"rawAndVerifiedBackportSteps":"success"}
+  }
+}

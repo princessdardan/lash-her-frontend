@@ -1,0 +1,22 @@
+{
+  "sourceCommit": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c",
+  "files": 504,
+  "decodedBytes": 40690920,
+  "publicBytes": 54328263,
+  "maxFileBytes": 1113573,
+  "limits": {
+    "files": 512,
+    "decoded": 41000000,
+    "public": 56000000,
+    "perFile": 2000000,
+    "private": 24000000
+  },
+  "gatewayRuntimeDiffBytes": 0,
+  "historicalProfileDiffBytes": 0,
+  "contracts": {
+    "reviewSha256": "300057a9cf68c78e3ad9dfc4f5c6e141345abca6e2bc1b850f5204dcc5955e5a",
+    "reviewRevision": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c",
+    "baselineRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "manifestSha256": "41be13b4727d453ee1fb059ee8071c9483c079d4cdd57971bb38a00885acb431"
+  }
+}
