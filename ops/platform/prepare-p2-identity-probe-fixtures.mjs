@@ -35,6 +35,18 @@ const RECOVERY_PRIVILEGE_FAULTS = Object.freeze([
 ].sort());
 const RECOVERY_ENVIRONMENT_ISOLATION = Object.freeze({ nodeOptionsPositiveControlExecuted: true, poisonedParentEnvironment: true,
   ambientNodeOptionsExecuted: false, ambientConfigVariablesAbsent: true, childEnvironmentAllowlistEnforced: true });
+const FORWARD_RECOVERY_CHECKS = Object.freeze([
+  "actual-fe-physical-session", "both-api-current-readonly", "actual-tls-build-probe-promote", "same-source-candidate-new-action",
+  "real-opaque-scope-shared-observer", "selected-workload-bytes", "cloned-plain-scope-refused", "wrong-client-verifier-refused",
+  "wrong-plan-candidate-target-directory-refused", "wrong-inventory-action-refused", "shared-mutation-operations-refused",
+  "receipt-drift-refused", "expired-session-refused", "open-admission-mutation-refused", "opened-admission-get-retained",
+  "original-terminal-retained-not-current", "original-receipts-preserved",
+]);
+const FORWARD_RECOVERY_RECEIPT_KEYS = Object.freeze([
+  "actualRuntimeContainers", "checks", "communityMigrations", "courseMigrations", "environmentIsolation", "fixtureOnly",
+  "frontendMigrations", "journalDigestsUnchanged", "mutationRefusals", "noSqlReplay", "originalFrontendTerminalRecreated",
+  "providerTouched", "serverMajor", "skipped", "status",
+].sort());
 const SOURCE_PATHS = Object.freeze(["src", "scripts", "contracts", "ops", "tests", "openapi", ":(glob).env*", ":(glob)tsconfig*.json"]);
 const DEPENDENCY_ROOTS = Object.freeze(["ops/gateway", "tools/api-contract-toolchain"]);
 const RECOVERY_MOUNTS = Object.freeze([
@@ -70,6 +82,7 @@ const FAILURE_PHASES = Object.freeze(["preflight", "source-fetch", "npm-ci", "bu
   "recovery-postgres18", "cleanup"]);
 const FAILURE_STAGES = Object.freeze(["frontend", "workspace", "course", "community", "identity", "recovery"]);
 const RECOVERY_FAILURES = Object.freeze(["docker-transport", "child-exit", "receipt-invalid"]);
+const RECOVERY_QUALIFICATIONS = Object.freeze(["current", "forward"]);
 const demand = condition => { if (!condition) throw new Error("P2_IDENTITY_FIXTURE_PREPARATION_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
 const hash = value => createHash("sha256").update(value).digest("hex");
@@ -252,6 +265,10 @@ function recoveryDockerArguments(frontendRoot, directories) {
     "--entrypoint=python3", RECOVERY_IMAGE, "ops/platform/test-p2-recovery-owned.py"];
 }
 
+function forwardRecoveryDockerArguments(frontendRoot, directories) {
+  return [...recoveryDockerArguments(frontendRoot, directories), "--forward-brand"];
+}
+
 export function parseP2RecoveryPostgres18Receipt(output) {
   demand(typeof output === "string" && output.length > 0 && output.length <= 1_000_000);
   const lines = output.trim().split("\n");
@@ -272,6 +289,41 @@ export function parseP2RecoveryPostgres18Receipt(output) {
     isolationMatches &&
     receipt.noSqlReplay === true && receipt.originalFrontendTerminalRecreated === false);
   return receipt;
+}
+
+export function parseP2ForwardRecoveryPostgres18Receipt(output) {
+  demand(typeof output === "string" && output.length > 0 && output.length <= 1_000_000);
+  const lines = output.trim().split("\n");
+  demand(lines.length === 1);
+  const receipt = JSON.parse(lines[0]);
+  const isolation = receipt?.environmentIsolation;
+  const isolationMatches = isolation && JSON.stringify(Object.keys(isolation).sort()) ===
+    JSON.stringify(Object.keys(RECOVERY_ENVIRONMENT_ISOLATION).sort()) &&
+    Object.entries(RECOVERY_ENVIRONMENT_ISOLATION).every(([name, expected]) => isolation[name] === expected);
+  demand(receipt && JSON.stringify(Object.keys(receipt).sort()) === JSON.stringify(FORWARD_RECOVERY_RECEIPT_KEYS) &&
+    receipt.status === "OWNED_P2_RECOVERY_FORWARD_CHECKS_PASS" && receipt.serverMajor === 18 &&
+    receipt.frontendMigrations === 83 && receipt.courseMigrations === 22 && receipt.communityMigrations === 11 &&
+    JSON.stringify(receipt.checks) === JSON.stringify(FORWARD_RECOVERY_CHECKS) && receipt.mutationRefusals === 1 &&
+    receipt.noSqlReplay === true && receipt.journalDigestsUnchanged === true && receipt.originalFrontendTerminalRecreated === false &&
+    receipt.skipped === 0 && receipt.fixtureOnly === true && receipt.providerTouched === false &&
+    receipt.actualRuntimeContainers === false && isolationMatches);
+  return receipt;
+}
+
+function runRecoveryQualification(run, dockerEndpoint, args, frontendRoot, environment, diagnostic, qualification) {
+  demand(RECOVERY_QUALIFICATIONS.includes(qualification));
+  diagnostic.recoveryQualification = qualification;
+  diagnostic.recoveryFailure = "docker-transport";
+  diagnostic.recoveryStarted = true;
+  const result = run("docker", ["--host", dockerEndpoint, ...args],
+    { cwd: frontendRoot, env: environment, timeout: 600_000, maxBuffer: 4 * 1024 * 1024 });
+  if (!(result && !result.error && result.status === 0 && result.signal == null &&
+    typeof result.stdout === "string" && typeof result.stderr === "string")) {
+    diagnostic.recoveryFailure = result?.status === 125 || result?.error ? "docker-transport" : "child-exit";
+    demand(false);
+  }
+  diagnostic.recoveryFailure = "receipt-invalid";
+  return result.stdout;
 }
 
 function validatePackage(directory, definition) {
@@ -367,25 +419,20 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
     const output = execute(run, process.execPath, ["--test", "--test-reporter=tap", TEST_FILE],
       { cwd: frontendRoot, env: testEnvironment, timeout: 180_000, maxBuffer: 8 * 1024 * 1024 });
     const tests = parseP2IdentityProbeTap(output);
-    let recovery;
+    let recovery, forwardRecovery;
     if (options.recoveryPostgres18 === true) {
       mark(diagnostic, "recovery-postgres18", "recovery");
       for (const [service, definition] of Object.entries(REPOSITORIES))
         verifyApiSourceForMount(run, directories[service], manifest.artifacts[service].revision, definition, installEnvironment, sourceReadToken);
       for (const directory of Object.values(directories)) makeApiSourceMountable(directory);
       const recoveryArguments = recoveryDockerArguments(frontendRoot, directories);
+      const forwardArguments = forwardRecoveryDockerArguments(frontendRoot, directories);
+      diagnostic.recoveryQualification = "current";
       diagnostic.recoveryFailure = "docker-transport";
       const dockerEndpoint = currentDockerContextEndpoint(run, dockerSocketStat, frontendRoot);
-      diagnostic.recoveryStarted = true;
-      const recoveryResult = run("docker", ["--host", dockerEndpoint, ...recoveryArguments],
-        { cwd: frontendRoot, env: dockerEnvironment(workspace), timeout: 600_000, maxBuffer: 4 * 1024 * 1024 });
-      if (!(recoveryResult && !recoveryResult.error && recoveryResult.status === 0 && recoveryResult.signal == null &&
-        typeof recoveryResult.stdout === "string" && typeof recoveryResult.stderr === "string")) {
-        diagnostic.recoveryFailure = recoveryResult?.status === 125 || recoveryResult?.error ? "docker-transport" : "child-exit";
-        demand(false);
-      }
-      diagnostic.recoveryFailure = "receipt-invalid";
-      const receipt = parseP2RecoveryPostgres18Receipt(recoveryResult.stdout);
+      const recoveryEnvironment = dockerEnvironment(workspace);
+      const receipt = parseP2RecoveryPostgres18Receipt(runRecoveryQualification(run, dockerEndpoint, recoveryArguments,
+        frontendRoot, recoveryEnvironment, diagnostic, "current"));
       recovery = { status: receipt.status, serverMajor: receipt.serverMajor, frontendMigrations: receipt.frontendMigrations,
         courseMigrations: receipt.courseMigrations, communityMigrations: receipt.communityMigrations, skipped: receipt.skipped,
         fixtureOnly: receipt.fixtureOnly, providerTouched: receipt.providerTouched, checks: receipt.checks,
@@ -395,13 +442,28 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
         frontendCreatorMemberships: receipt.frontendCreatorMemberships,
         frontendOperatorSearchPathPinned: receipt.frontendOperatorSearchPathPinned, environmentIsolation: receipt.environmentIsolation,
         noSqlReplay: receipt.noSqlReplay, originalFrontendTerminalRecreated: receipt.originalFrontendTerminalRecreated };
+      const forwardReceipt = parseP2ForwardRecoveryPostgres18Receipt(runRecoveryQualification(run, dockerEndpoint, forwardArguments,
+        frontendRoot, recoveryEnvironment, diagnostic, "forward"));
+      const apiSourcePins = Object.fromEntries(["course", "community"].map(service => [service, {
+        revision: sources[service].revision, gitTree: sources[service].gitTree, packageSha256: sources[service].packageSha256,
+        packageLockSha256: sources[service].packageLockSha256, artifactSha256: structuredClone(sources[service].artifactSha256),
+      }]));
+      forwardRecovery = { status: forwardReceipt.status, serverMajor: forwardReceipt.serverMajor,
+        frontendMigrations: forwardReceipt.frontendMigrations, courseMigrations: forwardReceipt.courseMigrations,
+        communityMigrations: forwardReceipt.communityMigrations, checks: forwardReceipt.checks,
+        mutationRefusals: forwardReceipt.mutationRefusals, noSqlReplay: forwardReceipt.noSqlReplay,
+        journalDigestsUnchanged: forwardReceipt.journalDigestsUnchanged,
+        originalFrontendTerminalRecreated: forwardReceipt.originalFrontendTerminalRecreated, skipped: forwardReceipt.skipped,
+        fixtureOnly: forwardReceipt.fixtureOnly, providerTouched: forwardReceipt.providerTouched,
+        actualRuntimeContainers: forwardReceipt.actualRuntimeContainers, environmentIsolation: forwardReceipt.environmentIsolation,
+        apiSourcePins };
     }
     mark(diagnostic, "exact-source-proof", "frontend");
     cleanSource(run, frontendRoot, installEnvironment);
     return { version: 1, status: recovery ? "P2_IDENTITY_AND_RECOVERY_FIXTURES_PASS" : "P2_IDENTITY_PROBE_FIXTURES_PASS", frontendSourceCommit: frontendCommit,
       manifestSha256: hash(manifestBytes), nodeMajor: 24, npmMajor: 11, sources, tests,
-      ...(recovery ? { recovery } : {}),
-      skipped: tests.skipped + (recovery?.skipped ?? 0), fixtureOnly: true, privateSourceFetch: true,
+      ...(recovery ? { recovery, forwardRecovery } : {}),
+      skipped: tests.skipped + (recovery?.skipped ?? 0) + (forwardRecovery?.skipped ?? 0), fixtureOnly: true, privateSourceFetch: true,
       fetchCredentialForwardedBeyondGit: false, scriptsIgnoredDuringInstall: true, providerTouched: false,
       stagingTouched: false, databaseConnected: recovery !== undefined, sqlExecuted: recovery !== undefined,
       ownedDisposableDatabase: recovery !== undefined, releaseAccepted: false };
@@ -425,6 +487,7 @@ export function prepareP2IdentityProbeFixtures(options = {}) {
     const error = new Error("P2_IDENTITY_FIXTURE_PREPARATION_REFUSED");
     Object.defineProperties(error, { phase: { value: diagnostic.phase }, stage: { value: diagnostic.stage },
       recoveryStarted: { value: diagnostic.recoveryStarted === true },
+      recoveryQualification: { value: RECOVERY_QUALIFICATIONS.includes(diagnostic.recoveryQualification) ? diagnostic.recoveryQualification : undefined },
       recoveryFailure: { value: RECOVERY_FAILURES.includes(diagnostic.recoveryFailure) ? diagnostic.recoveryFailure : undefined } });
     throw error;
   }
@@ -437,6 +500,7 @@ export function p2IdentityFixtureFailureReceipt(error) {
   return { version: 1, status: "P2_IDENTITY_PROBE_FIXTURES_REFUSED", phase, stage, fixtureOnly: true, providerTouched: false,
     stagingTouched: false, databaseConnected: recoveryStarted ? null : false, sqlExecuted: recoveryStarted ? null : false,
     ownedDisposableDatabaseExecutionAttempted: recoveryStarted,
+    ...(RECOVERY_QUALIFICATIONS.includes(error?.recoveryQualification) ? { recoveryQualification: error.recoveryQualification } : {}),
     ...(RECOVERY_FAILURES.includes(error?.recoveryFailure) ? { recoveryFailure: error.recoveryFailure } : {}), releaseAccepted: false };
 }
 
