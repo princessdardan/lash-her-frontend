@@ -39,7 +39,7 @@ class RetainedChainTests(unittest.TestCase):
         targets={name:{**{key:info['job']['target'][key] for key in ('host','port','database')},'serverMajor':16,'user':name+'_runtime','roleOid':'1'} for name,info in self.jobs.items() if name in ('course','community')}
         plan['nativePlan'].update(version=1,windowSeconds=180,projectId='prj_owned',deploymentId='dpl_owned',planSha256='d'*64,targetSha256='c'*64)
         process={'containerId':'1'*64,'imageId':'sha256:'+'2'*64,'pid':19,'running':True,'startedAt':'owned-start','restartCount':0}
-        plan.update(version=1,maxMatches=1,leaseMilliseconds=120000,mode='drop-after-ack',nativePlanSha256='d'*64,stageId='owned-stage',profile='lifecycle-known-command-v1',gatewayProcessSha256=c.sha(c.canonical(process)))
+        plan.update(version=1,environment='staging',maxMatches=1,leaseMilliseconds=120000,mode='drop-after-ack',nativePlanSha256='d'*64,stageId='owned-stage',profile='lifecycle-known-command-v1',gatewayProcessSha256=c.sha(c.canonical(process)))
         effects[0].update(version=1,status='P2_TRANSPORT_FAULT_INJECTED',environment='staging',profile=plan['profile'],stageId=plan['stageId'],
           candidateSha256='a'*64,configurationSha256=plan['configurationSha256'],gatewayProcessSha256=plan['gatewayProcessSha256'],gatewayImageSha256=self.selected['artifacts']['gateway']['image'].split(':')[-1])
         plan.update(gatewayConfigurationSha256=config['gateway.json'],gatewayImageSha256=self.selected['artifacts']['gateway']['image'].split(':')[-1])
@@ -140,6 +140,25 @@ class RetainedChainTests(unittest.TestCase):
             self.repin_chain()
             with self.subTest(kind=kind),self.assertRaises(ValueError):self.load()
         self.values=original;self.selection=original_selection;self.initial['interruptedRestoration']=self.selection;self.repin_chain();self.load()
+
+    def test_original_lease_environment_and_profile_reject_valid_repinned_chains(self):
+        self.load()
+        fault=self.original/'fault'
+        original_files={name:(fault/name).read_bytes() for name in ('fault-arm-intent.json','fault-arm-observed.json')}
+        original=copy.deepcopy(self.values)
+        for key,value in (('environment','production'),('profile','foreign-profile-v1')):
+            self.values=copy.deepcopy(original)
+            arm=json.loads(original_files['fault-arm-intent.json']);arm['lease'][key]=value
+            arm['leaseSha256']=c.sha(c.canonical(arm['lease'])+b'\n')
+            observed=json.loads(original_files['fault-arm-observed.json']);observed['leaseSha256']=arm['leaseSha256']
+            (fault/'fault-arm-intent.json').write_bytes(c.canonical(arm)+b'\n')
+            (fault/'fault-arm-observed.json').write_bytes(c.canonical(observed)+b'\n')
+            self.values['domain.json']['effect']['leaseSha256']=arm['leaseSha256'];self.repin_chain()
+            with self.subTest(key=key),self.assertRaisesRegex(ValueError,'P2_INTERRUPTED_ORIGINAL_FAULT_LEASE_REQUIRED'):self.load()
+        for name,raw in original_files.items():(fault/name).write_bytes(raw)
+        self.values=original;self.repin_chain();self.load()
+        self.values['baseline.json']['plan']['environment']='production';self.repin_chain()
+        with self.assertRaisesRegex(ValueError,'P2_INTERRUPTED_ORIGINAL_PROCESS_EFFECT_REQUIRED'):self.load()
 
     def test_valid_fresh_map_cannot_replace_original19_even_at_missing_API_frontier(self):
         auth=self.values['replacement-authorization.json'];name='known-ack-stage-0-intent.json'

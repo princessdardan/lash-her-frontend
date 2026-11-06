@@ -202,7 +202,7 @@ def original_fault_receipts(selection, selected, plan, effect):
             'sourceWitnessSha256', 'issuedAt', 'expiresAt', 'maxMatches', 'record'} and
             sha(canonical(lease) + b'\n') == intent['leaseSha256'] == effect.get('leaseSha256') and
             one(lease['version']) and one(lease['maxMatches']) and lease['releaseId'] == selected['releaseId'] and
-            all(lease[key] == plan[key] for key in ('stageId', 'candidateSha256', 'configurationSha256', 'gatewayConfigurationSha256',
+            all(lease[key] == plan[key] for key in ('environment', 'profile', 'stageId', 'candidateSha256', 'configurationSha256', 'gatewayConfigurationSha256',
                 'gatewayProcessSha256', 'gatewayImageSha256', 'mode', 'receiver')) and
             lease['sourceWitnessSha256'] == plan['commandSha256'] and intent['stageId'] == plan['stageId'],
             'P2_INTERRUPTED_ORIGINAL_FAULT_LEASE_REQUIRED')
@@ -290,7 +290,7 @@ def load_retained(initial, selected, jobs, verify, command=None):
             effect.get('gatewayImageSha256') == selected['artifacts']['gateway']['image'].split(':')[-1] and
             one(effect.get('version')) and effect.get('stageId') == plan.get('stageId') and
             effect.get('profile') == plan.get('profile') == 'lifecycle-known-command-v1' and
-            effect.get('environment') == 'staging' and effect.get('status') == 'P2_TRANSPORT_FAULT_INJECTED',
+            effect.get('environment') == plan.get('environment') == 'staging' and effect.get('status') == 'P2_TRANSPORT_FAULT_INJECTED',
             'P2_INTERRUPTED_ORIGINAL_PROCESS_EFFECT_REQUIRED')
     fault_pins = original_fault_receipts(selection, selected, plan, effect)
     original_gateway = settlement['gateway']
