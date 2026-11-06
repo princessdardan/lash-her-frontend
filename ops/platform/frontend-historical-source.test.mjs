@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   historicalSourceSha256 as hash, verifiedSourceRequirements,
   verifyHistoricalFrontendSourceProfile, prepareHistoricalSourceOriginalConfiguration as prepare,
+  historicalSourceOriginalValueKeys,
   historicalSourceSqlCredentialQueryPlan, observeHistoricalSourceSqlCredentials as observe,
   deriveHistoricalSourceCapabilityClosures as derive, historicalSourceAlternateStoreQueryPlan as storePlan, observeHistoricalSourceAlternateStores as stores,
 } from "./frontend-historical-source.mjs";
@@ -19,16 +20,17 @@ const keys = ["BACKUP_RESTORE_DATABASE_URL", "DATABASE_URL", "STAGING_DATABASE_U
 const database = { database: "frontend_historical_owned", major: 16, parentPid: 101, markers: ["1001", "1002", "1003", "1004"] };
 
 function originalFixture(environment = {}, options = {}) {
-  const keyCatalog = Object.keys(environment).sort(), sourceCommit = options.sourceCommit ?? c07;
+  const keyCatalog = [...(options.keyCatalog ?? Object.keys(environment))].sort(), sourceCommit = options.sourceCommit ?? c07;
   const provenance = { sourceCommit, surfaceSha256: hash(options.surface ?? "owned-surface"), configurationRecordSha256: hash(options.record ?? "owned-original-record"),
     kind: options.kind ?? "deployment", immutableReference: "owned-fixture/original-record-1", entrypoint: options.entrypoint ?? null, keyCatalogSha256: hash(keyCatalog),
     ...(options.selector ? { nonSecretSelectors: { APP_ENV: options.selector } } : {}) };
-  const databaseRoles = keys.filter(key => Object.hasOwn(environment, key)).map(key => ({ key, name: "owned_reader", oid: "16385" }));
-  return {
-    original: { sourceCommit, configurationRecordSha256: provenance.configurationRecordSha256, provenance, keyCatalog, environment: { ...environment } },
-    binding: { surfaceSha256: provenance.surfaceSha256, sourceCommit, configurationRecordSha256: provenance.configurationRecordSha256,
-      sourceConfiguration: { ...provenance, provenanceSha256: hash(provenance), databaseRoles } },
-  };
+  const databaseRoles = keys.filter(key => keyCatalog.includes(key)).map(key => ({ key, name: "owned_reader", oid: "16385" }));
+  const original = { sourceCommit, configurationRecordSha256: provenance.configurationRecordSha256, provenance, keyCatalog, environment: {} };
+  const binding = { surfaceSha256: provenance.surfaceSha256, sourceCommit, configurationRecordSha256: provenance.configurationRecordSha256,
+    providerCredentials: options.providerCredentials ?? [], sourceConfiguration: { ...provenance, provenanceSha256: hash(provenance), databaseRoles } };
+  const source = verifiedSourceRequirements(repository, sourceCommit), required = historicalSourceOriginalValueKeys(source, binding, original);
+  original.environment = Object.fromEntries(required.filter(key => Object.hasOwn(environment, key)).map(key => [key, environment[key]]));
+  return { original, binding, requiredValueKeys: required };
 }
 function sqlPeer(changes = {}) {
   return { connection: { stream: { encrypted: true, authorized: true } },
@@ -95,9 +97,11 @@ test("different preview source receives facts and unresolved capabilities rather
   }
 });
 
-test("pure original-config preflight binds source/surface/provenance/full sorted catalog before any connection", () => {
+test("pure original-config preflight binds source/surface/provenance/full sorted catalog and exact partial values before any connection", () => {
   const fixture = originalFixture({ DATABASE_URL: ownedUrl });
-  assert.deepEqual(prepare(requirements, fixture.binding, fixture.original).configuredSqlKeys, ["DATABASE_URL"]);
+  assert.deepEqual(prepare(requirements, fixture.binding, fixture.original), { version: 1, sourceCommit: c07, surfaceSha256: fixture.binding.surfaceSha256,
+    configurationRecordSha256: fixture.binding.configurationRecordSha256, provenanceSha256: fixture.binding.sourceConfiguration.provenanceSha256,
+    configuredSqlKeys: ["DATABASE_URL"], requiredValueKeys: ["DATABASE_URL"], databaseRoles: fixture.binding.sourceConfiguration.databaseRoles });
   for (const mutate of [f => { f.binding.surfaceSha256 = hash("other"); }, f => { f.original.sourceCommit = "0".repeat(40); },
     f => { f.original.environment.EXTRA_KEY = "extra"; }, f => { f.original.keyCatalog.push("MISSING_KEY"); },
     f => { f.binding.sourceConfiguration.databaseRoles = []; }, f => { f.binding.sourceConfiguration.databaseRoles.push({ ...f.binding.sourceConfiguration.databaseRoles[0] }); },
@@ -105,6 +109,41 @@ test("pure original-config preflight binds source/surface/provenance/full sorted
     const changed = structuredClone(fixture); mutate(changed); assert.throws(() => prepare(requirements, changed.binding, changed.original), rejected);
   }
   assert.throws(() => prepare(structuredClone(requirements), fixture.binding, fixture.original), rejected);
+});
+
+test("the 228-name C07 catalog needs only the exact 14 source-selected values", () => {
+  const catalogs = JSON.parse(readFileSync(new URL("../../docs/api-integration/baselines/2026-11-06-vercel-deployment-key-catalogs/key-name-sets.json", import.meta.url), "utf8"));
+  const keyCatalog = Object.values(catalogs.sets).find(keys => keys.length === 228); assert.ok(keyCatalog);
+  const providerCredentials = ["squareRetiredToken", "resendRetiredToken", "chitchatsRetiredToken", "googleIdentityRetiredSecret", "googleCalendarRetiredSecret", "highlevelRetiredToken"]
+    .map((runtimeKey, index) => ({ runtimeKey, providerSurfaceSha256: String(index + 1).repeat(64) }));
+  const values = { DATABASE_URL: ownedUrl, KV_REST_API_URL: "https://owned-redis.invalid/", KV_REST_API_TOKEN: "owned-redis-token",
+    VERCEL_ENV: "production", VERCEL_TARGET_ENV: "production", SQUARE_ACCESS_TOKEN: "owned-square-token", SQUARE_ENVIRONMENT: "sandbox",
+    SQUARE_LOCATION_ID: "owned-location", SQUARE_APPLICATION_ID: "owned-application", RESEND_API_KEY: "owned-resend-token",
+    AUTH_GOOGLE_SECRET: "owned-identity-secret", AUTH_GOOGLE_ID: "owned-identity-client", GOOGLE_CLIENT_SECRET: "owned-calendar-secret",
+    GOOGLE_CLIENT_ID: "owned-calendar-client" };
+  const fixture = originalFixture(values, { keyCatalog, selector: "staging", providerCredentials });
+  assert.equal(fixture.original.keyCatalog.length, 228); assert.deepEqual(fixture.requiredValueKeys, Object.keys(values).sort());
+  assert.equal(Object.keys(fixture.original.environment).length, 14);
+  assert.deepEqual(prepare(requirements, fixture.binding, fixture.original).requiredValueKeys, Object.keys(values).sort());
+  const extra = structuredClone(fixture); extra.original.environment.AUTH_SECRET = "must-not-be-collected";
+  assert.throws(() => prepare(requirements, extra.binding, extra.original), rejected);
+});
+
+test("catalog-present required values refuse when omitted while presence-only keys remain unresolved without values", async () => {
+  for (const fixture of [
+    originalFixture({}, { keyCatalog: ["DATABASE_URL"] }),
+    originalFixture({}, { keyCatalog: ["KV_REST_API_TOKEN", "KV_REST_API_URL"] }),
+    originalFixture({}, { keyCatalog: ["RESEND_API_KEY"], providerCredentials: [{ runtimeKey: "resendRetiredToken", providerSurfaceSha256: "1".repeat(64) }] }),
+    originalFixture({ SQUARE_ACCESS_TOKEN: "owned" }, { keyCatalog: ["APP_ENV", "SQUARE_ACCESS_TOKEN", "SQUARE_APPLICATION_ID", "SQUARE_ENVIRONMENT", "SQUARE_LOCATION_ID"], selector: "staging",
+      providerCredentials: [{ runtimeKey: "squareRetiredToken", providerSurfaceSha256: "2".repeat(64) }] }),
+  ]) assert.throws(() => prepare(requirements, fixture.binding, fixture.original), rejected);
+  const presenceOnly = originalFixture({}, { keyCatalog: ["AUTH_SECRET", "SANITY_WEBHOOK_SECRET"] });
+  assert.deepEqual(presenceOnly.original.environment, {});
+  const sql = await collect(presenceOnly), result = derive(requirements, presenceOnly.binding, presenceOnly.original, sql);
+  for (const family of ["google.identity", "google.oauth", "sanity.callbacks"])
+    assert.ok(result.unresolvedFrontendSqlFamilyIds.includes(family), family);
+  assert.ok(result.unresolvedExternalCapabilityFamilyIds.includes("sanity.editorial"));
+  assert.ok(result.unresolvedFamilyIds.includes("sanity.editorial"));
 });
 
 test("actual reducer pipeline closes an absent original capability with exact requirement and context bindings", async () => {
@@ -165,9 +204,9 @@ test("post-observation private configuration or role changes invalidate the proo
   const fixture = originalFixture({ DATABASE_URL: ownedUrl, SQUARE_ACCESS_TOKEN: "owned-synthetic-token" });
   const sql = await collect(fixture, new Map([["DATABASE_URL", sqlPeer()]]));
   assert.doesNotMatch(JSON.stringify(sql), /owned-synthetic-password|owned-synthetic-token|postgresql:/u);
-  fixture.original.environment.SQUARE_ACCESS_TOKEN = "changed";
+  fixture.original.environment.DATABASE_URL = "changed";
   assert.throws(() => derive(requirements, fixture.binding, fixture.original, sql), rejected);
-  fixture.original.environment.SQUARE_ACCESS_TOKEN = "owned-synthetic-token";
+  fixture.original.environment.DATABASE_URL = ownedUrl;
   fixture.binding.sourceConfiguration.databaseRoles[0].oid = "12345";
   assert.throws(() => derive(requirements, fixture.binding, fixture.original, sql), rejected);
 });
@@ -196,9 +235,9 @@ test("manual template mutation scope and original staging broadcast guard use ch
     assert.equal(closed("resend.events"), false);
   }
   const invalid = originalFixture({ APP_ENV: "production" }, { selector: "staging" });
+  invalid.original.provenance.nonSecretSelectors.APP_ENV = "production";
   assert.throws(() => prepare(requirements, invalid.binding, invalid.original), rejected);
-  const unsupported = originalFixture({}, { kind: "direct-caller", entrypoint: "ops/unknown.mjs" });
-  assert.throws(() => prepare(requirements, unsupported.binding, unsupported.original), rejected);
+  assert.throws(() => originalFixture({}, { kind: "direct-caller", entrypoint: "ops/unknown.mjs" }), rejected);
 });
 
 

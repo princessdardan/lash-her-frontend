@@ -33,10 +33,11 @@ export async function observeFrontendHistoricalSourceContexts(context, bindings,
       const source = frontendHistoricalSourceRequirements(binding);
       const prepared = prepareHistoricalSourceOriginalConfiguration(source, binding, original);
       const pin = `${context.plan.actionId}:${surface.surfaceSha256}:${binding.configurationRecordSha256}`;
-      const values = Object.entries(original.environment);
+      const values = Object.entries(original.environment), catalog = [...original.keyCatalog];
       if (pinned.has(pin)) {
-        const before = pinned.get(pin); demand(before.length === values.length && before.every(([key, value]) => original.environment[key] === value));
-      } else pinned.set(pin, values);
+        const before = pinned.get(pin); demand(JSON.stringify(before.catalog) === JSON.stringify(catalog) && before.values.length === values.length &&
+          before.values.every(([key, value]) => original.environment[key] === value));
+      } else pinned.set(pin, { catalog, values });
       const markers = Array.from({ length: 4 }, () => (randomBytes(8).readBigUInt64BE() & 0x7fffffffffffffffn).toString());
       const clients = new Map(), physical = new Map(), locks = [], facts = [];
       let failed = false;
@@ -95,29 +96,32 @@ export async function observeFrontendHistoricalSourceContexts(context, bindings,
           const deployment = bindings.relatedProjects?.find(project => project.projectId === surface.identity.projectId)?.deployments.find(row => row.deploymentId === surface.identity.deploymentId);
           demand(deployment && (deployment.target !== "production" || facts.every(row => row.sameSelectedPhysicalDatabase === false)));
         }
+        const keyCatalog = new Set(original.keyCatalog);
         const credentialKeys = { squareRetiredToken: "SQUARE_ACCESS_TOKEN", resendRetiredToken: "RESEND_API_KEY",
           chitchatsRetiredToken: "CHITCHATS_ACCESS_TOKEN",
           googleIdentityRetiredSecret: "AUTH_GOOGLE_SECRET", googleCalendarRetiredSecret: "GOOGLE_CLIENT_SECRET" };
-        const stagedOriginal = binding.sourceConfiguration.nonSecretSelectors?.APP_ENV === "staging" && original.environment.APP_ENV === "staging";
+        const stagedOriginal = binding.sourceConfiguration.nonSecretSelectors?.APP_ENV === "staging" && original.provenance.nonSecretSelectors?.APP_ENV === "staging";
         const originalSelection = key => {
           if (!stagedOriginal) return false;
           const env = original.environment;
-          if (key === "squareRetiredToken") return typeof bindings.squareRetirement?.locationId === "string" &&
+          if (key === "squareRetiredToken") return ["SQUARE_ENVIRONMENT", "SQUARE_LOCATION_ID", "SQUARE_APPLICATION_ID"].every(name => keyCatalog.has(name)) &&
+            typeof bindings.squareRetirement?.locationId === "string" &&
             typeof bindings.squareRetirement?.applicationId === "string" && env.SQUARE_ENVIRONMENT === "sandbox" &&
             env.SQUARE_LOCATION_ID === bindings.squareRetirement?.locationId && env.SQUARE_APPLICATION_ID === bindings.squareRetirement?.applicationId;
-          if (key === "chitchatsRetiredToken") return typeof bindings.chitchatsRetirement?.clientId === "string" && env.CHITCHATS_ENVIRONMENT === "staging" &&
+          if (key === "chitchatsRetiredToken") return ["CHITCHATS_ENVIRONMENT", "CHITCHATS_CLIENT_ID"].every(name => keyCatalog.has(name)) &&
+            typeof bindings.chitchatsRetirement?.clientId === "string" && env.CHITCHATS_ENVIRONMENT === "staging" &&
             env.CHITCHATS_CLIENT_ID === bindings.chitchatsRetirement?.clientId;
           if (key === "resendRetiredToken") return bindings.resendRetirement?.domainName === "mail.staging.lashher.com";
-          if (key === "googleIdentityRetiredSecret") return typeof bindings.googleRetirement?.clients?.identity === "string" &&
+          if (key === "googleIdentityRetiredSecret") return keyCatalog.has("AUTH_GOOGLE_ID") && typeof bindings.googleRetirement?.clients?.identity === "string" &&
             env.AUTH_GOOGLE_ID === bindings.googleRetirement.clients.identity;
-          if (key === "googleCalendarRetiredSecret") return typeof bindings.googleRetirement?.clients?.calendar === "string" &&
+          if (key === "googleCalendarRetiredSecret") return keyCatalog.has("GOOGLE_CLIENT_ID") && typeof bindings.googleRetirement?.clients?.calendar === "string" &&
             env.GOOGLE_CLIENT_ID === bindings.googleRetirement.clients.calendar &&
-            (Object.hasOwn(env, "GOOGLE_CALENDAR_ID") ? Boolean(env.GOOGLE_CALENDAR_ID) && sourceHash(env.GOOGLE_CALENDAR_ID) === bindings.googleRetirement.legacyCalendarSha256 : bindings.googleRetirement.legacyCalendarSha256 === null);
+            (keyCatalog.has("GOOGLE_CALENDAR_ID") ? Boolean(env.GOOGLE_CALENDAR_ID) && sourceHash(env.GOOGLE_CALENDAR_ID) === bindings.googleRetirement.legacyCalendarSha256 : bindings.googleRetirement.legacyCalendarSha256 === null);
           return false;
         };
         const providerCredentialBindings = binding.providerCredentials.map(row => ({ ...row,
-          originalCredentialEqualityVerified: typeof privateRuntime[row.runtimeKey] === "string" && privateRuntime[row.runtimeKey].length > 0 &&
-            original.environment[credentialKeys[row.runtimeKey]] === privateRuntime[row.runtimeKey],
+          originalCredentialEqualityVerified: keyCatalog.has(credentialKeys[row.runtimeKey]) && typeof privateRuntime[row.runtimeKey] === "string" &&
+            privateRuntime[row.runtimeKey].length > 0 && original.environment[credentialKeys[row.runtimeKey]] === privateRuntime[row.runtimeKey],
           originalProviderSelectionVerified: originalSelection(row.runtimeKey) }));
         result.bindings.push({ surfaceSha256: binding.surfaceSha256, sourceCommit: binding.sourceCommit,
           configurationRecordSha256: binding.configurationRecordSha256, provenanceSha256: binding.sourceConfiguration.provenanceSha256,

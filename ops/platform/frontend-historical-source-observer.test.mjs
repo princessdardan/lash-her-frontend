@@ -1,21 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { historicalSourceSha256 as hash } from "./frontend-historical-source.mjs";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { historicalSourceSha256 as hash, historicalSourceOriginalValueKeys, verifiedSourceRequirements } from "./frontend-historical-source.mjs";
 import { observeFrontendHistoricalSourceContexts, observeFrontendHistoricalSourceIntentCounts } from "./frontend-historical-source-observer.mjs";
 const commit = "b99d4f346696f897fa6a6729dfcc52d6503fe8d6";
-function fixture(environment = {}) {
+const repository = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), requirements = verifiedSourceRequirements(repository, commit);
+function fixture(environment = {}, options = {}) {
   const surfaceSha256 = hash("owned-original-source-surface"), configurationRecordSha256 = hash("owned-original-source-record");
-  const keyCatalog = Object.keys(environment).sort(), provenance = { sourceCommit: commit, surfaceSha256, configurationRecordSha256,
-    kind: "deployment", immutableReference: "owned:immutable-source-configuration", entrypoint: null, keyCatalogSha256: hash(keyCatalog) };
+  const keyCatalog = [...(options.keyCatalog ?? Object.keys(environment))].sort(), provenance = { sourceCommit: commit, surfaceSha256, configurationRecordSha256,
+    kind: "deployment", immutableReference: "owned:immutable-source-configuration", entrypoint: null, keyCatalogSha256: hash(keyCatalog),
+    ...(options.selector ? { nonSecretSelectors: { APP_ENV: options.selector } } : {}) };
   const role = { key: "DATABASE_URL", name: "owned_reader", oid: "123" };
-  const binding = { surfaceSha256, sourceCommit: commit, configurationRecordSha256, providerCredentials: [],
+  const binding = { surfaceSha256, sourceCommit: commit, configurationRecordSha256, providerCredentials: options.providerCredentials ?? [],
     sourceConfiguration: { ...provenance, provenanceSha256: hash(provenance), databaseRoles: keyCatalog.includes("DATABASE_URL") ? [role] : [] } };
-  const original = { sourceCommit: commit, configurationRecordSha256, provenance, keyCatalog, environment };
+  const original = { sourceCommit: commit, configurationRecordSha256, provenance, keyCatalog, environment: {} };
+  const requiredValueKeys = historicalSourceOriginalValueKeys(requirements, binding, original);
+  original.environment = Object.fromEntries(requiredValueKeys.filter(key => Object.hasOwn(environment, key)).map(key => [key, environment[key]]));
   const calls = [], parent = { async query(sql) { calls.push(sql); return { rows: sql.includes("pg_backend_pid") ? [{ pid: 101 }] : sql.includes("pg_advisory_unlock") ? [{ unlocked: true }] : [{ count: 4 }] }; } };
   const context = { getProviderContext: async () => {}, databaseClient: parent, verifyLockedSession: async () => {},
     plan: { actionId: "owned-source-observer", sourceCommit: "a".repeat(40), targetSha256: hash("owned-target"), providerBindingsSha256: hash("owned-bindings"), historicalLogins: { retiredLogins: [role] } } };
   const bindings = { projectId: "owned-stage", surfaces: [{ surfaceSha256, kind: "deployment", identity: { provider: "vercel", projectId: "owned-stage", deploymentId: "dpl_owned" } }], historicalRuntimeBindings: [binding] };
-  return { context, bindings, privateRuntime: { historicalRuntimeConfigurations: { [surfaceSha256]: original } }, original, binding, calls };
+  return { context, bindings, privateRuntime: { historicalRuntimeConfigurations: { [surfaceSha256]: original } }, original, binding, calls, requiredValueKeys };
 }
 
 test("actual checked C07 source and immutable empty original catalog produce only source-owned per-surface closures", async () => {
@@ -43,11 +49,8 @@ test("present empty original SQL key and substituted immutable values refuse bef
 
 test("foreign-preview capability selection uses reviewed original staging selectors as well as private credential equality", async () => {
   for (const business of ["staging", "production"]) {
-    const f = fixture({ APP_ENV: business, RESEND_API_KEY: "owned-original-provider-token" });
-    f.original.provenance.nonSecretSelectors = { APP_ENV: business };
-    f.binding.sourceConfiguration.nonSecretSelectors = { APP_ENV: business };
-    f.binding.sourceConfiguration.provenanceSha256 = hash(f.original.provenance);
-    f.binding.providerCredentials.push({ runtimeKey: "resendRetiredToken", providerSurfaceSha256: hash("owned-resend") });
+    const f = fixture({ RESEND_API_KEY: "owned-original-provider-token" }, { keyCatalog: ["APP_ENV", "RESEND_API_KEY"], selector: business,
+      providerCredentials: [{ runtimeKey: "resendRetiredToken", providerSurfaceSha256: hash("owned-resend") }] });
     f.bindings.resendRetirement = { domainName: "mail.staging.lashher.com" };
     f.privateRuntime.resendRetiredToken = "owned-original-provider-token";
     const result = await observeFrontendHistoricalSourceContexts(f.context, f.bindings, f.privateRuntime);
@@ -55,6 +58,29 @@ test("foreign-preview capability selection uses reviewed original staging select
     assert.equal(credential.originalCredentialEqualityVerified, true);
     assert.equal(credential.originalProviderSelectionVerified, business === "staging");
   }
+});
+
+test("catalog-present missing provider values refuse while catalog absence remains an explicit false binding", async () => {
+  const row = { runtimeKey: "resendRetiredToken", providerSurfaceSha256: hash("owned-resend") };
+  const missing = fixture({}, { keyCatalog: ["APP_ENV", "RESEND_API_KEY"], selector: "staging", providerCredentials: [row] });
+  let connections = 0;
+  await assert.rejects(observeFrontendHistoricalSourceContexts(missing.context, missing.bindings, missing.privateRuntime, { createClient() { connections++; } }));
+  assert.equal(connections, 0); assert.equal(missing.calls.length, 0);
+  const absent = fixture({}, { keyCatalog: ["APP_ENV"], selector: "staging", providerCredentials: [row] });
+  absent.bindings.resendRetirement = { domainName: "mail.staging.lashher.com" }; absent.privateRuntime.resendRetiredToken = "owned-current-token";
+  const result = await observeFrontendHistoricalSourceContexts(absent.context, absent.bindings, absent.privateRuntime);
+  const credential = result.bindings[0].providerCredentialBindings[0];
+  assert.equal(credential.originalCredentialEqualityVerified, false); assert.equal(credential.originalProviderSelectionVerified, true);
+});
+
+test("only source-selected values are pinned and changing one invalidates a repeated observation", async () => {
+  const row = { runtimeKey: "resendRetiredToken", providerSurfaceSha256: hash("owned-resend") };
+  const f = fixture({ RESEND_API_KEY: "owned-original-provider-token" }, { keyCatalog: ["APP_ENV", "AUTH_SECRET", "RESEND_API_KEY", "SANITY_WEBHOOK_SECRET"],
+    selector: "staging", providerCredentials: [row] });
+  f.bindings.resendRetirement = { domainName: "mail.staging.lashher.com" }; f.privateRuntime.resendRetiredToken = "owned-original-provider-token";
+  assert.deepEqual(f.requiredValueKeys, ["RESEND_API_KEY"]); await observeFrontendHistoricalSourceContexts(f.context, f.bindings, f.privateRuntime);
+  f.original.environment.RESEND_API_KEY = "changed";
+  await assert.rejects(observeFrontendHistoricalSourceContexts(f.context, f.bindings, f.privateRuntime));
 });
 
 test("fixed source intent tables are read only with bounded counts, and absent tables remain unknown", async () => {

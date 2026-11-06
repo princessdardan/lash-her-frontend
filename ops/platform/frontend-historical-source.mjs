@@ -118,7 +118,16 @@ export function verifiedSourceRequirements(repository, sourceCommit) {
   } catch { throw refusal(); }
 }
 
-function originalConfiguration(requirements, binding, original) {
+const providerCredentialValueKeys = Object.freeze({ squareRetiredToken: "SQUARE_ACCESS_TOKEN", resendRetiredToken: "RESEND_API_KEY",
+  chitchatsRetiredToken: "CHITCHATS_ACCESS_TOKEN", googleIdentityRetiredSecret: "AUTH_GOOGLE_SECRET",
+  googleCalendarRetiredSecret: "GOOGLE_CLIENT_SECRET" });
+const providerSelectorValueKeys = Object.freeze({ squareRetiredToken: ["SQUARE_ENVIRONMENT", "SQUARE_LOCATION_ID", "SQUARE_APPLICATION_ID"],
+  chitchatsRetiredToken: ["CHITCHATS_ENVIRONMENT", "CHITCHATS_CLIENT_ID"], googleIdentityRetiredSecret: ["AUTH_GOOGLE_ID"],
+  googleCalendarRetiredSecret: ["GOOGLE_CLIENT_ID"] });
+const redisCredentialKeys = Object.freeze(["KV_REST_API_URL", "KV_REST_API_TOKEN"]);
+const redisLabelKeys = Object.freeze(["VERCEL_TARGET_ENV", "VERCEL_ENV"]);
+
+function originalMetadata(requirements, binding, original) {
   demand(proofs.has(requirements) && binding?.sourceCommit === requirements.sourceCommit && digest(binding.surfaceSha256) && digest(binding.configurationRecordSha256));
   const selected = binding.sourceConfiguration, provenance = original?.provenance;
   demand(selected && original.sourceCommit === binding.sourceCommit && original.configurationRecordSha256 === binding.configurationRecordSha256 && provenance &&
@@ -129,15 +138,46 @@ function originalConfiguration(requirements, binding, original) {
     historicalSourceSha256(provenance) === selected.provenanceSha256);
   demand(Array.isArray(original.keyCatalog) && original.keyCatalog.every(key => typeof key === "string" && /^[A-Za-z_][A-Za-z0-9_]{0,191}$/u.test(key)) &&
     JSON.stringify(original.keyCatalog) === JSON.stringify([...new Set(original.keyCatalog)].sort()) && historicalSourceSha256(original.keyCatalog) === selected.keyCatalogSha256);
-  demand(original.environment && typeof original.environment === "object" && !Array.isArray(original.environment) &&
-    JSON.stringify(Object.keys(original.environment).sort()) === JSON.stringify(original.keyCatalog) && Object.values(original.environment).every(value => typeof value === "string") &&
-    Object.values(Object.getOwnPropertyDescriptors(original.environment)).every(property => "value" in property));
+  demand(JSON.stringify(provenance.nonSecretSelectors ?? null) === JSON.stringify(selected.nonSecretSelectors ?? null));
+  const catalog = new Set(original.keyCatalog);
   if (provenance.nonSecretSelectors !== undefined) demand(provenance.nonSecretSelectors && typeof provenance.nonSecretSelectors === "object" &&
     !Array.isArray(provenance.nonSecretSelectors) && Object.keys(provenance.nonSecretSelectors).every(key => key === "APP_ENV") &&
-    Object.entries(provenance.nonSecretSelectors).every(([key, value]) => ["local", "staging", "production"].includes(value) && Object.hasOwn(original.environment, key) && original.environment[key] === value));
+    Object.entries(provenance.nonSecretSelectors).every(([key, value]) => ["local", "staging", "production"].includes(value) && catalog.has(key)));
   if (selected.kind === "deployment") demand(selected.entrypoint === null);
   else demand(requirements.manualCredentialProfiles.includes(selected.entrypoint));
-  return { selected, environment: original.environment };
+  return { selected, provenance, keyCatalog: original.keyCatalog, catalog };
+}
+
+function requiredOriginalValueKeys(requirements, binding, metadata) {
+  const { catalog, provenance } = metadata, required = new Set(requirements.sqlCredentialRequirements.filter(row => catalog.has(row.key)).map(row => row.key));
+  if (redisCredentialKeys.every(key => catalog.has(key))) {
+    for (const key of redisCredentialKeys) required.add(key);
+    for (const key of redisLabelKeys) if (catalog.has(key)) required.add(key);
+  }
+  const staged = provenance.nonSecretSelectors?.APP_ENV === "staging";
+  demand(binding.providerCredentials === undefined || Array.isArray(binding.providerCredentials));
+  for (const row of binding.providerCredentials ?? []) {
+    const credential = providerCredentialValueKeys[row?.runtimeKey];
+    if (credential && catalog.has(credential)) required.add(credential);
+    if (!staged) continue;
+    const selectors = providerSelectorValueKeys[row?.runtimeKey];
+    if (selectors?.every(key => catalog.has(key))) for (const key of selectors) required.add(key);
+    if (row?.runtimeKey === "googleCalendarRetiredSecret" && catalog.has("GOOGLE_CLIENT_ID") && catalog.has("GOOGLE_CALENDAR_ID")) required.add("GOOGLE_CALENDAR_ID");
+  }
+  return [...required].sort();
+}
+
+export function historicalSourceOriginalValueKeys(requirements, binding, original) {
+  try { return freeze(requiredOriginalValueKeys(requirements, binding, originalMetadata(requirements, binding, original))); }
+  catch { throw refusal(); }
+}
+
+function originalConfiguration(requirements, binding, original) {
+  const metadata = originalMetadata(requirements, binding, original), requiredValueKeys = requiredOriginalValueKeys(requirements, binding, metadata);
+  demand(original.environment && typeof original.environment === "object" && !Array.isArray(original.environment) &&
+    JSON.stringify(Object.keys(original.environment).sort()) === JSON.stringify(requiredValueKeys) && Object.values(original.environment).every(value => typeof value === "string") &&
+    Object.values(Object.getOwnPropertyDescriptors(original.environment)).every(property => "value" in property));
+  return { ...metadata, values: original.environment, requiredValueKeys };
 }
 
 export function historicalSourceSqlCredentialQueryPlan(requirements) {
@@ -154,32 +194,32 @@ export function historicalSourceSqlCredentialQueryPlan(requirements) {
 
 export function prepareHistoricalSourceOriginalConfiguration(requirements, binding, original) {
   try {
-    const { selected, environment } = originalConfiguration(requirements, binding, original);
-    const configuredSqlKeys = requirements.sqlCredentialRequirements.filter(row => Object.hasOwn(environment, row.key)).map(row => row.key).sort();
+    const { selected, catalog, requiredValueKeys } = originalConfiguration(requirements, binding, original);
+    const configuredSqlKeys = requirements.sqlCredentialRequirements.filter(row => catalog.has(row.key)).map(row => row.key).sort();
     demand(Array.isArray(selected.databaseRoles) && new Set(selected.databaseRoles.map(row => row.key)).size === selected.databaseRoles.length &&
       JSON.stringify(selected.databaseRoles.map(row => row.key).sort()) === JSON.stringify(configuredSqlKeys) &&
       selected.databaseRoles.every(row => configuredSqlKeys.includes(row.key) && /^[a-z_][a-z0-9_]{0,62}$/u.test(row.name) && /^[1-9][0-9]{0,9}$/u.test(row.oid)));
     return freeze({ version: 1, sourceCommit: requirements.sourceCommit, surfaceSha256: binding.surfaceSha256,
       configurationRecordSha256: binding.configurationRecordSha256, provenanceSha256: selected.provenanceSha256,
-      configuredSqlKeys, databaseRoles: selected.databaseRoles.map(row => ({ key: row.key, name: row.name, oid: row.oid })) });
+      configuredSqlKeys, requiredValueKeys, databaseRoles: selected.databaseRoles.map(row => ({ key: row.key, name: row.name, oid: row.oid })) });
   } catch { throw refusal(); }
 }
 
 export async function observeHistoricalSourceSqlCredentials(requirements, input) {
   try {
     const { binding, originalConfiguration: original, clientsByKey, verifySession } = input;
-    const { selected, environment: inputEnvironment } = originalConfiguration(requirements, binding, original), plan = historicalSourceSqlCredentialQueryPlan(requirements);
+    const { selected, catalog, values: inputValues, requiredValueKeys } = originalConfiguration(requirements, binding, original), plan = historicalSourceSqlCredentialQueryPlan(requirements);
     prepareHistoricalSourceOriginalConfiguration(requirements, binding, original);
-    const environment = Object.fromEntries(Object.entries(inputEnvironment));
+    const values = Object.fromEntries(Object.entries(inputValues));
     demand(clientsByKey instanceof Map && typeof verifySession === "function" &&
       (input.physicalDatabase || input.physicalDatabasesByKey instanceof Map));
     demand(Array.isArray(selected.databaseRoles) && new Set(selected.databaseRoles.map(row => row.key)).size === selected.databaseRoles.length);
     const databaseRolesSha256 = historicalSourceSha256(selected.databaseRoles);
     await verifySession();
-    demand(Object.keys(environment).every(key => original.environment[key] === environment[key]));
+    demand(requiredValueKeys.every(key => original.environment[key] === values[key]));
     const facts = [];
     for (const requirement of plan.credentials) {
-      const configured = Object.hasOwn(environment, requirement.key);
+      const configured = catalog.has(requirement.key);
       if (!configured) { demand(!clientsByKey.has(requirement.key)); facts.push({ ...requirement, disposition: "absent-from-immutable-original-key-catalog" }); continue; }
       const client = clientsByKey.get(requirement.key), role = selected.databaseRoles.find(row => row.key === requirement.key);
       const database = input.physicalDatabasesByKey?.get(requirement.key) ?? input.physicalDatabase;
@@ -188,7 +228,7 @@ export async function observeHistoricalSourceSqlCredentials(requirements, input)
         database.markers.every(value => typeof value === "string" && /^[1-9][0-9]{0,18}$/u.test(value)));
       demand(client && role && /^[a-z_][a-z0-9_]{0,62}$/u.test(role.name) && /^[1-9][0-9]{0,9}$/u.test(role.oid) &&
         client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true);
-      const url = new URL(environment[requirement.key]);
+      const url = new URL(values[requirement.key]);
       const parameters = client.connectionParameters;
       demand(["postgres:", "postgresql:"].includes(url.protocol) && decodeURIComponent(url.pathname.slice(1)) === database.database && decodeURIComponent(url.username) === role.name && url.password &&
         parameters?.host === url.hostname && parameters.port === Number(url.port || 5432) && parameters.database === database.database && parameters.user === role.name &&
@@ -200,17 +240,19 @@ export async function observeHistoricalSourceSqlCredentials(requirements, input)
       demand((await client.query(plan.markers, [database.parentPid, database.markers])).rows[0]?.count === 4); await verifySession(requirement.key);
       facts.push({ ...requirement, disposition: "original-credential-bound-to-physical-database", role: { name: role.name, oid: role.oid }, database: database.database, major: database.major });
     }
-    const configuredKeys = plan.credentials.filter(row => Object.hasOwn(environment, row.key)).map(row => row.key).sort();
+    const configuredKeys = plan.credentials.filter(row => catalog.has(row.key)).map(row => row.key).sort();
     demand(JSON.stringify([...clientsByKey.keys()].sort()) === JSON.stringify(configuredKeys) &&
       JSON.stringify(selected.databaseRoles.map(row => row.key).sort()) === JSON.stringify(configuredKeys));
     if (input.physicalDatabasesByKey) demand(JSON.stringify([...input.physicalDatabasesByKey.keys()].sort()) === JSON.stringify(configuredKeys));
     await verifySession();
-    demand(Object.keys(environment).every(key => original.environment[key] === environment[key]) && historicalSourceSha256(selected.databaseRoles) === databaseRolesSha256);
+    const current = originalConfiguration(requirements, binding, original);
+    demand(JSON.stringify(current.keyCatalog) === JSON.stringify([...catalog]) && requiredValueKeys.every(key => current.values[key] === values[key]) &&
+      historicalSourceSha256(selected.databaseRoles) === databaseRolesSha256);
     const result = freeze({ version: 1, sourceCommit: requirements.sourceCommit, sourceInventorySha256: requirements.sourceInventorySha256,
       requirementsSha256: requirements.requirementsSha256, surfaceSha256: binding.surfaceSha256, configurationRecordSha256: binding.configurationRecordSha256,
       provenanceSha256: selected.provenanceSha256, databaseRolesSha256, facts, evidenceSha256: historicalSourceSha256({ sourceCommit: requirements.sourceCommit,
         surfaceSha256: binding.surfaceSha256, configurationRecordSha256: binding.configurationRecordSha256, provenanceSha256: selected.provenanceSha256, databaseRolesSha256, facts }) });
-    sqlProofs.add(result); privateOriginalValues.set(result, environment);
+    sqlProofs.add(result); privateOriginalValues.set(result, { keyCatalog: [...catalog], values });
     privateSqlContexts.set(result, { ...input, clientsByKey: new Map(clientsByKey),
       physicalDatabase: input.physicalDatabase ? structuredClone(input.physicalDatabase) : undefined,
       physicalDatabasesByKey: input.physicalDatabasesByKey ? new Map([...input.physicalDatabasesByKey].map(([key, value]) => [key, structuredClone(value)])) : undefined });
@@ -220,11 +262,13 @@ export async function observeHistoricalSourceSqlCredentials(requirements, input)
 
 export function deriveHistoricalSourceCapabilityClosures(requirements, binding, original, sqlEvidence, storeEvidence) {
   try {
-    const { environment: currentEnvironment, selected } = originalConfiguration(requirements, binding, original);
+    const { keyCatalog, values: currentValues, selected } = originalConfiguration(requirements, binding, original);
     demand(sqlProofs.has(sqlEvidence) && sqlEvidence.sourceCommit === requirements.sourceCommit && sqlEvidence.requirementsSha256 === requirements.requirementsSha256 &&
       sqlEvidence.surfaceSha256 === binding.surfaceSha256 && sqlEvidence.configurationRecordSha256 === binding.configurationRecordSha256 && sqlEvidence.provenanceSha256 === selected.provenanceSha256);
-    const environment = privateOriginalValues.get(sqlEvidence);
-    demand(environment && Object.keys(environment).every(key => currentEnvironment[key] === environment[key]) && historicalSourceSha256(selected.databaseRoles) === sqlEvidence.databaseRolesSha256);
+    const retained = privateOriginalValues.get(sqlEvidence);
+    demand(retained && JSON.stringify(retained.keyCatalog) === JSON.stringify(keyCatalog) && Object.keys(retained.values).every(key => currentValues[key] === retained.values[key]) &&
+      historicalSourceSha256(selected.databaseRoles) === sqlEvidence.databaseRolesSha256);
+    const catalog = new Set(retained.keyCatalog);
     if (storeEvidence !== undefined) demand(storeProofs.has(storeEvidence) && storeEvidence.sqlEvidenceSha256 === sqlEvidence.evidenceSha256 &&
       storeEvidence.sourceCommit === requirements.sourceCommit && storeEvidence.surfaceSha256 === binding.surfaceSha256 &&
       storeEvidence.configurationRecordSha256 === binding.configurationRecordSha256 && storeEvidence.provenanceSha256 === selected.provenanceSha256);
@@ -234,13 +278,13 @@ export function deriveHistoricalSourceCapabilityClosures(requirements, binding, 
       const paths = family.configurationConditions[0]?.requiredCredentialPaths ?? [];
       // A retained key with a masked, empty or invalid value is not absence.
       // Only its omission from the bound original full key catalog qualifies.
-      const noCapability = paths.length > 0 && paths.every(path => path.some(key => !Object.hasOwn(environment, key)));
+      const noCapability = paths.length > 0 && paths.every(path => path.some(key => !catalog.has(key)));
       const sourceConditions = family.configurationConditions[0];
       const executionClosed = sourceConditions?.mutationExecutions && !sourceConditions.mutationExecutions.some(execution =>
         execution.kind === selected.kind && (execution.kind === "deployment" || execution.entrypoint === selected.entrypoint));
       const guarded = sourceConditions?.originalSelectorClosures?.some(condition => condition.kind === selected.kind &&
-        original.provenance.nonSecretSelectors?.[condition.key] === condition.equals && environment[condition.key] === condition.equals);
-      const predicate = privateSqlPredicate(requirements, family, selected, environment, sqlEvidence);
+        original.provenance.nonSecretSelectors?.[condition.key] === condition.equals);
+      const predicate = privateSqlPredicate(requirements, family, selected, catalog, sqlEvidence);
       // Concrete retained grants/events/continuations are contradictions, never a
       // shortcut from a current empty store to historical request completeness.
       const contradicted = family.provider === "google" && storeEvidence?.hasRetainedGoogleState;
@@ -272,13 +316,13 @@ export function deriveHistoricalSourceCapabilityClosures(requirements, binding, 
 
 const authSigningKeys = ["AUTH_SECRET", "NEXTAUTH_SECRET", "AUTH_SECRET_1", "AUTH_SECRET_2", "AUTH_SECRET_3"];
 const calendarClientKeys = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI", "BOOKING_ADMIN_SETUP_SECRET", "KV_REST_API_URL", "KV_REST_API_TOKEN"];
-function privateSqlPredicate(requirements, family, selected, environment, sqlEvidence) {
+function privateSqlPredicate(requirements, family, selected, catalog, sqlEvidence) {
   const predicate = family.configurationConditions[0]?.privateSqlPredicate;
   if (!predicate) return false;
   // All admitted manual programs are individually source-reviewed. None imports
   // these six mutation paths; arbitrary direct helper/operator calls are refused.
   if (selected.kind === "direct-caller") return requirements.manualCredentialProfiles.includes(selected.entrypoint);
-  const absent = key => !Object.hasOwn(environment, key);
+  const absent = key => !catalog.has(key);
   const sqlAbsent = sqlEvidence.facts.every(row => row.disposition === "absent-from-immutable-original-key-catalog");
   const authBlocked = authSigningKeys.every(absent);
   const storesAbsent = sqlAbsent && ["KV_REST_API_URL", "KV_REST_API_TOKEN"].every(absent);
@@ -331,8 +375,8 @@ export async function observeHistoricalSourceAlternateStores(requirements, bindi
     // Also revalidates in-process branding, exact source/surface/original context,
     // unchanged private original values and original role metadata.
     deriveHistoricalSourceCapabilityClosures(requirements, binding, original, sqlEvidence);
-    const context = privateSqlContexts.get(sqlEvidence), environment = privateOriginalValues.get(sqlEvidence);
-    demand(context && environment);
+    const context = privateSqlContexts.get(sqlEvidence), retained = privateOriginalValues.get(sqlEvidence);
+    demand(context && retained); const catalog = new Set(retained.keyCatalog), values = retained.values;
     const plan = historicalSourceAlternateStoreQueryPlan(requirements);
     // Application rows may be read only from the selected parent-bound database.
     // Other original database credentials are metadata-only in this collector.
@@ -351,14 +395,14 @@ export async function observeHistoricalSourceAlternateStores(requirements, bindi
       return facts;
     };
     const readRedis = async () => {
-      const present = plan.redis.credentials.filter(key => Object.hasOwn(environment, key));
+      const present = plan.redis.credentials.filter(key => catalog.has(key));
       if (!present.length) return { disposition: "absent-from-immutable-original-key-catalog", observations: [] };
       // A partial, masked, empty or unavailable original store is uncertainty.
       demand(present.length === 2);
-      const token = environment.KV_REST_API_TOKEN, url = new URL(environment.KV_REST_API_URL);
+      const token = values.KV_REST_API_TOKEN, url = new URL(values.KV_REST_API_URL);
       demand(url.protocol === "https:" && !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash &&
         typeof token === "string" && token.length > 0 && !/[\r\n]/u.test(token));
-      const label = (environment.VERCEL_TARGET_ENV?.trim() || environment.VERCEL_ENV?.trim() || "development").toLowerCase();
+      const label = (values.VERCEL_TARGET_ENV?.trim() || values.VERCEL_ENV?.trim() || "development").toLowerCase();
       const observedRead = async command => {
         await context.verifySession();
         try { return await redisRead(url, token, command); } finally { await context.verifySession(); }
