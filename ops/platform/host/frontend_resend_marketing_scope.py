@@ -47,7 +47,8 @@ def _instant(value):
 def review(reviewed):
     value = reviewed.get("resendMarketing", reviewed) if isinstance(reviewed, dict) else None
     demand(isinstance(value, dict) and value.get("environment") == "staging" and
-        all(digest(value.get(key)) for key in ("databaseSnapshotSha256", "sourceInventorySha256", "requirementsSha256", "configurationSha256")),
+        isinstance(value.get("sourceCommit"), str) and re.fullmatch(r"[a-f0-9]{40}", value["sourceCommit"]) and
+        all(digest(value.get(key)) for key in ("surfaceSha256", "databaseSnapshotSha256", "sourceInventorySha256", "requirementsSha256", "configurationSha256")),
         "RESEND_MARKETING_REVIEW_REQUIRED")
     for key in ("segmentIdsBySource", "topicIdsBySource"):
         mapping = value.get(key)
@@ -130,14 +131,21 @@ def snapshot_sha256(actual):
 def _source(reviewed, requirements):
     demand(isinstance(requirements, dict) and requirements.get("status") == "FRONTEND_HISTORICAL_SOURCE_VERIFIED" and
         isinstance(requirements.get("sourceCommit"), str) and re.fullmatch(r"[a-f0-9]{40}", requirements["sourceCommit"]) and
-        all(requirements.get(key) == reviewed[key] for key in ("sourceInventorySha256", "requirementsSha256")), "RESEND_MARKETING_VERIFIED_SOURCE_REQUIRED")
+        all(requirements.get(key) == reviewed[key] for key in ("sourceCommit", "sourceInventorySha256", "requirementsSha256")), "RESEND_MARKETING_VERIFIED_SOURCE_REQUIRED")
+    demand(requirements.get("surfaceSha256") == reviewed["surfaceSha256"] and
+        requirements.get("configurationRecordSha256") == reviewed["configurationSha256"] and
+        digest(requirements.get("provenanceSha256")), "RESEND_MARKETING_VERIFIED_SURFACE_REQUIRED")
     rows = requirements.get("providerFamilies")
     demand(isinstance(rows, list), "RESEND_MARKETING_SOURCE_FAMILIES_REQUIRED")
     selected = {row.get("familyId"): row for row in rows if isinstance(row, dict) and row.get("familyId") in FAMILIES}
     demand(set(selected) == set(FAMILIES) and len([row for row in rows if isinstance(row, dict) and row.get("familyId") in FAMILIES]) == len(FAMILIES),
         "RESEND_MARKETING_SOURCE_FAMILIES_REQUIRED")
     closures = requirements.get("capabilityClosures", [])
-    demand(isinstance(closures, list), "RESEND_MARKETING_CAPABILITY_CLOSURES_REFUSED")
+    demand(isinstance(closures, list) and len(closures) <= len(rows) and all(isinstance(row, dict) and
+        isinstance(row.get("familyId"), str) for row in closures) and
+        len({row["familyId"] for row in closures}) == len(closures) and
+        {row["familyId"] for row in closures} <= {row.get("familyId") for row in rows},
+        "RESEND_MARKETING_CAPABILITY_CLOSURES_REFUSED")
     return selected, closures
 
 
@@ -155,17 +163,25 @@ def _requirements(family):
     return result
 
 
-def _closed(family_id, ids, family, closures, sql_ids):
-    demand(family.get("sourceDisposition") in ("reachable", "absent-from-verified-source"), "RESEND_MARKETING_SOURCE_DISPOSITION_REFUSED")
-    covered = set()
-    for row in closures:
-        if isinstance(row, dict) and row.get("familyId") == family_id:
-            demand(row.get("disposition") in ("no-capability-observed", "absent-from-verified-source") and
-                isinstance(row.get("requirementIds"), list) and isinstance(row.get("evidenceIds"), list) and row["evidenceIds"] and
-                all(digest(item) for item in row["evidenceIds"]) and
-                set(row["requirementIds"]) <= set(ids) | sql_ids, "RESEND_MARKETING_CAPABILITY_CLOSURE_REFUSED")
-            covered.update(row["requirementIds"])
-    return bool(ids) and set(ids) <= covered
+def _closed(family_id, ids, family, closures, sql_ids, requirements):
+    disposition = family.get("sourceDisposition")
+    demand(disposition in ("reachable", "absent-from-verified-source"), "RESEND_MARKETING_SOURCE_DISPOSITION_REFUSED")
+    matches = [row for row in closures if row["familyId"] == family_id]
+    if not matches:
+        return False
+    demand(len(matches) == 1, "RESEND_MARKETING_CAPABILITY_CLOSURE_REFUSED")
+    row = matches[0]
+    required = sorted(set(ids) | sql_ids)
+    evidence = row.get("evidenceIds")
+    source_evidence = {requirements[key] for key in
+        ("sourceInventorySha256", "requirementsSha256", "configurationRecordSha256", "provenanceSha256")}
+    demand(row.get("disposition") == ("absent-from-verified-source" if disposition == "absent-from-verified-source" else "no-capability-observed") and
+        all(row.get(key) == requirements[key] for key in
+            ("sourceCommit", "surfaceSha256", "configurationRecordSha256", "provenanceSha256")) and
+        row.get("requirementIds") == required and isinstance(evidence, list) and evidence and
+        all(digest(item) for item in evidence) and evidence == sorted(set(evidence)) and source_evidence <= set(evidence),
+        "RESEND_MARKETING_CAPABILITY_CLOSURE_REFUSED")
+    return True
 
 
 def _pagination(client, path):
@@ -233,11 +249,14 @@ def _reduce(reviewed, actual, before):
     All changed business state is retained in original/observed safe receipts.
     """
     current_hash = snapshot_sha256(actual)
+    original = None
+    if before is not None:
+        demand(isinstance(before, dict), "RESEND_MARKETING_ORIGINAL_SNAPSHOT_REQUIRED")
+        original = normalize_snapshot(before.get("databaseSnapshot", before))
+        demand(snapshot_sha256(original) == reviewed["databaseSnapshotSha256"], "RESEND_MARKETING_ORIGINAL_SNAPSHOT_REQUIRED")
     if current_hash == reviewed["databaseSnapshotSha256"]:
         return None
-    demand(before is not None, "RESEND_MARKETING_ORIGINAL_SNAPSHOT_REQUIRED")
-    original = normalize_snapshot(before.get("databaseSnapshot", before))
-    demand(snapshot_sha256(original) == reviewed["databaseSnapshotSha256"], "RESEND_MARKETING_ORIGINAL_SNAPSHOT_REQUIRED")
+    demand(original is not None, "RESEND_MARKETING_ORIGINAL_SNAPSHOT_REQUIRED")
     demand(actual["submissions"] == original["submissions"] and actual["campaigns"] == original["campaigns"],
         "RESEND_MARKETING_UNDECLARED_DATABASE_TRANSITION")
     old_consents = {row["id"]: row for row in original["consents"]}
@@ -303,33 +322,38 @@ def observe_scoped_effects(client, reviewed, actualRows, verifiedSourceRequireme
     actual = normalize_snapshot(actualRows)
     reducer = _reduce(selected, actual, before)
     ids = {key: _requirements(value) for key, value in source.items()}
-    sql_rows = verifiedSourceRequirements.get("sqlCredentialRequirements", [])
-    demand(isinstance(sql_rows, list), "RESEND_MARKETING_SQL_SOURCE_REQUIREMENTS_REFUSED")
-    sql_ids = {row.get("requirementId") for row in sql_rows if isinstance(row, dict)}
-    demand(all(isinstance(item, str) for item in sql_ids), "RESEND_MARKETING_SQL_SOURCE_REQUIREMENTS_REFUSED")
-    closed = {key: _closed(key, ids[key], value, closures, sql_ids) for key, value in source.items()}
+    sql_rows = verifiedSourceRequirements.get("sqlCredentialRequirements")
+    demand(isinstance(sql_rows, list) and len(sql_rows) <= 64 and all(isinstance(row, dict) and
+        isinstance(row.get("requirementId"), str) and re.fullmatch(r"[A-Za-z0-9._:-]{1,160}", row["requirementId"]) for row in sql_rows),
+        "RESEND_MARKETING_SQL_SOURCE_REQUIREMENTS_REFUSED")
+    sql_ids = {row["requirementId"] for row in sql_rows}
+    demand(len(sql_ids) == len(sql_rows), "RESEND_MARKETING_SQL_SOURCE_REQUIREMENTS_REFUSED")
+    closed = {key: _closed(key, ids[key], value, closures, sql_ids, verifiedSourceRequirements) for key, value in source.items()}
     # Original source/config closures plus complete empty SQL can prove that
     # this historical caller had no capability or effects, without obtaining an
     # unrelated replacement API key. No flag or caller-completion field selects it.
     source_closed = all(closed.values())
     sql_empty = all(not rows for rows in actual.values())
     if source_closed and sql_empty:
-        covered = sorted(item for values in ids.values() for item in values)
+        covered = sorted(set(item for values in ids.values() for item in values) | sql_ids)
         return {"provider": "resend", "status": "RESEND_MARKETING_EFFECTS_OBSERVED",
             "disposition": "source-inapplicable-and-effects-reconciled", "sourceInapplicable": True,
-            "sourceCommit": verifiedSourceRequirements["sourceCommit"], "sourceInventorySha256": selected["sourceInventorySha256"],
+            "sourceCommit": selected["sourceCommit"], "surfaceSha256": selected["surfaceSha256"],
+            "provenanceSha256": verifiedSourceRequirements["provenanceSha256"], "sourceInventorySha256": selected["sourceInventorySha256"],
             "requirementsSha256": selected["requirementsSha256"], "configurationSha256": selected["configurationSha256"],
             "originalDatabaseSnapshotSha256": selected["databaseSnapshotSha256"], "observedDatabaseSnapshotSha256": snapshot_sha256(actual),
             "databaseTransition": reducer, "families": [{"familyId": family, "sourceClosed": True, "unresolvedEffects": 0,
-                "paginationComplete": False, "coveredRequirementIds": ids[family], "missingRequirementIds": []} for family in FAMILIES],
+                "sourceClosureContradiction": False, "paginationComplete": False,
+                "coveredRequirementIds": sorted(set(ids[family]) | sql_ids), "missingRequirementIds": []} for family in FAMILIES],
             "coveredRequirementIds": covered, "missingRequirementIds": [], "effects": [], "contactCount": 0,
             "broadcastCount": 0, "marketingOfferCount": 0, "activeExecutions": 0, "unresolvedEffects": 0, "uncertainEffects": 0,
             "providerRequestsRequired": False, "sourceClosureContradiction": False, "complete": True}
     # Provider GET failures throw a sanitized error: they never produce zero.
     demand(client is not None and callable(getattr(client, "request", None)), "RESEND_MARKETING_PROVIDER_CLIENT_REQUIRED")
-    read_broadcasts = not closed["resend.broadcasts"] or bool(actual["campaigns"])
-    first = _provider_snapshot(client, read_broadcasts)
-    second = _provider_snapshot(client, read_broadcasts)
+    # Outside the strict no-provider branch, actual observations can contradict
+    # even a source-owned partial closure. Never hide those provider objects.
+    first = _provider_snapshot(client, True)
+    second = _provider_snapshot(client, True)
     demand(first == second, "RESEND_MARKETING_PROVIDER_CHANGED_DURING_OBSERVATION")
     contacts = {row["email_sha256"]: row for row in actual["contacts"]}
     demand(len(contacts) == len(actual["contacts"]), "RESEND_MARKETING_DATABASE_EMAIL_DUPLICATE")
@@ -427,28 +451,41 @@ def observe_scoped_effects(client, reviewed, actualRows, verifiedSourceRequireme
             recipients = value.get("to") if isinstance(value, dict) else None
             terminal = terminal and isinstance(recipients, list) and len(recipients) == 1 and row["email_sha256"] is not None and _email_hash(recipients[0]) == row["email_sha256"]
         offer_unknown += not terminal
+    contact_state = any(actual[key] for key in ("contacts", "submissions", "consents", "syncJobs")) or bool(first["contacts"])
+    relevant_nonempty = {
+        "resend.contacts": contact_state or bool(actual["outbox"]),
+        "resend.segments": contact_state or bool(actual["campaigns"]) or bool(first["broadcasts"]),
+        "resend.topics": contact_state,
+        "resend.events": contact_state,
+        "resend.broadcasts": bool(actual["campaigns"]) or bool(first["broadcasts"]),
+    }
+    contradictions = {family: closed[family] and relevant_nonempty[family] for family in FAMILIES}
     families, covered, missing = [], [], []
     for family in FAMILIES:
         # Untracked requests are not implicitly settled by an empty list. Only
         # original source/config proof may close such a requirement.
         untracked = source[family]["untrackedPotentialRequests"]
-        count = 0 if closed[family] else unknown[family] + len(untracked)
-        if family == "resend.contacts" and not closed[family]:
+        effective_closed = closed[family] and not contradictions[family]
+        # A closure may settle only an actually empty relevant scope. Retained
+        # intents and provider observations, including terminal ones, contradict
+        # source inapplicability and must never be forced back to zero.
+        count = unknown[family] + (0 if effective_closed else len(untracked))
+        if family == "resend.contacts":
             count += offer_unknown
-        if family == "resend.contacts" and source_closed and not sql_empty:
-            # A source-wide no-capability closure cannot erase retained intents.
-            count += 1
-        families.append({"familyId": family, "sourceClosed": closed[family], "unresolvedEffects": count,
-            "paginationComplete": True, "coveredRequirementIds": ids[family] if count == 0 else [],
+        if contradictions[family]:
+            count = max(1, count)
+        families.append({"familyId": family, "sourceClosed": effective_closed, "sourceClosurePresent": closed[family],
+            "sourceClosureContradiction": contradictions[family], "unresolvedEffects": count,
+            "paginationComplete": family != "resend.events", "coveredRequirementIds": ids[family] if count == 0 else [],
             "missingRequirementIds": [] if count == 0 else ids[family]})
         (covered if count == 0 else missing).extend(ids[family])
     total = sum(row["unresolvedEffects"] for row in families)
-    return {"provider": "resend", "status": "RESEND_MARKETING_EFFECTS_OBSERVED", "sourceCommit": verifiedSourceRequirements["sourceCommit"],
-        "sourceInventorySha256": selected["sourceInventorySha256"], "requirementsSha256": selected["requirementsSha256"],
+    return {"provider": "resend", "status": "RESEND_MARKETING_EFFECTS_OBSERVED", "sourceCommit": selected["sourceCommit"], "surfaceSha256": selected["surfaceSha256"],
+        "provenanceSha256": verifiedSourceRequirements["provenanceSha256"], "sourceInventorySha256": selected["sourceInventorySha256"], "requirementsSha256": selected["requirementsSha256"],
         "configurationSha256": selected["configurationSha256"], "originalDatabaseSnapshotSha256": selected["databaseSnapshotSha256"],
         "observedDatabaseSnapshotSha256": snapshot_sha256(actual), "databaseTransition": reducer,
         "families": families, "coveredRequirementIds": sorted(covered), "missingRequirementIds": sorted(missing),
         "effects": receipts, "contactCount": len(first["contacts"]), "broadcastCount": len(first["broadcasts"]),
         "marketingOfferCount": len(actual["outbox"]), "activeExecutions": leases, "unresolvedEffects": total,
-        "providerRequestsRequired": True, "sourceInapplicable": False, "sourceClosureContradiction": source_closed and not sql_empty,
+        "providerRequestsRequired": True, "sourceInapplicable": False, "sourceClosureContradiction": any(contradictions.values()),
         "uncertainEffects": total, "complete": total == 0 and leases == 0}

@@ -66,16 +66,30 @@ def offer():
 def requirements():
     return {"status": "FRONTEND_HISTORICAL_SOURCE_VERIFIED", "sourceCommit": "a" * 40,
         "sourceInventorySha256": "b" * 64, "requirementsSha256": "c" * 64,
+        "surfaceSha256": "e" * 64, "configurationRecordSha256": "d" * 64, "provenanceSha256": "f" * 64,
+        "sqlCredentialRequirements": [{"requirementId": "sql-credentials." + key} for key in
+            ("BACKUP_RESTORE_DATABASE_URL", "DATABASE_URL", "STAGING_DATABASE_URL", "TEST_DATABASE_URL")],
         "providerFamilies": [{"familyId": key, "sourceDisposition": "reachable", "configurationConditions": [], "sqlIntentRequirements":
             [{"requirementId": key + ".durable-intent"}], "untrackedPotentialRequests": []} for key in component.FAMILIES],
         "capabilityClosures": []}
 
 
 def reviewed(rows):
-    return {"environment": "staging", "databaseSnapshotSha256": component.snapshot_sha256(rows), "sourceInventorySha256": "b" * 64,
+    return {"environment": "staging", "sourceCommit": "a" * 40, "surfaceSha256": "e" * 64,
+        "databaseSnapshotSha256": component.snapshot_sha256(rows), "sourceInventorySha256": "b" * 64,
         "requirementsSha256": "c" * 64, "configurationSha256": "d" * 64,
         "segmentIdsBySource": {key: [SEGMENT] for key in component.SOURCES},
         "topicIdsBySource": {key: [TOPIC] for key in component.SOURCES}}
+
+
+def source_closure(source, family):
+    ids = {row["requirementId"] for key in ("configurationConditions", "sqlIntentRequirements", "untrackedPotentialRequests") for row in family[key]}
+    ids.update(row["requirementId"] for row in source["sqlCredentialRequirements"])
+    return {"familyId": family["familyId"], **{key: source[key] for key in
+        ("sourceCommit", "surfaceSha256", "configurationRecordSha256", "provenanceSha256")},
+        "disposition": "absent-from-verified-source" if family["sourceDisposition"] == "absent-from-verified-source" else "no-capability-observed",
+        "requirementIds": sorted(ids), "evidenceIds": sorted({source[key] for key in
+            ("sourceInventorySha256", "requirementsSha256", "configurationRecordSha256", "provenanceSha256")} | {"1" * 64})}
 
 
 class MarketingScopeTests(unittest.TestCase):
@@ -248,18 +262,15 @@ class MarketingScopeTests(unittest.TestCase):
         self.assertFalse(self.observe()["complete"])
         self.plan["flagsEnabled"] = False
         self.assertFalse(self.observe()["complete"])
-        self.source["capabilityClosures"] = [{"familyId": "resend.broadcasts", "disposition": "no-capability-observed",
-            "requirementIds": ["resend.broadcasts.durable-intent", "resend.broadcasts.untracked"], "evidenceIds": ["e" * 64]}]
+        self.source["capabilityClosures"] = [source_closure(self.source, family)]
         before_calls = len(self.calls)
         self.assertTrue(self.observe()["complete"])
-        self.assertFalse(any(path.startswith("/broadcasts") for _method, path in self.calls[before_calls:]))
+        self.assertTrue(any(path.startswith("/broadcasts") for _method, path in self.calls[before_calls:]))
         self.source["sourceInventorySha256"] = "e" * 64
         with self.assertRaisesRegex(ValueError, "VERIFIED_SOURCE_REQUIRED"): self.observe()
 
     def close_all(self):
-        self.source["capabilityClosures"] = [{"familyId": family["familyId"], "disposition": "no-capability-observed",
-            "requirementIds": [row["requirementId"] for key in ("configurationConditions", "sqlIntentRequirements", "untrackedPotentialRequests")
-                for row in family[key]], "evidenceIds": ["e" * 64]} for family in self.source["providerFamilies"]]
+        self.source["capabilityClosures"] = [source_closure(self.source, family) for family in self.source["providerFamilies"]]
 
     def test_exact_all_source_closures_and_empty_sql_require_no_provider_credential_or_request(self):
         self.close_all()
@@ -269,7 +280,7 @@ class MarketingScopeTests(unittest.TestCase):
         self.assertFalse(receipt["providerRequestsRequired"])
         self.assertEqual(receipt["disposition"], "source-inapplicable-and-effects-reconciled")
         self.assertEqual(receipt["uncertainEffects"], 0)
-        self.assertEqual(len(receipt["coveredRequirementIds"]), 5)
+        self.assertEqual(len(receipt["coveredRequirementIds"]), 9)
         self.assertEqual(self.calls, [])
 
     def test_partial_closure_or_source_disposition_without_closure_cannot_skip_provider_reads(self):
@@ -297,6 +308,84 @@ class MarketingScopeTests(unittest.TestCase):
         self.assertTrue(any(path.startswith("/broadcasts") for _method, path in self.calls))
         with self.assertRaisesRegex(ValueError, "PROVIDER_CLIENT_REQUIRED"):
             component.observe_scoped_effects(None, self.plan, self.rows, self.source)
+
+    def test_global_sql_requirements_cannot_be_omitted_from_any_closure(self):
+        self.close_all()
+        self.source["capabilityClosures"][0]["requirementIds"].remove("sql-credentials.DATABASE_URL")
+        with self.assertRaisesRegex(ValueError, "CAPABILITY_CLOSURE_REFUSED"): self.observe()
+        self.assertEqual(self.calls, [])
+
+    def test_absent_disposition_cannot_close_reachable_source(self):
+        self.close_all(); self.source["capabilityClosures"][0]["disposition"] = "absent-from-verified-source"
+        with self.assertRaisesRegex(ValueError, "CAPABILITY_CLOSURE_REFUSED"): self.observe()
+        self.assertEqual(self.calls, [])
+
+    def test_duplicate_closures_and_noncanonical_requirements_or_evidence_are_refused(self):
+        self.close_all(); valid = deepcopy(self.source["capabilityClosures"])
+        variants = [valid + [deepcopy(valid[0])]]
+        for key in ("requirementIds", "evidenceIds"):
+            bad = deepcopy(valid); bad[0][key].append(bad[0][key][0]); variants.append(bad)
+            bad = deepcopy(valid); bad[0][key].reverse(); variants.append(bad)
+        bad = deepcopy(valid); bad[0]["evidenceIds"] = ["1" * 64]; variants.append(bad)
+        for variant in variants:
+            self.source["capabilityClosures"] = variant
+            with self.assertRaisesRegex(ValueError, "CAPABILITY_CLOSURE"): self.observe()
+        self.assertEqual(self.calls, [])
+
+    def test_actual_source_context_must_match_reviewed_surface_and_each_closure(self):
+        self.close_all(); valid = deepcopy(self.source)
+        for key, wrong in (("sourceCommit", "0" * 40), ("surfaceSha256", "0" * 64), ("configurationRecordSha256", "0" * 64)):
+            self.source = deepcopy(valid); self.source[key] = wrong
+            with self.assertRaisesRegex(ValueError, "VERIFIED_(SOURCE|SURFACE)_REQUIRED"): self.observe()
+        for key, wrong in (("sourceCommit", "0" * 40), ("surfaceSha256", "0" * 64),
+            ("configurationRecordSha256", "0" * 64), ("provenanceSha256", "0" * 64)):
+            self.source = deepcopy(valid); self.source["capabilityClosures"][0][key] = wrong
+            with self.assertRaisesRegex(ValueError, "CAPABILITY_CLOSURE_REFUSED"): self.observe()
+        self.assertEqual(self.calls, [])
+
+    def test_partial_broadcast_closure_cannot_erase_actual_sql_and_provider_mismatch(self):
+        family = next(row for row in self.source["providerFamilies"] if row["familyId"] == "resend.broadcasts")
+        self.source["capabilityClosures"] = [source_closure(self.source, family)]
+        self.rows["campaigns"] = [{"id": CAMPAIGN, "status": "sent", "provider_broadcast_id": BROADCAST,
+            "provider_segment_id": SEGMENT, "scheduled_at": None, "sent_at": TIME, "updated_at": TIME}]
+        self.broadcasts = [{"id": BROADCAST, "name": "campaign:" + CAMPAIGN, "segment_id": SEGMENT, "status": "draft"}]
+        result = self.observe(); observed = next(row for row in result["families"] if row["familyId"] == family["familyId"])
+        self.assertFalse(result["complete"]); self.assertGreater(observed["unresolvedEffects"], 0)
+        self.assertTrue(observed["sourceClosureContradiction"]); self.assertFalse(observed["sourceClosed"])
+        self.assertIn("resend.broadcasts.durable-intent", observed["missingRequirementIds"])
+        self.assertFalse(observed["coveredRequirementIds"])
+
+    def test_partial_broadcast_closure_does_not_hide_unmatched_provider_objects_without_sql(self):
+        family = next(row for row in self.source["providerFamilies"] if row["familyId"] == "resend.broadcasts")
+        self.source["capabilityClosures"] = [source_closure(self.source, family)]
+        self.broadcasts = [{"id": BROADCAST, "name": "owned-unmatched", "segment_id": SEGMENT, "status": "queued"}]
+        result = self.observe(); observed = next(row for row in result["families"] if row["familyId"] == family["familyId"])
+        self.assertTrue(any(path.startswith("/broadcasts") for _method, path in self.calls))
+        self.assertFalse(result["complete"]); self.assertGreater(observed["unresolvedEffects"], 0)
+        self.assertTrue(result["sourceClosureContradiction"])
+
+    def test_partial_contact_closure_cannot_erase_pending_intent_or_unmatched_provider(self):
+        self.populated(); self.rows["syncJobs"][0].update(status="queued", succeeded_at=None)
+        family = next(row for row in self.source["providerFamilies"] if row["familyId"] == "resend.contacts")
+        self.source["capabilityClosures"] = [source_closure(self.source, family)]
+        for rows in (deepcopy(self.rows), empty()):
+            self.rows = rows; result = self.observe()
+            observed = next(row for row in result["families"] if row["familyId"] == family["familyId"])
+            self.assertFalse(result["complete"]); self.assertGreater(observed["unresolvedEffects"], 0)
+            self.assertTrue(observed["sourceClosureContradiction"])
+
+    def test_partial_event_closure_cannot_erase_an_attempted_optin(self):
+        self.populated(); self.rows["syncJobs"][0]["kind"] = "opt_in_sync"
+        family = next(row for row in self.source["providerFamilies"] if row["familyId"] == "resend.events")
+        self.source["capabilityClosures"] = [source_closure(self.source, family)]
+        result = self.observe(); observed = next(row for row in result["families"] if row["familyId"] == family["familyId"])
+        self.assertFalse(result["complete"]); self.assertGreater(observed["unresolvedEffects"], 0)
+        self.assertTrue(observed["sourceClosureContradiction"]); self.assertFalse(observed["paginationComplete"])
+
+    def test_original_snapshot_cannot_be_ignored_on_unchanged_current_hash(self):
+        self.close_all(); before = empty(); before["contacts"] = [contact()]
+        with self.assertRaisesRegex(ValueError, "ORIGINAL_SNAPSHOT_REQUIRED"):
+            component.observe_scoped_effects(None, self.plan, self.rows, self.source, before)
 
     def test_untracked_event_requirement_cannot_be_settled_by_empty_provider_list(self):
         self.source["providerFamilies"][-1]["untrackedPotentialRequests"] = [{"requirementId": "resend.events.untracked-send"}]
