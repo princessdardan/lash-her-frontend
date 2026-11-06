@@ -140,8 +140,12 @@ def _match(pattern, value):
     return type(value) is str and pattern.fullmatch(value) is not None
 
 
+def _one(value, allowed):
+    return type(value) is str and value in allowed
+
+
 def _closed(value, kind):
-    _need(type(value) is dict and set(value) == set(_KEYS[kind]))
+    _need(type(value) is dict and all(type(key) is str for key in value) and set(value) == set(_KEYS[kind]))
 
 
 def _hash(raw):
@@ -224,14 +228,14 @@ def _validate(kind, value):
               and (value["uploadId"] is None or _match(_PROVIDER, value["uploadId"])))
         return value
     if kind == "event":
-        _need(value["type"] in ("video.asset.track.ready", "video.asset.track.deleted"))
+        _need(_one(value["type"], ("video.asset.track.ready", "video.asset.track.deleted")))
         _instant(value["createdAt"])
         _need(all(_match(_PROVIDER, value[key]) for key in ("id", "environmentId", "objectId", "assetId")) and
               all(_match(_UUID, value[key]) for key in ("attemptId", "lessonId")) and _int(value["generation"], 1, 2_147_483_647))
         return value
     if kind == "managedResponse":
         _need(_match(_UUID, value["id"]) and _match(_UUID, value["lessonId"]) and
-              value["status"] in ("pending", "uploading", "processing", "ready", "errored"))
+              _one(value["status"], ("pending", "uploading", "processing", "ready", "errored")))
         return value
     if kind == "admittedTotals":
         _need(all(_int(item) for item in value.values()))
@@ -273,8 +277,8 @@ def _validate(kind, value):
             _need(_match(_PROVIDER, value["eventId"]) and _int(value["originalHeaderTimestamp"], 1, _SAFE // 1000))
             _need(_milliseconds(value["expiresAt"]) > _milliseconds(value["issuedAt"]))
     elif kind == "globalRequest":
-        _need(_int(value["ordinal"], 0, 63) and _match(_REQUEST, value["requestId"]) and value["category"] in ("newWork", "recovery")
-              and value["service"] in ("course", "community") and value["method"] in ("POST", "PUT", "PATCH", "DELETE")
+        _need(_int(value["ordinal"], 0, 63) and _match(_REQUEST, value["requestId"]) and _one(value["category"], ("newWork", "recovery"))
+              and _one(value["service"], ("course", "community")) and _one(value["method"], ("POST", "PUT", "PATCH", "DELETE"))
               and _match(_ROUTE, value["routeTemplate"]) and type(value["upstreamAttempted"]) is bool
               and (value["upstreamStatus"] is None or _int(value["upstreamStatus"], 100, 599))
               and (value["localResponseFinished"] is None or type(value["localResponseFinished"]) is bool))
@@ -336,6 +340,7 @@ class _PrivateMaterial:
     __slots__ = ("signature", "content_type", "body")
 
     def __init__(self, signature, content_type, body):
+        _need(all(type(item) in (bytes, bytearray) for item in (signature, content_type, body)))
         self.signature, self.content_type, self.body = map(bytearray, (signature, content_type, body))
 
     def __repr__(self):
@@ -373,6 +378,7 @@ def _decode_envelope(raw):
 
 
 def _header_timestamp(signature):
+    _need(type(signature) in (bytes, bytearray))
     try:
         parts = bytes(signature).decode("ascii").split(",")
         stamps = [item[2:] for item in parts if item.startswith("t=")]
@@ -394,7 +400,7 @@ def _safe_capture(commit):
 
 def _join_raw_event(material, event):
     """Private raw-field consistency, NOT provider signature authentication."""
-    _need(type(material) is _PrivateMaterial)
+    _need(type(material) is _PrivateMaterial and type(material.body) is bytearray)
     _validate("event", event)
     def pairs(items):
         value = {}
@@ -476,7 +482,9 @@ def _stable(info):
 
 
 def _read_fixed(fd, name, maximum):
-    _need(name in (*_RAW_NAMES, *_COMMIT_NAMES), "P2Q_MUX_FIXED_FILE_REQUIRED")
+    _need(type(fd) is int and fd >= 0 and type(name) is str and name in (*_RAW_NAMES, *_COMMIT_NAMES),
+          "P2Q_MUX_FIXED_FILE_REQUIRED")
+    _need(type(maximum) is int and maximum == (66708 if name in _RAW_NAMES else 16384), "P2Q_MUX_FIXED_FILE_REQUIRED")
     flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
     descriptor = os.open(name, flags, dir_fd=fd)
     try:
@@ -544,7 +552,7 @@ class _ReplayBurnModel:
     """One-process DATA model. No source issuer, durable-start ACK or HTTP sender."""
     def __init__(self, lease, captures):
         self._lease = _decode("lease", _encode("lease", lease))
-        count = len(_CASES[lease["caseId"]][0])
+        count = len(_CASES[self._lease["caseId"]][0])
         _need(type(captures) is list and len(captures) == count)
         self._captures = [_decode("safeCapture", _encode("safeCapture", row)) for row in captures]
         for slot, row in enumerate(self._captures):
@@ -664,13 +672,15 @@ _MEDIA_KEYS = ("id lessonId generation managedByCourse providerEnvironmentId upl
 def _media_rows(rows, selection):
     """Validate source-shaped video_assets projections, not actual DB authority."""
     _need(type(rows) is list and 0 < len(rows) <= 4096)
+    _validate("selection", selection)
     identities, generations = set(), set()
     for row in rows:
-        _need(type(row) is dict and set(row) == set(_MEDIA_KEYS) and _match(_UUID, row["id"]) and row["id"] not in identities)
+        _need(type(row) is dict and all(type(key) is str for key in row) and set(row) == set(_MEDIA_KEYS) and
+              _match(_UUID, row["id"]) and row["id"] not in identities)
         identities.add(row["id"])
-        _need(row["lessonId"] == selection["lessonId"] and _int(row["generation"], 1, 2_147_483_647) and
+        _need(_match(_UUID, row["lessonId"]) and row["lessonId"] == selection["lessonId"] and _int(row["generation"], 1, 2_147_483_647) and
               type(row["managedByCourse"]) is bool and type(row["isCurrent"]) is bool and
-              row["status"] in ("pending", "uploading", "processing", "ready", "errored"))
+              _one(row["status"], ("pending", "uploading", "processing", "ready", "errored")))
         _need(row["generation"] not in generations)
         generations.add(row["generation"])
         for key in ("providerEnvironmentId", "uploadId", "assetId"):
@@ -681,8 +691,8 @@ def _media_rows(rows, selection):
         _need(type(row["captionTracks"]) is list and len(row["captionTracks"]) <= 4096)
         tracks = set()
         for track in row["captionTracks"]:
-            _need(type(track) is dict and set(track) == {"id", "status"} and _match(_PROVIDER, track["id"]) and
-                  track["id"] not in tracks and track["status"] in ("preparing", "ready", "errored", "deleted"))
+            _need(type(track) is dict and all(type(key) is str for key in track) and set(track) == {"id", "status"} and
+                  _match(_PROVIDER, track["id"]) and track["id"] not in tracks and _one(track["status"], ("preparing", "ready", "errored", "deleted")))
             tracks.add(track["id"])
     normalized = copy.deepcopy(rows)
     for row in normalized:

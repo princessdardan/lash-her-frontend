@@ -123,6 +123,26 @@ class UnavailableTests(unittest.TestCase):
 
 
 class CodecTests(unittest.TestCase):
+    def test_invalid_python_objects_cannot_run_equality_or_conversion_hooks(self):
+        class Poison:
+            def __eq__(self, _other): raise AssertionError("equality callback")
+            def __bytes__(self): raise AssertionError("bytes callback")
+            def __iter__(self): raise AssertionError("iterator callback")
+            def __index__(self): raise AssertionError("index callback")
+        selected = lease(); row = capture(selected)
+        for kind, value, key in (("event", row["event"], "type"), ("managedResponse", row["managedResponse"], "status"),
+                                  ("globalRequest", global_row(selected), "category"), ("globalRequest", global_row(selected), "service"),
+                                  ("globalRequest", global_row(selected), "method")):
+            bad = copy.deepcopy(value); bad[key] = Poison()
+            with self.assertRaises(mux.MuxCaptureError): mux._validate(kind, bad)
+        with self.assertRaises(mux.MuxCaptureError): mux._header_timestamp(Poison())
+        with self.assertRaises(mux.MuxCaptureError): mux._PrivateMaterial(Poison(), b"c", b"b")
+        with self.assertRaises(mux.MuxCaptureError): mux._read_fixed(Poison(), "capture-0.private", 66708)
+        with self.assertRaises(mux.MuxCaptureError): mux._read_fixed(0, Poison(), 66708)
+        with self.assertRaises(mux.MuxCaptureError): mux._read_fixed(0, "capture-0.private", Poison())
+        projected = media(selected); projected["status"] = Poison()
+        with self.assertRaises(mux.MuxCaptureError): mux._media_rows([projected], selected["selection"])
+
     def test_canonical_metadata_exact_closed_bytes_and_raw_duplicates(self):
         golden = b'{"operation":"ARM","version":2}\n'
         self.assertEqual(mux._encode("wireFrame", {"version": 2, "operation": "ARM"}), golden)
