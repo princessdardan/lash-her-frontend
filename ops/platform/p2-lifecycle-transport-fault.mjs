@@ -100,20 +100,34 @@ async function nativeMetadata(nativePlan, control) {
   return value;
 }
 
+async function nativeBoundary(nativePlan, control) {
+  const current = await control.observe(nativePlan);
+  demand(current?.configurationRecordSha256 === nativePlan.configurationRecordSha256
+    && isDeepStrictEqual(current.featureControls, nativePlan.featureControls)
+    && isDeepStrictEqual(current.writerAdmissionBinding, nativePlan.writerAdmissionBinding));
+  const metadata = await nativeMetadata(nativePlan, control);
+  demand(current.projectId === metadata.projectId && current.deploymentId === metadata.deploymentId && current.sourceCommit === metadata.sourceCommit
+    && current.deploymentUrl === metadata.deploymentUrl && isDeepStrictEqual(current.schedule, metadata.schedule)
+    && current.nativeEnabled === metadata.nativeEnabled);
+  return current;
+}
+
 export async function runP2LifecycleTransportFault(input) {
   const { plan, client, verifyEnvironment, verifySession, withOwner, hostStage, nativeControl, exercise, containFrontend, directory } = input;
   const binding = plans.get(plan);
   demand(binding && input.confirmation === `staging/${plan.actionId}` && typeof verifyEnvironment === "function" && typeof verifySession === "function"
     && typeof withOwner === "function" && typeof exercise === "function" && typeof containFrontend === "function"
     && ["verify", "observe", "arm", "disarm", "closeGateway", "effects"].every(name => typeof hostStage?.[name] === "function")
-    && typeof nativeControl?.observeMetadata === "function");
+    && typeof nativeControl?.observe === "function" && typeof nativeControl.observeMetadata === "function");
   plans.delete(plan); // One source invocation; an unknown attempt is never replayed.
   const { nativePlan, selected } = binding, store = frontendReleaseReceiptStore(directory), dependencies = { verifySession, withOwner };
   const verify = physicalVerifier(nativePlan, client, verifyEnvironment, verifySession);
   let primaryFailure = false, effect, before, after, gatewayClosure, frontendClosure,
-    faultDisabled = false, finalLedger, nativeOff = false, nativeEnabled = null, phase = "physical-preflight", failurePhase = null;
+    faultDisabled = false, finalLedger, nativeOff = false, nativeEnabled = null, frontendRuntimeBindingVerified = false,
+    phase = "physical-preflight", failurePhase = null;
   const outcome = () => ({ version: 1, status: !primaryFailure && effect && faultDisabled && gatewayClosure?.gatewayAdmissionClosed === true
-      && frontendClosure?.frontendAdmissionClosed === true && nativeOff && finalLedger?.newWork === false && finalLedger.recovery === false
+      && frontendClosure?.frontendAdmissionClosed === true && nativeOff && frontendRuntimeBindingVerified
+      && finalLedger?.newWork === false && finalLedger.recovery === false
       && finalLedger.active === 0 && finalLedger.uncertain === 0
       && ["newWork", "recovery"].every(key => gatewayClosure.active?.[key] === 0 && gatewayClosure.uncertain?.[key] === 0)
       ? "P2_LIFECYCLE_TRANSPORT_FAULT_OBSERVED_CONTAINED" : "P2_LIFECYCLE_TRANSPORT_FAULT_REQUIRES_REVIEW",
@@ -123,6 +137,7 @@ export async function runP2LifecycleTransportFault(input) {
     frontendAdmissionClosed: frontendClosure?.frontendAdmissionClosed === false ? false
       : frontendClosure?.frontendAdmissionClosed === true && finalLedger ? finalLedger.newWork === false && finalLedger.recovery === false : null,
     nativeEnabled,
+    frontendRuntimeBindingVerified,
     outstandingActive: finalLedger?.active ?? null, outstandingUncertain: finalLedger?.uncertain ?? null,
     gatewayOutstandingActive: gatewayClosure?.active ?? null, gatewayOutstandingUncertain: gatewayClosure?.uncertain ?? null,
     uncertaintySettled: finalLedger ? finalLedger.active === 0 && finalLedger.uncertain === 0 : false,
@@ -134,7 +149,7 @@ export async function runP2LifecycleTransportFault(input) {
     // plan brand and actual owner role/OID before any fault activation.
     before = await observeP2LifecycleNativeLedger(nativePlan, client, dependencies);
     demand(before.newWork === false && before.recovery === true && before.active === 0 && before.uncertain === 0);
-    const metadata = await nativeMetadata(nativePlan, nativeControl); demand(metadata.nativeEnabled === false);
+    const metadata = await nativeBoundary(nativePlan, nativeControl); demand(metadata.nativeEnabled === false);
     assertHostObservation(await hostStage.observe(plan), plan);
     const actual = await selectedCommand(client, selected);
     demand(hash(actual.command) === plan.commandSha256 && actual.pending.length === 1
@@ -189,9 +204,17 @@ export async function runP2LifecycleTransportFault(input) {
         faultDisabled = current.faultLeasePresent === false;
         gatewayClosure = { gatewayAdmissionClosed: true, active: current.gatewayAdmission.active, uncertain: current.gatewayAdmission.uncertain };
       } catch { primaryFailure = true; failurePhase ??= phase; }
-      nativeOff = false; nativeEnabled = null;
-      try { nativeEnabled = (await nativeMetadata(nativePlan, nativeControl)).nativeEnabled; nativeOff = nativeEnabled === false; }
-      catch { primaryFailure = true; failurePhase ??= phase; }
+      nativeOff = false; nativeEnabled = null; frontendRuntimeBindingVerified = false;
+      try {
+        nativeEnabled = (await nativeBoundary(nativePlan, nativeControl)).nativeEnabled;
+        nativeOff = nativeEnabled === false; frontendRuntimeBindingVerified = true;
+      } catch {
+        primaryFailure = true; failurePhase ??= phase;
+        // A full protected-probe failure must not hide actual metadata-only
+        // disable evidence, and that fallback never authorizes qualification.
+        try { nativeEnabled = (await nativeMetadata(nativePlan, nativeControl)).nativeEnabled; nativeOff = nativeEnabled === false; }
+        catch { nativeEnabled = null; nativeOff = false; }
+      }
       try { retain("p2-fault-outcome.json", outcome()); } catch { primaryFailure = true; failurePhase ??= phase; }
     }
   }

@@ -44,7 +44,9 @@ function fixture(mode = "503-before-upstream") {
       upstreamReceiptVerified: mode !== "503-before-upstream", ...(mode === "drop-after-ack" ? { upstreamStatus: 200, downstreamBytesStarted: false } : {}) }]; },
   };
   const nativeControl = { async observeMetadata() { return { projectId: model.plan.projectId, deploymentId: model.plan.deploymentId, sourceCommit: model.plan.sourceCommit,
-    deploymentUrl: model.plan.deploymentUrl, schedule: model.plan.schedule, nativeEnabled: model.state.enabled }; } };
+    deploymentUrl: model.plan.deploymentUrl, schedule: model.plan.schedule, nativeEnabled: model.state.enabled }; },
+    async observe() { return { ...await nativeControl.observeMetadata(), configurationRecordSha256: model.plan.configurationRecordSha256,
+      featureControls: model.plan.featureControls, writerAdmissionBinding: model.plan.writerAdmissionBinding }; } };
   const input = { plan, client: model.client, directory: model.input.directory, confirmation: "staging/" + model.plan.actionId,
     verifyEnvironment: async () => { calls.push("environment"); }, verifySession: async () => {}, withOwner: model.input.withOwner, nativeControl, hostStage,
     async exercise() { calls.push("exercise"); model.state.deliveries.find(row => row.receiver === "course").attempts++; },
@@ -187,4 +189,21 @@ test("supplemental operator identity stays distinct from the immutable app sourc
     const plan = prepareP2LifecycleTransportFaultPlan(value.model.plan, { ...value.settings, operatorSourceCommit: "f".repeat(40) });
     assert.equal(plan.sourceCommit, value.model.plan.sourceCommit); assert.equal(plan.operatorSourceCommit, "f".repeat(40));
   } finally { value.cleanup(); }
+});
+
+test("actual configuration, controls and writer binding must match at preflight and final probe", async () => {
+  for (const field of ["configurationRecordSha256", "featureControls", "writerAdmissionBinding"]) for (const finalOnly of [false, true]) {
+    const value = fixture(); let observations = 0;
+    try {
+      const observe = value.input.nativeControl.observe;
+      value.input.nativeControl.observe = async plan => {
+        const row = { ...await observe(plan) }; observations++;
+        if (!finalOnly || observations > 1) row[field] = field === "configurationRecordSha256" ? "f".repeat(64) : {};
+        return row;
+      };
+      await assert.rejects(value.run(), error => { assert.equal(error.publicReceipt.status, "P2_LIFECYCLE_TRANSPORT_FAULT_REQUIRES_REVIEW");
+        assert.equal(error.publicReceipt.frontendRuntimeBindingVerified, false); return true; });
+      if (!finalOnly) assert.equal(value.calls.includes("arm"), false);
+    } finally { value.cleanup(); }
+  }
 });

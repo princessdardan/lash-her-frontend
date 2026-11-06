@@ -119,6 +119,12 @@ Earlier successful close/off responses cannot satisfy the terminal. A reopening,
 restart, lease reappearance or failed terminal read produces current false/unknown
 fields and a requires-review result; stale closure/off facts are discarded.
 
+Preflight and terminal also require the existing authenticated full frontend
+probe: exact configuration-record hash, ten feature controls and writer-admission
+binding. A fresh metadata-only GET follows the full probe and supplies the last
+native enabled observation. Metadata-only disable facts remain reportable when
+the protected probe is unavailable, but that fallback never qualifies the stage.
+
 ## Deliberate recovery after ACK loss
 
 Retain the old exact gateway process/counter receipt, the one injected effect,
