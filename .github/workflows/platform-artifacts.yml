@@ -484,6 +484,22 @@ jobs:
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/v1,dst=/source/contracts/api-integration/v1,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
             lash-her-frontend-migration:postgres18-test > "$RUNNER_TEMP/platform-evidence/frontend-migration-rehearsal.json"
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 1g --pids-limit 256 --shm-size 256m --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \
+            --env P2_PLATFORM_OWNED_TEST=true --env OWNED_POSTGRES_MAJOR=18 \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/.git,dst=/source/.git,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/platform,dst=/source/ops/platform,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/drizzle,dst=/source/drizzle,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/node_modules,dst=/source/node_modules,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/src,dst=/source/src,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/scripts,dst=/source/scripts,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/tsconfig.json,dst=/source/tsconfig.json,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/package.json,dst=/source/package.json,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/v1,dst=/source/contracts/api-integration/v1,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
+            --entrypoint node lash-her-frontend-migration:postgres18-test \
+            ops/platform/test-p2-platform-local.mjs > "$RUNNER_TEMP/platform-evidence/p2-platform-postgres18.json"
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node \
             lash-her-course-migration:p1-local dist-migration/scripts/check-migration-lineage.js --manifest-only
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node \

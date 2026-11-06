@@ -1,6 +1,6 @@
 # P2-12 / G2 staging certification
 
-Status: PREPARED RUNBOOK; NOT EXECUTED. Written against frontend `ab34cf9bedde69cf2ddce54b717c9dc1a181c5d6`. That revision is a documentation baseline, not a final frontend candidate. No staging release, provider call, secret retrieval, configuration change, migration, account mutation, or certification is performed by this document.
+Status: PREPARED RUNBOOK; NOT EXECUTED. The initial documentation baseline was frontend `ab34cf9bedde69cf2ddce54b717c9dc1a181c5d6`; the source-owned P2 driver and bounded certification probes below have since been integrated. A final frontend candidate remains unselected. No staging release, provider call, secret retrieval, configuration change, migration, account mutation, or certification is performed by this document.
 
 P2-12 depends on G1, P2-00, P2-09, P2-10, and P2-11. G2 additionally requires P2-01–P2-08 and the actual deployed results below. The [identity/lifecycle brief](briefs/identity-and-lifecycle.md), [learning brief](briefs/learning-and-migration.md), [release-coordination brief](briefs/release-coordination.md), [release policy](release-policy.md), [approved lifecycle policy](decisions/2026-11-05-p2-lifecycle-policy.md), and [paid archive policy](decisions/2026-11-05-paid-publication-archive-policy.md) govern acceptance.
 
@@ -29,28 +29,28 @@ Complete these slots in the ordinary private release record before execution. Us
 3. **Freeze and qualify one frontend candidate.** Integrate the final identity/cache/export-scrub/provider/coordinator corrections, released contracts, dependency profile and actual named interfaces. Run required exact-source CI/native/migration checks and refresh affected local browser evidence. Review the exact sources, targets, SQL, provider changes, safe test records, failure/recovery procedure, and intended independent capabilities with Dardan.
 4. **Dardan explicitly starts candidate publication.** Use the existing manual **Platform artifact candidate** workflow, `.github/workflows/platform-artifacts.yml`, as documented in [source publication](../../ops/platform/source-gate.md). Select `source_branch` (`staging` or `main`), `frontend_revision`, `course_revision`, and `community_revision`; frontend SHA must equal the selected workflow revision. This approves building the candidate, not deployment. No second reviewer, signing ceremony, or extra per-step approval is added.
 5. **Prepare and inspect the release without mutations.** Use the existing preparation commands below. Review the displayed staging-only identities and pending chain. Retain a usable compatible application/configuration and database recovery reference. Do not run a seed, test, schema push, down migration, or ad hoc SQL against staging.
-6. **Dardan explicitly starts the concrete reviewed staging release.** His start of the supported reviewed release action is deployment approval under the single-operator policy. There is no blanket permission in this runbook. At this source baseline, the pending-SQL coordinator is an in-process export and the legacy staging CLI still refuses pending frontend SQL. The complete P2 entrypoint/locked runtime-and-feature admission action must be qualified and recorded before live use; its command is OPEN, not invented here. No direct flag edit, standalone migration, P1 admission command, or provider-console bypass substitutes for it.
+6. **Dardan explicitly starts the concrete reviewed staging release.** His start of the supported reviewed release action is deployment approval under the single-operator policy. The [P2 operator driver](operator-p2-release.md) composes role preparation, pending frontend SQL, API migrations/startup and compatible frontend promotion under continuous locks. Exact integrated-source Linux CI, candidate qualification, historical/provider closure and the concrete reviewed inputs remain required before its apply command is eligible. The legacy staging CLI still refuses pending frontend SQL. No direct flag edit, standalone migration, P1 admission command or provider-console bypass substitutes for the qualified action.
 7. **Receivers and compatible runtime precede P2 writers.** Retain independent SQL success, exact receiver/read readiness, compatible frontend build/workload/promotion, and post-deployment identity evidence. Verify the selected current topology: new Course media/export-cleanup processes use dedicated credentials; historical eight-service C07 receipts cannot qualify a changed topology. Keep new customer work, unrelated schedules, and provider ingress closed until their exact profile is qualified. Apply the reviewed recovery-before-new-work sequence, then begin the matrix on dedicated test accounts.
 8. **Certify and restore deliberately.** Run provider/account mutations and fault stages serially as specified below. Await every request/job/cleanup, inspect actual receipts after ambiguity, and preserve original attempts. Restore only the selected reviewed state after failures; never automatically reapply SQL, resend a provider mutation, reopen a deleted user, enable unrelated business schedules, or declare uncertain effects zero. Final G2 acceptance references actual results and remaining limitations; this document supplies no acceptance result.
 
 ### Existing executable preparation and bounded local checks
 
-These are existing interfaces, not a new P2 deployment command. Symbolic path arguments identify operator-prepared files/directories outside Git; fill them from the exact release record, never with secret values.
+Symbolic path arguments identify operator-prepared files/directories outside Git; fill them from the exact release record, never with secret values. The P2 plan performs no live mutation.
 
 ```sh
 npm run contracts:p2:check
 node ops/platform/prepare-migrations.mjs CANDIDATE_JSON TARGETS_JSON SCHEMAS BUNDLE
 node ops/platform/frontend-migration.mjs --check BUNDLE/release.candidate.json BUNDLE/jobs/frontend.json BUNDLE/schema/frontend.json
-python3 ops/platform/host/staging_release.py BUNDLE CONFIGURATION RESULTS
+node ops/platform/p2-release.mjs plan /absolute/private/operator-settings.json
 ```
 
-The last command is the existing offline plan. Its existing apply form is shown in [initial staging qualification](operator-staging-qualification.md):
+The matching P2 apply form is source implemented. It remains ineligible until the prerequisites above pass and Dardan starts the concrete reviewed action:
 
 ```sh
-python3 ops/platform/host/staging_release.py BUNDLE CONFIGURATION RESULTS --apply --confirm staging/RELEASE_ID
+node ops/platform/p2-release.mjs apply /absolute/private/operator-settings.json --confirm staging/RELEASE_ID
 ```
 
-That command supports the already-current frontend path and retains staging qualification/admission holds. It is **not executable for this pending-SQL P2 certification** until its supported scope actually matches the reviewed action. Do not execute it merely because the syntax exists. The [frontend coordination](frontend-release-coordination-component.md), [restoration](frontend-release-restoration-component.md), [runtime](operator-runtime-release.md), and [worker host](course-worker-host-release-component.md) documents define the implementation boundaries. Legacy `staging_admission.py` requires the P1 six-controls-off profile and is not a P2 feature-admission command.
+The [frontend coordination](frontend-release-coordination-component.md), [restoration](frontend-release-restoration-component.md), [runtime](operator-runtime-release.md) and [worker host](course-worker-host-release-component.md) documents define the implementation boundaries. Legacy `staging_release.py` remains an already-current-frontend path; `staging_admission.py` requires the P1 six-controls-off profile. Neither replaces the P2 action. A committed-SQL failure requires a distinct reviewed current-only recovery action; never rerun the original apply or change pending tags to bypass its refusal.
 
 The existing learner/authoring drivers run only owned local stacks, require clean exact sources and accept no external database URL:
 
@@ -64,7 +64,9 @@ COURSE_AUTHORING_API_REVISION=3c0a0d6eee64344d97f98387755e9f34195a4c42 \
 node scripts/test-course-authoring-browser.mjs
 ```
 
-These commands are prepared reruns, not results on the final frontend/API pair. They must pass matching source/dependency/contract preflight. Their synthetic sessions, gateway/Sanity/font/media edges cannot certify live Google, Resend, Mux, deployed workload identity, or G2. Ordinary Playwright configuration targets localhost and includes fixture/SQL setup; do not repoint the suite or its seeds at staging. A deployed negative-token/fault-injection automation runner is OPEN where no supported source tool exists; use no invented CLI switches or production test hooks.
+These commands are prepared reruns, not results on the final frontend/API pair. They must pass matching source/dependency/contract preflight. Their synthetic sessions, gateway/Sanity/font/media edges cannot certify live Google, Resend, Mux, deployed workload identity or G2. Ordinary Playwright configuration targets localhost and includes fixture/SQL setup; do not repoint the suite or its seeds at staging.
+
+The [read-only deployed identity probe](../../ops/platform/p2-identity-negative-probes.md) uses its fixed current-stage host entry and a fresh host lease after S07/S09 have created the exact enrolled/completed-attempt records. It has no SQL, restart, account-mutation or key-rotation action. Its original-release hashes are provenance; `frontendSqlVerified` remains false. The [lifecycle native qualifier](p2-lifecycle-native-qualification.md) separately joins an actual provider-attached trace UUID to the admission ledger and ordered receiver effects. Its final disposition is native scheduling off and both frontend admissions closed with zero active/uncertain work; explicit restoration is required before further mutating cases. Neither tool has deployed evidence yet. Other fault/rotation scenarios without a supported procedure remain OPEN.
 
 ## Reviewed capability and interface profile
 
