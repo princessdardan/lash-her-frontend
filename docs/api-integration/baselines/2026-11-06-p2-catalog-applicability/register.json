@@ -1,0 +1,5137 @@
+{
+  "version": 1,
+  "status": "OFFLINE_CATALOG_APPLICABILITY_ONLY",
+  "scope": "all-81-retained-surfaces-no-mutation-authorization",
+  "inputs": {
+    "catalogs": {
+      "file": "docs/api-integration/baselines/2026-11-06-vercel-deployment-key-catalogs/observations.json",
+      "sha256": "4402700ecf1b6a88cac0b7168294736838f63f5d15e4a1543e1506f87ad19128"
+    },
+    "keySets": {
+      "file": "docs/api-integration/baselines/2026-11-06-vercel-deployment-key-catalogs/key-name-sets.json",
+      "sha256": "ac766bc235bd37830bcaff9d8a22311165eb7afba23af9755f869d51e675fd12"
+    },
+    "priorStates": {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-historical-project-discovery/retained-projects.json",
+      "sha256": "b9f338b4658c305ff28c8c8caf4e09135ac8f8737ff42e98036eacba257a8048"
+    },
+    "frozenSourceModule": {
+      "file": "ops/platform/frontend-historical-source.mjs",
+      "sha256": "2499451470e086b68c495970f9c696862b63b3dd297589f435eecd6320309655",
+      "requirementsAndProfileVersion": "f41c09ab"
+    },
+    "candidateValueSelector": {
+      "commit": "4f18b80aee84f0c67b005ce749cf18506fbdedea",
+      "file": "ops/platform/frontend-historical-source.mjs",
+      "sha256": "4e66672bac41d1622d5f985725d8715971cfcfe6fb214ab4d28b522232bcd51b",
+      "status": "candidate-interface-awaiting-independent-integration-clearance"
+    }
+  },
+  "originalConfigurationProvenanceSupplied": false,
+  "privateValuesRead": false,
+  "runtimeClosuresProduced": false,
+  "controlsPerformed": false,
+  "limitations": [
+    "Catalog names are not original values, account selections, feature enablement, SQL identity or effects.",
+    "No capability/SQL/store observation or runtime closure is produced; projection scaffolding is synthetic sizing only.",
+    "Unknown source rows have no exhaustive family inventory or selected-value bound; all81 remain in scope.",
+    "Source-absent is scoped: family absent, direct-caller-only mutation, or audited Mux private-SQL exclusion; external editorial capability remains unresolved.",
+    "Production targets are metadata only; project names, null targets and priorERROR states never authorize controls."
+  ],
+  "summary": {
+    "retainedSurfaces": 81,
+    "sourceBoundCatalogs": 76,
+    "verifiedSourceSurfaces": 59,
+    "unregisteredSourceSurfaces": 17,
+    "missingSourceSurfaces": 5,
+    "actualSourceCommits": 47,
+    "verifiedSourceCommits": 33,
+    "maximumCandidateSelectedValueKeysOnVerifiedSources": 17,
+    "familyCountsOnVerifiedSources": {
+      "mux.studio": {
+        "source-absent": 59,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 0,
+        "unknownsource": 0
+      },
+      "chitchats.drafts": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 15,
+        "catalog-possible-value-or-selector-needed": 44,
+        "unknownsource": 0
+      },
+      "chitchats.postage": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 15,
+        "catalog-possible-value-or-selector-needed": 44,
+        "unknownsource": 0
+      },
+      "chitchats.refunds": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 15,
+        "catalog-possible-value-or-selector-needed": 44,
+        "unknownsource": 0
+      },
+      "chitchats.tracking": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 15,
+        "catalog-possible-value-or-selector-needed": 44,
+        "unknownsource": 0
+      },
+      "google.calendar": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "google.identity": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "google.oauth": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "highlevel.contacts": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 24,
+        "catalog-possible-value-or-selector-needed": 35,
+        "unknownsource": 0
+      },
+      "highlevel.conversations": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 24,
+        "catalog-possible-value-or-selector-needed": 35,
+        "unknownsource": 0
+      },
+      "highlevel.messages": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 24,
+        "catalog-possible-value-or-selector-needed": 35,
+        "unknownsource": 0
+      },
+      "highlevel.oauth": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 24,
+        "catalog-possible-value-or-selector-needed": 35,
+        "unknownsource": 0
+      },
+      "highlevel.opportunities": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 24,
+        "catalog-possible-value-or-selector-needed": 35,
+        "unknownsource": 0
+      },
+      "highlevel.tasks": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 24,
+        "catalog-possible-value-or-selector-needed": 35,
+        "unknownsource": 0
+      },
+      "highlevel.webhooks": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 24,
+        "catalog-possible-value-or-selector-needed": 35,
+        "unknownsource": 0
+      },
+      "highlevel.workflows": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 24,
+        "catalog-possible-value-or-selector-needed": 35,
+        "unknownsource": 0
+      },
+      "mux.course-media": {
+        "source-absent": 24,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 35,
+        "unknownsource": 0
+      },
+      "resend.automations": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "resend.broadcasts": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "resend.contacts": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "resend.emails": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "resend.events": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "resend.segments": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "resend.templates": {
+        "source-absent": 24,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 35,
+        "unknownsource": 0
+      },
+      "resend.topics": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "resend.webhooks": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "sanity.callbacks": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "sanity.editorial": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "square.cards": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "square.checkout": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "square.customers": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "square.invoices": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "square.orders": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "square.payments": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "square.refunds": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      },
+      "square.webhooks": {
+        "source-absent": 0,
+        "credential-path-blocked-by-fullcatalog": 0,
+        "catalog-possible-value-or-selector-needed": 59,
+        "unknownsource": 0
+      }
+    }
+  },
+  "sourceProfiles": [
+    {
+      "sourceCommit": "03d850c0512eddc0ef11cbac779e255a7b73bd3b",
+      "treeOid": "a32fd7a72b7d34710870b9b1f11233cd55c1284c",
+      "profileSha256": "654c78cc6af1f298acdf6e432288640bbcd53a4d7c70f5f7f5b12411137f72bc",
+      "sourceInventorySha256": "942d920d27183dfdea8e0357676f7c4e704d90f9ef0cdd5573a952c20044906d",
+      "requirementsSha256": "bbebf5dad29c4a0b4dac41bbdc836fc9b13b900dd6b98f87ee6a65662f1619c1",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "0ed09401726ff5f6f5057018ba7125a498d7180c",
+      "treeOid": "42f90f43a2fd7a9c1e053bd785d62919ba07064a",
+      "profileSha256": "bcefc1d1a2b4d8a9e0394aa69cff24146fc49773a3f370e724a1f26aacac9ef0",
+      "sourceInventorySha256": "bc9fff97c3d0bfc4efbdae9178e16967449156cc96018145351b41485af93563",
+      "requirementsSha256": "444d129cfd470d453cbd5711c6159ed926fd89721f1d3b487bacdc124291671e",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "13142937adf542e41d0a12807d2503389933f74e",
+      "treeOid": "aa9ccfc57e3e4e6a385dad83aacde571a822bb52",
+      "profileSha256": "7943bf2b62ddbdcee41954c286fcadf7106335b4ae5f5ca94108fb4511a69552",
+      "sourceInventorySha256": "6a6b6a65e875ee4ebb7135b764840ebaea93a91db846e83ed26d40c4ef83fc6b",
+      "requirementsSha256": "f1124c1e99865c9201a53f1bff090b91c1b24cc96625e581247d6415fb1df05d",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "188af7d78123be519a19bfe8505fc4d6060dda41",
+      "treeOid": "8db61d2e44782476188912fb9bf8d09ae4e7495d",
+      "profileSha256": "5c2a2a9dedb2032f2757e3c40ede067e1136424d4c055cc12901324a873961bc",
+      "sourceInventorySha256": "fd3498159903cbc197bb3db6c3d86451309964b8e276da2854dd4bfd7a89410e",
+      "requirementsSha256": "27a52a0531ab8b57e4d1a13b20de3b735390f3a1b30f24533684a35fccf67e6f",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013"
+    },
+    {
+      "sourceCommit": "18feb565b4b1bd8bc3e9658d2eb3de7523594488",
+      "treeOid": "b92a69e2e279a5404a7911b2829f7827f60d2fcb",
+      "profileSha256": "a95300241822ffb87582ebbdbdd352d2879a2c8d3dfa94033b2dfb5054b0d981",
+      "sourceInventorySha256": "fe466f611dda0f25edd31183f0211c37a798cf0433c62f2358d50c555a2b5a67",
+      "requirementsSha256": "fe1db1e7964268411f760642eb41ec8dd649d9910b7754695844152c2eea06c8",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "1d8342ab93b6713bebbb3a9caabaa54a246f9957",
+      "treeOid": "7ee5cdb0ce0eca84f7707e95e687514c5b217482",
+      "profileSha256": "c38b2656ee1443cf901273330e3f93e1669ed945bfaaa34a1f655337683a4be6",
+      "sourceInventorySha256": "67283c23beb7927322f670afec74f6ba634f46ea4d6e1a9704c87e3783e70b70",
+      "requirementsSha256": "3aab3875eb0894362cae89afc353102a258f2bab65f1b3c74c24ade5e9b87b7f",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "2390ff32c4156bf861cbce32406f5e4ad18583ab",
+      "treeOid": "42b6ff7b5cff1aba69e20981af0880036d77947d",
+      "profileSha256": "19ff10d3c263eebc4b921325fead0774d49163fa04637fcafb5980d0b58fc03d",
+      "sourceInventorySha256": "2f0bfbf245b9e27838b832abd0fb5b64141af43d6c59843aa0e2763c3ec96eca",
+      "requirementsSha256": "3677870b2ad46e7dcf01e4a2ca6fc5d381092c7361ba70d1f7785a11a78ca499",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714"
+    },
+    {
+      "sourceCommit": "24a3fd334209177797a128bd67d07fe805d539f5",
+      "treeOid": "ac5b651650a83af66e227f80911c33a74dfbd3af",
+      "profileSha256": "70c8d31df606975936816d53801a9886737d40d870dff858b93ab454fc5e0b84",
+      "sourceInventorySha256": "119356c0285bbbdc422539e39d37892210b7ef2e08b16e2b592f392f16443eb0",
+      "requirementsSha256": "b9091dbe01d6536e636356cb698d18416c8928334229546baf20b1748d7f2b0f",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "26bcdd9a605eb6c07a75e2a7a7b519015b04deb8",
+      "treeOid": "3df4a3f67d1315df5336d4f345385962629c8662",
+      "profileSha256": "57c1f49e93a5c9df342834376ccca78f22d70baa67e41ba6bcb9640f4ab5b1d5",
+      "sourceInventorySha256": "6ff7a32f1cbbebefc8ba6fdac23221e2ca5a248d23db6a946ec94f48fb77fdbe",
+      "requirementsSha256": "47b4164c551edf3d6059ca7af5116201658508d68d4ba557c2fa65222c9721c1",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714"
+    },
+    {
+      "sourceCommit": "273a9821a097a7a0beeb918e8b1c4c51932f73ab",
+      "treeOid": "1741d96a9466ccee1c4a9ebb8ff70adae95fe335",
+      "profileSha256": "61e44d9890f82c79411c0ae85411b4338e6c87d10b1209243e7441678626b527",
+      "sourceInventorySha256": "263512ed6c9e96d4035de9463bdcc13553edb640a13d40cea39d4abab4971de7",
+      "requirementsSha256": "793684b1ae8a224c8a4320602dba76013adbf10a321e82b1db71c3ba941c3192",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "45223fec3ee71bf63cfb0e44a94a0a7b3e282ca1",
+      "treeOid": "eca5b5ead0d026822a68788f9332ae550f6fbfe0",
+      "profileSha256": "4933abaaf7ca0d9b8e2eaa6514bb0ad133a4fdeff100bd58d43395bb9d57ee9a",
+      "sourceInventorySha256": "cdc492cc5bda9d332bd68b42a65f718b1680a2f5ad175f7f8e0619e913f97cfb",
+      "requirementsSha256": "37bd3f75d32cdc66d0b897789aecad0fe64072404b7b50114bc206fb8fa19241",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "669f2978722a431c3f11cd8f68f59dfde9fe3d76",
+      "treeOid": "40ff8b54aa6e2b8d2a11e0ef79712d5e31713b42",
+      "profileSha256": "6a122e72c87578b99c914cc01bf1e6f9e31869e0ecda477e832fc556731b342e",
+      "sourceInventorySha256": "b4d58dcd93d9bfa41e5da052810de5bc1cf54184b8f88517fe90f65fab0de136",
+      "requirementsSha256": "75b10fe95304f684034702b3317a19e4178f1b84c382cfa2f758f49fdf34485e",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013"
+    },
+    {
+      "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+      "treeOid": "7b22db3ad93a77b0c840613a737396e0bcdf89dc",
+      "profileSha256": "97ff5fb55b4ba2ceace4e0de4899828ba2acd006d5da52872ea548a14dc64bf8",
+      "sourceInventorySha256": "f1e883ac69651d2cea9981d349829e7458c2113ca861c8858b8a484b8ce4481f",
+      "requirementsSha256": "03570104a0f054e2682a3417011b7593eee62f84be09beffdd094e33a5a6d7d3",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714"
+    },
+    {
+      "sourceCommit": "6d5845a8b6d5ff8f27ac7512d72075328233d0ec",
+      "treeOid": "018682cf10f5bf938b66cd0d885f0b5b0f5a2286",
+      "profileSha256": "198e7b29e03ed5ecd732b87bce090f9ec6b13d09693c464c4db067de3adb929c",
+      "sourceInventorySha256": "4d6d3fba3506fe443bdcacfeceb03ecd823e6ffb745f3807edb03cd694d0952a",
+      "requirementsSha256": "2fe66c3f91ed80506b6c94961116823eb900a3bafed5928dbad43dd9d5ae95e0",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6",
+      "treeOid": "31b019df96a5986d06ff32a3d72d53c278ad7b51",
+      "profileSha256": "c93cfe73071b163766758c6d9b2fd32acca4a99f3f1a9299c900d645ab8d377e",
+      "sourceInventorySha256": "5c4492fa0ebd5a7e3e6cca52e8cc0a3ff56109b79490659fbf8080729180dcc6",
+      "requirementsSha256": "6f77714f44e3e0b4281d56a7ae7c1d4023767c5002fd2f522c31eb7cc69faf7a",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "73beea0db10099c3b45cff6fac5dcd9a31f12762",
+      "treeOid": "00fbdc67c20fd225f0ed79a64f9d7cf70c73deb5",
+      "profileSha256": "60afe46a519a08732c8a90f539a1079e39795207ca0b65c078d9c9bbbaad5ab7",
+      "sourceInventorySha256": "d7c63e69b6d4f8ed1e0477eeb057c2462e8c51c8d71a46655393952372f0d7e2",
+      "requirementsSha256": "b96afd4ce66a172e959b5ea7bd329f82c9b9928abf9c728ab272e9f4d2a191e6",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013"
+    },
+    {
+      "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+      "treeOid": "b38d32730d01f0fcc86df00fd09302923e64aa6f",
+      "profileSha256": "1284b8cc2666aaf1d41b0f1d9751059f5cbc86a17425f868faded32bf26cf485",
+      "sourceInventorySha256": "3bf4e28f439b276a05e035cf3984cac56a851330d0c0fe49f8c2eadbb87fdfd8",
+      "requirementsSha256": "4f0a25b83582425815d180c98b52158de062cf006e2f1cd52d4258f1f9df9c73",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c"
+    },
+    {
+      "sourceCommit": "78c6f7cc92b3e5a2adc0ef60720899db7c902af2",
+      "treeOid": "04ed775afdb4eccfd9f1cfb99ff31539511dff27",
+      "profileSha256": "ccaf9a2227f4abec1b130b49d15e6a9337d7163497d53559543920a9493210ec",
+      "sourceInventorySha256": "67bfba4dcd32a7f03618e8d2fcd54402d0ff9963dc0cf2565393a2c6a3396138",
+      "requirementsSha256": "ff116db2d8ec7762cb73dee9bdc5235a25875c722cec30760d4a4a7bc4d2a997",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "9b899e4e02afe787f25315a5ef1912d4d32d6080",
+      "treeOid": "39b58c331bcba718354cb4b5cecacc1fe3c63cc9",
+      "profileSha256": "166dea3424d6a4db229074b1ae692b1b7a503a6f683c0fe301c32024274f3358",
+      "sourceInventorySha256": "05a1ef87e2022a744259ca9f0e2d3204bc2ee1c7d077601f28d927e4e8c2cc0c",
+      "requirementsSha256": "e17147c12f968a560b0a0a8f9bd352381fb78404cb2ddcb6e2d01f91b3737205",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013"
+    },
+    {
+      "sourceCommit": "a05f38d4d9452be6ee80c9b51d1b2f9188c54242",
+      "treeOid": "42f90f43a2fd7a9c1e053bd785d62919ba07064a",
+      "profileSha256": "68929788f06c8460d90cdc050db770102c5defc3379a34b4e3d3ef67738ab5e2",
+      "sourceInventorySha256": "2d32b522ef268b486d359fa6fcc2f287feeb376f561acb03e513f992c7b9ea68",
+      "requirementsSha256": "3512ed883d84a6c9a7f8da92ff22b2fac29849ca0bfcdd76ec83b16d36da9491",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "b1f46feadab04e5e0934f5c63b9333837b48f56c",
+      "treeOid": "6f3e765ccb66a375f962466585ccd1ea6aefa884",
+      "profileSha256": "5ca6c4236e82b33b2b672df954128fa748a47e853aa5da1bb2296da1ea82edee",
+      "sourceInventorySha256": "2839bbef81e194054bcb1bb03757ac45b235c4292bb3ef2199ea27cb803e91bb",
+      "requirementsSha256": "a3bd58ae6508c38aeac22528243d309b4cd06a9667ff4e4db7d1c592722c3827",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "b2ce650791fca81674f10bd4f9dd768d53efd185",
+      "treeOid": "e05e49fa001204d93f1467736c44602d68311ed6",
+      "profileSha256": "5b11b19173f22117f09dddb071b79bf028076f5d4d0506ce48f5e83a27aeb956",
+      "sourceInventorySha256": "286a43be75fd0f6ef299e0558550b9272cc75ac63474c54b753ba9af35c23384",
+      "requirementsSha256": "0d1438eb4d4c0194278da65b2a1490f9c5829872144624bf8d951c1b7edc055d",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "treeOid": "4f63ed9c0288b410b64a1f41d7cb70c5d5546364",
+      "profileSha256": "b6f60e929f83353652ff46589dadc89ab1de0f7c3f0d764a75bfba0f918caee0",
+      "sourceInventorySha256": "d3d2015ab6ad46151c3dd93f2a322318988aa85d8c5060e0f4cc16957f84ae9e",
+      "requirementsSha256": "cb58c72a7a8c812f09b7c9e82f2507ece61c893cef3ccc032aa5d6498b1caa88",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c"
+    },
+    {
+      "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+      "treeOid": "dee14e1844868d2692c013daec66bee229dda7e7",
+      "profileSha256": "313cf1fee0db7d4e2f4132478a123744b4e3784d608beb102197ec593aa7f396",
+      "sourceInventorySha256": "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+      "requirementsSha256": "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c"
+    },
+    {
+      "sourceCommit": "c5e61fcd8ef0ac1e055c5f98ffb98bc6857d44e2",
+      "treeOid": "5d30243bb0b464aba1007a7efb17fcd32a6dbba5",
+      "profileSha256": "e62653930e8b77e52f82d517407d6e9020dbb0c35b306211a8543158602fe024",
+      "sourceInventorySha256": "7959a1001b179cd0033abfd2458155e760ee6dfa6ff447d90c9704099f524141",
+      "requirementsSha256": "0386702550c55a5ddc222507081a95123d77738931ba4ee37da16b4c3a96e825",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "d632773365867a979084876426d74f6a584e6f2c",
+      "treeOid": "5ead75d605c1a1e41951665f00b770e4771c002a",
+      "profileSha256": "3c76fb63076cd0811468f8cd5a1eb59991c1eee26f1ec1dcd7307fa226a11953",
+      "sourceInventorySha256": "8eb0a6d89356f4c7a21b871650bd6ec827eea9e9002ed1805f7803b3032aaf20",
+      "requirementsSha256": "849f3b40778a26bf1e894a65aead43de2c6fe3e99013bb379581d3e8cde21f4f",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "d789070e4c186be67a474ae3851fb6da7f624179",
+      "treeOid": "ffbf617bd75974ae1d345325e77e0f0ca69fbe5b",
+      "profileSha256": "a36337ccf8fb20b835f4fad4f79a7810cd151c0fc72c6f016216165728371b3e",
+      "sourceInventorySha256": "8d10d3b080b9db9edf7d4b6b48a19eb02199d07e94e7f0b0a5c4133f90d829d3",
+      "requirementsSha256": "6531bf0766a27c4e7f321bb4b183c8313adc0bb3b3d25a1f6d9ddbab2881db55",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714"
+    },
+    {
+      "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+      "treeOid": "6cedd5073b8d82fe730b8e4558bb3cc0b01f5498",
+      "profileSha256": "a932a558bef7d1e716cae4ade01417b29c0493912bef2fffd77d6b7e60c97e21",
+      "sourceInventorySha256": "f101b6e47a8af046be7dde9c3d639166e0ecc99537c4a50a5cc0a8ca28b87570",
+      "requirementsSha256": "d8d965b6dc4a0c0772356b84030d16d3f4bbe836e2ccb9f5f255ad72ee4abc86",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c"
+    },
+    {
+      "sourceCommit": "e01ad6b6e6e319d63440f84b836f22594897b1d4",
+      "treeOid": "6399666aa67c666c52130aec93f2c6be95efbc20",
+      "profileSha256": "7e8e1d901256c9c8607a7db586154299e6b709a632cad1a3ea5ea35ecd88f89f",
+      "sourceInventorySha256": "a1d5c64c5e78ddaceab1cb4ad2fbadefa8b3c5ab15492a2a5789518701524402",
+      "requirementsSha256": "ab1a39bb634cbfeca5ce08b4b36ed3a5b2f0e4cc63d725b631a4d06c94ce964c",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013"
+    },
+    {
+      "sourceCommit": "e4040282b708d632bb4d45a45180905525b4da8a",
+      "treeOid": "ec01b34a72a3e1d417917a320f2dea239768ba23",
+      "profileSha256": "5085267b6edf7d856cfabddfed96354d87565f5e6c67556d091135e4014da270",
+      "sourceInventorySha256": "be233e3cf9dae12303625302b42e939b16ff2cc3b045b1a966ddb87b2d43ffbd",
+      "requirementsSha256": "b157eb7acd625e35a9e88640e53b5626e57a5dcb9cbd415fcc3f1d776d75e72d",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013"
+    },
+    {
+      "sourceCommit": "e6ee380122131505583a106437542591badf2172",
+      "treeOid": "59938d0dd865fbd80bd56b9b2dd8a3a322221a52",
+      "profileSha256": "7b7591fb572b8070e270d1db0a561bdef62ab8c5afaba14e8f5505a9b289d274",
+      "sourceInventorySha256": "96e8020519ff2586c9eb6548564346d8f35fe7e1266e90d1504784909e1db2da",
+      "requirementsSha256": "95eb49dd8de0168747d61bb01f824bbbb9be7c06f73076d7ab4d984af12f829d",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c"
+    },
+    {
+      "sourceCommit": "ea1772b20453a494dcd3ff635066ebd385906f6b",
+      "treeOid": "87087786f4795b67eb4781efc0c8dc5a1c71c937",
+      "profileSha256": "0a0369e39e95356cf2fb0ebde46dc5173694e43ce674d670c96c9ae6dd47fe29",
+      "sourceInventorySha256": "c25a2430c546d4cef24fcbe6f9d215b510a0c0f19d120cf8057aa24a7b41e723",
+      "requirementsSha256": "a4e8f18d1f5e18e2a1adb16e37a1184f0eeec5982d795d0ad53048ede8295bce",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013"
+    },
+    {
+      "sourceCommit": "fd08fe169b529f7d9edde3197873136a991ce863",
+      "treeOid": "96428ec3cb30f98f6809fab459e6172eb043f534",
+      "profileSha256": "8526cad40b0c7fccb623e423c4156014ea49243ce01fb1810e906576e631bdc7",
+      "sourceInventorySha256": "c6171c042fd917ab5836fd41f70ef51f57dc3e9ccfdce39014bd6800b92ec0f0",
+      "requirementsSha256": "3cbe0bbcc3daa3a6b0fbf95cdd59a083c0427c4c9c33fdf72cbe2ec2acd39c9b",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013"
+    }
+  ],
+  "familyPolicySets": {
+    "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c": {
+      "sqlCredentialKeys": [
+        "BACKUP_RESTORE_DATABASE_URL",
+        "DATABASE_URL",
+        "STAGING_DATABASE_URL",
+        "TEST_DATABASE_URL"
+      ],
+      "sourceReviewDisposition": {
+        "kind": "preview-source-facts-conservative-capability-reuse",
+        "credentialPathReuseProviders": [],
+        "unknownCapabilityProviders": [
+          "square",
+          "highlevel",
+          "chitchats",
+          "resend",
+          "google",
+          "sanity",
+          "mux"
+        ]
+      },
+      "families": [
+        {
+          "familyId": "chitchats.drafts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "chitchats.postage",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "chitchats.refunds",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "chitchats.tracking",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "google.calendar",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "google-calendar-all-alternate-paths-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "google.identity",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "google-auth-signing-absence-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "google.oauth",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "google-oauth-all-alternate-paths-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.contacts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.conversations",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.messages",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.oauth",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.opportunities",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.tasks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.webhooks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.workflows",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "mux.course-media",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "mux.studio",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "mux-public-editorial-private-sql-scope-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "resend.automations",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.broadcasts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.contacts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.emails",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.events",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.segments",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.templates",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.topics",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.webhooks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "sanity.callbacks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "sanity-signed-private-sql-ingress-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "sanity.editorial",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "sanity-editorial-private-sql-scope-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "square.cards",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.checkout",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.customers",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.invoices",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.orders",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.payments",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.refunds",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.webhooks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        }
+      ]
+    },
+    "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013": {
+      "sqlCredentialKeys": [
+        "BACKUP_RESTORE_DATABASE_URL",
+        "DATABASE_URL",
+        "STAGING_DATABASE_URL",
+        "TEST_DATABASE_URL"
+      ],
+      "sourceReviewDisposition": {
+        "kind": "preview-source-facts-conservative-capability-reuse",
+        "credentialPathReuseProviders": [],
+        "unknownCapabilityProviders": [
+          "square",
+          "highlevel",
+          "chitchats",
+          "resend",
+          "google",
+          "sanity",
+          "mux"
+        ]
+      },
+      "families": [
+        {
+          "familyId": "chitchats.drafts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "chitchats.postage",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "chitchats.refunds",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "chitchats.tracking",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "google.calendar",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "google-calendar-all-alternate-paths-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "google.identity",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "google-auth-signing-absence-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "google.oauth",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "google-oauth-all-alternate-paths-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.contacts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.conversations",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.messages",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.oauth",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.opportunities",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.tasks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.webhooks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.workflows",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "mux.course-media",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "mux.studio",
+          "sourceDisposition": "absent-from-verified-source",
+          "conditions": []
+        },
+        {
+          "familyId": "resend.automations",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.broadcasts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.contacts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.emails",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.events",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.segments",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.templates",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.topics",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "resend.webhooks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "sanity.callbacks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "sanity-signed-private-sql-ingress-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "sanity.editorial",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "sanity-editorial-private-sql-scope-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "square.cards",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.checkout",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.customers",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.invoices",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.orders",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.payments",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.refunds",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        },
+        {
+          "familyId": "square.webhooks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": []
+            }
+          ]
+        }
+      ]
+    },
+    "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714": {
+      "sqlCredentialKeys": [
+        "BACKUP_RESTORE_DATABASE_URL",
+        "DATABASE_URL",
+        "STAGING_DATABASE_URL",
+        "TEST_DATABASE_URL"
+      ],
+      "sourceReviewDisposition": {
+        "kind": "preview-source-facts-conservative-capability-reuse",
+        "credentialPathReuseProviders": [
+          "square",
+          "highlevel",
+          "chitchats",
+          "resend",
+          "google",
+          "sanity",
+          "mux"
+        ],
+        "unknownCapabilityProviders": []
+      },
+      "families": [
+        {
+          "familyId": "chitchats.drafts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "CHITCHATS_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "chitchats.postage",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "CHITCHATS_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "chitchats.refunds",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "CHITCHATS_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "chitchats.tracking",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "CHITCHATS_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "google.calendar",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "google-calendar-all-alternate-paths-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "google.identity",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "google-auth-signing-absence-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "google.oauth",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "google-oauth-all-alternate-paths-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.contacts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.conversations",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.messages",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.oauth",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CLIENT_ID",
+                  "HIGHLEVEL_CLIENT_SECRET"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.opportunities",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.tasks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.webhooks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_LOCATION_ID"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.workflows",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "mux.course-media",
+          "sourceDisposition": "absent-from-verified-source",
+          "conditions": []
+        },
+        {
+          "familyId": "mux.studio",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "mux-public-editorial-private-sql-scope-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "resend.automations",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.broadcasts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ],
+              "originalSelectorClosures": [
+                {
+                  "kind": "deployment",
+                  "key": "APP_ENV",
+                  "equals": "staging",
+                  "guard": "assertStagingBulkEmailDisabled at every reachable create/send caller; unused update/remove facade is not an entrypoint"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.contacts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.emails",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.events",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.segments",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.templates",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ],
+              "mutationExecutions": [
+                {
+                  "kind": "direct-caller",
+                  "entrypoint": "scripts/seed-resend-templates.ts"
+                },
+                {
+                  "kind": "direct-caller",
+                  "entrypoint": "scripts/update-contact-popup-resend-template.ts"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.topics",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.webhooks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_WEBHOOK_SECRET"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "sanity.callbacks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "sanity-signed-private-sql-ingress-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "sanity.editorial",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "sanity-editorial-private-sql-scope-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "square.cards",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.checkout",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.customers",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.invoices",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.orders",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.payments",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.refunds",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.webhooks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_WEBHOOK_SIGNATURE_KEY"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c": {
+      "sqlCredentialKeys": [
+        "BACKUP_RESTORE_DATABASE_URL",
+        "DATABASE_URL",
+        "STAGING_DATABASE_URL",
+        "TEST_DATABASE_URL"
+      ],
+      "sourceReviewDisposition": {
+        "kind": "audited-retained-staging-source",
+        "credentialPathReuseProviders": [
+          "square",
+          "highlevel",
+          "chitchats",
+          "resend",
+          "google",
+          "sanity",
+          "mux"
+        ],
+        "unknownCapabilityProviders": []
+      },
+      "families": [
+        {
+          "familyId": "chitchats.drafts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "CHITCHATS_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "chitchats.postage",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "CHITCHATS_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "chitchats.refunds",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "CHITCHATS_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "chitchats.tracking",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "CHITCHATS_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "google.calendar",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "google-calendar-all-alternate-paths-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "google.identity",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "google-auth-signing-absence-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "google.oauth",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "google-oauth-all-alternate-paths-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.contacts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.conversations",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.messages",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.oauth",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CLIENT_ID",
+                  "HIGHLEVEL_CLIENT_SECRET"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.opportunities",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.tasks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.webhooks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_LOCATION_ID"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "highlevel.workflows",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "DATABASE_URL",
+                  "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "mux.course-media",
+          "sourceDisposition": "absent-from-verified-source",
+          "conditions": []
+        },
+        {
+          "familyId": "mux.studio",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "mux-public-editorial-private-sql-scope-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "resend.automations",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.broadcasts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ],
+              "originalSelectorClosures": [
+                {
+                  "kind": "deployment",
+                  "key": "APP_ENV",
+                  "equals": "staging",
+                  "guard": "assertStagingBulkEmailDisabled at every reachable create/send caller; unused update/remove facade is not an entrypoint"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.contacts",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.emails",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.events",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.segments",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.templates",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ],
+              "mutationExecutions": [
+                {
+                  "kind": "direct-caller",
+                  "entrypoint": "scripts/seed-resend-templates.ts"
+                },
+                {
+                  "kind": "direct-caller",
+                  "entrypoint": "scripts/update-contact-popup-resend-template.ts"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.topics",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_API_KEY"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "resend.webhooks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "RESEND_WEBHOOK_SECRET"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "sanity.callbacks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "sanity-signed-private-sql-ingress-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "sanity.editorial",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [],
+              "privateSqlPredicate": "sanity-editorial-private-sql-scope-v1"
+            }
+          ]
+        },
+        {
+          "familyId": "square.cards",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.checkout",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.customers",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.invoices",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.orders",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.payments",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.refunds",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_ACCESS_TOKEN"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "familyId": "square.webhooks",
+          "sourceDisposition": "reachable",
+          "conditions": [
+            {
+              "requiredCredentialPaths": [
+                [
+                  "SQUARE_WEBHOOK_SIGNATURE_KEY"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "applicabilitySets": {
+    "57bbc7191e55cc3ff939c9ed4ba0775ddd206155c9336505a89b5c83ce274aea": {
+      "scope": "deployment-frontend-private-sql-and-protected-continuations-only",
+      "classifications": {
+        "source-absent": [
+          "mux.studio"
+        ],
+        "credential-path-blocked-by-fullcatalog": [],
+        "catalog-possible-value-or-selector-needed": [
+          "chitchats.drafts",
+          "chitchats.postage",
+          "chitchats.refunds",
+          "chitchats.tracking",
+          "google.calendar",
+          "google.identity",
+          "google.oauth",
+          "highlevel.contacts",
+          "highlevel.conversations",
+          "highlevel.messages",
+          "highlevel.oauth",
+          "highlevel.opportunities",
+          "highlevel.tasks",
+          "highlevel.webhooks",
+          "highlevel.workflows",
+          "mux.course-media",
+          "resend.automations",
+          "resend.broadcasts",
+          "resend.contacts",
+          "resend.emails",
+          "resend.events",
+          "resend.segments",
+          "resend.templates",
+          "resend.topics",
+          "resend.webhooks",
+          "sanity.callbacks",
+          "sanity.editorial",
+          "square.cards",
+          "square.checkout",
+          "square.customers",
+          "square.invoices",
+          "square.orders",
+          "square.payments",
+          "square.refunds",
+          "square.webhooks"
+        ],
+        "unknownsource": []
+      },
+      "reasons": [
+        {
+          "reason": "verified-source-does-not-authorize-reusing-credential-path-predicates",
+          "familyIds": [
+            "chitchats.drafts",
+            "chitchats.postage",
+            "chitchats.refunds",
+            "chitchats.tracking",
+            "highlevel.contacts",
+            "highlevel.conversations",
+            "highlevel.messages",
+            "highlevel.oauth",
+            "highlevel.opportunities",
+            "highlevel.tasks",
+            "highlevel.webhooks",
+            "highlevel.workflows",
+            "mux.course-media",
+            "resend.automations",
+            "resend.broadcasts",
+            "resend.contacts",
+            "resend.emails",
+            "resend.events",
+            "resend.segments",
+            "resend.templates",
+            "resend.topics",
+            "resend.webhooks",
+            "square.cards",
+            "square.checkout",
+            "square.customers",
+            "square.invoices",
+            "square.orders",
+            "square.payments",
+            "square.refunds",
+            "square.webhooks"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-auth-signing-absence-v1",
+          "familyIds": [
+            "google.identity"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-oauth-all-alternate-paths-v1",
+          "familyIds": [
+            "google.oauth"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-calendar-all-alternate-paths-v1",
+          "familyIds": [
+            "google.calendar"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "sanity-editorial-private-sql-scope-v1",
+          "familyIds": [
+            "sanity.editorial"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "sanity-signed-private-sql-ingress-v1",
+          "familyIds": [
+            "sanity.callbacks"
+          ]
+        },
+        {
+          "reason": "audited-mux-studio-has-no-frontend-private-sql-effect",
+          "familyIds": [
+            "mux.studio"
+          ]
+        }
+      ],
+      "externalEditorialCapabilityUnresolvedFamilyIds": [
+        "mux.studio",
+        "sanity.editorial"
+      ],
+      "catalogContext": {
+        "presentSqlKeys": [
+          "DATABASE_URL"
+        ],
+        "presentKvCredentialKeys": [
+          "KV_REST_API_URL",
+          "KV_REST_API_TOKEN"
+        ],
+        "presentAuthSigningKeys": [
+          "AUTH_SECRET"
+        ],
+        "sanitySigningKeyPresent": true,
+        "APP_ENVKeyPresent": true
+      },
+      "candidateValueProjection": {
+        "status": "unintegrated-candidate-interface-not-live-provenance",
+        "storePeerKeys": [
+          "DATABASE_URL",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ],
+        "allSupportedProviderBindingsNoSelectorKeys": [
+          "AUTH_GOOGLE_SECRET",
+          "DATABASE_URL",
+          "GOOGLE_CLIENT_SECRET",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "RESEND_API_KEY",
+          "SQUARE_ACCESS_TOKEN",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ],
+        "upperBoundIfOriginalStagingSelectorAndAllSupportedBindingsAreVerified": [
+          "AUTH_GOOGLE_ID",
+          "AUTH_GOOGLE_SECRET",
+          "DATABASE_URL",
+          "GOOGLE_CLIENT_ID",
+          "GOOGLE_CLIENT_SECRET",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "RESEND_API_KEY",
+          "SQUARE_ACCESS_TOKEN",
+          "SQUARE_APPLICATION_ID",
+          "SQUARE_ENVIRONMENT",
+          "SQUARE_LOCATION_ID",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ]
+      }
+    },
+    "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f": {
+      "scope": "deployment-frontend-private-sql-and-protected-continuations-only",
+      "classifications": {
+        "source-absent": [
+          "mux.course-media",
+          "mux.studio",
+          "resend.templates"
+        ],
+        "credential-path-blocked-by-fullcatalog": [
+          "chitchats.drafts",
+          "chitchats.postage",
+          "chitchats.refunds",
+          "chitchats.tracking",
+          "highlevel.contacts",
+          "highlevel.conversations",
+          "highlevel.messages",
+          "highlevel.oauth",
+          "highlevel.opportunities",
+          "highlevel.tasks",
+          "highlevel.webhooks",
+          "highlevel.workflows"
+        ],
+        "catalog-possible-value-or-selector-needed": [
+          "google.calendar",
+          "google.identity",
+          "google.oauth",
+          "resend.automations",
+          "resend.broadcasts",
+          "resend.contacts",
+          "resend.emails",
+          "resend.events",
+          "resend.segments",
+          "resend.topics",
+          "resend.webhooks",
+          "sanity.callbacks",
+          "sanity.editorial",
+          "square.cards",
+          "square.checkout",
+          "square.customers",
+          "square.invoices",
+          "square.orders",
+          "square.payments",
+          "square.refunds",
+          "square.webhooks"
+        ],
+        "unknownsource": []
+      },
+      "reasons": [
+        {
+          "reason": "retained-required-keys-need-original-binding-and-effects",
+          "familyIds": [
+            "resend.automations",
+            "resend.contacts",
+            "resend.emails",
+            "resend.events",
+            "resend.segments",
+            "resend.topics",
+            "resend.webhooks",
+            "square.cards",
+            "square.checkout",
+            "square.customers",
+            "square.invoices",
+            "square.orders",
+            "square.payments",
+            "square.refunds",
+            "square.webhooks"
+          ]
+        },
+        {
+          "reason": "every-reviewed-required-path-has-an-absent-key",
+          "missingKeys": [
+            "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+          ],
+          "familyIds": [
+            "highlevel.contacts",
+            "highlevel.conversations",
+            "highlevel.messages",
+            "highlevel.opportunities",
+            "highlevel.tasks",
+            "highlevel.workflows"
+          ]
+        },
+        {
+          "reason": "every-reviewed-required-path-has-an-absent-key",
+          "missingKeys": [
+            "HIGHLEVEL_LOCATION_ID"
+          ],
+          "familyIds": [
+            "highlevel.webhooks"
+          ]
+        },
+        {
+          "reason": "every-reviewed-required-path-has-an-absent-key",
+          "missingKeys": [
+            "HIGHLEVEL_CLIENT_ID",
+            "HIGHLEVEL_CLIENT_SECRET"
+          ],
+          "familyIds": [
+            "highlevel.oauth"
+          ]
+        },
+        {
+          "reason": "every-reviewed-required-path-has-an-absent-key",
+          "missingKeys": [
+            "CHITCHATS_ACCESS_TOKEN"
+          ],
+          "familyIds": [
+            "chitchats.drafts",
+            "chitchats.postage",
+            "chitchats.refunds",
+            "chitchats.tracking"
+          ]
+        },
+        {
+          "reason": "original-APP_ENV-selector-is-needed-not-project-or-target-name",
+          "familyIds": [
+            "resend.broadcasts"
+          ]
+        },
+        {
+          "reason": "mutation-entrypoints-are-direct-callers-not-this-deployment",
+          "familyIds": [
+            "resend.templates"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-auth-signing-absence-v1",
+          "familyIds": [
+            "google.identity"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-oauth-all-alternate-paths-v1",
+          "familyIds": [
+            "google.oauth"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-calendar-all-alternate-paths-v1",
+          "familyIds": [
+            "google.calendar"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "sanity-editorial-private-sql-scope-v1",
+          "familyIds": [
+            "sanity.editorial"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "sanity-signed-private-sql-ingress-v1",
+          "familyIds": [
+            "sanity.callbacks"
+          ]
+        },
+        {
+          "reason": "audited-mux-studio-has-no-frontend-private-sql-effect",
+          "familyIds": [
+            "mux.studio"
+          ]
+        },
+        {
+          "reason": "family-absent-from-exact-source",
+          "familyIds": [
+            "mux.course-media"
+          ]
+        }
+      ],
+      "externalEditorialCapabilityUnresolvedFamilyIds": [
+        "mux.studio",
+        "sanity.editorial"
+      ],
+      "catalogContext": {
+        "presentSqlKeys": [
+          "DATABASE_URL"
+        ],
+        "presentKvCredentialKeys": [
+          "KV_REST_API_URL",
+          "KV_REST_API_TOKEN"
+        ],
+        "presentAuthSigningKeys": [
+          "AUTH_SECRET"
+        ],
+        "sanitySigningKeyPresent": true,
+        "APP_ENVKeyPresent": true
+      },
+      "candidateValueProjection": {
+        "status": "unintegrated-candidate-interface-not-live-provenance",
+        "storePeerKeys": [
+          "DATABASE_URL",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ],
+        "allSupportedProviderBindingsNoSelectorKeys": [
+          "AUTH_GOOGLE_SECRET",
+          "DATABASE_URL",
+          "GOOGLE_CLIENT_SECRET",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "RESEND_API_KEY",
+          "SQUARE_ACCESS_TOKEN",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ],
+        "upperBoundIfOriginalStagingSelectorAndAllSupportedBindingsAreVerified": [
+          "AUTH_GOOGLE_ID",
+          "AUTH_GOOGLE_SECRET",
+          "DATABASE_URL",
+          "GOOGLE_CLIENT_ID",
+          "GOOGLE_CLIENT_SECRET",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "RESEND_API_KEY",
+          "SQUARE_ACCESS_TOKEN",
+          "SQUARE_APPLICATION_ID",
+          "SQUARE_ENVIRONMENT",
+          "SQUARE_LOCATION_ID",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ]
+      }
+    },
+    "d16bee58327ada74e949801b645527ef29f580293b03f033d9d4a22edd379315": {
+      "scope": "deployment-frontend-private-sql-and-protected-continuations-only",
+      "classifications": {
+        "source-absent": [
+          "mux.course-media",
+          "mux.studio",
+          "resend.templates"
+        ],
+        "credential-path-blocked-by-fullcatalog": [
+          "highlevel.contacts",
+          "highlevel.conversations",
+          "highlevel.messages",
+          "highlevel.oauth",
+          "highlevel.opportunities",
+          "highlevel.tasks",
+          "highlevel.webhooks",
+          "highlevel.workflows"
+        ],
+        "catalog-possible-value-or-selector-needed": [
+          "chitchats.drafts",
+          "chitchats.postage",
+          "chitchats.refunds",
+          "chitchats.tracking",
+          "google.calendar",
+          "google.identity",
+          "google.oauth",
+          "resend.automations",
+          "resend.broadcasts",
+          "resend.contacts",
+          "resend.emails",
+          "resend.events",
+          "resend.segments",
+          "resend.topics",
+          "resend.webhooks",
+          "sanity.callbacks",
+          "sanity.editorial",
+          "square.cards",
+          "square.checkout",
+          "square.customers",
+          "square.invoices",
+          "square.orders",
+          "square.payments",
+          "square.refunds",
+          "square.webhooks"
+        ],
+        "unknownsource": []
+      },
+      "reasons": [
+        {
+          "reason": "retained-required-keys-need-original-binding-and-effects",
+          "familyIds": [
+            "chitchats.drafts",
+            "chitchats.postage",
+            "chitchats.refunds",
+            "chitchats.tracking",
+            "resend.automations",
+            "resend.contacts",
+            "resend.emails",
+            "resend.events",
+            "resend.segments",
+            "resend.topics",
+            "resend.webhooks",
+            "square.cards",
+            "square.checkout",
+            "square.customers",
+            "square.invoices",
+            "square.orders",
+            "square.payments",
+            "square.refunds",
+            "square.webhooks"
+          ]
+        },
+        {
+          "reason": "every-reviewed-required-path-has-an-absent-key",
+          "missingKeys": [
+            "HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY"
+          ],
+          "familyIds": [
+            "highlevel.contacts",
+            "highlevel.conversations",
+            "highlevel.messages",
+            "highlevel.opportunities",
+            "highlevel.tasks",
+            "highlevel.workflows"
+          ]
+        },
+        {
+          "reason": "every-reviewed-required-path-has-an-absent-key",
+          "missingKeys": [
+            "HIGHLEVEL_LOCATION_ID"
+          ],
+          "familyIds": [
+            "highlevel.webhooks"
+          ]
+        },
+        {
+          "reason": "every-reviewed-required-path-has-an-absent-key",
+          "missingKeys": [
+            "HIGHLEVEL_CLIENT_ID",
+            "HIGHLEVEL_CLIENT_SECRET"
+          ],
+          "familyIds": [
+            "highlevel.oauth"
+          ]
+        },
+        {
+          "reason": "original-APP_ENV-selector-is-needed-not-project-or-target-name",
+          "familyIds": [
+            "resend.broadcasts"
+          ]
+        },
+        {
+          "reason": "mutation-entrypoints-are-direct-callers-not-this-deployment",
+          "familyIds": [
+            "resend.templates"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-auth-signing-absence-v1",
+          "familyIds": [
+            "google.identity"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-oauth-all-alternate-paths-v1",
+          "familyIds": [
+            "google.oauth"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-calendar-all-alternate-paths-v1",
+          "familyIds": [
+            "google.calendar"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "sanity-editorial-private-sql-scope-v1",
+          "familyIds": [
+            "sanity.editorial"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "sanity-signed-private-sql-ingress-v1",
+          "familyIds": [
+            "sanity.callbacks"
+          ]
+        },
+        {
+          "reason": "audited-mux-studio-has-no-frontend-private-sql-effect",
+          "familyIds": [
+            "mux.studio"
+          ]
+        },
+        {
+          "reason": "family-absent-from-exact-source",
+          "familyIds": [
+            "mux.course-media"
+          ]
+        }
+      ],
+      "externalEditorialCapabilityUnresolvedFamilyIds": [
+        "mux.studio",
+        "sanity.editorial"
+      ],
+      "catalogContext": {
+        "presentSqlKeys": [
+          "DATABASE_URL"
+        ],
+        "presentKvCredentialKeys": [
+          "KV_REST_API_URL",
+          "KV_REST_API_TOKEN"
+        ],
+        "presentAuthSigningKeys": [
+          "AUTH_SECRET"
+        ],
+        "sanitySigningKeyPresent": true,
+        "APP_ENVKeyPresent": true
+      },
+      "candidateValueProjection": {
+        "status": "unintegrated-candidate-interface-not-live-provenance",
+        "storePeerKeys": [
+          "DATABASE_URL",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ],
+        "allSupportedProviderBindingsNoSelectorKeys": [
+          "AUTH_GOOGLE_SECRET",
+          "CHITCHATS_ACCESS_TOKEN",
+          "DATABASE_URL",
+          "GOOGLE_CLIENT_SECRET",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "RESEND_API_KEY",
+          "SQUARE_ACCESS_TOKEN",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ],
+        "upperBoundIfOriginalStagingSelectorAndAllSupportedBindingsAreVerified": [
+          "AUTH_GOOGLE_ID",
+          "AUTH_GOOGLE_SECRET",
+          "CHITCHATS_ACCESS_TOKEN",
+          "CHITCHATS_CLIENT_ID",
+          "CHITCHATS_ENVIRONMENT",
+          "DATABASE_URL",
+          "GOOGLE_CLIENT_ID",
+          "GOOGLE_CLIENT_SECRET",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "RESEND_API_KEY",
+          "SQUARE_ACCESS_TOKEN",
+          "SQUARE_APPLICATION_ID",
+          "SQUARE_ENVIRONMENT",
+          "SQUARE_LOCATION_ID",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ]
+      }
+    },
+    "cc20bb2be40e81c99c498e0ac3f43c14a4d4a39d6d011e453453727cfc935d65": {
+      "scope": "deployment-frontend-private-sql-and-protected-continuations-only",
+      "classifications": {
+        "source-absent": [
+          "mux.studio"
+        ],
+        "credential-path-blocked-by-fullcatalog": [],
+        "catalog-possible-value-or-selector-needed": [
+          "chitchats.drafts",
+          "chitchats.postage",
+          "chitchats.refunds",
+          "chitchats.tracking",
+          "google.calendar",
+          "google.identity",
+          "google.oauth",
+          "highlevel.contacts",
+          "highlevel.conversations",
+          "highlevel.messages",
+          "highlevel.oauth",
+          "highlevel.opportunities",
+          "highlevel.tasks",
+          "highlevel.webhooks",
+          "highlevel.workflows",
+          "mux.course-media",
+          "resend.automations",
+          "resend.broadcasts",
+          "resend.contacts",
+          "resend.emails",
+          "resend.events",
+          "resend.segments",
+          "resend.templates",
+          "resend.topics",
+          "resend.webhooks",
+          "sanity.callbacks",
+          "sanity.editorial",
+          "square.cards",
+          "square.checkout",
+          "square.customers",
+          "square.invoices",
+          "square.orders",
+          "square.payments",
+          "square.refunds",
+          "square.webhooks"
+        ],
+        "unknownsource": []
+      },
+      "reasons": [
+        {
+          "reason": "verified-source-does-not-authorize-reusing-credential-path-predicates",
+          "familyIds": [
+            "chitchats.drafts",
+            "chitchats.postage",
+            "chitchats.refunds",
+            "chitchats.tracking",
+            "highlevel.contacts",
+            "highlevel.conversations",
+            "highlevel.messages",
+            "highlevel.oauth",
+            "highlevel.opportunities",
+            "highlevel.tasks",
+            "highlevel.webhooks",
+            "highlevel.workflows",
+            "mux.course-media",
+            "resend.automations",
+            "resend.broadcasts",
+            "resend.contacts",
+            "resend.emails",
+            "resend.events",
+            "resend.segments",
+            "resend.templates",
+            "resend.topics",
+            "resend.webhooks",
+            "square.cards",
+            "square.checkout",
+            "square.customers",
+            "square.invoices",
+            "square.orders",
+            "square.payments",
+            "square.refunds",
+            "square.webhooks"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-auth-signing-absence-v1",
+          "familyIds": [
+            "google.identity"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-oauth-all-alternate-paths-v1",
+          "familyIds": [
+            "google.oauth"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-calendar-all-alternate-paths-v1",
+          "familyIds": [
+            "google.calendar"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "sanity-editorial-private-sql-scope-v1",
+          "familyIds": [
+            "sanity.editorial"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "sanity-signed-private-sql-ingress-v1",
+          "familyIds": [
+            "sanity.callbacks"
+          ]
+        },
+        {
+          "reason": "audited-mux-studio-has-no-frontend-private-sql-effect",
+          "familyIds": [
+            "mux.studio"
+          ]
+        }
+      ],
+      "externalEditorialCapabilityUnresolvedFamilyIds": [
+        "mux.studio",
+        "sanity.editorial"
+      ],
+      "catalogContext": {
+        "presentSqlKeys": [
+          "DATABASE_URL"
+        ],
+        "presentKvCredentialKeys": [
+          "KV_REST_API_URL",
+          "KV_REST_API_TOKEN"
+        ],
+        "presentAuthSigningKeys": [
+          "AUTH_SECRET"
+        ],
+        "sanitySigningKeyPresent": true,
+        "APP_ENVKeyPresent": false
+      },
+      "candidateValueProjection": {
+        "status": "unintegrated-candidate-interface-not-live-provenance",
+        "storePeerKeys": [
+          "DATABASE_URL",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ],
+        "allSupportedProviderBindingsNoSelectorKeys": [
+          "AUTH_GOOGLE_SECRET",
+          "CHITCHATS_ACCESS_TOKEN",
+          "DATABASE_URL",
+          "GOOGLE_CLIENT_SECRET",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "RESEND_API_KEY",
+          "SQUARE_ACCESS_TOKEN",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ],
+        "upperBoundIfOriginalStagingSelectorAndAllSupportedBindingsAreVerified": [
+          "AUTH_GOOGLE_SECRET",
+          "CHITCHATS_ACCESS_TOKEN",
+          "DATABASE_URL",
+          "GOOGLE_CLIENT_SECRET",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "RESEND_API_KEY",
+          "SQUARE_ACCESS_TOKEN",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ]
+      }
+    },
+    "26a5df8de3abb9716fc7a0628d29f80779d9270fcab20935e1e1df31edf85cca": {
+      "scope": "deployment-frontend-private-sql-and-protected-continuations-only",
+      "classifications": {
+        "source-absent": [
+          "mux.studio"
+        ],
+        "credential-path-blocked-by-fullcatalog": [],
+        "catalog-possible-value-or-selector-needed": [
+          "chitchats.drafts",
+          "chitchats.postage",
+          "chitchats.refunds",
+          "chitchats.tracking",
+          "google.calendar",
+          "google.identity",
+          "google.oauth",
+          "highlevel.contacts",
+          "highlevel.conversations",
+          "highlevel.messages",
+          "highlevel.oauth",
+          "highlevel.opportunities",
+          "highlevel.tasks",
+          "highlevel.webhooks",
+          "highlevel.workflows",
+          "mux.course-media",
+          "resend.automations",
+          "resend.broadcasts",
+          "resend.contacts",
+          "resend.emails",
+          "resend.events",
+          "resend.segments",
+          "resend.templates",
+          "resend.topics",
+          "resend.webhooks",
+          "sanity.callbacks",
+          "sanity.editorial",
+          "square.cards",
+          "square.checkout",
+          "square.customers",
+          "square.invoices",
+          "square.orders",
+          "square.payments",
+          "square.refunds",
+          "square.webhooks"
+        ],
+        "unknownsource": []
+      },
+      "reasons": [
+        {
+          "reason": "verified-source-does-not-authorize-reusing-credential-path-predicates",
+          "familyIds": [
+            "chitchats.drafts",
+            "chitchats.postage",
+            "chitchats.refunds",
+            "chitchats.tracking",
+            "highlevel.contacts",
+            "highlevel.conversations",
+            "highlevel.messages",
+            "highlevel.oauth",
+            "highlevel.opportunities",
+            "highlevel.tasks",
+            "highlevel.webhooks",
+            "highlevel.workflows",
+            "mux.course-media",
+            "resend.automations",
+            "resend.broadcasts",
+            "resend.contacts",
+            "resend.emails",
+            "resend.events",
+            "resend.segments",
+            "resend.templates",
+            "resend.topics",
+            "resend.webhooks",
+            "square.cards",
+            "square.checkout",
+            "square.customers",
+            "square.invoices",
+            "square.orders",
+            "square.payments",
+            "square.refunds",
+            "square.webhooks"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-auth-signing-absence-v1",
+          "familyIds": [
+            "google.identity"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-oauth-all-alternate-paths-v1",
+          "familyIds": [
+            "google.oauth"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-calendar-all-alternate-paths-v1",
+          "familyIds": [
+            "google.calendar"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "sanity-editorial-private-sql-scope-v1",
+          "familyIds": [
+            "sanity.editorial"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "sanity-signed-private-sql-ingress-v1",
+          "familyIds": [
+            "sanity.callbacks"
+          ]
+        },
+        {
+          "reason": "family-absent-from-exact-source",
+          "familyIds": [
+            "mux.studio"
+          ]
+        }
+      ],
+      "externalEditorialCapabilityUnresolvedFamilyIds": [
+        "sanity.editorial"
+      ],
+      "catalogContext": {
+        "presentSqlKeys": [
+          "DATABASE_URL"
+        ],
+        "presentKvCredentialKeys": [
+          "KV_REST_API_URL",
+          "KV_REST_API_TOKEN"
+        ],
+        "presentAuthSigningKeys": [
+          "AUTH_SECRET"
+        ],
+        "sanitySigningKeyPresent": true,
+        "APP_ENVKeyPresent": false
+      },
+      "candidateValueProjection": {
+        "status": "unintegrated-candidate-interface-not-live-provenance",
+        "storePeerKeys": [
+          "DATABASE_URL",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ],
+        "allSupportedProviderBindingsNoSelectorKeys": [
+          "AUTH_GOOGLE_SECRET",
+          "CHITCHATS_ACCESS_TOKEN",
+          "DATABASE_URL",
+          "GOOGLE_CLIENT_SECRET",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "RESEND_API_KEY",
+          "SQUARE_ACCESS_TOKEN",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ],
+        "upperBoundIfOriginalStagingSelectorAndAllSupportedBindingsAreVerified": [
+          "AUTH_GOOGLE_SECRET",
+          "CHITCHATS_ACCESS_TOKEN",
+          "DATABASE_URL",
+          "GOOGLE_CLIENT_SECRET",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "RESEND_API_KEY",
+          "SQUARE_ACCESS_TOKEN",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ]
+      }
+    },
+    "2a1380ae68b9c2b413fcc35f5317a05cbeb6142b5a8e8bbd09b770cb6f520246": {
+      "scope": "deployment-frontend-private-sql-and-protected-continuations-only",
+      "classifications": {
+        "source-absent": [
+          "mux.studio"
+        ],
+        "credential-path-blocked-by-fullcatalog": [],
+        "catalog-possible-value-or-selector-needed": [
+          "chitchats.drafts",
+          "chitchats.postage",
+          "chitchats.refunds",
+          "chitchats.tracking",
+          "google.calendar",
+          "google.identity",
+          "google.oauth",
+          "highlevel.contacts",
+          "highlevel.conversations",
+          "highlevel.messages",
+          "highlevel.oauth",
+          "highlevel.opportunities",
+          "highlevel.tasks",
+          "highlevel.webhooks",
+          "highlevel.workflows",
+          "mux.course-media",
+          "resend.automations",
+          "resend.broadcasts",
+          "resend.contacts",
+          "resend.emails",
+          "resend.events",
+          "resend.segments",
+          "resend.templates",
+          "resend.topics",
+          "resend.webhooks",
+          "sanity.callbacks",
+          "sanity.editorial",
+          "square.cards",
+          "square.checkout",
+          "square.customers",
+          "square.invoices",
+          "square.orders",
+          "square.payments",
+          "square.refunds",
+          "square.webhooks"
+        ],
+        "unknownsource": []
+      },
+      "reasons": [
+        {
+          "reason": "verified-source-does-not-authorize-reusing-credential-path-predicates",
+          "familyIds": [
+            "chitchats.drafts",
+            "chitchats.postage",
+            "chitchats.refunds",
+            "chitchats.tracking",
+            "highlevel.contacts",
+            "highlevel.conversations",
+            "highlevel.messages",
+            "highlevel.oauth",
+            "highlevel.opportunities",
+            "highlevel.tasks",
+            "highlevel.webhooks",
+            "highlevel.workflows",
+            "mux.course-media",
+            "resend.automations",
+            "resend.broadcasts",
+            "resend.contacts",
+            "resend.emails",
+            "resend.events",
+            "resend.segments",
+            "resend.templates",
+            "resend.topics",
+            "resend.webhooks",
+            "square.cards",
+            "square.checkout",
+            "square.customers",
+            "square.invoices",
+            "square.orders",
+            "square.payments",
+            "square.refunds",
+            "square.webhooks"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-auth-signing-absence-v1",
+          "familyIds": [
+            "google.identity"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-oauth-all-alternate-paths-v1",
+          "familyIds": [
+            "google.oauth"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "google-calendar-all-alternate-paths-v1",
+          "familyIds": [
+            "google.calendar"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "sanity-editorial-private-sql-scope-v1",
+          "familyIds": [
+            "sanity.editorial"
+          ]
+        },
+        {
+          "reason": "private-sql-signing-client-or-alternate-store-path-remains-possible",
+          "predicate": "sanity-signed-private-sql-ingress-v1",
+          "familyIds": [
+            "sanity.callbacks"
+          ]
+        },
+        {
+          "reason": "audited-mux-studio-has-no-frontend-private-sql-effect",
+          "familyIds": [
+            "mux.studio"
+          ]
+        }
+      ],
+      "externalEditorialCapabilityUnresolvedFamilyIds": [
+        "mux.studio",
+        "sanity.editorial"
+      ],
+      "catalogContext": {
+        "presentSqlKeys": [
+          "DATABASE_URL"
+        ],
+        "presentKvCredentialKeys": [
+          "KV_REST_API_URL",
+          "KV_REST_API_TOKEN"
+        ],
+        "presentAuthSigningKeys": [
+          "AUTH_SECRET"
+        ],
+        "sanitySigningKeyPresent": true,
+        "APP_ENVKeyPresent": true
+      },
+      "candidateValueProjection": {
+        "status": "unintegrated-candidate-interface-not-live-provenance",
+        "storePeerKeys": [
+          "DATABASE_URL",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ],
+        "allSupportedProviderBindingsNoSelectorKeys": [
+          "AUTH_GOOGLE_SECRET",
+          "CHITCHATS_ACCESS_TOKEN",
+          "DATABASE_URL",
+          "GOOGLE_CLIENT_SECRET",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "RESEND_API_KEY",
+          "SQUARE_ACCESS_TOKEN",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ],
+        "upperBoundIfOriginalStagingSelectorAndAllSupportedBindingsAreVerified": [
+          "AUTH_GOOGLE_ID",
+          "AUTH_GOOGLE_SECRET",
+          "CHITCHATS_ACCESS_TOKEN",
+          "CHITCHATS_CLIENT_ID",
+          "CHITCHATS_ENVIRONMENT",
+          "DATABASE_URL",
+          "GOOGLE_CLIENT_ID",
+          "GOOGLE_CLIENT_SECRET",
+          "KV_REST_API_TOKEN",
+          "KV_REST_API_URL",
+          "RESEND_API_KEY",
+          "SQUARE_ACCESS_TOKEN",
+          "SQUARE_APPLICATION_ID",
+          "SQUARE_ENVIRONMENT",
+          "SQUARE_LOCATION_ID",
+          "VERCEL_ENV",
+          "VERCEL_TARGET_ENV"
+        ]
+      }
+    }
+  },
+  "surfaces": [
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_2AfeVbsNmsY67jrBkcbwiGLUCgJe",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793635888377,
+      "createdAtUtc": "2026-11-02T16:11:28.377Z",
+      "sourceCommit": "13142937adf542e41d0a12807d2503389933f74e",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "4b0c761a43fd7bee9ee1ff6dfce197582aa5a8fd2e2dd97d4f5097346f622753",
+      "provenanceSha256": "83667289a2bd7f7af1dc42b8410eb21231b93f20cf7a1248424d309907dfc8c8",
+      "catalogObservedAt": "2026-11-06T04:08:20.052Z",
+      "unionKeyCount": 214,
+      "applicabilitySetSha256": "57bbc7191e55cc3ff939c9ed4ba0775ddd206155c9336505a89b5c83ce274aea",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_2EYaBUHPhH7VpfMjewPwahjhYHbP",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792715713970,
+      "createdAtUtc": "2026-10-23T00:35:13.970Z",
+      "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "2f46a7a5266a87f804a3230b08102d09700bb2a039ffcfda21553f20fed5550a",
+      "provenanceSha256": "c77d3ed80233dce877a74ca1584324665deb090704d05f915e8026eb29a48602",
+      "catalogObservedAt": "2026-11-06T04:08:21.107Z",
+      "unionKeyCount": 213,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_2kbYXvgZ6JYa71ZfN8cHgmwaRfn9",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792875790487,
+      "createdAtUtc": "2026-10-24T21:03:10.487Z",
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "6fa4503785f6f9ca58e5e1616490ea5e3f9e25804b7882739c5260f3efc7ea42",
+      "provenanceSha256": "efd12f40ee14f0437f971bf342c7e8ace5fbd6f93d76a4e960dcabd8a211d21c",
+      "catalogObservedAt": "2026-11-06T04:08:22.151Z",
+      "unionKeyCount": 214,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_51EWpVb1iyVqKYW4gyc6MR2PoYns",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793221462997,
+      "createdAtUtc": "2026-10-28T21:04:22.997Z",
+      "sourceCommit": "45223fec3ee71bf63cfb0e44a94a0a7b3e282ca1",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "0ad0fc3ed97ad1179a5bd46c4cf352d4594702586296418aed21586436ff5eac",
+      "provenanceSha256": "80969fc987eacc4e2d9ba14cbae1f177c0ca2c3ec785d3393a44c9a960df47cf",
+      "catalogObservedAt": "2026-11-06T04:08:23.195Z",
+      "unionKeyCount": 214,
+      "applicabilitySetSha256": "57bbc7191e55cc3ff939c9ed4ba0775ddd206155c9336505a89b5c83ce274aea",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_6Ey7Fhh8E5eHjmpeGUhKpRnFs5hP",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793649292585,
+      "createdAtUtc": "2026-11-02T19:54:52.585Z",
+      "sourceCommit": "d632773365867a979084876426d74f6a584e6f2c",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "4b0c761a43fd7bee9ee1ff6dfce197582aa5a8fd2e2dd97d4f5097346f622753",
+      "provenanceSha256": "1a07d6b2a32b5557d55d0f97c49fd750139d356707d76ad8a07c2aac9f4030b0",
+      "catalogObservedAt": "2026-11-06T04:08:24.203Z",
+      "unionKeyCount": 214,
+      "applicabilitySetSha256": "57bbc7191e55cc3ff939c9ed4ba0775ddd206155c9336505a89b5c83ce274aea",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_6YZsoqCqh1dy42kzzBn4vjvTmu2G",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792874916693,
+      "createdAtUtc": "2026-10-24T20:48:36.693Z",
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "ce90a2feca9de4df017ba3e660c6a46395bc06f4e563713984b8ea7ec05ced84",
+      "provenanceSha256": "ebe5d179964afcfaf524fa4967389c2ac3c9adaae5fc228f59fd08dd657cec88",
+      "catalogObservedAt": "2026-11-06T04:08:25.268Z",
+      "unionKeyCount": 212,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_6wjquDpwk4gWPNdUFDVCn9bwBFYY",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793649130822,
+      "createdAtUtc": "2026-11-02T19:52:10.822Z",
+      "sourceCommit": "03d850c0512eddc0ef11cbac779e255a7b73bd3b",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "4b0c761a43fd7bee9ee1ff6dfce197582aa5a8fd2e2dd97d4f5097346f622753",
+      "provenanceSha256": "87b7a88bbe58eec80fce19a3e043da99c432dd510d5d3070cbaf1ac5f22313d8",
+      "catalogObservedAt": "2026-11-06T04:08:26.375Z",
+      "unionKeyCount": 214,
+      "applicabilitySetSha256": "57bbc7191e55cc3ff939c9ed4ba0775ddd206155c9336505a89b5c83ce274aea",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_7UNHRwCHteRdBSqApPmaMqQ9qDDJ",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793301545897,
+      "createdAtUtc": "2026-10-29T19:19:05.897Z",
+      "sourceCommit": "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "4b0c761a43fd7bee9ee1ff6dfce197582aa5a8fd2e2dd97d4f5097346f622753",
+      "provenanceSha256": "b9b1437c11476b215f0a25327e05348c2f16fd1ca143161c7dbe6c11411f0b50",
+      "catalogObservedAt": "2026-11-06T04:08:27.423Z",
+      "unionKeyCount": 214,
+      "applicabilitySetSha256": "57bbc7191e55cc3ff939c9ed4ba0775ddd206155c9336505a89b5c83ce274aea",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_7VUnHWAAVqcZYd4xfd2VJokj3SHS",
+      "providerTarget": "production",
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792715185361,
+      "createdAtUtc": "2026-10-23T00:26:25.361Z",
+      "sourceCommit": "2390ff32c4156bf861cbce32406f5e4ad18583ab",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "2f46a7a5266a87f804a3230b08102d09700bb2a039ffcfda21553f20fed5550a",
+      "provenanceSha256": "cb6ef296a188f8d4566b8fc2ad6930405e3f76031db2d2ce28cbc8e1c4769f0d",
+      "catalogObservedAt": "2026-11-06T04:08:28.432Z",
+      "unionKeyCount": 213,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_AC3rMPTnwfc27bCQyAERrE1fZmdF",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793222374199,
+      "createdAtUtc": "2026-10-28T21:19:34.199Z",
+      "sourceCommit": "e82645b6c045ce88dbaacf3c32cff8606a8592a8",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "0ad0fc3ed97ad1179a5bd46c4cf352d4594702586296418aed21586436ff5eac",
+      "provenanceSha256": "280da9d56aec8ce84ae020ae3047203289303297f72720a1a7fda154b71ef4f8",
+      "catalogObservedAt": "2026-11-06T04:08:29.627Z",
+      "unionKeyCount": 214,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_Ac7vFtRJLxoDm3juS2RYarWremaW",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793636398698,
+      "createdAtUtc": "2026-11-02T16:19:58.698Z",
+      "sourceCommit": "85dea97b0deae17cff19e345268bddafeba9fe28",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "4b0c761a43fd7bee9ee1ff6dfce197582aa5a8fd2e2dd97d4f5097346f622753",
+      "provenanceSha256": "3ad661f39b1726cd73fc01177b8b8eded24e7a4f0316b678d04ddb011772ab4c",
+      "catalogObservedAt": "2026-11-06T04:08:30.680Z",
+      "unionKeyCount": 214,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_AcWL59ofwPRKHifBujyQAfXEVzRs",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793663789495,
+      "createdAtUtc": "2026-11-02T23:56:29.495Z",
+      "sourceCommit": "26bcdd9a605eb6c07a75e2a7a7b519015b04deb8",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "0634af9af98575efbad86f6781e319d5d40905f3e2b3a0c58f0ca482c16b0e34",
+      "provenanceSha256": "caf767e9bc83488e563a2f9f352292cf107a018780523eb6da2b5b8d51aeb36b",
+      "catalogObservedAt": "2026-11-06T04:08:31.676Z",
+      "unionKeyCount": 216,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_B6kUx3d3viPek6UkKGHEpH9ZU6Ry",
+      "providerTarget": "production",
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792878027351,
+      "createdAtUtc": "2026-10-24T21:40:27.351Z",
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "512e10bf6fe2e3bdf6740c7993afc8c569c8a80c04cf0ec9af8458ca75a4ac4e",
+      "provenanceSha256": "1eb783ed1107ee5cff56b0304370e302c890a80e3d164d2e947efac8437d4e10",
+      "catalogObservedAt": "2026-11-06T04:08:32.647Z",
+      "unionKeyCount": 216,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_BCyvMh81J8KyGFuas3pJgNCKUkys",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792723287340,
+      "createdAtUtc": "2026-10-23T02:41:27.340Z",
+      "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "8fb9e3ca837dc23aa2b2b9f97969163cdbd9bfeddf93964110a4a5b1b10073ca",
+      "provenanceSha256": "16c0adedd16d0e3f959ca2eb519605202873e7f752bb65b46397b1374563521c",
+      "catalogObservedAt": "2026-11-06T04:08:33.590Z",
+      "unionKeyCount": 215,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_BUkM718SMVrDBF4texFyEty1hnCw",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793650357624,
+      "createdAtUtc": "2026-11-02T20:12:37.624Z",
+      "sourceCommit": "0ed09401726ff5f6f5057018ba7125a498d7180c",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "4b0c761a43fd7bee9ee1ff6dfce197582aa5a8fd2e2dd97d4f5097346f622753",
+      "provenanceSha256": "96bf305c08f9e8a933352e6a1215838144a463e5b486b04d65c2006e00114c69",
+      "catalogObservedAt": "2026-11-06T04:08:34.624Z",
+      "unionKeyCount": 214,
+      "applicabilitySetSha256": "57bbc7191e55cc3ff939c9ed4ba0775ddd206155c9336505a89b5c83ce274aea",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_BhcXzshZsXQ6nzqAkbKsn1BPDsZX",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792878220586,
+      "createdAtUtc": "2026-10-24T21:43:40.586Z",
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "6fa4503785f6f9ca58e5e1616490ea5e3f9e25804b7882739c5260f3efc7ea42",
+      "provenanceSha256": "334f4346ff64be0b776cf57e25c42dc0641dfb78d3d8bf7536e6cc048d7d8642",
+      "catalogObservedAt": "2026-11-06T04:08:35.673Z",
+      "unionKeyCount": 214,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_Bqc171V1RouKNkjcrnVtWB1imwKH",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793754546485,
+      "createdAtUtc": "2026-11-04T01:09:06.485Z",
+      "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "ad51854fbf7e74b524984a52a72822da1525d57adde7a1203edda4c457407939",
+      "provenanceSha256": "3b70b609ccf6ec77223350f04d765b9b49dfc993e7c4213c1bddb6d41a573a16",
+      "catalogObservedAt": "2026-11-06T04:08:36.715Z",
+      "unionKeyCount": 228,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_CdhFqwVANweysVe9cCTNpmHfduiy",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793672000549,
+      "createdAtUtc": "2026-11-03T02:13:20.549Z",
+      "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "7cdcccd084d9fe98d663920e395ad28981632bb36a2f7a1048269a263263b99a",
+      "provenanceSha256": "60602c4b40adb5dd34eb63e08fee8116ab6508ecf7aed0a0b166194dbee7a43e",
+      "catalogObservedAt": "2026-11-06T04:08:37.819Z",
+      "unionKeyCount": 222,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_DpTDFE5PVaHkEEXvgvavRUyujhTu",
+      "providerTarget": "production",
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793651327208,
+      "createdAtUtc": "2026-11-02T20:28:47.208Z",
+      "sourceCommit": "a05f38d4d9452be6ee80c9b51d1b2f9188c54242",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "84a172eea702013dda7aeb189f628501739b1695b711a16f459aefae9bcfa662",
+      "provenanceSha256": "f8c9a26c5b99960cdb9e952f155e3892a7bc2a0f79effd6689b2e42b587004fa",
+      "catalogObservedAt": "2026-11-06T04:08:38.808Z",
+      "unionKeyCount": 216,
+      "applicabilitySetSha256": "57bbc7191e55cc3ff939c9ed4ba0775ddd206155c9336505a89b5c83ce274aea",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_EdrWmJP8vXxEekbmAMWyAAbAxHzL",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792874277857,
+      "createdAtUtc": "2026-10-24T20:37:57.857Z",
+      "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "ce90a2feca9de4df017ba3e660c6a46395bc06f4e563713984b8ea7ec05ced84",
+      "provenanceSha256": "d5f225435884de3a2a9c58f4ada42ce9d97f04c8e549727dc9eae80ab51a8961",
+      "catalogObservedAt": "2026-11-06T04:08:39.915Z",
+      "unionKeyCount": 212,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_FAVez4Lwq3AydKquvaE37SqGQUSR",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792726108911,
+      "createdAtUtc": "2026-10-23T03:28:28.911Z",
+      "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "2f46a7a5266a87f804a3230b08102d09700bb2a039ffcfda21553f20fed5550a",
+      "provenanceSha256": "bb6663c6b75e0930da6722375d169e29bf4dd2046c6af116fa10010ecf3133b6",
+      "catalogObservedAt": "2026-11-06T04:08:41.038Z",
+      "unionKeyCount": 213,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_FZuGK5tHzqgd37Hr96fGo9wdT2u9",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793746211846,
+      "createdAtUtc": "2026-11-03T22:50:11.846Z",
+      "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "7cdcccd084d9fe98d663920e395ad28981632bb36a2f7a1048269a263263b99a",
+      "provenanceSha256": "bcc1eba43a0f00548105e3197d1db126b42f5b8fb6b645cad617a5ba3ba87cfa",
+      "catalogObservedAt": "2026-11-06T04:08:42.078Z",
+      "unionKeyCount": 222,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_HnN7FbtaRP2mBsQPg9QeZiSuupP8",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793662659064,
+      "createdAtUtc": "2026-11-02T23:37:39.064Z",
+      "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "7cdcccd084d9fe98d663920e395ad28981632bb36a2f7a1048269a263263b99a",
+      "provenanceSha256": "4a1fa7d6459e52602620ccdf48c6c8e70626152a92b323cf0353e8e14506116a",
+      "catalogObservedAt": "2026-11-06T04:08:43.198Z",
+      "unionKeyCount": 222,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_Hu8wAeUH81Wb3nNJLw5LsfvaXv2r",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793647580338,
+      "createdAtUtc": "2026-11-02T19:26:20.338Z",
+      "sourceCommit": "78c6f7cc92b3e5a2adc0ef60720899db7c902af2",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "4b0c761a43fd7bee9ee1ff6dfce197582aa5a8fd2e2dd97d4f5097346f622753",
+      "provenanceSha256": "f3fae147eeedd411e6efc5cfdecd910eabae71dd83adf728bbcbadff52d3fe35",
+      "catalogObservedAt": "2026-11-06T04:08:44.315Z",
+      "unionKeyCount": 214,
+      "applicabilitySetSha256": "57bbc7191e55cc3ff939c9ed4ba0775ddd206155c9336505a89b5c83ce274aea",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_NQiyux1pG6WxihCetBfDDZycVRQ4",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793663857784,
+      "createdAtUtc": "2026-11-02T23:57:37.784Z",
+      "sourceCommit": "d789070e4c186be67a474ae3851fb6da7f624179",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "0634af9af98575efbad86f6781e319d5d40905f3e2b3a0c58f0ca482c16b0e34",
+      "provenanceSha256": "b8aec2d3691cf54c83a536fda0ea67d3b45a811c33efadafb3e4920b5e06fecf",
+      "catalogObservedAt": "2026-11-06T04:08:45.319Z",
+      "unionKeyCount": 216,
+      "applicabilitySetSha256": "70ea2d932d291b5af227d49507b5fe26f748148e5665dbc2acb7a8e182855f8f",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714",
+      "maximumCandidateValueKeys": 14
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_2N7bbNfCUDriHji4YSiYR9aHeCxx",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793663857852,
+      "createdAtUtc": "2026-11-02T23:57:37.852Z",
+      "sourceCommit": "d789070e4c186be67a474ae3851fb6da7f624179",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "d90eacfecf88b9aad4b26b4c2c81b2ee43d6557c0e00f90674d222b6b1933e7c",
+      "provenanceSha256": "bed7305e3e78ba9a340e06d97681a98ba9ea971d183965027bcac2f4f20b2e35",
+      "catalogObservedAt": "2026-11-06T04:08:47.426Z",
+      "unionKeyCount": 253,
+      "applicabilitySetSha256": "d16bee58327ada74e949801b645527ef29f580293b03f033d9d4a22edd379315",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_2agvehbJAbLL4tKc2DU3nACPvyQf",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792536912456,
+      "createdAtUtc": "2026-10-20T22:55:12.456Z",
+      "sourceCommit": "24a3fd334209177797a128bd67d07fe805d539f5",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "1a3d9acaccde17d0f0ce7506ed2dc5123752e3a33bc72317d838ac94fdbb636b",
+      "provenanceSha256": "2ab480ef1b2fc669a76b5ff81b7a71a5659863671abc60eb7e489d63eb271ebf",
+      "catalogObservedAt": "2026-11-06T04:08:48.540Z",
+      "unionKeyCount": 246,
+      "applicabilitySetSha256": "cc20bb2be40e81c99c498e0ac3f43c14a4d4a39d6d011e453453727cfc935d65",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_2gueTVBa5hxGaSU4RazpuZWYZWH5",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1790199091574,
+      "createdAtUtc": "2026-09-23T21:31:31.574Z",
+      "sourceCommit": "ea1772b20453a494dcd3ff635066ebd385906f6b",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "19ed1dd956cb9d7f17f9d32a9748415db67fa542218ffc090aedbf0a1d854636",
+      "provenanceSha256": "bd4792cfa4a46466dc4811415ec0a9143c21526bbe1cb291b24c21d196dcafbc",
+      "catalogObservedAt": "2026-11-06T04:08:49.537Z",
+      "unionKeyCount": 236,
+      "applicabilitySetSha256": "26a5df8de3abb9716fc7a0628d29f80779d9270fcab20935e1e1df31edf85cca",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_3yFShd4Lig2peoqrciLAwBQHTCgg",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792539839825,
+      "createdAtUtc": "2026-10-20T23:43:59.825Z",
+      "sourceCommit": "c5e61fcd8ef0ac1e055c5f98ffb98bc6857d44e2",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "1a3d9acaccde17d0f0ce7506ed2dc5123752e3a33bc72317d838ac94fdbb636b",
+      "provenanceSha256": "bd47248aae52750f4817f87f693bcd96b5636f08a29d81ae8ca26f3b5cad4b2f",
+      "catalogObservedAt": "2026-11-06T04:08:50.531Z",
+      "unionKeyCount": 246,
+      "applicabilitySetSha256": "cc20bb2be40e81c99c498e0ac3f43c14a4d4a39d6d011e453453727cfc935d65",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_44VFAYJoV9EsS2JbdZ7GyLdiaz3z",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792874278066,
+      "createdAtUtc": "2026-10-24T20:37:58.066Z",
+      "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "63de1e3de253a311ce372f1d064e8e410d854c3529cd5654560177b6f4387bb2",
+      "provenanceSha256": "21d130e6f53388d6e041372b4bc5c52474d6e991162abd2cdb78518a2baa3dab",
+      "catalogObservedAt": "2026-11-06T04:08:51.576Z",
+      "unionKeyCount": 249,
+      "applicabilitySetSha256": "d16bee58327ada74e949801b645527ef29f580293b03f033d9d4a22edd379315",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_4CeGejXDVfRWUvf4yBKvLMKkigh5",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1790390276681,
+      "createdAtUtc": "2026-09-26T02:37:56.681Z",
+      "sourceCommit": "5ba30c60cfe8e6b7edfb577cb9d9e2c6579a5cab",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "13fdf3a4dd322b92d3b0d7079fa91fbd585d9e258add8b8a65f3f2ba688f9104",
+      "provenanceSha256": "051ba3098c5ef7641763e897c733bddced65d898350ff155aac27fdff500e22a",
+      "catalogObservedAt": "2026-11-06T04:08:52.593Z",
+      "unionKeyCount": 242,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_4MXvcWZKjuq5VM7NjotrKtqyzsJs",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792715714019,
+      "createdAtUtc": "2026-10-23T00:35:14.019Z",
+      "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "8742594274372ac588e28f1a1e011a97c8e41c21b4e256a99317bdc1cd82e88b",
+      "provenanceSha256": "9c9c4de39add64853232849dd93d26bb87d55abbc8fba4e5901ea952d743bac9",
+      "catalogObservedAt": "2026-11-06T04:08:53.586Z",
+      "unionKeyCount": 250,
+      "applicabilitySetSha256": "d16bee58327ada74e949801b645527ef29f580293b03f033d9d4a22edd379315",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_4jbyGUtJJtDbEtM39j7y3uMgLQjZ",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1790882674302,
+      "createdAtUtc": "2026-10-01T19:24:34.302Z",
+      "sourceCommit": "273a9821a097a7a0beeb918e8b1c4c51932f73ab",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "aa0a6d89142bfa39ad094e28d7d866e292f3d30392c31ef1f7da9d3e57828cc9",
+      "provenanceSha256": "5625aeeef0e62c930036fce7dd92fbc85ad77d736fccab5ee31454e1afee2625",
+      "catalogObservedAt": "2026-11-06T04:08:54.638Z",
+      "unionKeyCount": 242,
+      "applicabilitySetSha256": "cc20bb2be40e81c99c498e0ac3f43c14a4d4a39d6d011e453453727cfc935d65",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_4sU57HSrLtGS87yzjztxfdjTfGo6",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793222374256,
+      "createdAtUtc": "2026-10-28T21:19:34.256Z",
+      "sourceCommit": "e82645b6c045ce88dbaacf3c32cff8606a8592a8",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "1ec72b777191372e9e9d4c88c81f1effbac52591787aeab55585b449df67bcb2",
+      "provenanceSha256": "0b6d5c45995c3d2e05118595f03c5a19b9b3cf8e8579abbab3933b184c302f60",
+      "catalogObservedAt": "2026-11-06T04:08:55.852Z",
+      "unionKeyCount": 255,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_5Gswwd1jhi5vusSZHCL2DewL5z8W",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793663789639,
+      "createdAtUtc": "2026-11-02T23:56:29.639Z",
+      "sourceCommit": "26bcdd9a605eb6c07a75e2a7a7b519015b04deb8",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "d90eacfecf88b9aad4b26b4c2c81b2ee43d6557c0e00f90674d222b6b1933e7c",
+      "provenanceSha256": "6d9f3fed15de5255c7ebe582485d105da08ce19be3bc37cde31091dbd733824c",
+      "catalogObservedAt": "2026-11-06T04:08:56.902Z",
+      "unionKeyCount": 253,
+      "applicabilitySetSha256": "d16bee58327ada74e949801b645527ef29f580293b03f033d9d4a22edd379315",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_5JDDu6BaZcM4sg9wip65MKCwmhuL",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793300650975,
+      "createdAtUtc": "2026-10-29T19:04:10.975Z",
+      "sourceCommit": null,
+      "sourceStatus": "unknown-authoritative-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_5WEkq9nP659MTYKdPvukvjWKUbPG",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792875791118,
+      "createdAtUtc": "2026-10-24T21:03:11.118Z",
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "63de1e3de253a311ce372f1d064e8e410d854c3529cd5654560177b6f4387bb2",
+      "provenanceSha256": "ccad04d5a351646d90a58a234cdb9a3edc9b2aa6a38c39b04c521f63fc28e905",
+      "catalogObservedAt": "2026-11-06T04:08:58.977Z",
+      "unionKeyCount": 249,
+      "applicabilitySetSha256": "d16bee58327ada74e949801b645527ef29f580293b03f033d9d4a22edd379315",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_5oseGqYoQEakQd62ndrZ8FWQEkak",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792553186351,
+      "createdAtUtc": "2026-10-21T03:26:26.351Z",
+      "sourceCommit": "0678e16109425247047865e4aef0b7393d73dc15",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "938936fe3eeaecea4296a91b4be1448ba4b9240d1febd1bd8347149bf4264e07",
+      "provenanceSha256": "ca9ec0177249bdd253e12eb54de7e2b0522c2f81d650db28f02eabf6c7ccb6d2",
+      "catalogObservedAt": "2026-11-06T04:09:00.026Z",
+      "unionKeyCount": 250,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_5xhnLnvAVcs8ZN8kZnA1Fizmu6dA",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792539599935,
+      "createdAtUtc": "2026-10-20T23:39:59.935Z",
+      "sourceCommit": "e6ee380122131505583a106437542591badf2172",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "1a3d9acaccde17d0f0ce7506ed2dc5123752e3a33bc72317d838ac94fdbb636b",
+      "provenanceSha256": "2a9ada6614b03f537b960aa547b7f0a62f36946828b92d8c0f203440de8fba4c",
+      "catalogObservedAt": "2026-11-06T04:09:01.209Z",
+      "unionKeyCount": 246,
+      "applicabilitySetSha256": "cc20bb2be40e81c99c498e0ac3f43c14a4d4a39d6d011e453453727cfc935d65",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_6EmKDuUEQ81ZBQPSRouHZMuPhANs",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793301545861,
+      "createdAtUtc": "2026-10-29T19:19:05.861Z",
+      "sourceCommit": "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "76b7248fedd0e938b0ee89cbba966062a4c49751c7b711e89e392398f53c86c6",
+      "provenanceSha256": "8380ccdcc2b9839d023e993bab4f2e064fe7c0f25bba9e9c149482cb1f526063",
+      "catalogObservedAt": "2026-11-06T04:09:02.339Z",
+      "unionKeyCount": 251,
+      "applicabilitySetSha256": "2a1380ae68b9c2b413fcc35f5317a05cbeb6142b5a8e8bbd09b770cb6f520246",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_76798xJEJ56toJzhZnF1SjokvHko",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793221463039,
+      "createdAtUtc": "2026-10-28T21:04:23.039Z",
+      "sourceCommit": "45223fec3ee71bf63cfb0e44a94a0a7b3e282ca1",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "454015c443446ef366af2b510653353ba03bc62000b047796e63c51d0da026a0",
+      "provenanceSha256": "bfc90ddd61c59807123bf2729bf025867bff850f809a40093cfc8ef36cf03739",
+      "catalogObservedAt": "2026-11-06T04:09:03.406Z",
+      "unionKeyCount": 251,
+      "applicabilitySetSha256": "2a1380ae68b9c2b413fcc35f5317a05cbeb6142b5a8e8bbd09b770cb6f520246",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_7hkpYdaNvLJ6So9pgvUj2rTmVXpM",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793635888619,
+      "createdAtUtc": "2026-11-02T16:11:28.619Z",
+      "sourceCommit": "13142937adf542e41d0a12807d2503389933f74e",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "76b7248fedd0e938b0ee89cbba966062a4c49751c7b711e89e392398f53c86c6",
+      "provenanceSha256": "d7cdfe5a060d8d645518c96f132cf89d01064101e4b539bb508a3407d48217db",
+      "catalogObservedAt": "2026-11-06T04:09:04.447Z",
+      "unionKeyCount": 251,
+      "applicabilitySetSha256": "2a1380ae68b9c2b413fcc35f5317a05cbeb6142b5a8e8bbd09b770cb6f520246",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_7mG5ncqdKCBhpxNJ281Amqw9upe4",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793298300270,
+      "createdAtUtc": "2026-10-29T18:25:00.270Z",
+      "sourceCommit": null,
+      "sourceStatus": "unknown-authoritative-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_7odqGL3divDTEMqdBbkZWu2FzqX4",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793294469166,
+      "createdAtUtc": "2026-10-29T17:21:09.166Z",
+      "sourceCommit": null,
+      "sourceStatus": "unknown-authoritative-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_7p7h7NPvwH3WR5HqX6mVpb2mTCbD",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1790206744100,
+      "createdAtUtc": "2026-09-23T23:39:04.100Z",
+      "sourceCommit": "188af7d78123be519a19bfe8505fc4d6060dda41",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "b86545415f7a1c0968ac7f7a1e43c8f549945a25a592361461dd5323aad84df9",
+      "provenanceSha256": "b6185772b4775eb1dc0954011ad99dc4be5835bedbeaaa429c9c430eead73fa4",
+      "catalogObservedAt": "2026-11-06T04:09:07.706Z",
+      "unionKeyCount": 239,
+      "applicabilitySetSha256": "26a5df8de3abb9716fc7a0628d29f80779d9270fcab20935e1e1df31edf85cca",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_8AuKTVE4Gb5keSURS5VJffVdfTcu",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1791129036683,
+      "createdAtUtc": "2026-10-04T15:50:36.683Z",
+      "sourceCommit": "5e5c46c42332671945e3a240513194453c477b78",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "139c5df65cd4343e9ef6566b492163b2a80fb0d30e62b4e85f7d38c503602341",
+      "provenanceSha256": "369e277e3fbce1c55300c190aa0082565b6aeb8773335c30496b537791b58ab5",
+      "catalogObservedAt": "2026-11-06T04:09:08.991Z",
+      "unionKeyCount": 246,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_8Ux4PoWCYEpCyFh8nDeCBmNgNpg7",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1790199109243,
+      "createdAtUtc": "2026-09-23T21:31:49.243Z",
+      "sourceCommit": "ea1772b20453a494dcd3ff635066ebd385906f6b",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "19ed1dd956cb9d7f17f9d32a9748415db67fa542218ffc090aedbf0a1d854636",
+      "provenanceSha256": "9481ab01d65422c25ea16974a81e6cb68bcd6826452bc1cd3066936ad6ed83ff",
+      "catalogObservedAt": "2026-11-06T04:09:10.132Z",
+      "unionKeyCount": 236,
+      "applicabilitySetSha256": "26a5df8de3abb9716fc7a0628d29f80779d9270fcab20935e1e1df31edf85cca",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_8hy8iShdnkhWByKq3yZpsS8w7QpM",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1790371151082,
+      "createdAtUtc": "2026-09-25T21:19:11.082Z",
+      "sourceCommit": "038864503a835b916d430b3626efecdab04a0ecf",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "13fdf3a4dd322b92d3b0d7079fa91fbd585d9e258add8b8a65f3f2ba688f9104",
+      "provenanceSha256": "04aeee5eda39acf84da74423ad745f136056ca153d6b33e987d45f18dbaae44b",
+      "catalogObservedAt": "2026-11-06T04:09:11.167Z",
+      "unionKeyCount": 242,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_8jBfXPADayE6fJBcKZSUbJV8Fnz4",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792548113501,
+      "createdAtUtc": "2026-10-21T02:01:53.501Z",
+      "sourceCommit": "18feb565b4b1bd8bc3e9658d2eb3de7523594488",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "1a3d9acaccde17d0f0ce7506ed2dc5123752e3a33bc72317d838ac94fdbb636b",
+      "provenanceSha256": "5f19ae317a3eedb8e8bd0aeb3954166f3e6bff64176effcd5077ce2fadda9027",
+      "catalogObservedAt": "2026-11-06T04:09:12.156Z",
+      "unionKeyCount": 246,
+      "applicabilitySetSha256": "cc20bb2be40e81c99c498e0ac3f43c14a4d4a39d6d011e453453727cfc935d65",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_95r5G1LdWLzG3vhTSMNdFmez9bYL",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792542432890,
+      "createdAtUtc": "2026-10-21T00:27:12.890Z",
+      "sourceCommit": "122ea515aba5042ac3f4b7fa63090963bade899d",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "938936fe3eeaecea4296a91b4be1448ba4b9240d1febd1bd8347149bf4264e07",
+      "provenanceSha256": "5194bf38417bed964b9beedc3905f1224e4c526660feee06116cc76e6964ff67",
+      "catalogObservedAt": "2026-11-06T04:09:13.149Z",
+      "unionKeyCount": 250,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_9W7YyhTTm5V3mZ1EVgeoLTrgR9E3",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792556283197,
+      "createdAtUtc": "2026-10-21T04:18:03.197Z",
+      "sourceCommit": "f9558242893a4054df5c5ca5d39981977a929e1d",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "938936fe3eeaecea4296a91b4be1448ba4b9240d1febd1bd8347149bf4264e07",
+      "provenanceSha256": "d37cf94b755bf0f8f0aa165e5bf422b548e7f3e33a27a22fb2529a69c8bb08a2",
+      "catalogObservedAt": "2026-11-06T04:09:14.259Z",
+      "unionKeyCount": 250,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_9qg9xEinTeNWe3LZtGRt8cFWdoc3",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1787936038039,
+      "createdAtUtc": "2026-08-28T16:53:58.039Z",
+      "sourceCommit": "e4040282b708d632bb4d45a45180905525b4da8a",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "24faa3f57e76457973fba61aa1c8e99b3e87b7fb099c2ded3954535b8a73c72e",
+      "provenanceSha256": "2e4900d5ea386b1136daa43753a100b1920be71626dac70a8d72fbe6a82c5eb0",
+      "catalogObservedAt": "2026-11-06T04:09:15.263Z",
+      "unionKeyCount": 221,
+      "applicabilitySetSha256": "26a5df8de3abb9716fc7a0628d29f80779d9270fcab20935e1e1df31edf85cca",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_A6KNRNRr4MUUnjZ8haVKVAxZkn17",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1790953300668,
+      "createdAtUtc": "2026-10-02T15:01:40.668Z",
+      "sourceCommit": "89d2aba195741c62c56c3de8d8a7d90cdaf2da19",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "139c5df65cd4343e9ef6566b492163b2a80fb0d30e62b4e85f7d38c503602341",
+      "provenanceSha256": "3c23a37b58f52e5cc32c01ef080d6e2ca2c7d7a512783aa1c01bee2c30a67d25",
+      "catalogObservedAt": "2026-11-06T04:09:16.323Z",
+      "unionKeyCount": 246,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_AVcP3zfvSrL7sPQhxrr18BoFhHsQ",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792546604019,
+      "createdAtUtc": "2026-10-21T01:36:44.019Z",
+      "sourceCommit": "b2ce650791fca81674f10bd4f9dd768d53efd185",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "1a3d9acaccde17d0f0ce7506ed2dc5123752e3a33bc72317d838ac94fdbb636b",
+      "provenanceSha256": "b2f410639944be55e8b49eb9f436cde1e3708cba0443caa4a515e0074b6ec572",
+      "catalogObservedAt": "2026-11-06T04:09:17.398Z",
+      "unionKeyCount": 246,
+      "applicabilitySetSha256": "cc20bb2be40e81c99c498e0ac3f43c14a4d4a39d6d011e453453727cfc935d65",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_AWsUwWGxE2mTXQaHgo1fnvz23KSz",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793647580065,
+      "createdAtUtc": "2026-11-02T19:26:20.065Z",
+      "sourceCommit": "78c6f7cc92b3e5a2adc0ef60720899db7c902af2",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "76b7248fedd0e938b0ee89cbba966062a4c49751c7b711e89e392398f53c86c6",
+      "provenanceSha256": "056942ea5088cabc166465a415564b53084b4dd26a2855c003ed3d3d43d6bf94",
+      "catalogObservedAt": "2026-11-06T04:09:18.456Z",
+      "unionKeyCount": 251,
+      "applicabilitySetSha256": "2a1380ae68b9c2b413fcc35f5317a05cbeb6142b5a8e8bbd09b770cb6f520246",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_BYQiXkALFy2hjG2KVKUG7XEgYpyE",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793301564076,
+      "createdAtUtc": "2026-10-29T19:19:24.076Z",
+      "sourceCommit": null,
+      "sourceStatus": "unknown-authoritative-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_BtPXJsEUXR6xziGjuHafptgyYXaj",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793649130935,
+      "createdAtUtc": "2026-11-02T19:52:10.935Z",
+      "sourceCommit": "03d850c0512eddc0ef11cbac779e255a7b73bd3b",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "76b7248fedd0e938b0ee89cbba966062a4c49751c7b711e89e392398f53c86c6",
+      "provenanceSha256": "88fad55fd1a49843225324c88a9cb031af6eeceb7b63cf8953131cc00befdad2",
+      "catalogObservedAt": "2026-11-06T04:09:21.238Z",
+      "unionKeyCount": 251,
+      "applicabilitySetSha256": "2a1380ae68b9c2b413fcc35f5317a05cbeb6142b5a8e8bbd09b770cb6f520246",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_CaHt5o99Kaz6mfVh3aibp5GQPULT",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1788205696610,
+      "createdAtUtc": "2026-08-31T19:48:16.610Z",
+      "sourceCommit": "e01ad6b6e6e319d63440f84b836f22594897b1d4",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "3b96240efdf309e5de93c17c572a62e4218783c3f45d79c450e2cf806bc7dd1f",
+      "provenanceSha256": "c4b9c5270fc779902adf2831007594fcceebec5171d3ebb8dbe7cba2077daba3",
+      "catalogObservedAt": "2026-11-06T04:09:22.240Z",
+      "unionKeyCount": 222,
+      "applicabilitySetSha256": "26a5df8de3abb9716fc7a0628d29f80779d9270fcab20935e1e1df31edf85cca",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_D2YUBwd9iCYtzosasXZq6LQmkeDL",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1790264669177,
+      "createdAtUtc": "2026-09-24T15:44:29.177Z",
+      "sourceCommit": "9b1a822c97c2c3d07f52c41b5b43a51e4b86b9d4",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "b86545415f7a1c0968ac7f7a1e43c8f549945a25a592361461dd5323aad84df9",
+      "provenanceSha256": "f165a7f6bd2efaad1fef871905623e9f65f2e512c6d215128a82e20259c2af55",
+      "catalogObservedAt": "2026-11-06T04:09:23.291Z",
+      "unionKeyCount": 239,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_DGpuXvfy8obYDMRnJEUumobvEbq8",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793649292992,
+      "createdAtUtc": "2026-11-02T19:54:52.992Z",
+      "sourceCommit": "d632773365867a979084876426d74f6a584e6f2c",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "76b7248fedd0e938b0ee89cbba966062a4c49751c7b711e89e392398f53c86c6",
+      "provenanceSha256": "ccc159fd5bd2668fac5bc6b1bc30aaa5b31fef1ede963ec0b0606b2a990c8fc8",
+      "catalogObservedAt": "2026-11-06T04:09:24.344Z",
+      "unionKeyCount": 251,
+      "applicabilitySetSha256": "2a1380ae68b9c2b413fcc35f5317a05cbeb6142b5a8e8bbd09b770cb6f520246",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_DUhpTHCGjzMup1h6H4X5xXkvcjth",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792723287521,
+      "createdAtUtc": "2026-10-23T02:41:27.521Z",
+      "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "8742594274372ac588e28f1a1e011a97c8e41c21b4e256a99317bdc1cd82e88b",
+      "provenanceSha256": "8d9fc2c001f60b129a11bebd1d42481d8751d50b2d3fb7532cd0138e9be22dc9",
+      "catalogObservedAt": "2026-11-06T04:09:25.456Z",
+      "unionKeyCount": 250,
+      "applicabilitySetSha256": "d16bee58327ada74e949801b645527ef29f580293b03f033d9d4a22edd379315",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_DcgB842LqovU4j72iPhPkj7irK4H",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792874916958,
+      "createdAtUtc": "2026-10-24T20:48:36.958Z",
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "63de1e3de253a311ce372f1d064e8e410d854c3529cd5654560177b6f4387bb2",
+      "provenanceSha256": "41c10f5add614bccc968ff1fb6e523882625d1d0b3e723a6fac7a3ebde1de37b",
+      "catalogObservedAt": "2026-11-06T04:09:26.490Z",
+      "unionKeyCount": 249,
+      "applicabilitySetSha256": "d16bee58327ada74e949801b645527ef29f580293b03f033d9d4a22edd379315",
+      "familyPolicySetSha256": "425708cc74c7cae1becb15758a62cf7e3d853cb1e2fd0b8b6602d268546c269c",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_DhEgV2UndyEYy7pf2DvTKQVYkuW1",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792552586621,
+      "createdAtUtc": "2026-10-21T03:16:26.621Z",
+      "sourceCommit": "6d5845a8b6d5ff8f27ac7512d72075328233d0ec",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "1a3d9acaccde17d0f0ce7506ed2dc5123752e3a33bc72317d838ac94fdbb636b",
+      "provenanceSha256": "172c2d49a1fb12b52e93b95dc2d0904c64a955bdb4e8db3921b82424af0503c9",
+      "catalogObservedAt": "2026-11-06T04:09:27.551Z",
+      "unionKeyCount": 246,
+      "applicabilitySetSha256": "cc20bb2be40e81c99c498e0ac3f43c14a4d4a39d6d011e453453727cfc935d65",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_ELbyXLu1vCJ47CasiKavjSP5Jqk7",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1791128478420,
+      "createdAtUtc": "2026-10-04T15:41:18.420Z",
+      "sourceCommit": "1d8342ab93b6713bebbb3a9caabaa54a246f9957",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "aa0a6d89142bfa39ad094e28d7d866e292f3d30392c31ef1f7da9d3e57828cc9",
+      "provenanceSha256": "a6a05c49c699d23df46b4958592459138cce889296ab1f7a589a97829f9ed12a",
+      "catalogObservedAt": "2026-11-06T04:09:28.608Z",
+      "unionKeyCount": 242,
+      "applicabilitySetSha256": "cc20bb2be40e81c99c498e0ac3f43c14a4d4a39d6d011e453453727cfc935d65",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_EUTzmJQQ7Pe5TgYJ656YN6mc5vEP",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792552273292,
+      "createdAtUtc": "2026-10-21T03:11:13.292Z",
+      "sourceCommit": "3e105d4d54d77a7ca0f28607bfc9202107e3259e",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "938936fe3eeaecea4296a91b4be1448ba4b9240d1febd1bd8347149bf4264e07",
+      "provenanceSha256": "f5037c05eb7dcb656de519906c5300522c9f0360be53d94d4019e7e3e7b9849d",
+      "catalogObservedAt": "2026-11-06T04:09:29.661Z",
+      "unionKeyCount": 250,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_EpJRpoHMPEnvK6wEHSoPPCJKr7qW",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1790697489129,
+      "createdAtUtc": "2026-09-29T15:58:09.129Z",
+      "sourceCommit": "4084a4b83259967661ef2013f1e8c49407df770c",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "8821a3ff5589d5fb58dc7a54ac91334d192eb3668b8df3cc427441eb64e7486c",
+      "provenanceSha256": "ef4c0a900c8c4dfff8753c319ebf5424f44ef9a3c7fb839b2ab126836ac97bd1",
+      "catalogObservedAt": "2026-11-06T04:09:30.690Z",
+      "unionKeyCount": 244,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_EtiE5qSDa9d9bgc8PPHzcBzZPoGw",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1790205905168,
+      "createdAtUtc": "2026-09-23T23:25:05.168Z",
+      "sourceCommit": "188af7d78123be519a19bfe8505fc4d6060dda41",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "19ed1dd956cb9d7f17f9d32a9748415db67fa542218ffc090aedbf0a1d854636",
+      "provenanceSha256": "8ee483018fe2fb50256f930c4d38a39f9297c56610413b8c77702cca6eeb787b",
+      "catalogObservedAt": "2026-11-06T04:09:31.773Z",
+      "unionKeyCount": 236,
+      "applicabilitySetSha256": "26a5df8de3abb9716fc7a0628d29f80779d9270fcab20935e1e1df31edf85cca",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_EvGmgV4szqE8aZTic6mS3rYMthUw",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1787936084480,
+      "createdAtUtc": "2026-08-28T16:54:44.480Z",
+      "sourceCommit": "73beea0db10099c3b45cff6fac5dcd9a31f12762",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "24faa3f57e76457973fba61aa1c8e99b3e87b7fb099c2ded3954535b8a73c72e",
+      "provenanceSha256": "f01a8bbba4873d9a32b78fcf720e895b419913d1b51de64c7f55620bfb5b6f3c",
+      "catalogObservedAt": "2026-11-06T04:09:32.865Z",
+      "unionKeyCount": 221,
+      "applicabilitySetSha256": "26a5df8de3abb9716fc7a0628d29f80779d9270fcab20935e1e1df31edf85cca",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_ExkXSvSvhromRua1vjYJCS5fKLzq",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792726109186,
+      "createdAtUtc": "2026-10-23T03:28:29.186Z",
+      "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "8742594274372ac588e28f1a1e011a97c8e41c21b4e256a99317bdc1cd82e88b",
+      "provenanceSha256": "525f834529c6147c9d73dc6ea8b9580796bf5e64138df347f02e77b9ad3db705",
+      "catalogObservedAt": "2026-11-06T04:09:33.993Z",
+      "unionKeyCount": 250,
+      "applicabilitySetSha256": "d16bee58327ada74e949801b645527ef29f580293b03f033d9d4a22edd379315",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_GFxXf7XgZVbRvvwHxXb8BwqprEcY",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1790108020781,
+      "createdAtUtc": "2026-09-22T20:13:40.781Z",
+      "sourceCommit": "9b899e4e02afe787f25315a5ef1912d4d32d6080",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "9439817f591cfab89b3aaca6ac59f22c10764303dad4d77fcc15c20f33c4f8da",
+      "provenanceSha256": "b87f9bd2b999c53a04f123b7743a1dd391e5af7ebbb90b80233cdc5fe8da8038",
+      "catalogObservedAt": "2026-11-06T04:09:35.115Z",
+      "unionKeyCount": 237,
+      "applicabilitySetSha256": "26a5df8de3abb9716fc7a0628d29f80779d9270fcab20935e1e1df31edf85cca",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_GJFyG5skz97vFa7hQUKoabiMzUyV",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1791224058736,
+      "createdAtUtc": "2026-10-05T18:14:18.736Z",
+      "sourceCommit": "8745a463e310371a5c8a6b98dd12f5643feb289f",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "139c5df65cd4343e9ef6566b492163b2a80fb0d30e62b4e85f7d38c503602341",
+      "provenanceSha256": "058139298496c2e0a20bbb136a411d9dc727e5b3ef5b4a9875c4bbf2058e1c29",
+      "catalogObservedAt": "2026-11-06T04:09:36.135Z",
+      "unionKeyCount": 246,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_GJKS6XMr7Gk6xB1x9YYHwjUtJEwM",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793650357645,
+      "createdAtUtc": "2026-11-02T20:12:37.645Z",
+      "sourceCommit": "0ed09401726ff5f6f5057018ba7125a498d7180c",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "76b7248fedd0e938b0ee89cbba966062a4c49751c7b711e89e392398f53c86c6",
+      "provenanceSha256": "d6c8f04edb27ba6ab219387051af7d2190e87f198b05303379bc561eaf3b092f",
+      "catalogObservedAt": "2026-11-06T04:09:37.426Z",
+      "unionKeyCount": 251,
+      "applicabilitySetSha256": "2a1380ae68b9c2b413fcc35f5317a05cbeb6142b5a8e8bbd09b770cb6f520246",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_GJXVZixoDKsCHLbShpBgRwBAeSRE",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792541205426,
+      "createdAtUtc": "2026-10-21T00:06:45.426Z",
+      "sourceCommit": "b1f46feadab04e5e0934f5c63b9333837b48f56c",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "1a3d9acaccde17d0f0ce7506ed2dc5123752e3a33bc72317d838ac94fdbb636b",
+      "provenanceSha256": "98a83743daf22317e13f095da0f22d2b76bbbeda3b51a940ea344f94842169f8",
+      "catalogObservedAt": "2026-11-06T04:09:38.923Z",
+      "unionKeyCount": 246,
+      "applicabilitySetSha256": "cc20bb2be40e81c99c498e0ac3f43c14a4d4a39d6d011e453453727cfc935d65",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_GMdKekjKVcWN3hhh95T3xLHnVYsG",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1787897356771,
+      "createdAtUtc": "2026-08-28T06:09:16.771Z",
+      "sourceCommit": "fd08fe169b529f7d9edde3197873136a991ce863",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "24faa3f57e76457973fba61aa1c8e99b3e87b7fb099c2ded3954535b8a73c72e",
+      "provenanceSha256": "7f5c46f9945c92896e6ddeee435c582e922abda4b0e1e43fa83f06f5745ae48b",
+      "catalogObservedAt": "2026-11-06T04:09:39.977Z",
+      "unionKeyCount": 221,
+      "applicabilitySetSha256": "26a5df8de3abb9716fc7a0628d29f80779d9270fcab20935e1e1df31edf85cca",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_GnfkX8oKqLqS2ZhUcaVZP1EdzseY",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793636398930,
+      "createdAtUtc": "2026-11-02T16:19:58.930Z",
+      "sourceCommit": "85dea97b0deae17cff19e345268bddafeba9fe28",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "2857047fc9d40afc28a34828e5ed43ab3f9c6c6f29114b459c0b8fbd284f20c1",
+      "provenanceSha256": "73728d399af81e0c0b1d1cfa7bf5f14a70f4b942bc8ba524002ae6f7e9fbd697",
+      "catalogObservedAt": "2026-11-06T04:09:41.146Z",
+      "unionKeyCount": 272,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_GsChbmjrANuzDtn1xGsyr8EMGsxr",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1788231495618,
+      "createdAtUtc": "2026-09-01T02:58:15.618Z",
+      "sourceCommit": "5893173368941a7e0f35c932ba0b1798fc48873d",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "78bca4b5018fe63114afdf73294df9cfc8d562a1764ee5dcb231ab1977a24c3e",
+      "provenanceSha256": "02e4966fb94f52eed107bc86514e1021c50942fda7c5922458d0b58739d95ea8",
+      "catalogObservedAt": "2026-11-06T04:09:42.264Z",
+      "unionKeyCount": 227,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_HFTjByznKUNaPNrWkfEbjVBEaYZq",
+      "providerTarget": null,
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1787899253895,
+      "createdAtUtc": "2026-08-28T06:40:53.895Z",
+      "sourceCommit": "669f2978722a431c3f11cd8f68f59dfde9fe3d76",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "24faa3f57e76457973fba61aa1c8e99b3e87b7fb099c2ded3954535b8a73c72e",
+      "provenanceSha256": "f8cdc0cf730edaf5f1fa21829432cc3a54be6e09f0c9c548abb9072f0a2210a6",
+      "catalogObservedAt": "2026-11-06T04:09:43.384Z",
+      "unionKeyCount": 221,
+      "applicabilitySetSha256": "26a5df8de3abb9716fc7a0628d29f80779d9270fcab20935e1e1df31edf85cca",
+      "familyPolicySetSha256": "106a17c84a5ebe4bb3967324f77c151fe48e609d163d25bdb44ef1c7d7333013",
+      "maximumCandidateValueKeys": 10
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_J4RAChR5eiCjz6FQyHEnKvrE8aX8",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793651327241,
+      "createdAtUtc": "2026-11-02T20:28:47.241Z",
+      "sourceCommit": "a05f38d4d9452be6ee80c9b51d1b2f9188c54242",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "76b7248fedd0e938b0ee89cbba966062a4c49751c7b711e89e392398f53c86c6",
+      "provenanceSha256": "cf213b456e7d108940dfa08f9a99691d87b60277ae900f1643e6525985507aa1",
+      "catalogObservedAt": "2026-11-06T04:09:44.492Z",
+      "unionKeyCount": 251,
+      "applicabilitySetSha256": "2a1380ae68b9c2b413fcc35f5317a05cbeb6142b5a8e8bbd09b770cb6f520246",
+      "familyPolicySetSha256": "7a301c1f4eae4a7fe6c4333bf5625dbe84c30fb36f8f9b3eedca7745df8a800c",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_JE5fGnb6WtrkLHRDdfR5do9xod3Q",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1790265763945,
+      "createdAtUtc": "2026-09-24T16:02:43.945Z",
+      "sourceCommit": "9b1a822c97c2c3d07f52c41b5b43a51e4b86b9d4",
+      "sourceStatus": "unregistered-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "80e08a3ac8cdcdd6578c48a1c90d250051684bd90ff5ef0f0712ce4e4748bd16",
+      "provenanceSha256": "92d29e7ccd7f45337e067aaa80c7ef44379978250c70340650001b20c162791e",
+      "catalogObservedAt": "2026-11-06T04:09:45.567Z",
+      "unionKeyCount": 242,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_cnqbTnuFxWfT3DuzQya42CYf8Qhp",
+      "providerTarget": null,
+      "priorState": "ERROR",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1792715185504,
+      "createdAtUtc": "2026-10-23T00:26:25.504Z",
+      "sourceCommit": "2390ff32c4156bf861cbce32406f5e4ad18583ab",
+      "sourceStatus": "verified-profile",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "keyCatalogSha256": "8742594274372ac588e28f1a1e011a97c8e41c21b4e256a99317bdc1cd82e88b",
+      "provenanceSha256": "65040a8011b12bf04bd9afe5fd74b31ca1403a0d64acf5ce45ea59206cb45206",
+      "catalogObservedAt": "2026-11-06T04:09:46.792Z",
+      "unionKeyCount": 250,
+      "applicabilitySetSha256": "d16bee58327ada74e949801b645527ef29f580293b03f033d9d4a22edd379315",
+      "familyPolicySetSha256": "9b641eed0a7ee09945b5cd81da67df205c38338e460156ead8405c69aeab8714",
+      "maximumCandidateValueKeys": 17
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_rzM1LuvDQzn4N1hKouWRymhPqf7j",
+      "providerTarget": "production",
+      "priorState": "READY",
+      "priorStateObservedAt": "2026-11-06 00:39:07 UTC",
+      "createdAt": 1793300354952,
+      "createdAtUtc": "2026-10-29T18:59:14.952Z",
+      "sourceCommit": null,
+      "sourceStatus": "unknown-authoritative-source",
+      "originalValuesObserved": false,
+      "physicalSqlBindingVerified": false,
+      "providerBindingsVerified": false,
+      "runtimeClosureProduced": false,
+      "classification": "unknownsource",
+      "maximumCandidateValueKeys": null
+    }
+  ]
+}
