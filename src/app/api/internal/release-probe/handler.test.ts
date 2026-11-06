@@ -143,7 +143,7 @@ test("explicit P2 mode uses only its current catalog parser and requires no boot
   assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "private, no-store");
   assert.deepEqual(await response.json(), { version: 1, status: "FRONTEND_WORKLOAD_PROBE_PASS", challenge, environment: "staging",
     projectId: VERCEL_PROJECT_BINDINGS.stagingProjectId, sourceCommit: "a".repeat(40), gatewayOrigin: "https://gateway.example.invalid",
-    checks: ["gateway-course-catalog-p2"], contractPhase: "p2", featureControls: readReleaseFeatureControls(environment()), durationMs: 2 });
+    checks: ["gateway-course-catalog-p2"], contractPhase: "p2", featureControls: readReleaseFeatureControls(environment()), writerAdmissionBinding: null, durationMs: 2 });
   assert.equal(calls, 1);
 });
 
@@ -165,6 +165,24 @@ test("P2 probe reports only actual runtime feature booleans and ignores caller f
   const changed = await (await handler(request({ "x-lash-release-mode": "phase2" }))).json();
   assert.equal(changed.featureControls.CUSTOMER_AUTH_ENABLED, false);
   assert.equal(changed.featureControls.CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED, false);
+});
+
+test("P2 admission binding comes only from actual validated runtime configuration without credentials", async () => {
+  const env = { ...environment(), FRONTEND_WRITER_ADMISSION_MODE: "enforce", FRONTEND_WRITER_PRODUCER_SHA256: "b".repeat(64),
+    FRONTEND_WRITER_ADMISSION_TARGET_JSON: JSON.stringify({ environment: "staging", host: "db.owned.invalid", port: 5432,
+      database: "owned", user: "protocol_runtime", serverMajor: 18, targetSha256: "d".repeat(64) }),
+    DATABASE_URL: "postgresql://protocol_runtime:private-business-password@db.owned.invalid/owned?sslmode=verify-full",
+    FRONTEND_WRITER_ADMISSION_DATABASE_URL: "postgresql://protocol_runtime:private-ledger-password@db.owned.invalid/owned?sslmode=verify-full" };
+  const handler = createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration(env, now),
+    run: async () => assert.fail("legacy parser called"), phase2: async () => ({ ok: true, service: "course", durationMs: 1 }) });
+  const response = await handler(request({ "x-lash-release-mode": "phase2", "x-lash-writer-admission-binding": "forged" }));
+  const body = await response.json(); assert.equal(response.status, 200);
+  assert.deepEqual(body.writerAdmissionBinding, { mode: "enforce", targetSha256: "d".repeat(64), producerSha256: "b".repeat(64),
+    sourceCommit: "a".repeat(40), roleName: "protocol_runtime" });
+  for (const privateValue of ["private-business-password", "private-ledger-password", "db.owned.invalid", "postgresql:", "forged"]) {
+    assert.equal(JSON.stringify(body).includes(privateValue), false);
+  }
+  assert.equal(readReleaseProbeConfiguration({ ...env, FRONTEND_WRITER_ADMISSION_DATABASE_URL: env.FRONTEND_WRITER_ADMISSION_DATABASE_URL.replace("verify-full", "require") }, now), null);
 });
 
 test("P2 mode authenticates before work, refuses missing/production configuration and never falls back after parser failure", async () => {

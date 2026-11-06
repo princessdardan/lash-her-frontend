@@ -5,16 +5,20 @@ import { mintLifecycleServiceToken } from "@/lib/api-integration/lifecycle-servi
 import { runAccountWriter } from "./context";
 import { createAccountLifecycleStore } from "./store";
 import { processAccountLifecycle } from "./worker";
+import { traceLifecycleCronAdmission } from "./native-trace";
 
 async function runProductionLifecycleRecovery() {
-  return runAccountWriter("recovery", () => processAccountLifecycle({
+  return runAccountWriter("recovery", () => {
+    traceLifecycleCronAdmission();
+    return processAccountLifecycle({
     store: createAccountLifecycleStore(),
     client: receiver => createAccountLifecycleClient({ receiver, mintServiceToken: () => mintLifecycleServiceToken(receiver),
       // The whole awaited claim/delivery/settlement/export operation already
       // owns admission. Unknown service effects mark that same parent entry.
       run: async (_kind, task) => task(),
     }),
-  }));
+    });
+  });
 }
 
 export function createAccountLifecycleCron(dependencies: {
