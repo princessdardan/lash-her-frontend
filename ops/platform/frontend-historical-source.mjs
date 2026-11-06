@@ -251,13 +251,21 @@ export function deriveHistoricalSourceCapabilityClosures(requirements, binding, 
         configurationRecordSha256: binding.configurationRecordSha256, provenanceSha256: selected.provenanceSha256,
         disposition: absent ? "absent-from-verified-source" : "no-capability-observed", requirementIds,
         ...(predicate ? { effectScope: "frontend-private-sql-and-protected-continuations", sourcePredicate: family.configurationConditions[0].privateSqlPredicate,
-          externalProviderCapability: ["sanity", "mux"].includes(family.provider) ? "not-declared-absent" : "not-a-provider-retirement-receipt" } : {}),
+          externalProviderCapability: ["sanity.editorial", "mux.studio"].includes(family.familyId) ? "not-declared-absent" : "not-a-provider-retirement-receipt" } : {}),
         evidenceIds: [...new Set([requirements.sourceInventorySha256, requirements.requirementsSha256, binding.configurationRecordSha256, selected.provenanceSha256, sqlEvidence.evidenceSha256, ...(storeEvidence ? [storeEvidence.evidenceSha256] : [])])].sort() });
     }
+    const unresolvedFrontendSqlFamilyIds = requirements.providerFamilies.filter(family => !capabilityClosures.some(row => row.familyId === family.familyId)).map(row => row.familyId).sort();
+    // These exact reviewed source families retain external editorial/media
+    // capability even when their frontend-private-SQL scope is inapplicable.
+    // A broad consumer must never interpret a scoped exclusion as retirement.
+    const externalPredicates = { "sanity.editorial": "sanity-editorial-private-sql-scope-v1", "mux.studio": "mux-public-editorial-private-sql-scope-v1" };
+    const unresolvedExternalCapabilityFamilyIds = requirements.providerFamilies.filter(family => family.sourceDisposition === "reachable" &&
+      Object.hasOwn(externalPredicates, family.familyId) && family.configurationConditions[0]?.privateSqlPredicate === externalPredicates[family.familyId]).map(row => row.familyId).sort();
+    const unresolvedFamilyIds = [...new Set([...unresolvedFrontendSqlFamilyIds, ...unresolvedExternalCapabilityFamilyIds])].sort();
     return freeze({ version: 1, sourceCommit: requirements.sourceCommit, treeOid: requirements.treeOid,
       sourceInventorySha256: requirements.sourceInventorySha256, requirementsSha256: requirements.requirementsSha256,
       surfaceSha256: binding.surfaceSha256, configurationRecordSha256: binding.configurationRecordSha256, provenanceSha256: selected.provenanceSha256, capabilityClosures,
-      unresolvedFamilyIds: requirements.providerFamilies.filter(family => !capabilityClosures.some(row => row.familyId === family.familyId)).map(row => row.familyId) });
+      unresolvedFrontendSqlFamilyIds, unresolvedExternalCapabilityFamilyIds, unresolvedFamilyIds });
   } catch { throw refusal(); }
 }
 
