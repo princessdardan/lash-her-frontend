@@ -147,3 +147,34 @@ test('actual receiver refuses Linux tmp roots and preserves its supported privat
   assert.equal(await classify('/var/tmp/p2-c-no-dependencies-'+process.pid),'later-owned-dependency');
  }finally{rmSync(directory,{recursive:true,force:true});}
 });
+
+test('generated C child keeps its source-owned temp root through the actual TSX cache path',async()=>{
+ const {fileURLToPath,pathToFileURL}=await import('node:url'),paths=await import('node:path'),fs=await import('node:fs'),vm=await import('node:vm'),{createRequire}=await import('node:module'),{createHash}=await import('node:crypto');
+ const root=fileURLToPath(new URL('../../',import.meta.url)),entry=join(root,'docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs');
+ const originalEnvironment=readFileSync(join(root,'ops/platform/test-p2-known-ack-loss-local.mjs'),'utf8').match(/^const safeEnvironment=.*;$/mu)?.[0];assert.ok(originalEnvironment);
+ const safeEnvironment=Function('process',originalEnvironment+'return safeEnvironment;')(process);
+ let folder,launched=false;
+ const program=readFileSync(entry,'utf8').replace(/^import .*;$/gmu,'').replace(/^export /gmu,'').replaceAll('import.meta.url','FAKE_META_URL');
+ const fakeProcess={argv:[process.execPath,entry],execPath:process.execPath,env:{P2_INTERRUPTED_OWNED_TEST:'true',PATH:process.env.PATH,TMPDIR:'AMBIENT_TEMP_CANARY',VERCEL_TOKEN:'AMBIENT_SECRET_CANARY'},stderr:{write:()=>{}},stdout:{write:()=>assert.fail('projected outer failure must emit no success')},exit:()=>assert.fail('unexpected ownership/argument refusal')};
+ vm.runInNewContext(program,{URL,Buffer,performance,FAKE_META_URL:pathToFileURL(entry).href,process:fakeProcess,assert,readFileSync:fs.readFileSync,writeFileSync:fs.writeFileSync,realpathSync:fs.realpathSync,symlinkSync:fs.symlinkSync,rmSync:fs.rmSync,
+  mkdtempSync:value=>(folder=fs.realpathSync(fs.mkdtempSync(value))),spawnSync(file,args,options){
+   if(file==='git'||args[0]==='--check')return spawnSync(file,args,options);
+   assert.equal(paths.basename(args[2]),'cluster-and-new-c-process.mjs');
+   const outer=readFileSync(args[2],'utf8'),start=outer.indexOf('const cChild=spawnSync('),end=outer.indexOf(');\n    if(cChild.status',start);assert.ok(start>=0&&end>start);
+   const childEntry=join(folder,'cache-probe.ts'),preload=join(folder,'missing-default-temp.mjs');
+   writeFileSync(childEntry,"import {tmpdir} from 'node:os';const actual:number=1;process.stdout.write(JSON.stringify({temporaryRoot:tmpdir(),actual}));",{mode:0o600});
+   // Model Linux's missing /tmp only at the actual dependency mkdir call.
+   // The real TSX import/transform runs; no shared temp directory is modified.
+   writeFileSync(preload,"import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';const original=fs.mkdirSync,blocked='/tmp/tsx-'+process.geteuid();fs.mkdirSync=function(path,...args){if(String(path)===blocked)throw Object.assign(new Error('OWNED_MISSING_DEFAULT_TEMP'),{code:'ENOENT'});return Reflect.apply(original,this,[path,...args]);};syncBuiltinESMExports();",{mode:0o600});
+   Function('spawnSync','process','cInput','safeEnvironment','certificate',outer.slice(start,end+2))((exe,argv,selected)=>{
+    launched=true;assert.equal(exe,process.execPath);assert.deepEqual(argv.slice(0,2),['--import','tsx']);assert.equal(paths.basename(argv[2]),'owned-process.mjs');
+    const probe=environment=>spawnSync(exe,['--import',preload,'--import','tsx',childEntry],{cwd:root,encoding:'utf8',env:environment,timeout:10000});
+    const original={...selected.env};delete original.TMPDIR;const refused=probe(original);assert.equal(refused.status,1);assert.match(refused.stderr,/ENOENT/u);assert.equal(refused.stdout,'');
+    const actual=probe(selected.env);assert.equal(actual.status,0);assert.equal(actual.stderr,'');assert.deepEqual(JSON.parse(actual.stdout),{temporaryRoot:folder,actual:1});
+    assert.equal(selected.env.TMPDIR,folder);assert.equal(realpathSync(selected.env.TMPDIR),folder);assert.equal(JSON.stringify(selected.env).includes('AMBIENT_TEMP_CANARY'),false);assert.equal(JSON.stringify(selected.env).includes('AMBIENT_SECRET_CANARY'),false);
+    return actual;
+   },process,{},safeEnvironment,undefined);
+   return {status:1,stdout:'',stderr:''};
+  },join:paths.join,dirname:paths.dirname,resolve:paths.resolve,tmpdir,createRequire,createHash,pathToFileURL,fileURLToPath},{timeout:30000});
+ assert.equal(launched,true);assert.equal(fakeProcess.exitCode,1);assert.equal(existsSync(folder),false);
+});

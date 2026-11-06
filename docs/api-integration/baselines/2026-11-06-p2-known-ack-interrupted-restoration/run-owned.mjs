@@ -158,7 +158,7 @@ try{
     // The old B child has exited; its FE session and actual TLS gateway died.
     const cInput={port,password,certificate,key,directory,target,targetSha256,owner,runtime,sourceCommit,postgresMajor,apis,candidate:ownedCandidate,faultMode:process.env.P2_INTERRUPTED_OWNED_FAULT??'none'};
     const cChild=spawnSync(process.execPath,['--import','tsx',${JSON.stringify(actor)}],{input:JSON.stringify(cInput),encoding:'utf8',timeout:900000,
-      env:{...safeEnvironment,NODE_EXTRA_CA_CERTS:certificate,P2_INTERRUPTED_OWNED_CHILD:'true'}});
+      env:{...safeEnvironment,TMPDIR:${JSON.stringify(folder)},NODE_EXTRA_CA_CERTS:certificate,P2_INTERRUPTED_OWNED_CHILD:'true'}});
     if(cChild.status!==0){process.stderr.write(cChild.stderr);process.stderr.write(JSON.stringify({status:'OWNED_C_CHILD_EXIT',exitCode:cChild.status,signal:cChild.signal,code:cChild.error?.code??null})+'\\n');throw new Error('OWNED_NEW_C_PROCESS_REFUSED');}
     const restoration=JSON.parse(cChild.stdout);assert.equal(restoration.status,cInput.faultMode==='none'?'P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS':'P2_INTERRUPTED_NEGATIVE_OWNED_PASS');phase=cInput.faultMode==='none'?'actual-c-runtime-terminal-joined':'actual-c-negative-qualified';
  `;
