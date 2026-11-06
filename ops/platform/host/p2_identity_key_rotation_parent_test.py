@@ -106,10 +106,15 @@ class BrokerBindingTest(unittest.TestCase):
         broker.adapter = type("Adapter", (), {"frontend_deployment": lambda _self, phase: {
             "deploymentId": "dpl_owned", "configurationSha256": "d" * 64 if phase == "overlap" else "e" * 64}})()
         broker.browser_program_sha256 = "9" * 64
+        broker._observe_canonical = lambda phase, force=False: {
+            "browserOrigin": "https://staging.lashher.com", "aliasReadbackSha256": "7" * 64,
+            "protectedWorkloadSha256": "6" * 64}
         window = {"version": 1, "actionId": "p2-key-rotation-owned", "bindingSha256": "b" * 64,
             "phase": "overlap", "kind": "signer-read", "maximumSeconds": 60,
             "source": {"challenge": "f" * 64, "bindingSha256": "b" * 64, "browserProgramSha256": "9" * 64}, "deploymentId": "dpl_owned",
-            "configurationSha256": "d" * 64, "sourceCommit": "a" * 40, "candidateSha256": "c" * 64}
+            "configurationSha256": "d" * 64, "sourceCommit": "a" * 40, "candidateSha256": "c" * 64,
+            "browserOrigin": "https://staging.lashher.com", "canonicalAliasReadbackSha256": "7" * 64,
+            "canonicalProtectedWorkloadSha256": "6" * 64}
         self.assertEqual(broker._window_value({"window": window}), window)
         with self.assertRaises(ValueError):
             broker._window_value({"window": {**window, "maximumSeconds": 61}})

@@ -29,6 +29,12 @@ FILES = (PROGRAM, "ops/platform/p2-identity-key-rotation.test.mjs", "ops/platfor
     "ops/platform/p2-identity-key-rotation-browser-recorder.test.mjs",
     "ops/platform/p2-identity-key-rotation-session-closed.mjs",
     "ops/platform/p2-identity-key-rotation-session-closed.test.mjs",
+    "ops/platform/p2-identity-key-rotation-operator.mjs",
+    "ops/platform/p2-identity-key-rotation-operator.test.mjs",
+    "ops/platform/p2-canonical-browser-origin.mjs",
+    "ops/platform/p2-canonical-browser-origin.test.mjs",
+    "ops/platform/host/p2_canonical_browser_origin.py",
+    "ops/platform/host/p2_canonical_browser_origin_test.py",
     "ops/platform/p2-recovery-api-current-probe.mjs",
     "ops/platform/host/p2_identity_key_rotation_parent.py", "ops/platform/host/p2_identity_key_rotation_parent_test.py",
     "ops/platform/p2-identity-key-rotation.md")

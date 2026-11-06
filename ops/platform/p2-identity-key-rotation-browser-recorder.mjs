@@ -5,6 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolve } from "node:path";
+import { P2_CANONICAL_BROWSER_ORIGIN, validateP2CanonicalBrowserObservation } from "./p2-canonical-browser-origin.mjs";
 
 const plans = new WeakMap(), controllers = new WeakMap(), artifacts = new WeakMap();
 const demand = value => { if (!value) throw new Error("P2_IDENTITY_ROTATION_BROWSER_REFUSED"); };
@@ -16,18 +17,27 @@ const noStore = headers => /(?:^|,)\s*private\s*(?:,|$)/iu.test(headers["cache-c
   && /(?:^|,)\s*no-store\s*(?:,|$)/iu.test(headers["cache-control"] ?? "");
 const sourceFile = fileURLToPath(import.meta.url), launcher = "\nawait runP2IdentityRotationBrowserChild();\n";
 
-export function prepareP2IdentityRotationBrowserReadPlan(rotationPlan, phase, deployment) {
+export function prepareP2IdentityRotationBrowserReadPlan(rotationPlan, phase, deployment, canonicalObservation) {
   demand(rotationPlan?.version === 1 && rotationPlan.environment === "staging" && ["overlap", "current-only"].includes(phase)
     && COMMIT.test(rotationPlan.sourceCommit ?? "") && SHA.test(rotationPlan.bindingSha256 ?? "")
     && deployment?.phase === phase && /^dpl_[A-Za-z0-9]+$/u.test(deployment.deploymentId ?? "")
     && /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/u.test(deployment.deploymentUrl ?? "")
     && deployment.sourceCommit === rotationPlan.sourceCommit
     && deployment.configurationSha256 === rotationPlan.configuration?.[phase]?.sha256
-    && SHA.test(deployment.configurationSha256 ?? "") && SHA.test(deployment.workloadReceiptSha256 ?? ""));
+    && SHA.test(deployment.configurationSha256 ?? "") && SHA.test(deployment.workloadReceiptSha256 ?? "")
+    && rotationPlan.originalReleaseId === canonicalObservation?.releaseId
+    && canonicalObservation.featureControls && canonicalObservation.writerAdmissionBinding);
+  validateP2CanonicalBrowserObservation({ environment: "staging", releaseId: rotationPlan.originalReleaseId,
+    deploymentId: deployment.deploymentId, deploymentUrl: deployment.deploymentUrl,
+    sourceCommit: rotationPlan.sourceCommit, configurationRecordSha256: deployment.workloadReceiptSha256,
+    featureControls: rotationPlan.featureControls, writerAdmissionBinding: rotationPlan.writerAdmissionBinding }, canonicalObservation);
   const plan = Object.freeze({ version: 1, status: "P2_IDENTITY_ROTATION_BROWSER_SOURCE_PLAN", environment: "staging",
     actionId: rotationPlan.actionId, bindingSha256: rotationPlan.bindingSha256, sourceCommit: rotationPlan.sourceCommit,
     candidateSha256: rotationPlan.candidateSha256, phase, configurationSha256: deployment.configurationSha256,
     deploymentId: deployment.deploymentId, deploymentUrl: deployment.deploymentUrl,
+    browserOrigin: canonicalObservation.browserOrigin,
+    canonicalAliasReadbackSha256: canonicalObservation.aliasReadbackSha256,
+    canonicalProtectedWorkloadSha256: canonicalObservation.protectedWorkloadSha256,
     workloadReceiptSha256: deployment.workloadReceiptSha256, courseId: rotationPlan.courseId,
     browserProgramSha256: hash(Buffer.concat([readFileSync(sourceFile), Buffer.from(launcher)])),
     admissionClass: "bounded-frontend-new-work-read-only", maximumWindowSeconds: 60,
@@ -45,23 +55,24 @@ async function ordinaryRead(page, url, courseId, profile) {
 
 export async function recordP2IdentityRotationBrowserReads(input, pages) {
   demand(closed(input, ["version", "environment", "actionId", "challenge", "bindingSha256", "sourceCommit", "candidateSha256", "phase",
-    "configurationSha256", "deploymentId", "deploymentUrl", "workloadReceiptSha256", "browserProgramSha256", "courseId", "customerId", "adminId"])
+    "configurationSha256", "deploymentId", "deploymentUrl", "browserOrigin", "canonicalAliasReadbackSha256", "canonicalProtectedWorkloadSha256", "workloadReceiptSha256", "browserProgramSha256", "courseId", "customerId", "adminId"])
     && input.version === 1 && input.environment === "staging" && ["overlap", "current-only"].includes(input.phase)
     && [input.challenge, input.bindingSha256, input.candidateSha256, input.configurationSha256, input.workloadReceiptSha256,
-      input.browserProgramSha256].every(value => SHA.test(value))
+      input.browserProgramSha256, input.canonicalAliasReadbackSha256, input.canonicalProtectedWorkloadSha256].every(value => SHA.test(value))
     && COMMIT.test(input.sourceCommit) && [input.courseId, input.customerId, input.adminId].every(value => UUID.test(value))
     && /^dpl_[A-Za-z0-9]+$/u.test(input.deploymentId) && /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/u.test(input.deploymentUrl)
+    && input.browserOrigin === P2_CANONICAL_BROWSER_ORIGIN
     && pages?.customer && pages.admin);
   const windowStartedAt = new Date().toISOString();
-  const customerSession = await pages.customer.request.get(`${input.deploymentUrl}/api/customer-auth/session`, { maxRedirects: 0, timeout: 15_000 });
-  const adminSession = await pages.admin.request.get(`${input.deploymentUrl}/api/auth/session`, { maxRedirects: 0, timeout: 15_000 });
+  const customerSession = await pages.customer.request.get(`${input.browserOrigin}/api/customer-auth/session`, { maxRedirects: 0, timeout: 15_000 });
+  const adminSession = await pages.admin.request.get(`${input.browserOrigin}/api/auth/session`, { maxRedirects: 0, timeout: 15_000 });
   demand(customerSession.status() === 200 && adminSession.status() === 200);
   const customer = await customerSession.json(), admin = await adminSession.json(), authenticatedAt = admin?.user?.authenticatedAt;
   demand(customer?.user?.id === input.customerId && admin?.user?.id === input.adminId && Number.isInteger(authenticatedAt)
     && Date.now() - authenticatedAt * 1000 >= 0 && Date.now() - authenticatedAt * 1000 < 240_000);
   const profiles = [
-    await ordinaryRead(pages.customer, `${input.deploymentUrl}/api/academy/courses/${input.courseId}`, input.courseId, "course-learner"),
-    await ordinaryRead(pages.admin, `${input.deploymentUrl}/api/admin/courses/${input.courseId}`, input.courseId, "course-admin")];
+    await ordinaryRead(pages.customer, `${input.browserOrigin}/api/academy/courses/${input.courseId}`, input.courseId, "course-learner"),
+    await ordinaryRead(pages.admin, `${input.browserOrigin}/api/admin/courses/${input.courseId}`, input.courseId, "course-admin")];
   const windowCompletedAt = new Date().toISOString();
   demand(Date.parse(windowCompletedAt) >= Date.parse(windowStartedAt)
     && Date.parse(windowCompletedAt) - Date.parse(windowStartedAt) <= 60_000
@@ -70,6 +81,8 @@ export async function recordP2IdentityRotationBrowserReads(input, pages) {
   return { version: 1, status: "P2_IDENTITY_ROTATION_BROWSER_READS_RECORDED", environment: "staging", actionId: input.actionId,
     bindingSha256: input.bindingSha256, sourceCommit: input.sourceCommit, candidateSha256: input.candidateSha256, phase: input.phase,
     configurationSha256: input.configurationSha256, deploymentId: input.deploymentId, deploymentUrl: input.deploymentUrl,
+    browserOrigin: input.browserOrigin, canonicalAliasReadbackSha256: input.canonicalAliasReadbackSha256,
+    canonicalProtectedWorkloadSha256: input.canonicalProtectedWorkloadSha256,
     workloadReceiptSha256: input.workloadReceiptSha256, browserProgramSha256: input.browserProgramSha256,
     windowStartedAt, windowCompletedAt,
     evidenceClass: "actual-frontend-normal-course-signer-protected-http", profiles,
@@ -87,12 +100,12 @@ async function childMain() {
   const { chromium } = await import("playwright"), browser = await chromium.launch({ headless: false }); process.once("disconnect", () => { void browser.close().finally(() => process.exit(1)); });
   let record;
   try { const customerContext = await browser.newContext(), adminContext = await browser.newContext(), customer = await customerContext.newPage(), admin = await adminContext.newPage();
-    await customer.goto(`${input.deploymentUrl}/sign-in`, { waitUntil: "domcontentloaded", timeout: 60_000 });
-    await admin.goto(`${input.deploymentUrl}/admin/sign-in`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await customer.goto(`${input.browserOrigin}/sign-in`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await admin.goto(`${input.browserOrigin}/admin/sign-in`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     const authDeadline = Date.now() + 300_000;
     while (true) { try {
-      const customerSession = await customer.request.get(`${input.deploymentUrl}/api/customer-auth/session`, { maxRedirects: 0, timeout: 15_000 });
-      const adminSession = await admin.request.get(`${input.deploymentUrl}/api/auth/session`, { maxRedirects: 0, timeout: 15_000 });
+      const customerSession = await customer.request.get(`${input.browserOrigin}/api/customer-auth/session`, { maxRedirects: 0, timeout: 15_000 });
+      const adminSession = await admin.request.get(`${input.browserOrigin}/api/auth/session`, { maxRedirects: 0, timeout: 15_000 });
       const customerValue = customerSession.status() === 200 ? await customerSession.json() : null;
       const adminValue = adminSession.status() === 200 ? await adminSession.json() : null, at = adminValue?.user?.authenticatedAt;
       if (customerValue?.user?.id === input.customerId && adminValue?.user?.id === input.adminId && Number.isInteger(at)
@@ -113,6 +126,8 @@ export function launchP2IdentityRotationBrowserReadRecorder(plan) {
   const challenge = randomBytes(32).toString("hex"), input = { version: 1, environment: "staging", actionId: plan.actionId, challenge,
     bindingSha256: plan.bindingSha256, sourceCommit: plan.sourceCommit, candidateSha256: plan.candidateSha256, phase: plan.phase,
     configurationSha256: plan.configurationSha256, deploymentId: plan.deploymentId, deploymentUrl: plan.deploymentUrl,
+    browserOrigin: plan.browserOrigin, canonicalAliasReadbackSha256: plan.canonicalAliasReadbackSha256,
+    canonicalProtectedWorkloadSha256: plan.canonicalProtectedWorkloadSha256,
     workloadReceiptSha256: plan.workloadReceiptSha256, browserProgramSha256: plan.browserProgramSha256,
     courseId: plan.courseId, customerId: subjects.customerId, adminId: subjects.adminId };
   const child = spawn(process.execPath, ["--input-type=module", "--eval", program.toString("utf8")], { stdio: ["ignore", "ignore", "ignore", "ipc"],

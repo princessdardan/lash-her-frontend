@@ -786,6 +786,7 @@ class P2IdentityRotationHostAdapter:
         deployment = self.frontend_deployment(phase)
         fields = {"version", "status", "environment", "actionId", "bindingSha256", "sourceCommit",
                   "candidateSha256", "phase", "configurationSha256", "deploymentId", "deploymentUrl",
+                  "browserOrigin", "canonicalAliasReadbackSha256", "canonicalProtectedWorkloadSha256",
                   "workloadReceiptSha256", "browserProgramSha256", "windowStartedAt", "windowCompletedAt", "evidenceClass", "profiles",
                   "contextsIsolated", "sessionsFabricated", "requestsIntercepted", "storageInjected",
                   "tokenBytesOutput", "credentialHashesOutput", "releaseAccepted"}
@@ -797,6 +798,9 @@ class P2IdentityRotationHostAdapter:
                and source_record.get("sourceCommit") == self.scope.source_commit and source_record.get("phase") == phase
                and all(source_record.get(key) == deployment[key] for key in ("configurationSha256", "deploymentId",
                     "deploymentUrl", "workloadReceiptSha256"))
+               and source_record.get("browserOrigin") == "https://staging.lashher.com"
+               and all(re.fullmatch(r"[a-f0-9]{64}", source_record.get(key, "")) for key in
+                       ("canonicalAliasReadbackSha256", "canonicalProtectedWorkloadSha256"))
                and source_record.get("browserProgramSha256") == self.scope.browser_program_sha256
                and source_record.get("evidenceClass") == "actual-frontend-normal-course-signer-protected-http"
                and all(source_record.get(key) is expected for key, expected in {
@@ -853,6 +857,9 @@ class P2IdentityRotationHostAdapter:
                and source.get("candidateSha256") == self.scope.candidate_sha256
                and source.get("sourceCommit") == self.scope.source_commit and source.get("phase") == phase
                and source.get("configurationSha256") == self.configurations.hashes[phase]
+               and source.get("browserOrigin") == "https://staging.lashher.com"
+               and all(re.fullmatch(r"[a-f0-9]{64}", source.get(key, "")) for key in
+                       ("canonicalAliasReadbackSha256", "canonicalProtectedWorkloadSha256"))
                and source.get("browserProgramSha256") == self.scope.browser_program_sha256
                and source.get("deploymentId") == signer.get("deploymentId")
                and migrate.file_hash(json.dumps(source, sort_keys=True, separators=(",", ":")).encode())

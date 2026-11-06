@@ -126,7 +126,9 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
         const base = { version: 1, actionId: plan.actionId, bindingSha256: plan.bindingSha256, phase: browserPlan.phase,
           kind, maximumSeconds, source, deploymentId: browserPlan.deploymentId,
           configurationSha256: browserPlan.configurationSha256, sourceCommit: plan.sourceCommit,
-          candidateSha256: plan.candidateSha256 };
+          candidateSha256: plan.candidateSha256, browserOrigin: browserPlan.browserOrigin,
+          canonicalAliasReadbackSha256: browserPlan.canonicalAliasReadbackSha256,
+          canonicalProtectedWorkloadSha256: browserPlan.canonicalProtectedWorkloadSha256 };
         await physicalState({ newWork: false, active: 0, uncertain: 0 });
         const intent = await host.beginBrowserWindow(base);
         demand(intent?.status === "P2_IDENTITY_ROTATION_BROWSER_WINDOW_INTENT" && intent.kind === kind
@@ -164,7 +166,8 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
       };
       const observeFrontendSigner = async phase => {
         const deployment = await host.frontendDeployment(phase);
-        const browserPlan = prepareP2IdentityRotationBrowserReadPlan(plan, phase, deployment);
+        const canonicalObservation = await host.observeCanonicalOrigin(phase);
+        const browserPlan = prepareP2IdentityRotationBrowserReadPlan(plan, phase, deployment, canonicalObservation);
         const controller = launchP2IdentityRotationBrowserReadRecorder(browserPlan);
         try {
           await controller.initialized();

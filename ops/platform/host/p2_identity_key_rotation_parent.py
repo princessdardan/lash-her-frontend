@@ -21,6 +21,8 @@ import p2_identity_key_rotation as rotation_source
 import release as runtime
 import vercel
 import frontend_probe
+from frontend_release_adapters import LockedClient
+import p2_canonical_browser_origin as canonical_origin
 from p2_release_broker import Broker, LOCK, MAXIMUM, decode
 from p2_recovery_broker import P2RecoveryPhysicalObserver
 from p2_identity_key_rotation_adapter import P2IdentityRotationHostAdapter, P2IdentityRotationScope
@@ -124,6 +126,19 @@ class P2IdentityRotationBroker(Broker):
                 and frontend_probe.valid_writer_admission_binding(p.get("expectedWriterAdmissionBinding"))
                 and p["expectedWriterAdmissionBinding"].get("sourceCommit") == rotation["sourceCommit"],
                 "P2_ROTATION_WORKLOAD_EXPECTATION_REFUSED")
+        native_plan, private_probe = p.get("nativePlan"), p.get("privateProbe")
+        require(isinstance(native_plan, dict) and native_plan.get("actionId") == self.selected["releaseId"]
+                and native_plan.get("sourceCommit") == rotation["sourceCommit"]
+                and native_plan.get("featureControls") == p["expectedFeatureControls"]
+                and native_plan.get("writerAdmissionBinding") == p["expectedWriterAdmissionBinding"]
+                and native_plan.get("configurationRecordSha256") == p.get("baselineConfigurationRecordSha256")
+                and isinstance(private_probe, dict)
+                and set(private_probe) == {"environment", "projectId", "sourceCommit", "releaseId", "secret", "expiresAt", "gatewayOrigin"}
+                and private_probe.get("environment") == "staging"
+                and private_probe.get("projectId") == native_plan.get("projectId")
+                and private_probe.get("sourceCommit") == native_plan.get("sourceCommit")
+                and private_probe.get("releaseId") == native_plan.get("actionId"),
+                "P2_ROTATION_CANONICAL_BASELINE_REQUIRED")
         root = Path(p.get("rotationConfiguration", ""))
         require(root.is_absolute() and root.resolve() == root
                 and root.is_relative_to(Path("/var/lib/lash-her/releases/staging")),
@@ -140,10 +155,54 @@ class P2IdentityRotationBroker(Broker):
         self.guard_mutex = threading.RLock()
         self.guard_stop = threading.Event()
         self.frontend_close_prepared = False
+        self.canonical_observations = {}
+        self.canonical_last_verified = 0
         self.outcome.update(status="P2_IDENTITY_KEY_ROTATION_FAILED_REQUIRES_REVIEW",
                             actionId=self.action_id(), bindingSha256=rotation["bindingSha256"],
                             keyRemovalVerified=False, trafficAuthorized=False,
                             sqlExecuted=False, rolesPrepared=False, loginChanged=False)
+
+    def _canonical_private_directory(self, phase):
+        if phase == "baseline":
+            directory = self.directory / "canonical-baseline-private"
+            if not directory.exists():
+                directory.mkdir(mode=0o700)
+                migrate.write_json(directory, frontend_probe.PRIVATE_FILE, self.initial["privateProbe"])
+            frontend_probe._private_input(directory, {"environment": "staging",
+                "projectId": self.initial["nativePlan"]["projectId"],
+                "sourceCommit": self.initial["nativePlan"]["sourceCommit"],
+                "releaseId": self.initial["nativePlan"]["actionId"]})
+            return directory
+        directory = self.adapter.output / f"frontend-{phase}-private"
+        migrate.private_directory(directory)
+        return directory
+
+    def _canonical_context(self, phase):
+        require(phase in PHASES and phase == self.frontend_phase, "P2_ROTATION_CANONICAL_PHASE_REFUSED")
+        if phase == "baseline":
+            plan = copy.deepcopy(self.initial["nativePlan"])
+        else:
+            deployment = self.adapter.frontend_deployment(phase)
+            plan = copy.deepcopy(self.initial["nativePlan"])
+            plan.update(deploymentId=deployment["deploymentId"], deploymentUrl=deployment["deploymentUrl"],
+                        configurationRecordSha256=deployment["workloadReceiptSha256"],
+                        featureControls=copy.deepcopy(self.initial["expectedFeatureControls"]),
+                        writerAdmissionBinding=copy.deepcopy(self.initial["expectedWriterAdmissionBinding"]))
+        return {"candidate": self.selected, "plan": plan,
+                "configurationRecordSha256": plan["configurationRecordSha256"],
+                "privateProbeDirectory": str(self._canonical_private_directory(phase))}
+
+    def _observe_canonical(self, phase, *, force=False):
+        if not force and phase in self.canonical_observations and time.monotonic() - self.canonical_last_verified < 20:
+            return copy.deepcopy(self.canonical_observations[phase])
+        context = self._canonical_context(phase)
+        value = canonical_origin.observe(context, LockedClient(self.vercel, self.check))
+        require(value.get("browserOrigin") == canonical_origin.ORIGIN
+                and value.get("deploymentId") == context["plan"]["deploymentId"],
+                "P2_ROTATION_CANONICAL_ORIGIN_REFUSED")
+        self.canonical_observations[phase] = copy.deepcopy(value)
+        self.canonical_last_verified = time.monotonic()
+        return copy.deepcopy(value)
 
     def arm(self, request):
         self.check()
@@ -180,6 +239,7 @@ class P2IdentityRotationBroker(Broker):
         self.guard_last_verified = time.monotonic()
         boundary = self.adapter.observe_runtime_boundary("baseline")
         self.runtime_containers = self.adapter.runtime_guard_containers(boundary["containers"])
+        self._observe_canonical("baseline", force=True)
         self._guard_external()
         self._start_rotation_guard()
         return {"status": "P2_IDENTITY_ROTATION_PARENT_ARMED", "actionId": self.action_id(),
@@ -195,6 +255,7 @@ class P2IdentityRotationBroker(Broker):
                 require(value.get("gatewayAdmissionClosed") is True and value.get("gatewayActive") == 0
                         and value.get("gatewayUncertain") == 0 and value.get("nativeSchedulesEnabled") is False,
                         "P2_ROTATION_EXTERNAL_GUARD_REFUSED")
+                self._observe_canonical(self.frontend_phase)
                 self.guard_last_verified = time.monotonic()
                 return value
             finally:
@@ -224,7 +285,8 @@ class P2IdentityRotationBroker(Broker):
     def _window_value(self, value):
         rotation, window = self.initial["rotationPlan"], value.get("window")
         fields = {"version", "actionId", "bindingSha256", "phase", "kind", "maximumSeconds", "source",
-                  "deploymentId", "configurationSha256", "sourceCommit", "candidateSha256"}
+                  "deploymentId", "configurationSha256", "sourceCommit", "candidateSha256", "browserOrigin",
+                  "canonicalAliasReadbackSha256", "canonicalProtectedWorkloadSha256"}
         require(isinstance(window, dict) and fields.issubset(window) and set(window).issubset(fields | {"epoch", "drain"})
                 and window.get("version") == 1
                 and window.get("actionId") == self.action_id() and window.get("bindingSha256") == rotation["bindingSha256"]
@@ -243,6 +305,11 @@ class P2IdentityRotationBroker(Broker):
         deployment = self.adapter.frontend_deployment(window["phase"])
         require(all(window.get(key) == deployment.get(key) for key in ("deploymentId", "configurationSha256")),
                 "P2_ROTATION_BROWSER_DEPLOYMENT_CHANGED")
+        canonical = self._observe_canonical(window["phase"], force=True)
+        require(window.get("browserOrigin") == canonical.get("browserOrigin") == canonical_origin.ORIGIN
+                and window.get("canonicalAliasReadbackSha256") == canonical.get("aliasReadbackSha256")
+                and window.get("canonicalProtectedWorkloadSha256") == canonical.get("protectedWorkloadSha256"),
+                "P2_ROTATION_BROWSER_CANONICAL_ORIGIN_CHANGED")
         return {key: copy.deepcopy(window[key]) for key in fields}
 
     def _begin_window(self, value):
@@ -474,6 +541,8 @@ class P2IdentityRotationBroker(Broker):
             self.send(identity, "ROTATION_PROFILES_OBSERVED", receipt=receipt)
         elif operation == "rotation-frontend-deployment":
             self.send(identity, "ROTATION_FRONTEND_DEPLOYMENT", receipt=self.adapter.frontend_deployment(value.get("phase")))
+        elif operation == "rotation-observe-canonical-origin":
+            self.send(identity, "ROTATION_CANONICAL_ORIGIN", receipt=self._observe_canonical(value.get("phase"), force=True))
         elif operation == "rotation-browser-window-begin":
             self.send(identity, "ROTATION_BROWSER_WINDOW_INTENT", receipt=self._begin_window(value))
         elif operation == "rotation-browser-window-opened":

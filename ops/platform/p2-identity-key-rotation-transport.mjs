@@ -61,6 +61,7 @@ export function p2IdentityRotationEnvironmentLock(settings, initial) {
         observeProfiles: phase => call("rotation-observe-profiles", "ROTATION_PROFILES_OBSERVED", { phase }, 120_000),
         observeFrontendSigner: phase => call("rotation-observe-signer", "ROTATION_SIGNER_OBSERVED", { phase }),
         frontendDeployment: phase => call("rotation-frontend-deployment", "ROTATION_FRONTEND_DEPLOYMENT", { phase }),
+        observeCanonicalOrigin: phase => call("rotation-observe-canonical-origin", "ROTATION_CANONICAL_ORIGIN", { phase }, 120_000),
         beginBrowserWindow: window => call("rotation-browser-window-begin", "ROTATION_BROWSER_WINDOW_INTENT", { window }),
         browserWindowOpened: window => call("rotation-browser-window-opened", "ROTATION_BROWSER_WINDOW_OPENED", { window }),
         closingBrowserWindow: window => call("rotation-browser-window-closing", "ROTATION_BROWSER_WINDOW_CLOSING", { window }),
