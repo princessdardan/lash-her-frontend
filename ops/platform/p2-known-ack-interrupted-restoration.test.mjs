@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {spawn,spawnSync} from 'node:child_process';
+import {fork,spawn,spawnSync} from 'node:child_process';
 import {mkdtempSync,realpathSync,writeFileSync,readFileSync,rmSync,existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
@@ -124,7 +124,26 @@ test('actual failing original child reaches outer private capture through fixed 
  let program=readFileSync(entry,'utf8').replace(/^import .*;$/gmu,'').replace(/^export /gmu,'').replaceAll('import.meta.url','FAKE_META_URL');
  const fakeProcess={argv:[process.execPath,entry],execPath:process.execPath,env:{P2_INTERRUPTED_OWNED_TEST:'true',PATH:process.env.PATH},stderr:{write:value=>captures.push(value)},stdout:{write:()=>assert.fail('failure must not emit success')},exit:()=>assert.fail('unexpected ownership/argument refusal')};
  vm.runInNewContext(program,{URL,Buffer,performance,FAKE_META_URL:pathToFileURL(entry).href,process:fakeProcess,assert,readFileSync:fs.readFileSync,writeFileSync:fs.writeFileSync,realpathSync:fs.realpathSync,symlinkSync:fs.symlinkSync,rmSync:fs.rmSync,
-  mkdtempSync:value=>(folder=fs.realpathSync(fs.mkdtempSync(value))),spawnSync(file,args,options){if(file==='git'||args[0]==='--check')return spawnSync(file,args,options);assert.equal(args[0],'--import');assert.equal(args[1],'tsx');assert.equal(paths.basename(args[2]),'cluster-and-new-c-process.mjs');launched=true;return parent;},
+  mkdtempSync:value=>(folder=fs.realpathSync(fs.mkdtempSync(value))),spawnSync(file,args,options){if(file==='git'||args[0]==='--check')return spawnSync(file,args,options);assert.equal(args[0],'--import');assert.equal(args[1],'tsx');assert.equal(paths.basename(args[2]),'cluster-and-new-c-process.mjs');assert.equal(options.env.TMPDIR,folder);assert.equal(fs.realpathSync(options.env.TMPDIR),folder);launched=true;return parent;},
   join:paths.join,dirname:paths.dirname,resolve:paths.resolve,tmpdir,createRequire,createHash,pathToFileURL,fileURLToPath},{timeout:10000});
  assert.equal(launched,true);assert.equal(fakeProcess.exitCode,1);assert.equal(existsSync(folder),false);assert.equal(captures.join(''),parent.stderr);assert.equal(captures.join('').includes(canary),false);
+});
+
+// Exercise the unchanged receiver guard through its real child IPC. Failure
+// payloads remain private; no database or provider setup is reached.
+test('actual receiver refuses Linux tmp roots and preserves its supported private/var boundary',async()=>{
+ const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-c-receiver-root-')));
+ const receiver=new URL('./harness/owned-phase2-lifecycle-receiver.mjs',import.meta.url);
+ async function classify(root){
+  const child=fork(receiver,[],{cwd:directory,execArgv:[],stdio:['ignore','ignore','ignore','ipc'],env:{PATH:process.env.PATH,NODE_NO_WARNINGS:'1'}});
+  try{
+   const result=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('OWNED_RECEIVER_GUARD_TIMEOUT')),5000);child.once('message',value=>{clearTimeout(timer);resolve(value);});child.once('exit',()=>{clearTimeout(timer);reject(new Error('OWNED_RECEIVER_GUARD_EXIT'));});
+    child.send({id:1,op:'initialize',root,database:{host:'127.0.0.1',database:'owned_lifecycle_course_test'},clock:0,service:'course',keys:{}});});
+   assert.equal(typeof result.error,'string');return result.error.includes('input.root.startsWith')?'root-guard':'later-owned-dependency';
+  }finally{if(child.exitCode===null){const exit=new Promise(done=>child.once('exit',done));child.kill('SIGKILL');await exit;}}
+ }
+ try{
+  assert.equal(await classify('/tmp/p2-c-no-dependencies-'+process.pid),'root-guard');
+  assert.equal(await classify('/var/tmp/p2-c-no-dependencies-'+process.pid),'later-owned-dependency');
+ }finally{rmSync(directory,{recursive:true,force:true});}
 });

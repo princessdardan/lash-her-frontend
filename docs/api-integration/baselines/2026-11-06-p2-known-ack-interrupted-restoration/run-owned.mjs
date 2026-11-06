@@ -182,7 +182,7 @@ try{
   ["if(item.observed)process.stderr.write(JSON.stringify(item.observed)+'\\n');",diagnosticSource.parentForward],
  ],outer);
  const outputs=[];for(const mode of negativeOnly?negativeCases:['none']){
-  const result=spawnSync(process.execPath,['--import','tsx',outer],{cwd:root,env:{PATH:process.env.PATH,PG_BIN:process.env.PG_BIN,OWNED_POSTGRES_MAJOR:process.env.OWNED_POSTGRES_MAJOR??'16',
+  const result=spawnSync(process.execPath,['--import','tsx',outer],{cwd:root,env:{PATH:process.env.PATH,TMPDIR:folder,PG_BIN:process.env.PG_BIN,OWNED_POSTGRES_MAJOR:process.env.OWNED_POSTGRES_MAJOR??'16',
   P2_KNOWN_ACK_OWNED_TEST:'true',P2_INTERRUPTED_OWNED_FAULT:mode,P2_KNOWN_ACK_COURSE_SOURCE_ROOT:process.env.P2_KNOWN_ACK_COURSE_SOURCE_ROOT,P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT:process.env.P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT},encoding:'utf8',timeout:1200000});
  if(result.status!==0){process.stderr.write(result.stderr);process.exitCode=1;break;}else {const receipt=JSON.parse(result.stdout);receipt.restoration.elapsedSeconds=Math.round((performance.now()-started)/100)/10;
   receipt.restoration.ownedSourceSha256=Object.fromEntries(['ops/platform/p2-known-ack-interrupted-restoration.mjs','ops/platform/host/p2_known_ack_interrupted_restoration.py','ops/platform/host/p2_release_broker.py','ops/platform/host/p2_release_supervisor.py','ops/gateway/server.mjs','ops/gateway/p2-certification-fault.mjs','ops/gateway/package.json','ops/gateway/package-lock.json',...['run-owned.mjs','owned-process.mjs','owned-engine.py'].map(name=>'docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/'+name)].map(name=>[name,createHash('sha256').update(readFileSync(join(root,name))).digest('hex')]));
