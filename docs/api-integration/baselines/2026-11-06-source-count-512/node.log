@@ -1,0 +1,32 @@
+✔ source-derived fixed cases do not accept a caller command, action, version or URL (8.698208ms)
+✔ pending, changed, mismatched or non-head state refuses before issuing a POST (0.961834ms)
+✔ only exact duplicate/409 conflict schemas with private no-store count (5.041625ms)
+✔ every account/domain snapshot must remain identical; quota tables are outside the witness (0.889167ms)
+✔ plan leaves the live future gap OPEN and exposes no command or credential (1.386208ms)
+✔ receiver reviewed source count accepts 512 and refuses 513 without weakening the source digest (10.613958ms)
+✔ even the private POST entry refuses a future gap without making a network request (0.25525ms)
+✔ corrected reader context requires host identity, recomputed targets, immutable images and the same full source map (1.517791ms)
+✔ runtime binding requires actual staging configuration and dedicated service key (0.21ms)
+✔ actual composed private program sanitizes malformed/oversized packets (232.830667ms)
+✔ supplemental source proof binds current canonical PR head, every required job and exact workflow bytes (3.89075ms)
+✔ forked source, wrong actor, failed or skipped jobs and missing workflow refuse (1.950625ms)
+✔ newer failed attempts and moved source heads cannot hide behind prior green CI (0.682125ms)
+✔ real CI workflow pins every checkout to exact PR source and never persists its token (19.642ms)
+✔ the complete committed operator source fits the real public installation envelope (121.026333ms)
+✔ actual Git source handoff accepts 512 files and refuses 513 with the per-file byte limit intact (196.579541ms)
+✔ actual Git source handoff accepts exactly 41 MB and refuses one extra decoded byte (243.904417ms)
+✔ SSH retains strict separate known-hosts and quotes every remote argument (0.437291ms)
+✔ private phase payload reaches only SSH stdin, without ambient tokens or agent (10.708417ms)
+✔ uncertain child response retains private diagnostics once and never retries (11.966375ms)
+✔ a missing or permissive trust file refuses before SSH starts (7.723541ms)
+✔ large public source handoff does not expand private phase input limits (62.151583ms)
+✔ fixed installer enforces source count, decoded aggregate and per-file limits (842.341834ms)
+✔ public 56 MB and private 24 MB transport limits refuse overflow before execution (297.2005ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1285.912875
