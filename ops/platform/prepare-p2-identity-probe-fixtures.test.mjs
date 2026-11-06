@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { parse } from "yaml";
 import { p2IdentityFixtureFailureReceipt, parseP2DockerContextEndpoint,
@@ -805,6 +805,44 @@ test("C nonzero, transport and malformed receipts refuse and retain only bounded
     const base = join(runner, "p2-owned-fixture-failure/interrupted-restoration", "d".repeat(40)), metadata = JSON.parse(readFileSync(base + ".json"));
     assert.equal(lstatSync(base + ".stdout.log").size, 4 * 1024 * 1024); assert.equal(metadata.stdoutTruncated, true);
     assert.equal(metadata.stderrTruncated, false); assert.equal(metadata.stderrBytes, 20);
+  } finally { value.cleanup(); rmSync(runner, { recursive: true, force: true }); }
+});
+
+test("generated C child diagnostic survives actual parent forwarding and private adapter retention", async () => {
+  const { ownedDiagnosticContext, ownedDiagnosticSource } = await import("../../docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs");
+  const root = fileURLToPath(new URL("../../", import.meta.url)), source = ownedDiagnosticSource(ownedDiagnosticContext(root));
+  const canary = "PRIVATE_CHILD_DIAGNOSTIC_PASSWORD_URL_SQL_CANARY";
+  const program = `let phase='c-original-api-current',observed,cEngineDiagnostic=null;
+const error=Object.assign(new Error(${JSON.stringify(canary)}),{code:'ERR_MODULE_NOT_FOUND',
+url:${JSON.stringify(pathToFileURL(join(root, "src/lib/private-db/client.ts")).href)},actual:${JSON.stringify(canary)},expected:${JSON.stringify(canary)}});
+Promise.reject(error)${source.harnessCatch}`;
+  const options = { encoding: "utf8", timeout: 10_000, maxBuffer: 64_000, env: { PATH: process.env.PATH } };
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", program], options);
+  assert.ifError(child.error); assert.equal(child.status, 1); assert.equal(child.signal, null); assert.equal(child.stdout, "");
+  const original = JSON.parse(child.stderr);
+  assert.equal(original.diagnostic.error.code, "ERR_MODULE_NOT_FOUND");
+  assert.equal(original.diagnostic.error.module, "src/lib/private-db/client.ts");
+  const parent = spawnSync(process.execPath, ["--input-type=module", "-e",
+    `import {readFileSync} from 'node:fs';const item=JSON.parse(readFileSync(0,'utf8'));${source.parentForward}process.exitCode=1;`],
+  { ...options, input: child.stderr });
+  assert.ifError(parent.error); assert.equal(parent.status, 1); assert.equal(parent.signal, null); assert.equal(parent.stdout, "");
+  assert.deepEqual(JSON.parse(parent.stderr), original.diagnostic);
+  assert.equal(parent.stderr.includes(canary), false); assert.equal(parent.stderr.includes(root), false);
+  const value = harness(tap(), [], undefined, { interruptedStatus: parent.status, interruptedOutput: parent.stdout, interruptedStderr: parent.stderr });
+  const runner = realpathSync(mkdtempSync(join(tmpdir(), "p2-c-actual-diagnostic-retention-")));
+  try {
+    let failure;
+    withRunnerTemp(runner, () => { try { runLifecycle(value); } catch (error) { failure = p2IdentityFixtureFailureReceipt(error); } });
+    assert.equal(failure.recoveryQualification, "interrupted-restoration"); assert.equal(failure.recoveryFailure, "child-exit");
+    assert.equal(JSON.stringify(failure).includes(canary), false); assert.equal(JSON.stringify(failure).includes(sourceReadToken), false);
+    assert.equal(existsSync(value.workspace), false);
+    const directory = join(runner, "p2-owned-fixture-failure/interrupted-restoration"), base = join(directory, "d".repeat(40));
+    assert.equal(lstatSync(directory).mode & 0o777, 0o700); assert.equal(lstatSync(base + ".stderr.log").mode & 0o777, 0o600);
+    const retained = readFileSync(base + ".stderr.log", "utf8"), metadata = JSON.parse(readFileSync(base + ".json"));
+    assert.equal(retained, parent.stderr); assert.deepEqual(JSON.parse(retained), original.diagnostic);
+    assert.equal(retained.includes(canary), false); assert.equal(readFileSync(base + ".stdout.log", "utf8"), "");
+    assert.equal(metadata.sourceCommit, "d".repeat(40)); assert.equal(metadata.stderrBytes, Buffer.byteLength(parent.stderr));
+    assert.equal(metadata.stderrTruncated, false); assert.equal(metadata.stdoutBytes, 0); assert.equal(metadata.stdoutTruncated, false);
   } finally { value.cleanup(); rmSync(runner, { recursive: true, force: true }); }
 });
 
