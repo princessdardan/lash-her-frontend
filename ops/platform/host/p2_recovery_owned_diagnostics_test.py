@@ -9,13 +9,17 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
+import traceback
+import urllib.error
+import ssl
 import unittest
 from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[3]
 SOURCE=ROOT/'ops/platform/test-p2-recovery-owned.py'
-NS={'json':json,'os':os,'Path':Path,'re':re,'sys':sys,'signal':signal}
-NAMES={'OWNED_CHILD_PHASES','OWNED_CHILD_ERROR_CODES','child_environment','child_failure_diagnostic','report_child_failure'}
+NS={'json':json,'os':os,'Path':Path,'re':re,'sys':sys,'signal':signal,'ast':ast,'traceback':traceback,'urllib':urllib,'ssl':ssl}
+NAMES={'OWNED_CHILD_PHASES','OWNED_CHILD_ERROR_CODES','child_environment','child_failure_diagnostic','report_child_failure','OWNED_BRIDGE_SOURCE_FILES','OWNED_BRIDGE_ERROR_KINDS','owned_bridge_guard_codes','owned_bridge_diagnostic','read_owned_bridge_diagnostics'}
 NODES=[node for node in ast.parse(SOURCE.read_text()).body if isinstance(node,(ast.FunctionDef,ast.Assign)) and
     (node.name if isinstance(node,ast.FunctionDef) else node.targets[0].id) in NAMES]
 exec(compile(ast.Module(body=NODES,type_ignores=[]),str(SOURCE),'exec'),NS)
@@ -65,6 +69,41 @@ class OwnedRecoveryDiagnosticsTests(unittest.TestCase):
         with patch.dict(os.environ,{'NODE_OPTIONS':'PRIVATE_LOADER','DATABASE_URL':'PRIVATE_DB','VERCEL_TOKEN':'PRIVATE_PROVIDER','PGPASSWORD':'PRIVATE_PASSWORD'},clear=False):
             value=NS['child_environment'](P2_RECOVERY_OWNED_TEST='true')
         self.assertFalse(set(value)&{'NODE_OPTIONS','DATABASE_URL','VERCEL_TOKEN','PGPASSWORD'});self.assertNotIn('PRIVATE_',json.dumps(value))
+
+    def test_actual_source_guard_and_suppressed_http_cause_survive_without_private_text(self):
+        import migrate
+        allowed=NS['owned_bridge_guard_codes'](ROOT)
+        self.assertIn('FRONTEND_WORKLOAD_VERIFICATION_FAILED',allowed)
+        try:
+            try:raise urllib.error.HTTPError('https://PRIVATE_HOST.invalid/PRIVATE_PATH',401,'PRIVATE_MESSAGE',{},None)
+            except urllib.error.HTTPError as inner:
+                inner.close()
+                migrate.demand(False,'FRONTEND_WORKLOAD_VERIFICATION_FAILED')
+        except ValueError as error:value=NS['owned_bridge_diagnostic'](error,allowed,ROOT)
+        encoded=json.dumps(value)
+        self.assertEqual(value['chain'][0]['guardCode'],'FRONTEND_WORKLOAD_VERIFICATION_FAILED')
+        self.assertEqual(value['chain'][1]['httpStatus'],401)
+        self.assertTrue(any(row['file']=='ops/platform/host/migrate.py' for row in value['frames']))
+        for private in ('PRIVATE_HOST','PRIVATE_PATH','PRIVATE_MESSAGE','https://',str(ROOT)):
+            self.assertNotIn(private,encoded)
+
+    def test_unknown_uppercase_messages_and_unselected_source_frames_are_not_guard_codes(self):
+        error=ValueError('PRIVATE_UPPERCASE_CANARY')
+        value=NS['owned_bridge_diagnostic'](error,NS['owned_bridge_guard_codes'](ROOT),ROOT)
+        self.assertEqual(value['chain'][0]['guardCode'],'unknown');self.assertEqual(value['frames'],[])
+        self.assertNotIn('PRIVATE_',json.dumps(value))
+
+    def test_bridge_record_reader_refuses_extra_keys_unknown_codes_booleans_and_symlinks(self):
+        allowed=NS['owned_bridge_guard_codes'](ROOT)
+        value=NS['owned_bridge_diagnostic'](ValueError('FRONTEND_WORKLOAD_VERIFICATION_FAILED'),allowed,ROOT)
+        with tempfile.TemporaryDirectory(prefix='owned-recovery-diagnostic-') as path:
+            directory=Path(path);file=directory/'123.json';file.write_text(json.dumps(value))
+            self.assertEqual(NS['read_owned_bridge_diagnostics'](directory,allowed),[value])
+            for changed in ({**value,'raw':'PRIVATE_RAW'}, {**value,'chain':[{**value['chain'][0],'guardCode':'PRIVATE_CODE'}]},
+                    {**value,'chain':[{**value['chain'][0],'httpStatus':True}]}):
+                file.write_text(json.dumps(changed));self.assertEqual(NS['read_owned_bridge_diagnostics'](directory,allowed),[])
+            file.unlink();target=directory/'private';target.write_text(json.dumps(value));file.symlink_to(target)
+            self.assertEqual(NS['read_owned_bridge_diagnostics'](directory,allowed),[])
 
     def test_actual_inner_source_failure_retains_phase_and_frame_without_canaries(self):
         node='/Users/dardan/.nvm/versions/node/v24.18.0/bin/node' if Path('/Users/dardan/.nvm/versions/node/v24.18.0/bin/node').exists() else 'node'

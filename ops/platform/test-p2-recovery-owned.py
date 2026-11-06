@@ -1,5 +1,7 @@
 """Explicit loopback-only recovery qualification, all actual migration sources."""
+import ast
 import hashlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -14,6 +16,9 @@ import uuid
 import re
 import subprocess
 import sys
+import traceback
+import urllib.error
+import ssl
 import urllib.parse
 
 # Failure-only metadata. Raw inner output is never forwarded; the outer fixed
@@ -21,7 +26,7 @@ import urllib.parse
 OWNED_CHILD_PHASES = frozenset((
     'boot','frontend-connect','frontend-owner-roles','frontend-recovery-session',
     'forward-prior-reconciliation','forward-api-course-current','forward-api-community-current',
-    'forward-runtime-credential-negatives','forward-new-build-probe-promote','forward-source-scope',
+    'forward-runtime-credential-negatives','forward-new-build-probe-promote','forward-post-build-runtime-credential-negative','forward-source-scope',
     'forward-shared-compatible-observation','forward-shared-vercel-observation',
     'forward-open-admission-and-receipt-negatives','forward-journal-preservation','forward-scope-expired','forward-result',
     'current-frontend-privileges','current-api-privileges','current-result'))
@@ -30,6 +35,69 @@ OWNED_CHILD_ERROR_CODES = frozenset((
     'SELF_SIGNED_CERT_IN_CHAIN','DEPTH_ZERO_SELF_SIGNED_CERT','CERT_HAS_EXPIRED','UNABLE_TO_VERIFY_LEAF_SIGNATURE',
     'ECONNREFUSED','ECONNRESET','ETIMEDOUT','EADDRINUSE','EPIPE','ENOENT','EACCES','EPERM','ENOMEM',
     '42501','28P01','28000','3D000','53300','57P01'))
+
+
+# Fixed source closure for failure-only guard-code/frame projection. These are
+# source literals, never exception-message regexes or caller-selected paths.
+OWNED_BRIDGE_SOURCE_FILES = (
+    'ops/platform/host/p2_recovery_frontend_observation.py',
+    'ops/platform/host/frontend_release_adapters.py',
+    'ops/platform/host/frontend_probe.py', 'ops/platform/host/vercel.py',
+    'ops/platform/host/migrate.py', 'ops/platform/host/p2_certification_profile.py')
+OWNED_BRIDGE_ERROR_KINDS = frozenset(('ValueError','TypeError','RuntimeError','AssertionError','JSONDecodeError',
+    'FileNotFoundError','FileExistsError','PermissionError','TimeoutError','ConnectionError','HTTPError','URLError',
+    'SSLError','SSLCertVerificationError','ConnectionRefusedError','ConnectionResetError','BrokenPipeError','OSError'))
+
+
+def owned_bridge_guard_codes(source_root):
+    codes=set()
+    for name in OWNED_BRIDGE_SOURCE_FILES:
+        for node in ast.walk(ast.parse((Path(source_root)/name).read_text())):
+            if not isinstance(node,ast.Call) or not node.args:continue
+            function=node.func.id if isinstance(node.func,ast.Name) else node.func.attr if isinstance(node.func,ast.Attribute) else ''
+            value=node.args[-1]
+            if function in ('demand','require','ValueError') and isinstance(value,ast.Constant) and isinstance(value.value,str) and re.fullmatch(r'[A-Z][A-Z0-9_]{1,80}',value.value):
+                codes.add(value.value)
+    return frozenset(codes)
+
+
+def owned_bridge_diagnostic(error, allowed_codes, source_root):
+    chain=[];frames=[];seen=set();pending=[error]
+    while pending and len(chain)<8:
+        current=pending.pop(0)
+        if not isinstance(current,BaseException) or id(current) in seen:continue
+        seen.add(id(current));kind=type(current).__name__
+        code=current.args[0] if len(current.args)==1 and isinstance(current.args[0],str) and current.args[0] in allowed_codes else 'unknown'
+        http=current.code if isinstance(current,urllib.error.HTTPError) and type(current.code) is int and 100<=current.code<=599 else None
+        tls=current.verify_code if isinstance(current,ssl.SSLCertVerificationError) and type(current.verify_code) is int and 0<=current.verify_code<=1000 else None
+        chain.append({'kind':kind if kind in OWNED_BRIDGE_ERROR_KINDS else 'unknown','guardCode':code,'httpStatus':http,'tlsVerifyCode':tls})
+        for frame in traceback.extract_tb(current.__traceback__):
+            try:relative=str(Path(frame.filename).resolve().relative_to(Path(source_root).resolve()))
+            except (ValueError,OSError):continue
+            if relative not in OWNED_BRIDGE_SOURCE_FILES or not 1<=frame.lineno<=1000000:continue
+            value={'source':'frontend','file':relative,'line':frame.lineno}
+            if value not in frames and len(frames)<12:frames.append(value)
+        # Suppressed contexts contain the actual transport failure beneath the
+        # source's deliberately generic outer exception. Never print messages.
+        pending.extend(value for value in (current.__cause__,current.__context__,getattr(current,'reason',None)) if isinstance(value,BaseException))
+    return {'version':1,'status':'OWNED_P2_FORWARD_BRIDGE_DIAGNOSTIC','chain':chain,'frames':frames,'rawOutputRetained':False}
+
+
+def read_owned_bridge_diagnostics(directory, allowed_codes):
+    if directory is None:return []
+    values=[]
+    for path in sorted(Path(directory).iterdir()):
+        if len(values)>=4:break
+        if not re.fullmatch(r'[1-9][0-9]{0,9}\.json',path.name) or path.is_symlink() or not path.is_file() or path.stat().st_size>16384:continue
+        try:value=json.loads(path.read_bytes())
+        except (ValueError,OSError):continue
+        if not isinstance(value,dict) or set(value)!={'version','status','chain','frames','rawOutputRetained'} or value.get('version')!=1 or value.get('status')!='OWNED_P2_FORWARD_BRIDGE_DIAGNOSTIC' or value.get('rawOutputRetained') is not False:continue
+        if not isinstance(value['chain'],list) or not 1<=len(value['chain'])<=8 or not isinstance(value['frames'],list) or len(value['frames'])>12:continue
+        if any(not isinstance(row,dict) or set(row)!={'kind','guardCode','httpStatus','tlsVerifyCode'} or not isinstance(row['kind'],str) or row['kind'] not in OWNED_BRIDGE_ERROR_KINDS|{'unknown'} or not isinstance(row['guardCode'],str) or row['guardCode'] not in allowed_codes|{'unknown'} or
+            not (row['httpStatus'] is None or type(row['httpStatus']) is int and 100<=row['httpStatus']<=599) or not (row['tlsVerifyCode'] is None or type(row['tlsVerifyCode']) is int and 0<=row['tlsVerifyCode']<=1000) for row in value['chain']):continue
+        if any(not isinstance(row,dict) or set(row)!={'source','file','line'} or row['source']!='frontend' or not isinstance(row['file'],str) or row['file'] not in OWNED_BRIDGE_SOURCE_FILES or type(row['line']) is not int or not 1<=row['line']<=1000000 for row in value['frames']):continue
+        values.append(value)
+    return values
 
 
 def child_failure_diagnostic(result, source_roots, forward_mode):
@@ -70,9 +138,12 @@ def child_failure_diagnostic(result, source_roots, forward_mode):
         'stdoutBytes':len(stdout.encode('utf8')),'stderrBytes':len(stderr.encode('utf8')),'rawChildOutputRetained':False}
 
 
-def report_child_failure(result, source_roots, forward_mode):
+def report_child_failure(result, source_roots, forward_mode, bridge_directory=None, bridge_codes=frozenset()):
     diagnostic=child_failure_diagnostic(result,source_roots,forward_mode)
+    diagnostic["bridgeErrors"]=read_owned_bridge_diagnostics(bridge_directory,bridge_codes)
     encoded=json.dumps(diagnostic,separators=(',',':'))
+    while len(encoded.encode('utf8'))>8192 and diagnostic['bridgeErrors']:
+        diagnostic['bridgeErrors'].pop(0);encoded=json.dumps(diagnostic,separators=(',',':'))
     if len(encoded.encode('utf8'))>8192:raise ValueError('OWNED_CHILD_DIAGNOSTIC_BOUND_REFUSED')
     print('OWNED_P2_RECOVERY_CHILD_FAILED',file=sys.stderr,flush=True)
     print(encoded,file=sys.stderr,flush=True)
@@ -129,7 +200,7 @@ class Fixture:
             if cls.started:subprocess.run([str(cls.bin/'pg_ctl'),'-D',str(cls.data),'-m','immediate','-w','stop'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
         finally:
             if hasattr(cls,'cluster'):cls.cluster.cleanup()
-provider_fixture=None;foreign_fixture=None;proxy=None
+provider_fixture=None;foreign_fixture=None;proxy=None;bridge_directory=None;bridge_codes=frozenset()
 try:
     Fixture.setUpClass()
     api_roots={name:Path(os.environ.get(name.upper()+'_RECOVERY_SOURCE_ROOT','/Users/dardan/workspace/lash-her-'+name+'-api/.worktrees/phase2-'+name)).resolve() for name in ('course','community')}
@@ -212,8 +283,18 @@ try:
             if source.name in ('frontend-release-adapters.mjs','p2-recovery-frontend-observation.mjs'):shutil.copyfile(source,destination)
             else:destination.symlink_to(source)
         shim="import sys,ssl,re\nsys.path.insert(0,"+repr(str(root/'ops/platform/host'))+")\nimport frontend_probe,vercel\nvercel.API_ORIGIN="+repr(provider_fixture.origin)+"\noriginal_ssl=ssl.create_default_context\nssl.create_default_context=lambda *args,**kwargs: original_ssl(cafile="+repr(str(forward_tests.provider_fixture.vercel_test.VercelControlTests.cert))+")\noriginal_probe=frontend_probe.ProbeClient.request\nfrontend_probe.DEPLOYMENT_URL=re.compile(re.escape(vercel.API_ORIGIN))\ndef mapped_probe(self,url,*args,**kwargs):\n    assert url=='https://owned.vercel.app'\n    return original_probe(self,vercel.API_ORIGIN,*args,**kwargs)\nfrontend_probe.ProbeClient.request=mapped_probe\n"
+        bridge_directory=Fixture.root/'bridge-failures';bridge_directory.mkdir(mode=0o700)
+        bridge_codes=owned_bridge_guard_codes(root)
+        projection=("import os,json,traceback,urllib.error,ssl\nfrom pathlib import Path\n"+
+            "OWNED_BRIDGE_SOURCE_FILES="+repr(OWNED_BRIDGE_SOURCE_FILES)+"\nOWNED_BRIDGE_ERROR_KINDS="+repr(OWNED_BRIDGE_ERROR_KINDS)+"\n"+
+            inspect.getsource(owned_bridge_diagnostic)+"\n")
+        failure=("\ntry:actual.main()\nexcept BaseException as error:\n"+
+            "    diagnostic=owned_bridge_diagnostic(error,"+repr(bridge_codes)+","+repr(str(root))+")\n"+
+            "    descriptor=os.open("+repr(str(bridge_directory))+"+'/'+str(os.getpid())+'.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)\n"+
+            "    try:os.write(descriptor,json.dumps(diagnostic,separators=(',',':')).encode());os.fsync(descriptor)\n"+
+            "    finally:os.close(descriptor)\n    raise SystemExit(1)\n")
         for name in ('p2_recovery_frontend_observation','frontend_release_adapters'):
-            (host/(name+'.py')).write_text(shim+'import '+name+' as actual\nactual.main()\n')
+            (host/(name+'.py')).write_text(shim+projection+'import '+name+' as actual\n'+failure)
         connections['forwardFixture']={'context':provider_fixture.context,'graph':str(platform),'runtimeFaultFlag':provider_fixture.runtime_fault_flag,'foreignRouteFlag':str(foreign_route_flag)}
     sentinel=Fixture.root/'ambient-node-option-executed'
     injection=Fixture.root/'ambient-node-option.cjs'
@@ -240,7 +321,7 @@ try:
         if result.returncode:
             diagnostic_roots={'frontend':root,**api_roots}
             if forward_mode:diagnostic_roots['frontend-fixture']=graph
-            report_child_failure(result,diagnostic_roots,forward_mode)
+            report_child_failure(result,diagnostic_roots,forward_mode,bridge_directory,bridge_codes)
         else:
             if forward_mode:
                 if provider_fixture.runtime_fault_calls!=0:raise ValueError('OWNED_RUNTIME_CREDENTIAL_FAULT_PROVIDER_CALL')

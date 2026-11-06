@@ -12,7 +12,7 @@ import { frontendCoordinationHash as hash } from './frontend-release-inventory.m
 import {frontendReleaseReceiptStore,readFrontendReleaseEvidence} from './frontend-release-receipts.mjs';
 import {frontendProviderBindingsArtifact} from './frontend-provider-bindings.mjs';
 import {P2_CERTIFICATION_PROFILE} from './p2-certification-profile.mjs';
-const OWNED_CHILD_PHASES=new Set(['boot', 'frontend-connect', 'frontend-owner-roles', 'frontend-recovery-session', 'forward-prior-reconciliation', 'forward-api-course-current', 'forward-api-community-current', 'forward-runtime-credential-negatives', 'forward-new-build-probe-promote', 'forward-source-scope', 'forward-shared-compatible-observation', 'forward-shared-vercel-observation', 'forward-open-admission-and-receipt-negatives', 'forward-journal-preservation', 'forward-scope-expired', 'forward-result', 'current-frontend-privileges', 'current-api-privileges', 'current-result']);
+const OWNED_CHILD_PHASES=new Set(['boot', 'frontend-connect', 'frontend-owner-roles', 'frontend-recovery-session', 'forward-prior-reconciliation', 'forward-api-course-current', 'forward-api-community-current', 'forward-runtime-credential-negatives', 'forward-new-build-probe-promote', 'forward-post-build-runtime-credential-negative', 'forward-source-scope', 'forward-shared-compatible-observation', 'forward-shared-vercel-observation', 'forward-open-admission-and-receipt-negatives', 'forward-journal-preservation', 'forward-scope-expired', 'forward-result', 'current-frontend-privileges', 'current-api-privileges', 'current-result']);
 const ownedFixturePhase=phase=>{assert.ok(OWNED_CHILD_PHASES.has(phase));process.stderr.write(JSON.stringify({status:'OWNED_P2_RECOVERY_PHASE',phase})+'\n');};
 assert.equal(process.env.P2_RECOVERY_OWNED_TEST,'true');
 ownedFixturePhase('boot');
@@ -156,6 +156,7 @@ try{
       await context.verifyMutationScope(validProvider.frontendRuntimeDatabaseUrl);
       ownedFixturePhase('forward-new-build-probe-promote');
       assert.equal((await bridge.buildP2RecoveryForward(context)).status,'P2_RECOVERY_NEW_BUILD_VERIFIED');
+      ownedFixturePhase('forward-post-build-runtime-credential-negative');
       const anotherPassword=new URL(validProvider.frontendRuntimeDatabaseUrl);anotherPassword.password='owned-another-password';
       context.getProviderContext=async()=>({...validProvider,frontendRuntimeDatabaseUrl:anotherPassword.href});
       await runtimeRefusal(()=>context.verifyMutationScope(anotherPassword.href));context.getProviderContext=getProvider;await context.verifyMutationScope(validProvider.frontendRuntimeDatabaseUrl);runtimeCredentialRefusals=credentialRefusals;
