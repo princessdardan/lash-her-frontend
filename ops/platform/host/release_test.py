@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -76,6 +77,72 @@ class RuntimeReleaseTests(unittest.TestCase):
 
     def tearDown(self):
         self.fixture.tearDown()
+
+    def test_profiled_runtime_wrapper_plans_without_changing_configuration_file_inventory(self):
+        import staging_state
+        original_files = staging_state.CONFIGURATION_FILES
+        original_gateway = (self.configuration / "gateway.json").read_bytes()
+        ref = self.fixture.profiled()
+        self.target.update(version=2, qualificationTargetProfile=ref)
+        self.gateway.update(ownerId="team_2Hrn5eMZyZxfAWdmYvyKi9t3", projectId="prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+                            publicHost="api-staging.lashher.com")
+        self.save("runtime.json", self.target); self.save("gateway.json", self.gateway)
+        gateway = (self.configuration / "gateway.json").read_bytes()
+        with patch.object(subprocess, "run", side_effect=AssertionError("external IO")):
+            plan = release.execute(self.bundle, self.configuration, self.results, self.compose, expected_profile=ref)
+        self.assertEqual(plan["version"], 2); self.assertEqual(plan["qualificationTargetProfile"], ref)
+        self.assertEqual(staging_state.CONFIGURATION_FILES, original_files)
+        self.assertEqual(len(original_files), 19)
+        self.assertNotEqual(gateway, original_gateway)  # Only this owned fixture's public identity was selected.
+        self.assertNotIn(b"qualificationTargetProfile", gateway)
+        self.assertEqual((self.configuration / "gateway.json").read_bytes(), gateway)
+        selected, jobs, _, compose = release.make_plan(self.bundle, self.configuration, self.compose, expected_profile=ref)
+        snapshot = self.root / "profiled-snapshot"
+        release.snapshot_configuration(self.configuration, snapshot, selected, jobs, compose, expected_profile=ref)
+        for name in original_files:
+            self.assertEqual((snapshot / name).read_bytes(), (self.configuration / name).read_bytes())
+        self.target["graphComplete"] = True; self.save("runtime.json", self.target)
+        with self.assertRaisesRegex(ValueError, "REQUIRED"):
+            release.make_plan(self.bundle, self.configuration, self.compose, expected_profile=ref)
+        self.target.pop("graphComplete")
+        self.target.pop("qualificationTargetProfile"); self.save("runtime.json", self.target)
+        with self.assertRaisesRegex(ValueError, "REQUIRED"):
+            release.make_plan(self.bundle, self.configuration, self.compose, expected_profile=ref)
+
+    def test_profiled_runtime_apply_and_invalid_context_refuse_before_input_or_scope_hooks(self):
+        ref = self.fixture.profiled()
+        with patch.object(migrate, "read_input", side_effect=AssertionError("read input")), \
+             patch.object(release, "assert_host", side_effect=AssertionError("host IO")):
+            with self.assertRaisesRegex(ValueError, "POLICY_REFUSED"):
+                release.execute(self.bundle, self.configuration, self.results, self.compose, True,
+                                _p2_scope=object(), expected_profile=ref)
+            with self.assertRaisesRegex(ValueError, "UNKNOWN"):
+                release.make_plan(self.bundle, self.configuration, self.compose, expected_profile={**ref, "id": "p2q-20261106"})
+        self.assertEqual(list(self.results.iterdir()), [])
+
+    def test_profiled_runtime_requires_the_registered_project_and_gateway_origin(self):
+        ref = self.fixture.profiled()
+        self.target.update(version=2, qualificationTargetProfile=ref); self.save("runtime.json", self.target)
+        with self.assertRaisesRegex(ValueError, "OBSERVATION_MISMATCH"):
+            release.make_plan(self.bundle, self.configuration, self.compose, expected_profile=ref)
+
+    def test_actual_isolated_profiled_cli_can_only_plan_and_does_not_dispatch_a_scope(self):
+        ref = self.fixture.profiled()
+        self.target.update(version=2, qualificationTargetProfile=ref); self.save("runtime.json", self.target)
+        self.gateway.update(ownerId="team_2Hrn5eMZyZxfAWdmYvyKi9t3", projectId="prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+                            publicHost="api-staging.lashher.com"); self.save("gateway.json", self.gateway)
+        real_compose = Path(release.__file__).parents[1] / "compose.yaml"
+        self.fixture.release["runtime"]["composeSha256"] = "sha256:" + hashlib.sha256(real_compose.read_bytes()).hexdigest()
+        self.fixture.save()
+        command = [sys.executable, "-I", str(Path(release.__file__)), str(self.bundle), str(self.configuration), str(self.results), "--profiled-current"]
+        result = subprocess.run(command, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["qualificationTargetProfile"], ref)
+        self.assertFalse(json.loads(result.stdout)["credentialsRead"])
+        refused = subprocess.run([*command, "--apply"], capture_output=True)
+        self.assertEqual(refused.returncode, 1)
+        self.assertEqual(json.loads(refused.stderr)["status"], "API_RELEASE_REFUSED")
+        self.assertEqual(list(self.results.iterdir()), [])
 
     def save(self, relative, value):
         file = self.configuration / relative

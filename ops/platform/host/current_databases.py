@@ -35,17 +35,20 @@ def safe_diagnostics(result):
     return {"exitCode": result.returncode, "markers": sorted(set(markers))}
 
 
-def check_all(selected, jobs, output, credentials, checker, checker_sha256, environment=None):
+def check_all(selected, jobs, output, credentials, checker, checker_sha256, environment=None, *, expected_profile=None):
     """Read-only DB inspection; credentials go only to their individual one-shot.
 
     Frontend reuses its qualified verify-current-only entrypoint. API images run
     the separate read-only checker over private stdin, never the migration CLI.
     Images must already be cached by the reviewed parent.
     """
+    expected = migrate.profile_context(expected_profile)
+    migrate.candidate_profile(selected, expected)
     demand(selected.get("environment") == "staging" and set(jobs) == {"frontend", "course", "community"},
            "CURRENT_DATABASES_THREE_STAGING_TARGETS_REQUIRED")
     for info in jobs.values():
         migrate.require_contract_identity(selected, info["job"])
+        migrate.require_job_profile(expected, info["job"], frontend=info.get("frontend", False))
     demand(set(credentials) == set(jobs) and all(isinstance(value, str) and value for value in credentials.values()),
            "CURRENT_DATABASES_NAMED_PRIVATE_CREDENTIALS_REQUIRED")
     demand(jobs["frontend"]["job"]["target"].get("approvedPendingTags") == [],
@@ -63,6 +66,8 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
     outcome = {"status": "CURRENT_DATABASES_REQUIRES_REVIEW", "releaseId": selected["releaseId"], "environment": "staging",
                "checkerSha256": checker_sha256, "migrationsExecuted": False, "trafficAuthorized": False}
     outcome.update(migrate.contract_identity(selected))
+    if expected is not None:
+        outcome.update(version=2, qualificationTargetProfile=expected)
     try:
         for name in ("frontend", "course", "community"):
             info = jobs[name]
@@ -85,7 +90,7 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
             payload = None
             if name == "frontend":
                 args = migrate.docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), "staging", selected["releaseId"],
-                                                f"{uid}:{gid}", container, frontend=True)
+                                                f"{uid}:{gid}", container, frontend=True, expected_profile=expected)
                 args[2:2] = ["--pull", "never", "--platform", "linux/amd64"]
                 environment["FRONTEND_STAGING_MIGRATION_DATABASE_URL"] = credentials[name]
             else:
@@ -93,7 +98,8 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
                         "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--user", f"{uid}:{gid}",
                         "--memory", "256m", "--cpus", "0.5", "--pids-limit", "64",
                         "--mount", f"type=bind,src={inputs.resolve()},dst=/check/input,readonly",
-                        "--entrypoint", "node", info["image"], "/check/input/current.mjs", "/check/input/job.json", "/check/input/schema.json"]
+                        "--entrypoint", "node", info["image"], "/check/input/current.mjs",
+                        *([] if expected is None else ["--profiled-current"]), "/check/input/job.json", "/check/input/schema.json"]
                 payload = json.dumps({"connectionUrl": credentials[name]}).encode()
             outcome["phase"] = name + "-read-only-current"
             try:
@@ -107,8 +113,9 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
                     outcome["failureDiagnostics"] = safe_diagnostics(result)
                 demand(result.returncode == 0, "CURRENT_DATABASES_CONTAINER_CHECK_FAILED")
                 if name == "frontend":
-                    record = migrate.read_json(receipts, "database-receipt.json")
-                    terminal = migrate.read_json(receipts, "job-outcome.json")
+                    record = migrate.read_json(receipts, "database-receipt.json", expected_profile=expected)
+                    terminal = migrate.read_json(receipts, "job-outcome.json", expected_profile=expected)
+                    migrate.require_receipt_profile(expected, "frontend", record, terminal)
                     migrate.require_contract_identity(selected, record, terminal)
                     demand(record.get("status") == terminal.get("status") == "DATABASE_VERIFIED"
                            and record.get("readOnlyVerified") is True and terminal.get("readOnlyVerified") is True
@@ -120,7 +127,17 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
                            and record.get("target") == {key: info["job"]["target"][key] for key in ("host", "port", "database", "user", "serverMajor")},
                            "CURRENT_DATABASES_FRONTEND_READ_ONLY_PROOF_REQUIRED")
                 else:
-                    record = json.loads(result.stdout)
+                    if expected is None:
+                        record = json.loads(result.stdout)
+                    else:
+                        from qualification_target_profile import decode_qualification_target_json
+                        record = decode_qualification_target_json(result.stdout, "carrier")
+                    migrate.require_profile(expected, record)
+                    if expected is not None:
+                        demand(type(record.get("version")) is int and record["version"] == 2,
+                               "QUALIFICATION_TARGET_PROFILE_REQUIRED")
+                    else:
+                        demand(record.get("version") != 2, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
                     migrate.require_contract_identity(selected, record)
                     demand(record.get("status") == "CURRENT_API_DATABASE_READ_ONLY_PASS" and record.get("environment") == "staging"
                            and record.get("migrationsExecuted") is False and record.get("pendingTags") == []

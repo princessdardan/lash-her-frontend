@@ -1,4 +1,5 @@
 import hashlib
+import copy
 import json
 import subprocess
 import unittest
@@ -21,6 +22,22 @@ class CurrentDatabasesTests(unittest.TestCase):
         self.credentials = {name: name + "-private-fixture" for name in self.jobs}
         self.calls = []
         self.bad_frontend, self.bad_api, self.bad_cleanup = False, False, False
+
+    def profiled(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, resolve_qualification_target_profile
+        ref = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+        definition = resolve_qualification_target_profile(ref)
+        self.selected.update(version=3, workload={"projectId": definition["frontend"]["projectId"], "environment": "production"}, approval={})
+        for carrier in (self.selected, self.selected["sourceApproval"], self.selected["integration"], self.selected["workload"],
+                        self.selected["approval"], self.selected["frontendMigration"], *self.selected["sources"].values()):
+            carrier["qualificationTargetProfile"] = copy.deepcopy(ref)
+        for name, info in self.jobs.items():
+            job = info["job"]
+            job["version" if name == "frontend" else "schemaVersion"] = 2
+            job["qualificationTargetProfile"] = copy.deepcopy(ref)
+            job["target"]["qualificationTargetProfile"] = copy.deepcopy(ref)
+            if name != "frontend": job["target"]["schemaVersion"] = 2
+        return ref
 
     def tearDown(self):
         self.fixture.tearDown()
@@ -59,6 +76,8 @@ class CurrentDatabasesTests(unittest.TestCase):
                       "schemaBaselineSha256": job["schemaBaselineSha256"], "artifactSha256": job["target"]["artifactSha256"],
                       "transportVerifier": "selected-image/hasVerifiedMigrationTransport",
                       "target": {key: job["target"][key] for key in ("host", "port", "database", "user", "serverMajor")}}
+            if "qualificationTargetProfile" in job:
+                record.update(version=2, qualificationTargetProfile=job["qualificationTargetProfile"])
             if self.bad_api:
                 record["target"]["host"] = "other.invalid"
             return subprocess.CompletedProcess(args, 0, json.dumps(record).encode(), b"")
@@ -86,6 +105,41 @@ class CurrentDatabasesTests(unittest.TestCase):
         self.assertFalse(result["migrationsExecuted"])
         with self.assertRaisesRegex(ValueError, "FRESH_PRIVATE_OUTPUT"):
             self.execute()
+
+    def test_profiled_current_leaf_commands_and_actual_receipt_join_are_explicit(self):
+        ref = self.profiled()
+        result = self.execute(expected_profile=ref)
+        self.assertEqual(result["version"], 2); self.assertEqual(result["qualificationTargetProfile"], ref)
+        runs = [args for args, _, _ in self.calls if args[1] == "run"]
+        self.assertIn("--execute-profiled-current", runs[0])
+        self.assertTrue(all("--profiled-current" in args for args in runs[1:]))
+        self.assertFalse(result["migrationsExecuted"])
+
+    def test_mixed_and_unknown_profile_inputs_refuse_before_checker_or_child_access(self):
+        ref = self.profiled()
+        with patch.object(migrate, "read_input", side_effect=AssertionError("checker read")):
+            with self.assertRaisesRegex(ValueError, "POLICY_REFUSED"):
+                self.execute()
+            with self.assertRaisesRegex(ValueError, "UNKNOWN"):
+                self.execute(expected_profile={**ref, "id": "p2q-20261106"})
+            self.jobs["community"]["job"]["target"].pop("qualificationTargetProfile")
+            with self.assertRaisesRegex(ValueError, "REQUIRED"):
+                self.execute(expected_profile=ref)
+        self.assertEqual(self.calls, []); self.assertFalse(self.output.exists())
+
+    def test_a_legacy_current_receipt_cannot_be_adopted_by_a_profiled_action(self):
+        ref = self.profiled()
+        def changed(args, environment, payload=None, timeout=120):
+            result = self.run_child(args, environment, payload, timeout)
+            if args[1] == "run" and "/check/input/current.mjs" in args:
+                value = json.loads(result.stdout); value.pop("qualificationTargetProfile")
+                return subprocess.CompletedProcess(args, 0, json.dumps(value).encode(), b"")
+            return result
+        with patch.object(checks, "_run", side_effect=changed):
+            with self.assertRaisesRegex(ValueError, "REQUIRED"):
+                checks.check_all(self.selected, self.jobs, self.output, self.credentials, self.checker, self.checker_hash, expected_profile=ref)
+        self.assertEqual(sum(args[1] == "run" for args, _, _ in self.calls), 2)
+        self.assertEqual(migrate.read_json(self.output, "current-databases-outcome.json")["qualificationTargetProfile"], ref)
 
     def test_frontend_pending_sql_missing_credential_or_changed_checker_stops_before_process_access(self):
         self.jobs["frontend"]["job"]["target"]["approvedPendingTags"] = ["0000_test"]

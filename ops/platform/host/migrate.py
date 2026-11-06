@@ -51,6 +51,89 @@ def source_commit(value):
     return isinstance(value, str) and COMMIT.fullmatch(value) and value != "0" * 40
 
 
+def profile_context(expected_profile=None):
+    """Resolve an explicit source argument; never derive policy from input JSON."""
+    if expected_profile is None:
+        return None
+    from qualification_target_profile import parse_qualification_target_profile_ref, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+    selected = dict(parse_qualification_target_profile_ref(expected_profile))
+    demand(selected == dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE), "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+    return selected
+
+
+def require_profile(expected_profile, *carriers):
+    expected = profile_context(expected_profile)
+    if expected is None:
+        demand(all(value is None or isinstance(value, dict) and "qualificationTargetProfile" not in value
+                   for value in carriers), "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+    else:
+        from qualification_target_profile import require_qualification_target_profile
+        require_qualification_target_profile(expected, *carriers)
+    return expected
+
+
+def candidate_profile(release, expected_profile=None):
+    expected = profile_context(expected_profile)
+    sources = release.get("sources", {})
+    carriers = [release, release.get("sourceApproval"), release.get("integration"),
+                *(sources.get(name) for name in ("frontend", "course", "community")),
+                release.get("workload"), release.get("approval")]
+    if "frontendMigration" in release:
+        carriers.append(release["frontendMigration"])
+    require_profile(expected, *carriers)
+    if expected is None:
+        # Some legacy copy/inventory helpers intentionally receive a partial
+        # runtime selector. Full candidate parsing still requires version2;
+        # these helpers must not silently accept the new candidate3 form.
+        demand(release.get("version") != 3, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+    if expected is not None:
+        from qualification_target_profile import resolve_qualification_target_profile
+        definition = resolve_qualification_target_profile(expected)
+        demand(type(release.get("version")) is int and release["version"] == 3 and
+               release.get("environment") == definition["environment"] and
+               release.get("workload", {}).get("projectId") == definition["frontend"]["projectId"] and
+               release.get("workload", {}).get("environment") == definition["frontend"]["workloadEnvironment"],
+               "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+    return expected
+
+
+def require_receipt_profile(expected_profile, service, receipt, terminal):
+    """Join the selected images' actual, intentionally different CLI schemas."""
+    expected = require_profile(expected_profile, receipt, terminal)
+    if expected is None:
+        field = "version" if service == "frontend" else "schemaVersion"
+        demand(receipt.get(field) != 2 and terminal.get(field) != 2, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+        return
+    if service == "frontend":
+        demand(type(receipt.get("version")) is int and receipt["version"] == 2 and
+               type(terminal.get("version")) is int and terminal["version"] == 2,
+               "QUALIFICATION_TARGET_PROFILE_REQUIRED")
+    else:
+        demand(type(receipt.get("schemaVersion")) is int and receipt["schemaVersion"] == 2,
+               "QUALIFICATION_TARGET_PROFILE_REQUIRED")
+        if service == "lash-her-community-api":
+            demand(type(terminal.get("schemaVersion")) is int and terminal["schemaVersion"] == 2,
+                   "QUALIFICATION_TARGET_PROFILE_REQUIRED")
+        else:
+            demand(service == "lash-her-course-api" and "schemaVersion" not in terminal,
+                   "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+
+
+def require_job_profile(expected_profile, job, *, frontend=False):
+    expected = require_profile(expected_profile, job, job.get("target"))
+    if expected is None:
+        demand(job.get("target", {}).get("schemaVersion") != 2, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+    if job.get("stagingVerification") is not None:
+        require_profile(expected, job["stagingVerification"])
+    field = "version" if frontend else "schemaVersion"
+    demand(job.get(field) == (1 if expected is None else 2), "QUALIFICATION_TARGET_PROFILE_REQUIRED")
+    if expected is not None:
+        demand(type(job.get(field)) is int and (frontend or
+               type(job["target"].get("schemaVersion")) is int and job["target"]["schemaVersion"] == 2),
+               "QUALIFICATION_TARGET_PROFILE_REQUIRED")
+    return expected
+
+
 def read_input(root, relative, maximum=2_000_000):
     parts = Path(relative).parts
     demand(parts and not Path(relative).is_absolute() and ".." not in parts, "INPUT_PATH_REFUSED")
@@ -75,8 +158,13 @@ def read_input(root, relative, maximum=2_000_000):
         os.close(fd)
 
 
-def read_json(root, relative):
-    return json.loads(read_input(root, relative))
+def read_json(root, relative, *, expected_profile=None):
+    expected = profile_context(expected_profile)
+    raw = read_input(root, relative)
+    if expected is not None:
+        from qualification_target_profile import decode_qualification_target_json
+        return decode_qualification_target_json(raw, "carrier")
+    return json.loads(raw)
 
 
 def file_hash(value):
@@ -125,11 +213,13 @@ def write_json(directory, name, value):
             pass  # A private temporary-file cleanup failure cannot revoke durable output.
 
 
-def make_plan(bundle):
+def make_plan(bundle, *, expected_profile=None):
+    expected = profile_context(expected_profile)
     demand(bundle.is_dir() and not bundle.is_symlink(), "BUNDLE_DIRECTORY_REQUIRED")
-    release = read_json(bundle, "release.candidate.json")
+    release = read_json(bundle, "release.candidate.json", expected_profile=expected)
+    candidate_profile(release, expected)
     environment, release_id = release.get("environment"), release.get("releaseId")
-    demand(release.get("version") == 2 and environment in ("staging", "production")
+    demand(release.get("version") == (2 if expected is None else 3) and environment in ("staging", "production")
            and isinstance(release_id, str) and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", release_id), "RELEASE_IDENTITY_REFUSED")
     demand(digest(release.get("contractManifestSha256")) and release.get("integration", {}).get("state") == "passed", "QUALIFIED_CANDIDATE_REQUIRED")
     contract_identity(release)
@@ -141,7 +231,14 @@ def make_plan(bundle):
                and source_commit(source.get("commit")) and source.get("requiredChecks") == "passed", "EXACT_PASSING_SOURCES_REQUIRED")
     jobs = {}
     for name, (service, migration_key, runtime_key) in SERVICES.items():
-        job = read_json(bundle, f"jobs/{name}.json")
+        job = read_json(bundle, f"jobs/{name}.json", expected_profile=expected)
+        # Existing image preflight remains the complete API schema validator.
+        # The host adds a context/version join, independently of image choice.
+        if expected is not None:
+            require_job_profile(expected, job)
+        else:
+            require_profile(expected, job, job.get("target"), job.get("stagingVerification"))
+            demand(job.get("target", {}).get("schemaVersion") != 2, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
         require_contract_identity(release, job)
         images = {}
         for key, suffix in ((migration_key, "migration"), (runtime_key, "runtime")):
@@ -153,7 +250,7 @@ def make_plan(bundle):
                    and digest(artifact.get("provenanceSha256")), "VERIFIED_IMMUTABLE_IMAGES_REQUIRED")
             images[suffix] = image
         target = job.get("target", {})
-        demand(job.get("kind") == "operator-migration" and job.get("schemaVersion") == 1 and job.get("operator") == "Dardan"
+        demand(job.get("kind") == "operator-migration" and job.get("schemaVersion") == (1 if expected is None else 2) and job.get("operator") == "Dardan"
                and job.get("environment") == environment and job.get("releaseId") == release_id
                and target.get("service") == service and target.get("environment") == environment
                and job.get("sourceCommit") == release["sources"][name]["commit"]
@@ -172,6 +269,7 @@ def make_plan(bundle):
             demand(isinstance(staging, dict) and staging.get("receiptRef") == f"staging/{name}", "STAGING_RECEIPT_REQUIRED")
             previous = read_json(bundle, f"staging/{name}/database-receipt.json")
             outcome = read_json(bundle, f"staging/{name}/job-outcome.json")
+            require_receipt_profile(expected, service, previous, outcome)
             require_contract_identity(release, previous, outcome)
             demand(previous.get("status") == "DATABASE_VERIFIED" and previous.get("environment") == "staging"
                    and previous.get("service") == service and previous.get("failureCode") is None
@@ -181,7 +279,7 @@ def make_plan(bundle):
             demand(previous.get("artifactSha256") == staging.get("artifactSha256") == target.get("artifactSha256"), "STAGING_SQL_ARTIFACT_MISMATCH")
         jobs[name] = {"job": job, "schema": schema, "image": images["migration"], "service": service}
     if "frontendMigration" in release.get("artifacts", {}) or (bundle / "jobs/frontend.json").exists():
-        jobs["frontend"] = frontend_plan(bundle, release)
+        jobs["frontend"] = frontend_plan(bundle, release, expected_profile=expected)
     if environment == "production":
         acceptance = read_json(bundle, "staging/acceptance.json")
         require_contract_identity(release, acceptance)
@@ -204,19 +302,28 @@ def make_plan(bundle):
     return release, jobs
 
 
-def frontend_plan(bundle, release):
-    job = read_json(bundle, "jobs/frontend.json")
+def frontend_plan(bundle, release, *, expected_profile=None):
+    expected = profile_context(expected_profile)
+    candidate_profile(release, expected)
+    job = read_json(bundle, "jobs/frontend.json", expected_profile=expected)
     artifact = release["artifacts"].get("frontendMigration", {})
     image, prefix = artifact.get("image", ""), "ghcr.io/princessdardan/lash-her-platform-frontend-migration@"
     demand(isinstance(image, str) and image.startswith(prefix) and digest(image[len(prefix):])
            and artifact.get("scan") == "passed" and digest(artifact.get("sbomSha256")) and digest(artifact.get("provenanceSha256")), "VERIFIED_FRONTEND_IMAGE_REQUIRED")
     target, source = job.get("target", {}), release.get("frontendMigration", {})
+    require_profile(expected, job, target, source)
+    if expected is not None:
+        require_job_profile(expected, job, frontend=True)
+    else:
+        require_profile(expected, job.get("stagingVerification"))
     require_contract_identity(release, source, job)
-    demand(job.get("version") == 1 and job.get("operator") == "Dardan" and job.get("environment") == release["environment"]
+    demand(job.get("version") == (1 if expected is None else 2) and job.get("operator") == "Dardan" and job.get("environment") == release["environment"]
            and job.get("releaseId") == release["releaseId"] and job.get("sourceCommit") == source.get("sourceCommit") == release["sources"]["frontend"]["commit"]
            and job.get("migrationImageDigest") == image.split("@")[1] and job.get("contractManifestSha256") == source.get("contractManifestSha256") == release["contractManifestSha256"]
            and isinstance(job.get("sqlArtifactSha256"), str) and re.fullmatch(r"[a-f0-9]{64}", job["sqlArtifactSha256"])
            and job["sqlArtifactSha256"] == source.get("sqlArtifactSha256"), "FRONTEND_JOB_CANDIDATE_MISMATCH")
+    if expected is not None:
+        demand(type(job.get("version")) is int, "QUALIFICATION_TARGET_PROFILE_REQUIRED")
     demand(isinstance(target.get("host"), str) and re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+", target["host"]) and "-pooler" not in target["host"]
            and all(isinstance(target.get(key), str) and re.fullmatch(r"[A-Za-z0-9_-]{1,63}", target[key]) for key in ("database", "user", "runtimeRole"))
            and target["user"] != target["runtimeRole"] and target.get("serverMajor") in (16, 18)
@@ -242,7 +349,11 @@ def credential_names(name, environment):
     return f"{name.upper()}_{key}", key
 
 
-def docker_arguments(image, input_directory, receipt_directory, environment, release_id, user, name, checking=False, frontend=False):
+def docker_arguments(image, input_directory, receipt_directory, environment, release_id, user, name, checking=False, frontend=False, *, expected_profile=None):
+    expected = profile_context(expected_profile)
+    mode = "--check" if checking else "--execute"
+    if expected is not None:
+        mode += "-profiled-current"
     args = ["docker", "run", "--rm", "--name", name, "--network", "none" if checking else "bridge",
             "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--user", user,
             "--memory", "256m", "--cpus", "0.5", "--pids-limit", "128", "--tmpfs", "/tmp:size=32m,mode=1777",
@@ -254,7 +365,7 @@ def docker_arguments(image, input_directory, receipt_directory, environment, rel
         else:
             args += ["--env", "DATABASE_TARGET", "--env", credential_names("course", environment)[1]]
     args += ["--entrypoint", "node", image, "ops/platform/frontend-image.mjs" if frontend else "dist-migration/scripts/run-operator-migration.js",
-             "--check" if checking else "--execute"]
+             mode]
     if frontend:
         args += ["/run/release-input/candidate.json"]
     args += ["/run/release-input/job.json", "/run/release-input/schema.json"]
@@ -287,8 +398,12 @@ def suspend_runtime(environment, env):
     return ids
 
 
-def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), after_migrations=None, docker_env=None, before_frontend_migration=None, _p2_scope=None):
-    release, jobs = make_plan(bundle)
+def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), after_migrations=None, docker_env=None, before_frontend_migration=None, _p2_scope=None, *, expected_profile=None):
+    expected = profile_context(expected_profile)
+    # No existing broker/physical/historical continuation can authorize a new
+    # profiled action yet. This refusal precedes even scope or credential hooks.
+    demand(not apply or expected is None, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+    release, jobs = make_plan(bundle, expected_profile=expected)
     environment, release_id = release["environment"], release["releaseId"]
     frontend_read_only = "frontend" in jobs and jobs["frontend"]["job"]["target"]["approvedPendingTags"] == []
     plan = {"releaseId": release_id, "environment": environment, "operator": "Dardan", "operation": "migrations-only",
@@ -296,6 +411,8 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                                "pendingTags": info["job"]["target"].get("approvedPendingTags"), "image": info["image"]} for name, info in jobs.items()},
             "trafficAuthorized": False, "credentialsRead": False, "maintenanceRequired": True}
     plan.update(contract_identity(release))
+    if expected is not None:
+        plan.update(version=2, qualificationTargetProfile=expected)
     if "frontend" in jobs:
         plan.update(frontendMigrationMode="verify-current-only" if frontend_read_only else "apply-forward",
                     frontendProducerSuspensionRequired=not frontend_read_only)
@@ -415,6 +532,7 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                     demand(not inventory.stdout.strip(), "MIGRATION_CONTAINER_CLEANUP_UNVERIFIED")
                 receipt = read_json(receipts, "database-receipt.json")
                 terminal = read_json(receipts, "job-outcome.json")
+                require_receipt_profile(expected, info["service"], receipt, terminal)
                 require_contract_identity(release, info["job"], receipt, terminal)
                 demand(receipt.get("status") == "DATABASE_VERIFIED" and terminal.get("status") == "DATABASE_VERIFIED"
                        and receipt.get("environment") == environment and receipt.get("releaseId") == release_id
@@ -459,19 +577,26 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
 
 
 def main():
+    # The fixed installed file also supports Python's isolated (-I) entry.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bundle", type=Path)
     parser.add_argument("results", type=Path)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--confirm")
+    parser.add_argument("--profiled-current", action="store_true")
     args = parser.parse_args()
+    expected = None
+    if args.profiled_current:
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        expected = profile_context(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
     def interrupted(signum, _frame):
         raise SystemExit(130 if signum == signal.SIGINT else 143)
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
     lock = Path(tempfile.gettempdir()) / f"lash-her-release-{os.getuid()}.lock" if sys.platform == "darwin" else Path("/run/lock/lash-her-release.lock")
     try:
-        print(json.dumps(execute(args.bundle, args.results, args.apply, args.confirm, lock)))
+        print(json.dumps(execute(args.bundle, args.results, args.apply, args.confirm, lock, expected_profile=expected)))
     except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError):
         print(json.dumps({"status": "MIGRATION_RELEASE_REFUSED", "reviewRequired": True, "trafficAuthorized": False}), file=sys.stderr)
         raise SystemExit(1)

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { constants, openSync, closeSync, fstatSync, readSync, readFileSync } from "node:fs";
+import { isUtf8 } from "node:buffer";
 import { isDeepStrictEqual } from "node:util";
 import { pathToFileURL } from "node:url";
 
@@ -34,8 +35,26 @@ const grantsSql = `SELECT bool_and(has_table_privilege($1,c.oid,'SELECT') AND ha
 /** Called only with inputs prepared by the selected image's manifest validator.
  * One server-enforced read-only snapshot covers identity, journal, schema and roles.
  * This function has no migration, advisory-lock, DDL, DML or repair path. */
-export async function checkCurrentDatabase({ client, prepared, assertAppliedLineage, readMigrationCatalog, hasVerifiedMigrationTransport }) {
+export async function checkCurrentDatabase({ client, prepared, assertAppliedLineage, readMigrationCatalog, hasVerifiedMigrationTransport,
+  qualificationProfileModule }, expectedProfile = undefined) {
+  // The production main obtains this module only from the selected API image's
+  // fixed path. It is a pure test dependency here, never a JSON/CLI callback.
+  let expected;
+  if (expectedProfile !== undefined) {
+    demand(qualificationProfileModule && typeof qualificationProfileModule.parseQualificationTargetProfileRef === "function"
+      && typeof qualificationProfileModule.requireQualificationTargetProfile === "function", "QUALIFICATION_TARGET_PROFILE_REQUIRED");
+    expected = qualificationProfileModule.parseQualificationTargetProfileRef(expectedProfile);
+    demand(isDeepStrictEqual(expected, qualificationProfileModule.STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE),
+      "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
+  }
   const { manifest, artifact, target, baseline } = prepared;
+  if (expected === undefined) {
+    demand(!Object.hasOwn(manifest, "qualificationTargetProfile") && !Object.hasOwn(target, "qualificationTargetProfile")
+      && manifest.schemaVersion !== 2 && target.schemaVersion !== 2, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
+  } else {
+    qualificationProfileModule.requireQualificationTargetProfile(expected, manifest, target);
+    demand(manifest.schemaVersion === 2 && target.schemaVersion === 2, "QUALIFICATION_TARGET_PROFILE_REQUIRED");
+  }
   const phase2 = Object.hasOwn(manifest, "contractPhase") || Object.hasOwn(manifest, "phase2ContractManifestSha256");
   demand(!phase2 || manifest.contractPhase === "p2" && typeof manifest.phase2ContractManifestSha256 === "string"
     && /^sha256:[a-f0-9]{64}$/u.test(manifest.phase2ContractManifestSha256)
@@ -79,6 +98,7 @@ export async function checkCurrentDatabase({ client, prepared, assertAppliedLine
     demand(grants?.runtime_dml === true && grants.journal_isolated === true, "CURRENT_CHECK_RUNTIME_GRANTS_MISMATCH");
     demand(hasVerifiedMigrationTransport(client, target.host) === true, "CURRENT_CHECK_AUTHENTICATED_TLS_CHANNEL_REQUIRED");
     return { status: "CURRENT_API_DATABASE_READ_ONLY_PASS", environment: "staging", service: artifact.service,
+      ...(expected === undefined ? {} : { version: 2, qualificationTargetProfile: expected }),
       appliedCount: journal.length, pendingTags: [], artifactSha256: artifact.artifactSha256,
       schemaBaselineSha256: manifest.schemaBaselineSha256,
       ...(phase2 ? { contractPhase: "p2", phase2ContractManifestSha256: manifest.phase2ContractManifestSha256 } : {}),
@@ -92,21 +112,54 @@ export async function checkCurrentDatabase({ client, prepared, assertAppliedLine
   }
 }
 
+function boundedProfiledInput(file, maximum) {
+  demand(Number.isInteger(constants.O_NOFOLLOW) && Number.isInteger(constants.O_NONBLOCK), "CURRENT_CHECK_INPUT_FILE_REFUSED");
+  const descriptor = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const info = fstatSync(descriptor);
+    demand(info.isFile() && info.size > 0 && info.size <= maximum, "CURRENT_CHECK_INPUT_FILE_REFUSED");
+    const raw = Buffer.alloc(maximum + 1);
+    let length = 0;
+    while (length < raw.length) {
+      const count = readSync(descriptor, raw, length, raw.length - length, null);
+      if (!count) break;
+      length += count;
+    }
+    const result = raw.subarray(0, length);
+    demand(length <= maximum && isUtf8(result), "CURRENT_CHECK_INPUT_FILE_REFUSED");
+    return result.toString("utf8");
+  } finally { closeSync(descriptor); }
+}
+
 export async function main(args = process.argv.slice(2)) {
-  demand(args.length === 2, "CURRENT_CHECK_MANIFEST_AND_SCHEMA_FILES_REQUIRED");
+  const profiled = args[0] === "--profiled-current";
+  demand(args.length === (profiled ? 3 : 2) && args.every(value => typeof value === "string")
+    && (profiled || !args[0].startsWith("--")), "CURRENT_CHECK_MANIFEST_AND_SCHEMA_FILES_REQUIRED");
+  let expected, qualificationProfileModule;
+  if (profiled) {
+    // No caller import path or profile selector exists. Resolve before reading
+    // manifest bytes or private stdin, in this exact migration image.
+    qualificationProfileModule = await import("/app/dist-migration/src/db/qualification-target-profile.js");
+    expected = qualificationProfileModule.STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE;
+    qualificationProfileModule.resolveQualificationTargetProfile(expected);
+  }
+  const files = profiled ? args.slice(1) : args;
   demand(process.env.NODE_TLS_REJECT_UNAUTHORIZED !== "0", "CURRENT_CHECK_VERIFIED_TLS_REQUIRED");
-  const manifestBytes = readFileSync(args[0], "utf8"), baselineBytes = readFileSync(args[1], "utf8");
+  const manifestBytes = profiled ? boundedProfiledInput(files[0], 65_536) : readFileSync(files[0], "utf8");
+  const baselineBytes = profiled ? boundedProfiledInput(files[1], 2_000_000) : readFileSync(files[1], "utf8");
   // The reviewed host parent mounts exact files and runs the pinned migration image.
   const { prepareOperatorMigration } = await import("/app/dist-migration/src/db/operator-migration.js");
   const { assertAppliedLineage, directMigrationConnection, hasVerifiedMigrationTransport } = await import("/app/dist-migration/src/db/migration-lineage.js");
   const { readMigrationCatalog } = await import("/app/dist-migration/src/db/migration-schema.js");
   const { Client } = await import("/app/node_modules/pg/esm/index.mjs");
   const service = JSON.parse(readFileSync("/app/package.json", "utf8")).name;
-  const prepared = prepareOperatorMigration(manifestBytes, baselineBytes, "/app/drizzle", service);
+  const prepared = prepareOperatorMigration(manifestBytes, baselineBytes, "/app/drizzle", service, expected);
   const input = [];
   let length = 0;
   for await (const chunk of process.stdin) { length += chunk.length; demand(length <= 16_384, "CURRENT_CHECK_INPUT_TOO_LARGE"); input.push(chunk); }
-  const credential = JSON.parse(Buffer.concat(input).toString("utf8"));
+  const rawCredential = Buffer.concat(input);
+  const credential = profiled ? qualificationProfileModule.decodeQualificationTargetJson(rawCredential, "private-packet")
+    : JSON.parse(rawCredential.toString("utf8"));
   demand(credential && Object.keys(credential).length === 1 && typeof credential.connectionUrl === "string", "CURRENT_CHECK_PRIVATE_STDIN_REQUIRED");
   const url = new URL(credential.connectionUrl);
   demand(url.search === "?sslmode=verify-full", "CURRENT_CHECK_VERIFIED_TLS_REQUIRED");
@@ -119,7 +172,8 @@ export async function main(args = process.argv.slice(2)) {
   try {
     await client.connect();
     demand(!connectionFailed, "CURRENT_CHECK_CONNECTION_FAILED");
-    result = await checkCurrentDatabase({ client, prepared, assertAppliedLineage, readMigrationCatalog, hasVerifiedMigrationTransport });
+    result = await checkCurrentDatabase({ client, prepared, assertAppliedLineage, readMigrationCatalog, hasVerifiedMigrationTransport,
+      qualificationProfileModule }, expected);
     demand(!connectionFailed, "CURRENT_CHECK_CONNECTION_FAILED");
   } finally { await client.end(); }
   demand(!connectionFailed, "CURRENT_CHECK_CONNECTION_FAILED");

@@ -14,6 +14,7 @@ import sys
 from urllib.parse import parse_qsl, unquote, urlsplit
 from uuid import uuid4
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import migrate
 import docker_inspect
 
@@ -53,12 +54,22 @@ def command(args, env, timeout=30):
     return runner(args, env=env, check=True, capture_output=True, text=True, timeout=timeout).stdout.strip()
 
 
-def make_plan(bundle, configuration, compose_file):
-    release, jobs = migrate.make_plan(bundle)
-    target = migrate.read_json(configuration, "runtime.json")
+def _runtime_target_profile(target, release, expected):
+    migrate.require_profile(expected, target)
+    demand(target.get("version") == (1 if expected is None else 2) and target.get("environment") == release["environment"]
+           and target.get("releaseId") == release["releaseId"], "RUNTIME_TARGET_MISMATCH")
+    if expected is not None:
+        demand(type(target.get("version")) is int and set(target) == {
+            "version", "environment", "releaseId", "hostMachineId", "previousReleaseRef", "maintenanceRef", "qualificationTargetProfile"},
+            "QUALIFICATION_TARGET_PROFILE_REQUIRED")
+
+
+def make_plan(bundle, configuration, compose_file, *, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
+    release, jobs = migrate.make_plan(bundle, expected_profile=expected)
+    target = migrate.read_json(configuration, "runtime.json", expected_profile=expected)
+    _runtime_target_profile(target, release, expected)
     environment, release_id = release["environment"], release["releaseId"]
-    demand(target.get("version") == 1 and target.get("environment") == environment
-           and target.get("releaseId") == release_id, "RUNTIME_TARGET_MISMATCH")
     demand(isinstance(target.get("hostMachineId"), str) and re.fullmatch(r"[a-f0-9]{32}", target["hostMachineId"])
            and target["hostMachineId"] != "0" * 32, "EXACT_DEPLOYMENT_HOST_REQUIRED")
     for field in ("previousReleaseRef", "maintenanceRef"):
@@ -66,7 +77,15 @@ def make_plan(bundle, configuration, compose_file):
     runtime = release.get("runtime", {})
     compose = migrate.read_input(compose_file.parent, compose_file.name)
     demand(runtime.get("composeSha256") == "sha256:" + migrate.file_hash(compose), "PINNED_COMPOSE_REQUIRED")
-    gateway = migrate.read_json(configuration, "gateway.json")
+    gateway = migrate.read_json(configuration, "gateway.json", expected_profile=expected)
+    migrate.require_profile(None, gateway)  # Profile metadata belongs only to the host wrapper.
+    if expected is not None:
+        from qualification_target_profile import resolve_qualification_target_profile
+        definition = resolve_qualification_target_profile(expected)
+        demand(gateway.get("ownerId") == definition["frontend"]["teamId"] and
+               gateway.get("projectId") == definition["frontend"]["projectId"] and
+               "https://" + gateway.get("publicHost", "") == definition["gateway"]["publicOrigin"],
+               "QUALIFICATION_TARGET_OBSERVATION_MISMATCH")
     demand(gateway.get("appEnv") == environment and gateway.get("environment") == "production"
            and gateway.get("projectId") == release.get("workload", {}).get("projectId") and gateway.get("maintenance") is True
            and isinstance(gateway.get("publicHost"), str) and re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+", gateway["publicHost"])
@@ -91,6 +110,8 @@ def make_plan(bundle, configuration, compose_file):
             "previousReleaseRef": target["previousReleaseRef"], "maintenanceRef": target["maintenanceRef"],
             "stages": STAGES, "credentialsRead": False, "trafficAuthorized": False, "frontendPromotionAuthorized": False}
     plan.update(migrate.contract_identity(release))
+    if expected is not None:
+        plan.update(version=2, qualificationTargetProfile=expected)
     return release, jobs, plan, compose
 
 
@@ -139,12 +160,15 @@ def environment_values(raw, environment, service, jobs):
     return values
 
 
-def validate_snapshot_source(source, release, jobs):
+def validate_snapshot_source(source, release, jobs, *, expected_profile=None):
     """Validate private input before an operation can pause or write fixtures.
 
     Running snapshots have container-owned TLS/config files. They are not
     reusable operator inputs; select the retained root-owned input instead.
     """
+    expected = migrate.candidate_profile(release, expected_profile)
+    if expected is not None:
+        _profiled_snapshot_inputs(source, release, jobs, expected)
     migrate.private_directory(source)
     for relative in ("runtime.json", *CONFIG_FILES, *TLS_FILES, *(f"{service}.env" for service in ENV_FILES)):
         raw = migrate.read_input(source, relative, 65_536)
@@ -156,7 +180,10 @@ def validate_snapshot_source(source, release, jobs):
             environment_values(raw, release["environment"], relative[:-4], jobs)
 
 
-def snapshot_configuration(source, destination, release, jobs, compose):
+def snapshot_configuration(source, destination, release, jobs, compose, *, expected_profile=None):
+    expected = migrate.candidate_profile(release, expected_profile)
+    if expected is not None:
+        _profiled_snapshot_inputs(source, release, jobs, expected)
     migrate.private_directory(source)
     destination.mkdir(mode=0o700)
     files = ("runtime.json", *CONFIG_FILES, *TLS_FILES, *(f"{service}.env" for service in ENV_FILES))
@@ -185,7 +212,18 @@ def snapshot_configuration(source, destination, release, jobs, compose):
             os.chown(path, 65532, 65532)
 
 
-def snapshot_bundle(source, destination, release, jobs):
+def _profiled_snapshot_inputs(source, release, jobs, expected):
+    target = migrate.read_json(source, "runtime.json", expected_profile=expected)
+    _runtime_target_profile(target, release, expected)
+    for info in jobs.values():
+        migrate.require_job_profile(expected, info["job"], frontend=info.get("frontend", False))
+
+
+def snapshot_bundle(source, destination, release, jobs, *, expected_profile=None):
+    expected = migrate.candidate_profile(release, expected_profile)
+    if expected is not None:
+        for info in jobs.values():
+            migrate.require_job_profile(expected, info["job"], frontend=info.get("frontend", False))
     destination.mkdir(mode=0o700)
     migrate.write_json(destination, "release.candidate.json", release)
     for name, info in jobs.items():
@@ -199,7 +237,7 @@ def snapshot_bundle(source, destination, release, jobs):
             path = destination / relative
             path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             path.write_bytes(migrate.read_input(source, relative)); path.chmod(0o600)
-    copied_release, copied_jobs = migrate.make_plan(destination)
+    copied_release, copied_jobs = migrate.make_plan(destination, expected_profile=expected)
     demand(copied_release == release and copied_jobs == jobs, "MIGRATION_SNAPSHOT_MISMATCH")
 
 
@@ -268,7 +306,8 @@ def preflight(release, snapshot, jobs, pull=True):
                  "--input-type=module", "--eval", source])
 
 
-def check_containers(release, snapshot):
+def check_containers(release, snapshot, *, expected_profile=None):
+    migrate.candidate_profile(release, expected_profile)
     env = runtime_environment(release, snapshot)
     prefix = compose_command(snapshot, release["environment"])
     metadata = []
@@ -286,8 +325,12 @@ def check_containers(release, snapshot):
     return metadata
 
 
-def _execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None):
-    release, jobs, plan, compose = make_plan(bundle, configuration, compose_file)
+def _execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None, *, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
+    demand(not apply or expected is None, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+    demand(expected is None or _p2_scope is None and before_frontend_migration is None and after_runtime_ready is None,
+           "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+    release, jobs, plan, compose = make_plan(bundle, configuration, compose_file, expected_profile=expected)
     if _p2_scope is not None:
         _p2_scope.require_release(release, jobs)
         _p2_scope.require_configuration(configuration)
@@ -383,11 +426,15 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
         raise
 
 
-def execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None):
+def execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None, *, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
+    demand(not apply or expected is None, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+    demand(expected is None or _p2_scope is None and before_frontend_migration is None and after_runtime_ready is None,
+           "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
     token = _command_scope.set(_p2_scope)
     try:
         return _execute(bundle, configuration, results, compose_file, apply, confirmation, lock_path,
-                        before_frontend_migration, after_runtime_ready, _p2_scope)
+                        before_frontend_migration, after_runtime_ready, _p2_scope, expected_profile=expected)
     finally:
         _command_scope.reset(token)
 
@@ -399,12 +446,18 @@ def main():
     parser.add_argument("results", type=Path)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--confirm")
+    parser.add_argument("--profiled-current", action="store_true")
     args = parser.parse_args()
+    expected = None
+    if args.profiled_current:
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        expected = migrate.profile_context(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
     def interrupted(signum, _frame):
         raise SystemExit(130 if signum == signal.SIGINT else 143)
     signal.signal(signal.SIGTERM, interrupted); signal.signal(signal.SIGINT, interrupted)
     try:
-        print(json.dumps(execute(args.bundle, args.configuration, args.results, Path(__file__).parents[1] / "compose.yaml", args.apply, args.confirm)))
+        print(json.dumps(execute(args.bundle, args.configuration, args.results, Path(__file__).parents[1] / "compose.yaml", args.apply, args.confirm,
+                                 expected_profile=expected)))
     except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError):
         print('{"status":"API_RELEASE_REFUSED","trafficAuthorized":false,"reviewRequired":true}', file=sys.stderr)
         raise SystemExit(1)

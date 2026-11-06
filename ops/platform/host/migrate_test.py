@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -45,6 +46,90 @@ class MigrationDriverTests(unittest.TestCase):
         (self.bundle / "release.candidate.json").write_text(json.dumps(self.release))
         for name, job in self.jobs.items():
             (self.bundle / f"jobs/{name}.json").write_text(json.dumps(job))
+
+    def profiled(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, resolve_qualification_target_profile
+        ref = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+        definition = resolve_qualification_target_profile(ref)
+        self.release["version"] = 3
+        self.release["workload"] = {"projectId": definition["frontend"]["projectId"], "environment": "production"}
+        self.release["approval"] = {"state": "approved", "operator": "Dardan", "environment": "staging", "releaseId": "test-release"}
+        for carrier in (self.release, self.release["sourceApproval"], self.release["integration"], self.release["workload"], self.release["approval"],
+                        *self.release["sources"].values(), *([self.release["frontendMigration"]] if "frontendMigration" in self.release else [])):
+            carrier["qualificationTargetProfile"] = copy.deepcopy(ref)
+        for name, job in self.jobs.items():
+            job["version" if name == "frontend" else "schemaVersion"] = 2
+            job["qualificationTargetProfile"] = copy.deepcopy(ref)
+            job["target"]["qualificationTargetProfile"] = copy.deepcopy(ref)
+            if name != "frontend":
+                job["target"]["schemaVersion"] = 2
+        self.save()
+        return ref
+
+    def test_profiled_offline_plan_joins_candidate_jobs_targets_and_retains_sql_identities(self):
+        self.add_frontend()
+        original_baseline = (self.bundle / "schema/frontend.json").read_bytes()
+        ref = self.profiled()
+        with patch.object(subprocess, "run", side_effect=AssertionError("external IO")):
+            plan = migrate.execute(self.bundle, self.results, expected_profile=ref)
+        self.assertEqual(plan["version"], 2)
+        self.assertEqual(plan["qualificationTargetProfile"], ref)
+        self.assertFalse(plan["credentialsRead"])
+        self.assertEqual((self.bundle / "schema/frontend.json").read_bytes(), original_baseline)
+        for carrier in (self.release["approval"], self.jobs["course"]["target"], self.jobs["frontend"]):
+            saved = carrier.pop("qualificationTargetProfile"); self.save()
+            with self.assertRaisesRegex(ValueError, "QUALIFICATION_TARGET_PROFILE_REQUIRED"):
+                migrate.make_plan(self.bundle, expected_profile=ref)
+            carrier["qualificationTargetProfile"] = saved; self.save()
+        self.jobs["course"]["schemaVersion"] = 1; self.save()
+        with self.assertRaises(ValueError): migrate.make_plan(self.bundle, expected_profile=ref)
+
+    def test_profile_context_is_source_selected_before_reads_and_profiled_apply_is_unavailable(self):
+        ref = self.profiled()
+        with patch.object(migrate, "read_input", side_effect=AssertionError("input read")), \
+             patch.object(subprocess, "run", side_effect=AssertionError("child launched")), \
+             patch.object(os, "open", side_effect=AssertionError("lock acquired")):
+            with self.assertRaisesRegex(ValueError, "UNKNOWN"):
+                migrate.make_plan(self.bundle, expected_profile={**ref, "id": "p2q-20261106"})
+            with self.assertRaisesRegex(ValueError, "POLICY_REFUSED"):
+                migrate.execute(self.bundle, self.results, apply=True, expected_profile=ref, _p2_scope=object())
+        with self.assertRaisesRegex(ValueError, "POLICY_REFUSED"):
+            migrate.make_plan(self.bundle)
+        self.release["version"] = 2
+        self.release.pop("qualificationTargetProfile"); self.save()
+        with self.assertRaisesRegex(ValueError, "REQUIRED"):
+            migrate.make_plan(self.bundle, expected_profile=ref)
+
+    def test_profiled_raw_duplicate_keys_and_mismatched_ref_are_not_decoded_away(self):
+        ref = self.profiled()
+        file = self.bundle / "release.candidate.json"
+        file.write_text(file.read_text().replace('"version": 3', '"version": 3, "version": 3', 1))
+        with self.assertRaisesRegex(ValueError, "REFUSED"):
+            migrate.make_plan(self.bundle, expected_profile=ref)
+        self.save(); self.jobs["course"]["target"]["qualificationTargetProfile"]["sha256"] = "a" * 64; self.save()
+        with self.assertRaisesRegex(ValueError, "DIGEST_MISMATCH"):
+            migrate.make_plan(self.bundle, expected_profile=ref)
+
+    def test_actual_source_cli_receipt_shapes_and_fixed_image_commands(self):
+        ref = self.profiled()
+        for service, receipt in (("frontend", {"version": 2}), ("lash-her-course-api", {"schemaVersion": 2})):
+            with self.assertRaisesRegex(ValueError, "POLICY_REFUSED"):
+                migrate.require_receipt_profile(None, service, receipt, {})
+        for service in ("lash-her-course-api", "lash-her-community-api"):
+            receipt = {"schemaVersion": 2, "qualificationTargetProfile": ref}
+            terminal = {"qualificationTargetProfile": ref, **({"schemaVersion": 2} if "community" in service else {})}
+            migrate.require_receipt_profile(ref, service, receipt, terminal)
+            terminal["schemaVersion"] = 1
+            with self.assertRaises(ValueError): migrate.require_receipt_profile(ref, service, receipt, terminal)
+        for frontend in (False, True):
+            for checking, mode in ((True, "--check-profiled-current"), (False, "--execute-profiled-current")):
+                args = migrate.docker_arguments("image", self.bundle, self.results, "staging", "test-release", "501:20", "owned",
+                                                checking, frontend, expected_profile=ref)
+                self.assertIn(mode, args)
+        entry = Path(migrate.__file__)
+        result = subprocess.run([sys.executable, "-I", str(entry), str(self.bundle), str(self.results), "--profiled-current"], capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["qualificationTargetProfile"], ref)
 
     def execute(self, confirmation="staging/test-release"):
         return migrate.execute(self.bundle, self.results, True, confirmation, self.root / "release.lock")

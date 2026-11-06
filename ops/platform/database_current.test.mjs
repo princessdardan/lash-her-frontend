@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { checkCurrentDatabase } from "./host/database_current.mjs";
+import * as qualificationProfileModule from "./qualification-target-profile.mjs";
 
 function fixture() {
   const prepared = { manifest: { environment: "staging", runtimeRole: "lash_her_course_staging_runtime", schemaBaselineSha256: "a".repeat(64) },
@@ -42,6 +44,47 @@ test("current database verification uses one read-only snapshot without migratio
   assert.ok(f.queries.every((q) => /^(SELECT|BEGIN TRANSACTION|SET LOCAL|ROLLBACK)\b/u.test(q)));
   assert.equal(Object.hasOwn(result, "contractPhase"), false);
   assert.equal(Object.hasOwn(result, "phase2ContractManifestSha256"), false);
+});
+
+test("profiled read-only leaf joins explicit source context before TLS/SQL without adopting legacy input", async () => {
+  const expected = qualificationProfileModule.STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE;
+  const f = fixture(); f.qualificationProfileModule = qualificationProfileModule;
+  for (const value of [f.prepared.manifest, f.prepared.target]) Object.assign(value, { schemaVersion: 2, qualificationTargetProfile: expected });
+  const result = await checkCurrentDatabase(f, expected);
+  assert.equal(result.version, 2); assert.deepEqual(result.qualificationTargetProfile, expected);
+  assert.equal(result.migrationsExecuted, false);
+  const mutations = [g => { delete g.prepared.target.qualificationTargetProfile; },
+    g => { g.prepared.manifest.schemaVersion = 1; }, g => { g.prepared.target.schemaVersion = 1; },
+    g => { g.prepared.target.qualificationTargetProfile = { ...expected, sha256: "a".repeat(64) }; }];
+  for (const mutate of mutations) {
+    const g = fixture(); g.qualificationProfileModule = qualificationProfileModule;
+    for (const value of [g.prepared.manifest, g.prepared.target]) Object.assign(value, { schemaVersion: 2, qualificationTargetProfile: expected });
+    mutate(g); await assert.rejects(checkCurrentDatabase(g, expected)); assert.deepEqual(g.queries, []);
+  }
+  const legacy = fixture(); legacy.qualificationProfileModule = qualificationProfileModule;
+  await assert.rejects(checkCurrentDatabase(legacy, expected), /REQUIRED/u); assert.deepEqual(legacy.queries, []);
+  const profiled = fixture(); profiled.prepared.manifest.qualificationTargetProfile = expected;
+  await assert.rejects(checkCurrentDatabase(profiled), /POLICY_REFUSED/u); assert.deepEqual(profiled.queries, []);
+});
+
+test("unknown or malformed expected context refuses before any transport callback", async () => {
+  for (const expected of [null, { ...qualificationProfileModule.STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, id: "p2q-20261106" }]) {
+    const f = fixture(); f.qualificationProfileModule = qualificationProfileModule;
+    f.hasVerifiedMigrationTransport = () => assert.fail("transport callback invoked");
+    await assert.rejects(checkCurrentDatabase(f, expected)); assert.deepEqual(f.queries, []);
+  }
+});
+
+test("production profiled main has one fixed selected-image module before manifest or private input reads", () => {
+  const source = readFileSync(new URL("./host/database_current.mjs", import.meta.url), "utf8");
+  const main = source.slice(source.indexOf("export async function main"));
+  const selectedModule = 'await import("/app/dist-migration/src/db/qualification-target-profile.js")';
+  assert.equal(main.split(selectedModule).length, 2);
+  assert.ok(main.indexOf(selectedModule) < main.indexOf("const manifestBytes"));
+  assert.ok(main.indexOf("resolveQualificationTargetProfile(expected)") < main.indexOf("const manifestBytes"));
+  assert.ok(main.includes('prepareOperatorMigration(manifestBytes, baselineBytes, "/app/drizzle", service, expected)'));
+  assert.ok(main.includes('decodeQualificationTargetJson(rawCredential, "private-packet")'));
+  assert.ok(!main.includes("options.") && !main.includes("process.env.QUALIFICATION_TARGET_PROFILE"));
 });
 
 test("current P2 database verification binds both fields and rejects partial or malformed bindings before SQL", async () => {
