@@ -1,0 +1,594 @@
+{
+  "actualProviderEvidence": false,
+  "fixtureOnly": true,
+  "vectors": [
+    [
+      "lease",
+      {
+        "actionDirectoryIdentity": {
+          "device": "0",
+          "inode": "2"
+        },
+        "actionId": "owned-action",
+        "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "captureRootIdentity": {
+          "device": "0",
+          "inode": "1"
+        },
+        "caseId": "D1",
+        "configurationSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "courseImageSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expiresAt": "2026-11-06T12:02:00.000Z",
+        "gatewayConfigurationSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "gatewayImageSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "gatewayProcessSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "issuedAt": "2026-11-06T12:00:00.000Z",
+        "kind": "p2q-mux-controlled-capture-v2",
+        "maxCaptures": 1,
+        "maxReplayPosts": 1,
+        "operatorSourceClosureSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "planSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "qualificationTargetProfile": {
+          "id": "unregistered-owned",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "version": 1
+        },
+        "selection": {
+          "assetId": "asset_owned",
+          "attemptId": "11111111-1111-4111-8111-111111111111",
+          "environmentId": "env_owned",
+          "generation": 1,
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "uploadId": "upload_owned"
+        },
+        "sourceWitnessSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "version": 2
+      }
+    ],
+    [
+      "safeCapture",
+      {
+        "capturedAt": "2026-11-06T12:00:01.000Z",
+        "event": {
+          "assetId": "asset_owned",
+          "attemptId": "11111111-1111-4111-8111-111111111111",
+          "createdAt": "2026-11-06T12:00:00.000000001Z",
+          "environmentId": "env_owned",
+          "generation": 1,
+          "id": "event_0",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "objectId": "track_owned",
+          "type": "video.asset.track.ready"
+        },
+        "headerTimestamp": 1793966400,
+        "kind": "P2Q_MUX_CAPTURE_OBSERVED",
+        "leaseSha256": "2a35793caaf1fc38b13d14f7732774680a9b62beda9859ffee3da07ab81a7a65",
+        "localResponseFinished": true,
+        "managedResponse": {
+          "id": "11111111-1111-4111-8111-111111111111",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "status": "ready"
+        },
+        "monotonicNanoseconds": "100",
+        "requestId": "44444444-4444-4444-8444-444444444444",
+        "slot": 0,
+        "version": 2
+      }
+    ],
+    [
+      "safeSendStarted",
+      {
+        "captureObservationSha256": "cd1528e60639d5fb10e5cc5c8a014646af784fbf89c9c4d9bc53a257a0edecd2",
+        "captureSlot": 0,
+        "createdAt": "2026-11-06T12:00:03.000Z",
+        "kind": "P2Q_MUX_SEND_STARTED",
+        "leaseSha256": "2a35793caaf1fc38b13d14f7732774680a9b62beda9859ffee3da07ab81a7a65",
+        "sequence": 0,
+        "version": 2
+      }
+    ],
+    [
+      "replayObservation",
+      {
+        "captureSlot": 0,
+        "event": {
+          "assetId": "asset_owned",
+          "attemptId": "11111111-1111-4111-8111-111111111111",
+          "createdAt": "2026-11-06T12:00:00.000000001Z",
+          "environmentId": "env_owned",
+          "generation": 1,
+          "id": "event_0",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "objectId": "track_owned",
+          "type": "video.asset.track.ready"
+        },
+        "headerTimestamp": 1793966400,
+        "kind": "P2Q_MUX_REPLAY_OBSERVED",
+        "leaseSha256": "2a35793caaf1fc38b13d14f7732774680a9b62beda9859ffee3da07ab81a7a65",
+        "localResponseFinished": true,
+        "managedResponse": {
+          "id": "11111111-1111-4111-8111-111111111111",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "status": "ready"
+        },
+        "monotonicNanoseconds": "200",
+        "observedAt": "2026-11-06T12:00:04.000Z",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "sendStartedSha256": "5e85cd088a5b522f7d0d96c7ca19bbb196d4ce068c93504e7d1ec20ced75c99f",
+        "sequence": 0,
+        "version": 2
+      }
+    ],
+    [
+      "lease",
+      {
+        "actionDirectoryIdentity": {
+          "device": "0",
+          "inode": "2"
+        },
+        "actionId": "owned-action",
+        "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "captureRootIdentity": {
+          "device": "0",
+          "inode": "1"
+        },
+        "caseId": "R1",
+        "configurationSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "courseImageSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expiresAt": "2026-11-06T12:02:00.000Z",
+        "gatewayConfigurationSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "gatewayImageSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "gatewayProcessSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "issuedAt": "2026-11-06T12:00:00.000Z",
+        "kind": "p2q-mux-controlled-capture-v2",
+        "maxCaptures": 2,
+        "maxReplayPosts": 2,
+        "operatorSourceClosureSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "planSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "qualificationTargetProfile": {
+          "id": "unregistered-owned",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "version": 1
+        },
+        "selection": {
+          "assetId": "asset_owned",
+          "attemptId": "11111111-1111-4111-8111-111111111111",
+          "environmentId": "env_owned",
+          "generation": 1,
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "uploadId": "upload_owned"
+        },
+        "sourceWitnessSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "version": 2
+      }
+    ],
+    [
+      "safeCapture",
+      {
+        "capturedAt": "2026-11-06T12:00:01.000Z",
+        "event": {
+          "assetId": "asset_owned",
+          "attemptId": "11111111-1111-4111-8111-111111111111",
+          "createdAt": "2026-11-06T12:00:00.000000002Z",
+          "environmentId": "env_owned",
+          "generation": 1,
+          "id": "event_1",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "objectId": "track_owned",
+          "type": "video.asset.track.deleted"
+        },
+        "headerTimestamp": 1793966400,
+        "kind": "P2Q_MUX_CAPTURE_OBSERVED",
+        "leaseSha256": "517252bcc1722a58f77af56e4c4e5a7eb3071eb40f5d1a7cc60d77e3d9ee751d",
+        "localResponseFinished": true,
+        "managedResponse": {
+          "id": "11111111-1111-4111-8111-111111111111",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "status": "ready"
+        },
+        "monotonicNanoseconds": "101",
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "slot": 1,
+        "version": 2
+      }
+    ],
+    [
+      "safeSendStarted",
+      {
+        "captureObservationSha256": "675625c46850555946ce8bbc7ac7c87c20614df592d9be0e5d720307719411ab",
+        "captureSlot": 1,
+        "createdAt": "2026-11-06T12:00:03.000Z",
+        "kind": "P2Q_MUX_SEND_STARTED",
+        "leaseSha256": "517252bcc1722a58f77af56e4c4e5a7eb3071eb40f5d1a7cc60d77e3d9ee751d",
+        "sequence": 0,
+        "version": 2
+      }
+    ],
+    [
+      "replayObservation",
+      {
+        "captureSlot": 1,
+        "event": {
+          "assetId": "asset_owned",
+          "attemptId": "11111111-1111-4111-8111-111111111111",
+          "createdAt": "2026-11-06T12:00:00.000000002Z",
+          "environmentId": "env_owned",
+          "generation": 1,
+          "id": "event_1",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "objectId": "track_owned",
+          "type": "video.asset.track.deleted"
+        },
+        "headerTimestamp": 1793966400,
+        "kind": "P2Q_MUX_REPLAY_OBSERVED",
+        "leaseSha256": "517252bcc1722a58f77af56e4c4e5a7eb3071eb40f5d1a7cc60d77e3d9ee751d",
+        "localResponseFinished": true,
+        "managedResponse": {
+          "id": "11111111-1111-4111-8111-111111111111",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "status": "ready"
+        },
+        "monotonicNanoseconds": "200",
+        "observedAt": "2026-11-06T12:00:04.000Z",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "sendStartedSha256": "072595bdd6e56acaaa8292fcc83c0ba1640f35e536db58742ff7ec2592e3ca17",
+        "sequence": 0,
+        "version": 2
+      }
+    ],
+    [
+      "safeCapture",
+      {
+        "capturedAt": "2026-11-06T12:00:01.000Z",
+        "event": {
+          "assetId": "asset_owned",
+          "attemptId": "11111111-1111-4111-8111-111111111111",
+          "createdAt": "2026-11-06T12:00:00.000000001Z",
+          "environmentId": "env_owned",
+          "generation": 1,
+          "id": "event_0",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "objectId": "track_owned",
+          "type": "video.asset.track.ready"
+        },
+        "headerTimestamp": 1793966400,
+        "kind": "P2Q_MUX_CAPTURE_OBSERVED",
+        "leaseSha256": "517252bcc1722a58f77af56e4c4e5a7eb3071eb40f5d1a7cc60d77e3d9ee751d",
+        "localResponseFinished": true,
+        "managedResponse": {
+          "id": "11111111-1111-4111-8111-111111111111",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "status": "ready"
+        },
+        "monotonicNanoseconds": "100",
+        "requestId": "44444444-4444-4444-8444-444444444444",
+        "slot": 0,
+        "version": 2
+      }
+    ],
+    [
+      "safeSendStarted",
+      {
+        "captureObservationSha256": "4c09acf039aa71cddfbd393d2c8dc50c041dbacf827ded727a7521bb54975130",
+        "captureSlot": 0,
+        "createdAt": "2026-11-06T12:00:03.000Z",
+        "kind": "P2Q_MUX_SEND_STARTED",
+        "leaseSha256": "517252bcc1722a58f77af56e4c4e5a7eb3071eb40f5d1a7cc60d77e3d9ee751d",
+        "sequence": 1,
+        "version": 2
+      }
+    ],
+    [
+      "replayObservation",
+      {
+        "captureSlot": 0,
+        "event": {
+          "assetId": "asset_owned",
+          "attemptId": "11111111-1111-4111-8111-111111111111",
+          "createdAt": "2026-11-06T12:00:00.000000001Z",
+          "environmentId": "env_owned",
+          "generation": 1,
+          "id": "event_0",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "objectId": "track_owned",
+          "type": "video.asset.track.ready"
+        },
+        "headerTimestamp": 1793966400,
+        "kind": "P2Q_MUX_REPLAY_OBSERVED",
+        "leaseSha256": "517252bcc1722a58f77af56e4c4e5a7eb3071eb40f5d1a7cc60d77e3d9ee751d",
+        "localResponseFinished": true,
+        "managedResponse": {
+          "id": "11111111-1111-4111-8111-111111111111",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "status": "ready"
+        },
+        "monotonicNanoseconds": "200",
+        "observedAt": "2026-11-06T12:00:04.000Z",
+        "requestId": "66666666-6666-4666-8666-666666666666",
+        "sendStartedSha256": "84faacf107dcb4e4df7b4216b5d97a7dd05dc6436bd6f5c1975b8d122a113d2d",
+        "sequence": 1,
+        "version": 2
+      }
+    ],
+    [
+      "lease",
+      {
+        "actionDirectoryIdentity": {
+          "device": "0",
+          "inode": "2"
+        },
+        "actionId": "owned-action",
+        "candidateSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "captureRootIdentity": {
+          "device": "0",
+          "inode": "1"
+        },
+        "caseId": "A1",
+        "configurationSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "courseImageSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expiresAt": "2026-11-06T12:02:00.000Z",
+        "gatewayConfigurationSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "gatewayImageSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "gatewayProcessSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "issuedAt": "2026-11-06T12:00:00.000Z",
+        "kind": "p2q-mux-controlled-capture-v2",
+        "maxCaptures": 1,
+        "maxReplayPosts": 1,
+        "operatorSourceClosureSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "planSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "qualificationTargetProfile": {
+          "id": "unregistered-owned",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "version": 1
+        },
+        "selection": {
+          "assetId": "asset_owned",
+          "attemptId": "11111111-1111-4111-8111-111111111111",
+          "environmentId": "env_owned",
+          "generation": 1,
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "uploadId": "upload_owned"
+        },
+        "sourceWitnessSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "version": 2
+      }
+    ],
+    [
+      "safeCapture",
+      {
+        "capturedAt": "2026-11-06T12:00:01.000Z",
+        "event": {
+          "assetId": "asset_owned",
+          "attemptId": "11111111-1111-4111-8111-111111111111",
+          "createdAt": "2026-11-06T12:00:00.000000001Z",
+          "environmentId": "env_owned",
+          "generation": 1,
+          "id": "event_0",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "objectId": "track_owned",
+          "type": "video.asset.track.ready"
+        },
+        "headerTimestamp": 1793966400,
+        "kind": "P2Q_MUX_CAPTURE_OBSERVED",
+        "leaseSha256": "aa3c973a0ae6938b3a5e3434d706371af709395189e97ea149c8789532328334",
+        "localResponseFinished": true,
+        "managedResponse": {
+          "id": "11111111-1111-4111-8111-111111111111",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "status": "ready"
+        },
+        "monotonicNanoseconds": "100",
+        "requestId": "44444444-4444-4444-8444-444444444444",
+        "slot": 0,
+        "version": 2
+      }
+    ],
+    [
+      "safeSendStarted",
+      {
+        "captureObservationSha256": "422e826a283257856496c0007d3fbaa415414b6a3053e1d443e21102f631b821",
+        "captureSlot": 0,
+        "createdAt": "2026-11-06T12:00:03.000Z",
+        "kind": "P2Q_MUX_SEND_STARTED",
+        "leaseSha256": "aa3c973a0ae6938b3a5e3434d706371af709395189e97ea149c8789532328334",
+        "sequence": 0,
+        "version": 2
+      }
+    ],
+    [
+      "replayObservation",
+      {
+        "captureSlot": 0,
+        "event": {
+          "assetId": "asset_owned",
+          "attemptId": "11111111-1111-4111-8111-111111111111",
+          "createdAt": "2026-11-06T12:00:00.000000001Z",
+          "environmentId": "env_owned",
+          "generation": 1,
+          "id": "event_0",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "objectId": "track_owned",
+          "type": "video.asset.track.ready"
+        },
+        "headerTimestamp": 1793966400,
+        "kind": "P2Q_MUX_REPLAY_OBSERVED",
+        "leaseSha256": "aa3c973a0ae6938b3a5e3434d706371af709395189e97ea149c8789532328334",
+        "localResponseFinished": true,
+        "managedResponse": {
+          "id": "11111111-1111-4111-8111-111111111111",
+          "lessonId": "22222222-2222-4222-8222-222222222222",
+          "status": "ready"
+        },
+        "monotonicNanoseconds": "200",
+        "observedAt": "2026-11-06T12:00:04.000Z",
+        "requestId": "33333333-3333-4333-8333-333333333333",
+        "sendStartedSha256": "af49683b657e99b46d444bebb1290cd4ece631045c5dbd90c48447a287090590",
+        "sequence": 0,
+        "version": 2
+      }
+    ],
+    [
+      "globalRequest",
+      {
+        "category": "newWork",
+        "finishedAt": "2026-11-06T12:00:04.000Z",
+        "kind": "P2Q_MUX_ADMITTED_REQUEST_OBSERVED",
+        "leaseSha256": "2a35793caaf1fc38b13d14f7732774680a9b62beda9859ffee3da07ab81a7a65",
+        "localResponseFinished": true,
+        "method": "POST",
+        "ordinal": 0,
+        "requestId": "00000000-4444-4444-8444-444444444444",
+        "routeTemplate": "/v1/admin/lessons/{id}/captions",
+        "service": "course",
+        "startedAt": "2026-11-06T12:00:01.000Z",
+        "upstreamAttempted": true,
+        "upstreamStatus": 200,
+        "version": 2
+      }
+    ],
+    [
+      "windowSummary",
+      {
+        "admittedTotalsAfter": {
+          "newWork": 2,
+          "recovery": 3
+        },
+        "admittedTotalsBefore": {
+          "newWork": 2,
+          "recovery": 3
+        },
+        "closedAt": "2026-11-06T12:00:05.000Z",
+        "kind": "P2Q_MUX_GLOBAL_WINDOW_OBSERVED",
+        "leaseSha256": "2a35793caaf1fc38b13d14f7732774680a9b62beda9859ffee3da07ab81a7a65",
+        "observationFailures": 0,
+        "records": [],
+        "startedAt": "2026-11-06T12:00:00.000Z",
+        "version": 2
+      }
+    ],
+    [
+      "windowSummary",
+      {
+        "admittedTotalsAfter": {
+          "newWork": 3,
+          "recovery": 4
+        },
+        "admittedTotalsBefore": {
+          "newWork": 2,
+          "recovery": 3
+        },
+        "closedAt": "2026-11-06T12:00:05.000Z",
+        "kind": "P2Q_MUX_GLOBAL_WINDOW_OBSERVED",
+        "leaseSha256": "2a35793caaf1fc38b13d14f7732774680a9b62beda9859ffee3da07ab81a7a65",
+        "observationFailures": 0,
+        "records": [
+          {
+            "category": "newWork",
+            "finishedAt": "2026-11-06T12:00:04.000Z",
+            "kind": "P2Q_MUX_ADMITTED_REQUEST_OBSERVED",
+            "leaseSha256": "2a35793caaf1fc38b13d14f7732774680a9b62beda9859ffee3da07ab81a7a65",
+            "localResponseFinished": true,
+            "method": "POST",
+            "ordinal": 0,
+            "requestId": "00000000-4444-4444-8444-444444444444",
+            "routeTemplate": "/v1/admin/lessons/{id}/captions",
+            "service": "course",
+            "startedAt": "2026-11-06T12:00:01.000Z",
+            "upstreamAttempted": true,
+            "upstreamStatus": 200,
+            "version": 2
+          },
+          {
+            "category": "recovery",
+            "finishedAt": "2026-11-06T12:00:04.000Z",
+            "kind": "P2Q_MUX_ADMITTED_REQUEST_OBSERVED",
+            "leaseSha256": "2a35793caaf1fc38b13d14f7732774680a9b62beda9859ffee3da07ab81a7a65",
+            "localResponseFinished": true,
+            "method": "POST",
+            "ordinal": 1,
+            "requestId": "00000001-4444-4444-8444-444444444444",
+            "routeTemplate": "/v1/admin/lessons/{id}/captions",
+            "service": "course",
+            "startedAt": "2026-11-06T12:00:01.000Z",
+            "upstreamAttempted": true,
+            "upstreamStatus": 200,
+            "version": 2
+          }
+        ],
+        "startedAt": "2026-11-06T12:00:00.000Z",
+        "version": 2
+      }
+    ],
+    [
+      "wireFrame",
+      {
+        "operation": "ARM",
+        "version": 2
+      }
+    ],
+    [
+      "wireFrame",
+      {
+        "operation": "OPEN_AUTHORING_WINDOW",
+        "version": 2
+      }
+    ],
+    [
+      "wireFrame",
+      {
+        "operation": "CLOSE_AUTHORING_WINDOW",
+        "version": 2
+      }
+    ],
+    [
+      "wireFrame",
+      {
+        "operation": "OBSERVE_CAPTURE",
+        "version": 2
+      }
+    ],
+    [
+      "wireFrame",
+      {
+        "operation": "AUTHORIZE_CASE",
+        "version": 2
+      }
+    ],
+    [
+      "wireFrame",
+      {
+        "operation": "OPEN_REPLAY_WINDOW",
+        "version": 2
+      }
+    ],
+    [
+      "wireFrame",
+      {
+        "operation": "SEND_NEXT",
+        "version": 2
+      }
+    ],
+    [
+      "wireFrame",
+      {
+        "operation": "CLOSE_REPLAY_WINDOW",
+        "version": 2
+      }
+    ],
+    [
+      "wireFrame",
+      {
+        "operation": "FINISH",
+        "version": 2
+      }
+    ],
+    [
+      "wireFrame",
+      {
+        "operation": "ABORT",
+        "version": 2
+      }
+    ]
+  ],
+  "version": 1
+}
