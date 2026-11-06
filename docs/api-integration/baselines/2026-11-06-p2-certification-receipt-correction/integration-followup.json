@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "integratedSource": "71d2c03370a15a8c68b30e384548f55357924279",
+  "wrapperIndependentReviewSha256": "7e033f271698f3b4ef94cea2083879c42f427cfcfb24fc178e1eb36472a7712f",
+  "wrapperIndependentNodeChecks": 35,
+  "knownAckIndependentReviewSha256": "41d052f15138cb8feac3e0fb651ce875e1384d0db305206cc9d69697665c9d94",
+  "rootKnownAckHostChecks": 11,
+  "rootSourceChecks": 7,
+  "sourceFiles": 488,
+  "decodedBytes": 40044752,
+  "publicSerializedBytes": 53464338,
+  "originalFullProfiles": 33,
+  "privateRetentionManifestSha256": "2aca7f0890290ee2e981459351702f2219e7ebabf45be8ead38b21c926319e4d",
+  "actualLinuxRetryRequired": true,
+  "knownAckRuntimeIssuerConsumerIntegrated": false,
+  "releaseAccepted": false,
+  "g2Accepted": false
+}
