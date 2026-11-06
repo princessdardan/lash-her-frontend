@@ -20,7 +20,7 @@ export function p2RecoveryEnvironmentLock(settings, initial, directory, { launch
       stdio: ['pipe', 'pipe', 'pipe'], env: Object.fromEntries(['PATH', 'HOME', 'LANG'].filter(k => process.env[k] !== undefined).map(k => [k, process.env[k]])),
     });
     const signal = new AbortController(), pending = new Map();
-    let sequence = 0, failed = false, exited, active = true, armed = false, diagnostics = Buffer.alloc(0), heartbeat, apiStarted = false, preparedClose = false, joined;
+    let sequence = 0, failed = false, exited, active = true, armed = false, priorGatewayPrepared = false, diagnostics = Buffer.alloc(0), heartbeat, apiStarted = false, preparedClose = false, joined;
     const fail = () => {
       if (failed) return;
       failed = true; signal.abort();
@@ -66,8 +66,14 @@ export function p2RecoveryEnvironmentLock(settings, initial, directory, { launch
       heartbeat = setInterval(() => { if (!failed) void verifyEnvironment().catch(fail); }, 1000);
       const runtime = {
         mode: 'p2-post-sql-recovery', recoveryActionId: initial.recoveryActionId,
+        async preparePriorGateway({ verify }) {
+          require(!armed && !apiStarted && !priorGatewayPrepared); await verify();
+          const result = await request('prepare-prior-gateway','PRIOR_GATEWAY_PREPARED',{},300_000);
+          require(result.receipt?.status === 'PRIOR_GATEWAY_CLOSED_ZERO');
+          await verify(); priorGatewayPrepared=true;
+        },
         async armRecovery({ receipt, probe }) {
-          require(!armed&&!apiStarted);await verifyEnvironment();
+          require(priorGatewayPrepared&&!armed&&!apiStarted);await verifyEnvironment();
           const raw=readFrontendReleaseEvidence(directory,'p2-recovery-current-database.json');require(JSON.stringify(JSON.parse(raw))===JSON.stringify(receipt));
           await request('arm-recovery','RECOVERY_ARMED',{receipt:raw.toString('base64'),probe});armed=true;
         },

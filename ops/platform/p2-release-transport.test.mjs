@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { p2HostEnvironmentLock } from './p2-release-transport.mjs';
 import { P2_CERTIFICATION_PROFILE, P2_CERTIFICATION_RUNTIME_FLAGS, prepareP2CertificationProfile } from './p2-certification-profile.mjs';
-import { validateP2HostSettings } from './p2-release.mjs';
+import { validateP2HostSettings, validateP2PriorGatewayReference } from './p2-release.mjs';
 import { fileURLToPath } from 'node:url';
 
 // Owned process fixture: actual Python/OS flock and pipe lifetime. It substitutes
@@ -22,6 +22,9 @@ receipt={'status':'P2_STAGING_READY_FOR_CERTIFICATION','trafficAuthorized':False
 for raw in sys.stdin:
  p=json.loads(raw); op=p['operation']; v={'id':p['id']}
  if op=='check': v['status']='HELD'
+ elif op=='prepare-prior-gateway':
+  assert set(p)=={'id','operation'}
+  v.update(status='PRIOR_GATEWAY_PREPARED',receipt={'status':'PRIOR_GATEWAY_CLOSED_ZERO'})
  elif op=='start-api':
   started=True
   if sys.argv[2]=='death': os._exit(31)
@@ -87,6 +90,32 @@ test('host settings cannot override source, candidate, credentials or staging sc
   }
 });
 
+test('prior gateway references contain only closed retained-evidence paths and hashes', () => {
+  const base = '/var/lib/lash-her/releases/staging/owned';
+  const retained = { kind: 'retained-runtime', candidateDirectory: base + '/bundle', configurationDirectory: base + '/configuration',
+    runtimeReceiptDirectory: base + '/runtime', candidateSha256: 'a'.repeat(64), runtimeReceiptSha256: 'b'.repeat(64) };
+  assert.equal(validateP2PriorGatewayReference(undefined), undefined);
+  assert.deepEqual(validateP2PriorGatewayReference(retained), retained);
+  const stopped = { kind: 'stopped-current-candidate', stopReceiptDirectory: base + '/stop', stopReceiptSha256: 'c'.repeat(64) };
+  assert.deepEqual(validateP2PriorGatewayReference(stopped), stopped);
+  for (const change of [row => { row.kind = 'assume-empty'; }, row => { row.active = 0; }, row => { row.uncertain = 0; },
+    row => { row.runtimeReceiptSha256 = '0'.repeat(64); }, row => { row.candidateDirectory = base + '/../production'; },
+    row => { row.configurationDirectory = '/private/tmp/override'; }, row => { row.stopReceiptSha256 = 'c'.repeat(64); },
+    row => { row.runtimeReceiptDirectory += '//receipts'; }, row => { row.stopReceiptDirectory = base + '/stop'; }]) {
+    const altered = structuredClone(retained); change(altered); assert.throws(() => validateP2PriorGatewayReference(altered));
+  }
+  assert.deepEqual(validateP2PriorGatewayReference({ ...retained, stopReceiptDirectory: base + '/stop', stopReceiptSha256: 'c'.repeat(64) }),
+    { ...retained, stopReceiptDirectory: base + '/stop', stopReceiptSha256: 'c'.repeat(64) });
+});
+
+test('API start cannot bypass prior gateway preparation', async () => {
+  const f = fixture();
+  try {
+    await assert.rejects(f.factory(async (verify, _signal, runtime) => runtime.start({ database: f.database, client: f.client, verify })));
+    assert.throws(() => readFileSync(join(f.work, 'p2-host-release-outcome.json')));
+  } finally { f.cleanup(); }
+});
+
 test('actual guardian pipe retains host flock, joins receipts and never places credentials in SSH args/env', async () => {
   const f = fixture();
   try {
@@ -94,6 +123,7 @@ test('actual guardian pipe retains host flock, joins receipts and never places c
       await verify(); assert.equal(signal.aborted, false);
       const contender = spawnSync('python3', ['-I', '-c', 'import fcntl,os,sys;f=os.open(sys.argv[1],os.O_RDWR);fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)', f.lock]);
       assert.notEqual(contender.status, 0);
+      await runtime.preparePriorGateway({ verify });
       await runtime.start({ database: f.database, client: f.client, verify });
       await runtime.frontendVerified({}, verify); await runtime.prepareClose(verify);
       const outcome = { status: 'FRONTEND_SQL_COMPATIBLE_DEPLOYMENT_AND_ADMISSION_RESTORED', wholeReleaseAccepted: false };
@@ -112,6 +142,7 @@ test('guardian process death during API stage aborts continuation before fronten
   const f = fixture('death'); let frontendStarted = false;
   try {
     await assert.rejects(f.factory(async (verify, signal, runtime) => {
+      await runtime.preparePriorGateway({ verify });
       await runtime.start({ database: f.database, client: f.client, verify });
       frontendStarted = true; assert.equal(signal.aborted, false);
     }));
@@ -124,6 +155,7 @@ test('missing frontend terminal receipt refuses the parent join without a replay
   const f = fixture();
   try {
     await assert.rejects(f.factory(async (verify, _signal, runtime) => {
+      await runtime.preparePriorGateway({ verify });
       await runtime.start({ database: f.database, client: f.client, verify });
       await runtime.frontendVerified({}, verify); await runtime.prepareClose(verify);
       await runtime.finish({ status: 'owned' }, verify);

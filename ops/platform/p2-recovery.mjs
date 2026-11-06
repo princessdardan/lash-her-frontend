@@ -52,7 +52,9 @@ export function prepareP2RecoveryOperator(settings) {
   return { ...selected, candidateBytes, original, plan: { ...selected.action, operation:'p2-post-sql-deliberate-recovery', operatorSourceCommit:settings.operatorSourceCommit,
     originalSources:candidate.sources, frontendTarget:original.job.target, featureProfile:original.prepared.plan.certification,
     runtimeServices:10, frontendMode:selected.action.frontendMode, nativeSchedulesEnabled:false, trafficAuthorized:false,
-    failedBuildForwardAction:selected.action.failedBuildForwardAction, approval:'Dardan starts this exact reviewed staging recovery action' } };
+    failedBuildForwardAction:selected.action.failedBuildForwardAction,
+    ...(original.plan.priorGatewayReference ? { priorGatewayReference: original.plan.priorGatewayReference } : {}),
+    approval:'Dardan starts this exact reviewed staging recovery action' } };
 }
 
 export async function p2RecoveryOperator(settings,{apply=false,confirmation}={}) {
@@ -86,6 +88,7 @@ export async function p2RecoveryOperator(settings,{apply=false,confirmation}={})
     configurationSha256:checked.original.configurationSha256,configurationBindingSha256:checked.action.configurationSha256,
     confirmation,credentials,vercelToken:context.vercelToken,recoveryActionId:checked.action.recoveryActionId,originalReleaseId:checked.action.originalReleaseId,
     frontendMode:checked.action.frontendMode,...(checked.action.forwardReason?{forwardReason:checked.action.forwardReason}:{}),
+    ...(checked.original.plan.priorGatewayReference ? {priorGatewayReference:checked.original.plan.priorGatewayReference} : {}),
     originalReceiptSha256:checked.action.originalReceiptSha256,frontendJob:checked.original.job,frontendBaseline:checked.original.baseline,
     expectedWriterAdmissionBinding:checked.original.plan.writerAdmissionBinding,owner:checked.prepared.plan.owner,historicalLogins:checked.prepared.plan.historicalLogins,producers:checked.prepared.plan.producers,targetSha256:checked.prepared.plan.targetSha256,certification:checked.prepared.plan.certification,
     gatewayObservation:context.bindings?.gatewayObservation};

@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID, createHash } from "node:crypto";
 import { createServer as httpServer } from "node:http";
 import { createServer as netServer } from "node:net";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, cpSync, symlinkSync, realpathSync, rmSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, cpSync, symlinkSync, realpathSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -392,6 +392,12 @@ async function main() {
       },
     });
     p2.dependencies.withEnvironmentLock = (task, options) => withFrontendEnvironmentLock((verify, signal) => task(verify, signal, {
+      async preparePriorGateway({ client, verify: verifyBoth }) {
+        await verifyBoth(); stages.push("prior-gateway-closed-zero");
+        assert.deepEqual((await client.query("SELECT new_work,recovery FROM frontend_admission.control")).rows[0], { new_work: false, recovery: false });
+        assert.equal((await client.query("SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS present")).rows[0].present, false);
+        assert.equal(getState("owned-p2-api-continuation").built, false);
+      },
       async start({ database, client, verify: verifyBoth }) {
         await verifyBoth(); stages.push("api-start");
         assert.equal(getState("owned-p2-api-continuation").built, false);
@@ -428,11 +434,31 @@ async function main() {
     }), options);
     const p2Result = await p2.run();
     assert.equal(p2Result.databaseVerified, true);
-    assert.deepEqual(stages, ["api-start", "frontend-promoted", "prepare-close", "terminal-join"]);
+    assert.deepEqual(stages, ["prior-gateway-closed-zero", "api-start", "frontend-promoted", "prepare-close", "terminal-join"]);
     checks.push("p2-api-continuation-before-frontend-and-actual-tls-dual-pg-lock-observation-through-promotion-with-terminal-join");
+    phase = "p2-prior-gateway-refusal-before-sql";
+    const gatewayRefusal = await make("prior-gateway-refusal");
+    gatewayRefusal.dependencies.withEnvironmentLock = (task, options) => withFrontendEnvironmentLock((verify, signal) => task(verify, signal, {
+      async preparePriorGateway({ client, verify }) {
+        await verify();
+        assert.deepEqual((await client.query("SELECT new_work,recovery FROM frontend_admission.control")).rows[0], { new_work: false, recovery: false });
+        throw new Error("OWNED_PRIOR_GATEWAY_UNCERTAIN");
+      },
+      async start() { assert.fail("API stage began despite old gateway uncertainty"); },
+      async frontendVerified() { assert.fail("frontend began despite old gateway uncertainty"); },
+      async prepareClose() { assert.fail("terminal began despite old gateway uncertainty"); },
+      async finish() { assert.fail("join began despite old gateway uncertainty"); },
+    }), options);
+    await assert.rejects(gatewayRefusal.run(), /FRONTEND_RELEASE_COORDINATION_FAILED_REVIEW_REQUIRED/u);
+    assert.equal(getState("owned-prior-gateway-refusal").counts.build, 0);
+    assert.equal((await gatewayRefusal.client.query("SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS present")).rows[0].present, false);
+    assert.equal(existsSync(join(gatewayRefusal.output, "database-receipt.json")), false);
+    assert.deepEqual((await gatewayRefusal.client.query("SELECT new_work,recovery FROM frontend_admission.control")).rows[0], { new_work: false, recovery: false });
+    checks.push("p2-prior-gateway-uncertainty-refuses-before-reviewed-sql-api-recreation-and-frontend-build");
     phase = "p2-api-stage-backend-death";
     const p2Dead = await make("p2-api-backend-death");
     p2Dead.dependencies.withEnvironmentLock = (task, options) => withFrontendEnvironmentLock((verify, signal) => task(verify, signal, {
+      async preparePriorGateway({ verify }) { await verify(); },
       async start({ client }) { await admin.query("SELECT pg_terminate_backend($1,1000)", [client.processID]); },
       async frontendVerified() { assert.fail("frontend began after backend death"); },
       async prepareClose() { assert.fail("close began after backend death"); },
@@ -528,6 +554,7 @@ async function main() {
           assert.equal((await roleFlow.client.query("SELECT oid::text FROM pg_roles WHERE rolname=$1", [FRONTEND_PREPARATION_ROLES.runtime])).rows[0].oid, proof.runtime.oid);
           assert.equal(getState("owned-same-action-roles").bootstrapBuilt, false);
         },
+        async preparePriorGateway({ verify }) { await verify(); flow.push("prior-gateway-closed-zero"); },
         async start({ client, verify }) { await verify(); flow.push("api-stage"); assert.equal(client.processID, preparedPid); },
         async frontendVerified(_proof, verify) { await verify(); flow.push("frontend-promoted"); },
         async prepareClose(verify) { await verify(); flow.push("prepare-close"); },
@@ -554,7 +581,7 @@ async function main() {
         frames: error.stack?.split("\n").slice(1).filter(line => line.trim().startsWith("at ")).slice(0, 5) }));
       throw error;
     }), { path: roleFlow.dependencies.lockPath });
-    assert.deepEqual(flow, ["roles-prepared", "api-stage", "frontend-promoted", "prepare-close", "terminal-join"]);
+    assert.deepEqual(flow, ["roles-prepared", "prior-gateway-closed-zero", "api-stage", "frontend-promoted", "prepare-close", "terminal-join"]);
     checks.push("single-action-generated-role-credentials-and-observed-oids-feed-bootstrap-and-all-sql-on-the-same-held-physical-session");
     console.log(JSON.stringify({ status: "FRONTEND_RELEASE_OWNED_POSTGRES_PASS", postgresMajor: major, providerTouched: false, checks,
       liveAdapterQualified: false, migrationAuthorized: false, trafficAuthorized: false }));

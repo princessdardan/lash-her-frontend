@@ -103,7 +103,7 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
     await store.record("frontend-release-started.json", { ...base, status: "FRONTEND_RELEASE_COORDINATION_STARTED" }); intentRecorded = true;
     phase = "environment-release-lock";
     await (dependencies.withEnvironmentLock ?? withFrontendEnvironmentLock)(async (verifyEnvironment, environmentSignal, apiRuntime) => {
-      demand(apiRuntime === undefined || ["start", "frontendVerified", "prepareClose", "finish"].every(key => typeof apiRuntime[key] === "function"));
+      demand(apiRuntime === undefined || ["preparePriorGateway", "start", "frontendVerified", "prepareClose", "finish"].every(key => typeof apiRuntime[key] === "function"));
       const verifySource = async () => { await verifyEnvironment(); assertSource(root, plan.sourceCommit); };
       const providerContext = { candidate: migration.candidate, directory: dependencies.directory,
         bootstrapRuntimeTarget: { environment: plan.environment, targetSha256: plan.targetSha256,
@@ -238,6 +238,14 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
             return rows;
           });
           await store.record("admission-producers-verified.json", { ...base, producers: registered.length, registrationSha256: frontendCoordinationHash(registered) });
+          if (apiRuntime) {
+            // Eligible financial recovery has finished and frontend admission is
+            // now closed. Preserve the actual prior gateway's counters before
+            // SQL or any service recreation can erase process-local evidence.
+            phase = "prior-gateway-closure-and-drain";
+            await verify(); await apiRuntime.preparePriorGateway({ client, verify }); await verify();
+            demand(performance.now() <= deadline);
+          }
           phase = "independent-external-fence-observation";
           await observeFences("before-sql", verify); await verify(); demand(performance.now() <= deadline);
           await verifySource(); demand(performance.now() <= deadline);

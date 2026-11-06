@@ -37,6 +37,7 @@ export const P2_OWNED_FIXTURES = Object.freeze([
     'environment-lock-loss-fences-physical-client-and-refuses-promotion',
     'committed-sql-and-uncertain-promotion-preserved-with-new-read-only-recovery-action-and-no-replay',
     'p2-api-continuation-before-frontend-and-actual-tls-dual-pg-lock-observation-through-promotion-with-terminal-join',
+    'p2-prior-gateway-uncertainty-refuses-before-reviewed-sql-api-recreation-and-frontend-build',
     'p2-api-stage-actual-backend-death-preserves-committed-sql-and-prevents-frontend-mutation',
     'role-abort-during-actual-blocked-query-terminates-exact-backend-and-releases-pg-lock-before-rejection-under-held-environment-lock',
     'single-action-generated-role-credentials-and-observed-oids-feed-bootstrap-and-all-sql-on-the-same-held-physical-session',

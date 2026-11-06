@@ -95,13 +95,15 @@ export async function runP2PostSqlRecovery(input, dependencies) {
         };
         phase = 'fresh-current-database-and-provider-fences';
         await store.record('p2-recovery-current-database.json', receipt);
-        await host.armRecovery({ receipt, probe }); await verify();
         if(action.frontendMode==='reviewed-new-build'){
           phase='get-first-original-build-reconciliation';
           const prior=await reconcileP2RecoveryForward({...providerContext,plan,job:migration.job});
           await store.record('p2-recovery-forward-original.json',prior);
         }
         await fences('recovery-before-runtime');
+        phase = 'prior-gateway-closure-and-drain';
+        await verify(); await host.preparePriorGateway({ client, verify }); await verify();
+        await host.armRecovery({ receipt, probe }); await verify();
         // Remote implementation must bind probe to fresh physical session, then
         // verify BOTH API databases current/read-only before restoring10services.
         phase = 'get-only-retained-ready-frontend-observation';

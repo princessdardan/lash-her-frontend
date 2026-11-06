@@ -43,6 +43,24 @@ export function validateP2HostSettings(host) {
       !host[key].split('/').some(part => part === '.' || part === '..') && !host[key].includes('//')));
   return { machineId: host.machineId, bundle: host.bundle, configuration: host.configuration, results: host.results };
 }
+export function validateP2PriorGatewayReference(reference) {
+  if (reference === undefined) return undefined;
+  require(reference && typeof reference === 'object' && !Array.isArray(reference));
+  const fields = reference.kind === 'retained-runtime'
+    ? ['kind', 'candidateDirectory', 'configurationDirectory', 'runtimeReceiptDirectory', 'candidateSha256', 'runtimeReceiptSha256',
+      ...(Object.hasOwn(reference, 'stopReceiptDirectory') || Object.hasOwn(reference, 'stopReceiptSha256') ? ['stopReceiptDirectory', 'stopReceiptSha256'] : [])]
+    : reference.kind === 'stopped-current-candidate' ? ['kind', 'stopReceiptDirectory', 'stopReceiptSha256'] : [];
+  require(fields.length > 0 && isDeepStrictEqual(Object.keys(reference).sort(), fields.sort()));
+  for (const [key, value] of Object.entries(reference)) {
+    if (key.endsWith('Directory')) require(typeof value === 'string' && value.length <= 4096 &&
+      /^\/var\/lib\/lash-her\/releases\/staging\/[A-Za-z0-9_/.-]+$/u.test(value) &&
+      !value.includes('//') && !value.split('/').some(part => part === '.' || part === '..'));
+    if (key.endsWith('Sha256')) require(typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value) && !/^0+$/u.test(value));
+  }
+  // References select retained source evidence; the host observes the actual
+  // latest process and counters. No caller-provided zero/drain assertion exists.
+  return structuredClone(reference);
+}
 export function prepareP2OperatorRelease(settings) {
   require(settings?.version === 1 && settings.environment === 'staging' && /^[a-f0-9]{40}$/u.test(settings.sourceCommit));
   const bundle = settings.bundle;
@@ -65,6 +83,7 @@ export function prepareP2OperatorRelease(settings) {
   const writerAdmissionBinding = { mode: 'enforce', targetSha256: reviewedInventory.targetSha256,
     producerSha256: runtimeProducer, sourceCommit: job.sourceCommit, roleName: job.target.runtimeRole };
   validateP2HostSettings(settings.host);
+  const priorGatewayReference = validateP2PriorGatewayReference(settings.priorGatewayReference);
   const configuration = settings.configuration;
   frontendPrivateReceiptDirectory(configuration);
   const runtime = object(join(configuration, 'runtime.json'), true);
@@ -87,6 +106,7 @@ export function prepareP2OperatorRelease(settings) {
     sourceCommit: settings.sourceCommit, sources: candidate.sources, releaseId: candidate.releaseId, candidateSha256,
     hostMachineId: settings.host.machineId, frontendTarget: job.target, configurationSha256,
     certification: reviewedInventory.certification, writerAdmissionBinding, runtimeFlags: P2_CERTIFICATION_RUNTIME_FLAGS, restoration: reviewedInventory.restoration,
+    ...(priorGatewayReference ? { priorGatewayReference } : {}),
     ...(roles ? { rolePreparation: roles, inventoryRoleBindings: 'desired-names-only' } : {}),
     trafficAuthorized: false, releaseAccepted: false, approval: 'Dardan starts this exact reviewed staging action',
   } };
@@ -126,6 +146,7 @@ export async function p2OperatorRelease(settings, { apply = false, confirmation 
     frontendJob: checked.job, frontendBaseline: checked.baseline, targetSha256: checked.reviewedInventory.targetSha256,
     owner: checked.reviewedInventory.owner, certification: checked.reviewedInventory.certification,
     expectedWriterAdmissionBinding: checked.plan.writerAdmissionBinding,
+    ...(checked.plan.priorGatewayReference ? { priorGatewayReference: checked.plan.priorGatewayReference } : {}),
     ...(checked.roles ? { rolePreparation: checked.roles } : {}),
     gatewayObservation: context.bindings?.gatewayObservation };
   require(sha256(JSON.stringify(initial.gatewayObservation)) === checked.reviewedInventory.restoration.gatewayBindingSha256);

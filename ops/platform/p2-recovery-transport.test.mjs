@@ -15,6 +15,9 @@ receipt={'status':'P2_STAGING_RECOVERY_RESTORATION_VERIFIED','sqlReplayed':False
 for raw in sys.stdin:
  p=json.loads(raw);op=p['operation'];v={'id':p['id']}
  if op=='check':v['status']='HELD'
+ elif op=='prepare-prior-gateway':
+  assert set(p)=={'id','operation'}
+  v.update(status='PRIOR_GATEWAY_PREPARED',receipt={'status':'PRIOR_GATEWAY_CLOSED_ZERO'})
  elif op=='arm-recovery':v['status']='RECOVERY_ARMED'
  elif op=='start-api':
   assert json.loads(__import__('base64').b64decode(p['receipt']))['status']=='P2_RECOVERY_DATABASE_CURRENT'
@@ -50,16 +53,22 @@ test('retained READY recovery uses actual inherited pipe/flock without needing o
  const f=fixture();try{
   await f.factory(async(verify,_signal,host)=>{
    await verify();const contender=spawnSync('python3',['-I','-c',"import os,fcntl,sys;f=os.open(sys.argv[1],os.O_RDWR);fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)",f.lock]);assert.notEqual(contender.status,0);
-   await host.armRecovery({receipt:f.receipt,probe:{}});await host.restoreCurrent({receipt:f.receipt,probe:{}});await host.frontendVerified({workloadReceiptSha256:sha256(f.originalWorkload)});await host.restoreGatewayStage('recovery',{newWork:false,recovery:true});await host.restoreGatewayStage('new-work',{newWork:true,recovery:true});await host.prepareClose(verify);await host.finish(f.outcome,verify);
+   await host.preparePriorGateway({verify});await host.armRecovery({receipt:f.receipt,probe:{}});await host.restoreCurrent({receipt:f.receipt,probe:{}});await host.frontendVerified({workloadReceiptSha256:sha256(f.originalWorkload)});await host.restoreGatewayStage('recovery',{newWork:false,recovery:true});await host.restoreGatewayStage('new-work',{newWork:true,recovery:true});await host.prepareClose(verify);await host.finish(f.outcome,verify);
   });
   assert.equal(existsSync(join(f.original,'job-outcome.json')),false);assert.equal(JSON.parse(readFileSync(join(f.work,'p2-host-recovery-outcome.json'))).sqlReplayed,false);
   assert.equal(JSON.stringify(f.getCaptured()).includes('private-never-in-arguments-or-env'),false);
  }finally{f.cleanup();}
 });
+test('recovery arm cannot bypass prior gateway preparation',async()=>{
+ const f=fixture();try{
+  await assert.rejects(f.factory(async(_verify,_signal,host)=>host.armRecovery({receipt:f.receipt,probe:{}})));
+  assert.equal(existsSync(join(f.work,'p2-host-recovery-outcome.json')),false);
+ }finally{f.cleanup();}
+});
 test('reviewed forward recovery transmits only the newly verified workload bytes',async()=>{
  const f=fixture('ready',{frontendMode:'reviewed-new-build'}),selected=Buffer.from('{"workload":"new-reviewed-build"}\n');try{
   await f.factory(async(verify,_signal,host)=>{
-   await host.armRecovery({receipt:f.receipt,probe:{}});await host.restoreCurrent({receipt:f.receipt,probe:{}});
+   await host.preparePriorGateway({verify});await host.armRecovery({receipt:f.receipt,probe:{}});await host.restoreCurrent({receipt:f.receipt,probe:{}});
    await host.frontendVerified({workloadReceiptSha256:sha256(selected)},selected);
    await host.restoreGatewayStage('recovery',{newWork:false,recovery:true});await host.restoreGatewayStage('new-work',{newWork:true,recovery:true});await host.prepareClose(verify);await host.finish(f.outcome,verify);
   });
@@ -69,8 +78,8 @@ test('reviewed forward recovery transmits only the newly verified workload bytes
 test('reviewed forward recovery refuses omitted or mismatched new workload bytes before host verification',async()=>{
  for(const selected of [undefined,Buffer.from('different')]){
   const f=fixture('ready',{frontendMode:'reviewed-new-build'}),expected=Buffer.from('{"workload":"expected"}\n');try{
-   await assert.rejects(f.factory(async(_verify,_signal,host)=>{
-    await host.armRecovery({receipt:f.receipt,probe:{}});await host.restoreCurrent({receipt:f.receipt,probe:{}});
+   await assert.rejects(f.factory(async(verify,_signal,host)=>{
+    await host.preparePriorGateway({verify});await host.armRecovery({receipt:f.receipt,probe:{}});await host.restoreCurrent({receipt:f.receipt,probe:{}});
     await host.frontendVerified({workloadReceiptSha256:sha256(expected)},selected);
    }));
    assert.equal(existsSync(join(f.work,'p2-host-recovery-outcome.json')),false);
@@ -78,5 +87,5 @@ test('reviewed forward recovery refuses omitted or mismatched new workload bytes
  }
 });
 test('remote process death aborts recovery before frontend/promotion/admission work',async()=>{
- const f=fixture('death');let afterApi=false;try{await assert.rejects(f.factory(async(_verify,_signal,host)=>{await host.armRecovery({receipt:f.receipt,probe:{}});await host.restoreCurrent({receipt:f.receipt,probe:{}});afterApi=true;}));assert.equal(afterApi,false);assert.equal(existsSync(join(f.work,'p2-host-recovery-outcome.json')),false);}finally{f.cleanup();}
+ const f=fixture('death');let afterApi=false;try{await assert.rejects(f.factory(async(verify,_signal,host)=>{await host.preparePriorGateway({verify});await host.armRecovery({receipt:f.receipt,probe:{}});await host.restoreCurrent({receipt:f.receipt,probe:{}});afterApi=true;}));assert.equal(afterApi,false);assert.equal(existsSync(join(f.work,'p2-host-recovery-outcome.json')),false);}finally{f.cleanup();}
 });

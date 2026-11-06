@@ -20,7 +20,7 @@ export function p2HostEnvironmentLock(settings, initial, directory, { launch = s
       stdio: ['pipe', 'pipe', 'pipe'], env: Object.fromEntries(['PATH', 'HOME', 'LANG'].filter(k => process.env[k] !== undefined).map(k => [k, process.env[k]])),
     });
     const signal = new AbortController(), pending = new Map();
-    let sequence = 0, failed = false, exited, active = true, diagnostics = Buffer.alloc(0), heartbeat, apiStarted = false, preparedClose = false, joined;
+    let sequence = 0, failed = false, exited, active = true, diagnostics = Buffer.alloc(0), heartbeat, priorGatewayPrepared = false, apiStarted = false, preparedClose = false, joined;
     const fail = () => {
       if (failed) return;
       failed = true; signal.abort();
@@ -65,6 +65,12 @@ export function p2HostEnvironmentLock(settings, initial, directory, { launch = s
       // SET ROLE/transaction operations. The host independently observes PG.
       heartbeat = setInterval(() => { if (!failed) void verifyEnvironment().catch(fail); }, 1000);
       const runtime = {
+        async preparePriorGateway({ verify }) {
+          require(!apiStarted && !priorGatewayPrepared); await verify();
+          const result = await request('prepare-prior-gateway', 'PRIOR_GATEWAY_PREPARED', {}, 300_000);
+          require(result.receipt?.status === 'PRIOR_GATEWAY_CLOSED_ZERO');
+          await verify(); priorGatewayPrepared = true;
+        },
         async bindRoles(proof) {
           require(!apiStarted && initial.rolePreparation);
           await verifyEnvironment();
@@ -72,7 +78,7 @@ export function p2HostEnvironmentLock(settings, initial, directory, { launch = s
           initial.owner = structuredClone(proof.owner);
         },
         async start({ database, client, verify }) {
-          require(!apiStarted); await verify(); apiStarted = true;
+          require(priorGatewayPrepared && !apiStarted); await verify(); apiStarted = true;
           const marker = randomBytes(32).toString('hex');
           await client.query('SELECT pg_advisory_lock(hashtext($1))', [marker]);
           const identity = (await client.query('SELECT pg_backend_pid() AS pid,backend_start::text FROM pg_stat_activity WHERE pid=pg_backend_pid()')).rows[0];
