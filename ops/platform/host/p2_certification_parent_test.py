@@ -17,6 +17,23 @@ import migrate
 import p2_release_scope_test as scope_fixture
 import p2_certification_parent as parent
 import p2_release_supervisor as supervisor
+from p2_source_closure import TYPES, REQUIRED, verify_source_closure
+
+
+def tracked_source_fixture(source, destination):
+    """Mirror readOperatorSourceFiles' tracked public ops selection, not npm output."""
+    environment={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C',
+        'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':os.devnull,'GIT_NO_REPLACE_OBJECTS':'1'}
+    result=subprocess.run(['git','-c','safe.directory='+str(source),'-C',str(source),'ls-files','-z','--','ops'],
+        capture_output=True,check=True,env=environment,timeout=10)
+    names=sorted(name for name in result.stdout.decode('utf-8').split('\0') if name and Path(name).suffix in TYPES)
+    for name in names:
+        path=Path(name)
+        if path.is_absolute() or '..' in path.parts or path.parts[0]!='ops' or (source/path).is_symlink():
+            raise ValueError('OWNED_TRACKED_SOURCE_PATH_REQUIRED')
+        target=destination/path;target.parent.mkdir(parents=True,exist_ok=True)
+        target.write_bytes((source/path).read_bytes());target.chmod(0o644)
+    return names
 
 
 class CertificationScopeTests(unittest.TestCase):
@@ -297,8 +314,14 @@ print(json.dumps(report))
 
 
 class ActualCertificationEntryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        temporary=tempfile.TemporaryDirectory();cls.addClassCleanup(temporary.cleanup)
+        cls.source=Path(temporary.name).resolve()
+        cls.source_names=tracked_source_fixture(Path(parent.__file__).resolve().parents[3],cls.source)
+
     def entry(self,mode,flavor='normal'):
-        root=Path(parent.__file__).resolve().parents[3]
+        root=self.source
         result=subprocess.run([sys.executable,'-I','-B','-c',ENTRY_PROGRAM,str(root),mode,flavor],capture_output=True,text=True,timeout=20,
             env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C'})
         self.assertEqual(result.returncode,0);value=json.loads(result.stdout)
@@ -324,6 +347,36 @@ class ActualCertificationEntryTests(unittest.TestCase):
                 self.assertEqual(value['entryRefusal'],'P2_CERTIFICATION_CANONICAL_MODULE_REFUSED')
                 self.assertTrue(value['foreignCanonicalPreserved']);self.assertEqual(value['sourceClosureCalls'],0)
                 self.assertFalse(value['dispatchCalled'])
+
+    def test_tracked_copy_excludes_dependency_private_and_generated_files_without_weakening_closure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);source=root/'checkout';source.mkdir();installed=root/'installed';installed.mkdir()
+            for name in REQUIRED:
+                path=source/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'owned tracked source')
+            environment={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C',
+                'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':os.devnull}
+            for command in (['git','init','--quiet',str(source)],['git','-C',str(source),'add','--','ops']):
+                subprocess.run(command,check=True,capture_output=True,env=environment,timeout=10)
+            excluded=('ops/gateway/node_modules/jose/package.json','ops/gateway/node_modules/.package-lock.json',
+                'ops/platform/private/retained.json','ops/platform/generated-untracked.json')
+            for name in excluded:
+                path=source/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'owned untracked input')
+            names=tracked_source_fixture(source,installed)
+            self.assertEqual(set(names),REQUIRED)
+            for name in excluded:self.assertFalse((installed/name).exists())
+            manifest={name:parent._sha((installed/name).read_bytes()) for name in names}
+            initial={'sourceSha256':manifest,'sourceClosureSha256':parent._sha(json.dumps(sorted(manifest.items()),separators=(',',':')).encode())}
+            self.assertEqual(verify_source_closure(initial,installed),initial['sourceClosureSha256'])
+            extra=installed/excluded[0];extra.parent.mkdir(parents=True,exist_ok=True);extra.write_bytes(b'owned installed extra')
+            with self.assertRaisesRegex(ValueError,'P2_SOURCE_CLOSURE_INCOMPLETE'):verify_source_closure(initial,installed)
+
+    def test_git_inventory_failure_has_no_filesystem_fallback(self):
+        source=Path(parent.__file__).resolve().parents[3]
+        with tempfile.TemporaryDirectory() as temporary,patch('subprocess.run',side_effect=subprocess.CalledProcessError(1,['git'])) as command:
+            destination=Path(temporary)
+            with self.assertRaises(subprocess.CalledProcessError):tracked_source_fixture(source,destination)
+            self.assertEqual(list(destination.iterdir()),[])
+            self.assertEqual(command.call_args.args[0],['git','-c','safe.directory='+str(source),'-C',str(source),'ls-files','-z','--','ops'])
 
 
 if __name__=='__main__':unittest.main()
