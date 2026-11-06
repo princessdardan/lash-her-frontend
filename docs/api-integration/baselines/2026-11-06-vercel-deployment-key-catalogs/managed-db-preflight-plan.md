@@ -15,7 +15,7 @@ Public selectors come from C07's retained `qualification-receipts/database-curre
 
 Before any connection, all three Course URL identities/credentials must agree privately, as must both Community URLs. A disagreement is UNKNOWN, not permission to try different passwords. This permits two sequential sessions, one per exact API context. No frontend, pooled/alternate endpoint, alternate database, migration credential or owner login is substituted.
 
-Construct explicit `pg.Client` host/port/database/user/password properties in memory; do not pass a connection string alongside an SSL object. Pin the repository Node 24/pg dependency tree, authenticated TLS with the selected public root-CA trust, exact hostname/SNI and `rejectUnauthorized: true`; accept no caller CA, client key, proxy or TLS override. Confirm encrypted/authorized transport and the selected physical backend before/after observations. The [node-postgres SSL documentation](https://node-postgres.com/features/ssl) explains why SSL query parameters in a connection string can replace the intended SSL object.
+Construct explicit `pg.Client` host/port/database/user/password properties in memory; do not pass a connection string alongside an SSL object. Proposed CA context for root validation is the built-in `tls.rootCertificates` from pinned Node 24.18.0, supplied explicitly with exact hostname/SNI and `rejectUnauthorized: true`. Use the repository's pinned pg dependency. Accept no caller CA, client key, proxy or TLS override; inherit no `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`/`SSL_CERT_DIR`, TLS-disable flag, Node hook or PG override. The private API-mesh CA is not the Neon database CA. Confirm encrypted/authorized transport and the selected physical backend before/after observations. The [node-postgres SSL documentation](https://node-postgres.com/features/ssl) explains why SSL query parameters in a connection string can replace the intended SSL object.
 
 Use startup-only `default_transaction_read_only=on` and bounded connection/statement timeouts; distinguish these observer-imposed settings from provider defaults. No `SET ROLE`, transaction-control statement, explicit/advisory lock, DDL/DML, schema grant, migration, admission, process/host control or mutation is available. Run only the fixed catalog queries below. A permission/TLS/identity/schema/row-bound failure is UNKNOWN; there is no credential fallback, repair or automatic retry.
 
@@ -59,8 +59,8 @@ SELECT r.oid::text AS role_oid, r.rolname AS role_name,
        r.rolreplication, r.rolbypassrls, r.rolinherit,
        r.rolconnlimit, r.rolvaliduntil::text AS role_valid_until,
        r.rolconfig IS NULL AS role_config_is_null,
-       ARRAY(SELECT pg_catalog.split_part(setting, '=', 1)
-             FROM pg_catalog.unnest(COALESCE(r.rolconfig, ARRAY[]::text[])) setting
+       ARRAY(SELECT pg_catalog.split_part(config.setting, '=', 1)
+             FROM pg_catalog.unnest(COALESCE(r.rolconfig, ARRAY[]::text[])) AS config(setting)
              ORDER BY 1) AS role_setting_names,
        pg_catalog.pg_has_role(r.oid, 'MEMBER') AS runtime_member,
        pg_catalog.pg_has_role(r.oid, 'USAGE') AS runtime_inherits,
