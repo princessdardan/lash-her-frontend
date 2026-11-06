@@ -122,5 +122,23 @@ class CertificationProtocolTests(unittest.TestCase):
             worker.join(2);aborted.join(2);self.assertFalse(aborted.is_alive())
         self.assertEqual(events,['toggle-start','toggle-end','disable']);self.assertTrue(broker.outcome['nativeDisabled'])
 
+    def test_continuous_boundary_requires_full_features_writer_and_source_selected_native_state(self):
+        broker=self.broker;broker.native_mutex=threading.Lock();broker.native_expected=False
+        broker.scope=type('Scope',(),{'require_frontend':lambda *args:None,'require_configuration':lambda *args:None})()
+        broker.selected={};broker.jobs={'frontend':{}};broker.configuration=self.directory;broker.runtime_current=[];broker.process_snapshot=[]
+        broker._runtime_processes=lambda:[];broker.last_api_verified=time.monotonic();broker.last_boundary=0
+        for mode in ('auth-preparation','browser-pending','native-window','fault-drop-after-ack'):
+            broker.initial['certificationPlan']['mode']=mode
+            with self.subTest(mode=mode),patch.object(parent.runtime,'check_containers',return_value=[]):
+                full=unittest.mock.Mock(return_value={'nativeEnabled':False});broker._native_observe=full
+                broker._verify_boundary();full.assert_called_once();self.assertGreater(broker.last_boundary,0)
+                broker._native_observe=lambda:{'nativeEnabled':True}
+                with self.assertRaisesRegex(ValueError,'NATIVE_STATE_DRIFT'):broker._verify_boundary()
+                broker._native_observe=unittest.mock.Mock(side_effect=ValueError('PROTECTED_BINDING_DRIFT'))
+                with self.assertRaisesRegex(ValueError,'PROTECTED_BINDING_DRIFT'):broker._verify_boundary()
+        broker.initial['certificationPlan']['mode']='contain-native';broker._native_observe=unittest.mock.Mock(side_effect=AssertionError('expired private probe used'))
+        with patch.object(parent.runtime,'check_containers',return_value=[]),patch.object(parent.native,'observe_metadata',return_value={'nativeEnabled':True}) as metadata:
+            broker._verify_boundary();metadata.assert_called_once();broker._native_observe.assert_not_called()
+
 
 if __name__=='__main__':unittest.main()

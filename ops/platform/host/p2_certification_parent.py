@@ -214,6 +214,7 @@ class P2CertificationBroker(Broker):
         self.certification_started=time.monotonic();self.native_mutex=threading.Lock();self.boundary_stop=threading.Event();self.boundary_thread=None
         self.fault_stage=None;self.runtime_current=None;self.last_boundary=None;self.external_armed=False
         self.native_enable_attempted=False;self.admission_fd=None;self.process_snapshot=None;self.api_cycle=0
+        self.native_expected=False
         self.api_mutex=threading.Lock();self.last_api_verified=0;self.prepared_terminal=None
         self.suspension_stage=None;self.authentication_issued=False;self.browser_retained=None;self.pending_retained=None
         super().initialize()
@@ -310,7 +311,15 @@ class P2CertificationBroker(Broker):
         finally:runtime._command_scope.reset(token)
         require(self._runtime_processes()==self.process_snapshot,'P2_CERTIFICATION_PROCESS_OR_MOUNT_CHANGED')
         self._gateway_current()
-        native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check))
+        if self.initial['certificationPlan']['mode']=='contain-native':
+            native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check))
+        else:
+            # The same source mutex serializes toggles and healthy readbacks.
+            # A provider enable or feature/writer drift outside our declared
+            # action must revoke the stage, including browser/authentication.
+            with self.native_mutex:
+                expected=False if self.initial['certificationPlan']['mode'] in ('auth-preparation','browser-pending') else self.native_expected
+                require(self._native_observe()['nativeEnabled'] is expected,'P2_CERTIFICATION_NATIVE_STATE_DRIFT')
         if time.monotonic()-self.last_api_verified>=10:self._refresh_api()
         self.last_boundary=time.monotonic()
 
@@ -345,9 +354,12 @@ class P2CertificationBroker(Broker):
                 require(gateway.get('newWork') is False and gateway.get('recovery') is True and all(gateway[category][key]==0 for category in ('active','uncertain') for key in ('newWork','recovery')),
                     'P2_CERTIFICATION_NATIVE_GATEWAY_BARRIER_REQUIRED')
                 self.native_enable_attempted=True
-            elif native.observe_metadata(context,client)['nativeEnabled'] is False:return {'status':'P2_NATIVE_ALREADY_DISABLED','observation':native.observe_metadata(context,client)}
+            elif native.observe_metadata(context,client)['nativeEnabled'] is False:
+                self.native_expected=False
+                return {'status':'P2_NATIVE_ALREADY_DISABLED','observation':native.observe_metadata(context,client)}
             attempt=self.directory/('provider-'+('enable' if request['enabled'] else 'disable')+'-'+str(request['id']));attempt.mkdir(mode=0o700)
-            return native.set_enabled(context,client,request['enabled'],attempt,self.check)
+            observed=native.set_enabled(context,client,request['enabled'],attempt,self.check)
+            self.native_expected=request['enabled'];return observed
 
     def _native_observe(self):
         result=native.observe(self._native_context(),LockedClient(self.vercel,self.check))

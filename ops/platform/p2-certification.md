@@ -87,7 +87,12 @@ The inherited host flock and independent source-selected supervisor remain live.
 Before arming and continuously, the host joins both API read-only/current proofs
 through each exact image's mandatory verifyOperatorRoles export, ten existing
 same-image/process/mount inventories, actual gateway admission inode/counters,
-source/config hashes, and protected frontend features/writer binding. No SQL
+source/config hashes, and full protected frontend features/writer binding.
+Healthy readbacks are serialized with the source-owned native-toggle mutex;
+authentication/browser require literal nativeOFF, and native/fault require the
+last positively observed source-selected toggle state. A provider change outside
+that transition revokes the stage. Containment remains metadata-only even after
+private-probe expiry. No SQL
 executor, role creation, LOGIN reopening, build, promotion or runtime replacement
 is exposed. The parent never claims a missing original frontend SQL terminal.
 
