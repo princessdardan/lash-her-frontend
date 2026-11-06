@@ -8637,5 +8637,398 @@
       "sdkDependenciesSha256": "45c554d096fbf33ecc8a7aabbc24f077e07dbc0b073c52daaf998bb1d8dae7b1",
       "sqlCredentialRequirementsSha256": "964bc3eaa1eba4d7509289f0e8265344434b0fe95c9de6862a20120cf21effc8"
     }
+  ],
+  "operationGateAudit": [
+    {
+      "id": "location-installation-state-before-client-id",
+      "sourceGroups": [
+        "location-oauth-boundary"
+      ],
+      "wholeSqlExclusionFromOutboundKeyAbsence": false,
+      "steps": [
+        {
+          "ordinal": 1,
+          "operation": "validate-location",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "792509385b4d663c542b477b16f80c6efbbbfd9c",
+            "sha256": "c87f25ac8a813a6d4a2b4cef96668fe26eb72af2f2b7e616104b878512d41fcf",
+            "lineStart": 31,
+            "lineEnd": 31,
+            "excerptSha256": "4efb87bbcfc25001f8307228a7109a2b358a668db633c41f45a6e43ee0d4355e"
+          }
+        },
+        {
+          "ordinal": 2,
+          "operation": "insert-oauth-state",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "792509385b4d663c542b477b16f80c6efbbbfd9c",
+            "sha256": "c87f25ac8a813a6d4a2b4cef96668fe26eb72af2f2b7e616104b878512d41fcf",
+            "lineStart": 34,
+            "lineEnd": 34,
+            "excerptSha256": "9914282207b531cd70567eefb7db13f2338b496b16f3e9b0076ff50d0aef7f5e"
+          }
+        },
+        {
+          "ordinal": 3,
+          "operation": "read-client-id-after-insert",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "792509385b4d663c542b477b16f80c6efbbbfd9c",
+            "sha256": "c87f25ac8a813a6d4a2b4cef96668fe26eb72af2f2b7e616104b878512d41fcf",
+            "lineStart": 41,
+            "lineEnd": 41,
+            "excerptSha256": "1b04b867a5dac209f07f5dae0fcd28dac4c579f60bfc7b82bf621e00b39d12c8"
+          }
+        }
+      ]
+    },
+    {
+      "id": "agency-installation-url-before-state",
+      "sourceGroups": [
+        "agency-oauth-variant"
+      ],
+      "wholeSqlExclusionFromOutboundKeyAbsence": false,
+      "steps": [
+        {
+          "ordinal": 1,
+          "operation": "validate-location",
+          "source": {
+            "sourceCommit": "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "a195c5a1f1d80ff30dfbfc6a39a6c333361370e8",
+            "sha256": "02395084388ee43006b14605e4745090066383fd1c023cffb7bc33b0b1a286c8",
+            "lineStart": 35,
+            "lineEnd": 35,
+            "excerptSha256": "4efb87bbcfc25001f8307228a7109a2b358a668db633c41f45a6e43ee0d4355e"
+          }
+        },
+        {
+          "ordinal": 2,
+          "operation": "construct-authorization-url",
+          "source": {
+            "sourceCommit": "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "a195c5a1f1d80ff30dfbfc6a39a6c333361370e8",
+            "sha256": "02395084388ee43006b14605e4745090066383fd1c023cffb7bc33b0b1a286c8",
+            "lineStart": 37,
+            "lineEnd": 37,
+            "excerptSha256": "4c9043dafdb9c3477491da21e592bece5e70f83bc9a28998dbbc6754122df4a2"
+          }
+        },
+        {
+          "ordinal": 3,
+          "operation": "insert-oauth-state",
+          "source": {
+            "sourceCommit": "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "a195c5a1f1d80ff30dfbfc6a39a6c333361370e8",
+            "sha256": "02395084388ee43006b14605e4745090066383fd1c023cffb7bc33b0b1a286c8",
+            "lineStart": 39,
+            "lineEnd": 39,
+            "excerptSha256": "9914282207b531cd70567eefb7db13f2338b496b16f3e9b0076ff50d0aef7f5e"
+          }
+        }
+      ]
+    },
+    {
+      "id": "location-oauth-boundary-callback-claim-before-exchange",
+      "sourceGroups": [
+        "location-oauth-boundary"
+      ],
+      "wholeSqlExclusionFromOutboundKeyAbsence": false,
+      "steps": [
+        {
+          "ordinal": 1,
+          "operation": "claim-delete-oauth-state",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "792509385b4d663c542b477b16f80c6efbbbfd9c",
+            "sha256": "c87f25ac8a813a6d4a2b4cef96668fe26eb72af2f2b7e616104b878512d41fcf",
+            "lineStart": 94,
+            "lineEnd": 94,
+            "excerptSha256": "89f25e14e5e1f08b5f814e428bcd90e1bbaac5b06feea87977372b65134ae110"
+          }
+        },
+        {
+          "ordinal": 2,
+          "operation": "exchange-token-after-state-claim",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "792509385b4d663c542b477b16f80c6efbbbfd9c",
+            "sha256": "c87f25ac8a813a6d4a2b4cef96668fe26eb72af2f2b7e616104b878512d41fcf",
+            "lineStart": 97,
+            "lineEnd": 97,
+            "excerptSha256": "8548098760ce807e746c82e9f44315586209d1fe91cdfb754a2402ce861c8189"
+          }
+        },
+        {
+          "ordinal": 3,
+          "operation": "encrypt-after-provider-acceptance",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "792509385b4d663c542b477b16f80c6efbbbfd9c",
+            "sha256": "c87f25ac8a813a6d4a2b4cef96668fe26eb72af2f2b7e616104b878512d41fcf",
+            "lineStart": 98,
+            "lineEnd": 98,
+            "excerptSha256": "704c0be85f8fa7bb754d8c6f901c11a3c779100c9a8984ee5857aa3a126da2a5"
+          }
+        },
+        {
+          "ordinal": 4,
+          "operation": "upsert-connection-after-encryption",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "792509385b4d663c542b477b16f80c6efbbbfd9c",
+            "sha256": "c87f25ac8a813a6d4a2b4cef96668fe26eb72af2f2b7e616104b878512d41fcf",
+            "lineStart": 103,
+            "lineEnd": 103,
+            "excerptSha256": "94772ca06e5480ef4de2ce8bd365595ce1b21427dbed4abcc1b436dfa015b666"
+          }
+        }
+      ]
+    },
+    {
+      "id": "agency-oauth-variant-callback-claim-before-exchange",
+      "sourceGroups": [
+        "agency-oauth-variant"
+      ],
+      "wholeSqlExclusionFromOutboundKeyAbsence": false,
+      "steps": [
+        {
+          "ordinal": 1,
+          "operation": "claim-delete-oauth-state",
+          "source": {
+            "sourceCommit": "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "a195c5a1f1d80ff30dfbfc6a39a6c333361370e8",
+            "sha256": "02395084388ee43006b14605e4745090066383fd1c023cffb7bc33b0b1a286c8",
+            "lineStart": 131,
+            "lineEnd": 131,
+            "excerptSha256": "89f25e14e5e1f08b5f814e428bcd90e1bbaac5b06feea87977372b65134ae110"
+          }
+        },
+        {
+          "ordinal": 2,
+          "operation": "exchange-token-after-state-claim",
+          "source": {
+            "sourceCommit": "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "a195c5a1f1d80ff30dfbfc6a39a6c333361370e8",
+            "sha256": "02395084388ee43006b14605e4745090066383fd1c023cffb7bc33b0b1a286c8",
+            "lineStart": 134,
+            "lineEnd": 134,
+            "excerptSha256": "8548098760ce807e746c82e9f44315586209d1fe91cdfb754a2402ce861c8189"
+          }
+        },
+        {
+          "ordinal": 3,
+          "operation": "encrypt-after-provider-acceptance",
+          "source": {
+            "sourceCommit": "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "a195c5a1f1d80ff30dfbfc6a39a6c333361370e8",
+            "sha256": "02395084388ee43006b14605e4745090066383fd1c023cffb7bc33b0b1a286c8",
+            "lineStart": 135,
+            "lineEnd": 135,
+            "excerptSha256": "704c0be85f8fa7bb754d8c6f901c11a3c779100c9a8984ee5857aa3a126da2a5"
+          }
+        },
+        {
+          "ordinal": 4,
+          "operation": "upsert-connection-after-encryption",
+          "source": {
+            "sourceCommit": "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6",
+            "file": "src/lib/highlevel/oauth.ts",
+            "blobOid": "a195c5a1f1d80ff30dfbfc6a39a6c333361370e8",
+            "sha256": "02395084388ee43006b14605e4745090066383fd1c023cffb7bc33b0b1a286c8",
+            "lineStart": 140,
+            "lineEnd": 140,
+            "excerptSha256": "94772ca06e5480ef4de2ce8bd365595ce1b21427dbed4abcc1b436dfa015b666"
+          }
+        }
+      ]
+    },
+    {
+      "id": "signed-webhook-before-token-decryption",
+      "sourceGroups": [
+        "location-oauth-boundary",
+        "agency-oauth-variant"
+      ],
+      "wholeSqlExclusionFromOutboundKeyAbsence": false,
+      "steps": [
+        {
+          "ordinal": 1,
+          "operation": "presence-check-location",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/webhook.ts",
+            "blobOid": "31d3f439ba08b882dab20be616cf682f841a4e2f",
+            "sha256": "e5a651aca9be7ac8b7dbd6619133caec67b77867529446e14ee500d2d004149e",
+            "lineStart": 147,
+            "lineEnd": 147,
+            "excerptSha256": "49f4e370f603196f6f88f9c54f93d8457bcb0b999cf4a63eeb8ffbd087a1b89f"
+          }
+        },
+        {
+          "ordinal": 2,
+          "operation": "verify-built-in-provider-signature",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/webhook.ts",
+            "blobOid": "31d3f439ba08b882dab20be616cf682f841a4e2f",
+            "sha256": "e5a651aca9be7ac8b7dbd6619133caec67b77867529446e14ee500d2d004149e",
+            "lineStart": 152,
+            "lineEnd": 152,
+            "excerptSha256": "a33666f038f81d366660101c7c2bb2b337e0f09e7b6677bba98fc74800caa134"
+          }
+        },
+        {
+          "ordinal": 3,
+          "operation": "match-event-location",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/webhook.ts",
+            "blobOid": "31d3f439ba08b882dab20be616cf682f841a4e2f",
+            "sha256": "e5a651aca9be7ac8b7dbd6619133caec67b77867529446e14ee500d2d004149e",
+            "lineStart": 162,
+            "lineEnd": 162,
+            "excerptSha256": "bc5071493b547f8e94a91a798763f54b4d010b707bc61ac9762ae4e293f90628"
+          }
+        },
+        {
+          "ordinal": 4,
+          "operation": "invoke-persistence",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/webhook.ts",
+            "blobOid": "31d3f439ba08b882dab20be616cf682f841a4e2f",
+            "sha256": "e5a651aca9be7ac8b7dbd6619133caec67b77867529446e14ee500d2d004149e",
+            "lineStart": 177,
+            "lineEnd": 177,
+            "excerptSha256": "f1d6d4713d398b7b00d9312f2e7ba44e8f39f5686ad07e6db015ed0c1b0cf01a"
+          }
+        },
+        {
+          "ordinal": 5,
+          "operation": "insert-receipt-before-event-branch",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/webhook.ts",
+            "blobOid": "31d3f439ba08b882dab20be616cf682f841a4e2f",
+            "sha256": "e5a651aca9be7ac8b7dbd6619133caec67b77867529446e14ee500d2d004149e",
+            "lineStart": 43,
+            "lineEnd": 43,
+            "excerptSha256": "70c31e24550ef51a8d31977a9a74693a79313a6f09476d375002a8eab6b77e8c"
+          }
+        },
+        {
+          "ordinal": 6,
+          "operation": "optional-uninstall-revocation",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/webhook.ts",
+            "blobOid": "31d3f439ba08b882dab20be616cf682f841a4e2f",
+            "sha256": "e5a651aca9be7ac8b7dbd6619133caec67b77867529446e14ee500d2d004149e",
+            "lineStart": 48,
+            "lineEnd": 48,
+            "excerptSha256": "18a9c1ce0975e2cc7fe9ffbb04879a1c956d6e386cb8241560c059aaaf74e86d"
+          }
+        }
+      ]
+    },
+    {
+      "id": "local-sql-writers-without-highlevel-credentials",
+      "sourceGroups": [
+        "location-oauth-boundary",
+        "agency-oauth-variant"
+      ],
+      "wholeSqlExclusionFromOutboundKeyAbsence": false,
+      "steps": [
+        {
+          "ordinal": 1,
+          "operation": "enqueue-crm-outbox-with-supplied-transaction",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/store.ts",
+            "blobOid": "8ffe974723457e3c48d09ac9ba4d75f43042d701",
+            "sha256": "2231c99e9c2147e46cd9bd7261b5d8b0856bff3d4fbf226bbf653c656cf520b1",
+            "lineStart": 86,
+            "lineEnd": 86,
+            "excerptSha256": "04261f59a2e6147b839928f94c94f7b2383e9ec3527f39f1ca7d34cdf821406d"
+          }
+        },
+        {
+          "ordinal": 2,
+          "operation": "retention-deletes-oauth-states",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/highlevel/retention.ts",
+            "blobOid": "277dda710ff9c66c74064c529fcee6c57adacab1",
+            "sha256": "8320850bdda257a9d8a64464b15417dd2507c4be1acffbd93e1b1db46aea29cb",
+            "lineStart": 16,
+            "lineEnd": 16,
+            "excerptSha256": "231a09ac563aa7f3fc2147ccd231f60c39462ebc0c7e0dbac325108e5bfc5722"
+          }
+        },
+        {
+          "ordinal": 3,
+          "operation": "admin-reconciliation-updates-effect-state",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/app/admin/(protected)/marketing/highlevel/actions.ts",
+            "blobOid": "df2e5cf49f6e7e37874cbdcf9b7e79e82c0bb186",
+            "sha256": "d8b6a31a2b35bc45e61cf66e41a0f9e3dc6d59c6863050a241ed3fa100874d86",
+            "lineStart": 65,
+            "lineEnd": 65,
+            "excerptSha256": "d0f4339b7df05157cec0e4afe4362109e16d466bcf6a2d695f5b7bb171bb64aa"
+          }
+        }
+      ]
+    },
+    {
+      "id": "application-database-chain",
+      "sourceGroups": [
+        "location-oauth-boundary",
+        "agency-oauth-variant"
+      ],
+      "wholeSqlExclusionFromOutboundKeyAbsence": false,
+      "steps": [
+        {
+          "ordinal": 1,
+          "operation": "cached-pool-created-from-checkout-url",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/private-db/client.ts",
+            "blobOid": "17299078c0c0eae29b99f909d24b2dcb5a616ecb",
+            "sha256": "15bb6d9b4debdc644797385b1bcfd201060378c9cc872bdfd6426a0a467ae5d3",
+            "lineStart": 23,
+            "lineEnd": 23,
+            "excerptSha256": "dbf2d843276b04efd41fc78cb20ea66a24b9f8d69e8ba034f34b9f7588f43ca3"
+          }
+        },
+        {
+          "ordinal": 2,
+          "operation": "only-application-database-url-name",
+          "source": {
+            "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+            "file": "src/lib/env/private-checkout.ts",
+            "blobOid": "17d5cd0cbff6e9b92738338ed944e2412a1705c9",
+            "sha256": "e6d50773842ddc70b3d32422c41028f5214d4724ac519bceaadc4578226d8f04",
+            "lineStart": 11,
+            "lineEnd": 11,
+            "excerptSha256": "c13c01d47caaa22a0dcda6400ed574f384b5061298d0b8edbca3f08b57c0c9ab"
+          }
+        }
+      ]
+    }
   ]
 }

@@ -27,7 +27,10 @@
   "sqlOrProviderCalls": false,
   "liveControls": false,
   "files": {
-    "README.md": "6a9fc77d01e2b332d27af85628baaefaea889c09174b9ab222391d89c882226d",
-    "audit.json": "2a99639449bea778b6fb0f107dcbb7705cb2c7248ed89c5e3b9eff3d4a3958e6"
-  }
+    "README.md": "005987b3a2c4ed07fa54b595028f139c4cd90fbebdeb5d9143098329097232f1",
+    "audit.json": "b7ae5c27e2180fc1227af7d0cd192325f12dbb546209678632db6704d246230c"
+  },
+  "wholeOperationGateTraces": 7,
+  "wholeOperationSourceAnchors": 25,
+  "outboundAbsenceDoesNotProveCallbackOrStateSqlAbsence": true
 }
