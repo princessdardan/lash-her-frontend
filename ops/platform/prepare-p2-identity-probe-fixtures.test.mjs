@@ -45,12 +45,15 @@ function recoveryReceipt(changes = {}) {
   const privilegeFaults = ["frontend-runtime-inbound", "frontend-runtime-outbound", "frontend-runtime-rogue-admin", "frontend-owner-inbound",
     "frontend-owner-outbound", "frontend-sequence-update", "frontend-default-unexpected-grantee", "frontend-global-default",
     "frontend-table-grant-option", "frontend-default-grant-option", "frontend-table-references", "frontend-table-trigger",
+    "frontend-operator-superuser", "frontend-runtime-role-settings", "frontend-runtime-rogue-ownership",
+    "frontend-runtime-database-settings", "frontend-runtime-public-schema-access",
     ...["course", "community"].flatMap(service => apiFaults.map(fault => `${service}-${fault}`))].sort();
   return JSON.stringify({ status: "OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS", serverMajor: 18, frontendMigrations: 83,
-    courseMigrations: 22, communityMigrations: 11, checks: 50, skipped: 0, fixtureOnly: true, providerTouched: false,
-    privilegeFaults, frontendInitialPrivilegeRefusals: 12, frontendContinuousPrivilegeRefusals: 12, apiPrivilegeRefusals: 22,
+    courseMigrations: 22, communityMigrations: 11, checks: 55, skipped: 0, fixtureOnly: true, providerTouched: false,
+    privilegeFaults, frontendInitialPrivilegeRefusals: 17, frontendContinuousPrivilegeRefusals: 17, apiPrivilegeRefusals: 22,
     legacyApiVerifierRefusals: 2, frontendCreatorPolicy: "actual-non-superuser-automatic-admin-plus-explicit-owner-set",
-    frontendCreatorMemberships: 3, environmentIsolation: { nodeOptionsPositiveControlExecuted: true, poisonedParentEnvironment: true,
+    frontendCreatorMemberships: 3, frontendOperatorSearchPathPinned: true,
+    environmentIsolation: { nodeOptionsPositiveControlExecuted: true, poisonedParentEnvironment: true,
       ambientNodeOptionsExecuted: false, ambientConfigVariablesAbsent: true, childEnvironmentAllowlistEnforced: true },
     noSqlReplay: true, originalFrontendTerminalRecreated: false,
     ...changes }) + "\n";
@@ -176,9 +179,10 @@ test("recovery mode runs the fixed PostgreSQL 18 fixture after all identity chec
     assert.equal(result.recovery.status, "OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS");
     assert.equal(result.recovery.serverMajor, 18); assert.equal(result.recovery.frontendMigrations, 83);
     assert.equal(result.recovery.courseMigrations, 22); assert.equal(result.recovery.communityMigrations, 11);
-    assert.equal(result.recovery.checks, 50); assert.equal(result.recovery.skipped, 0); assert.equal(result.recovery.privilegeFaults.length, 34);
-    assert.equal(result.recovery.frontendInitialPrivilegeRefusals, 12); assert.equal(result.recovery.frontendContinuousPrivilegeRefusals, 12);
+    assert.equal(result.recovery.checks, 55); assert.equal(result.recovery.skipped, 0); assert.equal(result.recovery.privilegeFaults.length, 39);
+    assert.equal(result.recovery.frontendInitialPrivilegeRefusals, 17); assert.equal(result.recovery.frontendContinuousPrivilegeRefusals, 17);
     assert.equal(result.recovery.apiPrivilegeRefusals, 22); assert.equal(result.recovery.legacyApiVerifierRefusals, 2);
+    assert.equal(result.recovery.frontendOperatorSearchPathPinned, true);
     assert.equal(result.recovery.environmentIsolation.childEnvironmentAllowlistEnforced, true);
     assert.equal(JSON.stringify(result).includes(sourceReadToken), false);
     const dockerIndex = value.calls.findIndex(call => call.file === "docker");
@@ -256,9 +260,11 @@ test("refuses skipped, failed, partial, or duplicated TAP summaries", () => {
 test("recovery receipt refuses wrong major, migration counts, skips, replay, or extra output", () => {
   for (const output of [recoveryReceipt({ serverMajor: 16 }), recoveryReceipt({ frontendMigrations: 82 }),
     recoveryReceipt({ courseMigrations: 21 }), recoveryReceipt({ communityMigrations: 10 }), recoveryReceipt({ skipped: 1 }),
-    recoveryReceipt({ checks: 14 }), recoveryReceipt({ privilegeFaults: [] }), recoveryReceipt({ frontendInitialPrivilegeRefusals: 11 }),
-    recoveryReceipt({ frontendContinuousPrivilegeRefusals: 11 }), recoveryReceipt({ apiPrivilegeRefusals: 21 }),
+    recoveryReceipt({ checks: 14 }), recoveryReceipt({ checks: 50 }), recoveryReceipt({ privilegeFaults: [] }),
+    recoveryReceipt({ frontendInitialPrivilegeRefusals: 16 }), recoveryReceipt({ frontendContinuousPrivilegeRefusals: 16 }),
+    recoveryReceipt({ apiPrivilegeRefusals: 21 }),
     recoveryReceipt({ legacyApiVerifierRefusals: 1 }), recoveryReceipt({ frontendCreatorMemberships: 2 }),
+    recoveryReceipt({ frontendOperatorSearchPathPinned: false }),
     recoveryReceipt({ environmentIsolation: { nodeOptionsPositiveControlExecuted: true } }), recoveryReceipt({ noSqlReplay: false }),
     recoveryReceipt({ originalFrontendTerminalRecreated: true }), recoveryReceipt() + "private-output\n"])
     assert.throws(() => parseP2RecoveryPostgres18Receipt(output), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);

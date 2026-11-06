@@ -27,6 +27,8 @@ const RECOVERY_PRIVILEGE_FAULTS = Object.freeze([
   "frontend-runtime-inbound", "frontend-runtime-outbound", "frontend-runtime-rogue-admin", "frontend-owner-inbound",
   "frontend-owner-outbound", "frontend-sequence-update", "frontend-default-unexpected-grantee", "frontend-global-default",
   "frontend-table-grant-option", "frontend-default-grant-option", "frontend-table-references", "frontend-table-trigger",
+  "frontend-operator-superuser", "frontend-runtime-role-settings", "frontend-runtime-rogue-ownership",
+  "frontend-runtime-database-settings", "frontend-runtime-public-schema-access",
   ...["course", "community"].flatMap(service => ["runtime-inbound", "migration-inbound", "runtime-outbound", "sequence-update",
     "table-trigger", "table-references", "default-unexpected-grantee", "default-sequence-update", "global-default", "table-grant-option",
     "default-grant-option"].map(fault => `${service}-${fault}`)),
@@ -235,9 +237,10 @@ export function parseP2RecoveryPostgres18Receipt(output) {
     Object.entries(RECOVERY_ENVIRONMENT_ISOLATION).every(([name, expected]) => isolation[name] === expected);
   demand(receipt?.status === "OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS" && receipt.serverMajor === 18 &&
     receipt.frontendMigrations === 83 && receipt.courseMigrations === 22 && receipt.communityMigrations === 11 &&
-    receipt.checks === 50 && receipt.skipped === 0 && receipt.fixtureOnly === true && receipt.providerTouched === false &&
-    receipt.frontendInitialPrivilegeRefusals === 12 && receipt.frontendContinuousPrivilegeRefusals === 12 &&
+    receipt.checks === 55 && receipt.skipped === 0 && receipt.fixtureOnly === true && receipt.providerTouched === false &&
+    receipt.frontendInitialPrivilegeRefusals === 17 && receipt.frontendContinuousPrivilegeRefusals === 17 &&
     receipt.apiPrivilegeRefusals === 22 && receipt.legacyApiVerifierRefusals === 2 && receipt.frontendCreatorMemberships === 3 &&
+    receipt.frontendOperatorSearchPathPinned === true &&
     receipt.frontendCreatorPolicy === "actual-non-superuser-automatic-admin-plus-explicit-owner-set" &&
     JSON.stringify(receipt.privilegeFaults) === JSON.stringify(RECOVERY_PRIVILEGE_FAULTS) &&
     isolationMatches &&
@@ -352,7 +355,8 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
         privilegeFaults: receipt.privilegeFaults, frontendInitialPrivilegeRefusals: receipt.frontendInitialPrivilegeRefusals,
         frontendContinuousPrivilegeRefusals: receipt.frontendContinuousPrivilegeRefusals, apiPrivilegeRefusals: receipt.apiPrivilegeRefusals,
         legacyApiVerifierRefusals: receipt.legacyApiVerifierRefusals, frontendCreatorPolicy: receipt.frontendCreatorPolicy,
-        frontendCreatorMemberships: receipt.frontendCreatorMemberships, environmentIsolation: receipt.environmentIsolation,
+        frontendCreatorMemberships: receipt.frontendCreatorMemberships,
+        frontendOperatorSearchPathPinned: receipt.frontendOperatorSearchPathPinned, environmentIsolation: receipt.environmentIsolation,
         noSqlReplay: receipt.noSqlReplay, originalFrontendTerminalRecreated: receipt.originalFrontendTerminalRecreated };
     }
     mark(diagnostic, "exact-source-proof", "frontend");
