@@ -16,6 +16,13 @@ export const isRevision = (value) => typeof value === "string" && /^[0-9a-f]{40}
 // GitHub's authenticated manual dispatch is the source-build approval.
 // This policy does not claim independence from a compromised GitHub account.
 export const SOURCE_APPROVAL_MODE = "single-operator-dispatch";
+
+// Source implementation does not approve Google allocation. Register a literal
+// case only after the exact administrator, project, private custody paths and
+// SDK closure have been selected and the concrete action separately approved.
+// These cases never confer target registration or first-install authority.
+export const P2Q_GOOGLE_PROJECT_CAPTURE_CASES = Object.freeze({});
+
 export function assertSourceContext(context, { requirePhase2 = false } = {}) {
   const id = (value) => typeof value === "string" && /^[1-9][0-9]{0,19}$/u.test(value);
   if (context?.repository !== SOURCE_REPOSITORIES.frontend || context.repositoryId !== SOURCE_REPOSITORY_IDS.frontend ||
