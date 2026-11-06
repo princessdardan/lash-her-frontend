@@ -46,16 +46,24 @@ test("the actual owned source-copy branch produces an executable migration CLI w
 for (const fixture of [
   { name: "source CI", file: "ci.yml", job: "frontend-operator-migrations", prefix: "$PWD", marker: "FRONTEND_MIGRATION_EXPORT_SCHEMA=true" },
   { name: "candidate rehearsal", file: "platform-artifacts.yml", job: "candidate", prefix: "$PWD/sources/lash-her-frontend", marker: "frontend-migration-rehearsal.json" },
-]) test(`${fixture.name} readonly mounts can load the actual legacy and P2 response validators`, () => {
+]) test(`${fixture.name} readonly mounts and owned fixture can load the actual protected route and validators`, () => {
   const workflow = parse(readFileSync(new URL(`../../.github/workflows/${fixture.file}`, import.meta.url), "utf8"));
   const run = workflow.jobs[fixture.job].steps.find(step => step.run?.includes(fixture.marker))?.run;
   assert.ok(run);
   const mounts = [...run.matchAll(/--mount "type=bind,src=([^,"]+),dst=([^,"]+),readonly"/gu)]
     .map(([, source, destination]) => ({ source, destination })).sort((a, b) => b.destination.length - a.destination.length);
+  const dockerfile = readFileSync(new URL("./Dockerfile.frontend-migration-test", import.meta.url), "utf8");
+  const baked = [...dockerfile.matchAll(/^COPY ([A-Za-z0-9/._-]+) (\/source\/[A-Za-z0-9/._-]+)$/gmu)]
+    .map(([, source, destination]) => ({ source, destination }));
   const mountedSource = file => {
     const destination = `/source/${file}`;
     const mount = mounts.find(item => destination === item.destination || destination.startsWith(`${item.destination}/`));
-    assert.ok(mount, `Owned fixture does not mount ${file}`);
+    if (!mount) {
+      const imageFile = baked.find(item => item.destination === destination);
+      assert.ok(imageFile, `Owned fixture does not mount or package ${file}`);
+      assert.equal(imageFile.source, "ops/gateway/routes.json", "Only the reviewed gateway policy belongs in the owned fixture");
+      return resolve(source, imageFile.source);
+    }
     assert.ok(mount.source === fixture.prefix || mount.source.startsWith(`${fixture.prefix}/`));
     return resolve(source, mount.source.slice(fixture.prefix.length).replace(/^\//u, ""), destination.slice(mount.destination.length).replace(/^\//u, ""));
   };
@@ -68,9 +76,11 @@ for (const fixture of [
     if (file.endsWith(".json")) return;
     const syntax = ts.createSourceFile(file, readFileSync(join(source, file), "utf8"), ts.ScriptTarget.Latest, true);
     for (const statement of syntax.statements) {
-      if (!ts.isImportDeclaration(statement) || statement.importClause?.isTypeOnly || !ts.isStringLiteral(statement.moduleSpecifier) ||
-        !statement.moduleSpecifier.text.startsWith(".")) continue;
-      const base = resolve(source, dirname(file), statement.moduleSpecifier.text);
+      if (!(ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) || statement.isTypeOnly ||
+        statement.importClause?.isTypeOnly || !statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+      const specifier = statement.moduleSpecifier.text;
+      if (!specifier.startsWith(".") && !specifier.startsWith("@/")) continue;
+      const base = specifier.startsWith("@/") ? resolve(source, "src", specifier.slice(2)) : resolve(source, dirname(file), specifier);
       const target = [base, `${base}.ts`, `${base}.mjs`, `${base}.js`, `${base}.json`, join(base, "index.ts")]
         .find(path => existsSync(path) && statSync(path).isFile());
       assert.ok(target, `Missing actual source import: ${statement.moduleSpecifier.text}`);
@@ -80,7 +90,8 @@ for (const fixture of [
   try {
     for (const file of ["package.json", "tsconfig.json", "scripts/register-server-only-test.mjs"]) copy(file);
     symlinkSync(realpathSync(mountedSource("node_modules")), join(app, "node_modules"), "dir");
-    const entries = ["src/lib/api-integration/response-validation.ts", "src/lib/api-integration/candidate-validation.ts"];
+    const entries = ["src/lib/api-integration/response-validation.ts", "src/lib/api-integration/candidate-validation.ts",
+      "src/app/api/internal/release-probe/route.ts"];
     for (const file of entries) copyRuntimeImports(file);
     const code = `for (const url of ${JSON.stringify(entries.map(file => pathToFileURL(join(app, file)).href))}) await import(url); console.log("RESPONSE_VALIDATOR_MOUNT_CLOSURE_PASS");`;
     const imported = spawnSync(process.execPath, ["--import", "tsx", "--import", join(app, "scripts/register-server-only-test.mjs"), "--input-type=module", "--eval", code], {
@@ -88,5 +99,13 @@ for (const fixture of [
     });
     assert.ifError(imported.error); assert.equal(imported.status, 0, imported.stderr);
     assert.match(imported.stdout, /RESPONSE_VALIDATOR_MOUNT_CLOSURE_PASS/u);
+    // The previous CI context omitted this actual eager dependency. Removing
+    // only it must reproduce the real import failure, without DB/network calls.
+    rmSync(join(app, "ops/gateway/routes.json"));
+    const missing = spawnSync(process.execPath, ["--import", "tsx", "--import", join(app, "scripts/register-server-only-test.mjs"), "--input-type=module", "--eval", code], {
+      cwd: app, env: { PATH: process.env.PATH, NODE_ENV: "test" }, encoding: "utf8", timeout: 10_000,
+    });
+    assert.ifError(missing.error); assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /Cannot find module '[^']*ops\/gateway\/routes\.json'/u);
   } finally { rmSync(app, { recursive: true, force: true }); }
 });

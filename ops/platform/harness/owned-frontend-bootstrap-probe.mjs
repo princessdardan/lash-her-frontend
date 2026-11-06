@@ -7,6 +7,7 @@ import { createServer } from "node:http";
 import { Client } from "pg";
 import { readMigrationCatalog } from "../frontend-schema.mjs";
 import { changeFrontendAdmission } from "../frontend-admission.mjs";
+import { safeOwnedBootstrapFailure } from "./owned-frontend-probe-diagnostics.mjs";
 
 let phase = "configuration";
 async function main() {
@@ -16,7 +17,9 @@ async function main() {
   assert.ok(Number.isInteger(port) && port > 0 && port < 65536 && [16, 18].includes(major));
   assert.match(password ?? "", /^owned-[a-f0-9-]{36}$/u);
   const target = { environment: "staging", host: "127.0.0.1", port, database: "frontend_admission_owned", user: "frontend_admission_protocol", serverMajor: major, targetSha256: "a".repeat(64) };
+  phase = "configuration-import-application-environment";
   const { VERCEL_PROJECT_BINDINGS } = await import("../../../src/lib/env/application-environment.mjs");
+  phase = "configuration-import-bootstrap-controls";
   const { BOOTSTRAP_DISABLED_FEATURES } = await import("../../../src/lib/writer-admission/bootstrap-probe.ts");
   const secret = "d".repeat(64), challenge = "e".repeat(64);
   const url = `postgresql://${target.user}:${password}@127.0.0.1:${port}/${target.database}?sslmode=verify-full`;
@@ -31,14 +34,19 @@ async function main() {
     API_GATEWAY_STAGING_ORIGIN: "https://gateway.example.invalid",
   });
   delete process.env.VERCEL_OIDC_TOKEN_FILE;
+  phase = "configuration-read-owned-ca";
   const operator = new Client({ host: target.host, port, database: target.database, user: "frontend_test_admin", password,
     ssl: { rejectUnauthorized: true, ca: readFileSync(process.env.NODE_EXTRA_CA_CERTS, "utf8") } });
-  await operator.connect();
   let server, calls = 0;
   const nativeFetch = globalThis.fetch, checks = [];
-  let epoch = (await operator.query("SELECT epoch::text FROM frontend_admission.control")).rows[0].epoch;
+  let epoch;
   const change = async (newWork, recovery) => { epoch = (await changeFrontendAdmission(operator, target, epoch, { newWork, recovery })).epoch; };
   try {
+    phase = "configuration-operator-connect";
+    await operator.connect();
+    phase = "configuration-read-admission-control";
+    epoch = (await operator.query("SELECT epoch::text FROM frontend_admission.control")).rows[0].epoch;
+    phase = "configuration-close-admission";
     await change(false, false);
     globalThis.fetch = async (input, init) => {
       const request = new Request(input, init), selected = new URL(request.url);
@@ -48,6 +56,7 @@ async function main() {
       assert.equal(request.headers.get("x-lash-workload-token"), workload);
       calls++; return Response.json({ courses: [] });
     };
+    phase = "configuration-import-protected-route";
     const { GET, HEAD } = await import("../../../src/app/api/internal/release-probe/route.ts");
     server = createServer(async (incoming, outgoing) => {
       try {
@@ -57,6 +66,7 @@ async function main() {
         outgoing.writeHead(result.status, Object.fromEntries(result.headers)); outgoing.end(Buffer.from(await result.arrayBuffer()));
       } catch { outgoing.writeHead(500); outgoing.end(); }
     });
+    phase = "configuration-start-loopback";
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
     const request = async (headers = {}) => fetch(`http://127.0.0.1:${server.address().port}/api/internal/release-probe`, {
       headers: { authorization: `Bearer ${secret}`, "x-lash-release-challenge": challenge, "x-lash-release-mode": "admission-bootstrap", ...headers },
@@ -105,4 +115,4 @@ async function main() {
     await operator.end();
   }
 }
-main().catch(() => { console.error(JSON.stringify({ status: "FRONTEND_BOOTSTRAP_PROBE_OWNED_FAILED", phase, providerTouched: false })); process.exitCode = 1; });
+main().catch(error => { console.error(JSON.stringify(safeOwnedBootstrapFailure(phase, error))); process.exitCode = 1; });
