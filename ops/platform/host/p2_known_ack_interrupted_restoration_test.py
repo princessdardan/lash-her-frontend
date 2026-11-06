@@ -187,6 +187,30 @@ class AuthorityTests(unittest.TestCase):
                     self.assertIs(value['nativeDisabled'],True if readback['nativeEnabled'] is False else None)
             self.assertEqual(client.return_value.request.call_count,2)
 
+    def test_actual_isolated_main_entry_reaches_platform_guard_with_single_class_identity(self):
+        import subprocess
+        import sys
+        program=r"""
+import io,json,runpy,sys
+from pathlib import Path
+path=Path(sys.argv[1]);sys.path.insert(0,str(path.parent))
+import migrate
+original=migrate.demand;refusals=[]
+def observe(ok,code):
+    if not ok:refusals.append(code)
+    return original(ok,code)
+migrate.demand=observe
+sys.stdin=io.TextIOWrapper(io.BytesIO((json.dumps({'mode':'known-ack-interrupted-restoration','environment':'staging','candidate':{'releaseId':'owned'},'recoveryActionId':'restore-new'})+'\n').encode()))
+try:runpy.run_path(str(path),run_name='__main__')
+except SystemExit:pass
+print(json.dumps(refusals))
+"""
+        result=subprocess.run([sys.executable,'-I','-B','-c',program,str(Path(c.__file__).resolve())],capture_output=True,text=True,timeout=10)
+        self.assertEqual(result.returncode,0)
+        import os
+        expected='P2_INSTALLED_GUARD_SOURCE_REQUIRED' if os.geteuid()==0 and sys.platform=='linux' else 'P2_LINUX_ROOT_GUARD_REQUIRED'
+        self.assertEqual(json.loads(result.stdout),[expected])
+
     def test_closed_source_dispatch_has_a_distinct_fenced_terminal(self):
         import p2_release_supervisor as s
         initial={'candidate':{'releaseId':'original'},'mode':c.MODE,'recoveryActionId':'restore-new'}
@@ -197,6 +221,64 @@ class AuthorityTests(unittest.TestCase):
         for change in ({'native_containment':lambda *_:{}},{'layout':s.RECOVERY_LAYOUT},{'observer_type':c.PhysicalObserver},{'broker_type':c.Broker}):
             with self.subTest(change=tuple(change)),self.assertRaisesRegex(ValueError,'FIXED_SOURCE_DISPATCH'):s.supervise(initial,**{**options,**change})
         self.assertEqual(s.C_LAYOUT['terminalStatus'],'P2_KNOWN_ACK_INTERRUPTED_RUNTIME_RESTORED_FENCED')
+
+
+class FallbackContainmentTests(unittest.TestCase):
+    """Actual scope/flock/child reaping; fixed provider/Docker projections."""
+    def run_case(self, active=False, native_failed=False, delete_failed=False, alive=False):
+        import fcntl
+        import os
+        import subprocess
+        import p2_release_broker as shared
+        import p2_release_supervisor as supervisor
+        from p2_release_scope import P2ReleaseScope
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder).resolve();lock=root/'host-lock';fd=os.open(lock,os.O_CREAT|os.O_RDWR,0o600);fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            child=subprocess.Popen(['python3','-I','-c','import time;time.sleep(30)'])
+            scope=P2ReleaseScope(fd,lock,lambda:None,{'fixture':'fallback'})
+            scope.processes.add(child)
+            broker=c.InterruptedKnownAckRestorationBroker({'candidate':{'releaseId':'owned'},'candidateSha256':'a'*64},lambda _:None)
+            broker.scope=scope;broker.observer=__import__('types').SimpleNamespace(probe=lambda _:None)
+            broker.source=root;broker.directory=root/'action';broker.directory.mkdir();broker.lock_fd=fd
+            broker.selected={'releaseId':'owned'};broker.armed_probe={'fixture':'armed'};broker.worker=object() if active else None
+            broker.guard_alive=alive;broker.safety_write=3 if alive else None
+            events=[];remaining={'lash-p2-recovery-current-':['a'*12],'lash-p2-certification-observer-':['b'*12]}
+            def reaped():
+                self.assertTrue(scope.revoked.is_set());self.assertIsNotNone(child.poll())
+            def native(*_args):
+                reaped();events.append('native')
+                if native_failed:raise ValueError('OWNED_NATIVE_UNKNOWN')
+                return {'nativeDisabled':True,'nativeDisableAttempted':True}
+            def command(args,*_args):
+                reaped()
+                if args[1:3]==['container','ls']:
+                    prefix=next(name for name in remaining if any(name in str(value) for value in args));events.append(prefix);return '\n'.join(remaining[prefix])
+                self.assertEqual(args[1:3],['rm','--force'])
+                if delete_failed and args[-1]=='a'*12:raise ValueError('OWNED_DELETE_UNKNOWN')
+                for ids in remaining.values():
+                    if args[-1] in ids:ids.remove(args[-1])
+                return ''
+            try:
+                with patch.object(shared,'LOCK',lock),patch.object(shared,'verify_source_closure'),patch.object(c.prior,'capture_before_stop',side_effect=ValueError('OWNED_CAPTURE_UNKNOWN')),\
+                     patch.object(c.migrate,'suspend_runtime',side_effect=lambda *_:events.append('stop')),patch.object(c,'contain_interrupted_native',side_effect=native),\
+                     patch.object(c.runtime,'command',side_effect=command),patch.object(broker,'safety',side_effect=lambda _:events.append('delegate')),patch.object(shared.subprocess,'run'):
+                    broker.abort()
+                    if alive:
+                        self.assertEqual(events,['delegate']);self.assertIsNone(child.poll());return
+                    reaped();self.assertIn('native',events)
+                    for name in remaining:self.assertIn(name,events)
+                    self.assertLess(events.index('stop'),events.index('native'))
+                    self.assertIs(broker.outcome['nativeDisabled'],None if native_failed else True)
+                    if delete_failed:self.assertTrue(broker.outcome['recoveryCurrentContainerCleanupUncertain'])
+                    old=copy.deepcopy(broker.outcome);count=len(events);broker.abort();self.assertEqual(len(events),count);self.assertEqual(broker.outcome,old)
+            finally:
+                if child.poll() is None:child.kill()
+                child.wait();os.close(fd)
+
+    def test_guard_loss_while_armed_before_worker_reaps_and_cleans_both_namespaces(self):self.run_case()
+    def test_active_guard_loss_reaps_before_native_and_namespace_cleanup(self):self.run_case(active=True)
+    def test_failed_native_and_delete_readbacks_preserve_unknown_and_other_cleanup(self):self.run_case(native_failed=True,delete_failed=True)
+    def test_live_guard_keeps_single_containment_owner(self):self.run_case(alive=True)
 
 
 class TransitionTests(unittest.TestCase):

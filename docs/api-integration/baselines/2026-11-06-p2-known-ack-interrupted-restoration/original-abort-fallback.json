@@ -1,0 +1,1 @@
+{"sourceCommit": "ff564a6d0add74e368706d1c8616f1fbbef8e53c", "actualScopeRevoked": true, "runtimeStopAttempted": 1, "nativeContainmentCalled": 0, "readonlyNamespaceCleanupCalled": 0, "phase": "armed-before-worker", "transports": "fence/runtime projected; actual owned scope/flock"}

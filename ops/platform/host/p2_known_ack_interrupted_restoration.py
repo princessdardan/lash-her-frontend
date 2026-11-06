@@ -19,6 +19,11 @@ import time
 import weakref
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Fixed CLI and supervisor must share one class/capability registry identity.
+if __name__ == '__main__':
+    if 'p2_known_ack_interrupted_restoration' in sys.modules and sys.modules['p2_known_ack_interrupted_restoration'] is not sys.modules[__name__]:
+        raise ValueError('P2_INTERRUPTED_MODULE_IDENTITY_CONFLICT')
+    sys.modules['p2_known_ack_interrupted_restoration'] = sys.modules[__name__]
 import migrate
 import release as runtime
 import staging_admission
@@ -580,6 +585,37 @@ def contain_interrupted_native(initial, armed, source):
 class InterruptedKnownAckRestorationBroker(Broker):
     observer_type = InterruptedRestorationPhysicalObserver
     observer_source = 'ops/platform/p2-recovery-current-probe.mjs'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.interrupted_fallback_lock = threading.Lock()
+        self.interrupted_fallback_done = False
+
+    def abort(self):
+        # The ordinary parent revokes/reaps before its surviving-broker stop.
+        # A healthy independent guard remains the sole containment owner.
+        super().abort()
+        if self.guard_alive or not (self.observer or self.scope or getattr(self, 'armed_probe', None)):
+            return
+        with self.interrupted_fallback_lock:
+            if self.interrupted_fallback_done:
+                return
+            self.interrupted_fallback_done = True
+            # These fixed containment operations do not depend on the revoked
+            # FE lease. Failure of either operation never skips the other.
+            try:
+                result = contain_interrupted_native(self.initial, getattr(self, 'armed_probe', None), self.source)
+                require(set(result) == {'nativeDisabled', 'nativeDisableAttempted'} and
+                        (result['nativeDisabled'] is True or result['nativeDisabled'] is None) and type(result['nativeDisableAttempted']) is bool,
+                        'P2_INTERRUPTED_NATIVE_CONTAINMENT_RESULT_UNKNOWN')
+                self.outcome.update(result)
+            except BaseException:
+                self.outcome.update(nativeDisabled=None, nativeDisableAttempted=None)
+            try:
+                from p2_release_supervisor import cleanup_recovery_current_containers
+                cleanup_recovery_current_containers()
+            except BaseException:
+                self.outcome['recoveryCurrentContainerCleanupUncertain'] = True
 
     def initialize(self):
         self.started_at = time.monotonic()
