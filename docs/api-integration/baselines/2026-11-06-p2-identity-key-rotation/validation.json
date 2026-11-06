@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "status": "SOURCE_VALIDATION_PASS_LIVE_OPEN",
+  "baselineCommit": "caea30f6297a0da0b441c20cc9598ab1e798e192",
+  "sourceFiles": {
+    "ops/platform/p2-identity-key-rotation.mjs": "0a0ab4597459a140eff8038f3fdadea7eed95e1e7f7308be9d33d08b4201bfc8",
+    "ops/platform/p2-identity-key-rotation.test.mjs": "2707d0651ec3e112b50b2b4c604565a8c4f576a52c823efdfe85fa73b6f2f2d5",
+    "ops/platform/host/p2_identity_key_rotation.py": "3ad3311e6153dd375e6821fdcbf589787c6cb1e6fbca005383aa61ac39fe18b7",
+    "ops/platform/host/p2_identity_key_rotation_test.py": "96cdb71de39d3ce0ba3aee4dfbc2c72bdc159d0d39b1c8cd56c454a9d5d3875f",
+    "ops/platform/p2-identity-key-rotation.md": "2edd1fd4844a3cd0c7834d12011a368b3181ae61434e03bee75b14ffe0115305"
+  },
+  "embeddedProgram": {
+    "sha256": "627e95858dc433d7cd349c4f38e7fdc646e371bdc24e430102d9ae59f98a6c4b",
+    "bytes": 63304,
+    "importsExistingIdentityHelper": true
+  },
+  "verification": {
+    "node": { "passed": 6, "failed": 0, "skipped": 0, "realLoopbackVerifiedTls": true },
+    "python": { "passed": 5, "failed": 0, "skipped": 0 },
+    "eslint": "passed",
+    "javascriptSyntax": "passed",
+    "pythonCompile": "passed"
+  },
+  "boundaries": {
+    "parentAdapterReady": false,
+    "liveEligible": false,
+    "liveCalls": false,
+    "providerCalls": false,
+    "databaseCalls": false,
+    "vercelCalls": false,
+    "credentialValuesRead": false,
+    "credentialHashesOutput": false,
+    "newPublicEndpoint": false,
+    "communityFeatureAdded": false,
+    "sharedRuntimeEdited": false,
+    "sqlAuthorized": false,
+    "rolesAuthorized": false,
+    "loginChangeAuthorized": false,
+    "keyRemovalVerified": false,
+    "releaseAccepted": false
+  },
+  "openGates": [
+    "fixed-root-owned-config-only-certification-dispatch",
+    "actual-host-and-frontend-physical-lock-composition",
+    "exact-api-overlap-and-current-only-runtime-recreation",
+    "one-build-and-promotion-per-frontend-phase",
+    "actual-four-profile-source-container-config-joined-evidence",
+    "qualified-failure-containment-and-restoration",
+    "independent-review"
+  ]
+}
