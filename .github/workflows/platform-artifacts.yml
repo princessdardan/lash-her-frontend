@@ -474,6 +474,7 @@ jobs:
             --memory 1g --pids-limit 256 --shm-size 256m --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \
             --env FRONTEND_MIGRATION_IMAGE_DIGEST \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/platform,dst=/source/ops/platform,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/node_modules,dst=/source/node_modules,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/src,dst=/source/src,readonly" \

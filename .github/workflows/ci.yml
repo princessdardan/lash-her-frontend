@@ -69,6 +69,7 @@ jobs:
             --memory 1g --pids-limit 256 --shm-size 256m --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \
             --env FRONTEND_MIGRATION_EXPORT_SCHEMA=true --env FRONTEND_MIGRATION_IMAGE_DIGEST \
             --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
             --mount "type=bind,src=$PWD/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
             --mount "type=bind,src=$PWD/src,dst=/source/src,readonly" \
@@ -146,6 +147,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
