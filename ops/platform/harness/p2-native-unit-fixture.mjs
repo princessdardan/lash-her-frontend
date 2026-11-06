@@ -8,8 +8,14 @@ import { fileURLToPath } from "node:url";
 import { prepareP2LifecycleNativePlan, qualifyP2LifecycleNative, P2_NATIVE_FEATURE_NAMES, P2_LIFECYCLE_NATIVE_PROJECT } from "../p2-lifecycle-native.mjs";
 import { frontendAdmissionTargetSha256 } from "../frontend-admission-bootstrap.mjs";
 
+export function nativeSourceCommit() {
+  const source = realpathSync(fileURLToPath(new URL("../../..", import.meta.url)));
+  return execFileSync("git", ["--no-pager", "--no-replace-objects", "--no-optional-locks", "-c", `safe.directory=${source}`, "rev-parse", "--verify", "HEAD^{commit}"],
+    { cwd: source, encoding: "utf8", timeout: 10_000, maxBuffer: 4096, stdio: ["ignore", "pipe", "pipe"],
+      env: { PATH: process.env.PATH ?? "/usr/bin:/bin", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } }).trim();
+}
 export function nativeDocuments(target = {}) {
-  const sourceCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fileURLToPath(new URL("../../..", import.meta.url)), encoding: "utf8" }).trim();
+  const sourceCommit = nativeSourceCommit();
   const candidate = { version: 2, environment: "staging", releaseId: "owned-native", contractPhase: "p2", phase2ContractManifestSha256: `sha256:${"d".repeat(64)}`,
     integration: { state: "passed" }, sourceApproval: { mode: "single-operator-dispatch", operatorGithubUserId: "8996309" },
     sources: { frontend: { repository: "https://github.com/princessdardan/lash-her-frontend.git", commit: sourceCommit, requiredChecks: "passed" } },

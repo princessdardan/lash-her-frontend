@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { Client } from "pg";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
 import { frontendAdmissionTargetSha256, bootstrapFrontendAdmission, frontendAdmissionBootstrapArtifact } from "./frontend-admission-bootstrap.mjs";
+import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
 
 const execute=(file,args)=>execFileSync(file,args,{encoding:'utf8',stdio:['ignore','pipe','pipe']});
 let phase='ownership';
@@ -31,7 +32,7 @@ async function main(){
     phase='migrations';const artifact=frontendMigrationArtifact();await operator.query('CREATE SCHEMA drizzle');await operator.query('CREATE TABLE drizzle.__drizzle_migrations(id serial PRIMARY KEY,hash text,created_at bigint)');
     for(const migration of artifact.migrations){await operator.query('BEGIN');for(const sql of migration.sql)await operator.query(sql);await operator.query('INSERT INTO drizzle.__drizzle_migrations(hash,created_at) VALUES($1,$2)',[migration.hash,migration.folderMillis]);await operator.query('COMMIT');}
     await operator.query('GRANT USAGE ON SCHEMA public TO frontend_runtime');await operator.query('GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO frontend_runtime');await operator.query('GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO frontend_runtime');
-    const sourceCommit=execute('git',['rev-parse','HEAD']).trim(),target={host:'127.0.0.1',port,database:'frontend_admission_owned',user:'frontend_test_admin',serverMajor:postgresMajor},targetSha256=frontendAdmissionTargetSha256('staging',target);
+    const sourceCommit=nativeSourceCommit(),target={host:'127.0.0.1',port,database:'frontend_admission_owned',user:'frontend_test_admin',serverMajor:postgresMajor},targetSha256=frontendAdmissionTargetSha256('staging',target);
     const roles=(await operator.query("SELECT oid::text,rolname FROM pg_roles WHERE rolname IN ('admission_owner','frontend_runtime')")).rows;
     const owner={name:'admission_owner',oid:roles.find(row=>row.rolname==='admission_owner').oid},runtime={name:'frontend_runtime',oid:roles.find(row=>row.rolname==='frontend_runtime').oid};
     phase='closed-bootstrap';await bootstrapFrontendAdmission({version:1,environment:'staging',actionId:'owned-native',sourceCommit,...frontendAdmissionBootstrapArtifact(),inventorySha256:'a'.repeat(64),targetSha256,target,owner,producers:[{producerSha256:'b'.repeat(64),sourceCommit,role:runtime}]},operator,

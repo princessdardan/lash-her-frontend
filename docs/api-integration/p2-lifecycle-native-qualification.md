@@ -8,6 +8,8 @@ The stage uses the existing P1 project/deployment controls, including the suppor
 
 `prepareP2LifecycleNativePlan(candidate, input)` is offline and reads no credential. It requires a qualified staging P2 candidate, exact deployment ID/URL and configuration record digest, direct migration target and its digest, admission owner/producer names and actual OIDs, initial epoch, all ten boolean feature controls, a 60–180 second window, 1–180 second ledger observation budget, and explicit command witnesses `{commandId,accountVersion,action}`. Lifecycle and lifecycle recovery controls must be true. Its final disposition is explicitly `disabled-and-admission-closed`. The plan also verifies exact Git blob digests for the reviewed cron, actual admission runner/context/configuration, lifecycle worker/store/client, root opaque trace and runtime binding probe source. Changed or unavailable source refuses.
 
+Read-only Git calls trust only the canonical selected source directory using per-command `-c safe.directory=<selected source>`. They use a closed environment, disable global/system configuration and replacement objects, and read blobs without external diff or text conversion. The owned fixture resolves its exact HEAD through the same bounded source selection. This supports the CI checkout/container ownership boundary without wildcard trust or persistent Git configuration changes; CI must mount the selected source's Git metadata read-only.
+
 The plan-only executable is:
 
 ```sh

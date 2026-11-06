@@ -42,8 +42,9 @@ const iso = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2
 function sourcePolicy(sourceCommit) {
   demand(Object.keys(reviewedSource).length >= 8);
   for (const [file, sha256] of Object.entries(reviewedSource)) {
-    const bytes = execFileSync("git", ["--no-replace-objects", "--no-optional-locks", "show", `${sourceCommit}:${file}`],
-      { cwd: root, maxBuffer: 2_000_000, stdio: ["ignore", "pipe", "pipe"], env: { PATH: process.env.PATH ?? "/usr/bin:/bin", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } });
+    const bytes = execFileSync("git", ["--no-pager", "--no-replace-objects", "--no-optional-locks", "-c", `safe.directory=${root}`,
+      "show", "--no-ext-diff", "--no-textconv", `${sourceCommit}:${file}`],
+      { cwd: root, maxBuffer: 2_000_000, timeout: 10_000, stdio: ["ignore", "pipe", "pipe"], env: { PATH: process.env.PATH ?? "/usr/bin:/bin", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } });
     demand(p2NativeHash(bytes) === sha256);
   }
   return reviewedSource;

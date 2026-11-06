@@ -6,7 +6,17 @@ import test from "node:test";
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { prepareP2LifecycleNativePlan, validateP2NativeRequestObservation, containP2LifecycleNative } from "./p2-lifecycle-native.mjs";
-import { nativeDocuments, nativeModel, nativeObservation } from "./harness/p2-native-unit-fixture.mjs";
+import { nativeDocuments, nativeModel, nativeObservation, nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
+
+test('fixed native Git reads ignore ambient repository/configuration overrides and bind the canonical selected source',()=>{
+  const sourceCommit=nativeSourceCommit(),settings={GIT_DIR:'/owned-nonexistent-foreign-git',GIT_WORK_TREE:'/owned-foreign-source',GIT_CONFIG_GLOBAL:'/owned-foreign-config',
+    GIT_CONFIG_COUNT:'1',GIT_CONFIG_KEY_0:'safe.directory',GIT_CONFIG_VALUE_0:'*'},before=Object.fromEntries(Object.keys(settings).map(key=>[key,process.env[key]]));
+  try{
+    Object.assign(process.env,settings);assert.equal(nativeSourceCommit(),sourceCommit);
+    const fixture=nativeDocuments();assert.equal(fixture.candidate.sources.frontend.commit,sourceCommit);
+    assert.equal(prepareP2LifecycleNativePlan(fixture.candidate,fixture.settings).sourceCommit,sourceCommit);
+  }finally{for(const[key,value]of Object.entries(before)){if(value===undefined)delete process.env[key];else process.env[key]=value;}}
+});
 
 test("plan requires exact qualified P2/staging/ten-control lifecycle-only profile and explicit closed final disposition", () => {
   for (const change of [f => { f.candidate.environment = 'production'; }, f => { f.candidate.contractPhase = 'p1'; }, f => { f.candidate.workload.projectId = 'production'; },
