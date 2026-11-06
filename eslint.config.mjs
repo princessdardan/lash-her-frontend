@@ -5,6 +5,15 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    // These immutable standalone Node control snapshots are hash-bound evidence.
+    // Their local `module` variable is never compiled by the Next.js bundler.
+    files: [
+      "docs/api-integration/baselines/2026-11-05-historical-capability-followup/run-prior-control.mjs",
+      "docs/api-integration/baselines/2026-11-05-historical-capability-residuals/run-prior-residual-control.mjs",
+    ],
+    rules: { "@next/next/no-assign-module-variable": "off" },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
