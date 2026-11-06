@@ -1,0 +1,290 @@
+"""In-process one-record fault stage. No standalone activation or container stop."""
+import copy
+import datetime
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+import uuid
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import migrate
+import release as runtime
+import p2_identity_negative_probe as identity
+from p2_release_scope import P2ReleaseScope
+from p2_source_closure import verify_source_closure
+
+LEASE = "p2-certification-fault.json"
+LOCK = Path("/run/lock/lash-her-release.lock")
+ROOT = Path("/var/lib/lash-her/releases/staging")
+MODULE = "ops/gateway/p2-certification-fault.mjs"
+SHA = re.compile(r"^[a-f0-9]{64}$")
+UUID = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$")
+demand = migrate.demand
+
+GATEWAY_OBSERVER = r'''
+import {readFileSync,existsSync,statSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {get} from 'node:http';
+import {p2GatewayProcessBinding} from './p2-certification-fault.mjs';
+const sha=v=>createHash('sha256').update(v).digest('hex');
+try{
+ const stat=readFileSync('/proc/1/stat','utf8'),fields=stat.slice(stat.lastIndexOf(')')+2).trim().split(/\s+/u);
+ const processSha256=p2GatewayProcessBinding({bootId:readFileSync('/proc/sys/kernel/random/boot_id','utf8').trim(),pid:1,startTicks:fields[19]});
+ const admission=await new Promise((resolve,reject)=>{const req=get({hostname:'127.0.0.1',port:9100,path:'/admission',timeout:2000},res=>{
+  let raw='';res.on('data',chunk=>{raw+=chunk;if(Buffer.byteLength(raw)>8192)res.destroy()});res.once('error',reject);res.once('end',()=>{
+   try{if(res.statusCode!==200)throw Error();resolve(JSON.parse(raw))}catch{reject(Error())}})});req.once('timeout',()=>req.destroy());req.once('error',reject)});
+ const directory=statSync('/admission',{bigint:true});
+ console.log(JSON.stringify({version:1,status:'P2_FAULT_GATEWAY_CURRENT',processSha256,gatewayConfigurationSha256:sha(readFileSync('/config/gateway.json')),
+  admissionDirectory:{device:directory.dev.toString(),inode:directory.ino.toString()},
+  faultModuleSha256:sha(readFileSync('/app/p2-certification-fault.mjs')),admission,faultLeasePresent:existsSync('/admission/p2-certification-fault.json')}));
+}catch{console.log(JSON.stringify({version:1,status:'P2_FAULT_GATEWAY_CURRENT_REFUSED'}));process.exitCode=1}
+'''
+
+
+def _hash(value):
+    return hashlib.sha256(value).hexdigest()
+
+
+def _canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
+
+
+def _closed(value, names):
+    return isinstance(value, dict) and set(value) == set(names)
+
+
+def _write_all(descriptor, raw):
+    remaining = raw
+    while remaining:
+        written = os.write(descriptor, remaining)
+        demand(written > 0, "P2_FAULT_DURABLE_WRITE_REQUIRED")
+        remaining = remaining[written:]
+    os.fsync(descriptor)
+
+
+class P2CertificationFaultStage:
+    """Requires the real parent scope and its independent FE physical observer.
+
+    The source parent owns the FE client/owner/locks and mandatory containment.
+    This object never releases those locks, restarts a container, reopens a gate
+    or reconciles an uncertain operation. JSON cannot construct its P2 scope.
+    """
+    def __init__(self, scope, selected, jobs, configuration, operator_source, plan, directory, *, source_files):
+        demand(isinstance(scope, P2ReleaseScope) and scope.path == LOCK and scope.release is not None and scope.jobs is not None,
+            "P2_FAULT_ACTUAL_FE_BOUND_PARENT_SCOPE_REQUIRED")
+        demand(os.geteuid() == 0 and plan.get("version") == 1 and plan.get("environment") == "staging"
+            and plan.get("profile") == "lifecycle-known-command-v1" and plan.get("leaseMilliseconds") == 120000
+            and plan.get("maxMatches") == 1 and plan.get("mode") in ("503-before-upstream", "drop-after-ack")
+            and plan.get("receiver") in ("course", "community") and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", plan.get("stageId", ""))
+            and plan.get("finalDisposition") == "fault-disabled-native-off-and-admission-closed"
+            and plan.get("standaloneActivationEligible") is False and plan.get("automaticReconciliationAllowed") is False,
+            "P2_FAULT_FIXED_STAGE_PLAN_REQUIRED")
+        self.scope, self.selected, self.jobs = scope, copy.deepcopy(selected), copy.deepcopy(jobs)
+        self.configuration, self.source, self.plan = Path(configuration), Path(operator_source), copy.deepcopy(plan)
+        demand(isinstance(source_files, dict) and source_files, "P2_FAULT_CLOSED_SOURCE_REQUIRED")
+        self.source_initial = {"sourceSha256": copy.deepcopy(source_files), "sourceClosureSha256": _hash(_canonical(sorted(source_files.items())))}
+        demand(self.source_initial["sourceClosureSha256"] == plan.get("operatorSourceClosureSha256"), "P2_FAULT_SOURCE_PLAN_BINDING_REQUIRED")
+        self.directory = Path(directory)
+        demand(self.configuration.is_absolute() and self.configuration.is_relative_to(ROOT)
+            and self.source == Path("/opt/lash-her/operators") / plan["sourceCommit"]
+            and ".." not in self.configuration.parts and self.configuration.resolve() == self.configuration
+            and not any(path.is_symlink() for path in (self.configuration, *self.configuration.parents, self.source, *self.source.parents)),
+            "P2_FAULT_REVIEWED_PATH_REQUIRED")
+        scope.require_release(selected, jobs); scope.require_configuration(configuration)
+        verify_source_closure(self.source_initial, self.source)
+        demand(selected.get("environment") == "staging" and selected.get("contractPhase") == "p2"
+            and selected["releaseId"] == plan["actionId"] and scope.candidate_sha256 == plan["candidateSha256"]
+            and _hash(_canonical(selected)) == plan["candidateObjectSha256"]
+            and selected["sources"]["frontend"]["commit"] == plan["sourceCommit"]
+            and selected["artifacts"]["gateway"]["image"].endswith("@sha256:" + plan["gatewayImageSha256"])
+            and identity._configuration_hash(self.configuration) == plan["configurationSha256"], "P2_FAULT_SOURCE_CANDIDATE_CONFIGURATION_REQUIRED")
+        demand(self.directory.is_absolute() and self.directory.is_relative_to(ROOT) and ".." not in self.directory.parts
+            and self.directory.resolve() == self.directory and self.directory.parent.is_dir()
+            and not any(path.is_symlink() for path in (self.directory, *self.directory.parents))
+            and self.directory.parent.stat().st_uid == 0 and self.directory.parent.stat().st_mode & 0o077 == 0,
+            "P2_FAULT_PRIVATE_STAGE_DIRECTORY_REQUIRED")
+        self.directory.mkdir(mode=0o700, exist_ok=False)
+        self.arm_called, self.lease_sha256, self.issued_at, self.closed = False, None, None, False
+        self.admission_fd = os.open(self.configuration / "admission", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        info = os.fstat(self.admission_fd)
+        demand(info.st_uid == 0 and not info.st_mode & 0o022, "P2_FAULT_ADMISSION_DIRECTORY_REQUIRED")
+        self.admission_identity = info
+        try:
+            self.initial_inventory = self._inventory()
+            self.gateway = next(row for row in self.initial_inventory if row["service"] == "gateway")
+            identity._one_container(self.gateway, self.configuration, scope)
+            self.module_sha256 = _hash(migrate.read_input(self.source, MODULE, 524288))
+            self._gateway_current()
+        except BaseException:
+            os.close(self.admission_fd); self.closed = True
+            raise
+
+    def _inventory(self):
+        self.scope.verify()
+        token = runtime._command_scope.set(self.scope)
+        try:
+            return runtime.check_containers(self.selected, self.configuration)
+        finally:
+            runtime._command_scope.reset(token)
+
+    def verify(self):
+        demand(not self.closed, "P2_FAULT_STAGE_CLOSED")
+        self.scope.require_release(self.selected, self.jobs); self.scope.require_configuration(self.configuration)
+        verify_source_closure(self.source_initial, self.source)
+        opened = os.fstat(self.admission_fd)
+        demand(opened.st_dev == self.admission_identity.st_dev and opened.st_ino == self.admission_identity.st_ino,
+            "P2_FAULT_CACHED_ADMISSION_DIRECTORY_CHANGED")
+        demand(self._inventory() == self.initial_inventory and identity._configuration_hash(self.configuration) == self.plan["configurationSha256"]
+            and _hash(migrate.read_input(self.source, MODULE, 524288)) == self.module_sha256, "P2_FAULT_RUNTIME_OR_SOURCE_CHANGED")
+
+    def _gateway_current(self):
+        self.scope.verify()
+        result = self.scope.run(["docker", "exec", "--workdir", "/app", self.gateway["containerId"], "node", "--input-type=module", "--eval", GATEWAY_OBSERVER],
+            env=runtime.SAFE_ENV, timeout=10, capture_output=True)
+        demand(result.returncode == 0 and not result.stderr and 0 < len(result.stdout) <= 16384, "P2_FAULT_GATEWAY_READBACK_REQUIRED")
+        value = json.loads(result.stdout)
+        demand(_closed(value, ("version", "status", "processSha256", "gatewayConfigurationSha256", "faultModuleSha256", "admissionDirectory", "admission", "faultLeasePresent"))
+            and value["version"] == 1 and value["status"] == "P2_FAULT_GATEWAY_CURRENT"
+            and value["processSha256"] == self.plan["gatewayProcessSha256"] and value["gatewayConfigurationSha256"] == self.plan["gatewayConfigurationSha256"]
+            and value["faultModuleSha256"] == self.module_sha256 and type(value["faultLeasePresent"]) is bool
+            and value["admissionDirectory"] == {"device": str(self.admission_identity.st_dev), "inode": str(self.admission_identity.st_ino)},
+            "P2_FAULT_EXACT_GATEWAY_PROCESS_REQUIRED")
+        return value
+
+    def observe(self):
+        self.verify()
+        value = self._gateway_current()
+        return {"version": 1, "status": "P2_FAULT_HOST_CURRENT", "candidateSha256": self.plan["candidateSha256"],
+            "candidateObjectSha256": self.plan["candidateObjectSha256"], "configurationSha256": self.plan["configurationSha256"],
+            "gatewayConfigurationSha256": value["gatewayConfigurationSha256"], "gatewayImageSha256": self.plan["gatewayImageSha256"],
+            "gatewayProcessSha256": value["processSha256"], "runtimeInventorySha256": _hash(_canonical(self.initial_inventory)),
+            "operatorSourceClosureSha256": self.source_initial["sourceClosureSha256"],
+            "gatewayAdmission": value["admission"], "faultLeasePresent": value["faultLeasePresent"]}
+
+    def _record(self, name, value):
+        demand(re.fullmatch(r"[a-z0-9.-]+\.json", name), "P2_FAULT_RECORD_NAME_REQUIRED")
+        descriptor = os.open(self.directory / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        try:
+            _write_all(descriptor, _canonical(value) + b"\n")
+        finally:
+            os.close(descriptor)
+
+    def arm(self, record):
+        self.verify()
+        demand(not self.arm_called and _closed(record, ("commandId", "accountVersion", "canonicalSha256")) and UUID.fullmatch(record["commandId"])
+            and type(record["accountVersion"]) is int and 1 <= record["accountVersion"] <= 9007199254740991
+            and record["canonicalSha256"] == self.plan["commandSha256"], "P2_FAULT_EXACT_SOURCE_COMMAND_REQUIRED")
+        self.arm_called = True  # Sticky even when a subsequent write is uncertain.
+        self.issued_at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        expires = (datetime.datetime.fromisoformat(self.issued_at.replace("Z", "+00:00")) + datetime.timedelta(seconds=120)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        lease = {key: self.plan[key] for key in ("version", "environment", "profile", "stageId", "candidateSha256", "configurationSha256",
+            "gatewayConfigurationSha256", "gatewayProcessSha256", "gatewayImageSha256", "mode", "receiver")}
+        lease.update(releaseId=self.selected["releaseId"], sourceWitnessSha256=self.plan["commandSha256"], issuedAt=self.issued_at, expiresAt=expires,
+            maxMatches=1, record=copy.deepcopy(record))
+        raw = _canonical(lease) + b"\n"; self.lease_sha256 = _hash(raw)
+        self._record("fault-arm-intent.json", {"version": 1, "stageId": self.plan["stageId"], "leaseSha256": self.lease_sha256, "lease": lease})
+        temporary = ".p2-fault-" + uuid.uuid4().hex
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640, dir_fd=self.admission_fd)
+        try:
+            os.fchown(descriptor, 0, 65532); os.fchmod(descriptor, 0o640); _write_all(descriptor, raw)
+            os.link(temporary, LEASE, src_dir_fd=self.admission_fd, dst_dir_fd=self.admission_fd, follow_symlinks=False)
+            os.fsync(self.admission_fd)
+        finally:
+            os.close(descriptor); os.unlink(temporary, dir_fd=self.admission_fd)
+        self.verify()
+        demand(self._gateway_current()["faultLeasePresent"] is True, "P2_FAULT_ARM_READBACK_REQUIRED")
+        receipt = {"version": 1, "status": "P2_FAULT_LEASE_ARMED", "stageId": self.plan["stageId"], "leaseSha256": self.lease_sha256,
+            "expiresAt": expires, "maxMatches": 1, "gatewayProcessSha256": self.plan["gatewayProcessSha256"]}
+        self._record("fault-arm-observed.json", receipt)
+        return receipt
+
+    def effects(self):
+        self.verify(); demand(self.issued_at is not None, "P2_FAULT_ARM_INTENT_REQUIRED")
+        result = self.scope.run(["docker", "logs", "--since", self.issued_at, "--tail", "128", "--timestamps", self.gateway["containerId"]],
+            env=runtime.SAFE_ENV, capture_output=True, timeout=10)
+        demand(result.returncode == 0 and not result.stderr and len(result.stdout) <= 262144, "P2_FAULT_FINITE_LOG_OBSERVATION_REQUIRED")
+        rows = []
+        for raw in result.stdout.splitlines():
+            _, separator, line = raw.partition(b" ")
+            if not separator or len(line) > 8192:
+                continue
+            try:
+                value = json.loads(line)
+            except (ValueError, UnicodeError):
+                continue
+            if not isinstance(value, dict) or value.get("component") != "p2-certification-fault" or value.get("stageId") != self.plan["stageId"]:
+                continue
+            demand(value.get("profile") == self.plan["profile"] and value.get("status") == "P2_TRANSPORT_FAULT_INJECTED"
+                and value.get("leaseSha256") == self.lease_sha256 and all(value.get(key) == self.plan[key] for key in
+                    ("candidateSha256", "configurationSha256", "gatewayProcessSha256", "gatewayImageSha256", "mode", "receiver"))
+                and value.get("sourceWitnessSha256") == self.plan["commandSha256"], "P2_FAULT_SOURCE_EFFECT_BINDING_REQUIRED")
+            allowed = {"component", "version", "status", "environment", "profile", "stageId", "candidateSha256", "configurationSha256", "gatewayProcessSha256",
+                "gatewayImageSha256", "sourceWitnessSha256", "leaseSha256", "mode", "receiver", "upstreamStarted", "downstreamDisposition", "upstreamReceiptVerified"}
+            if self.plan["mode"] == "drop-after-ack":
+                allowed |= {"upstreamStatus", "downstreamBytesStarted"}
+            demand(set(value) == allowed and value["version"] == 1 and value["environment"] == "staging", "P2_FAULT_CLOSED_EFFECT_RECEIPT_REQUIRED")
+            rows.append({key: item for key, item in value.items() if key != "component"})
+        demand(len(rows) <= 1, "P2_FAULT_ONE_MATCH_REQUIRED")
+        return rows
+
+    def disarm(self):
+        # Cached directory/binding cleanup must run even if the original source,
+        # input path or FE backend is now unavailable. Never delete another lease.
+        try:
+            descriptor = os.open(LEASE, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=self.admission_fd)
+        except FileNotFoundError:
+            return {"version": 1, "faultDisabled": True, "leaseAbsent": True}
+        try:
+            info = os.fstat(descriptor); demand(stat.S_ISREG(info.st_mode) and info.st_size <= 8192, "P2_FAULT_LEASE_READBACK_REQUIRED")
+            raw = os.read(descriptor, 8193)
+        finally:
+            os.close(descriptor)
+        demand(self.lease_sha256 is not None and _hash(raw) == self.lease_sha256, "P2_FAULT_UNRELATED_LEASE_PRESERVED")
+        os.unlink(LEASE, dir_fd=self.admission_fd); os.fsync(self.admission_fd)
+        return {"version": 1, "faultDisabled": True, "leaseAbsent": True}
+
+    def close_gateway(self):
+        # Deliberate source fence only; do not reset active/uncertain counters.
+        state = {"version": 1, "environment": "staging", "releaseId": self.selected["releaseId"], "candidateSha256": self.plan["candidateSha256"],
+            "actionId": "p2-fault-close-" + self.plan["stageId"], "newWork": False, "recovery": False}
+        name = ".p2-fault-close-" + uuid.uuid4().hex
+        descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=self.admission_fd)
+        try:
+            os.fchmod(descriptor, 0o644); _write_all(descriptor, _canonical(state) + b"\n")
+            os.replace(name, "state.json", src_dir_fd=self.admission_fd, dst_dir_fd=self.admission_fd); os.fsync(self.admission_fd)
+        finally:
+            os.close(descriptor)
+            try:
+                os.unlink(name, dir_fd=self.admission_fd)
+            except FileNotFoundError:
+                pass
+        try:
+            value = self._gateway_current()["admission"]
+            demand(value.get("valid") is True and value.get("releaseId") == state["releaseId"] and value.get("candidateSha256") == state["candidateSha256"]
+                and value.get("newWork") is False and value.get("recovery") is False, "P2_FAULT_GATEWAY_CLOSED_READBACK_REQUIRED")
+            return {"version": 1, "gatewayAdmissionClosed": True, "fileFencePersisted": True, "active": value["active"], "uncertain": value["uncertain"]}
+        except BaseException:
+            return {"version": 1, "gatewayAdmissionClosed": None, "fileFencePersisted": True, "active": None, "uncertain": None}
+
+    def close(self):
+        if not self.closed:
+            failed = False
+            try:
+                self.disarm()
+            except BaseException:
+                failed = True
+            try:
+                self.close_gateway()
+            except BaseException:
+                failed = True
+            os.close(self.admission_fd); self.closed = True
+            demand(not failed, "P2_FAULT_HOST_CLEANUP_REQUIRES_REVIEW")
+
+
+if __name__ == "__main__":
+    print(json.dumps({"version": 1, "status": "P2_CERTIFICATION_FAULT_SOURCE_PARENT_REQUIRED", "standaloneActivationEligible": False,
+        "networkCalled": False, "mutationsPerformed": False, "releaseAccepted": False}))
