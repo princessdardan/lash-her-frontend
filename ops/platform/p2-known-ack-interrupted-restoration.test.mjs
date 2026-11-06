@@ -85,3 +85,46 @@ test('wrong ordering and host death cannot commit a C terminal or replay restora
   assert.equal(existsSync(join(f.directory,'p2-host-interrupted-restoration-outcome.json')),false);
  }finally{f.cleanup();}}
 });
+
+test('owned failure metadata excludes messages, values, raw URLs and non-source frames and bounds causes',async()=>{
+ const {ownedFailureDiagnostic,ownedEngineDiagnostic,validateOwnedDiagnostic}=await import('../../docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs');
+ const context={sourceRoot:'/reviewed',dependencyRoot:'/dependencies',sourceFiles:['src/known.ts'],packages:['jose'],phases:['c-original-api-current'],sourceCodes:['P2_SOURCE_CONTENT_CHANGED'],generatedFiles:{'/owned/old-b-process.mjs':'owned-fixture/old-b-process.mjs'}};
+ const canary='PRIVATE_PASSWORD_URL_SQL_ACTUAL_EXPECTED_CANARY',error=new Error(canary);
+ Object.assign(error,{code:'ERR_MODULE_NOT_FOUND',url:'file:///reviewed/src/known.ts?password='+canary,actual:canary,expected:canary});
+ error.stack='Error: '+canary+'\n at hidden (/private/'+canary+':9:1)\n at source (file:///reviewed/src/known.ts:42:7)';
+ let value=error;for(let index=0;index<5;index++){value.cause=new Error(canary);Object.assign(value.cause,{name:canary,code:canary,path:'/private/'+canary});value=value.cause;}
+ const safe=ownedFailureDiagnostic(error,'c-original-api-current',context);
+ assert.equal(JSON.stringify(safe).includes(canary),false);assert.equal(JSON.stringify(safe).includes('/reviewed'),false);
+ assert.equal(safe.error.module,'src/known.ts');assert.deepEqual(safe.error.frames,[{file:'src/known.ts',line:42,column:7}]);assert.equal(safe.error.code,'ERR_MODULE_NOT_FOUND');
+ assert.equal(safe.causes.length,3);assert.equal(safe.causeLimitReached,true);assert.equal(safe.causes[0].kind,'Unknown');assert.equal(validateOwnedDiagnostic(safe,context),safe);
+ for(const change of [v=>{v.error.message=canary;},v=>{v.error.kind=canary;},v=>{v.error.code=canary;},v=>{v.error.frames[0].file='/private/'+canary;},v=>{v.causes.push(v.causes[0]);}]){const bad=structuredClone(safe);change(bad);assert.equal(validateOwnedDiagnostic(bad,context),null);}
+ const unknown=ownedFailureDiagnostic(Object.assign(new Error(canary),{name:canary,code:canary,url:'https://user:'+canary+'@private.invalid/'}),canary,context);
+ assert.equal(unknown.phase,'unknown');assert.equal(unknown.error.code,null);assert.equal(unknown.error.module,null);assert.equal(JSON.stringify(unknown).includes(canary),false);
+ const engineContext={...context,sourceFiles:[...context.sourceFiles,'ops/platform/host/p2_known_ack_interrupted_restoration.py']};
+ const engine=ownedEngineDiagnostic(JSON.stringify({status:'OWNED_C_ENGINE_FAILED',kind:'ValueError',code:'P2_SOURCE_CONTENT_CHANGED',trace:[canary],stage:canary,frames:[null,{file:'p2_known_ack_interrupted_restoration.py',line:99},{file:canary,line:4}]}),'c-original-api-current',engineContext);
+ assert.equal(JSON.stringify(engine).includes(canary),false);assert.equal(engine.error.code,'P2_SOURCE_CONTENT_CHANGED');assert.equal(validateOwnedDiagnostic(engine,engineContext),engine);
+});
+
+test('actual failing original child reaches outer private capture through fixed catch and cleanup',async()=>{
+ const {ownedDiagnosticSource,ownedDiagnosticContext}=await import('../../docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs');
+ const {fileURLToPath,pathToFileURL}=await import('node:url'),paths=await import('node:path'),fs=await import('node:fs'),vm=await import('node:vm'),{createRequire}=await import('node:module'),{createHash}=await import('node:crypto');
+ const root=fileURLToPath(new URL('../../',import.meta.url)),entry=join(root,'docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs');
+ const context=ownedDiagnosticContext(root),source=ownedDiagnosticSource(context),canary='CHILD_PRIVATE_MESSAGE_PAYLOAD_CANARY';
+ const childProgram=`let phase='c-original-api-current',observed,cEngineDiagnostic=null;const error=Object.assign(new Error(${JSON.stringify(canary)}),{code:'ERR_MODULE_NOT_FOUND',url:${JSON.stringify(pathToFileURL(join(root,'src/lib/private-db/client.ts')).href)}});Promise.reject(error)${source.harnessCatch}`;
+ const inner=spawnSync(process.execPath,['--input-type=module','-e',childProgram],{encoding:'utf8',env:{PATH:process.env.PATH}});
+ assert.equal(inner.status,1);assert.equal(inner.stdout,'');assert.equal(inner.stderr.includes(canary),false);
+ const original=JSON.parse(inner.stderr);assert.equal(original.diagnostic.error.code,'ERR_MODULE_NOT_FOUND');assert.equal(original.diagnostic.error.module,'src/lib/private-db/client.ts');
+ const parentProgram=`import {readFileSync} from 'node:fs';const item=JSON.parse(readFileSync(0,'utf8'));${source.parentForward}process.exitCode=1;`;
+ const parent=spawnSync(process.execPath,['--input-type=module','-e',parentProgram],{input:inner.stderr,encoding:'utf8',env:{PATH:process.env.PATH}});
+ assert.equal(parent.status,1);assert.equal(parent.stdout,'');assert.deepEqual(JSON.parse(parent.stderr),original.diagnostic);assert.equal(parent.stderr.includes(canary),false);
+ // Execute the actual fixture entry's source-generation/failure/cleanup path.
+ // Only the PostgreSQL outer launch is substituted by the real failed child
+ // result above; no test selector, provider transport or production input exists.
+ const captures=[];let folder,launched=false;
+ let program=readFileSync(entry,'utf8').replace(/^import .*;$/gmu,'').replace(/^export /gmu,'').replaceAll('import.meta.url','FAKE_META_URL');
+ const fakeProcess={argv:[process.execPath,entry],execPath:process.execPath,env:{P2_INTERRUPTED_OWNED_TEST:'true',PATH:process.env.PATH},stderr:{write:value=>captures.push(value)},stdout:{write:()=>assert.fail('failure must not emit success')},exit:()=>assert.fail('unexpected ownership/argument refusal')};
+ vm.runInNewContext(program,{URL,Buffer,performance,FAKE_META_URL:pathToFileURL(entry).href,process:fakeProcess,assert,readFileSync:fs.readFileSync,writeFileSync:fs.writeFileSync,realpathSync:fs.realpathSync,symlinkSync:fs.symlinkSync,rmSync:fs.rmSync,
+  mkdtempSync:value=>(folder=fs.realpathSync(fs.mkdtempSync(value))),spawnSync(file,args,options){if(file==='git'||args[0]==='--check')return spawnSync(file,args,options);assert.equal(args[0],'--import');assert.equal(args[1],'tsx');assert.equal(paths.basename(args[2]),'cluster-and-new-c-process.mjs');launched=true;return parent;},
+  join:paths.join,dirname:paths.dirname,resolve:paths.resolve,tmpdir,createRequire,createHash,pathToFileURL,fileURLToPath},{timeout:10000});
+ assert.equal(launched,true);assert.equal(fakeProcess.exitCode,1);assert.equal(existsSync(folder),false);assert.equal(captures.join(''),parent.stderr);assert.equal(captures.join('').includes(canary),false);
+});
