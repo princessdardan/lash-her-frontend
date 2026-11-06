@@ -52,7 +52,9 @@ export async function exerciseOwnedFrontendWorkers() {
   const checks = [], reconciliationEvidence = [], requests = [], providerCalls = [], nativeFetch = globalThis.fetch;
   let epoch = (await operator.query("SELECT epoch::text FROM frontend_admission.control")).rows[0].epoch;
   let server, closePool, gate, providerFailure, invariantFailure, originalSanityFetch, sanityClient, logCount = 0;
-  const originals = { log: console.log, warn: console.warn, error: console.error };
+  const originals = { log: console.log, warn: console.warn, error: console.error, info: console.info };
+  const nativeTrace = [];
+  console.info = line => { logCount++; if (typeof line === "string" && line.includes("P2_LIFECYCLE_CRON_ADMITTED")) nativeTrace.push(JSON.parse(line)); };
   console.log = console.warn = console.error = () => { logCount++; };
   const operations = async () => (await operator.query("SELECT id,kind,state FROM frontend_admission.operations ORDER BY started_at,id")).rows;
   const change = async (newWork, recovery) => { epoch = (await changeFrontendAdmission(operator, target, epoch, { newWork, recovery })).epoch; };
@@ -147,6 +149,7 @@ export async function exerciseOwnedFrontendWorkers() {
     const { GET: rateGet } = await import("../../../src/app/api/cron/shipping-rate-cache-refresh/route.ts");
     const { GET: crmGet } = await import("../../../src/app/api/cron/highlevel-sync/route.ts");
     const { POST: stockPost } = await import("../../../src/app/api/webhooks/sanity/inventory-sync/route.ts");
+    const { GET: lifecycleGet } = await import("../../../src/app/api/cron/account-lifecycle/route.ts");
     ({ closePrivateDbPool: closePool } = await import("../../../src/lib/private-db/client.ts"));
     const { encryptCredential } = await import("../../../src/lib/highlevel/crypto.ts");
     ({ client: sanityClient } = await import("../../../src/sanity/lib/client.ts"));
@@ -264,10 +267,28 @@ export async function exerciseOwnedFrontendWorkers() {
     assert.equal((await operator.query("SELECT on_hand FROM product_stock WHERE product_id='owned-worker-product'")).rows[0].on_hand, 5);
     assert.deepEqual((await since(before)).map(row => row.state), ["uncertain"]); await clearTriggers(); await reconcile();
     checks.push("actual-signed-sanity-callback-with-intercepted-catalog-read-stock-transaction-and-missing-update-receipt");
+    phase = "actual-lifecycle-cron-native-correlation";
+    process.env.CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED = "true";
+    process.env.LASH_P2_CERTIFICATION_SCHEDULES = "account-lifecycle";
+    await change(false, true); before = await operations();
+    const lifecycleResponse = await lifecycleGet(new Request("https://owned.invalid/api/cron/account-lifecycle", { headers: { authorization: "Bearer owned-cron" } }));
+    assert.equal(lifecycleResponse.status, 200);
+    const lifecycleOperations = await since(before);
+    assert.equal(lifecycleOperations.length, 1); assert.equal(lifecycleOperations[0].state, "completed");
+    assert.equal(nativeTrace.length, 1); assert.equal(nativeTrace[0].operationId, lifecycleOperations[0].id);
+    assert.deepEqual(nativeTrace[0], { version: 1, status: "P2_LIFECYCLE_CRON_ADMITTED", environment: "staging",
+      projectId: VERCEL_PROJECT_BINDINGS.stagingProjectId, operationId: lifecycleOperations[0].id, producerSha256: "b".repeat(64),
+      sourceCommit: "c".repeat(40), epoch, kind: "recovery", targetSha256: target.targetSha256 });
+    await reconcile();
+    assert.equal((await lifecycleGet(new Request("https://owned.invalid/api/cron/account-lifecycle", { headers: { authorization: "Bearer owned-cron" } }))).status, 503);
+    assert.equal(nativeTrace.length, 1);
+    process.env.LASH_P2_CERTIFICATION_SCHEDULES = "off";
+    checks.push("actual-lifecycle-cron-admission-trace-matches-durable-completed-ledger-uuid-and-closed-policy-emits-none");
     if (invariantFailure) throw invariantFailure;
     return { status: "FRONTEND_WORKER_ADMISSION_OWNED_PASS", postgresMajor: target.serverMajor, checks, reconciliationEvidence,
       applicationSourceManifestSha256: frontendWriterInventory(fileURLToPath(new URL("../../../", import.meta.url))).sourceManifestSha256,
-      actualRouteExports: 5, loopbackHttp: true, verifiedPostgresTls: true, realBusinessDatabase: true, providersIntercepted: true,
+      actualRouteExports: 6, nativeAdmissionTrace: nativeTrace, providerNativeInvocationVerified: false,
+      loopbackHttp: true, verifiedPostgresTls: true, realBusinessDatabase: true, providersIntercepted: true,
       sanitySdkReadIntercepted: true, providerTouched: false, historicalWritersFenced: false, migrationAuthorized: false,
       syntheticLedgerSourceIdentity: true, applicationLogsSuppressed: logCount > 0,
       remaining: ["immutable-next-deployment-and-schedules", "historical-and-manual-provider-inventory", "revalidate-next-cache-context", "admin-oauth-campaign-owned-qualification", "shipping-pr91-and-execution", "parent-release-coordinator"] };

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { markWriterOperationUncertain } from "./context";
+import { currentWriterOperationIdentity, markWriterOperationUncertain } from "./context";
 import { authorizeCaptureSquarePayment } from "@/lib/payments/square/square-payment-charge";
 import { createHmac } from "node:crypto";
 import { createWriterAdmissionRunner } from "./runtime";
@@ -83,6 +83,22 @@ test("recovery reads the current epoch and commits admission before passing the 
   }, f.run)(request);
   assert.equal(response.status, 200); assert.equal(f.state.ended, true);
   assert.equal(f.calls.find(call => call.sql.includes("begin_operation"))?.values?.[4], "7");
+});
+
+test("opaque identity is the admitted ledger UUID, scoped to the active task and cleared after completion", async () => {
+  const f = fixture(); f.state.epoch = "8";
+  assert.equal(currentWriterOperationIdentity(), undefined);
+  await f.run("recovery", async () => {
+    const identity = currentWriterOperationIdentity()!;
+    assert.ok(Object.isFrozen(identity));
+    assert.equal(identity.operationId, f.calls.find(call => call.sql.includes("begin_operation"))?.values?.[0]);
+    assert.deepEqual({ ...identity, operationId: "owned" }, { operationId: "owned", kind: "recovery", epoch: "8",
+      producerSha256: "b".repeat(64), sourceCommit: "c".repeat(40), targetSha256: "a".repeat(64) });
+    await Promise.resolve(); assert.equal(currentWriterOperationIdentity(), identity);
+  });
+  assert.equal(currentWriterOperationIdentity(), undefined);
+  const off = createWriterAdmissionRunner({ getConfiguration: () => null });
+  await off("recovery", async () => assert.equal(currentWriterOperationIdentity(), undefined));
 });
 
 test("the real Square handler validates the untouched signature and persists recovery only after admission", async () => {

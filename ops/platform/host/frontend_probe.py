@@ -26,6 +26,15 @@ def valid_feature_controls(value):
     return isinstance(value, dict) and set(value) == set(FEATURE_CONTROL_NAMES) and all(type(item) is bool for item in value.values())
 
 
+def valid_writer_admission_binding(value):
+    return bool(isinstance(value, dict) and set(value) == {"mode", "targetSha256", "producerSha256", "sourceCommit", "roleName"}
+            and value.get("mode") == "enforce"
+            and all(isinstance(value.get(key), str) and re.fullmatch(r"[a-f0-9]{64}", value[key]) and value[key] != "0" * 64
+                    for key in ("targetSha256", "producerSha256"))
+            and isinstance(value.get("sourceCommit"), str) and re.fullmatch(r"[a-f0-9]{40}", value["sourceCommit"]) and value["sourceCommit"] != "0" * 40
+            and isinstance(value.get("roleName"), str) and re.fullmatch(r"[a-z][a-z0-9_]{0,62}", value["roleName"]))
+
+
 def _private_configuration(directory):
     migrate.private_directory(directory)
     demand(not any((parent / ".git").exists() for parent in (directory.resolve(), *directory.resolve().parents)),
@@ -135,7 +144,7 @@ def _automation_bypass(project):
     return bypass
 
 
-def verify(client, release, attempt, private_configuration, probe_client=None, expected_feature_controls=None):
+def verify(client, release, attempt, private_configuration, probe_client=None, expected_feature_controls=None, expected_writer_admission_binding=None):
     """A real HTTP callback for promote_frontend, not a success-file input.
 
     The selected deployment must execute its server-only SDK transport and
@@ -149,6 +158,9 @@ def verify(client, release, attempt, private_configuration, probe_client=None, e
         phase2 = "contractPhase" in release or "phase2ContractManifestSha256" in release
         demand((not phase2 and expected_feature_controls is None) or (phase2 and valid_feature_controls(expected_feature_controls)),
                "FRONTEND_FEATURE_PROFILE_REFUSED")
+        demand((not phase2 and expected_writer_admission_binding is None) or
+               (phase2 and valid_writer_admission_binding(expected_writer_admission_binding)
+                and expected_writer_admission_binding["sourceCommit"] == identity["sourceCommit"]), "FRONTEND_WRITER_BINDING_REFUSED")
         demand(not phase2 or (release.get("contractPhase") == "p2"
                and isinstance(release.get("phase2ContractManifestSha256"), str)
                and re.fullmatch(r"sha256:[a-f0-9]{64}", release["phase2ContractManifestSha256"])
@@ -168,14 +180,16 @@ def verify(client, release, attempt, private_configuration, probe_client=None, e
         demand(type(observed.get("version")) is int and observed["version"] == 1 and observed.get("status") == "FRONTEND_WORKLOAD_PROBE_PASS"
                and observed.get("challenge") == challenge and observed.get("checks") == ["gateway-course-catalog-p2" if phase2 else "gateway-course-catalog"]
                and (not phase2 or (observed.get("contractPhase") == "p2" and valid_feature_controls(observed.get("featureControls"))
-                   and observed["featureControls"] == expected_feature_controls))
+                   and observed["featureControls"] == expected_feature_controls
+                   and valid_writer_admission_binding(observed.get("writerAdmissionBinding"))
+                   and observed["writerAdmissionBinding"] == expected_writer_admission_binding))
                and observed.get("gatewayOrigin") == private.get("gatewayOrigin")
                and all(observed.get(key) == identity[key] for key in ("environment", "projectId", "sourceCommit"))
                and int(time.time() * 1000) < private["expiresAt"], "FRONTEND_WORKLOAD_PROBE_UNVERIFIED")
         outcome.update(status="FRONTEND_VERIFIED", phase="completed", checks=["frontend-server-gateway-course-catalog-p2" if phase2 else "frontend-server-gateway-course-catalog"])
         if phase2:
             outcome.update(contractPhase="p2", phase2ContractManifestSha256=release["phase2ContractManifestSha256"],
-                           featureControls=observed["featureControls"])
+                           featureControls=observed["featureControls"], writerAdmissionBinding=observed["writerAdmissionBinding"])
         return outcome
     except BaseException:
         raise ValueError("FRONTEND_WORKLOAD_VERIFICATION_FAILED") from None
