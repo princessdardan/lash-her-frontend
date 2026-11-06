@@ -2,7 +2,7 @@
 
 Source checkpoint updated November 6, 2026 (Toronto). Accepted live admission completed November 4 at 01:27:39 UTC, with independent postflight at 01:29:33 UTC. [The tracker](../../API-INTEGRATION-EXECUTION.md) owns task status; [release policy](release-policy.md) governs future releases.
 
-Latest source position: Course `a447bfde` and Community `939de65d` pass merged-main CI. Frontend `9480cd91` passes all ten required CI jobs. Later aliases, complete new-build recovery and certification tooling need affected final-source checks. See the final milestone below. Historical sections preserve their original source scope and do not describe current qualification.
+Latest source position: Course `a447bfde` and Community `939de65d` pass merged-main CI. Frontend `9480cd91` passes all ten required CI jobs; reviewed aliases/source-closure corrections are pushed at `3f0fcdb7` for fresh CI. Complete new-build recovery and certification tooling remain under independent review. See the final milestone below. Historical sections preserve their original source scope and do not describe current qualification.
 
 ## Accepted P1 state
 
@@ -127,3 +127,9 @@ The independently reviewed partial-original-value interface is integrated at `78
 The [81-surface offline register](baselines/2026-11-06-p2-catalog-applicability/README.md) remains its original preparation snapshot. Subsequent [exact-tree alias registration](baselines/2026-11-06-historical-source-exact-tree-aliases/README.md) is independently reviewed:35 supported exact revisions/33 unchanged stored profiles, both entire-tree equalities and36 Node24 checks. Current source coverage is63 surfaces;13 remain unregistered and five lack source identity. Original values/provenance, SQL/provider bindings and effects remain unresolved; prior ERROR state or production target supplies no exclusion.
 
 Six original private receipt sets (396 files) are preserved byte-identically beneath `/Users/dardan/.local/share/lash-her/phase2-goal-evidence/2026-11-06/`, outside temporary cleanup and source repositories. New-build recovery and concrete lifecycle persistence/negative/fault/timing and Mux procedures continue independently. Final-source checks, registry candidate, actual historical fencing and Dardan-started P2-12/G2 remain required. No live SQL mutation, provider/credential control, deployment, schedule or admission mutation occurred.
+
+## Certification review and source closure — November 6, 2026
+
+[The tracker milestone](../../API-INTEGRATION-EXECUTION.md) records current source `3f0fcdb7`, pushed to draft PR93 for fresh CI. Seven total closed exact-tree aliases now support40 exact revisions/33 stored profiles and68 of81 retained surfaces. Eight surfaces have seven unmatched revisions; five lack authoritative source identity. Original values/provenance, actual SQL/provider bindings and outstanding effects remain open.
+
+The source-transfer allowance is448 files with unchanged byte limits; actual identity-observer and reviewed-manifest checks both accept448/refuse449, and all16 focused tests pass. Forward recovery remains unintegrated pending three independent review fixes; lifecycle persistence remains unintegrated pending eight, including account-wide attempt completeness and prior capture authenticity. Receiver negatives have a separate independent review, and fixed fault/timing stages plus the actual lock-held certification parent continue. Earlier fixture passes are not clearance for these proposals. Real24-hour export cleanup and deployed provider/browser evidence remain necessary for P2-12/G2. No live SQL mutation, provider/credential control, deployment, schedule or admission mutation occurred.
