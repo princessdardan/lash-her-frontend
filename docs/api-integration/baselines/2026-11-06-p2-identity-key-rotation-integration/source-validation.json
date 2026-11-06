@@ -6,12 +6,13 @@
   "sourceIntegrationCommit": "1178707de914a528d796c08ebfa7a58d57d42681",
   "sharedSupervisorCommit": "4be11ab35888467b1d41f395b07d696e56f6dbce",
   "operatorBindingCorrectionCommit": "b677daf552e57d5356f80804fc8eb27189cb3b47",
+  "receiptAndCanonicalAuthorityCorrectionCommit": "4a3a8ff89344a75215cdfbd29f5c17ec9a3523c1",
   "sourceSha256": {
     "ops/platform/p2-canonical-browser-origin.mjs": "583684febb2e74d66d9e733c34d50fbc8bcb76b138e2d71ea2f38a72aa49c0f7",
     "ops/platform/host/p2_canonical_browser_origin.py": "e78c6dea99bf5a43beef91cb4dd15c6f6889ce0dd4e67e366804653e3b09413f",
     "ops/platform/p2-identity-key-rotation-operator.mjs": "6bb514b9cf334ea259b1cdc7c99cb693124ea04b485473cd3526fecef0f556b0",
-    "ops/platform/p2-identity-key-rotation-parent.mjs": "26a4f44195c187a4fd91ba0707808ae17aef37ae1132924fb0f6c6789cecd026",
-    "ops/platform/host/p2_identity_key_rotation_parent.py": "b02242122fa4662e0a8b391c88e28a037ba377e329ccf5e583964f380f3ed053",
+    "ops/platform/p2-identity-key-rotation-parent.mjs": "9d217da99e1f33b23666170f278dea1f5bacce2a09b57678a1fb6bf251b83bf6",
+    "ops/platform/host/p2_identity_key_rotation_parent.py": "392a55c0db694031cf0aa2ec87f34695c115c592a06ce2c1e43f0772e759a446",
     "ops/platform/host/p2_release_supervisor.py": "6f2fad0c6141c372af46ea4852a9ba22dc2354aeb1df20e310ef290d95ec2f01"
   },
   "checks": {
@@ -25,6 +26,8 @@
   "proved": {
     "fixedCanonicalBrowserOriginSeparateFromImmutableDeploymentUrl": true,
     "aliasAndProtectedWorkloadBoundBeforeBrowserWindow": true,
+    "randomChallengeWorkloadDigestRetainedBySourceIssuedPairedWindowAuthority": true,
+    "originalRecoveryReceiptMapPreservedAcrossOperatorParentBoundary": true,
     "normalCustomerAndAdminCourseReadsUseCanonicalOrigin": true,
     "exactSourceCiAndSourceInstallRequiredBeforeApply": true,
     "singleUseSshTransport": true,
