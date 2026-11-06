@@ -32,7 +32,7 @@ root=pathlib.Path('/opt/lash-her/operators')/commit
 if any(p.is_symlink() for p in (root,*root.parents)): raise ValueError('SOURCE_PARENT_SYMLINK_REFUSED')
 if any(p.exists() and (p.stat().st_uid!=0 or p.stat().st_mode & 0o022) for p in root.parents): raise ValueError('ROOT_OWNED_SOURCE_PARENTS_REQUIRED')
 files=p['files']
-if not isinstance(files,list) or not 1<=len(files)<=400: raise ValueError('SOURCE_FILES_REQUIRED')
+if not isinstance(files,list) or not 1<=len(files)<=448: raise ValueError('SOURCE_FILES_REQUIRED')
 seen=set(); verified=[]; total=0
 for f in files:
  name=f['path']; rel=pathlib.PurePosixPath(name)

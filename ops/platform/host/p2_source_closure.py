@@ -18,7 +18,7 @@ REQUIRED = {
 
 def verify_source_closure(initial, root):
     manifest = initial.get('sourceSha256')
-    if not isinstance(manifest, dict) or not 1 <= len(manifest) <= 400 or not REQUIRED.issubset(manifest):
+    if not isinstance(manifest, dict) or not 1 <= len(manifest) <= 448 or not REQUIRED.issubset(manifest):
         raise ValueError('P2_CLOSED_OPERATOR_SOURCE_REQUIRED')
     digest = hashlib.sha256(json.dumps(sorted(manifest.items()), separators=(',', ':')).encode()).hexdigest()
     if digest != initial.get('sourceClosureSha256'):

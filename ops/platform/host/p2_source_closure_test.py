@@ -35,6 +35,22 @@ class SourceClosureTests(unittest.TestCase):
         (self.root / 'ops/platform/host/migrate.py').write_text('unreviewed')
         with self.assertRaisesRegex(ValueError, 'CONTENT_CHANGED'): verify_source_closure(self.initial, self.root)
 
+    def test_certification_source_file_bound_is_finite_and_keeps_complete_coverage(self):
+        manifest = dict(self.manifest)
+        while len(manifest) < 448:
+            name = f'ops/platform/harness/owned-count-{len(manifest)}.mjs'
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'owned bounded source')
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        selected = self.make(manifest)
+        self.assertEqual(verify_source_closure(selected, self.root), selected['sourceClosureSha256'])
+        name = 'ops/platform/harness/owned-count-overflow.mjs'
+        (self.root / name).write_bytes(b'owned bounded source')
+        manifest[name] = hashlib.sha256((self.root / name).read_bytes()).hexdigest()
+        with self.assertRaises(ValueError):
+            verify_source_closure(self.make(manifest), self.root)
+
     def test_guard_observer_uses_exact_cached_source_when_original_is_lost(self):
         raw = (self.root / 'ops/platform/p2-frontend-live-probe.mjs').read_bytes()
         self.initial['_guardObserverProgram'] = raw

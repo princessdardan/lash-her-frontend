@@ -64,7 +64,9 @@ export function readOperatorSourceFiles(source) {
   const git=args=>execFileSync("git",["-C",source,...args],{encoding:"utf8",timeout:10000,maxBuffer:16_000_000,
     stdio:["ignore","pipe","pipe"]});
   const paths=git(["ls-files","-z","--","ops"]).split("\0").filter(path=>path&&/\.(?:py|mjs|json|yaml|yml|service|timer|sh|guard)$/u.test(path));
-  assert.ok(paths.length>0&&paths.length<=400);
+  // Current source plus the lifecycle certification packages exceeds
+  // 400 files. Keep the complete-source count bounded; byte limits are separate.
+  assert.ok(paths.length>0&&paths.length<=448);
   let total=0;
   return paths.map(path=> {
     assert.ok(path.startsWith("ops/")&&!path.split("/").includes(".."));
