@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "sourceCommit": "0c0cefab66109725483c3392b1b3afc3be62d804",
+  "frontendSourceManifestSha256": "d5452af0e7bb0e583e2ce7073d6e47dafa4b6b2fe01973a3432cdeaaed1479b6",
+  "frontendInventoryScope": "candidate-source-only",
+  "frontendRoutes": 91,
+  "frontendManualEntries": 38,
+  "newControlSurface": "ops/platform/p2q-google-project-allocation.mjs",
+  "entrypoints": [
+    "allocateP2qGoogleProject(actionId)",
+    "reconcileP2qGoogleProject(actionId)"
+  ],
+  "effects": [
+    "Temporary source-pinned Google SDK authentication and verified-principal revocation",
+    "At most one Resource Manager project CREATE under a durable exclusive intent",
+    "Original private response retention and numeric project/IAM readback"
+  ],
+  "registration": "Empty frozen source registry; zero selected actions",
+  "frontendSqlOrPublicRouteAdded": false,
+  "automaticCreateReplay": false,
+  "postCrashClaimRecovery": "OPEN; retained uncertain claims cannot be cleared by this source",
+  "deploymentInventoryVerified": false,
+  "writerFenceVerified": false,
+  "drainVerified": false,
+  "allocationAuthorityIssued": false,
+  "firstUseAuthorized": false
+}

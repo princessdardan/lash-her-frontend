@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 2282,
+      "sha256": "5ddba8bd4a416af421f8785aac030b209fb63e2135931f1b807a2709c71da648"
+    },
+    {
+      "path": "allocation-control-inventory.json",
+      "bytes": 1154,
+      "sha256": "b4dcd9daa88c0ee5c99465b43e6ccd85eaced1765375bda3a970dfe09f670d1d"
+    },
+    {
+      "path": "independent-review.json",
+      "bytes": 3057,
+      "sha256": "516ed217c8eb4556903df0e234912f3805f1d158ffa6ca5efa10d8430d00e4f3"
+    },
+    {
+      "path": "integration-mapping.json",
+      "bytes": 1645,
+      "sha256": "427bd6c647caf6619d62560db4bb33ec3dd7b598c756176d6d5d56a9ade4c0f2"
+    },
+    {
+      "path": "lint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "node-tests.log",
+      "bytes": 94453,
+      "sha256": "295f9477b5319dc30d9c965f48c91724c7f72bb5e23b21e8e8e4fbb85e265112"
+    },
+    {
+      "path": "original-cpython-final.json",
+      "bytes": 3985,
+      "sha256": "764e58e78c6f6564255ec75e698750333ee7b7e83d7bb4868a9c50a744f4ce38"
+    },
+    {
+      "path": "original-sdk-closed-report.json",
+      "bytes": 22507,
+      "sha256": "fd0089560b7fb087911abf4cb0c038e1c1f64aa96e9184aec60542fd6d907517"
+    },
+    {
+      "path": "sdk-audit-applicability.json",
+      "bytes": 1472,
+      "sha256": "3f0abce8e3f8bc13070e1fec2aa2cc2e0563a9d370bcc809707e5e210ef6de4e"
+    },
+    {
+      "path": "source-and-contracts.json",
+      "bytes": 463,
+      "sha256": "ca4c921b7292a696145f5899790b3c39c6162a9c349583143af1b708bdfc74e1"
+    },
+    {
+      "path": "validation.json",
+      "bytes": 807,
+      "sha256": "bbf2b6816a096f667c1cccd750aeb8602439cf26cd8654345cea579947ae33c2"
+    }
+  ]
+}

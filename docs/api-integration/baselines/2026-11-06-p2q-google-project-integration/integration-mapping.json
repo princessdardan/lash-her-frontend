@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "checkedCommit": "0c0cefab66109725483c3392b1b3afc3be62d804",
+  "rootPolicyCommit": "7e786bca5d832639bb33dd970dbfd708a6408126",
+  "workerPolicyDependencyNotDuplicated": "bddb212101ba4a91c832a89b6446dc9b6f39fdad",
+  "originalToIntegrated": [
+    {
+      "original": "799b624d96e7ccf5efd85d6fcfb874542ca0efbd",
+      "integrated": "8325c99130fc2f6fadab88a10e901e710545595e"
+    },
+    {
+      "original": "fbb41ae95e3d6904a36084afaa43a63e74f115c7",
+      "integrated": "ae8a2873c035f58968148a4dd1942aa6589243f5"
+    },
+    {
+      "original": "b983f02e083b308fff3b4cd3da3378cbae862c17",
+      "integrated": "441622a46c02fd0d7cb1578906dd8136e0589826"
+    },
+    {
+      "original": "0e6491446d26be75b6be7d1bcf5e18ff8f8da243",
+      "integrated": "3d3455970b6bb8449f51d03025220328b6e6a6dd"
+    },
+    {
+      "original": "2b74722260558ae87181ca391e889743b08d3ab8",
+      "integrated": "d598ef56804693032fb51c9c9253eebb8a912289"
+    },
+    {
+      "original": "33163d784c27adf865465fd6598f52a44cbe77f9",
+      "integrated": "28a232798d29547ee8582e81673b8c1ec7f76426"
+    },
+    {
+      "original": "c3a5d09d3eecfe80faa874829a06453fc283d4fa",
+      "integrated": "e7696b2aedcb66672d44e8ca665a44e674347604"
+    },
+    {
+      "original": "73a66c0a3e2e9dd5454094e0fa5f49282f2081c5",
+      "integrated": "7a3a76480c7c29f4d96b43f5f11d9ee3fce55df9"
+    },
+    {
+      "original": "a88b1bdc8edfa8aee3d8a7291fd471491e82cf7c",
+      "integrated": "1ed55d970e86c4b6eee34c1b2de8f9a50ae21553"
+    },
+    {
+      "original": "1cd1f2e6c49585f037b5ce72ec8681eb79dfb8c0",
+      "integrated": "0c0cefab66109725483c3392b1b3afc3be62d804"
+    }
+  ]
+}

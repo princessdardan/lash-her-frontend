@@ -271,3 +271,9 @@ The [bounded Google client capture proposal](baselines/2026-11-06-p2q-google-cli
 ## Corrected-source verification milestone — November 6, 2026
 
 [Exact-source evidence](baselines/2026-11-06-p2q-434-ci/validation.json) establishes all-ten CI success and direct operator/native/browser artifact checks at `434ff029`, with the disclosed retry and no live/provider acceptance claim. The owner Google setup question remains pending. Current-only profile registration and observer-only first-install components cannot grant authority to an unallocated/unknown target. Remaining source integration requires authentic selected provider/control/custody inputs; real allocation, candidate and release actions require separate owner approval.
+
+## Google project capture source integration — November 6, 2026
+
+The [integration evidence](baselines/2026-11-06-p2q-google-project-integration/validation.json) records the final documented search-first producer, independent CLEAR review and original-to-integrated commit mappings. Root Node24 verification passed 738 tests with 17 conditional skips and zero failures; focused lint, unchanged API contracts, immutable profiles and PR91 runtime checks pass. Exact-source CI for this packet remains pending; 434ff029 remains the latest all-ten pass with its disclosed browser retry.
+
+SDK 592 with private maintained CPython 3.14.10 passed five offline version/help forms with unchanged tool trees. No real authentication, token/revocation, TLS, provider request, allocation or credential change occurred. The empty case registry grants no allocation/first-use authority. Post-crash claim recovery, actual provider boundaries/IDs, OAuth-client capture, target registration, positive first-install/release integration and live G2-Q evidence remain OPEN. The same human may administer both lanes; old credential and recovery reach must be excluded. The owner's existing account/project labels are not yet qualified P2Q boundaries.
