@@ -1,0 +1,38 @@
+(node:45677) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ frontend preparation binds exact source, target and reviewed SQL/schema without credentials (15.391125ms)
+✔ frontend credential parsing requires exact identity and explicit verified TLS (3.821541ms)
+✔ frontend job assembly derives reviewed bindings without copying credentials (6.007709ms)
+✔ new frontend migration artifacts require P2 candidate, SQL image and job identity without changing v1 (26.144917ms)
+✔ frontend database and terminal receipts retain the separate P2 binding (9.011875ms)
+✔ frontend confirmation and source qualification precede credential acquisition (2.803708ms)
+✔ frontend apply uses one locked session, records before unlock and separates terminal completion (7.747125ms)
+✔ compatible frontend continuation retains the physical lock after the durable database receipt (11.910459ms)
+✔ failed or uncertain frontend continuation preserves successful SQL and never repeats it or authorizes traffic (7.735875ms)
+✔ idle connection errors during continuation are retained as sanitized failures even if the callback catches them (7.503375ms)
+✔ parent preflight receives the original locked physical client before lineage or application SQL (6.701667ms)
+✔ failed, disconnected or unlocked parent preflight refuses before lineage or application SQL (10.103792ms)
+✔ a serialized preflight callback is refused before credentials or database access (2.652459ms)
+✔ lost database session, missing lock and post-deployment drift cannot qualify the continuation (39.384208ms)
+✔ continuation-looking JSON is refused before credentials and missing durable intent stops deployment (8.940292ms)
+✔ current frontend uses a server-enforced read-only session and issues no schema or journal writes (5.309042ms)
+✔ current-only mode refuses an unenforced or changed read-only setting and actual pending SQL (7.810958ms)
+✔ frontend lock contention, pending mismatch and apply errors stop without successful database receipt (7.905ms)
+✔ frontend postflight schema/default-grant failures and disconnect failure cannot qualify completion (21.207709ms)
+✔ frontend production refuses missing or failed staging migration evidence (2.592583ms)
+✔ frontend receipts are exclusive and contain complete parseable JSON (17.172625ms)
+✔ legacy frontend migration writes refuse release targets and remote local-label bypasses (331.271041ms)
+✔ finalization runs after durable core continuation verification with the original physical lock held (10.627333ms)
+✔ failed post-continuation verification or missing durable completion never enters finalization (31.779125ms)
+✔ uncertain finalization preserves successful SQL and refuses final success without repeating its callback (12.067834ms)
+✔ serialized finalization or finalization without a compatible continuation refuses before credentials (5.306333ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 725.079375

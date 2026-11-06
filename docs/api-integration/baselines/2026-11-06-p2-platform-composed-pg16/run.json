@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "startedAtEpochSeconds": 1793940542.9520571,
+  "endedAtEpochSeconds": 1793940577.730506,
+  "exitCode": 0,
+  "command": "P2_PLATFORM_OWNED_TEST=true OWNED_POSTGRES_MAJOR=16 PG_BIN=/opt/homebrew/opt/postgresql@16/bin node ops/platform/test-p2-platform-local.mjs",
+  "environmentKeys": [
+    "HOME",
+    "LANG",
+    "OWNED_POSTGRES_MAJOR",
+    "P2_PLATFORM_OWNED_TEST",
+    "PATH",
+    "PG_BIN",
+    "TMPDIR"
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "status": "COMPOSED_SELF_OWNED_POSTGRES16_PASS",
+  "fixtureOnly": true,
+  "newRun": {
+    "sourceHeadBefore": "ef90e0295f8871619b6593f892ba682459f967ba",
+    "sourceHeadAfter": "6164dee441a9bad583a1550c09eaeae9e4a81f93",
+    "sourceRootsRecorded": [
+      "src",
+      "scripts",
+      "ops",
+      "contracts",
+      "drizzle"
+    ],
+    "trackedFilesRecorded": 1795,
+    "concurrentSourceChanges": [
+      "ops/platform/p2-post-sql-recovery.mjs",
+      "ops/platform/p2-post-sql-recovery.test.mjs"
+    ],
+    "allRecordedFilesUnchanged": false,
+    "fixedFixtureProgramsUnchanged": true,
+    "selectedCoreFilesUnchanged": true,
+    "stableSelectedCoreSha256": {
+      "ops/platform/test-p2-platform-local.mjs": "8c262457a0f4309e092e3e5394493d8e497279f86042a7ebdb291f7366b487d9",
+      "ops/platform/frontend-role-preparation.mjs": "71c67d47500dca535bb2450e59b820bc930ba8740eb791d509f76261b05b134c",
+      "ops/platform/frontend-migration.mjs": "400fa6e4b41347500517d1d40fc43f6d3cf28886b6a0263bcd685f84f1138394",
+      "ops/platform/frontend-release-coordinator.mjs": "a649275400d52dd03c9c4d2634b24f22b167968e39897a068d9ac94ceac2036c",
+      "ops/platform/frontend-release-recovery.mjs": "f2d43a730f7e318f8fc21b773868c579ddda5f339cc72fd7f45cf6391c9ac078",
+      "ops/platform/frontend-admission.sql": "b8ec48242871a6e44fef415b127709e9b107a60751e47bc0fa328b99244ab6ab",
+      "ops/platform/p2-release.mjs": "609889c68a6b7fb5ddb36e9c9c1d04bd2847d74cfc734147cd61aac5174ef6c7",
+      "ops/platform/p2-frontend-live-probe.mjs": "65f43ada2230fd13cc265f2d2e5924088696ba758eddf504ef32205e5e7f27c8",
+      "ops/platform/p2-lifecycle-native.mjs": "ea5467ef9f5980e1a96cc61f9648390bc4cb9a41d765af30c2d1577a3e3404dd",
+      "ops/platform/harness/owned-p2-native-lifecycle.mjs": "e9b416fcfdea09cfbbc6f7e7e9355f7e6645ffa0562513a098c82030fb063baf",
+      "ops/platform/harness/p2-native-unit-fixture.mjs": "fccdca113ec18b5961a6143cd03fdc5ab711e764072f97ee9453039ad738ae29",
+      "src/app/api/cron/account-lifecycle/route.ts": "a42e9786c20525a9d2a1a6c574913f841d14c37ab9ce54e00f2ad15c424b1a1b"
+    },
+    "startedAtUtc": "2026-11-06T04:49:02.952057+00:00",
+    "elapsedSeconds": 34.78,
+    "exitCode": 0,
+    "node": "24.18.0",
+    "postgres": "16.13",
+    "python": "3.14.3",
+    "openssl": "3.6.3",
+    "platform": "macOS",
+    "fixtures": [
+      {
+        "id": "roles",
+        "status": "FRONTEND_ROLES_OWNED_PASS",
+        "executedChecks": 24,
+        "skipped": 0,
+        "fixtureProgramSha256": "7b3273d7d22a2c6fa39d8b80298c2a2cf16381ce7b205c2f8aad6346fc69c5a8"
+      },
+      {
+        "id": "release",
+        "status": "FRONTEND_RELEASE_OWNED_POSTGRES_PASS",
+        "executedChecks": 17,
+        "skipped": 0,
+        "fixtureProgramSha256": "f5cb2ac2c9b9d099939654e719705360afc4bdc95028f5a6872d88d29a1b2658"
+      },
+      {
+        "id": "native",
+        "status": "P2_LIFECYCLE_NATIVE_OWNED_PASS",
+        "executedChecks": 9,
+        "skipped": 0,
+        "fixtureProgramSha256": "a2c6aa56af3c9479f025458f575e2221384abb15d6b01d3b8f286dbc81815908"
+      }
+    ],
+    "wrapperStderrBytes": 0
+  },
+  "priorStartupProof": {
+    "associatedRootImplementationCommit": "63b672aa88254004a17a3799c30e96d5d3833a3e",
+    "newlyExecuted": false,
+    "copiedUnchangedOriginalResults": true,
+    "rawFixtureSourceCommit": "46cfc99dc5fc1c3760ab0e2d6a5964008d3767a0",
+    "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+    "postgresMajor": 16,
+    "migrations": 83,
+    "checkGroups": 16,
+    "shadowCheck": "operator-search-path-cannot-shadow-real-catalog-or-redirect-application-ddl",
+    "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+    "packagedCliVerified": false,
+    "rootImplementationSourceFilesSha256": {
+      "ops/platform/frontend-migration.mjs": "400fa6e4b41347500517d1d40fc43f6d3cf28886b6a0263bcd685f84f1138394",
+      "ops/platform/frontend-migration.test.mjs": "d088c12b8327cdef90be09af65a787510df483a28f9306f13981ea2e57692701",
+      "ops/platform/frontend-release-recovery.mjs": "f2d43a730f7e318f8fc21b773868c579ddda5f339cc72fd7f45cf6391c9ac078",
+      "ops/platform/test-frontend-migration-local.mjs": "a9da27d469ac4d46ce6d93123710ee97b2c009d87ed4f34bf411619900738dcc"
+    },
+    "priorFocusedUnitTests": 26
+  },
+  "limits": {
+    "exactSourceCiQualified": false,
+    "immutableImagesQualified": false,
+    "linuxOrCrossUidContainerQualified": false,
+    "actualProviderNativeEvidence": false,
+    "liveProviderOrStagingTouched": false,
+    "migrationAuthorized": false,
+    "releaseAccepted": false,
+    "g2Accepted": false,
+    "actualApiRuntimeImagesExecuted": false,
+    "receiverTransport": "owned HTTPS receiver models"
+  },
+  "open": [
+    "Required exact-source Linux/PostgreSQL18 and cross-UID CI execution",
+    "Read-only staging provider/runtime role and namespace privilege preflight; no Neon metadata was observed here",
+    "Immutable candidate/image qualification and real provider evidence",
+    "Dardan-started staging release and full P2/G2 certification"
+  ],
+  "files": {
+    "wrapper.stdout.json": "735799241ceadd18e87d58cb01fe818fcf9956536b198094f68d13ef277c1f45",
+    "wrapper.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run.json": "2ebe570a264754fcb51c8cf5aeeb8e51d867d32ab406ac44155dee64b4fc1d14",
+    "source-before.json": "53e3e07b4ab583b2e5b3cb7ef2deb710ccff5b1e7845909563e478631738315a",
+    "source-after.json": "d959706ec55b6b55d8f872472c898fa434b756924ba71be821e41da3b91b383d",
+    "startup-search-path-pg16.json": "e7a65088573cde0ced5b32d64e8f90a0493428575507649ade5ead53c26f7c98",
+    "startup-search-path-pg16.stderr": "c2f20b3710b6dcfec82ec5f15c1a6c8713cd9ac28018338b4c6551b18e2681a0",
+    "startup-search-path-unit.log": "8e1009d191fa759277f4552b7aaf73acdd3a7674ee95c8ac85c89dd244997196",
+    "README.md": "907846ff9a7d012fe5a1974d6a54d31b59f5aed02f5e19316cb84713990626ff"
+  }
+}
