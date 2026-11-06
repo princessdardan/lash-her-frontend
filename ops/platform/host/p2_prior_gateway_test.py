@@ -176,8 +176,49 @@ class PriorGatewayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
             gate.preflight_prior_gateway(self.initial,self.selected,self.verify,self.command,lambda _:None)
         self.present=True
-        with self.assertRaisesRegex(ValueError,'NEWER_LINEAGE'):
+        with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
             gate.preflight_prior_gateway(self.initial,self.selected,self.verify,self.command,lambda _:None)
+
+    def test_present_stopped_gateway_rejects_same_process_pending_refused_or_running_lineage(self):
+        before=self.stop_proof()
+        stopped_pointer=json.loads((self.root/'.p2-gateway-lineage.json').read_bytes())
+        self.assertTrue(self.present)
+        self.assertEqual(gate.preflight_prior_gateway(self.initial,self.selected,self.verify,self.command,lambda _:None),before['observation'])
+        for state in ('replacement-in-progress','preparation-refused','running-observed'):
+            with self.subTest(state=state):
+                extra={'expectedCandidateSha256':self.initial['candidateSha256']} if state=='replacement-in-progress' else {}
+                gate._remember(self.initial,before['observation'],state,**extra)
+                with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
+                    gate.preflight_prior_gateway(self.initial,self.selected,self.verify,self.command,lambda _:None)
+        gate._write_lineage(stopped_pointer)
+        self.assertEqual(gate.preflight_prior_gateway(self.initial,self.selected,self.verify,self.command,lambda _:None),before['observation'])
+        for field,value in (('binding',{**stopped_pointer['binding'],'gatewayConfigurationSha256':'f'*64}),
+                            ('stopReceiptDirectory',str(self.configuration)),('stopReceiptSha256','f'*64)):
+            with self.subTest(field=field):
+                gate._write_lineage({**stopped_pointer,field:value})
+                with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
+                    gate.preflight_prior_gateway(self.initial,self.selected,self.verify,self.command,lambda _:None)
+        gate._write_lineage(stopped_pointer)
+        (self.root/'.p2-gateway-lineage.json').unlink()
+        # Source-issued ordered stop always publishes a latest pointer. Its
+        # deletion/loss stays unknown even with the stopped object present.
+        with self.assertRaisesRegex(ValueError,'LATEST_STOP_LINEAGE'):
+            gate.preflight_prior_gateway(self.initial,self.selected,self.verify,self.command,lambda _:None)
+
+    def test_noop_gateway_stage_cannot_mark_old_process_as_completed_replacement(self):
+        boundary=self.prepare()
+        for stage in gate.runtime.STAGES[:-1]:
+            boundary.before_stage(stage);boundary.after_stage(stage)
+        boundary.before_stage(('gateway',))
+        old=self.observe()
+        with self.assertRaisesRegex(ValueError,'REPLACEMENT_NEW_CONTAINER'):
+            boundary.after_stage(('gateway',))
+        self.assertFalse(boundary.replacement_finished)
+        self.assertEqual(boundary.stage_index,4)
+        self.assertEqual(self.observe()['process'],old['process'])
+        pointer=json.loads((self.root/'.p2-gateway-lineage.json').read_bytes())
+        self.assertEqual(pointer['state'],'replacement-in-progress')
+        self.assertEqual(pointer['process'],old['process'])
 
     def test_default_readonly_transport_does_not_reenter_the_mutation_scope(self):
         class MutationScope:

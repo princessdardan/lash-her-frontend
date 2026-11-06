@@ -290,12 +290,9 @@ def observe_stopped_prior_gateway(initial, selected, verify, command=None):
     ids = _inventory(command, verify)
     require(not ids or ids == [observation['process']['containerId']], 'PRIOR_GATEWAY_STOPPED_INVENTORY_CHANGED')
     pointer = _read_lineage()
-    if not ids:
-        require(pointer and pointer.get('state') == 'stopped-observed' and pointer.get('process') == observation['process'] and
-            pointer.get('binding') == observation['binding'] and pointer.get('stopReceiptDirectory') == str(directory) and
-            pointer.get('stopReceiptSha256') == ref['stopReceiptSha256'], 'PRIOR_GATEWAY_LATEST_STOP_LINEAGE_REQUIRED')
-    elif pointer and pointer.get('process') != observation['process']:
-        require(False, 'PRIOR_GATEWAY_NEWER_LINEAGE_REQUIRED')
+    require(pointer is not None and pointer.get('state') == 'stopped-observed' and pointer.get('process') == observation['process'] and
+        pointer.get('binding') == observation['binding'] and pointer.get('stopReceiptDirectory') == str(directory) and
+        pointer.get('stopReceiptSha256') == ref['stopReceiptSha256'], 'PRIOR_GATEWAY_LATEST_STOP_LINEAGE_REQUIRED')
     if ids:
         require(_process(ids[0],command,verify) == stopped.get('stoppedProcess'), 'PRIOR_GATEWAY_STOPPED_PROCESS_CHANGED')
         require(_mounted_configuration(ids[0],command,verify) == Path(observation['binding']['configurationDirectory']), 'PRIOR_GATEWAY_STOPPED_MOUNT_CHANGED')
@@ -364,6 +361,8 @@ class PriorGatewayBoundary:
         require(self.replacement_started and not self.replacement_finished, 'PRIOR_GATEWAY_REPLACEMENT_NOT_STARTED')
         actual = observe_prior_gateway(self.initial, self.selected, self.verify_session, self.command, self.assert_host)
         require(actual['binding']['candidateSha256'] == self.initial['candidateSha256'] and _zero(actual), 'PRIOR_GATEWAY_NEW_BOUNDARY_REQUIRED')
+        require(actual['process']['containerId'] != self.observation['process']['containerId'],
+            'PRIOR_GATEWAY_REPLACEMENT_NEW_CONTAINER_REQUIRED')
         _remember(self.initial,actual)
         self.replacement_finished = True
         self.current = actual
