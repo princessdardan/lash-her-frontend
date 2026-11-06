@@ -14,7 +14,7 @@ const sha = digit => digit.repeat(64), commit = digit => digit.repeat(40);
 function file(root, name, body = name) { mkdirSync(dirname(join(root, name)), { recursive: true }); writeFileSync(join(root, name), body); }
 function source(root, service) {
   const closure = service === "frontend" ? P2_LIFECYCLE_OWNED_SOURCE_CLOSURE.frontend : P2_LIFECYCLE_OWNED_SOURCE_CLOSURE.api;
-  for (const directory of closure.directories) file(root, `${directory}/owned.txt`);
+  for (const directory of closure.directories) { file(root, `${directory}/README.md`); file(root, `${directory}/owned.txt`); }
   for (const name of closure.files) file(root, name);
   if (service === "frontend") file(root, "contracts/api-integration/p2-candidate/manifest.json", "manifest");
   if (service !== "frontend") {
@@ -45,6 +45,10 @@ test("fixed PG18 manifest verifies exact mounted frontend and API closures", () 
     const verified = verifyP2LifecycleOwnedSourceManifest(raw, roots);
     assert.equal(verified.manifest.sources.course.revision, P2_LIFECYCLE_OWNED_API_REVISIONS.course);
     assert.match(verified.sourceManifestSha256, /^[a-f0-9]{64}$/u);
+    for (const service of ["frontend", "course", "community"]) {
+      const names = Object.keys(verified.manifest.sources[service].files);
+      assert.deepEqual(names, [...names].sort());
+    }
 
     file(roots.course, "src/owned.txt", "changed");
     assert.throws(() => verifyP2LifecycleOwnedSourceManifest(raw, roots), /P2_LIFECYCLE_OWNED_SOURCE_MANIFEST_REFUSED/u);
@@ -63,6 +67,7 @@ test("manifest refuses wrong revisions, unordered maps and extra authority field
       value => { value.sources.course.revision = commit("f"); },
       value => { value.command = ["git", "clone"]; },
       value => { value.sources.frontend.files = Object.fromEntries(Object.entries(value.sources.frontend.files).reverse()); },
+      value => { value.parentProofSha256 = "0".repeat(64); },
     ]) {
       const value = manifest(roots); change(value);
       assert.throws(() => verifyP2LifecycleOwnedSourceManifest(Buffer.from(JSON.stringify(value)), roots), /P2_LIFECYCLE_OWNED_SOURCE_MANIFEST_REFUSED/u);

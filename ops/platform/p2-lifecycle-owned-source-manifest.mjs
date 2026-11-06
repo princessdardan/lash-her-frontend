@@ -27,6 +27,7 @@ const FRONTEND_FILES = Object.freeze([
 const API_DIRECTORIES = Object.freeze(["drizzle", "src", "dist", "openapi", "contracts"]);
 const API_FILES = Object.freeze(["package.json", "package-lock.json"]);
 const hash = value => createHash("sha256").update(value).digest("hex");
+const isSha = value => SHA.test(value) && value !== "0".repeat(64);
 const demand = condition => { if (!condition) throw new Error("P2_LIFECYCLE_OWNED_SOURCE_MANIFEST_REFUSED"); };
 const closed = (value, fields) => Boolean(value && typeof value === "object" && !Array.isArray(value)
   && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...fields].sort()));
@@ -35,7 +36,7 @@ function validateFileMap(value) {
   demand(value && typeof value === "object" && !Array.isArray(value));
   const names = Object.keys(value);
   demand(names.length >= 1 && names.length <= 1_500 && JSON.stringify(names) === JSON.stringify([...names].sort())
-    && names.every(name => SAFE_PATH.test(name) && !name.startsWith("/") && !name.split("/").includes("..") && SHA.test(value[name])));
+    && names.every(name => SAFE_PATH.test(name) && !name.startsWith("/") && !name.split("/").includes("..") && isSha(value[name])));
   return value;
 }
 
@@ -43,17 +44,17 @@ export function validateP2LifecycleOwnedSourceManifest(raw) {
   const value = Buffer.isBuffer(raw) || typeof raw === "string" ? JSON.parse(raw.toString()) : structuredClone(raw);
   demand(closed(value, ["version", "status", "mode", "parentProofSha256", "identityManifestSha256", "sources"])
     && value.version === 1 && value.status === "P2_LIFECYCLE_OWNED_SOURCE_MANIFEST" && value.mode === "postgres18-container"
-    && SHA.test(value.parentProofSha256) && SHA.test(value.identityManifestSha256)
+    && isSha(value.parentProofSha256) && isSha(value.identityManifestSha256)
     && closed(value.sources, ["frontend", "course", "community"]));
   for (const service of ["frontend", "course", "community"]) {
     const source = value.sources[service];
     demand(closed(source, ["repository", "revision", "gitTree", "packageSha256", "packageLockSha256", "artifactSha256", "files"])
       && source.repository === REPOSITORIES[service] && COMMIT.test(source.revision) && COMMIT.test(source.gitTree)
-      && SHA.test(source.packageSha256) && SHA.test(source.packageLockSha256));
+      && isSha(source.packageSha256) && isSha(source.packageLockSha256));
     if (service === "frontend") demand(closed(source.artifactSha256, []));
-    else if (service === "course") demand(closed(source.artifactSha256, ["course"]) && SHA.test(source.artifactSha256.course));
+    else if (service === "course") demand(closed(source.artifactSha256, ["course"]) && isSha(source.artifactSha256.course));
     else demand(closed(source.artifactSha256, ["community", "enrollmentEvent"])
-      && SHA.test(source.artifactSha256.community) && SHA.test(source.artifactSha256.enrollmentEvent));
+      && isSha(source.artifactSha256.community) && isSha(source.artifactSha256.enrollmentEvent));
     validateFileMap(source.files);
   }
   demand(value.sources.course.revision === API_REVISIONS.course && value.sources.community.revision === API_REVISIONS.community);
@@ -92,7 +93,7 @@ export function p2LifecycleOwnedSourceFileMap(service, sourceRoot) {
   const files = service === "frontend" ? FRONTEND_FILES : API_FILES;
   for (const directory of directories) walk(root, directory, output);
   for (const name of files) output[name] = hash(readFile(root, name));
-  return Object.fromEntries(Object.entries(output).sort(([a], [b]) => a.localeCompare(b)));
+  return Object.fromEntries(Object.entries(output).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
 }
 
 export function verifyP2LifecycleOwnedSourceManifest(raw, roots) {
