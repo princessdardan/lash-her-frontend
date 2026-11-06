@@ -71,7 +71,7 @@ async function ownedCall(stage,task){
 const ownedEmission={attempted:0,emitted:0,projectionFailures:0,uncaughtMonitor:0,origin:'none'};
 function emitOwned(error,stage,records){
   ownedEmission.attempted++;
-  try{for(const record of records??[ownedNodeDiagnostic(error,stage)]){process.stderr.write(JSON.stringify(record)+'\n');ownedEmission.emitted++;}}
+  try{for(const record of records??[ownedNodeDiagnostic(error,stage)]){writeFileSync(2,JSON.stringify(record)+'\n');ownedEmission.emitted++;}}
   catch{ownedEmission.projectionFailures++;}
 }
 async function ownedBoundary(task){
@@ -81,7 +81,7 @@ async function ownedBoundary(task){
 }
 // Monitor default termination; do not consume the exception or change exit.
 process.on('uncaughtExceptionMonitor',(error,origin)=>{ownedEmission.uncaughtMonitor++;ownedEmission.origin=['uncaughtException','unhandledRejection'].includes(origin)?origin:'unknown';emitOwned(error,'uncaught-final');});
-process.once('exit',code=>{if(code!==0)process.stderr.write(JSON.stringify({status:'OWNED_P2_NODE_EMISSION_SUMMARY',...ownedEmission})+'\n');});
+process.once('exit',code=>{if(code!==0)try{writeFileSync(2,JSON.stringify({status:'OWNED_P2_NODE_EMISSION_SUMMARY',...ownedEmission})+'\n');}catch{ /* A closed diagnostic pipe cannot change the original exit. */ }});
 
 if(privateInput.ownedComposedDiagnosticControl!==undefined){
   const mode=privateInput.ownedComposedDiagnosticControl;assert.ok(['python-source-guard','node-pre-spawn','node-checkpoint','node-message-collision','shared-observer-guard','shared-observer-assertion'].includes(mode));
