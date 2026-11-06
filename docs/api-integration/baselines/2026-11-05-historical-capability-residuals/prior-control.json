@@ -1,0 +1,19 @@
+{
+  "status": "AMBIGUOUS_GENERAL_RESIDUAL_REPRODUCED",
+  "fixtureOnly": true,
+  "actualHistoricalDeploymentObserved": false,
+  "priorCommit": "57d4e082d9060bccae6aabe97a4b9cc7b274a061",
+  "priorModuleSha256": "e924d1d54d505858cd09eb2044b004ab887780a473f7f356c6d72a010b51fc3c",
+  "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "sourceInventorySha256": "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+  "requirementsSha256": "ba178492d1097423c83b6e268cfd4826608b471cf467c29cf8ebfeaab3e24ff4",
+  "closedFamilies": 36,
+  "unresolvedFamilyIds": [],
+  "externallyUnresolvedScopedFamilyIds": [
+    "sanity.editorial",
+    "sanity.callbacks",
+    "mux.studio"
+  ],
+  "actualSharedJoinBypassDemonstrated": false,
+  "liveProviderCalls": 0
+}
