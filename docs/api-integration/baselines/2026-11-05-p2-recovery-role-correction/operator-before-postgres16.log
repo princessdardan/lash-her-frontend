@@ -1,0 +1,13 @@
+{"status":"OWNED_FAULT_INSTALL_FAILED","id":"frontend-operator-superuser","sqlState":"42501"}
+file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-post-sql-recovery/ops/platform/p2-recovery-current-probe.mjs:163
+  } catch(error) { const safe=new Error('P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW');if(/^[a-z-]{1,60}$/u.test(error?.checkpoint??''))safe.checkpoint=error.checkpoint;throw safe; }
+                              ^
+
+Error: P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW
+    at withRecoveryFrontendSession (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-post-sql-recovery/ops/platform/p2-recovery-current-probe.mjs:163:31)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async checkFrontendFault (/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-post-sql-recovery/ops/platform/test-p2-recovery-owned.mjs:55:5)
+    at async <anonymous> (/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-post-sql-recovery/ops/platform/test-p2-recovery-owned.mjs:89:3)
+
+Node.js v24.18.0
+

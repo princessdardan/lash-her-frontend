@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "priorCorrectionCommit": "2b8b5b328d1b3538e6f6d33e7b20bce8d52e2a3a",
+  "qualification": "final owned recovery role closure; source-only",
+  "historicalReceiptsUnchanged": [
+    "before-postgres16.log",
+    "owned-postgres16.log",
+    "validation.json"
+  ],
+  "originalUnsafeAcceptedReproductionCases": 17,
+  "superuserCompoundSetup": "SQLSTATE42501; failed setup, not accepted-bypass evidence",
+  "checks": {
+    "nodeTests": 5,
+    "hostTests": 13,
+    "ownedDatabaseGroups": 55,
+    "namedRegressionCases": 39,
+    "frontendInitialRefusals": 17,
+    "frontendContinuousRefusals": 17,
+    "apiRefusals": 22,
+    "legacyApiExportRefusals": 2,
+    "postgresMajorExecuted": 16,
+    "postgres18ExecutedLocally": false,
+    "postgres18RequiredInCI": true,
+    "syntaxPassed": true,
+    "diffCheckPassed": true
+  },
+  "apiSourceInputs": {
+    "course": {
+      "commit": "76716c537b5cd3049f0653ed3596c4f547ce3584",
+      "fileSha256": {
+        "src/db/operator-migration.ts": "898bd9565dd5316ed526339981dcb9a32200d4485534a9464ccad3db612648a3",
+        "src/db/migration-release.ts": "fd9abd0eb07ef5818468c9371ff69d696813bf6b6df313835b7b6b18dc6906ad",
+        "src/db/migration-lineage.ts": "1c2cd7a4d20d8a9fea885161a74265f12e606fde9b70051232f00a0764e4a450",
+        "src/db/migration-schema.ts": "54125a4de26dd3ba62f0dca4ad8445ae6822709b194a002d563efcd298efdff9",
+        "package.json": "b1f214890facb53ba9b8b9210a84e9ec0732df253b57a83459461f6a8989998c",
+        "package-lock.json": "0153a941a3e767889cc356b1d3cc72823b03a7d46f97fd07f66b7e53f3e8c8fa"
+      }
+    },
+    "community": {
+      "commit": "e3bfffe295c7f0b7d029d6a7c9deb495ac418289",
+      "fileSha256": {
+        "src/db/operator-migration.ts": "e80b9fceb5e44099b8f21ffc789b7d73d3bebe9757032e696d83f83e9eb3fa65",
+        "src/db/migration-release.ts": "fd9abd0eb07ef5818468c9371ff69d696813bf6b6df313835b7b6b18dc6906ad",
+        "src/db/migration-lineage.ts": "1c2cd7a4d20d8a9fea885161a74265f12e606fde9b70051232f00a0764e4a450",
+        "src/db/migration-schema.ts": "a7b00e4cad7d26e04ab15ba43978921232420280094ef7dcf0e45d1b5bf765d8",
+        "package.json": "3966eb15f5a325f608e0dd7f97891e2591dbb9b74772aa4fe8ccebf0a00b778d",
+        "package-lock.json": "03e332482b3f4d4f1a572a8ba00d79a0e7d9a27497e67973103fbdc2833e4bfe"
+      }
+    }
+  },
+  "ownedDatabaseReceipt": {
+    "status": "OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS",
+    "checks": 55,
+    "frontendMigrations": 83,
+    "courseMigrations": 22,
+    "communityMigrations": 11,
+    "serverMajor": 16,
+    "noSqlReplay": true,
+    "originalFrontendTerminalRecreated": false,
+    "skipped": 0,
+    "fixtureOnly": true,
+    "providerTouched": false,
+    "privilegeFaults": [
+      "community-default-grant-option",
+      "community-default-sequence-update",
+      "community-default-unexpected-grantee",
+      "community-global-default",
+      "community-migration-inbound",
+      "community-runtime-inbound",
+      "community-runtime-outbound",
+      "community-sequence-update",
+      "community-table-grant-option",
+      "community-table-references",
+      "community-table-trigger",
+      "course-default-grant-option",
+      "course-default-sequence-update",
+      "course-default-unexpected-grantee",
+      "course-global-default",
+      "course-migration-inbound",
+      "course-runtime-inbound",
+      "course-runtime-outbound",
+      "course-sequence-update",
+      "course-table-grant-option",
+      "course-table-references",
+      "course-table-trigger",
+      "frontend-default-grant-option",
+      "frontend-default-unexpected-grantee",
+      "frontend-global-default",
+      "frontend-operator-superuser",
+      "frontend-owner-inbound",
+      "frontend-owner-outbound",
+      "frontend-runtime-database-settings",
+      "frontend-runtime-inbound",
+      "frontend-runtime-outbound",
+      "frontend-runtime-public-schema-access",
+      "frontend-runtime-rogue-admin",
+      "frontend-runtime-rogue-ownership",
+      "frontend-runtime-role-settings",
+      "frontend-sequence-update",
+      "frontend-table-grant-option",
+      "frontend-table-references",
+      "frontend-table-trigger"
+    ],
+    "frontendInitialPrivilegeRefusals": 17,
+    "frontendContinuousPrivilegeRefusals": 17,
+    "apiPrivilegeRefusals": 22,
+    "legacyApiVerifierRefusals": 2,
+    "frontendCreatorPolicy": "actual-non-superuser-automatic-admin-plus-explicit-owner-set",
+    "frontendCreatorMemberships": 3,
+    "frontendOperatorSearchPathPinned": true,
+    "environmentIsolation": {
+      "nodeOptionsPositiveControlExecuted": true,
+      "poisonedParentEnvironment": true,
+      "ambientNodeOptionsExecuted": false,
+      "ambientConfigVariablesAbsent": true,
+      "childEnvironmentAllowlistEnforced": true
+    }
+  },
+  "claims": {
+    "liveOperations": false,
+    "cloudSecretFetch": false,
+    "providerMutations": false,
+    "sqlReplayed": false,
+    "originalTerminalRecreated": false,
+    "operatorOtherAdminCapabilitiesRestricted": false,
+    "temporaryPrivilegeChanged": false,
+    "wholeReleaseAccepted": false,
+    "forwardBuildRecoveryImplemented": false
+  },
+  "openConditions": [
+    "required PostgreSQL18 CI",
+    "final committed-hash independent review",
+    "same-candidate forward-build recovery implementation",
+    "Dardan reviewed start for actual staging"
+  ],
+  "fileSha256": {
+    "ops/platform/p2-recovery-api-current-probe.mjs": "816d38c5482f121ae6ca67807d0a3c3101be54834722eadb9093b46f4fb28c0a",
+    "ops/platform/p2-recovery-current-probe.mjs": "a6ed57ac2701af0b074715c226520e9a1ebd52be2fd477089f303e0b5b67f35b",
+    "ops/platform/test-p2-recovery-owned.mjs": "d413bf75c8a46411d65db24202706836f5de453de4b22c545aa1ac448d522c07",
+    "ops/platform/test-p2-recovery-owned.py": "516858fff821356628ff6a7920f021599e859753015a83ebe369cf6c360d565b",
+    "docs/api-integration/operator-p2-post-sql-recovery.md": "62acf2a8efb4d78c01a33f27767a1123a94f85f93b14bd90235edcc40cb2c32b",
+    "docs/api-integration/baselines/2026-11-05-p2-recovery-role-correction/role-closure.md": "cf94a1bf2dddf452c1b5dbda3e0432a81475c78341b727dfc41660bcef42099b",
+    "docs/api-integration/baselines/2026-11-05-p2-recovery-role-correction/role-closure-node-tests.log": "52432eaa2b3c59323c42c046d3ae55d3c36dd2945550c8cfa45a6d60bba4a052",
+    "docs/api-integration/baselines/2026-11-05-p2-recovery-role-correction/role-closure-owned-postgres16.log": "71fd146b0b66a7c3f0cd71c36d4e63224e36423cb6a56d5f2860267373424045",
+    "docs/api-integration/baselines/2026-11-05-p2-recovery-role-correction/operator-owned-postgres16.log": "609c3936c215ca88d9e20c53b9e54b85623a76cabdde7713579d1a711e2932bb",
+    "docs/api-integration/baselines/2026-11-05-p2-recovery-role-correction/operator-before-postgres16.log": "08386372bd2efbb212bdfb3f73d20d91d4145016154c485e31bcd327c9fb1eaf",
+    "docs/api-integration/baselines/2026-11-05-p2-recovery-role-correction/host-tests.log": "713ce91dee8761da19f9cedf64196a7fec457de51f95915f0304843d620e9da5"
+  }
+}

@@ -11,6 +11,9 @@ import { readMigrationCatalog } from './frontend-schema.mjs';
 const require = (ok,checkpoint) => { if (!ok) { const error=new Error('P2_RECOVERY_CURRENT_DATABASE_REFUSED');if(checkpoint)error.checkpoint=checkpoint;throw error;} };
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const name = value => typeof value === 'string' && /^[a-z][a-z0-9_]{0,62}$/u.test(value);
+// Catalog builtins resolve first; public visibility preserves original baseline
+// regtype/expression rendering. No operator-selected schema is searched.
+const recoveryConnectionOptions=(value,target)=>{const connection=frontendConnectionOptions(value,target);return {...connection,options:[connection.options,'-c search_path=pg_catalog,public'].filter(Boolean).join(' ')};};
 export const RECOVERY_LOCK_APPLICATION = 'lash-her-p2-post-sql-recovery';
 // Exact bootstrap source body hashes; migration images do not ship its SQL.
 export const RECOVERY_ADMISSION_SOURCE_SHA256 = "b8ec48242871a6e44fef415b127709e9b107a60751e47bc0fa328b99244ab6ab";
@@ -21,7 +24,11 @@ export const RECOVERY_HELD_LOCK = `SELECT EXISTS(SELECT 1 FROM pg_locks WHERE lo
 
 async function verifyRecoveryMemberships(client, runtimeOid, owner) {
   require(owner && /^[1-9][0-9]*$/u.test(owner.oid));
-  const operator = (await client.query("SELECT session_user::regrole::oid::text AS oid,(SELECT rolsuper FROM pg_roles WHERE rolname=session_user) AS super")).rows[0];
+  const operator = (await client.query('SELECT oid::text,rolcanlogin,rolsuper,rolcreaterole,rolcreatedb,rolinherit,rolreplication,rolbypassrls FROM pg_roles WHERE rolname=session_user')).rows[0];
+  // The reviewed Neon target is a non-superuser provisioner. Its other admin
+  // attributes (including replication/RLS powers) are provider policy, not the
+  // restricted owner/runtime policy; do not invent static false requirements.
+  require(operator?.rolcanlogin===true && operator.rolcreaterole===true && operator.rolsuper===false,'operator-role-policy');
   const rows = (await client.query(`SELECT m.roleid::text,m.member::text,m.grantor::text,m.admin_option,m.inherit_option,m.set_option,g.rolsuper AS grantor_super
     FROM pg_auth_members m JOIN pg_roles g ON g.oid=m.grantor WHERE m.roleid=ANY($1::oid[]) OR m.member=ANY($1::oid[])
     ORDER BY m.roleid,m.member,m.grantor`, [[owner.oid,runtimeOid]])).rows;
@@ -29,7 +36,7 @@ async function verifyRecoveryMemberships(client, runtimeOid, owner) {
   // operator. Only its explicit owner SET grant and PG16+ creator administration
   // survive. No selected role has an outbound membership or another member.
   const creators=rows.filter(row=>row.admin_option===true),ownerSet=rows.filter(row=>row.admin_option===false);
-  require(operator && rows.length===(operator.super?1:3) && creators.length===(operator.super?0:2) &&
+  require(rows.length===3 && creators.length===2 &&
     creators.every(row=>row.member===operator.oid && [owner.oid,runtimeOid].includes(row.roleid) && row.grantor_super===true && row.inherit_option===false && row.set_option===false) &&
     new Set(creators.map(row=>row.roleid)).size===creators.length && ownerSet.length===1 && ownerSet[0].roleid===owner.oid &&
     ownerSet[0].member===operator.oid && ownerSet[0].grantor===operator.oid && ownerSet[0].inherit_option===false && ownerSet[0].set_option===true,'role-memberships');
@@ -38,15 +45,20 @@ async function verifyRecoveryMemberships(client, runtimeOid, owner) {
 export async function verifyRecoveryRuntimeGrants(client, target, owner) {
   let checkpoint='runtime-role-flags';
   try {
-  const roles = (await client.query(`SELECT oid::text,rolname,rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,
+  const roles = (await client.query(`SELECT oid::text,rolname,rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,rolconfig,rolconnlimit,rolvaliduntil,
     pg_has_role($1,$2,'MEMBER') AS migration_member,has_schema_privilege($1,'public','CREATE') AS ddl
     FROM pg_roles WHERE rolname=$1`, [target.runtimeRole, target.user])).rows;
   require(roles.length === 1 && roles[0].rolcanlogin === true && ['rolinherit','rolsuper','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls','migration_member','ddl'].every(key => roles[0][key] === false));
+  require(roles[0].rolconfig===null && roles[0].rolconnlimit===-1 && roles[0].rolvaliduntil===null,'runtime-role-settings');
   checkpoint='role-memberships';await verifyRecoveryMemberships(client,roles[0].oid,owner);
+  require((await client.query('SELECT 1 FROM pg_catalog.pg_db_role_setting WHERE setrole=ANY($1::oid[]) LIMIT 1',[[owner.oid,roles[0].oid]])).rows.length===0,'selected-role-database-settings');
   checkpoint='runtime-ownership';require((await client.query(`SELECT 1 WHERE has_database_privilege($1,current_database(),'CREATE') OR
+    EXISTS(SELECT 1 FROM pg_shdepend WHERE refclassid='pg_authid'::regclass AND refobjid=$1::regrole AND deptype='o') OR
     EXISTS(SELECT 1 FROM pg_database WHERE datname=current_database() AND pg_has_role($1,datdba,'MEMBER')) OR
     EXISTS(SELECT 1 FROM pg_namespace WHERE nspname IN ('public','drizzle','frontend_admission') AND pg_has_role($1,nspowner,'MEMBER')) OR
     EXISTS(SELECT 1 FROM pg_class WHERE relnamespace='public'::regnamespace AND pg_has_role($1,relowner,'MEMBER'))`, [target.runtimeRole])).rows.length === 0);
+  require((await client.query(`SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname !~ '^pg_' AND nspname<>'information_schema'
+    AND nspname NOT IN ('public','frontend_admission') AND pg_catalog.has_schema_privilege($1,oid,'USAGE') LIMIT 1`,[target.runtimeRole])).rows.length===0,'runtime-schema-access');
   checkpoint='runtime-table-dml';require((await client.query(`SELECT 1 FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relkind IN ('r','p') AND
     EXISTS(SELECT 1 FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE']) p WHERE NOT has_table_privilege($1,c.oid,p))`, [target.runtimeRole])).rows.length === 0);
   checkpoint='runtime-sequence-dml';require((await client.query(`SELECT 1 FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relkind='S' AND
@@ -120,8 +132,8 @@ export async function readRecoveryFrontendCurrent(client, prepared, action, veri
     require(old.length === retired.length && old.every(row => !row.rolcanlogin && retired.some(expected => expected.name === row.rolname && expected.oid === row.oid)));
     await client.query('SELECT pg_stat_clear_snapshot()');
     require((await client.query('SELECT count(*)::int AS count FROM pg_stat_activity WHERE usesysid=ANY($1::oid[])', [retired.map(row => row.oid)])).rows[0]?.count === 0);
-    phase='admission-owner';const owners = (await client.query('SELECT oid::text,rolcanlogin,rolsuper,rolinherit,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_roles WHERE rolname=$1', [plan.owner.name])).rows;
-    require(owners.length === 1 && owners[0].oid === plan.owner.oid && ['rolcanlogin','rolsuper','rolinherit','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls'].every(key => owners[0][key] === false));
+    phase='admission-owner';const owners = (await client.query('SELECT oid::text,rolcanlogin,rolsuper,rolinherit,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,rolconfig,rolconnlimit,rolvaliduntil FROM pg_roles WHERE rolname=$1', [plan.owner.name])).rows;
+    require(owners.length === 1 && owners[0].oid === plan.owner.oid && owners[0].rolconfig===null && owners[0].rolconnlimit===-1 && owners[0].rolvaliduntil===null && ['rolcanlogin','rolsuper','rolinherit','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls'].every(key => owners[0][key] === false));
     await client.query(`SET LOCAL ROLE "${plan.owner.name}"`);
     require((await client.query("SELECT nspowner::text AS oid FROM pg_namespace WHERE nspname='frontend_admission'")).rows[0]?.oid === plan.owner.oid);
     phase='admission-ledger';const controls = (await client.query('SELECT environment,target_sha256,epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton')).rows;
@@ -141,7 +153,7 @@ export async function readRecoveryFrontendCurrent(client, prepared, action, veri
 
 export async function withRecoveryFrontendSession(prepared, action, dependencies, task) {
   const target = prepared.migration.job.target;
-  const client = (dependencies.createClient ?? (options => new Client(options)))({ ...frontendConnectionOptions(await dependencies.getUrl(), target), application_name: RECOVERY_LOCK_APPLICATION });
+  const client = (dependencies.createClient ?? (options => new Client(options)))({ ...recoveryConnectionOptions(await dependencies.getUrl(), target),application_name: RECOVERY_LOCK_APPLICATION });
   let lost = false, locked = false, identity;
   client.on('error', () => { lost = true; });
   const verify = async () => {
@@ -174,14 +186,14 @@ export async function observeRecoveryPhysical(input, { getUrl, createClient = op
     Number.isSafeInteger(input.backendPid) && typeof input.backendStart === 'string' && input.job?.environment === 'staging' &&
     input.receipt?.status === 'P2_RECOVERY_DATABASE_CURRENT' && input.receipt.sourceCommit === input.job.sourceCommit &&
     input.receipt.sqlArtifactSha256 === input.job.sqlArtifactSha256 && name(input.owner?.name));
-  const client = createClient(frontendConnectionOptions(await getUrl(), input.job.target));
+  const client = createClient(recoveryConnectionOptions(await getUrl(), input.job.target));
   let lost = false, admission; client.on('error', () => { lost = true; });
   try {
     await client.connect(); require(client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true);
     const identity = (await client.query("SELECT current_user AS username,current_database() AS database,current_setting('server_version_num')::int/10000 AS major")).rows[0];
     require(identity.username === input.job.target.user && identity.database === input.job.target.database && identity.major === input.job.target.serverMajor);
-    const owner = (await client.query('SELECT oid::text,rolcanlogin,rolsuper,rolinherit,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_roles WHERE rolname=$1', [input.owner.name])).rows;
-    require(owner.length === 1 && owner[0].oid === input.owner.oid && ['rolcanlogin','rolsuper','rolinherit','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls'].every(key => owner[0][key] === false));
+    const owner = (await client.query('SELECT oid::text,rolcanlogin,rolsuper,rolinherit,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,rolconfig,rolconnlimit,rolvaliduntil FROM pg_roles WHERE rolname=$1', [input.owner.name])).rows;
+    require(owner.length === 1 && owner[0].oid === input.owner.oid && owner[0].rolconfig===null && owner[0].rolconnlimit===-1 && owner[0].rolvaliduntil===null && ['rolcanlogin','rolsuper','rolinherit','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls'].every(key => owner[0][key] === false));
     if (input.operation === 'fence') {
       await client.query('BEGIN');
       try {

@@ -20,23 +20,24 @@ export async function observeRecoveryApiCurrent(input, { getUrl, modules = image
   const api = await modules();
   const prepared = api.prepareOperatorMigration(JSON.stringify(input.job), input.schemaBytes, 'drizzle', input.service);
   const { manifest: job, target, artifact, baseline } = prepared;
-  const client = createClient({ ...api.directMigrationConnection(await getUrl(), target), options: '-c default_transaction_read_only=on', application_name: 'lash-her-p2-api-recovery-current' });
+  const connection=api.directMigrationConnection(await getUrl(),target);
+  const client = createClient({ ...connection, options: [connection.options,'-c default_transaction_read_only=on -c search_path=pg_catalog,public'].filter(Boolean).join(' '), application_name: 'lash-her-p2-api-recovery-current' });
   let lost = false,checkpoint='api-transport'; client.on('error', () => { lost = true; });
   try {
     await client.connect(); require(client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true);
     await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
     try {
-      checkpoint='api-identity';const identity = (await client.query("SELECT current_database() AS database,current_user AS role,current_setting('server_version_num')::int/10000 AS major,current_setting('transaction_read_only') AS readonly")).rows[0];
+      checkpoint='api-identity';const identity = (await client.query("SELECT pg_catalog.current_database() AS database,current_user AS role,pg_catalog.current_setting('server_version_num')::int/10000 AS major,pg_catalog.current_setting('transaction_read_only') AS readonly")).rows[0];
       require(identity.database === target.database && identity.role === target.user && identity.major === target.serverMajor && identity.readonly === 'on');
+      // Validate source-owned role settings before any application-schema or
+      // catalog reader could resolve names through a forbidden search_path.
+      checkpoint='api-role-export';require(typeof api.verifyOperatorRoles === 'function');
+      checkpoint='api-role-policy';await api.verifyOperatorRoles(client, target.user, job.runtimeRole, true, { service: input.service, environment: job.environment }); require(!lost);
       const journal = (await client.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at ASC NULLS FIRST,id ASC')).rows;
       // Preserve original approvedPendingTags. Current-only comparison is an
       // independent read; it never edits the original manifest to authorize [].
       checkpoint='api-lineage';require(api.assertAppliedLineage(artifact, journal).length === 0);
-      checkpoint='api-schema';require(isDeepStrictEqual(await api.readMigrationCatalog(client), baseline.catalog));
-      // Mandatory exact-image source policy; older images without the reviewed
-      // read-only export refuse. Never fall back to a weaker duplicated gate.
-      checkpoint='api-role-export';require(typeof api.verifyOperatorRoles === 'function');
-      checkpoint='api-role-policy';await api.verifyOperatorRoles(client, target.user, job.runtimeRole, true, { service: input.service, environment: job.environment }); require(!lost);
+      checkpoint='api-schema';require(isDeepStrictEqual(await api.readMigrationCatalog(client),baseline.catalog));
       return { version: 1, status: 'P2_RECOVERY_API_DATABASE_CURRENT', service: input.service,
         ...Object.fromEntries(['environment','releaseId','sourceCommit','migrationImageDigest','runtimeImageDigest','schemaBaselineSha256','contractSha256'].map(key => [key,job[key]])),
         ...(job.contractPhase === 'p2' ? { contractPhase:'p2',phase2ContractManifestSha256:job.phase2ContractManifestSha256 } : {}),

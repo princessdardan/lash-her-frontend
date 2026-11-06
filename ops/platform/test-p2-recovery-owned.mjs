@@ -27,8 +27,17 @@ try{
   assert.match(privateInput.password,/^owned-[a-f0-9-]+$/u);
   await admin.query("CREATE ROLE recovery_creator LOGIN CREATEROLE NOINHERIT PASSWORD '"+privateInput.password+"'; GRANT CREATE ON DATABASE postgres TO recovery_creator; GRANT USAGE,CREATE ON SCHEMA public TO recovery_creator");
   await admin.query('SET ROLE recovery_creator');
-  await admin.query("CREATE ROLE recovery_owner NOLOGIN NOINHERIT; CREATE ROLE recovery_runtime LOGIN NOINHERIT; GRANT recovery_owner TO recovery_creator WITH INHERIT FALSE, SET TRUE, ADMIN FALSE");
+  await admin.query("CREATE ROLE recovery_owner NOLOGIN NOINHERIT; CREATE ROLE recovery_runtime LOGIN NOINHERIT PASSWORD '"+privateInput.password+"'; GRANT recovery_owner TO recovery_creator WITH INHERIT FALSE, SET TRUE, ADMIN FALSE");
   await admin.query('RESET ROLE');
+  // These are valid provider administrative capabilities, not runtime grants.
+  // Keep them enabled throughout qualification to reject accidental policy
+  // additions that would prohibit the reviewed Neon provisioning principal.
+  await admin.query('ALTER ROLE recovery_creator CREATEDB INHERIT REPLICATION BYPASSRLS');
+  await admin.query(`CREATE SCHEMA recovery_shadow AUTHORIZATION recovery_creator;
+    CREATE VIEW recovery_shadow.pg_roles AS SELECT * FROM pg_catalog.pg_roles WHERE false;
+    CREATE FUNCTION recovery_shadow.hashtext(text) RETURNS integer LANGUAGE sql IMMUTABLE AS 'SELECT 0';
+    ALTER ROLE recovery_creator SET search_path TO recovery_shadow,pg_catalog,public;
+    ALTER DATABASE postgres SET search_path TO recovery_shadow,pg_catalog,public`);
   await admin.query("CREATE ROLE recovery_retired NOLOGIN NOINHERIT; GRANT CREATE ON DATABASE postgres TO recovery_owner; GRANT USAGE ON SCHEMA drizzle TO recovery_creator; GRANT SELECT ON ALL TABLES IN SCHEMA drizzle TO recovery_creator");
   await admin.query('CREATE SEQUENCE public.recovery_acl_probe');
   await admin.query('SET ROLE recovery_owner');await admin.query(readFileSync(new URL('./frontend-admission.sql',import.meta.url),'utf8'));await admin.query('RESET ROLE');
@@ -46,12 +55,13 @@ try{
   const deps={getUrl:()=>url.href,verifyEnvironment:async()=>{}};
   const creatorMemberships=(await admin.query("SELECT m.admin_option,m.inherit_option,m.set_option,g.rolsuper AS grantor_super FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.roleid JOIN pg_roles g ON g.oid=m.grantor WHERE r.rolname IN ('recovery_owner','recovery_runtime') ORDER BY m.admin_option,m.roleid")).rows;
   assert.equal(creatorMemberships.length,3);assert.equal(creatorMemberships.filter(row=>row.admin_option&&row.grantor_super&&!row.inherit_option&&!row.set_option).length,2);
-  const checkFrontendFault=async(id,install,remove)=>{
-    const checkpoint=/inbound|outbound|rogue-admin/u.test(id)?'role-memberships':/default/u.test(id)?'runtime-default-grants':'runtime-extra-privileges';
+  const checkFrontendFault=async(id,install,remove,afterInstall=async()=>{})=>{
+    const checkpoint=id==='frontend-operator-superuser'?'operator-role-policy':id==='frontend-runtime-role-settings'?'runtime-role-settings':id==='frontend-runtime-database-settings'?'selected-role-database-settings':id==='frontend-runtime-rogue-ownership'?'runtime-ownership':id==='frontend-runtime-public-schema-access'?'runtime-schema-access':/inbound|outbound|rogue-admin/u.test(id)?'role-memberships':/default/u.test(id)?'runtime-default-grants':'runtime-extra-privileges';
     await withRecoveryFrontendSession(prepared,action,deps,async({probe})=>{
       assert.equal((await observeRecoveryPhysical({...probe,operation:'verify-schema'},deps)).status,'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED');
       await admin.query(install);
       try{
+        await afterInstall();
         let continuousRefused=false;
         try{await observeRecoveryPhysical({...probe,operation:'verify-schema'},deps);}catch(error){continuousRefused=error.checkpoint===checkpoint;}
         privilegeFaults.push({id,continuousRefused});
@@ -60,6 +70,7 @@ try{
     });
     await admin.query(install);
     try{
+      await afterInstall();
       let initialRefused=false,restorationEntered=false;
       try{await withRecoveryFrontendSession(prepared,action,deps,async()=>{restorationEntered=true;});}catch(error){initialRefused=error.checkpoint===checkpoint;}
       privilegeFaults.at(-1).initialRefused=initialRefused;privilegeFaults.at(-1).restorationEntered=restorationEntered;
@@ -69,7 +80,10 @@ try{
     checks++;
   };
   assert.deepEqual((await admin.query("SELECT proname FROM pg_proc WHERE pronamespace='frontend_admission'::regnamespace ORDER BY proname")).rows.map(row=>row.proname),['admit','begin_operation','current_policy','finish_operation','settle']);
-  await withRecoveryFrontendSession(prepared,action,deps,async({receipt,probe,verify})=>{
+  await withRecoveryFrontendSession(prepared,action,deps,async({client,receipt,probe,verify})=>{
+    assert.equal((await admin.query("SELECT rolconfig FROM pg_catalog.pg_roles WHERE rolname='recovery_creator'")).rows[0].rolconfig[0],'search_path=recovery_shadow, pg_catalog, public');
+    assert.deepEqual((await client.query('SHOW search_path')).rows[0].search_path.split(',').map(value=>value.trim()),['pg_catalog','public']);
+    assert.notEqual((await client.query("SELECT hashtext('lash-her:private-db:migrations') AS value")).rows[0].value,0);
     assert.equal(receipt.status,'P2_RECOVERY_DATABASE_CURRENT');assert.equal(receipt.originalReceiptSha256['job-outcome.json'],null);assert.equal(receipt.sqlReplayed,false);
     assert.equal((await admin.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked',['lash-her:private-db:migrations'])).rows[0].locked,false);
     const actual=await observeRecoveryPhysical({...probe,operation:'verify-schema'},deps);assert.equal(actual.status,'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED');
@@ -82,6 +96,19 @@ try{
   await checkFrontendFault('frontend-runtime-rogue-admin','GRANT recovery_runtime TO recovery_rogue WITH ADMIN TRUE, INHERIT FALSE, SET FALSE','REVOKE recovery_runtime FROM recovery_rogue');
   await checkFrontendFault('frontend-owner-inbound','GRANT recovery_owner TO recovery_rogue','REVOKE recovery_owner FROM recovery_rogue');
   await checkFrontendFault('frontend-owner-outbound','GRANT recovery_rogue TO recovery_owner','REVOKE recovery_rogue FROM recovery_owner');
+  await checkFrontendFault('frontend-operator-superuser','ALTER ROLE recovery_creator SUPERUSER','ALTER ROLE recovery_creator NOSUPERUSER');
+  await checkFrontendFault('frontend-runtime-role-settings','ALTER ROLE recovery_runtime SET search_path TO pg_catalog,public','ALTER ROLE recovery_runtime RESET ALL');
+  await checkFrontendFault('frontend-runtime-database-settings','ALTER ROLE recovery_runtime IN DATABASE postgres SET search_path TO recovery_shadow,pg_catalog,public','ALTER ROLE recovery_runtime IN DATABASE postgres RESET ALL');
+  await checkFrontendFault('frontend-runtime-rogue-ownership','CREATE SCHEMA recovery_runtime_rogue AUTHORIZATION recovery_runtime','DROP SCHEMA recovery_runtime_rogue');
+  await checkFrontendFault('frontend-runtime-public-schema-access',`ALTER DATABASE postgres RESET search_path;
+    SET ROLE recovery_creator; CREATE SCHEMA recovery_runtime; CREATE TABLE recovery_runtime.shadow_marker(marker text); INSERT INTO recovery_runtime.shadow_marker VALUES('owned-shadow');
+    GRANT USAGE ON SCHEMA recovery_runtime TO PUBLIC; GRANT SELECT ON recovery_runtime.shadow_marker TO PUBLIC; RESET ROLE`,
+    'DROP SCHEMA recovery_runtime CASCADE; ALTER DATABASE postgres SET search_path TO recovery_shadow,pg_catalog,public',async()=>{
+      const runtimeUrl=new URL(privateInput.frontend);runtimeUrl.username='recovery_runtime';runtimeUrl.password=privateInput.password;
+      const runtime=await connect(runtimeUrl.href);
+      try{assert.equal((await runtime.query('SELECT current_schema() AS name')).rows[0].name,'recovery_runtime');assert.equal((await runtime.query('SELECT marker FROM shadow_marker')).rows[0].marker,'owned-shadow');}
+      finally{await runtime.end();}
+    });
   await checkFrontendFault('frontend-sequence-update','GRANT UPDATE ON SEQUENCE '+sequence+' TO recovery_runtime','REVOKE UPDATE ON SEQUENCE '+sequence+' FROM recovery_runtime');
   await checkFrontendFault('frontend-default-unexpected-grantee','ALTER DEFAULT PRIVILEGES FOR ROLE recovery_creator IN SCHEMA public GRANT SELECT ON TABLES TO recovery_rogue','ALTER DEFAULT PRIVILEGES FOR ROLE recovery_creator IN SCHEMA public REVOKE SELECT ON TABLES FROM recovery_rogue');
   await checkFrontendFault('frontend-global-default','ALTER DEFAULT PRIVILEGES FOR ROLE recovery_creator GRANT SELECT ON TABLES TO recovery_rogue','ALTER DEFAULT PRIVILEGES FOR ROLE recovery_creator REVOKE SELECT ON TABLES FROM recovery_rogue');
@@ -176,5 +203,5 @@ try{
     frontendInitialPrivilegeRefusals:privilegeFaults.filter(row=>row.id.startsWith('frontend-')&&row.initialRefused).length,
     frontendContinuousPrivilegeRefusals:privilegeFaults.filter(row=>row.id.startsWith('frontend-')&&row.continuousRefused).length,
     apiPrivilegeRefusals:privilegeFaults.filter(row=>!row.id.startsWith('frontend-')&&row.initialRefused).length,
-    legacyApiVerifierRefusals,frontendCreatorPolicy:'actual-non-superuser-automatic-admin-plus-explicit-owner-set',frontendCreatorMemberships:creatorMemberships.length,childEnvironmentAllowlistEnforced:true}));
+    legacyApiVerifierRefusals,frontendCreatorPolicy:'actual-non-superuser-automatic-admin-plus-explicit-owner-set',frontendCreatorMemberships:creatorMemberships.length,frontendOperatorSearchPathPinned:true,childEnvironmentAllowlistEnforced:true}));
 }finally{await admin.end();}
