@@ -164,15 +164,39 @@ class OwnedRecoveryDiagnosticsTests(unittest.TestCase):
         values=[{**row,'private':'PRIVATE_CANARY'},{**row,'stage':'PRIVATE_STAGE'},{**row,'frames':[{'source':'frontend','file':'PRIVATE_PATH','line':1,'column':1}]}]
         raw='\n'.join(json.dumps(value) for value in values)+'\n{OWNED_P2_RECOVERY_NODE_DIAGNOSTIC PRIVATE_RAW'
         value=NS['owned_node_projection'](raw)
-        self.assertEqual(value['counts'],{'seen':4,'accepted':0,'rejected':4})
+        self.assertEqual(value['counts'],{'seen':4,'accepted':0,'rejected':4,'retained':0,'truncated':0})
         self.assertEqual(value['rejections'],{'schema':1,'stage':1,'frame-binding':1,'json':1});self.assertNotIn('PRIVATE_',json.dumps(value))
 
     def test_node_bound_keeps_final_uncaught_record_after_nested_causes(self):
         row={'status':'OWNED_P2_RECOVERY_NODE_DIAGNOSTIC','phase':'forward-shared-vercel-observation','stage':'forward-callback','kind':'Error','guardCode':'unknown','checkpoint':'unknown','systemCode':'unknown','frames':[]}
         rows=[row for _ in range(8)]+[{**row,'stage':'uncaught-final','guardCode':'P2_RECOVERY_FRONTEND_CLEANUP_UNCERTAIN'}]
         value=NS['owned_node_projection']('\n'.join(json.dumps(record)for record in rows))
-        self.assertEqual(value['counts'],{'seen':9,'accepted':9,'rejected':0});self.assertEqual(len(value['records']),8)
+        self.assertEqual(value['counts'],{'seen':9,'accepted':9,'rejected':0,'retained':8,'truncated':1});self.assertEqual(len(value['records']),8)
         self.assertEqual(value['records'][-1]['stage'],'uncaught-final');self.assertEqual(value['records'][-1]['guardCode'],'P2_RECOVERY_FRONTEND_CLEANUP_UNCERTAIN')
+
+    def test_actual_outer_maximum_shapes_fit_budget_and_keep_final_uncaught(self):
+        file=max(NS['OWNED_NODE_SOURCE_FILES'],key=len)
+        frames=[{'source':'frontend-fixture','file':file,'line':1000000-i,'column':100000}for i in range(12)]
+        row={'status':'OWNED_P2_RECOVERY_NODE_DIAGNOSTIC','phase':max(NS['OWNED_CHILD_PHASES'],key=len),'stage':'composed-source-bridge','kind':'AssertionError','guardCode':max(NS['OWNED_NODE_GUARD_CODES'],key=len),'checkpoint':'runtime-physical-session','systemCode':'ECONNREFUSED','frames':frames}
+        rows=[row for _ in range(8)]+[{**row,'stage':'uncaught-final'}]
+        allowed=NS['owned_bridge_guard_codes'](ROOT)
+        bridge={'version':1,'status':'OWNED_P2_FORWARD_BRIDGE_DIAGNOSTIC','chain':[{'kind':'SSLCertVerificationError','guardCode':max(allowed,key=len),'httpStatus':599,'tlsVerifyCode':1000}for _ in range(8)],'frames':[{'source':'frontend','file':max(NS['OWNED_BRIDGE_SOURCE_FILES'],key=len),'line':1000000-i}for i in range(12)],'rawOutputRetained':False}
+        with tempfile.TemporaryDirectory(prefix='owned-max-diagnostic-') as path:
+            directory=Path(path).resolve();raw=[]
+            for i in range(12):
+                name='ops/'+('a'*240)+str(i).zfill(8)+'.mjs';self.assertEqual(len(name),256)
+                frame=directory/name;frame.parent.mkdir(exist_ok=True);frame.touch()
+                raw.append(' at '+str(frame)+':99999999:999999')
+            records=directory/'records';records.mkdir()
+            for i in range(4):(records/(str(i+1)+'.json')).write_text(json.dumps(bridge))
+            stderr='\n'.join(json.dumps(record)for record in rows)+'\n'+'\n'.join(raw)
+            output=io.StringIO()
+            with contextlib.redirect_stderr(output):NS['report_child_failure'](self.result(stderr),{'frontend-fixture':directory},True,records,allowed)
+            encoded=output.getvalue().splitlines()[1];value=json.loads(encoded)
+            self.assertLessEqual(len(encoded.encode()),8192);self.assertEqual(len(value['frames']),12)
+            counts=value['nodeRecordCounts'];self.assertEqual(counts['accepted'],9);self.assertEqual(counts['retained'],len(value['nodeErrors']));self.assertEqual(counts['truncated'],9-len(value['nodeErrors']))
+            self.assertTrue(value['nodeErrors']);self.assertEqual(value['nodeErrors'][-1]['stage'],'uncaught-final')
+            self.assertEqual(value['nodeErrors'][-1]['guardCode'],row['guardCode']);self.assertEqual(value['bridgeErrors'],[])
 
     def test_node_emission_summary_keeps_projection_failure_visible(self):
         raw=json.dumps({'status':'OWNED_P2_NODE_EMISSION_SUMMARY','attempted':1,'emitted':0,'projectionFailures':1,'uncaughtMonitor':1,'origin':'unknown'})

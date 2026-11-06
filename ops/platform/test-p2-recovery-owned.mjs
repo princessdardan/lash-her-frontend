@@ -25,6 +25,7 @@ const assertOwnedEnvironment=()=>assert.deepEqual(Object.keys(process.env).filte
 assertOwnedEnvironment();
 const privateInput=JSON.parse(process.env.P2_RECOVERY_OWNED_CONNECTIONS);const serverMajor=privateInput.serverMajor;assert.ok([16,18].includes(serverMajor));
 assert.equal(new URL(privateInput.frontend).hostname,'127.0.0.1');
+if(privateInput.ownedForwardIdleControl!==undefined)assert.equal(typeof privateInput.ownedForwardIdleControl,'boolean');
 const connect=async (url,options={})=>{const client=new Client({connectionString:url,ssl:{rejectUnauthorized:true},...options});await client.connect();return client;};
 function ownedBindings(supplied,plan){
   const identities=[...supplied.bindings.deployments.map(row=>({kind:'deployment',identity:{provider:'vercel',teamId:supplied.bindings.teamId,projectId:supplied.bindings.projectId,deploymentId:row.deploymentId}})),
@@ -174,7 +175,7 @@ try{
     const forwardAction={...supplied.action,candidateSha256:hash(Buffer.from(JSON.stringify(candidate)+'\n')),inventorySha256:hash(plan)};
     const store=frontendReleaseReceiptStore(supplied.directory),base={...forwardAction,targetSha256};
     const bridge=await import(pathToFileURL(join(fixture.graph,'p2-recovery-frontend-observation.mjs'))),adapters=await import(pathToFileURL(join(fixture.graph,'frontend-release-adapters.mjs')));
-    let retainedScope,retainedContext,mutationRefusals=0,runtimeCredentialRefusals=0;
+    let retainedScope,retainedContext,idleSessionProof,mutationRefusals=0,runtimeCredentialRefusals=0;
     await store.record('p2-recovery-started.json',{...base,status:'P2_POST_SQL_RECOVERY_STARTED'});
     ownedFixturePhase('frontend-recovery-session');
     await withRecoveryFrontendSession(prepared,forwardAction,deps,async({session,client,verify,receipt,probe})=>ownedBoundary(async()=>{
@@ -282,6 +283,15 @@ try{
       const workload=await adapters.readCompatibleFrontendWorkloadReceipt(context,observed);assert.equal(hash(workload),observed.workloadReceiptSha256);
       assert.deepEqual(workload,readFileSync(join(context.directory,'vercel/frontend-workload-outcome.json')));
       ownedFixturePhase('forward-shared-vercel-observation');
+      if(privateInput.ownedForwardIdleControl===true){
+        const beforePid=(await admin.query('SELECT pg_catalog.pg_backend_pid() AS pid')).rows[0].pid;
+        const beforeJournal=(await admin.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at,id')).rows;
+        await new Promise(resolve=>setTimeout(resolve,31_000));
+        assert.equal((await admin.query('SELECT pg_catalog.pg_backend_pid() AS pid')).rows[0].pid,beforePid);
+        assert.deepEqual((await admin.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at,id')).rows,beforeJournal);
+        assert.equal(admin.connection.stream.encrypted,true);assert.equal(admin.connection.stream.authorized,true);
+        await context.verifyLockedSession();idleSessionProof={idleSeconds:31,sameBackend:true,journalUnchanged:true,tlsAuthorized:true};
+      }
       const inventory=await ownedCall('shared-vercel',()=>adapters.runFrontendVercelWorker('observe-vercel',context));assert.equal(inventory.reviewedInventoryMatches,true);assert.equal(inventory.reviewedProjectMatches,true);assert.equal(inventory.aliasJobActive,false);
       assert.equal(inventory.knownTerminalActionBuilds.length,1);assert.notEqual(inventory.knownTerminalActionBuilds[0].deploymentId,observed.deploymentId);
       for(const result of [inventory,observed]){assert.equal(result.forwardRecovery.recoveryActionId,projection.recoveryActionId);assert.deepEqual(result.forwardRecovery.originalReceiptSha256,projection.originalReceiptSha256);}
@@ -316,7 +326,7 @@ try{
         'cloned-plain-scope-refused','wrong-client-verifier-refused','wrong-plan-candidate-target-directory-refused','wrong-inventory-action-refused','shared-mutation-operations-refused',
         'receipt-drift-refused','expired-session-refused','open-admission-mutation-refused','opened-admission-get-retained','original-terminal-retained-not-current','original-receipts-preserved',
         'actual-runtime-credential-tls-physical-binding','bad-runtime-credential-and-foreign-physical-refused'],
-      mutationRefusals,runtimeCredentialRefusals,foreignRuntimeTlsAuthenticated:true,noSqlReplay:true,journalDigestsUnchanged:true,originalFrontendTerminalRecreated:false,skipped:0,fixtureOnly:true,providerTouched:false,actualRuntimeContainers:false,childEnvironmentAllowlistEnforced:true}));
+      ...(idleSessionProof?{idleSessionProof}:{}),mutationRefusals,runtimeCredentialRefusals,foreignRuntimeTlsAuthenticated:true,noSqlReplay:true,journalDigestsUnchanged:true,originalFrontendTerminalRecreated:false,skipped:0,fixtureOnly:true,providerTouched:false,actualRuntimeContainers:false,childEnvironmentAllowlistEnforced:true}));
   }else{
   ownedFixturePhase('current-frontend-privileges');
   const checkFrontendFault=async(id,install,remove,afterInstall=async()=>{})=>{

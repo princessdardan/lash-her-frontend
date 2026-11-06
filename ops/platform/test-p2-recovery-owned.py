@@ -175,6 +175,7 @@ def owned_node_projection(stderr):
         counts['accepted']+=1
         result.append(value)
         if len(result)>8:result.pop(0)
+    counts.update(retained=len(result),truncated=counts['accepted']-len(result))
     return {'records':result,'counts':counts,'rejections':reasons,'emission':summary}
 
 
@@ -224,11 +225,14 @@ def child_failure_diagnostic(result, source_roots, forward_mode):
 def report_child_failure(result, source_roots, forward_mode, bridge_directory=None, bridge_codes=frozenset()):
     diagnostic=child_failure_diagnostic(result,source_roots,forward_mode)
     diagnostic["bridgeErrors"]=read_owned_bridge_diagnostics(bridge_directory,bridge_codes)
-    encoded=json.dumps(diagnostic,separators=(',',':'))
+    def encode():
+        diagnostic['nodeRecordCounts'].update(retained=len(diagnostic['nodeErrors']),truncated=diagnostic['nodeRecordCounts']['accepted']-len(diagnostic['nodeErrors']))
+        return json.dumps(diagnostic,separators=(',',':'))
+    encoded=encode()
     while len(encoded.encode('utf8'))>8192 and diagnostic['bridgeErrors']:
-        diagnostic['bridgeErrors'].pop(0);encoded=json.dumps(diagnostic,separators=(',',':'))
-    while len(encoded.encode('utf8'))>8192 and diagnostic['nodeErrors']:
-        diagnostic['nodeErrors'].pop(0);encoded=json.dumps(diagnostic,separators=(',',':'))
+        diagnostic['bridgeErrors'].pop(0);encoded=encode()
+    while len(encoded.encode('utf8'))>8192 and len(diagnostic['nodeErrors'])>1:
+        diagnostic['nodeErrors'].pop(0);encoded=encode()
     if len(encoded.encode('utf8'))>8192:raise ValueError('OWNED_CHILD_DIAGNOSTIC_BOUND_REFUSED')
     print('OWNED_P2_RECOVERY_CHILD_FAILED',file=sys.stderr,flush=True)
     print(encoded,file=sys.stderr,flush=True)
@@ -295,7 +299,8 @@ def run_owned_late_session_controls(node,root,connections,bridge_directory,bridg
     return results
 
 
-forward_mode=sys.argv[1:]==['--forward-brand']
+idle_proof=sys.argv[1:]==['--forward-brand-idle-proof']
+forward_mode=sys.argv[1:]==['--forward-brand'] or idle_proof
 if os.environ.get('P2_RECOVERY_OWNED_TEST') != 'true' or (len(sys.argv) != 1 and not forward_mode):
     raise SystemExit('EXPLICIT_OWNED_P2_RECOVERY_TEST_REQUIRED')
 root=Path(__file__).resolve().parents[2]
@@ -355,6 +360,7 @@ try:
         if result.returncode:
             raise ValueError('OWNED_P2_RECOVERY_SQL_FIXTURE_FAILED')
     connections={'serverMajor':major,'password':Fixture.password,'apiRoots':{key:str(value) for key,value in api_roots.items()}}
+    if idle_proof:connections['ownedForwardIdleControl']=True
     def url(user,database):
         return 'postgresql://'+user+':'+urllib.parse.quote(Fixture.password,safe='')+'@127.0.0.1:'+str(Fixture.port)+'/'+database+'?sslmode=verify-full'
     connections['frontend']=url('frontend_provider_fixture','postgres')
