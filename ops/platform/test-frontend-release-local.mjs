@@ -457,6 +457,60 @@ async function main() {
     const migration = { ...roleFlow.prepared.migration, candidate, job };
     prepareFrontendReleaseRoleTemplate(inventory, migration, frontendWriterInventory(app));
     const roles = prepareFrontendRolesPlan(candidate, job, { version: 1, producerSha256: inventory.producers.map(producer => producer.producerSha256) });
+    phase = "same-action-role-abort-blocked-query";
+    const abortDirectory = join(directory, "same-action-role-abort"); mkdirSync(abortDirectory, { mode: 0o700 });
+    const abortControl = new AbortController();
+    let blockedPid, blockedObserved = false, originalEndResolved = false;
+    await withFrontendEnvironmentLock(async (verifyEnvironment, environmentSignal) => {
+      await assert.rejects(runP2RolePreparationContinuation({
+        checked: { candidate, job, baseline, inventory, roles }, settings: {}, directory: abortDirectory, frontendDirectory: roleFlow.output,
+        context: {}, credentials: { FRONTEND_STAGING_MIGRATION_DATABASE_URL: roleFlow.dependencies.getUrl() },
+        confirmation: roleFlow.dependencies.confirmation, verifyEnvironment,
+        environmentSignal: AbortSignal.any([environmentSignal, abortControl.signal]),
+        runtime: { bindRoles() { assert.fail("aborted role transaction reached broker"); } },
+      }, { createClient(options) {
+        const actual = new Client({ ...options, ssl: { ...options.ssl, ca: readFileSync(certificate, "utf8") } });
+        actual.on("error", () => {}); connections.push(actual);
+        if (options.application_name === "lash-her-p2-role-close") return actual;
+        actual.once("connect", () => { blockedPid = actual.processID; });
+        return new Proxy(actual, { get(target, key) {
+          if (key === "end") return async () => {
+            await target.end();
+            // Make the end-ack lag visible. A repeated close must await this
+            // same promise rather than skip an already-started close.
+            await new Promise(resolve => setTimeout(resolve, 30)); originalEndResolved = true;
+          };
+          if (key === "query") return async (...args) => {
+            if (typeof args[0] === "string" && args[0].startsWith("CREATE ROLE ")) {
+              const blocked = target.query("SELECT pg_sleep(60)");
+              const observeThenAbort = async () => {
+                const deadline = Date.now() + 5_000;
+                while (true) {
+                  const observed = (await roleFlow.client.query(`SELECT wait_event,EXISTS(SELECT 1 FROM pg_locks WHERE pid=$1 AND locktype='advisory' AND granted) AS locked
+                    FROM pg_stat_activity WHERE pid=$1`, [blockedPid])).rows[0];
+                  if (observed?.wait_event === "PgSleep" && observed.locked) { blockedObserved = true; break; }
+                  assert.ok(Date.now() < deadline); await new Promise(resolve => setTimeout(resolve, 10));
+                }
+                abortControl.abort();
+              };
+              await Promise.all([blocked, observeThenAbort()]);
+            }
+            return target.query(...args);
+          };
+          const value = Reflect.get(target, key, target); return typeof value === "function" ? value.bind(target) : value;
+        } });
+      } }));
+      await verifyEnvironment();
+      assert.equal(blockedObserved, true); assert.equal(originalEndResolved, true);
+      assert.equal((await roleFlow.client.query("SELECT count(*)::int AS count FROM pg_stat_activity WHERE pid=$1", [blockedPid])).rows[0].count, 0);
+      assert.equal((await roleFlow.client.query("SELECT pg_try_advisory_lock(hashtext('lash-her:private-db:migrations')) AS held")).rows[0].held, true);
+      await roleFlow.client.query("SELECT pg_advisory_unlock(hashtext('lash-her:private-db:migrations'))");
+      assert.equal((await roleFlow.client.query("SELECT count(*)::int AS count FROM pg_roles WHERE rolname=ANY($1::text[])", [Object.values(FRONTEND_PREPARATION_ROLES)])).rows[0].count, 0);
+      const cleanup = JSON.parse(readFileSync(join(abortDirectory, "role-session-cleanup.json")));
+      assert.equal(cleanup.status, "P2_ROLE_SESSION_ABORTED_AND_ABSENT"); assert.equal(cleanup.backendAbsent, true);
+    }, { path: roleFlow.dependencies.lockPath });
+    checks.push("role-abort-during-actual-blocked-query-terminates-exact-backend-and-releases-pg-lock-before-rejection-under-held-environment-lock");
+    phase = "same-action-role-preparation-and-coordinator";
     const roleDirectory = join(directory, "same-action-role-parent"); mkdirSync(roleDirectory, { mode: 0o700 });
     let preparedPid, generated;
     await withFrontendEnvironmentLock((verifyEnvironment, environmentSignal) => runP2RolePreparationContinuation({

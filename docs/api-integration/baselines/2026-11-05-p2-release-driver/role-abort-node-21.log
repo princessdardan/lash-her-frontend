@@ -1,0 +1,37 @@
+(node:85618) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-release-driver/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-release-driver/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ pure inventory requires complete exact-source coverage, all external surface classes and exact protected targets (19.908792ms)
+✔ desired role templates contain no invented OIDs and cannot execute as observed inventories (4.098208ms)
+✔ bootstrap preparation binds the selected SQL, owner/OIDs, target and source without copying secrets (3.377583ms)
+✔ bootstrap installs only the independent ledger in one transaction with both controls closed (3.705916ms)
+✔ bootstrap intent/target/role refusal happens before installation and never resumes an existing schema (18.797542ms)
+✔ lost bootstrap commit acknowledgement preserves the installed schema without retry or reopening (3.068542ms)
+✔ external fence checks require retained exact bytes for every surface and fresh action/target/nonce (3.6805ms)
+✔ native flock serializes with other contenders, stays held through asynchronous continuation and refuses inode replacement (80.421958ms)
+✔ private receipt store preserves original exact evidence, rejects reuse/symlinks and cannot write inside checkout (13.341875ms)
+✔ an unbound fixed adapter hash refuses rather than converting component receipts into SQL authority (0.462542ms)
+✔ offline plan binds qualified P2 candidate/job/target/recovery and fixed NOINHERIT replacement names without inventing OIDs (1.70625ms)
+✔ role plan refuses wrong candidate/source/target/environment/name/producer and accidental credential material (0.474792ms)
+✔ reuse requires actual explicitly reviewed distinct OIDs and retained proof reference (0.256625ms)
+✔ serialized plans and missing parent lock/session hooks cannot reach SQL (0.52175ms)
+✔ standalone defaults to offline planning and never reads configured migration credentials (1.388709ms)
+(node:85620) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-release-driver/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-release-driver/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ fixed P2 profile excludes checkout, member access and native schedule activation (0.825791ms)
+✔ Node and fixed host enforce identical closed certification and runtime profiles (20.251333ms)
+✔ host settings cannot override source, candidate, credentials or staging scope (0.317959ms)
+✔ actual guardian pipe retains host flock, joins receipts and never places credentials in SSH args/env (64.590167ms)
+✔ guardian process death during API stage aborts continuation before frontend mutation (20.323834ms)
+✔ missing frontend terminal receipt refuses the parent join without a replay (22.276834ms)
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 342.123167

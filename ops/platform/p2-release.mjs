@@ -5,6 +5,7 @@ import { readFileSync, lstatSync, realpathSync, mkdirSync, writeFileSync } from 
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual } from 'node:util';
 import { prepareFrontendReleaseCoordination, runFrontendReleaseCoordination } from './frontend-release-coordinator.mjs';
 import { frontendPrivateReceiptDirectory } from './frontend-release-receipts.mjs';
@@ -139,19 +140,62 @@ export async function p2OperatorRelease(settings, { apply = false, confirmation 
 }
 
 export async function runP2RolePreparationContinuation({ checked, settings, directory, frontendDirectory, context, credentials, confirmation, verifyEnvironment, environmentSignal, runtime }, { createClient = options => new Client(options) } = {}) {
-    let client, ended = false;
-    const close = async () => { if (client && !ended) { ended = true; await client.end(); } };
-    const abort = () => { void close().catch(() => {}); };
+    let client, identity, closePromise, terminatePromise, aborted = environmentSignal.aborted;
+    const connection = () => frontendConnectionOptions(credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL, checked.job.target);
+    const terminateOriginal = () => terminatePromise ??= (async () => {
+      if (!identity) return; // no role SQL or advisory lock can precede identity
+      const checker = createClient({ ...connection(), application_name: 'lash-her-p2-role-close',
+        statement_timeout: 7_000, query_timeout: 8_000, lock_timeout: 1_000 });
+      checker.on('error', () => {});
+      let cleanup;
+      try {
+        await checker.connect();
+        const actual = (await checker.query('SELECT current_user,current_database() AS database')).rows[0];
+        require(checker.connection.stream.encrypted && checker.connection.stream.authorized &&
+          actual.current_user === checked.job.target.user && actual.database === checked.job.target.database);
+        // Terminate only this action's original backend. A reused PID cannot
+        // match its independently read server start time/user/database tuple.
+        await checker.query(`SELECT pg_terminate_backend(pid,5000) FROM pg_stat_activity
+          WHERE pid=$1 AND backend_start::text=$2 AND usename=$3 AND datname=$4`,
+        [identity.pid, identity.backend_start, identity.current_user, identity.database]);
+        const deadline = Date.now() + 5_000;
+        while (true) {
+          const remaining = (await checker.query(`SELECT count(*)::int AS count FROM pg_stat_activity
+            WHERE pid=$1 AND backend_start::text=$2`, [identity.pid, identity.backend_start])).rows[0]?.count;
+          require(Number.isInteger(remaining));
+          if (remaining === 0) break;
+          require(Date.now() < deadline); await delay(50);
+        }
+        cleanup = { status: 'P2_ROLE_SESSION_ABORTED_AND_ABSENT', originalBackendPid: identity.pid,
+          originalBackendStart: identity.backend_start, backendAbsent: true, originalBackendLocksReleased: true };
+      } finally { await checker.end(); }
+      writeFrontendReceipt(directory, 'role-session-cleanup.json', cleanup);
+    })();
+    const close = () => closePromise ??= (async () => {
+      // pg.end destroys a blocked-query socket, but PostgreSQL can keep that
+      // backend and its advisory lock until the statement notices disconnect.
+      // Abort therefore also uses a bounded same-identity termination/readback.
+      try { if (client) await client.end(); }
+      finally { if (aborted) await terminateOriginal(); }
+    })();
+    const abort = () => {
+      aborted = true;
+      // Also interrupt a normal close already in progress; its cached promise
+      // remains the one awaited by every caller and the finalizer.
+      try { client?.connection?.stream?.destroy(); } catch { /* termination/readback remains mandatory */ }
+      void terminateOriginal().catch(() => {});
+      void close().catch(() => {});
+    };
     environmentSignal.addEventListener('abort', abort, { once: true });
     try {
-      await verifyEnvironment();
-      client = createClient(frontendConnectionOptions(credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL, checked.job.target));
+      require(!aborted); await verifyEnvironment();
+      client = createClient(connection());
       let failed = false; client.on('error', () => { failed = true; }); await client.connect();
-      const identity = (await client.query('SELECT pg_backend_pid() AS pid,current_user,current_database() AS database')).rows[0];
-      require(client.connection.stream.encrypted && client.connection.stream.authorized && identity.current_user === checked.job.target.user && identity.database === checked.job.target.database);
+      identity = (await client.query('SELECT pg_backend_pid() AS pid,current_user,current_database() AS database,backend_start::text FROM pg_stat_activity WHERE pid=pg_backend_pid()')).rows[0];
+      require(Number.isSafeInteger(identity?.pid) && typeof identity.backend_start === 'string' && client.connection.stream.encrypted && client.connection.stream.authorized && identity.current_user === checked.job.target.user && identity.database === checked.job.target.database);
       require((await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS held', [FRONTEND_MIGRATION_LOCK])).rows[0]?.held === true);
       const verifySession = async () => {
-        require(!failed && !environmentSignal.aborted); await verifyEnvironment();
+        require(!failed && !aborted && !environmentSignal.aborted); await verifyEnvironment();
         const same = (await client.query('SELECT pg_backend_pid() AS pid,current_user,current_database() AS database')).rows[0];
         require(same.pid === identity.pid && same.current_user === identity.current_user && same.database === identity.database);
       };
@@ -177,8 +221,8 @@ export async function runP2RolePreparationContinuation({ checked, settings, dire
         createClient: () => connected,
         withEnvironmentLock: continuation => continuation(verifyEnvironment, environmentSignal, runtime) });
     } finally {
-      environmentSignal.removeEventListener('abort', abort);
-      await close();
+      try { await close(); if (aborted) await terminateOriginal(); }
+      finally { environmentSignal.removeEventListener('abort', abort); }
     }
 }
 
