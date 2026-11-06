@@ -69,6 +69,7 @@ const ARTIFACTS = Object.freeze({
 const FAILURE_PHASES = Object.freeze(["preflight", "source-fetch", "npm-ci", "build", "exact-source-proof", "identity-tests",
   "recovery-postgres18", "cleanup"]);
 const FAILURE_STAGES = Object.freeze(["frontend", "workspace", "course", "community", "identity", "recovery"]);
+const RECOVERY_FAILURES = Object.freeze(["docker-transport", "child-exit", "receipt-invalid"]);
 const demand = condition => { if (!condition) throw new Error("P2_IDENTITY_FIXTURE_PREPARATION_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
 const hash = value => createHash("sha256").update(value).digest("hex");
@@ -152,6 +153,31 @@ function dockerEnvironment(workspace) {
   mkdirSync(home, { mode: 0o700 });
   mkdirSync(configuration, { mode: 0o700 });
   return Object.freeze({ PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin", LANG: "C", LC_ALL: "C", HOME: home, DOCKER_CONFIG: configuration });
+}
+
+function dockerContextEnvironment() {
+  const home = process.env.HOME;
+  demand(typeof home === "string" && resolve(home) === home && !/[\u0000-\u001f\u007f]/u.test(home));
+  return Object.freeze({ PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin", LANG: "C", LC_ALL: "C", HOME: home });
+}
+
+export function parseP2DockerContextEndpoint(output, socketStat = lstatSync) {
+  demand(typeof output === "string" && output.length > 0 && output.length <= 2_048 && typeof socketStat === "function");
+  const endpoint = JSON.parse(output.trim());
+  demand(typeof endpoint === "string" && endpoint.length <= 1_024 && /^unix:\/\/[A-Za-z0-9_./-]+$/u.test(endpoint));
+  const socketPath = endpoint.slice("unix://".length);
+  demand(resolve(socketPath) === socketPath && !socketPath.split("/").includes(".."));
+  const info = socketStat(socketPath);
+  demand(info && info.isSocket() && !info.isSymbolicLink());
+  return endpoint;
+}
+
+function currentDockerContextEndpoint(run, socketStat, cwd) {
+  const result = run("docker", ["context", "inspect", "--format", "{{json .Endpoints.docker.Host}}"],
+    { cwd, env: dockerContextEnvironment(), timeout: 30_000, maxBuffer: 64 * 1024 });
+  demand(result && !result.error && result.status === 0 && result.signal == null && typeof result.stdout === "string" &&
+    typeof result.stderr === "string");
+  return parseP2DockerContextEndpoint(result.stdout, socketStat);
 }
 
 function execute(run, file, args, options) {
@@ -284,8 +310,10 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
   const frontendRoot = realpathSync(options.frontendRoot ?? ROOT);
   const run = options.run ?? defaultRun;
   const makeTemporaryDirectory = options.makeTemporaryDirectory ?? defaultTemporaryDirectory;
+  const dockerSocketStat = options.dockerSocketStat ?? lstatSync;
   const sourceReadToken = process.env.PLATFORM_SOURCE_READ_TOKEN;
   demand(typeof run === "function" && typeof makeTemporaryDirectory === "function" &&
+    typeof dockerSocketStat === "function" && (options.dockerSocketStat === undefined || options.run !== undefined) &&
     [undefined, true, false].includes(options.recoveryPostgres18) && Number((options.nodeVersion ?? process.versions.node).split(".")[0]) === 24);
   demand(validSourceReadToken(sourceReadToken));
   const manifestBytes = readBounded(join(frontendRoot, MANIFEST), 512_000);
@@ -345,10 +373,19 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
       for (const [service, definition] of Object.entries(REPOSITORIES))
         verifyApiSourceForMount(run, directories[service], manifest.artifacts[service].revision, definition, installEnvironment, sourceReadToken);
       for (const directory of Object.values(directories)) makeApiSourceMountable(directory);
+      const recoveryArguments = recoveryDockerArguments(frontendRoot, directories);
+      diagnostic.recoveryFailure = "docker-transport";
+      const dockerEndpoint = currentDockerContextEndpoint(run, dockerSocketStat, frontendRoot);
       diagnostic.recoveryStarted = true;
-      const recoveryOutput = execute(run, "docker", recoveryDockerArguments(frontendRoot, directories),
+      const recoveryResult = run("docker", ["--host", dockerEndpoint, ...recoveryArguments],
         { cwd: frontendRoot, env: dockerEnvironment(workspace), timeout: 600_000, maxBuffer: 4 * 1024 * 1024 });
-      const receipt = parseP2RecoveryPostgres18Receipt(recoveryOutput);
+      if (!(recoveryResult && !recoveryResult.error && recoveryResult.status === 0 && recoveryResult.signal == null &&
+        typeof recoveryResult.stdout === "string" && typeof recoveryResult.stderr === "string")) {
+        diagnostic.recoveryFailure = recoveryResult?.status === 125 || recoveryResult?.error ? "docker-transport" : "child-exit";
+        demand(false);
+      }
+      diagnostic.recoveryFailure = "receipt-invalid";
+      const receipt = parseP2RecoveryPostgres18Receipt(recoveryResult.stdout);
       recovery = { status: receipt.status, serverMajor: receipt.serverMajor, frontendMigrations: receipt.frontendMigrations,
         courseMigrations: receipt.courseMigrations, communityMigrations: receipt.communityMigrations, skipped: receipt.skipped,
         fixtureOnly: receipt.fixtureOnly, providerTouched: receipt.providerTouched, checks: receipt.checks,
@@ -387,7 +424,8 @@ export function prepareP2IdentityProbeFixtures(options = {}) {
   catch {
     const error = new Error("P2_IDENTITY_FIXTURE_PREPARATION_REFUSED");
     Object.defineProperties(error, { phase: { value: diagnostic.phase }, stage: { value: diagnostic.stage },
-      recoveryStarted: { value: diagnostic.recoveryStarted === true } });
+      recoveryStarted: { value: diagnostic.recoveryStarted === true },
+      recoveryFailure: { value: RECOVERY_FAILURES.includes(diagnostic.recoveryFailure) ? diagnostic.recoveryFailure : undefined } });
     throw error;
   }
 }
@@ -398,7 +436,8 @@ export function p2IdentityFixtureFailureReceipt(error) {
   const recoveryStarted = error?.recoveryStarted === true;
   return { version: 1, status: "P2_IDENTITY_PROBE_FIXTURES_REFUSED", phase, stage, fixtureOnly: true, providerTouched: false,
     stagingTouched: false, databaseConnected: recoveryStarted ? null : false, sqlExecuted: recoveryStarted ? null : false,
-    ownedDisposableDatabaseExecutionAttempted: recoveryStarted, releaseAccepted: false };
+    ownedDisposableDatabaseExecutionAttempted: recoveryStarted,
+    ...(RECOVERY_FAILURES.includes(error?.recoveryFailure) ? { recoveryFailure: error.recoveryFailure } : {}), releaseAccepted: false };
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

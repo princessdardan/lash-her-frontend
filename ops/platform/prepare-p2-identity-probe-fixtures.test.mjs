@@ -4,7 +4,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { p2IdentityFixtureFailureReceipt, parseP2IdentityProbeTap, parseP2RecoveryPostgres18Receipt, prepareP2IdentityProbeFixtures,
+import { p2IdentityFixtureFailureReceipt, parseP2DockerContextEndpoint, parseP2IdentityProbeTap, parseP2RecoveryPostgres18Receipt, prepareP2IdentityProbeFixtures,
   validateP2IdentityFixtureManifest } from "./prepare-p2-identity-probe-fixtures.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
@@ -73,16 +73,23 @@ function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDepende
   writeFileSync(join(root, "tsconfig.json"), "{}\n");
   const calls = [];
   const dockerModes = [];
+  const dockerSocketPath = join(workspace, "docker.sock");
+  const dockerSocketStat = path => {
+    if (path !== dockerSocketPath || settings.dockerSocketMissing === true) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+    return { isSocket: () => true, isSymbolicLink: () => false, uid: process.getuid() };
+  };
   const run = (file, args, options) => {
     calls.push({ file, args: [...args], cwd: options.cwd, env: { ...options.env } });
     const ok = stdout => ({ status: 0, signal: null, stdout, stderr: "" });
     if (file === "npm" && args[0] === "--version") return ok("11.7.0\n");
     if (file === "npm") return ok("");
     if (file === "docker") {
+      if (args[0] === "context") return ok(settings.dockerContextOutput ?? JSON.stringify(`unix://${dockerSocketPath}`) + "\n");
       dockerModes.push({ workspace: lstatSync(workspace).mode & 0o777,
         course: lstatSync(join(workspace, "lash-her-course-api")).mode & 0o777,
         community: lstatSync(join(workspace, "lash-her-community-api")).mode & 0o777 });
-      return ok(settings.recoveryOutput ?? recoveryReceipt());
+      return settings.recoveryResult ?? { status: settings.recoveryStatus ?? 0, signal: settings.recoverySignal ?? null,
+        stdout: settings.recoveryOutput ?? recoveryReceipt(), stderr: settings.recoveryStderr ?? "" };
     }
     if (file !== "git") {
       assert.deepEqual(args, ["--test", "--test-reporter=tap", "ops/platform/p2-identity-negative-probe.test.mjs"]);
@@ -120,7 +127,7 @@ function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDepende
       "https://github.com/princessdardan/lash-her-course-api.git\n" : "https://github.com/princessdardan/lash-her-community-api.git\n");
     return ok("");
   };
-  return { root, workspace, calls, dockerModes, run,
+  return { root, workspace, calls, dockerModes, dockerSocketPath, dockerSocketStat, run,
     cleanup: () => { rmSync(root, { recursive: true, force: true }); rmSync(workspace, { recursive: true, force: true }); } };
 }
 
@@ -172,7 +179,7 @@ test("recovery mode runs the fixed PostgreSQL 18 fixture after all identity chec
   const value = harness();
   try {
     const result = withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: value.root, nodeVersion: "24.18.0",
-      recoveryPostgres18: true, run: value.run, makeTemporaryDirectory: () => value.workspace }));
+      recoveryPostgres18: true, run: value.run, dockerSocketStat: value.dockerSocketStat, makeTemporaryDirectory: () => value.workspace }));
     assert.equal(result.status, "P2_IDENTITY_AND_RECOVERY_FIXTURES_PASS");
     assert.equal(result.fixtureOnly, true); assert.equal(result.providerTouched, false); assert.equal(result.skipped, 0);
     assert.equal(result.databaseConnected, true); assert.equal(result.sqlExecuted, true); assert.equal(result.ownedDisposableDatabase, true);
@@ -185,10 +192,15 @@ test("recovery mode runs the fixed PostgreSQL 18 fixture after all identity chec
     assert.equal(result.recovery.frontendOperatorSearchPathPinned, true);
     assert.equal(result.recovery.environmentIsolation.childEnvironmentAllowlistEnforced, true);
     assert.equal(JSON.stringify(result).includes(sourceReadToken), false);
-    const dockerIndex = value.calls.findIndex(call => call.file === "docker");
+    const contextIndex = value.calls.findIndex(call => call.file === "docker" && call.args[0] === "context");
+    const dockerIndex = value.calls.findIndex(call => call.file === "docker" && call.args[0] === "--host");
     const identityIndex = value.calls.findIndex(call => call.file !== "docker" && call.file !== "git" && call.file !== "npm");
-    assert.equal(identityIndex >= 0 && dockerIndex > identityIndex, true);
+    assert.equal(identityIndex >= 0 && contextIndex > identityIndex && dockerIndex > contextIndex, true);
+    const context = value.calls[contextIndex];
+    assert.deepEqual(context.args, ["context", "inspect", "--format", "{{json .Endpoints.docker.Host}}"]);
+    assert.deepEqual(Object.keys(context.env).sort(), ["HOME", "LANG", "LC_ALL", "PATH"]);
     const docker = value.calls[dockerIndex];
+    assert.deepEqual(docker.args.slice(0, 3), ["--host", `unix://${value.dockerSocketPath}`, "run"]);
     for (const argument of ["--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
       "--memory=1g", "--pids-limit=256", "--shm-size=256m", "--tmpfs=/tmp:rw,nosuid,nodev,size=512m,mode=1777",
       "--env=PG_BIN=/usr/lib/postgresql/18/bin", "--env=OWNED_POSTGRES_MAJOR=18", "--env=P2_RECOVERY_OWNED_TEST=true",
@@ -203,6 +215,49 @@ test("recovery mode runs the fixed PostgreSQL 18 fixture after all identity chec
     assert.deepEqual(Object.keys(docker.env).sort(), ["DOCKER_CONFIG", "HOME", "LANG", "LC_ALL", "PATH"]);
     assert.deepEqual(value.dockerModes, [{ workspace: 0o700, course: 0o755, community: 0o755 }]);
   } finally { value.cleanup(); }
+});
+
+test("Docker context accepts only an existing local Unix socket", () => {
+  const socket = "/tmp/lash-her-owned-docker.sock";
+  const ownedSocket = path => {
+    assert.equal(path, socket);
+    return { isSocket: () => true, isSymbolicLink: () => false, uid: process.getuid() };
+  };
+  assert.equal(parseP2DockerContextEndpoint(JSON.stringify(`unix://${socket}`), ownedSocket), `unix://${socket}`);
+  for (const endpoint of ["tcp://127.0.0.1:2375", "ssh://operator@example.test", "unix://operator:secret@/tmp/docker.sock",
+    "unix:///tmp/docker.sock?option=true", "unix://relative.sock", "not-json"]) {
+    assert.throws(() => parseP2DockerContextEndpoint(endpoint === "not-json" ? endpoint : JSON.stringify(endpoint), ownedSocket),
+      /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED|SyntaxError/u, endpoint);
+  }
+  assert.throws(() => parseP2DockerContextEndpoint(JSON.stringify(`unix://${socket}`), () => {
+    throw Object.assign(new Error("missing"), { code: "ENOENT" });
+  }), /missing/u);
+  for (const info of [
+    { isSocket: () => false, isSymbolicLink: () => false },
+    { isSocket: () => true, isSymbolicLink: () => true },
+  ]) assert.throws(() => parseP2DockerContextEndpoint(JSON.stringify(`unix://${socket}`), () => info),
+    /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
+});
+
+test("recovery failures expose only fixed Docker transport and child exit diagnostics", () => {
+  for (const scenario of [
+    { settings: { dockerContextOutput: JSON.stringify("tcp://127.0.0.1:2375") }, expected: "docker-transport", attempted: false },
+    { settings: { dockerSocketMissing: true }, expected: "docker-transport", attempted: false },
+    { settings: { recoveryStatus: 125, recoveryOutput: "private-output", recoveryStderr: "private-error" }, expected: "docker-transport", attempted: true },
+    { settings: { recoveryStatus: 1, recoveryOutput: "private-output", recoveryStderr: "private-error" }, expected: "child-exit", attempted: true },
+  ]) {
+    const value = harness(tap(), [], ["ops/gateway", "tools/api-contract-toolchain"], scenario.settings);
+    try {
+      let receipt;
+      assert.throws(() => withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: value.root, nodeVersion: "24.18.0",
+        recoveryPostgres18: true, run: value.run, dockerSocketStat: value.dockerSocketStat, makeTemporaryDirectory: () => value.workspace })),
+      error => { receipt = p2IdentityFixtureFailureReceipt(error); return true; });
+      assert.equal(receipt.phase, "recovery-postgres18"); assert.equal(receipt.stage, "recovery");
+      assert.equal(receipt.recoveryFailure, scenario.expected);
+      assert.equal(receipt.ownedDisposableDatabaseExecutionAttempted, scenario.attempted);
+      assert.equal(JSON.stringify(receipt).includes("private-"), false);
+    } finally { value.cleanup(); }
+  }
 });
 
 test("recovery mode refuses persisted API Git authentication before permission changes or Docker", () => {
@@ -306,11 +361,12 @@ test("failures expose only fixed diagnostic phases and never private child outpu
   try {
     let receipt;
     assert.throws(() => withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: recovery.root, nodeVersion: "24.18.0",
-      recoveryPostgres18: true, run: recovery.run, makeTemporaryDirectory: () => recovery.workspace })),
+      recoveryPostgres18: true, run: recovery.run, dockerSocketStat: recovery.dockerSocketStat, makeTemporaryDirectory: () => recovery.workspace })),
     error => { receipt = p2IdentityFixtureFailureReceipt(error); return true; });
     assert.equal(receipt.phase, "recovery-postgres18"); assert.equal(receipt.stage, "recovery");
     assert.equal(receipt.ownedDisposableDatabaseExecutionAttempted, true);
     assert.equal(receipt.databaseConnected, null); assert.equal(receipt.sqlExecuted, null);
+    assert.equal(receipt.recoveryFailure, "receipt-invalid");
   } finally { recovery.cleanup(); }
   assert.deepEqual(p2IdentityFixtureFailureReceipt(new Error("private")), { version: 1, status: "P2_IDENTITY_PROBE_FIXTURES_REFUSED",
     phase: "preflight", stage: "frontend", fixtureOnly: true, providerTouched: false, stagingTouched: false,
