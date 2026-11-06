@@ -1,0 +1,9 @@
+test_401_and_permission_rate_limit_malformed_or_oversized_bodies_remain_distinct_sanitized_unknowns (frontend_scoped_provider_client_test.ScopedProviderClientTests.test_401_and_permission_rate_limit_malformed_or_oversized_bodies_remain_distinct_sanitized_unknowns) ... ok
+test_even_a_permissive_classifier_cannot_enable_financial_mutations_or_cross_origin_requests (frontend_scoped_provider_client_test.ScopedProviderClientTests.test_even_a_permissive_classifier_cannot_enable_financial_mutations_or_cross_origin_requests) ... ok
+test_expected_denial_still_checkpoints_parent_after_the_actual_response (frontend_scoped_provider_client_test.ScopedProviderClientTests.test_expected_denial_still_checkpoints_parent_after_the_actual_response) ... ok
+test_verified_tls_read_and_exact_readonly_search_use_the_source_classifier (frontend_scoped_provider_client_test.ScopedProviderClientTests.test_verified_tls_read_and_exact_readonly_search_use_the_source_classifier) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 2.094s
+
+OK
