@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { p2IdentityFixtureFailureReceipt, parseP2DockerContextEndpoint,
   parseP2ForwardRecoveryPostgres18Receipt, parseP2IdentityProbeTap, parseP2LifecyclePersistencePostgres18Receipt,
+  parseP2LifecycleReceiversPostgres18Receipt,
   parseP2RecoveryPostgres18Receipt, prepareP2IdentityProbeFixtures,
   validateP2IdentityFixtureManifest } from "./prepare-p2-identity-probe-fixtures.mjs";
 import { P2_LIFECYCLE_OWNED_SOURCE_CLOSURE, verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
@@ -107,6 +108,27 @@ function lifecyclePersistenceReceipt(manifestBytes, changes = {}) {
     sourceMode: "parent-issued-manifest-and-mounted-readback", sourceManifestSha256: sha(manifestBytes), sourceSha256, ...changes }) + "\n";
 }
 
+function lifecycleReceiversReceipt(manifestBytes, changes = {}) {
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
+  const sourceSha256 = Object.fromEntries(["p2-lifecycle-state-witness.mjs", "p2-lifecycle-persistence-probe.mjs",
+    "p2-lifecycle-receiver-post.mjs", "p2-lifecycle-owned-source-manifest.mjs", "p2-lifecycle-receiver-negatives.mjs",
+    "harness/owned-p2-lifecycle-receivers.mjs", "test-p2-lifecycle-receivers-local.mjs"]
+    .map(name => [name, manifest.sources.frontend.files[`ops/platform/${name}`]]));
+  return JSON.stringify({ version: 1, status: "P2_LIFECYCLE_RECEIVER_OWNED_POSTGRES18_PASS", postgresMajor: 18,
+    frontendMigrations: 83, courseMigrations: 22, communityMigrations: 11,
+    sourceCommits: Object.fromEntries(Object.entries(manifest.sources).map(([service, source]) => [service, source.revision])),
+    checks: ["actual-source-both-receivers-accept-canonical-suspend-over-verified-tls",
+      ...["course", "community"].flatMap(service => ["exact-replay", "changed-replay", "stale-restore", "future-gap"]
+        .map(caseName => `${service}-${caseName}-actual-status-and-three-domain-unchanged`)),
+      "actual-durable-quotas-write-with-account-domain-digests-unchanged",
+      "actual-unauthorized-responses-cannot-qualify-negative-case",
+      "actual-terminal-delete-refuses-restore-and-preserves-exact-old-replay"],
+    httpCaseCount: 8, skipped: 0, domainStatePreserving: true, globallyReadOnly: false, quotaWritesObserved: true,
+    deployedFutureGapQualified: false, hostDockerPathQualified: false, fixtureOnly: true, providerTouched: false,
+    liveCertification: false, sourceMode: "parent-issued-manifest-and-mounted-readback",
+    sourceManifestSha256: sha(manifestBytes), sourceSha256, ...changes }) + "\n";
+}
+
 function populateSourceClosure(root, service) {
   const closure = service === "frontend" ? P2_LIFECYCLE_OWNED_SOURCE_CLOSURE.frontend : P2_LIFECYCLE_OWNED_SOURCE_CLOSURE.api;
   for (const directory of closure.directories) {
@@ -163,8 +185,10 @@ function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDepende
         } catch {
           return { status: 1, signal: null, stdout: "private-source-refusal", stderr: "private-source-refusal" };
         }
-        return settings.persistenceResult ?? { status: settings.persistenceStatus ?? 0, signal: settings.persistenceSignal ?? null,
-          stdout: settings.persistenceOutput ?? lifecyclePersistenceReceipt(options.input), stderr: settings.persistenceStderr ?? "" };
+        const receivers = args.includes("ops/platform/test-p2-lifecycle-receivers-local.mjs"), prefix = receivers ? "receivers" : "persistence";
+        return settings[`${prefix}Result`] ?? { status: settings[`${prefix}Status`] ?? 0, signal: settings[`${prefix}Signal`] ?? null,
+          stdout: settings[`${prefix}Output`] ?? (receivers ? lifecycleReceiversReceipt(options.input) : lifecyclePersistenceReceipt(options.input)),
+          stderr: settings[`${prefix}Stderr`] ?? "" };
       }
       const forward = args.at(-1) === "--forward-brand", prefix = forward ? "forwardRecovery" : "recovery";
       return settings[`${prefix}Result`] ?? { status: settings[`${prefix}Status`] ?? 0, signal: settings[`${prefix}Signal`] ?? null,
@@ -339,8 +363,19 @@ test("lifecycle mode sends one internally built exact source manifest to an isol
     assert.deepEqual(result.lifecyclePersistence.sourceCommits,
       { community: revisions.community, course: revisions.course, frontend: "d".repeat(40) });
     assert.equal(Object.keys(result.lifecyclePersistence.sourceSha256).length, 5);
+    assert.equal(result.lifecycleReceivers.status, "P2_LIFECYCLE_RECEIVER_OWNED_POSTGRES18_PASS");
+    assert.equal(result.lifecycleReceivers.postgresMajor, 18); assert.equal(result.lifecycleReceivers.frontendMigrations, 83);
+    assert.equal(result.lifecycleReceivers.courseMigrations, 22); assert.equal(result.lifecycleReceivers.communityMigrations, 11);
+    assert.equal(result.lifecycleReceivers.checks.length, 12); assert.equal(result.lifecycleReceivers.httpCaseCount, 8);
+    assert.equal(result.lifecycleReceivers.skipped, 0); assert.equal(result.lifecycleReceivers.domainStatePreserving, true);
+    assert.equal(result.lifecycleReceivers.globallyReadOnly, false); assert.equal(result.lifecycleReceivers.quotaWritesObserved, true);
+    assert.equal(result.lifecycleReceivers.deployedFutureGapQualified, false); assert.equal(result.lifecycleReceivers.hostDockerPathQualified, false);
+    assert.equal(result.lifecycleReceivers.sourceMode, "parent-issued-manifest-and-mounted-readback");
+    assert.equal(result.lifecycleReceivers.sourceManifestSha256, result.lifecyclePersistence.sourceManifestSha256);
+    assert.equal(result.lifecycleReceivers.parentProofSha256, result.lifecyclePersistence.parentProofSha256);
+    assert.equal(Object.keys(result.lifecycleReceivers.sourceSha256).length, 7);
     const dockerCalls = value.calls.filter(call => call.file === "docker" && call.args[0] === "--host");
-    assert.equal(dockerCalls.length, 3);
+    assert.equal(dockerCalls.length, 4);
     assert.equal(dockerCalls[0].args.includes("-i"), false); assert.equal(dockerCalls[1].args.includes("-i"), false);
     const persistence = dockerCalls[2];
     assert.equal(Buffer.isBuffer(persistence.input), true);
@@ -367,6 +402,17 @@ test("lifecycle mode sends one internally built exact source manifest to an isol
     assert.equal(mounts.some(mount => mount.includes("dst=/exact-sources/lash-her-community-api/package-lock.json")), true);
     assert.equal(mounts.some(mount => mount.includes("/.git") || /dst=\/exact-sources\/lash-her-(?:course|community)-api,readonly$/u.test(mount)), false);
     assert.deepEqual(Object.keys(persistence.env).sort(), ["DOCKER_CONFIG", "HOME", "LANG", "LC_ALL", "PATH"]);
+    const receivers = dockerCalls[3];
+    assert.equal(Buffer.isBuffer(receivers.input), true); assert.equal(sha(receivers.input), result.lifecycleReceivers.sourceManifestSha256);
+    for (const argument of ["-i", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+      "--env=PG_BIN=/usr/lib/postgresql/18/bin", "--env=OWNED_POSTGRES_MAJOR=18",
+      "--env=P2_LIFECYCLE_RECEIVER_OWNED_TEST=true", "--entrypoint=/usr/local/bin/node", "--import", "tsx",
+      "ops/platform/test-p2-lifecycle-receivers-local.mjs", "--postgres18-manifest"])
+      assert.equal(receivers.args.includes(argument), true, argument);
+    assert.deepEqual(receivers.args.slice(-4), ["--import", "tsx", "ops/platform/test-p2-lifecycle-receivers-local.mjs", "--postgres18-manifest"]);
+    const receiverMounts = receivers.args.filter((argument, index) => receivers.args[index - 1] === "--mount");
+    assert.equal(receiverMounts.length, 25); assert.equal(receiverMounts.every(mount => mount.endsWith(",readonly")), true);
+    assert.deepEqual(Object.keys(receivers.env).sort(), ["DOCKER_CONFIG", "HOME", "LANG", "LC_ALL", "PATH"]);
     assert.equal(JSON.stringify(result).includes(sourceReadToken), false);
     assert.equal(value.calls.filter(call => call.file === "git" && call.args.join(" ") === "remote get-url origin").length >= 12, true);
   } finally { value.cleanup(); }
@@ -390,6 +436,30 @@ test("lifecycle receipt parser refuses missing, extra, drifted, skipped and part
     for (const change of changes) {
       const receipt = structuredClone(valid); change(receipt);
       assert.throws(() => parseP2LifecyclePersistencePostgres18Receipt(JSON.stringify(receipt), expected),
+        /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
+    }
+  } finally { value.cleanup(); }
+});
+
+test("receiver receipt parser requires PostgreSQL 18, all twelve checks, eight HTTP cases, and exact mounted source evidence", () => {
+  const value = harness();
+  try {
+    const result = withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: value.root, nodeVersion: "24.18.0",
+      recoveryPostgres18: true, lifecyclePostgres18: true, run: value.run, dockerSocketStat: value.dockerSocketStat,
+      makeTemporaryDirectory: () => value.workspace }));
+    const receiverCall = value.calls.find(call => call.file === "docker" && call.args.includes("ops/platform/test-p2-lifecycle-receivers-local.mjs"));
+    const expected = { sourceCommits: result.lifecycleReceivers.sourceCommits, sourceSha256: result.lifecycleReceivers.sourceSha256,
+      sourceManifestSha256: result.lifecycleReceivers.sourceManifestSha256 };
+    const valid = JSON.parse(lifecycleReceiversReceipt(receiverCall.input));
+    assert.equal(parseP2LifecycleReceiversPostgres18Receipt(JSON.stringify(valid), expected).httpCaseCount, 8);
+    const changes = [receipt => { receipt.postgresMajor = 16; }, receipt => { receipt.skipped = 1; },
+      receipt => { receipt.checks = receipt.checks.slice(0, -1); }, receipt => { receipt.httpCaseCount = 7; },
+      receipt => { receipt.globallyReadOnly = true; }, receipt => { receipt.deployedFutureGapQualified = true; },
+      receipt => { receipt.sourceManifestSha256 = "1".repeat(64); }, receipt => { receipt.sourceCommits.community = "1".repeat(40); },
+      receipt => { delete receipt.sourceSha256["p2-lifecycle-receiver-post.mjs"]; }, receipt => { receipt.unreviewed = true; }];
+    for (const change of changes) {
+      const receipt = structuredClone(valid); change(receipt);
+      assert.throws(() => parseP2LifecycleReceiversPostgres18Receipt(JSON.stringify(receipt), expected),
         /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
     }
   } finally { value.cleanup(); }
@@ -442,6 +512,33 @@ test("lifecycle child failures expose only fixed persistence diagnostics", () =>
       assert.equal(JSON.stringify(receipt).includes("private-"), false);
     } finally { value.cleanup(); }
   }
+});
+
+test("receiver child failures expose only fixed receiver diagnostics and retain private output", () => {
+  const runnerTemporary = realpathSync(mkdtempSync(join(tmpdir(), "p2-owned-receiver-runner-temp-")));
+  chmodSync(runnerTemporary, 0o700);
+  for (const scenario of [
+    { settings: { receiversStatus: 125, receiversOutput: "private-receiver-output", receiversStderr: "private-receiver-error" }, failure: "docker-transport" },
+    { settings: { receiversStatus: 1, receiversOutput: "private-receiver-output", receiversStderr: "private-receiver-error" }, failure: "child-exit" },
+    { settings: { receiversOutput: "{\"status\":\"private-receiver-invalid\"}\n" }, failure: "receipt-invalid" },
+  ]) {
+    const value = harness(tap(), [], ["ops/gateway", "tools/api-contract-toolchain"], scenario.settings);
+    try {
+      let receipt;
+      assert.throws(() => withRunnerTemp(runnerTemporary, () => withSourceReadToken(sourceReadToken, () =>
+        prepareP2IdentityProbeFixtures({ frontendRoot: value.root, nodeVersion: "24.18.0", recoveryPostgres18: true,
+          lifecyclePostgres18: true, run: value.run, dockerSocketStat: value.dockerSocketStat,
+          makeTemporaryDirectory: () => value.workspace }))), error => { receipt = p2IdentityFixtureFailureReceipt(error); return true; });
+      assert.equal(receipt.phase, "lifecycle-postgres18"); assert.equal(receipt.stage, "receivers");
+      assert.equal(receipt.recoveryQualification, "receivers"); assert.equal(receipt.recoveryFailure, scenario.failure);
+      assert.equal(receipt.ownedDisposableDatabaseExecutionAttempted, true);
+      assert.equal(JSON.stringify(receipt).includes("private-receiver"), false);
+      const path = join(runnerTemporary, "p2-owned-fixture-failure", "receivers", `${"d".repeat(40)}.json`);
+      assert.equal(JSON.parse(readFileSync(path, "utf8")).qualification, "receivers");
+      rmSync(join(runnerTemporary, "p2-owned-fixture-failure"), { recursive: true, force: true });
+    } finally { value.cleanup(); }
+  }
+  rmSync(runnerTemporary, { recursive: true, force: true });
 });
 
 test("Docker child failure output is retained privately outside disposable checkout with commit binding", () => {

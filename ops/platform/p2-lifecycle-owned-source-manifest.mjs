@@ -22,7 +22,9 @@ const FRONTEND_FILES = Object.freeze([
   "ops/platform/release.mjs", "ops/platform/release-inputs.mjs", "ops/platform/source-policy.mjs",
   "ops/platform/p2-lifecycle-state-witness.mjs", "ops/platform/p2-lifecycle-persistence-probe.mjs",
   "ops/platform/p2-lifecycle-owned-source-manifest.mjs", "ops/platform/harness/owned-p2-lifecycle-persistence.mjs",
-  "ops/platform/test-p2-lifecycle-persistence-local.mjs",
+  "ops/platform/test-p2-lifecycle-persistence-local.mjs", "ops/platform/p2-lifecycle-receiver-post.mjs",
+  "ops/platform/p2-lifecycle-receiver-negatives.mjs", "ops/platform/harness/owned-p2-lifecycle-receivers.mjs",
+  "ops/platform/test-p2-lifecycle-receivers-local.mjs",
 ]);
 const API_DIRECTORIES = Object.freeze(["drizzle", "src", "dist", "openapi", "contracts"]);
 const API_FILES = Object.freeze(["package.json", "package-lock.json"]);
