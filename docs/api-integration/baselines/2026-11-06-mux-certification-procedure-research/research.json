@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "status": "RESEARCH_ONLY_UNEXECUTED",
+  "researchedAt": "2026-11-06",
+  "scope": "P2-S05 Course-managed dedicated staging lesson media lineage",
+  "accountAccessed": false,
+  "browserAccessed": false,
+  "credentialValuesAccessed": false,
+  "resourceApiCalled": false,
+  "stagingTouched": false,
+  "certificationPerformed": false,
+  "specifications": [
+    {
+      "url": "https://www.mux.com/api-spec.json",
+      "sha256": "cd6bfb1d1197dbf6541ef525b5fe18da01a1f772d1790aaf23f6f3ba20e329a5",
+      "sizeBytes": 1391856,
+      "retrievedAt": "2026-11-06T05:41:19.371Z",
+      "pathCount": 157
+    },
+    {
+      "url": "https://www.mux.com/webhook-spec.json",
+      "sha256": "8ee251cb3657955a59a386d6d661084ec9c8f68ba7db5d52ee38c5a2cfc370c4",
+      "sizeBytes": 6380473,
+      "retrievedAt": "2026-11-06T05:41:20.022Z",
+      "pathCount": 2
+    }
+  ],
+  "webhookOperationCount": 197,
+  "selectedDocumentedOperations": [
+    {
+      "method": "POST",
+      "path": "/video/v1/uploads",
+      "operationId": "create-direct-upload",
+      "responseStatusCodes": [
+        "201"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/video/v1/uploads",
+      "operationId": "list-direct-uploads",
+      "responseStatusCodes": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/video/v1/uploads/{UPLOAD_ID}",
+      "operationId": "get-direct-upload",
+      "responseStatusCodes": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/video/v1/uploads/{UPLOAD_ID}/cancel",
+      "operationId": "cancel-direct-upload",
+      "responseStatusCodes": [
+        "200",
+        "403"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/video/v1/assets/{ASSET_ID}",
+      "operationId": "get-asset",
+      "responseStatusCodes": [
+        "200"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/video/v1/assets/{ASSET_ID}",
+      "operationId": "delete-asset",
+      "responseStatusCodes": [
+        "204"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/video/v1/assets/{ASSET_ID}",
+      "operationId": "update-asset",
+      "responseStatusCodes": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/video/v1/assets/{ASSET_ID}/tracks",
+      "operationId": "create-asset-track",
+      "responseStatusCodes": [
+        "201"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/video/v1/assets/{ASSET_ID}/tracks/{TRACK_ID}",
+      "operationId": "delete-asset-track",
+      "responseStatusCodes": [
+        "204"
+      ]
+    }
+  ],
+  "selectedDocumentedWebhookTypes": [
+    "video.asset.created",
+    "video.asset.ready",
+    "video.asset.errored",
+    "video.asset.deleted",
+    "video.asset.track.created",
+    "video.asset.track.ready",
+    "video.asset.track.errored",
+    "video.asset.track.deleted",
+    "video.upload.created",
+    "video.upload.asset_created",
+    "video.upload.cancelled",
+    "video.upload.errored"
+  ],
+  "documentedTimedOutUploadWebhook": false,
+  "publicApiEventHistoryRetryReplayPathCount": 0,
+  "scopeOfApiAbsenceFinding": "Only the downloaded official public specification; no assertion about undocumented account UI.",
+  "unresolvedCapabilities": [
+    {
+      "id": "dashboard-event-attempt-history",
+      "status": "ACCOUNT_UI_UNOBSERVED_PUBLIC_PROCEDURE_NOT_ESTABLISHED"
+    },
+    {
+      "id": "provider-manual-redelivery",
+      "status": "NO_OPERATION_IN_REVIEWED_PUBLIC_API_SPEC_OR_DOCUMENTED_DASHBOARD_PROCEDURE"
+    },
+    {
+      "id": "provider-force-reordering",
+      "status": "NO_DOCUMENTED_TRIGGER_FOUND"
+    },
+    {
+      "id": "course-to-mux-accepted-operation-lost-response",
+      "status": "NO_DOCUMENTED_PROVIDER_TRIGGER_FOUND"
+    },
+    {
+      "id": "one-shot-gateway-ack-loss",
+      "status": "SEPARATE_PROPOSED_PROFILE_NOT_IMPLEMENTED_OR_EXECUTED"
+    },
+    {
+      "id": "history-retention-or-complete-export",
+      "status": "NO_GUARANTEE_ESTABLISHED"
+    }
+  ],
+  "documentationTransport": {
+    "initialSystemPythonCaVerification": "FAILED_NOT_BYPASSED",
+    "pinnedNodeBuiltinCaVerification": "SUCCEEDED",
+    "authenticationUsed": false,
+    "rawSpecificationsPublished": false
+  },
+  "primaryReferences": [
+    "https://www.mux.com/docs/core/listen-for-webhooks",
+    "https://www.mux.com/docs/core/verify-webhook-signatures",
+    "https://www.mux.com/docs/webhook-reference",
+    "https://www.mux.com/docs/api-reference/video/direct-uploads/create-direct-upload",
+    "https://www.mux.com/docs/api-reference/video/direct-uploads/get-direct-upload",
+    "https://www.mux.com/docs/api-reference/video/direct-uploads/cancel-direct-upload",
+    "https://www.mux.com/docs/api-reference/video/assets/get-asset",
+    "https://www.mux.com/docs/api-reference/video/assets/delete-asset",
+    "https://www.mux.com/docs/api-reference/video/assets/create-asset-track",
+    "https://www.mux.com/docs/api-reference/video/assets/delete-asset-track",
+    "https://www.mux.com/docs/guides/add-subtitles-to-your-videos",
+    "https://www.mux.com/docs/guides/secure-video-playback",
+    "https://raw.githubusercontent.com/muxinc/mux-node-sdk/main/api.md"
+  ],
+  "selectedCourseMuxSdkVersion": "14.0.1",
+  "applicationOrRuntimeSourceChanged": false
+}
