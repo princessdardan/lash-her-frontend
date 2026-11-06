@@ -12,6 +12,7 @@ import { frontendCandidateSurfaces,frontendCoordinationHash as hash,prepareFront
 import { P2_CERTIFICATION_PROFILE } from './p2-certification-profile.mjs';
 import { prepareP2PostSqlRecovery,bindOriginalRecoveryReceipts,p2RecoveryProviderContext } from './p2-post-sql-recovery.mjs';
 import { frontendProviderBindingsArtifact,FRONTEND_VERCEL_PROJECT,FRONTEND_VERCEL_TEAM,FRONTEND_VERCEL_REPOSITORY } from './frontend-provider-bindings.mjs';
+import {readP2RecoveryForwardScope} from './p2-recovery-current-probe.mjs';
 
 function fixture(){
   const sourceInventory={version:2,scope:'candidate-source-only',sourceManifestSha256:'1'.repeat(64),routes:[{file:'src/app/api/owned/route.ts',methods:['POST'],sourceSha256:'2'.repeat(64)}],actionModules:[],renderEntries:[],manualEntries:[],inlineActions:[],deferredSites:[],databaseConstructors:[],schedules:[]};
@@ -32,6 +33,11 @@ test('post-SQL recovery preserves original candidate and pending chain without f
   assert.equal(JSON.stringify(f.prepared.migration.job),before);assert.notEqual(checked.action.recoveryActionId,checked.action.originalReleaseId);
   assert.equal(checked.action.originalReceiptSha256['job-outcome.json'],null);assert.equal(checked.action.failedBuildForwardAction,'OPEN');
   assert.equal(checked.action.sqlReplayAuthorized,false);assert.ok(checked.prepared.migration.job.target.approvedPendingTags.length>0);
+});
+
+test('serialized forward scope cannot replace a live source-issued recovery session',async()=>{
+  await assert.rejects(readP2RecoveryForwardScope({version:1,mode:'reviewed-new-build',recoveryActionId:'invented',held:true},{}));
+  await assert.rejects(readP2RecoveryForwardScope(Object.freeze({}),{}));
 });
 
 test('candidate bytes, source, original action, inventory, config and deployment retry mode are bounded',()=>{

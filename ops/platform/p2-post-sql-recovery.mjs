@@ -8,8 +8,9 @@ import { frontendCoordinationHash, validateFrontendFenceObservation } from './fr
 import { frontendPrivateReceiptDirectory, frontendReleaseReceiptStore, readFrontendReleaseEvidence } from './frontend-release-receipts.mjs';
 import { prepareP2CertificationProfile } from './p2-certification-profile.mjs';
 import { restoreFrontendAdmission } from './frontend-release-restoration.mjs';
-import { withRecoveryFrontendSession } from './p2-recovery-current-probe.mjs';
-import { observeP2RecoveryFrontend } from './p2-recovery-frontend-observation.mjs';
+import { withRecoveryFrontendSession,issueP2RecoveryForwardScope,verifyP2RecoveryForwardMutation } from './p2-recovery-current-probe.mjs';
+import { observeP2RecoveryFrontend,reconcileP2RecoveryForward,buildP2RecoveryForward } from './p2-recovery-frontend-observation.mjs';
+import {readCompatibleFrontendWorkloadReceipt} from './frontend-release-adapters.mjs';
 
 const require = ok => { if (!ok) throw new Error('P2_POST_SQL_RECOVERY_REFUSED'); };
 const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value) && !/^0+$/u.test(value);
@@ -28,18 +29,24 @@ export function prepareP2PostSqlRecovery(prepared, input, candidateBytes) {
   require(input?.version === 1 && input.environment === 'staging' && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.recoveryActionId ?? '') &&
     input.recoveryActionId !== plan.actionId && input.originalReleaseId === plan.actionId && input.candidateSha256 === frontendCoordinationHash(candidateBytes) &&
     input.sourceCommit === plan.sourceCommit && input.inventorySha256 === checked.inventorySha256 && digest(input.configurationSha256) &&
-    input.frontendMode === 'reuse-retained-ready' && input.originalReceiptSha256 && typeof input.originalReceiptSha256 === 'object');
+    ['reuse-retained-ready','reviewed-new-build'].includes(input.frontendMode) && input.originalReceiptSha256 && typeof input.originalReceiptSha256 === 'object');
+  const forward=input.frontendMode==='reviewed-new-build';
+  if(forward)require(['prior-build-failed','prior-build-canceled','retained-ready-probe-expired'].includes(input.forwardReason)&&
+    typeof input.forwardPrivateConfigurationDirectory==='string'&&resolve(input.forwardPrivateConfigurationDirectory)===input.forwardPrivateConfigurationDirectory);
   const pins = input.originalReceiptSha256;
   require(Object.hasOwn(pins, 'frontend-release-started.json') && digest(pins['frontend-release-started.json']) &&
     Object.hasOwn(pins, 'database-receipt.json') &&
     Object.hasOwn(pins, 'job-outcome.json') && (pins['job-outcome.json'] === null || digest(pins['job-outcome.json'])) &&
     Object.keys(pins).length <= 128 && Object.entries(pins).every(([key, value]) => /^(?:vercel\/)?[a-z0-9][a-z0-9.-]{0,180}\.json$/u.test(key) && (value === null || digest(value))));
-  const retained=['frontend-build-started.json','frontend-build-created.json','frontend-build-outcome.json','frontend-promotion-started.json','frontend-workload-outcome.json'];
+  const retained=['frontend-build-started.json','frontend-build-created.json','frontend-build-outcome.json',...(!forward||input.forwardReason==='retained-ready-probe-expired'?['frontend-promotion-started.json','frontend-workload-outcome.json']:[])];
   require(retained.every(name=>digest(pins['vercel/'+name])));
+  if(forward&&input.forwardReason==='retained-ready-probe-expired')require(digest(pins['vercel/frontend-probe-preparation.json']));
+  if(forward&&input.forwardReason!=='retained-ready-probe-expired')require(pins['vercel/frontend-promotion-started.json']===null&&pins['vercel/frontend-workload-outcome.json']===null);
   return { prepared: { ...checked, ...(prepared.sourceInventory ? { sourceInventory:prepared.sourceInventory } : {}) }, action: { version: 1, environment: 'staging', recoveryActionId: input.recoveryActionId, originalReleaseId: plan.actionId,
     sourceCommit: plan.sourceCommit, candidateSha256: input.candidateSha256, inventorySha256: checked.inventorySha256,
-    configurationSha256: input.configurationSha256, originalReceiptSha256: structuredClone(pins), frontendMode: 'reuse-retained-ready',
-    sqlReplayAuthorized: false, rolePreparationAuthorized: false, historicalLoginsRestored: false, failedBuildForwardAction: 'OPEN' } };
+    configurationSha256: input.configurationSha256, originalReceiptSha256: structuredClone(pins), frontendMode: input.frontendMode,
+    ...(forward?{forwardReason:input.forwardReason,forwardPrivateConfigurationDirectory:input.forwardPrivateConfigurationDirectory}:{}),
+    sqlReplayAuthorized: false, rolePreparationAuthorized: false, historicalLoginsRestored: false, failedBuildForwardAction: forward?'REVIEWED_NEW_BUILD':'OPEN' } };
 }
 
 export function bindOriginalRecoveryReceipts(directory, action, prepared) {
@@ -74,11 +81,11 @@ export async function runP2PostSqlRecovery(input, dependencies) {
       require(host?.mode === 'p2-post-sql-recovery' && host.recoveryActionId === action.recoveryActionId);
       const guard = async () => { await dependencies.assertSource?.(); await verifyEnvironment(); bindOriginalRecoveryReceipts(dependencies.originalDirectory, action, prepared); };
       await guard();
-      const completed = await withRecoveryFrontendSession(prepared, action, { ...dependencies, verifyEnvironment: guard }, async ({ client, verify, receipt, probe }) => {
+      const completed = await withRecoveryFrontendSession(prepared, action, { ...dependencies, verifyEnvironment: guard }, async ({ client, verify, receipt, probe,session }) => {
         // Restoration primitives own their transaction; SET ROLE is session-local
         // only during the bounded call and always reset before verification.
         const restorationOwner = async task => { await verify(); await client.query(`SET ROLE "${plan.owner.name}"`); try { return await task(); } finally { await client.query('RESET ROLE'); await verify(); } };
-        const providerContext=p2RecoveryProviderContext(prepared,dependencies,{client,verify,environmentSignal});
+        const providerContext={...p2RecoveryProviderContext(prepared,dependencies,{client,verify,environmentSignal}),action};
         const fences = async checkpoint => {
           await verify(); bindOriginalRecoveryReceipts(dependencies.originalDirectory, action, prepared);
           const nonce = randomBytes(32).toString('hex');
@@ -88,12 +95,18 @@ export async function runP2PostSqlRecovery(input, dependencies) {
         phase = 'fresh-current-database-and-provider-fences';
         await store.record('p2-recovery-current-database.json', receipt);
         await host.armRecovery({ receipt, probe }); await verify();
+        if(action.frontendMode==='reviewed-new-build'){
+          phase='get-first-original-build-reconciliation';
+          const prior=await reconcileP2RecoveryForward({...providerContext,plan,job:migration.job});
+          await store.record('p2-recovery-forward-original.json',prior);
+        }
         await fences('recovery-before-runtime');
         // Remote implementation must bind probe to fresh physical session, then
         // verify BOTH API databases current/read-only before restoring10services.
         phase = 'get-only-retained-ready-frontend-observation';
-        const observed = await adapters.observeCompatibleFrontend({ plan, inventorySha256, checkpoint: 'recovery', recoveryActionId: action.recoveryActionId, ...providerContext, admissionObservation: { newWork: false, recovery: false, active: 0, uncertain: 0 } });
-        require(observed?.readyState === 'READY' && observed.actionId === plan.actionId && observed.sourceCommit === plan.sourceCommit &&
+        let observed;
+        if(action.frontendMode==='reuse-retained-ready')observed=await adapters.observeCompatibleFrontend({ plan, inventorySha256, checkpoint: 'recovery', recoveryActionId: action.recoveryActionId, ...providerContext, admissionObservation: { newWork: false, recovery: false, active: 0, uncertain: 0 } });
+        if(observed)require(observed?.readyState === 'READY' && observed.actionId === plan.actionId && observed.sourceCommit === plan.sourceCommit &&
           observed.aliasJobState === 'succeeded' && observed.aliasDeploymentId === observed.deploymentId && observed.aliasJobDeploymentId === observed.deploymentId &&
           observed.aliasJobMatchesIntent === true && observed.aliasJobType === 'promote' && observed.workloadVerified === true &&
           observed.admissionNewWork === false && observed.admissionRecovery === false && observed.nativeSchedulesEnabled === false &&
@@ -104,9 +117,25 @@ export async function runP2PostSqlRecovery(input, dependencies) {
           runtime.apiDatabases?.course?.status === 'P2_RECOVERY_API_DATABASE_CURRENT' && runtime.apiDatabases.community?.status === 'P2_RECOVERY_API_DATABASE_CURRENT' &&
           runtime.containers?.length === 10 && runtime.sqlReplayed === false);
         await store.record('p2-recovery-api-runtime.json', runtime);
+        if(action.frontendMode==='reviewed-new-build'){
+          phase='reviewed-new-build';
+          const selected=plan.producers.find(row=>row.producerSha256===(plan.runtimeProducerSha256??plan.bootstrapCompatibility?.runtimeProducerSha256)&&row.role.name===migration.job.target.runtimeRole);require(selected);
+          const expectedWriterAdmissionBinding={mode:'enforce',targetSha256:plan.targetSha256,producerSha256:selected.producerSha256,sourceCommit:plan.sourceCommit,roleName:migration.job.target.runtimeRole};
+          await store.record('p2-recovery-forward-started.json',{...base,status:'P2_RECOVERY_NEW_BUILD_INTENT',reason:action.forwardReason,
+            currentDatabaseReceiptSha256:frontendCoordinationHash(readFrontendReleaseEvidence(dependencies.directory,'p2-recovery-current-database.json')),
+            apiRuntimeReceiptSha256:frontendCoordinationHash(readFrontendReleaseEvidence(dependencies.directory,'p2-recovery-api-runtime.json')),
+            priorReconciliationReceiptSha256:frontendCoordinationHash(readFrontendReleaseEvidence(dependencies.directory,'p2-recovery-forward-original.json')),
+            expectedWriterAdmissionBinding,featureControls:plan.certification.featureControls});
+          const result=await buildP2RecoveryForward({...providerContext,plan,job:migration.job,verifyMutationScope:()=>verifyP2RecoveryForwardMutation(session)});
+          require(result.status==='P2_RECOVERY_NEW_BUILD_VERIFIED');
+          providerContext.forwardRecoveryScope=await issueP2RecoveryForwardScope(session,{...providerContext,plan});
+          observed=await adapters.observeCompatibleFrontend({plan,inventorySha256,checkpoint:'recovery',...providerContext,admissionObservation:{newWork:false,recovery:false,active:0,uncertain:0}});
+        }
+        require(observed?.readyState==='READY'&&observed.aliasJobMatchesIntent===true&&observed.aliasJobType==='promote'&&observed.aliasDeploymentId===observed.deploymentId&&observed.aliasJobDeploymentId===observed.deploymentId&&observed.workloadVerified===true&&observed.nativeSchedulesEnabled===false);
         const actualRuntime=await observeP2RecoveryFrontend({ ...providerContext, plan, job:migration.job });
         require(actualRuntime.deploymentId===observed.deploymentId);await store.record('p2-recovery-frontend-runtime.json',actualRuntime);
-        await host.frontendVerified({ ...observed, writerAdmissionBinding:actualRuntime.writerAdmissionBinding, frontendServerWorkloadReverified:true }); await verify(); await fences('recovery-after-ready');
+        const workload=await readCompatibleFrontendWorkloadReceipt({...providerContext,plan},observed);
+        await host.frontendVerified({ ...observed, writerAdmissionBinding:actualRuntime.writerAdmissionBinding, frontendServerWorkloadReverified:true },workload); await verify(); await fences('recovery-after-ready');
         phase = 'deliberate-ordered-admission-restoration';
         const restoration = await restoreFrontendAdmission(plan, client, receipt.admissionEpoch, { verifySession: verify, withOwner: restorationOwner, record: store.record,
           async verifyBoundary(stage, admission) {
@@ -129,7 +158,7 @@ export async function runP2PostSqlRecovery(input, dependencies) {
           } });
         require(restoration.admissionRestored === true); await verify();
         const outcome = { ...base, status: 'P2_STAGING_RECOVERY_RESTORATION_VERIFIED', phase: 'completed', admissionRestored: true, trafficAuthorized: true,
-          wholeReleaseAccepted: false, failedBuildForwardAction: 'OPEN', sqlReplayed: false };
+          wholeReleaseAccepted: false, failedBuildForwardAction: action.frontendMode==='reviewed-new-build'?'COMPLETED':'OPEN', sqlReplayed: false };
         await host.prepareClose(verify); return outcome;
       });
       // Session cleanup completed above. Record new verification only; the

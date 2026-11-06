@@ -40,6 +40,8 @@ class P2RecoveryBroker(Broker):
                 initial.get('confirmation') == 'staging/' + initial['recoveryActionId'] and
                 initial.get('originalReleaseId') == selected['releaseId'] and set(jobs) == {'frontend','course','community'}, 'P2_RECOVERY_ORIGINAL_CANDIDATE_REQUIRED')
         require(migrate.file_hash(json.dumps(initial['configurationSha256'],separators=(',',':'),ensure_ascii=False).encode()) == initial.get('configurationBindingSha256'), 'P2_RECOVERY_REVIEWED_CONFIGURATION_REQUIRED')
+        require(initial.get('frontendMode','reuse-retained-ready') in ('reuse-retained-ready','reviewed-new-build') and
+            (initial.get('frontendMode')!='reviewed-new-build' or initial.get('forwardReason') in ('prior-build-failed','prior-build-canceled','retained-ready-probe-expired')),'P2_RECOVERY_FRONTEND_MODE_REFUSED')
         return selected, jobs, plan, compose
 
     def arm(self, request):
@@ -107,7 +109,8 @@ class P2RecoveryBroker(Broker):
                 outcome.get('originalReleaseId') == self.selected['releaseId'] and outcome.get('candidateSha256') == self.initial['candidateSha256'] and
                 outcome.get('sourceCommit') == self.selected['sources']['frontend']['commit'] and outcome.get('admissionRestored') is True and
                 outcome.get('originalReceiptSha256') == self.initial['originalReceiptSha256'] and outcome.get('originalFrontendTerminalRecreated') is False and
-                outcome.get('sqlReplayed') is False and outcome.get('failedBuildForwardAction') == 'OPEN', 'P2_RECOVERY_TERMINAL_BINDING_REFUSED')
+                outcome.get('sqlReplayed') is False and outcome.get('frontendMode','reuse-retained-ready')==self.initial.get('frontendMode','reuse-retained-ready') and
+                outcome.get('failedBuildForwardAction')==('COMPLETED' if self.initial.get('frontendMode')=='reviewed-new-build' else 'OPEN'), 'P2_RECOVERY_TERMINAL_BINDING_REFUSED')
         require(self.worker_done.is_set() and not self.failed.is_set() and self.promoted is not None and getattr(self,'gateway_flags',None) == {'newWork':True,'recovery':True}, 'P2_RECOVERY_RUNTIME_NOT_READY')
         migrate.write_json(self.directory, 'p2-recovery-frontend-verification.json', outcome)
         self.finished = True; self.released.set()

@@ -27,10 +27,14 @@ export function prepareP2RecoveryOperator(settings) {
   const selected=prepareP2PostSqlRecovery(original.prepared,settings.recovery,candidateBytes);
   require(selected.action.configurationSha256 === hash(original.configurationSha256));
   bindOriginalRecoveryReceipts(settings.originalDirectory,selected.action,selected.prepared);
+  if(selected.action.frontendMode==='reviewed-new-build'){
+    frontendPrivateReceiptDirectory(dirname(selected.action.forwardPrivateConfigurationDirectory));
+    require(lstatSync(selected.action.forwardPrivateConfigurationDirectory,{throwIfNoEntry:false})===undefined);
+  }
   return { ...selected, candidateBytes, original, plan: { ...selected.action, operation:'p2-post-sql-deliberate-recovery', operatorSourceCommit:settings.operatorSourceCommit,
     originalSources:candidate.sources, frontendTarget:original.job.target, featureProfile:original.prepared.plan.certification,
-    runtimeServices:10, frontendMode:'reuse-retained-ready', nativeSchedulesEnabled:false, trafficAuthorized:false,
-    failedBuildForwardAction:'OPEN', approval:'Dardan starts this exact reviewed staging recovery action' } };
+    runtimeServices:10, frontendMode:selected.action.frontendMode, nativeSchedulesEnabled:false, trafficAuthorized:false,
+    failedBuildForwardAction:selected.action.failedBuildForwardAction, approval:'Dardan starts this exact reviewed staging recovery action' } };
 }
 
 export async function p2RecoveryOperator(settings,{apply=false,confirmation}={}) {
@@ -46,6 +50,10 @@ export async function p2RecoveryOperator(settings,{apply=false,confirmation}={})
   const context=object(settings.providerContext,24_000_000),credentials=Object.fromEntries(['FRONTEND_STAGING_MIGRATION_DATABASE_URL','COURSE_STAGING_DATABASE_URL','COMMUNITY_STAGING_DATABASE_URL'].map(key=>{
     const value=process.env[key];require(typeof value==='string'&&value.length>0);return[key,value];}));
   require(typeof context.vercelToken==='string'&&context.vercelToken.length>0);
+  if(checked.action.frontendMode==='reviewed-new-build'){
+    require(typeof context.frontendRuntimeDatabaseUrl==='string'&&typeof context.privateConfigurationDirectory==='string'&&context.privateConfigurationDirectory!==checked.action.forwardPrivateConfigurationDirectory);
+    mkdirSync(checked.action.forwardPrivateConfigurationDirectory,{mode:0o700});
+  }
   const ssh=await recreationSsh({knownHosts:settings.knownHosts,keyFile:settings.sshKey,diagnostics});
   require((await ssh.machine()).machineId===settings.host.machineId);
   const installed=await ssh.installSource({commit:settings.operatorSourceCommit,files:committed.files});require(installed.commit===settings.operatorSourceCommit&&installed.status==='EXACT_OPERATOR_SOURCE_INSTALLED');
@@ -56,6 +64,7 @@ export async function p2RecoveryOperator(settings,{apply=false,confirmation}={})
     bundle:settings.host.bundle,configuration:settings.host.configuration,results:settings.host.results,
     configurationSha256:checked.original.configurationSha256,configurationBindingSha256:checked.action.configurationSha256,
     confirmation,credentials,vercelToken:context.vercelToken,recoveryActionId:checked.action.recoveryActionId,originalReleaseId:checked.action.originalReleaseId,
+    frontendMode:checked.action.frontendMode,...(checked.action.forwardReason?{forwardReason:checked.action.forwardReason}:{}),
     originalReceiptSha256:checked.action.originalReceiptSha256,frontendJob:checked.original.job,frontendBaseline:checked.original.baseline,
     expectedWriterAdmissionBinding:checked.original.plan.writerAdmissionBinding,owner:checked.prepared.plan.owner,historicalLogins:checked.prepared.plan.historicalLogins,producers:checked.prepared.plan.producers,targetSha256:checked.prepared.plan.targetSha256,certification:checked.prepared.plan.certification,
     gatewayObservation:context.bindings?.gatewayObservation};

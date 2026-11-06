@@ -78,10 +78,11 @@ export function p2RecoveryEnvironmentLock(settings, initial, directory, { launch
           const result = await request('start-api','API_READY',{ receipt: raw.toString('base64'), probe }, 600_000);
           require(result.receipt?.status === 'P2_RECOVERY_API_RUNTIME_READY'); return result.receipt;
         },
-        async frontendVerified(observed) {
+        async frontendVerified(observed,selectedWorkload) {
           require(apiStarted && !preparedClose); await verifyEnvironment();
           const proof = Object.fromEntries(Object.entries(observed).filter(([key]) => !['evidence','evidenceSha256'].includes(key)));
-          const workload = readFrontendReleaseEvidence(join(settings.originalDirectory,'vercel'),'frontend-workload-outcome.json');
+          const workload=selectedWorkload??readFrontendReleaseEvidence(join(settings.originalDirectory,'vercel'),'frontend-workload-outcome.json');
+          require(Buffer.isBuffer(workload)&&workload.length>0&&workload.length<=2_000_000&&createHash('sha256').update(workload).digest('hex')===proof.workloadReceiptSha256);
           await request('frontend-verified','FRONTEND_VERIFIED',{ proof, workload: workload.toString('base64') });
         },
         async restoreGatewayStage(stage, admission) {
