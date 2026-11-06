@@ -172,6 +172,7 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   const workflow = parse(readFileSync(new URL("../../.github/workflows/platform-artifacts.yml", import.meta.url), "utf8"));
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   const job = workflow.jobs.candidate;
+  assert.equal(job["runs-on"], "ubuntu-24.04");
   assert.equal(job.environment, undefined);
   assert.ok(job.if.includes("github.actor_id == '8996309'"));
   assert.deepEqual(job.permissions, { contents: "read", actions: "read", packages: "write", "id-token": "write", attestations: "write" });
@@ -234,4 +235,12 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   assert.ok(harnessIndex > verifyIndex && finalCheckIndex > harnessIndex && qualificationIndex > finalCheckIndex);
   assert.equal(workflow.on.workflow_dispatch.inputs.source_branch.default, "main");
   assert.ok(!JSON.stringify(workflow).includes("aws-actions/"));
+});
+
+test("native qualification uses the explicit supported Ubuntu baseline without altering its verifier", () => {
+  const workflow = parse(readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8"));
+  for (const key of ["frontend-operator-migrations", "gateway-and-platform"]) assert.equal(workflow.jobs[key]["runs-on"], "ubuntu-24.04");
+  for (const job of Object.values(workflow.jobs)) for (const step of job.steps ?? []) {
+    if (step.run?.includes("ops/gateway/runtime/verify.mjs")) assert.equal(step["continue-on-error"], undefined);
+  }
 });

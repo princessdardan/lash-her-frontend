@@ -30,7 +30,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   candidate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     if: >-
       github.event_name == 'workflow_dispatch' &&
@@ -476,10 +476,11 @@ jobs:
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/ops/platform,dst=/source/ops/platform,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/node_modules,dst=/source/node_modules,readonly" \
-            --mount "type=bind,src=$PWD/sources/lash-her-frontend/src/lib/private-db/migration-lineage.ts,dst=/source/src/lib/private-db/migration-lineage.ts,readonly" \
-            --mount "type=bind,src=$PWD/sources/lash-her-frontend/src/lib/writer-admission,dst=/source/src/lib/writer-admission,readonly" \
-            --mount "type=bind,src=$PWD/sources/lash-her-frontend/src/lib/env/application-environment.mjs,dst=/source/src/lib/env/application-environment.mjs,readonly" \
-            --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/v1/manifest.json,dst=/source/contracts/api-integration/v1/manifest.json,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/src,dst=/source/src,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/scripts,dst=/source/scripts,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/tsconfig.json,dst=/source/tsconfig.json,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/package.json,dst=/source/package.json,readonly" \
+            --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/v1,dst=/source/contracts/api-integration/v1,readonly" \
             --mount "type=bind,src=$PWD/sources/lash-her-frontend/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
             lash-her-frontend-migration:postgres18-test > "$RUNNER_TEMP/platform-evidence/frontend-migration-rehearsal.json"
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node \

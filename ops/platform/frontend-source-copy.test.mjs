@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import { parse } from "yaml";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
 
 const source = resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -40,4 +41,52 @@ test("the actual owned source-copy branch produces an executable migration CLI w
       writeFileSync(target, original);
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+for (const fixture of [
+  { name: "source CI", file: "ci.yml", job: "frontend-operator-migrations", prefix: "$PWD", marker: "FRONTEND_MIGRATION_EXPORT_SCHEMA=true" },
+  { name: "candidate rehearsal", file: "platform-artifacts.yml", job: "candidate", prefix: "$PWD/sources/lash-her-frontend", marker: "frontend-migration-rehearsal.json" },
+]) test(`${fixture.name} readonly mounts can load the actual legacy and P2 response validators`, () => {
+  const workflow = parse(readFileSync(new URL(`../../.github/workflows/${fixture.file}`, import.meta.url), "utf8"));
+  const run = workflow.jobs[fixture.job].steps.find(step => step.run?.includes(fixture.marker))?.run;
+  assert.ok(run);
+  const mounts = [...run.matchAll(/--mount "type=bind,src=([^,"]+),dst=([^,"]+),readonly"/gu)]
+    .map(([, source, destination]) => ({ source, destination })).sort((a, b) => b.destination.length - a.destination.length);
+  const mountedSource = file => {
+    const destination = `/source/${file}`;
+    const mount = mounts.find(item => destination === item.destination || destination.startsWith(`${item.destination}/`));
+    assert.ok(mount, `Owned fixture does not mount ${file}`);
+    assert.ok(mount.source === fixture.prefix || mount.source.startsWith(`${fixture.prefix}/`));
+    return resolve(source, mount.source.slice(fixture.prefix.length).replace(/^\//u, ""), destination.slice(mount.destination.length).replace(/^\//u, ""));
+  };
+  const app = realpathSync(mkdtempSync(join(tmpdir(), "frontend-mounted-import-")));
+  const copy = file => { const target = join(app, file); mkdirSync(dirname(target), { recursive: true }); copyFileSync(mountedSource(file), target); };
+  const copied = new Set();
+  const copyRuntimeImports = file => {
+    if (copied.has(file)) return;
+    copied.add(file); copy(file);
+    if (file.endsWith(".json")) return;
+    const syntax = ts.createSourceFile(file, readFileSync(join(source, file), "utf8"), ts.ScriptTarget.Latest, true);
+    for (const statement of syntax.statements) {
+      if (!ts.isImportDeclaration(statement) || statement.importClause?.isTypeOnly || !ts.isStringLiteral(statement.moduleSpecifier) ||
+        !statement.moduleSpecifier.text.startsWith(".")) continue;
+      const base = resolve(source, dirname(file), statement.moduleSpecifier.text);
+      const target = [base, `${base}.ts`, `${base}.mjs`, `${base}.js`, `${base}.json`, join(base, "index.ts")]
+        .find(path => existsSync(path) && statSync(path).isFile());
+      assert.ok(target, `Missing actual source import: ${statement.moduleSpecifier.text}`);
+      copyRuntimeImports(relative(source, target));
+    }
+  };
+  try {
+    for (const file of ["package.json", "tsconfig.json", "scripts/register-server-only-test.mjs"]) copy(file);
+    symlinkSync(realpathSync(mountedSource("node_modules")), join(app, "node_modules"), "dir");
+    const entries = ["src/lib/api-integration/response-validation.ts", "src/lib/api-integration/candidate-validation.ts"];
+    for (const file of entries) copyRuntimeImports(file);
+    const code = `for (const url of ${JSON.stringify(entries.map(file => pathToFileURL(join(app, file)).href))}) await import(url); console.log("RESPONSE_VALIDATOR_MOUNT_CLOSURE_PASS");`;
+    const imported = spawnSync(process.execPath, ["--import", "tsx", "--import", join(app, "scripts/register-server-only-test.mjs"), "--input-type=module", "--eval", code], {
+      cwd: app, env: { PATH: process.env.PATH, NODE_ENV: "test" }, encoding: "utf8", timeout: 10_000,
+    });
+    assert.ifError(imported.error); assert.equal(imported.status, 0, imported.stderr);
+    assert.match(imported.stdout, /RESPONSE_VALIDATOR_MOUNT_CLOSURE_PASS/u);
+  } finally { rmSync(app, { recursive: true, force: true }); }
 });

@@ -1,0 +1,40 @@
+(node:61132) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ packaged source binds the migration executable, SQL, lineage and minimal dependencies (57.768792ms)
+✔ extra SQL or omitted source cannot silently enter a packaged image (91.822958ms)
+✔ packaged image refuses modified P2 manifest.json (48.956417ms)
+✔ packaged image refuses modified P2 course-api.json (51.1755ms)
+✔ packaged image refuses modified P2 community-api.json (45.904542ms)
+✔ packaged image refuses modified P2 enrollment-event.schema.json (45.085583ms)
+✔ packaged image refuses modified P2 boundary-contracts.json (47.327875ms)
+✔ packaged image refuses modified P2 README.md (48.498334ms)
+✔ released P2 image source requires and binds the fixed compatibility review and verifier source (46.921542ms)
+✔ minimal image dependencies stay aligned with the application lock (7.266916ms)
+✔ image entrypoint never offers checkout or environment source-verification bypasses (63.395333ms)
+(node:61133) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ the actual owned source-copy branch produces an executable migration CLI with its complete contract verifier closure (546.240083ms)
+✔ source CI readonly mounts can load the actual legacy and P2 response validators (154.594666ms)
+✔ candidate rehearsal readonly mounts can load the actual legacy and P2 response validators (149.572708ms)
+✔ lightsail-host: Lightsail-prefixed user data runs under POSIX sh and emits valid SSH lines (12.656583ms)
+✔ lightsail-access-recovery: Lightsail-prefixed user data runs under POSIX sh and emits valid SSH lines (10.580125ms)
+✔ monitoring is deferred outside the default runtime and release gate (1.732208ms)
+✔ topology publishes only gateway HTTPS; runtime and migration security boundaries cannot regress (0.465833ms)
+✔ private policies isolate workload, publisher, authority and operational peers (0.1995ms)
+✔ unfilled release candidate refuses and structural validation does not infer approvals (0.133583ms)
+✔ release completeness needs no billing access, forecast or verified spending controls (0.535959ms)
+✔ host watchdog uses the stock Python runtime and a bounded hardened systemd unit (0.114958ms)
+✔ candidate publication uses sole-operator dispatch, a scoped read token and never deploys (7.703875ms)
+✔ native qualification uses the explicit supported Ubuntu baseline without altering its verifier (5.461041ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1043.278458

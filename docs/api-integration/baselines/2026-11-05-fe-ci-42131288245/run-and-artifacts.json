@@ -1,0 +1,384 @@
+{
+  "run": {
+    "id": 42131288245,
+    "headSha": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65",
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "failure",
+    "attempt": 1,
+    "htmlUrl": "https://github.com/princessdardan/lash-her-frontend/actions/runs/42131288245",
+    "headTree": "781e9b6f204484e32f8fbf0fffbe1af323628ef4",
+    "createdAt": "2026-11-05T23:41:19Z",
+    "updatedAt": "2026-11-05T23:49:10Z",
+    "pullRequests": [
+      {
+        "number": 93,
+        "head": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65",
+        "base": "0d45f462c92a3de0af700e6f246bc4c57c8617b3"
+      }
+    ]
+  },
+  "jobs": [
+    {
+      "id": 127608254078,
+      "name": "frontend-operator-migrations",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_id": 42131288245,
+      "logs_url": null,
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Enable the containerd image store for attested local builds",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Build the immutable frontend migration image without publishing",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Verify migration-only image boundaries offline",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Build owned frontend PostgreSQL 18 fixture",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Exercise the operator CLI without provider access",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 10
+        },
+        {
+          "name": "Verify initial Course logins on owned PostgreSQL 18",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 11
+        },
+        {
+          "name": "Verify Community runtime credential handoff on owned PostgreSQL 18",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 12
+        },
+        {
+          "name": "Retain source-bound digest summary without private schema definitions",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 13
+        },
+        {
+          "name": "Retain raw frontend-runtime scan",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 14
+        },
+        {
+          "name": "Scan frontend migration image against verified backport evidence",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 15
+        },
+        {
+          "name": "Retain frontend-runtime qualification",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 16
+        },
+        {
+          "name": "Post Build the immutable frontend migration image without publishing",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 28
+        },
+        {
+          "name": "Post Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 29
+        },
+        {
+          "name": "Post Enable the containerd image store for attested local builds",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 30
+        },
+        {
+          "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 31
+        },
+        {
+          "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 32
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 33
+        }
+      ]
+    },
+    {
+      "id": 127608254623,
+      "name": "gateway-and-platform",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_id": 42131288245,
+      "logs_url": null,
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Enable the containerd image store for attested local builds",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Run npm ci --ignore-scripts --prefix ops/gateway",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Run node --test ops/gateway/*.test.mjs ops/platform/*.test.mjs",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Run python3 -m unittest discover -s ops/platform/host -p '*_test.py'",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Rehearse host forwarding rules in an isolated network namespace",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Verify recreation source receiver and maintenance units offline",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Verify actual Docker inspection with optional healthchecks",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        },
+        {
+          "name": "Run npm audit --audit-level=moderate --prefix ops/gateway",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13
+        },
+        {
+          "name": "Build gateway and private TLS artifact",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14
+        },
+        {
+          "name": "Refuse privileged or writable gateway image defaults",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15
+        },
+        {
+          "name": "Retain raw gateway-runtime scan",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16
+        },
+        {
+          "name": "Scan gateway image against verified backport evidence",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 17
+        },
+        {
+          "name": "Retain gateway-runtime qualification",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18
+        },
+        {
+          "name": "Post Retain raw gateway-runtime scan",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 31
+        },
+        {
+          "name": "Post Build gateway and private TLS artifact",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 32
+        },
+        {
+          "name": "Post Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 33
+        },
+        {
+          "name": "Post Enable the containerd image store for attested local builds",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 34
+        },
+        {
+          "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 35
+        },
+        {
+          "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 36
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 37
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 13463427050,
+      "name": "princessdardan~lash-her-frontend~ZR2ETA.dockerbuild",
+      "size_in_bytes": 72247,
+      "url": "https://api.github.com/repos/princessdardan/lash-her-frontend/actions/artifacts/13463427050",
+      "archive_download_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/actions/artifacts/13463427050/zip",
+      "expired": false,
+      "created_at": "2026-11-05T23:43:44Z",
+      "expires_at": "2027-02-03T23:41:19Z",
+      "updated_at": "2026-11-05T23:43:44Z",
+      "digest": "sha256:eafa7902364a1c408a29d8a34bd0bd6e66bd77ba158c457907646c9fd2c881c6",
+      "workflow_run": {
+        "id": 42131288245,
+        "repository_id": 1114139712,
+        "head_repository_id": 1114139712,
+        "head_branch": "codex/phase2-integration",
+        "head_sha": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65"
+      }
+    },
+    {
+      "id": 13462729582,
+      "name": "princessdardan~lash-her-frontend~G3L0OC.dockerbuild",
+      "size_in_bytes": 67477,
+      "url": "https://api.github.com/repos/princessdardan/lash-her-frontend/actions/artifacts/13462729582",
+      "archive_download_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/actions/artifacts/13462729582/zip",
+      "expired": false,
+      "created_at": "2026-11-05T23:45:13Z",
+      "expires_at": "2027-02-03T23:41:19Z",
+      "updated_at": "2026-11-05T23:45:13Z",
+      "digest": "sha256:470ef891f7abd59b07a93304bb0b6fee030833516b7348c2e9e7ee53e99c1faf",
+      "workflow_run": {
+        "id": 42131288245,
+        "repository_id": 1114139712,
+        "head_repository_id": 1114139712,
+        "head_branch": "codex/phase2-integration",
+        "head_sha": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65"
+      }
+    },
+    {
+      "id": 13462594878,
+      "name": "gateway-runtime-qualification",
+      "size_in_bytes": 33804,
+      "url": "https://api.github.com/repos/princessdardan/lash-her-frontend/actions/artifacts/13462594878",
+      "archive_download_url": "https://api.github.com/repos/princessdardan/lash-her-frontend/actions/artifacts/13462594878/zip",
+      "expired": false,
+      "created_at": "2026-11-05T23:45:12Z",
+      "expires_at": "2026-11-15T23:45:11Z",
+      "updated_at": "2026-11-05T23:45:12Z",
+      "digest": "sha256:2898d0d8801c41e65a0c3ceb6309f27615a30440853ca054596977bb38bdb731",
+      "workflow_run": {
+        "id": 42131288245,
+        "repository_id": 1114139712,
+        "head_repository_id": 1114139712,
+        "head_branch": "codex/phase2-integration",
+        "head_sha": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65"
+      }
+    }
+  ]
+}
