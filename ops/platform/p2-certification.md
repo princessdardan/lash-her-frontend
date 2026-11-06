@@ -52,7 +52,7 @@ frontend-promotion-started.json, and frontend-promotion-outcome.json. Each raw h
 and project/release/app-source/deployment binding is checked repeatedly; the
 workload's ten feature flags, writer binding and P2 manifest must match exactly.
 
-Modes are `native-window`, `fault-before-upstream`, `fault-drop-after-ack`,
+Modes are `direct-worker`, `native-window`, `fault-before-upstream`, `fault-drop-after-ack`,
 `contain-native`, and the source-composed authentication/browser pair. Native
 windows retain the existing60–180-second bound and drain budget. Fault cases use
 the fixed driver stage, exact selected actual command and canonical command hash.
@@ -88,8 +88,42 @@ owner UI to create the command. No command UUID is preallocated. Source readers
 join actual202/header ID, natural user exp+30 denial, actual playback expiry and
 player removal, then the fixed read-only pending query proves both deliveries
 remain pending/attempts0/no leases/no ACKs and sessions revoked. Finally both gates
-close and drain. Worker invocation is a separate action and is not implemented by
-this package.
+close and drain. Worker invocation uses the separately selected direct action
+below; browser success does not invoke it automatically.
+
+## Direct worker action
+
+`certification.mode=direct-worker` requires `startState=already-closed`, the same
+installed operator/application source, and exactly one actual retained suspension
+command. `worker.suspensionInput` re-derives the original source browser plan;
+`worker.persistenceReviewed` selects its existing exact three-target/configuration
+reader. `certification.worker.input` is the fixed eight-field worker selection:
+version, distinct actionId equal to certificationActionId, commandIndex0,
+pendingRecordSha256, canonicalCommandSha256, gatewayProcessSha256,
+gatewayConfigurationSha256, and denialProgramSha256. The source-owned worker
+constructor and host retained reader check the original browser/pending/natural
+receipts. Caller JSON cannot assert their completion.
+
+After current three-DB/ten-runtime verification and ARM, the fixed parent resolves
+only `FRONTEND_STAGING_CRON_SECRET` from its apply process and the existing private
+`providerContext.frontendRuntimeDatabaseUrl`. Neither value is read in plan mode,
+placed in argv/common receipts, or hashed as evidence. They pass through private
+SSH stdin to fixed source operations. A bad-key401 and valid-key admission503
+with no operation UUID are required while recovery is closed. The actual held
+frontend client also proves exactly the selected two pending deliveries,
+attempts0/no leases/no ACKs and no unrelated eligible export/scrub work.
+
+Only then FE and gateway recovery open at E+1, newWork remains false and native
+remains OFF. One normal authenticated GET must return the actual admitted
+x-request-id; the source ledger joins that exact completed recovery operation,
+source/producer/role/epoch and both ACKs. The request is never retried after an
+unknown response. Both gates close at E+2 before the source three-DB canonical
+receipt and receiver denial reads. Course proves the actual protected HTTP403;
+Community proves the deployed private account-access guard, with httpStatus null.
+No Community HTTP endpoint is invented. The contained terminal binds both the
+exact local source artifact bytes and retained host machine artifact, followed
+by a fresh closed/zero/nativeOFF readback. It records directWorkerSourceJoined
+without qualifying native invocation or completing persistence/S12 authority.
 
 ## Physical scope and containment
 
@@ -108,7 +142,7 @@ through each exact image's mandatory verifyOperatorRoles export, ten existing
 same-image/process/mount inventories, actual gateway admission inode/counters,
 source/config hashes, and full protected frontend features/writer binding.
 Healthy readbacks are serialized with the source-owned native-toggle mutex;
-authentication/browser require literal nativeOFF, and native/fault require the
+authentication/browser/direct-worker require literal nativeOFF, and native/fault require the
 last positively observed source-selected toggle state. A provider change outside
 that transition revokes the stage. Containment remains metadata-only even after
 private-probe expiry. No SQL
@@ -121,7 +155,8 @@ stays unknown and cannot skip later closure. If the guard itself is lost, the
 surviving broker revokes registered children and waits for its one native-toggle
 mutex before independent disable. Neither path reopens admission. Raw private
 probe/capture credentials are outside common receipts and scrubbed by the source
-cleanup paths. No cron secret is read by this parent.
+cleanup paths. The cron secret is read only by the selected direct-worker apply
+path; the existing probe helper remains unchanged and never reads it.
 
 ## Native request evidence and limits
 
@@ -150,8 +185,8 @@ staging execution remain separate unqualified gates.
 Run parent source/protocol tests with Node24:
 
 ```
-node --experimental-strip-types --test ops/platform/p2-certification.test.mjs ops/platform/p2-certification-request-evidence.test.mjs ops/platform/p2-certification-transport.test.mjs
-PYTHONPATH=ops/platform/host python3 -m unittest p2_certification_parent_test
+node --experimental-strip-types --test ops/platform/p2-certification.test.mjs ops/platform/p2-certification-request-evidence.test.mjs ops/platform/p2-certification-transport.test.mjs ops/platform/p2-lifecycle-worker-evidence.test.mjs
+PYTHONPATH=ops/platform/host python3 -m unittest p2_certification_parent_test p2_lifecycle_worker_evidence_test
 P2_CERTIFICATION_OWNED_TEST=true PG_BIN=/absolute/postgres16/bin node --experimental-strip-types ops/platform/test-p2-certification-local.mjs
 ```
 
@@ -160,7 +195,12 @@ migrations, verifies actual initial and continuous scopes and refuses privilege/
 marker/session/epoch faults. `OWNED_POSTGRES_MAJOR=18` requires an actual PG18
 binary directory. Its receipt explicitly leaves hostDocker/browser/native false.
 The transport fixture uses a real child pipe and POSIX flock, not a live host;
-fixture-injected transports cannot mint authentication or suspension capabilities.
+fixture-injected transports cannot mint authentication, suspension or worker
+capabilities. The direct-mode database regression checks primary and independent
+observers at E+1/E+2, retains the original E+1 operation, refuses later epochs and
+uncertainty, and verifies the migration journal is unchanged. Its synthetic
+catalog row tests the parent window; the separate worker fixture proves the
+actual route/dispatcher/three-DB path.
 
 ## Canonical-origin parent capability binding
 

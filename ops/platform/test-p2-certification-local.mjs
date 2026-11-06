@@ -84,6 +84,34 @@ async function child(){
       });
       await admin.query('UPDATE frontend_admission.control SET epoch=1,new_work=false,recovery=false');checks.push('actual-fixed-'+mode+'-open-close-epochs-only');
     }
+    phase='actual-child-direct-worker-window';
+    const direct={...plan,mode:'direct-worker'},operationId=randomUUID();
+    await withP2CertificationFrontendSession(prepared,direct,deps,async({client,verify,probe})=>{
+      await admin.query('UPDATE frontend_admission.control SET epoch=2,new_work=false,recovery=true');
+      // Fixture-only catalog row: the actual whole HTTP/dispatcher/three-DB
+      // worker is qualified separately. This proves the parent's exact window.
+      await admin.query(`INSERT INTO frontend_admission.operations(id,producer_sha256,source_sha,database_role,epoch,kind,state,completed_at)
+        VALUES($1,$2,$3,$4,2,'recovery','completed',pg_catalog.clock_timestamp())`,[operationId,producerSha256,sourceCommit,roles.cert_runtime]);
+      for(const [epoch,recovery] of [['2',true],['3',false]]){
+        await admin.query('UPDATE frontend_admission.control SET epoch=$1,recovery=$2',[epoch,recovery]);
+        const actual=await readP2CertificationCurrent(client,prepared,direct,verify);
+        assert.equal(actual.admission.epoch,epoch);assert.equal(actual.admission.recovery,recovery);
+        assert.deepEqual(actual.witness.operations.map(row=>row.id),[operationId]);
+        assert.equal(actual.witness.operations[0].epoch,'2');assert.equal(actual.witness.operations[0].state,'completed');
+        const independent=await observeP2CertificationPhysical({...probe,operation:'witness'},deps);
+        assert.deepEqual(independent.witness.operations.map(row=>row.id),[operationId]);
+      }
+      await admin.query('UPDATE frontend_admission.control SET epoch=4');
+      await assert.rejects(observeP2CertificationPhysical({...probe,operation:'observe'},deps));
+      await admin.query('UPDATE frontend_admission.control SET epoch=3');
+      await admin.query("UPDATE frontend_admission.operations SET state='uncertain',completed_at=NULL WHERE id=$1",[operationId]);
+      await assert.rejects(readP2CertificationCurrent(client,prepared,direct,verify));
+      await admin.query("UPDATE frontend_admission.operations SET state='completed',completed_at=pg_catalog.clock_timestamp() WHERE id=$1",[operationId]);
+      assert.equal((await readP2CertificationCurrent(client,prepared,direct,verify)).admission.uncertain,0);
+    });
+    await admin.query('DELETE FROM frontend_admission.operations WHERE id=$1',[operationId]);
+    await admin.query('UPDATE frontend_admission.control SET epoch=1,new_work=false,recovery=false');
+    checks.push('actual-fixed-direct-worker-epoch-original-operation-window-and-uncertainty-refusal');
     await admin.query('UPDATE frontend_admission.control SET new_work=true,recovery=true,epoch=2');
     assert.equal((await observeP2CertificationPhysical({...sourceProbe,operation:'fence'},deps)).frontendAdmissionClosed,true);
     assert.deepEqual((await admin.query('SELECT new_work,recovery FROM frontend_admission.control')).rows,[{new_work:false,recovery:false}]);

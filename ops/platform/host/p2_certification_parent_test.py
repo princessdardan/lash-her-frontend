@@ -131,7 +131,7 @@ class CertificationProtocolTests(unittest.TestCase):
         broker.scope=type('Scope',(),{'require_frontend':lambda *args:None,'require_configuration':lambda *args:None})()
         broker.selected={};broker.jobs={'frontend':{}};broker.configuration=self.directory;broker.runtime_current=[];broker.process_snapshot=[]
         broker._runtime_processes=lambda:[];broker.last_api_verified=time.monotonic();broker.last_boundary=0
-        for mode in ('auth-preparation','browser-pending','native-window','fault-drop-after-ack'):
+        for mode in ('auth-preparation','browser-pending','direct-worker','native-window','fault-drop-after-ack'):
             broker.initial['certificationPlan']['mode']=mode
             with self.subTest(mode=mode),patch.object(parent.runtime,'check_containers',return_value=[]):
                 full=unittest.mock.Mock(return_value={'nativeEnabled':False});broker._native_observe=full
@@ -143,6 +143,40 @@ class CertificationProtocolTests(unittest.TestCase):
         broker.initial['certificationPlan']['mode']='contain-native';broker._native_observe=unittest.mock.Mock(side_effect=AssertionError('expired private probe used'))
         with patch.object(parent.runtime,'check_containers',return_value=[]),patch.object(parent.native,'observe_metadata',return_value={'nativeEnabled':True}) as metadata:
             broker._verify_boundary();metadata.assert_called_once();broker._native_observe.assert_not_called()
+
+    def test_direct_worker_stage_dispatch_is_armed_mode_bound_and_retains_exact_source_bytes(self):
+        broker=self.broker;broker.initial['certificationPlan'].update(mode='direct-worker',workerPlanSha256='c'*64)
+        stage=unittest.mock.Mock();stage.retain_joined_from_source_parent.return_value={'privateRecordSha256':'d'*64}
+        broker.worker_stage=stage
+        self.assertEqual(broker.worker_operation('worker-ready',{}),{'bindingSha256':'c'*64});stage.verify.assert_called_once()
+        for operation,method,key,private in [('worker-credential','preflight_credential','secret','owned-only-private'),
+            ('worker-invoke','invoke_direct','secret','owned-only-private'),('worker-witness','observe_lifecycle_witness','runtimeUrl','owned-only-url')]:
+            broker.worker_operation(operation,{key:private});getattr(stage,method).assert_called_once_with(private)
+        raw=b'{"status":"source-owned-worker-record"}\n';record=json.loads(raw)
+        for source,selected in [(base64.b64encode(raw).decode(),{'status':'changed'}),('not-base64',record)]:
+            with self.assertRaises(ValueError):broker.worker_operation('worker-retain',{'sourceArtifact':source,'record':selected})
+        stage.retain_joined_from_source_parent.assert_not_called()
+        actual=broker.worker_operation('worker-retain',{'sourceArtifact':base64.b64encode(raw).decode(),'record':record})
+        self.assertEqual(actual,{'privateRecordSha256':'d'*64});stage.retain_joined_from_source_parent.assert_called_once_with(record)
+        self.assertEqual(broker.worker_source_sha256,parent._sha(raw))
+        for armed,mode in [(False,'direct-worker'),(True,'native-window')]:
+            broker.external_armed=armed;broker.initial['certificationPlan']['mode']=mode
+            with self.assertRaisesRegex(ValueError,'SOURCE_WORKER_STAGE_REQUIRED'):broker.worker_operation('worker-invoke',{'secret':'unused'})
+        self.assertEqual(stage.invoke_direct.call_count,1)
+
+    def test_direct_worker_terminal_requires_exact_local_source_and_machine_receipts_then_fresh_closed_read(self):
+        broker=self.broker;broker.initial['certificationPlan'].update(mode='direct-worker',workerPlanSha256='c'*64)
+        broker.worker_stage=unittest.mock.Mock();broker.worker_retained={'privateRecordSha256':'d'*64};broker.worker_source_sha256='e'*64
+        valid={'version':1,'status':'P2_CERTIFICATION_DIRECT_WORKER_JOINED','workerPlanSha256':'c'*64,
+            'workerSourceArtifactSha256':'e'*64,'workerMachineArtifactSha256':'d'*64}
+        for change in ({'workerPlanSha256':'f'*64},{'workerSourceArtifactSha256':'f'*64},{'workerMachineArtifactSha256':'f'*64},
+            {'status':'P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED'},{'callerCompleted':True}):
+            with self.subTest(change=tuple(change)):
+                with self.assertRaisesRegex(ValueError,'SOURCE_WORKER_JOIN_REQUIRED'):broker._require_worker_outcome({**valid,**change})
+        broker.worker_stage.final_closed_readback.assert_not_called()
+        broker._require_worker_outcome(valid);broker.worker_stage.final_closed_readback.assert_called_once()
+        broker.worker_stage.final_closed_readback.side_effect=ValueError('CURRENT_BOUNDARY_DRIFT')
+        with self.assertRaisesRegex(ValueError,'CURRENT_BOUNDARY_DRIFT'):broker._require_worker_outcome(valid)
 
 
     def test_canonical_alias_provider_and_four_argument_probe_retain_scope_checks(self):

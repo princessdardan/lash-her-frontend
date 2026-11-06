@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "status": "P2_DIRECT_WORKER_CERTIFICATION_PARENT_SOURCE_HOOKS_PASS",
+  "node": {
+    "passed": 14,
+    "skipped": 0
+  },
+  "host": {
+    "passed": 17,
+    "skipped": 0
+  },
+  "ownedPostgres": {
+    "16": {
+      "passedGroups": 9,
+      "frontendMigrations": 83
+    },
+    "18": {
+      "passedGroups": 9,
+      "frontendMigrations": 83,
+      "platform": "macOS-owned-source-build"
+    }
+  },
+  "lint": "PASS",
+  "syntax": "PASS",
+  "fixtureOnly": true,
+  "liveOperations": false,
+  "newOperationalFiles": 0,
+  "independentReview": "OPEN",
+  "dependencies": [
+    "03ce5d9ea50d1797caebdc38caeddf2ffe95663d",
+    "fff396ad",
+    "f1aebc11"
+  ],
+  "files": {
+    "ops/platform/host/p2_certification_parent.py": "da84d29a44caaf7fda53e9883ac4f73784541e89213ec8c124d16bbeece268ce",
+    "ops/platform/host/p2_certification_parent_test.py": "aeee66ebcd82e5a61b29efd2a8b52b2e771ff38dcd91aa458268742da7674468",
+    "ops/platform/p2-certification-current-probe.mjs": "fedf1ec2d687400ea90de6a5c6a6b6bae358af3c901936253094dcf3685bd6ae",
+    "ops/platform/p2-certification-transport.mjs": "27790ce3087dfbd47acd12f3a5f6e9d5130814c045d72b26154e62d6634ff541",
+    "ops/platform/p2-certification-transport.test.mjs": "d603e0cfe9c22f38785c5a4ea26bae6424bc27372e0520540d4fb84f5eac03e5",
+    "ops/platform/p2-certification.md": "30822951cdebcdff3395013810b5cb679fbf83f74a8d4643a104d477ea151d74",
+    "ops/platform/p2-certification.mjs": "d18fb0a8699a2fafb870b81780eaa26294d0b57efcef6aacd0318df1f7abd8fe",
+    "ops/platform/p2-certification.test.mjs": "6fffc7e5871181c42aeb289be1f9ec32b2d35a094d66b4397410554b21c5458e",
+    "ops/platform/test-p2-certification-local.mjs": "217a51ec475b1c549516f8eba67353d3a9e5c48fc2a0835119d2c5b3cddc5490",
+    "docs/api-integration/baselines/2026-11-06-p2-direct-worker-parent-hooks/README.md": "7c07d6bc68d973f9502e29109d320c8b15131270f2873dc3599bc272a1326cd3",
+    "docs/api-integration/baselines/2026-11-06-p2-direct-worker-parent-hooks/owned-postgres16.json": "210d40138ebf1cdfc6c3b4b3bcee1e018808b21c7d5b00a148270f3fc600ad26",
+    "docs/api-integration/baselines/2026-11-06-p2-direct-worker-parent-hooks/owned-postgres18.json": "ec4ff4ab9f0c706238d269f6747bb96daa32451938b28fb0711deb82f7fc3a6a"
+  }
+}

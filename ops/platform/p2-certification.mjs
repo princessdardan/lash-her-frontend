@@ -21,8 +21,9 @@ import {recreationSsh} from './recreation_ssh.mjs';
 import {p2CertificationEnvironmentLock} from './p2-certification-transport.mjs';
 import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,
   captureP2SuspensionControlledAuthority,observeP2SuspensionControlledAuthority,captureP2SuspensionPending} from './p2-lifecycle-suspension-evidence.mjs';
-
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
+import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,preflightP2DirectLifecycleWorker,
+  invokeP2DirectLifecycleWorker,joinP2DirectLifecycleWorker,readP2DirectWorkerSourceArtifact} from './p2-lifecycle-worker-evidence.mjs';
 
 const plans=new WeakMap();
 const browserSessions=new WeakMap();
@@ -53,8 +54,9 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
   demand(Buffer.isBuffer(candidateBytes)&&candidateBytes.length>0&&candidateBytes.length<=2_000_000&&isDeepStrictEqual(JSON.parse(candidateBytes),candidate)&&
     candidate?.contractPhase==='p2'&&candidate.environment==='staging'&&candidate.releaseId===inventory?.actionId&&job?.sourceCommit===candidate.sources.frontend.commit&&
     input?.version===1&&input.environment==='staging'&&inventory.targetSha256===frontendAdmissionTargetSha256('staging',job.target)&&action(input.certificationActionId)&&input.certificationActionId!==candidate.releaseId&&commit(input.operatorSourceCommit)&&
-    ['auth-preparation','browser-pending','native-window','fault-before-upstream','fault-drop-after-ack','contain-native'].includes(input.mode)&&['qualified-ready','already-closed'].includes(input.startState)&&
-    (!['auth-preparation','browser-pending','native-window'].includes(input.mode)||input.operatorSourceCommit===job.sourceCommit)&&
+    ['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','contain-native'].includes(input.mode)&&['qualified-ready','already-closed'].includes(input.startState)&&
+    (!['auth-preparation','browser-pending','direct-worker','native-window'].includes(input.mode)||input.operatorSourceCommit===job.sourceCommit)&&
+    (input.mode!=='direct-worker'||input.startState==='already-closed')&&
     /^[1-9][0-9]{0,17}$/u.test(input.initialEpoch??'')&&input.candidateSha256===rawHash(candidateBytes)&&input.inventorySha256===rawHash(inventory)&&
     input.configurationSha256===rawHash(configurationSha256)&&sha(input.configurationSha256)&&input.readyReceiptSha256&&
     [input.runtimeInventorySha256,input.gatewayProcessSha256,input.gatewayConfigurationSha256,input.operatorSourceClosureSha256].every(sha)&&
@@ -81,10 +83,16 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
       schedule:P2_LIFECYCLE_NATIVE_SCHEDULE,initialEpoch:input.initialEpoch,commandWitnesses:[],finalDisposition:'disabled-and-admission-closed'};
     nativePlan=freeze({...control,planSha256:p2NativeHash(control)});
   }else nativePlan=prepareP2LifecycleNativePlan(candidate,nativeSettings);
+  if(input.mode==='direct-worker')demand(nativePlan.commandWitnesses.length===1&&input.worker?.input?.commandIndex===0);
+  const workerPlan=input.mode==='direct-worker'?prepareP2LifecycleWorkerEvidencePlan(nativePlan,input.worker?.suspensionPlan,input.worker?.input):null;
+  demand(workerPlan===null||workerPlan.actionId===input.certificationActionId&&workerPlan.candidateSha256===input.candidateSha256&&workerPlan.configurationSha256===p2NativeHash(configurationSha256)&&
+    workerPlan.gatewayProcessSha256===input.gatewayProcessSha256&&workerPlan.gatewayConfigurationSha256===input.gatewayConfigurationSha256);
   const base={version:1,environment:'staging',certificationActionId:input.certificationActionId,originalReleaseId:candidate.releaseId,sourceCommit:job.sourceCommit,
     operatorSourceCommit:input.operatorSourceCommit,candidateSha256:input.candidateSha256,candidateObjectSha256:p2NativeHash(candidate),inventorySha256:input.inventorySha256,
     configurationSha256:input.configurationSha256,targetSha256:inventory.targetSha256,mode:input.mode,startState:input.startState,initialEpoch:input.initialEpoch,
     browserPlanSha256:['auth-preparation','browser-pending'].includes(input.mode)?input.browserPlanSha256:null,
+    workerPlan,
+    workerPlanSha256:workerPlan?p2NativeHash(workerPlan):null,
     configurationCanonicalSha256:p2NativeHash(configurationSha256),runtimeInventorySha256:input.runtimeInventorySha256,gatewayProcessSha256:input.gatewayProcessSha256,
     gatewayConfigurationSha256:input.gatewayConfigurationSha256,operatorSourceClosureSha256:input.operatorSourceClosureSha256,
     contractPhase:'p2',phase2ContractManifestSha256:candidate.phase2ContractManifestSha256,nativePlan,
@@ -105,7 +113,8 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
       gatewayImageSha256:candidate.artifacts.gateway.image.split('@sha256:')[1],operatorSourceClosureSha256:base.operatorSourceClosureSha256};
     prepareP2LifecycleTransportFaultPlan(nativePlan,faultInput);
   }
-  plans.set(plan,{prepared,candidate:structuredClone(candidate),nativeSettings,candidateBytes:Buffer.from(candidateBytes),frontendReceipts,configurationSha256:structuredClone(configurationSha256),requestEvidence:structuredClone(input.requestEvidence),faultInput});
+  plans.set(plan,{prepared,candidate:structuredClone(candidate),nativeSettings,candidateBytes:Buffer.from(candidateBytes),frontendReceipts,configurationSha256:structuredClone(configurationSha256),requestEvidence:structuredClone(input.requestEvidence),faultInput,
+    ...(workerPlan?{workerPlan,suspensionPlan:structuredClone(input.worker.suspensionPlan)}:{})});
   bindP2CertificationReadyReceipts(frontendReceipts,plan);return plan;
 }
 
@@ -113,7 +122,7 @@ export function p2CertificationParentContext(plan){const context=plans.get(plan)
 
 export function deriveP2CertificationNativePlan(plan,closedAdmission){
   const context=p2CertificationParentContext(plan),closedOffset=plan.startState==='qualified-ready'?1n:0n;
-  demand(!['auth-preparation','browser-pending','contain-native'].includes(plan.mode));
+  demand(!['auth-preparation','browser-pending','direct-worker','contain-native'].includes(plan.mode));
   demand(closedAdmission?.newWork===false&&closedAdmission.recovery===false&&closedAdmission.active===0&&closedAdmission.uncertain===0&&
     closedAdmission.epoch===(BigInt(plan.initialEpoch)+closedOffset).toString());
   const derived=prepareP2LifecycleNativePlan(context.candidate,{...context.nativeSettings,epoch:(BigInt(closedAdmission.epoch)+1n).toString()});
@@ -138,6 +147,30 @@ export async function runP2BoundedCertification(plan,dependencies){
       store.record('p2-certification-current-database.json',receipt);phase='all-three-current-and-existing-runtime';
       const current=await host.arm({receipt,probe});demand(current.status==='P2_CERTIFICATION_CURRENT_READY'&&current.runtimeReplaced===false&&current.sqlReplayed===false&&current.containers?.length===10);
       store.record('p2-certification-host-current.json',current);
+      if(plan.mode==='direct-worker'){
+        const workerPlan=context.workerPlan;demand(workerPlan===plan.workerPlan&&dependencies.workerPrivateResolvers);
+        const stage=await host.workerEvidenceStage(workerPlan),workerDependencies={withOwner,verifyEnvironment:environment,verifySession:verify};
+        phase='direct-worker-credential-preflight-closed';const credential=await preflightP2DirectLifecycleWorker(workerPlan,stage,dependencies.workerPrivateResolvers,client,workerDependencies);
+        let opened,invocation;
+        try{
+          opened=await withOwner(()=>changeFrontendAdmission(client,policy,plan.initialEpoch,{newWork:false,recovery:true}));
+          demand(opened.epoch===plan.nativePlan.initialEpoch);await host.gatewayStage('recovery');phase='one-direct-source-worker-request';
+          invocation=await invokeP2DirectLifecycleWorker(workerPlan,credential,client,workerDependencies);
+        }finally{
+          if(opened){await verify();const actual=await observe(opened.epoch);demand(actual.epoch===opened.epoch&&actual.newWork===false&&actual.recovery===true);
+            const closed=await withOwner(()=>changeFrontendAdmission(client,policy,opened.epoch,{newWork:false,recovery:false}));
+            demand(closed.epoch===(BigInt(plan.initialEpoch)+2n).toString());await host.gatewayStage('closed');}
+        }
+        phase='direct-worker-domain-and-denial-join';const sourceDirectory=join(dependencies.directory,'worker-source');mkdirSync(sourceDirectory,{mode:0o700});
+        const joined=await joinP2DirectLifecycleWorker(workerPlan,invocation,client,{...workerDependencies,directory:sourceDirectory});
+        const artifact=readP2DirectWorkerSourceArtifact(workerPlan,joined);
+        const methods=(await import('./p2-certification-transport.mjs')).readP2CertificationWorkerStage(stage,workerPlan);
+        const retained=await methods.retainJoined(joined);demand(retained.status==='P2_DIRECT_WORKER_JOINED_RETAINED');
+        terminal=await host.prepareClose({version:1,status:'P2_CERTIFICATION_DIRECT_WORKER_JOINED',workerPlanSha256:p2NativeHash(workerPlan),
+          workerSourceArtifactSha256:artifact.recordSha256,workerMachineArtifactSha256:retained.privateRecordSha256});
+        demand(terminal.status==='P2_BOUNDED_CERTIFICATION_CONTAINED'&&terminal.planSha256===plan.planSha256);
+        store.record('p2-certification-close-prepared.json',terminal);return;
+      }
       if(['auth-preparation','browser-pending'].includes(plan.mode)){
         const source=browserSessions.get(dependencies.browserSession);
         demand(source&&source.active&&source[plan.mode==='auth-preparation'?'authPlan':'browserPlan']===plan);
@@ -274,6 +307,12 @@ export function prepareP2CertificationOperator(settings){
   const original=prepareP2OperatorRelease({...settings,sourceCommit:candidate.sources.frontend.commit});demand(original.prepared&&original.roles===undefined);
   const input={...settings.certification,operatorSourceCommit:settings.operatorSourceCommit};
   let suspensionPlan,authPlan;
+  if(input.mode==='direct-worker'){
+    demand(settings.worker&&input.worker);
+    const original=prepareP2LifecycleSuspensionPlan(candidate,settings.worker.suspensionInput);
+    demand(input.worker.suspensionPlan===undefined||isDeepStrictEqual(input.worker.suspensionPlan,original));
+    input.worker={...input.worker,suspensionPlan:original};
+  }
   if(input.mode==='browser-pending'){
     demand(settings.browser&&settings.authPreparation&&input.startState==='already-closed');
     suspensionPlan=prepareP2LifecycleSuspensionPlan(candidate,settings.browser.input);
@@ -330,7 +369,9 @@ export async function p2CertificationOperator(settings,{apply=false,confirmation
     certificationPlan:plan,nativePlan:plan.nativePlan,targetSha256:plan.targetSha256,owner:checked.original.prepared.plan.owner,
     producers:checked.original.prepared.plan.producers,historicalLogins:checked.original.prepared.plan.historicalLogins,certification:checked.original.prepared.plan.certification,
     expectedWriterAdmissionBinding:checked.original.plan.writerAdmissionBinding};
+  if(plan.mode==='direct-worker')Object.assign(initial,{workerPlan:plan.workerPlan,sourceSuspensionPlan:p2CertificationParentContext(plan).suspensionPlan,persistenceReviewed:settings.worker.persistenceReviewed});
   return runP2BoundedCertification(plan,{directory,confirmation:'staging/'+plan.certificationActionId,sourceCi,browserSession:browserSource?.handle,getUrl:()=>credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
+    ...(plan.mode==='direct-worker'?{workerPrivateResolvers:createP2LifecycleWorkerPrivateResolvers(()=>privateObject(settings.providerContext,24_000_000))}:{}),
     assertSource:()=>committedOperatorSource(root,settings.operatorSourceCommit),withEnvironmentLock:p2CertificationEnvironmentLock(settings,initial,directory)});
   };
   if(!checked.authPlan)return execute(checked.plan);

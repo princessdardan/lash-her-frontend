@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {nativeDocuments} from './harness/p2-native-unit-fixture.mjs';
 import {frontendCoordinationHash as hash} from './frontend-release-inventory.mjs';
 import {prepareP2BoundedCertification,P2_CERTIFICATION_READY_FILES,deriveP2CertificationNativePlan,bindP2CertificationReadyReceipts} from './p2-certification.mjs';
+import {p2NativeHash} from './p2-lifecycle-native.mjs';
 
 function fixture(startState='already-closed'){
   const root=realpathSync(mkdtempSync(join(tmpdir(),'p2-certification-plan-')));chmodSync(root,0o700);const receipts=join(root,'ready');mkdirSync(receipts,{mode:0o700});
@@ -65,4 +66,17 @@ test('authentication is a fixed300-second separate action and browser control in
       f.input.browserPlanSha256=undefined;assert.throws(f.run);
     }finally{f.cleanup();}
   }
+});
+test('direct-worker plan is a separate closed-start one-suspension source case with no native enable',()=>{
+  const f=fixture();try{
+    f.input.mode='direct-worker';delete f.input.requestEvidence;f.input.native.commandWitnesses=[f.input.native.commandWitnesses[0]];
+    const candidate=f.prepared.migration.candidate;
+    f.input.worker={suspensionPlan:{profile:'normal-ui-suspension-pending-v1',environment:'staging',sourceCommit:candidate.sources.frontend.commit,candidateObjectSha256:p2NativeHash(candidate),
+      candidateSha256:hash(f.candidateBytes),targetSha256:f.input.native.targetSha256,configurationRecordSha256:f.input.native.configurationRecordSha256,configurationSha256:p2NativeHash(f.configuration)},
+      input:{version:1,actionId:f.input.certificationActionId,commandIndex:0,pendingRecordSha256:'7'.repeat(64),canonicalCommandSha256:'8'.repeat(64),gatewayProcessSha256:f.input.gatewayProcessSha256,gatewayConfigurationSha256:f.input.gatewayConfigurationSha256,denialProgramSha256:'9'.repeat(64)}};
+    const plan=f.run();assert.equal(plan.workerPlan.profile,'direct-known-suspension-v1');assert.equal(plan.workerPlan.workerInvocations,1);assert.equal(plan.workerPlan.nativeInvocationQualified,false);
+    assert.equal(plan.workerPlanSha256,p2NativeHash(plan.workerPlan));assert.deepEqual(plan.workerPlan.requiredPrivateInputs,['FRONTEND_STAGING_CRON_SECRET','providerContext.frontendRuntimeDatabaseUrl']);
+    assert.throws(()=>deriveP2CertificationNativePlan(plan,{epoch:'1',newWork:false,recovery:false,active:0,uncertain:0}));
+    f.input.startState='qualified-ready';assert.throws(f.run);
+  }finally{f.cleanup();}
 });

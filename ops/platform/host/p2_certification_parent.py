@@ -34,6 +34,7 @@ from p2_certification_fault import P2CertificationFaultStage,GATEWAY_OBSERVER,fr
 import p2_identity_negative_probe as identity_probe
 from p2_lifecycle_suspension_evidence import P2LifecycleSuspensionEvidenceStage
 import p2_canonical_browser_origin as canonical_browser
+from p2_lifecycle_worker_evidence import P2LifecycleWorkerEvidenceStage
 
 require=migrate.demand
 CORE='ops/platform/p2-recovery-current-probe.mjs'
@@ -219,6 +220,7 @@ class P2CertificationBroker(Broker):
         self.api_mutex=threading.Lock();self.last_api_verified=0;self.prepared_terminal=None
         self.suspension_stage=None;self.authentication_issued=False;self.browser_retained=None;self.pending_retained=None
         self.browser_origin=None
+        self.worker_stage=None;self.worker_retained=None;self.worker_source_sha256=None
         super().initialize()
 
     def select_release(self,initial):
@@ -234,6 +236,10 @@ class P2CertificationBroker(Broker):
             require(_sha(_canonical(initial['browserPlan']))==cert['browserPlanSha256'] and initial['browserPlan']['releaseId']==selected['releaseId'] and
                 initial['browserPlan']['candidateSha256']==initial['candidateSha256'] and initial['browserPlan']['sourceCommit']==initial['sourceCommit'] and
                 initial['browserPlan']['targetSha256']==cert['targetSha256'],'P2_CERTIFICATION_BROWSER_SOURCE_PLAN_REQUIRED')
+        if cert['mode']=='direct-worker':
+            require(cert['startState']=='already-closed' and initial['workerPlan']==cert['workerPlan'] and _sha(_canonical(initial['workerPlan']))==cert['workerPlanSha256'] and
+                initial['workerPlan']['actionId']==self.action_id() and initial['workerPlan']['nativePlanSha256']==initial['nativePlan']['planSha256'] and
+                cert['sourceCommit']==cert['operatorSourceCommit'],'P2_CERTIFICATION_SOURCE_WORKER_PLAN_REQUIRED')
         require(cert['operatorSourceClosureSha256']==initial['sourceClosureSha256'] and cert['configurationCanonicalSha256']==_sha(_canonical(initial['configurationSha256'])),
             'P2_CERTIFICATION_CLOSED_SOURCE_CONFIGURATION_REQUIRED')
         migrate.require_contract_identity(selected,cert)
@@ -300,6 +306,10 @@ class P2CertificationBroker(Broker):
             self.suspension_stage=P2LifecycleSuspensionEvidenceStage(self.scope,self.selected,self.jobs,self.configuration,self.source,
                 self.initial['browserPlan'],self.initial['persistenceReviewed'],self.initial['browserResources'])
             self.suspension_stage.register_source_parent(self.initial['sourceParentChallenge'])
+        if cert['mode']=='direct-worker':
+            self.worker_stage=P2LifecycleWorkerEvidenceStage(self.scope,self.selected,self.jobs,self.configuration,self.source,self.initial['workerPlan'],
+                self.initial['sourceSuspensionPlan'],self.initial['persistenceReviewed'],native_context=self._native_context(),provider_client=LockedClient(self.vercel,self.check),
+                observe_frontend=lambda:self.observer.probe('witness'))
         if cert['mode'] in ('auth-preparation','browser-pending'):
             self.browser_origin=self._retain_browser_observation('arm')['canonicalBrowserObservation']
         self.last_boundary=time.monotonic();self.external_armed=True
@@ -323,7 +333,7 @@ class P2CertificationBroker(Broker):
             # A provider enable or feature/writer drift outside our declared
             # action must revoke the stage, including browser/authentication.
             with self.native_mutex:
-                expected=False if self.initial['certificationPlan']['mode'] in ('auth-preparation','browser-pending') else self.native_expected
+                expected=False if self.initial['certificationPlan']['mode'] in ('auth-preparation','browser-pending','direct-worker') else self.native_expected
                 require(self._native_observe()['nativeEnabled'] is expected,'P2_CERTIFICATION_NATIVE_STATE_DRIFT')
                 if self.initial['certificationPlan']['mode'] in ('auth-preparation','browser-pending'):
                     self.browser_origin=self._observe_browser_origin()
@@ -351,7 +361,7 @@ class P2CertificationBroker(Broker):
         require(operation=='native-toggle' and type(request.get('enabled')) is bool,'P2_CERTIFICATION_FIXED_NATIVE_OPERATION_REQUIRED')
         with self.native_mutex:
             self.check()
-            require(request['enabled'] is False or self.initial['certificationPlan']['mode'] not in ('contain-native','auth-preparation','browser-pending'),'P2_CERTIFICATION_ENABLE_FORBIDDEN')
+            require(request['enabled'] is False or self.initial['certificationPlan']['mode'] not in ('contain-native','auth-preparation','browser-pending','direct-worker'),'P2_CERTIFICATION_ENABLE_FORBIDDEN')
             if request['enabled']:
                 require(not self.native_enable_attempted,'P2_CERTIFICATION_ENABLE_ALREADY_ATTEMPTED')
                 current=self.observer.probe('witness');admission=current['admission'];plan=self.initial['nativePlan']
@@ -540,6 +550,28 @@ class P2CertificationBroker(Broker):
             self.pending_retained=stage.retain_pending_from_source_parent(value.get('record'));return self.pending_retained
         raise ValueError('P2_CERTIFICATION_FIXED_BROWSER_OPERATION_REQUIRED')
 
+    def worker_operation(self,operation,value):
+        self.check();stage=self.worker_stage
+        require(self.external_armed and self.initial['certificationPlan']['mode']=='direct-worker' and stage is not None,'P2_CERTIFICATION_SOURCE_WORKER_STAGE_REQUIRED')
+        if operation=='worker-ready':stage.verify();return {'bindingSha256':self.initial['certificationPlan']['workerPlanSha256']}
+        if operation=='worker-credential':return stage.preflight_credential(value.get('secret'))
+        if operation=='worker-invoke':return stage.invoke_direct(value.get('secret'))
+        if operation=='worker-witness':return stage.observe_lifecycle_witness(value.get('runtimeUrl'))
+        if operation=='worker-denials':return stage.observe_receiver_denials()
+        if operation=='worker-final-closed':return stage.final_closed_readback()
+        if operation=='worker-retain':
+            raw,record=decode(value.get('sourceArtifact'));require(len(raw)<=262144 and record==value.get('record'),'P2_CERTIFICATION_WORKER_SOURCE_BYTES_REQUIRED')
+            self.worker_retained=stage.retain_joined_from_source_parent(record);self.worker_source_sha256=_sha(raw);return self.worker_retained
+        raise ValueError('P2_CERTIFICATION_FIXED_WORKER_OPERATION_REQUIRED')
+
+    def _require_worker_outcome(self,case):
+        cert=self.initial['certificationPlan']
+        require(self.worker_stage is not None and self.worker_retained and set(case)=={'version','status','workerPlanSha256','workerSourceArtifactSha256','workerMachineArtifactSha256'} and
+            case['version']==1 and case['status']=='P2_CERTIFICATION_DIRECT_WORKER_JOINED' and case['workerPlanSha256']==cert['workerPlanSha256'] and
+            case['workerMachineArtifactSha256']==self.worker_retained['privateRecordSha256'] and case['workerSourceArtifactSha256']==self.worker_source_sha256,
+            'P2_CERTIFICATION_SOURCE_WORKER_JOIN_REQUIRED')
+        self.worker_stage.final_closed_readback()
+
     def prepare_close(self,request):
         self.check();require(self.external_armed and self.closing_at is None,'P2_CERTIFICATION_CLOSE_ALREADY_PREPARED')
         self._verify_boundary();self._refresh_api()
@@ -571,6 +603,8 @@ class P2CertificationBroker(Broker):
                 case['browserRecordSha256']==self.browser_retained['recordSha256'] and case['pendingRecordSha256']==self.pending_retained['recordSha256'],
                 'P2_CERTIFICATION_SOURCE_BROWSER_PENDING_OUTCOME_REQUIRED')
             self.suspension_stage.scrub_controlled_credentials()
+        if cert['mode']=='direct-worker':
+            self._require_worker_outcome(case)
         initial=json.loads(self.frontend_raw)['witness']['deliveries']
         ordered=not witness['orderViolations'] and all(row['status']=='acknowledged' and row['acknowledged_at'] is not None and row['lease_until'] is None for row in witness['deliveries']) and any(
             row['attempts']>old['attempts'] and old['status']!='acknowledged' for row in witness['deliveries'] for old in initial if row['command_id']==old['command_id'] and row['receiver']==old['receiver'])
@@ -583,6 +617,7 @@ class P2CertificationBroker(Broker):
             'inventorySha256','configurationSha256','targetSha256','contractPhase','phase2ContractManifestSha256','mode','planSha256')},
             'status':'P2_BOUNDED_CERTIFICATION_CONTAINED','nativeDisabled':True,'frontendAdmission':admission,'gatewayAdmission':state,'nativeInvocationQualified':qualified,
             'persistenceAuthorityJoined':False,'deployedCertificationComplete':False,
+            'directWorkerSourceJoined':cert['mode']=='direct-worker',
             **({'canonicalBrowserObservationSha256':canonical['canonicalBrowserObservationSha256']} if canonical else {}),
             'caseStatus':case.get('status'),'caseOutcomeSha256':_sha(_canonical(case)),'requestEvidence':evidence,'knownAckLoss':known,'witnessSha256':physical['witnessSha256'],
             'sqlReplayed':False,'runtimeReplaced':False,'rolesPrepared':False,'historicalLoginsRestored':False,'frontendBuilt':False,'frontendPromoted':False,
@@ -627,6 +662,9 @@ class P2CertificationBroker(Broker):
         if operation.startswith('suspension-'):
             result=self.suspension_operation(operation,value)
             self.send(identity,'CERTIFICATION_SUSPENSION_READY' if operation=='suspension-ready' else 'CERTIFICATION_SUSPENSION_OBSERVED',receipt=result);return
+        if operation.startswith('worker-'):
+            result=self.worker_operation(operation,value)
+            self.send(identity,'CERTIFICATION_WORKER_READY' if operation=='worker-ready' else 'CERTIFICATION_WORKER_OBSERVED',receipt=result);return
         if operation.startswith('native-'):
             self.send(identity,'CERTIFICATION_NATIVE_OBSERVED',receipt=self.native_operation(operation,value));return
         if operation=='certification-gateway-stage':self.send(identity,'CERTIFICATION_GATEWAY_OBSERVED',receipt=self.gateway_stage(value.get('stage')));return

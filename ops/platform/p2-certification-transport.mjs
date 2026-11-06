@@ -12,6 +12,13 @@ const demand=ok=>{if(!ok)throw new Error('P2_CERTIFICATION_TRANSPORT_REFUSED');}
 const MAXIMUM=4_000_000;
 const suspensionStages=new WeakMap();
 const authenticationStages=new WeakMap();
+const workerStages=new WeakMap();
+
+export function readP2CertificationWorkerStage(handle,plan){
+  const selected=workerStages.get(handle);demand(selected&&selected.plan===plan&&selected.active()&&isDeepStrictEqual(selected.snapshot,plan));
+  return selected.methods;
+}
+
 
 export function readP2CertificationAuthenticationStage(handle,plan){
   const selected=authenticationStages.get(handle);demand(selected&&selected.plan===plan&&selected.active()&&isDeepStrictEqual(selected.snapshot,plan));
@@ -84,6 +91,24 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
             async retain(handle){const artifact=readers.readP2LifecycleBrowserSourceArtifact(plan,handle);demand(Buffer.isBuffer(artifact.bytes)&&artifact.bytes.length>0&&artifact.bytes.length<=2_000_000);return call('suspension-retain-browser',{artifact:artifact.bytes.toString('base64')});},
           });
           const handle=Object.freeze({});suspensionStages.set(handle,{plan,snapshot,active:alive,methods,canonicalBrowserObservationSha256:ready.receipt.canonicalBrowserObservationSha256});return handle;
+        },
+        async workerEvidenceStage(plan){
+          demand(launch===spawn&&armed&&!prepared&&initial.certificationPlan.mode==='direct-worker'&&isDeepStrictEqual(plan,initial.workerPlan));
+          const readers=await import('./p2-lifecycle-worker-evidence.mjs');
+          const ready=(await request('worker-ready','CERTIFICATION_WORKER_READY')).receipt;demand(ready.bindingSha256===initial.certificationPlan.workerPlanSha256);
+          const snapshot=structuredClone(plan),alive=()=>active&&!failed&&armed&&!prepared&&!controller.signal.aborted&&isDeepStrictEqual(plan,snapshot);
+          let credential;
+          const call=async(operation,data={},timeout=120_000)=>{demand(alive());return(await request(operation,'CERTIFICATION_WORKER_OBSERVED',data,timeout)).receipt;};
+          const methods=Object.freeze({
+            async preflightCredential(handle){const secret=readers.readP2LifecycleWorkerCronSecret(handle);demand(credential===undefined);credential=secret;return call('worker-credential',{secret},240_000);},
+            async invokeDirect(handle){const secret=readers.readP2LifecycleWorkerCronSecret(handle);demand(credential!==undefined&&secret===credential);return call('worker-invoke',{secret},120_000);},
+            async observeLifecycleWitness(handle){const runtimeUrl=await readers.readP2LifecycleWorkerRuntimeUrl(handle);return call('worker-witness',{runtimeUrl},240_000);},
+            observeReceiverDenials:()=>call('worker-denials',{},120_000),
+            finalClosedReadback:()=>call('worker-final-closed'),
+            async retainJoined(handle){const source=readers.readP2DirectWorkerSourceArtifact(plan,handle);demand(Buffer.isBuffer(source.bytes)&&source.bytes.length>0&&source.bytes.length<=262144);
+              return call('worker-retain',{record:source.record,sourceArtifact:source.bytes.toString('base64')});},
+          });
+          const handle=Object.freeze({});workerStages.set(handle,{plan,snapshot,active:alive,methods});return handle;
         },
         async prepareFault(plan){demand(armed&&!prepared);await request('fault-initialize','CERTIFICATION_FAULT_READY',{plan});
           const call=async(operation,data={})=>(await request(operation,'CERTIFICATION_FAULT_OBSERVED',{plan,...data})).receipt;

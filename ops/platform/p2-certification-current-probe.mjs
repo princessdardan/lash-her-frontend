@@ -18,7 +18,7 @@ const bodies={admit:'e8efe70da1fabe4381d640e73bc42b5e204ec5f1aa28589d09b1e73a0be
 const options=(value,target)=>({...frontendConnectionOptions(value,target),options:'-c search_path=pg_catalog,public',application_name:'lash-her-p2-bounded-certification'});
 
 function admissionPolicy(plan,value,initial){
-  demand(['auth-preparation','browser-pending','native-window','fault-before-upstream','fault-drop-after-ack','contain-native'].includes(plan.mode)&&
+  demand(['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','contain-native'].includes(plan.mode)&&
     ['qualified-ready','already-closed'].includes(plan.startState)&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&/^[1-9][0-9]{0,17}$/u.test(value.epoch)&&
     typeof value.newWork==='boolean'&&typeof value.recovery==='boolean'&&
     Number.isInteger(value.active)&&value.active>=0&&Number.isInteger(value.uncertain)&&value.uncertain>=0);
@@ -27,6 +27,11 @@ function admissionPolicy(plan,value,initial){
   if(['auth-preparation','browser-pending'].includes(plan.mode)){
     demand(delta>=0n&&delta<=2n&&value.uncertain===0&&value.newWork===(delta===1n||delta===0n&&closedOffset===1n)&&value.recovery===(delta===0n&&closedOffset===1n));
     if(initial)demand(delta===0n&&(closedOffset===1n||value.active===0));return;
+  }
+  if(plan.mode==='direct-worker'){
+    demand(plan.startState==='already-closed'&&plan.nativePlan.initialEpoch===(BigInt(plan.initialEpoch)+1n).toString()&&
+      delta>=0n&&delta<=2n&&value.newWork===false&&value.recovery===(delta===1n)&&value.uncertain===0);
+    if(initial)demand(delta===0n&&value.active===0);return;
   }
   demand(plan.nativePlan.initialEpoch===(BigInt(plan.initialEpoch)+closedOffset+1n).toString());
   if(initial)demand(delta===0n&&value.newWork===(closedOffset===1n)&&value.recovery===(closedOffset===1n)&&value.uncertain===0&&(closedOffset===1n||value.active===0));
@@ -93,7 +98,7 @@ export async function readP2CertificationCurrent(client,prepared,plan,verify,ini
       WHERE later.command_id=ANY($1::uuid[]) AND d.status='acknowledged' AND (pd.status IS DISTINCT FROM 'acknowledged' OR pd.acknowledged_at IS NULL OR pd.acknowledged_at>d.acknowledged_at) LIMIT 4097`,[ids])).rows;
     demand(orderViolations.length<=4096);await client.query(`SET LOCAL ROLE "${owner.name}"`);
     const operations=(await client.query(`SELECT id::text,epoch::text,kind,state,producer_sha256,source_sha,database_role::text AS role_oid,completed_at,reconciliation_sha256
-      FROM frontend_admission.operations WHERE epoch >= $1::bigint ORDER BY started_at,id LIMIT 4097`,[(BigInt(nativePlan.initialEpoch)+1n).toString()])).rows;
+      FROM frontend_admission.operations WHERE epoch >= $1::bigint ORDER BY started_at,id LIMIT 4097`,[(BigInt(nativePlan.initialEpoch)+(plan.mode==='direct-worker'?0n:1n)).toString()])).rows;
     demand(operations.length<=4096);
     const witness={commands,deliveries,orderViolations,operations};
     return{version:1,status:'P2_CERTIFICATION_DATABASE_CURRENT',service:'frontend',environment:'staging',releaseId:job.releaseId,certificationActionId:plan.certificationActionId,
