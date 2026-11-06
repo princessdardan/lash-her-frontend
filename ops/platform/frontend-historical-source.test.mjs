@@ -8,6 +8,7 @@ import {
   historicalSourceOriginalValueKeys,
   historicalSourceSqlCredentialQueryPlan, observeHistoricalSourceSqlCredentials as observe,
   deriveHistoricalSourceCapabilityClosures as derive, historicalSourceAlternateStoreQueryPlan as storePlan, observeHistoricalSourceAlternateStores as stores,
+  applyHistoricalSourceFileOperations,
 } from "./frontend-historical-source.mjs";
 
 const repository = realpathSync(fileURLToPath(new URL("../..", import.meta.url)));
@@ -97,6 +98,24 @@ test("seven reviewed deltas reconstruct exact profiles and retain five missing-s
   }
   for (const sourceCommit of ["dpl_5JDDu6BaZcM4sg9wip65MKCwmhuL", "dpl_7mG5ncqdKCBhpxNJ281Amqw9upe4", "dpl_7odqGL3divDTEMqdBbkZWu2FzqX4", "dpl_BYQiXkALFy2hjG2KVKUG7XEgYpyE", "dpl_rzM1LuvDQzn4N1hKouWRymhPqf7j"])
     assert.throws(() => verifiedSourceRequirements(repository, sourceCommit), rejected);
+});
+
+test("typed historical source-file operations reject add overwrite, replace add, and missing delete", () => {
+  const alpha = { file: "src/alpha.ts", blobOid: "a".repeat(40), sha256: "a".repeat(64) };
+  const beta = { file: "src/beta.ts", blobOid: "b".repeat(40), sha256: "b".repeat(64) };
+  const replacement = { ...alpha, blobOid: "c".repeat(40), sha256: "c".repeat(64) };
+  assert.deepEqual(applyHistoricalSourceFileOperations([alpha], [
+    { file: alpha.file, operation: "replace", base: alpha, target: replacement },
+    { file: beta.file, operation: "add", base: null, target: beta },
+  ]), [replacement, beta]);
+  assert.deepEqual(applyHistoricalSourceFileOperations([alpha, beta], [
+    { file: alpha.file, operation: "delete", base: alpha, target: null },
+  ]), [beta]);
+  for (const operations of [
+    [{ file: alpha.file, operation: "add", base: alpha, target: replacement }],
+    [{ file: beta.file, operation: "replace", base: null, target: beta }],
+    [{ file: beta.file, operation: "delete", base: null, target: null }],
+  ]) assert.throws(() => applyHistoricalSourceFileOperations([alpha], operations), rejected);
 });
 
 test("874 records the exact direct Sanity caller, alternative credentials and external editorial residual", async () => {

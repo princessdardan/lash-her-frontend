@@ -94,6 +94,31 @@ const setGroupValue = (profile, group, value) => { if (group.startsWith("entrypo
 const sameSet = (rows, expected, key) => Array.isArray(rows) && rows.length === expected.length &&
   JSON.stringify(rows.map(row => row[key]).sort()) === JSON.stringify([...expected].sort());
 
+export function applyHistoricalSourceFileOperations(baseRows, operations) {
+  try {
+    demand(Array.isArray(baseRows) && baseRows.every(row => row && typeof row.file === "string") &&
+      new Set(baseRows.map(row => row.file)).size === baseRows.length && Array.isArray(operations) &&
+      new Set(operations.map(row => row?.file)).size === operations.length);
+    const sourceRows = new Map(baseRows.map(row => [row.file, structuredClone(row)]));
+    for (const row of operations) {
+      const exists = sourceRows.has(row?.file), current = exists ? sourceRows.get(row.file) : null;
+      demand(exactKeys(row, ["file", "operation", "base", "target"]) && ["add", "replace", "delete"].includes(row.operation) &&
+        JSON.stringify(current) === JSON.stringify(row.base));
+      if (row.operation === "add") {
+        demand(!exists && row.base === null && row.target && row.target.file === row.file);
+        sourceRows.set(row.file, structuredClone(row.target));
+      } else if (row.operation === "replace") {
+        demand(exists && row.base && row.base.file === row.file && row.target && row.target.file === row.file);
+        sourceRows.set(row.file, structuredClone(row.target));
+      } else {
+        demand(exists && row.base && row.base.file === row.file && row.target === null);
+        sourceRows.delete(row.file);
+      }
+    }
+    return [...sourceRows.values()].sort((left, right) => codepoint(left.file, right.file));
+  } catch { throw refusal(); }
+}
+
 function materializeReviewedDelta(sourceCommit) {
   const selected = approved[sourceCommit];
   demand(selected?.deltaSha256 && selected.sourceInventorySha256);
@@ -124,15 +149,7 @@ function materializeReviewedDelta(sourceCommit) {
     demand(exactKeys(row, ["field", "baseSha256", "target"]) && historicalSourceSha256(profile.inventory[row.field]) === row.baseSha256); profile.inventory[row.field] = structuredClone(row.target);
   }
   profile.sourceCommit = sourceCommit; profile.treeOid = delta.target.treeOid; profile.inventory.sourceCommit = sourceCommit; profile.inventory.treeOid = delta.target.treeOid;
-  const sourceRows = new Map(profile.inventory.sourceFiles.map(row => [row.file, row]));
-  demand(Array.isArray(delta.sourceFileOperations) && new Set(delta.sourceFileOperations.map(row => row.file)).size === delta.sourceFileOperations.length);
-  for (const row of delta.sourceFileOperations) {
-    demand(exactKeys(row, ["file", "operation", "base", "target"]) && ["add", "replace", "delete"].includes(row.operation) &&
-      JSON.stringify(sourceRows.get(row.file) ?? null) === JSON.stringify(row.base));
-    if (row.operation === "delete") { demand(row.target === null); sourceRows.delete(row.file); }
-    else { demand(row.target?.file === row.file); sourceRows.set(row.file, structuredClone(row.target)); }
-  }
-  profile.inventory.sourceFiles = [...sourceRows.values()].sort((left, right) => codepoint(left.file, right.file));
+  profile.inventory.sourceFiles = applyHistoricalSourceFileOperations(profile.inventory.sourceFiles, delta.sourceFileOperations);
   for (const row of delta.invariantInventoryGroups) demand(exactKeys(row, ["group", "sha256"]) && historicalSourceSha256(groupValue(profile, row.group)) === row.sha256);
   for (const row of delta.inventoryFileGroups) {
     const before = groupValue(profile, row.group), byFile = Map.groupBy(before, item => item.file);
