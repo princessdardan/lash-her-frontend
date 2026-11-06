@@ -28,6 +28,17 @@ function withSourceReadToken(value, operation) {
   }
 }
 
+function withRunnerTemp(value, operation) {
+  const present = Object.hasOwn(process.env, "RUNNER_TEMP");
+  const previous = process.env.RUNNER_TEMP;
+  process.env.RUNNER_TEMP = value;
+  try { return operation(); }
+  finally {
+    if (present) process.env.RUNNER_TEMP = previous;
+    else delete process.env.RUNNER_TEMP;
+  }
+}
+
 function fixtureManifest() {
   return { version: 1, status: "released", frontendBaseRevision: "a".repeat(40), boundarySha256: "b".repeat(64), readmeSha256: "c".repeat(64), artifacts: {
     course: { repository: "lash-her-course-api", revision: revisions.course, sourcePath: "openapi/course-api.json", file: "course-api.json", sha256: sha(contents.course) },
@@ -431,6 +442,39 @@ test("lifecycle child failures expose only fixed persistence diagnostics", () =>
       assert.equal(JSON.stringify(receipt).includes("private-"), false);
     } finally { value.cleanup(); }
   }
+});
+
+test("Docker child failure output is retained privately outside disposable checkout with commit binding", () => {
+  const runnerTemporary = realpathSync(mkdtempSync(join(tmpdir(), "p2-owned-runner-temp-")));
+  chmodSync(runnerTemporary, 0o700);
+  const value = harness(tap(), [], ["ops/gateway", "tools/api-contract-toolchain"],
+    { forwardRecoveryStatus: 1, forwardRecoveryOutput: "owned-forward-private-stdout\n", forwardRecoveryStderr: "owned-forward-private-stderr\n" });
+  try {
+    let publicReceipt;
+    assert.throws(() => withRunnerTemp(runnerTemporary, () => withSourceReadToken(sourceReadToken, () =>
+      prepareP2IdentityProbeFixtures({ frontendRoot: value.root, nodeVersion: "24.18.0", recoveryPostgres18: true,
+        lifecyclePostgres18: true, run: value.run, dockerSocketStat: value.dockerSocketStat,
+        makeTemporaryDirectory: () => value.workspace }))), error => { publicReceipt = p2IdentityFixtureFailureReceipt(error); return true; });
+    assert.equal(existsSync(value.workspace), false);
+    assert.equal(JSON.stringify(publicReceipt).includes("owned-forward-private"), false);
+    assert.equal(publicReceipt.phase, "recovery-postgres18"); assert.equal(publicReceipt.recoveryQualification, "forward");
+    const commit = "d".repeat(40), root = join(runnerTemporary, "p2-owned-fixture-failure"), directory = join(root, "forward");
+    assert.equal(lstatSync(root).mode & 0o777, 0o700); assert.equal(lstatSync(directory).mode & 0o777, 0o700);
+    const stdoutPath = join(directory, `${commit}.stdout.log`), stderrPath = join(directory, `${commit}.stderr.log`);
+    const metadataPath = join(directory, `${commit}.json`);
+    assert.equal(readFileSync(stdoutPath, "utf8"), "owned-forward-private-stdout\n");
+    assert.equal(readFileSync(stderrPath, "utf8"), "owned-forward-private-stderr\n");
+    for (const path of [stdoutPath, stderrPath, metadataPath]) assert.equal(lstatSync(path).mode & 0o777, 0o600);
+    assert.deepEqual(JSON.parse(readFileSync(metadataPath, "utf8")), { version: 1, status: "P2_OWNED_FIXTURE_PRIVATE_FAILURE",
+      qualification: "forward", sourceCommit: commit, failure: "child-exit", exitStatus: 1, signal: null, spawnError: false,
+      stdoutBytes: 29, stderrBytes: 29, stdoutTruncated: false, stderrTruncated: false });
+  } finally { value.cleanup(); rmSync(runnerTemporary, { recursive: true, force: true }); }
+});
+
+test("CI uploads only the fixed private failure directory for three days", () => {
+  const workflow = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
+  assert.match(workflow, /Retain private owned fixture failure diagnostics\n\s+if: failure\(\)\n\s+uses: actions\/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f/u);
+  assert.match(workflow, /name: p2-owned-fixture-failure-\$\{\{ github\.sha \}\}\n\s+path: \$\{\{ runner\.temp \}\}\/p2-owned-fixture-failure\/\n\s+if-no-files-found: ignore\n\s+retention-days: 3/u);
 });
 
 test("Docker context accepts only an existing local Unix socket", () => {

@@ -124,6 +124,8 @@ const FAILURE_PHASES = Object.freeze(["preflight", "source-fetch", "npm-ci", "bu
 const FAILURE_STAGES = Object.freeze(["frontend", "workspace", "course", "community", "identity", "recovery", "lifecycle"]);
 const RECOVERY_FAILURES = Object.freeze(["docker-transport", "child-exit", "receipt-invalid"]);
 const RECOVERY_QUALIFICATIONS = Object.freeze(["current", "forward", "persistence"]);
+const PRIVATE_FAILURE_DIRECTORY = "p2-owned-fixture-failure";
+const PRIVATE_FAILURE_MAX_BYTES = 4 * 1024 * 1024;
 const demand = condition => { if (!condition) throw new Error("P2_IDENTITY_FIXTURE_PREPARATION_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
 const hash = value => createHash("sha256").update(value).digest("hex");
@@ -171,6 +173,42 @@ function defaultTemporaryDirectory() {
   const directory = mkdtempSync(join(realpathSync(tmpdir()), "lash-p2-identity-fixtures-"));
   chmodSync(directory, 0o700);
   return directory;
+}
+
+function privateFailureDirectory(qualification, sourceCommit) {
+  demand(RECOVERY_QUALIFICATIONS.includes(qualification) && digest(sourceCommit, 40));
+  const runnerTemporary = process.env.RUNNER_TEMP;
+  demand(typeof runnerTemporary === "string" && resolve(runnerTemporary) === runnerTemporary && !/[\u0000-\u001f\u007f]/u.test(runnerTemporary));
+  const runnerInfo = lstatSync(runnerTemporary), runnerRoot = realpathSync(runnerTemporary);
+  demand(runnerInfo.isDirectory() && !runnerInfo.isSymbolicLink() && runnerInfo.uid === process.getuid());
+  const root = join(runnerRoot, PRIVATE_FAILURE_DIRECTORY);
+  if (!existsSync(root)) mkdirSync(root, { mode: 0o700 });
+  const rootInfo = lstatSync(root);
+  demand(rootInfo.isDirectory() && !rootInfo.isSymbolicLink() && rootInfo.uid === process.getuid() && (rootInfo.mode & 0o077) === 0);
+  const directory = join(root, qualification);
+  mkdirSync(directory, { mode: 0o700 });
+  const info = lstatSync(directory);
+  demand(info.isDirectory() && !info.isSymbolicLink() && info.uid === process.getuid() && (info.mode & 0o077) === 0);
+  return { directory, sourceCommit };
+}
+
+function retainPrivateDockerFailure(qualification, sourceCommit, failure, result) {
+  demand(RECOVERY_FAILURES.includes(failure));
+  const stdout = typeof result?.stdout === "string" ? result.stdout : "";
+  const stderr = typeof result?.stderr === "string" ? result.stderr : "";
+  const rawStdout = Buffer.from(stdout), rawStderr = Buffer.from(stderr);
+  const storedStdout = rawStdout.subarray(0, PRIVATE_FAILURE_MAX_BYTES), storedStderr = rawStderr.subarray(0, PRIVATE_FAILURE_MAX_BYTES);
+  const target = privateFailureDirectory(qualification, sourceCommit);
+  const signal = typeof result?.signal === "string" && /^SIG[A-Z0-9]{1,16}$/u.test(result.signal) ? result.signal : null;
+  const metadata = { version: 1, status: "P2_OWNED_FIXTURE_PRIVATE_FAILURE", qualification, sourceCommit, failure,
+    exitStatus: Number.isInteger(result?.status) ? result.status : null, signal, spawnError: result?.error != null,
+    stdoutBytes: storedStdout.length, stderrBytes: storedStderr.length,
+    stdoutTruncated: rawStdout.length > storedStdout.length, stderrTruncated: rawStderr.length > storedStderr.length };
+  writeFileSync(join(target.directory, `${target.sourceCommit}.stdout.log`), storedStdout, { flag: "wx", mode: 0o600 });
+  writeFileSync(join(target.directory, `${target.sourceCommit}.stderr.log`), storedStderr, { flag: "wx", mode: 0o600 });
+  writeFileSync(join(target.directory, `${target.sourceCommit}.json`), canonical(metadata) + "\n", { flag: "wx", mode: 0o600 });
+  for (const suffix of ["stdout.log", "stderr.log", "json"])
+    demand((lstatSync(join(target.directory, `${target.sourceCommit}.${suffix}`)).mode & 0o077) === 0);
 }
 
 function defaultRun(file, args, options) {
@@ -422,8 +460,8 @@ export function parseP2ForwardRecoveryPostgres18Receipt(output) {
   return receipt;
 }
 
-function runRecoveryQualification(run, dockerEndpoint, args, frontendRoot, environment, diagnostic, qualification, input) {
-  demand(RECOVERY_QUALIFICATIONS.includes(qualification));
+function runRecoveryQualification(run, dockerEndpoint, args, frontendRoot, environment, diagnostic, qualification, sourceCommit, input) {
+  demand(RECOVERY_QUALIFICATIONS.includes(qualification) && digest(sourceCommit, 40));
   diagnostic.recoveryQualification = qualification;
   diagnostic.recoveryFailure = "docker-transport";
   diagnostic.recoveryStarted = true;
@@ -432,10 +470,19 @@ function runRecoveryQualification(run, dockerEndpoint, args, frontendRoot, envir
   if (!(result && !result.error && result.status === 0 && result.signal == null &&
     typeof result.stdout === "string" && typeof result.stderr === "string")) {
     diagnostic.recoveryFailure = result?.status === 125 || result?.error ? "docker-transport" : "child-exit";
+    retainPrivateDockerFailure(qualification, sourceCommit, diagnostic.recoveryFailure, result);
     demand(false);
   }
   diagnostic.recoveryFailure = "receipt-invalid";
-  return result.stdout;
+  return result;
+}
+
+function parseRecoveryQualification(parser, result, qualification, sourceCommit) {
+  try { return parser(result.stdout); }
+  catch (error) {
+    retainPrivateDockerFailure(qualification, sourceCommit, "receipt-invalid", result);
+    throw error;
+  }
 }
 
 function validatePackage(directory, definition) {
@@ -574,9 +621,10 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
       const qualificationFiles = verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
         manifest, installEnvironment, sourceReadToken);
       mark(diagnostic, "recovery-postgres18", "recovery");
-      const currentOutput = runRecoveryQualification(run, dockerEndpoint, recoveryArguments,
-        frontendRoot, recoveryEnvironment, diagnostic, "current");
-      const receipt = parseP2RecoveryPostgres18Receipt(currentOutput);
+      const currentResult = runRecoveryQualification(run, dockerEndpoint, recoveryArguments,
+        frontendRoot, recoveryEnvironment, diagnostic, "current", frontendCommit);
+      const currentOutput = currentResult.stdout;
+      const receipt = parseRecoveryQualification(parseP2RecoveryPostgres18Receipt, currentResult, "current", frontendCommit);
       recovery = { status: receipt.status, serverMajor: receipt.serverMajor, frontendMigrations: receipt.frontendMigrations,
         courseMigrations: receipt.courseMigrations, communityMigrations: receipt.communityMigrations, skipped: receipt.skipped,
         fixtureOnly: receipt.fixtureOnly, providerTouched: receipt.providerTouched, checks: receipt.checks,
@@ -590,9 +638,10 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
       verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
         manifest, installEnvironment, sourceReadToken, qualificationFiles);
       mark(diagnostic, "recovery-postgres18", "recovery");
-      const forwardOutput = runRecoveryQualification(run, dockerEndpoint, forwardArguments,
-        frontendRoot, recoveryEnvironment, diagnostic, "forward");
-      const forwardReceipt = parseP2ForwardRecoveryPostgres18Receipt(forwardOutput);
+      const forwardResult = runRecoveryQualification(run, dockerEndpoint, forwardArguments,
+        frontendRoot, recoveryEnvironment, diagnostic, "forward", frontendCommit);
+      const forwardOutput = forwardResult.stdout;
+      const forwardReceipt = parseRecoveryQualification(parseP2ForwardRecoveryPostgres18Receipt, forwardResult, "forward", frontendCommit);
       const apiSourcePins = Object.fromEntries(["course", "community"].map(service => [service, {
         revision: sources[service].revision, gitTree: sources[service].gitTree, packageSha256: sources[service].packageSha256,
         packageLockSha256: sources[service].packageLockSha256, artifactSha256: structuredClone(sources[service].artifactSha256),
@@ -615,9 +664,10 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
         const lifecycleInput = buildP2LifecyclePersistencePostgres18Input({ frontendRoot, directories, frontendSource, sources,
           identityManifestSha256: hash(manifestBytes), currentReceipt: currentOutput, forwardReceipt: forwardOutput });
         mark(diagnostic, "lifecycle-postgres18", "lifecycle");
-        const lifecycleOutput = runRecoveryQualification(run, dockerEndpoint, lifecyclePersistenceDockerArguments(frontendRoot, directories),
-          frontendRoot, recoveryEnvironment, diagnostic, "persistence", lifecycleInput.manifestBytes);
-        const lifecycleReceipt = parseP2LifecyclePersistencePostgres18Receipt(lifecycleOutput, lifecycleInput.expectedReceipt);
+        const lifecycleResult = runRecoveryQualification(run, dockerEndpoint, lifecyclePersistenceDockerArguments(frontendRoot, directories),
+          frontendRoot, recoveryEnvironment, diagnostic, "persistence", frontendCommit, lifecycleInput.manifestBytes);
+        const lifecycleReceipt = parseRecoveryQualification(output =>
+          parseP2LifecyclePersistencePostgres18Receipt(output, lifecycleInput.expectedReceipt), lifecycleResult, "persistence", frontendCommit);
         mark(diagnostic, "exact-source-proof", "frontend");
         verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
           manifest, installEnvironment, sourceReadToken, qualificationFiles);

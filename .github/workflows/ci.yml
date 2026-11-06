@@ -112,6 +112,14 @@ jobs:
         env:
           PLATFORM_SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
         run: node ops/platform/prepare-p2-identity-probe-fixtures.mjs --recovery-postgres18 --lifecycle-postgres18
+      - name: Retain private owned fixture failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: p2-owned-fixture-failure-${{ github.sha }}
+          path: ${{ runner.temp }}/p2-owned-fixture-failure/
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Verify initial Course logins on owned PostgreSQL 18
         run: |
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \

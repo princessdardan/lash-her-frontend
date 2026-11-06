@@ -8,6 +8,7 @@ staging evidence, or a live-provider claim.
 
 - Baseline: `72bd8af0bc1c9f4438a82721170bca5fbd8ec136`
 - CI integration: `ac0ef48f`
+- Docker stdin correction: `3c452acf`
 - Course source: `a447bfde20299e12afab68a3331b3792ddd07598`
 - Community source: `939de65dd52f0b1a43993a25c7c428dce6e2bb43`
 - Image: the existing local-only
@@ -29,12 +30,22 @@ candidate manifest, and hashes of both preceding recovery receipts.
 
 The persistence child receives only the manifest on stdin. It has no network,
 Docker socket, Git metadata, source token, provider credentials, or writable
-source mounts. It must return the exact 13-check PostgreSQL 18 receipt with
+source mounts. Only this child uses Docker's fixed `-i` stdin forwarding;
+the existing current and forward recovery commands remain unchanged. It must
+return the exact 13-check PostgreSQL 18 receipt with
 matching source-manifest, source-commit, and executable-source hashes.
+
+If a current, forward, or persistence Docker child fails, its bounded stdout,
+stderr, and fixed exit metadata are retained outside the disposable checkout at
+`$RUNNER_TEMP/p2-owned-fixture-failure/<qualification>/`. Directories are mode
+`0700`, files are mode `0600`, and filenames bind the exact frontend commit.
+The private-repository CI artifact is retained for three days. Child output is
+not copied to the public job receipt, console summary, PR comment, or this
+evidence package.
 
 ## Local source verification
 
-- 32 focused Node tests passed with zero skips.
+- 34 focused Node tests passed with zero skips.
 - ESLint passed for the changed helper and tests.
 - Workflow YAML parsed successfully.
 - Production source-map construction read 189 frontend, 262 Course, and 203
