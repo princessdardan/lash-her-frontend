@@ -45,3 +45,15 @@ class SourceClosureTests(unittest.TestCase):
         self.assertEqual(program.stat().st_mode & 0o777, 0o444)
         program.chmod(0o600); program.write_text('different')
         with self.assertRaises(ValueError): private_observer_program(self.initial, private / 'source')
+
+    def test_fixed_recovery_observer_uses_its_own_exact_cached_source(self):
+        raw = b'owned recovery observer'
+        source = 'ops/platform/p2-recovery-current-probe.mjs'
+        self.initial['sourceSha256'][source] = hashlib.sha256(raw).hexdigest()
+        self.initial['_guardObserverSource'] = source
+        self.initial['_guardObserverProgram'] = raw
+        private = self.root / 'recovery-private'; private.mkdir(mode=0o700)
+        self.assertEqual(private_observer_program(self.initial, private / 'source').read_bytes(), raw)
+        self.initial['_guardObserverSource'] = 'ops/platform/operator-supplied.mjs'
+        with self.assertRaisesRegex(ValueError, 'FIXED_OBSERVER_SOURCE_REQUIRED'):
+            private_observer_program(self.initial, private / 'other')

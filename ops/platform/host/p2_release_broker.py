@@ -108,8 +108,10 @@ class PhysicalObserver:
 
 
 class Broker:
-    def __init__(self, initial, output, *, shared_lock_fd=None, safety_write=None, guard_read=None):
+    def __init__(self, initial, output, *, shared_lock_fd=None, safety_write=None, guard_read=None,
+                 observer_type=PhysicalObserver, observer_source='ops/platform/p2-frontend-live-probe.mjs'):
         self.emit, self.initial = output, initial
+        self.observer_type, self.observer_source = observer_type, observer_source
         self.failed, self.released, self.worker_done = threading.Event(), threading.Event(), threading.Event()
         self.output_lock = threading.Lock()
         self.observer = self.scope = self.worker = None
@@ -159,6 +161,23 @@ class Broker:
                     self.guard_alive = False; self.abort(); return
         threading.Thread(target=guard_health, daemon=True).start()
 
+    def action_id(self):
+        return self.initial['candidate']['releaseId']
+
+    def directory_name(self):
+        return 'p2-' + self.action_id()
+
+    def terminal_filename(self):
+        return 'p2-release-outcome.json'
+
+    def select_release(self, initial):
+        selected, jobs, plan, compose = runtime.make_plan(self.bundle, self.configuration, self.source / 'ops/platform/compose.yaml')
+        require(selected == initial['candidate'] and selected.get('contractPhase') == 'p2'
+                and selected['sources']['frontend']['commit'] == initial['sourceCommit'] and selected['environment'] == 'staging'
+                and set(jobs) == {'frontend', 'course', 'community'}
+                and jobs['frontend']['job']['target']['approvedPendingTags'], 'P2_CANDIDATE_BINDING_REFUSED')
+        return selected, jobs, plan, compose
+
     def initialize(self):
         p = self.initial
         require(self.shared_lock_fd is not None and self.safety_write is not None and self.guard_read is not None,
@@ -179,19 +198,18 @@ class Broker:
                     'P2_PRIVATE_HOST_PATH_REFUSED')
             migrate.private_directory(value)
         self.bundle, self.configuration, self.results = (Path(p[key]) for key in ('bundle', 'configuration', 'results'))
-        self.selected, self.jobs, self.plan, _ = runtime.make_plan(self.bundle, self.configuration, self.source / 'ops/platform/compose.yaml')
+        self.selected, self.jobs, self.plan, _ = self.select_release(p)
         require(migrate.file_hash(migrate.read_input(self.bundle, 'release.candidate.json')) == p.get('candidateSha256'), 'P2_CANDIDATE_BYTES_CHANGED')
         require(self.selected == p['candidate'] and self.selected.get('contractPhase') == 'p2'
-                and self.selected['sources']['frontend']['commit'] == commit and self.selected['environment'] == 'staging'
-                and self.plan['hostMachineId'] == p['hostMachineId'] and set(self.jobs) == {'frontend', 'course', 'community'}
-                and self.jobs['frontend']['job']['target']['approvedPendingTags'], 'P2_CANDIDATE_BINDING_REFUSED')
+                and self.selected['environment'] == 'staging' and self.plan['hostMachineId'] == p['hostMachineId']
+                and set(self.jobs) == {'frontend', 'course', 'community'}, 'P2_CANDIDATE_BINDING_REFUSED')
         runtime.assert_host(self.plan)
         require_profile(p.get('certification'))
         for service, flags in RUNTIME_FLAGS.items():
             values = runtime.environment_values(migrate.read_input(self.configuration, service + '.env', 65536), 'staging', service, self.jobs)
             require(all(values.get(key) == value for key, value in flags.items()), 'P2_CERTIFICATION_RUNTIME_FLAGS_REQUIRED')
         require(staging_state.configuration_hashes(self.configuration) == p['configurationSha256'], 'P2_CONFIGURATION_CHANGED')
-        require(p.get('confirmation') == 'staging/' + self.selected['releaseId'], 'P2_EXPLICIT_START_REQUIRED')
+        require(p.get('confirmation') == 'staging/' + self.action_id(), 'P2_EXPLICIT_START_REQUIRED')
         credentials = p.get('credentials', {})
         require(set(credentials) == {'FRONTEND_STAGING_MIGRATION_DATABASE_URL', 'COURSE_STAGING_DATABASE_URL', 'COMMUNITY_STAGING_DATABASE_URL'}
                 and all(isinstance(v, str) and 0 < len(v) <= 16384 for v in credentials.values()), 'P2_NAMED_CREDENTIALS_REQUIRED')
@@ -203,7 +221,7 @@ class Broker:
         require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o077, 'P2_ACTUAL_HOST_LOCK_REQUIRED')
         fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         self.lock_info = info
-        self.directory = self.results / ('p2-' + self.selected['releaseId'])
+        self.directory = self.results / self.directory_name()
         self.directory.mkdir(mode=0o700)
         self.observer_program = private_observer_program(p, self.directory / 'private-source')
         self.outcome.update(environment='staging', releaseId=self.selected['releaseId'], sourceCommit=commit,
@@ -257,9 +275,9 @@ class Broker:
                 and request['probe'].get('targetSha256') == self.initial.get('targetSha256'), 'P2_PROBE_PLAN_BINDING_REFUSED')
         self.frontend_raw = raw
         self.safety({'operation': 'armed', 'probe': request['probe']})
-        self.observer = PhysicalObserver(self.selected, request['probe'], self.source,
+        self.observer = self.observer_type(self.selected, request['probe'], self.source,
                                         self.initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'], program=self.observer_program,
-                                        program_sha256=self.initial['sourceSha256']['ops/platform/p2-frontend-live-probe.mjs'])
+                                        program_sha256=self.initial['sourceSha256'][self.observer_source])
         self.observer.start(self.abort)
         self.scope = P2ReleaseScope(self.lock_fd, LOCK, self.check, receipt, self.outcome['candidateSha256'],
                                     release=self.selected, jobs=self.jobs, configuration_sha256=self.initial['configurationSha256'])
@@ -392,6 +410,12 @@ class Broker:
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
                 except BaseException:
                     self.outcome['migrationContainerCleanupUncertain'] = True
+            if self.observer_source == 'ops/platform/p2-recovery-current-probe.mjs':
+                try:
+                    from p2_release_supervisor import cleanup_recovery_current_containers
+                    cleanup_recovery_current_containers()
+                except BaseException:
+                    self.outcome['recoveryCurrentContainerCleanupUncertain'] = True
 
     def command(self, value):
         identity, operation = value.get('id'), value.get('operation')
@@ -472,8 +496,8 @@ class Broker:
         elif operation == 'commit':
             require(self.finished and not self.failed.is_set() and self.worker_done.is_set(), 'P2_RELEASE_JOIN_REQUIRED')
             require(runtime.check_containers(self.selected, self.runtime_snapshot) == self.ready['containers'], 'P2_RUNTIME_CHANGED')
-            migrate.write_json(self.directory, 'p2-release-outcome.json', self.outcome)
-            self.safety({'operation': 'committed', 'sha256': migrate.file_hash(migrate.read_input(self.directory, 'p2-release-outcome.json'))})
+            migrate.write_json(self.directory, self.terminal_filename(), self.outcome)
+            self.safety({'operation': 'committed', 'sha256': migrate.file_hash(migrate.read_input(self.directory, self.terminal_filename()))})
             self.committed.set()
             self.send(identity, 'COMMITTED', receipt=self.outcome)
             return False

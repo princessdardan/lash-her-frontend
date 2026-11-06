@@ -45,7 +45,12 @@ def verify_source_closure(initial, root):
 
 def private_observer_program(initial, directory):
     raw = initial['_guardObserverProgram']
-    expected = initial['sourceSha256']['ops/platform/p2-frontend-live-probe.mjs']
+    # Set by the fixed source supervisor after checking the closed manifest;
+    # never selected from the private operator input packet.
+    source_name = initial.get('_guardObserverSource', 'ops/platform/p2-frontend-live-probe.mjs')
+    if source_name not in {'ops/platform/p2-frontend-live-probe.mjs', 'ops/platform/p2-recovery-current-probe.mjs'}:
+        raise ValueError('P2_FIXED_OBSERVER_SOURCE_REQUIRED')
+    expected = initial['sourceSha256'][source_name]
     if hashlib.sha256(raw).hexdigest() != expected:
         raise ValueError('P2_OBSERVER_SOURCE_CHANGED')
     path = directory / 'p2-frontend-live-probe.mjs'

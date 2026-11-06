@@ -9,6 +9,7 @@ import contextlib
 import fcntl
 import json
 import os
+import re
 from pathlib import Path
 import select
 import signal
@@ -27,6 +28,36 @@ from p2_release_broker import Broker, PhysicalObserver, MAXIMUM, LOCK
 from p2_source_closure import verify_source_closure, private_observer_program
 
 require = migrate.demand
+
+DEFAULT_LAYOUT = {'actionIdKey': 'releaseId', 'receiptPrefix': 'p2-', 'runtimePrefix': 'runtime-',
+                  'terminalName': 'p2-release-outcome.json', 'terminalStatus': 'P2_STAGING_READY_FOR_CERTIFICATION'}
+RECOVERY_LAYOUT = {'actionIdKey': 'recoveryActionId', 'receiptPrefix': 'p2-recovery-', 'runtimePrefix': 'runtime-recovery-',
+                   'terminalName': 'p2-recovery-outcome.json', 'terminalStatus': 'P2_STAGING_RECOVERY_RESTORATION_VERIFIED'}
+
+
+def fixed_layout(initial):
+    # _guardLayout is replaced by supervise from fixed source arguments before
+    # forking. Private input cannot select a program, class or receipt path.
+    return initial.get('_guardLayout', DEFAULT_LAYOUT)
+
+
+def action_id(initial):
+    key = fixed_layout(initial)['actionIdKey']
+    value = initial['candidate']['releaseId'] if key == 'releaseId' else initial.get(key)
+    require(isinstance(value, str) and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', value), 'P2_GUARD_ACTION_ID_REQUIRED')
+    return value
+
+
+def cleanup_recovery_current_containers():
+    # Only the recovery helper's fixed read-only container names. Matching IDs
+    # are read from Docker, never supplied by an operator packet.
+    pattern = '^/lash-p2-recovery-current-(course|community)-[a-f0-9]{32}$'
+    query = ['docker', 'container', 'ls', '--all', '--filter', 'name=' + pattern, '--format', '{{.ID}}']
+    for identity in runtime.command(query, runtime.SAFE_ENV, 15).splitlines():
+        require(re.fullmatch(r'[a-f0-9]{12,64}', identity), 'P2_GUARD_RECOVERY_CONTAINER_ID_REFUSED')
+        runtime.command(['docker', 'rm', '--force', identity], runtime.SAFE_ENV, 30)
+    require(not runtime.command(query, runtime.SAFE_ENV, 15), 'P2_GUARD_RECOVERY_CONTAINER_REMAINS')
+
 
 
 def members(group):
@@ -135,7 +166,7 @@ def close_gateway(initial, selected, configuration):
             'closedGatewayAdmissionSha256': digest}
 
 
-def fail_closed(initial, armed, source, *, group=None, record_name='p2-independent-guard-outcome.json'):
+def fail_closed(initial, armed, source, *, group=None, record_name='p2-independent-guard-outcome.json', observer_type=None):
     result = {'status': 'P2_INDEPENDENT_GUARD_FAILED_CLOSED_REQUIRES_REVIEW', 'trafficAuthorized': None,
               'sqlReplayAuthorized': False, 'releaseAccepted': False, 'g2Accepted': False,
               'workerProcessesQuiesced': False, 'runtimeStopped': None, 'frontendAdmissionClosed': None}
@@ -151,18 +182,20 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
     # These values were verified before forking. Mutable input loss is not a
     # reason to skip closure of an already-running release.
     selected = initial['candidate']
+    layout, identity = fixed_layout(initial), action_id(initial)
+    observer_source = initial.get('_guardObserverSource', 'ops/platform/p2-frontend-live-probe.mjs')
     observer = None
     try:
-        private_root = Path(initial['results']) / ('p2-' + selected['releaseId'])
+        private_root = Path(initial['results']) / (layout['receiptPrefix'] + identity)
         program = private_observer_program(initial, private_root / 'guard-source')
-        observer = PhysicalObserver(selected, armed, source, initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'], program=program,
-                                    program_sha256=initial['sourceSha256']['ops/platform/p2-frontend-live-probe.mjs'])
+        observer = (observer_type or PhysicalObserver)(selected, armed, source, initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'], program=program,
+                                    program_sha256=initial['sourceSha256'][observer_source])
         observer.probe('fence')
         result['frontendAdmissionClosed'] = True
         result['trafficAuthorized'] = False
     except BaseException:
         pass
-    snapshot = Path(initial['results']) / ('runtime-' + selected['releaseId']) / 'configuration'
+    snapshot = Path(initial['results']) / (layout['runtimePrefix'] + identity) / 'configuration'
     try:
         result.update(close_gateway(initial, selected, snapshot))
     except BaseException:
@@ -178,12 +211,17 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
             require(not runtime.command(query, runtime.SAFE_ENV, 15), 'P2_GUARD_MIGRATION_CONTAINER_REMAINS')
         except BaseException:
             result['migrationContainerCleanupUncertain'] = True
+    if layout == RECOVERY_LAYOUT:
+        try:
+            cleanup_recovery_current_containers()
+        except BaseException:
+            result['recoveryCurrentContainerCleanupUncertain'] = True
     try:
         migrate.suspend_runtime('staging', runtime.SAFE_ENV)
         result['runtimeStopped'] = True
     except BaseException:
         pass
-    directory = Path(initial['results']) / ('p2-' + selected['releaseId'])
+    directory = Path(initial['results']) / (layout['receiptPrefix'] + identity)
     if directory.is_dir():
         try:
             migrate.write_json(directory, record_name, result)
@@ -192,19 +230,28 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
     return result
 
 
-def finish_failure_cleanup(initial, armed, source, child):
-    failed = fail_closed(initial, armed, source, group=child)
+def finish_failure_cleanup(initial, armed, source, child, *, observer_type=None):
+    failed = fail_closed(initial, armed, source, group=child, observer_type=observer_type)
     if armed is not None and not failed['workerProcessesQuiesced']:
         # Admissions have already been closed/stopped as far as can be
         # observed. Keep the actual flock while an unreaped mutator survives.
         while not stop_group(child):
             time.sleep(1)
         failed = fail_closed(initial, armed, source, group=child,
-                             record_name='p2-independent-guard-after-quiescence.json')
+                             record_name='p2-independent-guard-after-quiescence.json', observer_type=observer_type)
     return failed
 
 
-def supervise(initial):
+def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
+              observer_source='ops/platform/p2-frontend-live-probe.mjs', layout=None):
+    layout = dict(DEFAULT_LAYOUT if layout is None else layout)
+    require(issubclass(broker_type, Broker) and issubclass(observer_type, PhysicalObserver), 'P2_FIXED_SOURCE_TYPES_REQUIRED')
+    require((layout == DEFAULT_LAYOUT and broker_type is Broker and observer_type is PhysicalObserver
+             and observer_source == 'ops/platform/p2-frontend-live-probe.mjs') or
+            (layout == RECOVERY_LAYOUT and initial.get('mode') == 'p2-post-sql-recovery'
+             and observer_source == 'ops/platform/p2-recovery-current-probe.mjs'), 'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
+    initial['_guardLayout'], initial['_guardObserverSource'] = layout, observer_source
+    identity = action_id(initial)
     require(os.geteuid() == 0 and sys.platform == 'linux' and initial.get('environment') == 'staging', 'P2_LINUX_ROOT_GUARD_REQUIRED')
     source = Path(__file__).resolve().parents[3]
     require(migrate.source_commit(initial.get('sourceCommit')) and str(source) == '/opt/lash-her/operators/' + initial['sourceCommit'],
@@ -213,7 +260,8 @@ def supervise(initial):
     require(selected == initial['candidate'] and migrate.file_hash(migrate.read_input(Path(initial['bundle']), 'release.candidate.json')) == initial.get('candidateSha256'),
             'P2_GUARD_CANDIDATE_BINDING_REFUSED')
     verify_source_closure(initial, source)
-    initial['_guardObserverProgram'] = migrate.read_input(source, 'ops/platform/p2-frontend-live-probe.mjs')
+    require(observer_source in initial['sourceSha256'], 'P2_FIXED_OBSERVER_CLOSURE_REQUIRED')
+    initial['_guardObserverProgram'] = migrate.read_input(source, observer_source)
     # Linux subreaper adoption prevents orphaned mutating Docker CLI workers
     # from surviving a killed broker and racing the final container inventory.
     require(ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0, 'P2_GUARD_SUBREAPER_REQUIRED')
@@ -230,7 +278,8 @@ def supervise(initial):
         try:
             def emit(value):
                 print(json.dumps(value, separators=(',', ':')), flush=True)
-            broker = Broker(initial, emit, shared_lock_fd=fd, safety_write=safety_write, guard_read=health_read)
+            broker = broker_type(initial, emit, shared_lock_fd=fd, safety_write=safety_write, guard_read=health_read,
+                                 observer_type=observer_type, observer_source=observer_source)
             broker.initialize(); broker.send(0, 'LOCKED')
             while True:
                 raw = sys.stdin.buffer.readline(MAXIMUM + 1)
@@ -271,12 +320,12 @@ def supervise(initial):
             require(probe['job'] == verified_jobs['frontend']['job']
                     and probe['baseline'] == json.loads(verified_jobs['frontend']['schema']), 'P2_SAFETY_SCOPE_REFUSED')
         committed = watch_broker(child, safety_read, health_write, arm)
-        result = migrate.read_input(Path(initial['results']) / ('p2-' + initial['candidate']['releaseId']), 'p2-release-outcome.json')
-        require(migrate.file_hash(result) == committed and json.loads(result).get('status') == 'P2_STAGING_READY_FOR_CERTIFICATION',
+        result = migrate.read_input(Path(initial['results']) / (layout['receiptPrefix'] + identity), layout['terminalName'])
+        require(migrate.file_hash(result) == committed and json.loads(result).get('status') == layout['terminalStatus'],
                 'P2_GUARD_TERMINAL_RECEIPT_REQUIRED')
     except BaseException:
         with sticky_cleanup_signals():
-            finish_failure_cleanup(initial, armed, source, child)
+            finish_failure_cleanup(initial, armed, source, child, observer_type=observer_type)
         raise
     finally:
         os.close(safety_read); os.close(health_write); os.close(fd)

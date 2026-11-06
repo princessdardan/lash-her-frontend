@@ -12,7 +12,7 @@ import unittest
 import migrate
 from p2_release_broker import Broker
 from p2_release_scope import P2ReleaseScope
-from p2_release_supervisor import stop_group, watch_broker, close_gateway, fail_closed, sticky_cleanup_signals, finish_failure_cleanup
+from p2_release_supervisor import stop_group, watch_broker, close_gateway, fail_closed, sticky_cleanup_signals, finish_failure_cleanup, RECOVERY_LAYOUT
 import staging_admission
 from unittest.mock import patch
 
@@ -152,10 +152,15 @@ class IndependentGuardTests(unittest.TestCase):
     def test_final_guard_receipt_records_observed_quiescence_after_retry(self):
         self.failure_closure_case(group=424242, retry=True)
 
-    def failure_closure_case(self, group=None, repeated_signal=False, retry=False):
+    def test_recovery_failure_uses_distinct_snapshot_and_receipts_without_original_overwrite(self):
+        self.failure_closure_case(recovery=True)
+
+    def failure_closure_case(self, group=None, repeated_signal=False, retry=False, recovery=False):
         results = self.root / 'results'; results.mkdir(mode=0o700)
-        (results / 'p2-owned').mkdir(mode=0o700)
-        snapshot = results / 'runtime-owned' / 'configuration'; snapshot.mkdir(parents=True, mode=0o700)
+        receipt_name = 'p2-recovery-deliberate' if recovery else 'p2-owned'
+        runtime_name = 'runtime-recovery-deliberate' if recovery else 'runtime-owned'
+        (results / receipt_name).mkdir(mode=0o700)
+        snapshot = results / runtime_name / 'configuration'; snapshot.mkdir(parents=True, mode=0o700)
         (snapshot / 'admission').mkdir(mode=0o755)
         candidate_hash = 'a' * 64
         (snapshot / 'gateway.json').write_text(json.dumps({'admission': {'file': '/admission/state.json',
@@ -163,6 +168,10 @@ class IndependentGuardTests(unittest.TestCase):
         staging_admission.persist_state(snapshot, {'releaseId': 'owned', 'candidateSha256': candidate_hash}, 'owned-open', new_work=True, recovery=True)
         initial = {'candidate': {'releaseId': 'owned'}, 'candidateSha256': candidate_hash, 'results': str(results),
                    'bundle': str(self.root / 'deleted-bundle'), 'sourceSha256': {'ops/platform/p2-frontend-live-probe.mjs': 'a'*64}, 'credentials': {'FRONTEND_STAGING_MIGRATION_DATABASE_URL': 'synthetic'}}
+        if recovery:
+            initial.update(recoveryActionId='deliberate', _guardLayout=RECOVERY_LAYOUT,
+                           _guardObserverSource='ops/platform/p2-recovery-current-probe.mjs')
+            initial['sourceSha256']['ops/platform/p2-recovery-current-probe.mjs'] = 'b'*64
         calls = []
         class Observer:
             def __init__(owned_self, *_, **kwargs): pass
@@ -187,6 +196,9 @@ class IndependentGuardTests(unittest.TestCase):
         if retry:
             final = json.loads((results / 'p2-owned/p2-independent-guard-after-quiescence.json').read_bytes())
             self.assertIs(final['workerProcessesQuiesced'], True)
+        if recovery:
+            self.assertTrue((results / receipt_name / 'p2-independent-guard-outcome.json').exists())
+            self.assertFalse((results / 'p2-owned').exists())
 
     def test_abort_notifies_independent_guard_before_fallible_process_cleanup(self):
         safety_r, safety_w = os.pipe(); health_r, health_w = os.pipe()
