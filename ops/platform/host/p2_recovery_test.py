@@ -423,5 +423,16 @@ class RecoveryForwardBuildTests(RecoveryProviderReadTests):
         with self.assertRaisesRegex(ValueError,'ORIGINAL_RECEIPT_CHANGED'):live_recovery.require_forward_scope(self.context,self.client,self.verify)
         self.assertTrue(all(call['method']=='GET' for call in self.calls[before:]))
 
+    def test_valid_forward_scope_never_accepts_unreviewed_same_source_deployment(self):
+        self.prepare_forward();self.build();self.context['forwardRecoveryScope']=self.scope
+        self.assertTrue(self.execute('observe-vercel')['reviewedInventoryMatches'])
+        before=len(self.calls)
+        self.deployments.append({'uid':'dpl_unknownsame','state':'READY','target':'production','created':40,
+                                 'url':'unknownsame.vercel.app','meta':{'githubCommitSha':'a'*40}})
+        observed=self.execute('observe-vercel')
+        self.assertFalse(observed['reviewedInventoryMatches']);self.assertIsNone(observed['activeExecutions']);self.assertIsNone(observed['uncertainEffects'])
+        self.deployments.pop();self.assertTrue(self.execute('observe-vercel')['reviewedInventoryMatches'])
+        self.assertTrue(all(call['method']=='GET' for call in self.calls[before:]));self.preserved()
+
 if __name__=='__main__':
     unittest.main()

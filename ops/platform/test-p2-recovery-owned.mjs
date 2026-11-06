@@ -1,14 +1,17 @@
 // Explicit disposable PG16 fixture only; no configured/live URL is accepted.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync,writeFileSync,existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Client } from 'pg';
 import { frontendMigrationArtifact } from './frontend-migration.mjs';
 import { readMigrationCatalog } from './frontend-schema.mjs';
-import { withRecoveryFrontendSession, observeRecoveryPhysical } from './p2-recovery-current-probe.mjs';
+import { withRecoveryFrontendSession, observeRecoveryPhysical,issueP2RecoveryForwardScope,readP2RecoveryForwardScope,verifyP2RecoveryForwardMutation } from './p2-recovery-current-probe.mjs';
 import { observeRecoveryApiCurrent } from './p2-recovery-api-current-probe.mjs';
 import { frontendCoordinationHash as hash } from './frontend-release-inventory.mjs';
+import {frontendReleaseReceiptStore,readFrontendReleaseEvidence} from './frontend-release-receipts.mjs';
+import {frontendProviderBindingsArtifact} from './frontend-provider-bindings.mjs';
+import {P2_CERTIFICATION_PROFILE} from './p2-certification-profile.mjs';
 assert.equal(process.env.P2_RECOVERY_OWNED_TEST,'true');
 const assertOwnedEnvironment=()=>assert.deepEqual(Object.keys(process.env).filter(key=>!['PATH','HOME','LANG','TMPDIR','NODE_EXTRA_CA_CERTS','P2_RECOVERY_OWNED_TEST','P2_RECOVERY_OWNED_CONNECTIONS'].includes(key)&&!key.startsWith('LC_')&&
   // macOS inserts this CoreFoundation encoding metadata after exec; it is not
@@ -43,18 +46,114 @@ try{
   await admin.query('SET ROLE recovery_owner');await admin.query(readFileSync(new URL('./frontend-admission.sql',import.meta.url),'utf8'));await admin.query('RESET ROLE');
   await admin.query("GRANT USAGE ON SCHEMA public,frontend_admission TO recovery_runtime; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO recovery_runtime; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO recovery_runtime; GRANT EXECUTE ON ALL ROUTINES IN SCHEMA frontend_admission TO recovery_runtime; SET ROLE recovery_creator; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO recovery_runtime; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE,SELECT ON SEQUENCES TO recovery_runtime; RESET ROLE; REVOKE ALL ON SCHEMA drizzle FROM PUBLIC");
   const roles=Object.fromEntries((await admin.query("SELECT rolname,oid::text FROM pg_roles WHERE rolname=ANY($1::text[])",[['recovery_owner','recovery_runtime','recovery_retired']])).rows.map(row=>[row.rolname,row.oid]));
-  const targetSha256='a'.repeat(64),sourceCommit='b'.repeat(40),producerSha256='c'.repeat(64);
+  const fixture=privateInput.forwardFixture;
+  const targetSha256=fixture?.context.plan.targetSha256??'a'.repeat(64),sourceCommit=fixture?'a'.repeat(40):'b'.repeat(40),producerSha256=fixture?'5'.repeat(64):'c'.repeat(64);
   await admin.query("INSERT INTO frontend_admission.control(singleton,environment,target_sha256) VALUES(true,'staging',$1)",[targetSha256]);
   await admin.query('INSERT INTO frontend_admission.producers VALUES($1,$2,$3,true)',[producerSha256,sourceCommit,roles.recovery_runtime]);
   const url=new URL(privateInput.frontend);url.username='recovery_creator';url.password=privateInput.password;
   const target={host:url.hostname,port:Number(url.port),database:'postgres',user:'recovery_creator',runtimeRole:'recovery_runtime',serverMajor,approvedPendingTags:artifact.migrations.map(row=>row.tag)};
-  const job={environment:'staging',releaseId:'original-qualified',sourceCommit,target,contractPhase:'p2',phase2ContractManifestSha256:'sha256:'+'d'.repeat(64),sqlArtifactSha256:artifact.sqlArtifactSha256,migrationImageDigest:'sha256:'+'e'.repeat(64),schemaBaselineSha256:'f'.repeat(64),contractManifestSha256:artifact.contractManifestSha256};
+  const job={environment:'staging',releaseId:fixture?'adapter-owned':'original-qualified',sourceCommit,target,contractPhase:'p2',phase2ContractManifestSha256:'sha256:'+(fixture?'9':'d').repeat(64),sqlArtifactSha256:artifact.sqlArtifactSha256,migrationImageDigest:'sha256:'+'e'.repeat(64),schemaBaselineSha256:'f'.repeat(64),contractManifestSha256:artifact.contractManifestSha256};
   const plan={environment:'staging',sourceCommit,targetSha256,owner:{name:'recovery_owner',oid:roles.recovery_owner},producers:[{producerSha256,role:{name:'recovery_runtime',oid:roles.recovery_runtime}}],historicalLogins:{retiredLogins:[{name:'recovery_retired',oid:roles.recovery_retired}]}};
   const prepared={migration:{job,artifact,baseline:{catalog:await readMigrationCatalog(admin)}},plan};
   const action={recoveryActionId:'deliberate-recovery',candidateSha256:'1'.repeat(64),originalReceiptSha256:{'job-outcome.json':null}};
   const deps={getUrl:()=>url.href,verifyEnvironment:async()=>{}};
   const creatorMemberships=(await admin.query("SELECT m.admin_option,m.inherit_option,m.set_option,g.rolsuper AS grantor_super FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.roleid JOIN pg_roles g ON g.oid=m.grantor WHERE r.rolname IN ('recovery_owner','recovery_runtime') ORDER BY m.admin_option,m.roleid")).rows;
   assert.equal(creatorMemberships.length,3);assert.equal(creatorMemberships.filter(row=>row.admin_option&&row.grantor_super&&!row.inherit_option&&!row.set_option).length,2);
+  if(fixture){
+    const supplied=fixture.context,candidate=supplied.candidate;
+    Object.assign(plan,supplied.plan,{...plan,actionId:candidate.releaseId,certification:structuredClone(P2_CERTIFICATION_PROFILE)});
+    prepared.migration.candidate=structuredClone(candidate);
+    const identities=[...supplied.bindings.deployments.map(row=>({kind:'deployment',identity:{provider:'vercel',teamId:supplied.bindings.teamId,projectId:supplied.bindings.projectId,deploymentId:row.deploymentId}})),
+      {kind:'scheduler',identity:{provider:'vercel',teamId:supplied.bindings.teamId,projectId:supplied.bindings.projectId,scheduler:'native-crons'}}];
+    plan.externalSurfaces=identities.map(row=>({kind:row.kind,identitySha256:hash(row.identity),surfaceSha256:hash({kind:row.kind,identitySha256:hash(row.identity)})})).sort((a,b)=>a.surfaceSha256.localeCompare(b.surfaceSha256));
+    const bindings=frontendProviderBindingsArtifact({version:1,...supplied.bindings,surfaces:identities.map(row=>({...row,surfaceSha256:plan.externalSurfaces.find(item=>item.kind===row.kind&&item.identitySha256===hash(row.identity)).surfaceSha256}))},plan);
+    plan.providerBindingsSha256=hash(bindings);
+    const forwardAction={...supplied.action,candidateSha256:hash(Buffer.from(JSON.stringify(candidate)+'\n')),inventorySha256:hash(plan)};
+    const store=frontendReleaseReceiptStore(supplied.directory),base={...forwardAction,targetSha256};
+    const bridge=await import(pathToFileURL(join(fixture.graph,'p2-recovery-frontend-observation.mjs'))),adapters=await import(pathToFileURL(join(fixture.graph,'frontend-release-adapters.mjs')));
+    let retainedScope,retainedContext,mutationRefusals=0;
+    await store.record('p2-recovery-started.json',{...base,status:'P2_POST_SQL_RECOVERY_STARTED'});
+    await withRecoveryFrontendSession(prepared,forwardAction,deps,async({session,client,verify,receipt,probe})=>{
+      const context={candidate,plan,job,action:forwardAction,checkpoint:'recovery',inventorySha256:forwardAction.inventorySha256,recoveryActionId:forwardAction.recoveryActionId,
+        originalDirectory:supplied.originalDirectory,directory:supplied.directory,databaseClient:client,verifyLockedSession:verify,environmentSignal:new AbortController().signal,
+        bootstrapRuntimeTarget:{environment:'staging',targetSha256,host:target.host,port:target.port,database:target.database,user:target.runtimeRole,serverMajor},
+        getProviderContext:async()=>({bindings,vercelToken:'owned-token-marker',privateConfigurationDirectory:supplied.privateConfigurationDirectory,
+          gatewayHost:supplied.gatewayHost,frontendRuntimeDatabaseUrl:supplied.frontendRuntimeDatabaseUrl}),
+        verifyMutationScope:()=>verifyP2RecoveryForwardMutation(session)};
+      context.action.forwardPrivateConfigurationDirectory=supplied.newPrivateConfigurationDirectory;
+      await store.record('p2-recovery-current-database.json',receipt);
+      assert.equal((await observeRecoveryPhysical({...probe,operation:'verify-schema'},deps)).status,'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED');
+      const prior=await bridge.reconcileP2RecoveryForward(context);await store.record('p2-recovery-forward-original.json',prior);
+      const apiDatabases={};
+      for(const service of ['course','community']){
+        const apiRoot=privateInput.apiRoots[service],api=Object.assign({},await import(pathToFileURL(join(apiRoot,'src/db/operator-migration.ts'))),await import(pathToFileURL(join(apiRoot,'src/db/migration-lineage.ts'))),await import(pathToFileURL(join(apiRoot,'src/db/migration-schema.ts'))));
+        const apiAdmin=await connect(privateInput[service]);
+        try{
+          const apiArtifact=api.loadMigrationArtifact(join(apiRoot,'drizzle'),'lash-her-'+service+'-api'),schemaBytes=JSON.stringify({schemaVersion:1,serverMajor,artifactSha256:apiArtifact.artifactSha256,catalog:await api.readMigrationCatalog(apiAdmin)}),connection=new URL(privateInput[service]);
+          const apiJob={schemaVersion:1,kind:'operator-migration',releaseId:candidate.releaseId,operator:'Dardan',environment:'staging',sourceCommit:'2'.repeat(40),migrationImageDigest:'sha256:'+'3'.repeat(64),runtimeImageDigest:'sha256:'+'4'.repeat(64),contractSha256:'5'.repeat(64),runtimeRole:service+'_recovery_runtime',schemaBaselineSha256:hash(schemaBytes),recoveryRef:'owned/recovery',stagingVerification:null,statementTimeoutMs:10000,ddlLockTimeoutMs:1000,
+            target:{schemaVersion:1,service:'lash-her-'+service+'-api',environment:'staging',host:connection.hostname,port:Number(connection.port),database:service+'_recovery_owned',user:service+'_recovery_migration',serverMajor,artifactSha256:apiArtifact.artifactSha256,approvedPendingTags:apiArtifact.entries.map(row=>row.tag),allowEmptyBootstrap:false,providerIdentityEvidenceRef:'owned/provider'}};
+          apiDatabases[service]=await observeRecoveryApiCurrent({version:1,service:'lash-her-'+service+'-api',job:apiJob,schemaBytes,candidateSha256:forwardAction.candidateSha256,recoveryActionId:forwardAction.recoveryActionId},{getUrl:()=>privateInput[service],modules:async()=>({...api,prepareOperatorMigration:(job,schema,_directory,service)=>api.prepareOperatorMigration(job,schema,join(apiRoot,'drizzle'),service)})});
+        }finally{await apiAdmin.end();}
+      }
+      await store.record('p2-recovery-api-runtime.json',{...base,status:'P2_RECOVERY_API_RUNTIME_READY',apiDatabases,containers:Array.from({length:10},(_,index)=>({name:'fixture-runtime-'+index})),sqlReplayed:false,fixtureOnly:true});
+      await store.record('p2-recovery-forward-started.json',{...base,status:'P2_RECOVERY_NEW_BUILD_INTENT',reason:forwardAction.forwardReason,
+        currentDatabaseReceiptSha256:hash(readFrontendReleaseEvidence(supplied.directory,'p2-recovery-current-database.json')),
+        apiRuntimeReceiptSha256:hash(readFrontendReleaseEvidence(supplied.directory,'p2-recovery-api-runtime.json')),
+        priorReconciliationReceiptSha256:hash(readFrontendReleaseEvidence(supplied.directory,'p2-recovery-forward-original.json')),
+        expectedWriterAdmissionBinding:{mode:'enforce',targetSha256,producerSha256,sourceCommit,roleName:target.runtimeRole},featureControls:plan.certification.featureControls});
+      assert.equal((await bridge.buildP2RecoveryForward(context)).status,'P2_RECOVERY_NEW_BUILD_VERIFIED');
+      context.forwardRecoveryScope=await issueP2RecoveryForwardScope(session,context);retainedScope=context.forwardRecoveryScope;retainedContext=context;
+      const projection=await readP2RecoveryForwardScope(context.forwardRecoveryScope,context);assert.equal(projection.mode,'reviewed-new-build');assert.equal(Object.keys(projection).length,12);
+      const originals=Object.fromEntries(Object.entries(projection.originalReceiptSha256).map(([file,expected])=>[file,expected===null?null:readFileSync(join(projection.originalDirectory,file))]));
+      await assert.rejects(readP2RecoveryForwardScope(structuredClone(context.forwardRecoveryScope),context));
+      await assert.rejects(readP2RecoveryForwardScope({...context.forwardRecoveryScope},context));
+      await assert.rejects(readP2RecoveryForwardScope(context.forwardRecoveryScope,{...context,databaseClient:{}}));
+      await assert.rejects(readP2RecoveryForwardScope(context.forwardRecoveryScope,{...context,verifyLockedSession:async()=>{}}));
+      await assert.rejects(readP2RecoveryForwardScope(context.forwardRecoveryScope,{...context,plan:{...plan,targetSha256:'9'.repeat(64)}}));
+      await assert.rejects(readP2RecoveryForwardScope(context.forwardRecoveryScope,{...context,candidate:{...candidate,releaseId:'wrong-candidate'}}));
+      await assert.rejects(readP2RecoveryForwardScope(context.forwardRecoveryScope,{...context,bootstrapRuntimeTarget:{...context.bootstrapRuntimeTarget,user:'wrong_runtime'}}));
+      await assert.rejects(readP2RecoveryForwardScope(context.forwardRecoveryScope,{...context,directory:context.originalDirectory}));
+      await assert.rejects(adapters.runFrontendVercelWorker('observe-compatible',{...context,inventorySha256:'f'.repeat(64)}));
+      await assert.rejects(adapters.runFrontendVercelWorker('observe-compatible',{...context,recoveryActionId:'wrong-action'}));
+      for(const operation of ['deploy-compatible','retire-deployments','suspend-schedules'])await assert.rejects(adapters.runFrontendVercelWorker(operation,context));
+      const observed=await adapters.observeCompatibleFrontend(context);assert.equal(observed.readyState,'READY');assert.equal(observed.workloadVerified,true);
+      assert.equal(observed.aliasDeploymentId,observed.deploymentId);assert.equal(observed.aliasJobDeploymentId,observed.deploymentId);assert.equal(observed.aliasJobMatchesIntent,true);assert.equal(observed.nativeSchedulesEnabled,false);
+      assert.deepEqual(observed.featureControls,plan.certification.featureControls);
+      assert.deepEqual(observed.writerAdmissionBinding,{mode:'enforce',targetSha256,producerSha256,sourceCommit,roleName:target.runtimeRole});
+      assert.equal(observed.configurationRecordSha256,observed.workloadReceiptSha256);assert.equal(observed.certificationSchedule.path,'/api/cron/account-lifecycle');
+      const workload=await adapters.readCompatibleFrontendWorkloadReceipt(context,observed);assert.equal(hash(workload),observed.workloadReceiptSha256);
+      assert.deepEqual(workload,readFileSync(join(context.directory,'vercel/frontend-workload-outcome.json')));
+      const inventory=await adapters.runFrontendVercelWorker('observe-vercel',context);assert.equal(inventory.reviewedInventoryMatches,true);assert.equal(inventory.reviewedProjectMatches,true);assert.equal(inventory.aliasJobActive,false);
+      assert.equal(inventory.knownTerminalActionBuilds.length,1);assert.notEqual(inventory.knownTerminalActionBuilds[0].deploymentId,observed.deploymentId);
+      for(const result of [inventory,observed]){assert.equal(result.forwardRecovery.recoveryActionId,projection.recoveryActionId);assert.deepEqual(result.forwardRecovery.originalReceiptSha256,projection.originalReceiptSha256);}
+      assert.equal((await bridge.observeP2RecoveryFrontend(context)).status,'P2_RECOVERY_FRONTEND_RUNTIME_VERIFIED');
+      await admin.query('UPDATE frontend_admission.control SET recovery=true');
+      await assert.rejects(context.verifyMutationScope());mutationRefusals++;
+      // The same verified receipt scope remains valid for GET after ordered
+      // admission opening; it never grants another mutation or probe extension.
+      assert.equal((await adapters.observeCompatibleFrontend(context)).readyState,'READY');
+      await admin.query('UPDATE frontend_admission.control SET recovery=false');
+      const file=join(supplied.directory,'p2-recovery-forward-outcome.json'),original=readFileSync(file);writeFileSync(file,Buffer.concat([original,Buffer.from(' ')]));
+      await assert.rejects(readP2RecoveryForwardScope(context.forwardRecoveryScope,context));writeFileSync(file,original);
+      for(const[file,bytes]of Object.entries(originals)){if(bytes===null)assert.equal(existsSync(join(projection.originalDirectory,file)),false);else assert.deepEqual(readFileSync(join(projection.originalDirectory,file)),bytes);}
+      assert.equal(hash((await admin.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at ASC NULLS FIRST,id ASC')).rows),receipt.journalSha256);
+      for(const service of ['course','community']){
+        const current=await connect(privateInput[service]);
+        try{assert.equal(hash((await current.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at ASC NULLS FIRST,id ASC')).rows),apiDatabases[service].journalSha256);}
+        finally{await current.end();}
+      }
+      await verify();
+    });
+    await assert.rejects(readP2RecoveryForwardScope(retainedScope,retainedContext));
+    assertOwnedEnvironment();
+    console.log(JSON.stringify({status:'OWNED_P2_RECOVERY_FORWARD_SOURCE_CHECKS_PASS',serverMajor,frontendMigrations:artifact.migrations.length,
+      courseMigrations:JSON.parse(readFileSync(join(privateInput.apiRoots.course,'drizzle/meta/_journal.json'))).entries.length,
+      communityMigrations:JSON.parse(readFileSync(join(privateInput.apiRoots.community,'drizzle/meta/_journal.json'))).entries.length,
+      checks:['actual-fe-physical-session','both-api-current-readonly','actual-tls-build-probe-promote','same-source-candidate-new-action','real-opaque-scope-shared-observer','selected-workload-bytes',
+        'cloned-plain-scope-refused','wrong-client-verifier-refused','wrong-plan-candidate-target-directory-refused','wrong-inventory-action-refused','shared-mutation-operations-refused',
+        'receipt-drift-refused','expired-session-refused','open-admission-mutation-refused','opened-admission-get-retained','original-terminal-retained-not-current','original-receipts-preserved'],
+      mutationRefusals,noSqlReplay:true,journalDigestsUnchanged:true,originalFrontendTerminalRecreated:false,skipped:0,fixtureOnly:true,providerTouched:false,actualRuntimeContainers:false,childEnvironmentAllowlistEnforced:true}));
+  }else{
   const checkFrontendFault=async(id,install,remove,afterInstall=async()=>{})=>{
     const checkpoint=id==='frontend-operator-superuser'?'operator-role-policy':id==='frontend-runtime-role-settings'?'runtime-role-settings':id==='frontend-runtime-database-settings'?'selected-role-database-settings':id==='frontend-runtime-rogue-ownership'?'runtime-ownership':id==='frontend-runtime-public-schema-access'?'runtime-schema-access':/inbound|outbound|rogue-admin/u.test(id)?'role-memberships':/default/u.test(id)?'runtime-default-grants':'runtime-extra-privileges';
     await withRecoveryFrontendSession(prepared,action,deps,async({probe})=>{
@@ -202,4 +301,5 @@ try{
     frontendContinuousPrivilegeRefusals:privilegeFaults.filter(row=>row.id.startsWith('frontend-')&&row.continuousRefused).length,
     apiPrivilegeRefusals:privilegeFaults.filter(row=>!row.id.startsWith('frontend-')&&row.initialRefused).length,
     legacyApiVerifierRefusals,frontendCreatorPolicy:'actual-non-superuser-automatic-admin-plus-explicit-owner-set',frontendCreatorMemberships:creatorMemberships.length,frontendOperatorSearchPathPinned:true,childEnvironmentAllowlistEnforced:true}));
+  }
 }finally{await admin.end();}

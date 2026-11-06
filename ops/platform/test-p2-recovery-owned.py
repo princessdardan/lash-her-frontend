@@ -12,7 +12,8 @@ import subprocess
 import sys
 import urllib.parse
 
-if os.environ.get('P2_RECOVERY_OWNED_TEST') != 'true' or len(sys.argv) != 1:
+forward_mode=sys.argv[1:]==['--forward-brand']
+if os.environ.get('P2_RECOVERY_OWNED_TEST') != 'true' or (len(sys.argv) != 1 and not forward_mode):
     raise SystemExit('EXPLICIT_OWNED_P2_RECOVERY_TEST_REQUIRED')
 root=Path(__file__).resolve().parents[2]
 def child_environment(**generated):
@@ -62,6 +63,7 @@ class Fixture:
             if cls.started:subprocess.run([str(cls.bin/'pg_ctl'),'-D',str(cls.data),'-m','immediate','-w','stop'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
         finally:
             if hasattr(cls,'cluster'):cls.cluster.cleanup()
+provider_fixture=None
 try:
     Fixture.setUpClass()
     api_roots={name:Path(os.environ.get(name.upper()+'_RECOVERY_SOURCE_ROOT','/Users/dardan/workspace/lash-her-'+name+'-api/.worktrees/phase2-'+name)).resolve() for name in ('course','community')}
@@ -94,6 +96,37 @@ try:
         # actual catalog baseline; an ACL fault cannot hide behind schema drift.
         sql(database,'SET ROLE '+migration+'; CREATE SEQUENCE public.recovery_acl_probe; GRANT USAGE ON SCHEMA public TO '+runtime+'; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO '+runtime+'; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO '+runtime+'; REVOKE ALL ON SCHEMA drizzle FROM PUBLIC;')
         connections[name]=url(migration,database);connections[name+'Admin']=url('frontend_provider_fixture',database)
+    if forward_mode:
+        sys.path.insert(0,str(root/'ops/platform/host'))
+        import p2_recovery_test as forward_tests
+        forward_tests.RecoveryForwardBuildTests.setUpClass()
+        provider_fixture=forward_tests.RecoveryForwardBuildTests('test_reviewed_failed_build_creates_one_same_source_deployment_and_actual_private_probe')
+        provider_fixture.setUp()
+        physical={'host':'127.0.0.1','port':Fixture.port,'database':'postgres','user':'recovery_creator','serverMajor':major}
+        provider_fixture.database['target']=physical
+        target_hash=hashlib.sha256(json.dumps({'environment':'staging',**physical},separators=(',',':')).encode()).hexdigest()
+        provider_fixture.context['plan']['targetSha256']=target_hash;provider_fixture.context['bindings']['targetSha256']=target_hash
+        original_bootstrap=provider_fixture.bootstrap_context
+        def physical_bootstrap():
+            original_bootstrap()
+            provider_fixture.context['writerTarget']={'environment':'staging','targetSha256':target_hash,**physical,'user':'recovery_runtime'}
+            provider_fixture.context['frontendRuntimeDatabaseUrl']=url('recovery_runtime','postgres')
+        provider_fixture.bootstrap_context=physical_bootstrap
+        provider_fixture.prepare_forward()
+        # The existing host component fixture creates placeholder current/API
+        # inputs. They have not been used by a builder. In this distinct test
+        # mode, only actual Node current-readback results are first published.
+        for path in Path(provider_fixture.context['directory']).glob('*.json'):path.unlink()
+        graph=Fixture.root/'forward-app';platform=graph/'ops/platform';host=platform/'host';host.mkdir(parents=True)
+        (graph/'package.json').write_text('{"type":"module"}\n');(graph/'node_modules').symlink_to(root/'node_modules',target_is_directory=True)
+        for source in (root/'ops/platform').glob('*.mjs'):
+            destination=platform/source.name
+            if source.name in ('frontend-release-adapters.mjs','p2-recovery-frontend-observation.mjs'):shutil.copyfile(source,destination)
+            else:destination.symlink_to(source)
+        shim="import sys,ssl,re\nsys.path.insert(0,"+repr(str(root/'ops/platform/host'))+")\nimport frontend_probe,vercel\nvercel.API_ORIGIN="+repr(provider_fixture.origin)+"\noriginal_ssl=ssl.create_default_context\nssl.create_default_context=lambda *args,**kwargs: original_ssl(cafile="+repr(str(forward_tests.provider_fixture.vercel_test.VercelControlTests.cert))+")\noriginal_probe=frontend_probe.ProbeClient.request\nfrontend_probe.DEPLOYMENT_URL=re.compile(re.escape(vercel.API_ORIGIN))\ndef mapped_probe(self,url,*args,**kwargs):\n    assert url=='https://owned.vercel.app'\n    return original_probe(self,vercel.API_ORIGIN,*args,**kwargs)\nfrontend_probe.ProbeClient.request=mapped_probe\n"
+        for name in ('p2_recovery_frontend_observation','frontend_release_adapters'):
+            (host/(name+'.py')).write_text(shim+'import '+name+' as actual\nactual.main()\n')
+        connections['forwardFixture']={'context':provider_fixture.context,'graph':str(platform)}
     sentinel=Fixture.root/'ambient-node-option-executed'
     injection=Fixture.root/'ambient-node-option.cjs'
     injection.write_text("require('node:fs').writeFileSync("+json.dumps(str(sentinel))+",'executed');process.exit(47);\n")
@@ -119,14 +152,25 @@ try:
         if result.returncode:
             print('OWNED_P2_RECOVERY_CHILD_FAILED',file=sys.stderr,flush=True)
         else:
+            if forward_mode:
+                calls=provider_fixture.calls[provider_fixture.before_calls:]
+                creates=[row for row in calls if row['method']=='POST' and row['path'].split('?',1)[0]=='/v13/deployments']
+                promotions=[row for row in calls if row['method']=='POST' and '/promote/' in row['path']]
+                if len(creates)!=1 or len(promotions)!=1 or creates[0]['body']['meta'].get('lashRecoveryActionId')!='reviewed-forward':
+                    raise ValueError('OWNED_FORWARD_EXCLUSIVE_POST_COUNT_REFUSED')
+                final_post=max(index for index,row in enumerate(calls) if row['method']!='GET')
+                if not all(row['method']=='GET' for row in calls[final_post+1:]) or len(calls[final_post+1:])<10:
+                    raise ValueError('OWNED_FORWARD_SHARED_READ_INTERVAL_REFUSED')
+                provider_fixture.preserved()
             lines=result.stdout.splitlines()
             if len(lines)!=1:
                 raise ValueError('OWNED_RECOVERY_SINGLE_SOURCE_RECEIPT_REQUIRED')
             value=json.loads(lines[0])
-            if not isinstance(value,dict) or value.get('status')!='OWNED_P2_RECOVERY_DATABASE_SOURCE_CHECKS_PASS' or value.get('childEnvironmentAllowlistEnforced') is not True:
+            expected_status='OWNED_P2_RECOVERY_FORWARD_SOURCE_CHECKS_PASS' if forward_mode else 'OWNED_P2_RECOVERY_DATABASE_SOURCE_CHECKS_PASS'
+            if not isinstance(value,dict) or value.get('status')!=expected_status or value.get('childEnvironmentAllowlistEnforced') is not True:
                 raise ValueError('OWNED_RECOVERY_SOURCE_RECEIPT_MISSING')
             value.pop('childEnvironmentAllowlistEnforced')
-            print(json.dumps({**value,'status':'OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS','environmentIsolation':{
+            print(json.dumps({**value,'status':'OWNED_P2_RECOVERY_FORWARD_CHECKS_PASS' if forward_mode else 'OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS','environmentIsolation':{
                 'nodeOptionsPositiveControlExecuted':True,'poisonedParentEnvironment':True,'ambientNodeOptionsExecuted':False,
                 'ambientConfigVariablesAbsent':True,'childEnvironmentAllowlistEnforced':True}}),flush=True)
     finally:
@@ -135,4 +179,6 @@ try:
             else:os.environ[key]=value
     raise SystemExit(result.returncode)
 finally:
+    if provider_fixture is not None:
+        provider_fixture.tearDown();forward_tests.RecoveryForwardBuildTests.tearDownClass()
     Fixture.cleanup()
