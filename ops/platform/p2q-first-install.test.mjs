@@ -57,7 +57,7 @@ async function googleFixture(){
   .replace("const OWNER_UID=0,CASE_ROOT='/var/lib/lash-her/p2q/google-projects';",`const OWNER_UID=${process.getuid()},CASE_ROOT=${JSON.stringify(cases)};`)
   .replace("privatePath(path);let current='/';\n  for(const part of path.split('/').filter(Boolean))",`privatePath(path);demand(path===${JSON.stringify(root)}||path.startsWith(${JSON.stringify(root+'/')}),'PRIVATE_DIRECTORY_REQUIRED');let current=${JSON.stringify(root)};\n  for(const part of relative(current,path).split('/').filter(Boolean))`)
   .replace("'/run/lash-her-p2q-private/'",JSON.stringify(handoff+'/'));
- const path=join(root,'producer.mjs');file.writeFileSync(path,projected+'\nexport const ownedPrivate={casePlan,PrivateCase,execute,cleanAmbient,route,cliArgs,childEnvironment,request,physicalTree,verifyToolchain,readFile,writeFile,parse,principalClaim};\n');
+ const path=join(root,'producer.mjs');file.writeFileSync(path,projected+'\nexport const ownedPrivate={casePlan,PrivateCase,execute,cleanAmbient,route,cliArgs,childEnvironment,request,physicalTree,verifyToolchain,readFile,writeFile,parse,principalClaim,UMASK_WRAPPER};\n');
  const api=(await import(pathToFileURL(path).href)).ownedPrivate;
  const principalPath=join(handoff,'principal.json'),principal='new-owner@example.test';
  const bytes=Buffer.from(JSON.stringify({version:1,principal})+'\n');file.writeFileSync(principalPath,bytes,{mode:0o600});
@@ -256,4 +256,19 @@ test('Google acknowledged operation can be reobserved without creation; complete
   publicGoogleSafe(result);assert.equal(result.code,'P2Q_GOOGLE_OPERATION_ERROR');assert.equal(result.originalCreationAcknowledged,true);
   assert.equal(JSON.parse(file.readFileSync(join(store.path,'create-ack.json'))).operationName,'operations/cp.owned');
  }finally{failed.close();}
+});
+test('Google exact child umask wrapper creates0600/0700 without changing Node umask or invoking SDK',async()=>{
+ const f=await googleFixture();try{const launcher=join(f.root,'owned-writer.sh'),output=join(f.root,'owned-file'),directory=join(f.root,'owned-directory');
+  file.writeFileSync(launcher,'#!/bin/sh\nprintf owned > "$1"\n/bin/mkdir "$2"\n',{mode:0o700});const before=process.umask();
+  const result=spawnSync('python3',['-I','-B','-S','-c',f.api.UMASK_WRAPPER,launcher,output,directory],{env:{PATH:process.env.PATH,LANG:'C',LC_ALL:'C'},encoding:'utf8',timeout:5000});
+  assert.equal(result.status,0,result.stderr);assert.equal(result.stdout,'');assert.equal(result.stderr,'');assert.equal(process.umask(),before);
+  assert.equal(file.statSync(output).mode&0o777,0o600);assert.equal(file.statSync(directory).mode&0o777,0o700);
+ }finally{f.close();}
+});
+test('Google private root permission drift and response-parent symlink refuse before write',async()=>{
+ const f=await googleFixture();try{const store=new f.api.PrivateCase(f.plan,'create');file.chmodSync(f.cases,0o755);
+  assert.throws(()=>store.verify(),{code:'P2Q_GOOGLE_PRIVATE_DIRECTORY_REQUIRED'});file.chmodSync(f.cases,0o700);
+  file.rmdirSync(join(store.path,'responses'));const alternate=join(f.root,'alternate');file.mkdirSync(alternate,{mode:0o700});file.symlinkSync(alternate,join(store.path,'responses'));
+  assert.throws(()=>store.response('project',200,Buffer.from('{}')));assert.deepEqual(file.readdirSync(alternate),[]);
+ }finally{f.close();}
 });

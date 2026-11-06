@@ -11,6 +11,7 @@ import {P2Q_GOOGLE_PROJECT_CAPTURE_CASES} from './source-policy.mjs';
 const OWNER_UID=0,CASE_ROOT='/var/lib/lash-her/p2q/google-projects';
 const PROGRAM=fileURLToPath(import.meta.url),SOURCE_ROOT=resolve(dirname(PROGRAM),'../..');
 const HOST='cloudresourcemanager.googleapis.com',MAX_RAW=262144,MAX_TOTAL=4_000_000,MAX_RESPONSES=64;
+const UMASK_WRAPPER='import os,sys\nos.umask(0o077)\nos.execve(sys.argv[1],sys.argv[1:],dict(os.environ))\n';
 const SUFFIX=/\.(?:py|mjs|json|yaml|yml|service|timer|sh|guard)$/u;
 const flags=Object.freeze({allocationAuthorityIssued:false,firstUseAuthorized:false,administrativeBoundaryComplete:false,
   recoveryBoundaryComplete:false,profileRegistered:false,oauthClientCreated:false});
@@ -39,6 +40,7 @@ function directory(path,privateMode=false){
 }
 function syncDirectory(path){const fd=fs.openSync(path,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
 function readFile(path,max,privateMode=false){
+  if(privateMode)directory(dirname(path),true);
   const fd=fs.openSync(path,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
   try{const s=fs.fstatSync(fd);demand(s.isFile()&&s.uid===OWNER_UID&&s.nlink===1&&(privateMode?(s.mode&0o777)===0o600:(s.mode&0o022)===0),'PRIVATE_FILE_REQUIRED');
     demand(s.size>0&&s.size<=max,'PRIVATE_FILE_BOUND');const bytes=Buffer.alloc(s.size+1);let n=0,count;
@@ -49,7 +51,7 @@ function readFile(path,max,privateMode=false){
 }
 function writeFile(path,raw){
   demand(Buffer.isBuffer(raw)&&raw.length>0&&raw.length<=MAX_RAW,'PRIVATE_FILE_BOUND');
-  let fd;try{fd=fs.openSync(path,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);
+  let fd;try{directory(dirname(path),true);fd=fs.openSync(path,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);
     fs.fchmodSync(fd,0o600);let n=0;while(n<raw.length){const count=fs.writeSync(fd,raw,n,raw.length-n);demand(count>0,'PRIVATE_WRITE_FAILED');n+=count;}
     fs.fsyncSync(fd);fs.closeSync(fd);fd=undefined;syncDirectory(dirname(path));demand(readFile(path,MAX_RAW,true).equals(raw),'PRIVATE_WRITE_FAILED');
   }catch{throw error('PRIVATE_WRITE_FAILED');}finally{if(fd!==undefined)fs.closeSync(fd);}
@@ -128,7 +130,7 @@ class PrivateCase {
       // A deliberate GET-only reconciliation uses a fresh empty private auth config.
       demand(!fs.existsSync(join(this.path,'config')),'AUTH_PRINCIPAL_REQUIRED');fs.mkdirSync(join(this.path,'config'),{mode:0o700});syncDirectory(this.path);}
   }
-  verify(){directory(this.path,true);const s=fs.lstatSync(this.path),p=fs.lstatSync(CASE_ROOT);demand(s.dev===this.identity.dev&&s.ino===this.identity.ino&&p.dev===this.parentIdentity.dev&&p.ino===this.parentIdentity.ino,'PRIVATE_DIRECTORY_REQUIRED');}
+  verify(){directory(CASE_ROOT,true);directory(this.path,true);const s=fs.lstatSync(this.path),p=fs.lstatSync(CASE_ROOT);demand(s.dev===this.identity.dev&&s.ino===this.identity.ino&&p.dev===this.parentIdentity.dev&&p.ino===this.parentIdentity.ino,'PRIVATE_DIRECTORY_REQUIRED');}
   write(name,raw){this.verify();demand(/^(?:[a-z0-9-]+\.json|responses\/[0-9]{3}-[a-z-]+\.(?:raw|json))$/u.test(name),'PRIVATE_FILE_REQUIRED');writeFile(join(this.path,name),raw);}
   read(name){this.verify();demand(/^[a-z0-9-]+\.json$/u.test(name),'PRIVATE_FILE_REQUIRED');return readFile(join(this.path,name),MAX_RAW,true);}
   response(kind,status,raw){demand(/^[a-z-]+$/u.test(kind)&&Number.isInteger(status)&&status>=100&&status<=599&&Buffer.isBuffer(raw),'RESPONSE_REFUSED');
@@ -153,7 +155,8 @@ function cliArgs(kind,expected){
 }
 async function cli(plan,store,kind,expected){
   const interactive=kind==='login';demand(!interactive||process.stdin.isTTY===true&&process.stdout.isTTY===true&&process.stderr.isTTY===true,'AUTH_TTY_REQUIRED');
-  return new Promise((accept,reject)=>{const child=spawn(join(plan.toolchain.sdk.root,'bin/gcloud'),cliArgs(kind,expected),{cwd:store.path,env:childEnvironment(plan,store),stdio:interactive?'inherit':['ignore','pipe','pipe'],shell:false});
+  return new Promise((accept,reject)=>{const child=spawn(plan.toolchain.python.executable,['-I','-B','-S','-c',UMASK_WRAPPER,join(plan.toolchain.sdk.root,'bin/gcloud'),...cliArgs(kind,expected)],
+    {cwd:store.path,env:childEnvironment(plan,store),stdio:interactive?'inherit':['ignore','pipe','pipe'],shell:false});
     let output=Buffer.alloc(0),failed=false;const stop=()=>{failed=true;child.kill('SIGKILL');};const timer=setTimeout(stop,interactive?300000:15000);
     if(!interactive){child.stdout.on('data',part=>{if(output.length+part.length>16384)stop();else output=Buffer.concat([output,part]);});let n=0;child.stderr.on('data',part=>{n+=part.length;if(n>16384)stop();});}
     child.once('error',()=>{clearTimeout(timer);reject(error('AUTH_COMMAND_FAILED'));});child.once('close',code=>{clearTimeout(timer);if(failed||code!==0)reject(error('AUTH_COMMAND_FAILED'));else accept(output);});});
