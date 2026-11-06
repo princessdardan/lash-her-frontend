@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "status": "AUTHORITATIVE_SOURCE_RUNNER_PASSED",
+  "sourceCommit": "9b82ef1fcb1d8febf79ea2fb34f8174e20c56554",
+  "regularPassed": 1881,
+  "serverOnlyPassed": 611,
+  "failed": 0,
+  "skipped": 0,
+  "testCommands": [
+    "npm run test:unit:src"
+  ],
+  "scope": "Source runner only; script/security suites and later candidate CI remain required.",
+  "priorFailure": "Existing scheduler probe became transitively server-only after actual writer configuration was added; both affected tests are now registered. Original failed full-source output retained."
+}
