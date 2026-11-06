@@ -40,6 +40,12 @@ const exactSourceAliases = [
     treeOid: "aa9ccfc57e3e4e6a385dad83aacde571a822bb52", sourceInventorySha256: "d9a2b1cc0a6a9e684fde632193393378f0f5e74d33b2f49752dacfbb5178a56b",
     profileSha256: "5c1c39650e35589f95bdedea22a39ff3023659cbb98bf423986d585483d0c98d" },
 ];
+const reviewedDeltaSources = [
+  "5ba30c60cfe8e6b7edfb577cb9d9e2c6579a5cab", "038864503a835b916d430b3626efecdab04a0ecf",
+  "f9558242893a4054df5c5ca5d39981977a929e1d", "9b1a822c97c2c3d07f52c41b5b43a51e4b86b9d4",
+  "4084a4b83259967661ef2013f1e8c49407df770c", "8745a463e310371a5c8a6b98dd12f5643feb289f",
+  "5893173368941a7e0f35c932ba0b1798fc48873d",
+];
 const database = { database: "frontend_historical_owned", major: 16, parentPid: 101, markers: ["1001", "1002", "1003", "1004"] };
 
 function originalFixture(environment = {}, options = {}) {
@@ -68,8 +74,8 @@ const closureIds = (source, family) => [...new Set([...source.sqlCredentialRequi
 test("every checked retained staging/preview profile verifies its actual complete selected Git tree and blobs", () => {
   const files = readdirSync(directory).filter(file => file.endsWith(".json"));
   assert.equal(files.length, 33);
-  const supported = [...files.map(file => file.slice(0, -5)), ...exactSourceAliases.map(row => row.sourceCommit)];
-  assert.equal(supported.length, 40);
+  const supported = [...files.map(file => file.slice(0, -5)), ...exactSourceAliases.map(row => row.sourceCommit), ...reviewedDeltaSources];
+  assert.equal(supported.length, 47);
   for (const sourceCommit of supported) {
     const source = verifiedSourceRequirements(repository, sourceCommit);
     assert.equal(source.status, "FRONTEND_HISTORICAL_SOURCE_VERIFIED");
@@ -80,6 +86,31 @@ test("every checked retained staging/preview profile verifies its actual complet
     assert.equal(source.sourceAdmission, "not-qualified-by-current-candidate");
     assert.ok(Object.isFrozen(source.providerFamilies[0]));
   }
+});
+
+test("seven reviewed deltas reconstruct exact profiles and retain five missing-source deployments as unknown", () => {
+  for (const sourceCommit of reviewedDeltaSources) {
+    const source = verifiedSourceRequirements(repository, sourceCommit);
+    assert.equal(source.sourceCommit, sourceCommit);
+    assert.equal(source.providerFamilies.length, 36);
+    assert.equal(source.sourceAdmission, "not-qualified-by-current-candidate");
+  }
+  for (const sourceCommit of ["dpl_5JDDu6BaZcM4sg9wip65MKCwmhuL", "dpl_7mG5ncqdKCBhpxNJ281Amqw9upe4", "dpl_7odqGL3divDTEMqdBbkZWu2FzqX4", "dpl_BYQiXkALFy2hjG2KVKUG7XEgYpyE", "dpl_rzM1LuvDQzn4N1hKouWRymhPqf7j"])
+    assert.throws(() => verifiedSourceRequirements(repository, sourceCommit), rejected);
+});
+
+test("874 records the exact direct Sanity caller, alternative credentials and external editorial residual", async () => {
+  const sourceCommit = "8745a463e310371a5c8a6b98dd12f5643feb289f", source = verifiedSourceRequirements(repository, sourceCommit);
+  assert.ok(source.manualCredentialProfiles.includes("scripts/update-approved-service-descriptions.mjs"));
+  const editorial = source.providerFamilies.find(row => row.familyId === "sanity.editorial"), condition = editorial.configurationConditions[0];
+  assert.deepEqual(condition.requiredCredentialPaths, [["SANITY_API_READ_TOKEN"], ["SANITY_WRITE_TOKEN"]]);
+  assert.deepEqual(condition.mutationExecutions, [{ kind: "direct-caller", entrypoint: "scripts/update-approved-service-descriptions.mjs" }]);
+  assert.ok(editorial.annotations.some(row => row.file === "scripts/update-approved-service-descriptions.mjs"));
+  const fixture = originalFixture({}, { sourceCommit, kind: "direct-caller", entrypoint: "scripts/update-approved-service-descriptions.mjs" });
+  const sql = await observe(source, { binding: fixture.binding, originalConfiguration: fixture.original, clientsByKey: new Map(), physicalDatabasesByKey: new Map(), verifySession: async () => {} });
+  const result = derive(source, fixture.binding, fixture.original, sql);
+  assert.ok(result.unresolvedExternalCapabilityFamilyIds.includes("sanity.editorial"));
+  assert.equal(result.capabilityClosures.find(row => row.familyId === "sanity.editorial")?.externalProviderCapability, "not-declared-absent");
 });
 
 test("seven closed exact-tree aliases materialize only commit-bound profile fields", () => {
@@ -356,9 +387,9 @@ test("manual template mutation scope and original staging broadcast guard use ch
 });
 
 
-test("all 40 exact reviewed revisions carry six bounded private-SQL predicates or actual Mux plugin absence", async () => {
-  const supported = [...readdirSync(directory).map(file => file.slice(0, -5)), ...exactSourceAliases.map(row => row.sourceCommit)];
-  assert.equal(supported.length, 40);
+test("all 47 exact reviewed revisions carry six bounded private-SQL predicates or actual Mux plugin absence", async () => {
+  const supported = [...readdirSync(directory).map(file => file.slice(0, -5)), ...exactSourceAliases.map(row => row.sourceCommit), ...reviewedDeltaSources];
+  assert.equal(supported.length, 47);
   for (const sourceCommit of supported) {
     const source = verifiedSourceRequirements(repository, sourceCommit), fixture = originalFixture({}, { sourceCommit: source.sourceCommit });
     const sql = await observe(source, { binding: fixture.binding, originalConfiguration: fixture.original, clientsByKey: new Map(), physicalDatabasesByKey: new Map(), verifySession: async () => {} });

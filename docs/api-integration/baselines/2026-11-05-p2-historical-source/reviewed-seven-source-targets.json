@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "format": "frontend-historical-reviewed-delta-targets-v1",
+  "targets": [
+    {"sourceCommit":"5ba30c60cfe8e6b7edfb577cb9d9e2c6579a5cab","baseSourceCommit":"273a9821a097a7a0beeb918e8b1c4c51932f73ab","auditExtraFiles":[]},
+    {"sourceCommit":"038864503a835b916d430b3626efecdab04a0ecf","baseSourceCommit":"273a9821a097a7a0beeb918e8b1c4c51932f73ab","auditExtraFiles":[]},
+    {"sourceCommit":"f9558242893a4054df5c5ca5d39981977a929e1d","baseSourceCommit":"45223fec3ee71bf63cfb0e44a94a0a7b3e282ca1","auditExtraFiles":[]},
+    {"sourceCommit":"9b1a822c97c2c3d07f52c41b5b43a51e4b86b9d4","baseSourceCommit":"273a9821a097a7a0beeb918e8b1c4c51932f73ab","auditExtraFiles":[]},
+    {"sourceCommit":"4084a4b83259967661ef2013f1e8c49407df770c","baseSourceCommit":"273a9821a097a7a0beeb918e8b1c4c51932f73ab","auditExtraFiles":[]},
+    {"sourceCommit":"8745a463e310371a5c8a6b98dd12f5643feb289f","baseSourceCommit":"1d8342ab93b6713bebbb3a9caabaa54a246f9957","auditExtraFiles":["scripts/update-approved-service-descriptions.mjs"]},
+    {"sourceCommit":"5893173368941a7e0f35c932ba0b1798fc48873d","baseSourceCommit":"9b899e4e02afe787f25315a5ef1912d4d32d6080","auditExtraFiles":[]}
+  ]
+}

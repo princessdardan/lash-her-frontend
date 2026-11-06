@@ -47,6 +47,13 @@ const approved = {
   "e82645b6c045ce88dbaacf3c32cff8606a8592a8": {"treeOid":"eca5b5ead0d026822a68788f9332ae550f6fbfe0","profileSha256":"c746ac0183027a202f932c3c47465743799ceed3f26815ec090403a1f3182b13","sourceProfileCommit":"45223fec3ee71bf63cfb0e44a94a0a7b3e282ca1"},
   "ea1772b20453a494dcd3ff635066ebd385906f6b": {"treeOid":"87087786f4795b67eb4781efc0c8dc5a1c71c937","profileSha256":"dc00e364f01be0da4f591913cb4c69ac6cbc43e7f388033bf3de78ed71319484"},
   "fd08fe169b529f7d9edde3197873136a991ce863": {"treeOid":"96428ec3cb30f98f6809fab459e6172eb043f534","profileSha256":"07e230b1cf2985f1db65bd5ee7a39c07b631cb80d74730f2bc5eab17d094e0d8"},
+  "5ba30c60cfe8e6b7edfb577cb9d9e2c6579a5cab": {"treeOid":"713af0ed9c24cf5ed6056b53b5f6ee3ce5b2f59f","profileSha256":"bf35425adcb99e0d37643bfdf09ecfcdc036e423b8390fe12302498994175089","sourceInventorySha256":"996f935f6078b52df2d17d7f8e048aecf1d882699829a25f39cc6481b5ba36cb","deltaSha256":"e488856be221165d303cb991fbf8708824c7d26b6e8a29ba8dd84ff238af7acc"},
+  "038864503a835b916d430b3626efecdab04a0ecf": {"treeOid":"03a09635c53dc5c5ed420b8298551fd302960569","profileSha256":"13ef9ee604a978e2ff1f80c066f8fc8e1708702475b7a1fce52a661b68045fec","sourceInventorySha256":"07bceacb61980b913a0a45e1ab88442bc407e83d93731540473308df001afe91","deltaSha256":"218063ff94084075eaf994163d3e266ae11a27ae7944f6db3022dc410babaaf1"},
+  "f9558242893a4054df5c5ca5d39981977a929e1d": {"treeOid":"d12ffb21187193ac12deebaa46d1eb1bdaee9441","profileSha256":"7e36f7440dc44a1e942d13b4d9f6f86baa6a72fcc810769b418b67f4a05593b8","sourceInventorySha256":"7ffe52609365c16e84dc534a236d1191d6760ace10e91d1e534009ca093f905c","deltaSha256":"126577e96ae584f390822a71f94b9d92b26e5ddc1145c544248627e6aeddd52e"},
+  "9b1a822c97c2c3d07f52c41b5b43a51e4b86b9d4": {"treeOid":"b388f89113ced663dfe91022246bf69e00aff134","profileSha256":"a9e7250ed2edc4e56dba484f9b76dc3ddb073c582ecffdc0c272b5d7d2e588e4","sourceInventorySha256":"b3a88de5551a60cd9d59416f47221c3221db8a468fc80ce82391d6ff4a1dcf02","deltaSha256":"7f2b5d71f3ead7e28de9c546dd281b7114b99e8240f8a114b8987dc72be36a92"},
+  "4084a4b83259967661ef2013f1e8c49407df770c": {"treeOid":"75e8e610910de0caf762a620712e6e65215b19a4","profileSha256":"78fe5c6d50894f37d3707a907a3bc1a1cd4c1d3a77966c42988926dda761381e","sourceInventorySha256":"452f2b9e0518d29cf807acec1fa76a7c300a5cb28681fc6fafd4735e7f7ff546","deltaSha256":"3426c69b689a249552e055a315c2b18c3166782ada11d1f887be0f07a7c53c97"},
+  "8745a463e310371a5c8a6b98dd12f5643feb289f": {"treeOid":"e5cc9648b1d3a717436079e5a2fbe3c374bcb873","profileSha256":"fd3efc1a7b9cd81024389a783401714e9b0e46c53fb7fd275f7bcae10a2f2a08","sourceInventorySha256":"e01a8a406eb94b67d4b02c6b0f3659d1d32d24fbcbe44a6b86d44dee782974d9","deltaSha256":"465275aa70f73aac89e9b8a09d133c01a54aece76e86b8cd51e25a79ee6ed2d1"},
+  "5893173368941a7e0f35c932ba0b1798fc48873d": {"treeOid":"326df0174aef4dcd58e518ba74455141782c3cfa","profileSha256":"1494c8847a03ad40a52d7e98ed8bee0eb85b8c5fecc39fb59f781f4a03e7037b","sourceInventorySha256":"3ce5e0df635471ecf9facb55f9b20f9433ffb0789b23339d06c7f5a35c9b74d1","deltaSha256":"1a13dcbd2717066e47d2f7036923882e0cf6e6b42e958dfbde151178245e68fe"},
 };
 const proofs = new WeakSet(), sqlProofs = new WeakSet(), storeProofs = new WeakSet(), privateOriginalValues = new WeakMap(), privateSqlContexts = new WeakMap();
 const refusal = () => new Error("FRONTEND_HISTORICAL_SOURCE_REFUSED");
@@ -73,6 +80,94 @@ function materializeExactSourceProfile(sourceCommit, storedProfile) {
   const materialized = { ...storedProfile, sourceCommit, sourceInventorySha256: historicalSourceSha256(inventory), inventory };
   demand(historicalSourceSha256(materialized) === selected.profileSha256);
   return materialized;
+}
+
+const deltaProfileFields = ["version", "sdkDependencies", "sourceReviewDisposition", "sqlCredentialRequirements", "manualCredentialProfiles"];
+const deltaInventoryFields = ["version", "scope", "parserVersion", "absentConfigurations"];
+const deltaInventoryGroups = ["configurations", "providerPaths", ...["routes", "manual", "schedules", "deferred", "actions", "inlineActions", "renders", "dynamicExecution", "sql"].map(group => `entrypoints.${group}`)];
+const deltaSixFamilies = ["google.identity", "google.oauth", "google.calendar", "sanity.editorial", "sanity.callbacks", "mux.studio"];
+const exactKeys = (value, keys) => value && typeof value === "object" && !Array.isArray(value) &&
+  JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+const codepoint = (left, right) => left < right ? -1 : left > right ? 1 : 0;
+const groupValue = (profile, group) => group.startsWith("entrypoints.") ? profile.inventory.entrypoints[group.slice(12)] : profile.inventory[group];
+const setGroupValue = (profile, group, value) => { if (group.startsWith("entrypoints.")) profile.inventory.entrypoints[group.slice(12)] = value; else profile.inventory[group] = value; };
+const sameSet = (rows, expected, key) => Array.isArray(rows) && rows.length === expected.length &&
+  JSON.stringify(rows.map(row => row[key]).sort()) === JSON.stringify([...expected].sort());
+
+function materializeReviewedDelta(sourceCommit) {
+  const selected = approved[sourceCommit];
+  demand(selected?.deltaSha256 && selected.sourceInventorySha256);
+  const register = JSON.parse(readFileSync(new URL("./profiles/frontend-historical-source-deltas-v1.json", import.meta.url), "utf8"));
+  const deltaCommits = Object.entries(approved).filter(([, row]) => row.deltaSha256).map(([key]) => key).sort();
+  demand(exactKeys(register, ["version", "format", "profiles"]) && register.version === 1 && register.format === "frontend-historical-reviewed-delta-register-v1" &&
+    exactKeys(register.profiles, deltaCommits));
+  const delta = register.profiles[sourceCommit];
+  demand(exactKeys(delta, ["version", "format", "base", "target", "invariantProfileFields", "profileFieldReplacements", "invariantInventoryFields", "inventoryFieldReplacements", "sourceFileOperations", "inventoryFileGroups", "invariantInventoryGroups", "privateSqlReviewHashFamilies", "providerFamilyReplacements", "invariantProviderFamilies", "sixFamilyAudit"]) &&
+    delta.version === 1 && delta.format === "frontend-historical-reviewed-profile-delta-v1" && historicalSourceSha256(delta) === selected.deltaSha256 &&
+    exactKeys(delta.base, ["sourceCommit", "treeOid", "profileSha256"]) && exactKeys(delta.target, ["sourceCommit", "treeOid", "profileSha256", "sourceInventorySha256"]) &&
+    delta.target.sourceCommit === sourceCommit && delta.target.treeOid === selected.treeOid && delta.target.profileSha256 === selected.profileSha256 &&
+    delta.target.sourceInventorySha256 === selected.sourceInventorySha256);
+  const baseApproved = approved[delta.base.sourceCommit];
+  demand(baseApproved && !baseApproved.sourceProfileCommit && !baseApproved.deltaSha256 && baseApproved.treeOid === delta.base.treeOid && baseApproved.profileSha256 === delta.base.profileSha256);
+  const profile = JSON.parse(readFileSync(new URL(`./profiles/frontend-historical-sources/${delta.base.sourceCommit}.json`, import.meta.url), "utf8"));
+  demand(profile.sourceCommit === delta.base.sourceCommit && profile.treeOid === delta.base.treeOid && historicalSourceSha256(profile) === delta.base.profileSha256);
+
+  demand(sameSet([...delta.invariantProfileFields, ...delta.profileFieldReplacements], deltaProfileFields, "field") &&
+    sameSet([...delta.invariantInventoryFields, ...delta.inventoryFieldReplacements], deltaInventoryFields, "field") &&
+    sameSet([...delta.inventoryFileGroups, ...delta.invariantInventoryGroups], deltaInventoryGroups, "group"));
+  for (const row of delta.invariantProfileFields) demand(exactKeys(row, ["field", "sha256"]) && historicalSourceSha256(profile[row.field]) === row.sha256);
+  for (const row of delta.profileFieldReplacements) {
+    demand(exactKeys(row, ["field", "baseSha256", "target"]) && historicalSourceSha256(profile[row.field]) === row.baseSha256); profile[row.field] = structuredClone(row.target);
+  }
+  for (const row of delta.invariantInventoryFields) demand(exactKeys(row, ["field", "sha256"]) && historicalSourceSha256(profile.inventory[row.field]) === row.sha256);
+  for (const row of delta.inventoryFieldReplacements) {
+    demand(exactKeys(row, ["field", "baseSha256", "target"]) && historicalSourceSha256(profile.inventory[row.field]) === row.baseSha256); profile.inventory[row.field] = structuredClone(row.target);
+  }
+  profile.sourceCommit = sourceCommit; profile.treeOid = delta.target.treeOid; profile.inventory.sourceCommit = sourceCommit; profile.inventory.treeOid = delta.target.treeOid;
+  const sourceRows = new Map(profile.inventory.sourceFiles.map(row => [row.file, row]));
+  demand(Array.isArray(delta.sourceFileOperations) && new Set(delta.sourceFileOperations.map(row => row.file)).size === delta.sourceFileOperations.length);
+  for (const row of delta.sourceFileOperations) {
+    demand(exactKeys(row, ["file", "operation", "base", "target"]) && ["add", "replace", "delete"].includes(row.operation) &&
+      JSON.stringify(sourceRows.get(row.file) ?? null) === JSON.stringify(row.base));
+    if (row.operation === "delete") { demand(row.target === null); sourceRows.delete(row.file); }
+    else { demand(row.target?.file === row.file); sourceRows.set(row.file, structuredClone(row.target)); }
+  }
+  profile.inventory.sourceFiles = [...sourceRows.values()].sort((left, right) => codepoint(left.file, right.file));
+  for (const row of delta.invariantInventoryGroups) demand(exactKeys(row, ["group", "sha256"]) && historicalSourceSha256(groupValue(profile, row.group)) === row.sha256);
+  for (const row of delta.inventoryFileGroups) {
+    const before = groupValue(profile, row.group), byFile = Map.groupBy(before, item => item.file);
+    demand(exactKeys(row, ["group", "baseSha256", "targetSha256", "replacements"]) && historicalSourceSha256(before) === row.baseSha256 &&
+      Array.isArray(row.replacements) && new Set(row.replacements.map(item => item.file)).size === row.replacements.length);
+    const replacements = new Map();
+    for (const change of row.replacements) {
+      demand(exactKeys(change, ["file", "baseRecordsSha256", "targetRecords"]) && historicalSourceSha256(byFile.get(change.file) ?? []) === change.baseRecordsSha256 &&
+        Array.isArray(change.targetRecords) && change.targetRecords.every(item => item.file === change.file)); replacements.set(change.file, change.targetRecords);
+    }
+    const after = profile.inventory.sourceFiles.flatMap(source => structuredClone(replacements.get(source.file) ?? byFile.get(source.file) ?? []));
+    demand(historicalSourceSha256(after) === row.targetSha256); setGroupValue(profile, row.group, after);
+  }
+  const audit = delta.sixFamilyAudit;
+  demand(exactKeys(audit, ["baseSourceCommit", "baseSha256", "target", "targetSha256"]) && audit.baseSourceCommit === delta.base.sourceCommit &&
+    exactKeys(audit.target, ["sourceCommit", "files", "sdkDependencies"]) && audit.target.sourceCommit === sourceCommit && historicalSourceSha256(audit.target) === audit.targetSha256 &&
+    Array.isArray(audit.target.files) && audit.target.files.every(row => row.absent === true ? !profile.inventory.sourceFiles.some(source => source.file === row.file) :
+      profile.inventory.sourceFiles.some(source => source.file === row.file && source.blobOid === row.blobOid && source.sha256 === row.sha256)) &&
+    Array.isArray(audit.target.sdkDependencies) && audit.target.sdkDependencies.every(row => profile.sdkDependencies.some(source => JSON.stringify(source) === JSON.stringify(row))));
+  const familyIds = profile.providerFamilies.map(row => row.familyId);
+  demand(new Set(familyIds).size === familyIds.length && sameSet([...delta.privateSqlReviewHashFamilies, ...delta.providerFamilyReplacements, ...delta.invariantProviderFamilies], familyIds, "familyId"));
+  for (const row of delta.invariantProviderFamilies) demand(exactKeys(row, ["familyId", "sha256"]) && historicalSourceSha256(profile.providerFamilies.find(family => family.familyId === row.familyId)) === row.sha256);
+  for (const row of delta.providerFamilyReplacements) {
+    const index = profile.providerFamilies.findIndex(family => family.familyId === row.familyId);
+    demand(exactKeys(row, ["familyId", "baseSha256", "target"]) && index >= 0 && row.target?.familyId === row.familyId && historicalSourceSha256(profile.providerFamilies[index]) === row.baseSha256);
+    profile.providerFamilies[index] = structuredClone(row.target);
+  }
+  for (const row of delta.privateSqlReviewHashFamilies) {
+    const family = profile.providerFamilies.find(item => item.familyId === row.familyId);
+    demand(exactKeys(row, ["familyId", "baseFamilySha256"]) && deltaSixFamilies.includes(row.familyId) && historicalSourceSha256(family) === row.baseFamilySha256 && family.configurationConditions[0]?.privateSqlPredicate);
+    family.configurationConditions[0].sourcePredicateReviewSha256 = audit.targetSha256;
+  }
+  profile.sourceInventorySha256 = delta.target.sourceInventorySha256;
+  demand(historicalSourceSha256(profile.inventory) === profile.sourceInventorySha256 && historicalSourceSha256(profile) === delta.target.profileSha256);
+  return profile;
 }
 
 function gitReader(repository) {
@@ -141,7 +236,8 @@ export function verifiedSourceRequirements(repository, sourceCommit) {
   try {
     demand(commit(sourceCommit) && approved[sourceCommit]);
     const profileCommit = approved[sourceCommit].sourceProfileCommit ?? sourceCommit;
-    const profile = JSON.parse(readFileSync(new URL(`./profiles/frontend-historical-sources/${profileCommit}.json`, import.meta.url), "utf8"));
+    const profile = approved[sourceCommit].deltaSha256 ? materializeReviewedDelta(sourceCommit) :
+      JSON.parse(readFileSync(new URL(`./profiles/frontend-historical-sources/${profileCommit}.json`, import.meta.url), "utf8"));
     return verifyHistoricalFrontendSourceProfile(repository, sourceCommit, profile);
   } catch { throw refusal(); }
 }
@@ -363,8 +459,9 @@ const calendarClientKeys = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_
 function privateSqlPredicate(requirements, family, selected, catalog, sqlEvidence) {
   const predicate = family.configurationConditions[0]?.privateSqlPredicate;
   if (!predicate) return false;
-  // All admitted manual programs are individually source-reviewed. None imports
-  // these six mutation paths; arbitrary direct helper/operator calls are refused.
+  // Admitted manual programs are individually source-reviewed for frontend
+  // private SQL. Explicitly inventoried external mutations, including the 874
+  // Sanity caller, retain their separate external-capability residual.
   if (selected.kind === "direct-caller") return requirements.manualCredentialProfiles.includes(selected.entrypoint);
   const absent = key => !catalog.has(key);
   const sqlAbsent = sqlEvidence.facts.every(row => row.disposition === "absent-from-immutable-original-key-catalog");

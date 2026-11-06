@@ -1,9 +1,10 @@
 import {execFileSync} from 'node:child_process';
 import {createRequire} from 'node:module';
-import {readFileSync,writeFileSync} from 'node:fs';
+import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 // This regenerates reviewed source data/code pins; it does not authorize source or runtime capability.
-if(!process.argv.includes('--write-reviewed-profiles'))throw Error('Explicit --write-reviewed-profiles required');
+const deltaMode=process.argv.includes('--write-reviewed-seven-candidates');
+if(!process.argv.includes('--write-reviewed-profiles')&&!deltaMode)throw Error('Explicit --write-reviewed-profiles or --write-reviewed-seven-candidates required');
 const root=fileURLToPath(new URL('../../../../',import.meta.url)).replace(/\/$/u,'');
 const ts=createRequire(root+'/package.json')('typescript');
 const {historicalSourceSha256:hash}=await import(pathToFileURL(root+'/ops/platform/frontend-historical-source.mjs'));
@@ -12,6 +13,11 @@ const previews=JSON.parse(readFileSync(new URL('./preview-source-refs.json',impo
 const revisions=[...new Set([...reviewedRevisions,...previews])];
 const referenceSignatures=new Map();
 const sixAudit=JSON.parse(readFileSync(new URL('../2026-11-05-historical-capability-followup/reviewed-six-source-gates.json',import.meta.url),'utf8'));
+const reviewedSeven=JSON.parse(readFileSync(new URL('./reviewed-seven-source-targets.json',import.meta.url),'utf8'));
+if(reviewedSeven.version!==1||reviewedSeven.format!=='frontend-historical-reviewed-delta-targets-v1')throw Error('Reviewed seven target format drift');
+const reviewedSevenBySource=new Map(reviewedSeven.targets.map(target=>[target.sourceCommit,target]));
+if(reviewedSevenBySource.size!==7||reviewedSeven.targets.some(target=>!/^([a-f0-9]{40})$/u.test(target.sourceCommit)||!/^([a-f0-9]{40})$/u.test(target.baseSourceCommit)||!Array.isArray(target.auditExtraFiles)))throw Error('Reviewed seven targets drift');
+if(deltaMode){revisions.splice(0,revisions.length,...reviewedRevisions,...reviewedSeven.targets.map(target=>target.sourceCommit));mkdirSync('/private/tmp/lash-her-reviewed-seven-candidates',{recursive:true,mode:0o700});}
 const sixFamilyIds=['google.identity','google.oauth','google.calendar','sanity.editorial','sanity.callbacks','mux.studio'];
 const git=(args,input)=>execFileSync('git',['--no-replace-objects','--no-optional-locks',...args],{cwd:root,input,maxBuffer:96000000});
 const codeFile=f=>/^(?:src|scripts|ops)\//u.test(f)&&/\.(?:[cm]?[jt]sx?|py|sh)$/u.test(f)&&!/(?:^|\/)(?:tests|__tests__|__pycache__)(?:\/|$)|\.(?:test|spec)\./u.test(f);
@@ -70,7 +76,9 @@ for(const sourceCommit of revisions){
   if(/^scripts\/|^ops\//u.test(row.file)&&codeFile(row.file))entrypoints.manual.push({file:row.file,blobOid:row.blobOid,sha256,scope:row.file.startsWith('scripts/')?'tracked-script':'operator-program-requires-selected-entrypoint'});
   if(!/\.[cm]?[jt]sx?$/u.test(row.file))continue;
   const text=bytes.toString(),ast=ts.createSourceFile(row.file,text,ts.ScriptTarget.Latest,true,/tsx$|jsx$/u.test(row.file)?ts.ScriptKind.TSX:ts.ScriptKind.TS);if(ast.parseDiagnostics.length)throw Error('parse:'+row.file);
-  const imports=ast.statements.filter(ts.isImportDeclaration).map(s=>s.moduleSpecifier.text),moduleProvider=provider(row.file)??imports.map(provider).find(Boolean)??null;
+  const imports=ast.statements.filter(ts.isImportDeclaration).map(s=>s.moduleSpecifier.text);let moduleProvider=provider(row.file)??imports.map(provider).find(Boolean)??null;
+  const reviewedSanityCaller=sourceCommit==='8745a463e310371a5c8a6b98dd12f5643feb289f'&&row.file==='scripts/update-approved-service-descriptions.mjs';
+  if(reviewedSanityCaller)moduleProvider='sanity';
   const deferredNames=new Set(['after','waitUntil','queueMicrotask','setTimeout','setInterval']);for(const statement of ast.statements)if(ts.isImportDeclaration(statement)&&['next/server','@vercel/functions'].includes(statement.moduleSpecifier.text)&&statement.importClause?.namedBindings&&ts.isNamedImports(statement.importClause.namedBindings))for(const element of statement.importClause.namedBindings.elements)if(['after','waitUntil'].includes(element.propertyName?.text??element.name.text))deferredNames.add(element.name.text);
   const exports=[];for(const statement of ast.statements){if(ts.isExportDeclaration(statement)&&statement.exportClause&&ts.isNamedExports(statement.exportClause)){exports.push(...statement.exportClause.elements.filter(e=>!e.isTypeOnly).map(e=>e.name.text));continue;}if(!statement.modifiers?.some(m=>m.kind===ts.SyntaxKind.ExportKeyword))continue;if(ts.isFunctionDeclaration(statement)&&statement.name)exports.push(statement.name.text);if(ts.isVariableStatement(statement))for(const d of statement.declarationList.declarations){if(ts.isIdentifier(d.name))exports.push(d.name.text);else for(const e of d.name.elements)if(e.name&&ts.isIdentifier(e.name))exports.push(e.name.text);}if(ts.isExportDeclaration(statement)&&statement.exportClause&&ts.isNamedExports(statement.exportClause))exports.push(...statement.exportClause.elements.map(e=>e.name.text));}
   if(/^src\/app\/.*\/route\.[jt]s$/u.test(row.file))entrypoints.routes.push({file:row.file,blobOid:row.blobOid,sha256,methods:exports.filter(n=>['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].includes(n))});
@@ -85,7 +93,7 @@ for(const sourceCommit of revisions){
     if(moduleProvider&&['then','catch','finally'].includes(name)&&(ts.isExpressionStatement(node.parent)||ts.isVoidExpression(node.parent)))entrypoints.deferred.push({...meta,kind:'unawaited-provider-continuation'});
     if(name==='eval'||node.expression.kind===ts.SyntaxKind.ImportKeyword&&string(node.arguments[0])===null)entrypoints.dynamicExecution.push(meta);
     const endpoint=node.arguments.map(template).find(s=>typeof s==='string'&&(s.startsWith('/')||/^https?:\/\//u.test(s)))??null;
-    if((row.file.startsWith('src/')||row.file.startsWith('scripts/'))&&(['fetch','highlevel','request','createShipment','refreshShipment','buyShipment','refundShipment','deleteShipment','squareRequest','squareHttpRequest'].includes(name)||/\.(?:emails|contacts|broadcasts|templates|automations|events|customers|cards|payments|refunds|invoices|orders|segments|topics|calendarList)\./u.test(callee)||(moduleProvider&&/^(?:create|update|delete|send|remove|stop|refund|capture|publish|insert|patch|upsert)(?:[A-Z_]|$)/u.test(name))))providerSites.push({...meta,provider:provider(endpoint??'')??moduleProvider??'unclassified',endpoint});
+    if((row.file.startsWith('src/')||row.file.startsWith('scripts/'))&&(['fetch','highlevel','request','createShipment','refreshShipment','buyShipment','refundShipment','deleteShipment','squareRequest','squareHttpRequest'].includes(name)||reviewedSanityCaller&&['transaction','patch','set','commit','createClient','fetch'].includes(name)||/\.(?:emails|contacts|broadcasts|templates|automations|events|customers|cards|payments|refunds|invoices|orders|segments|topics|calendarList)\./u.test(callee)||(moduleProvider&&/^(?:create|update|delete|send|remove|stop|refund|capture|publish|insert|patch|upsert)(?:[A-Z_]|$)/u.test(name))))providerSites.push({...meta,provider:provider(endpoint??'')??moduleProvider??'unclassified',endpoint});
    }
    if(ts.isObjectLiteralExpression(node)&&row.file==='ops/platform/vercel-config.mjs'){const p=n=>node.properties.find(x=>ts.isPropertyAssignment(x)&&x.name.getText(ast).replaceAll('"','')===n)?.initializer;const path=string(p('path')),schedule=string(p('schedule'));if(path&&schedule)entrypoints.schedules.push({path,schedule,file:row.file,blobOid:row.blobOid,sha256});}
    ts.forEachChild(node,visit);};visit(ast);
@@ -96,7 +104,8 @@ for(const sourceCommit of revisions){
    absentConfigurations:['vercel.json'].filter(f=>!all.some(r=>r.file===f))};
  const lock=JSON.parse(bodies.get('package-lock.json')?.toString()??'{}');const sdkNames=['pg','drizzle-orm','resend','square','googleapis','google-auth-library','@upstash/redis','@sanity/client','next-auth','@auth/core','next-sanity','sanity','sanity-plugin-mux-input','@mux/mux-node','@mux/mux-player-react'];const sdkDependencies=sdkNames.flatMap(name=>{const p=lock.packages?.['node_modules/'+name]??lock.dependencies?.[name];return p?[{name,version:p.version,integrity:p.integrity??null}]:[];});
  const providerSignatures={};for(const name of Object.keys(families)){const selectedFiles=sourceFiles.filter(row=>row.file.startsWith('src/')||row.file.startsWith('scripts/')||['next.config.ts','vercel.mjs','sanity.config.ts','sanity.cli.ts'].includes(row.file));providerSignatures[name]=hash({selectedFiles,sdkDependencies});if(reviewedRevisions.includes(sourceCommit)){const signatures=referenceSignatures.get(name)??new Set();signatures.add(providerSignatures[name]);referenceSignatures.set(name,signatures);}}
- const auditedSix=sixAudit.profiles.find(p=>p.sourceCommit===sourceCommit);
+ const reviewedTarget=reviewedSevenBySource.get(sourceCommit),baseAudit=reviewedTarget&&sixAudit.profiles.find(p=>p.sourceCommit===reviewedTarget.baseSourceCommit);
+ const auditedSix=reviewedTarget?{sourceCommit,files:[...new Set([...baseAudit.files.map(row=>row.file),...reviewedTarget.auditExtraFiles])].sort().map(file=>sourceFiles.find(row=>row.file===file)??{file,absent:true}),sdkDependencies:baseAudit.sdkDependencies.map(expected=>sdkDependencies.find(row=>row.name===expected.name)??expected)}:sixAudit.profiles.find(p=>p.sourceCommit===sourceCommit);
  const sixReviewed=!!auditedSix&&auditedSix.files.every(expected=>expected.absent?!sourceFiles.some(r=>r.file===expected.file):sourceFiles.some(r=>r.file===expected.file&&r.blobOid===expected.blobOid&&r.sha256===expected.sha256))&&auditedSix.sdkDependencies.every(expected=>sdkDependencies.some(r=>r.name===expected.name&&r.version===expected.version&&r.integrity===expected.integrity));
  if(!sixReviewed)throw Error('Six-family source/SDK audit drift:'+sourceCommit);
  const muxStudioAbsent=!bodies.get('src/sanity/sanity.config.ts')?.toString().includes('sanity-plugin-mux-input')&&!bodies.has('src/sanity/schemas/documents/short-course.ts');
@@ -111,7 +120,9 @@ for(const sourceCommit of revisions){
   if(name==='highlevel'&&!['oauth','webhooks'].includes(suffix))requiredCredentialPaths=[['DATABASE_URL','HIGHLEVEL_CREDENTIAL_ENCRYPTION_KEY']];
   if(familyId==='highlevel.oauth')requiredCredentialPaths=[['DATABASE_URL','HIGHLEVEL_CLIENT_ID','HIGHLEVEL_CLIENT_SECRET']];if(familyId==='highlevel.webhooks')requiredCredentialPaths=[['DATABASE_URL','HIGHLEVEL_LOCATION_ID']];
   const credentialPathsReviewed=reviewedRevisions.includes(sourceCommit)||referenceSignatures.get(name)?.has(providerSignatures[name]);if(!credentialPathsReviewed)requiredCredentialPaths=[];
-  const mutationExecutions=credentialPathsReviewed&&familyId==='resend.templates'?[{kind:'direct-caller',entrypoint:'scripts/seed-resend-templates.ts'},{kind:'direct-caller',entrypoint:'scripts/update-contact-popup-resend-template.ts'}]:undefined;const originalSelectorClosures=credentialPathsReviewed&&familyId==='resend.broadcasts'?[{kind:'deployment',key:'APP_ENV',equals:'staging',guard:'assertStagingBulkEmailDisabled at every reachable create/send caller; unused update/remove facade is not an entrypoint'}]:undefined;
+  const directSanityEditorial=sourceCommit==='8745a463e310371a5c8a6b98dd12f5643feb289f'&&familyId==='sanity.editorial';
+  if(directSanityEditorial)requiredCredentialPaths=[['SANITY_API_READ_TOKEN'],['SANITY_WRITE_TOKEN']];
+  const mutationExecutions=directSanityEditorial?[{kind:'direct-caller',entrypoint:'scripts/update-approved-service-descriptions.mjs'}]:credentialPathsReviewed&&familyId==='resend.templates'?[{kind:'direct-caller',entrypoint:'scripts/seed-resend-templates.ts'},{kind:'direct-caller',entrypoint:'scripts/update-contact-popup-resend-template.ts'}]:undefined;const originalSelectorClosures=credentialPathsReviewed&&familyId==='resend.broadcasts'?[{kind:'deployment',key:'APP_ENV',equals:'staging',guard:'assertStagingBulkEmailDisabled at every reachable create/send caller; unused update/remove facade is not an entrypoint'}]:undefined;
   const privateSqlPredicate=sixReviewed&&sixFamilyIds.includes(familyId)?({
     'google.identity':'google-auth-signing-absence-v1',
     'google.oauth':'google-oauth-all-alternate-paths-v1',
@@ -132,10 +143,12 @@ for(const sourceCommit of revisions){
  }
  const dbFiles=sourceFiles.filter(r=>r.file.startsWith('src/')&&/\.[cm]?[jt]sx?$/u.test(r.file));const dbReads=[];for(const f of dbFiles){const text=bodies.get(f.file).toString(),lines=text.split('\n');for(let index=0;index<lines.length;index++)for(const match of lines[index].matchAll(/(?:process\.env\.|env\.)([A-Z_]*(?:DATABASE_URL|POSTGRES_URL|DB_URL|PGPASSWORD|PGHOST|PGUSER|PGDATABASE|PGPORT|PGPASSFILE)[A-Z_]*)/gu))dbReads.push({key:match[1],annotation:{...f,lineStart:index+1,lineEnd:index+1,symbol:'source-SQL-credential-read',excerptSha256:hash(lines[index])}});}
  const sqlCredentialRequirements=[...new Set(dbReads.map(r=>r.key))].sort().map(key=>({requirementId:'sql-credentials.'+key,key,sourceScope:'deployment-and-supported-tracked-manual-entrypoints',annotations:dbReads.filter(r=>r.key===key).map(r=>r.annotation)}));
- const manualCredentialProfiles=['scripts/seed-resend-templates.ts','scripts/update-contact-popup-resend-template.ts','scripts/highlevel-backfill.ts','scripts/highlevel-config-check.ts'].filter(f=>bodies.has(f));
+ const manualCredentialProfiles=['scripts/seed-resend-templates.ts','scripts/update-contact-popup-resend-template.ts','scripts/highlevel-backfill.ts','scripts/highlevel-config-check.ts',...(sourceCommit==='8745a463e310371a5c8a6b98dd12f5643feb289f'?['scripts/update-approved-service-descriptions.mjs']:[])].filter(f=>bodies.has(f));
  const sourceReviewDisposition={kind:reviewedRevisions.includes(sourceCommit)?'audited-retained-staging-source':'preview-source-facts-conservative-capability-reuse',auditedPrivateSqlPredicateFamilies:sixFamilyIds,credentialPathReuseProviders:Object.keys(families).filter(name=>referenceSignatures.get(name)?.has(providerSignatures[name])),unknownCapabilityProviders:Object.keys(families).filter(name=>!referenceSignatures.get(name)?.has(providerSignatures[name]))};
  const profile={version:1,sourceCommit,treeOid,sdkDependencies,sourceReviewDisposition,sourceInventorySha256:hash(inventory),inventory,sqlCredentialRequirements,providerFamilies,manualCredentialProfiles};
- writeFileSync(root+'/ops/platform/profiles/frontend-historical-sources/'+sourceCommit+'.json',JSON.stringify(profile)+'\n');
- output[sourceCommit]={treeOid,profileSha256:hash(profile)};console.log(JSON.stringify({sourceCommit,files:sourceFiles.length,routes:entrypoints.routes.length,manual:entrypoints.manual.length,deferred:entrypoints.deferred.length,providerPaths:providerSites.length,families:providerFamilies.length,sourceInventorySha256:profile.sourceInventorySha256}));
+ if(!deltaMode||reviewedTarget)writeFileSync((deltaMode?'/private/tmp/lash-her-reviewed-seven-candidates/':root+'/ops/platform/profiles/frontend-historical-sources/')+sourceCommit+'.json',JSON.stringify(profile)+'\n');
+ if(!deltaMode||reviewedTarget){output[sourceCommit]={treeOid,profileSha256:hash(profile)};console.log(JSON.stringify({sourceCommit,files:sourceFiles.length,routes:entrypoints.routes.length,manual:entrypoints.manual.length,deferred:entrypoints.deferred.length,providerPaths:providerSites.length,families:providerFamilies.length,sourceInventorySha256:profile.sourceInventorySha256}));}
 }
-const modulePath=root+'/ops/platform/frontend-historical-source.mjs';writeFileSync(modulePath,readFileSync(modulePath,'utf8').replace(/const approved = \{[\s\S]*?\n\};/u,'const approved = {\n'+Object.entries(output).map(([key,value])=>'  '+JSON.stringify(key)+': '+JSON.stringify(value)+',').join('\n')+'\n};'));
+if(!deltaMode){const modulePath=root+'/ops/platform/frontend-historical-source.mjs',current=readFileSync(modulePath,'utf8'),block=/const approved = \{([\s\S]*?)\n\};/u.exec(current)?.[1]??'';
+ const retained=Object.fromEntries([...block.matchAll(/^\s*"([a-f0-9]{40})": (\{.*\}),$/gmu)].map(match=>[match[1],JSON.parse(match[2])]).filter(([,value])=>value.sourceProfileCommit||value.deltaSha256));
+ const next={...output,...retained};writeFileSync(modulePath,current.replace(/const approved = \{[\s\S]*?\n\};/u,'const approved = {\n'+Object.entries(next).map(([key,value])=>'  '+JSON.stringify(key)+': '+JSON.stringify(value)+',').join('\n')+'\n};'));}
