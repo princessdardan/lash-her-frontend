@@ -26,6 +26,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Install pinned gateway dependencies for owned HTTP fixtures
+        run: npm ci --ignore-scripts --prefix ops/gateway
       - name: Enable the containerd image store for attested local builds
         uses: docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5
         with:
@@ -916,7 +918,16 @@ jobs:
       - run: npm run db:migrate
       - name: Seed enabled commerce readiness fixtures
         run: npm run test:e2e:seed-commerce
+      - name: Bound Ubuntu package acquisition for browser dependencies
+        run: |
+          sudo tee /etc/apt/apt.conf.d/zz-retries > /dev/null <<'APT'
+          Acquire::Retries "1";
+          Acquire::http::Timeout "15";
+          Acquire::https::Timeout "15";
+          APT
+          apt-config dump | grep -E '^Acquire::(Retries|https?::Timeout) '
       - run: npx playwright install --with-deps ${{ matrix.browser }}
+        timeout-minutes: 20
       - name: Run Playwright suite for ${{ matrix.browser }}
         run: npm test -- --project=${{ matrix.browser }} --workers=1 --reporter=line,blob
         env:

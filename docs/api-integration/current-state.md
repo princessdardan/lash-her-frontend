@@ -193,3 +193,7 @@ CI47 passes eight ordinary jobs, including build/all three browsers with the can
 ## Gateway frontier source follow-up — November 6, 2026
 
 [Integrated 91d44bd2](baselines/2026-11-06-p2-known-ack-frontier/root-integration.json) adds the independently cleared durable pending gateway marker; 61 focused root host checks pass without skips. Old stopped1 cannot qualify after replacement starts, and only actual distinct new0 can resolve it. Ordinary recovery/shared files are unchanged. Source fits 488 files/40,202,944 decoded bytes, all 33 profiles and PR91 runtime unchanged. Earlier b347 all-ten-job CI remains exact-source evidence; this follow-up needs fresh CI. Separate interrupted-restoration C and final candidate/live evidence remain open. No staging mutation or G2 acceptance occurred.
+
+## CI installer acquisition follow-up — November 6, 2026
+
+[The reviewed CI-only change](baselines/2026-11-06-p2-ci-installer-bounds/README.md) bounds observed Azure Ubuntu package stalls without removing dependencies/tests or weakening APT security. Current 088 has eight ordinary jobs passing and WebKit still installing; no WebKit suite result is claimed. The operator also installs its gateway lock explicitly for faithful C fixture resolution. YAML/diff and independent workflow review pass. Earlier exact b347 all-ten-job evidence is retained; new CI, separate C actual database/final source qualification, candidate and all deployed P2/G2 evidence remain open. No live mutation occurred.

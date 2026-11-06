@@ -407,3 +407,7 @@ CI47 has eight ordinary jobs passing, including canonical-CMS build/all browsers
 ## Durable gateway frontier integrated — November 6, 2026
 
 [The source-fixed frontier](docs/api-integration/baselines/2026-11-06-p2-known-ack-frontier/root-integration.json) is independently clear at `26845dd0` and integrated as `91d44bd2`. Root focused host checks pass 61/61 with zero skips. Actual filesystem and owned HTTPS evidence proves pending replacement cannot reuse old stopped1; fresh distinct new0 is required to resolve the pointer. Ordinary recovery/shared files remain unchanged. Clean source selects 488 files/40,202,944 decoded/53,675,254 public bytes; PR91 runtime and all 33 historical profiles remain byte-identical. Exact-source CI follows; separate C restoration, candidate and deployed P2/G2 evidence remain open.
+
+## CI installer acquisition follow-up — November 6, 2026
+
+[The reviewed CI-only change](docs/api-integration/baselines/2026-11-06-p2-ci-installer-bounds/README.md) bounds observed Azure Ubuntu package stalls without removing dependencies/tests or weakening APT security. Current 088 has eight ordinary jobs passing and WebKit still installing; no WebKit suite result is claimed. The operator also installs its gateway lock explicitly for faithful C fixture resolution. YAML/diff and independent workflow review pass. Earlier exact b347 all-ten-job evidence is retained; new CI, separate C actual database/final source qualification, candidate and all deployed P2/G2 evidence remain open. No live mutation occurred.
