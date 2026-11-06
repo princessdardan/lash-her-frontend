@@ -2,7 +2,7 @@
 
 Source checkpoint updated November 6, 2026 (Toronto). Accepted live admission completed November 4 at 01:27:39 UTC, with independent postflight at 01:29:33 UTC. [The tracker](../../API-INTEGRATION-EXECUTION.md) owns task status; [release policy](release-policy.md) governs future releases.
 
-Latest source position: Course `a447bfde` and Community `939de65d` pass merged-main CI; frontend `3f0fcdb7` remains the last all-ten-job pass. CI 42210725374 at `c7ae8e9f` passes actual Linux PostgreSQL18 composition (24/18/9/9, zero skips), then fails forward recovery with the nested cause still unavailable. Diagnostic propagation and typed known-ACK runtime integration continue. Final-source CI/candidate, historical configuration/provider effects and deployed certification remain open. Historical sections retain their original source scope.
+Latest source position: Course `a447bfde` and Community `939de65d` pass merged-main CI; frontend `3f0fcdb7` remains the last all-ten-job pass. Latest CI 42214656961 at `138d0118` fails forward recovery and CMS-dependent build/browser readiness. The reviewed canonical CI binding and final-only diagnostic corrections are integrated for fresh Linux checks. Typed known-ACK runtime/eligibility proof, final-source CI/candidate, historical configuration/provider effects and deployed certification remain open. Historical sections retain their original source scope.
 
 ## Accepted P1 state
 
@@ -138,7 +138,7 @@ The source-transfer allowance is 448 files with unchanged byte limits; actual id
 
 The [latest tracker milestone](../../API-INTEGRATION-EXECUTION.md) records terminal passing CI at `3f0fcdb7`, separately cleared gateway module/wiring at `508158a1`, corrected forward recovery at `2abfa161`, and corrected persistence at `25202bd9`. All three forward and eight persistence review findings are resolved. Integrated `caea30f6` passes actual owned PostgreSQL16 current55/forward19/persistence13 with exact API mains,83/22/11 migrations and zero skips; required PG18 forward CI remains open until its actual producer runs.
 
-The transport-fault issuer remains under independent review. Receiver tooling needs corrected-interface requalification. Timing refuses execution while source-authoritative browser/pending/joined-S12 adapters are unavailable. The fixed certification parent, normal-UI recorders, scoped key rotation and actual adapters remain implementation tasks. Historical configuration/provider evidence, real24-hour cleanup, registry candidate and Dardan-started staging certification remain open. G1 stays accepted; no P2-12/G2 completion or live mutation is claimed.
+The transport-fault issuer remains under independent review. Receiver tooling needs corrected-interface requalification. Timing refuses execution while source-authoritative browser/pending/joined-S12 adapters are unavailable. The fixed certification parent, normal-UI recorders, scoped key rotation and actual adapters remain implementation tasks. Historical configuration/provider evidence, real 24-hour cleanup, registry candidate and Dardan-started staging certification remain open. G1 stays accepted; no P2-12/G2 completion or live mutation is claimed.
 
 ## Required forward CI failure and diagnostic publication — November 6, 2026
 
@@ -173,3 +173,7 @@ The independently cleared [source envelope](baselines/2026-11-06-p2-source-hando
 ## Actual Linux four-fixture result — November 6, 2026
 
 [Exact `c7ae8e9f` evidence](baselines/2026-11-06-p2-linux-composition-forward-open/README.md) proves actual Linux/Docker/PostgreSQL18 composition 24/18/9/9 with zero skips. The subsequent forward fixture still fails, and its safe diagnostic still omits the nested cause. A composed diagnostic failure regression and actual correction remain required. Original artifact/log/receipt bytes are preserved off-host. Typed known-ACK runtime integration, final CI/candidate, historical configuration/provider effects and five missing identities, Dardan-started deployed certification, real 24-hour cleanup and G2 remain open. G1 stays accepted; no live mutation occurred.
+
+## CI CMS binding and final callback source — November 6, 2026
+
+[Canonical CI binding](baselines/2026-11-06-ci-sanity-binding/README.md) is integrated with 53 root/independent offline checks and unchanged hosted identity/runtime loaders. [Final-error projection](baselines/2026-11-06-p2-forward-final-callback/README.md) passes 12 root/independent composed checks; it excludes the earlier expected refusal seen in 138d. Latest 138d CI has four passing jobs and six failed jobs including its aggregate; actual Linux forward cause and real CMS availability/build/browser checks remain unresolved. C7's cancelled WebKit is recorded without a pass claim. Typed known-ACK runtime and backend eligibility work continue. Final CI/candidate, historical and deployed evidence, real 24-hour cleanup and G2 remain open; G1 stays accepted and no live mutation occurred.
