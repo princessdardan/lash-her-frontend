@@ -1,0 +1,24 @@
+✔ plan requires exact qualified P2/staging/ten-control lifecycle-only profile and explicit closed final disposition (52.758084ms)
+✔ finite native request witnesses join exact admitted recovery operations, ordered effects, and actual source closure without a cancellation claim (308.383542ms)
+✔ extra/changed cron, runtime flags or immutable writer binding refuse before enable (915.129ms)
+✔ caller complete booleans, manual request classification and unrelated source/epoch/UUID cannot replace provider request-scoped trace evidence (1695.433625ms)
+✔ unmatched recovery operations or reordered receiver effects remain OPEN even after a clean close (612.175625ms)
+✔ active and uncertain outcomes are retained rather than settled/replayed by the qualifier (573.655ms)
+✔ lost enable/disable acknowledgments are not retried and never produce qualification (582.347875ms)
+✔ a delayed native request after admission closure can be observed without inventing an admitted operation or queue zero (297.388583ms)
+✔ later receipt loss still attempts mandatory disable/admission closure and cannot return a success receipt (288.239792ms)
+✔ original intent with missing outcome after process death refuses automatic replay (296.3585ms)
+✔ actual SIGKILL after enable preserves intent; fresh explicit containment disables/closes without replay or qualification (623.48125ms)
+✔ a policy changed during operator observation invalidates the final fence instead of qualifying a stale closed snapshot (264.183708ms)
+✔ delivery acknowledgements interleaved with the epoch barrier cannot count as native window effects (269.083542ms)
+✔ receiver attempts must advance from the retained post-barrier snapshot, not the earlier start (308.589708ms)
+✔ a final native enable or source drift invalidates the main qualifier disabled claim (581.912958ms)
+✔ containment rechecks exact disabled metadata after draining and never reports a stale source fence (4174.86225ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11886.757
