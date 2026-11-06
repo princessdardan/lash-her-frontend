@@ -408,6 +408,7 @@ class P2IdentityRotationHostAdapter:
 
     def observe_api_configuration(self, phase):
         self.scope.verify()
+        self._verify_original_runtime_configuration()
         snapshot = self._snapshot(phase)
         prefix, environment = runtime.compose_command(snapshot, "staging"), runtime.runtime_environment(self.selected, snapshot)
         for service in API_SERVICES:
@@ -427,10 +428,17 @@ class P2IdentityRotationHostAdapter:
         finally:
             runtime._command_scope.reset(token)
         self._validate_runtime_mounts(snapshot, containers)
+        self._verify_original_runtime_configuration()
         self.scope.verify()
         return {"configurationSha256": self.configurations.hashes[phase], "containers": containers, "runtimeVerified": True}
 
+    def _verify_original_runtime_configuration(self):
+        demand(_runtime_phase_hash(self.unchanged_runtime_configuration)
+               == self.configurations.runtime_private_hashes["baseline"],
+               "ROTATION_CURRENT_RUNTIME_CONFIGURATION_CHANGED")
+
     def _validate_runtime_mounts(self, snapshot, containers):
+        self._verify_original_runtime_configuration()
         unchanged, api = self.unchanged_runtime_configuration, self.api_mount_configuration
         expected = {
             "gateway": {"/config/gateway.json": unchanged / "gateway.json", "/admission": unchanged / "admission",
@@ -464,6 +472,7 @@ class P2IdentityRotationHostAdapter:
                 demand(destination in required and row.get("Type") == "bind" and row.get("RW") is False
                        and row.get("Source") == str(required[destination]), "ROTATION_RUNTIME_MOUNTS_REFUSED")
             demand(set(required) == seen - ({"/tmp"} if "/tmp" in seen else set()), "ROTATION_RUNTIME_MOUNTS_REFUSED")
+        self._verify_original_runtime_configuration()
 
     def observe_continuous_runtime(self, phase, expected_containers):
         demand(phase in PHASES and isinstance(expected_containers, list) and len(expected_containers) == len(runtime.SERVICES),

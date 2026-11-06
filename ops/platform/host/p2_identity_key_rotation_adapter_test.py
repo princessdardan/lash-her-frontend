@@ -251,6 +251,7 @@ class AdapterTest(unittest.TestCase):
                               "community-api": {"COMMUNITY_MEMBER_JWT_CURRENT_SECRET": "y" * 40}}},
             hashes={"overlap": "a" * 64})
         adapter._snapshot = lambda _phase: Path("/private/snapshot")
+        adapter._verify_original_runtime_configuration = lambda: None
         containers = [{"service": service} for service in runtime.SERVICES]
         with patch.object(runtime, "compose_command", return_value=["docker", "compose"]), \
              patch.object(runtime, "runtime_environment", return_value={}), \
@@ -278,6 +279,7 @@ class AdapterTest(unittest.TestCase):
         adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
         adapter.scope = Scope(); snapshot = Path("/private/runtime-overlap"); original = Path("/private/original-runtime")
         adapter.unchanged_runtime_configuration = original; adapter.api_mount_configuration = original
+        adapter.configurations = types.SimpleNamespace(runtime_private_hashes={"baseline": "a" * 64})
         containers = [{"service": service, "containerId": str(index)} for index, service in enumerate(runtime.SERVICES)]
         expected = {
             "gateway": [("/config/gateway.json", original / "gateway.json"), ("/admission", original / "admission"),
@@ -295,17 +297,21 @@ class AdapterTest(unittest.TestCase):
                       *({"Type": "bind", "Destination": destination, "Source": str(source), "RW": False}
                         for destination, source in expected.get(service, []))]
             return "true|" + json.dumps(mounts)
-        adapter._command = command
-        adapter._validate_runtime_mounts(snapshot, containers)
-        adapter.api_mount_configuration = snapshot
-        expected["community-api"] = [("/tls/ca.pem", snapshot / "tls/ca.pem")]
-        adapter._validate_runtime_mounts(snapshot, containers)
-        def changed(arguments, environment, timeout=15, input=None):
-            raw = command(arguments, environment, timeout, input)
-            return raw.replace(str(original), "/foreign", 1) if by_id[arguments[-1]] == "gateway" else raw
-        adapter._command = changed
-        with self.assertRaises(ValueError):
+        with patch.object(rotation, "_runtime_phase_hash", return_value="a" * 64):
+            adapter._command = command
             adapter._validate_runtime_mounts(snapshot, containers)
+            adapter.api_mount_configuration = snapshot
+            expected["community-api"] = [("/tls/ca.pem", snapshot / "tls/ca.pem")]
+            adapter._validate_runtime_mounts(snapshot, containers)
+            def changed(arguments, environment, timeout=15, input=None):
+                raw = command(arguments, environment, timeout, input)
+                return raw.replace(str(original), "/foreign", 1) if by_id[arguments[-1]] == "gateway" else raw
+            adapter._command = changed
+            with self.assertRaises(ValueError):
+                adapter._validate_runtime_mounts(snapshot, containers)
+        with patch.object(rotation, "_runtime_phase_hash", return_value="b" * 64):
+            with self.assertRaises(ValueError):
+                adapter._verify_original_runtime_configuration()
 
     def test_runtime_boundary_joins_exact_containers_api_current_proofs_release_probe_and_disabled_schedules(self):
         adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)

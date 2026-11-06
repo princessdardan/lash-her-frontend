@@ -9,7 +9,7 @@
     "ops/platform/p2-identity-key-rotation-browser-recorder.mjs": "381fda76ced17d93e5d4946d359819f550572b04d3a7b3c26a68a55d84a32c7d",
     "ops/platform/p2-identity-key-rotation-session-closed.mjs": "f337a18b900507fa9dca3f4ffd0608f9bad7ad5a09494adb31c79c3679f5666a",
     "ops/platform/host/p2_identity_key_rotation_parent.py": "22ac82d003269b89d00b31c4a2f67daa1cf6741e76f01fe39e1af72e4afb0588",
-    "ops/platform/host/p2_identity_key_rotation_adapter.py": "54004b5e3405e024d4a9a69b3458832f70b200e2a92b5c44e193ec2df02b7e25"
+    "ops/platform/host/p2_identity_key_rotation_adapter.py": "5ac53702ab93c599884e3ff502948b939010ff55eeac18b41279f97d1d7ec2ac"
   },
   "checks": {
     "nodeOwned": { "passed": 26, "failed": 0, "skipped": 0 },
