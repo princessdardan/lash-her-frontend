@@ -1,0 +1,1 @@
+{"sourceCommit": "269a7d3b5f07f6b6925dd787b4234b037e1f70f2", "status": "ORIGINAL_CONFIG_DIGEST_MISMATCH_ACCEPTED_BY_LOADER", "originalIntentDigestRemains": true, "freshMapDiffers": true, "authorityIssued": false, "scope": "actual frozen loader; source-chain and stopped-gateway transport projected; no runtime transition attempted"}

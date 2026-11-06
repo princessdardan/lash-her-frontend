@@ -35,16 +35,27 @@ class RetainedChainTests(unittest.TestCase):
         self.selected={**f.fixture.release,'environment':'staging','contractPhase':'p2','sources':{'frontend':{'commit':'b'*40}}}
         self.jobs=c.migrate.make_plan(f.bundle)[1]
         plan,baseline,domain,gateway,effects=b.fixture();plan.update(candidateSha256='a'*64,sourceCommit='b'*40,operatorSourceCommit='b'*40,targetSha256='c'*64)
-        plan['nativePlan'].update(projectId='prj_owned',deploymentId='dpl_owned',planSha256='d'*64,targetSha256='c'*64)
+        config=c.staging_state.configuration_hashes(f.configuration);plan['configurationSha256']=c.sha(c.canonical(config))
+        targets={name:{**{key:info['job']['target'][key] for key in ('host','port','database')},'serverMajor':16,'user':name+'_runtime','roleOid':'1'} for name,info in self.jobs.items() if name in ('course','community')}
+        plan['nativePlan'].update(version=1,windowSeconds=180,projectId='prj_owned',deploymentId='dpl_owned',planSha256='d'*64,targetSha256='c'*64)
         process={'containerId':'1'*64,'imageId':'sha256:'+'2'*64,'pid':19,'running':True,'startedAt':'owned-start','restartCount':0}
+        plan.update(version=1,maxMatches=1,leaseMilliseconds=120000,mode='drop-after-ack',nativePlanSha256='d'*64,stageId='owned-stage',profile='lifecycle-known-command-v1',gatewayProcessSha256=c.sha(c.canonical(process)))
+        effects[0].update(version=1,status='P2_TRANSPORT_FAULT_INJECTED',environment='staging',profile=plan['profile'],stageId=plan['stageId'],
+          candidateSha256='a'*64,configurationSha256=plan['configurationSha256'],gatewayProcessSha256=plan['gatewayProcessSha256'],gatewayImageSha256=self.selected['artifacts']['gateway']['image'].split(':')[-1])
+        original_processes={name:{**process,'containerId':format(index+2,'064x'),'pid':20+index} for index,name in enumerate(c.runtime.SERVICES)}
+        original_processes['gateway']=process
+        ready=[{'service':name,'containerId':original_processes[name]['containerId'],'image':self.selected['artifacts'][c.runtime.IMAGE_KEYS[name]]['image'],
+          'health':'none' if name.endswith('-tls') else 'healthy'} for name in c.runtime.SERVICES]
+        (self.original/'p2-certification-current-ready.json').write_bytes(c.canonical({'status':'P2_CERTIFICATION_CURRENT_READY','apiDatabases':{},'containers':ready,'sqlReplayed':False,'runtimeReplaced':False})+b'\n')
         gateway.update(status='PRIOR_GATEWAY_OBSERVED',process=process,binding={'candidateSha256':'a'*64,'configurationDirectory':str(f.configuration)})
         initial_gateway=copy.deepcopy(gateway);initial_gateway['admission']['uncertain']['recovery']=0
         closed_gateway=copy.deepcopy(gateway);closed_gateway['admission']['recovery']=False;self.gateway=closed_gateway
         before=copy.deepcopy(domain);before['frontend']['admission'].update(epoch='4',recovery=False);self.before=before
-        intent={'version':1,'recoveryActionId':'replace-old','intent':{'profile':'known-ack-same-session-ordered-replacement-v1','runtimeReplacements':1,
-          'sqlReplayAllowed':False,'roleChangeAllowed':False,'ordinaryClosedZeroGate':False,'automaticFailureRecoveryAllowed':False,
-          'certificationActionId':'cert-old','candidateSha256':'a'*64,'operatorSourceCommit':'b'*40,'sourceCommit':'b'*40,'operatorSourceClosureSha256':closure,
-          'nativePlanSha256':'d'*64,'configurationInputDirectory':str(f.configuration)}};intent['intentSha256']=c.sha(c.canonical(intent['intent']))
+        cert={**plan,'configurationSha256':c.sha(json.dumps(config,separators=(',',':')).encode()),'certificationActionId':'cert-old',
+          'gatewayProcessSha256':plan['gatewayProcessSha256'],'runtimeInventorySha256':c.sha(c.canonical(ready)),'operatorSourceClosureSha256':closure,
+          'knownAckConfigurationInputDirectory':str(f.configuration),'knownAckReceiverTargets':targets}
+        intent={'version':1,'recoveryActionId':'replace-old','intent':c.known.replacement_intent(cert,'replace-old')}
+        intent['intentSha256']=c.sha(c.canonical(intent['intent']))
         values={'recovery-intent.json':intent,'baseline.json':{'status':'P2_KNOWN_ACK_BASELINE_RETAINED','candidateSha256':'a'*64,'recoveryActionId':'replace-old',
           'sourceModuleSha256':manifest[c.known.MODULE],'plan':plan,'gateway':initial_gateway,'databases':baseline},
           'domain.json':{'status':'P2_KNOWN_ACK_DOMAIN_SETTLED_IN_WINDOW','operationId':domain['frontend']['operations'][0]['id'],'gateway':gateway,'databases':domain,'effect':effects[0]}}
@@ -58,22 +69,22 @@ class RetainedChainTests(unittest.TestCase):
               'completedAt':'2026-11-06T01:00:04.000Z','httpStatus':503 if row['state']=='uncertain' else 200,'logScope':'this-provider-request-details','admittedLogLine':json.dumps(event)})
         raw=c.canonical(artifact)+b'\n';(self.original/'p2-certification-operator-request-details.json').write_bytes(raw)
         values['request-details.json']={'status':'P2_KNOWN_ACK_REQUEST_DETAILS_JOINED','artifactSha256':c.sha(raw),'originalArtifact':artifact,
-          'domainSha256':self.write('domain.json',values['domain.json']),'provenance':{'authority':'operator-recorded-request-details','artifactSha256':c.sha(raw)}}
+          'domainSha256':self.write('domain.json',values['domain.json']),'provenance':{'qualified':False,'authority':'operator-recorded-request-details','artifactSha256':c.sha(raw),'requestCount':2,'automaticProviderEvidence':False}}
         pins={name:self.write(name,values[name]) for name in c.CAUSAL_FILES[:4]}
         values['settlement.json']={'status':'P2_KNOWN_ACK_SPECIFIC_OPERATION_SETTLEMENT','recoveryActionId':'replace-old','domainSha256':pins['domain.json'],
           'baselineSha256':pins['baseline.json'],'requestDetailsSha256':pins['request-details.json'],'operationId':domain['frontend']['operations'][0]['id'],'epoch':'4','gateway':closed_gateway,'databases':before}
         pins['settlement.json']=self.write('settlement.json',values['settlement.json'])
-        values['replacement-authorization.json']={'status':'P2_KNOWN_ACK_REPLACEMENT_AUTHORIZED','candidateSha256':'a'*64,'certificationActionId':'cert-old','recoveryActionId':'replace-old',
+        values['replacement-authorization.json']={'version':1,'ordinaryClosedZeroGate':False,'sqlReplayAllowed':False,'roleChangeAllowed':False,'status':'P2_KNOWN_ACK_REPLACEMENT_AUTHORIZED','candidateSha256':'a'*64,'certificationActionId':'cert-old','recoveryActionId':'replace-old',
           'recoveryIntentSha256':intent['intentSha256'],'operatorSourceClosureSha256':closure,'baselineSha256':pins['baseline.json'],'domainSha256':pins['domain.json'],
           'requestDetailsSha256':pins['request-details.json'],'settlementSha256':pins['settlement.json'],'originalGateway':initial_gateway,
           'operationId':domain['frontend']['operations'][0]['id'],'sourceModuleSha256':manifest[c.known.MODULE]}
         pins['replacement-authorization.json']=self.write('replacement-authorization.json',values['replacement-authorization.json'])
         self.values=values;self.selection=selection();self.selection['causalReceiptSha256']=pins
         intent={'status':'P2_KNOWN_ACK_ORDERED_REPLACEMENT_INTENT','authorization':values['replacement-authorization.json'],'recoveryIntent':intent,
-          'stages':[list(s) for s in c.runtime.STAGES],'oldProcesses':dict.fromkeys(c.runtime.SERVICES,process)}
+          'stages':[list(s) for s in c.runtime.STAGES],'unavailableStages':[list(s) for s in c.known.UNAVAILABLE_STAGES],'oldProcesses':original_processes}
         raw=c.canonical(intent)+b'\n';(self.replacement/'known-ack-replacement-intent.json').write_bytes(raw)
         self.selection['replacementReceiptSha256']['known-ack-replacement-intent.json']=c.sha(raw);self.selection['priorGatewayReference']['stopReceiptDirectory']=str(self.replacement)
-        self.initial={'candidateSha256':'a'*64,'targetSha256':'c'*64,'configuration':str(f.configuration),'configurationSha256':c.staging_state.configuration_hashes(f.configuration),'interruptedRestoration':self.selection}
+        self.initial={'candidateSha256':'a'*64,'targetSha256':'c'*64,'configuration':str(f.configuration),'configurationSha256':config,'receiverTargets':targets,'interruptedRestoration':self.selection}
         for item in (patch.object(c,'ROOT',self.root),patch.object(c,'OPERATORS',operators),patch.object(c.prior,'observe_stopped_prior_gateway',return_value=self.gateway)):
             item.start();self.addCleanup(item.stop)
 
@@ -81,6 +92,53 @@ class RetainedChainTests(unittest.TestCase):
         raw=c.canonical(value)+b'\n';(self.causal/name).write_bytes(raw);return c.sha(raw)
 
     def load(self):return c.load_retained(self.initial,self.selected,self.jobs,lambda:None)
+
+    def repin_chain(self):
+        values=self.values;pins=self.selection['causalReceiptSha256']
+        values['recovery-intent.json']['intentSha256']=c.sha(c.canonical(values['recovery-intent.json']['intent']))
+        for name in ('recovery-intent.json','baseline.json','domain.json'):pins[name]=self.write(name,values[name])
+        values['request-details.json']['domainSha256']=pins['domain.json'];pins['request-details.json']=self.write('request-details.json',values['request-details.json'])
+        for name,key in (('baseline.json','baselineSha256'),('domain.json','domainSha256'),('request-details.json','requestDetailsSha256')):values['settlement.json'][key]=pins[name]
+        pins['settlement.json']=self.write('settlement.json',values['settlement.json'])
+        auth=values['replacement-authorization.json'];auth['recoveryIntentSha256']=values['recovery-intent.json']['intentSha256']
+        for name,key in (('baseline.json','baselineSha256'),('domain.json','domainSha256'),('request-details.json','requestDetailsSha256'),('settlement.json','settlementSha256')):auth[key]=pins[name]
+        pins['replacement-authorization.json']=self.write('replacement-authorization.json',auth)
+        path=self.replacement/'known-ack-replacement-intent.json';replacement=json.loads(path.read_bytes());replacement.update(authorization=auth,recoveryIntent=values['recovery-intent.json'])
+        raw=c.canonical(replacement)+b'\n';path.write_bytes(raw);self.selection['replacementReceiptSha256'][path.name]=c.sha(raw)
+        c.read_pinned(self.causal,pins);c.read_pinned(self.replacement,self.selection['replacementReceiptSha256'])
+
+    def test_all_original_B_predicates_reject_otherwise_valid_repinned_chains(self):
+        original=copy.deepcopy(self.values);original_selection=copy.deepcopy(self.selection)
+        cases=('fault-mode','command-action','extra-command','native-plan-sha','inner-version','inner-boolean-version','gateway-process-sha','runtime-inventory-sha','canonical-config-sha','boolean-backend-count','boolean-gateway-count')
+        for kind in cases:
+            self.values=copy.deepcopy(original);self.selection=copy.deepcopy(original_selection);self.initial['interruptedRestoration']=self.selection
+            plan=self.values['baseline.json']['plan'];intent=self.values['recovery-intent.json']['intent']
+            if kind=='fault-mode':plan['mode']='503-before-upstream'
+            elif kind=='command-action':plan['nativePlan']['commandWitnesses'][0]['action']='restore'
+            elif kind=='extra-command':plan['nativePlan']['commandWitnesses'].append(copy.deepcopy(plan['nativePlan']['commandWitnesses'][0]))
+            elif kind=='native-plan-sha':plan['nativePlanSha256']='f'*64
+            elif kind=='inner-version':intent['version']=2
+            elif kind=='inner-boolean-version':intent['version']=True
+            elif kind=='gateway-process-sha':intent['gatewayProcessSha256']='f'*64
+            elif kind=='runtime-inventory-sha':intent['runtimeInventorySha256']='f'*64
+            elif kind=='canonical-config-sha':plan['configurationSha256']='f'*64
+            elif kind=='boolean-backend-count':self.values['baseline.json']['databases']['course']['backend']['eligible']['outbox']=False
+            else:self.values['baseline.json']['gateway']['admission']['active']['newWork']=False
+            self.repin_chain()
+            with self.subTest(kind=kind),self.assertRaises(ValueError):self.load()
+        self.values=original;self.selection=original_selection;self.initial['interruptedRestoration']=self.selection;self.repin_chain();self.load()
+
+    def test_valid_fresh_map_cannot_replace_original19_even_at_missing_API_frontier(self):
+        auth=self.values['replacement-authorization.json'];name='known-ack-stage-0-intent.json'
+        raw=c.canonical({'status':'P2_KNOWN_ACK_RUNTIME_STAGE_INTENT','stage':list(c.runtime.STAGES[0]),'recoveryActionId':'replace-old','maximumSeconds':120,
+          'candidateSha256':'a'*64,'authorizationReceiptSha256':c.sha(c.canonical(auth))})+b'\n'
+        (self.replacement/name).write_bytes(raw);self.selection['replacementReceiptSha256'][name]=c.sha(raw)
+        self.assertEqual(self.load()['activeStage'],c.runtime.STAGES[0])
+        path=self.f.configuration/'course-api.env';old=path.read_bytes();path.write_bytes(old+b'OWNED_HARMLESS_CONFIG_DRIFT=1\n')
+        self.initial['configurationSha256']=c.staging_state.configuration_hashes(self.f.configuration)
+        with patch.object(c.prior,'observe_stopped_prior_gateway') as stopped,self.assertRaisesRegex(ValueError,'ORIGINAL_CONFIGURATION_REQUIRED'):self.load()
+        stopped.assert_not_called()
+        path.write_bytes(old);self.initial['configurationSha256']=c.staging_state.configuration_hashes(self.f.configuration);self.load()
 
     def test_complete_source_chain_keeps_one_without_issuing_a_capability(self):
         retained=self.load();self.assertEqual(retained['originalGateway']['admission']['uncertain'],{'newWork':0,'recovery':1});self.assertEqual(retained['completedStages'],[])
@@ -128,7 +186,7 @@ class RetainedChainTests(unittest.TestCase):
         authorization=self.values['replacement-authorization.json']
         for index,stage in enumerate(c.runtime.STAGES):
             begin={'status':'P2_KNOWN_ACK_RUNTIME_STAGE_INTENT','stage':list(stage),'candidateSha256':'a'*64,
-                   'recoveryActionId':'replace-old','authorizationReceiptSha256':c.sha(c.canonical(authorization))}
+                   'recoveryActionId':'replace-old','maximumSeconds':120,'authorizationReceiptSha256':c.sha(c.canonical(authorization))}
             name='known-ack-stage-'+str(index)+'-intent.json';raw=c.canonical(begin)+b'\n';(self.replacement/name).write_bytes(raw)
             self.selection['replacementReceiptSha256'][name]=c.sha(raw)
             if index<4:

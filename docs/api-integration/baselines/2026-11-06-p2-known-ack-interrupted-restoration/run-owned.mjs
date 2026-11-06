@@ -8,7 +8,9 @@ import {createRequire} from 'node:module';
 import {createHash} from 'node:crypto';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 const root=resolve(fileURLToPath(new URL('../../../..',import.meta.url)));
-assert.equal(process.env.P2_INTERRUPTED_OWNED_TEST,'true');
+const refuse=code=>{process.stderr.write(JSON.stringify({version:1,status:'P2_INTERRUPTED_OWNED_REFUSED',code})+'\n');process.exit(1);};
+if(process.env.P2_INTERRUPTED_OWNED_TEST!=='true')refuse('P2_INTERRUPTED_OWNED_SCOPE_REQUIRED');
+if(!(process.argv.length===2||process.argv.length===3&&process.argv[2]==='--negative-cases'))refuse('P2_INTERRUPTED_OWNED_ARGUMENTS_REFUSED');
 const gatewayRequire=createRequire(join(root,'ops/gateway/package.json'));
 const gatewayJose=gatewayRequire.resolve('jose');
 assert.equal(realpathSync(gatewayJose).startsWith(realpathSync(join(root,'ops/gateway/node_modules/jose'))+'/'),true);
@@ -23,22 +25,32 @@ function variant(source,changes,destination){
  writeFileSync(destination,raw,{mode:0o600,flag:'wx'});
  const checked=spawnSync(process.execPath,['--check',destination],{encoding:'utf8'});if(checked.status!==0){writeFileSync(join(folder,'private-generated-syntax.stderr'),checked.stderr,{mode:0o600});throw new Error('OWNED_GENERATED_FIXTURE_SYNTAX_REFUSED');}
 }
-const started=performance.now();
+const negativeCases=['original-bytes','original-config-drift','missing-lineage','pending-lineage','backend-effect','active-backend-loss','active-guard-loss'];
+const negativeOnly=process.argv[2]==='--negative-cases',started=performance.now();
 try{
  symlinkSync(join(root,'node_modules'),join(folder,'node_modules'),'dir');
  const harness=join(folder,'old-b-process.mjs'),outer=join(folder,'cluster-and-new-c-process.mjs'),actor=fileURLToPath(new URL('./owned-process.mjs',import.meta.url));
  const engine=fileURLToPath(new URL('./owned-engine.py',import.meta.url));
  variant(join(root,'ops/platform/harness/owned-p2-known-ack-loss.mjs'),[
+  ["const now=Date.now();let faultEnabled=true;",`const work=join(directory,'c-operator');mkdirSync(work,{mode:0o700});
+  const {ownedApiCurrent}=await import(${JSON.stringify(pathToFileURL(actor).href)});
+  const originalApi=await ownedApiCurrent(input,input.candidate,input.candidateSha256,'owned-b-certification');
+  const receiverTargets=Object.fromEntries(['course','community'].map(service=>[service,{host:'127.0.0.1',port,database:input.apis[service].database.database,user:input.apis[service].database.user,serverMajor:input.postgresMajor,roleOid:input.apis[service].roleOid}]));
+  const minimalJobs={frontend:{job:{target},schema:'{}'},...originalApi.jobs};
+  const rootGateway={...config,admission:{...config.admission,file:'/admission/state.json'}};
+  const preparedConfiguration=spawnSync('python3',['-B',${JSON.stringify(engine)},'configuration'],{input:JSON.stringify({root:${JSON.stringify(root)},work,input,candidate:input.candidate,candidateSha256:input.candidateSha256,jobs:minimalJobs,receiverTargets,oldPid:process.pid,apiProofs:originalApi.proofs,actionId:'owned-interrupted-restoration-c',gatewayConfiguration:Buffer.from(JSON.stringify(rootGateway)).toString('base64')}),encoding:'utf8',timeout:30000,env:{PATH:process.env.PATH,PYTHONDONTWRITEBYTECODE:'1'}});
+  for(const client of originalApi.clients)await client.end();assert.equal(preparedConfiguration.status,0);const originalConfiguration=JSON.parse(preparedConfiguration.stdout);
+  const now=Date.now();let faultEnabled=true;`],
+  ["configurationSha256:'b'.repeat(64)","configurationSha256:originalConfiguration.configurationCanonicalSha256"],
+  ["gatewayImageSha256:'c'.repeat(64)","gatewayImageSha256:input.candidate.artifacts.gateway.image.split(':').at(-1)"],
+
   ["database:input.apis[service].database.database,user:target.user","database:input.apis[service].database.database,user:'frontend_test_admin'"],
   ["candidateSha256='a'.repeat(64)","candidateSha256=input.candidateSha256"],
   ["import {readFileSync,writeFileSync}","import {readFileSync,writeFileSync,mkdirSync}"],
-  ["const evidenceSha256=hash(canonical({domain,effect:effects[0],firstOperationId:firstLedger[0].id}));",`const work=join(directory,'c-operator');mkdirSync(work,{mode:0o700});
-  const receiverTargets=Object.fromEntries(['course','community'].map(service=>[service,{host:'127.0.0.1',port,database:input.apis[service].database.database,user:input.apis[service].database.user,serverMajor:input.postgresMajor,roleOid:input.apis[service].roleOid}]));
-  const minimalJobs={frontend:{job:{target},schema:'{}'}};for(const service of ['course','community'])minimalJobs[service]={job:{target:{host:'127.0.0.1',port,database:input.apis[service].database.database,user:input.apis[service].migrationRole,serverMajor:input.postgresMajor},runtimeRole:input.apis[service].database.user},schema:'{}'};
-  const causalInput={root:${JSON.stringify(root)},work,input,old:{plan:reducerPlan,before,domain,beforeSettlement,effects,firstLedger,projection,oldBackend:backend,oldPid:process.pid},candidate:input.candidate,candidateSha256,jobs:minimalJobs,owner,receiverTargets,actionId:'owned-interrupted-restoration-c'};
+  ["const evidenceSha256=hash(canonical({domain,effect:effects[0],firstOperationId:firstLedger[0].id}));",`  const causalInput={root:${JSON.stringify(root)},work,input,old:{plan:reducerPlan,before,domain,beforeSettlement,effects,firstLedger,projection,oldBackend:backend,oldPid:process.pid},candidate:input.candidate,candidateSha256,jobs:minimalJobs,owner,receiverTargets,actionId:'owned-interrupted-restoration-c'};
   const sourcePrepare=spawnSync('python3',['-B',${JSON.stringify(engine)},'prepare'],{input:JSON.stringify(causalInput),encoding:'utf8',timeout:30000,env:{PATH:process.env.PATH,PYTHONDONTWRITEBYTECODE:'1'}});if(sourcePrepare.status!==0){writeFileSync(join(work,'private-old-prepare-error'),sourcePrepare.stderr,{mode:0o600});try{const safe=JSON.parse(sourcePrepare.stderr.trim().split('\\n').at(-1));observed.sourcePrepare={kind:safe.kind,code:safe.code};}catch{}throw new Error('OWNED_ORIGINAL_CAUSAL_PREPARE_REFUSED');}
   const originalPrepared=JSON.parse(sourcePrepare.stdout);const evidenceSha256=originalPrepared.interruptedRestoration.causalReceiptSha256['settlement.json'];`],
-  ["  return{version:1,status:'P2_KNOWN_ACK_WHOLE_ROUTE_PASS'",`  writeFileSync(join(directory,'interrupted-actual-domain.json'),JSON.stringify({plan:reducerPlan,before,domain,beforeSettlement,settled,effects,projection,oldBackend:backend,evidenceSha256,oldPid:process.pid}),{mode:0o600,flag:'wx'});\n  return{version:1,status:'P2_KNOWN_ACK_WHOLE_ROUTE_PASS'`],
+  ["  return{version:1,status:'P2_KNOWN_ACK_WHOLE_ROUTE_PASS'",`  writeFileSync(join(directory,'interrupted-actual-domain.json'),JSON.stringify({plan:reducerPlan,before,domain,beforeSettlement,settled,effects,projection,oldBackend:backend,evidenceSha256,oldPid:process.pid,originalCausalReceiptSha256:originalPrepared.interruptedRestoration.causalReceiptSha256}),{mode:0o600,flag:'wx'});\n  return{version:1,status:'P2_KNOWN_ACK_WHOLE_ROUTE_PASS'`],
  ],harness);
  const setup=`
     // Owned setup precedes the original B operation and all journal baselines.
@@ -60,11 +72,11 @@ try{
  `;
  const cRun=`
     // The old B child has exited; its FE session and actual TLS gateway died.
-    const cInput={port,password,certificate,key,directory,target,targetSha256,owner,runtime,sourceCommit,postgresMajor,apis,candidate:ownedCandidate};
+    const cInput={port,password,certificate,key,directory,target,targetSha256,owner,runtime,sourceCommit,postgresMajor,apis,candidate:ownedCandidate,faultMode:process.env.P2_INTERRUPTED_OWNED_FAULT??'none'};
     const cChild=spawnSync(process.execPath,['--import','tsx',${JSON.stringify(actor)}],{input:JSON.stringify(cInput),encoding:'utf8',timeout:900000,
       env:{...safeEnvironment,NODE_EXTRA_CA_CERTS:certificate,P2_INTERRUPTED_OWNED_CHILD:'true'}});
     if(cChild.status!==0){process.stderr.write(cChild.stderr);process.stderr.write(JSON.stringify({status:'OWNED_C_CHILD_EXIT',exitCode:cChild.status,signal:cChild.signal,code:cChild.error?.code??null})+'\\n');throw new Error('OWNED_NEW_C_PROCESS_REFUSED');}
-    const restoration=JSON.parse(cChild.stdout);assert.equal(restoration.status,'P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS');phase='actual-c-runtime-terminal-joined';
+    const restoration=JSON.parse(cChild.stdout);assert.equal(restoration.status,cInput.faultMode==='none'?'P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS':'P2_INTERRUPTED_NEGATIVE_OWNED_PASS');phase=cInput.faultMode==='none'?'actual-c-runtime-terminal-joined':'actual-c-negative-qualified';
  `;
  variant(join(root,'ops/platform/test-p2-known-ack-loss-local.mjs'),[
   ["mkdirSync, symlinkSync }", "mkdirSync, symlinkSync, readdirSync, lstatSync }"],
@@ -84,10 +96,13 @@ try{
   ["    return{...result,postgresMajor",cRun+"\n    return{...result,restoration,postgresMajor"],
   ["if(child.status!==0){const rows=",`if(child.status!==0){writeFileSync(${JSON.stringify(join(folder,'private-inner.stderr'))},child.stderr,{mode:0o600});const rows=`],
  ],outer);
- const result=spawnSync(process.execPath,['--import','tsx',outer],{cwd:root,env:{PATH:process.env.PATH,PG_BIN:process.env.PG_BIN,OWNED_POSTGRES_MAJOR:process.env.OWNED_POSTGRES_MAJOR??'16',
-  P2_KNOWN_ACK_OWNED_TEST:'true',P2_KNOWN_ACK_COURSE_SOURCE_ROOT:process.env.P2_KNOWN_ACK_COURSE_SOURCE_ROOT,P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT:process.env.P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT},encoding:'utf8',timeout:1200000});
- if(result.status!==0){process.stderr.write(result.stderr);process.exitCode=1;}else {const receipt=JSON.parse(result.stdout);receipt.restoration.elapsedSeconds=Math.round((performance.now()-started)/100)/10;
+ const outputs=[];for(const mode of negativeOnly?negativeCases:['none']){
+  const result=spawnSync(process.execPath,['--import','tsx',outer],{cwd:root,env:{PATH:process.env.PATH,PG_BIN:process.env.PG_BIN,OWNED_POSTGRES_MAJOR:process.env.OWNED_POSTGRES_MAJOR??'16',
+  P2_KNOWN_ACK_OWNED_TEST:'true',P2_INTERRUPTED_OWNED_FAULT:mode,P2_KNOWN_ACK_COURSE_SOURCE_ROOT:process.env.P2_KNOWN_ACK_COURSE_SOURCE_ROOT,P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT:process.env.P2_KNOWN_ACK_COMMUNITY_SOURCE_ROOT},encoding:'utf8',timeout:1200000});
+ if(result.status!==0){process.stderr.write(result.stderr);process.exitCode=1;break;}else {const receipt=JSON.parse(result.stdout);receipt.restoration.elapsedSeconds=Math.round((performance.now()-started)/100)/10;
   receipt.restoration.ownedSourceSha256=Object.fromEntries(['ops/platform/p2-known-ack-interrupted-restoration.mjs','ops/platform/host/p2_known_ack_interrupted_restoration.py','ops/platform/host/p2_release_broker.py','ops/platform/host/p2_release_supervisor.py','ops/gateway/server.mjs','ops/gateway/p2-certification-fault.mjs','ops/gateway/package.json','ops/gateway/package-lock.json',...['run-owned.mjs','owned-process.mjs','owned-engine.py'].map(name=>'docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/'+name)].map(name=>[name,createHash('sha256').update(readFileSync(join(root,name))).digest('hex')]));
   receipt.restoration.gatewayDependency={package:'jose',version:'6.2.3',resolution:'ops/gateway/node_modules/jose',packageSha256:createHash('sha256').update(readFileSync(join(root,'ops/gateway/node_modules/jose/package.json'))).digest('hex')};
-  process.stdout.write(JSON.stringify(receipt,null,2)+'\n');}
+  outputs.push(receipt);}
+ }
+ if(!process.exitCode)process.stdout.write(JSON.stringify(negativeOnly?{version:1,status:'P2_INTERRUPTED_NEGATIVES_OWNED_PASS',serverMajor:Number(process.env.OWNED_POSTGRES_MAJOR??'16'),cases:outputs.map(value=>value.restoration),elapsedSeconds:Math.round((performance.now()-started)/100)/10}:outputs[0],null,2)+'\n');
 }finally{rmSync(folder,{recursive:true,force:true});}

@@ -70,6 +70,10 @@ def action(value):
     return isinstance(value, str) and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', value)
 
 
+def one(value):
+    return type(value) is int and value == 1
+
+
 def digest(value):
     return isinstance(value, str) and re.fullmatch(r'[a-f0-9]{64}', value)
 
@@ -85,7 +89,7 @@ def root_path(value):
 def require_selection(selection, selected, candidate_sha256):
     keys = {'version', 'mode', 'restorationActionId', 'originalCertificationActionId', 'originalRecoveryActionId',
             'originalOperatorSourceCommit', 'causalReceiptSha256', 'replacementReceiptSha256', 'priorGatewayReference'}
-    require(isinstance(selection, dict) and set(selection) == keys and selection['version'] == 1 and selection['mode'] == MODE and
+    require(isinstance(selection, dict) and set(selection) == keys and one(selection['version']) and selection['mode'] == MODE and
             all(action(selection[k]) for k in ('restorationActionId', 'originalCertificationActionId', 'originalRecoveryActionId')) and
             len({selected['releaseId'], selection['restorationActionId'], selection['originalCertificationActionId'], selection['originalRecoveryActionId']}) == 4 and
             migrate.source_commit(selection['originalOperatorSourceCommit']) and digest(candidate_sha256), 'P2_INTERRUPTED_EXPLICIT_SELECTION_REQUIRED')
@@ -133,7 +137,7 @@ def original_source(commit, expected):
 def validate_request_details(plan, certification_id, evidence, operations):
     artifact = evidence['originalArtifact']
     require(set(artifact) == {'version', 'kind', 'reviewerGithubUserId', 'certificationActionId', 'nativePlanSha256', 'windowEpoch', 'recordedAt', 'observations'} and
-            artifact['version'] == 1 and artifact['kind'] == 'operator-recorded-request-details' and artifact['reviewerGithubUserId'] == '8996309' and
+            one(artifact['version']) and artifact['kind'] == 'operator-recorded-request-details' and artifact['reviewerGithubUserId'] == '8996309' and
             artifact['certificationActionId'] == certification_id and artifact['nativePlanSha256'] == plan['nativePlan']['planSha256'] and
             artifact['windowEpoch'] == str(int(plan['nativePlan']['initialEpoch']) + 1) and len(artifact['observations']) == 2,
             'P2_INTERRUPTED_NATIVE_REQUEST_SCOPE_REQUIRED')
@@ -143,7 +147,7 @@ def validate_request_details(plan, certification_id, evidence, operations):
     for row in artifact['observations']:
         require(set(row) == {'version', 'kind', 'reviewerGithubUserId', 'projectId', 'deploymentId', 'path', 'method', 'providerRequestTypeFilter',
                              'providerRequestId', 'startedAt', 'completedAt', 'httpStatus', 'logScope', 'admittedLogLine'} and
-                row['version'] == 1 and row['kind'] == 'vercel-native-request-details' and row['reviewerGithubUserId'] == '8996309' and
+                one(row['version']) and row['kind'] == 'vercel-native-request-details' and row['reviewerGithubUserId'] == '8996309' and
                 row['projectId'] == plan['nativePlan']['projectId'] and row['deploymentId'] == plan['nativePlan']['deploymentId'] and
                 row['path'] == native.PATH and row['method'] == 'GET' and row['providerRequestTypeFilter'] == 'cron' and
                 row['logScope'] == 'this-provider-request-details' and row['httpStatus'] in (200, 503) and
@@ -152,11 +156,38 @@ def validate_request_details(plan, certification_id, evidence, operations):
         ids.add(row['providerRequestId'])
         event = json.loads(row['admittedLogLine'])
         require(set(event) == {'version', 'status', 'environment', 'projectId', 'operationId', 'producerSha256', 'sourceCommit', 'epoch', 'kind', 'targetSha256'} and
-                event['version'] == 1 and event['status'] == 'P2_LIFECYCLE_CRON_ADMITTED' and event['environment'] == 'staging' and
+                one(event['version']) and event['status'] == 'P2_LIFECYCLE_CRON_ADMITTED' and event['environment'] == 'staging' and
                 event['projectId'] == plan['nativePlan']['projectId'] and event['producerSha256'] == plan['nativePlan']['producer']['producerSha256'] and
                 event['sourceCommit'] == plan['nativePlan']['sourceCommit'] and event['targetSha256'] == plan['targetSha256'] and
                 event['epoch'] == artifact['windowEpoch'] and event['kind'] == 'recovery', 'P2_INTERRUPTED_ADMITTED_REQUEST_BINDING_REQUIRED')
     known.validate_request_operations(plan, artifact, operations)
+
+
+def require_original_configuration(initial, plan, intent):
+    values = initial.get('configurationSha256')
+    require(isinstance(values, dict) and set(values) == set(staging_state.CONFIGURATION_FILES) and
+            all(digest(value) for value in values.values()) and
+            intent.get('configurationSha256') == sha(json.dumps(values, separators=(',', ':'), ensure_ascii=False).encode()) and
+            plan.get('configurationSha256') == sha(canonical(values)),
+            'P2_INTERRUPTED_ORIGINAL_CONFIGURATION_REQUIRED')
+
+
+def require_snapshot_numbers(value):
+    front = value['frontend']
+    require(isinstance(front['outstanding'], list) and isinstance(front['deliveries'], list), 'P2_INTERRUPTED_DELIVERY_ROWS_REQUIRED')
+    counts = [front[key] for key in ('exports', 'later')] + [row['attempts'] for row in front['outstanding'] + front['deliveries']]
+    counts += [front['admission'][key] for key in ('active', 'uncertain')]
+    for service in ('course', 'community'):
+        require(one(value[service]['backend'].get('version')), 'P2_INTERRUPTED_BACKEND_VERSION_REQUIRED')
+        counts += list(value[service]['backend']['eligible'].values()) + list(value[service]['backend']['rowCounts'].values())
+    require(all(type(item) is int and item >= 0 for item in counts), 'P2_INTERRUPTED_INTEGER_COUNTS_REQUIRED')
+
+
+def require_gateway_counts(value):
+    admission = value['admission']
+    require(all(set(admission[key]) == {'newWork', 'recovery'} and
+                all(type(item) is int and item >= 0 for item in admission[key].values()) for key in ('active', 'uncertain')),
+            'P2_INTERRUPTED_INTEGER_GATEWAY_COUNTS_REQUIRED')
 
 
 def load_retained(initial, selected, jobs, verify, command=None):
@@ -176,10 +207,31 @@ def load_retained(initial, selected, jobs, verify, command=None):
             authorization['recoveryActionId'] == baseline['recoveryActionId'] == settlement['recoveryActionId'] == selection['originalRecoveryActionId'] and
             plan['candidateSha256'] == initial['candidateSha256'] and plan['sourceCommit'] == selected['sources']['frontend']['commit'] and
             plan['operatorSourceCommit'] == selection['originalOperatorSourceCommit'] == selected['sources']['frontend']['commit'] and plan['targetSha256'] == initial['targetSha256'] and
-            intent['recoveryActionId'] == selection['originalRecoveryActionId'] and intent['version'] == 1 and
+            set(intent) == {'version', 'recoveryActionId', 'intent', 'intentSha256'} and
+            intent['recoveryActionId'] == selection['originalRecoveryActionId'] and one(intent['version']) and
             sha(canonical(intent['intent'])) == intent['intentSha256'] == authorization['recoveryIntentSha256'], 'P2_INTERRUPTED_ORIGINAL_CAUSAL_CONTEXT_REQUIRED')
+    require(one(authorization.get('version')) and all(authorization.get(key) is False for key in
+            ('ordinaryClosedZeroGate', 'sqlReplayAllowed', 'roleChangeAllowed')), 'P2_INTERRUPTED_ORIGINAL_AUTHORIZATION_POLICY_REQUIRED')
+    native_plan = plan['nativePlan']
+    require(one(plan.get('version')) and one(native_plan.get('version')) and one(plan.get('maxMatches')) and
+            type(plan.get('leaseMilliseconds')) is int and plan['leaseMilliseconds'] == 120000 and plan.get('mode') == 'drop-after-ack' and
+            plan.get('nativePlanSha256') == native_plan['planSha256'] and
+            isinstance(native_plan.get('commandWitnesses'), list) and len(native_plan['commandWitnesses']) == 1 and
+            native_plan['commandWitnesses'][0].get('action') == 'suspend' and
+            isinstance(native_plan.get('initialEpoch'), str) and re.fullmatch(r'[1-9][0-9]{0,17}', native_plan['initialEpoch']) and
+            type(native_plan.get('windowSeconds')) is int and 1 <= native_plan['windowSeconds'] <= 180,
+            'P2_INTERRUPTED_ORIGINAL_ONE_SUSPEND_FAULT_REQUIRED')
+    for record in (baseline, domain, settlement):
+        require_snapshot_numbers(record['databases'])
+        require_gateway_counts(record['gateway'])
     expected_intent = intent['intent']
-    require(expected_intent['profile'] == 'known-ack-same-session-ordered-replacement-v1' and expected_intent['runtimeReplacements'] == 1 and
+    require_original_configuration(initial, plan, expected_intent)
+    require(set(expected_intent) == set(known.replacement_intent({**expected_intent, 'knownAckConfigurationInputDirectory': expected_intent['configurationInputDirectory'],
+            'knownAckReceiverTargets': initial['receiverTargets'], 'nativePlan': plan['nativePlan']}, selection['originalRecoveryActionId'])),
+            'P2_INTERRUPTED_ORIGINAL_INTENT_SCHEMA_REQUIRED')
+    require(one(expected_intent.get('version')) and expected_intent.get('recoveryActionId') == selection['originalRecoveryActionId'] and
+            expected_intent.get('targetSha256') == initial['targetSha256'] and
+            type(expected_intent.get('nativeWindowSeconds')) is int and expected_intent['nativeWindowSeconds'] == plan['nativePlan']['windowSeconds'] and expected_intent['profile'] == 'known-ack-same-session-ordered-replacement-v1' and one(expected_intent['runtimeReplacements']) and
             all(expected_intent[k] is False for k in ('sqlReplayAllowed', 'roleChangeAllowed', 'ordinaryClosedZeroGate', 'automaticFailureRecoveryAllowed')) and
             expected_intent['certificationActionId'] == selection['originalCertificationActionId'] and expected_intent['candidateSha256'] == initial['candidateSha256'] and
             expected_intent['operatorSourceCommit'] == selection['originalOperatorSourceCommit'] and expected_intent['sourceCommit'] == plan['sourceCommit'] and
@@ -201,13 +253,34 @@ def load_retained(initial, selected, jobs, verify, command=None):
             json.loads(request_raw) == requests['originalArtifact'] and requests['provenance']['authority'] == 'operator-recorded-request-details',
             'P2_INTERRUPTED_ORIGINAL_REQUEST_BYTES_REQUIRED')
     validate_request_details(plan, selection['originalCertificationActionId'], requests, domain['databases']['frontend']['operations'])
+    effect = domain['effect']
+    require(expected_intent.get('gatewayProcessSha256') == plan.get('gatewayProcessSha256') == effect.get('gatewayProcessSha256') and
+            effect.get('candidateSha256') == initial['candidateSha256'] and effect.get('configurationSha256') == plan['configurationSha256'] and
+            effect.get('gatewayImageSha256') == selected['artifacts']['gateway']['image'].split(':')[-1] and
+            one(effect.get('version')) and effect.get('stageId') == plan.get('stageId') and
+            effect.get('profile') == plan.get('profile') == 'lifecycle-known-command-v1' and
+            effect.get('environment') == 'staging' and effect.get('status') == 'P2_TRANSPORT_FAULT_INJECTED',
+            'P2_INTERRUPTED_ORIGINAL_PROCESS_EFFECT_REQUIRED')
     original_gateway = settlement['gateway']
     require(known._same_process(baseline['gateway'], original_gateway) and original_gateway['admission']['newWork'] is False and
             original_gateway['admission']['recovery'] is False and known._zero(original_gateway['admission']['active']) and
             original_gateway['admission']['uncertain'] == {'newWork': 0, 'recovery': 1}, 'P2_INTERRUPTED_EXACT_ORIGINAL_ONE_REQUIRED')
     output = stages['known-ack-replacement-intent.json']
     require(output['status'] == 'P2_KNOWN_ACK_ORDERED_REPLACEMENT_INTENT' and output['authorization'] == authorization and output['recoveryIntent'] == intent and
-            output['stages'] == [list(s) for s in runtime.STAGES] and set(output['oldProcesses']) == set(runtime.SERVICES), 'P2_INTERRUPTED_SOURCE_REPLACEMENT_INTENT_REQUIRED')
+            output['stages'] == [list(s) for s in runtime.STAGES] and output.get('unavailableStages') == [list(s) for s in known.UNAVAILABLE_STAGES] and set(output['oldProcesses']) == set(runtime.SERVICES), 'P2_INTERRUPTED_SOURCE_REPLACEMENT_INTENT_REQUIRED')
+    ready_path = ROOT / ('p2-certification-' + selection['originalCertificationActionId'])
+    ready_raw = migrate.read_input(ready_path, 'p2-certification-current-ready.json', 2_000_000)
+    ready = json.loads(ready_raw)
+    inventory = ready.get('containers')
+    require(ready.get('status') == 'P2_CERTIFICATION_CURRENT_READY' and ready.get('sqlReplayed') is False and ready.get('runtimeReplaced') is False and
+            isinstance(inventory, list) and len(inventory) == len(runtime.SERVICES) and
+            [row.get('service') for row in inventory] == list(runtime.SERVICES) and
+            sha(canonical(inventory)) == expected_intent.get('runtimeInventorySha256') and
+            all(set(row) == {'service', 'containerId', 'image', 'health'} and
+                row['containerId'] == output['oldProcesses'][row['service']]['containerId'] and
+                row['image'] == selected['artifacts'][runtime.IMAGE_KEYS[row['service']]]['image'] and
+                row['health'] == ('none' if row['service'].endswith('-tls') else 'healthy') for row in inventory),
+            'P2_INTERRUPTED_ORIGINAL_RUNTIME_INVENTORY_REQUIRED')
     active = None
     completed = []
     for index, stage in enumerate(runtime.STAGES):
@@ -216,7 +289,7 @@ def load_retained(initial, selected, jobs, verify, command=None):
         require(end is None or begin is not None, 'P2_INTERRUPTED_STAGE_READBACK_WITHOUT_INTENT')
         if begin is not None:
             require(len(completed) == index and active is None and begin['status'] == 'P2_KNOWN_ACK_RUNTIME_STAGE_INTENT' and
-                    begin['stage'] == list(stage) and begin['candidateSha256'] == initial['candidateSha256'] and
+                    begin['stage'] == list(stage) and type(begin.get('maximumSeconds')) is int and begin['maximumSeconds'] == 120 and begin['candidateSha256'] == initial['candidateSha256'] and
                     begin['recoveryActionId'] == selection['originalRecoveryActionId'] and begin['authorizationReceiptSha256'] == sha(canonical(authorization)), 'P2_INTERRUPTED_STAGE_ORDER_OR_INTENT_REQUIRED')
             if end is None:
                 active = stage
@@ -243,18 +316,20 @@ def load_retained(initial, selected, jobs, verify, command=None):
     require(staging_state.configuration_hashes(input_directory) == initial['configurationSha256'], 'P2_INTERRUPTED_ROOT_INPUT_CHANGED')
     stopped_initial = {**initial, 'priorGatewayReference': selection['priorGatewayReference']}
     observation = prior.observe_stopped_prior_gateway(stopped_initial, selected, verify, command)
+    require_gateway_counts(observation)
     require(known._same_process(observation, original_gateway) and prior._closed_observed(observation) and
             known._zero(observation['admission']['active']) and observation['admission']['uncertain'] == {'newWork': 0, 'recovery': 1},
             'P2_INTERRUPTED_LATEST_SOURCE_STOPPED_ONE_REQUIRED')
     verify()
     return {'selection': selection, 'plan': plan, 'values': values, 'stages': stages, 'originalGateway': observation,
             'inputDirectory': input_directory, 'replacementDirectory': replacement, 'activeStage': active, 'completedStages': completed,
-            'oldProcesses': output['oldProcesses'], 'originalSource': source, 'originalSourceManifest': manifest}
+            'oldProcesses': output['oldProcesses'], 'originalReadySha256': sha(ready_raw), 'originalSource': source, 'originalSourceManifest': manifest}
 
 
 def validate_fresh_settled(retained, snapshot):
     """Fresh observation deadline is not inherited from the interrupted process."""
     settlement = retained['values']['settlement.json']
+    require_snapshot_numbers(snapshot)
     known.validate_backend_idle(snapshot)
     normalized = copy.deepcopy(snapshot)
     for service in ('course', 'community'):
@@ -450,6 +525,7 @@ class InterruptedRestorationBoundary:
             if self.finished:
                 actual = prior.observe_prior_gateway({**self.initial, 'configurationSha256': self.broker.initial['configurationSha256']},
                                                      self.selected, self.parent.verify, self.command)
+                require_gateway_counts(actual)
                 require(known._same_process(actual, self.new_gateway) and prior._zero(actual) and prior._closed_observed(actual),
                         'P2_INTERRUPTED_NEW_GATEWAY_DRIFT')
             elif self.stage_active == ('gateway',):
@@ -496,6 +572,7 @@ class InterruptedRestorationBoundary:
                 require(prior._read_lineage() == self.gateway_transition_lineage,
                         'P2_INTERRUPTED_LATEST_REPLACEMENT_LINEAGE_CHANGED')
                 actual = prior.observe_prior_gateway(self.initial, self.selected, self.parent.verify, self.command)
+                require_gateway_counts(actual)
                 require(actual['process']['containerId'] != self.old_gateway['process']['containerId'] and prior._closed_observed(actual) and prior._zero(actual) and
                         actual['binding']['configurationDirectory'] == str(self.snapshot), 'P2_INTERRUPTED_ACTUAL_NEW_GATEWAY_ZERO_REQUIRED')
                 prior._remember(self.initial, actual)
@@ -746,8 +823,11 @@ class InterruptedKnownAckRestorationBroker(Broker):
         require(sha(stop_raw) == stop_ref['stopReceiptSha256'] and
                 sha(migrate.read_input(Path(stop_ref['stopReceiptDirectory']), prior.BEFORE_STOP)) == json.loads(stop_raw)['beforeSha256'],
                 'P2_INTERRUPTED_ORIGINAL_STOP_BYTES_CHANGED')
+        require(sha(migrate.read_input(ROOT / ('p2-certification-' + selection['originalCertificationActionId']),
+                'p2-certification-current-ready.json', 2_000_000)) == retained['originalReadySha256'], 'P2_INTERRUPTED_ORIGINAL_READY_CHANGED')
         verify_source_closure({'sourceSha256': retained['originalSourceManifest'],
                                'sourceClosureSha256': retained['values']['replacement-authorization.json']['operatorSourceClosureSha256']}, retained['originalSource'])
+        require_original_configuration(self.initial, retained['plan'], retained['values']['recovery-intent.json']['intent'])
         runtime.validate_snapshot_source(retained['inputDirectory'], self.selected, self.jobs)
         require(staging_state.configuration_hashes(retained['inputDirectory']) == self.initial['configurationSha256'], 'P2_INTERRUPTED_ROOT_INPUT_CHANGED')
         for path in (retained['replacementDirectory'] / 'runtime-known-ack/known-ack-runtime-outcome.json',
@@ -808,6 +888,7 @@ class InterruptedKnownAckRestorationBroker(Broker):
                   'candidateSha256': self.initial['candidateSha256'], 'originalCertificationActionId': self.retained['selection']['originalCertificationActionId'],
                   'originalRecoveryActionId': self.retained['selection']['originalRecoveryActionId'],
                   'originalCausalReceiptSha256': self.retained['selection']['causalReceiptSha256'],
+                  'originalReadyReceiptSha256': self.retained['originalReadySha256'],
                   'originalReplacementReceiptSha256': self.retained['selection']['replacementReceiptSha256'],
                   'originalStopReference': self.retained['selection']['priorGatewayReference'], 'newFrontendReceiptSha256': sha(self.frontend_raw),
                   'newApiCurrentSha256': sha(canonical(self.api_before)), 'operatorSourceClosureSha256': self.initial['sourceClosureSha256'],
