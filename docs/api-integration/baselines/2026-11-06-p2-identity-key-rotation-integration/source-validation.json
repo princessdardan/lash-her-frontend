@@ -5,10 +5,11 @@
   "baseCommit": "f1aebc11f9a1cc4c84e8599fa4db1fca14c84d1c",
   "sourceIntegrationCommit": "1178707de914a528d796c08ebfa7a58d57d42681",
   "sharedSupervisorCommit": "4be11ab35888467b1d41f395b07d696e56f6dbce",
+  "operatorBindingCorrectionCommit": "b677daf552e57d5356f80804fc8eb27189cb3b47",
   "sourceSha256": {
     "ops/platform/p2-canonical-browser-origin.mjs": "583684febb2e74d66d9e733c34d50fbc8bcb76b138e2d71ea2f38a72aa49c0f7",
     "ops/platform/host/p2_canonical_browser_origin.py": "e78c6dea99bf5a43beef91cb4dd15c6f6889ce0dd4e67e366804653e3b09413f",
-    "ops/platform/p2-identity-key-rotation-operator.mjs": "99f601d2a0fa69b198c5641cbbf5468b546234d1b35b4df3336c55ed0bb3a137",
+    "ops/platform/p2-identity-key-rotation-operator.mjs": "6bb514b9cf334ea259b1cdc7c99cb693124ea04b485473cd3526fecef0f556b0",
     "ops/platform/p2-identity-key-rotation-parent.mjs": "26a4f44195c187a4fd91ba0707808ae17aef37ae1132924fb0f6c6789cecd026",
     "ops/platform/host/p2_identity_key_rotation_parent.py": "b02242122fa4662e0a8b391c88e28a037ba377e329ccf5e583964f380f3ed053",
     "ops/platform/host/p2_release_supervisor.py": "6f2fad0c6141c372af46ea4852a9ba22dc2354aeb1df20e310ef290d95ec2f01"
