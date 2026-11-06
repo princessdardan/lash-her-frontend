@@ -117,7 +117,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: p2-owned-fixture-failure-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/p2-owned-fixture-failure/
+          path: |
+            ${{ runner.temp }}/p2-owned-fixture-failure/
+            ${{ runner.temp }}/p2-platform-postgres18.json
           if-no-files-found: ignore
           retention-days: 3
       - name: Verify initial Course logins on owned PostgreSQL 18

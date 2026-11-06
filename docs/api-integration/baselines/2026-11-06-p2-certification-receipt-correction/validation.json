@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "status": "EXACT_NINE_CASE_CONSUMER_CORRECTED_ACTUAL_LINUX_RETRY_REQUIRED",
+  "baseSource": "5d0818a172e4027de1848a3f5855f96f1ac531e9",
+  "testedFileSha256": {
+    ".github/workflows/ci.yml": "45464f9da10137057ba55aa2012a0c9da336154e9d3eb67bb03ba40ae5c7e37f",
+    "ops/platform/test-p2-platform-local.mjs": "b7f5d821c6f9e37aac051943321bc30225a95534705a60ba810cb2b98729238a",
+    "ops/platform/test-p2-platform-local.test.mjs": "1de98c36f6e56037387d7f6c18ddc713d1667564e242a737245dbed46e6b80b9",
+    "ops/platform/prepare-p2-identity-probe-fixtures.test.mjs": "351a672df4169eb92a1e49ca86e6471c0eaee5d52395121d47dfd5a442c775df"
+  },
+  "rootChecks": {
+    "node": 42,
+    "skipped": 0,
+    "lintPassed": true
+  },
+  "originalLocalFailure": {
+    "fixture": "certification",
+    "childExitCode": 0,
+    "failureCode": "P2_OWNED_CHILD_RECEIPT_INVALID",
+    "requiredCases": 8,
+    "producerCases": 9,
+    "completedChecks": [
+      24,
+      18,
+      9
+    ]
+  },
+  "correctedLocalComposition": {
+    "platform": "macOS 26.6.2 / Darwin25.6 arm64",
+    "node": "24.18.0",
+    "postgres": "18.6",
+    "fixtures": 4,
+    "checks": [
+      24,
+      18,
+      9,
+      9
+    ],
+    "skips": 0,
+    "providerTouched": false,
+    "actualHostDocker": false,
+    "actualProviderNativeEvidence": false
+  },
+  "ci": {
+    "source": "6a04ab455723013ba93bda1c93d199fe281843af",
+    "runId": 42208112846,
+    "operatorJobId": 127859725679,
+    "failedStep": "Qualify Phase 2 roles, release failure and certification scopes on owned PostgreSQL 18",
+    "otherEightJobsPassed": true,
+    "aggregateGate": "failed",
+    "wrapperReceiptRetained": false,
+    "ciCauseAttribution": "strict consumer mismatch inferred from exact source and reproduced complete local failure; original CI wrapper stdout was not uploaded",
+    "forwardProducerReached": false,
+    "originalLinuxForwardCauseResolved": false
+  },
+  "originals": {
+    "original-composed-postgres18.json": {
+      "bytes": 5284,
+      "sha256": "91db24e11ccf8bbfdf257cdefec11a68a93689f49e6167d26b34105ebc3b780a"
+    },
+    "original-composed-postgres18.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "corrected-composed-postgres18.json": {
+      "bytes": 6243,
+      "sha256": "39a03488b40a777d9d1d392032a4cc55d4ad6f1de7c331f971d4a1ce95b86938"
+    },
+    "corrected-composed-postgres18.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "releaseAccepted": false,
+  "g2Accepted": false
+}

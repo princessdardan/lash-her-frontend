@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { P2_OWNED_FIXTURES, p2OwnedFixtureEnvironment, validateP2FixtureReceipt, p2OwnedFixtureFailure } from './test-p2-platform-local.mjs';
 
 function receipt(fixture, major = 18) {
@@ -45,13 +46,22 @@ test('receipt must prove the selected actual major, every required physical scen
   }
 });
 
-test('certification fixture requires all eight current/physical cases and cannot claim deployed qualification', () => {
+test('certification fixture requires all nine current/physical cases and cannot claim deployed qualification', () => {
   const fixture = P2_OWNED_FIXTURES.find(value => value.id === 'certification'), actual = receipt(fixture);
   for (const change of [value => { value.frontendMigrations = 82; }, value => { value.actualTlsPostgres = false; },
     value => { value.noSqlReplay = false; }, value => { value.browserQualified = true; }, value => { value.nativeInvocationQualified = true; },
     value => { value.actualHostDocker = true; }, value => { value.postgresMajor = 18; }, value => { value.checks.reverse(); }]) {
     const changed = structuredClone(actual); change(changed); assert.throws(() => validateP2FixtureReceipt(fixture, changed, 18));
   }
+});
+
+test('actual retained PostgreSQL18 receipt requires the added direct-worker operation-window case', () => {
+  const fixture = P2_OWNED_FIXTURES.find(value => value.id === 'certification');
+  const actual = JSON.parse(readFileSync(new URL('../../docs/api-integration/baselines/2026-11-06-p2-direct-worker-parent-hooks/owned-postgres18.json', import.meta.url)));
+  assert.equal(validateP2FixtureReceipt(fixture, actual, 18).executedChecks, 9);
+  const name = 'actual-fixed-direct-worker-epoch-original-operation-window-and-uncertainty-refusal';
+  assert.ok(actual.checks.includes(name));
+  assert.throws(() => validateP2FixtureReceipt(fixture, { ...actual, checks: actual.checks.filter(check => check !== name) }, 18));
 });
 
 test('native success cannot substitute for an enabled schedule, unfinished ledger or modeled app path', () => {

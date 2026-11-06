@@ -5,6 +5,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { parse } from "yaml";
 import { p2IdentityFixtureFailureReceipt, parseP2DockerContextEndpoint,
   parseP2ForwardRecoveryPostgres18Receipt, parseP2IdentityProbeTap, parseP2LifecyclePersistencePostgres18Receipt,
   parseP2LifecycleReceiversPostgres18Receipt,
@@ -602,10 +603,15 @@ test("Docker child failure output is retained privately outside disposable check
   } finally { value.cleanup(); rmSync(runnerTemporary, { recursive: true, force: true }); }
 });
 
-test("CI uploads only the fixed private failure directory for three days", () => {
+test("CI uploads only the fixed private failure directory and wrapper receipt for three days", () => {
   const workflow = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
   assert.match(workflow, /Retain private owned fixture failure diagnostics\n\s+if: failure\(\)\n\s+uses: actions\/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f/u);
-  assert.match(workflow, /name: p2-owned-fixture-failure-\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}\n\s+path: \$\{\{ runner\.temp \}\}\/p2-owned-fixture-failure\/\n\s+if-no-files-found: ignore\n\s+retention-days: 3/u);
+  const step = parse(workflow).jobs["frontend-operator-migrations"].steps.find(step => step.name === "Retain private owned fixture failure diagnostics");
+  assert.equal(step.if, "failure()");
+  assert.equal(step.with.name, "p2-owned-fixture-failure-${{ github.event.pull_request.head.sha || github.sha }}");
+  assert.deepEqual(step.with.path.trim().split(/\r?\n/u), ["${{ runner.temp }}/p2-owned-fixture-failure/", "${{ runner.temp }}/p2-platform-postgres18.json"]);
+  assert.equal(step.with["if-no-files-found"], "ignore");assert.equal(step.with["retention-days"], 3);
+  assert.deepEqual(Object.keys(step.with).sort(), ["name", "path", "if-no-files-found", "retention-days"].sort());
 });
 
 test("Docker context accepts only an existing local Unix socket", () => {

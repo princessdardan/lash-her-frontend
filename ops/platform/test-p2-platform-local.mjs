@@ -62,6 +62,7 @@ export const P2_OWNED_FIXTURES = Object.freeze([
     'initial-and-continuous-runtime-public-shadow-schema-refusal-and-repair',
     'actual-fixed-auth-preparation-open-close-epochs-only',
     'actual-fixed-browser-pending-open-close-epochs-only',
+    'actual-fixed-direct-worker-epoch-original-operation-window-and-uncertainty-refusal',
     'independent-fence-after-parent-session-loss-and-without-native-credential',
   ]) }),
 ]);
