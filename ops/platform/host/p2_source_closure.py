@@ -48,8 +48,11 @@ def private_observer_program(initial, directory):
     # Set by the fixed source supervisor after checking the closed manifest;
     # never selected from the private operator input packet.
     source_name = initial.get('_guardObserverSource', 'ops/platform/p2-frontend-live-probe.mjs')
-    if source_name not in {'ops/platform/p2-frontend-live-probe.mjs', 'ops/platform/p2-recovery-current-probe.mjs'}:
+    if source_name not in {'ops/platform/p2-frontend-live-probe.mjs', 'ops/platform/p2-recovery-current-probe.mjs',
+                           'ops/platform/p2-certification-current-probe.mjs'}:
         raise ValueError('P2_FIXED_OBSERVER_SOURCE_REQUIRED')
+    if source_name == 'ops/platform/p2-certification-current-probe.mjs' and initial.get('mode') != 'p2-bounded-certification':
+        raise ValueError('P2_FIXED_CERTIFICATION_OBSERVER_REQUIRED')
     expected = initial['sourceSha256'][source_name]
     if hashlib.sha256(raw).hexdigest() != expected:
         raise ValueError('P2_OBSERVER_SOURCE_CHANGED')

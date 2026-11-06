@@ -33,6 +33,8 @@ DEFAULT_LAYOUT = {'actionIdKey': 'releaseId', 'receiptPrefix': 'p2-', 'runtimePr
                   'terminalName': 'p2-release-outcome.json', 'terminalStatus': 'P2_STAGING_READY_FOR_CERTIFICATION'}
 RECOVERY_LAYOUT = {'actionIdKey': 'recoveryActionId', 'receiptPrefix': 'p2-recovery-', 'runtimePrefix': 'runtime-recovery-',
                    'terminalName': 'p2-recovery-outcome.json', 'terminalStatus': 'P2_STAGING_RECOVERY_RESTORATION_VERIFIED'}
+CERTIFICATION_LAYOUT = {'actionIdKey': 'certificationActionId', 'receiptPrefix': 'p2-certification-', 'runtimePrefix': 'runtime-certification-',
+                        'terminalName': 'p2-certification-outcome.json', 'terminalStatus': 'P2_BOUNDED_CERTIFICATION_CONTAINED'}
 
 
 def fixed_layout(initial):
@@ -166,7 +168,8 @@ def close_gateway(initial, selected, configuration):
             'closedGatewayAdmissionSha256': digest}
 
 
-def fail_closed(initial, armed, source, *, group=None, record_name='p2-independent-guard-outcome.json', observer_type=None):
+def fail_closed(initial, armed, source, *, group=None, record_name='p2-independent-guard-outcome.json', observer_type=None,
+                native_containment=None):
     result = {'status': 'P2_INDEPENDENT_GUARD_FAILED_CLOSED_REQUIRES_REVIEW', 'trafficAuthorized': None,
               'sqlReplayAuthorized': False, 'releaseAccepted': False, 'g2Accepted': False,
               'workerProcessesQuiesced': False, 'runtimeStopped': None, 'frontendAdmissionClosed': None}
@@ -176,13 +179,31 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
         except BaseException:
             result['workerProcessCleanupUncertain'] = True
     if armed is None:
-        # Before the SQL-complete handshake, the broker could not start APIs.
-        result.update(status='P2_GUARD_REFUSED_BEFORE_API_STAGE', runtimeStopAttempted=False)
+        # Certification starts from an existing runtime but cannot issue any
+        # mutator before its separate source-selected armed handshake.
+        status = ('P2_GUARD_REFUSED_BEFORE_CERTIFICATION_STAGE' if fixed_layout(initial) == CERTIFICATION_LAYOUT
+                  else 'P2_GUARD_REFUSED_BEFORE_API_STAGE')
+        result.update(status=status, runtimeStopAttempted=False)
         return result
     # These values were verified before forking. Mutable input loss is not a
     # reason to skip closure of an already-running release.
     selected = initial['candidate']
     layout, identity = fixed_layout(initial), action_id(initial)
+    if layout == CERTIFICATION_LAYOUT:
+        # The fixed source entry supplies this callable before forking. No
+        # operator JSON field selects code or a provider action. Reaping the
+        # mutator precedes disable; failed/unknown disable must not skip either
+        # admission fence or the final runtime stop below.
+        result.update(nativeDisabled=None, nativeDisableAttempted=None)
+        try:
+            require(callable(native_containment), 'P2_CERTIFICATION_NATIVE_CONTAINMENT_REQUIRED')
+            native = native_containment(initial, armed, source)
+            require(isinstance(native, dict) and set(native) == {'nativeDisabled', 'nativeDisableAttempted'} and
+                    (native['nativeDisabled'] is True or native['nativeDisabled'] is None) and
+                    type(native['nativeDisableAttempted']) is bool, 'P2_CERTIFICATION_NATIVE_CONTAINMENT_REFUSED')
+            result.update(native)
+        except BaseException:
+            result['nativeContainmentUncertain'] = True
     observer_source = initial.get('_guardObserverSource', 'ops/platform/p2-frontend-live-probe.mjs')
     observer = None
     try:
@@ -195,7 +216,10 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
         result['trafficAuthorized'] = False
     except BaseException:
         pass
-    snapshot = Path(initial['results']) / (layout['runtimePrefix'] + identity) / 'configuration'
+    # Certification adopts the exact currently mounted configuration; unlike
+    # release/recovery it neither creates nor restores a runtime snapshot.
+    snapshot = (Path(initial['configuration']) if layout == CERTIFICATION_LAYOUT else
+                Path(initial['results']) / (layout['runtimePrefix'] + identity) / 'configuration')
     try:
         result.update(close_gateway(initial, selected, snapshot))
     except BaseException:
@@ -230,26 +254,30 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
     return result
 
 
-def finish_failure_cleanup(initial, armed, source, child, *, observer_type=None):
-    failed = fail_closed(initial, armed, source, group=child, observer_type=observer_type)
+def finish_failure_cleanup(initial, armed, source, child, *, observer_type=None, native_containment=None):
+    failed = fail_closed(initial, armed, source, group=child, observer_type=observer_type, native_containment=native_containment)
     if armed is not None and not failed['workerProcessesQuiesced']:
         # Admissions have already been closed/stopped as far as can be
         # observed. Keep the actual flock while an unreaped mutator survives.
         while not stop_group(child):
             time.sleep(1)
         failed = fail_closed(initial, armed, source, group=child,
-                             record_name='p2-independent-guard-after-quiescence.json', observer_type=observer_type)
+                             record_name='p2-independent-guard-after-quiescence.json', observer_type=observer_type,
+                             native_containment=native_containment)
     return failed
 
 
 def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
-              observer_source='ops/platform/p2-frontend-live-probe.mjs', layout=None):
+              observer_source='ops/platform/p2-frontend-live-probe.mjs', layout=None, native_containment=None):
     layout = dict(DEFAULT_LAYOUT if layout is None else layout)
     require(issubclass(broker_type, Broker) and issubclass(observer_type, PhysicalObserver), 'P2_FIXED_SOURCE_TYPES_REQUIRED')
     require((layout == DEFAULT_LAYOUT and broker_type is Broker and observer_type is PhysicalObserver
-             and observer_source == 'ops/platform/p2-frontend-live-probe.mjs') or
+             and observer_source == 'ops/platform/p2-frontend-live-probe.mjs' and native_containment is None) or
             (layout == RECOVERY_LAYOUT and initial.get('mode') == 'p2-post-sql-recovery'
-             and observer_source == 'ops/platform/p2-recovery-current-probe.mjs'), 'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
+             and observer_source == 'ops/platform/p2-recovery-current-probe.mjs' and native_containment is None) or
+            (layout == CERTIFICATION_LAYOUT and initial.get('mode') == 'p2-bounded-certification'
+             and observer_source == 'ops/platform/p2-certification-current-probe.mjs' and callable(native_containment)),
+            'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     initial['_guardLayout'], initial['_guardObserverSource'] = layout, observer_source
     identity = action_id(initial)
     require(os.geteuid() == 0 and sys.platform == 'linux' and initial.get('environment') == 'staging', 'P2_LINUX_ROOT_GUARD_REQUIRED')
@@ -325,7 +353,7 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                 'P2_GUARD_TERMINAL_RECEIPT_REQUIRED')
     except BaseException:
         with sticky_cleanup_signals():
-            finish_failure_cleanup(initial, armed, source, child, observer_type=observer_type)
+            finish_failure_cleanup(initial, armed, source, child, observer_type=observer_type, native_containment=native_containment)
         raise
     finally:
         os.close(safety_read); os.close(health_write); os.close(fd)

@@ -12,7 +12,7 @@ import unittest
 import migrate
 from p2_release_broker import Broker
 from p2_release_scope import P2ReleaseScope
-from p2_release_supervisor import stop_group, watch_broker, close_gateway, fail_closed, sticky_cleanup_signals, finish_failure_cleanup, RECOVERY_LAYOUT
+from p2_release_supervisor import stop_group, watch_broker, close_gateway, fail_closed, sticky_cleanup_signals, finish_failure_cleanup, RECOVERY_LAYOUT, CERTIFICATION_LAYOUT
 import staging_admission
 from unittest.mock import patch
 
@@ -155,12 +155,38 @@ class IndependentGuardTests(unittest.TestCase):
     def test_recovery_failure_uses_distinct_snapshot_and_receipts_without_original_overwrite(self):
         self.failure_closure_case(recovery=True)
 
-    def failure_closure_case(self, group=None, repeated_signal=False, retry=False, recovery=False):
+    def test_certification_disables_native_before_current_mounted_admission_and_runtime_cleanup(self):
+        self.failure_closure_case(certification=True)
+
+    def test_certification_unknown_native_outcome_still_fences_and_stops(self):
+        self.failure_closure_case(certification=True, native_result={'nativeDisabled': None, 'nativeDisableAttempted': True})
+
+    def test_certification_callback_error_never_skips_other_cleanup_or_exposes_details(self):
+        self.failure_closure_case(certification=True, native_error=True)
+
+    def test_certification_malformed_native_outcome_is_unknown_not_verified(self):
+        self.failure_closure_case(certification=True, native_result={'nativeDisabled': True, 'nativeDisableAttempted': False, 'unreviewed': True})
+
+    def test_certification_native_disable_is_rechecked_after_mutator_reaping_retry(self):
+        self.failure_closure_case(group=424242, retry=True, certification=True)
+
+    def test_certification_cannot_issue_native_control_before_actual_armed_handshake(self):
+        callback_calls = []
+        initial = {'_guardLayout': CERTIFICATION_LAYOUT, 'nativeContainment': {'nativeDisabled': True}}
+        result = fail_closed(initial, None, self.root, native_containment=lambda *_: callback_calls.append(True))
+        self.assertEqual(callback_calls, [])
+        self.assertEqual(result['status'], 'P2_GUARD_REFUSED_BEFORE_CERTIFICATION_STAGE')
+        self.assertIs(result['runtimeStopAttempted'], False)
+        self.assertNotIn('nativeDisabled', result)
+
+    def failure_closure_case(self, group=None, repeated_signal=False, retry=False, recovery=False, certification=False,
+                             native_result=None, native_error=False):
         results = self.root / 'results'; results.mkdir(mode=0o700)
-        receipt_name = 'p2-recovery-deliberate' if recovery else 'p2-owned'
+        receipt_name = 'p2-certification-deliberate' if certification else 'p2-recovery-deliberate' if recovery else 'p2-owned'
         runtime_name = 'runtime-recovery-deliberate' if recovery else 'runtime-owned'
         (results / receipt_name).mkdir(mode=0o700)
-        snapshot = results / runtime_name / 'configuration'; snapshot.mkdir(parents=True, mode=0o700)
+        snapshot = self.root / 'actual-mounted-configuration' if certification else results / runtime_name / 'configuration'
+        snapshot.mkdir(parents=True, mode=0o700)
         (snapshot / 'admission').mkdir(mode=0o755)
         candidate_hash = 'a' * 64
         (snapshot / 'gateway.json').write_text(json.dumps({'admission': {'file': '/admission/state.json',
@@ -172,7 +198,18 @@ class IndependentGuardTests(unittest.TestCase):
             initial.update(recoveryActionId='deliberate', _guardLayout=RECOVERY_LAYOUT,
                            _guardObserverSource='ops/platform/p2-recovery-current-probe.mjs')
             initial['sourceSha256']['ops/platform/p2-recovery-current-probe.mjs'] = 'b'*64
+        if certification:
+            initial.update(certificationActionId='deliberate', _guardLayout=CERTIFICATION_LAYOUT, configuration=str(snapshot),
+                           _guardObserverSource='ops/platform/p2-certification-current-probe.mjs')
+            initial['sourceSha256']['ops/platform/p2-certification-current-probe.mjs'] = 'c'*64
         calls = []
+        def native_containment(actual_initial, armed, source):
+            self.assertIs(actual_initial, initial)
+            self.assertEqual(armed, {'owned': True}); self.assertEqual(source, self.root)
+            calls.append('native-disable')
+            if native_error:
+                raise RuntimeError('private-native-error-must-not-escape')
+            return native_result if native_result is not None else {'nativeDisabled': True, 'nativeDisableAttempted': False}
         class Observer:
             def __init__(owned_self, *_, **kwargs): pass
             def probe(owned_self, operation): calls.append(operation)
@@ -186,16 +223,24 @@ class IndependentGuardTests(unittest.TestCase):
              patch('p2_release_supervisor.migrate.suspend_runtime', side_effect=stop), \
              patch.object(staging_admission.Host, 'state', side_effect=ValueError('unavailable')), sticky_cleanup_signals():
             if repeated_signal: os.kill(os.getpid(), signal.SIGTERM)
-            receipt = (finish_failure_cleanup(initial, {'owned': True}, self.root, group) if retry else
-                       fail_closed(initial, {'owned': True}, self.root, group=group))
-        self.assertEqual(calls, ['fence', 'runtime-stop'] * (2 if retry else 1))
+            options = {'native_containment': native_containment} if certification else {}
+            receipt = (finish_failure_cleanup(initial, {'owned': True}, self.root, group, **options) if retry else
+                       fail_closed(initial, {'owned': True}, self.root, group=group, **options))
+        expected_calls = (['native-disable'] if certification else []) + ['fence', 'runtime-stop']
+        self.assertEqual(calls, expected_calls * (2 if retry else 1))
         self.assertIs(receipt['frontendAdmissionClosed'], True); self.assertIs(receipt['runtimeStopped'], True)
         state = json.loads((snapshot / 'admission/state.json').read_bytes())
         self.assertIs(state['newWork'], False); self.assertIs(state['recovery'], False)
         if group is not None: self.assertIs(receipt['workerProcessesQuiesced'], retry)
         if retry:
-            final = json.loads((results / 'p2-owned/p2-independent-guard-after-quiescence.json').read_bytes())
+            final = json.loads((results / receipt_name / 'p2-independent-guard-after-quiescence.json').read_bytes())
             self.assertIs(final['workerProcessesQuiesced'], True)
+        if certification:
+            valid = not native_error and (native_result is None or set(native_result) == {'nativeDisabled', 'nativeDisableAttempted'})
+            self.assertIs(receipt['nativeDisabled'], (native_result or {'nativeDisabled': True})['nativeDisabled'] if valid else None)
+            self.assertIs(receipt['nativeDisableAttempted'], (native_result or {'nativeDisableAttempted': False})['nativeDisableAttempted'] if valid else None)
+            self.assertNotIn('private-native-error', json.dumps(receipt))
+            self.assertFalse((results / 'runtime-certification-deliberate').exists())
         if recovery:
             self.assertTrue((results / receipt_name / 'p2-independent-guard-outcome.json').exists())
             self.assertFalse((results / 'p2-owned').exists())

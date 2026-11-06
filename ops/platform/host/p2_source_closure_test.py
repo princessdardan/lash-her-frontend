@@ -73,3 +73,18 @@ class SourceClosureTests(unittest.TestCase):
         self.initial['_guardObserverSource'] = 'ops/platform/operator-supplied.mjs'
         with self.assertRaisesRegex(ValueError, 'FIXED_OBSERVER_SOURCE_REQUIRED'):
             private_observer_program(self.initial, private / 'other')
+
+    def test_fixed_certification_observer_requires_its_exact_mode_and_cached_bytes(self):
+        raw = b'owned certification observer'
+        source = 'ops/platform/p2-certification-current-probe.mjs'
+        self.initial['sourceSha256'][source] = hashlib.sha256(raw).hexdigest()
+        self.initial['_guardObserverSource'] = source
+        self.initial['_guardObserverProgram'] = raw
+        private = self.root / 'certification-private'; private.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, 'FIXED_CERTIFICATION_OBSERVER_REQUIRED'):
+            private_observer_program(self.initial, private / 'refused')
+        self.initial['mode'] = 'p2-bounded-certification'
+        self.assertEqual(private_observer_program(self.initial, private / 'source').read_bytes(), raw)
+        self.initial['_guardObserverProgram'] = b'changed observer'
+        with self.assertRaisesRegex(ValueError, 'OBSERVER_SOURCE_CHANGED'):
+            private_observer_program(self.initial, private / 'changed')

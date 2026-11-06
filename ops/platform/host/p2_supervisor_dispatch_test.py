@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 import unittest
 from p2_release_broker import Broker, PhysicalObserver
-from p2_release_supervisor import supervise, DEFAULT_LAYOUT, RECOVERY_LAYOUT, cleanup_recovery_current_containers
+from p2_release_supervisor import supervise, DEFAULT_LAYOUT, RECOVERY_LAYOUT, CERTIFICATION_LAYOUT, cleanup_recovery_current_containers
 
 
 class FixedDispatchTests(unittest.TestCase):
@@ -42,6 +42,34 @@ class FixedDispatchTests(unittest.TestCase):
             initial['sourceCommit'] = 'a'*40
             jobs['frontend']['job']['target']['approvedPendingTags'] = []
             with self.assertRaisesRegex(ValueError, 'CANDIDATE_BINDING_REFUSED'): broker.select_release(initial)
+
+    def test_certification_dispatch_requires_source_callable_and_cannot_be_selected_by_json(self):
+        class CertificationBroker(Broker): pass
+        class CertificationObserver(PhysicalObserver): pass
+        initial = {'candidate': {'releaseId': 'original'}, 'mode': 'p2-bounded-certification', 'certificationActionId': 'certification-2',
+                   'nativeContainment': 'operator-selected-function', '_guardLayout': CERTIFICATION_LAYOUT}
+        with patch('p2_release_supervisor.os.geteuid', return_value=1):
+            with self.assertRaisesRegex(ValueError, 'LINUX_ROOT_GUARD_REQUIRED'):
+                supervise(initial)
+        self.assertEqual(initial['_guardLayout'], DEFAULT_LAYOUT)
+        options = {'broker_type': CertificationBroker, 'observer_type': CertificationObserver,
+                   'observer_source': 'ops/platform/p2-certification-current-probe.mjs', 'layout': CERTIFICATION_LAYOUT}
+        for callback in (None, 'operator-selected-function', {'held': True}):
+            with self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
+                supervise(initial, **options, native_containment=callback)
+        callback = lambda *_: {'nativeDisabled': True, 'nativeDisableAttempted': False}
+        with patch('p2_release_supervisor.os.geteuid', return_value=1):
+            with self.assertRaisesRegex(ValueError, 'LINUX_ROOT_GUARD_REQUIRED'):
+                supervise(initial, **options, native_containment=callback)
+        self.assertEqual(initial['_guardLayout'], CERTIFICATION_LAYOUT)
+        self.assertEqual(initial['_guardObserverSource'], options['observer_source'])
+        for changed in ({**options, 'observer_source': 'ops/platform/arbitrary.mjs'},
+                        {**options, 'layout': {**CERTIFICATION_LAYOUT, 'terminalName': '../out.json'}}):
+            with self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
+                supervise(initial, **changed, native_containment=callback)
+        for layout in (DEFAULT_LAYOUT, RECOVERY_LAYOUT):
+            with self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
+                supervise(initial, layout=layout, native_containment=callback)
 
     def test_recovery_readonly_helper_cleanup_accepts_only_docker_observed_ids(self):
         commands = []
