@@ -106,9 +106,9 @@ class BrokerBindingTest(unittest.TestCase):
         broker.adapter = type("Adapter", (), {"frontend_deployment": lambda _self, phase: {
             "deploymentId": "dpl_owned", "configurationSha256": "d" * 64 if phase == "overlap" else "e" * 64}})()
         broker.browser_program_sha256 = "9" * 64
-        broker._observe_canonical = lambda phase, force=False: {
+        broker.canonical_window_authority = {"overlap": {"value": {
             "browserOrigin": "https://staging.lashher.com", "aliasReadbackSha256": "7" * 64,
-            "protectedWorkloadSha256": "6" * 64}
+            "protectedWorkloadSha256": "6" * 64}, "completedKinds": {"authentication"}}}
         window = {"version": 1, "actionId": "p2-key-rotation-owned", "bindingSha256": "b" * 64,
             "phase": "overlap", "kind": "signer-read", "maximumSeconds": 60,
             "source": {"challenge": "f" * 64, "bindingSha256": "b" * 64, "browserProgramSha256": "9" * 64}, "deploymentId": "dpl_owned",
@@ -122,6 +122,13 @@ class BrokerBindingTest(unittest.TestCase):
             broker._window_value({"window": {**window, "deploymentId": "dpl_other"}})
         with self.assertRaises(ValueError):
             broker._window_value({"window": {**window, "source": {**window["source"], "browserProgramSha256": "8" * 64}}})
+        # A continuous observation has a fresh random workload challenge and
+        # therefore a different digest. It must not invalidate the exact
+        # source-issued window authority returned to the controller.
+        broker.canonical_observations = {"overlap": {"protectedWorkloadSha256": "5" * 64}}
+        self.assertEqual(broker._window_value({"window": window}), window)
+        with self.assertRaises(ValueError):
+            broker._window_value({"window": {**window, "canonicalProtectedWorkloadSha256": "5" * 64}})
 
     def test_restoration_requires_the_source_derived_last_qualified_phase_and_no_open_or_uncertain_work(self):
         broker = parent.P2IdentityRotationBroker.__new__(parent.P2IdentityRotationBroker)

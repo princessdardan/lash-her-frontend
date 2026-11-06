@@ -157,6 +157,7 @@ class P2IdentityRotationBroker(Broker):
         self.guard_stop = threading.Event()
         self.frontend_close_prepared = False
         self.canonical_observations = {}
+        self.canonical_window_authority = {}
         self.canonical_last_verified = 0
         self.outcome.update(status="P2_IDENTITY_KEY_ROTATION_FAILED_REQUIRES_REVIEW",
                             actionId=self.action_id(), bindingSha256=rotation["bindingSha256"],
@@ -204,6 +205,13 @@ class P2IdentityRotationBroker(Broker):
         self.canonical_observations[phase] = copy.deepcopy(value)
         self.canonical_last_verified = time.monotonic()
         return copy.deepcopy(value)
+
+    def _issue_canonical_window_authority(self, phase):
+        require(phase in ("overlap", "current-only") and phase not in self.canonical_window_authority,
+                "P2_ROTATION_CANONICAL_WINDOW_AUTHORITY_EXISTS")
+        value = self._observe_canonical(phase, force=True)
+        self.canonical_window_authority[phase] = {"value": copy.deepcopy(value), "completedKinds": set()}
+        return value
 
     def arm(self, request):
         self.check()
@@ -306,11 +314,17 @@ class P2IdentityRotationBroker(Broker):
         deployment = self.adapter.frontend_deployment(window["phase"])
         require(all(window.get(key) == deployment.get(key) for key in ("deploymentId", "configurationSha256")),
                 "P2_ROTATION_BROWSER_DEPLOYMENT_CHANGED")
-        canonical = self._observe_canonical(window["phase"], force=True)
-        require(window.get("browserOrigin") == canonical.get("browserOrigin") == canonical_origin.ORIGIN
+        authority = self.canonical_window_authority.get(window["phase"])
+        canonical = authority.get("value") if isinstance(authority, dict) else None
+        require(isinstance(canonical, dict)
+                and window.get("browserOrigin") == canonical.get("browserOrigin") == canonical_origin.ORIGIN
                 and window.get("canonicalAliasReadbackSha256") == canonical.get("aliasReadbackSha256")
                 and window.get("canonicalProtectedWorkloadSha256") == canonical.get("protectedWorkloadSha256"),
                 "P2_ROTATION_BROWSER_CANONICAL_ORIGIN_CHANGED")
+        completed = authority["completedKinds"]
+        require(window["kind"] not in completed
+                and (window["kind"] == "authentication" or "authentication" in completed),
+                "P2_ROTATION_BROWSER_CANONICAL_WINDOW_ORDER_REFUSED")
         return {key: copy.deepcopy(window[key]) for key in fields}
 
     def _begin_window(self, value):
@@ -371,6 +385,12 @@ class P2IdentityRotationBroker(Broker):
         result = {"status": "P2_IDENTITY_ROTATION_BROWSER_WINDOW_CLOSED", "epoch": self.window["closed"],
                   "phase": window["phase"], "kind": window["kind"], "active": 0, "uncertain": 0}
         migrate.write_json(self.directory, f"browser-{window['phase']}-{window['kind']}-closed.json", result)
+        authority = self.canonical_window_authority[window["phase"]]
+        authority["completedKinds"].add(window["kind"])
+        if window["kind"] == "signer-read":
+            require(authority["completedKinds"] == {"authentication", "signer-read"},
+                    "P2_ROTATION_BROWSER_CANONICAL_WINDOW_INCOMPLETE")
+            del self.canonical_window_authority[window["phase"]]
         self.window = None
         return result
 
@@ -543,7 +563,7 @@ class P2IdentityRotationBroker(Broker):
         elif operation == "rotation-frontend-deployment":
             self.send(identity, "ROTATION_FRONTEND_DEPLOYMENT", receipt=self.adapter.frontend_deployment(value.get("phase")))
         elif operation == "rotation-observe-canonical-origin":
-            self.send(identity, "ROTATION_CANONICAL_ORIGIN", receipt=self._observe_canonical(value.get("phase"), force=True))
+            self.send(identity, "ROTATION_CANONICAL_ORIGIN", receipt=self._issue_canonical_window_authority(value.get("phase")))
         elif operation == "rotation-browser-window-begin":
             self.send(identity, "ROTATION_BROWSER_WINDOW_INTENT", receipt=self._begin_window(value))
         elif operation == "rotation-browser-window-opened":
@@ -568,6 +588,7 @@ class P2IdentityRotationBroker(Broker):
             proof = P2RecoveryPhysicalObserver.probe(self.observer, "observe")
             self.observer.exact(proof["admission"]["epoch"], False)
             self.window = None
+            self.canonical_window_authority.clear()
             self._guard_external()
             self.send(identity, "ROTATION_CONTAINED", receipt=receipt)
         elif operation == "rotation-restore":

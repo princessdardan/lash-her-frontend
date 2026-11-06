@@ -24,11 +24,16 @@ export function isP2IdentityRotationParentAuthority(value, plan) {
 
 export function prepareP2IdentityRotationParent(plan, prepared, recoveryAction, bindings, dependencies) {
   const job = prepared?.migration?.job, candidate = prepared?.migration?.candidate;
+  const originalReceipts = recoveryAction?.originalReceiptSha256;
   demand(plan?.version === 1 && plan.environment === "staging" && /^p2-key-rotation-[a-z0-9-]{1,40}$/u.test(plan.actionId)
     && SHA.test(plan.bindingSha256 ?? "") && SHA.test(plan.candidateSha256 ?? "") && COMMIT.test(plan.sourceCommit ?? "")
     && candidate?.environment === "staging" && candidate.contractPhase === "p2" && job?.sourceCommit === plan.sourceCommit
     && recoveryAction?.recoveryActionId === plan.actionId && recoveryAction.candidateSha256 === plan.candidateSha256
-    && SHA.test(recoveryAction.originalReceiptSha256 ?? "")
+    && originalReceipts && typeof originalReceipts === "object" && !Array.isArray(originalReceipts)
+    && Object.keys(originalReceipts).length >= 3 && Object.keys(originalReceipts).length <= 128
+    && ["frontend-release-started.json", "database-receipt.json", "job-outcome.json"].every(name => Object.hasOwn(originalReceipts, name))
+    && Object.entries(originalReceipts).every(([name, value]) => /^(?:vercel\/)?[a-z0-9][a-z0-9.-]{0,180}\.json$/u.test(name)
+      && (value === null || SHA.test(value)))
     && bindings?.sourceCommit === plan.sourceCommit && bindings.candidateSha256 === plan.candidateSha256
     && bindings.bindingSha256 === plan.bindingSha256
     && isDeepStrictEqual(bindings.configuration, plan.configuration)

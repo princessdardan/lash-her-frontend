@@ -17,7 +17,9 @@ const plan = Object.freeze({ version: 1, environment: "staging", actionId: "p2-k
   configuration: Object.fromEntries(["baseline", "overlap", "current-only"].map(phase => [phase,
     { sha256: sha(phase), privateRef: `/private/tmp/p2-key-rotation-parent/config/${phase}` }])) });
 const prepared = { migration: { job: { sourceCommit: plan.sourceCommit }, candidate: { environment: "staging", contractPhase: "p2" } } };
-const action = { recoveryActionId: plan.actionId, candidateSha256: plan.candidateSha256, originalReceiptSha256: sha("receipt") };
+const action = { recoveryActionId: plan.actionId, candidateSha256: plan.candidateSha256, originalReceiptSha256: {
+  "frontend-release-started.json": sha("started"), "database-receipt.json": sha("database"), "job-outcome.json": null,
+  "vercel/frontend-build-outcome.json": sha("build") } };
 const bindings = { sourceCommit: plan.sourceCommit, candidateSha256: plan.candidateSha256, bindingSha256: plan.bindingSha256,
   configuration: structuredClone(plan.configuration), featureControls: { identity: true }, writerAdmissionBinding: { mode: "enforce" } };
 let sessionCalls = 0;
@@ -31,6 +33,12 @@ test("parent preparation binds the exact candidate, recovery action, and three c
   assert.equal(isP2IdentityRotationParentAuthority({}, selected), false);
   assert.throws(() => prepareP2IdentityRotationParent(plan, prepared, { ...action, candidateSha256: sha("other") }, bindings, dependencies),
     /P2_IDENTITY_ROTATION_PARENT_PLAN_REFUSED/u);
+  assert.throws(() => prepareP2IdentityRotationParent(plan, prepared,
+    { ...action, originalReceiptSha256: sha("scalar-was-never-valid") }, bindings, dependencies),
+  /P2_IDENTITY_ROTATION_PARENT_PLAN_REFUSED/u);
+  assert.throws(() => prepareP2IdentityRotationParent(plan, prepared,
+    { ...action, originalReceiptSha256: { ...action.originalReceiptSha256, "../../escape.json": sha("bad") } }, bindings, dependencies),
+  /P2_IDENTITY_ROTATION_PARENT_PLAN_REFUSED/u);
 });
 
 test("caller objects cannot stand in for the fixed single-use SSH transport", async () => {

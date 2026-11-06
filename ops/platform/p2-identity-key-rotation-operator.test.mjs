@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { prepareP2IdentityRotationPlanFromChecked } from "./p2-identity-key-rotation-operator.mjs";
+import { prepareP2IdentityRotationParent } from "./p2-identity-key-rotation-parent.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
 const uuid = digit => `${digit.repeat(8)}-${digit.repeat(4)}-4${digit.repeat(3)}-8${digit.repeat(3)}-${digit.repeat(12)}`;
@@ -12,12 +13,13 @@ function fixture() {
   const candidate = { releaseId: "original-release", environment: "staging", contractPhase: "p2",
     sources: { frontend: { commit: sourceCommit } }, workload: { projectId: "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM" },
     phase2ContractManifestSha256: sha("contract") };
-  const checked = { action: { recoveryActionId: actionId, sourceCommit, candidateSha256: sha("candidate"), originalReceiptSha256: {} },
+  const checked = { action: { recoveryActionId: actionId, sourceCommit, candidateSha256: sha("candidate"), originalReceiptSha256: {
+    "frontend-release-started.json": sha("started"), "database-receipt.json": sha("database"), "job-outcome.json": null } },
     original: { candidate, job: { sourceCommit, target: { host: "db.owned.invalid", port: 5432, database: "owned",
       user: "frontend_runtime", serverMajor: 16, runtimeRole: "frontend_runtime" } },
       plan: { writerAdmissionBinding } },
-    prepared: { plan: { targetSha256: writerAdmissionBinding.targetSha256, owner: { name: "frontend_owner", oid: "42" },
-      certification: { featureControls: { customerIdentityEnabled: true } } } } };
+    prepared: { migration: { candidate, job: { sourceCommit } }, plan: { targetSha256: writerAdmissionBinding.targetSha256,
+      owner: { name: "frontend_owner", oid: "42" }, certification: { featureControls: { customerIdentityEnabled: true } } } } };
   const root = "/var/lib/lash-her/releases/staging/rotation-owned";
   const configuration = Object.fromEntries(["baseline", "overlap", "current-only"].map(phase => [phase,
     { sha256: sha(`public-${phase}`), privateRef: `${root}/${phase}` }]));
@@ -41,6 +43,12 @@ test("source plan binds current recovery, three private references, native deplo
   assert.equal(result.plan.bindingSha256.length, 64);
   assert.equal(result.nativePlan.deploymentId, settings.rotation.baseline.deploymentId);
   assert.deepEqual(joined.plan.readyReceiptSha256, settings.rotation.readyReceiptSha256);
+  const parent = prepareP2IdentityRotationParent(result.plan, checked.prepared, checked.action,
+    { sourceCommit: result.plan.sourceCommit, candidateSha256: result.plan.candidateSha256,
+      bindingSha256: result.plan.bindingSha256, configuration: result.plan.configuration,
+      featureControls: result.plan.featureControls, writerAdmissionBinding: result.plan.writerAdmissionBinding },
+    { getUrl: () => "owned", verifyEnvironment: () => {} });
+  assert.deepEqual(parent, result.plan);
   assert.equal(Object.isFrozen(result.plan), true);
   assert.throws(() => { result.plan.actionId = "changed"; }, TypeError);
 });
