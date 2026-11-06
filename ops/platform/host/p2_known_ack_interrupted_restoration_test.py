@@ -109,7 +109,7 @@ class RetainedChainTests(unittest.TestCase):
 
     def test_all_original_B_predicates_reject_otherwise_valid_repinned_chains(self):
         original=copy.deepcopy(self.values);original_selection=copy.deepcopy(self.selection)
-        cases=('fault-mode','command-action','extra-command','native-plan-sha','inner-version','inner-boolean-version','gateway-process-sha','runtime-inventory-sha','canonical-config-sha','boolean-backend-count','boolean-gateway-count')
+        cases=('fault-mode','command-action','extra-command','native-plan-sha','inner-version','inner-boolean-version','gateway-process-sha','runtime-inventory-sha','receiver-targets-sha','canonical-config-sha','boolean-backend-count','boolean-gateway-count')
         for kind in cases:
             self.values=copy.deepcopy(original);self.selection=copy.deepcopy(original_selection);self.initial['interruptedRestoration']=self.selection
             plan=self.values['baseline.json']['plan'];intent=self.values['recovery-intent.json']['intent']
@@ -121,6 +121,7 @@ class RetainedChainTests(unittest.TestCase):
             elif kind=='inner-boolean-version':intent['version']=True
             elif kind=='gateway-process-sha':intent['gatewayProcessSha256']='f'*64
             elif kind=='runtime-inventory-sha':intent['runtimeInventorySha256']='f'*64
+            elif kind=='receiver-targets-sha':intent['receiverTargetsSha256']='f'*64
             elif kind=='canonical-config-sha':plan['configurationSha256']='f'*64
             elif kind=='boolean-backend-count':self.values['baseline.json']['databases']['course']['backend']['eligible']['outbox']=False
             else:self.values['baseline.json']['gateway']['admission']['active']['newWork']=False

@@ -231,6 +231,7 @@ def load_retained(initial, selected, jobs, verify, command=None):
             'P2_INTERRUPTED_ORIGINAL_INTENT_SCHEMA_REQUIRED')
     require(one(expected_intent.get('version')) and expected_intent.get('recoveryActionId') == selection['originalRecoveryActionId'] and
             expected_intent.get('targetSha256') == initial['targetSha256'] and
+            expected_intent.get('receiverTargetsSha256') == sha(canonical(initial['receiverTargets'])) and
             type(expected_intent.get('nativeWindowSeconds')) is int and expected_intent['nativeWindowSeconds'] == plan['nativePlan']['windowSeconds'] and expected_intent['profile'] == 'known-ack-same-session-ordered-replacement-v1' and one(expected_intent['runtimeReplacements']) and
             all(expected_intent[k] is False for k in ('sqlReplayAllowed', 'roleChangeAllowed', 'ordinaryClosedZeroGate', 'automaticFailureRecoveryAllowed')) and
             expected_intent['certificationActionId'] == selection['originalCertificationActionId'] and expected_intent['candidateSha256'] == initial['candidateSha256'] and
