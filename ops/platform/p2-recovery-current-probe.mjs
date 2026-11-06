@@ -1,0 +1,183 @@
+// Source-owned current-only verifier. Never invokes a migration/apply runner.
+import { randomBytes, createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
+import { Client } from 'pg';
+import { frontendConnectionOptions, FRONTEND_MIGRATION_LOCK } from './frontend-migration.mjs';
+import { assertAppliedMigrationLineage } from '../../src/lib/private-db/migration-lineage.ts';
+import { readMigrationCatalog } from './frontend-schema.mjs';
+
+const require = (ok,checkpoint) => { if (!ok) { const error=new Error('P2_RECOVERY_CURRENT_DATABASE_REFUSED');if(checkpoint)error.checkpoint=checkpoint;throw error;} };
+const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const name = value => typeof value === 'string' && /^[a-z][a-z0-9_]{0,62}$/u.test(value);
+export const RECOVERY_LOCK_APPLICATION = 'lash-her-p2-post-sql-recovery';
+// Exact bootstrap source body hashes; migration images do not ship its SQL.
+export const RECOVERY_ADMISSION_SOURCE_SHA256 = "b8ec48242871a6e44fef415b127709e9b107a60751e47bc0fa328b99244ab6ab";
+const expectedRoutineBodies = Object.freeze({"admit": "e8efe70da1fabe4381d640e73bc42b5e204ec5f1aa28589d09b1e73a0be21504", "begin_operation": "c634f0f3f018062fb2b115f923ab8637f02a34c515e8532b41ccd912762917d3", "current_policy": "1322b30139dcb101aafcbd461536c1788233da1f0ab6e9084745513a4da1694e", "finish_operation": "84257c2f6b8be184397e3d326d9908f11a6e9d75facde5c7abb5bad2e9db4e1d", "settle": "a6fb927fbc0df4d7262aba5c6185ebffa737d1adafcf5766080078e0d0f45fbd"});
+export const RECOVERY_HELD_LOCK = `SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND pid=pg_backend_pid()
+ AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND classid=((hashtext($1)::bigint>>32)&4294967295)::oid
+ AND objid=(hashtext($1)::bigint&4294967295)::oid AND objsubid=1 AND mode='ExclusiveLock' AND granted) AS held`;
+
+export async function verifyRecoveryRuntimeGrants(client, target, owner) {
+  let checkpoint='runtime-role-flags';
+  try {
+  const roles = (await client.query(`SELECT oid::text,rolname,rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,
+    pg_has_role($1,$2,'MEMBER') AS migration_member,has_schema_privilege($1,'public','CREATE') AS ddl
+    FROM pg_roles WHERE rolname=$1`, [target.runtimeRole, target.user])).rows;
+  require(roles.length === 1 && roles[0].rolcanlogin === true && ['rolinherit','rolsuper','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls','migration_member','ddl'].every(key => roles[0][key] === false));
+  checkpoint='runtime-ownership';require((await client.query(`SELECT 1 WHERE has_database_privilege($1,current_database(),'CREATE') OR
+    EXISTS(SELECT 1 FROM pg_database WHERE datname=current_database() AND pg_has_role($1,datdba,'MEMBER')) OR
+    EXISTS(SELECT 1 FROM pg_namespace WHERE nspname IN ('public','drizzle','frontend_admission') AND pg_has_role($1,nspowner,'MEMBER')) OR
+    EXISTS(SELECT 1 FROM pg_class WHERE relnamespace='public'::regnamespace AND pg_has_role($1,relowner,'MEMBER'))`, [target.runtimeRole])).rows.length === 0);
+  checkpoint='runtime-table-dml';require((await client.query(`SELECT 1 FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relkind IN ('r','p') AND
+    EXISTS(SELECT 1 FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE']) p WHERE NOT has_table_privilege($1,c.oid,p))`, [target.runtimeRole])).rows.length === 0);
+  checkpoint='runtime-sequence-dml';require((await client.query(`SELECT 1 FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relkind='S' AND
+    EXISTS(SELECT 1 FROM unnest(ARRAY['SELECT','USAGE']) p WHERE NOT has_sequence_privilege($1,c.oid,p))`, [target.runtimeRole])).rows.length === 0);
+  require((await client.query("SELECT has_schema_privilege($1,'drizzle','USAGE') AS journal_access", [target.runtimeRole])).rows[0]?.journal_access === false);
+  checkpoint='runtime-extra-privileges';require((await client.query(`SELECT 1 FROM pg_auth_members WHERE member=$1::oid UNION ALL
+    SELECT 1 FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relkind IN ('r','p') AND
+      EXISTS(SELECT 1 FROM unnest(ARRAY['TRUNCATE','REFERENCES','TRIGGER']) p WHERE has_table_privilege($2,c.oid,p))`, [roles[0].oid,target.runtimeRole])).rows.length===0);
+  checkpoint='runtime-default-grants';const defaults = (await client.query(`SELECT d.defaclobjtype AS kind,a.privilege_type AS privilege FROM pg_default_acl d
+    CROSS JOIN LATERAL aclexplode(d.defaclacl) a WHERE d.defaclrole=current_user::regrole AND d.defaclnamespace='public'::regnamespace AND a.grantee=$1::regrole`, [target.runtimeRole])).rows;
+  require([...['SELECT','INSERT','UPDATE','DELETE'].map(privilege => ['r',privilege]),['S','SELECT'],['S','USAGE']].every(([kind, privilege]) => defaults.some(row => row.kind === kind && row.privilege === privilege)));
+  checkpoint='runtime-admission-privileges';const admission = (await client.query(`SELECT has_schema_privilege($1,'frontend_admission','USAGE') AS usage,
+    has_schema_privilege($1,'frontend_admission','CREATE') AS ddl,
+    EXISTS(SELECT 1 FROM pg_class c CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p
+      WHERE c.relnamespace='frontend_admission'::regnamespace AND c.relkind='r' AND has_table_privilege($1,c.oid,p)) AS direct_tables`, [target.runtimeRole])).rows[0];
+  require(admission?.usage === true && admission.ddl === false && admission.direct_tables === false);
+  checkpoint='runtime-admission-functions';const functions = (await client.query(`SELECT p.proname,p.prokind,p.prosrc,p.proowner::text AS owner,p.prosecdef,p.proconfig,
+    has_function_privilege($1,p.oid,'EXECUTE') AS executable FROM pg_proc p WHERE p.pronamespace='frontend_admission'::regnamespace ORDER BY p.proname`, [target.runtimeRole])).rows;
+  require(owner && functions.length === 5 && functions.map(row => row.proname).join(',') === 'admit,begin_operation,current_policy,finish_operation,settle','admission-function-identities');
+  require(functions.every(row => row.owner === owner.oid),'admission-function-owners');
+  require(functions.every(row => row.executable === true),'admission-function-execution-grants');
+  require(functions.every(row => row.prokind === 'p' ? row.prosecdef === false && row.proconfig === null :
+    row.prosecdef === true && row.proconfig?.includes('search_path=pg_catalog, frontend_admission')),'admission-function-security');
+  require(functions.every(row => createHash('sha256').update(row.prosrc).digest('hex') === expectedRoutineBodies[row.proname]),'admission-function-source');
+  return { name: roles[0].rolname, oid: roles[0].oid };
+  } catch(error) { error.checkpoint ??= checkpoint; throw error; }
+}
+
+export async function readRecoveryFrontendCurrent(client, prepared, action, verifySession) {
+  const { migration, plan } = prepared, { target } = migration.job;
+  require(name(plan.owner.name)); await verifySession();
+  await client.query('BEGIN READ ONLY');
+  let phase='current-lineage';
+  try {
+    require((await client.query("SHOW transaction_read_only")).rows[0]?.transaction_read_only === 'on');
+    const after = (await client.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at ASC NULLS FIRST,id ASC')).rows;
+    require(after.length === migration.artifact.migrations.length && assertAppliedMigrationLineage(migration.artifact.expected, after) === migration.artifact.migrations.at(-1).folderMillis);
+    phase='schema-catalog';require(isDeepStrictEqual(await readMigrationCatalog(client), migration.baseline.catalog));
+    phase='runtime-grants';const runtime = await verifyRecoveryRuntimeGrants(client, target, plan.owner);
+    require(plan.producers.some(producer => producer.role.name === runtime.name && producer.role.oid === runtime.oid));
+    phase='retired-logins-and-sessions';const retired = plan.historicalLogins.retiredLogins;
+    const old = (await client.query('SELECT oid::text,rolname,rolcanlogin FROM pg_roles WHERE rolname=ANY($1::text[]) ORDER BY rolname', [retired.map(row => row.name)])).rows;
+    require(old.length === retired.length && old.every(row => !row.rolcanlogin && retired.some(expected => expected.name === row.rolname && expected.oid === row.oid)));
+    await client.query('SELECT pg_stat_clear_snapshot()');
+    require((await client.query('SELECT count(*)::int AS count FROM pg_stat_activity WHERE usesysid=ANY($1::oid[])', [retired.map(row => row.oid)])).rows[0]?.count === 0);
+    phase='admission-owner';const owners = (await client.query('SELECT oid::text,rolcanlogin,rolsuper,rolinherit,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_roles WHERE rolname=$1', [plan.owner.name])).rows;
+    require(owners.length === 1 && owners[0].oid === plan.owner.oid && ['rolcanlogin','rolsuper','rolinherit','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls'].every(key => owners[0][key] === false));
+    await client.query(`SET LOCAL ROLE "${plan.owner.name}"`);
+    require((await client.query("SELECT nspowner::text AS oid FROM pg_namespace WHERE nspname='frontend_admission'")).rows[0]?.oid === plan.owner.oid);
+    phase='admission-ledger';const controls = (await client.query('SELECT environment,target_sha256,epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton')).rows;
+    require(controls.length === 1 && controls[0].environment === 'staging' && controls[0].target_sha256 === plan.targetSha256 && controls[0].new_work === false && controls[0].recovery === false);
+    require((await client.query("SELECT count(*)::int AS count FROM frontend_admission.operations WHERE state<>'completed'")).rows[0]?.count === 0);
+    const producers = (await client.query('SELECT producer_sha256,source_sha,database_role::text AS role_oid FROM frontend_admission.producers WHERE enabled ORDER BY producer_sha256')).rows;
+    require(producers.length === plan.producers.length && producers.every((row, i) => row.producer_sha256 === plan.producers[i].producerSha256 && row.source_sha === plan.sourceCommit && row.role_oid === plan.producers[i].role.oid));
+    return { version: 1, status: 'P2_RECOVERY_DATABASE_CURRENT', migrationMode: 'recovery-current-only', service: 'frontend', environment: 'staging',
+      releaseId: migration.job.releaseId, recoveryActionId: action.recoveryActionId, sourceCommit: migration.job.sourceCommit,
+      candidateSha256: action.candidateSha256, originalReceiptSha256: action.originalReceiptSha256,
+      ...Object.fromEntries(['migrationImageDigest','sqlArtifactSha256','schemaBaselineSha256','contractManifestSha256','contractPhase','phase2ContractManifestSha256'].map(key => [key,migration.job[key]])),
+      target: Object.fromEntries(['host','port','database','user','serverMajor'].map(key => [key,target[key]])), after,
+      journalSha256: hash(after), schemaVerified: true, runtimeRoleVerified: true, owner: plan.owner, runtime, admissionEpoch: controls[0].epoch,
+      oldLoginsDenied: true, oldRoleSessions: 0, retiredLogins: structuredClone(retired), producers: structuredClone(plan.producers), sqlReplayed: false, originalFrontendTerminalRecreated: false, trafficAuthorized: false };
+  } catch(error) { error.checkpoint ??= phase; throw error; } finally { await client.query('ROLLBACK'); }
+}
+
+export async function withRecoveryFrontendSession(prepared, action, dependencies, task) {
+  const target = prepared.migration.job.target;
+  const client = (dependencies.createClient ?? (options => new Client(options)))({ ...frontendConnectionOptions(await dependencies.getUrl(), target), application_name: RECOVERY_LOCK_APPLICATION });
+  let lost = false, locked = false, identity;
+  client.on('error', () => { lost = true; });
+  const verify = async () => {
+    await dependencies.verifyEnvironment(); require(!lost && client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true);
+    const actual = (await client.query('SELECT pg_backend_pid() AS pid,current_user AS username,current_database() AS database,current_setting(\'server_version_num\')::int/10000 AS major')).rows[0];
+    require(actual.username === target.user && actual.database === target.database && actual.major === target.serverMajor && (!identity || actual.pid === identity.pid)); identity = actual;
+    if (locked) require((await client.query(RECOVERY_HELD_LOCK, [FRONTEND_MIGRATION_LOCK])).rows[0]?.held === true);
+    require(!lost);
+  };
+  try {
+    await client.connect(); await verify();
+    locked = (await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [FRONTEND_MIGRATION_LOCK])).rows[0]?.locked === true; require(locked);
+    const marker = randomBytes(32).toString('hex'); await client.query('SELECT pg_advisory_lock(hashtext($1))', [marker]);
+    const backendStart = (await client.query('SELECT backend_start::text FROM pg_stat_activity WHERE pid=pg_backend_pid()')).rows[0]?.backend_start; require(typeof backendStart === 'string');
+    const receipt = await readRecoveryFrontendCurrent(client, prepared, action, verify);
+    const result = await task({ client, verify, receipt, probe: { version: 1, marker, backendPid: identity.pid, backendStart, applicationName: RECOVERY_LOCK_APPLICATION,
+      job: prepared.migration.job, baseline: prepared.migration.baseline, targetSha256: prepared.plan.targetSha256, owner: prepared.plan.owner, receipt } });
+    await verify(); return result;
+  } catch(error) { const safe=new Error('P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW');if(/^[a-z-]{1,60}$/u.test(error?.checkpoint??''))safe.checkpoint=error.checkpoint;throw safe; }
+  finally {
+    try { if (locked) await client.query('SELECT pg_advisory_unlock_all()'); } catch { lost = true; }
+    try { await client.end(); } catch { lost = true; }
+    if (lost) throw new Error('P2_RECOVERY_FRONTEND_CLEANUP_UNCERTAIN');
+  }
+}
+
+// Image-side independent observer of the *new* physical recovery session.
+export async function observeRecoveryPhysical(input, { getUrl, createClient = options => new Client(options) }) {
+  require(input?.version === 1 && ['observe','verify-schema','fence'].includes(input.operation) && /^[a-f0-9]{64}$/u.test(input.marker ?? '') &&
+    Number.isSafeInteger(input.backendPid) && typeof input.backendStart === 'string' && input.job?.environment === 'staging' &&
+    input.receipt?.status === 'P2_RECOVERY_DATABASE_CURRENT' && input.receipt.sourceCommit === input.job.sourceCommit &&
+    input.receipt.sqlArtifactSha256 === input.job.sqlArtifactSha256 && name(input.owner?.name));
+  const client = createClient(frontendConnectionOptions(await getUrl(), input.job.target));
+  let lost = false, admission; client.on('error', () => { lost = true; });
+  try {
+    await client.connect(); require(client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true);
+    const identity = (await client.query("SELECT current_user AS username,current_database() AS database,current_setting('server_version_num')::int/10000 AS major")).rows[0];
+    require(identity.username === input.job.target.user && identity.database === input.job.target.database && identity.major === input.job.target.serverMajor);
+    const owner = (await client.query('SELECT oid::text,rolcanlogin,rolsuper,rolinherit,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_roles WHERE rolname=$1', [input.owner.name])).rows;
+    require(owner.length === 1 && owner[0].oid === input.owner.oid && ['rolcanlogin','rolsuper','rolinherit','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls'].every(key => owner[0][key] === false));
+    if (input.operation === 'fence') {
+      await client.query('BEGIN');
+      try {
+        await client.query(`SET LOCAL ROLE "${input.owner.name}"`);
+        const control = (await client.query('SELECT environment,target_sha256 FROM frontend_admission.control WHERE singleton FOR UPDATE')).rows;
+        require(control.length === 1 && control[0].environment === 'staging' && control[0].target_sha256 === input.targetSha256);
+        await client.query('UPDATE frontend_admission.control SET new_work=false,recovery=false,epoch=epoch+1 WHERE singleton AND (new_work OR recovery)');
+        const after = (await client.query('SELECT new_work,recovery FROM frontend_admission.control WHERE singleton')).rows[0]; require(after?.new_work === false && after.recovery === false);
+        await client.query('COMMIT');
+      } catch { await client.query('ROLLBACK'); throw new Error('P2_RECOVERY_FENCE_UNCERTAIN'); }
+      return { status: 'P2_FRONTEND_ADMISSION_CLOSED', targetSha256: input.targetSha256 };
+    }
+    await client.query('BEGIN READ ONLY');
+    try {
+      const original = (await client.query('SELECT backend_start::text,usename,datname,application_name FROM pg_stat_activity WHERE pid=$1', [input.backendPid])).rows;
+      require(original.length === 1 && original[0].backend_start === input.backendStart && original[0].usename === input.job.target.user && original[0].datname === input.job.target.database && original[0].application_name === RECOVERY_LOCK_APPLICATION);
+      for (const lock of [FRONTEND_MIGRATION_LOCK,input.marker]) {
+        const actual = (await client.query(`SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND pid=$1 AND database=(SELECT oid FROM pg_database WHERE datname=current_database())
+          AND classid=((hashtext($2)::bigint>>32)&4294967295)::oid AND objid=(hashtext($2)::bigint&4294967295)::oid AND objsubid=1 AND mode='ExclusiveLock' AND granted) AS held`, [input.backendPid,lock])).rows[0]; require(actual?.held === true);
+      }
+      const journal = (await client.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at ASC NULLS FIRST,id ASC')).rows;
+      require(isDeepStrictEqual(journal,input.receipt.after));
+      if (input.operation === 'verify-schema') require(isDeepStrictEqual(await readMigrationCatalog(client), input.baseline.catalog));
+      const runtime = await verifyRecoveryRuntimeGrants(client,input.job.target,input.owner); require(isDeepStrictEqual(runtime,input.receipt.runtime));
+      const retired = input.receipt.retiredLogins; require(Array.isArray(retired));
+      const old = (await client.query('SELECT oid::text,rolname,rolcanlogin FROM pg_roles WHERE rolname=ANY($1::text[]) ORDER BY rolname',[retired.map(row=>row.name)])).rows;
+      require(old.length===retired.length&&old.every(row=>row.rolcanlogin===false&&retired.some(expected=>expected.name===row.rolname&&expected.oid===row.oid)));
+      await client.query('SELECT pg_stat_clear_snapshot()');
+      require((await client.query('SELECT count(*)::int AS count FROM pg_stat_activity WHERE usesysid=ANY($1::oid[])',[retired.map(row=>row.oid)])).rows[0]?.count===0);
+      await client.query(`SET LOCAL ROLE "${input.owner.name}"`);
+      const controls = (await client.query('SELECT environment,target_sha256,epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton')).rows;
+      require(controls.length === 1 && controls[0].environment === 'staging' && controls[0].target_sha256 === input.targetSha256);
+      const counts = (await client.query("SELECT count(*) FILTER(WHERE state='active')::int AS active,count(*) FILTER(WHERE state='uncertain')::int AS uncertain FROM frontend_admission.operations")).rows[0];
+      admission = { epoch: controls[0].epoch, newWork: controls[0].new_work, recovery: controls[0].recovery, ...counts };
+    } finally { await client.query('ROLLBACK'); }
+    require(!lost); return { status: 'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED', marker: input.marker, backendPid: input.backendPid, sourceCommit: input.job.sourceCommit, recoveryActionId: input.receipt.recoveryActionId, admission };
+  } finally { await client.end(); require(!lost); }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try { const bytes = readFileSync(0); require(bytes.length > 0 && bytes.length <= 2_000_000);
+    console.log(JSON.stringify(await observeRecoveryPhysical(JSON.parse(bytes), { getUrl: () => process.env.FRONTEND_STAGING_MIGRATION_DATABASE_URL })));
+  } catch { console.error('P2_RECOVERY_PHYSICAL_OBSERVATION_REFUSED'); process.exitCode = 1; }
+}
