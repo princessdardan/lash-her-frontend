@@ -1,0 +1,82 @@
+TAP version 13
+# Subtest: plan requires exact qualified P2/staging/ten-control lifecycle-only profile and explicit closed final disposition
+ok 1 - plan requires exact qualified P2/staging/ten-control lifecycle-only profile and explicit closed final disposition
+  ---
+  duration_ms: 54.245625
+  type: 'test'
+  ...
+# Subtest: finite native request witnesses join exact admitted recovery operations, ordered effects, and actual source closure without a cancellation claim
+ok 2 - finite native request witnesses join exact admitted recovery operations, ordered effects, and actual source closure without a cancellation claim
+  ---
+  duration_ms: 302.202125
+  type: 'test'
+  ...
+# Subtest: extra/changed cron, runtime flags or immutable writer binding refuse before enable
+ok 3 - extra/changed cron, runtime flags or immutable writer binding refuse before enable
+  ---
+  duration_ms: 925.40775
+  type: 'test'
+  ...
+# Subtest: caller complete booleans, manual request classification and unrelated source/epoch/UUID cannot replace provider request-scoped trace evidence
+ok 4 - caller complete booleans, manual request classification and unrelated source/epoch/UUID cannot replace provider request-scoped trace evidence
+  ---
+  duration_ms: 1732.864042
+  type: 'test'
+  ...
+# Subtest: unmatched recovery operations or reordered receiver effects remain OPEN even after a clean close
+ok 5 - unmatched recovery operations or reordered receiver effects remain OPEN even after a clean close
+  ---
+  duration_ms: 583.372084
+  type: 'test'
+  ...
+# Subtest: active and uncertain outcomes are retained rather than settled/replayed by the qualifier
+ok 6 - active and uncertain outcomes are retained rather than settled/replayed by the qualifier
+  ---
+  duration_ms: 560.293166
+  type: 'test'
+  ...
+# Subtest: lost enable/disable acknowledgments are not retried and never produce qualification
+ok 7 - lost enable/disable acknowledgments are not retried and never produce qualification
+  ---
+  duration_ms: 557.516667
+  type: 'test'
+  ...
+# Subtest: a delayed native request after admission closure can be observed without inventing an admitted operation or queue zero
+ok 8 - a delayed native request after admission closure can be observed without inventing an admitted operation or queue zero
+  ---
+  duration_ms: 292.862666
+  type: 'test'
+  ...
+# Subtest: later receipt loss still attempts mandatory disable/admission closure and cannot return a success receipt
+ok 9 - later receipt loss still attempts mandatory disable/admission closure and cannot return a success receipt
+  ---
+  duration_ms: 276.104166
+  type: 'test'
+  ...
+# Subtest: original intent with missing outcome after process death refuses automatic replay
+ok 10 - original intent with missing outcome after process death refuses automatic replay
+  ---
+  duration_ms: 293.235083
+  type: 'test'
+  ...
+# Subtest: actual SIGKILL after enable preserves intent; fresh explicit containment disables/closes without replay or qualification
+ok 11 - actual SIGKILL after enable preserves intent; fresh explicit containment disables/closes without replay or qualification
+  ---
+  duration_ms: 525.347709
+  type: 'test'
+  ...
+# Subtest: a policy changed during operator observation invalidates the final fence instead of qualifying a stale closed snapshot
+ok 12 - a policy changed during operator observation invalidates the final fence instead of qualifying a stale closed snapshot
+  ---
+  duration_ms: 286.122875
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6434.172917
