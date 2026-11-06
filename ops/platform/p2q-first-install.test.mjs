@@ -8,6 +8,7 @@ import {EventEmitter} from 'node:events';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
+import childMutable from 'node:child_process';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {pathToFileURL} from 'node:url';
@@ -57,7 +58,7 @@ async function googleFixture(){
   .replace("const OWNER_UID=0,CASE_ROOT='/var/lib/lash-her/p2q/google-projects';",`const OWNER_UID=${process.getuid()},CASE_ROOT=${JSON.stringify(cases)};`)
   .replace("privatePath(path);let current='/';\n  for(const part of path.split('/').filter(Boolean))",`privatePath(path);demand(path===${JSON.stringify(root)}||path.startsWith(${JSON.stringify(root+'/')}),'PRIVATE_DIRECTORY_REQUIRED');let current=${JSON.stringify(root)};\n  for(const part of relative(current,path).split('/').filter(Boolean))`)
   .replace("'/run/lash-her-p2q-private/'",JSON.stringify(handoff+'/'));
- const path=join(root,'producer.mjs');file.writeFileSync(path,projected+'\nexport const ownedPrivate={casePlan,PrivateCase,execute,cleanAmbient,route,cliArgs,childEnvironment,request,physicalTree,verifyToolchain,readFile,writeFile,parse,principalClaim,claimMayClose,UMASK_WRAPPER,verifySdkInputs,SDK_CA_RELATIVE};\n');
+ const path=join(root,'producer.mjs');file.writeFileSync(path,projected+'\nexport const ownedPrivate={casePlan,PrivateCase,execute,cleanAmbient,route,cliArgs,cli,childEnvironment,request,physicalTree,verifyToolchain,readFile,writeFile,parse,principalClaim,claimMayClose,UMASK_WRAPPER,verifySdkInputs,SDK_CA_RELATIVE};\n');
  const api=(await import(pathToFileURL(path).href)).ownedPrivate;
  const principalPath=join(handoff,'principal.json'),principal='new-owner@example.test';
  const bytes=Buffer.from(JSON.stringify({version:1,principal})+'\n');file.writeFileSync(principalPath,bytes,{mode:0o600});
@@ -341,4 +342,19 @@ test('Google physical closure pins empty OpenSSL directory existence, identity a
   file.renameSync(modules,join(f.root,'retained-original-modules'));assert.notEqual(f.api.physicalTree(root,{}),initial);
   file.mkdirSync(modules,{mode:0o700});assert.notEqual(f.api.physicalTree(root,{}),initial);
  }finally{f.close();}
+});
+test('Google actual SDK dispatch model receives fixed isolation and refuses drift before spawn',async()=>{
+ const f=await googleFixture(),original=childMutable.spawn;try{const store=new f.api.PrivateCase(f.plan,'create');let calls=0;
+  childMutable.spawn=(program,args,options)=>{calls++;assert.equal(program,f.plan.toolchain.python.executable);
+   assert.deepEqual(args.slice(0,6),['-I','-B','-S','-c',f.api.UMASK_WRAPPER,join(f.plan.toolchain.sdk.root,'bin/gcloud')]);
+   assert.deepEqual(args.slice(6),f.api.cliArgs('list',f.principal));const env=options.env;
+   assert.equal(env.NETRC,join(store.path,'sdk.netrc'));assert.equal(env.SSL_CERT_DIR,join(store.path,'empty-ca'));assert.equal(env.OPENSSL_CONF,'/dev/null');
+   assert.equal(env.OPENSSL_MODULES,join(f.plan.toolchain.python.root,'lib/openssl/ossl-modules'));assert.equal(env.HTTPLIB2_CA_CERTS,join(f.plan.toolchain.sdk.root,f.api.SDK_CA_RELATIVE));
+   assert.equal(Object.hasOwn(env,'HOME'),false);assert.equal(Object.hasOwn(env,'GOOGLE_APPLICATION_CREDENTIALS'),false);
+   const child=new EventEmitter();child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.kill=()=>true;
+   queueMicrotask(()=>{child.stdout.emit('data',Buffer.from('[]'));child.emit('close',0);});return child;};
+  syncBuiltinESMExports();assert.equal((await f.api.cli(f.plan,store,'list',f.principal)).toString(),'[]');assert.equal(calls,1);
+  const ca=join(f.plan.toolchain.sdk.root,f.api.SDK_CA_RELATIVE);file.unlinkSync(ca);file.symlinkSync(join(store.path,'sdk.netrc'),ca);
+  await assert.rejects(f.api.cli(f.plan,store,'list',f.principal));assert.equal(calls,1);
+ }finally{childMutable.spawn=original;syncBuiltinESMExports();f.close();}
 });
