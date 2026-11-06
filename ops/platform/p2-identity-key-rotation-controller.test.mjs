@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { runIdentityKeyRotationController } from "./p2-identity-key-rotation-controller.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
 const profiles = ["community-admin", "community-member", "course-admin", "course-learner"];
+const fixture = label => { const directory = mkdtempSync(join(realpathSync(tmpdir()), `p2-rotation-controller-${label}-`)); chmodSync(directory, 0o700); return directory; };
 
 function plan(directory) {
   return { version: 1, environment: "staging", actionId: "p2-key-rotation-owned", bindingSha256: sha("binding"),
@@ -79,7 +82,7 @@ function harness(selected, { failFirst = false, failAt = failFirst ? 1 : null, i
 }
 
 test("fixed controller orders API/frontend phases, verifies every split state and retains same-token evidence", async () => {
-  const directory = `/private/tmp/p2-rotation-controller-${process.pid}-success`; mkdirSync(directory, { mode: 0o700 });
+  const directory = fixture("success");
   try {
     const selected = plan(directory), owned = harness(selected);
     const outcome = await runIdentityKeyRotationController(selected, parent, owned.dependencies, { fixture: true, nowMs: owned.nowMs });
@@ -96,7 +99,7 @@ test("fixed controller orders API/frontend phases, verifies every split state an
 });
 
 test("fractional signer cutoff waits through the next JWT second before capture", async () => {
-  const directory = `/private/tmp/p2-rotation-controller-${process.pid}-fractional-cutoff`; mkdirSync(directory, { mode: 0o700 });
+  const directory = fixture("fractional-cutoff");
   try {
     const selected = plan(directory), owned = harness(selected, { signerCutoff: "2027-01-15T07:00:00.500Z" });
     const outcome = await runIdentityKeyRotationController(selected, parent, owned.dependencies,
@@ -106,7 +109,7 @@ test("fractional signer cutoff waits through the next JWT second before capture"
 });
 
 test("successful lost API acknowledgement is reconciled before the split-state boundary is evaluated", async () => {
-  const directory = `/private/tmp/p2-rotation-controller-${process.pid}-post-effect`; mkdirSync(directory, { mode: 0o700 });
+  const directory = fixture("post-effect");
   try {
     const selected = plan(directory), first = harness(selected, { failFirst: true });
     const apply = first.dependencies.applyMutation;
@@ -129,7 +132,7 @@ test("successful lost API acknowledgement is reconciled before the split-state b
 });
 
 test("resume after overlap qualification reuses retained phase and reconciles only the current mutation", async () => {
-  const directory = `/private/tmp/p2-rotation-controller-${process.pid}-phase-resume`; mkdirSync(directory, { mode: 0o700 });
+  const directory = fixture("phase-resume");
   try {
     const selected = plan(directory), first = harness(selected, { failAt: 3 });
     await assert.rejects(() => runIdentityKeyRotationController(selected, parent, first.dependencies,
@@ -146,7 +149,7 @@ test("resume after overlap qualification reuses retained phase and reconciles on
 });
 
 test("lost mutation acknowledgement remains closed and a later run reconciles GET-first without replay", async () => {
-  const directory = `/private/tmp/p2-rotation-controller-${process.pid}-resume`; mkdirSync(directory, { mode: 0o700 });
+  const directory = fixture("resume");
   try {
     const selected = plan(directory), first = harness(selected, { failFirst: true });
     await assert.rejects(() => runIdentityKeyRotationController(selected, parent, first.dependencies,
@@ -162,7 +165,7 @@ test("lost mutation acknowledgement remains closed and a later run reconciles GE
 });
 
 test("controller rejects caller-shaped authority and does not start a mutation", async () => {
-  const directory = `/private/tmp/p2-rotation-controller-${process.pid}-authority`; mkdirSync(directory, { mode: 0o700 });
+  const directory = fixture("authority");
   try {
     const selected = plan(directory), owned = harness(selected);
     await assert.rejects(() => runIdentityKeyRotationController(selected, { ...parent, hostLockHeld: false }, owned.dependencies,
@@ -176,7 +179,7 @@ test("controller rejects caller-shaped authority and does not start a mutation",
 
 test("controller refuses observation timestamps not joined to the retained capture and actual phase window", async () => {
   for (const variant of ["capture", "window"]) {
-    const directory = `/private/tmp/p2-rotation-controller-${process.pid}-time-${variant}`; mkdirSync(directory, { mode: 0o700 });
+    const directory = fixture(`time-${variant}`);
     try {
       const selected = plan(directory), owned = harness(selected);
       const original = owned.dependencies.observeProfiles;
@@ -196,7 +199,7 @@ test("controller refuses observation timestamps not joined to the retained captu
 });
 
 test("controller performs a final boundary read and refuses drift after the last profile observation", async () => {
-  const directory = `/private/tmp/p2-rotation-controller-${process.pid}-final-boundary`; mkdirSync(directory, { mode: 0o700 });
+  const directory = fixture("final-boundary");
   try {
     const selected = plan(directory), owned = harness(selected);
     const observeProfiles = owned.dependencies.observeProfiles;
@@ -216,7 +219,7 @@ test("controller performs a final boundary read and refuses drift after the last
 });
 
 test("retained controller result is historical until current guards pass again", async () => {
-  const directory = `/private/tmp/p2-rotation-controller-${process.pid}-retained-read`; mkdirSync(directory, { mode: 0o700 });
+  const directory = fixture("retained-read");
   try {
     const selected = plan(directory), first = harness(selected);
     await runIdentityKeyRotationController(selected, parent, first.dependencies, { fixture: true, nowMs: first.nowMs });

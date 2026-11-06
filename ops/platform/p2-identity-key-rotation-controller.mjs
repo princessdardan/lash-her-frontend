@@ -1,4 +1,5 @@
 import { closeSync, constants, existsSync, fstatSync, fsyncSync, lstatSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { observeIdentityRotationBoundary } from "./p2-identity-key-rotation-observer.mjs";
 
@@ -9,6 +10,7 @@ const PHASES = Object.freeze(["baseline", "overlap", "current-only"]);
 const MUTATIONS = Object.freeze({ overlap: ["api", "frontend"], "current-only": ["frontend", "api"] });
 const DRAIN_MS = 330_000;
 const TOKEN_CLOCK_RESOLUTION_MS = 1_000;
+const FIXTURE_ROOT = `${realpathSync(tmpdir())}/`;
 
 export class RotationControllerFailure extends Error {
   constructor(check) { super("P2_IDENTITY_KEY_ROTATION_CONTROLLER_REFUSED"); this.check = check; }
@@ -26,7 +28,7 @@ function validatePlan(plan, options = {}) {
     && [plan.bindingSha256, plan.candidateSha256].every(value => SHA.test(value)) && COMMIT.test(plan.sourceCommit)
     && /^[a-f0-9]{32}$/u.test(plan.hostMachineId) && typeof plan.privateDirectory === "string"
     && (resolve(plan.privateDirectory).startsWith("/var/lib/lash-her/releases/staging/")
-      || options.fixture === true && resolve(plan.privateDirectory).startsWith("/private/tmp/"))
+      || options.fixture === true && resolve(plan.privateDirectory).startsWith(FIXTURE_ROOT))
     && closed(plan.configuration, PHASES) && PHASES.every(phase => closed(plan.configuration[phase], ["sha256", "privateRef"])
       && SHA.test(plan.configuration[phase].sha256)
       && plan.configuration[phase].privateRef === `${plan.privateDirectory}/config/${phase}`)
