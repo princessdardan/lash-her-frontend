@@ -46,24 +46,39 @@ test("the actual owned source-copy branch produces an executable migration CLI w
 for (const fixture of [
   { name: "source CI", file: "ci.yml", job: "frontend-operator-migrations", prefix: "$PWD", marker: "FRONTEND_MIGRATION_EXPORT_SCHEMA=true" },
   { name: "candidate rehearsal", file: "platform-artifacts.yml", job: "candidate", prefix: "$PWD/sources/lash-her-frontend", marker: "frontend-migration-rehearsal.json" },
-]) test(`${fixture.name} readonly mounts and owned fixture can load the actual protected route and validators`, () => {
+]) {
+test(`${fixture.name} owned Docker fixture COPY inputs exist inside its actual build context`, () => {
+  const workflow = parse(readFileSync(new URL(`../../.github/workflows/${fixture.file}`, import.meta.url), "utf8"));
+  const build = workflow.jobs[fixture.job].steps.find(step => step.run?.includes("Dockerfile.frontend-migration-test"))?.run;
+  assert.ok(build);
+  const command = build.replace(/\\\n\s*/gu, " ").split("\n").find(line => line.includes("docker build"));
+  const selectedContext = command?.trim().match(/(?:^|\s)([A-Za-z0-9/._-]+)$/u)?.[1];
+  const expected = fixture.name === "source CI" ? "ops/platform" : "sources/lash-her-frontend/ops/platform";
+  assert.equal(selectedContext, expected);
+  const directory = join(source, "ops/platform");
+  const verify = text => {
+    for (const line of text.split("\n").filter(line => /^COPY\s/u.test(line) && !/^COPY\s+--from=/u.test(line))) {
+      const instruction = /^COPY ([A-Za-z0-9/._-]+) ([A-Za-z0-9/._-]+)$/u.exec(line);
+      assert.ok(instruction, "Review unsupported fixture COPY syntax against the actual build context");
+      const input = resolve(directory, instruction[1]);
+      assert.ok(input.startsWith(`${directory}/`) && existsSync(input), `Fixture COPY input is outside or missing from ${selectedContext}`);
+    }
+  };
+  const dockerfile = readFileSync(new URL("./Dockerfile.frontend-migration-test", import.meta.url), "utf8");
+  verify(dockerfile);
+  assert.throws(() => verify(`${dockerfile}\nCOPY ops/gateway/routes.json /source/ops/gateway/routes.json\n`), /Fixture COPY input/u);
+});
+
+test(`${fixture.name} readonly mounts can load the actual protected route and validators`, () => {
   const workflow = parse(readFileSync(new URL(`../../.github/workflows/${fixture.file}`, import.meta.url), "utf8"));
   const run = workflow.jobs[fixture.job].steps.find(step => step.run?.includes(fixture.marker))?.run;
   assert.ok(run);
   const mounts = [...run.matchAll(/--mount "type=bind,src=([^,"]+),dst=([^,"]+),readonly"/gu)]
     .map(([, source, destination]) => ({ source, destination })).sort((a, b) => b.destination.length - a.destination.length);
-  const dockerfile = readFileSync(new URL("./Dockerfile.frontend-migration-test", import.meta.url), "utf8");
-  const baked = [...dockerfile.matchAll(/^COPY ([A-Za-z0-9/._-]+) (\/source\/[A-Za-z0-9/._-]+)$/gmu)]
-    .map(([, source, destination]) => ({ source, destination }));
   const mountedSource = file => {
     const destination = `/source/${file}`;
     const mount = mounts.find(item => destination === item.destination || destination.startsWith(`${item.destination}/`));
-    if (!mount) {
-      const imageFile = baked.find(item => item.destination === destination);
-      assert.ok(imageFile, `Owned fixture does not mount or package ${file}`);
-      assert.equal(imageFile.source, "ops/gateway/routes.json", "Only the reviewed gateway policy belongs in the owned fixture");
-      return resolve(source, imageFile.source);
-    }
+    assert.ok(mount, `Owned fixture does not mount ${file}`);
     assert.ok(mount.source === fixture.prefix || mount.source.startsWith(`${fixture.prefix}/`));
     return resolve(source, mount.source.slice(fixture.prefix.length).replace(/^\//u, ""), destination.slice(mount.destination.length).replace(/^\//u, ""));
   };
@@ -109,3 +124,4 @@ for (const fixture of [
     assert.match(missing.stderr, /Cannot find module '[^']*ops\/gateway\/routes\.json'/u);
   } finally { rmSync(app, { recursive: true, force: true }); }
 });
+}
