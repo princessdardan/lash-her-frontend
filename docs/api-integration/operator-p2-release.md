@@ -1,0 +1,31 @@
+# Phase 2 staging operator driver
+
+Implementation and qualification are in progress. The entry point is `node ops/platform/p2-release.mjs plan /absolute/private/operator-settings.json`; apply is `node ops/platform/p2-release.mjs apply /absolute/private/operator-settings.json --confirm staging/RELEASE_ID`. Dardan starts the concrete reviewed apply command under the [single-operator policy](release-policy.md). A source commit or candidate build does not start it. No live action has been performed by these source tests.
+
+The exact source must have passing required CI. The local operator runtime is Node 24 with the selected source's installed dependencies, Git, Python 3 and existing pinned SSH trust/key. No host Node installation, local Docker engine or new operator image is assumed. The existing source receiver installs the exact Git-bound public operator files. SSH uses the existing selected staging address and strict host-key checking; the broker verifies the actual Linux machine ID.
+
+The private settings identify local bundle/configuration/inventory/provider-context/result paths, exact source commit, existing SSH key/known-host paths, and a closed host object containing only `machineId`, `bundle`, `configuration`, `results`. Host paths must be canonical private directories beneath `/var/lib/lash-her/releases/staging/`. The selected three-app bundle, pending frontend SQL, complete schema artifacts, recovery references, observed role bindings and provider inventory remain mandatory. Missing historical/provider proof is a refusal, not a request to bypass the coordinator.
+
+Resolve the existing named frontend/Course/Community staging migration URLs privately at runtime. The provider context is the existing mode0600 runtime handoff, read only by apply; it includes the reviewed public bindings and private provider values consumed by the fixed adapters. AWS-held values use `asm-exec` dynamic references. No credential goes in command arguments, ordinary output, source or common receipts. The driver loads no dotenv file and has no generic command hook.
+
+## Continuous locks and execution order
+
+The independent Python supervisor on the selected Linux host acquires the actual release/watchdog flock. The broker inherits the same open file description; both retain it through terminal receipt joining. Reciprocal private pipes detect a killed or stalled broker/guard. Broker death leaves the guard able to kill and reap its mutating process group, fence frontend admission, persist a closed gateway admission file and stop the runtime before releasing the lock. Guard death makes the broker's process-local scope revoke startup/apply commands and kill registered subprocesses before closure. An operator-controlled JSON `held` flag cannot construct this scope.
+
+The frontend coordinator opens the verified-TLS physical PostgreSQL session and retains its advisory lock through bootstrap, recovery/drain, historical fencing, reviewed SQL, API startup, compatible frontend build/workload verification and promotion. Before API migration, a second connection in the exact frontend migration image observes that original backend, its release-specific nonce lock, the migration lock, complete journal and schema. A live observer continues until the deliberate final-close handshake. It reads no application rows.
+
+After the frontend SQL receipt is durable, the host applies only Course and Community migrations and starts their exact runtime images. The frontend SQL is never executed a second time. The API database record explicitly says `API_DATABASES_VERIFIED_FRONTEND_CONTINUATION_OPEN`; it does not fabricate the frontend's terminal receipt. Startup checks the live scope before and after every Compose stage. The API runtime-ready continuation stays open during frontend promotion and terminal checks.
+
+The protected deployed frontend probe must report the exact fixed P2 feature profile. Separate Vercel and Linux gateway observations are composed for restoration; no local Mac Docker state represents the staging host. Final joining requires the original frontend SQL receipt, actual frontend terminal outcome, compatible promotion/workload proof and API runtime/migration receipts. An uncertain or missing acknowledgement never triggers SQL replay, another deployment or automatic admission reopening.
+
+## Certification profile
+
+`p2-certification-profile.mjs` and its checked Python counterpart admit customer identity, Course reads, learner routes and account lifecycle/recovery. Paid checkout, entitlement recovery and new Community member reads/writes stay off. Both API lifecycle enforcement flags, Mux recovery/cleanup and Course export cleanup must be explicitly enabled in the reviewed staging runtime inputs. The driver verifies these values; it does not silently edit them.
+
+The bootstrap frontend keeps all ten feature flags false. Only the post-SQL compatible build uses the certification profile. The new gateway starts closed, then admits only after compatible frontend and runtime evidence pass; frontend admission is restored through the existing ordered source coordinator. Native project/business schedules remain disabled. Any later lifecycle-only native scheduler qualification requires its concrete reviewed action and deployed evidence.
+
+`P2_STAGING_READY_FOR_CERTIFICATION` records actual staging admission, not G2 acceptance. Real Google/Resend/Mux, authoring/learning/lifecycle, accessibility and existing-site certification remain necessary. Production, paid Course checkout, Community member features and monitoring are outside this driver.
+
+## Open source qualification
+
+The [owned driver record](baselines/2026-11-05-p2-release-driver/) distinguishes real PostgreSQL/OS tests from intercepted API/provider responses. Exact-source Linux CI, complete independent review and actual deployed execution are still required. The source-owned role-preparation package is being integrated into the same action: desired role names are reviewed first, and only actual PostgreSQL readback may populate coordinator OIDs. Until that composition lands, the driver requires already-qualified observed owner/runtime role prerequisites and cannot provision missing roles itself. No fabricated OID, standalone uncoordinated SQL or extra approval click is a substitute.

@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "sourceBase": "614d3a6e",
+  "interfaceCommit": "7c33c1cf",
+  "status": "SOURCE_IMPLEMENTATION_AND_OWNED_QUALIFICATION_IN_PROGRESS",
+  "liveOperationsPerformed": false,
+  "productionChanged": false,
+  "sqlReplayAuthorized": false,
+  "releaseAccepted": false,
+  "g2Accepted": false,
+  "checks": {
+    "nodeGuardAndCoordination": {
+      "passed": 15,
+      "failed": 0
+    },
+    "selectedHostRegression": {
+      "passed": 46,
+      "failed": 0
+    },
+    "ownedPostgres16": {
+      "groups": 15,
+      "allFrontendMigrations": 83,
+      "actualTls": true,
+      "providerTouched": false,
+      "actualApiDocker": false
+    },
+    "ownedPosixGuard": {
+      "passed": 5,
+      "failed": 0,
+      "realSigkill": true,
+      "realFlock": true,
+      "providerAndApiSubstituted": true,
+      "additionalFaults": [
+        "missing original bundle after admission",
+        "cleanup timeout cannot prevent independent abort notification"
+      ]
+    },
+    "hostRegressionBeforeFinalGuardChanges": {
+      "run": 391,
+      "failed": 0,
+      "optionalOwnedPostgresSkipped": 1
+    }
+  },
+  "open": [
+    "Same-action role preparation composition",
+    "Final independent review of supervisor, broker and release driver",
+    "Exact-source Linux/required CI",
+    "Immutable candidate qualification",
+    "Actual staging release and P2 certification"
+  ],
+  "files": {
+    "host-regression-391-pass.log": "5cb2b6dcf5e19a614d22610cfe6128356fedefcf884f30408b85fa4e5d257af7",
+    "host-sandbox-socket-refusal.log": "31d73454aaaebe0673586410b1b40c1d4a7716e6bb359eecff63e77a31716855",
+    "guard-posix-pass.log": "48e7f815fc236193c9727c28f2b81c5c755aabe48cf610f00322a5e2c5d25f14",
+    "guard-reviewed-five-pass.log": "7793a43ca2b972195cc6fc1ba06f85bfbb22128f85937bf5b785399138d35ff6",
+    "node-fifteen-pass.log": "b6bb83d38611a4a1957a15ffc5d2f2296b51f86c531426eb7a6e371a0e011d8c",
+    "guard-initial-canonical-path-failure.log": "b90d2a59036b4e648360fef16df02cf5eba5e587e1b0875142d28e0b296c9657",
+    "owned-postgres16.log": "3d9c4ed769020962e737be93acd5bb4827c0a5463249ad13748424c9585e17ee",
+    "selected-host-fortysix-pass.log": "eeeb58ec5751244f95f35fb77d8ec5393cb2efa8130945b8ad09593b31893a4b"
+  },
+  "sourceCommit": "2f1730eb",
+  "sourceFiles": {
+    "ops/platform/frontend-release-coordinator.mjs": "d9f0ba96b62cdf61f3cc7c37b259a667cb90803bd7c8c63f93539bf85ea2973a",
+    "ops/platform/host/migrate.py": "faa985aaa3250ba99d8f4f2b4f8b4b34b4186a2030b396aa697f7275d8d3bc39",
+    "ops/platform/host/release.py": "0c013901c2524839efd847bd9fa656fdeb5ff48df4f20de87b6671eafd61f78f",
+    "ops/platform/test-frontend-release-local.mjs": "a191da5172f94954d3efa4d8f19679f5203bfa2b38e31a978b36385836e874e9",
+    "ops/platform/host/p2_release_broker.py": "d00797d503b419b2aacfda21aa88f87c83c9918b250aecdbec9e58dfab29ac6b",
+    "ops/platform/host/p2_release_supervisor.py": "ede0351291362295bd7c212852e811467d22649d09e1d12964898ad853cd0f8c",
+    "ops/platform/host/p2_release_scope.py": "a45ea038ce1b27d401a2700ffac5e84d786d8bbb2d2e4ea16768e386b0942a9d",
+    "ops/platform/host/p2_release_scope_test.py": "ff1b976ba5e1c92b9d073cd2e3503f6fda92ea50a55be31f820e1607e2b315f4",
+    "ops/platform/host/p2_release_guard_test.py": "c178b3ef65bc34ced8297e3c0bc470c4421a8c4361b209063141f8d3243892bc",
+    "ops/platform/p2-frontend-live-probe.mjs": "65f43ada2230fd13cc265f2d2e5924088696ba758eddf504ef32205e5e7f27c8",
+    "ops/platform/p2-release-transport.mjs": "948859046b672f84dcc7bf008d986fcf929556d040be2b6f370507070b93e5db",
+    "ops/platform/p2-release-transport.test.mjs": "5d0e2627df8ae78e8cde6861be5be2af0b46089fcbfa8e9e048e575836865b20",
+    "ops/platform/p2-release.mjs": "3be8955134aa40743af1daa3dc05c02f8394ad26c512b8640a394dbafd630bd9"
+  }
+}
