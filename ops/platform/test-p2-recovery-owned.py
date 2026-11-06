@@ -116,18 +116,17 @@ try:
             raise ValueError('OWNED_AMBIENT_NODE_OPTION_EXECUTED')
         if len(result.stdout)+len(result.stderr)>1_000_000:
             raise ValueError('OWNED_RECOVERY_TEST_OUTPUT_LIMIT')
-        source_receipts=[]
-        for line in result.stdout.splitlines():
-            try:value=json.loads(line)
-            except json.JSONDecodeError:value=None
-            if isinstance(value,dict) and value.get('status')=='OWNED_P2_RECOVERY_DATABASE_SOURCE_CHECKS_PASS':source_receipts.append(value)
-            else:print(line,flush=True)
-        if result.stderr:print(result.stderr,file=sys.stderr,flush=True)
-        if result.returncode==0:
-            if len(source_receipts)!=1 or source_receipts[0].get('childEnvironmentAllowlistEnforced') is not True:
+        if result.returncode:
+            print('OWNED_P2_RECOVERY_CHILD_FAILED',file=sys.stderr,flush=True)
+        else:
+            lines=result.stdout.splitlines()
+            if len(lines)!=1:
+                raise ValueError('OWNED_RECOVERY_SINGLE_SOURCE_RECEIPT_REQUIRED')
+            value=json.loads(lines[0])
+            if not isinstance(value,dict) or value.get('status')!='OWNED_P2_RECOVERY_DATABASE_SOURCE_CHECKS_PASS' or value.get('childEnvironmentAllowlistEnforced') is not True:
                 raise ValueError('OWNED_RECOVERY_SOURCE_RECEIPT_MISSING')
-            source_receipts[0].pop('childEnvironmentAllowlistEnforced')
-            print(json.dumps({**source_receipts[0],'status':'OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS','environmentIsolation':{
+            value.pop('childEnvironmentAllowlistEnforced')
+            print(json.dumps({**value,'status':'OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS','environmentIsolation':{
                 'nodeOptionsPositiveControlExecuted':True,'poisonedParentEnvironment':True,'ambientNodeOptionsExecuted':False,
                 'ambientConfigVariablesAbsent':True,'childEnvironmentAllowlistEnforced':True}}),flush=True)
     finally:

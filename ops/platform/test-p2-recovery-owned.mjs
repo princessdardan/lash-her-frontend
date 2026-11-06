@@ -118,8 +118,7 @@ try{
   for(const privilege of ['REFERENCES','TRIGGER']){
     await checkFrontendFault('frontend-table-'+privilege.toLowerCase(),'GRANT '+privilege+' ON TABLE '+frontendTable+' TO recovery_runtime','REVOKE '+privilege+' ON TABLE '+frontendTable+' FROM recovery_runtime');
   }
-  console.log(JSON.stringify({status:'OWNED_P2_RECOVERY_FRONTEND_PRIVILEGE_RESULTS',nonSuperuserCreatorMemberships:creatorMemberships,faults:privilegeFaults}));
-  assert.ok(privilegeFaults.every(row=>row.initialRefused===true&&row.continuousRefused===true&&row.restorationEntered===false),'frontend privilege drift entered restoration');
+  assert.deepEqual(privilegeFaults.filter(row=>row.initialRefused!==true||row.continuousRefused!==true||row.restorationEntered!==false).map(row=>row.id),[],'frontend privilege drift entered restoration');
   const stale=structuredClone(prepared);stale.plan.owner.oid='9999999';
   await assert.rejects(withRecoveryFrontendSession(stale,action,deps,async()=>assert.fail('stale prepared owner OID accepted')));checks++;
   await admin.query('ALTER ROLE recovery_owner CREATEROLE');
@@ -195,8 +194,7 @@ try{
       }finally{await privileged.end();}
     }finally{await apiAdmin.end();}
   }
-  console.log(JSON.stringify({status:'OWNED_P2_RECOVERY_PRIVILEGE_FAULT_RESULTS',faults:privilegeFaults}));
-  assert.ok(privilegeFaults.every(row=>row.initialRefused===true&&row.continuousRefused!==false&&row.restorationEntered!==true),'unsafe privilege fault was accepted');
+  assert.deepEqual(privilegeFaults.filter(row=>row.initialRefused!==true||row.continuousRefused===false||row.restorationEntered===true).map(row=>row.id),[],'unsafe privilege fault was accepted');
   assertOwnedEnvironment();
   console.log(JSON.stringify({status:'OWNED_P2_RECOVERY_DATABASE_SOURCE_CHECKS_PASS',checks,frontendMigrations:artifact.migrations.length,courseMigrations:JSON.parse(readFileSync(join(privateInput.apiRoots.course,'drizzle/meta/_journal.json'))).entries.length,communityMigrations:JSON.parse(readFileSync(join(privateInput.apiRoots.community,'drizzle/meta/_journal.json'))).entries.length,serverMajor,noSqlReplay:true,originalFrontendTerminalRecreated:false,
     skipped:0,fixtureOnly:true,providerTouched:false,privilegeFaults:privilegeFaults.map(row=>row.id).sort(),

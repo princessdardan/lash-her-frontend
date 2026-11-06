@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "checks": {
+    "stdoutLines": 1,
+    "stderrEmpty": true,
+    "ownedDatabaseGroups": 55,
+    "namedCases": 39,
+    "postgresMajor": 16,
+    "postgres18Local": false
+  },
+  "claims": {
+    "helperParserRelaxed": false,
+    "optionalSkip": false,
+    "providerTouched": false,
+    "sqlReplay": false,
+    "liveOperations": false
+  },
+  "fileSha256": {
+    "ops/platform/test-p2-recovery-owned.py": "4b32feb25b81d11d5a3db3d988c1fdc180c89f923bd72d83882a449b872407e7",
+    "ops/platform/test-p2-recovery-owned.mjs": "0536fc914fd884c2d4bcf874a8015b60bfc8aa4862d6eaf89e9ece859c24d0c5",
+    "docs/api-integration/baselines/2026-11-06-p2-recovery-single-receipt/README.md": "c893d1686b3f81d3e3015d3703dd4059c22000a3e257beb255191722bca28a77",
+    "docs/api-integration/baselines/2026-11-06-p2-recovery-single-receipt/owned-postgres16.log": "7f11da44be21c92641598ba97aa3d7a26a3fae717f757e0ed266ba22cfa4327f"
+  }
+}
