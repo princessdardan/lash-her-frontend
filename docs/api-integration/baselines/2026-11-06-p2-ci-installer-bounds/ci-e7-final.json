@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "source": "e7ab752e604ba43bc5b6443a9197a56e2a6e0cad",
+  "runId": 42234033582,
+  "terminalSnapshot": true,
+  "allTenRequiredPassed": true,
+  "jobs": [
+    {
+      "id": 127947535426,
+      "name": "database",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127947535717,
+      "name": "quality-and-unit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127947535830,
+      "name": "audit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127947535848,
+      "name": "browser (webkit)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127947535903,
+      "name": "browser (chromium)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127947535919,
+      "name": "frontend-operator-migrations",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127947535975,
+      "name": "gateway-and-platform",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127947535992,
+      "name": "build",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127947536190,
+      "name": "browser (firefox)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 127953750331,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "stagingCertified": false,
+  "g2Accepted": false
+}

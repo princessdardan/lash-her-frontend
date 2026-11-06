@@ -1,0 +1,20 @@
+[
+  {
+    "id": 13510284120,
+    "name": "schema",
+    "bytes": 13853,
+    "sha256": "2a4015087201c3d1c0dce7a5d56216d8a68f41788e6e5de43170e71ab5c05964"
+  },
+  {
+    "id": 13511168598,
+    "name": "frontend-runtime",
+    "bytes": 61015,
+    "sha256": "1865c4bed0a9b0a6e12322dfdef2e211dfe52a9877a26bfa3987ee6e1197e1fd"
+  },
+  {
+    "id": 13511721341,
+    "name": "gateway-runtime",
+    "bytes": 59419,
+    "sha256": "bf022d69f1d3d4273d3409440bb7b60ec89f1651a0055c0422ed375d5d510c2c"
+  }
+]

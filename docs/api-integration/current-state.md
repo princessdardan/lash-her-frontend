@@ -2,7 +2,7 @@
 
 Source checkpoint updated November 6, 2026 (Toronto). Accepted live admission completed November 4 at 01:27:39 UTC, with independent postflight at 01:29:33 UTC. [The tracker](../../API-INTEGRATION-EXECUTION.md) owns task status; [release policy](release-policy.md) governs future releases.
 
-Latest source position: Course `a447bfde` and Community `939de65d` pass merged-main CI; frontend `b347ca58193252b8863057c7d5a05812edcbc0c3` passes all ten required jobs in CI 42227517719, including actual Linux forward/persistence/receiver checks and all browsers. The independently cleared durable gateway frontier is integrated locally as `91d44bd2` for fresh CI; separate interrupted-restoration C remains in implementation. Final union/CI/candidate, historical configuration/provider effects and deployed certification remain open. Historical sections retain their original source scope.
+Latest source position: Course `a447bfde` and Community `939de65d` pass merged-main CI. Frontend `e7ab752e604ba43bc5b6443a9197a56e2a6e0cad` passes all ten required jobs in CI 42234033582, including durable gateway frontier/pinned dependency setup, Linux operator and all browsers. Separate interrupted-restoration C has clean owned PG16/18 positive receipts but containment/actual-entry review corrections and CI wiring remain open. Final union/CI/candidate, historical configuration/provider effects and deployed certification remain required. Historical sections retain their original scope.
 
 ## Accepted P1 state
 
@@ -197,3 +197,7 @@ CI47 passes eight ordinary jobs, including build/all three browsers with the can
 ## CI installer acquisition follow-up — November 6, 2026
 
 [The reviewed CI-only change](baselines/2026-11-06-p2-ci-installer-bounds/README.md) bounds observed Azure Ubuntu package stalls without removing dependencies/tests or weakening APT security. Current 088 has eight ordinary jobs passing and WebKit still installing; no WebKit suite result is claimed. The operator also installs its gateway lock explicitly for faithful C fixture resolution. YAML/diff and independent workflow review pass. Earlier exact b347 all-ten-job evidence is retained; new CI, separate C actual database/final source qualification, candidate and all deployed P2/G2 evidence remain open. No live mutation occurred.
+
+## E7 exact-source CI and remaining C review — November 6, 2026
+
+[Exact E7 CI](baselines/2026-11-06-p2-ci-installer-bounds/ci-e7-final.json) passes all ten required jobs, including all browsers and actual PG18 roles 24/release 18/native 9/certification 10 plus identity 19/recovery 55/forward 19/persistence 13/receiver 12, zero skips. WebKit installs in 34 seconds and its suite passes. Separate C has owned PG16/18 positive new-process/new-backend/three-database receipts, but final review found guard-death/pre-worker cleanup and actual CLI identity gaps. Corrections, fixed CI wiring and final union qualification remain required; no C/deployed acceptance is claimed. Original receipts and failed attempts remain retained. No staging mutation or G2 closure occurred.
