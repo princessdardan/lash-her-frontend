@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { frontendMigrationArtifact, prepareFrontendMigration } from "./frontend-migration.mjs";
 import { bootstrapFrontendAdmission, frontendAdmissionBootstrapArtifact, frontendAdmissionTargetSha256, prepareFrontendAdmissionBootstrap } from "./frontend-admission-bootstrap.mjs";
-import { frontendCandidateSurfaces, frontendCoordinationHash as hash, prepareFrontendReleaseInventory, validateFrontendFenceObservation } from "./frontend-release-inventory.mjs";
+import { frontendCandidateSurfaces, frontendCoordinationHash as hash, prepareFrontendReleaseInventory, prepareFrontendReleaseRoleTemplate, validateFrontendFenceObservation } from "./frontend-release-inventory.mjs";
 import { frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { loadFrontendReleaseAdapters } from "./frontend-release-coordinator.mjs";
 import { withFrontendEnvironmentLock } from "./frontend-environment-lock.mjs";
@@ -77,6 +77,19 @@ test("pure inventory requires complete exact-source coverage, all external surfa
   assert.throws(() => frontendCandidateSurfaces({ ...f.source, version: 1 }));
   const input = structuredClone(f.inventory); input.password = "private-marker"; input.externalSurfaces[0].password = "private-marker";
   assert.equal(JSON.stringify(prepareFrontendReleaseInventory(input, f.migration, f.source)).includes("private-marker"), false);
+});
+
+test("desired role templates contain no invented OIDs and cannot execute as observed inventories", () => {
+  const f = fixture(), input = structuredClone(f.inventory);
+  delete input.owner.oid; for (const producer of input.producers) delete producer.role.oid;
+  const template = prepareFrontendReleaseRoleTemplate(input, f.migration, f.source);
+  assert.deepEqual(template.owner, { name: "admission_owner" });
+  assert.deepEqual(template.producers[0].role, { name: "runtime" });
+  assert.equal(template.roleBindings, "desired-names-only");
+  assert.throws(() => prepareFrontendReleaseInventory(template, f.migration, f.source));
+  assert.throws(() => prepareFrontendReleaseRoleTemplate(f.inventory, f.migration, f.source));
+  const incomplete = structuredClone(input); incomplete.candidateCoverage.pop();
+  assert.throws(() => prepareFrontendReleaseRoleTemplate(incomplete, f.migration, f.source));
 });
 
 test("bootstrap preparation binds the selected SQL, owner/OIDs, target and source without copying secrets", () => {

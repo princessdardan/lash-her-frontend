@@ -248,6 +248,7 @@ class Broker:
     def start(self, identity, request):
         self.check()
         require(self.worker is None and self.closing_at is None, 'P2_API_STAGE_ALREADY_STARTED')
+        require(self.initial.get('rolePreparation') is None or hasattr(self, 'roles_proof'), 'P2_OBSERVED_ROLES_REQUIRED_BEFORE_API_STAGE')
         raw, receipt = decode(request['receipt'])
         require(request['probe']['job'] == self.jobs['frontend']['job'] and request['probe']['receipt'] == receipt,
                 'P2_PROBE_RECEIPT_BINDING_REFUSED')
@@ -299,10 +300,23 @@ class Broker:
                 and workload.get('phase2ContractManifestSha256') == self.selected['phase2ContractManifestSha256']
                 and workload.get('featureControls') == self.initial['certification']['featureControls'],
                 'P2_IMMUTABLE_FEATURE_PROFILE_REQUIRED')
+        require(workload.get('writerAdmissionBinding') == self.initial['expectedWriterAdmissionBinding']
+                and proof.get('writerAdmissionBinding') == workload['writerAdmissionBinding']
+                and proof.get('configurationRecordSha256') == proof['workloadReceiptSha256'],
+                'P2_IMMUTABLE_WRITER_BINDING_REQUIRED')
         state = vercel.deployment_state(self.vercel, proof['deploymentId'], proof['projectId'], proof['sourceCommit'], proof['actionId'])
         project = vercel._project(self.vercel, proof['projectId'])
         require(state['readyState'] == 'READY' and (project.get('targets') or {}).get('production', {}).get('id') == proof['deploymentId']
                 and (project.get('crons') or {}).get('disabledAt') is not None, 'P2_ACTUAL_FRONTEND_PROMOTION_REQUIRED')
+        cron, schedule = project.get('crons') or {}, proof.get('certificationSchedule') or {}
+        expected_schedule = {'path': '/api/cron/account-lifecycle', 'schedule': '* * * * *',
+                             'host': state['url'].removeprefix('https://')}
+        definitions = cron.get('definitions')
+        require(cron.get('deploymentId') == proof['deploymentId'] and isinstance(definitions, list) and len(definitions) == 1
+                and all(definitions[0].get(key) == value and schedule.get(key) == value for key, value in expected_schedule.items())
+                and schedule.get('deploymentId') == proof['deploymentId'] and schedule.get('nativeEnabled') is False
+                and re.fullmatch(r'[a-f0-9]{64}', schedule.get('definitionsSha256', '')) is not None,
+                'P2_LIFECYCLE_ONLY_DISABLED_SCHEDULE_REQUIRED')
         require(runtime.check_containers(self.selected, self.runtime_snapshot) == self.ready['containers'], 'P2_RUNTIME_CHANGED')
         self.promoted = proof
 
@@ -386,6 +400,26 @@ class Broker:
         self.last_command = time.monotonic()
         if operation == 'check':
             self.send(identity, 'HELD')
+        elif operation == 'roles-prepared':
+            require(self.worker is None and self.observer is None and self.initial.get('rolePreparation') is not None
+                    and not hasattr(self, 'roles_proof'), 'P2_ROLE_PREPARATION_STAGE_REFUSED')
+            proof, plan = value['proof'], self.initial['rolePreparation']
+            body = {key: item for key, item in proof.items() if key != 'proofSha256'}
+            expected = hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+            require(proof.get('proofSha256') == expected and proof.get('status') == 'FRONTEND_ROLES_PREPARED'
+                    and proof.get('committed') is True and proof.get('runtimeCredentialVerified') is True
+                    and all(proof.get(key) == item for key, item in plan.items())
+                    and proof.get('environment') == 'staging' and proof.get('owner', {}).get('name') == 'lash_her_frontend_staging_admission_owner_p2'
+                    and proof.get('runtime', {}).get('name') == self.jobs['frontend']['job']['target']['runtimeRole']
+                    and all(re.fullmatch(r'[1-9][0-9]{0,9}', proof[key].get('oid', '')) and int(proof[key]['oid']) <= 4294967295 for key in ('owner', 'runtime'))
+                    and proof['owner']['oid'] != proof['runtime']['oid'],
+                    'P2_OBSERVED_ROLE_PROOF_REQUIRED')
+            require(proof.get('producers') == [{'producerSha256': producer, 'sourceCommit': plan['sourceCommit'], 'role': proof['runtime']}
+                                               for producer in plan['producerSha256']], 'P2_OBSERVED_ROLE_PRODUCERS_REFUSED')
+            self.roles_proof = proof
+            self.initial['owner'] = proof['owner']
+            migrate.write_json(self.directory, 'p2-observed-role-preparation.json', proof)
+            self.send(identity, 'ROLES_PREPARED')
         elif operation == 'start-api':
             self.start(identity, value)
         elif operation == 'frontend-verified':
@@ -415,6 +449,8 @@ class Broker:
                 require(terminal.get(key) == self.scope.receipt.get(key), 'P2_FRONTEND_TERMINAL_BINDING_REFUSED')
             require(frontend.get('actionId') == self.selected['releaseId'] and frontend.get('sourceCommit') == terminal['sourceCommit'],
                     'P2_FRONTEND_OUTCOME_BINDING_REFUSED')
+            if hasattr(self, 'roles_proof'):
+                require(frontend.get('rolePreparationProofSha256') == self.roles_proof['proofSha256'], 'P2_ROLE_TERMINAL_PROOF_BINDING_REFUSED')
             for name, raw in (('frontend-job-outcome.json', terminal_raw), ('frontend-release-outcome.json', outcome_raw),
                               ('frontend-original-database-receipt.json', self.frontend_raw)):
                 with (self.directory / name).open('xb') as stream:
@@ -426,6 +462,8 @@ class Broker:
                     and frontend.get('admissionRecovery') is True, 'P2_FRONTEND_ADMISSION_RESTORATION_REQUIRED')
             self.outcome.update(status='P2_STAGING_READY_FOR_CERTIFICATION', trafficAuthorized=True, newWorkAuthorized=True,
                                 recoveryAuthorized=True, nativeSchedulesEnabled=False, g2Accepted=False,
+                                certificationSchedule=self.promoted['certificationSchedule'], nativeQualification='pending',
+                                rolePreparationProofSha256=getattr(self, 'roles_proof', {}).get('proofSha256'),
                                 frontendTerminalSha256=migrate.file_hash(terminal_raw),
                                 frontendOutcomeSha256=migrate.file_hash(outcome_raw), frontendDatabaseReceiptSha256=migrate.file_hash(self.frontend_raw),
                                 apiRuntimeReceiptSha256=migrate.file_hash(migrate.read_input(self.api_attempt, 'runtime-outcome.json')),

@@ -13,6 +13,11 @@ import { githubSourceApi } from './release-inputs.mjs';
 import { recreationSsh } from './recreation_ssh.mjs';
 import { p2HostEnvironmentLock } from './p2-release-transport.mjs';
 import { prepareP2CertificationProfile, P2_CERTIFICATION_RUNTIME_FLAGS } from './p2-certification-profile.mjs';
+import { Client } from 'pg';
+import { prepareFrontendMigration, frontendConnectionOptions, FRONTEND_MIGRATION_LOCK, writeFrontendReceipt } from './frontend-migration.mjs';
+import { frontendWriterInventory } from './frontend-writer-inventory.mjs';
+import { prepareFrontendReleaseRoleTemplate } from './frontend-release-inventory.mjs';
+import { prepareFrontendRolesPlan, applyPreparedFrontendRoles, FRONTEND_PREPARATION_ROLES } from './frontend-role-preparation.mjs';
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const require = ok => { if (!ok) throw new Error('P2_OPERATOR_RELEASE_REFUSED'); };
@@ -45,10 +50,19 @@ export function prepareP2OperatorRelease(settings) {
   const job = object(join(bundle, 'jobs/frontend.json'));
   const baseline = object(join(bundle, 'schema/frontend.json'));
   const inventory = object(settings.inventory, true);
-  const prepared = prepareFrontendReleaseCoordination(candidate, job, baseline, inventory);
-  require(candidate.contractPhase === 'p2' && settings.sourceCommit === prepared.plan.sourceCommit &&
-    prepared.plan.restoration?.newWork === true && prepared.plan.restoration.recovery === true &&
-    isDeepStrictEqual(prepared.plan.certification, prepareP2CertificationProfile(prepared.plan.certification)));
+  const roles = settings.rolePreparation === undefined ? undefined : prepareFrontendRolesPlan(candidate, job, settings.rolePreparation);
+  const prepared = roles ? undefined : prepareFrontendReleaseCoordination(candidate, job, baseline, inventory);
+  const reviewedInventory = roles ? prepareFrontendReleaseRoleTemplate(inventory, prepareFrontendMigration(candidate, job, baseline), frontendWriterInventory(root)) : prepared.plan;
+  if (roles) require(reviewedInventory.admissionMode === 'bootstrap' && reviewedInventory.owner.name === FRONTEND_PREPARATION_ROLES.owner &&
+    reviewedInventory.producers.every(producer => producer.role.name === FRONTEND_PREPARATION_ROLES.runtime) &&
+    isDeepStrictEqual(reviewedInventory.producers.map(producer => producer.producerSha256).sort(), roles.producerSha256));
+  require(candidate.contractPhase === 'p2' && settings.sourceCommit === reviewedInventory.sourceCommit &&
+    reviewedInventory.restoration?.newWork === true && reviewedInventory.restoration.recovery === true &&
+    isDeepStrictEqual(reviewedInventory.certification, prepareP2CertificationProfile(reviewedInventory.certification)));
+  const runtimeProducer = reviewedInventory.runtimeProducerSha256 ?? reviewedInventory.bootstrapCompatibility?.runtimeProducerSha256;
+  require(/^[a-f0-9]{64}$/u.test(runtimeProducer ?? '') && reviewedInventory.producers.some(producer => producer.producerSha256 === runtimeProducer && producer.role.name === job.target.runtimeRole));
+  const writerAdmissionBinding = { mode: 'enforce', targetSha256: reviewedInventory.targetSha256,
+    producerSha256: runtimeProducer, sourceCommit: job.sourceCommit, roleName: job.target.runtimeRole };
   validateP2HostSettings(settings.host);
   const configuration = settings.configuration;
   frontendPrivateReceiptDirectory(configuration);
@@ -67,11 +81,12 @@ export function prepareP2OperatorRelease(settings) {
   const candidateSha256 = sha256(bytes(join(bundle, 'release.candidate.json'), true));
   require(isDeepStrictEqual(object(join(configuration, 'gateway.json')).admission,
     { file: '/admission/state.json', releaseId: candidate.releaseId, candidateSha256 }));
-  return { prepared, candidate, job, baseline, configurationSha256, plan: {
+  return { prepared, roles, inventory, reviewedInventory, candidate, job, baseline, configurationSha256, plan: {
     version: 1, environment: 'staging', operation: 'phase2-frontend-sql-api-runtime-and-compatible-promotion',
     sourceCommit: settings.sourceCommit, sources: candidate.sources, releaseId: candidate.releaseId, candidateSha256,
     hostMachineId: settings.host.machineId, frontendTarget: job.target, configurationSha256,
-    certification: prepared.plan.certification, runtimeFlags: P2_CERTIFICATION_RUNTIME_FLAGS, restoration: prepared.plan.restoration,
+    certification: reviewedInventory.certification, writerAdmissionBinding, runtimeFlags: P2_CERTIFICATION_RUNTIME_FLAGS, restoration: reviewedInventory.restoration,
+    ...(roles ? { rolePreparation: roles, inventoryRoleBindings: 'desired-names-only' } : {}),
     trafficAuthorized: false, releaseAccepted: false, approval: 'Dardan starts this exact reviewed staging action',
   } };
 }
@@ -107,15 +122,64 @@ export async function p2OperatorRelease(settings, { apply = false, confirmation 
     candidateSha256: checked.plan.candidateSha256,
     bundle: settings.host.bundle, configuration: settings.host.configuration, results: settings.host.results,
     configurationSha256: checked.configurationSha256, confirmation, credentials, vercelToken: context.vercelToken,
-    frontendJob: checked.job, frontendBaseline: checked.baseline, targetSha256: checked.prepared.plan.targetSha256,
-    owner: checked.prepared.plan.owner, certification: checked.prepared.plan.certification,
+    frontendJob: checked.job, frontendBaseline: checked.baseline, targetSha256: checked.reviewedInventory.targetSha256,
+    owner: checked.reviewedInventory.owner, certification: checked.reviewedInventory.certification,
+    expectedWriterAdmissionBinding: checked.plan.writerAdmissionBinding,
+    ...(checked.roles ? { rolePreparation: checked.roles } : {}),
     gatewayObservation: context.bindings?.gatewayObservation };
-  require(sha256(JSON.stringify(initial.gatewayObservation)) === checked.prepared.plan.restoration.gatewayBindingSha256);
+  require(sha256(JSON.stringify(initial.gatewayObservation)) === checked.reviewedInventory.restoration.gatewayBindingSha256);
   const withEnvironmentLock = p2HostEnvironmentLock(settings, initial, frontendDirectory);
+  if (checked.roles) return withEnvironmentLock((verifyEnvironment, environmentSignal, runtime) =>
+    runP2RolePreparationContinuation({ checked, settings, directory, frontendDirectory, context, credentials, confirmation,
+      verifyEnvironment, environmentSignal, runtime }));
   return runFrontendReleaseCoordination(checked.prepared, {
     confirmation, directory: frontendDirectory, getUrl: () => credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
     getProviderContext: async () => context, withEnvironmentLock,
   });
+}
+
+export async function runP2RolePreparationContinuation({ checked, settings, directory, frontendDirectory, context, credentials, confirmation, verifyEnvironment, environmentSignal, runtime }, { createClient = options => new Client(options) } = {}) {
+    let client, ended = false;
+    const close = async () => { if (client && !ended) { ended = true; await client.end(); } };
+    const abort = () => { void close().catch(() => {}); };
+    environmentSignal.addEventListener('abort', abort, { once: true });
+    try {
+      await verifyEnvironment();
+      client = createClient(frontendConnectionOptions(credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL, checked.job.target));
+      let failed = false; client.on('error', () => { failed = true; }); await client.connect();
+      const identity = (await client.query('SELECT pg_backend_pid() AS pid,current_user,current_database() AS database')).rows[0];
+      require(client.connection.stream.encrypted && client.connection.stream.authorized && identity.current_user === checked.job.target.user && identity.database === checked.job.target.database);
+      require((await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS held', [FRONTEND_MIGRATION_LOCK])).rows[0]?.held === true);
+      const verifySession = async () => {
+        require(!failed && !environmentSignal.aborted); await verifyEnvironment();
+        const same = (await client.query('SELECT pg_backend_pid() AS pid,current_user,current_database() AS database')).rows[0];
+        require(same.pid === identity.pid && same.current_user === identity.current_user && same.database === identity.database);
+      };
+      const rolesDirectory = join(directory, 'role-preparation'), rolesPrivate = join(directory, 'role-credentials');
+      mkdirSync(rolesDirectory, { mode: 0o700 }); mkdirSync(rolesPrivate, { mode: 0o700 });
+      const proof = await applyPreparedFrontendRoles(checked.roles, client, { confirmation, verifyEnvironment, verifySession,
+        directory: rolesDirectory, privateDirectory: rolesPrivate,
+        ...(settings.rolesReuseDirectory ? { reuseDirectory: settings.rolesReuseDirectory, reusePrivateDirectory: settings.rolesReusePrivateDirectory } : {}) });
+      await verifySession(); await runtime.bindRoles(proof);
+      const inventory = { ...checked.inventory, owner: proof.owner,
+        producers: proof.producers.map(({ producerSha256, role }) => ({ producerSha256, role })), rolePreparationProofSha256: proof.proofSha256 };
+      const prepared = prepareFrontendReleaseCoordination(checked.candidate, checked.job, checked.baseline, inventory);
+      writeFrontendReceipt(directory, 'observed-frontend-inventory.json', prepared.plan);
+      const replacementContext = { ...context, frontendRuntimeDatabaseUrl: proof.private.runtimeDatabaseUrl };
+      const connected = new Proxy(client, { get(target, key) {
+        if (key === 'connect') return verifySession;
+        if (key === 'end') return close;
+        const value = Reflect.get(target, key, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      } });
+      return await runFrontendReleaseCoordination(prepared, { confirmation, directory: frontendDirectory,
+        getUrl: () => credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL, getProviderContext: async () => replacementContext,
+        createClient: () => connected,
+        withEnvironmentLock: continuation => continuation(verifyEnvironment, environmentSignal, runtime) });
+    } finally {
+      environmentSignal.removeEventListener('abort', abort);
+      await close();
+    }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

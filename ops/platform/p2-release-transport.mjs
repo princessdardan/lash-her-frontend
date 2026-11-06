@@ -65,6 +65,12 @@ export function p2HostEnvironmentLock(settings, initial, directory, { launch = s
       // SET ROLE/transaction operations. The host independently observes PG.
       heartbeat = setInterval(() => { if (!failed) void verifyEnvironment().catch(fail); }, 1000);
       const runtime = {
+        async bindRoles(proof) {
+          require(!apiStarted && initial.rolePreparation);
+          await verifyEnvironment();
+          await request('roles-prepared', 'ROLES_PREPARED', { proof });
+          initial.owner = structuredClone(proof.owner);
+        },
         async start({ database, client, verify }) {
           require(!apiStarted); await verify(); apiStarted = true;
           const marker = randomBytes(32).toString('hex');

@@ -43,6 +43,16 @@ export function frontendCandidateSurfaces(source) {
 }
 
 export function prepareFrontendReleaseInventory(input, migration, source) {
+  return normalizeFrontendReleaseInventory(input, migration, source, false);
+}
+
+// Review desired role names without making up PostgreSQL OIDs. This template
+// cannot execute: the coordinator always calls the observed-role validator.
+export function prepareFrontendReleaseRoleTemplate(input, migration, source) {
+  return normalizeFrontendReleaseInventory(input, migration, source, true);
+}
+
+function normalizeFrontendReleaseInventory(input, migration, source, desiredRoles) {
   const job = migration?.job;
   demand(input?.version === 1 && input.environment === "staging" && job?.environment === "staging" &&
     typeof input.actionId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.actionId) && input.actionId === job.releaseId &&
@@ -58,20 +68,23 @@ export function prepareFrontendReleaseInventory(input, migration, source) {
     bootstrapCompatibility = prepareFrontendBootstrapCompatibility(input.bootstrapCompatibility);
   } else demand(input.bootstrapSqlSha256 === undefined && input.bootstrapCompatibility === undefined);
   const owner = input.owner;
-  demand(roleName(owner?.name) && oid(owner.oid) && owner.name !== job.target.user &&
+  demand(roleName(owner?.name) && (desiredRoles ? owner.oid === undefined : oid(owner.oid)) && owner.name !== job.target.user &&
     Array.isArray(input.producers) && input.producers.length > 0 && input.producers.length <= 256);
   const producers = input.producers.map(p => {
-    demand(digest(p?.producerSha256) && roleName(p.role?.name) && oid(p.role.oid) && ![owner.name, job.target.user].includes(p.role.name) && p.role.oid !== owner.oid);
-    return { producerSha256: p.producerSha256, role: { name: p.role.name, oid: p.role.oid } };
+    demand(digest(p?.producerSha256) && roleName(p.role?.name) && (desiredRoles ? p.role.oid === undefined : oid(p.role.oid) && p.role.oid !== owner.oid) &&
+      ![owner.name, job.target.user].includes(p.role.name));
+    return { producerSha256: p.producerSha256, role: { name: p.role.name, ...(!desiredRoles ? { oid: p.role.oid } : {}) } };
   }).sort((a, b) => a.producerSha256.localeCompare(b.producerSha256));
   demand(new Set(producers.map(p => p.producerSha256)).size === producers.length);
   const roleNames = new Map(), roleOids = new Map();
-  for (const producer of producers) {
+  for (const producer of desiredRoles ? [] : producers) {
     demand((!roleNames.has(producer.role.name) || roleNames.get(producer.role.name) === producer.role.oid) &&
       (!roleOids.has(producer.role.oid) || roleOids.get(producer.role.oid) === producer.role.name));
     roleNames.set(producer.role.name, producer.role.oid); roleOids.set(producer.role.oid, producer.role.name);
   }
   demand(producers.some(p => p.role.name === job.target.runtimeRole));
+  if (input.runtimeProducerSha256 !== undefined) demand(digest(input.runtimeProducerSha256) &&
+    producers.some(producer => producer.producerSha256 === input.runtimeProducerSha256 && producer.role.name === job.target.runtimeRole));
   if (bootstrapCompatibility) demand(producers.some(p => p.role.name === job.target.runtimeRole &&
     p.producerSha256 === bootstrapCompatibility.runtimeProducerSha256));
   const expected = frontendCandidateSurfaces(source);
@@ -100,11 +113,14 @@ export function prepareFrontendReleaseInventory(input, migration, source) {
     targetSha256: input.targetSha256, sourceInventorySha256: input.sourceInventorySha256,
     reviewSha256: input.reviewSha256, adaptersSha256: input.adaptersSha256,
     ...(input.providerBindingsSha256 ? { providerBindingsSha256: input.providerBindingsSha256 } : {}),
+    ...(input.runtimeProducerSha256 ? { runtimeProducerSha256: input.runtimeProducerSha256 } : {}),
+    ...(input.rolePreparationProofSha256 === undefined ? {} : (() => { demand(digest(input.rolePreparationProofSha256)); return { rolePreparationProofSha256: input.rolePreparationProofSha256 }; })()),
     observationBudgetSeconds: input.observationBudgetSeconds, admissionMode: input.admissionMode,
     ...(input.restoration !== undefined ? { restoration: prepareFrontendRestoration(input.restoration) } : {}),
     ...(input.certification !== undefined ? { certification: prepareP2CertificationProfile(input.certification) } : {}),
     ...(input.admissionMode === "bootstrap" ? { bootstrapSqlSha256: input.bootstrapSqlSha256, bootstrapCompatibility } : {}),
-    expectedEpoch: input.expectedEpoch, owner: { name: owner.name, oid: owner.oid }, producers,
+    expectedEpoch: input.expectedEpoch, owner: { name: owner.name, ...(!desiredRoles ? { oid: owner.oid } : {}) }, producers,
+    ...(desiredRoles ? { roleBindings: "desired-names-only" } : {}),
     candidateCoverage: coverage, externalSurfaces: surfaces, historicalLogins: historical };
 }
 

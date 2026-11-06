@@ -51,6 +51,7 @@ export function prepareFrontendReleaseCoordination(candidate, job, baseline, inv
 
 function deploymentProof(plan, result, { bootstrap = false } = {}) {
   const certification = bootstrap ? undefined : plan.certification;
+  const runtimeProducer = plan.runtimeProducerSha256 ?? plan.bootstrapCompatibility?.runtimeProducerSha256;
   demand(result?.version === 1 && result.actionId === plan.actionId && result.sourceCommit === plan.sourceCommit &&
     result.environment === plan.environment && result.targetSha256 === plan.targetSha256 &&
     result.projectId === "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM" && typeof result.deploymentId === "string" && /^dpl_[A-Za-z0-9]+$/u.test(result.deploymentId) &&
@@ -61,12 +62,23 @@ function deploymentProof(plan, result, { bootstrap = false } = {}) {
     frontendCoordinationHash(result.evidence) === result.evidenceSha256);
   const evidence = JSON.parse(result.evidence.toString("utf8"));
   if (certification) demand(isDeepStrictEqual(result.featureControls, certification.featureControls) &&
-    isDeepStrictEqual(evidence.featureControls, certification.featureControls));
+    isDeepStrictEqual(evidence.featureControls, certification.featureControls) &&
+    isDeepStrictEqual(result.certificationSchedule, evidence.certificationSchedule) &&
+    result.certificationSchedule?.path === "/api/cron/account-lifecycle" && result.certificationSchedule.schedule === "* * * * *" &&
+    result.certificationSchedule.deploymentId === result.deploymentId && result.certificationSchedule.nativeEnabled === false &&
+    /^[a-z0-9-]+\.vercel\.app$/u.test(result.certificationSchedule.host ?? "") &&
+    /^[a-f0-9]{64}$/u.test(result.certificationSchedule.definitionsSha256 ?? "") &&
+    isDeepStrictEqual(result.writerAdmissionBinding, evidence.writerAdmissionBinding) &&
+    isDeepStrictEqual(result.writerAdmissionBinding, { mode: "enforce", targetSha256: plan.targetSha256,
+      producerSha256: runtimeProducer, sourceCommit: plan.sourceCommit,
+      roleName: plan.producers.find(producer => producer.producerSha256 === runtimeProducer)?.role.name }) &&
+    result.configurationRecordSha256 === result.workloadReceiptSha256 && evidence.configurationRecordSha256 === result.configurationRecordSha256);
   demand(["version", "actionId", "sourceCommit", "environment", "targetSha256", "projectId", "deploymentId", "readyState", "aliasJobState", "aliasDeploymentId",
     "nativeSchedulesEnabled", "admissionNewWork", "admissionRecovery", "workloadVerified", "workloadReceiptSha256"].every(key => evidence[key] === result[key]));
   return { ...Object.fromEntries(["version", "actionId", "sourceCommit", "environment", "targetSha256", "projectId", "deploymentId", "readyState", "aliasJobState", "aliasDeploymentId",
     "nativeSchedulesEnabled", "admissionNewWork", "admissionRecovery", "workloadVerified", "workloadReceiptSha256", "evidenceSha256"].map(key => [key, result[key]])),
-    ...(certification ? { featureControls: structuredClone(result.featureControls) } : {}) };
+    ...(certification ? { featureControls: structuredClone(result.featureControls), certificationSchedule: structuredClone(result.certificationSchedule),
+      writerAdmissionBinding: structuredClone(result.writerAdmissionBinding), configurationRecordSha256: result.configurationRecordSha256 } : {}) };
 }
 
 export async function runFrontendReleaseCoordination(prepared, dependencies) {
@@ -79,6 +91,7 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
   const store = frontendReleaseReceiptStore(dependencies.directory);
   const base = { version: 1, environment: plan.environment, actionId: plan.actionId, sourceCommit: plan.sourceCommit,
     targetSha256: plan.targetSha256, inventorySha256, adaptersSha256: plan.adaptersSha256,
+    ...(plan.rolePreparationProofSha256 ? { rolePreparationProofSha256: plan.rolePreparationProofSha256 } : {}),
     trafficAuthorized: false, migrationAuthorized: false, admissionRestored: false, nativeSchedulesRestored: false };
   let phase = "source-and-adapter-preflight", intentRecorded = false, databaseVerified = false, frontendVerified = false, frontendMutationAttempted = false;
   let bootstrapFrontendMutationAttempted = false, bootstrapFrontendVerified = false;

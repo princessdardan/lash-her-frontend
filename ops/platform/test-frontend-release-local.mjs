@@ -37,6 +37,7 @@ async function call(method,path,value) {
 export async function fenceFrontendExternalProducers(c){await c.verifyLockedSession();await call('POST','/fence',{actionId:c.plan.actionId});await c.verifyLockedSession();await c.record('owned-provider-fenced.json',{status:'OWNED_FENCED',actionId:c.plan.actionId});}
 export async function reconcileFrontendExternalProducers(c){await c.verifyLockedSession();if(!c.admissionObservation.ledgerDrained||c.admissionObservation.newWork||c.admissionObservation.recovery)throw new Error('OWNED_DRAIN_REQUIRED');}
 export async function deployAdmissionCompatibleFrontend(c){
+ if(c.plan.rolePreparationProofSha256){const value=await c.getProviderContext();if(new URL(value.frontendRuntimeDatabaseUrl).username!=='lash_her_frontend_staging_runtime_p2')throw new Error('OWNED_GENERATED_RUNTIME_HANDOFF_REQUIRED');}
  await c.verifyLockedSession();await call('POST','/bootstrap-build',{actionId:c.plan.actionId,sourceCommit:c.plan.sourceCommit,schema:c.preapplicationSchema});
  await c.verifyLockedSession();await call('POST','/bootstrap-promote',{actionId:c.plan.actionId});await c.verifyLockedSession();
 }
@@ -442,6 +443,65 @@ async function main() {
     assert.equal(JSON.parse(readFileSync(join(p2Dead.output, "database-receipt.json"))).status, "DATABASE_VERIFIED");
     assert.equal(JSON.parse(readFileSync(join(p2Dead.output, "job-outcome.json"))).status, "FAILED_REQUIRES_REVIEW");
     checks.push("p2-api-stage-actual-backend-death-preserves-committed-sql-and-prevents-frontend-mutation");
+    phase = "same-action-role-preparation-and-coordinator";
+    const roleFlow = await make("same-action-roles"), flow = [];
+    const { prepareFrontendRolesPlan, FRONTEND_PREPARATION_ROLES } = await load("frontend-role-preparation.mjs");
+    const { prepareFrontendReleaseRoleTemplate } = await load("frontend-release-inventory.mjs");
+    const { runP2RolePreparationContinuation } = await load("p2-release.mjs");
+    const job = structuredClone(roleFlow.prepared.migration.job); job.target.runtimeRole = FRONTEND_PREPARATION_ROLES.runtime;
+    const candidate = structuredClone(roleFlow.prepared.migration.candidate), inventory = structuredClone(roleFlow.prepared.plan);
+    inventory.owner = { name: FRONTEND_PREPARATION_ROLES.owner };
+    inventory.producers = inventory.producers.map(producer => ({ producerSha256: producer.producerSha256, role: { name: FRONTEND_PREPARATION_ROLES.runtime } }));
+    inventory.historicalLogins.target.currentRuntimeRole = FRONTEND_PREPARATION_ROLES.runtime;
+    inventory.historicalLogins.target.admissionOwnerRole = FRONTEND_PREPARATION_ROLES.owner;
+    const migration = { ...roleFlow.prepared.migration, candidate, job };
+    prepareFrontendReleaseRoleTemplate(inventory, migration, frontendWriterInventory(app));
+    const roles = prepareFrontendRolesPlan(candidate, job, { version: 1, producerSha256: inventory.producers.map(producer => producer.producerSha256) });
+    const roleDirectory = join(directory, "same-action-role-parent"); mkdirSync(roleDirectory, { mode: 0o700 });
+    let preparedPid, generated;
+    await withFrontendEnvironmentLock((verifyEnvironment, environmentSignal) => runP2RolePreparationContinuation({
+      checked: { candidate, job, baseline, inventory, roles }, settings: {}, directory: roleDirectory, frontendDirectory: roleFlow.output,
+      context: {}, credentials: { FRONTEND_STAGING_MIGRATION_DATABASE_URL: roleFlow.dependencies.getUrl() },
+      confirmation: roleFlow.dependencies.confirmation, verifyEnvironment, environmentSignal,
+      runtime: {
+        async bindRoles(proof) {
+          flow.push("roles-prepared"); generated = proof;
+          assert.equal(proof.committed, true); assert.equal(proof.owner.name, FRONTEND_PREPARATION_ROLES.owner);
+          const codec = execFileSync('python3', ['-I', '-c', 'import hashlib,json,sys;p=json.load(sys.stdin);p.pop("proofSha256");print(hashlib.sha256(json.dumps(p,sort_keys=True,ensure_ascii=False,separators=(",",":")).encode()).hexdigest())'],
+            { input: JSON.stringify(proof), encoding: 'utf8', maxBuffer: 8192 });
+          assert.equal(codec.trim(), proof.proofSha256);
+          assert.equal(JSON.stringify(proof).includes(proof.private.runtimeDatabaseUrl), false);
+          assert.equal((await roleFlow.client.query("SELECT oid::text FROM pg_roles WHERE rolname=$1", [FRONTEND_PREPARATION_ROLES.runtime])).rows[0].oid, proof.runtime.oid);
+          assert.equal(getState("owned-same-action-roles").bootstrapBuilt, false);
+        },
+        async start({ client, verify }) { await verify(); flow.push("api-stage"); assert.equal(client.processID, preparedPid); },
+        async frontendVerified(_proof, verify) { await verify(); flow.push("frontend-promoted"); },
+        async prepareClose(verify) { await verify(); flow.push("prepare-close"); },
+        async finish(outcome, verifyEnvironment) {
+          await verifyEnvironment(); flow.push("terminal-join"); assert.equal(outcome.frontendVerified, true);
+          const observed = JSON.parse(readFileSync(join(roleDirectory, "observed-frontend-inventory.json")));
+          assert.equal(observed.owner.oid, generated.owner.oid); assert.equal(observed.rolePreparationProofSha256, generated.proofSha256);
+          assert.equal(JSON.parse(readFileSync(join(roleFlow.output, "job-outcome.json"))).status, "DATABASE_VERIFIED");
+          assert.equal((await roleFlow.client.query("SELECT count(*)::int AS count FROM pg_stat_activity WHERE pid=$1", [preparedPid])).rows[0].count, 0);
+        },
+      },
+    }, { createClient(options) {
+      const client = new Client({ ...options, ssl: { ...options.ssl, ca: readFileSync(certificate, "utf8") } });
+      client.once("connect", () => { preparedPid = client.processID; }); connections.push(client); return client;
+    } }).catch(error => {
+      const retained = [];
+      for (const file of [join(roleDirectory, "role-preparation/roles-preparation-outcome.json"), join(roleFlow.output, "frontend-release-outcome.json"), join(roleFlow.output, "job-outcome.json")]) {
+        try {
+          const value = JSON.parse(readFileSync(file)); retained.push(Object.fromEntries(["status", "phase", "checkpoint", "sqlState", "sqlOutcome", "failureCode"].filter(key => value[key] !== undefined).map(key => [key, value[key]])));
+        } catch { /* missing receipts stay absent; never print private input */ }
+      }
+      console.error(JSON.stringify({ status: "OWNED_ROLE_COMPOSITION_DETAIL", flow, retained,
+        failureCode: /^[A-Z_]{1,80}$/u.test(error?.message ?? "") ? error.message : "OWNED_CHECK_FAILED",
+        frames: error.stack?.split("\n").slice(1).filter(line => line.trim().startsWith("at ")).slice(0, 5) }));
+      throw error;
+    }), { path: roleFlow.dependencies.lockPath });
+    assert.deepEqual(flow, ["roles-prepared", "api-stage", "frontend-promoted", "prepare-close", "terminal-join"]);
+    checks.push("single-action-generated-role-credentials-and-observed-oids-feed-bootstrap-and-all-sql-on-the-same-held-physical-session");
     console.log(JSON.stringify({ status: "FRONTEND_RELEASE_OWNED_POSTGRES_PASS", postgresMajor: major, providerTouched: false, checks,
       liveAdapterQualified: false, migrationAuthorized: false, trafficAuthorized: false }));
   } finally {
@@ -453,5 +513,11 @@ async function main() {
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try { await main(); }
-  catch { console.error(JSON.stringify({ status: "FRONTEND_RELEASE_OWNED_POSTGRES_FAILED", phase, providerTouched: false })); process.exitCode = 1; }
+  catch (error) {
+    console.error(JSON.stringify({ status: "FRONTEND_RELEASE_OWNED_POSTGRES_FAILED", phase, providerTouched: false,
+      failureCode: /^[A-Z_]{1,80}$/u.test(error?.message ?? "") ? error.message : "OWNED_CHECK_FAILED",
+      checkpoint: /^[a-z-]{1,80}$/u.test(error?.checkpoint ?? "") ? error.checkpoint : undefined,
+      frames: typeof error?.stack === "string" ? error.stack.split("\n").slice(1).filter(line => line.trim().startsWith("at ")).slice(0, 5) : [] }));
+    process.exitCode = 1;
+  }
 }
