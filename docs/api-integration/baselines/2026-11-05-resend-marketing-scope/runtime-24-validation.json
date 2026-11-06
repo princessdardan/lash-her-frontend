@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "qualification": "owned-fixtures-only",
+  "runtimeCommit": "2afd89471814f397ca7c0cee098722883a2f3250",
+  "baseCommit": "a85ae6deb4d98976caacfb7e726d32245e2bf97e",
+  "sharedTransportCommit": "82b06ce2",
+  "sourceSha256": {
+    "ops/platform/host/frontend_resend_marketing_scope.py": "9c6701c6dfb3d0268826480b86fb014cae4d6f88de39ad75180a9c8205a4b840",
+    "ops/platform/host/frontend_resend_marketing_scope_test.py": "351224efc44e70ee4553e7dbbab50e0ca5c46ebcdac1d051249df10991bd040b",
+    "ops/platform/host/frontend_scoped_provider_client.py": "7ecb9c4dc734f9174bdf310d066034f5ddb653a7553d82894ad13a3467678cbb"
+  },
+  "ownedTests": {
+    "https": 21,
+    "postgres": 3,
+    "totalPassed": 24,
+    "postgresMajor": 16,
+    "migrations": 83,
+    "databaseTls": "verify-full",
+    "databaseAuthentication": "SCRAM-SHA-256"
+  },
+  "historicalGuardOwnedCases": 5,
+  "liveProviderRequests": 0,
+  "actualOriginalRuntimeConfigurationObserved": false,
+  "testCredentials": "isolated test values; none retained in logs",
+  "cleanup": "all test teardown and PostgreSQL class cleanups awaited; ephemeral clusters removed",
+  "retainedAttempts": [
+    {
+      "file": "failed-sandbox-attempt.txt",
+      "result": "18 socket bind permission errors;19 tests skipped before refactor",
+      "qualification": false,
+      "note": "Original shell wrapper returned the final tail status; unittest log is authoritative failure."
+    },
+    {
+      "file": "failed-history-assertion-attempt.txt",
+      "result": "17 passing TLS tests;1 faulty assertion over prior request history;1 PG test skipped",
+      "qualification": false
+    },
+    {
+      "file": "intermediate-owned-pg-21-pass.txt",
+      "result": "21 tests passed before additional intent/state cases",
+      "qualification": true
+    },
+    {
+      "file": "owned-https-pg-24-pass.txt",
+      "result": "24 tests passed at exact runtime source hashes",
+      "qualification": true
+    }
+  ]
+}

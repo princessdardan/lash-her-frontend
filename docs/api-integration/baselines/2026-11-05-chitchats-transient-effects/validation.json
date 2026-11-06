@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "baseCommit": "a85ae6deb4d98976caacfb7e726d32245e2bf97e",
+  "sourceCommitAudited": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "scope": "source-only new standalone transient Chit Chats component/tests/docs/evidence",
+  "verification": {
+    "command": "CRM_SHIPPING_OWNED_POSTGRES_TEST=true python3 -m unittest discover -s ops/platform/host -p frontend_chitchats_transient_effects_test.py -v",
+    "tests": 18,
+    "passed": 18,
+    "failures": 0,
+    "skipped": 0,
+    "actualMigrationsApplied": 83,
+    "postgres": "16.13",
+    "node": "24.18.0",
+    "python": "3.14.3",
+    "tls": "owned HTTPS and PostgreSQL verify-full/SCRAM",
+    "syntaxCheckPassed": true,
+    "gitDiffCheckPassed": true,
+    "historicalBlobHashesReproduced": true
+  },
+  "initialSandboxAttempt": {
+    "status": "loopback-bind-denied",
+    "result": "reran successfully with approved fixture-only permission"
+  },
+  "claims": {
+    "liveProviderCalls": false,
+    "liveDatabaseReads": false,
+    "secretRetrieval": false,
+    "applicationSourceChanged": false,
+    "combinedProviderComponentChanged": false,
+    "sharedCoordinatorChanged": false,
+    "financialMutations": false,
+    "trafficAuthorized": false,
+    "untrackedC07HistoricalRequestsCertifiedComplete": false
+  },
+  "fileSha256": {
+    "ops/platform/host/frontend_chitchats_transient_effects.py": "ce411769f7bf0434414488e902b96e7d7621e2f88f53e1095e880c72f69ed2ce",
+    "ops/platform/host/frontend_chitchats_transient_effects_test.py": "eb09bd78d129dc2ef7568b1802bfcacddba9020439c93ba326fc1f064bfd39a7",
+    "docs/api-integration/frontend-chitchats-transient-effects.md": "c6b902151458acb842e5641be6ea877ffe1c5b05306eb03ac704d401af0d33ac",
+    "docs/api-integration/baselines/2026-11-05-chitchats-transient-effects/README.md": "18edbf8ef5b3d399d146414100b3596f54a1283893a05b8610b5a399bf03111f",
+    "docs/api-integration/baselines/2026-11-05-chitchats-transient-effects/owned-tests.log": "95a0ef7e122be26685f287c1c72c134f93dff2e0129ed35bbfda99105bfbe229",
+    "docs/api-integration/baselines/2026-11-05-chitchats-transient-effects/source-audit.json": "2331a29af65f66cf457cea716cd95e7fd2891d9b5aff2d208e87e2f23f27251d",
+    "docs/api-integration/baselines/2026-11-05-chitchats-transient-effects/sql-query-contract.json": "7a5c4237881f482f9b22cb2b265cb178a0627e4bb26c38528b8994fa4e18e9b1"
+  }
+}

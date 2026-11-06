@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "status": "OWNED_RESEND_CLOSURE_CORRECTION_PASS_LIVE_UNQUALIFIED",
+  "fixCommit": "7ce24a0b70081023aba9f2c34e33cb2d32b7b3b2",
+  "frozenOriginalCommit": "fcdada77bf86913ddb408d59747041827c3ad172",
+  "frozenHelperSha256": "eda224f438c99a13e714a89e517693c4cc5f51e550cfd196bcd7567964cab893",
+  "sourceSha256": {
+    "ops/platform/host/frontend_resend_marketing_scope.py": "e399ce9ecd0583ee916e04e38baffbb289142eec720dcf94c137806e8051e30b",
+    "ops/platform/host/frontend_resend_marketing_scope_test.py": "042ee1b572e2704e3c73a7f7ee9ae91998a1df9ea08370e9f6c0fe48f59e1d79"
+  },
+  "frozenRegressionFailures": 9,
+  "correctedDomainTests": {
+    "passed": 38,
+    "ownedHttpsFixtureCases": 35,
+    "actualPostgresCases": 3,
+    "postgresMajor": 16,
+    "migrations": 83,
+    "tls": "verify-full",
+    "authentication": "SCRAM-SHA-256"
+  },
+  "actualSourceFunctionChecks": {
+    "passed": 17,
+    "sourceModuleSha256": "eb5e8c974d29ee60d42417d8fa84bfce68c958fce11af95b15adb7ce2dcdaa2e",
+    "sourceContextSha256": "fb0adf159f0a50baf8d774764329664392a4750f7db257f2badb91ff9ccadfee",
+    "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+    "sourceInventorySha256": "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+    "requirementsSha256": "14d1c6dbe0e53733ce9eb332f24d077d670aaa359fab2514d992d87a09e59300",
+    "completeOriginalKeyCatalog": "explicitly synthetic and empty",
+    "configuredSqlPeers": 0,
+    "globalSqlRequirements": 4,
+    "positiveCoveredRequirementCount": 19,
+    "privateContextRetainedOutsideGit": true
+  },
+  "independentReview": {
+    "reviewer": "p2_provider_review",
+    "scope": "7ce24a0b two-file closure/contradiction correction",
+    "reportedFalseCompletesCorrected": true,
+    "newActionableFindings": 0
+  },
+  "pythonCompilation": "passed",
+  "nodeFixtureGeneratorSyntax": "passed",
+  "whitespaceCheck": "passed",
+  "liveProviderCalls": 0,
+  "actualOriginalRuntimeConfigurationObserved": false,
+  "cleanup": "Owned HTTPS threads joined; disposable actual PG cluster stopped and removed. No detached task remains."
+}

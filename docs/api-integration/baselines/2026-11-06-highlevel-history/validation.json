@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-06T00:42:04.557Z",
+  "status": "OWNED_SOURCE_HISTORY_OBSERVER_VALIDATED_LIVE_STATE_UNQUALIFIED",
+  "baseCommit": "a85ae6deb4d98976caacfb7e726d32245e2bf97e",
+  "historicalSourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "runtime": "Python3.14.3",
+  "postgres": "16.13",
+  "migrations": 83,
+  "dependency": {
+    "commit": "82b06ce2",
+    "path": "ops/platform/host/frontend_scoped_provider_client.py",
+    "sha256": "7ecb9c4dc734f9174bdf310d066034f5ddb653a7553d82894ad13a3467678cbb",
+    "unchanged": true
+  },
+  "checks": [
+    {
+      "command": "python3 -m py_compile ops/platform/host/frontend_highlevel_history.py ops/platform/host/frontend_highlevel_history_test.py",
+      "result": "PASS"
+    },
+    {
+      "command": "python3 -m unittest frontend_highlevel_history_test.HistoryTests -v",
+      "result": "SANDBOX_LOOPBACK_REFUSED",
+      "setupErrors": 23,
+      "assertionsExecuted": false,
+      "artifact": "sandbox-loopback-refusal.log"
+    },
+    {
+      "command": "FRONTEND_HIGHLEVEL_HISTORY_POSTGRES_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin python3 -m unittest frontend_highlevel_history_test -v",
+      "result": "PASS",
+      "tests": 25,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "artifact": "owned-initial-25-tests.log"
+    },
+    {
+      "command": "FRONTEND_HIGHLEVEL_HISTORY_POSTGRES_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin python3 -m unittest frontend_highlevel_history_test frontend_scoped_provider_client_test -v",
+      "result": "PASS",
+      "tests": 30,
+      "historyHttpsCases": 24,
+      "actualDatabaseCases": 2,
+      "transportCases": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "artifact": "owned-intermediate-30-tests.log"
+    },
+    {
+      "command": "FRONTEND_HIGHLEVEL_HISTORY_POSTGRES_TEST=true PG_BIN=/opt/homebrew/opt/postgresql@16/bin python3 -m unittest frontend_highlevel_history_test frontend_scoped_provider_client_test -v",
+      "result": "PASS",
+      "tests": 31,
+      "historyHttpsCases": 25,
+      "actualDatabaseCases": 2,
+      "transportCases": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "artifact": "owned-final-31-tests.log",
+      "reason": "Final regression: provider retention constrains API reads, not original absence-proof lifetime with fresh SQL"
+    }
+  ],
+  "interfaces": [
+    "database_queries(reviewed)",
+    "normalize_snapshot(actualRows)",
+    "snapshot_sha256(value)",
+    "read_only_request(method,path,body,reviewed)",
+    "observe_scoped_effects(privateLockedClient,reviewed,actualRows,verifiedSourceRequirements)"
+  ],
+  "scope": {
+    "liveCalls": false,
+    "productionLocationRefused": true,
+    "providerMutations": false,
+    "piiOrCredentialsInReceipts": false,
+    "originalConfigurationReducerOwnedByParent": true,
+    "noCapabilityFixtureIsLiveEvidence": false,
+    "workflowIntentExecutionJoinInferred": false,
+    "retentionWindowTreatedAsDeadline": false,
+    "trafficAuthorized": false,
+    "existingModulesEdited": false
+  },
+  "files": {
+    "ops/platform/host/frontend_highlevel_history.py": {
+      "sha256": "bfcde2ef03f53219abd1489dbbaac0ff47dbdf8d9bda925cb9b2333fff2e3d94",
+      "bytes": 39416
+    },
+    "ops/platform/host/frontend_highlevel_history_test.py": {
+      "sha256": "6ad174921d38f9608c88d87cbb291fa14eb2074da5ba764b644d1a2f8a724eb3",
+      "bytes": 29792
+    },
+    "docs/api-integration/frontend-highlevel-history.md": {
+      "sha256": "ac3fdcc39f8d11027a8ad1898628f08e4a4b0bab7a6ed5aa1f293be9eb088c54",
+      "bytes": 11088
+    },
+    "docs/api-integration/baselines/2026-11-06-highlevel-history/historical-source-audit.json": {
+      "sha256": "68032b4886f76aa11235ae6543b4f1a0a63b1dc76ee8db68cafab06ceb76f601",
+      "bytes": 2481
+    },
+    "docs/api-integration/baselines/2026-11-06-highlevel-history/README.md": {
+      "sha256": "a6fe733720be756fab8ccdd33027a67ae0e6c5edfde9821bc959b763849f3562",
+      "bytes": 2583
+    },
+    "docs/api-integration/baselines/2026-11-06-highlevel-history/sandbox-loopback-refusal.log": {
+      "sha256": "e6386818a63ff5166bc2f05bee702bf13e420ee336e8c71cea4c383c24d07ff0",
+      "bytes": 34082
+    },
+    "docs/api-integration/baselines/2026-11-06-highlevel-history/owned-initial-25-tests.log": {
+      "sha256": "a19a3f0dede895a6911626742ca819aba8c050d33fcc7699e58a6ee80df5cb08",
+      "bytes": 5064
+    },
+    "docs/api-integration/baselines/2026-11-06-highlevel-history/owned-intermediate-30-tests.log": {
+      "sha256": "a562e4a554431232255b068a50d2b9c266a9f54df551544459d4e9bcf743b2f2",
+      "bytes": 6240
+    },
+    "docs/api-integration/baselines/2026-11-06-highlevel-history/owned-final-31-tests.log": {
+      "sha256": "0d64d95bd6e2dc5f6f7723fcdc0a317f26fa0b98ba667bbee13f9fa427ae372c",
+      "bytes": 6470
+    }
+  }
+}

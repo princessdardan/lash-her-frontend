@@ -1,0 +1,450 @@
+{
+  "version": 1,
+  "kind": "retained-resend-marketing-source-audit",
+  "profiles": [
+    {
+      "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+      "treeOid": "dee14e1844868d2692c013daec66bee229dda7e7",
+      "files": [
+        {
+          "file": "src/lib/resend-platform.ts",
+          "blobOid": "38ecf3e43922b6960bfe66837195a014429a93f5",
+          "sha256": "4a3528b39cab7b6667aaf0065bc22a3e967a5fca4613989184d3cdb0d8f1da03",
+          "lines": 816
+        },
+        {
+          "file": "src/lib/env/staging-email-policy.mjs",
+          "blobOid": "1e67c8afd871a7985e1c47343a4cd9ac99ca7b66",
+          "sha256": "e82583cd9e7f1f8ab3e5a639ab1c49e0079f3e7a35e6fa58c08a02442716d979",
+          "lines": 30
+        },
+        {
+          "file": "src/lib/env/application-environment.mjs",
+          "blobOid": "56389d2cb98f9c13ff72db2d73ee43685116bc70",
+          "sha256": "893934b2cf52c9a26fbdc50530ab413496862d832abcb321d2d7046bea2b9000",
+          "lines": 105
+        },
+        {
+          "file": "src/lib/highlevel/config.ts",
+          "blobOid": "c586960f80ee7e43635d7dbdf90922f3453b5d50",
+          "sha256": "f260e279d8fcefd3df0af8545cedac2d2043b922164533167c1e28169d0dee32",
+          "lines": 115
+        },
+        {
+          "file": "src/lib/marketing-campaign/send-campaign.ts",
+          "blobOid": "aff33117d4392ffa512aba14af6d95bf22414e26",
+          "sha256": "5320feccb7e48dd54910bc84b935759d6a0958ce0f3c71ff4e42bf1245c409ed",
+          "lines": 216
+        },
+        {
+          "file": "src/lib/marketing-campaign/marketing-campaign-store.ts",
+          "blobOid": "4733728f599772a0a6d63ab8f1f0e6b1c9ba8dd9",
+          "sha256": "595e5346e4a8090f73b1fbcee7bb6e2b766b8d7a210ddfe7b9902a3413d2d9d9",
+          "lines": 207
+        },
+        {
+          "file": "src/lib/marketing-contact/marketing-contact-store.ts",
+          "blobOid": "a84e2aa0da7103a8cf6edd22f680d9c692410065",
+          "sha256": "fe988ce689ba2d0dbf00bf1070e1b9a54492763613d0384af01999d738d34030",
+          "lines": 1055
+        },
+        {
+          "file": "src/lib/marketing-contact/marketing-contact-sync-worker.ts",
+          "blobOid": "929207fedef64801ab3c7654e65f15f49a9bf17d",
+          "sha256": "944250e5be7edb72d9be945f8739280f1942fc1a038b18f7751a78f5bfda30c5",
+          "lines": 643
+        },
+        {
+          "file": "src/app/api/webhooks/resend/handler.ts",
+          "blobOid": "59bc29bfbcf985558991164fe551a37bcbf15bb3",
+          "sha256": "afaf35bdd8aee70f5ee1c59288ea5ffceecb2cba11cabf6b016f52b2bae0eca4",
+          "lines": 136
+        },
+        {
+          "file": "src/app/admin/(protected)/marketing/campaigns/actions.ts",
+          "blobOid": "2ee29148754ad605ed44f95c49481a82978766dd",
+          "sha256": "39fb7bbec24bccf9ce53aadc7ea423c719620aa2f17be7072fad0d4852019f8b",
+          "lines": 251
+        },
+        {
+          "file": "src/lib/resend-template-seeding.ts",
+          "blobOid": "4fdfbba781c0be9bc6aa54b503ff014ae89c658f",
+          "sha256": "fe2e42c9f17994eec8026d13bee0b707e8af162b85808375e056aae569510a40",
+          "lines": 853
+        },
+        {
+          "file": "scripts/seed-resend-templates.ts",
+          "blobOid": "045dc575d20b24b9b6a4958b5515fbfda314b76e",
+          "sha256": "424f004e2a4b8256fd4aed7638309bd54618154c11c554efbf8a237cec9be352",
+          "lines": 36
+        },
+        {
+          "file": "scripts/update-contact-popup-resend-template.ts",
+          "blobOid": "3f82b42fe59e3b7e86b8cb60c56e3c10417a5e10",
+          "sha256": "9e81fc53ae9c8ab0dc1478c23818847b08a6fa75107a9dcc11397a3a96b053d4",
+          "lines": 60
+        }
+      ],
+      "lockedSdk": {
+        "version": "6.12.3",
+        "resolved": "https://registry.npmjs.org/resend/-/resend-6.12.3.tgz",
+        "integrity": "sha512-FkEi6YPnVL96/LvH8+QP7NaeaBy5brYXwlRqUCqZZeNL0/iyKij18IPmyPXYauT/2ODn1JG04qKz+qlJfzqzTw==",
+        "license": "MIT",
+        "dependencies": {
+          "postal-mime": "2.7.4",
+          "svix": "1.92.2"
+        },
+        "engines": {
+          "node": ">=20"
+        },
+        "peerDependencies": {
+          "@react-email/render": "*"
+        },
+        "peerDependenciesMeta": {
+          "@react-email/render": {
+            "optional": true
+          }
+        }
+      },
+      "packageLockSha256": "797605065847a24761babb8b541a63a31356c0d5163b8983e497abec2189ebe1"
+    },
+    {
+      "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+      "treeOid": "b38d32730d01f0fcc86df00fd09302923e64aa6f",
+      "files": [
+        {
+          "file": "src/lib/resend-platform.ts",
+          "blobOid": "38ecf3e43922b6960bfe66837195a014429a93f5",
+          "sha256": "4a3528b39cab7b6667aaf0065bc22a3e967a5fca4613989184d3cdb0d8f1da03",
+          "lines": 816
+        },
+        {
+          "file": "src/lib/env/staging-email-policy.mjs",
+          "blobOid": "1e67c8afd871a7985e1c47343a4cd9ac99ca7b66",
+          "sha256": "e82583cd9e7f1f8ab3e5a639ab1c49e0079f3e7a35e6fa58c08a02442716d979",
+          "lines": 30
+        },
+        {
+          "file": "src/lib/env/application-environment.mjs",
+          "blobOid": "56389d2cb98f9c13ff72db2d73ee43685116bc70",
+          "sha256": "893934b2cf52c9a26fbdc50530ab413496862d832abcb321d2d7046bea2b9000",
+          "lines": 105
+        },
+        {
+          "file": "src/lib/highlevel/config.ts",
+          "blobOid": "c586960f80ee7e43635d7dbdf90922f3453b5d50",
+          "sha256": "f260e279d8fcefd3df0af8545cedac2d2043b922164533167c1e28169d0dee32",
+          "lines": 115
+        },
+        {
+          "file": "src/lib/marketing-campaign/send-campaign.ts",
+          "blobOid": "aff33117d4392ffa512aba14af6d95bf22414e26",
+          "sha256": "5320feccb7e48dd54910bc84b935759d6a0958ce0f3c71ff4e42bf1245c409ed",
+          "lines": 216
+        },
+        {
+          "file": "src/lib/marketing-campaign/marketing-campaign-store.ts",
+          "blobOid": "4733728f599772a0a6d63ab8f1f0e6b1c9ba8dd9",
+          "sha256": "595e5346e4a8090f73b1fbcee7bb6e2b766b8d7a210ddfe7b9902a3413d2d9d9",
+          "lines": 207
+        },
+        {
+          "file": "src/lib/marketing-contact/marketing-contact-store.ts",
+          "blobOid": "a84e2aa0da7103a8cf6edd22f680d9c692410065",
+          "sha256": "fe988ce689ba2d0dbf00bf1070e1b9a54492763613d0384af01999d738d34030",
+          "lines": 1055
+        },
+        {
+          "file": "src/lib/marketing-contact/marketing-contact-sync-worker.ts",
+          "blobOid": "929207fedef64801ab3c7654e65f15f49a9bf17d",
+          "sha256": "944250e5be7edb72d9be945f8739280f1942fc1a038b18f7751a78f5bfda30c5",
+          "lines": 643
+        },
+        {
+          "file": "src/app/api/webhooks/resend/handler.ts",
+          "blobOid": "59bc29bfbcf985558991164fe551a37bcbf15bb3",
+          "sha256": "afaf35bdd8aee70f5ee1c59288ea5ffceecb2cba11cabf6b016f52b2bae0eca4",
+          "lines": 136
+        },
+        {
+          "file": "src/app/admin/(protected)/marketing/campaigns/actions.ts",
+          "blobOid": "2ee29148754ad605ed44f95c49481a82978766dd",
+          "sha256": "39fb7bbec24bccf9ce53aadc7ea423c719620aa2f17be7072fad0d4852019f8b",
+          "lines": 251
+        },
+        {
+          "file": "src/lib/resend-template-seeding.ts",
+          "blobOid": "4fdfbba781c0be9bc6aa54b503ff014ae89c658f",
+          "sha256": "fe2e42c9f17994eec8026d13bee0b707e8af162b85808375e056aae569510a40",
+          "lines": 853
+        },
+        {
+          "file": "scripts/seed-resend-templates.ts",
+          "blobOid": "045dc575d20b24b9b6a4958b5515fbfda314b76e",
+          "sha256": "424f004e2a4b8256fd4aed7638309bd54618154c11c554efbf8a237cec9be352",
+          "lines": 36
+        },
+        {
+          "file": "scripts/update-contact-popup-resend-template.ts",
+          "blobOid": "3f82b42fe59e3b7e86b8cb60c56e3c10417a5e10",
+          "sha256": "9e81fc53ae9c8ab0dc1478c23818847b08a6fa75107a9dcc11397a3a96b053d4",
+          "lines": 60
+        }
+      ],
+      "lockedSdk": {
+        "version": "6.12.3",
+        "resolved": "https://registry.npmjs.org/resend/-/resend-6.12.3.tgz",
+        "integrity": "sha512-FkEi6YPnVL96/LvH8+QP7NaeaBy5brYXwlRqUCqZZeNL0/iyKij18IPmyPXYauT/2ODn1JG04qKz+qlJfzqzTw==",
+        "license": "MIT",
+        "dependencies": {
+          "postal-mime": "2.7.4",
+          "svix": "1.92.2"
+        },
+        "engines": {
+          "node": ">=20"
+        },
+        "peerDependencies": {
+          "@react-email/render": "*"
+        },
+        "peerDependenciesMeta": {
+          "@react-email/render": {
+            "optional": true
+          }
+        }
+      },
+      "packageLockSha256": "797605065847a24761babb8b541a63a31356c0d5163b8983e497abec2189ebe1"
+    },
+    {
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "treeOid": "4f63ed9c0288b410b64a1f41d7cb70c5d5546364",
+      "files": [
+        {
+          "file": "src/lib/resend-platform.ts",
+          "blobOid": "38ecf3e43922b6960bfe66837195a014429a93f5",
+          "sha256": "4a3528b39cab7b6667aaf0065bc22a3e967a5fca4613989184d3cdb0d8f1da03",
+          "lines": 816
+        },
+        {
+          "file": "src/lib/env/staging-email-policy.mjs",
+          "blobOid": "1e67c8afd871a7985e1c47343a4cd9ac99ca7b66",
+          "sha256": "e82583cd9e7f1f8ab3e5a639ab1c49e0079f3e7a35e6fa58c08a02442716d979",
+          "lines": 30
+        },
+        {
+          "file": "src/lib/env/application-environment.mjs",
+          "blobOid": "56389d2cb98f9c13ff72db2d73ee43685116bc70",
+          "sha256": "893934b2cf52c9a26fbdc50530ab413496862d832abcb321d2d7046bea2b9000",
+          "lines": 105
+        },
+        {
+          "file": "src/lib/highlevel/config.ts",
+          "blobOid": "c586960f80ee7e43635d7dbdf90922f3453b5d50",
+          "sha256": "f260e279d8fcefd3df0af8545cedac2d2043b922164533167c1e28169d0dee32",
+          "lines": 115
+        },
+        {
+          "file": "src/lib/marketing-campaign/send-campaign.ts",
+          "blobOid": "aff33117d4392ffa512aba14af6d95bf22414e26",
+          "sha256": "5320feccb7e48dd54910bc84b935759d6a0958ce0f3c71ff4e42bf1245c409ed",
+          "lines": 216
+        },
+        {
+          "file": "src/lib/marketing-campaign/marketing-campaign-store.ts",
+          "blobOid": "4733728f599772a0a6d63ab8f1f0e6b1c9ba8dd9",
+          "sha256": "595e5346e4a8090f73b1fbcee7bb6e2b766b8d7a210ddfe7b9902a3413d2d9d9",
+          "lines": 207
+        },
+        {
+          "file": "src/lib/marketing-contact/marketing-contact-store.ts",
+          "blobOid": "a84e2aa0da7103a8cf6edd22f680d9c692410065",
+          "sha256": "fe988ce689ba2d0dbf00bf1070e1b9a54492763613d0384af01999d738d34030",
+          "lines": 1055
+        },
+        {
+          "file": "src/lib/marketing-contact/marketing-contact-sync-worker.ts",
+          "blobOid": "929207fedef64801ab3c7654e65f15f49a9bf17d",
+          "sha256": "944250e5be7edb72d9be945f8739280f1942fc1a038b18f7751a78f5bfda30c5",
+          "lines": 643
+        },
+        {
+          "file": "src/app/api/webhooks/resend/handler.ts",
+          "blobOid": "59bc29bfbcf985558991164fe551a37bcbf15bb3",
+          "sha256": "afaf35bdd8aee70f5ee1c59288ea5ffceecb2cba11cabf6b016f52b2bae0eca4",
+          "lines": 136
+        },
+        {
+          "file": "src/app/admin/(protected)/marketing/campaigns/actions.ts",
+          "blobOid": "2ee29148754ad605ed44f95c49481a82978766dd",
+          "sha256": "39fb7bbec24bccf9ce53aadc7ea423c719620aa2f17be7072fad0d4852019f8b",
+          "lines": 251
+        },
+        {
+          "file": "src/lib/resend-template-seeding.ts",
+          "blobOid": "4fdfbba781c0be9bc6aa54b503ff014ae89c658f",
+          "sha256": "fe2e42c9f17994eec8026d13bee0b707e8af162b85808375e056aae569510a40",
+          "lines": 853
+        },
+        {
+          "file": "scripts/seed-resend-templates.ts",
+          "blobOid": "045dc575d20b24b9b6a4958b5515fbfda314b76e",
+          "sha256": "424f004e2a4b8256fd4aed7638309bd54618154c11c554efbf8a237cec9be352",
+          "lines": 36
+        },
+        {
+          "file": "scripts/update-contact-popup-resend-template.ts",
+          "blobOid": "3f82b42fe59e3b7e86b8cb60c56e3c10417a5e10",
+          "sha256": "9e81fc53ae9c8ab0dc1478c23818847b08a6fa75107a9dcc11397a3a96b053d4",
+          "lines": 60
+        }
+      ],
+      "lockedSdk": {
+        "version": "6.12.3",
+        "resolved": "https://registry.npmjs.org/resend/-/resend-6.12.3.tgz",
+        "integrity": "sha512-FkEi6YPnVL96/LvH8+QP7NaeaBy5brYXwlRqUCqZZeNL0/iyKij18IPmyPXYauT/2ODn1JG04qKz+qlJfzqzTw==",
+        "license": "MIT",
+        "dependencies": {
+          "postal-mime": "2.7.4",
+          "svix": "1.92.2"
+        },
+        "engines": {
+          "node": ">=20"
+        },
+        "peerDependencies": {
+          "@react-email/render": "*"
+        },
+        "peerDependenciesMeta": {
+          "@react-email/render": {
+            "optional": true
+          }
+        }
+      },
+      "packageLockSha256": "ec2a5cccb697c353c59b48ebb8b4277e2fe7ad5b67835023afe16018705bc60e"
+    },
+    {
+      "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+      "treeOid": "6cedd5073b8d82fe730b8e4558bb3cc0b01f5498",
+      "files": [
+        {
+          "file": "src/lib/resend-platform.ts",
+          "blobOid": "38ecf3e43922b6960bfe66837195a014429a93f5",
+          "sha256": "4a3528b39cab7b6667aaf0065bc22a3e967a5fca4613989184d3cdb0d8f1da03",
+          "lines": 816
+        },
+        {
+          "file": "src/lib/env/staging-email-policy.mjs",
+          "blobOid": "1e67c8afd871a7985e1c47343a4cd9ac99ca7b66",
+          "sha256": "e82583cd9e7f1f8ab3e5a639ab1c49e0079f3e7a35e6fa58c08a02442716d979",
+          "lines": 30
+        },
+        {
+          "file": "src/lib/env/application-environment.mjs",
+          "blobOid": "56389d2cb98f9c13ff72db2d73ee43685116bc70",
+          "sha256": "893934b2cf52c9a26fbdc50530ab413496862d832abcb321d2d7046bea2b9000",
+          "lines": 105
+        },
+        {
+          "file": "src/lib/highlevel/config.ts",
+          "blobOid": "c586960f80ee7e43635d7dbdf90922f3453b5d50",
+          "sha256": "f260e279d8fcefd3df0af8545cedac2d2043b922164533167c1e28169d0dee32",
+          "lines": 115
+        },
+        {
+          "file": "src/lib/marketing-campaign/send-campaign.ts",
+          "blobOid": "aff33117d4392ffa512aba14af6d95bf22414e26",
+          "sha256": "5320feccb7e48dd54910bc84b935759d6a0958ce0f3c71ff4e42bf1245c409ed",
+          "lines": 216
+        },
+        {
+          "file": "src/lib/marketing-campaign/marketing-campaign-store.ts",
+          "blobOid": "4733728f599772a0a6d63ab8f1f0e6b1c9ba8dd9",
+          "sha256": "595e5346e4a8090f73b1fbcee7bb6e2b766b8d7a210ddfe7b9902a3413d2d9d9",
+          "lines": 207
+        },
+        {
+          "file": "src/lib/marketing-contact/marketing-contact-store.ts",
+          "blobOid": "a84e2aa0da7103a8cf6edd22f680d9c692410065",
+          "sha256": "fe988ce689ba2d0dbf00bf1070e1b9a54492763613d0384af01999d738d34030",
+          "lines": 1055
+        },
+        {
+          "file": "src/lib/marketing-contact/marketing-contact-sync-worker.ts",
+          "blobOid": "929207fedef64801ab3c7654e65f15f49a9bf17d",
+          "sha256": "944250e5be7edb72d9be945f8739280f1942fc1a038b18f7751a78f5bfda30c5",
+          "lines": 643
+        },
+        {
+          "file": "src/app/api/webhooks/resend/handler.ts",
+          "blobOid": "59bc29bfbcf985558991164fe551a37bcbf15bb3",
+          "sha256": "afaf35bdd8aee70f5ee1c59288ea5ffceecb2cba11cabf6b016f52b2bae0eca4",
+          "lines": 136
+        },
+        {
+          "file": "src/app/admin/(protected)/marketing/campaigns/actions.ts",
+          "blobOid": "2ee29148754ad605ed44f95c49481a82978766dd",
+          "sha256": "39fb7bbec24bccf9ce53aadc7ea423c719620aa2f17be7072fad0d4852019f8b",
+          "lines": 251
+        },
+        {
+          "file": "src/lib/resend-template-seeding.ts",
+          "blobOid": "4fdfbba781c0be9bc6aa54b503ff014ae89c658f",
+          "sha256": "fe2e42c9f17994eec8026d13bee0b707e8af162b85808375e056aae569510a40",
+          "lines": 853
+        },
+        {
+          "file": "scripts/seed-resend-templates.ts",
+          "blobOid": "045dc575d20b24b9b6a4958b5515fbfda314b76e",
+          "sha256": "424f004e2a4b8256fd4aed7638309bd54618154c11c554efbf8a237cec9be352",
+          "lines": 36
+        },
+        {
+          "file": "scripts/update-contact-popup-resend-template.ts",
+          "blobOid": "3f82b42fe59e3b7e86b8cb60c56e3c10417a5e10",
+          "sha256": "9e81fc53ae9c8ab0dc1478c23818847b08a6fa75107a9dcc11397a3a96b053d4",
+          "lines": 60
+        }
+      ],
+      "lockedSdk": {
+        "version": "6.12.3",
+        "resolved": "https://registry.npmjs.org/resend/-/resend-6.12.3.tgz",
+        "integrity": "sha512-FkEi6YPnVL96/LvH8+QP7NaeaBy5brYXwlRqUCqZZeNL0/iyKij18IPmyPXYauT/2ODn1JG04qKz+qlJfzqzTw==",
+        "license": "MIT",
+        "dependencies": {
+          "postal-mime": "2.7.4",
+          "svix": "1.92.2"
+        },
+        "engines": {
+          "node": ">=20"
+        },
+        "peerDependencies": {
+          "@react-email/render": "*"
+        },
+        "peerDependenciesMeta": {
+          "@react-email/render": {
+            "optional": true
+          }
+        }
+      },
+      "packageLockSha256": "f18ffe6edfc4896aaaf6ef1b56358314032bdbcd533fb870732f2c3d4a383846"
+    }
+  ],
+  "allSelectedMarketingFilesByteIdentical": true,
+  "originalRuntimeConfigurationObserved": false,
+  "providerApiRequestsMade": false,
+  "sdkVerification": {
+    "package": "resend",
+    "version": "6.12.3",
+    "url": "https://registry.npmjs.org/resend/-/resend-6.12.3.tgz",
+    "integrity": "sha512-FkEi6YPnVL96/LvH8+QP7NaeaBy5brYXwlRqUCqZZeNL0/iyKij18IPmyPXYauT/2ODn1JG04qKz+qlJfzqzTw==",
+    "archiveSha256": "a3439a40e926f4ae4f5b2f25b3397539ad2be811944b6b2f6de53e5e8447c61b",
+    "moduleSha256": "98829e2611ee4c3cceea654407e00f01fa6e2275dc96f89dc409a2d3e86df7ec",
+    "installedModuleMatchesArchive": true,
+    "eventsSendPresent": true,
+    "eventsSendEndpoint": "POST /events/send"
+  },
+  "scopeNotes": [
+    "Exact source/config capability closure remains source reducer responsibility; this audit alone cannot exclude a provider family.",
+    "events.send exists in the exact locked archive and can issue POST /events/send. Succeeded sync jobs do not retain that event result.",
+    "Both broadcast create/send call the staging business-environment guard before the SDK mutation. Resolved original runtime staging configuration must be independently verified.",
+    "Wrapper exports alone are not proof of a reachable route/manual entrypoint."
+  ]
+}

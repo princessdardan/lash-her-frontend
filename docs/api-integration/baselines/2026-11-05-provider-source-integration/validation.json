@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "status": "OWNED_PROVIDER_SOURCE_INTEGRATION_PASS",
+  "liveMutations": false,
+  "wholeP2CertificationClaimed": false,
+  "node": {
+    "tests": 42,
+    "failures": 0,
+    "skipped": 0,
+    "registeredSourceProfiles": 33,
+    "elapsedSeconds": 2.612
+  },
+  "ownedHttpsWorker": {
+    "tests": 27,
+    "failures": 0,
+    "skipped": 0,
+    "actualC07ContextThrough4DomainHelpers": true,
+    "relatedNullPreviewAndProductionMutationRefusal": true,
+    "builtTenFeatureControlsAndLifecycleOnlyDefinition": true
+  },
+  "ownedPostgres": {
+    "major": 16,
+    "migrations": 83,
+    "operationalTables": 13,
+    "actualOriginalSqlCredentialPeers": 4,
+    "differentDatabaseMetadataPeers": 1,
+    "actualScopedResendQueries": 6,
+    "googleQueries": 5,
+    "crmShippingQueries": 8,
+    "liveProviderTouched": false
+  },
+  "evidenceBoundaries": [
+    "Actual original deployment configuration and actual selected provider effects remain release-time requirements",
+    "Six-family Google/Sanity/Mux historical source follow-up separately owned and pending in this commit",
+    "No live release, deployment, credential retirement, production activation, or native enablement performed"
+  ],
+  "sourceSha256": {
+    "ops/platform/frontend-provider-bindings.mjs": "ff52895f9df0d89650057ce23bb5f93f3af1ac4ec7124e7d85e33168c901e1ff",
+    "ops/platform/frontend-provider-fence-join.mjs": "a200f62026ace1a826d436186416c666f18b10444659a7b911567da62fd14a84",
+    "ops/platform/frontend-release-adapters.mjs": "05b368bcbe02cd37f93fbd5964fe8ecb872381c25e7c3a6717219ec6bbdd6827",
+    "ops/platform/host/frontend_release_adapters.py": "c19545e60ca21be1749397023b64bd55f44bc2cb7acd6f1166882d822295a81b",
+    "ops/platform/frontend-historical-source-observer.mjs": "e45c40bcbc70e09f4c31bb2ff747c6137c5f313947e323e6ccc463dc0b795bd4",
+    "ops/platform/frontend-provider-effect-scopes.mjs": "14e888c5a2a9b1b9cce3508f6ca588a2aad45b7e6a63269a195213cc767583eb",
+    "ops/platform/test-frontend-provider-inventory-local.mjs": "978951c9c6d4eaf30b14c3beb608daecb7e5a320322f0eab4b836c0bfbd95fc3"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "qualification": "owned-fixtures-only",
+  "runtimeCommit": "9374e4362b42048814cff848914e43dc092006bb",
+  "runtimeCommits": [
+    "2afd89471814f397ca7c0cee098722883a2f3250",
+    "9367f821637db7c1137eb3db169e10407514bb33",
+    "9374e4362b42048814cff848914e43dc092006bb"
+  ],
+  "baseCommit": "a85ae6deb4d98976caacfb7e726d32245e2bf97e",
+  "sharedTransportOwnerCommit": "82b06ce2",
+  "sourceSha256": {
+    "ops/platform/host/frontend_resend_marketing_scope.py": "eda224f438c99a13e714a89e517693c4cc5f51e550cfd196bcd7567964cab893",
+    "ops/platform/host/frontend_resend_marketing_scope_test.py": "c0e7851e1e257b21614745f70808466cf2a5e94a53d31ded1188ad55dd6a9b36",
+    "ops/platform/host/frontend_scoped_provider_client.py": "7ecb9c4dc734f9174bdf310d066034f5ddb653a7553d82894ad13a3467678cbb"
+  },
+  "ownedTests": {
+    "domainHttps": 26,
+    "postgres": 3,
+    "domainTotalPassed": 29,
+    "sharedTransportHttpsPassed": 4,
+    "postgresMajor": 16,
+    "migrations": 83,
+    "databaseTls": "verify-full",
+    "databaseAuthentication": "SCRAM-SHA-256"
+  },
+  "historicalGuardOwnedCases": 5,
+  "pythonCompilation": "passed",
+  "gitDiffCheck": "passed",
+  "actualHistoricalManifestInterfaceCheck": "passed against provisional source-owned example;15 required IDs correctly remain missing",
+  "liveProviderRequests": 0,
+  "actualOriginalRuntimeConfigurationObserved": false,
+  "sourceCapabilityClosuresObserved": false,
+  "cleanup": "All test teardown and PostgreSQL class cleanup completed; owned HTTPS server threads checked stopped; ephemeral clusters removed. No live runtime/database was accepted by harness.",
+  "retainedFailures": [
+    "failed-sandbox-attempt.txt",
+    "failed-history-assertion-attempt.txt"
+  ],
+  "retainedIntermediateSuccesses": [
+    "intermediate-owned-pg-21-pass.txt",
+    "owned-https-pg-24-pass.txt",
+    "intermediate-owned-pg-27-pass.txt",
+    "owned-https-pg-28-pass.txt"
+  ],
+  "finalOutputs": [
+    "owned-https-pg-29-pass.txt",
+    "shared-transport-4-pass.txt",
+    "python-compile-pass.txt"
+  ]
+}

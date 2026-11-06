@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { frontendProviderBindingsArtifact, prepareFrontendProviderBindings, FRONTEND_VERCEL_PROJECT as PROJECT,
-  FRONTEND_VERCEL_TEAM as TEAM, FRONTEND_VERCEL_REPOSITORY as REPOSITORY } from "./frontend-provider-bindings.mjs";
+  FRONTEND_RELATED_PRODUCTION_PROJECT as PRODUCTION_PROJECT, FRONTEND_VERCEL_TEAM as TEAM, FRONTEND_VERCEL_REPOSITORY as REPOSITORY } from "./frontend-provider-bindings.mjs";
 import { frontendCoordinationHash as hash, validateFrontendFenceObservation } from "./frontend-release-inventory.mjs";
 import { frontendGoogleSnapshotSha256 } from "./frontend-google-effects.mjs";
 import { frontendReleaseReceiptStore } from "./frontend-release-receipts.mjs";
@@ -50,6 +50,24 @@ test("concrete binding artifact ties every deployment and scheduler to exact rev
     const copy = structuredClone(retirement); invalid(copy.deploymentRetirement);
     assert.throws(() => frontendProviderBindingsArtifact(copy, f.plan));
   }
+});
+
+test("related production-project inventory includes raw null previews and refuses production-target retirement selections", () => {
+  const f = fixture();
+  const identity = { provider: "vercel", teamId: TEAM, projectId: PRODUCTION_PROJECT, deploymentId: "dpl_ownedpreview" };
+  const identitySha256 = hash(identity), surfaceSha256 = hash({ kind: "deployment", identitySha256 });
+  f.plan.externalSurfaces.push({ kind: "deployment", identitySha256, surfaceSha256 });
+  f.input.surfaces.push({ kind: "deployment", identity, surfaceSha256 });
+  f.input.relatedProjects = [{ projectId: PRODUCTION_PROJECT,
+    deployments: [{ deploymentId: "dpl_ownedpreview", sourceCommit: "c".repeat(40), target: null, createdAt: 11, url: "owned-preview.vercel.app", state: "READY" }],
+    retirePreviewDeploymentIds: ["dpl_ownedpreview"] }];
+  const prepared = frontendProviderBindingsArtifact(f.input, f.plan);
+  assert.equal(prepared.relatedProjects[0].deployments[0].target, "preview");
+  assert.equal(prepared.surfaces.find(row => row.surfaceSha256 === surfaceSha256).identity.projectId, PRODUCTION_PROJECT);
+  const changed = structuredClone(f.input); changed.relatedProjects[0].deployments[0].target = "production";
+  assert.throws(() => frontendProviderBindingsArtifact(changed, f.plan));
+  changed.relatedProjects[0].retirePreviewDeploymentIds = [];
+  assert.equal(frontendProviderBindingsArtifact(changed, f.plan).relatedProjects[0].deployments[0].target, "production");
 });
 
 test("Resend retirement artifact binds only isolated staging domain and exact scoped key/webhook/email IDs", () => {
@@ -237,7 +255,7 @@ async function protocolFixture(code, task) {
     mkdirSync(join(app, "scripts"), { recursive: true });
     for (const name of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"])
       copyFileSync(join(root, "scripts", name), join(app, "scripts", name));
-    const modules = ["frontend-release-restoration", "frontend-admission", "frontend-square-effects", "frontend-google-effects", "frontend-crm-shipping-effects", "frontend-historical-capabilities", "frontend-provider-fence-join", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
+    const modules = ["frontend-provider-effect-scopes", "frontend-historical-source-observer", "frontend-historical-source", "p2-certification-profile", "frontend-release-restoration", "frontend-admission", "frontend-square-effects", "frontend-google-effects", "frontend-crm-shipping-effects", "frontend-historical-capabilities", "frontend-provider-fence-join", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
       "frontend-migration", "frontend-schema", "source-checkout", "source-policy", "release-inputs", "release"];
     for (const name of modules) copyFileSync(join(root, "ops/platform", `${name}.mjs`), join(app, "ops/platform", `${name}.mjs`));
     copyFileSync(join(root, "src/lib/private-db/migration-lineage.ts"), join(app, "src/lib/private-db/migration-lineage.ts"));

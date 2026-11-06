@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "status": "OWNED_SQUARE_NO_SHOW_STATUS_CORRECTION_PASS",
+  "tests": {
+    "total": 29,
+    "failures": 0,
+    "skipped": 0,
+    "ownedHttps": true,
+    "isolatedPostgresql": 16,
+    "repositoryMigrations": 83
+  },
+  "sourceSemantics": "service-no-show-charge-finalizer.resolveOutcome stores COMPLETED from payment.updated and PAID from invoice.payment_made; both successful charged receipts match actual invoice PAID",
+  "sourceSha256": {
+    "ops/platform/host/frontend_square_financial_scope.py": "d00b241db7241b87a35b7d99c192fca1863e2cb0355b883c422feb935bfdfee5",
+    "ops/platform/host/frontend_square_financial_scope_test.py": "61c9479b81f531c08bc8001182e03089f155c0e8079559f5d5f2721a323786e4"
+  },
+  "liveQualification": false
+}

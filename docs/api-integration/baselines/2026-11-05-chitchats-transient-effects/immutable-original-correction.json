@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "status": "OWNED_CHITCHATS_IMMUTABLE_ORIGINAL_PRESERVED_PASS",
+  "tests": {
+    "total": 22,
+    "failures": 0,
+    "skipped": 0,
+    "ownedHttps": true,
+    "isolatedPostgresql": 16,
+    "repositoryMigrations": 83,
+    "actualC07SourcePipeline": true
+  },
+  "regression": "A real nonempty immutable original shipment/job snapshot plus empty current SQL and provider inventory remains uncertain, retains missing requirements, and cannot retain source no-capability closures",
+  "closureContextPreservedInOutput": true,
+  "sourceSha256": {
+    "ops/platform/host/frontend_chitchats_transient_effects.py": "11728ef6b945d700b93e4cec08a02098721a8742d3afcc892329c3a81e5a0b88",
+    "ops/platform/host/frontend_chitchats_transient_effects_test.py": "2024dc51c756eeb43716646d63ed015ca929b16fb9a4d1ad5a0c97feba34f3c7"
+  },
+  "liveQualification": false
+}
