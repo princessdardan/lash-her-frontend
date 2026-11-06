@@ -322,12 +322,19 @@ function cleanSource(run, directory, environment) {
 }
 
 function sourceProof(run, directory, revision, url, environment) {
-  demand(git(run, directory, ["remote", "get-url", "origin"], environment) === url);
+  const remote = git(run, directory, ["remote", "get-url", "origin"], environment);
+  demand(remote === url || (url === FRONTEND_REPOSITORY.url && remote === "https://github.com/princessdardan/lash-her-frontend"));
   demand(git(run, directory, ["rev-parse", "HEAD"], environment) === revision);
   const tree = git(run, directory, ["rev-parse", "HEAD^{tree}"], environment);
   demand(digest(tree, 40));
   cleanSource(run, directory, environment);
   return tree;
+}
+
+export function verifyP2FrontendSourceProof(run, directory, revision, environment) {
+  demand(typeof run === "function" && typeof directory === "string" && digest(revision, 40) && environment && typeof environment === "object");
+  return Object.freeze({ repository: FRONTEND_REPOSITORY.url,
+    gitTree: sourceProof(run, directory, revision, FRONTEND_REPOSITORY.url, environment) });
 }
 
 function verifyApiSourceForMount(run, directory, revision, definition, environment, sourceReadToken) {
@@ -571,7 +578,7 @@ function frontendPackageProof(directory) {
 
 function verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources, manifest,
   environment, sourceReadToken, expectedFiles) {
-  demand(sourceProof(run, frontendRoot, frontendSource.revision, FRONTEND_REPOSITORY.url, environment) === frontendSource.gitTree &&
+  demand(verifyP2FrontendSourceProof(run, frontendRoot, frontendSource.revision, environment).gitTree === frontendSource.gitTree &&
     canonical(frontendPackageProof(frontendRoot)) === canonical({ packageSha256: frontendSource.packageSha256,
       packageLockSha256: frontendSource.packageLockSha256 }));
   for (const [service, definition] of Object.entries(REPOSITORIES)) {
@@ -626,7 +633,7 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
     mark(diagnostic, "exact-source-proof", "frontend");
     const frontendCommit = git(run, frontendRoot, ["rev-parse", "HEAD"], installEnvironment);
     demand(digest(frontendCommit, 40));
-    const frontendTree = sourceProof(run, frontendRoot, frontendCommit, FRONTEND_REPOSITORY.url, installEnvironment);
+    const frontendTree = verifyP2FrontendSourceProof(run, frontendRoot, frontendCommit, installEnvironment).gitTree;
     const frontendSource = { repository: FRONTEND_REPOSITORY.name, revision: frontendCommit, gitTree: frontendTree,
       ...frontendPackageProof(frontendRoot), artifactSha256: {} };
     const npmVersion = execute(run, "npm", ["--version"], { cwd: frontendRoot, env: installEnvironment, timeout: 30_000 }).trim();
@@ -761,7 +768,7 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
       }
     }
     mark(diagnostic, "exact-source-proof", "frontend");
-    demand(sourceProof(run, frontendRoot, frontendCommit, FRONTEND_REPOSITORY.url, installEnvironment) === frontendTree);
+    demand(verifyP2FrontendSourceProof(run, frontendRoot, frontendCommit, installEnvironment).gitTree === frontendTree);
     return { version: 1, status: lifecyclePersistence ? "P2_IDENTITY_RECOVERY_AND_LIFECYCLE_FIXTURES_PASS" :
       recovery ? "P2_IDENTITY_AND_RECOVERY_FIXTURES_PASS" : "P2_IDENTITY_PROBE_FIXTURES_PASS", frontendSourceCommit: frontendCommit,
       manifestSha256: hash(manifestBytes), nodeMajor: 24, npmMajor: 11, sources, tests,

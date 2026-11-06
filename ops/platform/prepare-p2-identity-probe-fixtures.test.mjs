@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,7 +9,7 @@ import { p2IdentityFixtureFailureReceipt, parseP2DockerContextEndpoint,
   parseP2ForwardRecoveryPostgres18Receipt, parseP2IdentityProbeTap, parseP2LifecyclePersistencePostgres18Receipt,
   parseP2LifecycleReceiversPostgres18Receipt,
   parseP2RecoveryPostgres18Receipt, prepareP2IdentityProbeFixtures,
-  validateP2IdentityFixtureManifest } from "./prepare-p2-identity-probe-fixtures.mjs";
+  validateP2IdentityFixtureManifest, verifyP2FrontendSourceProof } from "./prepare-p2-identity-probe-fixtures.mjs";
 import { P2_LIFECYCLE_OWNED_SOURCE_CLOSURE, verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
@@ -39,6 +40,39 @@ function withRunnerTemp(value, operation) {
     else delete process.env.RUNNER_TEMP;
   }
 }
+
+test("frontend source proof accepts only the two fixed actions/checkout HTTPS remote spellings", () => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "p2-frontend-source-proof-")));
+  chmodSync(directory, 0o700);
+  const environment = { PATH: process.env.PATH, LANG: "C", LC_ALL: "C", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+  const actualRun = (file, args, options) => spawnSync(file, args, { cwd: options.cwd, env: options.env, encoding: "utf8",
+    timeout: options.timeout, stdio: ["ignore", "pipe", "pipe"] });
+  const gitActual = args => execFileSync("git", args, { cwd: directory, env: environment, encoding: "utf8" }).trim();
+  try {
+    gitActual(["init", "--quiet", "."]);
+    writeFileSync(join(directory, "README.md"), "owned source proof\n");
+    gitActual(["add", "README.md"]);
+    gitActual(["-c", "user.name=Owned Fixture", "-c", "user.email=owned@example.invalid", "commit", "--quiet", "-m", "owned"]);
+    gitActual(["remote", "add", "origin", "https://github.com/princessdardan/lash-her-frontend"]);
+    const revision = gitActual(["rev-parse", "HEAD"]), tree = gitActual(["rev-parse", "HEAD^{tree}"]);
+    assert.match(revision, /^[a-f0-9]{40}$/u);
+    assert.deepEqual(verifyP2FrontendSourceProof(actualRun, directory, revision, environment),
+      { repository: "https://github.com/princessdardan/lash-her-frontend.git", gitTree: tree });
+    gitActual(["remote", "set-url", "origin", "https://github.com/princessdardan/lash-her-frontend.git"]);
+    assert.equal(verifyP2FrontendSourceProof(actualRun, directory, revision, environment).gitTree, tree);
+    for (const remote of [
+      "https://github.com/other/lash-her-frontend.git",
+      "https://github.com/princessdardan/lash-her-frontend.git?ref=owned",
+      "https://owned@github.com/princessdardan/lash-her-frontend.git",
+      "https://github.com/princessdardan/lash-her-frontend/",
+      "git@github.com:princessdardan/lash-her-frontend.git",
+    ]) {
+      gitActual(["remote", "set-url", "origin", remote]);
+      assert.throws(() => verifyP2FrontendSourceProof(actualRun, directory, revision, environment),
+        /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u, remote);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
 
 function fixtureManifest() {
   return { version: 1, status: "released", frontendBaseRevision: "a".repeat(40), boundarySha256: "b".repeat(64), readmeSha256: "c".repeat(64), artifacts: {
