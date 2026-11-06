@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "status": "OWNED_FIXTURES_PASSED",
+  "observedAt": "2026-11-06T00:51:21.583457+00:00",
+  "baseCommit": "a85ae6deb4d98976caacfb7e726d32245e2bf97e",
+  "historicalSourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "testsPassed": 25,
+  "testsSkipped": 0,
+  "pythonVersion": "3.14.3",
+  "postgresVersion": "postgres (PostgreSQL) 16.13 (Homebrew)",
+  "migrationCount": 83,
+  "migrationJournalSha256": "466a9e19076eb90bbf680f879393d73e35393576c76cab2baa8164bfd2423c70",
+  "sourceSha256": {
+    "ops/platform/host/frontend_square_financial_scope.py": "152d266057b7d1bd1df926c9fd16a5d75a6ef543782a3fb5c9cb2937e67066c1",
+    "ops/platform/host/frontend_square_financial_scope_test.py": "4f1984622b73acf3fdaadf15cbf878ba92d167653e6db120b89744186d72f42a",
+    "docs/api-integration/frontend-square-financial-scope.md": "aa4a022e9cce8e96e676dad53315e39bfa272f0b9f3dfb2a5360b58fb953b7b6"
+  },
+  "sharedTransportSha256": "7ecb9c4dc734f9174bdf310d066034f5ddb653a7553d82894ad13a3467678cbb",
+  "actualSourceInterfaceCompatibility": {
+    "squareFamilies": 8,
+    "coveredRequirements": 25,
+    "providerRequests": 0,
+    "principalOrCredentialRequired": false,
+    "provisionalSourceDigestsPinned": false
+  },
+  "coverage": [
+    "all fixed SQL projections against all83migrations",
+    "actual nonempty private-intent/payment/customer/card joins",
+    "actual SQL callback receipt advance",
+    "owned trusted-CA HTTPS fixed-origin transport",
+    "owned HTTPS nonempty financial/customer receipts",
+    "read-only orders search; all financial mutations refused",
+    "401/403/429/redirect/malformed response refusal",
+    "pagination/cursor/duplicate/limit refusal",
+    "CAD/location/application/money/reference/customer/outcome tampering",
+    "partial refund amount and original payment identity",
+    "lost acknowledgment and repeated empty list uncertainty",
+    "pending webhook and stale confirmation marker uncertainty",
+    "immutable prestate and bounded received/append callback reducers",
+    "complete source/original-config/SQL absence with no invented principals or credentials"
+  ],
+  "liveProviderOperations": false,
+  "stagingOrProductionOperations": false,
+  "trafficAuthorized": false
+}
