@@ -5,6 +5,7 @@ Both processes retain the same actual flock open file description. A single
 broker/guard death leaves a survivor that revokes mutations before final stop.
 """
 import ctypes
+import contextlib
 import fcntl
 import json
 import os
@@ -16,11 +17,14 @@ import sys
 import subprocess
 import time
 
+sys.modules.setdefault('p2_release_supervisor', sys.modules[__name__])
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import migrate
 import release as runtime
 import staging_admission
 from p2_release_broker import Broker, PhysicalObserver, MAXIMUM, LOCK
+from p2_source_closure import verify_source_closure, private_observer_program
 
 require = migrate.demand
 
@@ -42,9 +46,14 @@ def members(group):
     return result
 
 
-def stop_group(pid):
+def stop_group(pid, timeout=2):
     # This guard is a subreaper. Reap adopted Docker CLI children as well as the
     # broker; no still-running worker may race the final container stop.
+    deadline = time.monotonic() + timeout
+    try:
+        os.killpg(pid, signal.SIGSTOP)
+    except ProcessLookupError:
+        pass
     while members(pid):
         try:
             os.killpg(pid, signal.SIGKILL)
@@ -57,7 +66,20 @@ def stop_group(pid):
                     break
             except ChildProcessError:
                 break
+        if time.monotonic() >= deadline:
+            return False
         time.sleep(0.02)
+    return True
+
+
+@contextlib.contextmanager
+def sticky_cleanup_signals():
+    previous = {item: signal.signal(item, signal.SIG_IGN) for item in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
+    try:
+        yield
+    finally:
+        for item, handler in previous.items():
+            signal.signal(item, handler)
 
 
 def watch_broker(child, safety_read, health_write, arm):
@@ -113,13 +135,15 @@ def close_gateway(initial, selected, configuration):
             'closedGatewayAdmissionSha256': digest}
 
 
-def fail_closed(initial, armed, source, *, group=None):
+def fail_closed(initial, armed, source, *, group=None, record_name='p2-independent-guard-outcome.json'):
     result = {'status': 'P2_INDEPENDENT_GUARD_FAILED_CLOSED_REQUIRES_REVIEW', 'trafficAuthorized': None,
               'sqlReplayAuthorized': False, 'releaseAccepted': False, 'g2Accepted': False,
               'workerProcessesQuiesced': False, 'runtimeStopped': None, 'frontendAdmissionClosed': None}
     if group is not None:
-        stop_group(group)
-        result['workerProcessesQuiesced'] = True
+        try:
+            result['workerProcessesQuiesced'] = stop_group(group)
+        except BaseException:
+            result['workerProcessCleanupUncertain'] = True
     if armed is None:
         # Before the SQL-complete handshake, the broker could not start APIs.
         result.update(status='P2_GUARD_REFUSED_BEFORE_API_STAGE', runtimeStopAttempted=False)
@@ -127,8 +151,12 @@ def fail_closed(initial, armed, source, *, group=None):
     # These values were verified before forking. Mutable input loss is not a
     # reason to skip closure of an already-running release.
     selected = initial['candidate']
-    observer = PhysicalObserver(selected, armed, source, initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'])
+    observer = None
     try:
+        private_root = Path(initial['results']) / ('p2-' + selected['releaseId'])
+        program = private_observer_program(initial, private_root / 'guard-source')
+        observer = PhysicalObserver(selected, armed, source, initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'], program=program,
+                                    program_sha256=initial['sourceSha256']['ops/platform/p2-frontend-live-probe.mjs'])
         observer.probe('fence')
         result['frontendAdmissionClosed'] = True
         result['trafficAuthorized'] = False
@@ -157,8 +185,23 @@ def fail_closed(initial, armed, source, *, group=None):
         pass
     directory = Path(initial['results']) / ('p2-' + selected['releaseId'])
     if directory.is_dir():
-        migrate.write_json(directory, 'p2-independent-guard-outcome.json', result)
+        try:
+            migrate.write_json(directory, record_name, result)
+        except BaseException:
+            result['guardReceiptRetained'] = False
     return result
+
+
+def finish_failure_cleanup(initial, armed, source, child):
+    failed = fail_closed(initial, armed, source, group=child)
+    if armed is not None and not failed['workerProcessesQuiesced']:
+        # Admissions have already been closed/stopped as far as can be
+        # observed. Keep the actual flock while an unreaped mutator survives.
+        while not stop_group(child):
+            time.sleep(1)
+        failed = fail_closed(initial, armed, source, group=child,
+                             record_name='p2-independent-guard-after-quiescence.json')
+    return failed
 
 
 def supervise(initial):
@@ -169,6 +212,8 @@ def supervise(initial):
     selected, verified_jobs = migrate.make_plan(Path(initial['bundle']))
     require(selected == initial['candidate'] and migrate.file_hash(migrate.read_input(Path(initial['bundle']), 'release.candidate.json')) == initial.get('candidateSha256'),
             'P2_GUARD_CANDIDATE_BINDING_REFUSED')
+    verify_source_closure(initial, source)
+    initial['_guardObserverProgram'] = migrate.read_input(source, 'ops/platform/p2-frontend-live-probe.mjs')
     # Linux subreaper adoption prevents orphaned mutating Docker CLI workers
     # from surviving a killed broker and racing the final container inventory.
     require(ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0, 'P2_GUARD_SUBREAPER_REQUIRED')
@@ -230,7 +275,8 @@ def supervise(initial):
         require(migrate.file_hash(result) == committed and json.loads(result).get('status') == 'P2_STAGING_READY_FOR_CERTIFICATION',
                 'P2_GUARD_TERMINAL_RECEIPT_REQUIRED')
     except BaseException:
-        fail_closed(initial, armed, source, group=child)
+        with sticky_cleanup_signals():
+            finish_failure_cleanup(initial, armed, source, child)
         raise
     finally:
         os.close(safety_read); os.close(health_write); os.close(fd)

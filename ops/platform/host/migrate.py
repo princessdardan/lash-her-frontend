@@ -312,6 +312,7 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
         from p2_release_scope import P2ReleaseScope
         demand(isinstance(_p2_scope, P2ReleaseScope) and "frontend" in jobs
                and before_frontend_migration is None, "P2_PROCESS_LOCAL_SCOPE_REQUIRED")
+        _p2_scope.require_release(release, jobs)
         _p2_scope.require_frontend(release, jobs["frontend"])
     lock_fd = (_p2_scope.descriptor if _p2_scope is not None else
                os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600))

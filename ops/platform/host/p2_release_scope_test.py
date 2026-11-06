@@ -5,9 +5,11 @@ import os
 from pathlib import Path
 import subprocess
 import unittest
+import time
 from unittest.mock import patch
 
 import migrate
+import staging_state
 import migrate_test
 from p2_certification_profile import PROFILE, require_profile
 from p2_release_scope import P2ReleaseScope
@@ -93,6 +95,59 @@ class P2ScopeTests(unittest.TestCase):
         self.assertFalse(any('ops/platform/frontend-image.mjs' in args for args in applies))
         self.scope.verify()  # the borrowed descriptor was neither closed nor unlocked
         self.assertGreater(self.observations, 4)
+
+    def test_input_is_private_stdin_and_scope_rejects_changed_api_jobs_before_docker(self):
+        result = self.scope.run(['python3', '-I', '-c', 'import sys;print(len(sys.stdin.read()))'],
+                                input='synthetic-private-input', text=True, capture_output=True, check=True, timeout=5)
+        self.assertEqual(result.stdout.strip(), str(len('synthetic-private-input')))
+        selected, jobs = migrate.make_plan(self.bundle)
+        scope = P2ReleaseScope(self.descriptor, self.path, lambda: None, self.receipt, release=selected, jobs=jobs)
+        self.jobs['course']['target']['approvedPendingTags'] = ['0001_unreviewed']
+        self.save()
+        with patch.object(migrate.subprocess, 'run', side_effect=AssertionError('Docker must not run')) as docker:
+            with self.assertRaisesRegex(ValueError, 'REVIEWED_RELEASE_INPUTS_CHANGED'):
+                migrate.execute(self.bundle, self.results, True, 'staging/test-release', self.path, _p2_scope=scope)
+            docker.assert_not_called()
+
+    def test_unreaped_child_remains_registered_for_guard_loss_retry(self):
+        began, effect = self.root / 'child-began', self.root / 'late-effect'
+        actual = subprocess.Popen(['python3', '-I', '-c', 'import pathlib,time,sys;pathlib.Path(sys.argv[1]).touch();time.sleep(1);pathlib.Path(sys.argv[2]).touch()', str(began), str(effect)])
+        deadline = time.monotonic() + 5
+        while not began.exists():
+            self.assertLess(time.monotonic(), deadline); time.sleep(0.01)
+        class LostKill:
+            calls = 0
+            def poll(owned_self): return actual.poll()
+            def communicate(owned_self, **_): raise subprocess.TimeoutExpired('owned', 1)
+            def kill(owned_self):
+                owned_self.calls += 1
+                if owned_self.calls == 1: raise OSError('owned kill acknowledgement lost')
+                actual.kill()
+            def wait(owned_self, **kwargs): return actual.wait(**kwargs)
+        lost = LostKill()
+        try:
+            with patch('p2_release_scope.subprocess.Popen', return_value=lost):
+                with self.assertRaises(OSError): self.scope.run(['owned-only'], timeout=1)
+            self.assertIn(lost, self.scope.processes)
+            self.scope.revoke()
+            self.assertIsNotNone(actual.poll())
+            time.sleep(1.05)
+            self.assertFalse(effect.exists())
+        finally:
+            if actual.poll() is None: actual.kill()
+            actual.wait(timeout=5)
+
+    def test_changed_runtime_configuration_refuses_before_it_can_be_consumed(self):
+        directory = self.root / 'configuration'; directory.mkdir(mode=0o700)
+        for name in staging_state.CONFIGURATION_FILES:
+            path = directory / name; path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'owned-reviewed')
+        expected = staging_state.configuration_hashes(directory)
+        scope = P2ReleaseScope(self.descriptor, self.path, lambda: None, self.receipt, configuration_sha256=expected)
+        scope.require_configuration(directory)
+        (directory / 'course-api.env').write_text('COURSE_ACCOUNT_LIFECYCLE_ENABLED=false\n')
+        with self.assertRaisesRegex(ValueError, 'REVIEWED_CONFIGURATION_CHANGED'):
+            scope.require_configuration(directory)
 
 
 class P2ProfileTests(unittest.TestCase):

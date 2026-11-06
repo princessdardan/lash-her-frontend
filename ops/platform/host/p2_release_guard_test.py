@@ -12,7 +12,7 @@ import unittest
 import migrate
 from p2_release_broker import Broker
 from p2_release_scope import P2ReleaseScope
-from p2_release_supervisor import stop_group, watch_broker, close_gateway, fail_closed
+from p2_release_supervisor import stop_group, watch_broker, close_gateway, fail_closed, sticky_cleanup_signals, finish_failure_cleanup
 import staging_admission
 from unittest.mock import patch
 
@@ -144,7 +144,17 @@ class IndependentGuardTests(unittest.TestCase):
         self.assertIsNone(receipt['gatewayAdmissionAcknowledged'])
 
     def test_input_bundle_loss_cannot_skip_frontend_gateway_fence_or_runtime_stop(self):
+        self.failure_closure_case()
+
+    def test_stuck_members_and_repeated_graceful_signal_still_close_admissions_and_stop(self):
+        self.failure_closure_case(group=424242, repeated_signal=True)
+
+    def test_final_guard_receipt_records_observed_quiescence_after_retry(self):
+        self.failure_closure_case(group=424242, retry=True)
+
+    def failure_closure_case(self, group=None, repeated_signal=False, retry=False):
         results = self.root / 'results'; results.mkdir(mode=0o700)
+        (results / 'p2-owned').mkdir(mode=0o700)
         snapshot = results / 'runtime-owned' / 'configuration'; snapshot.mkdir(parents=True, mode=0o700)
         (snapshot / 'admission').mkdir(mode=0o755)
         candidate_hash = 'a' * 64
@@ -152,20 +162,31 @@ class IndependentGuardTests(unittest.TestCase):
             'releaseId': 'owned', 'candidateSha256': candidate_hash}}))
         staging_admission.persist_state(snapshot, {'releaseId': 'owned', 'candidateSha256': candidate_hash}, 'owned-open', new_work=True, recovery=True)
         initial = {'candidate': {'releaseId': 'owned'}, 'candidateSha256': candidate_hash, 'results': str(results),
-                   'bundle': str(self.root / 'deleted-bundle'), 'credentials': {'FRONTEND_STAGING_MIGRATION_DATABASE_URL': 'synthetic'}}
+                   'bundle': str(self.root / 'deleted-bundle'), 'sourceSha256': {'ops/platform/p2-frontend-live-probe.mjs': 'a'*64}, 'credentials': {'FRONTEND_STAGING_MIGRATION_DATABASE_URL': 'synthetic'}}
         calls = []
         class Observer:
-            def __init__(owned_self, *_): pass
+            def __init__(owned_self, *_, **kwargs): pass
             def probe(owned_self, operation): calls.append(operation)
+        def stop(*_):
+            if repeated_signal: os.kill(os.getpid(), signal.SIGTERM)
+            calls.append('runtime-stop')
         with patch('p2_release_supervisor.PhysicalObserver', Observer), \
+             patch('p2_release_supervisor.private_observer_program', return_value=self.root / 'owned-program'), \
              patch('p2_release_supervisor.runtime.command', return_value=''), \
-             patch('p2_release_supervisor.migrate.suspend_runtime', side_effect=lambda *_: calls.append('runtime-stop')), \
-             patch.object(staging_admission.Host, 'state', side_effect=ValueError('unavailable')):
-            receipt = fail_closed(initial, {'owned': True}, self.root)
-        self.assertEqual(calls, ['fence', 'runtime-stop'])
+             patch('p2_release_supervisor.stop_group', side_effect=[False, True, True] if retry else lambda *_: False), \
+             patch('p2_release_supervisor.migrate.suspend_runtime', side_effect=stop), \
+             patch.object(staging_admission.Host, 'state', side_effect=ValueError('unavailable')), sticky_cleanup_signals():
+            if repeated_signal: os.kill(os.getpid(), signal.SIGTERM)
+            receipt = (finish_failure_cleanup(initial, {'owned': True}, self.root, group) if retry else
+                       fail_closed(initial, {'owned': True}, self.root, group=group))
+        self.assertEqual(calls, ['fence', 'runtime-stop'] * (2 if retry else 1))
         self.assertIs(receipt['frontendAdmissionClosed'], True); self.assertIs(receipt['runtimeStopped'], True)
         state = json.loads((snapshot / 'admission/state.json').read_bytes())
         self.assertIs(state['newWork'], False); self.assertIs(state['recovery'], False)
+        if group is not None: self.assertIs(receipt['workerProcessesQuiesced'], retry)
+        if retry:
+            final = json.loads((results / 'p2-owned/p2-independent-guard-after-quiescence.json').read_bytes())
+            self.assertIs(final['workerProcessesQuiesced'], True)
 
     def test_abort_notifies_independent_guard_before_fallible_process_cleanup(self):
         safety_r, safety_w = os.pipe(); health_r, health_w = os.pipe()

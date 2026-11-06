@@ -25,6 +25,7 @@ import staging_state
 import vercel
 import frontend_gateway_observation
 from p2_certification_profile import require_profile, RUNTIME_FLAGS
+from p2_source_closure import verify_source_closure, private_observer_program
 
 MAXIMUM = 4_000_000
 LOCK = Path('/run/lock/lash-her-release.lock')
@@ -41,14 +42,18 @@ def decode(raw):
 
 
 class PhysicalObserver:
-    def __init__(self, selected, request, source, credential):
+    def __init__(self, selected, request, source, credential, *, program=None, program_sha256=None):
         self.selected, self.request, self.source, self.credential = selected, request, source, credential
         self.stop_event, self.failure = threading.Event(), None
         self.last_verified = 0
         self.thread = None
+        self.program = program
+        self.program_sha256 = program_sha256
 
     def probe(self, operation):
-        program = self.source / 'ops/platform/p2-frontend-live-probe.mjs'
+        program = self.program or self.source / 'ops/platform/p2-frontend-live-probe.mjs'
+        if self.program_sha256 is not None:
+            require(migrate.file_hash(program.read_bytes()) == self.program_sha256, 'P2_PRIVATE_OBSERVER_CHANGED')
         image = self.selected['artifacts']['frontendMigration']['image']
         env = {**runtime.SAFE_ENV, 'FRONTEND_STAGING_MIGRATION_DATABASE_URL': self.credential}
         name = 'lash-p2-observer-' + uuid4().hex
@@ -65,6 +70,8 @@ class PhysicalObserver:
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15, check=False)
             remaining = runtime.command(['docker', 'container', 'ls', '--all', '--filter', 'name=^/' + name + '$', '--format', '{{.ID}}'], runtime.SAFE_ENV, 15)
             require(not remaining, 'P2_OBSERVER_CONTAINER_CLEANUP_UNVERIFIED')
+            if self.program_sha256 is not None:
+                require(migrate.file_hash(program.read_bytes()) == self.program_sha256, 'P2_PRIVATE_OBSERVER_CHANGED')
         require(len(result.stdout) <= 8192, 'P2_OBSERVER_OUTPUT_REFUSED')
         value = json.loads(result.stdout)
         expected = 'P2_FRONTEND_ADMISSION_CLOSED' if operation == 'fence' else 'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED'
@@ -164,11 +171,7 @@ class Broker:
         require(migrate.source_commit(commit), 'P2_EXACT_SOURCE_REQUIRED')
         self.source = Path(__file__).resolve().parents[3]
         require(str(self.source) == '/opt/lash-her/operators/' + commit, 'P2_INSTALLED_SOURCE_REQUIRED')
-        for name, expected in p['sourceSha256'].items():
-            require(name.startswith('ops/') and '..' not in Path(name).parts, 'P2_SOURCE_PATH_REFUSED')
-            current = self.source / name
-            require(not current.is_symlink() and current.stat().st_uid == 0 and not current.stat().st_mode & 0o022
-                    and migrate.file_hash(migrate.read_input(self.source, name)) == expected, 'P2_SOURCE_CHANGED')
+        verify_source_closure(p, self.source)
         for key in ('bundle', 'configuration', 'results'):
             value = Path(p[key])
             require(value.is_absolute() and str(value.resolve()) == str(value) and
@@ -202,6 +205,7 @@ class Broker:
         self.lock_info = info
         self.directory = self.results / ('p2-' + self.selected['releaseId'])
         self.directory.mkdir(mode=0o700)
+        self.observer_program = private_observer_program(p, self.directory / 'private-source')
         self.outcome.update(environment='staging', releaseId=self.selected['releaseId'], sourceCommit=commit,
                             candidateSha256=p['candidateSha256'])
         self.outcome.update(migrate.contract_identity(self.selected))
@@ -223,6 +227,7 @@ class Broker:
 
     def check(self):
         require(not self.failed.is_set(), 'P2_BROKER_FAILED')
+        verify_source_closure(self.initial, self.source)
         try:
             pulse = os.read(self.guard_read, 65536)
             require(pulse, 'P2_INDEPENDENT_GUARD_DIED')
@@ -252,9 +257,11 @@ class Broker:
         self.frontend_raw = raw
         self.safety({'operation': 'armed', 'probe': request['probe']})
         self.observer = PhysicalObserver(self.selected, request['probe'], self.source,
-                                        self.initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'])
+                                        self.initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'], program=self.observer_program,
+                                        program_sha256=self.initial['sourceSha256']['ops/platform/p2-frontend-live-probe.mjs'])
         self.observer.start(self.abort)
-        self.scope = P2ReleaseScope(self.lock_fd, LOCK, self.check, receipt, self.outcome['candidateSha256'])
+        self.scope = P2ReleaseScope(self.lock_fd, LOCK, self.check, receipt, self.outcome['candidateSha256'],
+                                    release=self.selected, jobs=self.jobs, configuration_sha256=self.initial['configurationSha256'])
         self.scope.require_frontend(self.selected, self.jobs['frontend'])
         def ready(attempt, migration_attempt, snapshot, selected, outcome):
             require(selected == self.selected and outcome.get('status') == 'API_RUNTIME_READY', 'P2_API_READY_BINDING_REFUSED')

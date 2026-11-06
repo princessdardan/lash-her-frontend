@@ -102,6 +102,7 @@ export async function p2OperatorRelease(settings, { apply = false, confirmation 
   require(installed.status === 'EXACT_OPERATOR_SOURCE_INSTALLED' && installed.commit === settings.sourceCommit);
   const initial = { version: 1, environment: 'staging', sourceCommit: settings.sourceCommit,
     sourceSha256: Object.fromEntries(committed.files.map(file => [file.path, file.sha256])),
+    sourceClosureSha256: sha256(JSON.stringify(committed.files.map(file => [file.path, file.sha256]).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))),
     hostMachineId: settings.host.machineId, candidate: checked.candidate,
     candidateSha256: checked.plan.candidateSha256,
     bundle: settings.host.bundle, configuration: settings.host.configuration, results: settings.host.results,

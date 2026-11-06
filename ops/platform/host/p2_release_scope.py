@@ -14,12 +14,14 @@ import threading
 
 
 class P2ReleaseScope:
-    def __init__(self, descriptor, path, verify_frontend, receipt, candidate_sha256=None):
+    def __init__(self, descriptor, path, verify_frontend, receipt, candidate_sha256=None, *, release=None, jobs=None, configuration_sha256=None):
         self.descriptor, self.path = descriptor, path
         self.identity = os.fstat(descriptor)
         self.verify_frontend = verify_frontend
         self.receipt = copy.deepcopy(receipt)
         self.candidate_sha256 = candidate_sha256
+        self.release, self.jobs = copy.deepcopy(release), copy.deepcopy(jobs)
+        self.configuration_sha256 = copy.deepcopy(configuration_sha256)
         self.closed = False
         self.revoked = threading.Event()
         self.processes, self.mutations = set(), threading.Lock()
@@ -55,7 +57,7 @@ class P2ReleaseScope:
             except BaseException:
                 self.cleanup_uncertain = True
 
-    def run(self, args, *, timeout, check=False, capture_output=False, text=False, **options):
+    def run(self, args, *, timeout, check=False, capture_output=False, text=False, input=None, **options):
         # Revocation and Popen registration share one mutex. Once revoked, no
         # worker can issue another startup/apply command, including after an
         # already-running Compose command unwinds.
@@ -63,11 +65,15 @@ class P2ReleaseScope:
             self.verify()
             if capture_output:
                 options.update(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if input is not None:
+                if 'stdin' in options:
+                    raise ValueError('P2_CHILD_STDIN_CONFLICT')
+                options['stdin'] = subprocess.PIPE
             process = subprocess.Popen(args, text=text, **options)
             self.processes.add(process)
         try:
             try:
-                stdout, stderr = process.communicate(timeout=timeout)
+                stdout, stderr = process.communicate(input=input, timeout=timeout)
             except BaseException:
                 process.kill(); process.wait(timeout=15); raise
             result = subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
@@ -77,7 +83,22 @@ class P2ReleaseScope:
             return result
         finally:
             with self.mutations:
-                self.processes.discard(process)
+                if process.poll() is None:
+                    self.cleanup_uncertain = True
+                else:
+                    self.processes.discard(process)
+
+    def require_release(self, release, jobs):
+        self.verify()
+        if self.release is not None and (release != self.release or jobs != self.jobs):
+            raise ValueError('P2_REVIEWED_RELEASE_INPUTS_CHANGED')
+
+    def require_configuration(self, directory):
+        self.verify()
+        if self.configuration_sha256 is not None:
+            import staging_state
+            if staging_state.configuration_hashes(directory) != self.configuration_sha256:
+                raise ValueError('P2_REVIEWED_CONFIGURATION_CHANGED')
 
     def require_frontend(self, release, info):
         self.verify()

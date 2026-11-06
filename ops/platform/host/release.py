@@ -288,6 +288,9 @@ def check_containers(release, snapshot):
 
 def _execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None):
     release, jobs, plan, compose = make_plan(bundle, configuration, compose_file)
+    if _p2_scope is not None:
+        _p2_scope.require_release(release, jobs)
+        _p2_scope.require_configuration(configuration)
     if not apply:
         return plan
     demand(confirmation == f'{release["environment"]}/{release["releaseId"]}', "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED")
@@ -363,6 +366,8 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
         snapshot_bundle(bundle, immutable_bundle, release, jobs)
         snapshot_configuration(configuration, snapshot, release, jobs, compose)
         if _p2_scope is not None:
+            _p2_scope.require_release(release, jobs)
+            _p2_scope.require_configuration(snapshot)
             _p2_scope.initialize_runtime(snapshot, release)
         checked_release, checked_jobs, checked_plan, _ = make_plan(immutable_bundle, snapshot, snapshot / "compose.yaml")
         demand(checked_release == release and checked_jobs == jobs and checked_plan == plan, "RUNTIME_CONFIGURATION_CHANGED")
