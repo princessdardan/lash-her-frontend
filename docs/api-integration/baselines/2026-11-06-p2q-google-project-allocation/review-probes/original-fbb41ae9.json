@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "sourceCommit": "fbb41ae95e3d6904a36084afaa43a63e74f115c7",
+  "projectionOnly": true,
+  "providerCalls": false,
+  "missingOriginalAck": {
+    "status": "P2Q_GOOGLE_RECONCILED_CURRENT_NOT_ORIGINAL_CREATION",
+    "creationOutcome": "UNKNOWN",
+    "originalCreationAcknowledged": false,
+    "requiresOwnerReview": false,
+    "code": null,
+    "cleanup": true,
+    "runReleasePredicate": true
+  },
+  "driftBeforeCreate": {
+    "code": "P2Q_GOOGLE_SOURCE_REQUIRED",
+    "creationPostCount": 1,
+    "sourceDriftBeforeHttpObserved": true,
+    "createHttpCalls": 1,
+    "credentialCleanupVerified": false
+  }
+}

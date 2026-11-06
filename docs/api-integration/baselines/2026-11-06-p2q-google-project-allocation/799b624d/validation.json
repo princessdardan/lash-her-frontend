@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "status": "P2Q_GOOGLE_PROJECT_PRODUCER_SOURCE_VERIFIED",
+  "sourceCommit": "799b624d96e7ccf5efd85d6fcfb874542ca0efbd",
+  "sourceBase": "6fe258f61aaeba7fc0bb69a3a1c7d515481a7111",
+  "rootPolicyDependency": "7e786bca5d832639bb33dd970dbfd708a6408126",
+  "localPolicyCherryPick": "bddb2121",
+  "changedFiles": {
+    "ops/platform/p2q-google-project-allocation.mjs": {
+      "sha256": "81f32aae875250f1a22412a3792207bb67c84ab78f8c4106957b4dc4ad0802d3",
+      "bytes": 31966
+    },
+    "ops/platform/p2q-first-install.test.mjs": {
+      "sha256": "255173c2bbbaffdbb075051a325ed639f1bf200dcf5d27d732797d12552863d0",
+      "bytes": 28360
+    }
+  },
+  "combinedSourceBytes": 60326,
+  "assignedSourceByteLimit": 98304,
+  "trackedOpsFiles": 512,
+  "trackedOpsBytes": 40914148,
+  "sourceCaps": {
+    "files": 512,
+    "bytes": 41000000
+  },
+  "verification": {
+    "node": "24.18.0",
+    "platform": "darwin",
+    "tests": {
+      "command": "node --test ops/platform/p2q-first-install.test.mjs",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "log": "tests.log",
+      "warning": "existing MODULE_TYPELESS_PACKAGE_JSON warning for migration-lineage.ts"
+    },
+    "lint": {
+      "command": "node node_modules/eslint/bin/eslint.js ops/platform/p2q-google-project-allocation.mjs ops/platform/p2q-first-install.test.mjs",
+      "exitCode": 0,
+      "log": "lint.log",
+      "dependencyLockSha256": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886",
+      "dependencySource": "existing phase2-integration/node_modules, matching package-lock bytes"
+    },
+    "diffCheck": true,
+    "newGoogleGroups": 14,
+    "unchangedFirstInstallGroups": 4,
+    "realPrivateFilesystem": true,
+    "uidAndTempAncestorGuardsProjected": true,
+    "cliAndHttpsResponsesModeled": true,
+    "actualFreshProcessImportDispatchTripwire": true
+  },
+  "commonReceiptFlags": {
+    "allocationAuthorityIssued": false,
+    "firstUseAuthorized": false,
+    "administrativeBoundaryComplete": false,
+    "recoveryBoundaryComplete": false,
+    "profileRegistered": false,
+    "oauthClientCreated": false
+  },
+  "limitations": {
+    "productionCasesRegistered": 0,
+    "providerCalls": false,
+    "actualGoogleAuthentication": false,
+    "actualSdkCommandsByProducerOwner": false,
+    "actualProjectCreated": false,
+    "actualIamReadOrMutation": false,
+    "actualRootUidQualification": false,
+    "actualLinuxCi": false,
+    "sdkClosureQualifiedForRealCase": false,
+    "actualCurrentPythonPrefixEligible": false,
+    "holderDeathAndStaleClaimRecoveryImplemented": false,
+    "safelyReleasedPrincipalClaimAllowsOriginalAckReadOnlyReobserve": true,
+    "sameProcessLostAckGetOnlyMechanicsTested": true,
+    "publicPostCrashReconcileRemainsBlocked": true,
+    "firstInstallAuthority": false
+  },
+  "primaryDocumentation": [
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/create",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/search",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/get",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/getIamPolicy",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/operations/get",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects",
+    "https://docs.cloud.google.com/sdk/docs/authenticate",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/auth/login",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/auth/list",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/auth/print-access-token",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/auth/revoke",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/topic/configurations"
+  ]
+}

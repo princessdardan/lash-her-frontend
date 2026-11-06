@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "status": "P2Q_GOOGLE_PROJECT_PRODUCER_SOURCE_VERIFIED",
+  "sourceCommit": "0e6491446d26be75b6be7d1bcf5e18ff8f8da243",
+  "sourceBase": "6fe258f61aaeba7fc0bb69a3a1c7d515481a7111",
+  "rootPolicyDependency": "7e786bca5d832639bb33dd970dbfd708a6408126",
+  "localPolicyCherryPick": "bddb2121",
+  "changedFiles": {
+    "ops/platform/p2q-google-project-allocation.mjs": {
+      "sha256": "089a8ffff41959d01de9e0863ad5831dccedb38a56e415a815f85438a35cbca2",
+      "bytes": 32646
+    },
+    "ops/platform/p2q-first-install.test.mjs": {
+      "sha256": "a3f118488e0d473e93e194ce189b933e997b485ddc5848bcaca9c37b9fc2cb49",
+      "bytes": 33647
+    }
+  },
+  "combinedSourceBytes": 66293,
+  "assignedSourceByteLimit": 98304,
+  "trackedOpsFiles": 512,
+  "trackedOpsBytes": 40920115,
+  "sourceCaps": {
+    "files": 512,
+    "bytes": 41000000
+  },
+  "verification": {
+    "node": "24.18.0",
+    "platform": "darwin",
+    "tests": {
+      "command": "node --test ops/platform/p2q-first-install.test.mjs",
+      "passed": 24,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "log": "tests.log",
+      "warning": "existing MODULE_TYPELESS_PACKAGE_JSON warning for migration-lineage.ts"
+    },
+    "lint": {
+      "command": "node node_modules/eslint/bin/eslint.js ops/platform/p2q-google-project-allocation.mjs ops/platform/p2q-first-install.test.mjs",
+      "exitCode": 0,
+      "log": "lint.log",
+      "dependencyLockSha256": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886",
+      "dependencySource": "existing phase2-integration/node_modules, matching package-lock bytes"
+    },
+    "diffCheck": true,
+    "newGoogleGroups": 20,
+    "unchangedFirstInstallGroups": 4,
+    "realPrivateFilesystem": true,
+    "uidAndTempAncestorGuardsProjected": true,
+    "cliAndHttpsResponsesModeled": true,
+    "actualFreshProcessImportDispatchTripwire": true,
+    "actualOwnedPythonUmaskWrapper": true,
+    "realSdkInvocation": false,
+    "continuousPrivateRootAndParentSymlinkRegression": true,
+    "independentReview": {
+      "status": "CLEAR",
+      "sourceCommit": "0e6491446d26be75b6be7d1bcf5e18ff8f8da243",
+      "testsPassed": 24,
+      "skipped": 0,
+      "report": "independent-review.json",
+      "reportSha256": "204c897ff416d8a5f0c1d75c67c6cf2550a62b4b65a186ce1e9fbf220024c616"
+    }
+  },
+  "commonReceiptFlags": {
+    "allocationAuthorityIssued": false,
+    "firstUseAuthorized": false,
+    "administrativeBoundaryComplete": false,
+    "recoveryBoundaryComplete": false,
+    "profileRegistered": false,
+    "oauthClientCreated": false
+  },
+  "limitations": {
+    "productionCasesRegistered": 0,
+    "providerCalls": false,
+    "actualGoogleAuthentication": false,
+    "actualSdkCommandsByProducerOwner": false,
+    "actualProjectCreated": false,
+    "actualIamReadOrMutation": false,
+    "actualRootUidQualification": false,
+    "actualLinuxCi": false,
+    "sdkClosureQualifiedForRealCase": false,
+    "actualCurrentPythonPrefixEligible": false,
+    "holderDeathAndStaleClaimRecoveryImplemented": false,
+    "safelyReleasedPrincipalClaimAllowsOriginalAckReadOnlyReobserve": true,
+    "sameProcessLostAckGetOnlyMechanicsTested": true,
+    "publicPostCrashReconcileRemainsBlocked": true,
+    "firstInstallAuthority": false,
+    "wholeOsOrDynamicLoaderClosureProven": false,
+    "executionRequiresRootOwnedCleanGitCheckout": true
+  },
+  "primaryDocumentation": [
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/create",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/search",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/get",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/getIamPolicy",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/operations/get",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects",
+    "https://docs.cloud.google.com/sdk/docs/authenticate",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/auth/login",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/auth/list",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/auth/print-access-token",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/auth/revoke",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/topic/configurations"
+  ],
+  "originalSourceCommit": "799b624d96e7ccf5efd85d6fcfb874542ca0efbd",
+  "originalEvidenceManifestSha256": "cac8a3528f75d1e730aa5eaf3c9efa1dd32db726225ede8ff606c1c7d978ec23",
+  "previousSourceCommit": "b983f02e083b308fff3b4cd3da3378cbae862c17",
+  "previousEvidenceManifestSha256": "ebaed2e889d312ccef511baf296e9c817fb837975ad55d3606d2162771fac33f",
+  "reviewCorrections": {
+    "unknownOrMissingOriginalAck": "OBSERVATION_UNKNOWN, owner review required, claim close ineligible",
+    "immediatePreHttpGuard": "recheck source/toolchain/principal/case after CLI identity/token before HTTP or CREATE-attempt marking",
+    "sdkChildGuard": "actual guards rechecked before every production SDK child",
+    "cleanupGuard": "identity read followed by guard before revoke; guard again before postrevoke list; drift retains config",
+    "emptyToolFiles": "Fixed opt-in only in physicalTree; raw/principal/source nonempty checks unchanged"
+  },
+  "originalReviewProbe": {
+    "scriptSha256": "d37e32a68cdb937b4066031ce1a5208b22b1089e7ce87b6c99cea46396736d8f",
+    "resultSha256": "69eac2f3a6198d23fd50b52ad47b591579ddc61c7555ee50bacce112c9854a33"
+  }
+}

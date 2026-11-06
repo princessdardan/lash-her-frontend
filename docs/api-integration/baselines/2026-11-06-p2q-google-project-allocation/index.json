@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "latestReviewedSourceCommit": "0e6491446d26be75b6be7d1bcf5e18ff8f8da243",
+  "status": "SOURCE_AND_MODEL_VERIFIED_NOT_LIVE_AUTHORITY",
+  "snapshots": {
+    "799b624d": {
+      "sourceCommit": "799b624d96e7ccf5efd85d6fcfb874542ca0efbd",
+      "manifestSha256": "cac8a3528f75d1e730aa5eaf3c9efa1dd32db726225ede8ff606c1c7d978ec23",
+      "validationSha256": "0a122a212675da7e5742332f2a58ed6b2886cced2e6286e483835d175682c084"
+    },
+    "fbb41ae9": {
+      "sourceCommit": "fbb41ae95e3d6904a36084afaa43a63e74f115c7",
+      "manifestSha256": "a48d233e8327f338230ab09f7f06650cf156317a8ed4de9c75bf997de156a1b5",
+      "validationSha256": "da62d0c1b0fefec976c23a18ad425c25560a6472eca90665c59a75a6536ced6b"
+    },
+    "b983f02e": {
+      "sourceCommit": "b983f02e083b308fff3b4cd3da3378cbae862c17",
+      "manifestSha256": "ebaed2e889d312ccef511baf296e9c817fb837975ad55d3606d2162771fac33f",
+      "validationSha256": "8afd1aeecec37977d57d551e0d2c5bf3aaf7d1203d12885be34ee8611595f0d9"
+    },
+    "0e649144": {
+      "sourceCommit": "0e6491446d26be75b6be7d1bcf5e18ff8f8da243",
+      "manifestSha256": "bc662e728bacb320de94d58f34ce5a223e00a75fa55619ee1ddef6aa8898f7a4",
+      "validationSha256": "b0a3cedd2eaae67b8a183dcd024185eff3a4f7fa815e51f5b0aa8569806acf85"
+    }
+  },
+  "sourceCommitsInOrder": [
+    "799b624d96e7ccf5efd85d6fcfb874542ca0efbd",
+    "fbb41ae95e3d6904a36084afaa43a63e74f115c7",
+    "b983f02e083b308fff3b4cd3da3378cbae862c17",
+    "0e6491446d26be75b6be7d1bcf5e18ff8f8da243"
+  ],
+  "rootPolicyDependency": "7e786bca5d832639bb33dd970dbfd708a6408126",
+  "registryDependencyMustNotBeDuplicated": "bddb2121",
+  "futureIntegratedSourceMapping": {
+    "status": "NOT_YET_RECORDED",
+    "owner": "root",
+    "separateAppendRecord": "integration-mapping.json",
+    "mapping": {
+      "799b624d96e7ccf5efd85d6fcfb874542ca0efbd": null,
+      "fbb41ae95e3d6904a36084afaa43a63e74f115c7": null,
+      "b983f02e083b308fff3b4cd3da3378cbae862c17": null,
+      "0e6491446d26be75b6be7d1bcf5e18ff8f8da243": null
+    },
+    "nullIsNotIntegrationEvidence": true
+  },
+  "latestVerification": {
+    "sourceAndModelGroupsPassed": 24,
+    "failed": 0,
+    "skipped": 0,
+    "independentlyPassed": 24,
+    "sourceRootUid0Qualified": false,
+    "actualSdkAuthProviderQualified": false,
+    "postCrashHolderRecovery": "OPEN"
+  },
+  "commonFlags": {
+    "allocationAuthorityIssued": false,
+    "firstUseAuthorized": false,
+    "administrativeBoundaryComplete": false,
+    "recoveryBoundaryComplete": false,
+    "profileRegistered": false,
+    "oauthClientCreated": false
+  },
+  "reviewProbes": {
+    "original-fbb41ae9.json": "69eac2f3a6198d23fd50b52ad47b591579ddc61c7555ee50bacce112c9854a33",
+    "original-fbb41ae9.mjs": "d37e32a68cdb937b4066031ce1a5208b22b1089e7ce87b6c99cea46396736d8f"
+  }
+}

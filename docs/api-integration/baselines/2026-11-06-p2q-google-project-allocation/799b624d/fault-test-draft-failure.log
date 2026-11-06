@@ -1,0 +1,48 @@
+(node:89481) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-google-project-allocation/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-google-project-allocation/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ public current and unregistered first-install requests refuse before client or parent work (1.522ms)
+✔ JSON fresh/zero/authority flags and forged observation handles cannot select a path (0.195291ms)
+✔ owned fixture resolver only models selection and emits no install permission (3.224792ms)
+✔ resolved current policy still refuses before transport in the private interface fixture (1.623292ms)
+✔ Google public empty registry and fresh import refuse before filesystem/child/network/credential IO (33.569ms)
+✔ Google private protocol creates once after durable intent and captures original ACK/current/IAM without authority (84.412708ms)
+✔ Google lost ACK is never re-POSTed; GET-only reconciliation distinguishes current evidence and timeout UNKNOWN (424.659375ms)
+✔ Google same-process lost ACK can GET current state while retaining UNKNOWN creation outcome (90.79825ms)
+✔ Google preflight existing/wrong or multiple principals and source drift permit zero creation (148.888625ms)
+✔ Google ALREADY_EXISTS, foreign operation/project/parent/owner and operation errors require review without retries (545.642083ms)
+✔ Google clean child environment rejects ambient auth/ADC/impersonation/Python/browser/proxy overrides (29.211375ms)
+✔ Google raw truncation/symlink and cleanup uncertainty retain private evidence (104.377416ms)
+✖ Google actual file-write/fsync faults preserve burn and never replay CREATE (60.230541ms)
+✔ Google principal claims serialize cases and never expire or clear an unknown holder (15.667625ms)
+✔ Google tool closure pins only exact internal vendor symlinks and actual target bytes (6.927125ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 14
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1683.99625
+
+✖ failing tests:
+
+test at ops/platform/p2q-first-install.test.mjs:184:1
+✖ Google actual file-write/fsync faults preserve burn and never replay CREATE (60.230541ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at publicGoogleSafe (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-google-project-allocation/ops/platform/p2q-first-install.test.mjs:99:149)
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/p2q-google-project-allocation/ops/platform/p2q-first-install.test.mjs:195:93)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

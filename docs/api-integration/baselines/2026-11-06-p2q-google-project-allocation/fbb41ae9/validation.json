@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "status": "P2Q_GOOGLE_PROJECT_PRODUCER_SOURCE_VERIFIED",
+  "sourceCommit": "fbb41ae95e3d6904a36084afaa43a63e74f115c7",
+  "sourceBase": "6fe258f61aaeba7fc0bb69a3a1c7d515481a7111",
+  "rootPolicyDependency": "7e786bca5d832639bb33dd970dbfd708a6408126",
+  "localPolicyCherryPick": "bddb2121",
+  "changedFiles": {
+    "ops/platform/p2q-google-project-allocation.mjs": {
+      "sha256": "f76fc4f332bb4049b662fbb0bb54f0ea0853f2e958494796e5aa937809a1389b",
+      "bytes": 32257
+    },
+    "ops/platform/p2q-first-install.test.mjs": {
+      "sha256": "b4431ef449933ee3aa3670ef4651d822eabcf45ddbe3b02708028fe754d467ec",
+      "bytes": 29900
+    }
+  },
+  "combinedSourceBytes": 62157,
+  "assignedSourceByteLimit": 98304,
+  "trackedOpsFiles": 512,
+  "trackedOpsBytes": 40915979,
+  "sourceCaps": {
+    "files": 512,
+    "bytes": 41000000
+  },
+  "verification": {
+    "node": "24.18.0",
+    "platform": "darwin",
+    "tests": {
+      "command": "node --test ops/platform/p2q-first-install.test.mjs",
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "log": "tests.log",
+      "warning": "existing MODULE_TYPELESS_PACKAGE_JSON warning for migration-lineage.ts"
+    },
+    "lint": {
+      "command": "node node_modules/eslint/bin/eslint.js ops/platform/p2q-google-project-allocation.mjs ops/platform/p2q-first-install.test.mjs",
+      "exitCode": 0,
+      "log": "lint.log",
+      "dependencyLockSha256": "5818039172a8d15364c26f0b2dfcad1e9b2f5c1a5a179ce9f163a0e7527d8886",
+      "dependencySource": "existing phase2-integration/node_modules, matching package-lock bytes"
+    },
+    "diffCheck": true,
+    "newGoogleGroups": 16,
+    "unchangedFirstInstallGroups": 4,
+    "realPrivateFilesystem": true,
+    "uidAndTempAncestorGuardsProjected": true,
+    "cliAndHttpsResponsesModeled": true,
+    "actualFreshProcessImportDispatchTripwire": true,
+    "actualOwnedPythonUmaskWrapper": true,
+    "realSdkInvocation": false,
+    "continuousPrivateRootAndParentSymlinkRegression": true
+  },
+  "commonReceiptFlags": {
+    "allocationAuthorityIssued": false,
+    "firstUseAuthorized": false,
+    "administrativeBoundaryComplete": false,
+    "recoveryBoundaryComplete": false,
+    "profileRegistered": false,
+    "oauthClientCreated": false
+  },
+  "limitations": {
+    "productionCasesRegistered": 0,
+    "providerCalls": false,
+    "actualGoogleAuthentication": false,
+    "actualSdkCommandsByProducerOwner": false,
+    "actualProjectCreated": false,
+    "actualIamReadOrMutation": false,
+    "actualRootUidQualification": false,
+    "actualLinuxCi": false,
+    "sdkClosureQualifiedForRealCase": false,
+    "actualCurrentPythonPrefixEligible": false,
+    "holderDeathAndStaleClaimRecoveryImplemented": false,
+    "safelyReleasedPrincipalClaimAllowsOriginalAckReadOnlyReobserve": true,
+    "sameProcessLostAckGetOnlyMechanicsTested": true,
+    "publicPostCrashReconcileRemainsBlocked": true,
+    "firstInstallAuthority": false
+  },
+  "primaryDocumentation": [
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/create",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/search",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/get",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects/getIamPolicy",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/operations/get",
+    "https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects",
+    "https://docs.cloud.google.com/sdk/docs/authenticate",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/auth/login",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/auth/list",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/auth/print-access-token",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/auth/revoke",
+    "https://docs.cloud.google.com/sdk/gcloud/reference/topic/configurations"
+  ],
+  "originalSourceCommit": "799b624d96e7ccf5efd85d6fcfb874542ca0efbd",
+  "originalEvidenceManifestSha256": "cac8a3528f75d1e730aa5eaf3c9efa1dd32db726225ede8ff606c1c7d978ec23"
+}
