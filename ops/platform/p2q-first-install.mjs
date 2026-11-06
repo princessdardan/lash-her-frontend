@@ -21,7 +21,7 @@ const identitySql=`SELECT pg_catalog.pg_backend_pid() AS pid,current_user AS use
  (SELECT oid::text FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database()) AS database_oid,
  (SELECT oid::text FROM pg_catalog.pg_roles WHERE rolname=session_user) AS role_oid,
  (SELECT backend_start::text FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()) AS backend_start`;
-const emptySql=`SELECT
+const coreCatalogSql=`SELECT
  (SELECT count(*)::int FROM pg_catalog.pg_namespace WHERE nspname !~ '^pg_' AND nspname NOT IN ('public','information_schema')) AS schemas,
  (SELECT count(*)::int FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema') AS relations,
  (SELECT count(*)::int FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema') AS functions,
@@ -56,7 +56,10 @@ export async function prepareP2qFirstInstallObservation(request){
  'P2Q_FIRST_INSTALL_EMPTY_JOB_REQUIRED');
  return Object.freeze({version:1,service:'frontend',qualificationTargetProfile:structuredClone(ref),actionId:request.actionId,releaseId:candidate.releaseId,sourceCommit:job.sourceCommit,
   target:Object.freeze(Object.fromEntries(['host','port','database','user','serverMajor'].map(key=>[key,target[key]]))),
-  observationOnly:true,firstUseAuthorized:false,migrationAuthorized:false,rolePreparationAuthorized:false});
+  observationOnly:true,firstUseAuthorized:false,migrationAuthorized:false,rolePreparationAuthorized:false,
+  catalogObservationScope:'frontend-core-counts-v1',completeDatabaseEmptyProven:false,
+  unobservedCatalogClasses:Object.freeze(['pg_collation','pg_default_acl','pg_db_role_setting','pg_auth_members','pg_cast','pg_conversion','pg_event_trigger',
+   'pg_ts_config','pg_ts_config_map','pg_ts_dict','pg_ts_parser','pg_ts_template','other-standalone-object-catalogs'])});
 }
 
 class DatabaseObservation {constructor(token){require(token===issuer,'P2Q_FIRST_INSTALL_OBSERVATION_HANDLE_REQUIRED');Object.freeze(this);}}
@@ -77,7 +80,7 @@ async function snapshot(state){
  try{
   await state.client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');transaction=true;
   require((await state.client.query("SELECT pg_catalog.current_setting('transaction_read_only') AS read_only")).rows[0]?.read_only==='on','P2Q_FIRST_INSTALL_READ_ONLY_REQUIRED');
-  const counts=(await state.client.query(emptySql)).rows[0],roles=(await state.client.query(rolesSql)).rows;
+  const counts=(await state.client.query(coreCatalogSql)).rows[0],roles=(await state.client.query(rolesSql)).rows;
   require(counts&&Object.values(counts).every(value=>Number.isInteger(value)&&value>=0),'P2Q_FIRST_INSTALL_CATALOG_OBSERVATION_REQUIRED');
   require(counts.other_sessions===0,'P2Q_FIRST_INSTALL_UNEXPECTED_DATABASE_SESSION');
   require(Object.values(counts).every(value=>value===0),'P2Q_FIRST_INSTALL_NONEMPTY_DATABASE');
@@ -89,7 +92,7 @@ async function snapshot(state){
 export async function readP2qFirstInstallDatabaseObservation(handle){
  const state=states.get(handle);require(state?.active,'P2Q_FIRST_INSTALL_OBSERVATION_HANDLE_REQUIRED');
  const actual=await snapshot(state);require(isDeepStrictEqual(actual,state.before),'P2Q_FIRST_INSTALL_DATABASE_OBSERVATION_DRIFT');
- return structuredClone({...state.plan,status:'P2Q_FIRST_INSTALL_DATABASE_OBSERVED_EMPTY',identity:state.identity,...actual,
+ return structuredClone({...state.plan,status:'P2Q_FIRST_INSTALL_CORE_CATALOG_OBSERVED_ZERO',identity:state.identity,...actual,
   creationControlProven:false,credentialDeliveryHistoryProven:false,providerBeforeUseProven:false,hostControlProven:false,targetSelectionVerified:false});
 }
 export async function withP2qFirstInstallDatabaseObservation(request,{client,verifySession},task){

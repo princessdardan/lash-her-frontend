@@ -1,4 +1,4 @@
-// Explicit owned empty-target observation fixture. No first-use authority.
+// Explicit owned core-catalog observation fixture. No complete emptiness or first-use authority.
 import assert from 'node:assert/strict';
 import {randomBytes,createHash} from 'node:crypto';
 import {spawn,spawnSync} from 'node:child_process';
@@ -70,9 +70,26 @@ export async function runOwnedP2qFirstInstall(){
   }
   phase='owned-host-start';guard=await startGuard();client=await connect();const lock=async()=>assert.equal((await client.query('SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS held',[FRONTEND_MIGRATION_LOCK])).rows[0].held,true);await lock();
   const collect=task=>collector.withP2qFirstInstallDatabaseObservation(request,{client,verifySession:()=>guard.check()},task);
-  phase='actual-empty-observation';let escaped;
+  phase='actual-core-catalog-observation';let escaped;
   const first=await collect(async(handle,verify)=>{escaped=handle;const value=await verify();assert.equal(value.firstUseAuthorized,false);await assert.rejects(collector.readP2qFirstInstallDatabaseObservation({...handle}));return null;});
-  assert.equal(first.observation.firstUseAuthorized,false);assert.equal(first.observation.creationControlProven,false);await assert.rejects(collector.readP2qFirstInstallDatabaseObservation(escaped));checks.push('actual-tls-empty-catalog-role-backend-and-source-nonce-observation-with-no-authority');
+  assert.equal(first.observation.firstUseAuthorized,false);assert.equal(first.observation.creationControlProven,false);await assert.rejects(collector.readP2qFirstInstallDatabaseObservation(escaped));checks.push('actual-tls-core-catalog-role-backend-and-source-nonce-observation-with-no-authority');
+  const assertScoped=observation=>{
+   assert.equal(observation.status,'P2Q_FIRST_INSTALL_CORE_CATALOG_OBSERVED_ZERO');assert.equal(observation.catalogObservationScope,'frontend-core-counts-v1');
+   for(const key of ['firstUseAuthorized','migrationAuthorized','rolePreparationAuthorized','completeDatabaseEmptyProven','creationControlProven','credentialDeliveryHistoryProven','providerBeforeUseProven','hostControlProven','targetSelectionVerified'])assert.equal(observation[key],false);
+   for(const name of ['pg_collation','pg_db_role_setting','pg_auth_members','pg_default_acl','pg_cast','pg_ts_config'])assert.ok(observation.unobservedCatalogClasses.includes(name));
+   assert.deepEqual(observation.counts,first.observation.counts);assert.equal(observation.roleCatalogSha256,first.observation.roleCatalogSha256);
+  };
+  assertScoped(first.observation);
+  phase='unobserved-collation-control';
+  await client.query('CREATE COLLATION public.owned_unobserved FROM pg_catalog."C"');
+  assert.equal((await client.query("SELECT count(*)::int AS count FROM pg_catalog.pg_collation WHERE collname='owned_unobserved'")).rows[0].count,1);
+  assertScoped((await collect(async()=>null)).observation);await client.query('DROP COLLATION public.owned_unobserved');
+  checks.push('actual-custom-collation-unobserved-with-complete-emptiness-unproven-and-no-authority');
+  phase='unobserved-database-role-setting-control';
+  await client.query('ALTER ROLE p2q_owned_admin IN DATABASE p2q_frontend SET search_path = public, pg_catalog');
+  assert.equal((await client.query("SELECT count(*)::int AS count FROM pg_catalog.pg_db_role_setting WHERE setrole=(SELECT oid FROM pg_catalog.pg_roles WHERE rolname='p2q_owned_admin') AND setdatabase=(SELECT oid FROM pg_catalog.pg_database WHERE datname='p2q_frontend')")).rows[0].count,1);
+  assertScoped((await collect(async()=>null)).observation);await client.query('ALTER ROLE p2q_owned_admin IN DATABASE p2q_frontend RESET ALL');
+  checks.push('actual-database-role-setting-unobserved-with-complete-emptiness-unproven-and-no-authority');
   const peer=await connect();assert.equal((await peer.query('SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS held',[FRONTEND_MIGRATION_LOCK])).rows[0].held,false);await peer.end();checks.push('actual-parent-physical-lock-contention');
   phase='catalog-faults';
   for(const sql of ['CREATE TABLE public.owned_foreign(id int)','CREATE SCHEMA drizzle; CREATE TABLE drizzle.__drizzle_migrations(id int)','CREATE SCHEMA owned_foreign; CREATE FUNCTION owned_foreign.f() RETURNS int LANGUAGE sql AS $$SELECT 1$$']){
@@ -89,7 +106,7 @@ export async function runOwnedP2qFirstInstall(){
   const before=(await client.query("SELECT pg_catalog.to_regnamespace('drizzle') IS NULL AS no_journal,pg_catalog.to_regnamespace('frontend_admission') IS NULL AS no_admission")).rows[0];assert.deepEqual(before,{no_journal:true,no_admission:true});
   return {version:1,status:'P2Q_FIRST_INSTALL_COLLECTORS_OWNED_PASS',postgresMajor:18,checks,executedChecks:checks.length,skipped:0,fixtureOnly:true,actualTlsPostgres:true,actualPhysicalDatabaseLocks:true,actualHostProcessFlock:true,
    fixtureRegistryProjected:true,dockerMetadataProjected:true,actualDocker:false,providerTouched:false,firstUseAuthorityMinted:false,productionFirstInstallEligible:false,migrationExecuted:false,rolePreparationExecuted:false,admissionInstalled:false,
-   originalEmptyStatePreserved:true,frontendPendingMigrationCount:artifact.migrations.length,observation:first.observation,sourceCommit,sourceSha256:Object.fromEntries(['ops/platform/p2q-first-install.mjs','ops/platform/host/p2q_first_install.py','ops/platform/test-p2q-first-install-local.mjs'].map(name=>[name,hash(readFileSync(join(root,name)))]))};
+   originalObservedCatalogStatePreserved:true,frontendPendingMigrationCount:artifact.migrations.length,observation:first.observation,sourceCommit,sourceSha256:Object.fromEntries(['ops/platform/p2q-first-install.mjs','ops/platform/host/p2q_first_install.py','ops/platform/test-p2q-first-install-local.mjs'].map(name=>[name,hash(readFileSync(join(root,name)))]))};
  }catch(error){throw Object.assign(new Error('P2Q_FIRST_INSTALL_OWNED_FAILED'),{phase,kind:['Error','AssertionError','TypeError','SyntaxError','ValueError'].includes(error?.name)?error.name:'Unknown',frame:(String(error?.stack).split('\n').find(line=>line.includes('test-p2q-first-install-local.mjs:'))??'').match(/:(\d+):(\d+)\)?$/u)?.slice(1)??null,code:typeof error?.code==='string'&&error.code.startsWith('P2Q_')?error.code:'UNKNOWN'});}
  finally{if(client)try{await client.end();}catch{/*Owned cleanup.*/}if(guard)await guard.close();if(started)fixedExec(join(binaries,'pg_ctl'),['-D',data,'-m','immediate','-w','stop']);rmSync(directory,{recursive:true,force:true});}
 }
