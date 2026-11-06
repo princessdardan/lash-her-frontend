@@ -202,6 +202,53 @@ test("P2 mode authenticates before work, refuses missing/production configuratio
   assert.equal(calls, 1);
 });
 
+test("authentication-origin mode reports only actual validated canonical configuration behind the existing challenge", async () => {
+  const canonical = "https://staging.lashher.com";
+  const env = { ...environment(), CUSTOMER_AUTH_ENABLED: "true", INTEGRATION_CUSTOMER_ACCESS_ENABLED: "true",
+    AUTH_URL: canonical, CUSTOMER_AUTH_URL: canonical, CUSTOMER_AUTH_SECRET: "customer-private-secret-value-32-characters",
+    CUSTOMER_AUTH_GOOGLE_ID: "customer-google-id", CUSTOMER_AUTH_GOOGLE_SECRET: "customer-google-private-value",
+    CUSTOMER_AUTH_RESEND_KEY: "customer-private-resend-value", CUSTOMER_AUTH_EMAIL_FROM: "academy@example.invalid" };
+  let calls = 0;
+  const phase2 = async () => { calls++; return { ok: true as const, service: "course" as const, durationMs: 1 }; };
+  const handler = createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration(env, now), run: phase2, phase2 });
+  assert.equal((await handler(request({ "x-lash-release-mode": "phase2-auth-origins", authorization: "Bearer wrong" }))).status, 401);
+  assert.equal(calls, 0);
+  const response = await handler(request({ "x-lash-release-mode": "phase2-auth-origins" }));
+  assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "private, no-store");
+  const body = await response.json();
+  assert.equal(body.challenge, challenge); assert.equal(body.sourceCommit, env.VERCEL_GIT_COMMIT_SHA);
+  assert.equal(body.projectId, VERCEL_PROJECT_BINDINGS.stagingProjectId); assert.equal(body.contractPhase, "p2");
+  assert.deepEqual(body.authenticationOrigins, { customerOrigin: canonical, adminOrigin: canonical,
+    adminRedirectProxyOrigin: null, customerRedirectProxyEnabled: false });
+  for (const value of [env.CUSTOMER_AUTH_SECRET, env.CUSTOMER_AUTH_GOOGLE_SECRET, env.CUSTOMER_AUTH_RESEND_KEY, env.CUSTOMER_AUTH_GOOGLE_ID, env.CUSTOMER_AUTH_EMAIL_FROM, secret]) {
+    assert.equal(JSON.stringify(body).includes(value), false);
+  }
+  const ordinary = await (await handler(request({ "x-lash-release-mode": "phase2" }))).json();
+  assert.equal(Object.hasOwn(ordinary, "authenticationOrigins"), false);
+});
+
+test("authentication-origin mode refuses mismatched, missing, proxied or disabled auth before upstream work", async () => {
+  const canonical = "https://staging.lashher.com";
+  const env = { ...environment(), CUSTOMER_AUTH_ENABLED: "true", INTEGRATION_CUSTOMER_ACCESS_ENABLED: "true",
+    AUTH_URL: canonical, CUSTOMER_AUTH_URL: canonical, CUSTOMER_AUTH_SECRET: "customer-private-secret-value-32-characters",
+    CUSTOMER_AUTH_GOOGLE_ID: "customer-google-id", CUSTOMER_AUTH_GOOGLE_SECRET: "customer-google-private-value",
+    CUSTOMER_AUTH_RESEND_KEY: "customer-private-resend-value", CUSTOMER_AUTH_EMAIL_FROM: "academy@example.invalid" };
+  let calls = 0;
+  const phase2 = async () => { calls++; return { ok: true as const, service: "course" as const, durationMs: 1 }; };
+  for (const changed of [{ AUTH_URL: "https://production.example.invalid" }, { AUTH_URL: "" },
+    { AUTH_URL: canonical + "/other-auth" }, { AUTH_URL: canonical + "?private=value" },
+    { CUSTOMER_AUTH_URL: "https://other.vercel.app" }, { CUSTOMER_AUTH_SECRET: "" },
+    { NEXTAUTH_URL: "https://production.example.invalid" }, { AUTH_REDIRECT_PROXY_URL: canonical + "/api/auth" },
+    { AUTH_REDIRECT_PROXY_URL: "https://production.example.invalid/api/auth" }, { CUSTOMER_AUTH_ENABLED: "false" }]) {
+    const handler = createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration({ ...env, ...changed }, now), run: phase2, phase2 });
+    const response = await handler(request({ "x-lash-release-mode": "phase2-auth-origins" }));
+    assert.equal(response.status, 503); assert.deepEqual(await response.json(), { error: "Release probe failed" });
+  }
+  assert.equal(calls, 0);
+  const fallback = { ...env, AUTH_URL: undefined, NEXTAUTH_URL: canonical + "/api/auth" };
+  assert.equal((await createReleaseProbeHandler({ configuration: () => readReleaseProbeConfiguration(fallback, now), run: phase2, phase2 })(request({ "x-lash-release-mode": "phase2-auth-origins" }))).status, 200);
+});
+
 test("Google binding requires staging bootstrap and issues transient runtime proofs for only the authenticated challenge", async () => {
   const configuration = () => readReleaseProbeConfiguration(environment(), now);
   const observation: FrontendBootstrapProbe = { admission: { environment: "staging", targetSha256: "a".repeat(64), producerSha256: "b".repeat(64), sourceCommit: "a".repeat(40), epoch: "1", newWork: false, recovery: false }, schemaCatalogSha256: "d".repeat(64), featureControls: {} as FrontendBootstrapProbe["featureControls"] };

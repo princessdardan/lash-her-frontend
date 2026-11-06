@@ -5,6 +5,19 @@ not authorize a live start. Dardan must review the exact candidate, source,
 configuration, action, state/epoch, retained READY receipts and private inputs
 before `apply --confirm staging/<certificationActionId>`.
 
+Normal browser sign-in uses the approved canonical origin
+`https://staging.lashher.com`, separately from immutable deployment provenance.
+The protected `phase2-auth-origins` probe mode extends the existing phase2
+workload envelope with only `authenticationOrigins`: actual validated customer
+origin, effective admin origin, null admin redirect proxy, and the source's
+disabled customer redirect proxy. Customer authentication must be configured and
+the effective `AUTH_URL` or `NEXTAUTH_URL` must explicitly use the canonical
+origin with `/` or `/api/auth`; a configured admin redirect proxy refuses this
+certification mode. Bearer/challenge, staging project/source, private/no-store,
+and the existing one-hour probe lifetime remain mandatory. Existing probe modes
+keep their response shapes. This observes configuration; real provider/browser
+sign-in remains necessary, together with a fresh exact alias/deployment join.
+
 `settings.host.configuration` must select the actual mounted runtime snapshot,
 such as the retained release or recovery snapshot's `configuration` directory.
 The local `settings.configuration` may remain the original byte-identical private
