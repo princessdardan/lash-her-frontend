@@ -4,7 +4,8 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createServer,request as httpsRequest} from 'node:https';
 import {request as httpRequest} from 'node:http';
-import {fork} from 'node:child_process';
+import {fork,spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {randomUUID,createHash} from 'node:crypto';
 import {setTimeout as pause} from 'node:timers/promises';
 import {Client} from 'pg';
@@ -73,7 +74,7 @@ async function main(){
   });};
   await operator.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))',['lash-her:private-db:migrations']);
   const journal=hash(JSON.stringify((await operator.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows));
-  const opened=await withOwner(()=>changeFrontendAdmission(operator,{environment:'staging',targetSha256},'1',{newWork:false,recovery:true}));
+  let opened=await withOwner(()=>changeFrontendAdmission(operator,{environment:'staging',targetSha256},'1',{newWork:false,recovery:true}));
   const marker=randomUUID().replaceAll('-','')+randomUUID().replaceAll('-','');await operator.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))',[marker]);
   const backend=(await operator.query('SELECT pg_catalog.pg_backend_pid() AS pid,backend_start::text AS started FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()')).rows[0];
   const projection={version:1,commandId:command.commandId,commandSha256:hash(canonical(command)),accountVersion:'1',windowEpoch:opened.epoch};
@@ -88,6 +89,9 @@ async function main(){
   };
   const before=await readAll();assert.equal(before.frontend.outstanding.length,2);assert.equal(before.frontend.exports,0);assert.equal(before.course.command,null);assert.equal(before.community.command,null);
   assert.equal((await ledger()).length,0);assert.deepEqual(gateway.admissionState().uncertain,{newWork:0,recovery:0});
+  const nativeInitialEpoch=opened.epoch;
+  opened=await withOwner(()=>changeFrontendAdmission(operator,{environment:'staging',targetSha256},opened.epoch,{newWork:false,recovery:true}));
+  projection.windowEpoch=opened.epoch;
   phase='actual-first-whole-route-drop';const first=await GET(new Request('https://owned-known-ack.vercel.app/api/cron/account-lifecycle',{headers:{authorization:'Bearer '+process.env.CRON_SECRET}}));await first.arrayBuffer();await pause(50);
   const firstLedger=await ledger(),firstDeliveries=(await operator.query('SELECT receiver,status,attempts,lease_id::text,lease_until FROM customer_account_deliveries ORDER BY receiver')).rows;
   observed={http:first.status,ledgerStates:firstLedger.map(row=>row.state),effectCount:effects.length,gatewayUncertain:gateway.admissionState().uncertain,courseAccepted:accepted.course.size,communityAccepted:accepted.community.size,gatewayCounters:gateway.counters,fetchObservations};assert.equal(first.status,503);assert.equal(firstLedger.length,1);assert.equal(first.headers.get('x-request-id'),firstLedger[0].id);assert.equal(effects.length,1);assert.equal(effects[0].upstreamReceiptVerified,true);
@@ -102,6 +106,39 @@ async function main(){
   phase='actual-canonical-three-database-domain-proof';const domain=await readAll();
   assert.equal(domain.frontend.outstanding.length,0);assert.equal(domain.frontend.admission.uncertain,1);
   for(const service of ['course','community']){assert.equal(domain[service].command.commandSha256,projection.commandSha256);assert.equal(domain[service].command.userBindingSha256,domain.frontend.userBindingSha256);assert.equal(domain[service].command.accountStatus,'suspended');assert.equal(domain[service].command.accountVersion,'1');}
+  phase='source-known-ack-domain-reducer';
+  const reducerProgram=String.raw`
+import copy,json,sys
+sys.path.insert(0,sys.argv[1])
+import p2_known_ack_loss as source
+value=json.load(sys.stdin);plan=value['plan'];before=value['before'];domain=value['domain'];gateway=value['gateway'];effects=value['effects']
+source.validate_baseline(plan,before)
+assert source.validate_domain(plan,before,domain,gateway,effects)=={'operationId':value['operationId']}
+faults=0
+for kind in ('other-work','later-version','extra-effect','producer','command','missing-ack','extra-attempt','canonical-receiver','global-unknown','gateway-unknown'):
+    actual=copy.deepcopy(domain);observed=copy.deepcopy(gateway);injected=copy.deepcopy(effects)
+    if kind=='other-work':actual['frontend']['exports']=1
+    elif kind=='later-version':actual['frontend']['later']=1
+    elif kind=='extra-effect':injected+=injected
+    elif kind=='producer':actual['frontend']['operations'][0]['producer_sha256']='f'*64
+    elif kind=='command':actual['frontend']['commandSha256']='f'*64
+    elif kind=='missing-ack':actual['frontend']['deliveries'][0]['acknowledged_at']=None
+    elif kind=='extra-attempt':actual['frontend']['deliveries'][0]['attempts']+=1
+    elif kind=='canonical-receiver':actual['course']['command']['commandSha256']='f'*64
+    elif kind=='global-unknown':actual['frontend']['admission']['uncertain']=2
+    elif kind=='gateway-unknown':observed['admission']['uncertain']['recovery']=2
+    try:source.validate_domain(plan,before,actual,observed,injected)
+    except ValueError:faults+=1
+    else:raise AssertionError('owned reducer accepted '+kind)
+assert faults==10
+try:source.require_known_ack_loss_authorization({'status':'P2_KNOWN_ACK_REPLACEMENT_AUTHORIZED'},object(),'owned-replacement')
+except ValueError:pass
+else:raise AssertionError('plain receipt issued replacement authority')
+print(json.dumps({'status':'P2_KNOWN_ACK_SOURCE_DOMAIN_REDUCER_PASS','faultRefusals':faults,'plainReceiptAuthorityRefused':True,'authorityIssued':False}))
+`;
+  const reducerPlan={commandSha256:projection.commandSha256,receiver:'course',nativePlan:{initialEpoch:nativeInitialEpoch,sourceCommit,producer:{producerSha256:'b'.repeat(64),role:{oid:runtime.oid}},commandWitnesses:[{commandId:command.commandId,accountVersion:'1',action:'suspend'}]}};
+  const reducer=spawnSync('python3',['-I','-c',reducerProgram,fileURLToPath(new URL('../host/',import.meta.url))],{input:JSON.stringify({plan:reducerPlan,before,domain,gateway:{admission:gateway.admissionState()},effects,operationId:firstLedger[0].id}),encoding:'utf8',timeout:10000,env:{PATH:process.env.PATH,LANG:'C',LC_ALL:'C'}});
+  assert.equal(reducer.status,0);const reducerResult=JSON.parse(reducer.stdout);assert.equal(reducerResult.status,'P2_KNOWN_ACK_SOURCE_DOMAIN_REDUCER_PASS');
   phase='actual-domain-fault-refusal';let canonicalFaultRefusals=0,immutableReceiptRewriteRefusals=0;
   for(const service of ['course','community']){
    const api=input.apis[service],client=new Client({...api.database,ssl:{rejectUnauthorized:true,ca:readFileSync(certificate,'utf8')}});await client.connect();
@@ -116,16 +153,31 @@ async function main(){
   }
   assert.deepEqual(gateway.admissionState().uncertain,{newWork:0,recovery:1});assert.deepEqual(gateway.admissionState().active,{newWork:0,recovery:0});
   const closed=await withOwner(()=>changeFrontendAdmission(operator,{environment:'staging',targetSha256},opened.epoch,{newWork:false,recovery:false}));save(false);
+  const beforeSettlement=await readAll();
   phase='specific-frontend-operation-reconciliation';const evidenceSha256=hash(canonical({domain,effect:effects[0],firstOperationId:firstLedger[0].id}));
   await withOwner(()=>reconcileFrontendOperation(operator,{environment:'staging',targetSha256},closed.epoch,firstLedger[0].id,evidenceSha256));
   const settled=await readAll();assert.equal(settled.frontend.admission.active,0);assert.equal(settled.frontend.admission.uncertain,0);assert.equal(settled.frontend.operations.find(row=>row.id===firstLedger[0].id).reconciliation_sha256,evidenceSha256);
   assert.deepEqual(settled.course,domain.course);assert.deepEqual(settled.community,domain.community);assert.deepEqual(gateway.admissionState().uncertain,{newWork:0,recovery:1});
+  const settlementProgram=String.raw`
+import copy,json,sys
+sys.path.insert(0,sys.argv[1])
+import p2_known_ack_loss as source
+value=json.load(sys.stdin)
+source.validate_settled(value['plan'],value['before'],value['after'],value['operationId'],value['receiptSha256'])
+bad=copy.deepcopy(value['after']);extra=copy.deepcopy(bad['frontend']['operations'][1]);extra['id']='00000000-0000-4000-8000-000000000099';bad['frontend']['operations'].append(extra)
+try:source.validate_settled(value['plan'],value['before'],bad,value['operationId'],value['receiptSha256'])
+except ValueError:pass
+else:raise AssertionError('new completed operation was hidden by global zero')
+print(json.dumps({'status':'P2_KNOWN_ACK_SPECIFIC_SETTLEMENT_REDUCER_PASS','extraCompletedOperationRefused':True,'authorityIssued':False}))
+`;
+  const settlementResult=spawnSync('python3',['-I','-c',settlementProgram,fileURLToPath(new URL('../host/',import.meta.url))],{input:JSON.stringify({plan:reducerPlan,before:beforeSettlement,after:settled,operationId:firstLedger[0].id,receiptSha256:evidenceSha256}),encoding:'utf8',timeout:10000,env:{PATH:process.env.PATH,LANG:'C',LC_ALL:'C'}});
+  assert.equal(settlementResult.status,0);const settlementProof=JSON.parse(settlementResult.stdout);assert.equal(settlementProof.status,'P2_KNOWN_ACK_SPECIFIC_SETTLEMENT_REDUCER_PASS');
   assert.equal(hash(JSON.stringify((await operator.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows)),journal);
   return{version:1,status:'P2_KNOWN_ACK_WHOLE_ROUTE_PASS',actualAppCron:true,actualDispatcher:true,actualTlsGateway:true,actualTlsReceivers:true,actualCanonicalApiReceivers:true,actualThreeDatabaseDomainProof:true,actualTlsPostgres:true,actualProvider:false,modeledOidc:true,
    firstHttpStatus:first.status,firstFrontendLedgerState:firstState,firstFrontendUncertain:firstLedger.filter(row=>row.state==='uncertain').length,firstGatewayUncertain:1,firstDeliveries,
    replayHttpStatus:second.status,finalFrontendUncertain:finalLedger.filter(row=>row.state==='uncertain').length,finalGatewayUncertain:1,finalDeliveries,sourceTraceMatchesOperation:traces.length===2&&traces.every((row,index)=>row.operationId===finalLedger[index].id),
    settledFrontendUncertain:settled.frontend.admission.uncertain,specificFrontendOperationReconciled:true,gatewayCounterReset:false,domainProofSha256:hash(canonical(domain)),
-   canonicalFaultRefusals,immutableReceiptRewriteRefusals,
+   canonicalFaultRefusals,immutableReceiptRewriteRefusals,sourceDomainReducer:reducerResult,sourceSettlementReducer:settlementProof,
    noSqlReplay:true,noRoleChange:true,noRuntimeRestart:true,fixtureOnly:true};
  }finally{console.info=originalInfo;globalThis.fetch=originalFetch;for(const server of servers){server.closeAllConnections();await new Promise(done=>server.close(done));}for(const receiver of children){try{await receiver.request('stop');}catch{receiver.child.kill('SIGKILL');}}await closePool?.();await operator.end();}
 }

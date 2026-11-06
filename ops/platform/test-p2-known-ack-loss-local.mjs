@@ -63,7 +63,7 @@ async function main(){
     if(child.status!==0){const rows=child.stderr.trim().split('\n').filter(row=>row.startsWith('{'));if(rows.length){const item=JSON.parse(rows.at(-1));if(/^[a-z-]{1,80}$/u.test(item.phase??''))phase='child-'+item.phase;if(item.observed)process.stderr.write(JSON.stringify(item.observed)+'\n');}throw new Error('OWNED_KNOWN_ACK_CHILD_REFUSED');}const result=JSON.parse(child.stdout);assert.equal(result.status,'P2_KNOWN_ACK_WHOLE_ROUTE_PASS');
     return{...result,postgresMajor,migrations:{frontend:artifact.migrations.length,course:apis.course.migrations,community:apis.community.migrations},frontendSourceCommit:sourceCommit,
       apiSourceCommits:Object.fromEntries(Object.entries(apis).map(([name,value])=>[name,value.commit])),apiSourceArchives:Object.fromEntries(Object.entries(apis).map(([name,value])=>[name,{sha256:value.archiveSha256,lockSha256:value.lockSha256}])),
-      fixtureSourceSha256:Object.fromEntries(['p2-known-ack-loss-probe.mjs','harness/owned-p2-known-ack-loss.mjs','harness/owned-phase2-lifecycle-receiver.mjs'].map(file=>[file,hash(readFileSync(new URL('./'+file,import.meta.url)))])),
+      fixtureSourceSha256:Object.fromEntries(['p2-known-ack-loss-probe.mjs','host/p2_known_ack_loss.py','harness/owned-p2-known-ack-loss.mjs','harness/owned-phase2-lifecycle-receiver.mjs'].map(file=>[file,hash(readFileSync(new URL('./'+file,import.meta.url)))])),
       sqlArtifactSha256:artifact.sqlArtifactSha256,fixtureOnly:true,actualVercelNativeEvidence:false,providerTouched:false};
   }finally{for(const client of clients){try{await client.end();}catch{/*Owned cleanup.*/}}if(started)execute(join(binaries,'pg_ctl'),['-D',data,'-m','immediate','-w','stop']);rmSync(directory,{recursive:true,force:true});}
 }

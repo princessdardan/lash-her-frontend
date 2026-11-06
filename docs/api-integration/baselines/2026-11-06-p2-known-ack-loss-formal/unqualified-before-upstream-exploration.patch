@@ -1,0 +1,77 @@
+diff --git a/ops/platform/harness/owned-p2-known-ack-loss.mjs b/ops/platform/harness/owned-p2-known-ack-loss.mjs
+index 739e33bd..9dbb6fe4 100644
+--- a/ops/platform/harness/owned-p2-known-ack-loss.mjs
++++ b/ops/platform/harness/owned-p2-known-ack-loss.mjs
+@@ -25,7 +25,8 @@ async function main(){
+  const operator=new Client({host:target.host,port,database:target.database,user:target.user,password,ssl:{rejectUnauthorized:true,ca:readFileSync(certificate,'utf8')}});await operator.connect();
+  const fetchObservations=[],servers=[],children=[],effects=[],accepted={course:new Map(),community:new Map()},originalFetch=globalThis.fetch,originalInfo=console.info,traces=[];let closePool;
+  const withOwner=async task=>{await operator.query(`SET ROLE "${owner.name}"`);try{return await task();}finally{await operator.query('RESET ROLE');}};
+- const ledger=()=>withOwner(async()=> (await operator.query('SELECT id::text,state,kind,epoch::text,reconciliation_sha256 FROM frontend_admission.operations ORDER BY started_at')).rows);
++ let scopedEpoch=null;
++ const ledger=()=>withOwner(async()=> (await operator.query('SELECT id::text,state,kind,epoch::text,reconciliation_sha256 FROM frontend_admission.operations WHERE epoch>=COALESCE($1::bigint,0) ORDER BY started_at',[scopedEpoch])).rows);
+  try{
+   phase='actual-source-route';const {GET}=await import('../../../src/app/api/cron/account-lifecycle/route.ts');({closePrivateDbPool:closePool}=await import('../../../src/lib/private-db/client.ts'));
+   console.info=line=>{assert.equal(typeof line,'string');assert.equal(JSON.parse(line).status,'P2_LIFECYCLE_CRON_ADMITTED');traces.push(JSON.parse(line));};
+@@ -59,12 +60,12 @@ async function main(){
+   const hash=value=>createHash('sha256').update(value).digest('hex');
+   const config={issuer:'https://oidc.vercel.com/test-team',audience:'https://vercel.com/test-team',subject:'owner:test-team:project:test-project:environment:production',ownerId:VERCEL_PROJECT_BINDINGS.teamId,projectId:VERCEL_PROJECT_BINDINGS.stagingProjectId,
+    environment:'production',appEnv:'staging',publicHost:'api-staging.lashher.com',courseOrigin:origins.course,communityOrigin:origins.community,tlsKeyFile:key,tlsCertFile:certificate,upstreamCaFile:certificate,admission:{file:admissionFile,candidateSha256,releaseId}};
+-  const now=Date.now();let faultEnabled=true;
++  const now=Date.now();let faultEnabled=true,faultMode='503-before-upstream';
+   const gateway=createGateway(config,{verify:async proof=>{assert.equal(proof,process.env.VERCEL_OIDC_TOKEN);return{projectId:config.projectId};},certificationFault(reviewed){
+    const raw=Buffer.from(JSON.stringify(reviewed)),processBinding=p2GatewayProcessBinding({bootId:'00000000-0000-4000-8000-000000000005',pid:1,startTicks:'123'});
+-   const lease={version:1,environment:'staging',profile:'lifecycle-known-command-v1',stageId:'owned-known-ack',releaseId,candidateSha256,configurationSha256:'b'.repeat(64),gatewayConfigurationSha256:hash(raw),gatewayProcessSha256:processBinding,gatewayImageSha256:'c'.repeat(64),
+-    sourceWitnessSha256:hash(canonical(command)),issuedAt:new Date(now).toISOString(),expiresAt:new Date(now+120000).toISOString(),maxMatches:1,mode:'drop-after-ack',receiver:'course',record:{commandId:command.commandId,accountVersion:1,canonicalSha256:hash(canonical(command))}};
+-   return createP2CertificationFault({...reviewed,admission:{...reviewed.admission,file:'/admission/state.json'}},{readLease:()=>faultEnabled?Buffer.from(JSON.stringify(lease)):null,readGateway:()=>raw,processBinding:()=>processBinding,emit:value=>effects.push(value)});
++   const leases=Object.fromEntries(['503-before-upstream','drop-after-ack'].map(mode=>[mode,{version:1,environment:'staging',profile:'lifecycle-known-command-v1',stageId:'owned-'+mode,releaseId,candidateSha256,configurationSha256:'b'.repeat(64),gatewayConfigurationSha256:hash(raw),gatewayProcessSha256:processBinding,gatewayImageSha256:'c'.repeat(64),
++    sourceWitnessSha256:hash(canonical(command)),issuedAt:new Date(now).toISOString(),expiresAt:new Date(now+120000).toISOString(),maxMatches:1,mode,receiver:'course',record:{commandId:command.commandId,accountVersion:1,canonicalSha256:hash(canonical(command))}}]));
++   return createP2CertificationFault({...reviewed,admission:{...reviewed.admission,file:'/admission/state.json'}},{readLease:()=>faultEnabled?Buffer.from(JSON.stringify(leases[faultMode])):null,readGateway:()=>raw,processBinding:()=>processBinding,emit:value=>effects.push(value)});
+   }});servers.push(gateway.server);await new Promise(done=>gateway.server.listen(0,'127.0.0.1',done));
+   globalThis.fetch=(value,options={})=>{const selected=new URL(typeof value==='string'||value instanceof URL?value:value.url);assert.equal(selected.origin,'https://gateway.owned.invalid');const headers=Object.fromEntries(new Headers(options.headers));headers.host='api-staging.lashher.com';return new Promise((resolve,reject)=>{
+    const req=httpsRequest({hostname:'127.0.0.1',port:gateway.server.address().port,path:selected.pathname,method:options.method,servername:'api-staging.lashher.com',ca:readFileSync(certificate),headers,signal:options.signal},res=>{
+@@ -73,7 +74,7 @@ async function main(){
+   });};
+   await operator.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))',['lash-her:private-db:migrations']);
+   const journal=hash(JSON.stringify((await operator.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows));
+-  const opened=await withOwner(()=>changeFrontendAdmission(operator,{environment:'staging',targetSha256},'1',{newWork:false,recovery:true}));
++  let opened=await withOwner(()=>changeFrontendAdmission(operator,{environment:'staging',targetSha256},'1',{newWork:false,recovery:true}));
+   const marker=randomUUID().replaceAll('-','')+randomUUID().replaceAll('-','');await operator.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))',[marker]);
+   const backend=(await operator.query('SELECT pg_catalog.pg_backend_pid() AS pid,backend_start::text AS started FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()')).rows[0];
+   const projection={version:1,commandId:command.commandId,commandSha256:hash(canonical(command)),accountVersion:'1',windowEpoch:opened.epoch};
+@@ -88,6 +89,24 @@ async function main(){
+   };
+   const before=await readAll();assert.equal(before.frontend.outstanding.length,2);assert.equal(before.frontend.exports,0);assert.equal(before.course.command,null);assert.equal(before.community.command,null);
+   assert.equal((await ledger()).length,0);assert.deepEqual(gateway.admissionState().uncertain,{newWork:0,recovery:0});
++  phase='actual-normal-before-upstream-baseline';
++  const prior=await GET(new Request('https://owned-known-ack.vercel.app/api/cron/account-lifecycle',{headers:{authorization:'Bearer '+process.env.CRON_SECRET}}));
++  assert.equal(prior.status,200);assert.deepEqual(await prior.json(),{acknowledged:1,retrying:1,blocked:0,exportsReady:0,expired:0});
++  const priorLedger=await ledger(),priorSnapshot=await readAll(),priorEffects=effects.slice();
++  assert.equal(priorLedger.length,1);assert.equal(priorLedger[0].state,'completed');assert.equal(prior.headers.get('x-request-id'),priorLedger[0].id);
++  assert.equal(priorSnapshot.frontend.admission.active,0);assert.equal(priorSnapshot.frontend.admission.uncertain,0);
++  assert.deepEqual(gateway.admissionState().uncertain,{newWork:0,recovery:0});assert.deepEqual(gateway.admissionState().active,{newWork:0,recovery:0});
++  assert.equal(priorEffects.length,1);assert.equal(priorEffects[0].mode,'503-before-upstream');assert.equal(priorEffects[0].upstreamStarted,false);
++  assert.equal(priorSnapshot.frontend.outstanding.length,1);assert.equal(priorSnapshot.frontend.outstanding[0].receiver,'course');
++  assert.equal(priorSnapshot.frontend.outstanding[0].attempts,1);assert.equal(priorSnapshot.frontend.outstanding[0].status,'pending');
++  assert.equal(priorSnapshot.frontend.outstanding[0].lease_id,null);assert.equal(priorSnapshot.frontend.outstanding[0].lease_until,null);
++  assert.equal(priorSnapshot.course.command,null);assert.equal(priorSnapshot.community.command.commandSha256,projection.commandSha256);
++  const retryDeadline=performance.now()+30000;
++  while((await operator.query("SELECT next_run_at<=pg_catalog.clock_timestamp() AS ready FROM customer_account_deliveries WHERE receiver='course'")).rows[0].ready!==true){assert.ok(performance.now()<retryDeadline);await pause(100);}
++  opened=await withOwner(()=>changeFrontendAdmission(operator,{environment:'staging',targetSha256},opened.epoch,{newWork:false,recovery:true}));
++  scopedEpoch=projection.windowEpoch=opened.epoch;faultMode='drop-after-ack';effects.length=0;
++  const faultBaseline=await readAll();assert.equal(faultBaseline.frontend.outstanding.length,1);assert.equal(faultBaseline.frontend.outstanding[0].ready,true);
++  assert.equal(faultBaseline.frontend.outstanding[0].attempts,1);assert.equal(faultBaseline.frontend.operations.length,0);
+   phase='actual-first-whole-route-drop';const first=await GET(new Request('https://owned-known-ack.vercel.app/api/cron/account-lifecycle',{headers:{authorization:'Bearer '+process.env.CRON_SECRET}}));await first.arrayBuffer();await pause(50);
+   const firstLedger=await ledger(),firstDeliveries=(await operator.query('SELECT receiver,status,attempts,lease_id::text,lease_until FROM customer_account_deliveries ORDER BY receiver')).rows;
+   observed={http:first.status,ledgerStates:firstLedger.map(row=>row.state),effectCount:effects.length,gatewayUncertain:gateway.admissionState().uncertain,courseAccepted:accepted.course.size,communityAccepted:accepted.community.size,gatewayCounters:gateway.counters,fetchObservations};assert.equal(first.status,503);assert.equal(firstLedger.length,1);assert.equal(first.headers.get('x-request-id'),firstLedger[0].id);assert.equal(effects.length,1);assert.equal(effects[0].upstreamReceiptVerified,true);
+@@ -122,8 +141,10 @@ async function main(){
+   assert.deepEqual(settled.course,domain.course);assert.deepEqual(settled.community,domain.community);assert.deepEqual(gateway.admissionState().uncertain,{newWork:0,recovery:1});
+   assert.equal(hash(JSON.stringify((await operator.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows)),journal);
+   return{version:1,status:'P2_KNOWN_ACK_WHOLE_ROUTE_PASS',actualAppCron:true,actualDispatcher:true,actualTlsGateway:true,actualTlsReceivers:true,actualCanonicalApiReceivers:true,actualThreeDatabaseDomainProof:true,actualTlsPostgres:true,actualProvider:false,modeledOidc:true,
++   baselineProfile:'normal-source-before-upstream-retry',priorHttpStatus:prior.status,priorFrontendState:priorLedger[0].state,priorFrontendUncertain:0,priorGatewayUncertain:0,priorPendingAttempts:1,
++   priorSourceEffect:priorEffects[0],priorDomainSha256:hash(canonical(priorSnapshot)),baselineReadyPendingDeliveries:1,baselineOtherCanonicalAcknowledged:true,
+    firstHttpStatus:first.status,firstFrontendLedgerState:firstState,firstFrontendUncertain:firstLedger.filter(row=>row.state==='uncertain').length,firstGatewayUncertain:1,firstDeliveries,
+-   replayHttpStatus:second.status,finalFrontendUncertain:finalLedger.filter(row=>row.state==='uncertain').length,finalGatewayUncertain:1,finalDeliveries,sourceTraceMatchesOperation:traces.length===2&&traces.every((row,index)=>row.operationId===finalLedger[index].id),
++   replayHttpStatus:second.status,finalFrontendUncertain:finalLedger.filter(row=>row.state==='uncertain').length,finalGatewayUncertain:1,finalDeliveries,sourceTraceMatchesOperation:traces.filter(row=>row.epoch===opened.epoch).length===2&&traces.filter(row=>row.epoch===opened.epoch).every((row,index)=>row.operationId===finalLedger[index].id),
+    settledFrontendUncertain:settled.frontend.admission.uncertain,specificFrontendOperationReconciled:true,gatewayCounterReset:false,domainProofSha256:hash(canonical(domain)),
+    canonicalFaultRefusals,immutableReceiptRewriteRefusals,
+    noSqlReplay:true,noRoleChange:true,noRuntimeRestart:true,fixtureOnly:true};
