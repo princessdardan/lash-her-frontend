@@ -1,0 +1,103 @@
+{
+  "status": "P2_CERTIFICATION_ACTUAL_ENTRY_IDENTITY_REPRO",
+  "sourceCommit": "e7ab752e604ba43bc5b6443a9197a56e2a6e0cad",
+  "results": [
+    {
+      "mode": "auth-preparation",
+      "hostOrProviderCalls": [],
+      "brokerModule": "__main__",
+      "canonicalBrokerSame": false,
+      "canonicalObserverSame": false,
+      "canonicalContainmentSame": false,
+      "realEntryCallbackName": "contain_certification_native",
+      "sourceClosureVerified": true,
+      "dispatchCheckpoint": "P2_LINUX_ROOT_GUARD_REQUIRED",
+      "entryExit": 1
+    },
+    {
+      "mode": "browser-pending",
+      "hostOrProviderCalls": [],
+      "brokerModule": "__main__",
+      "canonicalBrokerSame": false,
+      "canonicalObserverSame": false,
+      "canonicalContainmentSame": false,
+      "realEntryCallbackName": "contain_certification_native",
+      "sourceClosureVerified": true,
+      "dispatchCheckpoint": "P2_LINUX_ROOT_GUARD_REQUIRED",
+      "entryExit": 1
+    },
+    {
+      "mode": "direct-worker",
+      "hostOrProviderCalls": [],
+      "brokerModule": "__main__",
+      "canonicalBrokerSame": false,
+      "canonicalObserverSame": false,
+      "canonicalContainmentSame": false,
+      "realEntryCallbackName": "contain_certification_native",
+      "sourceClosureVerified": true,
+      "dispatchCheckpoint": "P2_LINUX_ROOT_GUARD_REQUIRED",
+      "entryExit": 1
+    },
+    {
+      "mode": "native-window",
+      "hostOrProviderCalls": [],
+      "brokerModule": "__main__",
+      "canonicalBrokerSame": false,
+      "canonicalObserverSame": false,
+      "canonicalContainmentSame": false,
+      "realEntryCallbackName": "contain_certification_native",
+      "sourceClosureVerified": true,
+      "dispatchCheckpoint": "P2_LINUX_ROOT_GUARD_REQUIRED",
+      "entryExit": 1
+    },
+    {
+      "mode": "fault-before-upstream",
+      "hostOrProviderCalls": [],
+      "brokerModule": "__main__",
+      "canonicalBrokerSame": false,
+      "canonicalObserverSame": false,
+      "canonicalContainmentSame": false,
+      "realEntryCallbackName": "contain_certification_native",
+      "sourceClosureVerified": true,
+      "dispatchCheckpoint": "P2_LINUX_ROOT_GUARD_REQUIRED",
+      "entryExit": 1
+    },
+    {
+      "mode": "fault-drop-after-ack",
+      "hostOrProviderCalls": [],
+      "brokerModule": "__main__",
+      "canonicalBrokerSame": false,
+      "canonicalObserverSame": false,
+      "canonicalContainmentSame": false,
+      "realEntryCallbackName": "contain_certification_native",
+      "sourceClosureVerified": true,
+      "dispatchCheckpoint": "P2_LINUX_ROOT_GUARD_REQUIRED",
+      "entryExit": 1
+    },
+    {
+      "mode": "known-ack-recovery",
+      "hostOrProviderCalls": [],
+      "brokerModule": "__main__",
+      "canonicalBrokerSame": false,
+      "canonicalObserverSame": false,
+      "canonicalContainmentSame": false,
+      "realEntryCallbackName": "contain_certification_native",
+      "sourceClosureVerified": true,
+      "knownRecorderCheckpoint": "P2_KNOWN_ACK_BEFORE_FAULT_SOURCE_PARENT_REQUIRED",
+      "dispatchCheckpoint": "P2_LINUX_ROOT_GUARD_REQUIRED",
+      "entryExit": 1
+    },
+    {
+      "mode": "contain-native",
+      "hostOrProviderCalls": [],
+      "brokerModule": "__main__",
+      "canonicalBrokerSame": false,
+      "canonicalObserverSame": false,
+      "canonicalContainmentSame": false,
+      "realEntryCallbackName": "contain_certification_native",
+      "sourceClosureVerified": true,
+      "dispatchCheckpoint": "P2_LINUX_ROOT_GUARD_REQUIRED",
+      "entryExit": 1
+    }
+  ]
+}

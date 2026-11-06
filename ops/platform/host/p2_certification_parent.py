@@ -18,6 +18,12 @@ import sys
 import threading
 import time
 
+_current_module=sys.modules[__name__]
+_canonical_module=sys.modules.get('p2_certification_parent')
+if _canonical_module is not None and _canonical_module is not _current_module:
+    raise ValueError('P2_CERTIFICATION_CANONICAL_MODULE_REFUSED')
+sys.modules['p2_certification_parent']=_current_module
+
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 import migrate
 import release as runtime

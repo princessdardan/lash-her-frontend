@@ -220,4 +220,110 @@ class CertificationProtocolTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'CANONICAL_ALIAS_DRIFT'):broker._verify_boundary()
 
 
+ENTRY_PROGRAM=r'''
+import hashlib,importlib,io,json,runpy,sys,types
+from pathlib import Path
+from unittest.mock import patch
+root=Path(sys.argv[1]);mode=sys.argv[2];flavor=sys.argv[3]
+sys.path.insert(0,str(root/'ops/platform/host'))
+import p2_release_supervisor as guard
+import release,migrate,vercel,frontend_probe,p2_source_closure
+report={'mode':mode,'hostOrProviderCalls':[],'sourceClosureCalls':0,'dispatchCalled':False}
+def forbidden(*args,**kwargs):
+    report['hostOrProviderCalls'].append('forbidden-boundary')
+    raise AssertionError('OWNED_ENTRY_CROSSED_SAFE_BOUNDARY')
+release.command=forbidden;release.assert_host=forbidden;migrate.make_plan=forbidden
+vercel.Client=forbidden;frontend_probe.verify=forbidden;guard.os.fork=forbidden
+verify_closure=p2_source_closure.verify_source_closure
+def actual_closure(*args):
+    report['sourceClosureCalls']+=1
+    return verify_closure(*args)
+p2_source_closure.verify_source_closure=actual_closure
+foreign=None
+if flavor!='normal':
+    foreign=types.ModuleType('p2_certification_parent')
+    if flavor=='foreign-same-file':foreign.__file__=str(root/'ops/platform/host/p2_certification_parent.py')
+    sys.modules['p2_certification_parent']=foreign
+extensions={'.py','.mjs','.json','.yaml','.yml','.service','.timer','.sh','.guard'}
+manifest={} if foreign else {p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
+    for p in (root/'ops').rglob('*') if p.is_file() and p.suffix in extensions and '__pycache__' not in p.parts}
+initial={'mode':'p2-bounded-certification','environment':'staging','certificationActionId':'owned-entry',
+ 'sourceCommit':'a'*40,'candidate':{'releaseId':'owned-release'},'sourceSha256':manifest,
+ 'sourceClosureSha256':hashlib.sha256(json.dumps(sorted(manifest.items()),separators=(',',':')).encode()).hexdigest(),
+ 'certificationPlan':{'mode':mode}}
+actual_supervise=guard.supervise
+def observe(value,**options):
+    report['dispatchCalled']=True
+    canonical=importlib.import_module('p2_certification_parent')
+    cls=options['broker_type'];observer=options['observer_type'];callback=options['native_containment']
+    report.update(brokerModule=cls.__module__,canonicalBrokerSame=cls is canonical.P2CertificationBroker,
+      canonicalObserverSame=observer is canonical.P2CertificationPhysicalObserver,
+      canonicalContainmentSame=callback is canonical.contain_certification_native,
+      sameModuleRegistrationIdempotent=importlib.import_module('p2_certification_parent') is canonical,
+      mainOwnsCanonicalModule=sys.modules['__main__'] is canonical,realEntryCallbackName=callback.__name__)
+    if mode=='known-ack-recovery':
+      from p2_known_ack_loss import P2KnownAckLossRecorder,digest,canonical as encode
+      from p2_certification_fault import P2CertificationFaultStage
+      from p2_release_scope import P2ReleaseScope
+      # Actual source classes, deliberately invalid next fault policy and no
+      # live scope. This probe must reject before I/O and issue no authority.
+      broker=cls.__new__(cls);broker.scope=P2ReleaseScope.__new__(P2ReleaseScope)
+      broker.fault_stage=P2CertificationFaultStage.__new__(P2CertificationFaultStage)
+      broker.fault_stage.scope=broker.scope;broker.fault_stage.arm_called=False
+      broker.fault_stage.plan={'mode':'before-upstream'}
+      broker.external_armed=True;broker.native_enable_attempted=False;broker.selected={'releaseId':'owned-release'}
+      broker.initial={'certificationActionId':'owned-entry','nativePlan':{'planSha256':'a'*64,'commandWitnesses':[]},
+        'certificationPlan':{'mode':mode,'knownAckRecovery':{'version':1,'recoveryActionId':'owned-recovery',
+          'intent':{},'intentSha256':digest(encode({}))}}}
+      try:P2KnownAckLossRecorder(broker,'owned-recovery',{})
+      except ValueError as error:report['knownRecorderCheckpoint']=str(error)
+      else:raise AssertionError('INVALID_FAULT_POLICY_WAS_ACCEPTED')
+    try:
+      # The real shared dispatcher and its actual callbacks remain unchanged.
+      # This intentional nonroot guard prevents host/platform/process work.
+      with patch.object(guard.os,'geteuid',return_value=1):actual_supervise(value,**options)
+    except ValueError as error:
+      report['dispatchCheckpoint']=str(error)
+      raise
+guard.supervise=observe
+sys.stdin=io.TextIOWrapper(io.BytesIO((json.dumps(initial)+'\n').encode()))
+sys.argv=[str(root/'ops/platform/host/p2_certification_parent.py'),'--supervisor']
+try:runpy.run_path(sys.argv[0],run_name='__main__')
+except SystemExit as error:report['entryExit']=error.code
+except ValueError as error:report['entryRefusal']=str(error)
+if foreign is not None:report['foreignCanonicalPreserved']=sys.modules.get('p2_certification_parent') is foreign
+print(json.dumps(report))
+'''
+
+
+class ActualCertificationEntryTests(unittest.TestCase):
+    def entry(self,mode,flavor='normal'):
+        root=Path(parent.__file__).resolve().parents[3]
+        result=subprocess.run([sys.executable,'-I','-B','-c',ENTRY_PROGRAM,str(root),mode,flavor],capture_output=True,text=True,timeout=20,
+            env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C'})
+        self.assertEqual(result.returncode,0);value=json.loads(result.stdout)
+        self.assertEqual(value['hostOrProviderCalls'],[])
+        self.assertEqual(result.stderr.strip(),'P2_BOUNDED_CERTIFICATION_FAILED_REQUIRES_REVIEW' if flavor=='normal' else '')
+        return value
+
+    def test_actual_isolated_main_all_eight_modes_reach_unchanged_shared_dispatch_guard(self):
+        for mode in ('auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery','contain-native'):
+            with self.subTest(mode=mode):
+                value=self.entry(mode)
+                self.assertEqual(value['brokerModule'],'__main__');self.assertEqual(value['sourceClosureCalls'],1)
+                for key in ('canonicalBrokerSame','canonicalObserverSame','canonicalContainmentSame','sameModuleRegistrationIdempotent','mainOwnsCanonicalModule'):
+                    self.assertTrue(value[key])
+                self.assertEqual(value['realEntryCallbackName'],'contain_certification_native')
+                self.assertEqual(value['dispatchCheckpoint'],'P2_LINUX_ROOT_GUARD_REQUIRED');self.assertEqual(value['entryExit'],1)
+                if mode=='known-ack-recovery':self.assertEqual(value['knownRecorderCheckpoint'],'P2_KNOWN_ACK_ONE_SAME_SOURCE_SUSPENSION_REQUIRED')
+
+    def test_foreign_canonical_module_is_refused_without_replacement_before_source_cache_or_dispatch(self):
+        for flavor in ('foreign','foreign-same-file'):
+            with self.subTest(flavor=flavor):
+                value=self.entry('known-ack-recovery',flavor)
+                self.assertEqual(value['entryRefusal'],'P2_CERTIFICATION_CANONICAL_MODULE_REFUSED')
+                self.assertTrue(value['foreignCanonicalPreserved']);self.assertEqual(value['sourceClosureCalls'],0)
+                self.assertFalse(value['dispatchCalled'])
+
+
 if __name__=='__main__':unittest.main()
