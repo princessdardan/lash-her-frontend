@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "status": "OWNED_HIGHLEVEL_HISTORY_INTEGRATION_CORRECTION_PASS",
+  "tests": {
+    "total": 29,
+    "failures": 0,
+    "skipped": 0,
+    "ownedHttps": true,
+    "isolatedPostgresql": 16,
+    "repositoryMigrations": 83
+  },
+  "changes": [
+    "All nine fixed literal queries have LIMIT 4097 overflow sentinels",
+    "Strict all-family source/config/global-SQL closure plus actual empty SQL needs no fabricated principal or unrelated retained API time window",
+    "Actual provider reads still require exact real location/company and retained API window",
+    "Every closure binds exact source/surface/configuration/provenance context"
+  ],
+  "actualSourceInterface": {
+    "status": "PASS",
+    "sourceModuleSha256": "eb5e8c974d29ee60d42417d8fa84bfce68c958fce11af95b15adb7ce2dcdaa2e",
+    "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+    "ownedFixtureOnly": true,
+    "liveProviderCalls": 0,
+    "liveSqlCalls": 0,
+    "coveredRequirementCount": 29
+  },
+  "sourceSha256": {
+    "ops/platform/host/frontend_highlevel_history.py": "b8ff82d9d8683da4b2c80775c2f23edff8657ba5e19bf2cd9fd42878e463f77c",
+    "ops/platform/host/frontend_highlevel_history_test.py": "9d6ed9e8cb42bffaa2ffea7f94f724b83eac3676df81931481991b7434edcd40",
+    "docs/api-integration/baselines/2026-11-05-highlevel-history-correction/verify-c07-history.py": "9b75629d4b138dfc2e5c8c0f9d3baa0284ebd26e4068a8468927a82a79da3f9f"
+  },
+  "liveQualification": false
+}

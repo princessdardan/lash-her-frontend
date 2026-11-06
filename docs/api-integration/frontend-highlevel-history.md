@@ -58,3 +58,7 @@ FRONTEND_HIGHLEVEL_HISTORY_POSTGRES_TEST=true PG_BIN=/opt/homebrew/opt/postgresq
 ```
 
 The tests use the actual fixed-origin transport with a test-only loopback origin and trusted fixture CA, checkpoint every actual request, and apply all repository migrations to an owned TLS/SCRAM PostgreSQL 16 cluster. They do not read configured databases, provider accounts or live credentials. No live historical retirement, deployment or G2 acceptance is claimed.
+
+## Shared integration correction
+
+All nine fixed SQL projections include a 4,097-row overflow sentinel. Every original-configuration closure is bound to the exact source, historical surface, configuration record, and provenance digest. The all-source-closure plus actual empty SQL path can run before any location/company/token resolution and does not require an irrelevant API log window; provider reads still require exact real principals and the documented retained window. The correction passes 29 owned HTTPS and PostgreSQL 16 tests with all 83 migrations. The actual C07 source getter, original-configuration preparation, SQL collector, and closure reducer were also exercised with an explicitly owned empty original catalog, covering 29 HighLevel/global SQL requirements without fabricated principals or provider calls. This is owned-fixture evidence, not a claim about actual staging configuration. Evidence: `baselines/2026-11-05-highlevel-history-correction/validation.json`.

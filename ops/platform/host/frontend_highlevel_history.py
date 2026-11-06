@@ -71,13 +71,16 @@ def _instant(value):
         raise ValueError("HIGHLEVEL_HISTORY_UTC_REQUIRED") from None
 
 
-def _review(reviewed):
+def _review(reviewed, principals=False):
     demand(isinstance(reviewed, dict) and reviewed.get("environment") == "staging" and
-        _id(reviewed.get("locationId")) and reviewed["locationId"] != PRODUCTION_LOCATION and
-        _id(reviewed.get("companyId")) and _digest(reviewed.get("sourceBindingSha256")),
+        _digest(reviewed.get("sourceBindingSha256")),
         "HIGHLEVEL_HISTORY_STAGING_SCOPE_REQUIRED")
+    for field in ("locationId", "companyId"):
+        if principals or reviewed.get(field) is not None:
+            demand(_id(reviewed.get(field)), "HIGHLEVEL_HISTORY_ACTUAL_PRINCIPAL_REQUIRED")
+    demand(reviewed.get("locationId") != PRODUCTION_LOCATION, "HIGHLEVEL_HISTORY_STAGING_SCOPE_REQUIRED")
     for field in ("expectedProviderContactIds", "expectedWorkflowIds"):
-        rows = reviewed.get(field)
+        rows = reviewed.get(field, [] if not principals else None)
         demand(isinstance(rows, list) and len(rows) <= MAXIMUM and all(_id(item) for item in rows) and rows == sorted(set(rows)),
             "HIGHLEVEL_HISTORY_REVIEWED_INVENTORY_REQUIRED")
     return reviewed
@@ -86,7 +89,7 @@ def _review(reviewed):
 def read_only_request(method, path, body, reviewed):
     """Closed documented transport surface, used by the parent's fixed-origin client."""
     try:
-        _review(reviewed)
+        _review(reviewed, principals=True)
         if method != "GET" or body is not None or not isinstance(path, str) or len(path) > 4096:
             return False
         parsed = urlsplit(path)
@@ -125,17 +128,17 @@ def read_only_request(method, path, body, reviewed):
 def database_queries(reviewed):
     """Literal SELECT triples; global unscoped callers cannot disappear by tenant filtering."""
     _review(reviewed)
-    location = [reviewed["locationId"]]
+    location = [reviewed.get("locationId")]
     return [
-        ("historyContacts", "SELECT id::text, location_id, provider_id, encode(sha256(convert_to(email_normalized,'UTF8')),'hex') AS email_sha256, deleted_at::text, created_at::text, updated_at::text FROM highlevel_contacts WHERE location_id=$1 ORDER BY id", location),
-        ("historyEffects", "SELECT e.key, e.contact_id::text, e.kind, e.provider_id, e.state, jsonb_build_object('workflow',e.data->>'workflow','journey',e.data->>'journey','pipeline',e.data->>'pipeline') AS data, e.created_at::text, e.updated_at::text FROM highlevel_effects e JOIN highlevel_contacts c ON c.id=e.contact_id WHERE c.location_id=$1 ORDER BY e.key", location),
-        ("historyOutbox", "SELECT id::text, encode(sha256(convert_to(event_key,'UTF8')),'hex') AS idempotency_sha256, entity_type, entity_id, event_type, historical, status, (locked_by IS NOT NULL OR locked_until IS NOT NULL) AS lease_held, occurred_at::text, created_at::text, completed_at::text FROM highlevel_outbox ORDER BY id", []),
-        ("historyConnections", "SELECT location_id, refresh_state, (credentials_ciphertext='[revoked]') AS credentials_revoked, expires_at::text, updated_at::text FROM highlevel_connections WHERE location_id=$1 ORDER BY location_id", location),
-        ("historyWebhooks", "SELECT encode(sha256(convert_to(key,'UTF8')),'hex') AS receipt_sha256, location_id, event_type, provider_contact_id, received_at::text FROM highlevel_webhook_receipts WHERE location_id=$1 ORDER BY key", location),
-        ("historyDeliveries", "SELECT id::text, encode(sha256(convert_to(provider_idempotency_key,'UTF8')),'hex') AS idempotency_sha256, kind, status, provider_message_id, (lease_owner IS NOT NULL OR lease_expires_at IS NOT NULL) AS lease_held, created_at::text, sent_at::text, redacted_at::text FROM customer_email_outbox WHERE delivery_provider='highlevel' ORDER BY id", []),
-        ("historyMarketingJobs", "SELECT id::text, encode(sha256(convert_to(idempotency_key,'UTF8')),'hex') AS idempotency_sha256, source, kind::text, status::text, (locked_by IS NOT NULL OR locked_until IS NOT NULL) AS lease_held, created_at::text, succeeded_at::text, skipped_at::text FROM marketing_contact_sync_jobs ORDER BY id", []),
-        ("historyOauthStates", "SELECT hash AS state_sha256, expires_at::text FROM highlevel_oauth_states ORDER BY hash", []),
-        ("historyGlobalScope", "SELECT (SELECT count(*)::int FROM highlevel_contacts) AS contacts, (SELECT count(*)::int FROM highlevel_effects) AS effects, (SELECT count(*)::int FROM highlevel_connections) AS connections, (SELECT count(*)::int FROM highlevel_webhook_receipts) AS webhooks", []),
+        ("historyContacts", "SELECT id::text, location_id, provider_id, encode(sha256(convert_to(email_normalized,'UTF8')),'hex') AS email_sha256, deleted_at::text, created_at::text, updated_at::text FROM highlevel_contacts WHERE location_id=$1 ORDER BY id LIMIT 4097", location),
+        ("historyEffects", "SELECT e.key, e.contact_id::text, e.kind, e.provider_id, e.state, jsonb_build_object('workflow',e.data->>'workflow','journey',e.data->>'journey','pipeline',e.data->>'pipeline') AS data, e.created_at::text, e.updated_at::text FROM highlevel_effects e JOIN highlevel_contacts c ON c.id=e.contact_id WHERE c.location_id=$1 ORDER BY e.key LIMIT 4097", location),
+        ("historyOutbox", "SELECT id::text, encode(sha256(convert_to(event_key,'UTF8')),'hex') AS idempotency_sha256, entity_type, entity_id, event_type, historical, status, (locked_by IS NOT NULL OR locked_until IS NOT NULL) AS lease_held, occurred_at::text, created_at::text, completed_at::text FROM highlevel_outbox ORDER BY id LIMIT 4097", []),
+        ("historyConnections", "SELECT location_id, refresh_state, (credentials_ciphertext='[revoked]') AS credentials_revoked, expires_at::text, updated_at::text FROM highlevel_connections WHERE location_id=$1 ORDER BY location_id LIMIT 4097", location),
+        ("historyWebhooks", "SELECT encode(sha256(convert_to(key,'UTF8')),'hex') AS receipt_sha256, location_id, event_type, provider_contact_id, received_at::text FROM highlevel_webhook_receipts WHERE location_id=$1 ORDER BY key LIMIT 4097", location),
+        ("historyDeliveries", "SELECT id::text, encode(sha256(convert_to(provider_idempotency_key,'UTF8')),'hex') AS idempotency_sha256, kind, status, provider_message_id, (lease_owner IS NOT NULL OR lease_expires_at IS NOT NULL) AS lease_held, created_at::text, sent_at::text, redacted_at::text FROM customer_email_outbox WHERE delivery_provider='highlevel' ORDER BY id LIMIT 4097", []),
+        ("historyMarketingJobs", "SELECT id::text, encode(sha256(convert_to(idempotency_key,'UTF8')),'hex') AS idempotency_sha256, source, kind::text, status::text, (locked_by IS NOT NULL OR locked_until IS NOT NULL) AS lease_held, created_at::text, succeeded_at::text, skipped_at::text FROM marketing_contact_sync_jobs ORDER BY id LIMIT 4097", []),
+        ("historyOauthStates", "SELECT hash AS state_sha256, expires_at::text FROM highlevel_oauth_states ORDER BY hash LIMIT 4097", []),
+        ("historyGlobalScope", "SELECT (SELECT count(*)::int FROM highlevel_contacts) AS contacts, (SELECT count(*)::int FROM highlevel_effects) AS effects, (SELECT count(*)::int FROM highlevel_connections) AS connections, (SELECT count(*)::int FROM highlevel_webhook_receipts) AS webhooks LIMIT 4097", []),
     ]
 
 
@@ -194,7 +197,8 @@ def _source(reviewed, requirements):
     demand(isinstance(requirements, dict) and requirements.get("version") == 1 and
         requirements.get("status") == "FRONTEND_HISTORICAL_SOURCE_VERIFIED" and
         _digest(requirements.get("sourceCommit"), 40) and _digest(requirements.get("treeOid"), 40) and
-        all(_digest(requirements.get(key)) for key in ("sourceInventorySha256", "requirementsSha256")) and
+        all(_digest(requirements.get(key)) for key in ("sourceInventorySha256", "requirementsSha256", "surfaceSha256",
+            "configurationRecordSha256", "provenanceSha256")) and
         requirements["sourceCommit"] == reviewed.get("historicalSourceCommit"), "HIGHLEVEL_HISTORY_CHECKED_SOURCE_REQUIRED")
     families = requirements.get("providerFamilies")
     demand(isinstance(families, list) and isinstance(requirements.get("sqlCredentialRequirements"), list),
@@ -244,7 +248,10 @@ def _family_bindings(source, families, actual):
         valid = False
         evidence = []
         if closure is not None:
-            demand(set(closure) == {"familyId", "disposition", "requirementIds", "evidenceIds"} and
+            demand(set(closure) == {"familyId", "disposition", "requirementIds", "evidenceIds", "sourceCommit", "surfaceSha256",
+                    "configurationRecordSha256", "provenanceSha256"} and
+                all(closure.get(key) == source.get(key) for key in ("sourceCommit", "surfaceSha256",
+                    "configurationRecordSha256", "provenanceSha256")) and
                 closure["disposition"] in ("no-capability-observed", "absent-from-verified-source") and
                 isinstance(closure["requirementIds"], list) and closure["requirementIds"] == requirements and
                 isinstance(closure["evidenceIds"], list) and closure["evidenceIds"] == sorted(set(closure["evidenceIds"])) and
@@ -365,17 +372,11 @@ def observe_scoped_effects(client, reviewed, actual_rows, verified_source_requir
     actual = normalize_snapshot(actual_rows)
     demand(_digest(reviewed.get("historyDatabaseSnapshotSha256")) and sha256(actual) == reviewed["historyDatabaseSnapshotSha256"],
         "HIGHLEVEL_HISTORY_DATABASE_SNAPSHOT_CHANGED")
-    history = reviewed.get("history")
-    demand(isinstance(history, dict) and set(history) == {"observedAt", "windowStart", "windowEnd"}, "HIGHLEVEL_HISTORY_WINDOW_REQUIRED")
-    now, start, end = (_instant(history[key]) for key in ("observedAt", "windowStart", "windowEnd"))
-    actual_time = datetime.now(timezone.utc)
-    demand(timedelta(0) < end - start <= timedelta(days=30) and start < end <= now <= actual_time,
-        "HIGHLEVEL_HISTORY_RETAINED_WINDOW_REQUIRED")
     family_receipts = _family_bindings(source, families, actual)
-    scope = {"version": 1, "provider": "highlevel", "locationId": reviewed["locationId"], "companyId": reviewed["companyId"],
+    scope = {"version": 1, "provider": "highlevel", "locationId": reviewed.get("locationId"), "companyId": reviewed.get("companyId"),
         "sourceBindingSha256": reviewed["sourceBindingSha256"], "sourceCommit": source["sourceCommit"],
         "sourceInventorySha256": source["sourceInventorySha256"], "requirementsSha256": source["requirementsSha256"],
-        "historyDatabaseSnapshotSha256": reviewed["historyDatabaseSnapshotSha256"], "window": history,
+        "historyDatabaseSnapshotSha256": reviewed["historyDatabaseSnapshotSha256"], "window": None,
         "coveredRequirementIds": sorted({key for row in family_receipts for key in row["coveredRequirementIds"]}),
         "missingRequirementIds": sorted({key for row in family_receipts for key in row["missingRequirementIds"]}),
         "families": family_receipts, "historicalWritersFenced": False, "trafficAuthorized": False}
@@ -385,6 +386,14 @@ def observe_scoped_effects(client, reviewed, actual_rows, verified_source_requir
             "knownContacts": [], "knownJobs": [], "knownDeliveries": [], "knownWebhookReceipts": [], "knownConnections": [], "knownOauthStates": [],
             "unavailableWorkflowIds": [], "unavailableContactIds": [], "requiredObservations": [],
             "workflowExecutionInventoryComplete": True, "inboundWebhooksQualified": True, "activeExecutions": 0, "uncertainEffects": 0}
+    _review(reviewed, principals=True)
+    history = reviewed.get("history")
+    demand(isinstance(history, dict) and set(history) == {"observedAt", "windowStart", "windowEnd"}, "HIGHLEVEL_HISTORY_WINDOW_REQUIRED")
+    now, start, end = (_instant(history[key]) for key in ("observedAt", "windowStart", "windowEnd"))
+    actual_time = datetime.now(timezone.utc)
+    demand(timedelta(0) < end - start <= timedelta(days=30) and start < end <= now <= actual_time,
+        "HIGHLEVEL_HISTORY_RETAINED_WINDOW_REQUIRED")
+    scope["window"] = {key: history[key] for key in ("observedAt", "windowStart", "windowEnd")}
     # Provider retention constrains API reads, not the validity/approval lifetime
     # of an original-configuration absence proof with newly read actual SQL.
     demand(actual_time - timedelta(days=60) <= start, "HIGHLEVEL_HISTORY_RETAINED_WINDOW_REQUIRED")

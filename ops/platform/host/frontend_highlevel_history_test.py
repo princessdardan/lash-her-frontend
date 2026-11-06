@@ -36,12 +36,14 @@ def source_proof(absent=False):
         families.append(record)
     return {"version": 1, "status": "FRONTEND_HISTORICAL_SOURCE_VERIFIED", "sourceCommit": "b" * 40, "treeOid": "c" * 40,
         "sourceInventorySha256": "d" * 64, "requirementsSha256": "e" * 64, "providerFamilies": families,
+        "surfaceSha256": "1" * 64, "configurationRecordSha256": "2" * 64, "provenanceSha256": "3" * 64,
         "sqlCredentialRequirements": [{"requirementId": "sql-credentials.DATABASE_URL"}], "capabilityClosures": []}
 
 
 def complete_closures(source):
     global_ids = [row["requirementId"] for row in source["sqlCredentialRequirements"]]
-    source["capabilityClosures"] = [{"familyId": row["familyId"], "disposition": row["sourceDisposition"] if row["sourceDisposition"] ==
+    source["capabilityClosures"] = [{**{key: source[key] for key in ("sourceCommit", "surfaceSha256",
+        "configurationRecordSha256", "provenanceSha256")}, "familyId": row["familyId"], "disposition": row["sourceDisposition"] if row["sourceDisposition"] ==
         "absent-from-verified-source" else "no-capability-observed", "evidenceIds": ["f" * 64],
         "requirementIds": sorted(global_ids + [item["requirementId"] for key in
             ("configurationConditions", "sqlIntentRequirements", "untrackedPotentialRequests") for item in row[key]])}
@@ -184,6 +186,18 @@ class HistoryTests(unittest.TestCase):
         self.assertTrue(result["missingRequirementIds"])
         self.assertEqual(self.checkpoints, len(self.calls) * 2)
 
+    def test_closure_context_cannot_be_transplanted_from_another_original_surface(self):
+        complete_closures(self.source)
+        original = deepcopy(self.source)
+        for field, value in (("sourceCommit", "9" * 40), ("surfaceSha256", "9" * 64),
+                ("configurationRecordSha256", "9" * 64), ("provenanceSha256", "9" * 64)):
+            with self.subTest(field=field):
+                self.source = deepcopy(original)
+                self.source["capabilityClosures"][0][field] = value
+                with self.assertRaisesRegex(ValueError, "CAPABILITY_REQUIREMENT_BINDING_REFUSED"):
+                    self.observe()
+        self.source = original
+
     def test_checked_complete_original_no_capability_closure_has_source_specific_zero(self):
         complete_closures(self.source)
         result = self.observe()
@@ -195,6 +209,24 @@ class HistoryTests(unittest.TestCase):
         self.assertFalse(result["historicalWritersFenced"])
         self.assertFalse(result["trafficAuthorized"])
         self.assertEqual(self.calls, [])
+
+    def test_verified_absence_needs_no_fabricated_principal_or_irrelevant_log_window(self):
+        complete_closures(self.source)
+        reviewed = {key: value for key, value in self.reviewed.items() if key not in
+            ("locationId", "companyId", "expectedProviderContactIds", "expectedWorkflowIds", "history")}
+        reviewed["historyDatabaseSnapshotSha256"] = history.snapshot_sha256(self.rows)
+        queries = history.database_queries(reviewed)
+        self.assertEqual(len(queries), 9)
+        self.assertTrue(all(sql.endswith("LIMIT 4097") for _name, sql, _params in queries))
+        result = history.observe_scoped_effects(None, reviewed, self.rows, self.source)
+        self.assertEqual((result["activeExecutions"], result["uncertainEffects"]), (0, 0))
+        self.assertIsNone(result["locationId"])
+        self.assertIsNone(result["companyId"])
+        self.assertIsNone(result["window"])
+        self.assertFalse(history.read_only_request("GET", "/locations/ownedLocation", None, reviewed))
+        self.source["capabilityClosures"].pop()
+        with self.assertRaisesRegex(ValueError, "PRINCIPAL_REQUIRED"):
+            history.observe_scoped_effects(None, reviewed, self.rows, self.source)
 
     def test_source_absent_families_still_require_global_sql_credential_closure(self):
         self.source = source_proof(absent=True)
