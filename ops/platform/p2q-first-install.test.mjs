@@ -10,9 +10,9 @@ const current={version:1,id:'staging-current',sha256:'ea88751524540bfe177e089680
 function request(ref){return {qualificationTargetProfile:ref,actionId:'owned-observe',candidate:{version:3,environment:'staging',releaseId:'owned',sources:{frontend:{commit:'b'.repeat(40)}},qualificationTargetProfile:ref,contractPhase:'p2',phase2ContractManifestSha256:'sha256:'+'d'.repeat(64)},
  job:{version:2,environment:'staging',releaseId:'owned',sourceCommit:'b'.repeat(40),qualificationTargetProfile:ref,contractPhase:'p2',phase2ContractManifestSha256:'sha256:'+'d'.repeat(64),target:{host:'127.0.0.1',port:5432,database:'owned',user:'owned_admin',runtimeRole:'owned_runtime',serverMajor:18,allowEmptyBootstrap:true,approvedPendingTags:['0000_owned']}}};}
 test('public current and unregistered first-install requests refuse before client or parent work',async()=>{
- for(const ref of [current,{version:1,id:'p2q-20261106',sha256:'a'.repeat(64)}]){
+ for(const [ref,code] of [[current,'QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED'],[{version:1,id:'p2q-20261106',sha256:'a'.repeat(64)},'QUALIFICATION_TARGET_PROFILE_UNKNOWN']]){
   let calls=0;const client={query(){calls++;throw new Error('must not query');}};
-  await assert.rejects(withP2qFirstInstallDatabaseObservation(request(ref),{client,verifySession:()=>{calls++;}},()=>{calls++;}));assert.equal(calls,0);
+  await assert.rejects(withP2qFirstInstallDatabaseObservation(request(ref),{client,verifySession:()=>{calls++;}},()=>{calls++;}),{code});assert.equal(calls,0);
  }
 });
 test('JSON fresh/zero/authority flags and forged observation handles cannot select a path',async()=>{

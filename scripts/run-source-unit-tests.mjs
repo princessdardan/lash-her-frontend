@@ -13,6 +13,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/admin/calendar-discovery-result.test.ts",
   "src/lib/writer-admission/square-binding-probe.test.ts",
   "src/lib/course-authoring/page-data.test.ts",
+  "src/lib/course-support/manual-grant-handler.test.ts",
   "src/lib/admin/authorization-operation.test.ts",
   "src/lib/writer-admission/resend-binding-probe.test.ts",
   "src/lib/customer-lifecycle/worker.test.ts",
