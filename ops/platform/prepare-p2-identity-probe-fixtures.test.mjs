@@ -67,8 +67,10 @@ function forwardRecoveryReceipt(changes = {}) {
       "real-opaque-scope-shared-observer", "selected-workload-bytes", "cloned-plain-scope-refused", "wrong-client-verifier-refused",
       "wrong-plan-candidate-target-directory-refused", "wrong-inventory-action-refused", "shared-mutation-operations-refused",
       "receipt-drift-refused", "expired-session-refused", "open-admission-mutation-refused", "opened-admission-get-retained",
-      "original-terminal-retained-not-current", "original-receipts-preserved"],
+      "original-terminal-retained-not-current", "original-receipts-preserved", "actual-runtime-credential-tls-physical-binding",
+      "bad-runtime-credential-and-foreign-physical-refused"],
     mutationRefusals: 1, noSqlReplay: true, journalDigestsUnchanged: true, originalFrontendTerminalRecreated: false,
+    runtimeCredentialRefusals: 9, foreignRuntimeTlsAuthenticated: true, runtimeCredentialFaultProviderCalls: 0,
     skipped: 0, fixtureOnly: true, providerTouched: false, actualRuntimeContainers: false,
     environmentIsolation: { nodeOptionsPositiveControlExecuted: true, poisonedParentEnvironment: true,
       ambientNodeOptionsExecuted: false, ambientConfigVariablesAbsent: true, childEnvironmentAllowlistEnforced: true },
@@ -211,7 +213,9 @@ test("recovery mode runs current and forward PostgreSQL 18 fixtures after all id
     assert.equal(result.forwardRecovery.status, "OWNED_P2_RECOVERY_FORWARD_CHECKS_PASS");
     assert.equal(result.forwardRecovery.serverMajor, 18); assert.equal(result.forwardRecovery.frontendMigrations, 83);
     assert.equal(result.forwardRecovery.courseMigrations, 22); assert.equal(result.forwardRecovery.communityMigrations, 11);
-    assert.equal(result.forwardRecovery.checks.length, 17); assert.equal(result.forwardRecovery.mutationRefusals, 1);
+    assert.equal(result.forwardRecovery.checks.length, 19); assert.equal(result.forwardRecovery.mutationRefusals, 1);
+    assert.equal(result.forwardRecovery.runtimeCredentialRefusals, 9); assert.equal(result.forwardRecovery.foreignRuntimeTlsAuthenticated, true);
+    assert.equal(result.forwardRecovery.runtimeCredentialFaultProviderCalls, 0);
     assert.equal(result.forwardRecovery.skipped, 0); assert.equal(result.forwardRecovery.actualRuntimeContainers, false);
     assert.equal(result.forwardRecovery.journalDigestsUnchanged, true); assert.equal(result.forwardRecovery.noSqlReplay, true);
     assert.deepEqual(result.forwardRecovery.apiSourcePins.course, { revision: revisions.course, gitTree: "e".repeat(40),
@@ -367,11 +371,23 @@ test("forward recovery receipt refuses wrong mode, PG16, echoed current proof, m
     forwardRecoveryReceipt({ courseMigrations: 21 }), forwardRecoveryReceipt({ communityMigrations: 10 }),
     forwardRecoveryReceipt({ checks: checks.slice(0,-1) }), forwardRecoveryReceipt({ checks: [...checks,checks[0]] }),
     forwardRecoveryReceipt({ mutationRefusals: 0 }), forwardRecoveryReceipt({ skipped: 1 }),
+    forwardRecoveryReceipt({ runtimeCredentialRefusals: 0 }), forwardRecoveryReceipt({ runtimeCredentialRefusals: undefined }),
+    forwardRecoveryReceipt({ foreignRuntimeTlsAuthenticated: false }), forwardRecoveryReceipt({ runtimeCredentialFaultProviderCalls: 1 }),
     forwardRecoveryReceipt({ noSqlReplay: false }), forwardRecoveryReceipt({ journalDigestsUnchanged: false }),
     forwardRecoveryReceipt({ originalFrontendTerminalRecreated: true }), forwardRecoveryReceipt({ actualRuntimeContainers: true }),
     forwardRecoveryReceipt({ environmentIsolation: { childEnvironmentAllowlistEnforced: true } }),
     forwardRecoveryReceipt({ unreviewedExtra: true }), forwardRecoveryReceipt() + "private-output\n"])
     assert.throws(() => parseP2ForwardRecoveryPostgres18Receipt(output), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
+});
+
+test("forward parser matches the retained actual nineteen-case producer receipt", () => {
+  const original = JSON.parse(readFileSync(new URL("../../docs/api-integration/baselines/2026-11-06-p2-forward-review-corrections/owned-forward-postgres16.json", import.meta.url), "utf8"));
+  assert.equal(original.serverMajor, 16);
+  assert.throws(() => parseP2ForwardRecoveryPostgres18Receipt(JSON.stringify(original)), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
+  // This projection verifies only the fixed shared receipt schema; it is not
+  // PostgreSQL18 evidence. Actual CI must independently produce that major.
+  const projected = { ...original, serverMajor: 18 };
+  assert.deepEqual(parseP2ForwardRecoveryPostgres18Receipt(JSON.stringify(projected)), projected);
 });
 
 test("a forward qualification failure reports only the fixed forward mode and no child output", () => {

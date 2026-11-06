@@ -41,11 +41,12 @@ const FORWARD_RECOVERY_CHECKS = Object.freeze([
   "wrong-plan-candidate-target-directory-refused", "wrong-inventory-action-refused", "shared-mutation-operations-refused",
   "receipt-drift-refused", "expired-session-refused", "open-admission-mutation-refused", "opened-admission-get-retained",
   "original-terminal-retained-not-current", "original-receipts-preserved",
+  "actual-runtime-credential-tls-physical-binding", "bad-runtime-credential-and-foreign-physical-refused",
 ]);
 const FORWARD_RECOVERY_RECEIPT_KEYS = Object.freeze([
   "actualRuntimeContainers", "checks", "communityMigrations", "courseMigrations", "environmentIsolation", "fixtureOnly",
-  "frontendMigrations", "journalDigestsUnchanged", "mutationRefusals", "noSqlReplay", "originalFrontendTerminalRecreated",
-  "providerTouched", "serverMajor", "skipped", "status",
+  "foreignRuntimeTlsAuthenticated", "frontendMigrations", "journalDigestsUnchanged", "mutationRefusals", "noSqlReplay", "originalFrontendTerminalRecreated",
+  "providerTouched", "runtimeCredentialFaultProviderCalls", "runtimeCredentialRefusals", "serverMajor", "skipped", "status",
 ].sort());
 const SOURCE_PATHS = Object.freeze(["src", "scripts", "contracts", "ops", "tests", "openapi", ":(glob).env*", ":(glob)tsconfig*.json"]);
 const DEPENDENCY_ROOTS = Object.freeze(["ops/gateway", "tools/api-contract-toolchain"]);
@@ -304,6 +305,7 @@ export function parseP2ForwardRecoveryPostgres18Receipt(output) {
     receipt.status === "OWNED_P2_RECOVERY_FORWARD_CHECKS_PASS" && receipt.serverMajor === 18 &&
     receipt.frontendMigrations === 83 && receipt.courseMigrations === 22 && receipt.communityMigrations === 11 &&
     JSON.stringify(receipt.checks) === JSON.stringify(FORWARD_RECOVERY_CHECKS) && receipt.mutationRefusals === 1 &&
+    receipt.runtimeCredentialRefusals === 9 && receipt.foreignRuntimeTlsAuthenticated === true && receipt.runtimeCredentialFaultProviderCalls === 0 &&
     receipt.noSqlReplay === true && receipt.journalDigestsUnchanged === true && receipt.originalFrontendTerminalRecreated === false &&
     receipt.skipped === 0 && receipt.fixtureOnly === true && receipt.providerTouched === false &&
     receipt.actualRuntimeContainers === false && isolationMatches);
@@ -452,6 +454,8 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
         frontendMigrations: forwardReceipt.frontendMigrations, courseMigrations: forwardReceipt.courseMigrations,
         communityMigrations: forwardReceipt.communityMigrations, checks: forwardReceipt.checks,
         mutationRefusals: forwardReceipt.mutationRefusals, noSqlReplay: forwardReceipt.noSqlReplay,
+        runtimeCredentialRefusals: forwardReceipt.runtimeCredentialRefusals, foreignRuntimeTlsAuthenticated: forwardReceipt.foreignRuntimeTlsAuthenticated,
+        runtimeCredentialFaultProviderCalls: forwardReceipt.runtimeCredentialFaultProviderCalls,
         journalDigestsUnchanged: forwardReceipt.journalDigestsUnchanged,
         originalFrontendTerminalRecreated: forwardReceipt.originalFrontendTerminalRecreated, skipped: forwardReceipt.skipped,
         fixtureOnly: forwardReceipt.fixtureOnly, providerTouched: forwardReceipt.providerTouched,
