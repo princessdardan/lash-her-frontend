@@ -52,7 +52,7 @@ frontend-promotion-started.json, and frontend-promotion-outcome.json. Each raw h
 and project/release/app-source/deployment binding is checked repeatedly; the
 workload's ten feature flags, writer binding and P2 manifest must match exactly.
 
-Modes are `direct-worker`, `native-window`, `fault-before-upstream`, `fault-drop-after-ack`,
+Modes are `direct-worker`, `native-window`, `fault-before-upstream`, `fault-drop-after-ack`, `known-ack-recovery`,
 `contain-native`, and the source-composed authentication/browser pair. Native
 windows retain the existing60–180-second bound and drain budget. Fault cases use
 the fixed driver stage, exact selected actual command and canonical command hash.
@@ -125,6 +125,123 @@ exact local source artifact bytes and retained host machine artifact, followed
 by a fresh closed/zero/nativeOFF readback. It records directWorkerSourceJoined
 without qualifying native invocation or completing persistence/S12 authority.
 
+## Deliberate known ACK-loss qualification and replacement
+
+`known-ack-recovery` is an upfront reviewed case for one actual retained suspend
+command with both deliveries still pending/attempts0/no leases/no ACKs, no later
+version and no unrelated pending/export/scrub work. Operator and application
+source must match. Its existing `fault` selection binds commandIndex0, one target
+receiver, stageId and canonical command SHA. `knownAckRecovery` has exactly
+version1, a distinct recoveryActionId, configurationInputDirectory and the two
+reviewed receiverTargets (host, port, database, user, serverMajor, runtime roleOid).
+The public plan derives an immutable replacement intent binding original raw
+candidate/source/contracts/configuration/target, full operator closure, original
+ten-runtime inventory, gateway process, native plan and receiver targets. That
+intent permits one ordered same-candidate runtime replacement under the same
+hostFD and actual frontend physical session. Every other mode retains its
+existing runtime-replacement refusal.
+
+configurationInputDirectory selects a canonical root-owned private staging input.
+The actual mounted snapshot remains the observed old-process configuration. The
+current P2 snapshot producer copies all19 selected configuration bytes unchanged;
+its TLS modes/ownership and added compose/admission directory are the differences.
+Before ARM/fault, the source validates root ownership/private/runtime target
+scope and exact input-to-mounted byte equality. A prior restoration must select
+its retained root-owned configuration-input output when applicable. This mode
+has no historical raw-input normalizer or caller equivalence assertion and never
+chowns a mounted65532 snapshot into an input. New snapshot bytes remain identical.
+
+The host issues its recorder before fault arm, retaining actual FEzero and the
+same gateway0 process with the exact two untouched deliveries. It arms one fixed
+target lease (maxMatches1), advances the source epoch and temporarily enables the
+existing native schedule. Normal provider invocations perform the work. The
+bounded60–180-second window must observe exactly one uncertain503 operation from
+the typed dropped ACK and one later completed200 replay, both ACKs and actual
+three-DB canonical receipt/user/version equality. Selected attempts must be2 and
+the other receiver1. Any third request, unrelated work/effect/producer/command/
+version/process/uncertainty refuses. Existing approved operator request-details
+bytes must join those exact two operation IDs while the window is still active;
+no API completeness or native provenance is inferred from counters alone.
+
+The source disarms, disables native, closes both gates and requires zero active
+work. It prepares a retained specific-operation settlement only after the domain
+and explicit request proof. The owner reconciles only that actual uncertain FE
+UUID with the retained evidence SHA, then fresh FEglobal0 and oldgateway1 are
+required. Original0/1 receipts remain immutable. The private process-local
+authorization is reserved atomically before verification I/O, consumed once and
+poisoned on verification failure. Serialized/copied/cross-scope authority refuses.
+
+The exact KnownAckLossBoundary and dedicated KnownAckRecoveryScope delegate all
+children and revocation to the original physical/flock scope. The dedicated
+runtime constructor initializes the complete common runtime field set after
+authority validation and reuses its actual restore and stage methods. Ordinary
+scope/runtime constructors and their zero gate remain unchanged. Both current
+API checks precede destructive work, and fresh current checks follow restoration.
+The common internal runtime-readiness receipt is retained as provenance; the
+typed result is P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED with ordinaryClosedZeroGate
+false and the old uncertainty transcript preserved.
+
+The source fixes five ordered stages: both APIs; both private TLS proxies;
+snapshot/community-worker/media/export-cleanup workers; publisher; gateway last.
+Each stage has a120-second deadline within the existing900-second parent limit.
+Every unaffected old/new service retains its exact image, private environment,
+readonly mounts and process identity. Only the currently selected stage may be
+temporarily unavailable. Actual environment values are compared privately and
+are never receipt values or credential hashes. Fresh metadata and FE nonce/
+locks/global0 remain mandatory. Only the literal API, TLS and gateway stages can
+temporarily use immutable original workload/config/writer proof plus fresh exact
+deployment/project/source/nativeOFF metadata. The unchanged original private
+probe must remain unexpired. Full protected proof returns immediately after
+each such stage; worker/publisher stages keep full proof continuously. A failed
+probe never selects a fallback branch.
+
+Gateway-last uses the existing source capture_before_stop and retain_ordered_stop
+functions, preserving old1, exact source-module hashes and latest lineage before
+the one replacement. The new gateway must have a different actual container ID,
+closed gates and zero counters. All ten current process checks then rebind to
+fresh observed identities, followed by full protected readiness and fresh current
+three-target/physical proofs. The terminal remains closed with native disabled;
+later admission restoration requires its separate reviewed action. Failure
+retains unknowns and invokes existing independent containment. This case cannot
+be attached retroactively to an unplanned failure or a stopped/unknown process.
+
+Backend workers remain running throughout the fault/replay window. Their private
+paths bypass gateway admission, so FE queue eligibility is insufficient. Before
+fault arm, continuously, and before consuming replacement authority, fixed
+read-only observers require no unrelated backend work across the entire remaining
+900-second parent horizon. They always use the same selected runtime images and
+the already validated root configuration input's runtime credential, with verified
+TLS, exact role/OID/database/major and registered finite helper containers. They
+do not depend on the API containers remaining available during replacement.
+
+The fixed Course projection requires an existing publisher singleton; no pending
+outbox or lease; no requested/building/expired or horizon-expiring snapshot; no
+media lease or managed undeleted media due within the horizon; no horizon-expiring
+lifecycle export; and no publisher retention candidates. The retention boundary
+is the existing180-day source policy. Community requires no pending/leased repair,
+requested/running reconciliation, lease or horizon-expiring lifecycle export.
+Its actual latest snapshot-backed reconciliation request and latest retention
+audit must defer both fixed24-hour source schedules beyond the same horizon.
+Missing schedule/control evidence refuses. Poll/configuration values do not
+replace actual queue/timestamp observations.
+
+Complete ordered safe projections of queues, controls, leases, terminal outcomes,
+stream/snapshot rows, Community inbox/tombstones/projections and reconciliation
+staging rows are digested privately. Each table is bounded at1000 rows; observing
+the1001st row refuses completeness. Every subsequent projection must equal the
+retained baseline, including a completed transient effect. Only the expected
+selected lifecycle state/command receipt writes are outside these unrelated-work
+projections; those retain their separate exact command/version/canonical proof.
+No raw body, export data, token, provider URL or runtime credential is emitted.
+
+These conservative prerequisites can make this case unavailable: managed Course
+media is normally reconciled every60 seconds while the reviewed profile enables
+the media worker. Eligible media, missing receipts or other work must refuse
+before the fault. This action does not pause workers, clean up assets, invent
+terminal receipts or alter retention to obtain eligibility. Actual source-owned
+preflight/certification/ordering and G2 remain OPEN until their real prerequisites
+and execution are qualified.
+
 ## Physical scope and containment
 
 The Node process holds the actual verified-TLS FE connection, migration advisory
@@ -146,8 +263,9 @@ authentication/browser/direct-worker require literal nativeOFF, and native/fault
 last positively observed source-selected toggle state. A provider change outside
 that transition revokes the stage. Containment remains metadata-only even after
 private-probe expiry. No SQL
-executor, role creation, LOGIN reopening, build, promotion or runtime replacement
-is exposed. The parent never claims a missing original frontend SQL terminal.
+executor, role creation, LOGIN reopening, build or promotion is exposed. Runtime
+replacement is restricted to the explicit typed known-ACK case above. The parent
+never claims a missing original frontend SQL terminal.
 
 On loss, the independent guard reaps mutators before metadata-only native disable,
 FE fence, actual mounted gateway fence, and runtime stop. Each failed observation
@@ -173,9 +291,10 @@ native invocation.
 
 The contained terminal keeps `persistenceAuthorityJoined=false`,
 `deployedCertificationComplete=false`, and `wholeReleaseAccepted=false`.
-Drop-after-ACK may retain exactly one source-proven typed effect and uncertainty1
+Ordinary drop-after-ACK may retain exactly one source-proven typed effect and uncertainty1
 for review, but cannot settle it, clear counters, authorize replacement or restart.
-The separate known-ACK-loss settlement/recovery binder is OPEN. S14's real24-hour
+The explicit known-ACK path has source-preparation tests; its actual host/provider
+qualification remains OPEN. S14's real24-hour
 read-only observation is outside all bounded certification locks. Actual Linux
 Docker/SSH, normal browser auth/playback, native provider request evidence and
 staging execution remain separate unqualified gates.

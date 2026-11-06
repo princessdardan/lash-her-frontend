@@ -8,7 +8,7 @@ import {mkdirSync,existsSync,lstatSync,realpathSync,openSync,closeSync,fstatSync
 import {join,dirname,resolve} from 'node:path';
 import {setTimeout as pause} from 'node:timers/promises';
 import {frontendReleaseReceiptStore,frontendPrivateReceiptDirectory} from './frontend-release-receipts.mjs';
-import {changeFrontendAdmission,observeFrontendDrain} from './frontend-admission.mjs';
+import {changeFrontendAdmission,observeFrontendDrain,reconcileFrontendOperation} from './frontend-admission.mjs';
 import {qualifyP2LifecycleNative,containP2LifecycleNative} from './p2-lifecycle-native.mjs';
 import {prepareP2LifecycleTransportFaultPlan,runP2LifecycleTransportFault} from './p2-lifecycle-transport-fault.mjs';
 import {withP2CertificationFrontendSession,readP2CertificationCurrent} from './p2-certification-current-probe.mjs';
@@ -18,7 +18,7 @@ import {prepareP2OperatorRelease} from './p2-release.mjs';
 import {committedOperatorSource,verifyOperatorCi} from './recreation_source.mjs';
 import {githubSourceApi} from './release-inputs.mjs';
 import {recreationSsh} from './recreation_ssh.mjs';
-import {p2CertificationEnvironmentLock} from './p2-certification-transport.mjs';
+import {p2CertificationEnvironmentLock,readP2CertificationKnownAckStage} from './p2-certification-transport.mjs';
 import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,
   captureP2SuspensionControlledAuthority,observeP2SuspensionControlledAuthority,captureP2SuspensionPending} from './p2-lifecycle-suspension-evidence.mjs';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
@@ -31,6 +31,7 @@ const demand=ok=>{if(!ok)throw new Error('P2_CERTIFICATION_PARENT_REFUSED');};
 const commit=value=>typeof value==='string'&&/^[a-f0-9]{40}$/u.test(value)&&!/^0+$/u.test(value);
 const action=value=>typeof value==='string'&&/^[a-z0-9][a-z0-9-]{0,63}$/u.test(value);
 const sha=value=>typeof value==='string'&&/^[a-f0-9]{64}$/u.test(value)&&!/^0+$/u.test(value);
+const exactKeys=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&isDeepStrictEqual(Object.keys(value).sort(),[...keys].sort());
 const freeze=value=>{if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value);}return value;};
 export const P2_CERTIFICATION_READY_FILES=Object.freeze(['frontend-build-started.json','frontend-build-created.json','frontend-build-outcome.json',
   'frontend-workload-outcome.json','frontend-promotion-started.json','frontend-promotion-outcome.json']);
@@ -54,8 +55,8 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
   demand(Buffer.isBuffer(candidateBytes)&&candidateBytes.length>0&&candidateBytes.length<=2_000_000&&isDeepStrictEqual(JSON.parse(candidateBytes),candidate)&&
     candidate?.contractPhase==='p2'&&candidate.environment==='staging'&&candidate.releaseId===inventory?.actionId&&job?.sourceCommit===candidate.sources.frontend.commit&&
     input?.version===1&&input.environment==='staging'&&inventory.targetSha256===frontendAdmissionTargetSha256('staging',job.target)&&action(input.certificationActionId)&&input.certificationActionId!==candidate.releaseId&&commit(input.operatorSourceCommit)&&
-    ['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','contain-native'].includes(input.mode)&&['qualified-ready','already-closed'].includes(input.startState)&&
-    (!['auth-preparation','browser-pending','direct-worker','native-window'].includes(input.mode)||input.operatorSourceCommit===job.sourceCommit)&&
+    ['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery','contain-native'].includes(input.mode)&&['qualified-ready','already-closed'].includes(input.startState)&&
+    (!['auth-preparation','browser-pending','direct-worker','native-window','known-ack-recovery'].includes(input.mode)||input.operatorSourceCommit===job.sourceCommit)&&
     (input.mode!=='direct-worker'||input.startState==='already-closed')&&
     /^[1-9][0-9]{0,17}$/u.test(input.initialEpoch??'')&&input.candidateSha256===rawHash(candidateBytes)&&input.inventorySha256===rawHash(inventory)&&
     input.configurationSha256===rawHash(configurationSha256)&&sha(input.configurationSha256)&&input.readyReceiptSha256&&
@@ -66,7 +67,7 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     isDeepStrictEqual(input.native.featureControls,inventory.certification.featureControls)&&input.native.targetSha256===inventory.targetSha256&&
     ['host','port','database','user','serverMajor'].every(key=>input.native.target[key]===job.target[key]));
   const closedOffset=input.startState==='qualified-ready'?1n:0n;
-  if(['native-window','fault-before-upstream','fault-drop-after-ack'].includes(input.mode)){
+  if(['native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery'].includes(input.mode)){
     demand(input.requestEvidence?.kind==='operator-recorded-request-details'&&typeof input.requestEvidence.path==='string'&&resolve(input.requestEvidence.path)===input.requestEvidence.path);
     frontendPrivateReceiptDirectory(dirname(input.requestEvidence.path));
   }
@@ -98,14 +99,32 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     contractPhase:'p2',phase2ContractManifestSha256:candidate.phase2ContractManifestSha256,nativePlan,
     persistenceReaderEligible:input.operatorSourceCommit===job.sourceCommit,
     requestEvidenceDescriptorSha256:input.requestEvidence?p2NativeHash(input.requestEvidence):null,
-    faultSelection:input.mode.startsWith('fault-')?{stageId:input.fault?.stageId,receiver:input.fault?.receiver,commandIndex:input.fault?.commandIndex,commandSha256:input.fault?.commandSha256}:null,
+    faultSelection:input.mode.startsWith('fault-')||input.mode==='known-ack-recovery'?{stageId:input.fault?.stageId,receiver:input.fault?.receiver,commandIndex:input.fault?.commandIndex,commandSha256:input.fault?.commandSha256}:null,
     readyReceiptSha256:structuredClone(input.readyReceiptSha256),maximumSeconds:input.mode==='auth-preparation'?300:900,finalDisposition:'native-disabled-and-both-admissions-closed',
     frontendSqlReplay:false,apiSqlReplay:false,rolePreparationAllowed:false,historicalLoginRestorationAllowed:false,buildAllowed:false,promotionAllowed:false,
     wholeReleaseAccepted:false};
+  if(input.mode==='known-ack-recovery'){
+    const recovery=input.knownAckRecovery;
+    demand(exactKeys(recovery,['version','recoveryActionId','receiverTargets','configurationInputDirectory'])&&recovery.version===1&&action(recovery.recoveryActionId)&&
+      typeof recovery.configurationInputDirectory==='string'&&resolve(recovery.configurationInputDirectory)===recovery.configurationInputDirectory&&
+      recovery.configurationInputDirectory.startsWith('/var/lib/lash-her/releases/staging/')&&
+      ![input.certificationActionId,candidate.releaseId,input.fault?.stageId].includes(recovery.recoveryActionId)&&
+      nativePlan.commandWitnesses.length===1&&input.fault?.commandIndex===0&&exactKeys(recovery.receiverTargets,['course','community']));
+    for(const target of Object.values(recovery.receiverTargets))demand(exactKeys(target,['host','port','database','user','serverMajor','roleOid'])&&
+      typeof target.host==='string'&&target.host.length>0&&target.host.length<=253&&Number.isInteger(target.port)&&target.port>0&&target.port<=65535&&
+      /^[a-z][a-z0-9_]{0,62}$/u.test(target.database??'')&&/^[a-z][a-z0-9_]{0,62}$/u.test(target.user??'')&&[16,18].includes(target.serverMajor)&&/^[1-9][0-9]{0,9}$/u.test(target.roleOid??''));
+    base.knownAckReceiverTargets=structuredClone(recovery.receiverTargets);
+    base.knownAckConfigurationInputDirectory=recovery.configurationInputDirectory;
+    const intent={version:1,recoveryActionId:recovery.recoveryActionId,certificationActionId:base.certificationActionId,
+      ...Object.fromEntries(['candidateSha256','sourceCommit','operatorSourceCommit','targetSha256','configurationSha256','gatewayProcessSha256','runtimeInventorySha256','operatorSourceClosureSha256'].map(key=>[key,base[key]])),
+      configurationInputDirectory:base.knownAckConfigurationInputDirectory,nativePlanSha256:nativePlan.planSha256,receiverTargetsSha256:p2NativeHash(base.knownAckReceiverTargets),profile:'known-ack-same-session-ordered-replacement-v1',runtimeReplacements:1,nativeWindowSeconds:nativePlan.windowSeconds,
+      sqlReplayAllowed:false,roleChangeAllowed:false,ordinaryClosedZeroGate:false,automaticFailureRecoveryAllowed:false};
+    base.knownAckRecovery={version:1,recoveryActionId:recovery.recoveryActionId,intent,intentSha256:p2NativeHash(intent)};
+  }else demand(input.knownAckRecovery===undefined);
   const plan=freeze({...base,planSha256:p2NativeHash(base)});
   demand(base.browserPlanSha256===null||sha(base.browserPlanSha256));
   let faultInput;
-  if(input.mode.startsWith('fault-')){
+  if(input.mode.startsWith('fault-')||input.mode==='known-ack-recovery'){
     demand(input.fault&&action(input.fault.stageId));
     faultInput={version:1,stageId:input.fault.stageId,mode:input.mode==='fault-before-upstream'?'503-before-upstream':'drop-after-ack',receiver:input.fault.receiver,
       commandIndex:input.fault.commandIndex,commandSha256:input.fault.commandSha256,candidateSha256:input.candidateSha256,operatorSourceCommit:input.operatorSourceCommit,
@@ -127,6 +146,45 @@ export function deriveP2CertificationNativePlan(plan,closedAdmission){
     closedAdmission.epoch===(BigInt(plan.initialEpoch)+closedOffset).toString());
   const derived=prepareP2LifecycleNativePlan(context.candidate,{...context.nativeSettings,epoch:(BigInt(closedAdmission.epoch)+1n).toString()});
   demand(derived.planSha256===plan.nativePlan.planSha256);return derived;
+}
+
+async function runKnownAckCase(plan,nativePlan,host,faultPlan,hostStage,client,verify,withOwner,directory){
+  const context=p2CertificationParentContext(plan),prepared=context.prepared,policy={environment:'staging',targetSha256:plan.targetSha256};
+  const handle=await host.knownAckStage(plan),stage=readP2CertificationKnownAckStage(handle,plan);
+  await stage.armFault();let barrier,enableAttempted=false,domainJoined=false,closureFailed=false;
+  try{
+    barrier=await withOwner(()=>changeFrontendAdmission(client,policy,nativePlan.initialEpoch,{newWork:false,recovery:true}));
+    demand(barrier.epoch===(BigInt(nativePlan.initialEpoch)+1n).toString());
+    const initial=await readP2CertificationCurrent(client,prepared,plan,verify);demand(initial.admission.active===0&&initial.admission.uncertain===0&&initial.witness.operations.length===0);
+    enableAttempted=true;await host.nativeControl.setEnabled(nativePlan,true);await stage.startWindow();
+    const deadline=performance.now()+nativePlan.windowSeconds*1000;
+    while(performance.now()<deadline){
+      await verify();const domain=await stage.observeDomain();
+      demand(['P2_KNOWN_ACK_DOMAIN_PENDING','P2_KNOWN_ACK_DOMAIN_SETTLED_IN_WINDOW'].includes(domain.status));
+      if(domain.status==='P2_KNOWN_ACK_DOMAIN_SETTLED_IN_WINDOW'&&existsSync(context.requestEvidence.path)){
+        collectP2CertificationRequestDetails(nativePlan,barrier.epoch,context.requestEvidence,{directory,certificationActionId:plan.certificationActionId});
+        const evidence=join(directory,'native-request-evidence'),provenance=JSON.parse(readFrontendReleaseEvidence(evidence,'p2-native-request-evidence-provenance.json'));
+        const bytes=readFrontendReleaseEvidence(evidence,provenance.artifactReceipt);demand(rawHash(bytes)===provenance.artifactSha256);
+        demand((await stage.retainRequestDetails(bytes)).status==='P2_KNOWN_ACK_REQUEST_DETAILS_JOINED');domainJoined=true;break;
+      }
+      await pause(Math.min(1000,deadline-performance.now()));
+    }
+  }finally{
+    // Every closure is attempted independently; none replays the fault/request.
+    try{demand((await hostStage.disarm(faultPlan)).faultDisabled===true);}catch{closureFailed=true;}
+    if(enableAttempted){try{if((await host.nativeControl.observeMetadata(nativePlan)).nativeEnabled!==false)await host.nativeControl.setEnabled(nativePlan,false);
+      demand((await host.nativeControl.observeMetadata(nativePlan)).nativeEnabled===false);}catch{closureFailed=true;}}
+    try{const actual=await readP2CertificationCurrent(client,prepared,plan,verify);
+      if(actual.admission.newWork||actual.admission.recovery)await withOwner(()=>changeFrontendAdmission(client,policy,actual.admission.epoch,{newWork:false,recovery:false}));
+    }catch{closureFailed=true;}
+    try{await host.gatewayStage('closed');}catch{closureFailed=true;}
+  }
+  demand(domainJoined&&!closureFailed&&barrier);
+  const settlement=await stage.prepareSettlement();demand(/^[a-f0-9-]{36}$/u.test(settlement.operationId??'')&&sha(settlement.evidenceSha256)&&/^[1-9][0-9]*$/u.test(settlement.epoch??''));
+  await withOwner(()=>reconcileFrontendOperation(client,policy,settlement.epoch,settlement.operationId,settlement.evidenceSha256));
+  const result=await stage.replace();demand(result.status==='P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED'&&result.recoveryActionId===plan.knownAckRecovery.recoveryActionId&&
+    result.ordinaryClosedZeroGate===false&&result.originalGatewayUncertaintyPreserved===true&&result.runtimeReplacements===1&&result.sqlReplayed===false);
+  return result;
 }
 
 export async function runP2BoundedCertification(plan,dependencies){
@@ -266,7 +324,11 @@ export async function runP2BoundedCertification(plan,dependencies){
         phase='recovery-only-stage';const recovery=await withOwner(()=>changeFrontendAdmission(client,policy,closedEpoch,{newWork:false,recovery:true}));
         demand(recovery.epoch===nativePlan.initialEpoch);store.record('p2-certification-recovery-only.json',recovery);await host.gatewayStage('recovery');
         const invoke=()=>qualifyP2LifecycleNative({...nativeInput,plan:nativePlan,directory:nativeDirectory,observeNativeRequests:collect});
-        if(plan.mode==='native-window'){phase='bounded-actual-native-window';caseOutcome=await invoke();}
+        if(plan.mode==='known-ack-recovery'){
+          const faultPlan=prepareP2LifecycleTransportFaultPlan(nativePlan,context.faultInput),hostStage=await host.prepareFault(faultPlan);
+          phase='reviewed-known-ack-drop-replay-settlement-replacement';
+          caseOutcome=await runKnownAckCase(plan,nativePlan,host,faultPlan,hostStage,client,verify,withOwner,dependencies.directory);
+        }else if(plan.mode==='native-window'){phase='bounded-actual-native-window';caseOutcome=await invoke();}
         else{
           const faultInput=context.faultInput;demand(faultInput);
           const faultPlan=prepareP2LifecycleTransportFaultPlan(nativePlan,faultInput),hostStage=await host.prepareFault(faultPlan);
@@ -279,7 +341,7 @@ export async function runP2BoundedCertification(plan,dependencies){
         await host.gatewayStage('closed');
       }
       phase='fresh-contained-terminal';await verify();
-      terminal=await host.prepareClose(caseOutcome,requestArtifact);demand(terminal?.status==='P2_BOUNDED_CERTIFICATION_CONTAINED'&&terminal.planSha256===plan.planSha256&&terminal.nativeDisabled===true&&terminal.sqlReplayed===false&&terminal.runtimeReplaced===false);
+      terminal=await host.prepareClose(caseOutcome,requestArtifact);demand(terminal?.status==='P2_BOUNDED_CERTIFICATION_CONTAINED'&&terminal.planSha256===plan.planSha256&&terminal.nativeDisabled===true&&terminal.sqlReplayed===false&&terminal.runtimeReplaced===(plan.mode==='known-ack-recovery'));
       store.record('p2-certification-close-prepared.json',terminal);
     });
     // The physical session is now actually closed. The host retains its real

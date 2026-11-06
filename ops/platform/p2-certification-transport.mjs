@@ -13,6 +13,12 @@ const MAXIMUM=4_000_000;
 const suspensionStages=new WeakMap();
 const authenticationStages=new WeakMap();
 const workerStages=new WeakMap();
+const knownAckStages=new WeakMap();
+
+export function readP2CertificationKnownAckStage(handle,plan){
+  const selected=knownAckStages.get(handle);demand(selected&&selected.plan===plan&&selected.active()&&isDeepStrictEqual(selected.snapshot,plan));
+  return selected.methods;
+}
 
 export function readP2CertificationWorkerStage(handle,plan){
   const selected=workerStages.get(handle);demand(selected&&selected.plan===plan&&selected.active()&&isDeepStrictEqual(selected.snapshot,plan));
@@ -109,6 +115,18 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               return call('worker-retain',{record:source.record,sourceArtifact:source.bytes.toString('base64')});},
           });
           const handle=Object.freeze({});workerStages.set(handle,{plan,snapshot,active:alive,methods});return handle;
+        },
+        async knownAckStage(plan){
+          demand(launch===spawn&&armed&&!prepared&&initial.certificationPlan.mode==='known-ack-recovery'&&isDeepStrictEqual(plan,initial.certificationPlan));
+          const ready=(await request('known-prepare','CERTIFICATION_KNOWN_ACK_OBSERVED',{},180_000)).receipt;
+          demand(ready.status==='P2_KNOWN_ACK_SOURCE_STAGE_PREPARED'&&ready.bindingSha256===plan.planSha256);
+          const snapshot=structuredClone(plan),alive=()=>active&&!failed&&armed&&!prepared&&!controller.signal.aborted&&isDeepStrictEqual(plan,snapshot);
+          const call=async(operation,data={},timeout=180_000)=>{demand(alive());return(await request(operation,'CERTIFICATION_KNOWN_ACK_OBSERVED',data,timeout)).receipt;};
+          let replacementAttempted=false;
+          const methods=Object.freeze({armFault:()=>call('known-arm'),startWindow:()=>call('known-start-window'),observeDomain:()=>call('known-domain'),
+            retainRequestDetails:bytes=>{demand(Buffer.isBuffer(bytes)&&bytes.length>0&&bytes.length<=2_000_000);return call('known-requests',{requestArtifact:bytes.toString('base64')});},
+            prepareSettlement:()=>call('known-settlement'),replace:()=>{demand(!replacementAttempted);replacementAttempted=true;return call('known-replace',{},800_000);}});
+          const handle=Object.freeze({});knownAckStages.set(handle,{plan,snapshot,active:alive,methods});return handle;
         },
         async prepareFault(plan){demand(armed&&!prepared);await request('fault-initialize','CERTIFICATION_FAULT_READY',{plan});
           const call=async(operation,data={})=>(await request(operation,'CERTIFICATION_FAULT_OBSERVED',{plan,...data})).receipt;

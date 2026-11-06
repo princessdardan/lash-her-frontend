@@ -1,0 +1,31 @@
+✔ operator request details retain exact original bytes and explicit finite provenance (154.86075ms)
+✔ unsupported automatic collector and caller completion booleans cannot replace request details (370.519584ms)
+✔ wrong action, plan, epoch, reviewer, duplicated IDs and private fields refuse before retention (758.091417ms)
+✔ actual child pipe/flock joins only exact certification terminal and keeps credentials in stdin (69.268ms)
+✔ actual remote process death aborts before case mutation and retains no success receipt (21.14525ms)
+✔ native parent preserves original candidate identity and derives only fixed source epochs (484.847333ms)
+✔ source/raw bytes/config/inventory/producer and reader identity drift cannot qualify the parent (61.774625ms)
+✔ retained READY workload and original P2 identity cannot be substituted behind a hash (127.471084ms)
+✔ authentication is a fixed300-second separate action and browser control invents no commands (18.613208ms)
+✔ direct-worker plan is a separate closed-start one-suspension source case with no native enable (146.969917ms)
+✔ known-ACK replacement is a distinct upfront reviewed one-use intent bound identically by both source languages (623.694625ms)
+✔ known-ACK private runtime reader uses the exact production staging credential binding without generic fallback (0.158584ms)
+✔ private denial profile cannot select a URL, SQL, token, command or Community HTTP feature (0.784125ms)
+✔ source private resolvers read only approved runtime inputs and foreign handles refuse (0.214041ms)
+✔ Course403 must be the exact account restriction, never generic403/401/429/503 (2.002ms)
+✔ Community requires actualproduction runtime configuration before any private module load (0.251125ms)
+✔ fixed child environment removes ambient URLs, provider credentials, loader hooks and other owned flags (0.869708ms)
+✔ receipt must prove the selected actual major, every required physical scenario and zero skips (0.394291ms)
+✔ certification fixture requires all ten current/physical cases and cannot claim deployed qualification (0.876792ms)
+✔ strict certification consumer accepts actual retained PG18 ten-case receipt and refuses either missing new case (0.704625ms)
+✔ native success cannot substitute for an enabled schedule, unfinished ledger or modeled app path (0.129959ms)
+✔ child failure preserves fixed status/phase/checkpoint without echoing messages, stack or credential fields (0.29375ms)
+✔ wrapper rejects arbitrary arguments before running a PostgreSQL or fixture program (36.418125ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1688.669083

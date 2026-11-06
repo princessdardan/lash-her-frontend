@@ -6,13 +6,15 @@ import {createServer,request as httpsRequest} from 'node:https';
 import {request as httpRequest} from 'node:http';
 import {fork,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {pathToFileURL} from 'node:url';
+import {createRequire} from 'node:module';
 import {randomUUID,createHash} from 'node:crypto';
 import {setTimeout as pause} from 'node:timers/promises';
 import {Client} from 'pg';
 import {createGateway} from '../../gateway/server.mjs';
 import {createP2CertificationFault,p2GatewayProcessBinding} from '../../gateway/p2-certification-fault.mjs';
 import {changeFrontendAdmission,reconcileFrontendOperation} from '../frontend-admission.mjs';
-import {observeKnownAckSql} from '../p2-known-ack-loss-probe.mjs';
+import {observeKnownAckSql,observeKnownAckBackend,readKnownAckRuntimeDatabaseUrl} from '../p2-known-ack-loss-probe.mjs';
 let phase='owned-input',observed;
 async function main(){
  assert.equal(process.env.P2_NATIVE_OWNED_CHILD,'true');const input=JSON.parse(readFileSync(0));const {target,port,password,runtime,owner,targetSha256,certificate,key,sourceCommit,directory}=input;
@@ -24,7 +26,7 @@ async function main(){
   COURSE_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET:'owned-course-'+randomUUID(),COMMUNITY_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET:'owned-community-'+randomUUID(),
   VERCEL_OIDC_TOKEN:`${Buffer.from('{"alg":"HS256"}').toString('base64url')}.${Buffer.from(JSON.stringify({exp:Math.floor(Date.now()/1000)+3600})).toString('base64url')}.owned`});
  const operator=new Client({host:target.host,port,database:target.database,user:target.user,password,ssl:{rejectUnauthorized:true,ca:readFileSync(certificate,'utf8')}});await operator.connect();
- const fetchObservations=[],servers=[],children=[],effects=[],accepted={course:new Map(),community:new Map()},originalFetch=globalThis.fetch,originalInfo=console.info,traces=[];let closePool;
+ const fetchObservations=[],servers=[],children=[],effects=[],backendClients=[],accepted={course:new Map(),community:new Map()},originalFetch=globalThis.fetch,originalInfo=console.info,traces=[];let closePool;
  const withOwner=async task=>{await operator.query(`SET ROLE "${owner.name}"`);try{return await task();}finally{await operator.query('RESET ROLE');}};
  const ledger=()=>withOwner(async()=> (await operator.query('SELECT id::text,state,kind,epoch::text,reconciliation_sha256 FROM frontend_admission.operations ORDER BY started_at')).rows);
  try{
@@ -87,13 +89,99 @@ async function main(){
   let opened=await withOwner(()=>changeFrontendAdmission(operator,{environment:'staging',targetSha256},'1',{newWork:false,recovery:true}));
   const marker=randomUUID().replaceAll('-','')+randomUUID().replaceAll('-','');await operator.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))',[marker]);
   const backend=(await operator.query('SELECT pg_catalog.pg_backend_pid() AS pid,backend_start::text AS started FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()')).rows[0];
-  const projection={version:1,commandId:command.commandId,commandSha256:hash(canonical(command)),accountVersion:'1',windowEpoch:opened.epoch};
+  const backendDeadline=new Date(Date.now()+900000).toISOString(),backendFaults=[];
+  phase='actual-backend-readonly-eligibility';
+  const databases={},models={};
+  for(const service of ['course','community']){
+   const api=input.apis[service],require=createRequire(join(api.root,'package.json')),{drizzle}=require('drizzle-orm/node-postgres');
+   const client=new Client({...api.database,ssl:{rejectUnauthorized:true,ca:readFileSync(certificate,'utf8')}});await client.connect();backendClients.push(client);databases[service]=client;models[service]=drizzle(client);
+  }
+  const load=(service,file)=>import(pathToFileURL(join(input.apis[service].root,file)).href);
+  phase='backend-missing-evidence-refusal';
+  // An empty database has no scheduler/control evidence and is ineligible.
+  await assert.rejects(observeKnownAckBackend(databases.course,'course',backendDeadline));
+  const emptyCommunity=await observeKnownAckBackend(databases.community,'community',backendDeadline);
+  assert.equal(emptyCommunity.eligible.reconciliationSchedule,1);assert.equal(emptyCommunity.eligible.retentionSchedule,1);
+  backendFaults.push({name:'missing-scheduler-receipts',service:'community',backend:emptyCommunity});
+  phase='backend-actual-source-scheduler-baseline';
+  const publisher=(await load('course','src/integrations/community/persistence/drizzle-publisher.repository.ts')).createDrizzleCommunityEnrollmentPublisherRepository(models.course);
+  await publisher.getControl();
+  phase='backend-source-snapshot-repository';
+  const entitlement=(await load('course','src/entitlements/entitlement.repository.ts')).createDrizzleEntitlementCommandRepository(models.course);
+  const snapshots=(await load('course','src/integrations/community/community-read.repository.ts')).createDrizzleCommunityReadRepository(models.course,entitlement);
+  const store=new (await load('community','src/integrations/course/reconciliation/drizzle-reconciliation-store.ts')).DrizzleReconciliationStore(models.community);
+  phase='backend-source-coordinator-construction';
+  const coordinator=(await load('community','src/integrations/course/reconciliation/reconciliation.ts')).createReconciliationCoordinator({store,snapshots:{
+   createSnapshot:async idempotencyKey=>{const value=await snapshots.requestSnapshot({idempotencyKey});return{...value.snapshot,idempotentReplay:value.isReplay};},
+   getSnapshot:snapshotId=>snapshots.getSnapshot(snapshotId),getSnapshotItems:value=>snapshots.listSnapshotItems(value)
+  }});
+  phase='backend-source-schedule-request';await coordinator.requestScheduled();
+  phase='backend-source-snapshot-build';assert.equal((await snapshots.buildNextSnapshot()).status,'ready');
+  phase='backend-source-schedule-completion';let scheduleOutcome='waiting';
+  for(let step=0;step<10&&scheduleOutcome==='waiting';step++)scheduleOutcome=await coordinator.advance();
+  assert.equal(scheduleOutcome,'completed');
+  phase='backend-actual-source-retention-baseline';
+  const retention=(await load('community','src/ops/retention.ts')).createCompletedEnrollmentRetention(models.community);
+  await retention.run({now:new Date(Date.now()-86400000+300000),operatorId:'owned-source-retention',reason:'owned_due_scheduler_receipt'});
+  await databases.community.query('BEGIN');
+  try{
+   // Retain the actual source-created old start receipt while modeling loss of
+   // its latest completion row. Never update immutable operational evidence.
+   await databases.community.query("DELETE FROM course_enrollment_operations WHERE action='retention_run' AND details->>'outcome'='completed'");
+   const dueRetention=await observeKnownAckBackend(databases.community,'community',backendDeadline);assert.equal(dueRetention.eligible.retentionSchedule,1);
+   backendFaults.push({name:'community-retention-schedule-horizon',service:'community',backend:dueRetention});
+  }finally{await databases.community.query('ROLLBACK');}
+  await retention.run({now:new Date(),operatorId:'owned-source-retention',reason:'owned_scheduler_baseline'});
+  const backendBefore={};for(const service of ['course','community']){
+   backendBefore[service]=await observeKnownAckBackend(databases[service],service,backendDeadline);assert.ok(Object.values(backendBefore[service].eligible).every(value=>value===0));
+  }
+  const fault=async(name,service,mutate,eligible)=>{
+   phase='backend-'+name;
+   const client=databases[service];assert.deepEqual(await observeKnownAckBackend(client,service,backendDeadline),backendBefore[service]);await client.query('BEGIN');
+   try{await mutate(client);let actual=null;
+    if(eligible===null)await assert.rejects(observeKnownAckBackend(client,service,backendDeadline));
+    else{actual=await observeKnownAckBackend(client,service,backendDeadline);if(eligible)assert.ok(actual.eligible[eligible]>0);else{assert.ok(Object.values(actual.eligible).every(value=>value===0));assert.notEqual(actual.snapshotSha256,backendBefore[service].snapshotSha256);}}
+    backendFaults.push({name,service,backend:actual});
+   }finally{await client.query('ROLLBACK');}
+   assert.deepEqual(await observeKnownAckBackend(client,service,backendDeadline),backendBefore[service]);
+  };
+  await fault('missing-course-control','course',client=>client.query('DELETE FROM community_enrollment_publisher_control'),null);
+  await fault('projection-completeness-bound','course',client=>client.query("INSERT INTO community_enrollment_outbox_operations(target_type,target_id,action,operator_id,reason,previous_state,resulting_state) SELECT 'publisher','publisher','status_inspect','owned','owned','running','running' FROM pg_catalog.generate_series(1,1001)"),null);
+  const seedOutbox=async(client,state='pending',leased=false)=>{
+   const user=randomUUID(),course=randomUUID(),stream=randomUUID(),event=randomUUID();
+   await client.query('INSERT INTO users(id) VALUES($1)',[user]);await client.query("INSERT INTO courses(id,slug,title) VALUES($1,$2,'Owned')",[course,'owned-'+course]);
+   await client.query("INSERT INTO community_enrollment_streams(id,user_id,course_id,state,effective_at) VALUES($1,$2,$3,'active',now())",[stream,user,course]);
+   await client.query("INSERT INTO community_enrollment_outbox(event_id,stream_id,stream_version,canonical_body,canonical_digest,state,available_at,delivered_at,lease_owner,lease_expires_at) VALUES($1,$2,1,'{}',$3,$4,now()+interval '2 hours',CASE WHEN $4='delivered' THEN now() ELSE NULL END,$5,CASE WHEN $5::text IS NOT NULL THEN now()+interval '2 hours' ELSE NULL END)",[event,stream,'a'.repeat(64),state,leased?'owned-lease':null]);
+  };
+  await fault('future-course-outbox','course',client=>seedOutbox(client),'outbox');
+  await fault('course-outbox-lease','course',client=>seedOutbox(client,'delivered',true),'outbox');
+  await fault('completed-course-effect-projection','course',client=>seedOutbox(client,'delivered'),false);
+  await fault('course-snapshot-work','course',client=>client.query("UPDATE community_enrollment_snapshots SET status='requested'"),'snapshots');
+  await fault('course-snapshot-expiry-horizon','course',client=>client.query("UPDATE community_enrollment_snapshots SET expires_at=now()+interval '5 minutes'"),'snapshots');
+  await fault('course-retention-horizon','course',client=>client.query("INSERT INTO community_enrollment_outbox_operations(target_type,target_id,action,operator_id,reason,previous_state,resulting_state,created_at) VALUES('publisher','publisher','status_inspect','owned','owned','running','running',now()-interval '180 days')"),'retention');
+  await fault('course-media-horizon','course',async client=>{
+   const course=randomUUID(),lessonModule=randomUUID(),lesson=randomUUID();
+   await client.query("INSERT INTO courses(id,slug,title) VALUES($1,$2,'Owned')",[course,'owned-'+course]);
+   await client.query("INSERT INTO modules(id,course_id,slug,title,position) VALUES($1,$2,'owned','Owned',1)",[lessonModule,course]);
+   await client.query("INSERT INTO lessons(id,module_id,slug,title,position) VALUES($1,$2,'owned','Owned',1)",[lesson,lessonModule]);
+   await client.query("INSERT INTO video_assets(lesson_id,managed_by_course,provider_environment_id,status,recovery_next_attempt_at) VALUES($1,true,'owned','ready',now()+interval '5 minutes')",[lesson]);
+  },'media');
+  for(const service of ['course','community'])await fault(service+'-export-expiry-horizon',service,async client=>{
+   const id=randomUUID(),user=randomUUID();await client.query("INSERT INTO account_lifecycle_commands(command_id,user_id,account_version,action,canonical_digest,issued_at,accepted_at) VALUES($1,$2,1,'export',$3,now(),now())",[id,user,'a'.repeat(64)]);
+   await client.query("INSERT INTO account_lifecycle_exports(command_id,user_id,account_version,data,ready_at,expires_at) VALUES($1,$2,1,'{}',now()-interval '24 hours'+interval '5 minutes',now()+interval '5 minutes')",[id,user]);
+  },'exports');
+  await fault('future-community-repair','community',client=>client.query("INSERT INTO course_enrollment_repairs(stream_id,minimum_version,next_attempt_at) VALUES($1,1,now()+interval '2 hours')",[randomUUID()]),'repairs');
+  await fault('completed-community-effect-projection','community',client=>client.query("INSERT INTO course_enrollment_projections(stream_id,user_id,course_id,state,applied_version,highest_observed_version,status,source,effective_at) VALUES($1,$2,$3,'active',1,1,'current','event',now())",[randomUUID(),randomUUID(),randomUUID()]),false);
+  await fault('community-reconciliation-work','community',client=>client.query("UPDATE course_enrollment_reconciliations SET status='running'"),'reconciliations');
+  await fault('community-reconciliation-schedule-horizon','community',client=>client.query("UPDATE course_enrollment_reconciliations SET requested_at=now()-interval '24 hours'+interval '5 minutes'"),'reconciliationSchedule');
+  const projection={version:1,commandId:command.commandId,commandSha256:hash(canonical(command)),accountVersion:'1',windowEpoch:opened.epoch,backendDeadline};
   const readAll=async()=>{
    const frontend={...projection,service:'frontend',target,owner,marker,backendPid:backend.pid,backendStart:backend.started,targetSha256};
    const front=await observeKnownAckSql(frontend,{getUrl:()=>`postgresql://${target.user}:${password}@127.0.0.1:${port}/${target.database}?sslmode=verify-full`});
    const receipts={frontend:front};
    for(const service of ['course','community']){const api=input.apis[service],selected={...projection,service,target:{...api.database,serverMajor:input.postgresMajor,roleOid:api.roleOid}};delete selected.target.password;
-    receipts[service]=await observeKnownAckSql(selected,{getUrl:()=>`postgresql://${api.database.user}:${password}@127.0.0.1:${port}/${api.database.database}?sslmode=verify-full`});
+    receipts[service]=await observeKnownAckSql(selected,{getUrl:()=>readKnownAckRuntimeDatabaseUrl({NODE_ENV:'production',DATABASE_TARGET:'staging',
+      STAGING_DATABASE_URL:`postgresql://${api.database.user}:${password}@127.0.0.1:${port}/${api.database.database}?sslmode=verify-full`,DATABASE_URL:'unrelated-generic-binding'})});
    }
    assert.deepEqual(await observeKnownAckSql(frontend,{getUrl:()=>`postgresql://${target.user}:${password}@127.0.0.1:${port}/${target.database}?sslmode=verify-full`}),front);return receipts;
   };
@@ -124,6 +212,13 @@ import p2_known_ack_loss as source
 value=json.load(sys.stdin);plan=value['plan'];before=value['before'];domain=value['domain'];gateway=value['gateway'];effects=value['effects']
 source.validate_baseline(plan,before)
 assert source.validate_domain(plan,before,domain,gateway,effects)=={'operationId':value['operationId']}
+backend_faults=0
+for item in value['backendFaults']:
+    actual=copy.deepcopy(before);actual[item['service']]['backend']=item['backend']
+    try:source.validate_backend_idle(actual,before)
+    except ValueError:backend_faults+=1
+    else:raise AssertionError('backend fault accepted '+item['name'])
+assert backend_faults==len(value['backendFaults']) and backend_faults>=14
 faults=0
 for kind in ('other-work','later-version','extra-effect','producer','command','missing-ack','extra-attempt','canonical-receiver','global-unknown','gateway-unknown','extra-prior-completed'):
     actual=copy.deepcopy(domain);observed=copy.deepcopy(gateway);injected=copy.deepcopy(effects)
@@ -146,10 +241,10 @@ assert faults==11
 try:source.require_known_ack_loss_authorization({'status':'P2_KNOWN_ACK_REPLACEMENT_AUTHORIZED'},object(),'owned-replacement')
 except ValueError:pass
 else:raise AssertionError('plain receipt issued replacement authority')
-print(json.dumps({'status':'P2_KNOWN_ACK_SOURCE_DOMAIN_REDUCER_PASS','faultRefusals':faults,'plainReceiptAuthorityRefused':True,'authorityIssued':False}))
+print(json.dumps({'status':'P2_KNOWN_ACK_SOURCE_DOMAIN_REDUCER_PASS','faultRefusals':faults,'backendFaultRefusals':backend_faults,'plainReceiptAuthorityRefused':True,'authorityIssued':False}))
 `;
   const reducerPlan={commandSha256:projection.commandSha256,receiver:'course',nativePlan:{initialEpoch:nativeInitialEpoch,sourceCommit,producer:{producerSha256:'b'.repeat(64),role:{oid:runtime.oid}},commandWitnesses:[{commandId:command.commandId,accountVersion:'1',action:'suspend'}]}};
-  const reducer=spawnSync('python3',['-I','-c',reducerProgram,fileURLToPath(new URL('../host/',import.meta.url))],{input:JSON.stringify({plan:reducerPlan,before,domain,gateway:{admission:gateway.admissionState()},effects,operationId:firstLedger[0].id}),encoding:'utf8',timeout:10000,env:{PATH:process.env.PATH,LANG:'C',LC_ALL:'C'}});
+  const reducer=spawnSync('python3',['-I','-c',reducerProgram,fileURLToPath(new URL('../host/',import.meta.url))],{input:JSON.stringify({plan:reducerPlan,before,domain,backendFaults,gateway:{admission:gateway.admissionState()},effects,operationId:firstLedger[0].id}),encoding:'utf8',timeout:10000,env:{PATH:process.env.PATH,LANG:'C',LC_ALL:'C'}});
   assert.equal(reducer.status,0);const reducerResult=JSON.parse(reducer.stdout);assert.equal(reducerResult.status,'P2_KNOWN_ACK_SOURCE_DOMAIN_REDUCER_PASS');
   phase='actual-domain-fault-refusal';let canonicalFaultRefusals=0,immutableReceiptRewriteRefusals=0;
   for(const service of ['course','community']){
@@ -191,8 +286,10 @@ print(json.dumps({'status':'P2_KNOWN_ACK_SPECIFIC_SETTLEMENT_REDUCER_PASS','extr
    replayHttpStatus:second.status,finalFrontendUncertain:finalLedger.filter(row=>row.state==='uncertain').length,finalGatewayUncertain:1,finalDeliveries,sourceTraceMatchesOperation:traces.length===2&&traces.every((row,index)=>row.operationId===finalLedger[index].id),
    settledFrontendUncertain:settled.frontend.admission.uncertain,specificFrontendOperationReconciled:true,gatewayCounterReset:false,domainProofSha256:hash(canonical(domain)),
    canonicalFaultRefusals,immutableReceiptRewriteRefusals,sourceDomainReducer:reducerResult,sourceSettlementReducer:settlementProof,
+   backendEligibility:{actualReadOnlyProjections:true,sourceSchedulerBaseline:true,sourceRetentionBaseline:true,faultRefusals:backendFaults.length,
+    faultNames:backendFaults.map(value=>value.name),entireParentHorizonSeconds:900,liveWorkerProcesses:false},
    journalSha256Before:journalsBefore,journalSha256After:journalsAfter,allThreeJournalsUnchanged:true,
    noSqlReplay:true,noRoleChange:true,noRuntimeRestart:true,fixtureOnly:true};
- }finally{console.info=originalInfo;globalThis.fetch=originalFetch;for(const server of servers){server.closeAllConnections();await new Promise(done=>server.close(done));}for(const receiver of children){try{await receiver.request('stop');}catch{receiver.child.kill('SIGKILL');}}await closePool?.();await operator.end();}
+ }finally{console.info=originalInfo;globalThis.fetch=originalFetch;for(const server of servers){server.closeAllConnections();await new Promise(done=>server.close(done));}for(const receiver of children){try{await receiver.request('stop');}catch{receiver.child.kill('SIGKILL');}}for(const client of backendClients)await client.end();await closePool?.();await operator.end();}
 }
 main().then(value=>console.log(JSON.stringify(value))).catch(()=>{console.error(JSON.stringify({status:'P2_KNOWN_ACK_WHOLE_ROUTE_FAILED',phase,observed}));process.exitCode=1;});

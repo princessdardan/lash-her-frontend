@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "status": "P2_KNOWN_ACK_WHOLE_ROUTE_PASS",
+  "actualAppCron": true,
+  "actualDispatcher": true,
+  "actualTlsGateway": true,
+  "actualTlsReceivers": true,
+  "actualCanonicalApiReceivers": true,
+  "actualThreeDatabaseDomainProof": true,
+  "actualTlsPostgres": true,
+  "actualProvider": false,
+  "modeledOidc": true,
+  "firstHttpStatus": 503,
+  "firstFrontendLedgerState": "uncertain",
+  "firstFrontendUncertain": 1,
+  "firstGatewayUncertain": 1,
+  "firstDeliveries": [
+    {
+      "receiver": "community",
+      "status": "acknowledged",
+      "attempts": 1,
+      "lease_id": null,
+      "lease_until": null
+    },
+    {
+      "receiver": "course",
+      "status": "pending",
+      "attempts": 1,
+      "lease_id": null,
+      "lease_until": null
+    }
+  ],
+  "replayHttpStatus": 200,
+  "finalFrontendUncertain": 1,
+  "finalGatewayUncertain": 1,
+  "finalDeliveries": [
+    {
+      "receiver": "community",
+      "status": "acknowledged",
+      "attempts": 1,
+      "lease_id": null,
+      "lease_until": null
+    },
+    {
+      "receiver": "course",
+      "status": "acknowledged",
+      "attempts": 2,
+      "lease_id": null,
+      "lease_until": null
+    }
+  ],
+  "sourceTraceMatchesOperation": true,
+  "settledFrontendUncertain": 0,
+  "specificFrontendOperationReconciled": true,
+  "gatewayCounterReset": false,
+  "domainProofSha256": "dea29e3f215189faabb285eee645df115804967567d5cc54896924060e23feca",
+  "canonicalFaultRefusals": 2,
+  "immutableReceiptRewriteRefusals": 2,
+  "sourceDomainReducer": {
+    "status": "P2_KNOWN_ACK_SOURCE_DOMAIN_REDUCER_PASS",
+    "faultRefusals": 11,
+    "backendFaultRefusals": 17,
+    "plainReceiptAuthorityRefused": true,
+    "authorityIssued": false
+  },
+  "sourceSettlementReducer": {
+    "status": "P2_KNOWN_ACK_SPECIFIC_SETTLEMENT_REDUCER_PASS",
+    "extraCompletedOperationRefused": true,
+    "authorityIssued": false
+  },
+  "backendEligibility": {
+    "actualReadOnlyProjections": true,
+    "sourceSchedulerBaseline": true,
+    "sourceRetentionBaseline": true,
+    "faultRefusals": 17,
+    "faultNames": [
+      "missing-scheduler-receipts",
+      "community-retention-schedule-horizon",
+      "missing-course-control",
+      "projection-completeness-bound",
+      "future-course-outbox",
+      "course-outbox-lease",
+      "completed-course-effect-projection",
+      "course-snapshot-work",
+      "course-snapshot-expiry-horizon",
+      "course-retention-horizon",
+      "course-media-horizon",
+      "course-export-expiry-horizon",
+      "community-export-expiry-horizon",
+      "future-community-repair",
+      "completed-community-effect-projection",
+      "community-reconciliation-work",
+      "community-reconciliation-schedule-horizon"
+    ],
+    "entireParentHorizonSeconds": 900,
+    "liveWorkerProcesses": false
+  },
+  "journalSha256Before": {
+    "frontend": "79216f67827004f1cb69a623110a07d11568c84c73b61e2e7d56d078c1a48dab",
+    "course": "e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899",
+    "community": "b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a"
+  },
+  "journalSha256After": {
+    "frontend": "79216f67827004f1cb69a623110a07d11568c84c73b61e2e7d56d078c1a48dab",
+    "course": "e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899",
+    "community": "b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a"
+  },
+  "allThreeJournalsUnchanged": true,
+  "noSqlReplay": true,
+  "noRoleChange": true,
+  "noRuntimeRestart": true,
+  "fixtureOnly": true,
+  "postgresMajor": 16,
+  "migrations": {
+    "frontend": 83,
+    "course": 22,
+    "community": 11
+  },
+  "frontendSourceCommit": "f1fc3b4dc33acc5e6030294a9c429fab449b4fcb",
+  "apiSourceCommits": {
+    "course": "a447bfde20299e12afab68a3331b3792ddd07598",
+    "community": "939de65dd52f0b1a43993a25c7c428dce6e2bb43"
+  },
+  "apiSourceArchives": {
+    "course": {
+      "sha256": "84ff026ee80024fc0890e2ade42a692c5cf2072010aa428b6472e34d46702d51",
+      "lockSha256": "0153a941a3e767889cc356b1d3cc72823b03a7d46f97fd07f66b7e53f3e8c8fa"
+    },
+    "community": {
+      "sha256": "616d8f504481ab24d4335bce3ebdd42b9ff2bc75f2ec47321b48d56d42ea14d1",
+      "lockSha256": "03e332482b3f4d4f1a572a8ba00d79a0e7d9a27497e67973103fbdc2833e4bfe"
+    }
+  },
+  "fixtureSourceSha256": {
+    "p2-known-ack-loss-probe.mjs": "155700b3a5ff7ed65410ce28046fb8ac07ff00a9d7ee3cb0237bc53ca3a42186",
+    "host/p2_known_ack_loss.py": "cc9a11a0b6b212dc481c8bd2de037e1cbfc0fbf8ab0de8b34f6db35f3efd9a2b",
+    "harness/owned-p2-known-ack-loss.mjs": "51d858b2f7928ade7ed7cbfb83e1b323784993738b378f11dd0474347eb3a601",
+    "harness/owned-phase2-lifecycle-receiver.mjs": "65e9e483cb4eba3b1804ac4725d15e0ffea13fa6703a7af877f9882129fc3c44"
+  },
+  "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+  "actualVercelNativeEvidence": false,
+  "providerTouched": false
+}

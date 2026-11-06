@@ -60,6 +60,7 @@ class CertificationProtocolTests(unittest.TestCase):
         self.broker.check=lambda:None
         self.broker.initial={'certificationActionId':'bounded-auth','certificationPlan':{'mode':'auth-preparation','initialEpoch':'7'},'browserPlan':{'sourceCommit':'a'*40},'sourceParentChallenge':'b'*64}
         self.broker.external_armed=True;self.broker.authentication_issued=False
+        self.broker.known_ack_boundary=None;self.broker.known_ack_new_gateway_process=None;self.broker.known_ack_recorder=None
         self.broker.observer=type('Physical',(),{'probe':lambda _,op:{'admission':{'epoch':'8','newWork':True,'recovery':False,'uncertain':0}}})()
         self.gateway={'admission':{'newWork':True,'recovery':False,'uncertain':{'newWork':0,'recovery':0}}}
         self.broker._gateway_current=lambda:self.gateway

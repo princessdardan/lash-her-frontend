@@ -10,6 +10,7 @@ import {Client} from 'pg';
 import {frontendMigrationArtifact} from './frontend-migration.mjs';
 import {readMigrationCatalog} from './frontend-schema.mjs';
 import {frontendAdmissionTargetSha256} from './frontend-admission-bootstrap.mjs';
+import {reconcileFrontendOperation} from './frontend-admission.mjs';
 import {withP2CertificationFrontendSession,observeP2CertificationPhysical,readP2CertificationCurrent} from './p2-certification-current-probe.mjs';
 const run=(program,args,options={})=>execFileSync(program,args,{encoding:'utf8',stdio:['ignore','pipe','pipe'],env:{PATH:process.env.PATH,LANG:'C',LC_ALL:'C'},...options});
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -112,6 +113,37 @@ async function child(){
     await admin.query('DELETE FROM frontend_admission.operations WHERE id=$1',[operationId]);
     await admin.query('UPDATE frontend_admission.control SET epoch=1,new_work=false,recovery=false');
     checks.push('actual-fixed-direct-worker-epoch-original-operation-window-and-uncertainty-refusal');
+    phase='actual-child-known-ack-specific-settlement';
+    const known={...plan,mode:'known-ack-recovery'},uncertainId=randomUUID(),replayId=randomUUID(),extraId=randomUUID(),evidence='d'.repeat(64);
+    await withP2CertificationFrontendSession(prepared,known,deps,async({client,verify,probe})=>{
+      await admin.query('UPDATE frontend_admission.control SET epoch=2,new_work=false,recovery=true');
+      await readP2CertificationCurrent(client,prepared,known,verify);
+      await admin.query('UPDATE frontend_admission.control SET epoch=3');
+      for(const [id,state] of [[uncertainId,'uncertain'],[replayId,'completed']])await admin.query(`INSERT INTO frontend_admission.operations(id,producer_sha256,source_sha,database_role,epoch,kind,state,completed_at)
+        VALUES($1,$2,$3,$4,3,'recovery',$5,CASE WHEN $5='completed' THEN pg_catalog.clock_timestamp() ELSE NULL END)`,[id,producerSha256,sourceCommit,roles.cert_runtime,state]);
+      assert.equal((await readP2CertificationCurrent(client,prepared,known,verify)).admission.uncertain,1);
+      assert.equal((await observeP2CertificationPhysical({...probe,operation:'witness'},deps)).witness.operations.length,2);
+      await admin.query('UPDATE frontend_admission.operations SET source_sha=$1 WHERE id=$2',['f'.repeat(40),uncertainId]);
+      await assert.rejects(readP2CertificationCurrent(client,prepared,known,verify));
+      await admin.query('UPDATE frontend_admission.operations SET source_sha=$1 WHERE id=$2',[sourceCommit,uncertainId]);
+      await admin.query(`INSERT INTO frontend_admission.operations(id,producer_sha256,source_sha,database_role,epoch,kind,state)
+        VALUES($1,$2,$3,$4,3,'recovery','uncertain')`,[extraId,producerSha256,sourceCommit,roles.cert_runtime]);
+      await assert.rejects(observeP2CertificationPhysical({...probe,operation:'observe'},deps));
+      await admin.query('DELETE FROM frontend_admission.operations WHERE id=$1',[extraId]);
+      await admin.query('UPDATE frontend_admission.control SET epoch=4,new_work=false,recovery=false');
+      await client.query('SET ROLE cert_owner');
+      try{
+        await assert.rejects(reconcileFrontendOperation(client,{environment:'staging',targetSha256},'3',uncertainId,evidence));
+        await reconcileFrontendOperation(client,{environment:'staging',targetSha256},'4',uncertainId,evidence);
+      }finally{await client.query('RESET ROLE');}
+      const actual=await readP2CertificationCurrent(client,prepared,known,verify);
+      assert.equal(actual.admission.uncertain,0);assert.equal(actual.admission.active,0);assert.equal(actual.admission.epoch,'4');
+      assert.equal(actual.witness.operations.find(row=>row.id===uncertainId).reconciliation_sha256,evidence);
+      assert.equal((await observeP2CertificationPhysical({...probe,operation:'witness'},deps)).admission.uncertain,0);
+    });
+    await admin.query('DELETE FROM frontend_admission.operations WHERE id=ANY($1::uuid[])',[[uncertainId,replayId]]);
+    await admin.query('UPDATE frontend_admission.control SET epoch=1,new_work=false,recovery=false');
+    checks.push('actual-known-ack-epochs-exact-uncertainty-and-specific-operation-settlement');
     await admin.query('UPDATE frontend_admission.control SET new_work=true,recovery=true,epoch=2');
     assert.equal((await observeP2CertificationPhysical({...sourceProbe,operation:'fence'},deps)).frontendAdmissionClosed,true);
     assert.deepEqual((await admin.query('SELECT new_work,recovery FROM frontend_admission.control')).rows,[{new_work:false,recovery:false}]);

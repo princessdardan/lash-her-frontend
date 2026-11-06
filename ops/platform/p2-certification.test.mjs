@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {execFileSync} from 'node:child_process';
 import {mkdtempSync,mkdirSync,realpathSync,chmodSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -7,10 +8,12 @@ import {nativeDocuments} from './harness/p2-native-unit-fixture.mjs';
 import {frontendCoordinationHash as hash} from './frontend-release-inventory.mjs';
 import {prepareP2BoundedCertification,P2_CERTIFICATION_READY_FILES,deriveP2CertificationNativePlan,bindP2CertificationReadyReceipts} from './p2-certification.mjs';
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
+import {readKnownAckRuntimeDatabaseUrl} from './p2-known-ack-loss-probe.mjs';
 
-function fixture(startState='already-closed'){
+function fixture(startState='already-closed',gateway=false){
   const root=realpathSync(mkdtempSync(join(tmpdir(),'p2-certification-plan-')));chmodSync(root,0o700);const receipts=join(root,'ready');mkdirSync(receipts,{mode:0o700});
   const {candidate,settings}=nativeDocuments(),producer=settings.producer;
+  if(gateway)candidate.artifacts={gateway:{image:'ghcr.io/princessdardan/lash-her-api-gateway@sha256:'+'8'.repeat(64)}};
   const inventory={actionId:candidate.releaseId,sourceCommit:candidate.sources.frontend.commit,targetSha256:settings.targetSha256,owner:settings.owner,
     producers:[producer],runtimeProducerSha256:producer.producerSha256,certification:{featureControls:settings.featureControls}};
   const job={sourceCommit:candidate.sources.frontend.commit,target:{...settings.target,runtimeRole:producer.role.name}};
@@ -79,4 +82,30 @@ test('direct-worker plan is a separate closed-start one-suspension source case w
     assert.throws(()=>deriveP2CertificationNativePlan(plan,{epoch:'1',newWork:false,recovery:false,active:0,uncertain:0}));
     f.input.startState='qualified-ready';assert.throws(f.run);
   }finally{f.cleanup();}
+});
+test('known-ACK replacement is a distinct upfront reviewed one-use intent bound identically by both source languages',()=>{
+  const f=fixture('already-closed',true);try{
+    f.input.mode='known-ack-recovery';f.input.native.commandWitnesses=[f.input.native.commandWitnesses[0]];
+    f.input.fault={stageId:'known-drop-once',receiver:'course',commandIndex:0,commandSha256:'7'.repeat(64)};
+    const target={host:'owned-api.invalid',port:5432,database:'owned_database',user:'owned_runtime',serverMajor:18,roleOid:'123'};
+    f.input.knownAckRecovery={version:1,recoveryActionId:'reviewed-known-replacement',configurationInputDirectory:'/var/lib/lash-her/releases/staging/owned-input',receiverTargets:{course:{...target},community:{...target}}};
+    const plan=f.run(),intent=plan.knownAckRecovery.intent;
+    assert.equal(intent.runtimeReplacements,1);assert.equal(intent.ordinaryClosedZeroGate,false);assert.equal(intent.automaticFailureRecoveryAllowed,false);
+    assert.equal(intent.sqlReplayAllowed,false);assert.equal(intent.roleChangeAllowed,false);assert.equal(intent.nativePlanSha256,plan.nativePlan.planSha256);
+    assert.equal(plan.knownAckRecovery.intentSha256,p2NativeHash(intent));
+    const program="import json,sys;sys.path.insert(0,sys.argv[1]);import p2_known_ack_loss as m;v=json.load(sys.stdin);print(json.dumps(m.replacement_intent(v,v['knownAckRecovery']['recoveryActionId'])))";
+    const actual=JSON.parse(execFileSync('python3',['-I','-c',program,new URL('./host/',import.meta.url).pathname],{input:JSON.stringify(plan),encoding:'utf8',env:{PATH:process.env.PATH,LANG:'C',LC_ALL:'C'}}));
+    assert.deepEqual(actual,intent);
+    for(const change of [value=>{value.knownAckRecovery.recoveryActionId=value.certificationActionId;},value=>{value.knownAckRecovery.runtimeReplacements=2;},
+      value=>{value.knownAckRecovery.receiverTargets.course.token='caller-selected';},value=>{value.mode='fault-drop-after-ack';}]){
+      const saved=structuredClone(f.input);change(f.input);assert.throws(f.run);
+      for(const key of Object.keys(f.input))delete f.input[key];Object.assign(f.input,saved);
+    }
+  }finally{f.cleanup();}
+});
+test('known-ACK private runtime reader uses the exact production staging credential binding without generic fallback',()=>{
+  assert.equal(readKnownAckRuntimeDatabaseUrl({NODE_ENV:'production',DATABASE_TARGET:'staging',STAGING_DATABASE_URL:'owned-synthetic-runtime-url',DATABASE_URL:'unrelated'}),'owned-synthetic-runtime-url');
+  for(const value of [{NODE_ENV:'test',DATABASE_TARGET:'staging',STAGING_DATABASE_URL:'owned'},
+    {NODE_ENV:'production',DATABASE_TARGET:'production',STAGING_DATABASE_URL:'owned'},
+    {NODE_ENV:'production',DATABASE_TARGET:'staging',DATABASE_URL:'generic-must-not-substitute'}])assert.throws(()=>readKnownAckRuntimeDatabaseUrl(value));
 });

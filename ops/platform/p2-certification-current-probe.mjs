@@ -18,7 +18,7 @@ const bodies={admit:'e8efe70da1fabe4381d640e73bc42b5e204ec5f1aa28589d09b1e73a0be
 const options=(value,target)=>({...frontendConnectionOptions(value,target),options:'-c search_path=pg_catalog,public',application_name:'lash-her-p2-bounded-certification'});
 
 function admissionPolicy(plan,value,initial){
-  demand(['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','contain-native'].includes(plan.mode)&&
+  demand(['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery','contain-native'].includes(plan.mode)&&
     ['qualified-ready','already-closed'].includes(plan.startState)&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&/^[1-9][0-9]{0,17}$/u.test(value.epoch)&&
     typeof value.newWork==='boolean'&&typeof value.recovery==='boolean'&&
     Number.isInteger(value.active)&&value.active>=0&&Number.isInteger(value.uncertain)&&value.uncertain>=0);
@@ -38,7 +38,7 @@ function admissionPolicy(plan,value,initial){
   else{
     demand(delta>=0n&&delta<=closedOffset+3n&&value.newWork===(closedOffset===1n&&delta===0n)&&
       value.recovery===(closedOffset===1n&&delta===0n||delta===closedOffset+1n||delta===closedOffset+2n));
-    demand(plan.mode==='fault-drop-after-ack'?value.uncertain<=1:value.uncertain===0);
+    demand(['fault-drop-after-ack','known-ack-recovery'].includes(plan.mode)?value.uncertain<=1:value.uncertain===0);
   }
 }
 

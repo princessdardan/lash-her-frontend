@@ -221,6 +221,8 @@ class P2CertificationBroker(Broker):
         self.suspension_stage=None;self.authentication_issued=False;self.browser_retained=None;self.pending_retained=None
         self.browser_origin=None
         self.worker_stage=None;self.worker_retained=None;self.worker_source_sha256=None
+        self.known_ack_recorder=None;self.known_ack_boundary=None;self.known_ack_outcome=None;self.known_ack_replace_attempted=False
+        self.known_ack_new_gateway_process=None
         super().initialize()
 
     def select_release(self,initial):
@@ -240,6 +242,15 @@ class P2CertificationBroker(Broker):
             require(cert['startState']=='already-closed' and initial['workerPlan']==cert['workerPlan'] and _sha(_canonical(initial['workerPlan']))==cert['workerPlanSha256'] and
                 initial['workerPlan']['actionId']==self.action_id() and initial['workerPlan']['nativePlanSha256']==initial['nativePlan']['planSha256'] and
                 cert['sourceCommit']==cert['operatorSourceCommit'],'P2_CERTIFICATION_SOURCE_WORKER_PLAN_REQUIRED')
+        if cert['mode']=='known-ack-recovery':
+            import p2_known_ack_loss as known
+            selection=cert.get('knownAckRecovery')
+            require(cert['sourceCommit']==cert['operatorSourceCommit'] and isinstance(selection,dict) and selection.get('version')==1 and
+                re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}',selection.get('recoveryActionId','')) and
+                selection['recoveryActionId'] not in (self.action_id(),selected['releaseId']) and
+                selection.get('intent')==known.replacement_intent(cert,selection['recoveryActionId']) and selection.get('intentSha256')==_sha(_canonical(selection['intent'])),
+                'P2_CERTIFICATION_REVIEWED_KNOWN_ACK_INTENT_REQUIRED')
+            known.validate_known_configuration_input(cert['knownAckConfigurationInputDirectory'],self.configuration,selected,jobs,initial['configurationSha256'])
         require(cert['operatorSourceClosureSha256']==initial['sourceClosureSha256'] and cert['configurationCanonicalSha256']==_sha(_canonical(initial['configurationSha256'])),
             'P2_CERTIFICATION_CLOSED_SOURCE_CONFIGURATION_REQUIRED')
         migrate.require_contract_identity(selected,cert)
@@ -321,6 +332,11 @@ class P2CertificationBroker(Broker):
 
     def _verify_boundary(self):
         self.scope.require_frontend(self.selected,self.jobs['frontend']);self.scope.require_configuration(self.configuration)
+        if self.known_ack_boundary is not None:
+            self.known_ack_boundary.verify_healthy_boundary()
+            if time.monotonic()-self.last_api_verified>=10:self._refresh_api()
+            self.last_boundary=time.monotonic();return
+        if self.known_ack_recorder is not None:self.known_ack_recorder.verify_backend_idle()
         token=runtime._command_scope.set(self.scope)
         try:require(runtime.check_containers(self.selected,self.configuration)==self.runtime_current,'P2_CERTIFICATION_RUNTIME_CHANGED')
         finally:runtime._command_scope.reset(token)
@@ -426,7 +442,7 @@ class P2CertificationBroker(Broker):
         result=self.scope.run(['docker','exec','--workdir','/app',gateway['containerId'],'node','--input-type=module','--eval',GATEWAY_OBSERVER],env=runtime.SAFE_ENV,timeout=10,capture_output=True,check=True)
         require(not result.stderr and 0<len(result.stdout)<=16384,'P2_CERTIFICATION_GATEWAY_READBACK_REQUIRED')
         value=json.loads(result.stdout);plan=self.initial['certificationPlan']
-        require(value.get('status')=='P2_FAULT_GATEWAY_CURRENT' and value.get('processSha256')==plan['gatewayProcessSha256'] and
+        require(value.get('status')=='P2_FAULT_GATEWAY_CURRENT' and value.get('processSha256')==(self.known_ack_new_gateway_process or plan['gatewayProcessSha256']) and
             value.get('gatewayConfigurationSha256')==plan['gatewayConfigurationSha256'] and value.get('faultModuleSha256')==_sha(migrate.read_input(self.source,'ops/gateway/p2-certification-fault.mjs')) and
             value.get('admissionDirectory')=={'device':str(opened.st_dev),'inode':str(opened.st_ino)},'P2_CERTIFICATION_EXACT_GATEWAY_REQUIRED')
         return value
@@ -452,7 +468,7 @@ class P2CertificationBroker(Broker):
 
     def fault_operation(self,operation,request):
         self.check();plan=request.get('plan');cert=self.initial['certificationPlan']
-        require(self.external_armed and cert['mode'] in ('fault-before-upstream','fault-drop-after-ack') and isinstance(plan,dict) and
+        require(self.external_armed and cert['mode'] in ('fault-before-upstream','fault-drop-after-ack','known-ack-recovery') and isinstance(plan,dict) and
             plan.get('mode')==('503-before-upstream' if cert['mode']=='fault-before-upstream' else 'drop-after-ack') and
             plan.get('nativePlanSha256')==self.initial['nativePlan']['planSha256'] and plan.get('operatorSourceCommit')==self.initial['sourceCommit'] and
             plan.get('configurationSha256')==cert['configurationCanonicalSha256'] and plan.get('gatewayProcessSha256')==cert['gatewayProcessSha256'] and
@@ -470,6 +486,7 @@ class P2CertificationBroker(Broker):
         if operation=='fault-verify':self.fault_stage.verify();return {'verified':True}
         if operation=='fault-observe':return self.fault_stage.observe()
         if operation=='fault-arm':
+            require(cert['mode']!='known-ack-recovery','P2_CERTIFICATION_KNOWN_ACK_SOURCE_ARM_REQUIRED')
             actual=self.observer.probe('witness')['witness']['commands'];record=request.get('record')
             require(isinstance(record,dict) and any(row['commandId']==record.get('commandId') and row['accountVersion']==str(record.get('accountVersion')) and
                 row['canonicalSha256']==record.get('canonicalSha256')==plan['commandSha256'] for row in actual),'P2_CERTIFICATION_FAULT_ACTUAL_COMMAND_REQUIRED')
@@ -564,6 +581,45 @@ class P2CertificationBroker(Broker):
             self.worker_retained=stage.retain_joined_from_source_parent(record);self.worker_source_sha256=_sha(raw);return self.worker_retained
         raise ValueError('P2_CERTIFICATION_FIXED_WORKER_OPERATION_REQUIRED')
 
+    def known_ack_operation(self,operation,value):
+        self.check();cert=self.initial['certificationPlan']
+        require(self.external_armed and cert['mode']=='known-ack-recovery','P2_CERTIFICATION_FIXED_KNOWN_ACK_MODE_REQUIRED')
+        import p2_known_ack_loss as known
+        if operation=='known-prepare':
+            require(self.known_ack_recorder is None and self.fault_stage is not None,'P2_CERTIFICATION_KNOWN_ACK_ISSUER_ALREADY_USED')
+            self.known_ack_recorder=known.P2KnownAckLossRecorder(self,cert['knownAckRecovery']['recoveryActionId'],cert['knownAckReceiverTargets'])
+            return {'status':'P2_KNOWN_ACK_SOURCE_STAGE_PREPARED','bindingSha256':cert['planSha256'],'baselineSha256':self.known_ack_recorder.baseline_sha256}
+        recorder=self.known_ack_recorder;require(recorder is not None,'P2_CERTIFICATION_KNOWN_ACK_SOURCE_ISSUER_REQUIRED')
+        if operation=='known-arm':
+            recorder._verify();known.validate_baseline(recorder.plan,recorder._snapshot())
+            require(self._native_observe()['nativeEnabled'] is False,'P2_CERTIFICATION_KNOWN_ACK_NATIVE_OFF_BEFORE_ARM')
+            return self.fault_stage.arm({'commandId':recorder.command['commandId'],'accountVersion':int(recorder.command['accountVersion']),'canonicalSha256':recorder.plan['commandSha256']})
+        if operation=='known-start-window':recorder.start_native_window();return {'status':'P2_KNOWN_ACK_NATIVE_WINDOW_STARTED'}
+        if operation=='known-domain':return recorder.observe_domain()
+        if operation=='known-requests':return recorder.retain_request_details(value.get('requestArtifact'))
+        if operation=='known-settlement':return recorder.prepare_reconciliation()
+        if operation=='known-replace':
+            require(not self.known_ack_replace_attempted and self.known_ack_boundary is None,'P2_CERTIFICATION_KNOWN_ACK_REPLACEMENT_ALREADY_ATTEMPTED')
+            self.known_ack_replace_attempted=True
+            authorization=recorder.authorize_replacement()
+            boundary=known.issue_known_ack_loss_boundary(self,authorization);self.known_ack_boundary=boundary
+            restored=known.KnownAckRecoveryRuntime(known.KnownAckRecoveryScope(boundary));outcome=restored.restore()
+            self.configuration=self.runtime_snapshot=restored.snapshot;self.runtime_current=outcome['containers']
+            if self.admission_fd is not None:os.close(self.admission_fd)
+            self.admission_fd=os.open(self.configuration/'admission',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW);self.admission_identity=os.fstat(self.admission_fd)
+            self.process_snapshot=self._runtime_processes()
+            gateway=next(row for row in self.runtime_current if row['service']=='gateway')
+            observed=self.scope.run(['docker','exec','--workdir','/app',gateway['containerId'],'node','--input-type=module','--eval',GATEWAY_OBSERVER],
+                env=runtime.SAFE_ENV,timeout=10,capture_output=True,check=True)
+            require(not observed.stderr and 0<len(observed.stdout)<=16384,'P2_CERTIFICATION_KNOWN_ACK_NEW_GATEWAY_PROOF_REQUIRED')
+            actual=json.loads(observed.stdout);require(actual.get('status')=='P2_FAULT_GATEWAY_CURRENT' and re.fullmatch(r'[a-f0-9]{64}',actual.get('processSha256','')),
+                'P2_CERTIFICATION_KNOWN_ACK_NEW_PROCESS_REQUIRED')
+            self.known_ack_new_gateway_process=actual['processSha256'];self._gateway_current();self._verify_boundary()
+            self.known_ack_outcome=outcome
+            migrate.write_json(self.directory,'known-ack-replacement-joined.json',outcome)
+            return copy.deepcopy(outcome)
+        raise ValueError('P2_CERTIFICATION_FIXED_KNOWN_ACK_OPERATION_REQUIRED')
+
     def _require_worker_outcome(self,case):
         cert=self.initial['certificationPlan']
         require(self.worker_stage is not None and self.worker_retained and set(case)=={'version','status','workerPlanSha256','workerSourceArtifactSha256','workerMachineArtifactSha256'} and
@@ -590,7 +646,10 @@ class P2CertificationBroker(Broker):
             known={'operationId':unknown[0]['id'],'effect':effects[0],'oldGatewayProcessSha256':cert['gatewayProcessSha256'],'gatewayUncertain':state['uncertain'],
                 'frontendUncertain':1,'automaticReconciliationAllowed':False,'recoveryAuthorized':False}
         else:require(all(state.get('uncertain',{}).get(key)==0 for key in ('newWork','recovery')),'P2_CERTIFICATION_GATEWAY_UNCERTAINTY_REFUSED')
-        evidence=self._request_evidence(request.get('requestEvidence'),witness)
+        if cert['mode']=='known-ack-recovery':
+            require(self.known_ack_outcome is not None and self.known_ack_recorder.request_evidence is not None,'P2_CERTIFICATION_KNOWN_ACK_JOIN_REQUIRED')
+            evidence={**self.known_ack_recorder.request_evidence['provenance'],'qualified':False,'knownAckCorrelationVerified':True}
+        else:evidence=self._request_evidence(request.get('requestEvidence'),witness)
         case=request.get('caseOutcome');require(isinstance(case,dict) and re.fullmatch(r'P2_[A-Z0-9_]{1,100}',case.get('status','')),'P2_CERTIFICATION_SOURCE_CASE_OUTCOME_REQUIRED')
         if cert['mode']=='auth-preparation':
             require(self.authentication_issued and set(case)=={'version','status','browserPlanSha256'} and case['version']==1 and
@@ -605,6 +664,12 @@ class P2CertificationBroker(Broker):
             self.suspension_stage.scrub_controlled_credentials()
         if cert['mode']=='direct-worker':
             self._require_worker_outcome(case)
+        if cert['mode']=='known-ack-recovery':
+            require(case==self.known_ack_outcome and case['status']=='P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED' and self.known_ack_boundary.finished,
+                'P2_CERTIFICATION_KNOWN_ACK_RUNTIME_OUTCOME_REQUIRED')
+            known={'operationId':self.known_ack_recorder.domain['operationId'],'domainSha256':self.known_ack_recorder.domain_sha256,
+                'settlementSha256':self.known_ack_recorder.settlement_sha256,'oldGatewayUncertain':{'newWork':0,'recovery':1},
+                'recoveryActionId':cert['knownAckRecovery']['recoveryActionId'],'ordinaryClosedZeroGate':False,'replacementCompletedClosed':True}
         initial=json.loads(self.frontend_raw)['witness']['deliveries']
         ordered=not witness['orderViolations'] and all(row['status']=='acknowledged' and row['acknowledged_at'] is not None and row['lease_until'] is None for row in witness['deliveries']) and any(
             row['attempts']>old['attempts'] and old['status']!='acknowledged' for row in witness['deliveries'] for old in initial if row['command_id']==old['command_id'] and row['receiver']==old['receiver'])
@@ -620,7 +685,7 @@ class P2CertificationBroker(Broker):
             'directWorkerSourceJoined':cert['mode']=='direct-worker',
             **({'canonicalBrowserObservationSha256':canonical['canonicalBrowserObservationSha256']} if canonical else {}),
             'caseStatus':case.get('status'),'caseOutcomeSha256':_sha(_canonical(case)),'requestEvidence':evidence,'knownAckLoss':known,'witnessSha256':physical['witnessSha256'],
-            'sqlReplayed':False,'runtimeReplaced':False,'rolesPrepared':False,'historicalLoginsRestored':False,'frontendBuilt':False,'frontendPromoted':False,
+            'sqlReplayed':False,'runtimeReplaced':cert['mode']=='known-ack-recovery','rolesPrepared':False,'historicalLoginsRestored':False,'frontendBuilt':False,'frontendPromoted':False,
             'providerQueuedInvocations':None,'providerCancellationVerified':False,'trafficAuthorized':False,'wholeReleaseAccepted':False}
         migrate.require_contract_identity(self.selected,self.prepared_terminal)
         migrate.write_json(self.directory,'p2-certification-close-prepared.json',self.prepared_terminal)
@@ -665,6 +730,9 @@ class P2CertificationBroker(Broker):
         if operation.startswith('worker-'):
             result=self.worker_operation(operation,value)
             self.send(identity,'CERTIFICATION_WORKER_READY' if operation=='worker-ready' else 'CERTIFICATION_WORKER_OBSERVED',receipt=result);return
+        if operation.startswith('known-'):
+            result=self.known_ack_operation(operation,value)
+            self.send(identity,'CERTIFICATION_KNOWN_ACK_OBSERVED',receipt=result);return
         if operation.startswith('native-'):
             self.send(identity,'CERTIFICATION_NATIVE_OBSERVED',receipt=self.native_operation(operation,value));return
         if operation=='certification-gateway-stage':self.send(identity,'CERTIFICATION_GATEWAY_OBSERVED',receipt=self.gateway_stage(value.get('stage')));return
