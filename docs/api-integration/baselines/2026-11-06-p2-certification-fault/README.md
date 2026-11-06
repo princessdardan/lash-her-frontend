@@ -1,0 +1,9 @@
+# Bounded certification fault component checks
+
+The unchanged ecc9b8ab module was independently reviewed; root integrated its two shared wiring edits and actual HTTPS tests as 508158a1. This branch consumed root wiring/cap dependencies unchanged. New stage/issuer commit ddde1654 adds only six files. The retained final tests executed the exact bytes listed in verification.json: 36 Node cases (10 module,18 actual gateway HTTPS,8 stage protocol model),7 actual owned FD/filesystem cleanup cases and lint with zero warnings/skips. The initial sandbox loopback EPERM output is preserved; the same owned suite passed with local-bind permission.
+
+The new stage tests model PG/provider/host callbacks, while the host tests use actual owned flock/exclusive links/fsync/cached-directory FDs and simulate root ownership/observations. They are not actual PG-stage or Linux-root/Docker issuer proof. The earlier receiver package separately proves actual pinned API/TLS/PG16 behavior; it cannot substitute for joined parent execution here. No live/provider calls, new CLI activation, counter reset, auto-reconciliation or container restart occurred.
+
+Exact production fault activation remains source-parent-only and ineligible until the actual FE physical-client/owner/host scope parent and fixed host adapter are wired and qualified. Actual lost-ACK uncertainty remains1 and REQUIRES_REVIEW; docs specify the separate evidence-backed business settlement and deliberate same-candidate current-only runtime replacement boundary. Managed Mux source matching/metadata is implemented in the gateway module; real managed-row proof/provider retry/order observation and a source parent issuer remain OPEN.
+
+These are component checks, not deployed certification, required candidate CI, P2 completion or G2 acceptance.

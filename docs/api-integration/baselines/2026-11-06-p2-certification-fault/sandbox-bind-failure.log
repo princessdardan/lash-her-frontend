@@ -1,0 +1,299 @@
+✔ staging/project/team/host/candidate/process/TTL/closed shape are mandatory (8.980292ms)
+✔ only exact method/route/receiver/idempotency/canonical record matches (0.4765ms)
+✔ pre-await fuse reserves exactly one concurrent request and never rearms an upstream failure (1.288959ms)
+✔ 503 mode completes before upstream and emits only a matching actual response effect (0.176083ms)
+✔ ACK loss requires complete typed200 with no downstream bytes and drops only once (0.364417ms)
+✔ expiry, monotonic expiry and removal cancel an already reserved drop (0.187417ms)
+✔ same stage cannot be replaced or gateway process identity reused after restart (0.15675ms)
+✔ closed Mux profile emits only after exact managed200 and retains a fixed old/new/same-event metadata sequence (0.760292ms)
+✔ unmatched/ignored/legacy-identity Mux replies never establish verified managed ingress (0.596625ms)
+✔ timestamp ordering retains provider microseconds and timezone equivalence (0.177291ms)
+✖ certification503 runs only after actual auth/admission and before any TLS upstream effect (12.993125ms)
+✖ certification ACK loss drops actual complete upstream200 before response bytes and preserves uncertainty (2.3695ms)
+✖ certification never turns untyped or unsuccessful upstream replies into ACK-loss proof (0.657375ms)
+✖ certification Mux profile sees actual raw bytes and signature then drops only verified managed200 (0.704125ms)
+✖ private TLS upstream receives only selected headers, original query and application authorization (0.510917ms)
+✖ same lifecycle paths route to their explicit service and never expose private enrollment routes (0.447417ms)
+✖ missing optional Community upstream fails closed without forwarding to Course (0.4045ms)
+✖ host fence changes immediately for historical callers while recovery remains independent (0.435833ms)
+✖ fencing accounts for admitted delayed work before reporting drained (0.722208ms)
+✖ an upstream disconnect preserves mutation uncertainty even after transport drain (0.607458ms)
+✖ missing workload, OIDC-only protected requests, wrong host and duplicate credentials never reach upstream (0.355167ms)
+✖ maintenance holds application writes while read probes and signed callback forwarding remain available (0.320459ms)
+✖ exact Mux exception preserves raw bytes/signature; other webhook methods are denied (0.310708ms)
+✖ upstream 429 envelope and Retry-After survive; internal locations and cookies cannot escape (0.305333ms)
+✖ workload admission does not consume independent webhook/service budgets (0.31575ms)
+✖ untrusted private TLS certificate is refused without exposing connection details (0.333833ms)
+✖ private TLS terminator checks actual peer and route, replacing spoofed forwarding metadata (0.243709ms)
+✖ private TLS permits exact P2 quiz PUT and caption DELETE routes while denying other methods and peers (0.181917ms)
+(node:63181) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-certification-fault/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-certification-fault/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ source plan has no executable standalone path or caller command/body/URL options (147.074458ms)
+✔ physical/owner/native gates precede activation, and cleanup runs after a failed lock check (145.977959ms)
+✔ observed source effect and real delivery attempt require awaited closure of all admissions (149.005541ms)
+✔ outstanding uncertainty is retained and cannot be called contained or automatically reconciled (141.739917ms)
+✔ unknown arm, source effect mismatch and later receipt loss still attempt both closures (414.957958ms)
+✔ component cannot unwind before an in-flight containment callback completes (142.977167ms)
+✔ a serialized plan or an already attempted source plan cannot replay activation (140.718542ms)
+ℹ tests 35
+ℹ suites 0
+ℹ pass 17
+ℹ fail 18
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1374.499417
+
+✖ failing tests:
+
+test at ops/gateway/server.test.mjs:100:1
+✖ certification503 runs only after actual auth/admission and before any TLS upstream effect (12.993125ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:119:1
+✖ certification ACK loss drops actual complete upstream200 before response bytes and preserves uncertainty (2.3695ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:139:1
+✖ certification never turns untyped or unsuccessful upstream replies into ACK-loss proof (0.657375ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:149:1
+✖ certification Mux profile sees actual raw bytes and signature then drops only verified managed200 (0.704125ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:168:1
+✖ private TLS upstream receives only selected headers, original query and application authorization (0.510917ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:185:1
+✖ same lifecycle paths route to their explicit service and never expose private enrollment routes (0.447417ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:206:1
+✖ missing optional Community upstream fails closed without forwarding to Course (0.4045ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:213:1
+✖ host fence changes immediately for historical callers while recovery remains independent (0.435833ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:250:1
+✖ fencing accounts for admitted delayed work before reporting drained (0.722208ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:272:1
+✖ an upstream disconnect preserves mutation uncertainty even after transport drain (0.607458ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:285:1
+✖ missing workload, OIDC-only protected requests, wrong host and duplicate credentials never reach upstream (0.355167ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:299:1
+✖ maintenance holds application writes while read probes and signed callback forwarding remain available (0.320459ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:309:1
+✖ exact Mux exception preserves raw bytes/signature; other webhook methods are denied (0.310708ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:324:1
+✖ upstream 429 envelope and Retry-After survive; internal locations and cookies cannot escape (0.305333ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:341:1
+✖ workload admission does not consume independent webhook/service budgets (0.31575ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:352:1
+✖ untrusted private TLS certificate is refused without exposing connection details (0.333833ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:360:1
+✖ private TLS terminator checks actual peer and route, replacing spoofed forwarding metadata (0.243709ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
+
+test at ops/gateway/server.test.mjs:385:1
+✖ private TLS permits exact P2 quiz PUT and caption DELETE routes while denying other methods and peers (0.181917ms)
+  Error: listen EPERM: operation not permitted 127.0.0.1
+      at Server.setupListenHandle [as _listen2] (node:net:1987:21)
+      at listenInCluster (node:net:2066:12)
+      at node:net:2275:7
+      at processTicksAndRejections (node:internal/process/task_queues:90:21)
+      at runNextTicks (node:internal/process/task_queues:69:3)
+      at process.processImmediate (node:internal/timers:472:9) {
+    code: 'EPERM',
+    errno: -1,
+    syscall: 'listen',
+    address: '127.0.0.1'
+  }
