@@ -17,6 +17,22 @@ import { prepareP2CertificationProfile } from "./p2-certification-profile.mjs";
 import { prepareFrontendProviderBindings } from "./frontend-provider-bindings.mjs";
 
 const demand = ok => { if (!ok) throw new Error("FRONTEND_PROVIDER_ADAPTER_REFUSED"); };
+
+// These provider continuations are fixed legacy entrypoints. A profiled caller
+// must use a complete reviewed graph; reject its carriers before credentials,
+// receipt reads, failure writes, locked-session hooks or child construction.
+function requireLegacyAdapterContext(context, ...additionalCarriers) {
+  const candidate = context?.candidate, plan = context?.plan;
+  const carriers = [context, plan, candidate, candidate?.frontendMigration,
+    candidate?.sourceApproval, candidate?.integration, candidate?.workload, candidate?.approval,
+    ...Object.values(candidate?.sources ?? {}), plan?.bootstrapCompatibility, plan?.restoration,
+    plan?.target, context?.job, context?.database, context?.migration,
+    context?.bootstrapRuntimeTarget, context?.preapplicationSchema, context?.admissionObservation,
+    context?.forwardRecoveryScope, ...additionalCarriers];
+  if (carriers.some(value => value !== null && typeof value === "object" && Object.hasOwn(value, "qualificationTargetProfile")) ||
+    candidate?.version !== undefined && candidate.version !== 2 || plan?.version !== undefined && plan.version !== 1)
+    throw new Error("QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
+}
 const script = fileURLToPath(new URL("./host/frontend_release_adapters.py", import.meta.url));
 const fields = (value, keys) => Object.fromEntries(keys.map(key => [key, value?.[key]]));
 const privateActionCredentials = new WeakMap();
@@ -84,6 +100,7 @@ async function runtime(context) {
 }
 
 export async function runFrontendVercelWorker(operation, context) {
+  requireLegacyAdapterContext(context);
   let child, output, failed = false, deadline, killDeadline, received = false, bytes = 0, processing = Promise.resolve();
   try {
     demand(["retire-related-previews", "observe-provider-effects", "observe-vercel", "observe-retired-capabilities", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments", "retire-resend", "observe-resend", "observe-resend-effects", "verify-square", "retire-square", "observe-square", "suspend-square", "suspend-sanity", "observe-sanity", "retire-google", "observe-google", "suspend-highlevel", "verify-highlevel", "retire-highlevel", "observe-highlevel", "suspend-chitchats", "verify-chitchats", "retire-chitchats", "observe-chitchats", "observe-restoration"].includes(operation));
@@ -350,6 +367,7 @@ function readHistoricalSourceContexts(context, bindings, index) {
 }
 
 export async function fenceFrontendExternalProducers(context) {
+  requireLegacyAdapterContext(context);
   try {
     demand(context.admissionObservation?.newWork === false && typeof context.record === "function");
     const { bindings, value } = await runtime(context);
@@ -456,6 +474,7 @@ async function observeFrontendScopedProviderEffects(context, bindings, before) {
 }
 
 export async function reconcileFrontendExternalProducers(context) {
+  requireLegacyAdapterContext(context);
   demand(context.admissionObservation?.newWork === false && context.admissionObservation.recovery === false &&
     context.admissionObservation.ledgerDrained === true && typeof context.record === "function");
   const { bindings } = await runtime(context);
@@ -467,74 +486,90 @@ export async function reconcileFrontendExternalProducers(context) {
 
 // Qualified controls do not independently establish running/effect drain.
 export async function suspendFrontendVercelSchedules(context) {
+  requireLegacyAdapterContext(context);
   return runFrontendVercelWorker("suspend-schedules", context);
 }
 
 // Exact reviewed IDs only, after an actual admission-compatible bootstrap.
 // This retires future ingress; it never asserts running/provider effect drain.
 export async function retireFrontendVercelDeployments(context) {
+  requireLegacyAdapterContext(context);
   demand(context?.admissionObservation?.newWork === false);
   return runFrontendVercelWorker("retire-deployments", context);
 }
 
 export async function verifyFrontendSquareCredentialRetirement(context) {
+  requireLegacyAdapterContext(context);
   demand(context?.admissionObservation?.ledgerDrained === true && context.admissionObservation.newWork === false && context.admissionObservation.recovery === false);
   return runFrontendVercelWorker("verify-square", context);
 }
 export async function suspendFrontendSquareCallback(context) {
+  requireLegacyAdapterContext(context);
   demand(context?.admissionObservation?.ledgerDrained === true && context.admissionObservation.newWork === false && context.admissionObservation.recovery === false);
   return runFrontendVercelWorker("suspend-square", context);
 }
-export async function observeFrontendSquareScope(context) { return runFrontendVercelWorker("observe-square", context); }
+export async function observeFrontendSquareScope(context) {
+  requireLegacyAdapterContext(context); return runFrontendVercelWorker("observe-square", context); }
 
 export async function retireFrontendResendCredential(context) {
+  requireLegacyAdapterContext(context);
   demand(context?.admissionObservation?.ledgerDrained === true && context.admissionObservation.newWork === false && context.admissionObservation.recovery === false);
   return runFrontendVercelWorker("retire-resend", context);
 }
 
 export async function observeFrontendResendCredential(context) {
+  requireLegacyAdapterContext(context);
   return runFrontendVercelWorker("observe-resend", context);
 }
 
 export async function observeFrontendResendEffects(context) {
+  requireLegacyAdapterContext(context);
   return runFrontendVercelWorker("observe-resend-effects", context);
 }
 
 export async function suspendFrontendSanityHooks(context) {
+  requireLegacyAdapterContext(context);
   demand(context?.admissionObservation?.newWork === false);
   return runFrontendVercelWorker("suspend-sanity", context);
 }
 
 export async function observeFrontendSanityScope(context) {
+  requireLegacyAdapterContext(context);
   return runFrontendVercelWorker("observe-sanity", context);
 }
 
 export async function retireFrontendGoogleGrants(context) {
+  requireLegacyAdapterContext(context);
   demand(context?.admissionObservation?.ledgerDrained === true && context.admissionObservation.newWork === false && context.admissionObservation.recovery === false);
   return runFrontendVercelWorker("retire-google", context);
 }
 
 export async function observeFrontendGoogleScope(context) {
+  requireLegacyAdapterContext(context);
   return runFrontendVercelWorker("observe-google", context);
 }
 
 export async function suspendFrontendCrmShippingCredential(provider, context) {
+  requireLegacyAdapterContext(context);
   demand(["highlevel", "chitchats"].includes(provider) && context?.admissionObservation?.newWork === false);
   return runFrontendVercelWorker(`suspend-${provider}`, context);
 }
 
 export async function verifyFrontendCrmShippingRetirement(provider, context) {
+  requireLegacyAdapterContext(context);
   demand(["highlevel", "chitchats"].includes(provider) && context?.admissionObservation?.ledgerDrained === true &&
     context.admissionObservation.newWork === false && context.admissionObservation.recovery === false);
   return runFrontendVercelWorker(`verify-${provider}`, context);
 }
 
 export async function observeFrontendCrmShippingScope(provider, context) {
+  requireLegacyAdapterContext(context);
   demand(["highlevel", "chitchats"].includes(provider));
   return runFrontendVercelWorker(`observe-${provider}`, context);
 }
 
 export async function readFrontendEstablishedFence(context) {
+  requireLegacyAdapterContext(context);
   const sourceDirectory = context.originalDirectory ?? context.directory;
   const bytes = readFrontendReleaseEvidence(sourceDirectory, "external-fences-after-promotion.json");
   const proof = JSON.parse(bytes.toString("utf8"));
@@ -553,6 +588,7 @@ export async function readFrontendEstablishedFence(context) {
 }
 
 export async function observeFrontendExternalFences(context) {
+  requireLegacyAdapterContext(context);
   const { bindings } = await runtime(context);
   const observations = { vercel: await runFrontendVercelWorker("observe-vercel", context), retirements: {} };
   const sourceDirectory = context.originalDirectory ?? context.directory;
@@ -621,15 +657,18 @@ export async function observeFrontendExternalFences(context) {
 }
 
 export async function observeFrontendRestorationBoundary(context) {
+  requireLegacyAdapterContext(context);
   const result = await runFrontendVercelWorker("observe-restoration", context);
   const evidence = Buffer.from(JSON.stringify(result)); return { ...result, evidence, evidenceSha256: hash(evidence) };
 }
 
 export async function deployCompatibleFrontend(context) {
+  requireLegacyAdapterContext(context);
   return runFrontendVercelWorker("deploy-compatible", context);
 }
 
 export async function observeCompatibleFrontend(context) {
+  requireLegacyAdapterContext(context);
   const result = await runFrontendVercelWorker("observe-compatible", context);
   if (context.checkpoint !== "recovery") demand(result.readyState === "READY" && result.aliasJobState === "succeeded" &&
     result.aliasDeploymentId === result.deploymentId && result.aliasJobDeploymentId === result.deploymentId &&
@@ -654,6 +693,7 @@ export async function observeCompatibleFrontend(context) {
 }
 
 export async function readCompatibleFrontendWorkloadReceipt(context, observation) {
+  requireLegacyAdapterContext(context, observation);
   const scope = await forwardRecoveryScope(context);
   const bytes = readFrontendReleaseEvidence(resolve(scope?.directory ?? context.originalDirectory ?? context.directory, "vercel"), "frontend-workload-outcome.json");
   demand(hash(bytes) === observation.workloadReceiptSha256);
@@ -661,10 +701,12 @@ export async function readCompatibleFrontendWorkloadReceipt(context, observation
 }
 
 export async function deployAdmissionCompatibleFrontend(context) {
+  requireLegacyAdapterContext(context);
   return runFrontendVercelWorker("deploy-admission", context);
 }
 
 export async function observeAdmissionCompatibleFrontend(context) {
+  requireLegacyAdapterContext(context);
   const result = await runFrontendVercelWorker("observe-admission", context);
   if (context.checkpoint !== "recovery") demand(result.readyState === "READY" && result.aliasJobState === "succeeded" && result.aliasDeploymentId === result.deploymentId &&
     result.aliasJobMatchesIntent === true && result.aliasJobDeploymentId === result.deploymentId && result.aliasJobType === "promote" &&

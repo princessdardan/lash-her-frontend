@@ -10,8 +10,47 @@ import { frontendCoordinationHash as hash, validateFrontendFenceObservation } fr
 import { frontendGoogleSnapshotSha256 } from "./frontend-google-effects.mjs";
 import { frontendReleaseReceiptStore } from "./frontend-release-receipts.mjs";
 import { fenceFrontendExternalProducers, runFrontendVercelWorker, observeFrontendExternalFences, observeCompatibleFrontend, readCompatibleFrontendWorkloadReceipt, readFrontendEstablishedFence } from "./frontend-release-adapters.mjs";
+import * as adapterExports from "./frontend-release-adapters.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+
+test("every legacy provider continuation rejects profiled carriers before private reads or effects", async () => {
+  const profile = { version: 1, id: "staging-current", sha256: "ea88751524540bfe177e089680b41d6f35b2454d73d17ef9a40b7663381225ba" };
+  const changes = [
+    value => { value.qualificationTargetProfile = profile; },
+    value => { value.plan.qualificationTargetProfile = profile; },
+    value => { value.plan.version = 2; },
+    value => { value.candidate.qualificationTargetProfile = profile; },
+    value => { value.candidate.version = 3; },
+    ...["frontendMigration", "sourceApproval", "integration", "workload", "approval"].map(key => value => {
+      value.candidate[key] = { ...value.candidate[key], qualificationTargetProfile: profile };
+    }),
+    value => { value.candidate.sources.frontend.qualificationTargetProfile = profile; },
+    ...["bootstrapCompatibility", "restoration", "target"].map(key => value => { value.plan[key] = { qualificationTargetProfile: profile }; }),
+    ...["job", "database", "migration", "bootstrapRuntimeTarget", "preapplicationSchema", "admissionObservation", "forwardRecoveryScope"]
+      .map(key => value => { value[key] = { qualificationTargetProfile: profile }; }),
+  ];
+  const entries = Object.entries(adapterExports);
+  assert.equal(entries.length, 26);
+  for (const [name, entry] of entries) for (const change of changes) {
+    const value = fixture();
+    change(value);
+    const tripwire = () => { throw new Error("PRIVATE_IO_BEFORE_POLICY_REFUSAL"); };
+    Object.defineProperty(value, "directory", { get: tripwire });
+    value.verifyLockedSession = tripwire;
+    value.getProviderContext = tripwire;
+    value.record = tripwire;
+    value.databaseClient = { query: tripwire };
+    const args = name === "runFrontendVercelWorker" ? ["observe-vercel", value] :
+      name.includes("CrmShipping") ? ["highlevel", value] : [value, {}];
+    await assert.rejects(entry(...args), { message: "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED" }, name);
+  }
+  const value = fixture();
+  Object.defineProperty(value, "directory", { get() { throw new Error("PRIVATE_READ_BEFORE_POLICY_REFUSAL"); } });
+  await assert.rejects(readCompatibleFrontendWorkloadReceipt(value, { qualificationTargetProfile: profile }),
+    { message: "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED" });
+});
+
 function fixture(provider = "square") {
   const plan = { version: 1, environment: "staging", actionId: "adapter-owned", sourceCommit: "a".repeat(40), targetSha256: "b".repeat(64) };
   const identities = [{ kind: "deployment", identity: { provider: "vercel", teamId: TEAM, projectId: PROJECT, deploymentId: "dpl_previous" } },
