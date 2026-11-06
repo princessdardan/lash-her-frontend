@@ -2,6 +2,7 @@
 """One operator action for API migrations and runtime startup; plan by default."""
 import argparse
 import copy
+import contextvars
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,8 @@ from uuid import uuid4
 
 import migrate
 import docker_inspect
+
+_command_scope = contextvars.ContextVar("p2_runtime_command_scope", default=None)
 
 STAGES = [("community-api", "course-api"), ("community-tls", "course-tls"),
           ("course-snapshot", "community-worker", "course-media", "course-export-cleanup"), ("course-publisher",), ("gateway",)]
@@ -45,7 +48,9 @@ demand = migrate.demand
 def command(args, env, timeout=30):
     # Provider/container errors can contain credentials. Never print or retain
     # unfiltered command output; callers consume only selected structured fields.
-    return subprocess.run(args, env=env, check=True, capture_output=True, text=True, timeout=timeout).stdout.strip()
+    scope = _command_scope.get()
+    runner = scope.run if scope is not None else subprocess.run
+    return runner(args, env=env, check=True, capture_output=True, text=True, timeout=timeout).stdout.strip()
 
 
 def make_plan(bundle, configuration, compose_file):
@@ -281,7 +286,7 @@ def check_containers(release, snapshot):
     return metadata
 
 
-def execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None):
+def _execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None):
     release, jobs, plan, compose = make_plan(bundle, configuration, compose_file)
     if not apply:
         return plan
@@ -305,18 +310,27 @@ def execute(bundle, configuration, results, compose_file, apply=False, confirmat
         # Invoked only after durable database success, while migrate.execute
         # holds the release/watchdog lock. No second approval step is needed.
         try:
-            demand(verified_release == release and database_outcome.get("status") == "DATABASES_VERIFIED", "DATABASE_STAGE_BINDING_REFUSED")
+            expected_database_status = ("API_DATABASES_VERIFIED_FRONTEND_CONTINUATION_OPEN" if _p2_scope is not None else "DATABASES_VERIFIED")
+            if _p2_scope is not None:
+                _p2_scope.require_frontend(release, jobs["frontend"])
+            demand(verified_release == release and database_outcome.get("status") == expected_database_status, "DATABASE_STAGE_BINDING_REFUSED")
             migrate.require_contract_identity(release, database_outcome)
             outcome["phase"] = "runtime-startup"
             prefix, env = compose_command(snapshot, release["environment"]), runtime_environment(release, snapshot)
             for stage in STAGES:
+                if _p2_scope is not None:
+                    _p2_scope.verify()
                 outcome["phase"] = "start-" + "+".join(stage)
                 command([*prefix, "up", "--detach", "--no-deps", "--pull", "never", "--force-recreate", "--wait", "--wait-timeout", "90", *stage], env, 120)
+                if _p2_scope is not None:
+                    _p2_scope.verify()
             outcome["phase"] = "runtime-boundary-probes"
             probe = json.loads(command([*prefix, "exec", "-T", "gateway", "node", "release-probe.mjs"], env, 30))
             demand(probe.get("status") == "API_RUNTIME_BOUNDARIES_PASS" and isinstance(probe.get("checks"), list)
                    and len(probe["checks"]) == 5 and set(probe["checks"]) == PROBE_CHECKS, "RUNTIME_BOUNDARY_CHECKS_REQUIRED")
             outcome["containers"] = check_containers(release, snapshot)
+            if _p2_scope is not None:
+                _p2_scope.verify()
             outcome["boundaryChecks"] = probe["checks"]
             outcome["migrationOutcomeSha256"] = migrate.file_hash(migrate.read_input(migration_attempt, "migration-outcome.json"))
             outcome["candidateSha256"] = database_outcome["candidateSha256"]
@@ -348,18 +362,29 @@ def execute(bundle, configuration, results, compose_file, apply=False, confirmat
         immutable_bundle = attempt / "migration-input"
         snapshot_bundle(bundle, immutable_bundle, release, jobs)
         snapshot_configuration(configuration, snapshot, release, jobs, compose)
+        if _p2_scope is not None:
+            _p2_scope.initialize_runtime(snapshot, release)
         checked_release, checked_jobs, checked_plan, _ = make_plan(immutable_bundle, snapshot, snapshot / "compose.yaml")
         demand(checked_release == release and checked_jobs == jobs and checked_plan == plan, "RUNTIME_CONFIGURATION_CHANGED")
         preflight(release, snapshot, jobs)
         outcome["phase"] = "migrations"
         return migrate.execute(immutable_bundle, results, True, confirmation, lock_path, after_migrations=start_runtime, docker_env=SAFE_ENV,
-                               before_frontend_migration=before_frontend_migration)
+                               before_frontend_migration=before_frontend_migration, _p2_scope=_p2_scope)
     except BaseException as error:
         outcome["status"] = "FAILED_REQUIRES_REVIEW"
         code = str(error)
         outcome["failureCode"] = code if isinstance(error, ValueError) and re.fullmatch(r"[A-Z_]{1,80}", code) else "RUNTIME_OR_INPUT_FAILURE"
         migrate.write_json(attempt, "runtime-outcome.json" if not (attempt / "runtime-outcome.json").exists() else "runtime-failure.json", outcome)
         raise
+
+
+def execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None):
+    token = _command_scope.set(_p2_scope)
+    try:
+        return _execute(bundle, configuration, results, compose_file, apply, confirmation, lock_path,
+                        before_frontend_migration, after_runtime_ready, _p2_scope)
+    finally:
+        _command_scope.reset(token)
 
 
 def main():

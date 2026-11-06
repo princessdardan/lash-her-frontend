@@ -49,7 +49,8 @@ export function prepareFrontendReleaseCoordination(candidate, job, baseline, inv
   return { migration, plan, inventorySha256: frontendCoordinationHash(plan) };
 }
 
-function deploymentProof(plan, result) {
+function deploymentProof(plan, result, { bootstrap = false } = {}) {
+  const certification = bootstrap ? undefined : plan.certification;
   demand(result?.version === 1 && result.actionId === plan.actionId && result.sourceCommit === plan.sourceCommit &&
     result.environment === plan.environment && result.targetSha256 === plan.targetSha256 &&
     result.projectId === "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM" && typeof result.deploymentId === "string" && /^dpl_[A-Za-z0-9]+$/u.test(result.deploymentId) &&
@@ -59,10 +60,13 @@ function deploymentProof(plan, result) {
     Buffer.isBuffer(result.evidence) && result.evidence.length > 0 && result.evidence.length <= 2_000_000 &&
     frontendCoordinationHash(result.evidence) === result.evidenceSha256);
   const evidence = JSON.parse(result.evidence.toString("utf8"));
+  if (certification) demand(isDeepStrictEqual(result.featureControls, certification.featureControls) &&
+    isDeepStrictEqual(evidence.featureControls, certification.featureControls));
   demand(["version", "actionId", "sourceCommit", "environment", "targetSha256", "projectId", "deploymentId", "readyState", "aliasJobState", "aliasDeploymentId",
     "nativeSchedulesEnabled", "admissionNewWork", "admissionRecovery", "workloadVerified", "workloadReceiptSha256"].every(key => evidence[key] === result[key]));
-  return Object.fromEntries(["version", "actionId", "sourceCommit", "environment", "targetSha256", "projectId", "deploymentId", "readyState", "aliasJobState", "aliasDeploymentId",
-    "nativeSchedulesEnabled", "admissionNewWork", "admissionRecovery", "workloadVerified", "workloadReceiptSha256", "evidenceSha256"].map(key => [key, result[key]]));
+  return { ...Object.fromEntries(["version", "actionId", "sourceCommit", "environment", "targetSha256", "projectId", "deploymentId", "readyState", "aliasJobState", "aliasDeploymentId",
+    "nativeSchedulesEnabled", "admissionNewWork", "admissionRecovery", "workloadVerified", "workloadReceiptSha256", "evidenceSha256"].map(key => [key, result[key]])),
+    ...(certification ? { featureControls: structuredClone(result.featureControls) } : {}) };
 }
 
 export async function runFrontendReleaseCoordination(prepared, dependencies) {
@@ -85,7 +89,8 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
     const adapters = await loadFrontendReleaseAdapters(root, plan.adaptersSha256);
     await store.record("frontend-release-started.json", { ...base, status: "FRONTEND_RELEASE_COORDINATION_STARTED" }); intentRecorded = true;
     phase = "environment-release-lock";
-    await withFrontendEnvironmentLock(async (verifyEnvironment, environmentSignal) => {
+    await (dependencies.withEnvironmentLock ?? withFrontendEnvironmentLock)(async (verifyEnvironment, environmentSignal, apiRuntime) => {
+      demand(apiRuntime === undefined || ["start", "frontendVerified", "prepareClose", "finish"].every(key => typeof apiRuntime[key] === "function"));
       const verifySource = async () => { await verifyEnvironment(); assertSource(root, plan.sourceCommit); };
       const providerContext = { candidate: migration.candidate, directory: dependencies.directory,
         bootstrapRuntimeTarget: { environment: plan.environment, targetSha256: plan.targetSha256,
@@ -150,7 +155,7 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
             demand(after.newWork === false && after.recovery === false && after.ledgerDrained === true);
             const observed = await adapters.observeAdmissionCompatibleFrontend(Object.freeze({ plan, inventorySha256, preapplicationSchema,
               admissionObservation: after, verifyLockedSession: verify, environmentSignal, ...providerContext }));
-            const proof = deploymentProof(plan, observed);
+            const proof = deploymentProof(plan, observed, { bootstrap: true });
             demand(observed.bootstrapAdmissionVerified === true && observed.schemaCatalogSha256 === preapplicationSchema.schemaCatalogSha256 &&
               observed.appliedLineageSha256 === preapplicationSchema.appliedLineageSha256);
             const evidence = JSON.parse(observed.evidence.toString("utf8"));
@@ -231,6 +236,11 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
           databaseVerified = true; phase = "compatible-frontend-deployment";
           const verify = async () => { await verifyEnvironment(); await verifySession(); };
           await verify();
+          if (apiRuntime) {
+            phase = "locked-api-migration-and-runtime";
+            await apiRuntime.start({ database, client: admissionClient, verifySession, verify });
+            await verify(); phase = "compatible-frontend-deployment";
+          }
           const beforeDeployDrain = await owner(admissionClient, verifySession, () => observeFrontendDrain(admissionClient, target, epoch));
           demand(beforeDeployDrain.ledgerDrained === true && beforeDeployDrain.active === 0 && beforeDeployDrain.uncertain === 0);
           frontendMutationAttempted = true;
@@ -245,12 +255,12 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
           const proof = deploymentProof(plan, observed);
           await store.retain(`${randomBytes(32).toString("hex")}-${proof.evidenceSha256}.json`, observed.evidence);
           await store.record("compatible-frontend-verified.json", proof); verifiedDeployment = proof;
+          if (apiRuntime) { await apiRuntime.frontendVerified(proof, verify); await verify(); }
           frontendVerified = true;
           await store.record("admission-post-deployment-drained.json", { ...base, ...afterDeployDrain });
           await observeFences("after-promotion", verify); await verifySource(); await verify();
         },
-        afterContinuationVerified: plan.restoration === undefined ? undefined : async ({ database, verifySession }) => {
-          if (plan.restoration === undefined) return;
+        afterContinuationVerified: plan.restoration === undefined && !apiRuntime ? undefined : async ({ database, verifySession }) => {
           const verify = async () => { await verifyEnvironment(); await verifySession(); };
           const proof = verifiedDeployment;
           if (plan.restoration !== undefined) {
@@ -264,8 +274,11 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
                 demand(isDeepStrictEqual(await readMigrationCatalog(admissionClient), migration.baseline.catalog) &&
                   isDeepStrictEqual((await admissionClient.query("select hash, created_at from drizzle.__drizzle_migrations order by created_at asc nulls first, id asc")).rows, database.after));
                 await observeFences(stage, verify);
-                const actual = await adapters.observeFrontendRestorationBoundary(Object.freeze({ plan, inventorySha256, database,
-                  admissionObservation: admission, verifyLockedSession: verify, environmentSignal, ...providerContext }));
+                const boundaryContext = Object.freeze({ plan, inventorySha256, database,
+                  admissionObservation: admission, verifyLockedSession: verify, environmentSignal, ...providerContext });
+                const actual = apiRuntime?.observeRestorationBoundary ?
+                  await apiRuntime.observeRestorationBoundary(await adapters.observeCompatibleFrontend(boundaryContext), boundaryContext) :
+                  await adapters.observeFrontendRestorationBoundary(boundaryContext);
                 demand(Buffer.isBuffer(actual.evidence) && actual.evidence.length > 0 && actual.evidence.length <= 2_000_000 &&
                   frontendCoordinationHash(actual.evidence) === actual.evidenceSha256);
                 const value = JSON.parse(actual.evidence.toString("utf8"));
@@ -288,6 +301,7 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
             });
             epoch = restored.epoch;
           }
+          if (apiRuntime) { await verify(); await apiRuntime.prepareClose(verify); await verify(); }
         },
       }); } finally { environmentSignal.removeEventListener("abort", fenceLostEnvironment); }
       phase = "locked-final-verification"; await verifyEnvironment();
@@ -295,6 +309,7 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
         ...(restored ? { admissionRestored: true, admissionNewWork: restored.newWork, admissionRecovery: restored.recovery } : {}),
         databaseOutcome: "verified", frontendDomainsPromoted: true, epoch, wholeReleaseAccepted: false, phase: "completed" };
       await store.record("frontend-release-held.json", outcome);
+      if (apiRuntime) await apiRuntime.finish(outcome, verifyEnvironment);
     }, dependencies.lockPath ? { path: dependencies.lockPath } : {});
     phase = "completed";
     await store.record("frontend-release-outcome.json", outcome); return outcome;

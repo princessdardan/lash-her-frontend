@@ -1,0 +1,501 @@
+#!/usr/bin/env python3
+"""Fixed SSH-side P2 release broker; the actual host flock outlives all stages."""
+import base64
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import select
+import stat
+import subprocess
+import sys
+import threading
+import time
+from uuid import uuid4
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import migrate
+import release as runtime
+from p2_release_scope import P2ReleaseScope
+import staging_admission
+import staging_state
+import vercel
+import frontend_gateway_observation
+from p2_certification_profile import require_profile, RUNTIME_FLAGS
+
+MAXIMUM = 4_000_000
+LOCK = Path('/run/lock/lash-her-release.lock')
+require = migrate.demand
+
+
+def decode(raw):
+    require(isinstance(raw, str) and len(raw) <= MAXIMUM, 'P2_RECEIPT_REQUIRED')
+    value = base64.b64decode(raw, validate=True)
+    require(0 < len(value) <= 2_000_000, 'P2_RECEIPT_BOUNDS_REFUSED')
+    parsed = json.loads(value)
+    require(isinstance(parsed, dict), 'P2_RECEIPT_OBJECT_REQUIRED')
+    return value, parsed
+
+
+class PhysicalObserver:
+    def __init__(self, selected, request, source, credential):
+        self.selected, self.request, self.source, self.credential = selected, request, source, credential
+        self.stop_event, self.failure = threading.Event(), None
+        self.last_verified = 0
+        self.thread = None
+
+    def probe(self, operation):
+        program = self.source / 'ops/platform/p2-frontend-live-probe.mjs'
+        image = self.selected['artifacts']['frontendMigration']['image']
+        env = {**runtime.SAFE_ENV, 'FRONTEND_STAGING_MIGRATION_DATABASE_URL': self.credential}
+        name = 'lash-p2-observer-' + uuid4().hex
+        args = ['docker', 'run', '--rm', '--name', name, '--interactive', '--network', 'host', '--read-only', '--cap-drop', 'ALL',
+                '--security-opt', 'no-new-privileges', '--memory', '256m', '--pids-limit', '64',
+                '--env', 'FRONTEND_STAGING_MIGRATION_DATABASE_URL', '--mount',
+                f'type=bind,src={program},dst=/app/ops/platform/p2-frontend-live-probe.mjs,readonly',
+                '--entrypoint', 'node', image, 'ops/platform/p2-frontend-live-probe.mjs']
+        try:
+            result = subprocess.run(args, input=json.dumps({**self.request, 'operation': operation}),
+                                    capture_output=True, text=True, env=env, timeout=30, check=True)
+        finally:
+            subprocess.run(['docker', 'rm', '--force', name], env=runtime.SAFE_ENV,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15, check=False)
+            remaining = runtime.command(['docker', 'container', 'ls', '--all', '--filter', 'name=^/' + name + '$', '--format', '{{.ID}}'], runtime.SAFE_ENV, 15)
+            require(not remaining, 'P2_OBSERVER_CONTAINER_CLEANUP_UNVERIFIED')
+        require(len(result.stdout) <= 8192, 'P2_OBSERVER_OUTPUT_REFUSED')
+        value = json.loads(result.stdout)
+        expected = 'P2_FRONTEND_ADMISSION_CLOSED' if operation == 'fence' else 'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED'
+        require(value.get('status') == expected, 'P2_PHYSICAL_OBSERVATION_REFUSED')
+        if operation != 'fence':
+            require(value.get('marker') == self.request['marker'] and value.get('backendPid') == self.request['backendPid']
+                    and value.get('sourceCommit') == self.request['job']['sourceCommit'], 'P2_PHYSICAL_OBSERVATION_BINDING_REFUSED')
+        return value
+
+    def start(self, failed):
+        self.probe('verify-schema')
+        self.last_verified = time.monotonic()
+        def observe():
+            while not self.stop_event.wait(1):
+                try:
+                    self.probe('observe')
+                    self.last_verified = time.monotonic()
+                except BaseException:
+                    self.failure = True
+                    failed()
+                    return
+        self.thread = threading.Thread(target=observe, daemon=True)
+        self.thread.start()
+
+    def verify(self):
+        require(not self.failure and 0 <= time.monotonic() - self.last_verified < 35,
+                'P2_FRONTEND_PHYSICAL_SESSION_LOST')
+
+    def stop(self):
+        self.stop_event.set()
+        if self.thread is not None and self.thread is not threading.current_thread():
+            self.thread.join(32)
+            require(not self.thread.is_alive(), 'P2_OBSERVER_CLEANUP_UNVERIFIED')
+
+
+class Broker:
+    def __init__(self, initial, output, *, shared_lock_fd=None, safety_write=None, guard_read=None):
+        self.emit, self.initial = output, initial
+        self.failed, self.released, self.worker_done = threading.Event(), threading.Event(), threading.Event()
+        self.output_lock = threading.Lock()
+        self.observer = self.scope = self.worker = None
+        self.runtime_snapshot = self.ready = self.promoted = None
+        self.closing_at = None
+        self.finished = False
+        self.committed = threading.Event()
+        self.operation_active = threading.Lock()
+        self.last_command = time.monotonic()
+        self.lock_fd = None
+        self.shared_lock_fd, self.safety_write, self.guard_read = shared_lock_fd, safety_write, guard_read
+        self.safety_mutex, self.guard_alive = threading.Lock(), guard_read is not None
+        self.last_guard = time.monotonic()
+        self.guard_pulsed = threading.Event()
+        if guard_read is not None:
+            os.set_blocking(guard_read, False)
+        self.outcome = {'status': 'P2_RELEASE_FAILED_REQUIRES_REVIEW', 'trafficAuthorized': False,
+                        'releaseAccepted': False, 'sqlReplayAuthorized': False, 'productionChanged': False}
+
+    def send(self, identity, status, **data):
+        with self.output_lock:
+            self.emit({'id': identity, 'status': status, **data})
+
+    def safety(self, value):
+        require(self.safety_write is not None and self.guard_alive, 'P2_INDEPENDENT_GUARD_REQUIRED')
+        raw = (json.dumps(value, separators=(',', ':')) + '\n').encode()
+        require(len(raw) <= MAXIMUM, 'P2_SAFETY_INPUT_BOUNDS')
+        with self.safety_mutex:
+            while raw:
+                count = os.write(self.safety_write, raw)
+                require(count > 0, 'P2_GUARD_CHANNEL_CLOSED')
+                raw = raw[count:]
+
+    def start_guard_health(self):
+        def guard_health():
+            while not self.committed.wait(0.1):
+                try:
+                    readable, _, _ = select.select([self.guard_read], [], [], 0.1)
+                    if readable:
+                        require(os.read(self.guard_read, 65536), 'P2_INDEPENDENT_GUARD_DIED')
+                        self.last_guard = time.monotonic()
+                        self.guard_pulsed.set()
+                    require(time.monotonic() - self.last_guard < 3, 'P2_INDEPENDENT_GUARD_HEALTH_LOST')
+                except BlockingIOError:
+                    continue
+                except BaseException:
+                    self.guard_alive = False; self.abort(); return
+        threading.Thread(target=guard_health, daemon=True).start()
+
+    def initialize(self):
+        p = self.initial
+        require(self.shared_lock_fd is not None and self.safety_write is not None and self.guard_read is not None,
+                'P2_INDEPENDENT_SUPERVISOR_REQUIRED')
+        self.start_guard_health()
+        require(self.guard_pulsed.wait(5) and self.guard_alive, 'P2_INDEPENDENT_GUARD_HANDSHAKE_REQUIRED')
+        require(p.get('version') == 1 and p.get('environment') == 'staging' and os.geteuid() == 0,
+                'P2_SELECTED_ROOT_HOST_REQUIRED')
+        commit = p.get('sourceCommit')
+        require(migrate.source_commit(commit), 'P2_EXACT_SOURCE_REQUIRED')
+        self.source = Path(__file__).resolve().parents[3]
+        require(str(self.source) == '/opt/lash-her/operators/' + commit, 'P2_INSTALLED_SOURCE_REQUIRED')
+        for name, expected in p['sourceSha256'].items():
+            require(name.startswith('ops/') and '..' not in Path(name).parts, 'P2_SOURCE_PATH_REFUSED')
+            current = self.source / name
+            require(not current.is_symlink() and current.stat().st_uid == 0 and not current.stat().st_mode & 0o022
+                    and migrate.file_hash(migrate.read_input(self.source, name)) == expected, 'P2_SOURCE_CHANGED')
+        for key in ('bundle', 'configuration', 'results'):
+            value = Path(p[key])
+            require(value.is_absolute() and str(value.resolve()) == str(value) and
+                    str(value).startswith('/var/lib/lash-her/releases/staging/') and ',' not in str(value),
+                    'P2_PRIVATE_HOST_PATH_REFUSED')
+            migrate.private_directory(value)
+        self.bundle, self.configuration, self.results = (Path(p[key]) for key in ('bundle', 'configuration', 'results'))
+        self.selected, self.jobs, self.plan, _ = runtime.make_plan(self.bundle, self.configuration, self.source / 'ops/platform/compose.yaml')
+        require(migrate.file_hash(migrate.read_input(self.bundle, 'release.candidate.json')) == p.get('candidateSha256'), 'P2_CANDIDATE_BYTES_CHANGED')
+        require(self.selected == p['candidate'] and self.selected.get('contractPhase') == 'p2'
+                and self.selected['sources']['frontend']['commit'] == commit and self.selected['environment'] == 'staging'
+                and self.plan['hostMachineId'] == p['hostMachineId'] and set(self.jobs) == {'frontend', 'course', 'community'}
+                and self.jobs['frontend']['job']['target']['approvedPendingTags'], 'P2_CANDIDATE_BINDING_REFUSED')
+        runtime.assert_host(self.plan)
+        require_profile(p.get('certification'))
+        for service, flags in RUNTIME_FLAGS.items():
+            values = runtime.environment_values(migrate.read_input(self.configuration, service + '.env', 65536), 'staging', service, self.jobs)
+            require(all(values.get(key) == value for key, value in flags.items()), 'P2_CERTIFICATION_RUNTIME_FLAGS_REQUIRED')
+        require(staging_state.configuration_hashes(self.configuration) == p['configurationSha256'], 'P2_CONFIGURATION_CHANGED')
+        require(p.get('confirmation') == 'staging/' + self.selected['releaseId'], 'P2_EXPLICIT_START_REQUIRED')
+        credentials = p.get('credentials', {})
+        require(set(credentials) == {'FRONTEND_STAGING_MIGRATION_DATABASE_URL', 'COURSE_STAGING_DATABASE_URL', 'COMMUNITY_STAGING_DATABASE_URL'}
+                and all(isinstance(v, str) and 0 < len(v) <= 16384 for v in credentials.values()), 'P2_NAMED_CREDENTIALS_REQUIRED')
+        for key, value in credentials.items():
+            os.environ[key] = value
+        self.vercel = vercel.Client(p['vercelToken'])
+        self.lock_fd = self.shared_lock_fd
+        info = os.fstat(self.lock_fd)
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o077, 'P2_ACTUAL_HOST_LOCK_REQUIRED')
+        fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        self.lock_info = info
+        self.directory = self.results / ('p2-' + self.selected['releaseId'])
+        self.directory.mkdir(mode=0o700)
+        self.outcome.update(environment='staging', releaseId=self.selected['releaseId'], sourceCommit=commit,
+                            candidateSha256=p['candidateSha256'])
+        self.outcome.update(migrate.contract_identity(self.selected))
+        migrate.write_json(self.directory, 'p2-release-started.json', self.outcome)
+        self.check()
+        def parent_watch():
+            while not self.committed.wait(1):
+                if self.failed.is_set():
+                    return
+                try:
+                    self.safety({'operation': 'alive'})
+                except BaseException:
+                    self.guard_alive = False; self.abort(); return
+                if time.monotonic() - self.last_command > 45:
+                    self.abort()
+                    return
+        self.parent_watch = threading.Thread(target=parent_watch, daemon=True)
+        self.parent_watch.start()
+
+    def check(self):
+        require(not self.failed.is_set(), 'P2_BROKER_FAILED')
+        try:
+            pulse = os.read(self.guard_read, 65536)
+            require(pulse, 'P2_INDEPENDENT_GUARD_DIED')
+            self.last_guard = time.monotonic()
+        except BlockingIOError:
+            pass
+        require(self.guard_alive and time.monotonic() - self.last_guard < 3, 'P2_INDEPENDENT_GUARD_LOST')
+        info, actual = os.fstat(self.lock_fd), os.lstat(LOCK)
+        require(info.st_ino == actual.st_ino == self.lock_info.st_ino and info.st_dev == actual.st_dev == self.lock_info.st_dev
+                and stat.S_ISREG(actual.st_mode) and actual.st_uid == 0 and not actual.st_mode & 0o077,
+                'P2_HOST_ENVIRONMENT_LOCK_CHANGED')
+        fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if self.observer and self.closing_at is None:
+            self.observer.verify()
+        if self.closing_at is not None and not self.finished:
+            require(time.monotonic() - self.closing_at < 10, 'P2_FRONTEND_CLOSE_TIMEOUT')
+
+    def start(self, identity, request):
+        self.check()
+        require(self.worker is None and self.closing_at is None, 'P2_API_STAGE_ALREADY_STARTED')
+        raw, receipt = decode(request['receipt'])
+        require(request['probe']['job'] == self.jobs['frontend']['job'] and request['probe']['receipt'] == receipt,
+                'P2_PROBE_RECEIPT_BINDING_REFUSED')
+        require(request['probe'].get('baseline') == json.loads(self.jobs['frontend']['schema'])
+                and request['probe'].get('owner') == self.initial.get('owner')
+                and request['probe'].get('targetSha256') == self.initial.get('targetSha256'), 'P2_PROBE_PLAN_BINDING_REFUSED')
+        self.frontend_raw = raw
+        self.safety({'operation': 'armed', 'probe': request['probe']})
+        self.observer = PhysicalObserver(self.selected, request['probe'], self.source,
+                                        self.initial['credentials']['FRONTEND_STAGING_MIGRATION_DATABASE_URL'])
+        self.observer.start(self.abort)
+        self.scope = P2ReleaseScope(self.lock_fd, LOCK, self.check, receipt, self.outcome['candidateSha256'])
+        self.scope.require_frontend(self.selected, self.jobs['frontend'])
+        def ready(attempt, migration_attempt, snapshot, selected, outcome):
+            require(selected == self.selected and outcome.get('status') == 'API_RUNTIME_READY', 'P2_API_READY_BINDING_REFUSED')
+            self.runtime_snapshot, self.ready = snapshot, outcome
+            self.api_attempt, self.migration_attempt = attempt, migration_attempt
+            self.check()
+            self.send(identity, 'API_READY', receipt=outcome)
+            while not self.released.wait(0.2):
+                self.check()
+            require(not self.failed.is_set() and self.finished, 'P2_FRONTEND_COMPLETION_REQUIRED')
+        def worker():
+            try:
+                runtime.execute(self.bundle, self.configuration, self.results, self.source / 'ops/platform/compose.yaml',
+                                True, self.initial['confirmation'], LOCK, after_runtime_ready=ready, _p2_scope=self.scope)
+            except BaseException:
+                self.abort()
+                self.send(identity, 'P2_API_STAGE_FAILED')
+            finally:
+                self.worker_done.set()
+        self.worker = threading.Thread(target=worker, daemon=True)
+        self.worker.start()
+
+    def verify_promoted(self, proof, workload_raw):
+        self.check()
+        require(self.ready is not None and proof.get('version') == 1 and proof.get('actionId') == self.selected['releaseId']
+                and proof.get('sourceCommit') == self.selected['sources']['frontend']['commit']
+                and proof.get('projectId') == self.selected['workload']['projectId'] and proof.get('readyState') == 'READY'
+                and proof.get('aliasJobState') == 'succeeded' and proof.get('aliasDeploymentId') == proof.get('deploymentId')
+                and proof.get('workloadVerified') is True and proof.get('nativeSchedulesEnabled') is False,
+                'P2_COMPATIBLE_FRONTEND_PROOF_REQUIRED')
+        raw, workload = decode(workload_raw)
+        require(migrate.file_hash(raw) == proof.get('workloadReceiptSha256') and workload.get('status') == 'FRONTEND_VERIFIED'
+                and all(workload.get(key) == proof.get(key) for key in ('deploymentId', 'projectId', 'sourceCommit'))
+                and workload.get('releaseId') == self.selected['releaseId'] and workload.get('contractPhase') == 'p2'
+                and workload.get('phase2ContractManifestSha256') == self.selected['phase2ContractManifestSha256']
+                and workload.get('featureControls') == self.initial['certification']['featureControls'],
+                'P2_IMMUTABLE_FEATURE_PROFILE_REQUIRED')
+        state = vercel.deployment_state(self.vercel, proof['deploymentId'], proof['projectId'], proof['sourceCommit'], proof['actionId'])
+        project = vercel._project(self.vercel, proof['projectId'])
+        require(state['readyState'] == 'READY' and (project.get('targets') or {}).get('production', {}).get('id') == proof['deploymentId']
+                and (project.get('crons') or {}).get('disabledAt') is not None, 'P2_ACTUAL_FRONTEND_PROMOTION_REQUIRED')
+        require(runtime.check_containers(self.selected, self.runtime_snapshot) == self.ready['containers'], 'P2_RUNTIME_CHANGED')
+        self.promoted = proof
+
+    def admit_certification(self):
+        require(self.promoted is not None, 'P2_FRONTEND_REQUIRED_BEFORE_ADMISSION')
+        self.check()
+        binding = {'releaseId': self.selected['releaseId'], 'candidateSha256': self.outcome['candidateSha256']}
+        host = staging_admission.Host(self.selected, self.runtime_snapshot, self.vercel)
+        observed = host.state()
+        require(observed.get('newWork') is False and observed.get('recovery') is False
+                and all(observed[category][key] == 0 for category in ('active', 'uncertain')
+                        for key in ('newWork', 'recovery')), 'P2_GATEWAY_DRAIN_REQUIRED')
+        migrate.write_json(self.directory, 'p2-certification-admission-intent.json', {**self.outcome,
+            'profile': self.initial['certification'], 'admission': {'newWork': True, 'recovery': True}})
+        acknowledged = staging_admission.persist_state(self.runtime_snapshot, binding,
+            'p2-certification-' + self.selected['releaseId'], new_work=True, recovery=True)
+        observed = host.state()
+        require(observed.get('sha256') == acknowledged and observed.get('newWork') is True
+                and observed.get('recovery') is True and all(observed['uncertain'][key] == 0 for key in ('newWork', 'recovery')),
+                'P2_CERTIFICATION_ADMISSION_UNVERIFIED')
+        migrate.write_json(self.directory, 'p2-certification-admission-verified.json', {
+            'status': 'P2_CERTIFICATION_GATEWAY_ADMITTED', 'admissionStateSha256': acknowledged,
+            'profile': self.initial['certification'], 'g2Accepted': False, 'nativeSchedulesEnabled': False})
+
+    def abort(self):
+        if self.failed.is_set():
+            return
+        self.failed.set()
+        self.released.set()
+        self.outcome.update(status='P2_RELEASE_FAILED_REQUIRES_REVIEW', trafficAuthorized=None,
+                            newWorkAuthorized=None, recoveryAuthorized=None)
+        if self.scope:
+            self.scope.revoked.set()
+        if self.guard_alive and self.safety_write is not None:
+            try:
+                self.safety({'operation': 'abort'})
+                return  # the independent guard reaps this entire worker group
+            except BaseException:
+                self.guard_alive = False
+        if self.scope:
+            try:
+                self.scope.revoke()
+                if getattr(self.scope, 'cleanup_uncertain', False):
+                    self.outcome['workerProcessCleanupUncertain'] = True
+            except BaseException:
+                self.outcome['workerProcessCleanupUncertain'] = True
+        # Closing on loss is allowed; reopening, replay and automatic deployment
+        # recovery are never attempted. Failures remain explicit uncertainty.
+        if self.observer:
+            try:
+                self.observer.probe('fence')
+                self.outcome['frontendAdmissionClosedOnFailure'] = True
+                self.outcome.update(trafficAuthorized=False, newWorkAuthorized=False, recoveryAuthorized=False)
+            except BaseException:
+                self.outcome['frontendAdmissionClosedOnFailure'] = None
+        if self.runtime_snapshot is not None:
+            try:
+                from p2_release_supervisor import close_gateway
+                self.outcome.update(close_gateway(self.initial, self.selected, self.runtime_snapshot))
+            except BaseException:
+                self.outcome['gatewayAdmissionFileClosed'] = None
+        if self.observer or self.worker:
+            try:
+                migrate.suspend_runtime('staging', runtime.SAFE_ENV)
+                self.outcome['runtimeStopped'] = True
+            except BaseException:
+                self.outcome['runtimeStopped'] = None
+        if getattr(self, 'selected', None) and self.worker:
+            for name in ('course', 'community'):
+                container = 'lash-migrate-' + name + '-' + self.selected['releaseId']
+                try:
+                    subprocess.run(['docker', 'rm', '--force', container], env=runtime.SAFE_ENV,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
+                except BaseException:
+                    self.outcome['migrationContainerCleanupUncertain'] = True
+
+    def command(self, value):
+        identity, operation = value.get('id'), value.get('operation')
+        require(type(identity) is int and 0 < identity < 1_000_000, 'P2_PROTOCOL_ID_REFUSED')
+        self.check()
+        self.last_command = time.monotonic()
+        if operation == 'check':
+            self.send(identity, 'HELD')
+        elif operation == 'start-api':
+            self.start(identity, value)
+        elif operation == 'frontend-verified':
+            self.verify_promoted(value['proof'], value['workload'])
+            self.admit_certification()
+            self.send(identity, 'FRONTEND_VERIFIED')
+        elif operation == 'prepare-close':
+            require(self.promoted is not None and self.closing_at is None, 'P2_FRONTEND_NOT_VERIFIED')
+            self.observer.verify()
+            self.observer.stop()
+            self.closing_at = time.monotonic()
+            self.send(identity, 'FRONTEND_CLOSE_PREPARED')
+        elif operation == 'observe-gateway':
+            require(self.promoted is not None and self.runtime_snapshot is not None, 'P2_PROMOTED_RUNTIME_REQUIRED')
+            observed = frontend_gateway_observation.observe(self.runtime_snapshot, self.initial['gatewayObservation'], self.check)
+            self.send(identity, 'GATEWAY_OBSERVED', gateway=observed)
+        elif operation == 'finish':
+            require(self.closing_at is not None and not self.finished, 'P2_FRONTEND_CLOSE_NOT_PREPARED')
+            terminal_raw, terminal = decode(value['terminal'])
+            outcome_raw, frontend = decode(value['frontend'])
+            require(terminal.get('status') == 'DATABASE_VERIFIED' and terminal.get('phase') == 'completed'
+                    and terminal.get('failureCode') is None and frontend.get('databaseVerified') is True
+                    and frontend.get('frontendVerified') is True and frontend.get('wholeReleaseAccepted') is False
+                    and frontend.get('frontendDomainsPromoted') is True, 'P2_FRONTEND_TERMINAL_REQUIRED')
+            for key in ('environment', 'releaseId', 'sourceCommit', 'migrationImageDigest', 'sqlArtifactSha256',
+                        'contractManifestSha256', 'schemaBaselineSha256', 'target', 'contractPhase', 'phase2ContractManifestSha256'):
+                require(terminal.get(key) == self.scope.receipt.get(key), 'P2_FRONTEND_TERMINAL_BINDING_REFUSED')
+            require(frontend.get('actionId') == self.selected['releaseId'] and frontend.get('sourceCommit') == terminal['sourceCommit'],
+                    'P2_FRONTEND_OUTCOME_BINDING_REFUSED')
+            for name, raw in (('frontend-job-outcome.json', terminal_raw), ('frontend-release-outcome.json', outcome_raw),
+                              ('frontend-original-database-receipt.json', self.frontend_raw)):
+                with (self.directory / name).open('xb') as stream:
+                    os.fchmod(stream.fileno(), 0o600); stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+            self.finished = True
+            self.released.set()
+            require(self.worker_done.wait(10) and not self.failed.is_set(), 'P2_RUNTIME_CONTINUATION_UNVERIFIED')
+            require(frontend.get('admissionRestored') is True and frontend.get('admissionNewWork') is True
+                    and frontend.get('admissionRecovery') is True, 'P2_FRONTEND_ADMISSION_RESTORATION_REQUIRED')
+            self.outcome.update(status='P2_STAGING_READY_FOR_CERTIFICATION', trafficAuthorized=True, newWorkAuthorized=True,
+                                recoveryAuthorized=True, nativeSchedulesEnabled=False, g2Accepted=False,
+                                frontendTerminalSha256=migrate.file_hash(terminal_raw),
+                                frontendOutcomeSha256=migrate.file_hash(outcome_raw), frontendDatabaseReceiptSha256=migrate.file_hash(self.frontend_raw),
+                                apiRuntimeReceiptSha256=migrate.file_hash(migrate.read_input(self.api_attempt, 'runtime-outcome.json')),
+                                migrationOutcomeSha256=migrate.file_hash(migrate.read_input(self.migration_attempt, 'migration-outcome.json')))
+            self.send(identity, 'P2_RELEASE_JOINED', receipt=self.outcome)
+        elif operation == 'commit':
+            require(self.finished and not self.failed.is_set() and self.worker_done.is_set(), 'P2_RELEASE_JOIN_REQUIRED')
+            require(runtime.check_containers(self.selected, self.runtime_snapshot) == self.ready['containers'], 'P2_RUNTIME_CHANGED')
+            migrate.write_json(self.directory, 'p2-release-outcome.json', self.outcome)
+            self.safety({'operation': 'committed', 'sha256': migrate.file_hash(migrate.read_input(self.directory, 'p2-release-outcome.json'))})
+            self.committed.set()
+            self.send(identity, 'COMMITTED', receipt=self.outcome)
+            return False
+        else:
+            raise ValueError('P2_PROTOCOL_OPERATION_REFUSED')
+        return True
+
+    def close(self, committed=False):
+        if not committed:
+            self.abort()
+            if hasattr(self, 'directory'):
+                try:
+                    migrate.write_json(self.directory, 'p2-release-failure.json', self.outcome)
+                except BaseException:
+                    pass
+        if self.observer:
+            self.observer.stop()
+        if self.worker:
+            self.worker_done.wait(15)
+        if self.scope:
+            self.scope.closed = True
+        if self.lock_fd is not None:
+            os.close(self.lock_fd)
+            self.lock_fd = None
+
+
+def main():
+    broker, committed = None, False
+    def emit(value):
+        text = json.dumps(value, separators=(',', ':'))
+        require(len(text) <= MAXIMUM, 'P2_PROTOCOL_OUTPUT_REFUSED')
+        print(text, flush=True)
+    try:
+        first = sys.stdin.buffer.readline(MAXIMUM + 1)
+        require(0 < len(first) <= MAXIMUM and first.endswith(b'\n'), 'P2_INITIAL_INPUT_REFUSED')
+        broker = Broker(json.loads(first), emit)
+        broker.initialize()
+        broker.send(0, 'LOCKED')
+        while True:
+            raw = sys.stdin.buffer.readline(MAXIMUM + 1)
+            if not raw:
+                break
+            require(0 < len(raw) <= MAXIMUM and raw.endswith(b'\n'), 'P2_PROTOCOL_INPUT_REFUSED')
+            value = json.loads(raw)
+            if value.get('operation') == 'check':
+                broker.command(value)
+            else:
+                require(broker.operation_active.acquire(blocking=False), 'P2_CONCURRENT_STAGE_REFUSED')
+                def operation(value=value):
+                    try:
+                        broker.command(value)
+                    except BaseException:
+                        broker.abort()
+                        broker.send(value.get('id'), 'P2_HOST_STAGE_FAILED')
+                    finally:
+                        broker.operation_active.release()
+                threading.Thread(target=operation, daemon=True).start()
+        committed = broker.committed.is_set()
+        require(committed, 'P2_CONTROLLER_DISCONNECTED')
+    except BaseException:
+        print('{"status":"P2_HOST_RELEASE_FAILED_REQUIRES_REVIEW"}', file=sys.stderr, flush=True)
+        raise SystemExit(1)
+    finally:
+        if broker:
+            broker.close(committed)
+
+
+if __name__ == '__main__':
+    print('P2_INDEPENDENT_SUPERVISOR_REQUIRED', file=sys.stderr)
+    raise SystemExit(1)

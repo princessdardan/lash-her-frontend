@@ -379,6 +379,69 @@ async function main() {
     for (const [name, digest] of original) assert.equal(hash(readFileSync(join(lost.output, name))), digest);
     assert.deepEqual(getState("owned-lost-promotion").counts, { fence: 1, build: 1, promote: 1 });
     checks.push("committed-sql-and-uncertain-promotion-preserved-with-new-read-only-recovery-action-and-no-replay");
+    phase = "p2-api-runtime-continuation-order-and-physical-observer";
+    const { observeP2Frontend } = await load("p2-frontend-live-probe.mjs");
+    const p2 = await make("p2-api-continuation"), stages = [];
+    let probeInput;
+    const observePhysical = async operation => observeP2Frontend({ ...probeInput, operation }, {
+      getUrl: p2.dependencies.getUrl,
+      createClient(options) {
+        const client = new Client({ ...options, ssl: { ...options.ssl, ca: readFileSync(certificate, "utf8") } });
+        connections.push(client); return client;
+      },
+    });
+    p2.dependencies.withEnvironmentLock = (task, options) => withFrontendEnvironmentLock((verify, signal) => task(verify, signal, {
+      async start({ database, client, verify: verifyBoth }) {
+        await verifyBoth(); stages.push("api-start");
+        assert.equal(getState("owned-p2-api-continuation").built, false);
+        const marker = hash(randomUUID()); await client.query("SELECT pg_advisory_lock(hashtext($1))", [marker]);
+        const identity = (await client.query("SELECT pg_backend_pid() AS pid,backend_start::text FROM pg_stat_activity WHERE pid=pg_backend_pid()")).rows[0];
+        probeInput = { version: 1, operation: "verify-schema", marker, backendPid: identity.pid, backendStart: identity.backend_start,
+          receipt: database, job: p2.prepared.migration.job, baseline: p2.prepared.migration.baseline,
+          owner: p2.prepared.plan.owner, targetSha256: p2.prepared.plan.targetSha256 };
+        assert.equal((await observePhysical("verify-schema")).status, "P2_FRONTEND_PHYSICAL_LOCK_VERIFIED");
+        assert.equal((await p2.client.query("SELECT pg_try_advisory_lock(hashtext('lash-her:private-db:migrations')) AS held")).rows[0].held, false);
+      },
+      async frontendVerified(proof, verifyBoth) {
+        await verifyBoth(); stages.push("frontend-promoted"); assert.equal(proof.aliasJobState, "succeeded");
+        assert.equal((await observePhysical("observe")).status, "P2_FRONTEND_PHYSICAL_LOCK_VERIFIED");
+      },
+      async prepareClose(verifyBoth) {
+        await verifyBoth(); stages.push("prepare-close"); assert.equal((await observePhysical("verify-schema")).status, "P2_FRONTEND_PHYSICAL_LOCK_VERIFIED");
+      },
+      async finish(outcome, verifyEnvironment) {
+        await verifyEnvironment(); stages.push("terminal-join");
+        assert.equal(outcome.frontendVerified, true);
+        assert.equal(JSON.parse(readFileSync(join(p2.output, "job-outcome.json"))).status, "DATABASE_VERIFIED");
+        assert.equal((await p2.client.query("SELECT count(*)::int AS count FROM pg_stat_activity WHERE pid=$1", [probeInput.backendPid])).rows[0].count, 0);
+        await assert.rejects(observePhysical("observe"), /P2_FRONTEND_LIVE_PROBE_REFUSED/u);
+        await p2.client.query("BEGIN"); await p2.client.query("SET LOCAL ROLE release_admission_owner");
+        await p2.client.query("UPDATE frontend_admission.control SET new_work=true,recovery=true WHERE singleton");
+        await p2.client.query("COMMIT");
+        assert.equal((await observePhysical("fence")).status, "P2_FRONTEND_ADMISSION_CLOSED");
+        const closed = (await p2.client.query("SELECT new_work,recovery,epoch::text FROM frontend_admission.control WHERE singleton")).rows[0];
+        assert.equal(closed.new_work, false); assert.equal(closed.recovery, false);
+        assert.equal((await observePhysical("fence")).status, "P2_FRONTEND_ADMISSION_CLOSED");
+        assert.deepEqual((await p2.client.query("SELECT new_work,recovery,epoch::text FROM frontend_admission.control WHERE singleton")).rows[0], closed);
+      },
+    }), options);
+    const p2Result = await p2.run();
+    assert.equal(p2Result.databaseVerified, true);
+    assert.deepEqual(stages, ["api-start", "frontend-promoted", "prepare-close", "terminal-join"]);
+    checks.push("p2-api-continuation-before-frontend-and-actual-tls-dual-pg-lock-observation-through-promotion-with-terminal-join");
+    phase = "p2-api-stage-backend-death";
+    const p2Dead = await make("p2-api-backend-death");
+    p2Dead.dependencies.withEnvironmentLock = (task, options) => withFrontendEnvironmentLock((verify, signal) => task(verify, signal, {
+      async start({ client }) { await admin.query("SELECT pg_terminate_backend($1,1000)", [client.processID]); },
+      async frontendVerified() { assert.fail("frontend began after backend death"); },
+      async prepareClose() { assert.fail("close began after backend death"); },
+      async finish() { assert.fail("join began after backend death"); },
+    }), options);
+    await assert.rejects(p2Dead.run(), /FRONTEND_RELEASE_COORDINATION_FAILED_REVIEW_REQUIRED/u);
+    assert.equal(getState("owned-p2-api-backend-death").counts.build, 0);
+    assert.equal(JSON.parse(readFileSync(join(p2Dead.output, "database-receipt.json"))).status, "DATABASE_VERIFIED");
+    assert.equal(JSON.parse(readFileSync(join(p2Dead.output, "job-outcome.json"))).status, "FAILED_REQUIRES_REVIEW");
+    checks.push("p2-api-stage-actual-backend-death-preserves-committed-sql-and-prevents-frontend-mutation");
     console.log(JSON.stringify({ status: "FRONTEND_RELEASE_OWNED_POSTGRES_PASS", postgresMajor: major, providerTouched: false, checks,
       liveAdapterQualified: false, migrationAuthorized: false, trafficAuthorized: false }));
   } finally {

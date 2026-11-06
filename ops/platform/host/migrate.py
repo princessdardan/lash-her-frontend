@@ -287,7 +287,7 @@ def suspend_runtime(environment, env):
     return ids
 
 
-def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), after_migrations=None, docker_env=None, before_frontend_migration=None):
+def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), after_migrations=None, docker_env=None, before_frontend_migration=None, _p2_scope=None):
     release, jobs = make_plan(bundle)
     environment, release_id = release["environment"], release["releaseId"]
     frontend_read_only = "frontend" in jobs and jobs["frontend"]["job"]["target"]["approvedPendingTags"] == []
@@ -306,7 +306,15 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
     for directory in (results.resolve(), bundle.resolve()):
         demand(not any((parent / ".git").exists() for parent in (directory, *directory.parents)), "RELEASE_ARTIFACTS_OUTSIDE_CHECKOUT_REQUIRED")
     demand("," not in str(results.resolve()) and "," not in str(bundle.resolve()), "MOUNT_PATH_REFUSED")
-    lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    # Only the fixed P2 broker can pass a process-local scope retaining its real
+    # flock and live frontend PostgreSQL observer. The public CLI has no option.
+    if _p2_scope is not None:
+        from p2_release_scope import P2ReleaseScope
+        demand(isinstance(_p2_scope, P2ReleaseScope) and "frontend" in jobs
+               and before_frontend_migration is None, "P2_PROCESS_LOCAL_SCOPE_REQUIRED")
+        _p2_scope.require_frontend(release, jobs["frontend"])
+    lock_fd = (_p2_scope.descriptor if _p2_scope is not None else
+               os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600))
     try:
         demand(stat.S_ISREG(os.fstat(lock_fd).st_mode) and os.fstat(lock_fd).st_uid == os.getuid(), "RELEASE_LOCK_REFUSED")
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -322,6 +330,8 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
         prepared = []
         try:
             for name, info in jobs.items():
+                if _p2_scope is not None:
+                    _p2_scope.verify()
                 outcome["phase"] = f"image-preflight-{name}"
                 inputs, receipts = attempt / f"{name}-input", attempt / name
                 inputs.mkdir(mode=0o700); receipts.mkdir(mode=0o700)
@@ -336,14 +346,18 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 if os.getuid() == 0:
                     os.chown(inputs, uid, gid); os.chown(receipts, uid, gid)
                 prepared.append((name, info, inputs, receipts))
-                subprocess.run(["docker", "pull", info["image"]], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=180)
+                runner = _p2_scope.run if _p2_scope is not None else subprocess.run
+                runner(["docker", "pull", info["image"]], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=180)
                 args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", f"lash-check-{name}-{release_id}", True, info.get("frontend", False))
-                subprocess.run(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=30)
+                runner(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=30)
             # Validate every job in its exact migration image before database credentials are read.
             outcome["phase"] = "credential-validation"
-            credentials = {name: os.environ.get(credential_names(name, environment)[0]) for name in jobs}
+            credentials = {name: os.environ.get(credential_names(name, environment)[0]) for name in jobs
+                           if name != "frontend" or _p2_scope is None}
             demand(all(credentials.values()), "NAMED_MIGRATION_CREDENTIAL_REQUIRED")
-            if "frontend" in jobs and (not frontend_read_only or before_frontend_migration is not None):
+            if _p2_scope is not None:
+                _p2_scope.require_frontend(release, jobs["frontend"])
+            elif "frontend" in jobs and (not frontend_read_only or before_frontend_migration is not None):
                 outcome["phase"] = "frontend-producer-suspension"
                 # Vercel writers/schedules are outside Docker. Only the reviewed
                 # full release coordinator can suspend/drain and verify them;
@@ -366,6 +380,18 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
             outcome["stoppedRuntimeContainers"] = suspend_runtime(environment, base_env)
             outcome["runtimeResumed"] = False
             for name, info, inputs, receipts in prepared:
+                if _p2_scope is not None:
+                    _p2_scope.verify()
+                    if name == "frontend":
+                        # SQL already committed in the still-held Node session.
+                        # Preserve that original stage; do not fabricate its
+                        # terminal receipt, invoke SQL again or reacquire PG.
+                        receipt = _p2_scope.require_frontend(release, info)
+                        write_json(receipts, "database-receipt.json", receipt)
+                        write_json(receipts, "frontend-continuation-open.json", {
+                            "status": "FRONTEND_CONTINUATION_STILL_OPEN", "environment": environment,
+                            "releaseId": release_id, "sqlReplayed": False, "trafficAuthorized": False})
+                        continue
                 outcome["phase"] = f"apply-{name}"
                 env = {**base_env, credential_names(name, environment)[1]: credentials[name],
                        **({} if info.get("frontend") else {"DATABASE_TARGET": environment})}
@@ -373,7 +399,8 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 args = docker_arguments(info["image"], inputs.resolve(), receipts.resolve(), environment, release_id, f"{uid}:{gid}", container_name, frontend=info.get("frontend", False))
                 log_fd = os.open(receipts / "container.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 try:
-                    subprocess.run(args, check=True, stdout=log_fd, stderr=log_fd, env=env, timeout=1260)
+                    runner = _p2_scope.run if _p2_scope is not None else subprocess.run
+                    runner(args, check=True, stdout=log_fd, stderr=log_fd, env=env, timeout=1260)
                 finally:
                     os.close(log_fd)
                     # Also cleans up a container left running by a timed-out/interrupted Docker CLI.
@@ -403,7 +430,8 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                                and receipt.get("applied") == [], "FRONTEND_READ_ONLY_VERIFICATION_REQUIRED")
                         outcome["frontendMigrationMode"] = "verify-current-only"
                         outcome["frontendReadOnlyVerified"] = True
-            outcome["status"] = "DATABASES_VERIFIED"
+            outcome["status"] = ("API_DATABASES_VERIFIED_FRONTEND_CONTINUATION_OPEN" if _p2_scope is not None
+                                 else "DATABASES_VERIFIED")
             outcome["phase"] = "completed"
             outcome["candidateSha256"] = file_hash(read_input(attempt, "candidate.json"))
             outcome["databaseReceiptSha256"] = {name: file_hash(read_input(receipts, "database-receipt.json")) for name, _info, _inputs, receipts in prepared}
@@ -421,7 +449,8 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
             return after_migrations(attempt, release, outcome)
         return outcome
     finally:
-        os.close(lock_fd)
+        if _p2_scope is None:
+            os.close(lock_fd)
 
 
 def main():
