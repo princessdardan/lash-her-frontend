@@ -13,7 +13,28 @@ import { P2_CERTIFICATION_PROFILE } from './p2-certification-profile.mjs';
 import { prepareP2PostSqlRecovery,bindOriginalRecoveryReceipts,p2RecoveryProviderContext } from './p2-post-sql-recovery.mjs';
 import { frontendProviderBindingsArtifact,FRONTEND_VERCEL_PROJECT,FRONTEND_VERCEL_TEAM,FRONTEND_VERCEL_REPOSITORY } from './frontend-provider-bindings.mjs';
 import {readP2RecoveryForwardScope} from './p2-recovery-current-probe.mjs';
-import {requireP2RecoveryPrivateDirectories} from './p2-recovery.mjs';
+import {createP2RecoveryReceiptDirectories,requireP2RecoveryPrivateDirectories} from './p2-recovery.mjs';
+import {frontendReleaseReceiptStore} from './frontend-release-receipts.mjs';
+
+test('operator metadata and SSH diagnostics leave the actual frontend receipt store empty at handoff',()=>{
+  const results=realpathSync(mkdtempSync(join(tmpdir(),'p2-recovery-cli-layout-')));chmodSync(results,0o700);
+  try{
+    const paths=createP2RecoveryReceiptDirectories(results,'owned-layout');
+    writeFileSync(join(paths.directory,'reviewed-plan.json'),'{"sourceOnly":true}\n',{mode:0o600});
+    writeFileSync(join(paths.directory,'operator-source-ci.json'),'{"fixtureOnly":true}\n',{mode:0o600});
+    writeFileSync(join(paths.diagnostics,'owned.log'),'owned diagnostic',{mode:0o600});
+    // The old flat CLI handoff fails this real constructor before any lock.
+    assert.throws(()=>frontendReleaseReceiptStore(paths.directory),/FRONTEND_RELEASE_RECEIPTS_REFUSED/u);
+    assert.deepEqual(readdirSync(paths.frontendDirectory),[]);
+    const store=frontendReleaseReceiptStore(paths.frontendDirectory);
+    store.record('owned-boundary.json',{sourceOnly:true});
+    assert.deepEqual(JSON.parse(readFileSync(join(paths.frontendDirectory,'owned-boundary.json'))),{sourceOnly:true});
+    assert.equal(readFileSync(join(paths.directory,'reviewed-plan.json'),'utf8'),'{"sourceOnly":true}\n');
+    assert.throws(()=>createP2RecoveryReceiptDirectories(results,'owned-layout'));
+    for(const id of ['../escape','bad/action',''])assert.throws(()=>createP2RecoveryReceiptDirectories(results,id));
+    assert.deepEqual(readdirSync(results),['owned-layout']);
+  }finally{rmSync(results,{recursive:true,force:true});}
+});
 
 test('forward private probe directory is canonically disjoint from both common trees and old private tree',()=>{
   const root=realpathSync(mkdtempSync(join(tmpdir(),'p2-private-boundary-')));chmodSync(root,0o700);

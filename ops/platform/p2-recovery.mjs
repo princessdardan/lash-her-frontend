@@ -19,6 +19,13 @@ function bytes(path,maximum=2_000_000) {
   return readFileSync(path);
 }
 function object(path,maximum) { const value=JSON.parse(bytes(path,maximum)); require(value && typeof value === 'object' && !Array.isArray(value)); return value; }
+export function createP2RecoveryReceiptDirectories(results,actionId){
+  frontendPrivateReceiptDirectory(results);require(typeof actionId==='string'&&/^[a-z0-9][a-z0-9-]{0,63}$/u.test(actionId));
+  const directory=join(results,actionId);mkdirSync(directory,{mode:0o700});
+  const frontendDirectory=join(directory,'frontend'),diagnostics=join(directory,'ssh');
+  mkdirSync(frontendDirectory,{mode:0o700});mkdirSync(diagnostics,{mode:0o700});
+  return {directory,frontendDirectory,diagnostics};
+}
 export function requireP2RecoveryPrivateDirectories(privateDirectory,{originalDirectory,directory,oldPrivateDirectory}){
   const canonical=path=>{require(typeof path==='string'&&resolve(path)===path);const present=lstatSync(path,{throwIfNoEntry:false});if(present){frontendPrivateReceiptDirectory(path);return realpathSync(path);}frontendPrivateReceiptDirectory(dirname(path));return join(realpathSync(dirname(path)),basename(path));};
   const selected=canonical(privateDirectory);
@@ -57,8 +64,7 @@ export async function p2RecoveryOperator(settings,{apply=false,confirmation}={})
   const context=object(settings.providerContext,24_000_000);
   if(checked.action.frontendMode==='reviewed-new-build')requireP2RecoveryPrivateDirectories(checked.action.forwardPrivateConfigurationDirectory,{originalDirectory:settings.originalDirectory,
     directory:join(settings.results,checked.action.recoveryActionId),oldPrivateDirectory:context.privateConfigurationDirectory});
-  frontendPrivateReceiptDirectory(settings.results); const directory=join(settings.results,checked.action.recoveryActionId);mkdirSync(directory,{mode:0o700});
-  const diagnostics=join(directory,'ssh');mkdirSync(diagnostics,{mode:0o700});
+  const {directory,frontendDirectory,diagnostics}=createP2RecoveryReceiptDirectories(settings.results,checked.action.recoveryActionId);
   writeFileSync(join(directory,'reviewed-plan.json'),JSON.stringify(checked.plan)+'\n',{mode:0o600,flag:'wx'});
   writeFileSync(join(directory,'operator-source-ci.json'),JSON.stringify(ci)+'\n',{mode:0o600,flag:'wx'});
   const credentials=Object.fromEntries(['FRONTEND_STAGING_MIGRATION_DATABASE_URL','COURSE_STAGING_DATABASE_URL','COMMUNITY_STAGING_DATABASE_URL'].map(key=>{
@@ -84,9 +90,9 @@ export async function p2RecoveryOperator(settings,{apply=false,confirmation}={})
     expectedWriterAdmissionBinding:checked.original.plan.writerAdmissionBinding,owner:checked.prepared.plan.owner,historicalLogins:checked.prepared.plan.historicalLogins,producers:checked.prepared.plan.producers,targetSha256:checked.prepared.plan.targetSha256,certification:checked.prepared.plan.certification,
     gatewayObservation:context.bindings?.gatewayObservation};
   require(hash(initial.gatewayObservation)===checked.prepared.plan.restoration.gatewayBindingSha256);
-  return runP2PostSqlRecovery({prepared:checked.prepared,action:checked.action,candidateBytes:checked.candidateBytes},{confirmation,directory,originalDirectory:settings.originalDirectory,
+  return runP2PostSqlRecovery({prepared:checked.prepared,action:checked.action,candidateBytes:checked.candidateBytes},{confirmation,directory:frontendDirectory,originalDirectory:settings.originalDirectory,
     operatorSourceCommit:settings.operatorSourceCommit,getUrl:()=>credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,getProviderContext:async()=>context,
-    withRecoveryEnvironmentLock:p2RecoveryEnvironmentLock(settings,initial,directory),
+    withRecoveryEnvironmentLock:p2RecoveryEnvironmentLock(settings,initial,frontendDirectory),
     assertSource:()=>committedOperatorSource(root,settings.operatorSourceCommit)});
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
