@@ -24,7 +24,7 @@ const parent = { sourceOwnedFixedAction: true, hostLockHeld: true, frontendPhysi
   loginChangeAuthorized: false };
 
 function harness(selected, { failFirst = false, failAt = failFirst ? 1 : null, initialRuntime = "baseline", initialFrontend = "baseline",
-  initialClock = "2027-01-15T07:00:00.000Z" } = {}) {
+  initialClock = "2027-01-15T07:00:00.000Z", signerCutoff = "2027-01-15T07:00:00.000Z", retainedTokenIssuedAt = null } = {}) {
   let runtime = initialRuntime, frontend = initialFrontend, clock = Date.parse(initialClock), failed = false;
   const calls = [], restored = [], failClosed = [];
   const containers = ["community-api", "community-tls", "community-worker", "course-api", "course-export-cleanup", "course-media",
@@ -56,8 +56,11 @@ function harness(selected, { failFirst = false, failAt = failFirst ? 1 : null, i
       applyState(intent); return result(intent, false);
     },
     reconcileMutation: async intent => { calls.push(`reconcile:${intent.phase}:${intent.kind}`); applyState(intent); return result(intent, true); },
-    captureTokens: async () => profiles.map(profile => ({ status: "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED", profile,
-      tokenIssuedAt: "2027-01-15T07:05:30.000Z", tokenExpiresAt: "2027-01-15T07:10:30.000Z" })),
+    captureTokens: async () => {
+      const issued = retainedTokenIssuedAt === null ? Math.floor(clock / 1000) * 1000 : Date.parse(retainedTokenIssuedAt);
+      return profiles.map(profile => ({ status: "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED", profile,
+        tokenIssuedAt: new Date(issued).toISOString(), tokenExpiresAt: new Date(issued + 300_000).toISOString() }));
+    },
     observeProfiles: async (phase, captures) => {
       clock += 10_000;
       return captures.map(({ profile, tokenIssuedAt, tokenExpiresAt }) => ({ status: "P2_IDENTITY_ROTATION_PRIVATE_OBSERVED",
@@ -66,7 +69,7 @@ function harness(selected, { failFirst = false, failAt = failFirst ? 1 : null, i
         observedAt: new Date(clock).toISOString() }));
     },
     observeFrontendSigner: async phase => ({ status: "P2_IDENTITY_ROTATION_FRONTEND_SIGNER_VERIFIED",
-      configurationSha256: selected.configuration[phase].sha256, issuanceCutoffAt: "2027-01-15T07:00:00.000Z",
+      configurationSha256: selected.configuration[phase].sha256, issuanceCutoffAt: signerCutoff,
       receiptSha256: sha(`frontend-${phase}`) }),
     wait: async (deadline, verify) => { await verify(); clock = deadline; await verify(); },
     failClosed: async value => { failClosed.push(value); },
@@ -89,6 +92,16 @@ test("fixed controller orders API/frontend phases, verifies every split state an
       { fixture: true, nowMs: retained.nowMs })).status, "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED");
     assert.deepEqual(retained.calls, []);
     assert.ok(retained.guardCalls() > 0);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("fractional signer cutoff waits through the next JWT second before capture", async () => {
+  const directory = `/private/tmp/p2-rotation-controller-${process.pid}-fractional-cutoff`; mkdirSync(directory, { mode: 0o700 });
+  try {
+    const selected = plan(directory), owned = harness(selected, { signerCutoff: "2027-01-15T07:00:00.500Z" });
+    const outcome = await runIdentityKeyRotationController(selected, parent, owned.dependencies,
+      { fixture: true, nowMs: owned.nowMs });
+    assert.equal(outcome.status, "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED");
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -123,7 +136,7 @@ test("resume after overlap qualification reuses retained phase and reconciles on
       { fixture: true, nowMs: first.nowMs }), error => error.check === "rotation-failure-uncertain");
     assert.deepEqual(first.calls, ["apply:overlap:api", "apply:overlap:frontend", "apply:current-only:frontend"]);
     const resumed = harness(selected, { initialRuntime: "overlap", initialFrontend: "overlap",
-      initialClock: "2027-01-15T07:06:00.000Z" });
+      initialClock: "2027-01-15T07:06:00.000Z", retainedTokenIssuedAt: "2027-01-15T07:05:30.000Z" });
     const outcome = await runIdentityKeyRotationController(selected, parent, resumed.dependencies,
       { fixture: true, nowMs: resumed.nowMs });
     assert.equal(outcome.status, "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED");

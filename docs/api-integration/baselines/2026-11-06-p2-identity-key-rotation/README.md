@@ -20,6 +20,8 @@ Owned validation covers:
   state, unexpired old-token rejection, new-token acceptance, and module,
   source, image, container, and configuration joins;
 - the 330-second maximum token lifetime plus verifier-skew drain;
+- second-aligned capture scheduling after fractional signer cutoffs, preserving
+  the full 330-second drain before the JWT issuer floors `iat` to seconds;
 - source retention and reuse of the exact same unexpired old/new token bytes
   before and after previous-key removal;
 - ordered phase windows that reject evidence outside its phase and require the

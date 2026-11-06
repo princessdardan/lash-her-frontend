@@ -140,13 +140,14 @@ async function runMutation(records, plan, phase, kind, dependencies) {
 }
 
 function capturedProfiles(captures, cutoff, startedAt, completedAt, fresh) {
+  const earliestIssuedAt = Math.ceil((cutoff + DRAIN_MS) / TOKEN_CLOCK_RESOLUTION_MS) * TOKEN_CLOCK_RESOLUTION_MS;
   const expected = ["community-admin", "community-member", "course-admin", "course-learner"];
   demand(Array.isArray(captures) && captures.length === expected.length
     && captures.map(row => row.profile).sort().join() === expected.join()
     && captures.every(row => row.status === "P2_IDENTITY_ROTATION_PRIVATE_TOKENS_CAPTURED"
       && Number.isFinite(Date.parse(row.tokenIssuedAt)) && Number.isFinite(Date.parse(row.tokenExpiresAt))
       && Date.parse(row.tokenExpiresAt) - Date.parse(row.tokenIssuedAt) === 300_000
-      && Date.parse(row.tokenIssuedAt) >= cutoff + DRAIN_MS
+      && Date.parse(row.tokenIssuedAt) >= earliestIssuedAt
       && (!fresh || Date.parse(row.tokenIssuedAt) >= startedAt - TOKEN_CLOCK_RESOLUTION_MS
         && Date.parse(row.tokenIssuedAt) <= completedAt)
       && Date.parse(row.tokenExpiresAt) > completedAt), "retained-token-capture");
@@ -253,8 +254,9 @@ export async function runIdentityKeyRotationController(planValue, parent, depend
       "frontend-overlap-signer");
       const cutoff = Date.parse(frontendOverlap.issuanceCutoffAt);
       demand(Number.isFinite(cutoff), "frontend-issuance-cutoff");
-      await dependencies.wait(cutoff + DRAIN_MS, async () => verifyBoundary("overlap"));
-      demand((options.nowMs ?? Date.now)() >= cutoff + DRAIN_MS, "overlap-drain-incomplete");
+      const tokenCaptureAt = Math.ceil((cutoff + DRAIN_MS) / TOKEN_CLOCK_RESOLUTION_MS) * TOKEN_CLOCK_RESOLUTION_MS;
+      await dependencies.wait(tokenCaptureAt, async () => verifyBoundary("overlap"));
+      demand((options.nowMs ?? Date.now)() >= tokenCaptureAt, "overlap-drain-incomplete");
       selectedOverlap = { frontendIssuanceCutoffAt: frontendOverlap.issuanceCutoffAt,
         frontendSignerReceiptSha256: frontendOverlap.receiptSha256 };
     }

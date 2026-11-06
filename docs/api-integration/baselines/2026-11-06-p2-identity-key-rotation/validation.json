@@ -6,8 +6,8 @@
   "sourceFiles": {
     "ops/platform/p2-identity-key-rotation.mjs": "45d89633b0e6a194974fc9750661f2ea08799dc1c7b41b391269905f4bcb8558",
     "ops/platform/p2-identity-key-rotation.test.mjs": "02790b8e5ed9d0a9f0a7013e2408678ba399b56521c0833c7e8498cff1f6155c",
-    "ops/platform/p2-identity-key-rotation-controller.mjs": "2adbf12f9ef85ddc3052461ee628d7a3e75e0f6999bd39354401d3a9ad464c3d",
-    "ops/platform/p2-identity-key-rotation-controller.test.mjs": "2bdfd1b68d2c9cd2edfe81dcbd900974eeefa6229e7e6cc690f61c075689b450",
+    "ops/platform/p2-identity-key-rotation-controller.mjs": "7ea9f0314037e3d2f0903016a5d46b40709dd0ff06ab3ba26b87e453b8a42e51",
+    "ops/platform/p2-identity-key-rotation-controller.test.mjs": "c0d6061ea48e2de434350692d0aff4675bd0ad46bfa3f3720eb0efe638203fca",
     "ops/platform/p2-identity-key-rotation-observer.mjs": "73cbf46a51b241168921d986be93107c03f3c62d679e314de12004e5726e10bb",
     "ops/platform/host/p2_identity_key_rotation.py": "178f63244c90cc3683e11917e02e77d77dd40f6a61f8fabe0f24c3d035705d61",
     "ops/platform/host/p2_identity_key_rotation_test.py": "11380fdf9558c5d05629091486183fb71e791714afb736d1649245787806597d",
@@ -22,7 +22,7 @@
   },
   "verification": {
     "rotationObserverNode": { "passed": 6, "failed": 0, "skipped": 0, "realLoopbackVerifiedTls": true },
-    "rotationControllerNode": { "passed": 8, "failed": 0, "skipped": 0 },
+    "rotationControllerNode": { "passed": 9, "failed": 0, "skipped": 0 },
     "python": { "passed": 16, "failed": 0, "skipped": 0 },
     "eslint": "passed",
     "javascriptSyntax": "passed",
