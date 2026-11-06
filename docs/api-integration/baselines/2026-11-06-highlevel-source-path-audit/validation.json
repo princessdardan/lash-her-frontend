@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "status": "SOURCE_ONLY_HIGHLEVEL_AUDIT_VERIFIED",
+  "sourceCommit": "caea30f6297a0da0b441c20cc9598ab1e798e192",
+  "frozenRegisterSha256": "4405210789036219f955b983975ed40da0bb5a78c0d21ce49aec487408809d02",
+  "verifiedSourceProfiles": 25,
+  "selectedGitBlobsSha256Checked": 888,
+  "surfaces": 35,
+  "groups": {
+    "agency-oauth-variant": {
+      "sources": 1,
+      "surfaces": 2
+    },
+    "location-oauth-boundary": {
+      "sources": 14,
+      "surfaces": 21
+    },
+    "source-paths-absent": {
+      "sources": 10,
+      "surfaces": 12
+    }
+  },
+  "deterministicAuditJson": true,
+  "runtimeClosuresProduced": false,
+  "profilesChanged": false,
+  "privateValuesRead": false,
+  "sqlOrProviderCalls": false,
+  "liveControls": false,
+  "files": {
+    "README.md": "6a9fc77d01e2b332d27af85628baaefaea889c09174b9ab222391d89c882226d",
+    "audit.json": "2a99639449bea778b6fb0f107dcbb7705cb2c7248ed89c5e3b9eff3d4a3958e6"
+  }
+}
