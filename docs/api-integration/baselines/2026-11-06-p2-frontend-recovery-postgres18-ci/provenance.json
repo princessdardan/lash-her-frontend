@@ -1,0 +1,382 @@
+{
+  "version": 1,
+  "repository": "princessdardan/lash-her-frontend",
+  "frontendSourceCommit": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d",
+  "run": {
+    "id": 42166753948,
+    "run_number": 262,
+    "run_attempt": 1,
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d",
+    "head_branch": "codex/phase2-integration",
+    "created_at": "2026-11-06T05:09:54Z",
+    "updated_at": "2026-11-06T05:21:08Z",
+    "run_started_at": "2026-11-06T05:09:54Z",
+    "html_url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/42166753948"
+  },
+  "initialRunStatus": "in_progress",
+  "job": {
+    "id": 127724912018,
+    "run_id": 42166753948,
+    "name": "frontend-operator-migrations",
+    "status": "completed",
+    "conclusion": "success",
+    "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d",
+    "started_at": "2026-11-06T05:09:57Z",
+    "completed_at": "2026-11-06T05:15:12Z",
+    "labels": [
+      "ubuntu-24.04"
+    ],
+    "steps": [
+      {
+        "name": "Set up job",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 1,
+        "started_at": "2026-11-06T05:09:58Z",
+        "completed_at": "2026-11-06T05:10:00Z"
+      },
+      {
+        "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 2,
+        "started_at": "2026-11-06T05:10:01Z",
+        "completed_at": "2026-11-06T05:10:03Z"
+      },
+      {
+        "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 3,
+        "started_at": "2026-11-06T05:10:03Z",
+        "completed_at": "2026-11-06T05:10:06Z"
+      },
+      {
+        "name": "Run npm ci",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 4,
+        "started_at": "2026-11-06T05:10:06Z",
+        "completed_at": "2026-11-06T05:10:35Z"
+      },
+      {
+        "name": "Enable the containerd image store for attested local builds",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 5,
+        "started_at": "2026-11-06T05:10:35Z",
+        "completed_at": "2026-11-06T05:10:46Z"
+      },
+      {
+        "name": "Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 6,
+        "started_at": "2026-11-06T05:10:46Z",
+        "completed_at": "2026-11-06T05:10:53Z"
+      },
+      {
+        "name": "Build the immutable frontend migration image without publishing",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 7,
+        "started_at": "2026-11-06T05:10:53Z",
+        "completed_at": "2026-11-06T05:11:12Z"
+      },
+      {
+        "name": "Verify migration-only image boundaries offline",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 8,
+        "started_at": "2026-11-06T05:11:12Z",
+        "completed_at": "2026-11-06T05:11:13Z"
+      },
+      {
+        "name": "Build owned frontend PostgreSQL 18 fixture",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 9,
+        "started_at": "2026-11-06T05:11:13Z",
+        "completed_at": "2026-11-06T05:11:31Z"
+      },
+      {
+        "name": "Exercise the operator CLI without provider access",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 10,
+        "started_at": "2026-11-06T05:11:31Z",
+        "completed_at": "2026-11-06T05:12:27Z"
+      },
+      {
+        "name": "Qualify Phase 2 role preparation and release failure paths on owned PostgreSQL 18",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 11,
+        "started_at": "2026-11-06T05:12:27Z",
+        "completed_at": "2026-11-06T05:13:19Z"
+      },
+      {
+        "name": "Exercise exact API identity and current-only recovery on owned PostgreSQL 18",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 12,
+        "started_at": "2026-11-06T05:13:19Z",
+        "completed_at": "2026-11-06T05:14:23Z"
+      },
+      {
+        "name": "Verify initial Course logins on owned PostgreSQL 18",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 13,
+        "started_at": "2026-11-06T05:14:23Z",
+        "completed_at": "2026-11-06T05:14:24Z"
+      },
+      {
+        "name": "Verify Community runtime credential handoff on owned PostgreSQL 18",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 14,
+        "started_at": "2026-11-06T05:14:24Z",
+        "completed_at": "2026-11-06T05:14:25Z"
+      },
+      {
+        "name": "Retain source-bound digest summary without private schema definitions",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 15,
+        "started_at": "2026-11-06T05:14:25Z",
+        "completed_at": "2026-11-06T05:14:26Z"
+      },
+      {
+        "name": "Retain raw frontend-runtime scan",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 16,
+        "started_at": "2026-11-06T05:14:26Z",
+        "completed_at": "2026-11-06T05:14:32Z"
+      },
+      {
+        "name": "Scan frontend migration image against verified backport evidence",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 17,
+        "started_at": "2026-11-06T05:14:32Z",
+        "completed_at": "2026-11-06T05:14:58Z"
+      },
+      {
+        "name": "Retain frontend-runtime qualification",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 18,
+        "started_at": "2026-11-06T05:14:58Z",
+        "completed_at": "2026-11-06T05:14:59Z"
+      },
+      {
+        "name": "Post Retain raw frontend-runtime scan",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 31,
+        "started_at": "2026-11-06T05:14:59Z",
+        "completed_at": "2026-11-06T05:14:59Z"
+      },
+      {
+        "name": "Post Build the immutable frontend migration image without publishing",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 32,
+        "started_at": "2026-11-06T05:14:59Z",
+        "completed_at": "2026-11-06T05:15:00Z"
+      },
+      {
+        "name": "Post Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 33,
+        "started_at": "2026-11-06T05:15:00Z",
+        "completed_at": "2026-11-06T05:15:05Z"
+      },
+      {
+        "name": "Post Enable the containerd image store for attested local builds",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 34,
+        "started_at": "2026-11-06T05:15:05Z",
+        "completed_at": "2026-11-06T05:15:10Z"
+      },
+      {
+        "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 35,
+        "started_at": "2026-11-06T05:15:10Z",
+        "completed_at": "2026-11-06T05:15:10Z"
+      },
+      {
+        "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 36,
+        "started_at": "2026-11-06T05:15:10Z",
+        "completed_at": "2026-11-06T05:15:11Z"
+      },
+      {
+        "name": "Complete job",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 37,
+        "started_at": "2026-11-06T05:15:11Z",
+        "completed_at": "2026-11-06T05:15:11Z"
+      }
+    ]
+  },
+  "allJobsAtTerminalSnapshot": [
+    {
+      "id": 127724911827,
+      "name": "audit",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d"
+    },
+    {
+      "id": 127724911899,
+      "name": "build",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d"
+    },
+    {
+      "id": 127724911901,
+      "name": "quality-and-unit",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d"
+    },
+    {
+      "id": 127724911963,
+      "name": "gateway-and-platform",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d"
+    },
+    {
+      "id": 127724912018,
+      "name": "frontend-operator-migrations",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d"
+    },
+    {
+      "id": 127724912040,
+      "name": "browser (chromium)",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d"
+    },
+    {
+      "id": 127724912043,
+      "name": "browser (firefox)",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d"
+    },
+    {
+      "id": 127724912073,
+      "name": "database",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d"
+    },
+    {
+      "id": 127724912173,
+      "name": "browser (webkit)",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d"
+    },
+    {
+      "id": 127728316650,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 13479382371,
+      "name": "frontend-operator-schema-summary",
+      "digest": "sha256:0baa2965406eadd2e22f6d26a56ae6625bc47895ec4ce916e6990b4a6bf05ecd",
+      "size_in_bytes": 13427,
+      "expired": false,
+      "created_at": "2026-11-06T05:14:26Z",
+      "expires_at": "2026-11-16T05:14:26Z",
+      "workflow_run": {
+        "id": 42166753948,
+        "repository_id": 1114139712,
+        "head_repository_id": 1114139712,
+        "head_branch": "codex/phase2-integration",
+        "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d"
+      }
+    },
+    {
+      "id": 13479731612,
+      "name": "frontend-runtime-qualification",
+      "digest": "sha256:847d3327985e3d6509e2f553f9306e84acbd16d1e933bbc01fab3bcfcadc2ed0",
+      "size_in_bytes": 60610,
+      "expired": false,
+      "created_at": "2026-11-06T05:14:58Z",
+      "expires_at": "2026-11-16T05:14:58Z",
+      "workflow_run": {
+        "id": 42166753948,
+        "repository_id": 1114139712,
+        "head_repository_id": 1114139712,
+        "head_branch": "codex/phase2-integration",
+        "head_sha": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d"
+      }
+    }
+  ],
+  "originalLog": {
+    "jobId": 127724912018,
+    "sizeBytes": 280192,
+    "sha256": "f88973e53f799693355c01ee06bff0c7654f4d1de917ba0def7cd93c2f2a964a",
+    "originalBytesRetainedPrivately": true,
+    "publishedWholeLog": false
+  },
+  "receiptExtraction": [
+    {
+      "file": "identity-recovery-log-receipt.json",
+      "sourceLogLine": 2120,
+      "sourceLogLineSha256": "602e14f6d51ff619bafa78878267c405dbb315136e954603c81120497c901498",
+      "receiptSha256": "23011a8d903f44baf50c863e7de56ce008fe4cd8680944125fb8fdcd94bfe5fe",
+      "status": "P2_IDENTITY_AND_RECOVERY_FIXTURES_PASS",
+      "retention": "actual-complete-job-log-receipt"
+    },
+    {
+      "file": "course-initial-login-log-receipt.json",
+      "sourceLogLine": 2132,
+      "sourceLogLineSha256": "49886ffa2c2027c1ae24033b680c43bdfb24aec3ffd117f44a15410d971b8f82",
+      "receiptSha256": "f4f58a15eebb61248574f2c5acc04be9d465e64fd3bbce7a2dcda8013f0f4af5",
+      "status": "COURSE_INITIAL_LOGIN_OWNED_POSTGRES18_PASS",
+      "retention": "actual-complete-job-log-receipt"
+    },
+    {
+      "file": "community-runtime-credential-log-receipt.json",
+      "sourceLogLine": 2144,
+      "sourceLogLineSha256": "eb6617bfe5be2cbed38a7668589c6651e5c7c582db8e6b72635ebf222fa1807d",
+      "receiptSha256": "6600f28fac5fe2297fc7b6963ea8920043b8613a940f15e1a964fc44e9a3bd17",
+      "status": "COMMUNITY_RUNTIME_CREDENTIAL_OWNED_POSTGRES18_PASS",
+      "retention": "actual-complete-job-log-receipt"
+    }
+  ],
+  "identityRecoveryReceiptRetainedInArtifact": false,
+  "privateSchemaDdlPublished": false,
+  "privateOutputPublished": false,
+  "artifactPublicationPerformed": false,
+  "stagingTouched": false,
+  "providerTouched": false,
+  "releaseAccepted": false,
+  "g2Accepted": false
+}

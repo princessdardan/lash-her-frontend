@@ -1,0 +1,72 @@
+{
+  "status": "SOURCE_AND_NATIVE_HASH_LINKS_VALIDATION_PASS",
+  "frontendSourceCommit": "9480cd91b2805e2a0ab85fa2ad2f56afa2d12a8d",
+  "apiSourceChecks": {
+    "course": {
+      "revision": "a447bfde20299e12afab68a3331b3792ddd07598",
+      "gitAndPackageBindingVerified": true
+    },
+    "community": {
+      "revision": "939de65dd52f0b1a43993a25c7c428dce6e2bb43",
+      "gitAndPackageBindingVerified": true
+    }
+  },
+  "manifestSourceBindingVerified": true,
+  "sourcePrograms": {
+    "ops/gateway/runtime/verify.mjs": {
+      "sha256": "e88f1a5050e02268f7837aecf0cf40c35f60e2f5dce98ef07f5063b8cd3d98a7",
+      "unchangedFromAcceptedPR91": true
+    },
+    "ops/gateway/runtime/inputs.lock.json": {
+      "sha256": "74ef1c74c0c0d119c8a0704314be61dfc9e9d26bb2c3416e9ca36db51a8ff69c",
+      "unchangedFromAcceptedPR91": true
+    }
+  },
+  "native": {
+    "status": "EXACT_SOURCE_NATIVE_EVIDENCE_AND_HASH_LINKS_VERIFIED",
+    "binding": {
+      "product": "pkg:oci/lash-her-frontend-migration@sha256:30c8d78812703cb92554c59e368cd4ea28d06862895e684f08aff5b466f56bea?arch=amd64&repository_url=index.docker.io%2Flibrary%2Flash-her-frontend-migration",
+      "component": "pkg:deb/debian/zlib1g@1.3.dfsg%2Breally1.3.1-1%2Blash1?arch=amd64&distro=debian-13.7&epoch=1"
+    },
+    "imageId": "sha256:30c8d78812703cb92554c59e368cd4ea28d06862895e684f08aff5b466f56bea",
+    "rawScanArtifactName": "lash-her-frontend-migration:ci",
+    "filteredScanArtifactName": "lash-her-frontend-migration@sha256:30c8d78812703cb92554c59e368cd4ea28d06862895e684f08aff5b466f56bea",
+    "strictRecordedRefRecheck": {
+      "status": "REFUSED",
+      "reason": "CI_RAW_SCAN_RETAINS_TAG_ALIAS",
+      "sourceLine": 58
+    },
+    "vexStatementsExact": true,
+    "fileHashLinksVerified": 4,
+    "dockerInvoked": false
+  },
+  "strictRecordedVerifierInitialFailurePreserved": true,
+  "originalArchivesUnchanged": true,
+  "checks": {
+    "githubArchiveDigestsMatch": true,
+    "runAndJobSourceMatch": true,
+    "checkoutLogSourceMatches": true,
+    "completeJobStepsSuccessful": true,
+    "exactIdentityTestsPass19": true,
+    "actualRecoveryChecks55": true,
+    "actualDistinctPrivilegeFaults39": true,
+    "recoveryReceiptFromLogNotFabricatedArtifact": true,
+    "composedPostgres18Checks24_17_9": true,
+    "packagedCli83Migrations": true,
+    "frontendSourceAndPhase2HashMatch": true,
+    "fullRunTerminalAll10JobsSuccess": true,
+    "schemaAndNativeImageDigestMatch": true,
+    "privateLogsAndArchiveBytesRetained": true,
+    "originalRawScanNotNormalized": true,
+    "privateOriginalsPermissionsVerified": true,
+    "privateExtractorScriptModeCorrectedBeforeCommit": true
+  },
+  "preservedOfflineRefusal": {
+    "status": "REFUSED",
+    "originalStderrSha256": "1a77100f2c26aa2276739be53199652999cf10dd28075ba4750a0cd6efffa04e",
+    "reason": "CI_RAW_SCAN_RETAINS_TAG_ALIAS",
+    "originalStderrRetainedPrivately": true,
+    "source": "ops/gateway/runtime/verify.mjs:58",
+    "notClaimedStrictCollectorReady": true
+  }
+}
