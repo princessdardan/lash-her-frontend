@@ -219,6 +219,7 @@ class IndependentGuardTests(unittest.TestCase):
         with patch('p2_release_supervisor.PhysicalObserver', Observer), \
              patch('p2_release_supervisor.private_observer_program', return_value=self.root / 'owned-program'), \
              patch('p2_release_supervisor.runtime.command', return_value=''), \
+             patch('p2_release_supervisor.cleanup_recovery_current_containers') as cleanup_current, \
              patch('p2_release_supervisor.stop_group', side_effect=[False, True, True] if retry else lambda *_: False), \
              patch('p2_release_supervisor.migrate.suspend_runtime', side_effect=stop), \
              patch.object(staging_admission.Host, 'state', side_effect=ValueError('unavailable')), sticky_cleanup_signals():
@@ -228,6 +229,7 @@ class IndependentGuardTests(unittest.TestCase):
                        fail_closed(initial, {'owned': True}, self.root, group=group, **options))
         expected_calls = (['native-disable'] if certification else []) + ['fence', 'runtime-stop']
         self.assertEqual(calls, expected_calls * (2 if retry else 1))
+        self.assertEqual(cleanup_current.call_count, (2 if retry else 1) if recovery or certification else 0)
         self.assertIs(receipt['frontendAdmissionClosed'], True); self.assertIs(receipt['runtimeStopped'], True)
         state = json.loads((snapshot / 'admission/state.json').read_bytes())
         self.assertIs(state['newWork'], False); self.assertIs(state['recovery'], False)

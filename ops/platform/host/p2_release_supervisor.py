@@ -235,7 +235,7 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
             require(not runtime.command(query, runtime.SAFE_ENV, 15), 'P2_GUARD_MIGRATION_CONTAINER_REMAINS')
         except BaseException:
             result['migrationContainerCleanupUncertain'] = True
-    if layout == RECOVERY_LAYOUT:
+    if layout in (RECOVERY_LAYOUT, CERTIFICATION_LAYOUT):
         try:
             cleanup_recovery_current_containers()
         except BaseException:
