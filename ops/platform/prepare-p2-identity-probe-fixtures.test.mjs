@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { parseP2IdentityProbeTap, prepareP2IdentityProbeFixtures, validateP2IdentityFixtureManifest } from "./prepare-p2-identity-probe-fixtures.mjs";
+import { p2IdentityFixtureFailureReceipt, parseP2IdentityProbeTap, parseP2RecoveryPostgres18Receipt, prepareP2IdentityProbeFixtures,
+  validateP2IdentityFixtureManifest } from "./prepare-p2-identity-probe-fixtures.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
 const revisions = { course: "3c0a0d6eee64344d97f98387755e9f34195a4c42", community: "1ce696a7ae6073cb125da19146789693398b6cc4" };
@@ -38,18 +39,48 @@ function tap(changes = {}) {
   return `TAP version 13\n1..${fields.tests}\n${Object.entries(fields).map(([name, value]) => `# ${name} ${value}`).join("\n")}\n`;
 }
 
-function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDependencyRoots = ["ops/gateway", "tools/api-contract-toolchain"]) {
+function recoveryReceipt(changes = {}) {
+  const apiFaults = ["runtime-inbound", "migration-inbound", "runtime-outbound", "sequence-update", "table-trigger", "table-references",
+    "default-unexpected-grantee", "default-sequence-update", "global-default", "table-grant-option", "default-grant-option"];
+  const privilegeFaults = ["frontend-runtime-inbound", "frontend-runtime-outbound", "frontend-runtime-rogue-admin", "frontend-owner-inbound",
+    "frontend-owner-outbound", "frontend-sequence-update", "frontend-default-unexpected-grantee", "frontend-global-default",
+    "frontend-table-grant-option", "frontend-default-grant-option", "frontend-table-references", "frontend-table-trigger",
+    ...["course", "community"].flatMap(service => apiFaults.map(fault => `${service}-${fault}`))].sort();
+  return JSON.stringify({ status: "OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS", serverMajor: 18, frontendMigrations: 83,
+    courseMigrations: 22, communityMigrations: 11, checks: 50, skipped: 0, fixtureOnly: true, providerTouched: false,
+    privilegeFaults, frontendInitialPrivilegeRefusals: 12, frontendContinuousPrivilegeRefusals: 12, apiPrivilegeRefusals: 22,
+    legacyApiVerifierRefusals: 2, frontendCreatorPolicy: "actual-non-superuser-automatic-admin-plus-explicit-owner-set",
+    frontendCreatorMemberships: 3, environmentIsolation: { nodeOptionsPositiveControlExecuted: true, poisonedParentEnvironment: true,
+      ambientNodeOptionsExecuted: false, ambientConfigVariablesAbsent: true, childEnvironmentAllowlistEnforced: true },
+    noSqlReplay: true, originalFrontendTerminalRecreated: false,
+    ...changes }) + "\n";
+}
+
+function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDependencyRoots = ["ops/gateway", "tools/api-contract-toolchain"], settings = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "p2-identity-prep-root-")));
   const workspace = realpathSync(mkdtempSync(join(tmpdir(), "p2-identity-prep-work-")));
   chmodSync(root, 0o700); chmodSync(workspace, 0o700);
-  mkdirSync(join(root, "contracts/api-integration/p2-candidate"), { recursive: true });
+  for (const directory of ["contracts/api-integration/p2-candidate", "contracts/api-integration/v1", "ops/platform", "ops/gateway", "drizzle",
+    "node_modules", "src", "scripts"]) mkdirSync(join(root, directory), { recursive: true });
   writeFileSync(join(root, "contracts/api-integration/p2-candidate/manifest.json"), JSON.stringify(fixtureManifest()));
+  writeFileSync(join(root, "ops/platform/test-p2-recovery-owned.py"), "# owned fixture\n");
+  writeFileSync(join(root, "ops/platform/test-p2-recovery-owned.mjs"), "// owned fixture\n");
+  writeFileSync(join(root, "ops/gateway/routes.json"), "{}\n");
+  writeFileSync(join(root, "package.json"), '{"type":"module"}\n');
+  writeFileSync(join(root, "tsconfig.json"), "{}\n");
   const calls = [];
+  const dockerModes = [];
   const run = (file, args, options) => {
     calls.push({ file, args: [...args], cwd: options.cwd, env: { ...options.env } });
     const ok = stdout => ({ status: 0, signal: null, stdout, stderr: "" });
     if (file === "npm" && args[0] === "--version") return ok("11.7.0\n");
     if (file === "npm") return ok("");
+    if (file === "docker") {
+      dockerModes.push({ workspace: lstatSync(workspace).mode & 0o777,
+        course: lstatSync(join(workspace, "lash-her-course-api")).mode & 0o777,
+        community: lstatSync(join(workspace, "lash-her-community-api")).mode & 0o777 });
+      return ok(settings.recoveryOutput ?? recoveryReceipt());
+    }
     if (file !== "git") {
       assert.deepEqual(args, ["--test", "--test-reporter=tap", "ops/platform/p2-identity-negative-probe.test.mjs"]);
       return ok(testOutput);
@@ -62,6 +93,10 @@ function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDepende
     if (args[0] === "checkout") assert.fail("checkout must retain the fixed -c prefix");
     if (args.includes("checkout")) {
       const service = options.cwd.endsWith("lash-her-course-api") ? "course" : "community";
+      mkdirSync(join(options.cwd, ".git"), { recursive: true });
+      const url = service === "course" ? "https://github.com/princessdardan/lash-her-course-api.git" :
+        "https://github.com/princessdardan/lash-her-community-api.git";
+      writeFileSync(join(options.cwd, ".git/config"), `[core]\n\trepositoryformatversion = 0\n[remote "origin"]\n\turl = ${url}\n${settings.apiGitConfigSuffix ?? ""}`);
       writeFileSync(join(options.cwd, "package.json"), JSON.stringify({ name: `lash-her-${service}-api`, scripts: { "build:production": "tsc -p tsconfig.build.json" } }));
       writeFileSync(join(options.cwd, "package-lock.json"), JSON.stringify({ lockfileVersion: 3 }));
       if (service === "course") {
@@ -82,7 +117,8 @@ function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDepende
       "https://github.com/princessdardan/lash-her-course-api.git\n" : "https://github.com/princessdardan/lash-her-community-api.git\n");
     return ok("");
   };
-  return { root, workspace, calls, run, cleanup: () => { rmSync(root, { recursive: true, force: true }); rmSync(workspace, { recursive: true, force: true }); } };
+  return { root, workspace, calls, dockerModes, run,
+    cleanup: () => { rmSync(root, { recursive: true, force: true }); rmSync(workspace, { recursive: true, force: true }); } };
 }
 
 test("prepares exact manifest sources with fixed clean builds and requires all 19 actual tests", () => {
@@ -92,10 +128,13 @@ test("prepares exact manifest sources with fixed clean builds and requires all 1
     const result = withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: value.root, nodeVersion: "24.18.0",
       run: value.run, makeTemporaryDirectory: () => value.workspace }));
     assert.equal(result.status, "P2_IDENTITY_PROBE_FIXTURES_PASS");
+    assert.equal(result.fixtureOnly, true); assert.equal(result.providerTouched, false); assert.equal(result.skipped, 0);
+    assert.equal(result.databaseConnected, false); assert.equal(result.sqlExecuted, false); assert.equal(result.ownedDisposableDatabase, false);
     assert.equal(JSON.stringify(result).includes(sourceReadToken), false);
     assert.deepEqual(result.tests, { tests: 19, pass: 19, fail: 0, cancelled: 0, skipped: 0, todo: 0 });
     assert.equal(result.sources.course.revision, revisions.course); assert.equal(result.sources.community.revision, revisions.community);
     assert.equal(result.scriptsIgnoredDuringInstall, true); assert.equal(result.databaseConnected, false); assert.equal(existsSync(value.workspace), false);
+    assert.equal(value.calls.some(call => call.file === "docker"), false);
     const fetches = value.calls.filter(call => call.file === "git" && call.args[0] === "fetch");
     assert.deepEqual(fetches.map(call => call.args), [["fetch", "--no-tags", "--depth=1", "origin", revisions.course], ["fetch", "--no-tags", "--depth=1", "origin", revisions.community]]);
     for (const fetch of fetches) {
@@ -126,6 +165,64 @@ test("prepares exact manifest sources with fixed clean builds and requires all 1
   } finally { value.cleanup(); }
 });
 
+test("recovery mode runs the fixed PostgreSQL 18 fixture after all identity checks with isolated Docker inputs", () => {
+  const value = harness();
+  try {
+    const result = withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: value.root, nodeVersion: "24.18.0",
+      recoveryPostgres18: true, run: value.run, makeTemporaryDirectory: () => value.workspace }));
+    assert.equal(result.status, "P2_IDENTITY_AND_RECOVERY_FIXTURES_PASS");
+    assert.equal(result.fixtureOnly, true); assert.equal(result.providerTouched, false); assert.equal(result.skipped, 0);
+    assert.equal(result.databaseConnected, true); assert.equal(result.sqlExecuted, true); assert.equal(result.ownedDisposableDatabase, true);
+    assert.equal(result.recovery.status, "OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS");
+    assert.equal(result.recovery.serverMajor, 18); assert.equal(result.recovery.frontendMigrations, 83);
+    assert.equal(result.recovery.courseMigrations, 22); assert.equal(result.recovery.communityMigrations, 11);
+    assert.equal(result.recovery.checks, 50); assert.equal(result.recovery.skipped, 0); assert.equal(result.recovery.privilegeFaults.length, 34);
+    assert.equal(result.recovery.frontendInitialPrivilegeRefusals, 12); assert.equal(result.recovery.frontendContinuousPrivilegeRefusals, 12);
+    assert.equal(result.recovery.apiPrivilegeRefusals, 22); assert.equal(result.recovery.legacyApiVerifierRefusals, 2);
+    assert.equal(result.recovery.environmentIsolation.childEnvironmentAllowlistEnforced, true);
+    assert.equal(JSON.stringify(result).includes(sourceReadToken), false);
+    const dockerIndex = value.calls.findIndex(call => call.file === "docker");
+    const identityIndex = value.calls.findIndex(call => call.file !== "docker" && call.file !== "git" && call.file !== "npm");
+    assert.equal(identityIndex >= 0 && dockerIndex > identityIndex, true);
+    const docker = value.calls[dockerIndex];
+    for (const argument of ["--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+      "--memory=1g", "--pids-limit=256", "--shm-size=256m", "--tmpfs=/tmp:rw,nosuid,nodev,size=512m,mode=1777",
+      "--env=PG_BIN=/usr/lib/postgresql/18/bin", "--env=OWNED_POSTGRES_MAJOR=18", "--env=P2_RECOVERY_OWNED_TEST=true",
+      "--env=NODE_BIN=/usr/local/bin/node", "--env=COURSE_RECOVERY_SOURCE_ROOT=/exact-sources/lash-her-course-api",
+      "--env=COMMUNITY_RECOVERY_SOURCE_ROOT=/exact-sources/lash-her-community-api", "--entrypoint=python3",
+      "lash-her-frontend-migration:postgres18-test", "ops/platform/test-p2-recovery-owned.py"]) assert.equal(docker.args.includes(argument), true, argument);
+    const mounts = docker.args.filter((argument, index) => docker.args[index - 1] === "--mount");
+    assert.equal(mounts.length, 12); assert.equal(mounts.every(value => value.endsWith(",readonly")), true);
+    assert.equal(mounts.some(value => value.includes("dst=/exact-sources/lash-her-course-api")), true);
+    assert.equal(mounts.some(value => value.includes("dst=/exact-sources/lash-her-community-api")), true);
+    assert.equal(mounts.some(value => value.includes(`src=${value.workspace},`)), false);
+    assert.deepEqual(Object.keys(docker.env).sort(), ["DOCKER_CONFIG", "HOME", "LANG", "LC_ALL", "PATH"]);
+    assert.deepEqual(value.dockerModes, [{ workspace: 0o700, course: 0o755, community: 0o755 }]);
+  } finally { value.cleanup(); }
+});
+
+test("recovery mode refuses persisted API Git authentication before permission changes or Docker", () => {
+  const value = harness(tap(), [], ["ops/gateway", "tools/api-contract-toolchain"],
+    { apiGitConfigSuffix: `[http "https://github.com/"]\n\textraheader = AUTHORIZATION: basic ${sourceReadToken}\n` });
+  try {
+    assert.throws(() => withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: value.root, nodeVersion: "24.18.0",
+      recoveryPostgres18: true, run: value.run, makeTemporaryDirectory: () => value.workspace })), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
+    assert.equal(value.calls.some(call => call.file === "docker"), false);
+  } finally { value.cleanup(); }
+});
+
+test("recovery mode refuses a frontend mount that resolves outside the exact source", () => {
+  const value = harness();
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), "p2-identity-private-outside-")));
+  try {
+    rmSync(join(value.root, "node_modules"), { recursive: true });
+    symlinkSync(outside, join(value.root, "node_modules"), "dir");
+    assert.throws(() => withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: value.root, nodeVersion: "24.18.0",
+      recoveryPostgres18: true, run: value.run, makeTemporaryDirectory: () => value.workspace })), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
+    assert.equal(value.calls.some(call => call.file === "docker"), false);
+  } finally { value.cleanup(); rmSync(outside, { recursive: true, force: true }); }
+});
+
 test("refuses ignored source, environment configuration, and unreviewed dependency roots", () => {
   for (const ignored of ["src/auth/foreign.ts", ".env.staging", "ops/foreign/node_modules/runtime/index.js", "tsconfig.hidden.json"]) {
     const value = harness(tap(), [ignored]);
@@ -154,6 +251,64 @@ test("refuses a noncanonical repository, mismatched event revision, or artifact 
 test("refuses skipped, failed, partial, or duplicated TAP summaries", () => {
   for (const output of [tap({ pass: 18, skipped: 1 }), tap({ pass: 18, fail: 1 }), tap({ tests: 18, pass: 18 }), tap() + "# pass 19\n"])
     assert.throws(() => parseP2IdentityProbeTap(output), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
+});
+
+test("recovery receipt refuses wrong major, migration counts, skips, replay, or extra output", () => {
+  for (const output of [recoveryReceipt({ serverMajor: 16 }), recoveryReceipt({ frontendMigrations: 82 }),
+    recoveryReceipt({ courseMigrations: 21 }), recoveryReceipt({ communityMigrations: 10 }), recoveryReceipt({ skipped: 1 }),
+    recoveryReceipt({ checks: 14 }), recoveryReceipt({ privilegeFaults: [] }), recoveryReceipt({ frontendInitialPrivilegeRefusals: 11 }),
+    recoveryReceipt({ frontendContinuousPrivilegeRefusals: 11 }), recoveryReceipt({ apiPrivilegeRefusals: 21 }),
+    recoveryReceipt({ legacyApiVerifierRefusals: 1 }), recoveryReceipt({ frontendCreatorMemberships: 2 }),
+    recoveryReceipt({ environmentIsolation: { nodeOptionsPositiveControlExecuted: true } }), recoveryReceipt({ noSqlReplay: false }),
+    recoveryReceipt({ originalFrontendTerminalRecreated: true }), recoveryReceipt() + "private-output\n"])
+    assert.throws(() => parseP2RecoveryPostgres18Receipt(output), /P2_IDENTITY_FIXTURE_PREPARATION_REFUSED/u);
+});
+
+test("failures expose only fixed diagnostic phases and never private child output", () => {
+  const scenarios = [
+    { phase: "source-fetch", stage: "course", fail: (_file, args, options) =>
+      options.cwd.endsWith("lash-her-course-api") && args[0] === "fetch" },
+    { phase: "npm-ci", stage: "course", fail: (file, args, options) =>
+      file === "npm" && args[0] === "ci" && options.cwd.endsWith("lash-her-course-api") },
+    { phase: "build", stage: "course", fail: (file, args, options) =>
+      file === "npm" && args[0] === "run" && options.cwd.endsWith("lash-her-course-api") },
+    { phase: "exact-source-proof", stage: "course", fail: (file, args, options) =>
+      file === "git" && args.join(" ") === "remote get-url origin" && options.cwd.endsWith("lash-her-course-api") },
+  ];
+  for (const scenario of scenarios) {
+    const value = harness();
+    try {
+      const refusingRun = (file, args, options) => scenario.fail(file, args, options) ?
+        { status: 1, signal: null, stdout: "private-child-output", stderr: "private-child-error" } : value.run(file, args, options);
+      let receipt;
+      assert.throws(() => withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: value.root, nodeVersion: "24.18.0",
+        run: refusingRun, makeTemporaryDirectory: () => value.workspace })), error => {
+        receipt = p2IdentityFixtureFailureReceipt(error); return true;
+      });
+      assert.equal(receipt.phase, scenario.phase); assert.equal(receipt.stage, scenario.stage);
+      assert.equal(JSON.stringify(receipt).includes("private-child"), false);
+    } finally { value.cleanup(); }
+  }
+  const identity = harness(tap({ pass: 18, skipped: 1 }));
+  try {
+    let receipt;
+    assert.throws(() => withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: identity.root, nodeVersion: "24.18.0",
+      run: identity.run, makeTemporaryDirectory: () => identity.workspace })), error => { receipt = p2IdentityFixtureFailureReceipt(error); return true; });
+    assert.equal(receipt.phase, "identity-tests"); assert.equal(receipt.stage, "identity");
+  } finally { identity.cleanup(); }
+  const recovery = harness(tap(), [], ["ops/gateway", "tools/api-contract-toolchain"], { recoveryOutput: recoveryReceipt({ checks: 14 }) });
+  try {
+    let receipt;
+    assert.throws(() => withSourceReadToken(sourceReadToken, () => prepareP2IdentityProbeFixtures({ frontendRoot: recovery.root, nodeVersion: "24.18.0",
+      recoveryPostgres18: true, run: recovery.run, makeTemporaryDirectory: () => recovery.workspace })),
+    error => { receipt = p2IdentityFixtureFailureReceipt(error); return true; });
+    assert.equal(receipt.phase, "recovery-postgres18"); assert.equal(receipt.stage, "recovery");
+    assert.equal(receipt.ownedDisposableDatabaseExecutionAttempted, true);
+    assert.equal(receipt.databaseConnected, null); assert.equal(receipt.sqlExecuted, null);
+  } finally { recovery.cleanup(); }
+  assert.deepEqual(p2IdentityFixtureFailureReceipt(new Error("private")), { version: 1, status: "P2_IDENTITY_PROBE_FIXTURES_REFUSED",
+    phase: "preflight", stage: "frontend", fixtureOnly: true, providerTouched: false, stagingTouched: false,
+    databaseConnected: false, sqlExecuted: false, ownedDisposableDatabaseExecutionAttempted: false, releaseAccepted: false });
 });
 
 test("refuses a non-Node-24 executor before source fetch", () => {
