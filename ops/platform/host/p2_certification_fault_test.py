@@ -116,6 +116,50 @@ class FaultStageTests(unittest.TestCase):
         value = json.loads(result.stdout); self.assertFalse(value["standaloneActivationEligible"])
         self.assertFalse(value["networkCalled"]); self.assertFalse(value["mutationsPerformed"])
 
+    def test_frontend_target_hash_matches_actual_node_insertion_order_contract(self):
+        target = {"host": "127.0.0.1", "port": 5432, "database": "owned", "user": "owned_operator", "serverMajor": 16,
+            "approvedPendingTags": ["owned-extra-field-excluded"]}
+        node = "/Users/dardan/.nvm/versions/node/v24.18.0/bin/node" if sys.platform == "darwin" else "node"
+        module = (Path(fault.__file__).parents[1] / "frontend-admission-bootstrap.mjs").as_uri()
+        script = "import{frontendAdmissionTargetSha256 as h}from" + json.dumps(module) + ";let s='';for await(const x of process.stdin)s+=x;console.log(h('staging',JSON.parse(s)))"
+        actual = subprocess.check_output([node, "--input-type=module", "--eval", script], input=json.dumps(target).encode()).decode().strip()
+        self.assertEqual(fault.frontend_target_sha256(target), actual)
+
+    def test_scope_receipt_and_frontend_job_target_are_both_required(self):
+        target = {"host": "127.0.0.1", "port": 5432, "database": "owned", "user": "owned_operator", "serverMajor": 16, "approvedPendingTags": ["owned-pending"]}
+        selected = {"environment": "staging", "contractPhase": "p2", "sources": {"frontend": {"commit": "a" * 40}}}
+        job = {"environment": "staging", "releaseId": "owned", "sourceCommit": "a" * 40, "migrationImageDigest": "b" * 64,
+            "sqlArtifactSha256": "c" * 64, "contractManifestSha256": "d" * 64, "schemaBaselineSha256": "e" * 64,
+            "contractPhase": "p2", "phase2ContractManifestSha256": "f" * 64, "target": target}
+        jobs = {"frontend": {"job": job}}
+        receipt = {key: value for key, value in job.items() if key != "target"}
+        receipt.update(status="DATABASE_VERIFIED", service="frontend", schemaVerified=True, runtimeRoleVerified=True,
+            trafficAuthorized=False, migrationMode="apply-forward", target={key: target[key] for key in ("host", "port", "database", "user", "serverMajor")},
+            failureCode=None, after=[{"tag": "owned-applied"}], applied=[{"tag": "owned-pending"}])
+        scope = P2ReleaseScope(self.lock, self.lock_path, self.scope.verify_frontend, receipt, "1" * 64, release=selected, jobs=jobs)
+        plan = {"sourceCommit": "a" * 40, "targetSha256": fault.frontend_target_sha256(target)}
+        self.assertEqual(fault.bind_frontend_scope(scope, selected, jobs, plan)["status"], "DATABASE_VERIFIED")
+        with self.assertRaisesRegex(ValueError, "P2_FAULT_FE_PHYSICAL_SCOPE_PLAN_MISMATCH"):
+            fault.bind_frontend_scope(scope, selected, jobs, {**plan, "targetSha256": "0" * 64})
+        scope.receipt = {}
+        with self.assertRaisesRegex(ValueError, "P2_LIVE_FRONTEND_RECEIPT_BINDING_REFUSED"):
+            fault.bind_frontend_scope(scope, selected, jobs, plan)
+
+    def test_gateway_security_mount_check_is_repeated_at_verification_boundaries(self):
+        stage = self.stage
+        stage.configuration, stage.source, stage.source_initial = self.root, self.root, {}
+        stage.admission_identity = os.fstat(stage.admission_fd)
+        stage.initial_inventory, stage.gateway, stage.module_sha256 = [], {"service": "gateway"}, fault._hash(b"module")
+        stage._inventory = lambda: []
+        with patch.object(fault, "bind_frontend_scope"), patch.object(fault, "verify_source_closure"), \
+                patch.object(fault.identity, "_configuration_hash", return_value=stage.plan["configurationSha256"]), \
+                patch.object(fault.migrate, "read_input", return_value=b"module"), patch.object(fault.identity, "_one_container") as mounted:
+            fault.P2CertificationFaultStage.verify(stage)
+            mounted.assert_called_once_with(stage.gateway, stage.configuration, stage.scope)
+            mounted.side_effect = ValueError("OWNED_MOUNT_DRIFT")
+            with self.assertRaisesRegex(ValueError, "OWNED_MOUNT_DRIFT"):
+                fault.P2CertificationFaultStage.verify(stage)
+
 
 if __name__ == "__main__":
     unittest.main()

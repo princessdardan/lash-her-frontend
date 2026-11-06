@@ -21,18 +21,22 @@ function fixture(mode = "503-before-upstream") {
     return originalQuery.call(model.client, sql, values);
   };
   const settings = { version: 1, stageId: "owned-fault", mode, receiver: "course", commandIndex: 0, candidateSha256: "1".repeat(64), commandSha256: hash(command),
-    configurationSha256: "2".repeat(64), gatewayConfigurationSha256: "3".repeat(64), gatewayImageSha256: "4".repeat(64), gatewayProcessSha256: "5".repeat(64), operatorSourceClosureSha256: "8".repeat(64) };
+    configurationSha256: "2".repeat(64), gatewayConfigurationSha256: "3".repeat(64), gatewayImageSha256: "4".repeat(64), gatewayProcessSha256: "5".repeat(64),
+    operatorSourceCommit: model.plan.sourceCommit, operatorSourceClosureSha256: "8".repeat(64) };
   const plan = prepareP2LifecycleTransportFaultPlan(model.plan, settings), leaseSha = "6".repeat(64), zeros = { newWork: 0, recovery: 0 };
+  const gatewayState = { newWork: false, recovery: true, active: { ...zeros }, uncertain: { ...zeros } };
   let armed = false;
   const hostStage = {
     async verify() { calls.push("host-verify"); },
     async observe() { return { version: 1, status: "P2_FAULT_HOST_CURRENT", candidateSha256: plan.candidateSha256, candidateObjectSha256: plan.candidateObjectSha256,
       configurationSha256: plan.configurationSha256, gatewayConfigurationSha256: plan.gatewayConfigurationSha256, gatewayImageSha256: plan.gatewayImageSha256,
-      gatewayProcessSha256: plan.gatewayProcessSha256, operatorSourceClosureSha256: plan.operatorSourceClosureSha256,
-      runtimeInventorySha256: "7".repeat(64), gatewayAdmission: { valid: true, newWork: false, recovery: true, active: zeros, uncertain: zeros }, faultLeasePresent: false }; },
+      gatewayProcessSha256: plan.gatewayProcessSha256, targetSha256: plan.targetSha256, operatorSourceCommit: plan.operatorSourceCommit,
+      operatorSourceClosureSha256: plan.operatorSourceClosureSha256,
+      runtimeInventorySha256: "7".repeat(64), gatewayAdmission: { valid: true, ...structuredClone(gatewayState) }, faultLeasePresent: false }; },
     async arm(_plan, record) { calls.push("arm"); assert.equal(record.commandId, command.commandId); assert.equal(record.canonicalSha256, plan.commandSha256); armed = true; return { status: "P2_FAULT_LEASE_ARMED", leaseSha256: leaseSha }; },
     async disarm() { calls.push("disarm"); armed = false; return { faultDisabled: true }; },
-    async closeGateway() { calls.push("gateway-close"); return { gatewayAdmissionClosed: true, active: zeros, uncertain: zeros }; },
+    async closeGateway() { calls.push("gateway-close"); gatewayState.newWork = false; gatewayState.recovery = false;
+      return { gatewayAdmissionClosed: true, active: gatewayState.active, uncertain: gatewayState.uncertain }; },
     async effects() { assert.equal(armed, true); return [{ version: 1, status: "P2_TRANSPORT_FAULT_INJECTED", environment: "staging", profile: plan.profile, stageId: plan.stageId,
       candidateSha256: plan.candidateSha256, configurationSha256: plan.configurationSha256, gatewayProcessSha256: plan.gatewayProcessSha256,
       gatewayImageSha256: plan.gatewayImageSha256, sourceWitnessSha256: plan.commandSha256, leaseSha256: leaseSha, mode: plan.mode, receiver: plan.receiver,
@@ -45,7 +49,7 @@ function fixture(mode = "503-before-upstream") {
     verifyEnvironment: async () => { calls.push("environment"); }, verifySession: async () => {}, withOwner: model.input.withOwner, nativeControl, hostStage,
     async exercise() { calls.push("exercise"); model.state.deliveries.find(row => row.receiver === "course").attempts++; },
     async containFrontend() { calls.push("frontend-contain"); model.state.newWork = false; model.state.recovery = false; return { frontendAdmissionClosed: true }; } };
-  return { model, plan, settings, input, calls, hostStage, cleanup: model.cleanup, run: () => runP2LifecycleTransportFault(input) };
+  return { model, plan, settings, input, calls, hostStage, gatewayState, cleanup: model.cleanup, run: () => runP2LifecycleTransportFault(input) };
 }
 
 test("source plan has no executable standalone path or caller command/body/URL options", () => {
@@ -110,7 +114,8 @@ test("outstanding uncertainty is retained and cannot be called contained or auto
   try {
     const exercise = value.input.exercise;
     value.input.exercise = async () => { await exercise(); value.model.state.operations.push({ id: randomUUID(), epoch: "1", state: "uncertain" }); };
-    value.hostStage.closeGateway = async () => ({ gatewayAdmissionClosed: true, active: { newWork: 0, recovery: 0 }, uncertain: { newWork: 0, recovery: 1 } });
+    const close = value.hostStage.closeGateway;
+    value.hostStage.closeGateway = async () => { value.gatewayState.uncertain.recovery = 1; return close(); };
     await assert.rejects(value.run(), error => { assert.equal(error.publicReceipt.status, "P2_LIFECYCLE_TRANSPORT_FAULT_REQUIRES_REVIEW");
       assert.equal(error.publicReceipt.frontendAdmissionClosed, true); assert.equal(error.publicReceipt.outstandingUncertain, 1);
       assert.equal(error.publicReceipt.uncertaintySettled, false); assert.equal(error.publicReceipt.automaticReconciliationPerformed, false); return true; });
@@ -149,5 +154,37 @@ test("a serialized plan or an already attempted source plan cannot replay activa
     assert.equal(value.calls.includes("arm"), false);
     await value.run(); const count = value.calls.length;
     await assert.rejects(value.run()); assert.equal(value.calls.length, count);
+  } finally { value.cleanup(); }
+});
+
+test("native re-enable during final FE ledger is reread and cannot retain native-off success", async () => {
+  const value = fixture(); let counts = 0;
+  try {
+    const query = value.input.client.query;
+    value.input.client.query = async (sql, args) => {
+      const result = await query(sql, args);
+      if (sql.includes("count(*) FILTER") && ++counts === 3) value.model.state.enabled = true;
+      return result;
+    };
+    await assert.rejects(value.run(), error => { assert.equal(error.publicReceipt.status, "P2_LIFECYCLE_TRANSPORT_FAULT_REQUIRES_REVIEW");
+      assert.equal(error.publicReceipt.nativeEnabled, true); return true; });
+  } finally { value.cleanup(); }
+});
+
+test("gateway reopening after close is reread and cannot retain admission-closed success", async () => {
+  const value = fixture();
+  try {
+    const contain = value.input.containFrontend;
+    value.input.containFrontend = async (...args) => { const result = await contain(...args); value.gatewayState.recovery = true; return result; };
+    await assert.rejects(value.run(), error => { assert.equal(error.publicReceipt.status, "P2_LIFECYCLE_TRANSPORT_FAULT_REQUIRES_REVIEW");
+      assert.equal(error.publicReceipt.gatewayAdmissionClosed, null); assert.notEqual(error.publicReceipt.faultDisabled, true); return true; });
+  } finally { value.cleanup(); }
+});
+
+test("supplemental operator identity stays distinct from the immutable app source", () => {
+  const value = fixture();
+  try {
+    const plan = prepareP2LifecycleTransportFaultPlan(value.model.plan, { ...value.settings, operatorSourceCommit: "f".repeat(40) });
+    assert.equal(plan.sourceCommit, value.model.plan.sourceCommit); assert.equal(plan.operatorSourceCommit, "f".repeat(40));
   } finally { value.cleanup(); }
 });

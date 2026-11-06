@@ -47,6 +47,12 @@ plan contains hashes and fixed metadata, no raw subject/command/body. The actual
 native plan and selected command stay in a process-local registry. A serialized
 plan cannot execute; an attempted plan cannot execute a second time.
 
+`sourceCommit` remains the immutable frontend application source from the native
+plan/candidate. Required `operatorSourceCommit` separately identifies the installed
+supplemental operator tree and its complete source-closure hash. They may differ;
+the runtime gateway module bytes must still match that operator tree. No candidate
+source is relabeled to accommodate newer operator code.
+
 `runP2LifecycleTransportFault` accepts only source dependencies:
 
 ```text
@@ -75,11 +81,16 @@ only in reviewed source; JSON supplies none.
 The host implementation is `P2CertificationFaultStage` in
 `host/p2_certification_fault.py`. Construction requires an actual `P2ReleaseScope`
 with the canonical inherited FD, selected release/jobs and live FE observer.
+It calls that source-selected scope's `require_frontend` against the selected FE
+job, so the base or current-only subclass must validate its exact receipt. The
+Node plan's FE admission target hash is recomputed from that SAME host job and
+compared explicitly. A generic scope with an arbitrary receipt is insufficient.
 It verifies both raw candidate-file and canonical candidate-object hashes (these
 are different identities), current private configuration, complete installed
 operator source manifest, exact ten-service inventory, gateway module bytes,
 process/config identity and the actual mounted admission directory's device/inode.
-Every ordinary method continues those checks. Publishing uses a fully written,
+Every ordinary method continues those checks, including gateway security/mount
+readback at each verification boundary. Publishing uses a fully written,
 fsynced temporary file and an exclusive atomic link; original intents/receipts
 are never overwritten. Root/group ownership is applied before publication.
 
@@ -101,6 +112,12 @@ return a caller assertion. If anything remains active/uncertain, disabled native
 state or closure is unavailable, the terminal is
 `P2_LIFECYCLE_TRANSPORT_FAULT_REQUIRES_REVIEW`. No automatic reconciliation occurs.
 The parent must await this result before releasing its locks.
+
+After the final FE ledger read, the stage rereads the exact current gateway
+process/source/mount/lease/admission/counters, then reads native metadata last.
+Earlier successful close/off responses cannot satisfy the terminal. A reopening,
+restart, lease reappearance or failed terminal read produces current false/unknown
+fields and a requires-review result; stale closure/off facts are discarded.
 
 ## Deliberate recovery after ACK loss
 

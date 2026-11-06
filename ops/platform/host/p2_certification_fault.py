@@ -57,6 +57,25 @@ def _closed(value, names):
     return isinstance(value, dict) and set(value) == set(names)
 
 
+def frontend_target_sha256(target):
+    """Match frontendAdmissionTargetSha256's fixed insertion order exactly."""
+    names = ("host", "port", "database", "user", "serverMajor")
+    demand(isinstance(target, dict) and all(name in target for name in names), "P2_FAULT_FE_JOB_TARGET_REQUIRED")
+    value = {"environment": "staging", **{name: target[name] for name in names}}
+    return _hash(json.dumps(value, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode())
+
+
+def bind_frontend_scope(scope, selected, jobs, plan):
+    scope.require_release(selected, jobs)
+    demand(isinstance(jobs.get("frontend"), dict), "P2_FAULT_FE_JOB_REQUIRED")
+    proof = scope.require_frontend(selected, jobs["frontend"])
+    job = jobs["frontend"]["job"]
+    demand(plan.get("targetSha256") == frontend_target_sha256(job["target"])
+        and plan.get("sourceCommit") == job.get("sourceCommit") == selected["sources"]["frontend"]["commit"],
+        "P2_FAULT_FE_PHYSICAL_SCOPE_PLAN_MISMATCH")
+    return proof
+
+
 def _write_all(descriptor, raw):
     remaining = raw
     while remaining:
@@ -90,11 +109,12 @@ class P2CertificationFaultStage:
         demand(self.source_initial["sourceClosureSha256"] == plan.get("operatorSourceClosureSha256"), "P2_FAULT_SOURCE_PLAN_BINDING_REQUIRED")
         self.directory = Path(directory)
         demand(self.configuration.is_absolute() and self.configuration.is_relative_to(ROOT)
-            and self.source == Path("/opt/lash-her/operators") / plan["sourceCommit"]
+            and re.fullmatch(r"[a-f0-9]{40}", plan.get("operatorSourceCommit", ""))
+            and self.source == Path("/opt/lash-her/operators") / plan["operatorSourceCommit"]
             and ".." not in self.configuration.parts and self.configuration.resolve() == self.configuration
             and not any(path.is_symlink() for path in (self.configuration, *self.configuration.parents, self.source, *self.source.parents)),
             "P2_FAULT_REVIEWED_PATH_REQUIRED")
-        scope.require_release(selected, jobs); scope.require_configuration(configuration)
+        bind_frontend_scope(scope, selected, jobs, plan); scope.require_configuration(configuration)
         verify_source_closure(self.source_initial, self.source)
         demand(selected.get("environment") == "staging" and selected.get("contractPhase") == "p2"
             and selected["releaseId"] == plan["actionId"] and scope.candidate_sha256 == plan["candidateSha256"]
@@ -133,13 +153,14 @@ class P2CertificationFaultStage:
 
     def verify(self):
         demand(not self.closed, "P2_FAULT_STAGE_CLOSED")
-        self.scope.require_release(self.selected, self.jobs); self.scope.require_configuration(self.configuration)
+        bind_frontend_scope(self.scope, self.selected, self.jobs, self.plan); self.scope.require_configuration(self.configuration)
         verify_source_closure(self.source_initial, self.source)
         opened = os.fstat(self.admission_fd)
         demand(opened.st_dev == self.admission_identity.st_dev and opened.st_ino == self.admission_identity.st_ino,
             "P2_FAULT_CACHED_ADMISSION_DIRECTORY_CHANGED")
         demand(self._inventory() == self.initial_inventory and identity._configuration_hash(self.configuration) == self.plan["configurationSha256"]
             and _hash(migrate.read_input(self.source, MODULE, 524288)) == self.module_sha256, "P2_FAULT_RUNTIME_OR_SOURCE_CHANGED")
+        identity._one_container(self.gateway, self.configuration, self.scope)
 
     def _gateway_current(self):
         self.scope.verify()
@@ -159,6 +180,7 @@ class P2CertificationFaultStage:
         self.verify()
         value = self._gateway_current()
         return {"version": 1, "status": "P2_FAULT_HOST_CURRENT", "candidateSha256": self.plan["candidateSha256"],
+            "targetSha256": self.plan["targetSha256"], "operatorSourceCommit": self.plan["operatorSourceCommit"],
             "candidateObjectSha256": self.plan["candidateObjectSha256"], "configurationSha256": self.plan["configurationSha256"],
             "gatewayConfigurationSha256": value["gatewayConfigurationSha256"], "gatewayImageSha256": self.plan["gatewayImageSha256"],
             "gatewayProcessSha256": value["processSha256"], "runtimeInventorySha256": _hash(_canonical(self.initial_inventory)),

@@ -20,8 +20,9 @@ export function prepareP2LifecycleTransportFaultPlan(nativePlan, input) {
     && nativePlan.finalDisposition === "disabled-and-admission-closed" && sha(nativePlan.planSha256)
     && sha(nativePlan.candidateSha256) && sha(nativePlan.targetSha256) && /^[a-f0-9]{40}$/u.test(nativePlan.sourceCommit)
     && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(nativePlan.actionId) && Array.isArray(nativePlan.commandWitnesses)
-    && closed(input, ["version", "stageId", "mode", "receiver", "commandIndex", "candidateSha256", "commandSha256", "configurationSha256", "gatewayConfigurationSha256", "gatewayImageSha256", "gatewayProcessSha256", "operatorSourceClosureSha256"])
-    && input.version === 1 && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.stageId) && ["503-before-upstream", "drop-after-ack"].includes(input.mode)
+    && closed(input, ["version", "stageId", "mode", "receiver", "commandIndex", "candidateSha256", "commandSha256", "configurationSha256", "gatewayConfigurationSha256", "gatewayImageSha256", "gatewayProcessSha256", "operatorSourceCommit", "operatorSourceClosureSha256"])
+    && input.version === 1 && /^[a-f0-9]{40}$/u.test(input.operatorSourceCommit)
+    && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.stageId) && ["503-before-upstream", "drop-after-ack"].includes(input.mode)
     && ["course", "community"].includes(input.receiver) && Number.isInteger(input.commandIndex) && input.commandIndex >= 0
     && input.commandIndex < nativePlan.commandWitnesses.length && [input.candidateSha256, input.commandSha256, input.configurationSha256, input.gatewayConfigurationSha256,
       input.gatewayImageSha256, input.gatewayProcessSha256, input.operatorSourceClosureSha256].every(sha));
@@ -32,7 +33,7 @@ export function prepareP2LifecycleTransportFaultPlan(nativePlan, input) {
     mode: input.mode, receiver: input.receiver, commandSha256: input.commandSha256, configurationSha256: input.configurationSha256,
     gatewayConfigurationSha256: input.gatewayConfigurationSha256, gatewayImageSha256: input.gatewayImageSha256,
     gatewayProcessSha256: input.gatewayProcessSha256, commandSelectionSha256: hash({ nativePlanSha256: nativePlan.planSha256, commandIndex: input.commandIndex }),
-    operatorSourceClosureSha256: input.operatorSourceClosureSha256,
+    operatorSourceCommit: input.operatorSourceCommit, operatorSourceClosureSha256: input.operatorSourceClosureSha256,
     leaseMilliseconds: 120000, maxMatches: 1, finalDisposition: "fault-disabled-native-off-and-admission-closed",
     standaloneActivationEligible: false, automaticReplayAllowed: false, automaticReconciliationAllowed: false, releaseAccepted: false });
   plans.set(plan, { nativePlan, selected: structuredClone(selected) }); return plan;
@@ -78,14 +79,17 @@ async function selectedCommand(client, expected) {
   } finally { await client.query("ROLLBACK"); }
 }
 
-function assertHostObservation(value, plan) {
+function assertHostObservation(value, plan, recovery = true, zero = true) {
   demand(value?.version === 1 && value.status === "P2_FAULT_HOST_CURRENT" && value.candidateSha256 === plan.candidateSha256
     && value.candidateObjectSha256 === plan.candidateObjectSha256
     && value.configurationSha256 === plan.configurationSha256 && value.gatewayConfigurationSha256 === plan.gatewayConfigurationSha256
     && value.gatewayImageSha256 === plan.gatewayImageSha256 && value.gatewayProcessSha256 === plan.gatewayProcessSha256
-    && value.operatorSourceClosureSha256 === plan.operatorSourceClosureSha256
+    && value.operatorSourceCommit === plan.operatorSourceCommit && value.operatorSourceClosureSha256 === plan.operatorSourceClosureSha256
+    && value.targetSha256 === plan.targetSha256
     && sha(value.runtimeInventorySha256) && value.gatewayAdmission?.valid === true && value.gatewayAdmission.newWork === false
-    && value.gatewayAdmission.recovery === true && ["newWork", "recovery"].every(key => value.gatewayAdmission.active?.[key] === 0 && value.gatewayAdmission.uncertain?.[key] === 0)
+    && value.gatewayAdmission.recovery === recovery && ["newWork", "recovery"].every(key => Number.isInteger(value.gatewayAdmission.active?.[key])
+      && value.gatewayAdmission.active[key] >= 0 && Number.isInteger(value.gatewayAdmission.uncertain?.[key]) && value.gatewayAdmission.uncertain[key] >= 0
+      && (!zero || value.gatewayAdmission.active[key] === 0 && value.gatewayAdmission.uncertain[key] === 0))
     && value.faultLeasePresent === false);
 }
 
@@ -107,7 +111,7 @@ export async function runP2LifecycleTransportFault(input) {
   const { nativePlan, selected } = binding, store = frontendReleaseReceiptStore(directory), dependencies = { verifySession, withOwner };
   const verify = physicalVerifier(nativePlan, client, verifyEnvironment, verifySession);
   let primaryFailure = false, effect, before, after, gatewayClosure, frontendClosure,
-    faultDisabled = false, finalLedger, nativeOff = false, phase = "physical-preflight", failurePhase = null;
+    faultDisabled = false, finalLedger, nativeOff = false, nativeEnabled = null, phase = "physical-preflight", failurePhase = null;
   const outcome = () => ({ version: 1, status: !primaryFailure && effect && faultDisabled && gatewayClosure?.gatewayAdmissionClosed === true
       && frontendClosure?.frontendAdmissionClosed === true && nativeOff && finalLedger?.newWork === false && finalLedger.recovery === false
       && finalLedger.active === 0 && finalLedger.uncertain === 0
@@ -118,7 +122,7 @@ export async function runP2LifecycleTransportFault(input) {
     faultDisabled, gatewayAdmissionClosed: gatewayClosure?.gatewayAdmissionClosed ?? null,
     frontendAdmissionClosed: frontendClosure?.frontendAdmissionClosed === false ? false
       : frontendClosure?.frontendAdmissionClosed === true && finalLedger ? finalLedger.newWork === false && finalLedger.recovery === false : null,
-    nativeEnabled: nativeOff ? false : null,
+    nativeEnabled,
     outstandingActive: finalLedger?.active ?? null, outstandingUncertain: finalLedger?.uncertain ?? null,
     gatewayOutstandingActive: gatewayClosure?.active ?? null, gatewayOutstandingUncertain: gatewayClosure?.uncertain ?? null,
     uncertaintySettled: finalLedger ? finalLedger.active === 0 && finalLedger.uncertain === 0 : false,
@@ -174,8 +178,20 @@ export async function runP2LifecycleTransportFault(input) {
       try { const disabled = await hostStage.disarm(plan); faultDisabled = disabled.faultDisabled === true; } catch { primaryFailure = true; failurePhase ??= phase; }
       try { gatewayClosure = await hostStage.closeGateway(plan); } catch { primaryFailure = true; failurePhase ??= phase; }
       try { frontendClosure = await containFrontend(nativePlan, { faultDisabled, gatewayClosure }); } catch { primaryFailure = true; failurePhase ??= phase; }
-      try { nativeOff = (await nativeMetadata(nativePlan, nativeControl)).nativeEnabled === false; } catch { primaryFailure = true; failurePhase ??= phase; }
       try { await verify(); finalLedger = await observeP2LifecycleNativeLedger(nativePlan, client, dependencies); } catch { primaryFailure = true; failurePhase ??= phase; }
+      // Discard earlier cleanup observations before independent terminal reads.
+      // Neither a successful close call nor an earlier metadata GET is final.
+      faultDisabled = null;
+      gatewayClosure = { gatewayAdmissionClosed: null, active: null, uncertain: null };
+      try {
+        const current = await hostStage.observe(plan);
+        assertHostObservation(current, plan, false, false);
+        faultDisabled = current.faultLeasePresent === false;
+        gatewayClosure = { gatewayAdmissionClosed: true, active: current.gatewayAdmission.active, uncertain: current.gatewayAdmission.uncertain };
+      } catch { primaryFailure = true; failurePhase ??= phase; }
+      nativeOff = false; nativeEnabled = null;
+      try { nativeEnabled = (await nativeMetadata(nativePlan, nativeControl)).nativeEnabled; nativeOff = nativeEnabled === false; }
+      catch { primaryFailure = true; failurePhase ??= phase; }
       try { retain("p2-fault-outcome.json", outcome()); } catch { primaryFailure = true; failurePhase ??= phase; }
     }
   }
