@@ -183,7 +183,7 @@ export async function qualifyP2LifecycleNative(input) {
     typeof nativeControl?.observe === "function" && typeof nativeControl.observeMetadata === "function" && typeof nativeControl.setEnabled === "function" && typeof observeNativeRequests === "function");
   const receipts = store(directory); demand(!receipts.exists("p2-native-started.json") && !receipts.exists("p2-native-outcome.json"));
   const now = input.clock?.now ?? (() => performance.now()), pause = input.clock?.pause ?? sleep;
-  let phase = "preflight", nativeEnableAttempted = false, nativeDisableAttempted = false, nativeDisabled = false, admissionMutationUnknown = false, windowEpoch, finalAdmission, start, after,
+  let phase = "preflight", nativeEnableAttempted = false, nativeDisableAttempted = false, nativeDisabled = false, admissionMutationUnknown = false, windowEpoch, finalAdmission, scoped, after,
     observedRequests = [], failure = false, epoch = plan.initialEpoch, enableMutationOutcome = "not-started", disableMutationOutcome = "not-started", fenceCurrent = false;
   const failurePhases = [], recordFailure = () => { failure = true; if (!failurePhases.includes(phase)) failurePhases.push(phase); };
   const dependencies = { verifySession, withOwner };
@@ -204,16 +204,17 @@ export async function qualifyP2LifecycleNative(input) {
   try {
     sourcePolicy(plan.sourceCommit); const preflight = await boundary(false);
     receipts.write("p2-native-runtime-preflight.json", { planSha256:plan.planSha256, observation:Object.fromEntries(['projectId','deploymentId','sourceCommit','deploymentUrl','configurationRecordSha256','nativeEnabled','schedule','featureControls','writerAdmissionBinding'].map(key=>[key,preflight[key]])) });
-    start = await observeP2LifecycleNativeLedger(plan, client, dependencies);
+    const start = await observeP2LifecycleNativeLedger(plan, client, dependencies);
     demand(start.epoch === epoch && start.recovery === true && start.active === 0 && start.uncertain === 0 && start.deliveries.some(row => row.status !== "acknowledged"));
     phase = "recovery-only-epoch-barrier";
     receipts.write("p2-native-recovery-only-intent.json", { planSha256: plan.planSha256, epoch, newWork: false, recovery: true });
     admissionMutationUnknown = true;
     const changed = await withOwner(() => changeFrontendAdmission(client, { environment: "staging", targetSha256: plan.targetSha256 }, epoch, { newWork: false, recovery: true }));
     epoch = windowEpoch = changed.epoch; admissionMutationUnknown = false;
-    const scoped = await observeP2LifecycleNativeLedger(plan, client, dependencies, windowEpoch);
+    scoped = await observeP2LifecycleNativeLedger(plan, client, dependencies, windowEpoch);
     demand(scoped.epoch === epoch && scoped.newWork === false && scoped.recovery === true && scoped.active === 0 && scoped.uncertain === 0 && scoped.operations.length === 0);
     receipts.write("p2-native-recovery-only-observed.json", scoped);
+    demand(scoped.deliveries.some(row => row.status !== "acknowledged"));
     phase = "enable-native"; receipts.write("p2-native-enable-intent.json", { planSha256: plan.planSha256, windowEpoch, schedule: plan.schedule });
     await verify(); nativeEnableAttempted = true; enableMutationOutcome = "unknown"; await nativeControl.setEnabled(plan, true); await boundary(true); enableMutationOutcome = "observed-enabled";
     phase = "bounded-native-window";
@@ -271,6 +272,7 @@ export async function qualifyP2LifecycleNative(input) {
     try {
       await boundary(false); after = await observeP2LifecycleNativeLedger(plan,client,dependencies,windowEpoch);
       demand(after.epoch === epoch && after.newWork === false && after.recovery === false);
+      await boundary(false);
       finalAdmission = {epoch:after.epoch,newWork:after.newWork,recovery:after.recovery,active:after.active,uncertain:after.uncertain};
       fenceCurrent = true; containmentRecord("p2-native-final-ledger-observed.json",after);
     } catch { recordFailure(); finalAdmission = null; }
@@ -280,12 +282,12 @@ export async function qualifyP2LifecycleNative(input) {
     operation.kind === "recovery" && operation.state === "completed" && operation.completed_at !== null && operation.reconciliation_sha256 === null && operation.epoch === windowEpoch && operation.producer_sha256 === plan.producer.producerSha256 &&
     operation.source_sha === plan.sourceCommit && operation.role_oid === plan.producer.role.oid && correlatedRequests.some(row => row.event.operationId === operation.id && row.httpStatus === 200)));
   const orderedEffects = Boolean(after && after.orderViolations.length === 0 && after.deliveries.every(row => row.status === "acknowledged" && row.acknowledged_at !== null && row.lease_until === null) &&
-    start && after.deliveries.some(row => start.deliveries.some(before => before.command_id === row.command_id && before.receiver === row.receiver && before.status !== 'acknowledged' && row.attempts > before.attempts)));
+    scoped && after.deliveries.some(row => scoped.deliveries.some(before => before.command_id === row.command_id && before.receiver === row.receiver && before.status !== 'acknowledged' && row.attempts > before.attempts)));
   const fenced = fenceCurrent && nativeDisabled && finalAdmission?.newWork === false && finalAdmission?.recovery === false && finalAdmission.active === 0 && finalAdmission.uncertain === 0 && !admissionMutationUnknown;
   const qualified = !failure && matched && orderedEffects && fenced;
   const outcome = { version: 1, actionId: plan.actionId, sourceCommit: plan.sourceCommit, projectId: plan.projectId, deploymentId: plan.deploymentId, planSha256: plan.planSha256,
     status: qualified ? "P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED" : "P2_LIFECYCLE_NATIVE_OPEN_REQUIRES_REVIEW", phase, windowEpoch: windowEpoch ?? null,
-    nativeEnableAttempted, nativeDisableAttempted, enableMutationOutcome, disableMutationOutcome, failurePhases, nativeEnabled: nativeDisabled ? false : null, finalAdmission: finalAdmission ?? null,
+    nativeEnableAttempted, nativeDisableAttempted, enableMutationOutcome, disableMutationOutcome, failurePhases, nativeEnabled: fenceCurrent && nativeDisabled ? false : null, finalAdmission: finalAdmission ?? null,
     nativeInvocationObserved: observedRequests.length > 0, nativeLedgerCorrelationVerified: matched, orderedReceiverPersistenceVerified: orderedEffects,
     sourceAdmissionFenceVerified: fenced, providerQueuedInvocations: null, providerActiveInvocations: null, providerCancellationVerified: false,
     admissionMutationUnknown, automaticReplayAllowed: false, finalDisposition: plan.finalDisposition, wholeReleaseAccepted: false, migrationAuthorized: false };
@@ -315,12 +317,18 @@ export async function containP2LifecycleNative(input) {
   const receipts=store(directory); demand(!receipts.exists('p2-native-containment-started.json'));
   receipts.write('p2-native-containment-started.json',{version:1,planSha256:plan.planSha256,expectedEpoch:input.expectedEpoch,status:'P2_NATIVE_CONTAINMENT_STARTED',enableAllowed:false});
   const verify=verifier(plan,client,verifyEnvironment,verifySession), now=input.clock?.now ?? (()=>performance.now()), pause=input.clock?.pause ?? sleep;
+  const disabledBoundary=async()=>{
+    await verify();const metadata=await nativeControl.observeMetadata(plan);
+    demand(metadata.projectId===plan.projectId && metadata.deploymentId===plan.deploymentId && metadata.sourceCommit===plan.sourceCommit &&
+      metadata.deploymentUrl===plan.deploymentUrl && metadata.nativeEnabled===false && same(metadata.schedule,plan.schedule));
+    await verify();return Object.fromEntries(['projectId','deploymentId','sourceCommit','deploymentUrl','schedule','nativeEnabled'].map(key=>[key,metadata[key]]));
+  };
   let nativeDisabled=false, mutationUnknown=false, finalAdmission=null, failure=false;
   try {
     sourcePolicy(plan.sourceCommit); const actual=await observeP2LifecycleNativeState(input); demand(actual.ledger.epoch===input.expectedEpoch);
     await verify();
     if(actual.native.nativeEnabled===true) { receipts.write('p2-native-containment-disable-intent.json',{planSha256:plan.planSha256}); await nativeControl.setEnabled(plan,false); }
-    const disabled=await nativeControl.observeMetadata(plan); demand(disabled.projectId===plan.projectId && disabled.deploymentId===plan.deploymentId && disabled.sourceCommit===plan.sourceCommit && disabled.nativeEnabled===false && same(disabled.schedule,plan.schedule)); nativeDisabled=true;
+    await disabledBoundary();
     let selectedEpoch=actual.ledger.epoch;
     if(actual.ledger.newWork || actual.ledger.recovery) {
       receipts.write('p2-native-containment-close-intent.json',{planSha256:plan.planSha256,epoch:selectedEpoch,newWork:false,recovery:false}); mutationUnknown=true;
@@ -333,6 +341,10 @@ export async function containP2LifecycleNative(input) {
       finalAdmission={epoch:ledger.epoch,newWork:false,recovery:false,active:ledger.active,uncertain:ledger.uncertain};
       if(ledger.active===0 || ledger.uncertain>0 || now()>=deadline)break; await pause(Math.min(1000,deadline-now()));
     }while(true);
+    // A disable readback before drain cannot establish the final source fence.
+    sourcePolicy(plan.sourceCommit);const finalNative=await disabledBoundary();
+    receipts.write('p2-native-containment-final-boundary.json',{version:1,planSha256:plan.planSha256,native:finalNative,finalAdmission});
+    nativeDisabled=true;
   }catch{failure=true;}
   const outcome={version:1,planSha256:plan.planSha256,status:'P2_LIFECYCLE_NATIVE_CONTAINMENT_REQUIRES_REVIEW',nativeEnabled:nativeDisabled?false:null,finalAdmission,admissionMutationUnknown:mutationUnknown,
     sourceAdmissionFenceVerified:!failure && !mutationUnknown && nativeDisabled && finalAdmission?.active===0 && finalAdmission?.uncertain===0, nativeQualificationAccepted:false,

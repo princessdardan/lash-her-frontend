@@ -14,8 +14,8 @@ import {withFrontendEnvironmentLock} from '../frontend-environment-lock.mjs';
 let phase='ownership';
 async function main(){
   assert.equal(process.env.P2_NATIVE_OWNED_CHILD,'true');const privateInput=JSON.parse(readFileSync(0,'utf8'));
-  const {port,password,certificate,key,directory,target,targetSha256,owner,runtime,sourceCommit}=privateInput;
-  assert.equal(target.host,'127.0.0.1');assert.equal(target.database,'frontend_admission_owned');assert.equal(target.port,port);assert.equal(target.serverMajor,16);
+  const {port,password,certificate,key,directory,target,targetSha256,owner,runtime,sourceCommit,postgresMajor}=privateInput;
+  assert.equal(target.host,'127.0.0.1');assert.equal(target.database,'frontend_admission_owned');assert.equal(target.port,port);assert.ok([16,18].includes(postgresMajor));assert.equal(target.serverMajor,postgresMajor);
   const url=`postgresql://${runtime.name}:${password}@127.0.0.1:${port}/${target.database}?sslmode=verify-full`;
   const {VERCEL_PROJECT_BINDINGS}=await import('../../../src/lib/env/application-environment.mjs');
   Object.assign(process.env,{DATABASE_URL:url,FRONTEND_WRITER_ADMISSION_DATABASE_URL:url,FRONTEND_WRITER_ADMISSION_MODE:'enforce',FRONTEND_WRITER_ADMISSION_TARGET_JSON:JSON.stringify({...target,user:runtime.name,targetSha256,environment:'staging'}),
@@ -65,7 +65,7 @@ async function main(){
     const physicalPid=(await operator.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
     const verifySession=async()=>assert.equal((await operator.query('SELECT pg_backend_pid() AS pid')).rows[0].pid,physicalPid);
     const stageDirectory=join(directory,'native-stage');mkdirSync(stageDirectory,{mode:0o700});
-    phase='actual-stage';let result;
+    phase='actual-stage';let result,barrierInterleaving,barrierReceipts;
     await withFrontendEnvironmentLock(async verifyEnvironment=>{
       await operator.query('SELECT pg_advisory_lock(hashtext($1))',['lash-her:private-db:migrations']);
       const contender=await connect();try{assert.equal((await contender.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked',['lash-her:private-db:migrations'])).rows[0].locked,false);}finally{await contender.end();}record('actual-physical-release-lock-contention');
@@ -81,6 +81,38 @@ async function main(){
           return requests.map(request=>nativeObservation(plan,{id:request.lines.length?JSON.parse(request.lines[0]).operationId:randomUUID(),epoch:request.lines.length?JSON.parse(request.lines[0]).epoch:epoch},
             {providerRequestId:request.id,startedAt:request.startedAt,completedAt:request.completedAt,httpStatus:request.status,admittedLogLine:request.lines[0]??null}));
         }});
+      // An old worker can finish between the start read and the committed
+      // barrier. Its delivery must not become native-window progress merely
+      // because an empty native invocation could be correlated afterward.
+      assert.equal(result.status,'P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED');
+      const command={version:1,commandId:randomUUID(),userId:customerId,accountVersion:3,action:'suspend',issuedAt:new Date().toISOString()};commandList.push(command);
+      await operator.query('INSERT INTO customer_account_commands(command_id,user_id,account_version,idempotency_key,action,issued_at,command) VALUES($1,$2,$3,$4,$5,$6,$7)',[command.commandId,customerId,command.accountVersion,randomUUID(),command.action,command.issuedAt,JSON.stringify(command)]);
+      for(const receiver of ['course','community'])await operator.query("INSERT INTO customer_account_deliveries(command_id,receiver,status) VALUES($1,$2,'pending')",[command.commandId,receiver]);
+      const reopened=await withOwner(()=>changeFrontendAdmission(operator,{environment:'staging',targetSha256},result.finalAdmission.epoch,{newWork:false,recovery:true}));
+      const barrierDocs=nativeDocuments(target);Object.assign(barrierDocs.settings,{epoch:reopened.epoch,owner,producer,targetSha256,commandWitnesses:[{commandId:command.commandId,accountVersion:'3',action:'suspend'}]});
+      const barrierPlan=prepareP2LifecycleNativePlan(barrierDocs.candidate,barrierDocs.settings),barrierDirectory=join(directory,'native-barrier-interleave');mkdirSync(barrierDirectory,{mode:0o700});
+      const finisher=await connect(),originalQuery=operator.query.bind(operator),beforeRequests=requests.length,beforeEffects=receiverCalls.length,toggles=[];let armed=true,emptyTick=false;
+      operator.query=async(sql,...args)=>{
+        const response=await originalQuery(sql,...args);
+        if(armed&&typeof sql==='string'&&sql.startsWith('UPDATE frontend_admission.control')){
+          armed=false;await finisher.query("UPDATE customer_account_deliveries SET status='acknowledged',attempts=1,acknowledged_at=now(),lease_until=NULL WHERE command_id=$1",[command.commandId]);
+        }
+        return response;
+      };
+      try{
+        barrierInterleaving=await qualifyP2LifecycleNative({plan:barrierPlan,client:operator,directory:barrierDirectory,confirmation:`staging/${barrierPlan.actionId}`,verifyEnvironment,verifySession,withOwner,
+          nativeControl:{observe:async()=>boundary(),observeMetadata:async()=>boundary(),setEnabled:async(_plan,enabled)=>{toggles.push(enabled);nativeEnabled=enabled;}},
+          clock:{now:()=>elapsed,pause:async milliseconds=>{elapsed+=milliseconds;if(nativeEnabled&&!emptyTick){emptyTick=true;const response=await actualRequest();assert.equal(response.status,200);await response.arrayBuffer();}}},
+          observeNativeRequests:async()=>requests.slice(beforeRequests).map(request=>nativeObservation(barrierPlan,{id:JSON.parse(request.lines[0]).operationId,epoch:JSON.parse(request.lines[0]).epoch},
+            {providerRequestId:request.id,startedAt:request.startedAt,completedAt:request.completedAt,httpStatus:request.status,admittedLogLine:request.lines[0]}))});
+      }finally{operator.query=originalQuery;await finisher.end();}
+      assert.equal(barrierInterleaving.status,'P2_LIFECYCLE_NATIVE_OPEN_REQUIRES_REVIEW');assert.equal(barrierInterleaving.nativeEnableAttempted,false);
+      assert.equal(barrierInterleaving.orderedReceiverPersistenceVerified,false);assert.deepEqual(toggles,[]);assert.equal(requests.length,beforeRequests);assert.equal(receiverCalls.length,beforeEffects);
+      assert.equal(nativeEnabled,false);const current=await withOwner(async()=>(await operator.query('SELECT epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton')).rows[0]);
+      assert.equal(current.epoch,barrierInterleaving.finalAdmission.epoch);assert.equal(current.new_work,false);assert.equal(current.recovery,false);
+      const scoped=JSON.parse(readFileSync(join(barrierDirectory,'p2-native-recovery-only-observed.json')));assert.ok(scoped.deliveries.every(row=>row.status==='acknowledged'&&row.attempts===1));
+      barrierReceipts=readdirSync(barrierDirectory).filter(name=>name.endsWith('.json')).sort().map(name=>{const bytes=readFileSync(join(barrierDirectory,name));return{name,sha256:p2NativeHash(bytes),value:JSON.parse(bytes)};});
+      record('actual-postgres-barrier-update-interleaving-acknowledgements-refuse-before-native-enable');
       await operator.query('SELECT pg_advisory_unlock(hashtext($1))',['lash-her:private-db:migrations']);
     },{path:join(directory,'environment.lock')});
     assert.ifError(receiverFailure);assert.equal(result.status,'P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED');assert.equal(receiverCalls.length,4);assert.equal(requests.filter(row=>row.status===200).length,2);
@@ -89,9 +121,9 @@ async function main(){
     const operations=await withOwner(async()=> (await operator.query('SELECT id::text,kind,state,epoch::text FROM frontend_admission.operations ORDER BY started_at')).rows);
     assert.equal(operations.length,2);assert.ok(operations.every(row=>row.state==='completed'&&row.kind==='recovery'&&row.epoch!==result.finalAdmission.epoch));
     const stageReceipts=readdirSync(stageDirectory).filter(name=>name.endsWith('.json')).sort().map(name=>{const bytes=readFileSync(join(stageDirectory,name));return{name,sha256:p2NativeHash(bytes),value:JSON.parse(bytes)};});
-    const serialized=JSON.stringify({result,receiverCalls,operations,stageReceipts});for(const secret of [password,process.env.CRON_SECRET,process.env.COURSE_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET])assert.ok(!serialized.includes(secret));record('private-credentials-not-in-common-evidence');
+    const serialized=JSON.stringify({result,barrierInterleaving,barrierReceipts,receiverCalls,operations,stageReceipts});for(const secret of [password,process.env.CRON_SECRET,process.env.COURSE_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET])assert.ok(!serialized.includes(secret));record('private-credentials-not-in-common-evidence');
     return{status:'P2_LIFECYCLE_NATIVE_OWNED_PASS',actualTlsPostgres:true,actualTlsReceivers:true,actualAppCron:true,actualRuntimeTrace:true,actualProvider:false,
-      modeledProviderNativeClassification:true,executedChecks:checks.length,skipped:0,checks,result,operations,receiverCalls,stageReceipts,
+      modeledProviderNativeClassification:true,executedChecks:checks.length,skipped:0,checks,result,barrierInterleaving,barrierReceipts,operations,receiverCalls,stageReceipts,
       sourceModuleSha256:p2NativeHash(readFileSync(new URL('../p2-lifecycle-native.mjs',import.meta.url)))};
   }finally{console.info=originalInfo;globalThis.fetch=originalFetch;if(server)await new Promise(resolve=>server.close(resolve));await closePool?.();await operator.end();}
 }

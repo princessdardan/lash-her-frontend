@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, rmSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, mkdirSync, mkdtempSync, chmodSync, realpathSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -116,6 +117,80 @@ test('actual SIGKILL after enable preserves intent; fresh explicit containment d
 test('a policy changed during operator observation invalidates the final fence instead of qualifying a stale closed snapshot',async()=>{
   const fixture=nativeModel();
   try{const observe=fixture.input.observeNativeRequests;fixture.input.observeNativeRequests=async()=>{const rows=await observe();fixture.state.epoch=String(BigInt(fixture.state.epoch)+1n);fixture.state.recovery=true;return rows;};
-    const result=await fixture.run();assert.equal(result.status,'P2_LIFECYCLE_NATIVE_OPEN_REQUIRES_REVIEW');assert.equal(result.sourceAdmissionFenceVerified,false);assert.equal(result.finalAdmission,null);assert.ok(result.failurePhases.includes('final-closed-boundary'));
+    const result=await fixture.run();assert.equal(result.status,'P2_LIFECYCLE_NATIVE_OPEN_REQUIRES_REVIEW');assert.equal(result.sourceAdmissionFenceVerified,false);assert.equal(result.finalAdmission,null);assert.equal(result.nativeEnabled,null);assert.ok(result.failurePhases.includes('final-closed-boundary'));
   }finally{fixture.cleanup();}
+});
+
+test('delivery acknowledgements interleaved with the epoch barrier cannot count as native window effects',async()=>{
+  const fixture=nativeModel();
+  try{
+    const query=fixture.client.query.bind(fixture.client);
+    fixture.client.query=async(sql,values)=>{const result=await query(sql,values);
+      if(sql.startsWith('UPDATE frontend_admission.control')&&fixture.state.epoch==='2')
+        for(const row of fixture.state.deliveries)Object.assign(row,{status:'acknowledged',attempts:1,acknowledged_at:new Date(),lease_until:null});
+      return result;
+    };
+    const result=await fixture.run();
+    assert.equal(result.status,'P2_LIFECYCLE_NATIVE_OPEN_REQUIRES_REVIEW');assert.equal(result.orderedReceiverPersistenceVerified,false);
+    assert.deepEqual(fixture.state.toggles,[]);assert.equal(fixture.state.operations.length,0);
+    const scoped=JSON.parse(readFileSync(join(fixture.input.directory,'p2-native-recovery-only-observed.json')));
+    assert.ok(scoped.deliveries.every(row=>row.status==='acknowledged'));
+  }finally{fixture.cleanup();}
+});
+
+test('receiver attempts must advance from the retained post-barrier snapshot, not the earlier start',async()=>{
+  const fixture=nativeModel();
+  try{
+    const query=fixture.client.query.bind(fixture.client);
+    fixture.client.query=async(sql,values)=>{const result=await query(sql,values);
+      if(sql.startsWith('UPDATE frontend_admission.control')&&fixture.state.epoch==='2')for(const row of fixture.state.deliveries)row.attempts=1;
+      return result;
+    };
+    const result=await fixture.run();
+    assert.equal(result.nativeLedgerCorrelationVerified,true);assert.equal(result.sourceAdmissionFenceVerified,true);
+    assert.equal(result.status,'P2_LIFECYCLE_NATIVE_OPEN_REQUIRES_REVIEW');assert.equal(result.orderedReceiverPersistenceVerified,false);
+  }finally{fixture.cleanup();}
+});
+
+test('a final native enable or source drift invalidates the main qualifier disabled claim',async()=>{
+  for(const scenario of ['enabled','source']){
+    const fixture=nativeModel();let drift=false;
+    try{
+      const observe=fixture.input.nativeControl.observe,requests=fixture.input.observeNativeRequests;
+      fixture.input.nativeControl.observe=async()=>({...await observe(),...(drift&&scenario==='source'?{sourceCommit:'f'.repeat(40)}:{})});
+      fixture.input.observeNativeRequests=async()=>{const result=await requests();drift=true;if(scenario==='enabled')fixture.state.enabled=true;return result;};
+      const result=await fixture.run();assert.equal(result.status,'P2_LIFECYCLE_NATIVE_OPEN_REQUIRES_REVIEW');
+      assert.equal(result.nativeEnabled,null);assert.equal(result.sourceAdmissionFenceVerified,false);assert.ok(result.failurePhases.includes('final-closed-boundary'));
+    }finally{fixture.cleanup();}
+  }
+});
+
+test('containment rechecks exact disabled metadata after draining and never reports a stale source fence',async()=>{
+  for(const scenario of ['stable','enabled','source','deployment','url','schedule','metadata-unavailable','lost-lock']){
+    const fixture=nativeModel();let directory,drift=false,metadataReads=0,pauses=0;
+    try{
+      assert.equal((await fixture.run()).status,'P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED');
+      directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-native-containment-current-')));chmodSync(directory,0o700);
+      const operation={...fixture.state.operations[0],id:'dddddddd-bbbb-4ccc-8ddd-eeeeeeeeeeee',state:'active',completed_at:null};fixture.state.operations.push(operation);
+      const metadata=fixture.input.nativeControl.observeMetadata;
+      fixture.input.nativeControl.observeMetadata=async()=>{
+        metadataReads++;if(drift&&scenario==='metadata-unavailable')throw Error('owned-metadata-unavailable');
+        return {...await metadata(),...(drift&&scenario==='source'?{sourceCommit:'f'.repeat(40)}:{}),
+          ...(drift&&scenario==='deployment'?{deploymentId:'dpl_foreign'}:{}),...(drift&&scenario==='url'?{deploymentUrl:'https://foreign.vercel.app'}:{}),
+          ...(drift&&scenario==='schedule'?{schedule:{path:'/api/cron/foreign',schedule:'* * * * *'}}:{})};
+      };
+      const input={...fixture.input,directory,originalDirectory:fixture.input.directory,expectedEpoch:fixture.state.epoch,
+        verifyEnvironment:async()=>{if(drift&&scenario==='lost-lock')throw Error('owned-lock-lost');},
+        clock:{now:fixture.input.clock.now,pause:async()=>{pauses++;operation.state='completed';operation.completed_at=new Date();drift=true;if(scenario==='enabled')fixture.state.enabled=true;}}};
+      const result=await containP2LifecycleNative(input);
+      assert.equal(pauses,1);assert.equal(result.status,'P2_LIFECYCLE_NATIVE_CONTAINMENT_REQUIRES_REVIEW');assert.equal(result.nativeQualificationAccepted,false);
+      assert.equal(result.nativeEnabled,scenario==='stable'?false:null);assert.equal(result.sourceAdmissionFenceVerified,scenario==='stable');
+      if(scenario!=='lost-lock')assert.ok(metadataReads>=3);
+      if(scenario==='stable'){
+        const final=JSON.parse(readFileSync(join(directory,'p2-native-containment-final-boundary.json')));
+        assert.equal(final.native.nativeEnabled,false);assert.equal(final.native.sourceCommit,fixture.plan.sourceCommit);assert.deepEqual(final.finalAdmission,result.finalAdmission);
+      }else assert.equal(existsSync(join(directory,'p2-native-containment-final-boundary.json')),false);
+      assert.deepEqual(fixture.state.toggles,[true,false]);assert.equal(result.providerQueuedInvocations,null);assert.equal(result.providerCancellationVerified,false);
+    }finally{fixture.cleanup();if(directory)rmSync(directory,{recursive:true,force:true});}
+  }
 });
