@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "baseAndFailedCiSourceCommit": "c7ae8e9fd16c1332d520e08e0b052bded019a934",
+  "implementationCommits": [
+    "9a1bb50a238cd676d45bdde5ea3499b820ebb6a7",
+    "545424f4b2b848cde28fb0e997de0d0c99f1f5fd"
+  ],
+  "normalForwardPg18ExecutionCommit": "9a1bb50a238cd676d45bdde5ea3499b820ebb6a7",
+  "composedEnvelopeExecutionCommit": "545424f4b2b848cde28fb0e997de0d0c99f1f5fd",
+  "sourceSha256": {
+    "ops/platform/test-p2-recovery-owned.mjs": "4ee2355c16a8c691f4b54cd10f8160bacf2c56a91162fe5d48240744f5d60cec",
+    "ops/platform/test-p2-recovery-owned.py": "c896a8812028f2044b332394b8c353803b7fafc97f4e2ab0ea9c3e5d82daf5d5",
+    "ops/platform/host/p2_recovery_owned_diagnostics_test.py": "257938df9e0361ac59a7aa9af834fd2a78afb39812018c909f9370394f1d467b"
+  },
+  "originalCiRunId": "42210725374",
+  "originalCiJobId": "127868425433",
+  "originalZipSha256": "965678488af9be4074b6eff05e6e6e36d0345899a12ad4e18213813cb7a93e58",
+  "evidenceSha256": {
+    "composed-outer-envelopes.json": "7ba6ccedcfd3cea523337a4ea85c6f977ad548bcdd70cdf4f1871c49b16d7d84",
+    "composed-outer-envelopes.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "original-c7-ci-artifact.zip": "965678488af9be4074b6eff05e6e6e36d0345899a12ad4e18213813cb7a93e58",
+    "original-c7-linux-platform-pg18.json": "a5177fa9ed432243126a19ef06c3c06b5399be190fb84f17a241b15bc0d68c54",
+    "owned-pg18-forward.json": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
+    "owned-pg18-forward.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "unit.log": "cd3d4a34c7dc65d19c7f96de46d77d32122616a4771214ba014fcd91cd6f48ff"
+  },
+  "independentReviewReportSha256": "456d12ad2a8e78c62558fd47612a33c3a658a02544a179910d4f15dad1766eb2",
+  "fixtureOnly": true,
+  "linuxCauseIdentified": false,
+  "newLinuxQualificationPending": true,
+  "productionChanged": false,
+  "externalProviderTouched": false,
+  "releaseAccepted": false
+}
