@@ -39,11 +39,11 @@ function directory(path,privateMode=false){
   if(privateMode)demand((fs.lstatSync(path).mode&0o777)===0o700,'PRIVATE_DIRECTORY_REQUIRED');
 }
 function syncDirectory(path){const fd=fs.openSync(path,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
-function readFile(path,max,privateMode=false){
+function readFile(path,max,privateMode=false,allowEmpty=false){
   if(privateMode)directory(dirname(path),true);
   const fd=fs.openSync(path,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
   try{const s=fs.fstatSync(fd);demand(s.isFile()&&s.uid===OWNER_UID&&s.nlink===1&&(privateMode?(s.mode&0o777)===0o600:(s.mode&0o022)===0),'PRIVATE_FILE_REQUIRED');
-    demand(s.size>0&&s.size<=max,'PRIVATE_FILE_BOUND');const bytes=Buffer.alloc(s.size+1);let n=0,count;
+    demand((allowEmpty||s.size>0)&&s.size<=max,'PRIVATE_FILE_BOUND');const bytes=Buffer.alloc(s.size+1);let n=0,count;
     while((count=fs.readSync(fd,bytes,n,bytes.length-n,null))>0)n+=count;
     const after=fs.fstatSync(fd);demand(n===s.size&&after.size===s.size&&after.ino===s.ino&&after.dev===s.dev&&after.mtimeMs===s.mtimeMs&&after.ctimeMs===s.ctimeMs,'PRIVATE_FILE_REQUIRED');
     return bytes.subarray(0,n);
@@ -108,7 +108,7 @@ function physicalTree(root,approved){
       const resolved=target(name);demand(!(fs.lstatSync(resolved).isDirectory()&&(dirname(name)===resolved||dirname(name).startsWith(resolved+'/'))),'TOOLCHAIN_REQUIRED');
       records.push([key,'symlink',String(s.dev),String(s.ino),text,relative(root,resolved)]);
     }else{demand((s.mode&0o022)===0,'TOOLCHAIN_REQUIRED');if(s.isDirectory())walk(name);else{demand(s.isFile()&&records.length<100000,'TOOLCHAIN_REQUIRED');
-      const raw=readFile(name,128_000_000);bytes+=raw.length;demand(bytes<=2_000_000_000,'TOOLCHAIN_REQUIRED');records.push([relative(root,name),String(s.dev),String(s.ino),s.mode&0o777,raw.length,digest(raw)]);}}
+      const raw=readFile(name,128_000_000,false,true);bytes+=raw.length;demand(bytes<=2_000_000_000,'TOOLCHAIN_REQUIRED');records.push([relative(root,name),String(s.dev),String(s.ino),s.mode&0o777,raw.length,digest(raw)]);}}
   }}
   walk(root);demand(records.length>0&&Object.keys(approved).length===found.size,'TOOLCHAIN_REQUIRED');return digest(encoded(records));
 }

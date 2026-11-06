@@ -299,3 +299,11 @@ test('Google cleanup drift after identity read prevents SDK revoke and retains c
   assert.equal(result.custodyIncomplete,true);assert.equal(result.requiresOwnerReview,true);assert.equal(f.api.claimMayClose(result),false);assert.equal(file.existsSync(join(store.path,'config')),true);
  }finally{f.close();}
 });
+test('Google tool files include empty SDK modules and larger binaries without changing private/source bounds',async()=>{
+ const f=await googleFixture();try{const root=join(f.root,'tool-files');file.mkdirSync(root,{mode:0o700});
+  const empty=join(root,'__init__.py'),binary=join(root,'library.a');file.writeFileSync(empty,Buffer.alloc(0),{mode:0o600});
+  file.writeFileSync(binary,Buffer.alloc(2_000_001),{mode:0o600});assert.match(f.api.physicalTree(root,{}),/^[a-f0-9]{64}$/u);
+  assert.throws(()=>f.api.readFile(empty,4096,true),{code:'P2Q_GOOGLE_PRIVATE_FILE_BOUND'});assert.throws(()=>f.api.readFile(binary,2_000_000),{code:'P2Q_GOOGLE_PRIVATE_FILE_BOUND'});
+  file.truncateSync(binary,128_000_001);assert.throws(()=>f.api.physicalTree(root,{}),{code:'P2Q_GOOGLE_PRIVATE_FILE_BOUND'});
+ }finally{f.close();}
+});
