@@ -4,11 +4,12 @@ import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { frontendProviderBindingsArtifact, frontendProviderMissingCapabilities, prepareFrontendProviderBindings, FRONTEND_VERCEL_PROJECT as PROJECT,
+import { frontendProviderBindingsArtifact, prepareFrontendProviderBindings, FRONTEND_VERCEL_PROJECT as PROJECT,
   FRONTEND_VERCEL_TEAM as TEAM, FRONTEND_VERCEL_REPOSITORY as REPOSITORY } from "./frontend-provider-bindings.mjs";
 import { frontendCoordinationHash as hash, validateFrontendFenceObservation } from "./frontend-release-inventory.mjs";
 import { frontendGoogleSnapshotSha256 } from "./frontend-google-effects.mjs";
-import { fenceFrontendExternalProducers, runFrontendVercelWorker, observeFrontendExternalFences, observeCompatibleFrontend } from "./frontend-release-adapters.mjs";
+import { frontendReleaseReceiptStore } from "./frontend-release-receipts.mjs";
+import { fenceFrontendExternalProducers, runFrontendVercelWorker, observeFrontendExternalFences, observeCompatibleFrontend, readFrontendEstablishedFence } from "./frontend-release-adapters.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 function fixture(provider = "square") {
@@ -63,6 +64,24 @@ test("Resend retirement artifact binds only isolated staging domain and exact sc
     r => { r.replacementKeyId = r.retiredKeyId; }, r => { r.expectedKeyIds.pop(); }, r => { r.webhookIds.push(r.webhookIds[0]); }]) {
     const changed = structuredClone(f.input); mutate(changed.resendRetirement);
     assert.throws(() => frontendProviderBindingsArtifact(changed, f.plan));
+  }
+});
+
+test("historical runtime records bind original source, exact selected physical login and all selected retired credential variables", () => {
+  const f = fixture("chitchats");
+  f.plan.historicalLogins = { retiredLogins: [{ name: "retired_runtime", oid: "123" }] };
+  const provider = f.plan.externalSurfaces.find(row => row.kind === "provider");
+  f.input.historicalRuntimeBindings = f.input.surfaces.filter(row => ["deployment", "direct-caller"].includes(row.kind)).map(surface => ({
+    surfaceSha256: surface.surfaceSha256, sourceCommit: surface.kind === "deployment" ? "b".repeat(40) : "c".repeat(40),
+    configurationRecordSha256: "1".repeat(64), databaseRole: { name: "retired_runtime", oid: "123" },
+    providerCredentials: [{ providerSurfaceSha256: provider.surfaceSha256, runtimeKey: "chitchatsRetiredToken" }],
+    currentEnvEquivalent: true, privatePassword: "private-marker" }));
+  assert.equal(JSON.stringify(frontendProviderBindingsArtifact(f.input, f.plan)).includes("private-marker"), false);
+  for (const change of [r => { r[0].sourceCommit = "e".repeat(40); }, r => { r[0].databaseRole.oid = "124"; },
+    r => { r[0].providerCredentials = []; }, r => { r[0].providerCredentials[0].runtimeKey = "arbitrarySecret"; },
+    r => { r[0].configurationRecordSha256 = "0".repeat(64); }]) {
+    const copy = structuredClone(f.input); change(copy.historicalRuntimeBindings);
+    assert.throws(() => frontendProviderBindingsArtifact(copy, f.plan));
   }
 });
 
@@ -154,16 +173,9 @@ test("restoration gateway binding selects an exact existing machine/configuratio
   }
 });
 
-test("missing historical/provider capabilities remain explicit for every surface without synthetic zero counts", () => {
-  const f = fixture(), missing = frontendProviderMissingCapabilities(f.artifact);
-  assert.equal(missing.length, f.plan.externalSurfaces.length);
-  assert.equal(new Set(missing.map(row => row.surfaceSha256)).size, missing.length);
-  assert.equal(missing.find(row => row.provider === "square").capability, "provider-credential-retirement-and-effect-reconciliation");
-});
-
 test("missing runtime context refuses before any provider process and records missing capabilities", async () => {
   const f = fixture(), records = [], context = { plan: f.plan, record: (name, value) => records.push({ name, value }), verifyLockedSession: () => {} };
-  await assert.rejects(fenceFrontendExternalProducers(context), /FRONTEND_PROVIDER_FENCE_CAPABILITY_MISSING/u);
+  await assert.rejects(fenceFrontendExternalProducers(context), /FRONTEND_PROVIDER_INGRESS_CONTROL_FAILED_REVIEW_REQUIRED/u);
   assert.equal(records.length, 1); assert.equal(records[0].value.historicalWritersFenced, false);
   assert.equal(records[0].value.activeExecutions, null); assert.equal(records[0].value.uncertainEffects, null);
   await assert.rejects(runFrontendVercelWorker("observe-vercel", context), /FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED/u);
@@ -194,6 +206,30 @@ test("unknown invocation/callback counts are retainable only in deliberate read-
   assert.equal(actual.surfaces.every(row => row.activeExecutions === null && row.uncertainEffects === null), true);
 });
 
+test("restoration rereads exact retained strict history instead of accepting a summary boolean or changed evidence", async () => {
+  const f = fixture(), nonce = "1".repeat(64), directory = realpathSync(mkdtempSync(join(tmpdir(), "frontend-established-fence-")));
+  try {
+    const store = frontendReleaseReceiptStore(directory), inventorySha256 = hash(f.plan);
+    const surfaces = f.plan.externalSurfaces.map(surface => {
+      const observation = Buffer.from(JSON.stringify({ status: "OWNED_OBSERVATION", surfaceSha256: surface.surfaceSha256 }));
+      const reconciliation = Buffer.from(JSON.stringify({ status: "OWNED_RECONCILIATION", rawInvocationCount: null }));
+      const state = surface.kind === "provider" ? "credentials-retired-and-effects-reconciled" : surface.kind === "scheduler" ?
+        "disabled-and-running-executions-reconciled" : "retired-and-effects-reconciled";
+      const evidence = Buffer.from(JSON.stringify({ version: 1, nonce, actionId: f.plan.actionId, sourceCommit: f.plan.sourceCommit, targetSha256: f.plan.targetSha256,
+        ...surface, state, activeExecutions: 0, uncertainEffects: 0, observationSha256: hash(observation), reconciliationSha256: hash(reconciliation) }));
+      return { surfaceSha256: surface.surfaceSha256, evidence, evidenceSha256: hash(evidence), observation, reconciliation };
+    });
+    const proof = await validateFrontendFenceObservation(f.plan, nonce, { version: 1, nonce, actionId: f.plan.actionId, sourceCommit: f.plan.sourceCommit,
+      targetSha256: f.plan.targetSha256, inventorySha256, surfaces }, store.retain);
+    await store.record("external-fences-after-promotion.json", proof);
+    const observed = await readFrontendEstablishedFence({ plan: f.plan, inventorySha256, directory });
+    assert.equal(observed.strictEvidenceSha256.length, f.plan.externalSurfaces.length);
+    const changed = { ...JSON.parse(surfaces[0].evidence.toString("utf8")), fenced: true };
+    writeFileSync(join(directory, `${nonce}-${f.plan.externalSurfaces[0].surfaceSha256}.json`), JSON.stringify(changed));
+    await assert.rejects(readFrontendEstablishedFence({ plan: f.plan, inventorySha256, directory }));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 async function protocolFixture(code, task) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "frontend-provider-protocol-"))), app = join(directory, "app");
   try {
@@ -201,7 +237,7 @@ async function protocolFixture(code, task) {
     mkdirSync(join(app, "scripts"), { recursive: true });
     for (const name of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"])
       copyFileSync(join(root, "scripts", name), join(app, "scripts", name));
-    const modules = ["frontend-release-restoration", "frontend-admission", "frontend-square-effects", "frontend-google-effects", "frontend-crm-shipping-effects", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
+    const modules = ["frontend-release-restoration", "frontend-admission", "frontend-square-effects", "frontend-google-effects", "frontend-crm-shipping-effects", "frontend-historical-capabilities", "frontend-provider-fence-join", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
       "frontend-migration", "frontend-schema", "source-checkout", "source-policy", "release-inputs", "release"];
     for (const name of modules) copyFileSync(join(root, "ops/platform", `${name}.mjs`), join(app, "ops/platform", `${name}.mjs`));
     copyFileSync(join(root, "src/lib/private-db/migration-lineage.ts"), join(app, "src/lib/private-db/migration-lineage.ts"));
@@ -246,5 +282,20 @@ assert sys.stdin.readline()==''
 `, async (adapter, context) => {
     let calls = 0; context.verifyLockedSession = async () => { if (++calls === 3) throw new Error("private-lock-marker"); };
     await assert.rejects(adapter.runFrontendVercelWorker("observe-vercel", context), /FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED/u);
+  });
+});
+
+test("the same action cannot substitute an arbitrary denied credential after preflight", async () => {
+  await protocolFixture(`import json,sys
+json.loads(sys.stdin.readline())
+print(json.dumps({'type':'result','value':{'status':'OWNED_PROTOCOL_PASS'}}),flush=True)
+`, async (adapter, context) => {
+    const supplier = context.getProviderContext;
+    let retired = "original-owned-retired-token";
+    context.getProviderContext = async () => ({ ...await supplier(), squareRetiredToken: retired });
+    await adapter.runFrontendVercelWorker("observe-vercel", context);
+    retired = "arbitrary-invalid-substitute";
+    await assert.rejects(adapter.runFrontendVercelWorker("observe-vercel", context), error =>
+      error.message === "FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED");
   });
 });

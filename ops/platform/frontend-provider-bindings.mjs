@@ -191,21 +191,35 @@ export function frontendProviderBindingsArtifact(input, plan) {
     }
     result[key] = row;
   }
+  if (input.historicalRuntimeBindings !== undefined) {
+    demand(Array.isArray(input.historicalRuntimeBindings) && input.historicalRuntimeBindings.length <= 4096);
+    const keys = { square: ["squareRetiredToken"], resend: ["resendRetiredToken"], highlevel: ["highlevelRetiredToken"],
+      chitchats: ["chitchatsRetiredToken"], google: ["googleIdentityRetiredSecret", "googleCalendarRetiredSecret"],
+      "google-identity": ["googleIdentityRetiredSecret"], "google-calendar": ["googleCalendarRetiredSecret"], sanity: [] };
+    result.historicalRuntimeBindings = input.historicalRuntimeBindings.map(row => {
+      const surface = surfaces.find(surface => surface.surfaceSha256 === row?.surfaceSha256);
+      demand(surface && ["deployment", "direct-caller"].includes(surface.kind) && commit(row.sourceCommit) && digest(row.configurationRecordSha256) &&
+        plan.historicalLogins?.retiredLogins.some(role => role.name === row.databaseRole?.name && role.oid === row.databaseRole?.oid) &&
+        Array.isArray(row.providerCredentials));
+      if (surface.kind === "deployment") demand(deployments.find(item => item.deploymentId === surface.identity.deploymentId).sourceCommit === row.sourceCommit);
+      const expected = surfaces.filter(surface => surface.kind === "provider").flatMap(surface =>
+        (keys[surface.identity.provider] ?? []).map(runtimeKey => ({ providerSurfaceSha256: surface.surfaceSha256, runtimeKey })));
+      const providerCredentials = row.providerCredentials.map(binding => {
+        demand(expected.some(item => item.providerSurfaceSha256 === binding?.providerSurfaceSha256 && item.runtimeKey === binding.runtimeKey));
+        return { providerSurfaceSha256: binding.providerSurfaceSha256, runtimeKey: binding.runtimeKey };
+      }).sort((a, b) => a.runtimeKey.localeCompare(b.runtimeKey));
+      demand(new Set(providerCredentials.map(item => item.runtimeKey)).size === providerCredentials.length &&
+        hash(providerCredentials) === hash(expected.sort((a, b) => a.runtimeKey.localeCompare(b.runtimeKey))));
+      return { surfaceSha256: row.surfaceSha256, sourceCommit: row.sourceCommit, configurationRecordSha256: row.configurationRecordSha256,
+        databaseRole: { name: row.databaseRole.name, oid: row.databaseRole.oid }, providerCredentials };
+    }).sort((a, b) => a.surfaceSha256.localeCompare(b.surfaceSha256));
+    demand(new Set(result.historicalRuntimeBindings.map(row => row.surfaceSha256)).size === result.historicalRuntimeBindings.length);
+  }
   if (plan.restoration !== undefined) demand(result.gatewayObservation && hash(result.gatewayObservation) === plan.restoration.gatewayBindingSha256);
   return result;
 }
-
 export function prepareFrontendProviderBindings(input, plan) {
   const result = frontendProviderBindingsArtifact(input, plan);
   demand(digest(plan.providerBindingsSha256) && hash(result) === plan.providerBindingsSha256);
   return result;
-}
-
-export function frontendProviderMissingCapabilities(bindings) {
-  return bindings.surfaces.map(surface => ({ surfaceSha256: surface.surfaceSha256,
-    provider: surface.identity.provider, kind: surface.kind,
-    capability: surface.kind === "deployment" ? "historical-deployment-database-provider-and-callback-fence" :
-      surface.kind === "scheduler" ? "running-native-invocation-and-deferred-effects-reconciliation" :
-        surface.kind === "direct-caller" ? "direct-caller-credential-retirement-and-effect-reconciliation" :
-          "provider-credential-retirement-and-effect-reconciliation" }));
 }

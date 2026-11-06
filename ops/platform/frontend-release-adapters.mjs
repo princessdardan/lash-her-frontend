@@ -4,16 +4,19 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname, sep } from "node:path";
-import { frontendPrivateReceiptDirectory } from "./frontend-release-receipts.mjs";
-import { frontendCoordinationHash as hash } from "./frontend-release-inventory.mjs";
+import { frontendPrivateReceiptDirectory, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
+import { frontendCoordinationHash as hash, validateFrontendFenceObservation } from "./frontend-release-inventory.mjs";
 import { observeFrontendSquareEffects } from "./frontend-square-effects.mjs";
 import { observeFrontendGoogleDatabase } from "./frontend-google-effects.mjs";
 import { observeFrontendCrmShippingDatabase, frontendCrmShippingSnapshotSha256 } from "./frontend-crm-shipping-effects.mjs";
-import { prepareFrontendProviderBindings, frontendProviderMissingCapabilities } from "./frontend-provider-bindings.mjs";
+import { observeHistoricalFrontendCapabilityBindings, observeHistoricalFrontendDatabaseFence } from "./frontend-historical-capabilities.mjs";
+import { deriveFrontendProviderFence } from "./frontend-provider-fence-join.mjs";
+import { prepareFrontendProviderBindings } from "./frontend-provider-bindings.mjs";
 
 const demand = ok => { if (!ok) throw new Error("FRONTEND_PROVIDER_ADAPTER_REFUSED"); };
 const script = fileURLToPath(new URL("./host/frontend_release_adapters.py", import.meta.url));
 const fields = (value, keys) => Object.fromEntries(keys.map(key => [key, value?.[key]]));
+const privateActionCredentials = new WeakMap();
 
 async function runtime(context) {
   try {
@@ -22,6 +25,18 @@ async function runtime(context) {
   const value = await context.getProviderContext(Object.freeze({ actionId: context.plan.actionId,
     sourceCommit: context.plan.sourceCommit, targetSha256: context.plan.targetSha256 }));
   const bindings = prepareFrontendProviderBindings(value?.bindings, context.plan);
+  let actions = privateActionCredentials.get(context.getProviderContext);
+  if (!actions) { actions = new Map(); privateActionCredentials.set(context.getProviderContext, actions); }
+  const scope = `${context.plan.actionId}:${context.plan.sourceCommit}:${context.plan.targetSha256}:${context.plan.providerBindingsSha256}`;
+  let fixed = actions.get(scope);
+  if (!fixed) { fixed = new Map(); actions.set(scope, fixed); }
+  for (const key of ["squareRetiredToken", "squareReplacementToken", "resendRetiredToken", "resendReplacementToken",
+    "highlevelRetiredToken", "highlevelReplacementToken", "chitchatsRetiredToken", "chitchatsReplacementToken",
+    "googleIdentityRetiredSecret", "googleIdentityReplacementSecret", "googleCalendarRetiredSecret", "googleCalendarReplacementSecret",
+    "sanityRetiredToken", "sanityReplacementToken"]) {
+    if (fixed.has(key)) demand(value[key] === fixed.get(key));
+    else if (typeof value[key] === "string") fixed.set(key, value[key]);
+  }
   frontendPrivateReceiptDirectory(context.directory);
   if (context.plan.restoration !== undefined) {
     demand(typeof value.gatewayRuntimeDirectory === "string");
@@ -47,7 +62,7 @@ async function runtime(context) {
 export async function runFrontendVercelWorker(operation, context) {
   let child, output, failed = false, deadline, killDeadline, received = false, bytes = 0, processing = Promise.resolve();
   try {
-    demand(["observe-vercel", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments", "retire-resend", "observe-resend", "observe-resend-effects", "verify-square", "observe-square", "suspend-square", "suspend-sanity", "observe-sanity", "retire-google", "observe-google", "suspend-highlevel", "verify-highlevel", "observe-highlevel", "suspend-chitchats", "verify-chitchats", "observe-chitchats", "observe-restoration"].includes(operation));
+    demand(["observe-vercel", "observe-retired-capabilities", "suspend-schedules", "deploy-compatible", "observe-compatible", "deploy-admission", "observe-admission", "retire-deployments", "retire-resend", "observe-resend", "observe-resend-effects", "verify-square", "retire-square", "observe-square", "suspend-square", "suspend-sanity", "observe-sanity", "retire-google", "observe-google", "suspend-highlevel", "verify-highlevel", "retire-highlevel", "observe-highlevel", "suspend-chitchats", "verify-chitchats", "retire-chitchats", "observe-chitchats", "observe-restoration"].includes(operation));
     const { value, bindings, candidate } = await runtime(context);
     const payload = { operation, plan: fields(context.plan, ["environment", "actionId", "sourceCommit", "targetSha256", "bootstrapCompatibility", "restoration"]),
       candidate, bindings, directory: context.directory, vercelToken: value.vercelToken,
@@ -55,12 +70,27 @@ export async function runFrontendVercelWorker(operation, context) {
       ...(context.database ? { database: context.database } : {}),
       ...(context.preapplicationSchema ? { preapplicationSchema: context.preapplicationSchema } : {}),
       ...(context.admissionObservation ? { admissionObservation: context.admissionObservation } : {}) };
+    if (operation.startsWith("retire-")) {
+      const remaining = context.deadline === undefined ? context.plan.observationBudgetSeconds : Math.ceil((context.deadline - performance.now()) / 1000);
+      demand(Number.isInteger(remaining) && remaining > 0);
+      payload.retirementObservationSeconds = Math.min(300, remaining);
+    }
+    if (operation === "observe-retired-capabilities") {
+      for (const [provider, keys] of [["google", ["googleIdentityReplacementSecret", "googleCalendarReplacementSecret", "googleIdentityRetiredSecret", "googleCalendarRetiredSecret"]],
+        ["chitchats", ["chitchatsReplacementToken", "chitchatsRetiredToken"]], ["sanity", ["sanityReplacementToken", "sanityRetiredToken"]]]) {
+        if (!bindings[`${provider}Retirement`]) continue;
+        for (const key of keys) {
+          demand(typeof value[key] === "string" && value[key].length > 0 && value[key].length <= 8192 && /^[!-~]+$/u.test(value[key]));
+          payload[key] = value[key];
+        }
+      }
+    }
     if (operation === "observe-restoration") {
       demand(bindings.gatewayObservation && hash(bindings.gatewayObservation) === context.plan.restoration?.gatewayBindingSha256 &&
         typeof value.gatewayRuntimeDirectory === "string");
       payload.gatewayRuntimeDirectory = frontendPrivateReceiptDirectory(value.gatewayRuntimeDirectory);
     }
-    if (bindings.squareRetirement && ["deploy-admission", "verify-square", "observe-square", "suspend-square"].includes(operation)) {
+    if (bindings.squareRetirement && ["deploy-admission", "verify-square", "retire-square", "observe-square", "suspend-square"].includes(operation)) {
       demand(typeof value.squareReplacementToken === "string" && value.squareReplacementToken.length > 0 && value.squareReplacementToken.length <= 8192 &&
         /^[!-~]+$/u.test(value.squareReplacementToken));
       payload.squareReplacementToken = value.squareReplacementToken;
@@ -102,7 +132,7 @@ export async function runFrontendVercelWorker(operation, context) {
         payload.googleActual = await observeFrontendGoogleDatabase(context.databaseClient, bindings.googleRetirement, value, context.verifyLockedSession, false);
       }
     }
-    const crmShipping = /^(suspend|verify|observe)-(highlevel|chitchats)$/u.exec(operation);
+    const crmShipping = /^(suspend|verify|retire|observe)-(highlevel|chitchats)$/u.exec(operation);
     let crmShippingActual, crmShippingReviewed;
     if (crmShipping) {
       const provider = crmShipping[2], prefix = provider === "highlevel" ? "highlevel" : "chitchats";
@@ -113,7 +143,7 @@ export async function runFrontendVercelWorker(operation, context) {
         payload[prefix + suffix] = token;
       }
       demand(value[prefix + "ReplacementToken"] !== value[prefix + "RetiredToken"]);
-      if (provider === "highlevel" && crmShippingReviewed.credentialKind === "oauth-installation" && crmShipping[1] === "verify") {
+      if (provider === "highlevel" && crmShippingReviewed.credentialKind === "oauth-installation" && ["verify", "retire"].includes(crmShipping[1])) {
         const refresh = value.highlevelRetiredRefreshCredentials;
         demand(refresh?.client_id === crmShippingReviewed.oauthClientId && ["client_id", "client_secret", "refresh_token"].every(key =>
           typeof refresh[key] === "string" && refresh[key].length > 0 && refresh[key].length <= 8192 && /^[!-~]+$/u.test(refresh[key])));
@@ -133,7 +163,7 @@ export async function runFrontendVercelWorker(operation, context) {
         payload.resendRetiredToken = value.resendRetiredToken;
       }
     }
-    if (["retire-resend", "verify-square", "suspend-square", "retire-google"].includes(operation)) {
+    if (["retire-resend", "verify-square", "retire-square", "suspend-square", "retire-google"].includes(operation)) {
       const privateDirectory = frontendPrivateReceiptDirectory(value.privateConfigurationDirectory);
       demand(privateDirectory !== context.directory && !privateDirectory.startsWith(context.directory + sep));
       payload.privateConfigurationDirectory = privateDirectory;
@@ -189,7 +219,8 @@ export async function runFrontendVercelWorker(operation, context) {
       }).catch(stop);
     });
     child.stdin.on("error", stop); child.stdout.on("error", stop);
-    deadline = setTimeout(stop, 20 * 60_000);
+    const workerBudget = context.deadline === undefined ? 20 * 60_000 : Math.min(20 * 60_000, context.deadline - performance.now());
+    demand(workerBudget > 0); deadline = setTimeout(stop, workerBudget);
     const exit = new Promise(resolve => { child.once("error", () => { failed = true; resolve(null); }); child.once("close", code => resolve(code)); });
     child.stdin.write(raw);
     const code = await exit; await processing;
@@ -211,29 +242,40 @@ export async function runFrontendVercelWorker(operation, context) {
 }
 
 export async function fenceFrontendExternalProducers(context) {
-  let missing = [{ capability: "runtime-provider-context-and-reviewed-binding-inventory" }], projectMetadataObserved = false;
   try {
-    const { bindings } = await runtime(context); missing = frontendProviderMissingCapabilities(bindings);
-    // Read real metadata so a capability refusal carries an actual project
-    // observation. Disabling a scheduler cannot establish callback/key drain.
-    const observed = await runFrontendVercelWorker("observe-vercel", context);
-    await context.record("provider-vercel-fence-preflight.json", observed);
-    projectMetadataObserved = true;
-  } catch { /* retain explicit missing capabilities without private errors */
-  } finally {
-    demand(typeof context.record === "function");
+    demand(context.admissionObservation?.newWork === false && typeof context.record === "function");
+    const { bindings, value } = await runtime(context);
+    const before = await observeHistoricalFrontendCapabilityBindings(context, bindings, value);
+    await context.record("historical-capability-bindings-before.json", before);
+    await context.record("provider-vercel-fence-preflight.json", await runFrontendVercelWorker("observe-vercel", context));
+    await context.record("provider-schedules-suspended.json", await suspendFrontendVercelSchedules(context));
+    if (bindings.deploymentRetirement) await context.record("provider-deployments-retired.json", await retireFrontendVercelDeployments(context));
+    if (bindings.sanityRetirement) await context.record("provider-sanity-suspended.json", await suspendFrontendSanityHooks(context));
+    for (const provider of ["highlevel", "chitchats"]) if (bindings[`${provider}Retirement`])
+      await context.record(`provider-${provider}-before.json`, await suspendFrontendCrmShippingCredential(provider, context));
+    return { status: "FRONTEND_SELECTED_INGRESS_CONTROLS_OBSERVED", historicalWritersFenced: false,
+      activeExecutions: null, uncertainEffects: null };
+  } catch {
     try { await context.record("provider-fencing-capabilities.json", { version: 1, environment: "staging", actionId: context.plan.actionId,
       sourceCommit: context.plan.sourceCommit, targetSha256: context.plan.targetSha256,
-      status: "FRONTEND_PROVIDER_FENCE_CAPABILITY_MISSING", missing,
-      projectMetadataObserved,
+      status: "FRONTEND_SELECTED_INGRESS_CONTROL_FAILED_REQUIRES_REVIEW",
       historicalWritersFenced: false, activeExecutions: null, uncertainEffects: null, migrationAuthorized: false, trafficAuthorized: false }); }
     catch { throw new Error("FRONTEND_PROVIDER_CAPABILITY_RECEIPT_FAILED_REVIEW_REQUIRED"); }
+    throw new Error("FRONTEND_PROVIDER_INGRESS_CONTROL_FAILED_REVIEW_REQUIRED");
   }
-  throw new Error("FRONTEND_PROVIDER_FENCE_CAPABILITY_MISSING");
 }
 
-// Qualified subcomponent only. The whole fence above intentionally refuses
-// until every vendor/callback/credential surface has actual supported controls.
+export async function reconcileFrontendExternalProducers(context) {
+  demand(context.admissionObservation?.newWork === false && context.admissionObservation.recovery === false &&
+    context.admissionObservation.ledgerDrained === true && typeof context.record === "function");
+  const { bindings } = await runtime(context);
+  for (const [provider, operation] of [["square", "retire-square"], ["resend", "retire-resend"], ["google", "retire-google"],
+    ["highlevel", "retire-highlevel"], ["chitchats", "retire-chitchats"]]) {
+    if (bindings[`${provider}Retirement`]) await context.record(`provider-${provider}-retired.json`, await runFrontendVercelWorker(operation, context));
+  }
+}
+
+// Qualified controls do not independently establish running/effect drain.
 export async function suspendFrontendVercelSchedules(context) {
   return runFrontendVercelWorker("suspend-schedules", context);
 }
@@ -302,20 +344,77 @@ export async function observeFrontendCrmShippingScope(provider, context) {
   return runFrontendVercelWorker(`observe-${provider}`, context);
 }
 
+export async function readFrontendEstablishedFence(context) {
+  const sourceDirectory = context.originalDirectory ?? context.directory;
+  const bytes = readFrontendReleaseEvidence(sourceDirectory, "external-fences-after-promotion.json");
+  const proof = JSON.parse(bytes.toString("utf8"));
+  demand(proof.inventorySha256 === context.inventorySha256 && /^[a-f0-9]{64}$/u.test(proof.nonce) &&
+    Array.isArray(proof.surfaces) && proof.surfaces.length === context.plan.externalSurfaces.length);
+  const surfaces = context.plan.externalSurfaces.map(surface => {
+    const evidence = readFrontendReleaseEvidence(sourceDirectory, `${proof.nonce}-${surface.surfaceSha256}.json`);
+    demand(hash(evidence) === proof.surfaces.find(row => row.surfaceSha256 === surface.surfaceSha256)?.evidenceSha256);
+    return { surfaceSha256: surface.surfaceSha256, evidence, evidenceSha256: hash(evidence),
+      observation: readFrontendReleaseEvidence(sourceDirectory, `${proof.nonce}-${hash({ surfaceSha256: surface.surfaceSha256, artifact: "observation" })}.json`),
+      reconciliation: readFrontendReleaseEvidence(sourceDirectory, `${proof.nonce}-${hash({ surfaceSha256: surface.surfaceSha256, artifact: "reconciliation" })}.json`) };
+  });
+  await validateFrontendFenceObservation(context.plan, proof.nonce, { version: 1, nonce: proof.nonce, actionId: context.plan.actionId,
+    sourceCommit: context.plan.sourceCommit, targetSha256: context.plan.targetSha256, inventorySha256: context.inventorySha256, surfaces }, async () => {});
+  return { proofSha256: hash(bytes), strictEvidenceSha256: surfaces.map(row => row.evidenceSha256) };
+}
+
 export async function observeFrontendExternalFences(context) {
   const { bindings } = await runtime(context);
-  const observed = await runFrontendVercelWorker("observe-vercel", context);
-  const resend = bindings.resendRetirement ? await runFrontendVercelWorker("observe-resend", context) : undefined;
+  const observations = { vercel: await runFrontendVercelWorker("observe-vercel", context), retirements: {} };
+  const sourceDirectory = context.originalDirectory ?? context.directory;
+  const readOriginal = name => {
+    try {
+      const result = JSON.parse(readFrontendReleaseEvidence(sourceDirectory, name).toString("utf8"));
+      demand(["actionId", "sourceCommit", "targetSha256"].every(key => result[key] === context.plan[key]));
+      return result;
+    } catch { return null; }
+  };
+  const before = readOriginal("historical-capability-bindings-before.json");
+  const database = await observeHistoricalFrontendDatabaseFence(context);
+  const restoreOpen = context.checkpoint?.startsWith("restoration-") && (database.admission.newWork || database.admission.recovery);
+  if (restoreOpen) {
+    // Initial settled history stays immutable. Current admitted work may create
+    // new provider objects after reopening, so reread the exact earlier strict
+    // proof and only the historical capabilities that must remain denied.
+    const established = await readFrontendEstablishedFence(context);
+    const capabilities = await runFrontendVercelWorker("observe-retired-capabilities", context);
+    observations.establishedHistoricalFence = { ...established, retiredCapabilities: capabilities.providers };
+  }
+  const selected = new Set(bindings.surfaces.filter(row => row.kind === "provider").map(row => row.identity.provider));
+  for (const name of selected) {
+    const provider = ["google-identity", "google-calendar"].includes(name) ? "google" : name;
+    if (observations[provider] === undefined) {
+      const key = `${provider}Retirement`;
+      if (!bindings[key]) observations[provider] = { status: "SELECTED_PROVIDER_BINDING_MISSING", provider };
+      else if (restoreOpen) observations[provider] = observations.establishedHistoricalFence.retiredCapabilities[provider] ??
+        { status: "HISTORICAL_CAPABILITY_READBACK_MISSING", provider };
+      else try {
+        observations[provider] = await runFrontendVercelWorker(`observe-${provider}`, context);
+        if (provider === "resend") observations.resendEmails = await observeFrontendResendEffects(context);
+      } catch { observations[provider] = { status: "OBSERVATION_FAILED_REQUIRES_REVIEW", provider }; }
+      observations.retirements[provider] = readOriginal(`provider-${provider}-${provider === "sanity" ? "suspended" : "retired"}.json`);
+    }
+    observations[name] = observations[provider];
+  }
+  const joined = deriveFrontendProviderFence(context.plan, bindings, observations, database, before);
   return { version: 1, nonce: context.nonce, actionId: context.plan.actionId, sourceCommit: context.plan.sourceCommit,
     targetSha256: context.plan.targetSha256, inventorySha256: context.inventorySha256,
     surfaces: bindings.surfaces.map(surface => {
-      const observation = Buffer.from(JSON.stringify(surface.identity.provider === "vercel" ? observed : surface.identity.provider === "resend" && resend ? resend : {
-        status: "PROVIDER_OBSERVATION_UNSUPPORTED", surfaceSha256: surface.surfaceSha256, provider: surface.identity.provider }));
-      const reconciliation = Buffer.from(JSON.stringify({ status: "EFFECT_RECONCILIATION_UNAVAILABLE", surfaceSha256: surface.surfaceSha256,
-        missing: frontendProviderMissingCapabilities(bindings).filter(row => row.surfaceSha256 === surface.surfaceSha256) }));
+      const derived = joined.find(row => row.surfaceSha256 === surface.surfaceSha256);
+      const observation = Buffer.from(JSON.stringify({ provider: observations[surface.identity.provider] ?? observations,
+        database, historicalCapabilityBefore: before, retirementReceipts: observations.retirements }));
+      const reconciliation = Buffer.from(JSON.stringify({ ...derived.reconciliation,
+        evidenceIds: { historicalCapabilityBeforeSha256: before ? hash(before) : null, physicalDatabaseReadbackSha256: hash(database),
+          providerReadbackSha256: hash(observations[surface.identity.provider] ?? observations), retirementReceiptsSha256: hash(observations.retirements),
+          vercelIngressReadbackSha256: hash(observations.vercel) } }));
       const evidence = Buffer.from(JSON.stringify({ version: 1, nonce: context.nonce, actionId: context.plan.actionId,
         sourceCommit: context.plan.sourceCommit, targetSha256: context.plan.targetSha256, surfaceSha256: surface.surfaceSha256,
-        identitySha256: hash(surface.identity), kind: surface.kind, state: "unfenced", activeExecutions: null, uncertainEffects: null,
+        identitySha256: hash(surface.identity), kind: surface.kind, state: derived.state,
+        activeExecutions: derived.activeExecutions, uncertainEffects: derived.uncertainEffects,
         observationSha256: hash(observation), reconciliationSha256: hash(reconciliation) }));
       return { surfaceSha256: surface.surfaceSha256, evidence, evidenceSha256: hash(evidence), observation, reconciliation };
     }) };

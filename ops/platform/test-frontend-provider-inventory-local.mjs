@@ -11,6 +11,7 @@ import { frontendMigrationArtifact } from "./frontend-migration.mjs";
 import { observeFrontendOperationalProviderInventory } from "./frontend-operational-provider-inventory.mjs";
 import { observeFrontendGoogleDatabase, frontendGoogleSnapshotSha256 } from "./frontend-google-effects.mjs";
 import { observeFrontendCrmShippingDatabase, frontendCrmShippingSnapshotSha256 } from "./frontend-crm-shipping-effects.mjs";
+import { observeHistoricalFrontendCapabilityBindings, observeHistoricalFrontendDatabaseFence } from "./frontend-historical-capabilities.mjs";
 
 assert.equal(process.env.FRONTEND_PROVIDER_INVENTORY_LOCAL_TEST, "true");
 assert.equal(process.versions.node.split(".")[0], "24");
@@ -29,12 +30,33 @@ try {
   run("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost",
     "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1", "-keyout", key, "-out", certificate]); chmodSync(key, 0o600);
   writeFileSync(join(data, "postgresql.conf"), `listen_addresses='127.0.0.1'\nport=${port}\nunix_socket_directories=''\nssl=on\nssl_cert_file='${certificate}'\nssl_key_file='${key}'\n`);
-  writeFileSync(join(data, "pg_hba.conf"), "hostssl all provider_test 127.0.0.1/32 trust\n");
+  writeFileSync(join(data, "pg_hba.conf"), "hostssl all provider_test 127.0.0.1/32 trust\nhostssl all provider_retired 127.0.0.1/32 scram-sha-256\n");
   run(join(binaries, "pg_ctl"), ["-D", data, "-l", join(directory, "postgres.log"), "-w", "start"]); running = true;
   client = new Client({ host: "127.0.0.1", port, user: "provider_test", database: "postgres",
     ssl: { rejectUnauthorized: true, ca: readFileSync(certificate, "utf8") } });
   await client.connect();
   const verify = async () => { assert.equal(client.connection.stream.encrypted, true); assert.equal(client.connection.stream.authorized, true); };
+  await client.query("CREATE ROLE provider_retired LOGIN NOINHERIT PASSWORD 'owned-capability-fixture-password'");
+  const retiredOid = (await client.query("SELECT oid::text FROM pg_roles WHERE rolname='provider_retired'")).rows[0].oid;
+  const capabilityPlan = { actionId: "owned-capability", sourceCommit: "a".repeat(40), targetSha256: "b".repeat(64),
+    historicalLogins: { target: { host: "127.0.0.1", port, database: "postgres", serverMajor: Number(run(join(binaries, "postgres"), ["--version"]).match(/PostgreSQL\) (\d+)/u)[1]) } } };
+  const capabilityBindings = { surfaces: [{ kind: "deployment", surfaceSha256: "c".repeat(64) }], historicalRuntimeBindings: [{
+    surfaceSha256: "c".repeat(64), sourceCommit: capabilityPlan.sourceCommit, configurationRecordSha256: "d".repeat(64),
+    databaseRole: { name: "provider_retired", oid: retiredOid }, providerCredentials: [{ runtimeKey: "chitchatsRetiredToken", providerSurfaceSha256: "e".repeat(64) }] }] };
+  const privateCapabilities = { chitchatsRetiredToken: "owned-provider-token", historicalRuntimeConfigurations: { ["c".repeat(64)]: {
+    sourceCommit: capabilityPlan.sourceCommit, configurationRecordSha256: "d".repeat(64),
+    databaseUrl: `postgresql://provider_retired:owned-capability-fixture-password@127.0.0.1:${port}/postgres?sslmode=verify-full`,
+    providerCredentials: { chitchatsRetiredToken: "owned-provider-token" } } } };
+  const observedCapabilities = await observeHistoricalFrontendCapabilityBindings({ plan: capabilityPlan, databaseClient: client, verifyLockedSession: verify },
+    capabilityBindings, privateCapabilities, { createClient: options => new Client({ ...options, ssl: { ...options.ssl, ca: readFileSync(certificate, "utf8") } }) });
+  assert.equal(observedCapabilities.bindings[0].samePhysicalDatabaseVerified, true);
+  assert.equal(observedCapabilities.rawInvocationCount, null);
+  assert.equal(JSON.stringify(observedCapabilities).includes("owned-provider-token"), false);
+  assert.equal(JSON.stringify(observedCapabilities).includes("owned-capability-fixture-password"), false);
+  assert.equal((await client.query("SELECT count(*)::int AS count FROM pg_locks WHERE locktype='advisory' AND pid=pg_backend_pid()")).rows[0].count, 0);
+  const mismatch = structuredClone(privateCapabilities); mismatch.historicalRuntimeConfigurations["c".repeat(64)].providerCredentials.chitchatsRetiredToken = "different-token";
+  await assert.rejects(observeHistoricalFrontendCapabilityBindings({ plan: capabilityPlan, databaseClient: client, verifyLockedSession: verify }, capabilityBindings, mismatch),
+    /FRONTEND_HISTORICAL_CAPABILITY_BINDING_REFUSED/u);
   const absent = await observeFrontendOperationalProviderInventory(client, verify);
   assert.equal(absent.tables.every(table => table.present === false && table.rowCount === null), true);
   const artifact = frontendMigrationArtifact();
@@ -43,6 +65,27 @@ try {
     try { for (const statement of migration.sql) await client.query(statement); await client.query("COMMIT"); }
     catch (error) { await client.query("ROLLBACK"); throw error; }
   }
+  await client.query("CREATE ROLE provider_admission_owner NOLOGIN NOINHERIT");
+  await client.query("GRANT CREATE ON DATABASE postgres TO provider_admission_owner");
+  await client.query("SET ROLE provider_admission_owner");
+  try {
+    await client.query(readFileSync(new URL("./frontend-admission.sql", import.meta.url), "utf8"));
+    await client.query("INSERT INTO frontend_admission.control(environment,target_sha256) VALUES('staging',$1)", [capabilityPlan.targetSha256]);
+  } finally { await client.query("RESET ROLE"); }
+  capabilityPlan.owner = { name: "provider_admission_owner", oid: (await client.query("SELECT oid::text FROM pg_roles WHERE rolname='provider_admission_owner'")).rows[0].oid };
+  capabilityPlan.historicalLogins.retiredLogins = [{ name: "provider_retired", oid: retiredOid }];
+  await client.query("ALTER ROLE provider_retired NOLOGIN");
+  const actualDatabaseFence = await observeHistoricalFrontendDatabaseFence({ plan: capabilityPlan, databaseClient: client, verifyLockedSession: verify });
+  assert.equal(actualDatabaseFence.retiredLoginsDenied, true);
+  assert.equal(actualDatabaseFence.retiredRolesDedicated, true);
+  assert.equal(actualDatabaseFence.selectedSessions, 0);
+  assert.deepEqual(actualDatabaseFence.admission, { newWork: false, recovery: false, active: 0, uncertain: 0 });
+  await client.query("INSERT INTO frontend_admission.producers(producer_sha256,source_sha,database_role) VALUES($1,$2,$3::oid)",
+    ["f".repeat(64), capabilityPlan.sourceCommit, retiredOid]);
+  await client.query("INSERT INTO frontend_admission.operations(id,producer_sha256,source_sha,database_role,epoch,kind,state) VALUES($1::uuid,$2,$3,$4::oid,1,'recovery','uncertain')",
+    [randomUUID(), "f".repeat(64), capabilityPlan.sourceCommit, retiredOid]);
+  const uncertainDatabaseFence = await observeHistoricalFrontendDatabaseFence({ plan: capabilityPlan, databaseClient: client, verifyLockedSession: verify });
+  assert.equal(uncertainDatabaseFence.admission.uncertain, 1);
   const baseline = await observeFrontendOperationalProviderInventory(client, verify);
   assert.equal(baseline.tables.every(table => table.present), true);
   const connectionId = randomUUID(), rawKey = randomBytes(32), iv = randomBytes(12);

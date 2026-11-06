@@ -26,9 +26,8 @@ const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const demand = ok => { if (!ok) throw new Error("FRONTEND_RELEASE_COORDINATION_REFUSED"); };
 const immutable = value => { if (value && typeof value === "object" && !Object.isFrozen(value)) { Object.values(value).forEach(immutable); Object.freeze(value); } return value; };
 
-// The fixed adapter's whole-fence export refuses unsupported historical/vendor
-// capabilities. Neither input JSON nor an arbitrary callback can substitute
-// source-qualified controls or a successful-looking fence certificate.
+// Neither input JSON nor an arbitrary callback can substitute source-qualified
+// controls or observations for the source-owned final fence predicate.
 export async function loadFrontendReleaseAdapters(sourceRoot, expectedSha256) {
   const relative = "ops/platform/frontend-release-adapters.mjs", path = join(sourceRoot, relative);
   for (const part of ["ops", "ops/platform", relative]) demand(!lstatSync(join(sourceRoot, part)).isSymbolicLink());
@@ -36,7 +35,7 @@ export async function loadFrontendReleaseAdapters(sourceRoot, expectedSha256) {
   demand(bytes.length > 0 && bytes.length <= 2_000_000 && frontendCoordinationHash(bytes) === expectedSha256);
   const adapters = await import(`${pathToFileURL(path).href}?source=${expectedSha256}`);
   demand(frontendCoordinationHash(readFileSync(path)) === expectedSha256 &&
-    ["fenceFrontendExternalProducers", "observeFrontendExternalFences", "deployCompatibleFrontend", "observeCompatibleFrontend",
+    ["fenceFrontendExternalProducers", "reconcileFrontendExternalProducers", "observeFrontendExternalFences", "deployCompatibleFrontend", "observeCompatibleFrontend",
       "deployAdmissionCompatibleFrontend", "observeAdmissionCompatibleFrontend"].every(key => typeof adapters[key] === "function"));
   return adapters;
 }
@@ -98,9 +97,12 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
         const nonce = randomBytes(32).toString("hex");
         const result = await adapters.observeFrontendExternalFences(Object.freeze({ plan, inventorySha256, nonce, checkpoint, ...providerContext,
           databaseClient, verifyLockedSession, environmentSignal }));
-        const proof = await validateFrontendFenceObservation(plan, nonce, result, store.retain);
+        // Retain honest unknown observations before enforcing the unchanged
+        // strict predicate. Retaining evidence never authorizes application SQL.
+        const proof = await validateFrontendFenceObservation(plan, nonce, result, store.retain, { requireFenced: false });
         await verifyEnvironment();
         await store.record(`external-fences-${checkpoint}.json`, proof);
+        await validateFrontendFenceObservation(plan, nonce, result, async () => {});
       };
       const owner = async (client, verifySession, work) => {
         await verifyEnvironment(); await verifySession();
@@ -200,6 +202,11 @@ export async function runFrontendReleaseCoordination(prepared, dependencies) {
           await store.record("admission-drained.json", { ...base, ...drain });
           const drainedProviderInventory = await observeFrontendOperationalProviderInventory(client, verify);
           await store.record("frontend-operational-provider-inventory-after-drain.json", { ...base, ...drainedProviderInventory });
+          phase = "selected-provider-retirement-and-effect-reconciliation";
+          await adapters.reconcileFrontendExternalProducers(Object.freeze({ plan, inventorySha256, deadline,
+            environmentSignal, verifyLockedSession: verify, record: store.record, retain: store.retain,
+            admissionObservation: drain, databaseClient: client, ...providerContext }));
+          await verify(); demand(performance.now() <= deadline);
           phase = "current-source-producer-verification";
           const registered = await owner(client, verifySession, async () => {
             const rows = (await client.query("SELECT producer_sha256,source_sha,database_role::text AS role_oid FROM frontend_admission.producers WHERE enabled ORDER BY producer_sha256")).rows;
