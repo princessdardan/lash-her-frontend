@@ -13,8 +13,8 @@ Complete these slots in the ordinary private release record before execution. Us
 | Binding | Required value / present reference |
 | --- | --- |
 | Frontend | OPEN: final clean 40-character Git SHA, branch, current required CI run/attempt and terminal results. Do not substitute `ab34cf9b` or an older local browser head. |
-| Course | Recorded exact main `3c0a0d6eee64344d97f98387755e9f34195a4c42`; [post-merge qualification](baselines/2026-11-05-p2-api-final-main/README.md), CI run `42134134628`. Revalidate selected head/current required checks during candidate preparation. |
-| Community | Recorded exact main `1ce696a7ae6073cb125da19146789693398b6cc4`; same API baseline, CI `42134273891` and compatibility `42134273771`. Revalidate during candidate preparation. |
+| Course | Recorded exact main `a447bfde20299e12afab68a3331b3792ddd07598`; [post-merge qualification](baselines/2026-11-06-p2-api-role-main/README.md), required CI run `42162176192`, including packaged PostgreSQL18 and native qualification. Revalidate selected head/current required checks during candidate preparation. |
+| Community | Recorded exact main `939de65dd52f0b1a43993a25c7c428dce6e2bb43`; required post-merge CI `42162186353` and compatibility `42162186016` passed. Revalidate during candidate preparation. |
 | Contracts | Final frontend's released P2 manifest SHA256, exact compatibility-review blob/baseline, unchanged v1 manifest SHA256, and generated validators. Current Course artifact `5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d`; Community `0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1`; enrollment event `a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e`. Verify final bytes; these hashes alone do not qualify runtime. |
 | Immutable candidate | OPEN: candidate/release ID, manifest bytes/hash, successful **Platform artifact candidate** run/attempt, six image digests, exact native proofs/scans, SBOMs, provenance and attestations. CI images are not registry publication proof. |
 | Database stages | Exact three direct targets, role names/OIDs, server major, complete applied lineage/schema hashes, reviewed pending chains, original database and terminal receipts, recovery reference. Read actual state; never infer pending tags from historical migration counts. |
@@ -56,11 +56,11 @@ The existing learner/authoring drivers run only owned local stacks, require clea
 
 ```sh
 COURSE_LEARNING_API_SOURCE=/path/to/clean/course-checkout \
-COURSE_LEARNING_API_REVISION=3c0a0d6eee64344d97f98387755e9f34195a4c42 \
+COURSE_LEARNING_API_REVISION=a447bfde20299e12afab68a3331b3792ddd07598 \
 node scripts/test-course-learning-browser.mjs
 
 COURSE_AUTHORING_API_SOURCE=/path/to/clean/course-checkout \
-COURSE_AUTHORING_API_REVISION=3c0a0d6eee64344d97f98387755e9f34195a4c42 \
+COURSE_AUTHORING_API_REVISION=a447bfde20299e12afab68a3331b3792ddd07598 \
 node scripts/test-course-authoring-browser.mjs
 ```
 
@@ -118,7 +118,7 @@ Dardan serializes deployment/configuration/key rotation, provider ingress/callba
 | [Authoring requalification](baselines/2026-11-05-p2-authoring-requalification/README.md) | Four actual local Next/Auth.js admin/Course/PG cases including paid catalog/archive warning and policy. | Final-candidate/current contract applicability, real staff Google, staging Mux and publication/access boundaries. Earlier Course artifacts differ; do not relabel them as the current pin. |
 | [Identity entrypoints](baselines/2026-11-05-p2-00-identity-admission-qualified/README.md), [CI integration](baselines/2026-11-05-p2-00-identity-ci-integration/README.md) | 43 actual Auth.js/account/admin/cron entrypoints, physical SQL/admission receipts and 33 identity/lifecycle database regressions in their source scope. | Actual Next/browser/provider behavior, latest actor-cache/dependency applicability, both live receiver deliveries and final exact-source CI. Google/Resend/receiver replies were synthetic. |
 | [Integrated owned lifecycle](baselines/2026-11-05-p2-integrated-owned/validation.json), [physical scrub fix](baselines/2026-11-05-lifecycle-scrub-receipts/README.md) | Local three-repository ordering/replay/deletion/export groundwork; actual SQL faults and physical scrub checks. Original uncertainty and failures remain retained. | Exact final deployed receivers, native lifecycle recovery, real expiry/scrub/outage/race evidence. Synthetic admission/producer identities do not qualify historical staging writers. |
-| [Final API mains](baselines/2026-11-05-p2-api-final-main/README.md) | Recorded exact-source required CI, packaged PG18, native proofs and API tests. | Immutable published candidate plus actual target/configuration/migration/runtime/provider/browser receipts. |
+| [Qualified API role mains](baselines/2026-11-06-p2-api-role-main/README.md) | Exact `a447bfde`/`939de65d` required merged-main CI, packaged PG18 and native artifact summaries. Earlier API baselines remain historical. | Immutable published candidate plus actual target/configuration/migration/runtime/provider/browser receipts. |
 | Accepted C07 G1 | Its actual recovery-only host/OIDC/TLS/native/recovery applicability. | New P2 SQL, topology, flags, authoring/identity/media/learning/lifecycle and feature admission. Never restamp historical acceptance. |
 
 ## Failure record and G2 decision
