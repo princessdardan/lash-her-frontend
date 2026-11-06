@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "status": "P2_BOUNDED_CERTIFICATION_PARENT_SOURCE_CHECKS_PASS",
+  "sourceDependencies": [
+    "d1965ee2",
+    "693f984b",
+    "68798e17",
+    "fb8622fc",
+    "165b3a05",
+    "4e369f5e",
+    "93f6234d",
+    "f5c4c6b8",
+    "73eac6ee"
+  ],
+  "node24": {
+    "owned": 9,
+    "withBrowserDependency": 18,
+    "failed": 0,
+    "skipped": 0
+  },
+  "python": {
+    "owned": 7,
+    "withFaultBrowserDependencies": 23,
+    "failed": 0,
+    "skipped": 0
+  },
+  "postgres": {
+    "version": 1,
+    "status": "P2_CERTIFICATION_CURRENT_OWNED_PASS",
+    "serverMajor": 16,
+    "frontendMigrations": 83,
+    "checks": [
+      "actual83-current-lineage-schema-prepared-roles-and-old-login-denial",
+      "actual-exclusive-global-and-random-lock-session-lifetime-and-fixed-native-epochs",
+      "initial-and-continuous-runtime-inbound-refusal-and-repair",
+      "initial-and-continuous-runtime-database-setting-refusal-and-repair",
+      "initial-and-continuous-runtime-public-shadow-schema-refusal-and-repair",
+      "actual-fixed-auth-preparation-open-close-epochs-only",
+      "actual-fixed-browser-pending-open-close-epochs-only",
+      "independent-fence-after-parent-session-loss-and-without-native-credential"
+    ],
+    "skipped": 0,
+    "actualTlsPostgres": true,
+    "noSqlReplay": true,
+    "providerTouched": false,
+    "actualHostDocker": false,
+    "browserQualified": false,
+    "nativeInvocationQualified": false,
+    "fixtureOnly": true
+  },
+  "lint": "PASS",
+  "syntax": "PASS",
+  "fixtureOnly": true,
+  "providerTouched": false,
+  "liveStagingRun": false,
+  "independentReview": "OPEN",
+  "gatesOpen": [
+    "actual-Linux-host-Docker-SSH",
+    "actual-normal-browser-Google-Resend-playback",
+    "actual-native-provider-request-details",
+    "direct-worker-case",
+    "known-ACK-loss-settlement-and-recovery-binder",
+    "S12-persistence-authority-join",
+    "S14-real24h",
+    "staging-reviewed-start"
+  ],
+  "files": {
+    "ops/platform/p2-certification.mjs": "3f9af689225c30393cb49deb8d31508cecf6c309f267debd8f1ba32a26322bd3",
+    "ops/platform/p2-certification-current-probe.mjs": "b604e633eb8d25eaa83c27b574d2cd5cf080f5522eb4baae5a8826c9450a4446",
+    "ops/platform/p2-certification-transport.mjs": "2ff1fd3bcdb7460391be8b6b7597188e4dc0d949f6343099fbc1e7055ba6392d",
+    "ops/platform/p2-certification-request-evidence.mjs": "7e1d6c5a6c3ef3700d6cde948d7c533e49c92519d8aa3543ce3a2d1e9e99b249",
+    "ops/platform/host/p2_certification_parent.py": "bf80ec23bbb2a33f6b5c599d6a9e21d3c4bd01cca8de12e52fd147ed861c621c",
+    "ops/platform/p2-certification.test.mjs": "6a687952d8d78f0f7feaec64b0dfad7526f19239c071f4bb42425a260c7e5f85",
+    "ops/platform/p2-certification-transport.test.mjs": "4eaa137e8a39c9a5efb20507587a14cb7f251f59895f8415165b2ba42810fdd8",
+    "ops/platform/p2-certification-request-evidence.test.mjs": "aaa7d35b4411f99022b66b2ea2c62cda967d4ea2072b64f48730c139ec64285d",
+    "ops/platform/host/p2_certification_parent_test.py": "385f1b88da408b26676d3a76d123c0349b59dec5009b3b4e1afd587307b09f10",
+    "ops/platform/test-p2-certification-local.mjs": "53531976d94f12166063005b04273924d982cc137ec3d53f3b79e435a0828455",
+    "ops/platform/p2-certification.md": "fb5e3af0665d52f12b26c18dc144415c924523a2e8543d01786ccef83fdd7498",
+    "docs/api-integration/baselines/2026-11-06-p2-certification-parent/README.md": "0c5e64d0248ffeb9b010fc1fbc4e44ffc8f62adb6e4c07954124ab02d4a75184",
+    "docs/api-integration/baselines/2026-11-06-p2-certification-parent/owned-postgres16.json": "c4d487bddfe546cbf44777ddb551505ce962b66fe0f9539555ecb0884876eb3c"
+  }
+}
