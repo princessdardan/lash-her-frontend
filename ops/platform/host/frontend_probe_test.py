@@ -220,26 +220,61 @@ class FrontendProbeTests(unittest.TestCase):
     def test_phase2_final_probe_selects_only_current_catalog_and_retains_the_exact_contract_pair(self):
         self.release.update(contractPhase="p2", phase2ContractManifestSha256="sha256:" + "d" * 64)
         self.credential(); attempt = self.attempt()
-        self.probe_body = {"checks": ["gateway-course-catalog-p2"], "contractPhase": "p2"}
+        self.probe_body = {"checks": ["gateway-course-catalog-p2"], "contractPhase": "p2",
+                           "featureControls": {key: False for key in frontend_probe.FEATURE_CONTROL_NAMES}}
         self.fixture.enqueue(self.fixture.deployment(), self.project())
-        result = frontend_probe.verify(self.client, self.release, attempt, self.private, self.mapped_http())
+        result = frontend_probe.verify(self.client, self.release, attempt, self.private, self.mapped_http(), self.probe_body["featureControls"])
         self.assertEqual(result["checks"], ["frontend-server-gateway-course-catalog-p2"])
         self.assertEqual(result["contractPhase"], "p2")
         self.assertEqual(result["phase2ContractManifestSha256"], self.release["phase2ContractManifestSha256"])
+        self.assertEqual(result["featureControls"], self.probe_body["featureControls"])
         headers = {key.lower(): value for key, value in self.probes[0]["headers"].items()}
         self.assertEqual(headers["x-lash-release-mode"], "phase2")
         self.assertNotIn("cookie", headers)
 
+    def test_phase2_requires_closed_boolean_controls_from_actual_deployment_and_the_reviewed_profile(self):
+        self.release.update(contractPhase="p2", phase2ContractManifestSha256="sha256:" + "d" * 64)
+        self.credential()
+        controls = {key: False for key in frontend_probe.FEATURE_CONTROL_NAMES}
+        invalid = [None, {}, {**controls, "unexpected": False}, {**controls, "CUSTOMER_AUTH_ENABLED": 0},
+                   {**controls, "CUSTOMER_AUTH_ENABLED": "false"}, {**controls, "CUSTOMER_AUTH_ENABLED": None}]
+        del_one = dict(controls); del del_one["CUSTOMER_AUTH_ENABLED"]; invalid.append(del_one)
+        for index, value in enumerate(invalid):
+            with self.subTest(value=value):
+                self.probe_body = {"checks": ["gateway-course-catalog-p2"], "contractPhase": "p2", "featureControls": value}
+                self.fixture.enqueue(self.fixture.deployment(), self.project())
+                attempt = self.attempt("controls-" + str(index))
+                with self.assertRaisesRegex(ValueError, "FRONTEND_WORKLOAD_VERIFICATION_FAILED"):
+                    frontend_probe.verify(self.client, self.release, attempt, self.private, self.mapped_http(), controls)
+                self.assertNotIn("featureControls", migrate.read_json(attempt, "frontend-workload-outcome.json"))
+        expected = {**controls, "CUSTOMER_AUTH_ENABLED": True}
+        self.probe_body = {"checks": ["gateway-course-catalog-p2"], "contractPhase": "p2", "featureControls": controls}
+        self.fixture.enqueue(self.fixture.deployment(), self.project())
+        with self.assertRaisesRegex(ValueError, "FRONTEND_WORKLOAD_VERIFICATION_FAILED"):
+            frontend_probe.verify(self.client, self.release, self.attempt("wrong-profile"), self.private, self.mapped_http(), expected)
+        self.probe_body["featureControls"] = expected
+        self.fixture.enqueue(self.fixture.deployment(), self.project())
+        result = frontend_probe.verify(self.client, self.release, self.attempt("matched-profile"), self.private, self.mapped_http(), expected)
+        self.assertEqual(result["featureControls"], expected)
+
+    def test_invalid_expected_feature_profile_refuses_before_provider_or_workload_requests(self):
+        self.release.update(contractPhase="p2", phase2ContractManifestSha256="sha256:" + "d" * 64)
+        for index, expected in enumerate((None, {}, {key: 0 for key in frontend_probe.FEATURE_CONTROL_NAMES})):
+            with self.assertRaisesRegex(ValueError, "FRONTEND_WORKLOAD_VERIFICATION_FAILED"):
+                frontend_probe.verify(self.client, self.release, self.attempt("invalid-profile-" + str(index)), self.private, self.mapped_http(), expected)
+        self.assertEqual(self.probes, [])
+
     def test_phase2_never_accepts_the_historical_catalog_receipt_or_partial_contract_binding(self):
         self.release.update(contractPhase="p2", phase2ContractManifestSha256="sha256:" + "d" * 64)
         self.credential()
+        controls = {key: False for key in frontend_probe.FEATURE_CONTROL_NAMES}
         self.fixture.enqueue(self.fixture.deployment(), self.project())
         with self.assertRaisesRegex(ValueError, "FRONTEND_WORKLOAD_VERIFICATION_FAILED"):
-            frontend_probe.verify(self.client, self.release, self.attempt("legacy"), self.private, self.mapped_http())
+            frontend_probe.verify(self.client, self.release, self.attempt("legacy"), self.private, self.mapped_http(), controls)
         self.assertEqual(len(self.probes), 1)
         del self.release["phase2ContractManifestSha256"]
         with self.assertRaisesRegex(ValueError, "FRONTEND_WORKLOAD_VERIFICATION_FAILED"):
-            frontend_probe.verify(self.client, self.release, self.attempt("partial"), self.private, self.mapped_http())
+            frontend_probe.verify(self.client, self.release, self.attempt("partial"), self.private, self.mapped_http(), controls)
         self.assertEqual(len(self.probes), 1)
 
     def test_substituted_source_or_unready_deployment_refuses_before_probe(self):

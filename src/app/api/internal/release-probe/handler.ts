@@ -4,6 +4,7 @@ import type { FrontendBootstrapProbe } from "@/lib/writer-admission/bootstrap-pr
 import type { FrontendSquareBindingProbe } from "@/lib/writer-admission/square-binding-probe";
 import type { FrontendResendBindingProbe } from "@/lib/writer-admission/resend-binding-probe";
 import type { FrontendGoogleBindingProbe } from "@/lib/writer-admission/google-binding-probe";
+import { readReleaseFeatureControls, type ReleaseFeatureControls } from "@/lib/api-integration/release-feature-controls";
 
 const MAX_LIFETIME_MS = 60 * 60 * 1000;
 type Configuration = {
@@ -12,6 +13,7 @@ type Configuration = {
   sourceCommit: string;
   gatewayOrigin: string;
   secret: string;
+  featureControls: ReleaseFeatureControls;
 };
 
 export function readReleaseProbeConfiguration(
@@ -27,7 +29,8 @@ export function readReleaseProbeConfiguration(
     if (environment === "local" || !env.VERCEL_PROJECT_ID || !env.VERCEL_GIT_COMMIT_SHA) return null;
     const origin = new URL(env[environment === "production" ? "API_GATEWAY_PRODUCTION_ORIGIN" : "API_GATEWAY_STAGING_ORIGIN"] ?? "");
     if (origin.protocol !== "https:" || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) return null;
-    return { environment, projectId: env.VERCEL_PROJECT_ID, sourceCommit: env.VERCEL_GIT_COMMIT_SHA, gatewayOrigin: origin.origin, secret };
+    return { environment, projectId: env.VERCEL_PROJECT_ID, sourceCommit: env.VERCEL_GIT_COMMIT_SHA, gatewayOrigin: origin.origin, secret,
+      featureControls: readReleaseFeatureControls(env) };
   } catch { return null; }
 }
 
@@ -63,7 +66,7 @@ export function createReleaseProbeHandler(deps: {
       return reply(200, { version: 1, status: "FRONTEND_WORKLOAD_PROBE_PASS", challenge,
         environment: config.environment, projectId: config.projectId, sourceCommit: config.sourceCommit, gatewayOrigin: config.gatewayOrigin,
         checks: mode === "phase2" ? ["gateway-course-catalog-p2"] : google ? ["gateway-course-catalog", "frontend-admission-bootstrap", "google-binding"] : square ? ["gateway-course-catalog", "frontend-admission-bootstrap", "square-binding"] : resend ? ["gateway-course-catalog", "frontend-admission-bootstrap", "resend-binding"] : bootstrap ? ["gateway-course-catalog", "frontend-admission-bootstrap"] : ["gateway-course-catalog"], durationMs: result.durationMs,
-        ...(mode === "phase2" ? { contractPhase: "p2" } : {}),
+        ...(mode === "phase2" ? { contractPhase: "p2", featureControls: config.featureControls } : {}),
         ...(bootstrap ?? {}), ...(resend ?? {}), ...(square ?? {}), ...(google ?? {}) }, mode === "phase2" || mode === "google-binding");
     } catch { return reply(503, { error: "Release probe failed" }); }
   };

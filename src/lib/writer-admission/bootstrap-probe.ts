@@ -4,12 +4,9 @@ import { Client } from "pg";
 import { readMigrationCatalog } from "../../../ops/platform/frontend-schema.mjs";
 import { resolveWriterAdmissionConfiguration, type WriterAdmissionConfiguration } from "./config";
 import type { WriterAdmissionClient } from "./runtime";
+import { RELEASE_FEATURE_CONTROL_NAMES } from "@/lib/api-integration/release-feature-controls";
 
-export const BOOTSTRAP_DISABLED_FEATURES = [
-  "INTEGRATION_CUSTOMER_ACCESS_ENABLED", "INTEGRATION_COURSE_READS_ENABLED", "INTEGRATION_CHECKOUT_ENABLED",
-  "INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED", "INTEGRATION_COMMUNITY_READS_ENABLED", "INTEGRATION_COMMUNITY_WRITES_ENABLED",
-  "INTEGRATION_LEARNING_ROUTES_ENABLED", "CUSTOMER_AUTH_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED",
-] as const;
+export const BOOTSTRAP_DISABLED_FEATURES = RELEASE_FEATURE_CONTROL_NAMES;
 
 export interface FrontendBootstrapProbe {
   admission: { environment: "staging"; targetSha256: string; producerSha256: string; sourceCommit: string; epoch: string; newWork: false; recovery: false };
