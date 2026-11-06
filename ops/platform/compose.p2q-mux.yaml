@@ -1,0 +1,13 @@
+# Static isolated-lane component. The existing release/recreation entrypoints
+# do not select this override. A future source-owned two-file launcher must
+# require the real allocated policy and inspect this exact running bind.
+services:
+  gateway:
+    volumes:
+      - type: bind
+        source: /run/lash-her-p2q-mux-private/capture-root
+        target: /mux-capture
+        read_only: false
+        bind:
+          create_host_path: false
+          propagation: rprivate

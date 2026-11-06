@@ -8,6 +8,24 @@ import { privateTlsPolicies, databaseConnectionBudgets } from "./configuration.m
 
 const model = parse(readFileSync(new URL("./compose.yaml", import.meta.url), "utf8"), { merge: true });
 
+test("isolated Mux override declares only the fixed gateway spool without changing the default layout", () => {
+  const override = parse(readFileSync(new URL("./compose.p2q-mux.yaml", import.meta.url), "utf8"));
+  assert.deepEqual(Object.keys(override), ["services"]);
+  assert.deepEqual(Object.keys(override.services), ["gateway"]);
+  assert.deepEqual(Object.keys(override.services.gateway), ["volumes"]);
+  assert.deepEqual(override.services.gateway.volumes, [{
+    type: "bind", source: "/run/lash-her-p2q-mux-private/capture-root", target: "/mux-capture",
+    read_only: false, bind: { create_host_path: false, propagation: "rprivate" },
+  }]);
+  assert.equal(model.services.gateway.read_only, true);
+  assert.deepEqual(model.services.gateway.volumes, [
+    "${RELEASE_DIR:?select protected release directory}/gateway.json:/config/gateway.json:ro",
+    "${RELEASE_DIR}/admission:/admission:ro", "${RELEASE_DIR}/tls/gateway:/tls:ro",
+  ]);
+  // This source-model check does not prove Compose merge semantics, actual
+  // mount/UID/fsync behavior or an authorized launcher. Those remain gates.
+});
+
 for (const templateName of ["lightsail-host", "lightsail-access-recovery"]) {
 test(`${templateName}: Lightsail-prefixed user data runs under POSIX sh and emits valid SSH lines`, () => {
   const template = JSON.parse(readFileSync(new URL(`../aws/${templateName}.cfn.json`, import.meta.url), "utf8"));
