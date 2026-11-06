@@ -1,6 +1,5 @@
 // Frozen DATA codecs; no resource/session authority.
 import { createHash } from "node:crypto";
-import { decodeQualificationTargetJson } from "./qualification-target-profile.mjs";
 
 export const P2Q_MUX_CAPTURE_SCHEMA_SHA256 = "c2c44f3895117af792b56bc0cd838e2a4f158f4e59a14d2be791b6f7349e1c8a";
 export const P2Q_MUX_LIMITS = Object.freeze({ leaseBytes: 8192, safeRecordBytes: 16384, evidenceBytes: 196608,
@@ -114,7 +113,8 @@ export function validateP2QMuxValue(kind, value) {
 export function encodeP2QMuxValue(kind, value) { return bytes(validateP2QMuxValue(kind, value)); }
 export function decodeP2QMuxValue(kind, raw) {
   try { demand(typeof raw === "string" || raw instanceof Uint8Array); const input = Buffer.from(raw);
-    demand(input.length > 0 && input.length <= limit(kind)); const value = validateP2QMuxValue(kind, decodeQualificationTargetJson(input, "carrier"));
+    demand(input.length > 0 && input.length <= limit(kind));
+    const value = validateP2QMuxValue(kind, JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input)));
     demand(input.equals(bytes(value))); return value;
   } catch { throw new P2QMuxCaptureError(); }
 }

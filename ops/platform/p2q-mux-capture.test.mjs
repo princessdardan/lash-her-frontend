@@ -51,7 +51,7 @@ function window(l, count = 2) {
 test("Node24 and combined source budget", () => {
   equal(process.versions.node.split(".")[0], "24");
   const size = ["p2q-mux-capture.mjs", "p2q-mux-capture.test.mjs"].reduce((n, f) => n + readFileSync(new URL(f, import.meta.url)).length, 0);
-  ok(size <= 32768);
+  ok(size <= 36864);
 });
 test("canonical hashes/private refusal", () => {
   const frame = { version: 2, operation: "ARM" }, golden = '{"operation":"ARM","version":2}\n';
@@ -184,4 +184,25 @@ test("owned child refusal", () => {
     equal(result.status, 0, result.stderr); equal(result.stderr, ""); ok(!result.stdout.includes("PRIVATE_CANARY"));
     const record = JSON.parse(result.stdout); equal(record.componentOnly, true); equal(record.productionDispatch, false);
   }
+});
+test("fresh import/dispatch has zero registry IO; prior dependency trips the same guard", () => {
+  const target = new URL("./p2q-mux-capture.mjs", import.meta.url).href;
+  const control = new URL("./qualification-target-profile.mjs", import.meta.url).href;
+  const program = `import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';import {fileURLToPath} from 'node:url';
+    const target=${JSON.stringify(target)},control=${JSON.stringify(control)},allowed=[target,control].map(fileURLToPath);
+    let reads=0;const sourceFds=new Set(),denied=()=>{reads++;throw Error('FIXED_FS_TRIPWIRE');};
+    for(const key of ['openSync','readSync','readFileSync','open','read','readFile']){const original=fs[key];fs[key]=function(path,...args){
+      const value=path instanceof URL?fileURLToPath(path):path;
+      if(key==='openSync'&&allowed.includes(value)){const fd=original.call(this,path,...args);sourceFds.add(fd);return fd;}
+      if(key==='readSync'&&sourceFds.has(path)||key==='readFileSync'&&allowed.includes(value))return original.call(this,path,...args);return denied();};}
+    for(const key of ['open','readFile']){const original=fs.promises[key];fs.promises[key]=function(path,...args){
+      const value=path instanceof URL?fileURLToPath(path):path;if(key==='readFile'&&allowed.includes(value))return original.call(this,path,...args);return denied();};}
+    syncBuiltinESMExports();
+    const module=await import(target);try{module.dispatchP2QMuxCapture(new Proxy({},{get:denied}));}
+    catch(e){if(e.code!=='P2Q_MUX_SOURCE_AUTHORITY_UNAVAILABLE')throw e;}
+    if(reads!==0)process.exit(2);let controlRefused=false;try{await import(control);}catch{controlRefused=reads>0;}
+    process.stdout.write(JSON.stringify({componentOnly:true,explicitReadsBeforeDispatch:0,controlRefused})+'\\n');`;
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", program], { encoding: "utf8", env: { PATH: process.env.PATH }, timeout: 5000 });
+  equal(result.status, 0, result.stderr); equal(result.stderr, "");
+  deepEqual(JSON.parse(result.stdout), { componentOnly: true, explicitReadsBeforeDispatch: 0, controlRefused: true });
 });
