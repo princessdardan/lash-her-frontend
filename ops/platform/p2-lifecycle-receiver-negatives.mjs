@@ -4,7 +4,7 @@ import { prepareP2LifecyclePersistencePlan } from "./p2-lifecycle-persistence-pr
 import { validateP2LifecycleStateWitness, p2LifecycleStateWitnessSha256 } from "./p2-lifecycle-state-witness.mjs";
 import { assertReceiverNegativeBaseline, deriveReceiverNegativeCommand } from "./p2-lifecycle-receiver-post.mjs";
 
-const fields = ["version", "environment", "releaseId", "candidateSha256", "configurationSha256", "sources", "targets", "containerImages",
+const fields = ["version", "environment", "releaseId", "hostMachineId", "candidateSha256", "configurationSha256", "sources", "targets", "containerImages",
   "operatorSourceSha256", "frontendDeploymentSha256", "originalReleaseSha256", "expectedMigrations"];
 const closed = (value, names) => value && typeof value === "object" && !Array.isArray(value)
   && isDeepStrictEqual(Object.keys(value).sort(), [...names].sort());
@@ -18,25 +18,30 @@ export function prepareP2LifecycleReceiverPlan(reviewed) {
   demand(closed(reviewed, ["version", "environment", "profile", "actionId", "persistence", "programSha256", "operatorSourceFiles", "privateDirectory"])
     && reviewed.version === 1 && reviewed.environment === "staging" && reviewed.profile === "suspended-head-negatives-v1"
     && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(reviewed.actionId) && digest(reviewed.programSha256));
-  demand(closed(reviewed.persistence, ["version", "environment", "probeId", "plan", "containers", "operatorFiles", "programSha256", "privateDirectory"])
+  demand(closed(reviewed.persistence, ["version", "environment", "probeId", "plan", "containers", "operatorSourceFiles", "programSha256", "privateDirectory"])
     && reviewed.persistence.version === 1 && reviewed.persistence.environment === "staging" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(reviewed.persistence.probeId)
-    && closed(reviewed.persistence.operatorFiles, persistenceFiles) && Object.values(reviewed.persistence.operatorFiles).every(digest)
+    && reviewed.persistence.operatorSourceFiles && persistenceFiles.every(name => Object.hasOwn(reviewed.persistence.operatorSourceFiles, name))
     && digest(reviewed.persistence.programSha256));
   const sourcePlan = reviewed.persistence.plan;
   demand(sourcePlan && typeof sourcePlan === "object");
   const plan = prepareP2LifecyclePersistencePlan(Object.fromEntries(fields.map(name => [name, sourcePlan[name]])));
   demand(isDeepStrictEqual(sourcePlan, plan) && reviewed.persistence.environment === "staging"
     && Array.isArray(reviewed.persistence.containers) && reviewed.persistence.containers.length === 10
+    && new Set(reviewed.persistence.containers.map(row => row.containerId)).size === 10
     && isDeepStrictEqual(reviewed.persistence.containers.map(row => row.service).sort(), [...services].sort())
     && reviewed.persistence.containers.every(row => closed(row, ["service", "containerId", "image", "health"]) && digest(row.containerId)
       && /^ghcr\.io\/princessdardan\/[a-z0-9-]+@sha256:[a-f0-9]{64}$/u.test(row.image)
       && row.health === (row.service.endsWith("-tls") ? "none" : "healthy")));
-  demand(reviewed.operatorSourceFiles && Object.keys(reviewed.operatorSourceFiles).length > 0
+  demand(reviewed.operatorSourceFiles && Object.keys(reviewed.operatorSourceFiles).length > 0 && Object.keys(reviewed.operatorSourceFiles).length <= 448
     && Object.entries(reviewed.operatorSourceFiles).every(([name, hash]) => /^ops\/[A-Za-z0-9_./-]+$/u.test(name) && !name.split("/").includes("..") && digest(hash)));
+  const sourceSha256 = createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.keys(reviewed.operatorSourceFiles).sort()
+    .map(name => [name, reviewed.operatorSourceFiles[name]])))).digest("hex");
+  demand(isDeepStrictEqual(reviewed.persistence.operatorSourceFiles, reviewed.operatorSourceFiles) && sourceSha256 === plan.operatorSourceSha256);
   demand(typeof reviewed.privateDirectory === "string" && /^\/var\/lib\/lash-her\/releases\/staging\/[a-zA-Z0-9_/-]+$/u.test(reviewed.privateDirectory)
     && !reviewed.privateDirectory.split("/").includes(".."));
   return Object.freeze({ version: 1, status: "P2_LIFECYCLE_RECEIVER_NEGATIVE_PLAN", environment: "staging", profile: reviewed.profile,
     actionId: reviewed.actionId, candidateSha256: plan.candidateSha256, configurationSha256: plan.configurationSha256,
+    operatorSourceCommit: plan.sources.frontend, operatorSourceEligibility: "same-as-immutable-frontend-candidate",
     sourceSha256: createHash("sha256").update(JSON.stringify(plan.sources)).digest("hex"), programSha256: reviewed.programSha256,
     cases: ["course", "community"].flatMap(service => P2_LIFECYCLE_RECEIVER_CASES.map(caseName => ({ service, case: caseName,
       expectedHttpStatus: caseName === "exact-replay" ? 200 : 409 }))),

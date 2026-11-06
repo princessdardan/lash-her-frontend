@@ -59,18 +59,33 @@ The settings object is closed: `version:1`, `environment:'staging'`, `knownHosts
 contains `version`, `environment`, fixed `profile`, `actionId`, the exact reviewed
 persistence package settings, the assembled receiver `programSha256`, complete
 `operatorSourceFiles` map, and a new private output directory. The persistence
-plan supplies the candidate/configuration/source/three-target bindings, all ten
+plan supplies the exact host machine and candidate/configuration/source/three-target bindings, all ten
 current container IDs/images/health states, migration counts, and original
 release/frontend references. These references do not constitute new frontend SQL
 or release-acceptance evidence.
 
-Prepare the source maps from the final committed, reviewed operator tree using
-`p2_lifecycle_persistence_probe.operator_hashes(source)`, its `private_program`
-hash, `p2_identity_negative_probe.source_closure(source)`, and
-`p2_lifecycle_receiver_negative.private_program(source)` hash. Existing pinned SSH
+Prepare the complete source map from the final committed, reviewed operator tree
+using `p2_identity_negative_probe.source_closure(source)` and use that SAME map
+for both `reviewed.operatorSourceFiles` and `reviewed.persistence.operatorSourceFiles`.
+The persistence plan's `operatorSourceSha256` is the SHA of its ASCII-key-sorted
+compact JSON map. The old four-file `operator_hashes` helper is not execution
+authority. Retain the exact persistence `private_program(source)` and receiver
+`private_program(source)` hashes. Each persistence target hash must use the
+source `p2LifecyclePersistenceTargetSha256` contract including the observed runtime
+role OID; Course/Community image refs are complete immutable ghcr references.
+Existing pinned SSH
 source installation must install exactly that tree at
 `/opt/lash-her/operators/<reviewed frontend source commit>`. This action installs
 no source and changes no source-transport caps.
+
+This reader-dependent action is eligible only when the installed operator source
+commit equals the immutable frontend candidate commit. The public plan states
+that required commit; the host reader enforces the same installed-source path and
+full source-map join. The first reviewed P2 candidate must therefore contain the
+completed certification tooling. A supplemental operator commit is ineligible for
+this action, including after a release failure, until a separate reviewed adapter
+supports that identity distinction. Do not relabel the candidate or substitute a
+different source map to bypass the restriction.
 
 Execution requires explicit `--execute staging/<actionId>`. Its private stdin is
 exactly:

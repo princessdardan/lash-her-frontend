@@ -60,6 +60,8 @@ test("plan leaves the live future gap OPEN and exposes no command or credential"
   const plan = prepareP2LifecycleReceiverPlan(receiverReviewedFixture());
   assert.equal(plan.cases.length, 6); assert.equal(plan.openCases.length, 2); assert.ok(plan.openCases.every(row => row.status === "OPEN"));
   assert.equal(plan.networkCalled, false); assert.equal(plan.admissionChangesAuthorized, false);
+  assert.equal(plan.operatorSourceCommit, receiverReviewedFixture().persistence.plan.sources.frontend);
+  assert.equal(plan.operatorSourceEligibility, "same-as-immutable-frontend-candidate");
   assert.equal(JSON.stringify(plan).includes(receiverWitnessFixture().userId), false);
   const changed = receiverReviewedFixture(); changed.quiescence = { held: true }; assert.throws(() => prepareP2LifecycleReceiverPlan(changed));
 });
@@ -68,6 +70,15 @@ test("even the private POST entry refuses a future gap without making a network 
   const fixture = receiverPostFixture("future-gap"); let requests = 0;
   await assert.rejects(postReceiverNegative(fixture.input, { post: async () => { requests++; } }), /P2_LIFECYCLE_RECEIVER_REFUSED/u);
   assert.equal(requests, 0);
+});
+
+test("corrected reader context requires host identity, recomputed targets, immutable images and the same full source map", () => {
+  for (const mutate of [row => { delete row.persistence.plan.hostMachineId; }, row => { row.persistence.plan.targets.course.targetSha256 = "f".repeat(64); },
+    row => { row.persistence.plan.containerImages.course = "sha256:" + "6".repeat(64); }, row => { row.persistence.operatorFiles = {}; },
+    row => { row.operatorSourceFiles = { ...row.operatorSourceFiles, "ops/platform/foreign.mjs": "e".repeat(64) }; },
+    row => { row.persistence.plan.operatorSourceSha256 = "f".repeat(64); }]) {
+    const fixture = structuredClone(receiverReviewedFixture()); mutate(fixture); assert.throws(() => prepareP2LifecycleReceiverPlan(fixture));
+  }
 });
 
 test("runtime binding requires actual staging configuration and dedicated service key", () => {

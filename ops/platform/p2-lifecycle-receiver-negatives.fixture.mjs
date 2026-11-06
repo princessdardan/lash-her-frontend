@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { prepareP2LifecyclePersistencePlan } from "./p2-lifecycle-persistence-probe.mjs";
+import { prepareP2LifecyclePersistencePlan, p2LifecyclePersistenceTargetSha256 } from "./p2-lifecycle-persistence-probe.mjs";
 export const receiverFixtureUuid = n => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 export const receiverFixtureHash = value => createHash("sha256").update(value).digest("hex");
 const canonical = value => JSON.stringify(value, (_key, child) => child && typeof child === "object" && !Array.isArray(child)
@@ -29,17 +29,22 @@ export function receiverPostFixture(caseName = "exact-replay", service = "course
 }
 export function receiverReviewedFixture() {
   const witness = receiverWitnessFixture();
-  const targets = Object.fromEntries(["frontend", "course", "community"].map(service => [service, { targetSha256: witness.targetSha256[service], host: "localhost", port: 5432,
-    database: "owned_" + service, runtimeRole: "owned_" + service, runtimeRoleOid: "1234", serverMajor: 16 }]));
-  const plan = prepareP2LifecyclePersistencePlan({ version: 1, environment: "staging", releaseId: "owned", candidateSha256: witness.candidateSha256,
-    configurationSha256: witness.configurationSha256, sources: witness.sources, targets, containerImages: { course: "sha256:" + "6".repeat(64), community: "sha256:" + "7".repeat(64) },
-    operatorSourceSha256: "8".repeat(64), frontendDeploymentSha256: "9".repeat(64), originalReleaseSha256: "a".repeat(64), expectedMigrations: { frontend: 83, course: 22, community: 11 } });
+  const targets = Object.fromEntries(["frontend", "course", "community"].map(service => {
+    const target = { host: "localhost", port: 5432, database: "owned_" + service, runtimeRole: "owned_" + service, runtimeRoleOid: "1234", serverMajor: 16 };
+    return [service, { targetSha256: p2LifecyclePersistenceTargetSha256(service, target), ...target }];
+  }));
+  const operatorSourceFiles = Object.fromEntries(["ops/platform/p2-lifecycle-state-witness.mjs", "ops/platform/p2-lifecycle-persistence-probe.mjs",
+    "ops/platform/host/p2_lifecycle_persistence_scope.py", "ops/platform/host/p2_lifecycle_persistence_probe.py", "ops/platform/p2-lifecycle-receiver-post.mjs"]
+    .sort().map(name => [name, "d".repeat(64)]));
+  const plan = prepareP2LifecyclePersistencePlan({ version: 1, environment: "staging", releaseId: "owned", hostMachineId: "1".repeat(32), candidateSha256: witness.candidateSha256,
+    configurationSha256: witness.configurationSha256, sources: witness.sources, targets,
+    containerImages: { course: "ghcr.io/princessdardan/lash-her-platform-course-runtime@sha256:" + "6".repeat(64), community: "ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:" + "7".repeat(64) },
+    operatorSourceSha256: receiverFixtureHash(JSON.stringify(operatorSourceFiles)), frontendDeploymentSha256: "9".repeat(64), originalReleaseSha256: "a".repeat(64), expectedMigrations: { frontend: 83, course: 22, community: 11 } });
   return { version: 1, environment: "staging", profile: "suspended-head-negatives-v1", actionId: "owned-negatives", persistence: { version: 1, environment: "staging", plan,
     containers: ["community-api", "course-api", "community-tls", "course-tls", "course-snapshot", "community-worker", "course-media", "course-export-cleanup", "course-publisher", "gateway"]
       .map((service, index) => ({ service, containerId: String(index).repeat(64), image: "ghcr.io/princessdardan/lash-her-owned@sha256:" + "e".repeat(64), health: service.endsWith("-tls") ? "none" : "healthy" })),
-    probeId: "owned-persistence", operatorFiles: Object.fromEntries(["ops/platform/p2-lifecycle-state-witness.mjs", "ops/platform/p2-lifecycle-persistence-probe.mjs",
-      "ops/platform/host/p2_lifecycle_persistence_scope.py", "ops/platform/host/p2_lifecycle_persistence_probe.py"].map(name => [name, "d".repeat(64)])),
+    probeId: "owned-persistence", operatorSourceFiles,
     programSha256: "f".repeat(64), privateDirectory: "/var/lib/lash-her/releases/staging/owned-persistence" },
-  programSha256: "b".repeat(64), operatorSourceFiles: { "ops/platform/p2-lifecycle-receiver-post.mjs": "c".repeat(64) },
+  programSha256: "b".repeat(64), operatorSourceFiles,
   privateDirectory: "/var/lib/lash-her/releases/staging/owned-negatives" };
 }

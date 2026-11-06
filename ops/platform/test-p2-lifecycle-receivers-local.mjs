@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
+import { p2LifecyclePersistenceTargetSha256 } from "./p2-lifecycle-persistence-probe.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const apiPins = { course: "a447bfde20299e12afab68a3331b3792ddd07598", community: "939de65dd52f0b1a43993a25c7c428dce6e2bb43" };
@@ -68,7 +69,8 @@ async function main() {
       phase = `verify-${name}-runtime`;
       runtime[name] = await connect({ host: "localhost", port, user: role, password, database }, true);
       const identity = (await runtime[name].query("select current_user::regrole::oid::text as oid")).rows[0];
-      targets[name] = { targetSha256: hash(`${name}:${database}:${role}`), host: "localhost", port, database, runtimeRole: role, runtimeRoleOid: identity.oid, serverMajor: 16 };
+      const observedTarget = { host: "localhost", port, database, runtimeRole: role, runtimeRoleOid: identity.oid, serverMajor: 16 };
+      targets[name] = { targetSha256: p2LifecyclePersistenceTargetSha256(name, observedTarget), ...observedTarget };
       migrations[name] = Number((await admin[name].query("select count(*)::int as count from drizzle.__drizzle_migrations")).rows[0].count);
     }
     assert.deepEqual(migrations, { frontend: 83, course: 22, community: 11 });
