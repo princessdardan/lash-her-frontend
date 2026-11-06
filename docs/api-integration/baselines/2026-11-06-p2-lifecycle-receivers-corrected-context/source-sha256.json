@@ -1,0 +1,11 @@
+{
+  "ops/platform/p2-lifecycle-receiver-negatives.mjs": "859474dc771635da22ce133d437c5bb2ba3c1ab4d8341df421c4f9e798d22447",
+  "ops/platform/p2-lifecycle-receiver-negatives.fixture.mjs": "3949b55fa5debe11a31db5ab695c6531d08b1aa13d08369d0a49f249bdd4d0a7",
+  "ops/platform/p2-lifecycle-receiver-negatives.test.mjs": "c8670f6971869c9f7a5cb7bed4c2f760125bbb7992258d89a01df2fe887ebe68",
+  "ops/platform/test-p2-lifecycle-receivers-local.mjs": "142256e135d6ea7a9a8ed16ec51acd0f053c9c04fe00d8877f6ff3172f6360a8",
+  "ops/platform/p2-lifecycle-receiver-negatives.md": "a5b4d0081097e9066f938e1bc4d404df19fa4554cb2fe6bdb261ced3324df614",
+  "ops/platform/p2-lifecycle-persistence-probe.mjs": "b7e92ba072fabf352391bc1ba6c9407ba9ba81ce25ee9ea9a2bb8daaeeb6a972",
+  "ops/platform/p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+  "ops/platform/host/p2_lifecycle_persistence_probe.py": "1fbd1519227e198b27c8f27db566ff6425d93bbc52300f7d8966059333b82d1a",
+  "ops/platform/host/p2_lifecycle_persistence_scope.py": "1a22b4664cb4995a7824da5de4b537f735789a12abdd5937c948fcbc283f878e"
+}
