@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "status": "P2_RUNTIME_FEATURE_CONTROLS_SOURCE_VERIFIED",
+  "sourceCommit": "8dc7fe3287565491c1017738495eed559705aa9e",
+  "testsRanBeforeCommitOnIdenticalRecordedBytes": true,
+  "checks": {
+    "authenticatedHandlerTests": 12,
+    "ownedHttpsTests": 19,
+    "actualModuleClosureAndBuildContextTests": 5,
+    "typeCheck": "passed",
+    "targetedLint": "passed",
+    "diffCheck": "passed"
+  },
+  "assertions": [
+    "actual immutable deployment responds with exactly ten nonsecret runtime booleans",
+    "mandatory explicit reviewed P2 profile matches actual booleans",
+    "missing extra integer string and null controls refuse",
+    "incoming headers cannot supply control values",
+    "legacy P1 and closed bootstrap control semantics preserved"
+  ],
+  "files": [
+    {
+      "file": "ops/platform/host/frontend_probe.py",
+      "sha256": "dbe1e7eaa4a37a38fffe8e0042e8f2f97b67986b222bcdc94a1c8b6ae7278336"
+    },
+    {
+      "file": "ops/platform/host/frontend_probe_test.py",
+      "sha256": "b8296c9e2fa10c5ef0b10904e4890ac0ddb06c0c6379cf2157e75fa42418941c"
+    },
+    {
+      "file": "src/app/api/internal/release-probe/handler.ts",
+      "sha256": "ce8123b724166e9a4fc8a532be431c332aa3fb90464ae13816ca11070ae68dc1"
+    },
+    {
+      "file": "src/app/api/internal/release-probe/handler.test.ts",
+      "sha256": "9a48f5926c4a66413a4dd50492f2ef4b97ac9bbf8a3639b71a7add9abea9f623"
+    },
+    {
+      "file": "src/lib/writer-admission/bootstrap-probe.ts",
+      "sha256": "2d516687e11a06a52a097a4dda8e880902db5c3ea351cdb61b1bea3c05710bed"
+    },
+    {
+      "file": "src/lib/api-integration/release-feature-controls.ts",
+      "sha256": "6e825f4f3969f2153e0aa5ac17483b1f7b027b78989d7d1d469631e67411ef44"
+    }
+  ],
+  "liveProviderCalls": false,
+  "liveDeploymentVerified": false,
+  "stagingChanged": false,
+  "phase2Accepted": false
+}
