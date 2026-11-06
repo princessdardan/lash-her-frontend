@@ -27,6 +27,26 @@ class PersistenceProbeTests(unittest.TestCase):
         self.assertIn(probe.PROGRAM_FILES[0], closure)
         self.assertIn(probe.PROGRAM_FILES[1], closure)
 
+    def test_reviewed_source_accepts_496_and_refuses_497_with_valid_digests(self):
+        result = subprocess.run(['node', '--input-type=module', '-e',
+            'import {receiverReviewedFixture} from "./ops/platform/p2-lifecycle-receiver-negatives.fixture.mjs";'
+            'process.stdout.write(JSON.stringify(receiverReviewedFixture().persistence));'],
+            cwd=self.source, capture_output=True, check=True, timeout=10)
+        reviewed = json.loads(result.stdout)
+        files = reviewed['operatorSourceFiles']
+        for name in probe.identity_probe.SOURCE_ANCHORS:
+            files.setdefault(name, 'a' * 64)
+        while len(files) < 496:
+            files[f'ops/platform/owned-bound-{len(files)}.mjs'] = 'a' * 64
+        reviewed['plan']['operatorSourceSha256'] = probe._hash(probe._canonical(files))
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(probe, 'ROOT', Path(directory).resolve()):
+            reviewed['privateDirectory'] = str(Path(directory).resolve() / 'owned')
+            probe._reviewed(reviewed)
+            files['ops/platform/owned-overflow.mjs'] = 'b' * 64
+            reviewed['plan']['operatorSourceSha256'] = probe._hash(probe._canonical(files))
+            with self.assertRaisesRegex(Exception, 'SOURCE_BINDING_REQUIRED'):
+                probe._reviewed(reviewed)
+
     def test_documented_isolated_entry_loads_fixed_local_modules(self):
         result = subprocess.run([sys.executable, "-I", "-u", str(Path(probe.__file__))], input=b"", capture_output=True, check=False)
         self.assertEqual(result.returncode, 1)

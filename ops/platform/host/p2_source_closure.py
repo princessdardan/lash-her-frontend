@@ -18,7 +18,7 @@ REQUIRED = {
 
 def verify_source_closure(initial, root):
     manifest = initial.get('sourceSha256')
-    if not isinstance(manifest, dict) or not 1 <= len(manifest) <= 480 or not REQUIRED.issubset(manifest):
+    if not isinstance(manifest, dict) or not 1 <= len(manifest) <= 496 or not REQUIRED.issubset(manifest):
         raise ValueError('P2_CLOSED_OPERATOR_SOURCE_REQUIRED')
     digest = hashlib.sha256(json.dumps(sorted(manifest.items()), separators=(',', ':')).encode()).hexdigest()
     if digest != initial.get('sourceClosureSha256'):
@@ -38,7 +38,7 @@ def verify_source_closure(initial, root):
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022 or not 0 < info.st_size <= 2_000_000:
             raise ValueError('P2_SOURCE_PERMISSIONS_REFUSED')
         raw = path.read_bytes(); total += len(raw)
-        if hashlib.sha256(raw).hexdigest() != expected or total > 40_000_000:
+        if hashlib.sha256(raw).hexdigest() != expected or total > 41_000_000:
             raise ValueError('P2_SOURCE_CONTENT_CHANGED')
     return digest
 

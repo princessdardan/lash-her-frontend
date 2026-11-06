@@ -37,7 +37,7 @@ class SourceClosureTests(unittest.TestCase):
 
     def test_certification_source_file_bound_is_finite_and_keeps_complete_coverage(self):
         manifest = dict(self.manifest)
-        while len(manifest) < 480:
+        while len(manifest) < 496:
             name = f'ops/platform/harness/owned-count-{len(manifest)}.mjs'
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -61,6 +61,26 @@ class SourceClosureTests(unittest.TestCase):
         self.assertEqual(program.stat().st_mode & 0o777, 0o444)
         program.chmod(0o600); program.write_text('different')
         with self.assertRaises(ValueError): private_observer_program(self.initial, private / 'source')
+
+    def test_complete_installed_closure_accepts_41mb_and_refuses_one_extra_byte(self):
+        manifest = dict(self.manifest)
+        remaining = 41_000_000 - sum((self.root / name).stat().st_size for name in manifest)
+        index = 0
+        while remaining:
+            name = f'ops/platform/harness/owned-bytes-{index}.mjs'
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            size = min(remaining, 2_000_000)
+            path.write_bytes(b'x' * size)
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            remaining -= size
+            index += 1
+        selected = self.make(manifest)
+        self.assertEqual(verify_source_closure(selected, self.root), selected['sourceClosureSha256'])
+        path.write_bytes(path.read_bytes() + b'x')
+        manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        with self.assertRaisesRegex(ValueError, 'CONTENT_CHANGED'):
+            verify_source_closure(self.make(manifest), self.root)
 
     def test_fixed_recovery_observer_uses_its_own_exact_cached_source(self):
         raw = b'owned recovery observer'

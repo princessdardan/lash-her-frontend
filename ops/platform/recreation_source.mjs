@@ -64,16 +64,16 @@ export function readOperatorSourceFiles(source) {
   const git=args=>execFileSync("git",["-C",source,...args],{encoding:"utf8",timeout:10000,maxBuffer:16_000_000,
     stdio:["ignore","pipe","pipe"]});
   const paths=git(["ls-files","-z","--","ops"]).split("\0").filter(path=>path&&/\.(?:py|mjs|json|yaml|yml|service|timer|sh|guard)$/u.test(path));
-  // Current source plus the lifecycle certification packages exceeds
-  // 400 files. Keep the complete-source count bounded; byte limits are separate.
-  assert.ok(paths.length>0&&paths.length<=480);
+  // Complete integration includes fixed certification and rotation packages.
+  // Keep source count finite; aggregate and transport bytes are bounded separately.
+  assert.ok(paths.length>0&&paths.length<=496);
   let total=0;
   return paths.map(path=> {
     assert.ok(path.startsWith("ops/")&&!path.split("/").includes(".."));
     const raw=readFileSync(join(source,path));total+=raw.length;
-    // The 33 immutable historical source profiles consume 31.8 MB. Keep a
-    // measured bound for the complete public source, including those profiles.
-    assert.ok(raw.length<=2_000_000&&total<=40_000_000);
+    // Preserve every immutable historical source profile and complete operator
+    // dependency. This decoded cap still fits the fixed 56 MB public transport.
+    assert.ok(raw.length<=2_000_000&&total<=41_000_000);
     return {path,sha256:sha256(raw),data:raw.toString("base64")};
   });
 }

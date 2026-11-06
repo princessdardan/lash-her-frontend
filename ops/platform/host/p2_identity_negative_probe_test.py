@@ -259,10 +259,10 @@ class IdentityNegativeProbeTests(unittest.TestCase):
                 file = source / name
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_bytes((self.source / name).read_bytes())
-            for index in range(480 - len(probe.SOURCE_ANCHORS)):
+            for index in range(496 - len(probe.SOURCE_ANCHORS)):
                 (source / "ops" / f"owned-source-{index}.mjs").write_text("// owned fixture\n")
             files = probe.source_closure(source)
-            self.assertEqual(len(files), 480)
+            self.assertEqual(len(files), 496)
             reviewed = deepcopy(self.reviewed)
             reviewed["operatorSourceFiles"] = files
             reviewed["operatorSourceSha256"] = probe._hash(probe._canonical(files))

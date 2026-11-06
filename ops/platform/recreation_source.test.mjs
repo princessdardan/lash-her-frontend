@@ -64,17 +64,32 @@ test("the complete committed operator source fits the real public installation e
   assert.equal(files.filter(file=>file.path.startsWith("ops/platform/profiles/frontend-historical-sources/")).length,33);
   assert.ok(Buffer.byteLength(JSON.stringify({commit:sourceCommit,files}))<=56_000_000);
 });
-test("actual Git source handoff accepts 480 files and refuses 481 with the per-file byte limit intact",()=> {
+test("actual Git source handoff accepts 496 files and refuses 497 with the per-file byte limit intact",()=> {
   const directory=mkdtempSync(join(tmpdir(),"p2-source-count-"));
   const git=args=>execFileSync("git",["-C",directory,...args],{stdio:["ignore","pipe","pipe"]});
   try {
     git(["init","--quiet"]);mkdirSync(join(directory,"ops"));
-    for(let index=0;index<480;index++)writeFileSync(join(directory,`ops/owned-${index}.mjs`),"// owned source\n");
-    git(["add","ops"]);assert.equal(readOperatorSourceFiles(directory).length,480);
+    for(let index=0;index<496;index++)writeFileSync(join(directory,`ops/owned-${index}.mjs`),"// owned source\n");
+    git(["add","ops"]);assert.equal(readOperatorSourceFiles(directory).length,496);
     writeFileSync(join(directory,"ops/overflow.mjs"),"// owned source\n");git(["add","ops/overflow.mjs"]);
     assert.throws(()=>readOperatorSourceFiles(directory));
     git(["rm","--cached","ops/overflow.mjs"]);
     writeFileSync(join(directory,"ops/owned-0.mjs"),Buffer.alloc(2_000_001));
+    assert.throws(()=>readOperatorSourceFiles(directory));
+  } finally {rmSync(directory,{recursive:true,force:true});}
+});
+test("actual Git source handoff accepts exactly 41 MB and refuses one extra decoded byte",()=> {
+  const directory=mkdtempSync(join(tmpdir(),"p2-source-bytes-"));
+  const git=args=>execFileSync("git",["-C",directory,...args],{stdio:["ignore","pipe","pipe"]});
+  try {
+    git(["init","--quiet"]);mkdirSync(join(directory,"ops"));
+    for(let index=0;index<20;index++)writeFileSync(join(directory,`ops/owned-${index}.mjs`),Buffer.alloc(2_000_000,120));
+    const last=join(directory,"ops/owned-last.mjs");writeFileSync(last,Buffer.alloc(1_000_000,120));
+    git(["add","ops"]);
+    const files=readOperatorSourceFiles(directory);
+    assert.equal(files.reduce((total,file)=>total+Buffer.from(file.data,"base64").length,0),41_000_000);
+    assert.ok(Buffer.byteLength(JSON.stringify({commit:"a".repeat(40),files}))<=56_000_000);
+    writeFileSync(last,Buffer.alloc(1_000_001,120));
     assert.throws(()=>readOperatorSourceFiles(directory));
   } finally {rmSync(directory,{recursive:true,force:true});}
 });
