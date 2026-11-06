@@ -396,7 +396,9 @@ try:
                 try:
                     while True:
                         readable,_,_=select.select([self.request,backend],[],[],30)
-                        if not readable:return
+                        # A readiness poll is not a session idle deadline.
+                        # Real EOF/OSError or fixture shutdown closes the relay.
+                        if not readable:continue
                         for source in readable:
                             raw=source.recv(65536)
                             if not raw:return

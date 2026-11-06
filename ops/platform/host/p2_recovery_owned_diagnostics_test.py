@@ -9,6 +9,11 @@ import os
 from pathlib import Path
 import re
 import signal
+import select
+import socket
+import socketserver
+import threading
+import types
 import subprocess
 import sys
 import tempfile
@@ -197,6 +202,39 @@ class OwnedRecoveryDiagnosticsTests(unittest.TestCase):
             counts=value['nodeRecordCounts'];self.assertEqual(counts['accepted'],9);self.assertEqual(counts['retained'],len(value['nodeErrors']));self.assertEqual(counts['truncated'],9-len(value['nodeErrors']))
             self.assertTrue(value['nodeErrors']);self.assertEqual(value['nodeErrors'][-1]['stage'],'uncaught-final')
             self.assertEqual(value['nodeErrors'][-1]['guardCode'],row['guardCode']);self.assertEqual(value['bridgeErrors'],[])
+
+    def test_actual_relay_keeps_idle_session_until_real_eof(self):
+        closed=threading.Event();backend_closed=threading.Event();polls=[]
+        class Echo(socketserver.BaseRequestHandler):
+            def handle(self):
+                try:
+                    while True:
+                        data=self.request.recv(65536)
+                        if not data:return
+                        self.request.sendall(data)
+                finally:backend_closed.set()
+        class Server(socketserver.ThreadingTCPServer):daemon_threads=True
+        backend=Server(('127.0.0.1',0),Echo);backend_thread=threading.Thread(target=backend.serve_forever,daemon=True);backend_thread.start()
+        def poll(*args):
+            polls.append(True);return select.select(*args[:3],0.01)
+        with tempfile.TemporaryDirectory(prefix='owned-idle-relay-') as directory:
+            namespace={'socket':socket,'socketserver':socketserver,'select':types.SimpleNamespace(select=poll),'Fixture':types.SimpleNamespace(port=backend.server_address[1]),'foreign_fixture':types.SimpleNamespace(port=backend.server_address[1]),'foreign_route_flag':Path(directory)/'never-foreign'}
+            route=next(node for node in ast.walk(ast.parse(SOURCE.read_text())) if isinstance(node,ast.ClassDef) and node.name=='Route')
+            exec(compile(ast.Module(body=[route],type_ignores=[]),str(SOURCE),'exec'),namespace)
+            actual=namespace['Route']
+            class Observed(actual):
+                def handle(self):
+                    try:super().handle()
+                    finally:closed.set()
+            relay=Server(('127.0.0.1',0),Observed);relay_thread=threading.Thread(target=relay.serve_forever,daemon=True);relay_thread.start()
+            try:
+                client=socket.create_connection(relay.server_address,timeout=1)
+                try:
+                    self.assertFalse(closed.wait(0.06));self.assertGreaterEqual(len(polls),2)
+                    client.sendall(b'owned-session');self.assertEqual(client.recv(64),b'owned-session')
+                finally:client.close()
+                self.assertTrue(closed.wait(1));self.assertTrue(backend_closed.wait(1))
+            finally:relay.shutdown();relay.server_close();relay_thread.join(2);backend.shutdown();backend.server_close();backend_thread.join(2)
 
     def test_node_emission_summary_keeps_projection_failure_visible(self):
         raw=json.dumps({'status':'OWNED_P2_NODE_EMISSION_SUMMARY','attempted':1,'emitted':0,'projectionFailures':1,'uncaughtMonitor':1,'origin':'unknown'})
