@@ -466,6 +466,8 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
             str(root / "ops/platform/frontend-historical-source.mjs"), str(root), str(output)],
             check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         source = json.loads(output.read_text())["requirements"]
+        recovery = self.parent.parent / "scope-recovery"; recovery.mkdir(mode=0o700)
+        original_source_bytes = output.read_bytes()
         groups = {"square": square.COLUMN_NAMES, "resend": resend.COLUMNS, "highlevel": highlevel.COLUMNS, "chitchats": chitchats.COLUMNS}
         for provider, columns in groups.items():
             with self.subTest(provider=provider):
@@ -494,7 +496,11 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                 observed = self.execute("observe-provider-effects")
                 self.assertEqual((observed["activeExecutions"], observed["uncertainEffects"]), (0, 0))
                 self.assertFalse(observed["missingRequirementIds"])
+                self.context.update(originalDirectory=str(self.parent), directory=str(recovery))
+                self.assertEqual(self.execute("observe-provider-effects"), observed)
+                self.context.pop("originalDirectory"); self.context["directory"] = str(self.parent)
         self.assertFalse(self.calls)
+        self.assertEqual(output.read_bytes(), original_source_bytes)
 
     def related_preview_context(self):
         self.bootstrap_context()
