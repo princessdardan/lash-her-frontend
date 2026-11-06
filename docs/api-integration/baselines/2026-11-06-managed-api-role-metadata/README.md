@@ -1,0 +1,21 @@
+# Managed API metadata preflight: attempt 1
+
+**UNKNOWN for both API contexts.** Two authorized read-only connections authenticated, ran the first literal identity query, refused the aggregate exact-identity guard and closed awaited. No role, membership, schema, ACL or database/role-setting query ran against either managed database. No retry, fallback credential, mutation, migration, explicit lock or provider/host control occurred.
+
+The fixed selectors and private custody checks are in the [approved plan](../2026-11-06-vercel-deployment-key-catalogs/managed-db-preflight-plan.md). Before any connection, all five accepted API runtime files were verified privately as unchanged regular files with private permissions. Course's three credential inputs agreed, as did Community's two. Both selectors were the exact approved direct endpoints; no pooler or alternate endpoint was substituted. No credential bytes, file digests, connection URLs, GUC values, certificate bodies or private keys are included here.
+
+The executed [observer](observe.mjs) uses pinned Node 24.18.0 and the repository's locked `pg` dependency. It supplies Node's built-in CA roots, exact SNI and `rejectUnauthorized: true`, with no inherited PG or TLS overrides. Its closed child environment contained only `PATH` and `LANG`. Startup options impose `search_path=pg_catalog,public`, `default_transaction_read_only=on` and bounded statement, lock and idle-transaction timeouts before the first query. These are observer-imposed session settings, not observed stored provider defaults.
+
+The actual failure is retained in [attempt-1-sanitized.json](attempt-1-sanitized.json). Each context reports `EXACT_READONLY_IDENTITY_REQUIRED` at `initial-metadata`, `connected: true`, `closeAwaited: true`. The first implementation checked all identity conjuncts together before retaining the first row. Consequently it cannot identify whether role/database/major/read-only/search-path/server TLS metadata/client TLS state/port differed. No cause is inferred. In this attempt's schema, `tlsAuthorized: false` means that a complete initial snapshot was never accepted; it does **not** establish a TLS authorization failure. `rowBoundsComplete` and `readbackStable` are also false because no complete snapshots exist.
+
+The private execution record is retained outside the repository with mode 0600 under a mode 0700 directory. It contains the same fixed failure codes and no captured first identity row. The public result intentionally omits its temporary-directory locator. No raw upstream or exception body was printed.
+
+This observation does not establish provider role attributes, effective schema privileges, stored role/database defaults, frontend credentials/settings, historical fencing, migration permission, staging release acceptance or P2/G2 certification. The source-relevant original frontend configuration archive/value provenance remains a separate unresolved artifact.
+
+## Validation
+
+`observe.test.mjs` passed all nine checks with pinned Node 24.18.0. This includes unchanged-byte/group binding, direct/pooler/foreign-selector refusal, duplicate/control/production input refusal, role-name and setting-value redaction, default plan-only CLI, fixed read-only SQL closure and execution of all six literal catalog queries twice against an actual disposable PostgreSQL 16.13 cluster. The local cluster authenticated only a fixture-owned role and was removed after awaited client/cluster cleanup. It does not qualify the managed PostgreSQL 18 contexts.
+
+ESLint, JavaScript syntax and whitespace checks passed. The first unit run had seven passes, one failure and one explicit owned-cluster skip: its SQL-token check mistakenly treated the quoted privilege name `'CREATE'` as a SQL mutation. The test now removes SQL string literals before checking statement tokens; the observer query and acceptance predicates were unchanged by that test correction. The owned-cluster run then passed nine of nine with no skips.
+
+The default command remains plan-only. Re-running `--observe-read-only` would open new managed sessions and requires a separately authorized diagnostic attempt; this evidence records only the two one-attempt sessions already authorized and executed.
