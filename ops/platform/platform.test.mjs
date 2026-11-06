@@ -239,7 +239,7 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
 
 test("native qualification uses the explicit supported Ubuntu baseline without altering its verifier", () => {
   const workflow = parse(readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8"));
-  for (const key of ["frontend-operator-migrations", "gateway-and-platform"]) assert.equal(workflow.jobs[key]["runs-on"], "ubuntu-24.04");
+  for (const key of ["frontend-operator-migrations", "gateway-and-platform", "browser-tests"]) assert.equal(workflow.jobs[key]["runs-on"], "ubuntu-24.04");
   for (const job of Object.values(workflow.jobs)) for (const step of job.steps ?? []) {
     if (step.run?.includes("ops/gateway/runtime/verify.mjs")) assert.equal(step["continue-on-error"], undefined);
   }
