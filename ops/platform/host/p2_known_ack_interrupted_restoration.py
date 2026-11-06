@@ -6,6 +6,7 @@ new process-local capability. The old gateway's one is never an ordinary zero.
 """
 import base64
 import copy
+import contextlib
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -588,34 +589,110 @@ class InterruptedKnownAckRestorationBroker(Broker):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.interrupted_fallback_lock = threading.Lock()
+        self.interrupted_fallback_lock = threading.RLock()
         self.interrupted_fallback_done = False
 
+    def children_quiesced(self):
+        if not self.scope:
+            return True
+        try:
+            with self.scope.mutations:
+                return all(process.poll() is not None for process in self.scope.processes)
+        except BaseException:
+            return False
+
+    def fixed_failure_containment(self, name):
+        from p2_release_supervisor import fail_closed, C_LAYOUT
+        initial = {**self.initial, '_guardLayout': C_LAYOUT,
+                   '_guardObserverSource': self.observer_source}
+        result = fail_closed(initial, getattr(self, 'armed_probe', None), self.source,
+                             record_name=name, observer_type=self.observer_type,
+                             native_containment=contain_interrupted_native)
+        self.outcome.update(result)
+
     def abort(self):
-        # The ordinary parent revokes/reaps before its surviving-broker stop.
+        # Serialize the parent reaping with all tail containment and close().
         # A healthy independent guard remains the sole containment owner.
-        super().abort()
-        if self.guard_alive or not (self.observer or self.scope or getattr(self, 'armed_probe', None)):
-            return
         with self.interrupted_fallback_lock:
+            previously_failed = self.failed.is_set()
+            super().abort()
+            if self.guard_alive or not (self.observer or self.scope or getattr(self, 'armed_probe', None)):
+                return
             if self.interrupted_fallback_done:
                 return
             self.interrupted_fallback_done = True
-            # These fixed containment operations do not depend on the revoked
-            # FE lease. Failure of either operation never skips the other.
-            try:
-                result = contain_interrupted_native(self.initial, getattr(self, 'armed_probe', None), self.source)
-                require(set(result) == {'nativeDisabled', 'nativeDisableAttempted'} and
-                        (result['nativeDisabled'] is True or result['nativeDisabled'] is None) and type(result['nativeDisableAttempted']) is bool,
-                        'P2_INTERRUPTED_NATIVE_CONTAINMENT_RESULT_UNKNOWN')
-                self.outcome.update(result)
-            except BaseException:
-                self.outcome.update(nativeDisabled=None, nativeDisableAttempted=None)
-            try:
-                from p2_release_supervisor import cleanup_recovery_current_containers
-                cleanup_recovery_current_containers()
-            except BaseException:
-                self.outcome['recoveryCurrentContainerCleanupUncertain'] = True
+            # A guard may die after an earlier delegated abort. Parent.failed
+            # is never reset: explicitly reap, then use the fixed C guard path.
+            if self.scope:
+                try:
+                    self.scope.revoke()
+                except BaseException:
+                    self.outcome['workerProcessCleanupUncertain'] = True
+            if previously_failed:
+                try:
+                    self.fixed_failure_containment('p2-interrupted-surviving-broker-containment.json')
+                except BaseException:
+                    self.outcome['survivingBrokerContainmentUncertain'] = True
+            else:
+                try:
+                    result = contain_interrupted_native(self.initial, getattr(self, 'armed_probe', None), self.source)
+                    require(set(result) == {'nativeDisabled', 'nativeDisableAttempted'} and
+                            (result['nativeDisabled'] is True or result['nativeDisabled'] is None) and type(result['nativeDisableAttempted']) is bool,
+                            'P2_INTERRUPTED_NATIVE_CONTAINMENT_RESULT_UNKNOWN')
+                    self.outcome.update(result)
+                except BaseException:
+                    self.outcome.update(nativeDisabled=None, nativeDisableAttempted=None)
+                try:
+                    from p2_release_supervisor import cleanup_recovery_current_containers
+                    cleanup_recovery_current_containers()
+                except BaseException:
+                    self.outcome['recoveryCurrentContainerCleanupUncertain'] = True
+            self.outcome['workerProcessesQuiesced'] = self.children_quiesced()
+            if not self.children_quiesced():
+                self.outcome.update(workerProcessesQuiesced=False, workerProcessCleanupUncertain=True,
+                                    runtimeStopped=None, recoveryCurrentContainerCleanupUncertain=True)
+
+    def close(self, committed=False):
+        from p2_release_supervisor import sticky_cleanup_signals
+        with self.interrupted_fallback_lock:
+            if not committed:
+                self.abort()
+            retained = not self.children_quiesced()
+        # Retain the actual FD if kill/wait is unknown. Release the cleanup
+        # mutex while waiting so a newly dead guard can still trigger reaping.
+        signals = sticky_cleanup_signals() if retained and threading.current_thread() is threading.main_thread() else contextlib.nullcontext()
+        with signals:
+            while True:
+                with self.interrupted_fallback_lock:
+                    if self.children_quiesced():
+                        break
+                    self.outcome.update(workerProcessesQuiesced=False, workerProcessCleanupUncertain=True, runtimeStopped=None)
+                time.sleep(0.1)
+            if retained:
+                with self.interrupted_fallback_lock:
+                    try:
+                        self.fixed_failure_containment('p2-interrupted-surviving-broker-after-quiescence.json')
+                        self.outcome['workerProcessesQuiesced'] = True
+                    except BaseException:
+                        self.outcome['survivingBrokerContainmentUncertain'] = True
+        # A worker may itself unwind through abort(); never join while holding
+        # the cleanup mutex that it needs in order to finish.
+        if self.worker and self.worker is not threading.current_thread():
+            self.worker_done.wait(15)
+        with self.interrupted_fallback_lock:
+            require(self.children_quiesced(), 'P2_INTERRUPTED_MUTATOR_NOT_QUIESCED')
+            if not committed and hasattr(self, 'directory'):
+                try:
+                    migrate.write_json(self.directory, 'p2-release-failure.json', self.outcome)
+                except BaseException:
+                    pass
+            if self.observer:
+                self.observer.stop()
+            if self.scope:
+                self.scope.closed = True
+            if self.lock_fd is not None:
+                os.close(self.lock_fd)
+                self.lock_fd = None
 
     def initialize(self):
         self.started_at = time.monotonic()

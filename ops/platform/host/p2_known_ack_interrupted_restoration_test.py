@@ -275,6 +275,60 @@ class FallbackContainmentTests(unittest.TestCase):
                 if child.poll() is None:child.kill()
                 child.wait();os.close(fd)
 
+    def synchronized_case(self, unreaped=False, delegated=False):
+        import fcntl
+        import os
+        import subprocess
+        import p2_release_broker as shared
+        import p2_release_supervisor as supervisor
+        from p2_release_scope import P2ReleaseScope
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder).resolve();lock=root/'lock';fd=os.open(lock,os.O_CREAT|os.O_RDWR,0o600);fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            child=subprocess.Popen(['python3','-I','-c','import time;time.sleep(30)'])
+            scope=P2ReleaseScope(fd,lock,lambda:None,{});scope.processes.add(child)
+            broker=c.InterruptedKnownAckRestorationBroker({'candidate':{'releaseId':'owned'}},lambda _:None)
+            broker.scope=scope;broker.observer=__import__('types').SimpleNamespace(probe=lambda _:None,stop=lambda:None)
+            broker.source=root;broker.directory=root/'action';broker.directory.mkdir();broker.lock_fd=fd;broker.selected={'releaseId':'owned'};broker.armed_probe={}
+            entered=threading.Event();release=threading.Event();cleaned=threading.Event();closed=threading.Event();events=[]
+            actual_revoke=scope.revoke
+            def revoke():
+                entered.set()
+                if unreaped:raise ValueError('OWNED_KILL_WAIT_FAILED')
+                self.assertTrue(release.wait(3));actual_revoke()
+            def native(*_):
+                events.append('native');cleaned.set()
+                return {'nativeDisabled':True,'nativeDisableAttempted':False}
+            def fixed(name):
+                self.assertIsNotNone(child.poll());self.assertEqual(os.fstat(fd).st_ino,lock.stat().st_ino);events.append(name)
+            try:
+                with patch.object(shared,'LOCK',lock),patch.object(scope,'revoke',side_effect=revoke),patch.object(c.prior,'capture_before_stop',side_effect=ValueError('OWNED_CAPTURE_UNKNOWN')),\
+                     patch.object(c.migrate,'suspend_runtime'),patch.object(c,'contain_interrupted_native',side_effect=native),patch.object(supervisor,'cleanup_recovery_current_containers'),\
+                     patch.object(broker,'fixed_failure_containment',side_effect=fixed),patch.object(broker,'safety'):
+                    if delegated:
+                        broker.guard_alive=True;broker.safety_write=3;broker.abort();self.assertIsNone(child.poll());broker.guard_alive=False
+                    failure=threading.Thread(target=broker.abort);failure.start();self.assertTrue(entered.wait(2))
+                    def close():broker.close();closed.set()
+                    closer=threading.Thread(target=close);closer.start()
+                    self.assertFalse(closed.wait(0.1));self.assertEqual(os.fstat(fd).st_ino,lock.stat().st_ino)
+                    if not unreaped:self.assertFalse(cleaned.is_set());release.set()
+                    failure.join(3);self.assertFalse(failure.is_alive())
+                    if unreaped:
+                        self.assertFalse(closed.wait(0.1));self.assertFalse(broker.outcome['workerProcessesQuiesced']);self.assertIsNone(broker.outcome['runtimeStopped'])
+                        child.kill();child.wait()
+                    closer.join(3);self.assertFalse(closer.is_alive());self.assertTrue(closed.is_set())
+                    with self.assertRaises(OSError):os.fstat(fd)
+                    if unreaped:self.assertIn('p2-interrupted-surviving-broker-after-quiescence.json',events)
+                    if delegated:self.assertIn('p2-interrupted-surviving-broker-containment.json',events)
+            finally:
+                release.set()
+                if child.poll() is None:child.kill()
+                child.wait()
+                if broker.lock_fd is not None:os.close(fd)
+
+    def test_concurrent_close_cannot_pass_blocked_parent_reaping(self):self.synchronized_case()
+    def test_unreaped_mutator_retains_actual_fd_until_definitive_exit(self):self.synchronized_case(unreaped=True)
+    def test_delegated_abort_then_guard_death_still_reaps_and_contains(self):self.synchronized_case(delegated=True)
+
     def test_guard_loss_while_armed_before_worker_reaps_and_cleans_both_namespaces(self):self.run_case()
     def test_active_guard_loss_reaps_before_native_and_namespace_cleanup(self):self.run_case(active=True)
     def test_failed_native_and_delete_readbacks_preserve_unknown_and_other_cleanup(self):self.run_case(native_failed=True,delete_failed=True)
