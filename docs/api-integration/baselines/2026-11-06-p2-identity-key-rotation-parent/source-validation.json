@@ -8,12 +8,12 @@
     "ops/platform/p2-identity-key-rotation-transport.mjs": "27f7b7a5d591a612eca6cbe17b1435f942e4de9e12893a66548b4e6d06d26ff3",
     "ops/platform/p2-identity-key-rotation-browser-recorder.mjs": "381fda76ced17d93e5d4946d359819f550572b04d3a7b3c26a68a55d84a32c7d",
     "ops/platform/p2-identity-key-rotation-session-closed.mjs": "f337a18b900507fa9dca3f4ffd0608f9bad7ad5a09494adb31c79c3679f5666a",
-    "ops/platform/host/p2_identity_key_rotation_parent.py": "aed5591439682b13ee575a7aaec9de2c73a75b21d84c1110cfb4b185a0d1c151",
-    "ops/platform/host/p2_identity_key_rotation_adapter.py": "932b07a8e63eaff632edaf0b5270a93dec79faad7e39ebb8b19a9197c5cf08c8"
+    "ops/platform/host/p2_identity_key_rotation_parent.py": "22ac82d003269b89d00b31c4a2f67daa1cf6741e76f01fe39e1af72e4afb0588",
+    "ops/platform/host/p2_identity_key_rotation_adapter.py": "54004b5e3405e024d4a9a69b3458832f70b200e2a92b5c44e193ec2df02b7e25"
   },
   "checks": {
-    "nodeOwned": { "passed": 25, "failed": 0, "skipped": 0 },
-    "pythonOwned": { "passed": 26, "failed": 0, "skipped": 0 },
+    "nodeOwned": { "passed": 26, "failed": 0, "skipped": 0 },
+    "pythonOwned": { "passed": 28, "failed": 0, "skipped": 0 },
     "eslintSelected": "passed",
     "pythonCompile": "passed",
     "diffCheck": "passed"
@@ -34,6 +34,7 @@
     "sharedSupervisorLayoutAndDispatch": true,
     "actualLinuxContainerAndPostgresScopeQualification": true,
     "actualVercelAndStagingRotation": true,
+    "canonicalBrowserOriginAliasBinding": true,
     "sourceFileCapIntegration": true,
     "keyRemovalVerified": false,
     "releaseAccepted": false,

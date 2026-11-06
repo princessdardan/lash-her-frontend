@@ -3,6 +3,9 @@ import time
 import unittest
 from unittest.mock import patch
 from pathlib import Path
+import os
+import tempfile
+import types
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -67,6 +70,34 @@ class BrokerBindingTest(unittest.TestCase):
         self.assertRegex(raw, r"^[a-f0-9]{64}$")
         self.assertRegex(embedded, r"^[a-f0-9]{64}$")
 
+    def test_prepared_close_enters_bounded_closing_mode_before_inherited_check_can_touch_stopped_observer(self):
+        broker = parent.P2IdentityRotationBroker.__new__(parent.P2IdentityRotationBroker)
+        directory = Path(tempfile.mkdtemp()); lock = directory / "release.lock"
+        lock.write_bytes(b""); lock.chmod(0o600)
+        descriptor = os.open(lock, os.O_RDWR)
+        read_fd, write_fd = os.pipe()
+        try:
+            os.write(write_fd, b"alive")
+            broker.failed = threading.Event(); broker.source = directory; broker.initial = {}
+            broker.guard_read = read_fd; os.set_blocking(read_fd, False)
+            broker.guard_alive = True; broker.last_guard = time.monotonic()
+            broker.lock_fd = descriptor; broker.lock_info = os.fstat(descriptor)
+            broker.observer = type("Stopped", (), {"verify": lambda _self: self.fail("stopped observer was queried")})()
+            broker.closing_at = time.monotonic(); broker.finished = False
+            broker.adapter = object(); broker.frontend_close_prepared = True
+            broker.guard_stop = threading.Event(); broker.guard_stop.set()
+            broker.guard_in_progress = False; broker.guard_last_verified = time.monotonic()
+            info = os.fstat(descriptor)
+            root_owned = types.SimpleNamespace(st_ino=info.st_ino, st_dev=info.st_dev,
+                                               st_mode=info.st_mode, st_uid=0)
+            with patch.object(parent, "LOCK", lock), \
+                 patch("p2_release_broker.LOCK", lock), \
+                 patch("p2_release_broker.verify_source_closure"), \
+                 patch("p2_release_broker.os.lstat", return_value=root_owned):
+                broker.check()
+        finally:
+            os.close(read_fd); os.close(write_fd); os.close(descriptor)
+
     def test_window_binding_is_exact_and_deployment_backed(self):
         broker = parent.P2IdentityRotationBroker.__new__(parent.P2IdentityRotationBroker)
         broker.initial = {"rotationActionId": "p2-key-rotation-owned", "rotationPlan": {"actionId": "p2-key-rotation-owned", "bindingSha256": "b" * 64,
@@ -98,6 +129,7 @@ class BrokerBindingTest(unittest.TestCase):
         broker.adapter = type("Adapter", (), {
             "restore_qualified": lambda _self, *args: calls.append(("restore", *args)) or {"status": "restored"},
             "observe_runtime_boundary": lambda _self, phase: {"containers": [{"service": phase}]},
+            "runtime_guard_containers": lambda _self, rows: rows,
             "retained_frontend_signer": lambda _self, phase: calls.append(("signer", phase)) or {},
             "retained_profile_evidence": lambda _self, phase: calls.append(("profiles", phase)) or {},
         })()
@@ -110,6 +142,18 @@ class BrokerBindingTest(unittest.TestCase):
             for key, value in changes.items(): setattr(broker, key, value)
             with self.assertRaises(ValueError):
                 broker._restore({"phase": "overlap", "configuration": {"sha256": "b" * 64}})
+
+    def test_containment_cannot_clear_a_host_recorded_unknown_mutation(self):
+        broker = parent.P2IdentityRotationBroker.__new__(parent.P2IdentityRotationBroker)
+        broker.mutation_unresolved = True
+        receipt = broker._containment_receipt({"phase": "baseline", "mutationUncertain": False})
+        self.assertTrue(receipt["mutationUncertain"])
+        self.assertTrue(broker.mutation_unresolved)
+        broker.mutation_unresolved = False
+        receipt = broker._containment_receipt({"phase": "overlap", "mutationUncertain": True})
+        self.assertTrue(receipt["mutationUncertain"])
+        with self.assertRaises(ValueError):
+            broker._containment_receipt({"phase": "baseline", "mutationUncertain": 0})
 
 
 if __name__ == "__main__":

@@ -170,7 +170,7 @@ class RotationConfigurationSet:
 
 
 class P2IdentityRotationHostAdapter:
-    def __init__(self, scope, selected, jobs, configuration_root, output, compose_file, client, gateway_host,
+    def __init__(self, scope, selected, jobs, configuration_root, current_runtime_configuration, output, compose_file, client, gateway_host,
                  operator_source, operator_program_sha256):
         demand(type(scope) is P2IdentityRotationScope, "P2_ROTATION_TYPED_SCOPE_REQUIRED")
         self.scope, self.selected, self.jobs, self.output = scope, copy.deepcopy(selected), copy.deepcopy(jobs), Path(output)
@@ -186,6 +186,12 @@ class P2IdentityRotationHostAdapter:
                "P2_ROTATION_OPERATOR_PROGRAM_CHANGED")
         self.configurations = RotationConfigurationSet(configuration_root, scope.rotation_configuration_sha256,
                                                        scope.private_rotation_configuration_sha256)
+        current_runtime_configuration = Path(current_runtime_configuration)
+        migrate.private_directory(current_runtime_configuration)
+        demand(_runtime_phase_hash(current_runtime_configuration) == self.configurations.runtime_private_hashes["baseline"],
+               "ROTATION_CURRENT_RUNTIME_CONFIGURATION_CHANGED")
+        self.unchanged_runtime_configuration = current_runtime_configuration
+        self.api_mount_configuration = current_runtime_configuration
         demand(selected == scope.release and jobs == scope.jobs and vercel.release_identity(selected)[2] == scope.source_commit,
                "P2_ROTATION_REVIEWED_RELEASE_CHANGED")
         migrate.private_directory(self.output)
@@ -425,17 +431,18 @@ class P2IdentityRotationHostAdapter:
         return {"configurationSha256": self.configurations.hashes[phase], "containers": containers, "runtimeVerified": True}
 
     def _validate_runtime_mounts(self, snapshot, containers):
+        unchanged, api = self.unchanged_runtime_configuration, self.api_mount_configuration
         expected = {
-            "gateway": {"/config/gateway.json": snapshot / "gateway.json", "/admission": snapshot / "admission",
-                        "/tls": snapshot / "tls/gateway"},
-            "course-api": {}, "course-tls": {"/config/course-tls.json": snapshot / "course-tls.json",
-                                               "/tls": snapshot / "tls/course"},
-            "course-publisher": {"/tls/ca.pem": snapshot / "tls/ca.pem"}, "course-snapshot": {},
+            "gateway": {"/config/gateway.json": unchanged / "gateway.json", "/admission": unchanged / "admission",
+                        "/tls": unchanged / "tls/gateway"},
+            "course-api": {}, "course-tls": {"/config/course-tls.json": unchanged / "course-tls.json",
+                                               "/tls": unchanged / "tls/course"},
+            "course-publisher": {"/tls/ca.pem": unchanged / "tls/ca.pem"}, "course-snapshot": {},
             "course-media": {}, "course-export-cleanup": {},
-            "community-api": {"/tls/ca.pem": snapshot / "tls/ca.pem"},
-            "community-tls": {"/config/community-tls.json": snapshot / "community-tls.json",
-                                "/tls": snapshot / "tls/community"},
-            "community-worker": {"/tls/ca.pem": snapshot / "tls/ca.pem"},
+            "community-api": {"/tls/ca.pem": api / "tls/ca.pem"},
+            "community-tls": {"/config/community-tls.json": unchanged / "community-tls.json",
+                                "/tls": unchanged / "tls/community"},
+            "community-worker": {"/tls/ca.pem": unchanged / "tls/ca.pem"},
         }
         demand({item.get("service") for item in containers} == set(expected), "ROTATION_RUNTIME_MOUNT_INVENTORY_REFUSED")
         for container in containers:
@@ -465,6 +472,13 @@ class P2IdentityRotationHostAdapter:
         demand(observed.get("containers") == expected_containers and observed.get("runtimeVerified") is True,
                "ROTATION_RUNTIME_IDENTITIES_CHANGED")
         return observed
+
+    def runtime_guard_containers(self, public_containers):
+        retained = getattr(self, "_runtime_guard_containers", None)
+        demand(isinstance(retained, list) and [
+            {key: row[key] for key in ("service", "containerId", "image")} for row in retained
+        ] == public_containers, "ROTATION_RUNTIME_GUARD_BINDING_REFUSED")
+        return copy.deepcopy(retained)
 
     def _observe_api_database_current(self, name):
         demand(name in ("course", "community"), "ROTATION_API_CURRENT_SCOPE_REQUIRED")
@@ -522,8 +536,11 @@ class P2IdentityRotationHostAdapter:
             demand(state.get("LoadState") == "loaded" and state.get("ActiveState") == "inactive"
                    and state.get("UnitFileState") in ("disabled", "static"),
                    "ROTATION_BUSINESS_SCHEDULES_NOT_DISABLED")
+        self._runtime_guard_containers = copy.deepcopy(runtime_state["containers"])
+        public_containers = [{key: row[key] for key in ("service", "containerId", "image")}
+                             for row in runtime_state["containers"]]
         return {"configurationSha256": self.configurations.hashes[phase], "nativeSchedulesEnabled": False,
-                "businessSchedulesEnabled": False, "containers": runtime_state["containers"],
+                "businessSchedulesEnabled": False, "containers": public_containers,
                 "courseCurrent": current["course"]["status"] == "P2_RECOVERY_API_DATABASE_CURRENT",
                 "communityCurrent": current["community"]["status"] == "P2_RECOVERY_API_DATABASE_CURRENT",
                 "boundaryChecks": sorted(probe["checks"])}
@@ -557,6 +574,7 @@ class P2IdentityRotationHostAdapter:
             prefix, environment = runtime.compose_command(snapshot, "staging"), runtime.runtime_environment(self.selected, snapshot)
             self._command([*prefix, "up", "--detach", "--no-deps", "--pull", "never", "--force-recreate", "--wait",
                            "--wait-timeout", "90", *API_SERVICES], environment)
+            self.api_mount_configuration = snapshot
             observed = self.observe_api_configuration(phase)
         finally:
             runtime._command_scope.reset(token)
@@ -894,6 +912,7 @@ class P2IdentityRotationHostAdapter:
         intent = self._intent(intent)
         phase = intent["phase"]
         if intent["kind"] == "api":
+            self.api_mount_configuration = self._snapshot(phase)
             observed = self.observe_api_configuration(phase)
             demand(observed.get("runtimeVerified") is True
                    and observed.get("configurationSha256") == self.configurations.hashes[phase],

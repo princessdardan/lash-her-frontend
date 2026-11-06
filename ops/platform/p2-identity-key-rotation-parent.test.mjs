@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { isP2IdentityRotationParentAuthority, prepareP2IdentityRotationParent,
   runP2IdentityRotationParent } from "./p2-identity-key-rotation-parent.mjs";
+import { observeIdentityRotationBoundary, P2_IDENTITY_ROTATION_SERVICES } from "./p2-identity-key-rotation-observer.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
 const plan = Object.freeze({ version: 1, environment: "staging", actionId: "p2-key-rotation-owned",
@@ -72,4 +73,33 @@ test("terminal protocol closes the actual frontend session before the host prove
   assert.equal(closureAfterSession, true);
   assert.equal(result.status, "P2_IDENTITY_KEY_ROTATION_PARENT_FIXTURE_JOINED");
   assert.equal(result.keyRemovalVerified, false);
+});
+
+test("public runtime boundary projects exact three-field container rows while rejecting private health fields", async () => {
+  const containers = P2_IDENTITY_ROTATION_SERVICES.map((service, index) => ({ service,
+    containerId: (index + 1).toString(16).padStart(64, "0"),
+    image: `ghcr.io/princessdardan/lash-her-platform-${service}@sha256:${"b".repeat(64)}` }));
+  const context = { version: 1, environment: "staging", actionId: plan.actionId, phase: "baseline",
+    bindingSha256: plan.bindingSha256, sourceCommit: plan.sourceCommit, candidateSha256: plan.candidateSha256,
+    runtimeConfigurationSha256: sha("runtime"), frontendConfigurationSha256: sha("frontend"),
+    frontendSession: { verify: async () => {}, receipt: { candidateSha256: plan.candidateSha256 },
+      probe: { receipt: { sourceCommit: plan.sourceCommit } } },
+    hostScope: { verify() {}, sourceCommit: plan.sourceCommit, candidateSha256: plan.candidateSha256,
+      bindingSha256: plan.bindingSha256 } };
+  const dependencies = { observePhysical: async () => ({ status: "P2_FRONTEND_PHYSICAL_LOCK_VERIFIED",
+      sourceCommit: plan.sourceCommit, admission: { newWork: false, recovery: false, active: 0, uncertain: 0 } }),
+    observeRuntime: async () => ({ configurationSha256: context.runtimeConfigurationSha256,
+      nativeSchedulesEnabled: false, businessSchedulesEnabled: false, containers,
+      courseCurrent: true, communityCurrent: true, boundaryChecks: ["private-application-credential-required",
+        "private-community-peer-denied", "private-course-tls-catalog", "public-metrics-hidden",
+        "public-tls-missing-workload-denied"] }),
+    observeFrontendProvider: async () => ({ configurationSha256: context.frontendConfigurationSha256,
+      cronsEnabled: false, aliasJobActive: false, deploymentId: "dpl_Owned" }) };
+  assert.equal((await observeIdentityRotationBoundary(context, dependencies)).containerCount, 10);
+  dependencies.observeRuntime = async () => ({ configurationSha256: context.runtimeConfigurationSha256,
+    nativeSchedulesEnabled: false, businessSchedulesEnabled: false, containers: containers.map(row => ({ ...row, health: "healthy" })),
+    courseCurrent: true, communityCurrent: true, boundaryChecks: ["private-application-credential-required",
+      "private-community-peer-denied", "private-course-tls-catalog", "public-metrics-hidden",
+      "public-tls-missing-workload-denied"] });
+  await assert.rejects(() => observeIdentityRotationBoundary(context, dependencies), /P2_IDENTITY_ROTATION_BOUNDARY_REFUSED/u);
 });

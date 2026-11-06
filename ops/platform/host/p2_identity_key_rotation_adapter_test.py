@@ -276,16 +276,17 @@ class AdapterTest(unittest.TestCase):
 
     def test_runtime_mount_guard_requires_exact_readonly_snapshot_sources(self):
         adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
-        adapter.scope = Scope(); snapshot = Path("/private/runtime-overlap")
+        adapter.scope = Scope(); snapshot = Path("/private/runtime-overlap"); original = Path("/private/original-runtime")
+        adapter.unchanged_runtime_configuration = original; adapter.api_mount_configuration = original
         containers = [{"service": service, "containerId": str(index)} for index, service in enumerate(runtime.SERVICES)]
         expected = {
-            "gateway": [("/config/gateway.json", snapshot / "gateway.json"), ("/admission", snapshot / "admission"),
-                        ("/tls", snapshot / "tls/gateway")],
-            "course-tls": [("/config/course-tls.json", snapshot / "course-tls.json"), ("/tls", snapshot / "tls/course")],
-            "course-publisher": [("/tls/ca.pem", snapshot / "tls/ca.pem")],
-            "community-api": [("/tls/ca.pem", snapshot / "tls/ca.pem")],
-            "community-tls": [("/config/community-tls.json", snapshot / "community-tls.json"), ("/tls", snapshot / "tls/community")],
-            "community-worker": [("/tls/ca.pem", snapshot / "tls/ca.pem")],
+            "gateway": [("/config/gateway.json", original / "gateway.json"), ("/admission", original / "admission"),
+                        ("/tls", original / "tls/gateway")],
+            "course-tls": [("/config/course-tls.json", original / "course-tls.json"), ("/tls", original / "tls/course")],
+            "course-publisher": [("/tls/ca.pem", original / "tls/ca.pem")],
+            "community-api": [("/tls/ca.pem", original / "tls/ca.pem")],
+            "community-tls": [("/config/community-tls.json", original / "community-tls.json"), ("/tls", original / "tls/community")],
+            "community-worker": [("/tls/ca.pem", original / "tls/ca.pem")],
         }
         by_id = {row["containerId"]: row["service"] for row in containers}
         def command(arguments, _environment, _timeout=15, _input=None):
@@ -296,9 +297,12 @@ class AdapterTest(unittest.TestCase):
             return "true|" + json.dumps(mounts)
         adapter._command = command
         adapter._validate_runtime_mounts(snapshot, containers)
+        adapter.api_mount_configuration = snapshot
+        expected["community-api"] = [("/tls/ca.pem", snapshot / "tls/ca.pem")]
+        adapter._validate_runtime_mounts(snapshot, containers)
         def changed(arguments, environment, timeout=15, input=None):
             raw = command(arguments, environment, timeout, input)
-            return raw.replace(str(snapshot), "/foreign", 1) if by_id[arguments[-1]] == "gateway" else raw
+            return raw.replace(str(original), "/foreign", 1) if by_id[arguments[-1]] == "gateway" else raw
         adapter._command = changed
         with self.assertRaises(ValueError):
             adapter._validate_runtime_mounts(snapshot, containers)
@@ -308,7 +312,7 @@ class AdapterTest(unittest.TestCase):
         adapter.selected = {}; adapter.client = object(); adapter.scope = Scope()
         adapter.configurations = types.SimpleNamespace(hashes={"overlap": "a" * 64})
         containers = [{"service": service, "containerId": f"{index + 1:064x}",
-            "image": "ghcr.io/princessdardan/lash-her-platform-test@sha256:" + "b" * 64}
+            "image": "ghcr.io/princessdardan/lash-her-platform-test@sha256:" + "b" * 64, "health": "healthy"}
             for index, service in enumerate(runtime.SERVICES)]
         adapter.observe_api_configuration = lambda _phase: {"configurationSha256": "a" * 64,
             "containers": containers, "runtimeVerified": True}
@@ -330,6 +334,8 @@ class AdapterTest(unittest.TestCase):
             "containers", "courseCurrent", "communityCurrent", "boundaryChecks"})
         self.assertTrue(result["courseCurrent"]); self.assertTrue(result["communityCurrent"])
         self.assertFalse(result["nativeSchedulesEnabled"]); self.assertFalse(result["businessSchedulesEnabled"])
+        self.assertTrue(all(set(row) == {"service", "containerId", "image"} for row in result["containers"]))
+        self.assertEqual(adapter.runtime_guard_containers(result["containers"]), containers)
         self.assertEqual(len([call for call in calls if call[0] == "systemctl"]), 2)
 
     def test_api_recreation_is_one_registered_compose_mutation_without_sql_or_roles(self):
