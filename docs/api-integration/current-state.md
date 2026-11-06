@@ -2,7 +2,7 @@
 
 Source checkpoint updated November 6, 2026 (Toronto). Accepted live admission completed November 4 at 01:27:39 UTC, with independent postflight at 01:29:33 UTC. [The tracker](../../API-INTEGRATION-EXECUTION.md) owns task status; [release policy](release-policy.md) governs future releases.
 
-Latest source position: Course `a447bfde` and Community `939de65d` pass merged-main CI. Frontend `e7ab752e604ba43bc5b6443a9197a56e2a6e0cad` passes all ten required jobs in CI 42234033582, including durable gateway frontier/pinned dependency setup, Linux operator and all browsers. Separate interrupted-restoration C has clean owned PG16/18 positive receipts but containment/actual-entry review corrections and CI wiring remain open. Final union/CI/candidate, historical configuration/provider effects and deployed certification remain required. Historical sections retain their original scope.
+Latest source position: API mains remain qualified at Course `a447bfde` and Community `939de65d`. E7 remains the last all-ten-job frontend CI pass. Cleared C/source/CI/entry packages are integrated as `93a8c821`; root 86 host/46 Node checks pass, zero skips, and exact integrated Linux CI is next. Dardan confirmed no original configuration archive; existing-scope historical P2-00 remains unqualified. A finite metadata feasibility check is proceeding; no target change is approved. Final candidate and deployed P2/G2 remain open. Historical sections retain their original scope.
 
 ## Accepted P1 state
 
@@ -201,3 +201,9 @@ CI47 passes eight ordinary jobs, including build/all three browsers with the can
 ## E7 exact-source CI and remaining C review — November 6, 2026
 
 [Exact E7 CI](baselines/2026-11-06-p2-ci-installer-bounds/ci-e7-final.json) passes all ten required jobs, including all browsers and actual PG18 roles 24/release 18/native 9/certification 10 plus identity 19/recovery 55/forward 19/persistence 13/receiver 12, zero skips. WebKit installs in 34 seconds and its suite passes. Separate C has owned PG16/18 positive new-process/new-backend/three-database receipts, but final review found guard-death/pre-worker cleanup and actual CLI identity gaps. Corrections, fixed CI wiring and final union qualification remain required; no C/deployed acceptance is claimed. Original receipts and failed attempts remain retained. No staging mutation or G2 closure occurred.
+
+## Cleared C integration and unavailable historical archive — November 6, 2026
+
+[Integrated 93a source](baselines/2026-11-06-p2-c-integrated-source/README.md) passes 86 host/46 Node, zero skips, with lint and narrow independent composition review. Complete 492-file/40,448,700-byte decoded selection fits existing bounds; PR91 runtime/all 33 profiles unchanged. C exact PG18 positive and seven negatives pass within explicit modeled-runtime/source-transport boundaries. New exact Linux CI remains required; original failures/repros and source-specific receipts stay retained.
+
+[The user-confirmed archive absence](decisions/2026-11-06-original-frontend-config-unavailable.md) does not waive historical binding/effect evidence or authorize a target change. Old P2-00/live G2 remain unqualified; accepted G1 stays preserved. One finite read-only feasibility check is proceeding while source CI completes. A fresh isolated lane is only a proposal and would not complete old P2-00. No live mutation, deployment or new provider/account/environment was performed.
