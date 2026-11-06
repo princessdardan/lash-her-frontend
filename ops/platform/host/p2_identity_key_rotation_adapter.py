@@ -41,14 +41,23 @@ def _env(raw):
     return value
 
 
-def _phase_hash(directory):
-    files = (*runtime.CONFIG_FILES, *runtime.TLS_FILES, *(f"{service}.env" for service in runtime.ENV_FILES),
-             "runtime.json", "frontend.env")
+def _configuration_hash(directory, files):
     payload = bytearray()
     for relative in sorted(files):
         raw = migrate.read_input(directory, relative, 65_536)
         payload.extend(relative.encode() + b"\0" + raw + b"\0")
     return migrate.file_hash(bytes(payload))
+
+
+def _runtime_phase_hash(directory):
+    return _configuration_hash(directory, (*runtime.CONFIG_FILES, *runtime.TLS_FILES,
+                                            *(f"{service}.env" for service in runtime.ENV_FILES), "runtime.json"))
+
+
+def _phase_hash(directory):
+    return _configuration_hash(directory, (*runtime.CONFIG_FILES, *runtime.TLS_FILES,
+                                            *(f"{service}.env" for service in runtime.ENV_FILES),
+                                            "runtime.json", "frontend.env"))
 
 
 class P2IdentityRotationScope(P2ReleaseScope):
@@ -96,11 +105,12 @@ class RotationConfigurationSet:
                and all(public_expected[phase] != private_expected[phase] for phase in PHASES),
                "ROTATION_CONFIGURATION_INVENTORY_REQUIRED")
         self.directories = {phase: self.root / phase for phase in PHASES}
-        self.hashes, self.private_hashes = copy.deepcopy(public_expected), {}
+        self.hashes, self.private_hashes, self.runtime_private_hashes = copy.deepcopy(public_expected), {}, {}
         self.frontend, self.api = {}, {}
         for phase, directory in self.directories.items():
             migrate.private_directory(directory)
             self.private_hashes[phase] = _phase_hash(directory)
+            self.runtime_private_hashes[phase] = _runtime_phase_hash(directory)
             demand(self.private_hashes[phase] == private_expected[phase], "ROTATION_CONFIGURATION_HASH_CHANGED")
             self.frontend[phase] = _env(migrate.read_input(directory, "frontend.env", 65_536))
             self.api[phase] = {service: _env(migrate.read_input(directory, f"{service}.env", 65_536)) for service in API_SERVICES}
@@ -220,7 +230,7 @@ class P2IdentityRotationHostAdapter:
                        == migrate.file_hash(migrate.read_input(self.compose_file.parent, self.compose_file.name)),
                    "ROTATION_RETAINED_SNAPSHOT_CHANGED")
         self.configurations.directory(phase)
-        demand(_phase_hash(destination) == self.configurations.private_hashes[phase],
+        demand(_runtime_phase_hash(destination) == self.configurations.runtime_private_hashes[phase],
                "ROTATION_SNAPSHOT_CONFIGURATION_CHANGED")
         return destination
 

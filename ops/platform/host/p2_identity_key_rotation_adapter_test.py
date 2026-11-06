@@ -24,9 +24,12 @@ class ConfigurationFixture:
             directory.mkdir(mode=0o700)
             for relative in (*runtime.CONFIG_FILES, *runtime.TLS_FILES, "runtime.json"):
                 path = directory / relative; path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                path.write_bytes((relative + "\n").encode()); path.chmod(0o600)
+                payload = "shared-ca\n" if relative in ("tls/ca.pem", "tls/gateway/ca.pem") else relative + "\n"
+                path.write_bytes(payload.encode()); path.chmod(0o600)
             for service in runtime.ENV_FILES:
-                values = {"NODE_ENV": "production", "DATABASE_TARGET": "staging", "STAGING_DATABASE_URL": "postgresql://runtime:password@db/course?sslmode=verify-full"}
+                name = "course" if service.startswith("course-") else "community"
+                values = {"NODE_ENV": "production", "DATABASE_TARGET": "staging",
+                          "STAGING_DATABASE_URL": f"postgresql://{name}_runtime:password@db/{name}?sslmode=verify-full"}
                 prefixes = {"course-api": rotation.PROFILE_PREFIXES[:2], "community-api": rotation.PROFILE_PREFIXES[2:]}.get(service, ())
                 values.update(self.profile_values(prefixes, phase))
                 self.write_env(directory / f"{service}.env", values)
@@ -89,6 +92,20 @@ class RotationConfigurationTest(unittest.TestCase):
         path.write_text(path.read_text() + "POST_REVIEW_DRIFT=refused\n"); path.chmod(0o600)
         with self.assertRaises(ValueError):
             selected.directory("overlap")
+
+    def test_actual_runtime_snapshot_uses_reviewed_runtime_subset_and_keeps_frontend_separate(self):
+        selected = rotation.RotationConfigurationSet(self.temp.name, self.fixture.hashes,
+                                                     self.fixture.private_hashes, fixture=True)
+        output = Path(tempfile.mkdtemp()); os.chmod(output, 0o700)
+        compose = output / "compose.yaml"; compose.write_text("services: {}\n"); compose.chmod(0o600)
+        adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
+        adapter.configurations, adapter.output, adapter.compose_file = selected, output, compose
+        adapter.selected = {"environment": "staging"}
+        adapter.jobs = {name: {"job": {"target": {"host": "db", "port": 5432, "database": name,
+            "user": f"{name}_owner"}, "runtimeRole": f"{name}_runtime"}} for name in ("course", "community")}
+        snapshot = adapter._snapshot("overlap")
+        self.assertFalse((snapshot / "frontend.env").exists())
+        self.assertEqual(rotation._runtime_phase_hash(snapshot), selected.runtime_private_hashes["overlap"])
 
 
 class Scope:

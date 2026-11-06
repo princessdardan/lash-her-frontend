@@ -11,8 +11,8 @@
     "ops/platform/p2-identity-key-rotation-observer.mjs": "73cbf46a51b241168921d986be93107c03f3c62d679e314de12004e5726e10bb",
     "ops/platform/host/p2_identity_key_rotation.py": "178f63244c90cc3683e11917e02e77d77dd40f6a61f8fabe0f24c3d035705d61",
     "ops/platform/host/p2_identity_key_rotation_test.py": "11380fdf9558c5d05629091486183fb71e791714afb736d1649245787806597d",
-    "ops/platform/host/p2_identity_key_rotation_adapter.py": "437e18bd42be6bc6ad6888d6d18a59a0a76142b1a7fc3a0005032c1cd113cdb0",
-    "ops/platform/host/p2_identity_key_rotation_adapter_test.py": "e1cddff10c21eb8215bc7e2ac281e31973e140aabc834a4977433a6990195098",
+    "ops/platform/host/p2_identity_key_rotation_adapter.py": "d1c0d7a6c9b06e6a13bda10593d815d449525a2ab342fb748fa6b94df4dca2ce",
+    "ops/platform/host/p2_identity_key_rotation_adapter_test.py": "d6e0ba9204bdb129ccb4b5649f4f6d8ea9a03d66be42d1fd0617dd039065e496",
     "ops/platform/p2-identity-key-rotation.md": "ad72fa0f6723d538634a91e6b7f3bfbb3c9f99c267770c7319d507988af69e0b"
   },
   "embeddedProgram": {
@@ -23,7 +23,7 @@
   "verification": {
     "rotationObserverNode": { "passed": 6, "failed": 0, "skipped": 0, "realLoopbackVerifiedTls": true },
     "rotationControllerNode": { "passed": 8, "failed": 0, "skipped": 0 },
-    "python": { "passed": 15, "failed": 0, "skipped": 0 },
+    "python": { "passed": 16, "failed": 0, "skipped": 0 },
     "eslint": "passed",
     "javascriptSyntax": "passed",
     "pythonCompile": "passed",

@@ -36,8 +36,9 @@ Owned validation covers:
   only the existing fresh release-probe overlay, and passes child credentials
   over private stdin rather than process arguments;
 - repeated reviewed private-configuration byte validation before and after
-  copies, mutations, and observations, with copied snapshots joined to the
-  same reviewed byte hash;
+  copies, mutations, and observations. Actual runtime snapshots are joined to
+  the reviewed runtime-only subset while `frontend.env` remains covered by the
+  separately rechecked full private bundle;
 - Vercel `decrypt=false` opaque secret values are discarded as non-authority;
   supported sensitive/encrypted response shapes do not imply secret readback;
 - refusal of incomplete profiles, short drain, grace acceptance, configured
