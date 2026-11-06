@@ -228,7 +228,11 @@ def run_owned_composed_diagnostic_controls(node,root,connections,bridge_director
             if not any(row['guardCode']=='P2_FORWARD_CONCLUSIVE_FAILED_BUILD_REQUIRED' for error in value['bridgeErrors'] for row in error['chain']):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_PYTHON_SOURCE_REQUIRED')
         elif mode=='node-message-collision':
             if value['bridgeErrors'] or not value['nodeErrors'] or any(error['guardCode']!='unknown' for error in value['nodeErrors']):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_UNBOUND_COLLISION_REFUSED')
-        elif value['bridgeErrors'] or not any(error['guardCode']==('P2_RECOVERY_CURRENT_DATABASE_REFUSED' if mode=='node-checkpoint' else 'P2_RECOVERY_FRONTEND_RECHECK_REFUSED') and error['frames'] for error in value['nodeErrors']):
+        elif mode=='node-checkpoint':
+            # Closing stdin and SIGTERM can race the child's EOF projection.
+            # Its optional cleanup metadata never replaces the actual Node guard.
+            if not any(error['guardCode']=='P2_RECOVERY_CURRENT_DATABASE_REFUSED' and error['checkpoint']=='forward-brand' and error['stage']=='composed-checkpoint' and error['frames'] for error in value['nodeErrors']):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_NODE_SOURCE_REQUIRED')
+        elif value['bridgeErrors'] or not any(error['guardCode']=='P2_RECOVERY_FRONTEND_RECHECK_REFUSED' and error['frames'] for error in value['nodeErrors']):
             raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_NODE_SOURCE_REQUIRED')
         encoded=json.dumps(value)
         if any(secret and secret in encoded for secret in (connections.get('password'),connections.get('frontend'),'owned-token-marker')):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_PRIVATE_VALUE_REFUSED')

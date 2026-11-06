@@ -142,7 +142,8 @@ class OwnedRecoveryDiagnosticsTests(unittest.TestCase):
                 before=len(owner.calls)
                 values=NS['run_owned_composed_diagnostic_controls'](node,ROOT,connections,directory,codes)
                 self.assertEqual(len(values),4);self.assertTrue(values[0]['bridgeErrors'])
-                self.assertFalse(values[1]['bridgeErrors']);self.assertFalse(values[2]['bridgeErrors'])
+                self.assertFalse(values[1]['bridgeErrors']);self.assertFalse(values[3]['bridgeErrors'])
+                self.assertTrue(any(row['guardCode']=='P2_RECOVERY_CURRENT_DATABASE_REFUSED' and row['checkpoint']=='forward-brand' for row in values[2]['nodeErrors']))
                 self.assertTrue(all(row['method']=='GET' for row in owner.calls[before:]))
                 self.assertEqual(list(directory.iterdir()),[])
         finally:
