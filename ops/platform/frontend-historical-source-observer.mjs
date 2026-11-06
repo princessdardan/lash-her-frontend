@@ -126,7 +126,10 @@ export async function observeFrontendHistoricalSourceContexts(context, bindings,
         result.bindings.push({ surfaceSha256: binding.surfaceSha256, sourceCommit: binding.sourceCommit,
           configurationRecordSha256: binding.configurationRecordSha256, provenanceSha256: binding.sourceConfiguration.provenanceSha256,
           sourceInventorySha256: source.sourceInventorySha256, requirementsSha256: source.requirementsSha256,
-          sqlEvidence: sql, alternateStoreEvidence: stores ?? null, sqlPhysicalBindings: facts, providerCredentialBindings, requirements: { ...source, ...closures } });
+          sqlEvidence: sql, alternateStoreEvidence: stores ?? null, sqlPhysicalBindings: facts, providerCredentialBindings,
+          // Kept beside the generic source context so compact receipts retain
+          // useful outbound facts without authorizing SQL quiescence from them.
+          outboundCredentialExclusions: closures.outboundCredentialExclusions, requirements: { ...source, ...closures } });
       } finally {
         let cleanupFailed = false;
         for (const [client, marker] of locks.reverse()) {

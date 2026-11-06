@@ -1,0 +1,248 @@
+{
+  "scope": "offline-interpretation-only; frozen register and all81 surfaces retained",
+  "affectedSurfaces": 24,
+  "databaseUrlPresent": 24,
+  "originalBindingsOrRuntimeClosuresProduced": false,
+  "surfaces": [
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_2EYaBUHPhH7VpfMjewPwahjhYHbP",
+      "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_2kbYXvgZ6JYa71ZfN8cHgmwaRfn9",
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_6YZsoqCqh1dy42kzzBn4vjvTmu2G",
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_7VUnHWAAVqcZYd4xfd2VJokj3SHS",
+      "sourceCommit": "2390ff32c4156bf861cbce32406f5e4ad18583ab",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_AcWL59ofwPRKHifBujyQAfXEVzRs",
+      "sourceCommit": "26bcdd9a605eb6c07a75e2a7a7b519015b04deb8",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_B6kUx3d3viPek6UkKGHEpH9ZU6Ry",
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_BCyvMh81J8KyGFuas3pJgNCKUkys",
+      "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_BhcXzshZsXQ6nzqAkbKsn1BPDsZX",
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_Bqc171V1RouKNkjcrnVtWB1imwKH",
+      "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_CdhFqwVANweysVe9cCTNpmHfduiy",
+      "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_EdrWmJP8vXxEekbmAMWyAAbAxHzL",
+      "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_FAVez4Lwq3AydKquvaE37SqGQUSR",
+      "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_FZuGK5tHzqgd37Hr96fGo9wdT2u9",
+      "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_HnN7FbtaRP2mBsQPg9QeZiSuupP8",
+      "sourceCommit": "74ca26736e5834fce639407278b4575bf4d05670",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "deploymentId": "dpl_NQiyux1pG6WxihCetBfDDZycVRQ4",
+      "sourceCommit": "d789070e4c186be67a474ae3851fb6da7f624179",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_2N7bbNfCUDriHji4YSiYR9aHeCxx",
+      "sourceCommit": "d789070e4c186be67a474ae3851fb6da7f624179",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_44VFAYJoV9EsS2JbdZ7GyLdiaz3z",
+      "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_4MXvcWZKjuq5VM7NjotrKtqyzsJs",
+      "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_5Gswwd1jhi5vusSZHCL2DewL5z8W",
+      "sourceCommit": "26bcdd9a605eb6c07a75e2a7a7b519015b04deb8",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_5WEkq9nP659MTYKdPvukvjWKUbPG",
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_DUhpTHCGjzMup1h6H4X5xXkvcjth",
+      "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_DcgB842LqovU4j72iPhPkj7irK4H",
+      "sourceCommit": "b5f7e08c5d264b66286062c60691f4d28d924294",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_ExkXSvSvhromRua1vjYJCS5fKLzq",
+      "sourceCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    },
+    {
+      "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "deploymentId": "dpl_cnqbTnuFxWfT3DuzQya42CYf8Qhp",
+      "sourceCommit": "2390ff32c4156bf861cbce32406f5e4ad18583ab",
+      "databaseUrlPresent": true,
+      "authSecretPresent": true,
+      "highlevelLocationPresent": false,
+      "previousClassification": "credential-path-blocked-by-fullcatalog",
+      "correctedInterpretation": "outbound-credential-path-excluded-only; seven frontend SQL families remain unresolved while DATABASE_URL is configured"
+    }
+  ]
+}

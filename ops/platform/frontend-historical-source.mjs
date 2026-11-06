@@ -123,11 +123,16 @@ export function verifyHistoricalFrontendSourceProfile(repository, sourceCommit, 
       demand(Number.isInteger(annotation.lineStart) && annotation.lineStart > 0 && Number.isInteger(annotation.lineEnd) && annotation.lineEnd >= annotation.lineStart && annotation.lineEnd <= lines.length);
       demand(historicalSourceSha256(lines.slice(annotation.lineStart - 1, annotation.lineEnd).join("\n")) === annotation.excerptSha256);
     }
+    const highlevelCredentialPathsReviewed = profile.providerFamilies.some(family => family.provider === "highlevel" &&
+      family.configurationConditions.some(condition => condition.requiredCredentialPaths?.length > 0));
     const facts = { version: 1, status: "FRONTEND_HISTORICAL_SOURCE_VERIFIED", sourceCommit, treeOid: profile.treeOid,
       sourceInventorySha256: profile.sourceInventorySha256, entrypoints: profile.inventory.entrypoints,
       sqlCredentialRequirements: profile.sqlCredentialRequirements, providerFamilies: profile.providerFamilies,
       manualCredentialProfiles: profile.manualCredentialProfiles, sdkDependencies: profile.sdkDependencies,
-      sourceReviewDisposition: profile.sourceReviewDisposition, sourceAdmission: "not-qualified-by-current-candidate" };
+      sourceReviewDisposition: profile.sourceReviewDisposition, sourceAdmission: "not-qualified-by-current-candidate",
+      // Scope interpretation is part of the receipt identity. A retained
+      // outbound-only v1 closure must not be reaccepted as a SQL exclusion.
+      ...(highlevelCredentialPathsReviewed ? { capabilityScopePolicy: "highlevel-outbound-and-private-sql-separate-v2" } : {}) };
     const result = freeze({ ...facts, requirementsSha256: historicalSourceSha256(facts) }); proofs.add(result); return result;
   } catch { throw refusal(); }
 }
@@ -295,13 +300,28 @@ export function deriveHistoricalSourceCapabilityClosures(requirements, binding, 
     if (storeEvidence !== undefined) demand(storeProofs.has(storeEvidence) && storeEvidence.sqlEvidenceSha256 === sqlEvidence.evidenceSha256 &&
       storeEvidence.sourceCommit === requirements.sourceCommit && storeEvidence.surfaceSha256 === binding.surfaceSha256 &&
       storeEvidence.configurationRecordSha256 === binding.configurationRecordSha256 && storeEvidence.provenanceSha256 === selected.provenanceSha256);
-    const capabilityClosures = [];
+    const capabilityClosures = [], outboundCredentialExclusions = [];
     for (const family of requirements.providerFamilies) {
       const absent = family.sourceDisposition === "absent-from-verified-source";
       const paths = family.configurationConditions[0]?.requiredCredentialPaths ?? [];
       // A retained key with a masked, empty or invalid value is not absence.
       // Only its omission from the bound original full key catalog qualifies.
       const noCapability = paths.length > 0 && paths.every(path => path.some(key => !catalog.has(key)));
+      const highlevelSqlWriter = family.provider === "highlevel" && family.familyId !== "highlevel.webhooks";
+      const applicationSqlInvocation = selected.kind === "deployment" || selected.kind === "direct-caller" &&
+        ["scripts/highlevel-backfill.ts", "scripts/highlevel-config-check.ts"].includes(selected.entrypoint);
+      // C07 OAuth state claims and local queue/consent/retention SQL precede
+      // outbound credential lookup. Only the exact reviewed application SQL
+      // path's absence can close those writers. Arbitrary injected clients are
+      // not an application invocation and never inherit this exclusion.
+      const sqlNoCapability = noCapability && (!highlevelSqlWriter || applicationSqlInvocation && !catalog.has("DATABASE_URL"));
+      if (highlevelSqlWriter && noCapability) outboundCredentialExclusions.push({ familyId: family.familyId,
+        sourceCommit: requirements.sourceCommit, surfaceSha256: binding.surfaceSha256,
+        configurationRecordSha256: binding.configurationRecordSha256, provenanceSha256: selected.provenanceSha256,
+        effectScope: "source-outbound-provider-credential-paths-only",
+        configurationRequirementIds: family.configurationConditions.map(row => row.requirementId).sort(),
+        evidenceIds: [...new Set([requirements.sourceInventorySha256, requirements.requirementsSha256,
+          binding.configurationRecordSha256, selected.provenanceSha256, sqlEvidence.evidenceSha256])].sort() });
       const sourceConditions = family.configurationConditions[0];
       const executionClosed = sourceConditions?.mutationExecutions && !sourceConditions.mutationExecutions.some(execution =>
         execution.kind === selected.kind && (execution.kind === "deployment" || execution.entrypoint === selected.entrypoint));
@@ -311,7 +331,7 @@ export function deriveHistoricalSourceCapabilityClosures(requirements, binding, 
       // Concrete retained grants/events/continuations are contradictions, never a
       // shortcut from a current empty store to historical request completeness.
       const contradicted = family.provider === "google" && storeEvidence?.hasRetainedGoogleState;
-      if (contradicted || (!absent && !noCapability && !executionClosed && !guarded && !predicate)) continue;
+      if (contradicted || (!absent && !sqlNoCapability && !executionClosed && !guarded && !predicate)) continue;
       const requirementIds = [...new Set([...requirements.sqlCredentialRequirements, ...family.configurationConditions,
         ...family.sqlIntentRequirements, ...family.untrackedPotentialRequests].map(row => row.requirementId))].sort();
       capabilityClosures.push({ familyId: family.familyId, sourceCommit: requirements.sourceCommit, surfaceSha256: binding.surfaceSha256,
@@ -331,7 +351,8 @@ export function deriveHistoricalSourceCapabilityClosures(requirements, binding, 
     const unresolvedFamilyIds = [...new Set([...unresolvedFrontendSqlFamilyIds, ...unresolvedExternalCapabilityFamilyIds])].sort();
     return freeze({ version: 1, sourceCommit: requirements.sourceCommit, treeOid: requirements.treeOid,
       sourceInventorySha256: requirements.sourceInventorySha256, requirementsSha256: requirements.requirementsSha256,
-      surfaceSha256: binding.surfaceSha256, configurationRecordSha256: binding.configurationRecordSha256, provenanceSha256: selected.provenanceSha256, capabilityClosures,
+      surfaceSha256: binding.surfaceSha256, configurationRecordSha256: binding.configurationRecordSha256, provenanceSha256: selected.provenanceSha256,
+      capabilityClosures, outboundCredentialExclusions,
       unresolvedFrontendSqlFamilyIds, unresolvedExternalCapabilityFamilyIds, unresolvedFamilyIds });
   } catch { throw refusal(); }
 }

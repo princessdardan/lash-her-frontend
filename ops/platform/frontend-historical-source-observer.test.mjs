@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import { historicalSourceSha256 as hash, historicalSourceOriginalValueKeys, verifiedSourceRequirements } from "./frontend-historical-source.mjs";
 import { observeFrontendHistoricalSourceContexts, observeFrontendHistoricalSourceIntentCounts } from "./frontend-historical-source-observer.mjs";
 const commit = "b99d4f346696f897fa6a6729dfcc52d6503fe8d6";
@@ -92,4 +93,38 @@ test("fixed source intent tables are read only with bounded counts, and absent t
   assert.equal(queries[0], "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"); assert.equal(queries.at(-1), "ROLLBACK");
   before.bindings[0].requirements.providerFamilies[0].sqlIntentRequirements[0].tables = ["orders;DELETE"];
   await assert.rejects(observeFrontendHistoricalSourceIntentCounts(context, before));
+});
+
+test("actual C07 observer cannot give the HighLevel helper zero from outbound-only exclusions", async () => {
+  const f = fixture({ DATABASE_URL: "postgresql://owned_reader:owned-password@127.0.0.1:5432/owned_frontend?sslmode=verify-full" },
+    { keyCatalog: ["AUTH_SECRET", "DATABASE_URL"] });
+  let ended = 0;
+  const result = await observeFrontendHistoricalSourceContexts(f.context, f.bindings, f.privateRuntime, { createClient() {
+    return { connection: { stream: { encrypted: true, authorized: true } },
+      connectionParameters: { host: "127.0.0.1", port: 5432, database: "owned_frontend", user: "owned_reader", password: "owned-password" },
+      on() {}, async connect() {}, async end() { ended++; }, async query(sql) {
+        return { rows: sql.includes("current_user") ? [{ database: "owned_frontend", username: "owned_reader", session_username: "owned_reader", role_oid: "123", major: 16, read_only: "on" }] :
+          [{ count: sql.includes("pg_locks") ? 4 : 0 }] };
+      } };
+  } });
+  assert.equal(ended, 1);
+  const row = result.bindings[0];
+  assert.deepEqual(f.requiredValueKeys, ["DATABASE_URL"], "signing and HighLevel keys stay names-only");
+  assert.equal(row.requirements.unresolvedFrontendSqlFamilyIds.filter(id => id.startsWith("highlevel.")).length, 7);
+  assert.deepEqual(row.outboundCredentialExclusions, row.requirements.outboundCredentialExclusions);
+  const code = `import sys,json
+sys.path.insert(0,sys.argv[1])
+import frontend_highlevel_history as h
+s=json.load(sys.stdin)
+rows={name:([{'contacts':0,'effects':0,'connections':0,'webhooks':0}] if name=='historyGlobalScope' else []) for name in h.COLUMNS}
+try:
+ result=h.observe_scoped_effects(None,{'environment':'staging','sourceBindingSha256':s['configurationRecordSha256'],'historicalSourceCommit':s['sourceCommit'],'historyDatabaseSnapshotSha256':h.sha256(rows)},rows,s)
+ print(json.dumps({'zero':result.get('activeExecutions')==0 and result.get('uncertainEffects')==0}))
+except ValueError as error:
+ print(json.dumps({'zero':False,'refusal':str(error)}))
+`;
+  const helper = spawnSync("python3", ["-I", "-c", code, fileURLToPath(new URL("./host/", import.meta.url))],
+    { input: JSON.stringify(row.requirements), encoding: "utf8", env: Object.fromEntries(["PATH", "HOME", "LANG"].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]])) });
+  assert.equal(helper.status, 0);
+  assert.deepEqual(JSON.parse(helper.stdout), { zero: false, refusal: "HIGHLEVEL_HISTORY_ACTUAL_PRINCIPAL_REQUIRED" });
 });

@@ -296,6 +296,47 @@ test("present empty/masked credentials remain potential capabilities and differe
   }
 });
 
+test("HighLevel outbound key absence cannot close OAuth state or local SQL writers", async () => {
+  const fixture = originalFixture({ DATABASE_URL: ownedUrl }, { keyCatalog: ["AUTH_SECRET", "DATABASE_URL"] });
+  const sql = await collect(fixture, new Map([["DATABASE_URL", sqlPeer()]]));
+  const result = derive(requirements, fixture.binding, fixture.original, sql);
+  const writers = requirements.providerFamilies.filter(row => row.provider === "highlevel" && row.familyId !== "highlevel.webhooks").map(row => row.familyId).sort();
+  assert.equal(requirements.capabilityScopePolicy, "highlevel-outbound-and-private-sql-separate-v2");
+  assert.equal(requirements.sourceAdmission, "not-qualified-by-current-candidate");
+  assert.equal(writers.length, 7);
+  assert.deepEqual(result.unresolvedFrontendSqlFamilyIds.filter(id => id.startsWith("highlevel.")), writers);
+  assert.ok(result.capabilityClosures.some(row => row.familyId === "highlevel.webhooks"), "actual missing-location guard remains useful");
+  assert.deepEqual(result.outboundCredentialExclusions.map(row => row.familyId).sort(), writers);
+  for (const row of result.outboundCredentialExclusions) {
+    assert.equal(row.effectScope, "source-outbound-provider-credential-paths-only");
+    assert.deepEqual(row.configurationRequirementIds, [row.familyId + ".original-configuration"]);
+    assert.equal(Object.hasOwn(row, "requirementIds"), false, "outbound facts cannot cover SQL, callback or accepted-effect IDs");
+    assert.equal(row.surfaceSha256, fixture.binding.surfaceSha256);
+  }
+});
+
+test("signed HighLevel ingress remains a SQL obligation without encryption or client secrets", async () => {
+  const fixture = originalFixture({ DATABASE_URL: ownedUrl }, { keyCatalog: ["AUTH_SECRET", "DATABASE_URL", "HIGHLEVEL_LOCATION_ID"] });
+  const sql = await collect(fixture, new Map([["DATABASE_URL", sqlPeer()]]));
+  const result = derive(requirements, fixture.binding, fixture.original, sql);
+  assert.deepEqual(result.unresolvedFrontendSqlFamilyIds.filter(id => id.startsWith("highlevel.")),
+    requirements.providerFamilies.filter(row => row.provider === "highlevel").map(row => row.familyId).sort());
+  assert.ok(!result.capabilityClosures.some(row => row.familyId.startsWith("highlevel.")));
+  assert.ok(!result.outboundCredentialExclusions.some(row => row.familyId === "highlevel.webhooks"));
+});
+
+test("HighLevel application SQL absence and exact manual caller provenance stay distinct", async () => {
+  for (const options of [{}, { kind: "direct-caller", entrypoint: "scripts/highlevel-backfill.ts" },
+    { kind: "direct-caller", entrypoint: "scripts/highlevel-config-check.ts" }]) {
+    const fixture = originalFixture({}, options), sql = await collect(fixture), result = derive(requirements, fixture.binding, fixture.original, sql);
+    assert.equal(result.capabilityClosures.filter(row => row.familyId.startsWith("highlevel.")).length, 8);
+  }
+  const other = originalFixture({}, { kind: "direct-caller", entrypoint: "scripts/seed-resend-templates.ts" });
+  const sql = await collect(other), result = derive(requirements, other.binding, other.original, sql);
+  assert.equal(result.unresolvedFrontendSqlFamilyIds.filter(id => id.startsWith("highlevel.")).length, 7);
+  assert.throws(() => originalFixture({}, { kind: "direct-caller", entrypoint: "src/lib/highlevel/oauth.ts" }), rejected);
+});
+
 test("manual template mutation scope and original staging broadcast guard use checked source and bound original selectors", async () => {
   for (const [options, environment, templatesClosed, broadcastsClosed] of [
     [{}, { RESEND_API_KEY: "owned-synthetic-token", APP_ENV: "staging" }, true, false],
