@@ -2,6 +2,8 @@
 import ast
 import contextlib
 import io
+import inspect
+import shutil
 import json
 import os
 from pathlib import Path
@@ -18,8 +20,8 @@ from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[3]
 SOURCE=ROOT/'ops/platform/test-p2-recovery-owned.py'
-NS={'json':json,'os':os,'Path':Path,'re':re,'sys':sys,'signal':signal,'ast':ast,'traceback':traceback,'urllib':urllib,'ssl':ssl}
-NAMES={'OWNED_CHILD_PHASES','OWNED_CHILD_ERROR_CODES','child_environment','child_failure_diagnostic','report_child_failure','OWNED_BRIDGE_SOURCE_FILES','OWNED_BRIDGE_ERROR_KINDS','owned_bridge_guard_codes','owned_bridge_diagnostic','read_owned_bridge_diagnostics'}
+NS={'json':json,'os':os,'Path':Path,'re':re,'sys':sys,'signal':signal,'ast':ast,'traceback':traceback,'urllib':urllib,'ssl':ssl,'inspect':inspect,'shutil':shutil,'io':io,'contextlib':contextlib,'subprocess':subprocess}
+NAMES={'OWNED_CHILD_PHASES','OWNED_CHILD_ERROR_CODES','child_environment','child_failure_diagnostic','report_child_failure','OWNED_BRIDGE_SOURCE_FILES','OWNED_BRIDGE_ERROR_KINDS','owned_bridge_guard_codes','owned_bridge_diagnostic','read_owned_bridge_diagnostics','prepare_owned_forward_graph','run_owned_composed_diagnostic_controls','OWNED_NODE_GUARD_CODES','OWNED_NODE_SOURCE_FILES','owned_node_diagnostics'}
 NODES=[node for node in ast.parse(SOURCE.read_text()).body if isinstance(node,(ast.FunctionDef,ast.Assign)) and
     (node.name if isinstance(node,ast.FunctionDef) else node.targets[0].id) in NAMES]
 exec(compile(ast.Module(body=NODES,type_ignores=[]),str(SOURCE),'exec'),NS)
@@ -122,6 +124,29 @@ class OwnedRecoveryDiagnosticsTests(unittest.TestCase):
                 file.write_text(json.dumps(changed));self.assertEqual(NS['read_owned_bridge_diagnostics'](directory,allowed),[])
             file.unlink();target=directory/'private';target.write_text(json.dumps(value));file.symlink_to(target)
             self.assertEqual(NS['read_owned_bridge_diagnostics'](directory,allowed),[])
+
+    def test_actual_outer_producer_preserves_composed_python_and_node_only_refusals(self):
+        import p2_recovery_test as fixture
+        fixture.RecoveryForwardBuildTests.setUpClass()
+        owner=fixture.RecoveryForwardBuildTests('test_reviewed_failed_build_creates_one_same_source_deployment_and_actual_private_probe')
+        owner.setUp()
+        try:
+            owner.prepare_forward()
+            with tempfile.TemporaryDirectory(prefix='owned-composed-forward-') as path:
+                graph,platform,directory,codes=NS['prepare_owned_forward_graph'](ROOT,Path(path),owner.origin,fixture.provider_fixture.vercel_test.VercelControlTests.cert)
+                connections={'serverMajor':18,'frontend':'postgresql://owned:OWNED_PRIVATE@127.0.0.1/never-connect','password':'OWNED_PRIVATE',
+                    'forwardFixture':{'context':owner.context,'graph':str(platform)}}
+                node='/Users/dardan/.nvm/versions/node/v24.18.0/bin/node' if Path('/Users/dardan/.nvm/versions/node/v24.18.0/bin/node').exists() else 'node'
+                for name in ('p2-recovery-frontend-observation.mjs','frontend-release-adapters.mjs'):
+                    self.assertEqual((platform/name).read_bytes(),(ROOT/'ops/platform'/name).read_bytes())
+                before=len(owner.calls)
+                values=NS['run_owned_composed_diagnostic_controls'](node,ROOT,connections,directory,codes)
+                self.assertEqual(len(values),4);self.assertTrue(values[0]['bridgeErrors'])
+                self.assertFalse(values[1]['bridgeErrors']);self.assertFalse(values[2]['bridgeErrors'])
+                self.assertTrue(all(row['method']=='GET' for row in owner.calls[before:]))
+                self.assertEqual(list(directory.iterdir()),[])
+        finally:
+            owner.tearDown();fixture.RecoveryForwardBuildTests.tearDownClass()
 
     def test_actual_inner_source_failure_retains_phase_and_frame_without_canaries(self):
         node='/Users/dardan/.nvm/versions/node/v24.18.0/bin/node' if Path('/Users/dardan/.nvm/versions/node/v24.18.0/bin/node').exists() else 'node'

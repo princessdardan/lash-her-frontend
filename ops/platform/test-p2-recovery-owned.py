@@ -1,5 +1,7 @@
 """Explicit loopback-only recovery qualification, all actual migration sources."""
 import ast
+import contextlib
+import io
 import hashlib
 import inspect
 import json
@@ -25,7 +27,7 @@ import urllib.parse
 # CI parent privately retains this bounded record without changing its receipt.
 OWNED_CHILD_PHASES = frozenset((
     'boot','frontend-connect','frontend-owner-roles','frontend-recovery-session',
-    'forward-prior-reconciliation','forward-api-course-current','forward-api-community-current',
+    'forward-composed-failure-control','forward-prior-reconciliation','forward-api-course-current','forward-api-community-current',
     'forward-runtime-credential-negatives','forward-new-build-probe-promote','forward-post-build-runtime-credential-negative','forward-source-scope',
     'forward-shared-compatible-observation','forward-shared-vercel-observation',
     'forward-open-admission-and-receipt-negatives','forward-journal-preservation','forward-scope-expired','forward-result',
@@ -113,6 +115,52 @@ def read_owned_bridge_diagnostics(directory, allowed_codes):
     return values
 
 
+def prepare_owned_forward_graph(root,directory,provider_origin,provider_ca):
+    graph=Path(directory)/'forward-app';platform=graph/'ops/platform';host=platform/'host';host.mkdir(parents=True)
+    (graph/'package.json').write_text('{"type":"module"}\n');(graph/'node_modules').symlink_to(root/'node_modules',target_is_directory=True)
+    for source in (root/'ops/platform').glob('*.mjs'):
+        destination=platform/source.name
+        if source.name in ('frontend-release-adapters.mjs','p2-recovery-frontend-observation.mjs'):shutil.copyfile(source,destination)
+        else:destination.symlink_to(source)
+    shim="import sys,ssl,re\nsys.path.insert(0,"+repr(str(root/'ops/platform/host'))+")\nimport frontend_probe,vercel\nvercel.API_ORIGIN="+repr(provider_origin)+"\noriginal_ssl=ssl.create_default_context\nssl.create_default_context=lambda *args,**kwargs: original_ssl(cafile="+repr(str(provider_ca))+")\noriginal_probe=frontend_probe.ProbeClient.request\nfrontend_probe.DEPLOYMENT_URL=re.compile(re.escape(vercel.API_ORIGIN))\ndef mapped_probe(self,url,*args,**kwargs):\n    assert url=='https://owned.vercel.app'\n    return original_probe(self,vercel.API_ORIGIN,*args,**kwargs)\nfrontend_probe.ProbeClient.request=mapped_probe\n"
+    bridge_directory=Path(directory)/'bridge-failures';bridge_directory.mkdir(mode=0o700)
+    bridge_codes=owned_bridge_guard_codes(root)
+    projection=("import os,json,traceback,urllib.error,ssl\nfrom pathlib import Path\n"+
+        "OWNED_BRIDGE_SOURCE_FILES="+repr(OWNED_BRIDGE_SOURCE_FILES)+"\nOWNED_BRIDGE_ERROR_KINDS="+repr(OWNED_BRIDGE_ERROR_KINDS)+"\n"+
+        inspect.getsource(owned_bridge_diagnostic)+"\n")
+    failure=("\ntry:actual.main()\nexcept BaseException as error:\n"+
+        "    diagnostic=owned_bridge_diagnostic(error,"+repr(bridge_codes)+","+repr(str(root))+")\n"+
+        "    descriptor=os.open("+repr(str(bridge_directory))+"+'/'+str(os.getpid())+'.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)\n"+
+        "    try:os.write(descriptor,json.dumps(diagnostic,separators=(',',':')).encode());os.fsync(descriptor)\n"+
+        "    finally:os.close(descriptor)\n    raise SystemExit(1)\n")
+    for name in ('p2_recovery_frontend_observation','frontend_release_adapters'):
+        (host/(name+'.py')).write_text(shim+projection+'import '+name+' as actual\n'+failure)
+    return graph,platform,bridge_directory,bridge_codes
+
+
+OWNED_NODE_GUARD_CODES=frozenset(('P2_RECOVERY_CURRENT_DATABASE_REFUSED','P2_RECOVERY_RUNTIME_CREDENTIAL_REFUSED',
+    'P2_RECOVERY_RUNTIME_CREDENTIAL_CLEANUP_UNCERTAIN','P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW','P2_RECOVERY_FRONTEND_RECHECK_REFUSED'))
+OWNED_NODE_SOURCE_FILES=frozenset(('ops/platform/p2-recovery-current-probe.mjs','ops/platform/p2-recovery-frontend-observation.mjs',
+    'ops/platform/frontend-release-adapters.mjs','ops/platform/test-p2-recovery-owned.mjs'))
+
+
+def owned_node_diagnostics(stderr):
+    result=[]
+    for line in stderr.splitlines():
+        if not 0<len(line)<=8192:continue
+        try:value=json.loads(line)
+        except (ValueError,TypeError):continue
+        if not isinstance(value,dict) or set(value)!={'status','phase','stage','kind','guardCode','checkpoint','frames'} or value.get('status')!='OWNED_P2_RECOVERY_NODE_DIAGNOSTIC':continue
+        if any(type(value[key]) is not str for key in ('phase','stage','kind','guardCode','checkpoint')):continue
+        if value['phase'] not in OWNED_CHILD_PHASES or value['stage'] not in ('build-bridge','mutation-checkpoint','composed-source-bridge','composed-checkpoint') or value['kind'] not in ('Error','AssertionError','TypeError','RangeError','SyntaxError','unknown'):continue
+        if value['guardCode'] not in OWNED_NODE_GUARD_CODES|{'unknown'} or value['checkpoint'] not in ('runtime-credential','runtime-physical-session','forward-brand','forward-mode','unknown'):continue
+        if not isinstance(value['frames'],list) or len(value['frames'])>12:continue
+        if any(not isinstance(row,dict) or set(row)!={'source','file','line','column'} or row['source'] not in ('frontend','frontend-fixture') or type(row['file']) is not str or row['file'] not in OWNED_NODE_SOURCE_FILES or type(row['line']) is not int or not 1<=row['line']<=1000000 or type(row['column']) is not int or not 1<=row['column']<=100000 for row in value['frames']):continue
+        result.append(value)
+        if len(result)>=8:break
+    return result
+
+
 def child_failure_diagnostic(result, source_roots, forward_mode):
     stderr = result.stderr if isinstance(result.stderr,str) else ''
     stdout = result.stdout if isinstance(result.stdout,str) else ''
@@ -147,7 +195,7 @@ def child_failure_diagnostic(result, source_roots, forward_mode):
         except ValueError:pass
         if signal_name not in ('SIGABRT','SIGKILL','SIGTERM','SIGSEGV','SIGBUS','SIGILL','SIGFPE','SIGXCPU','SIGXFSZ'):signal_name=None
     return {'version':1,'status':'OWNED_P2_RECOVERY_CHILD_DIAGNOSTIC','fixture':'forward' if forward_mode else 'current',
-        'phase':phase,'exitStatus':returncode,'signal':signal_name,'errorKind':kind,'errorCode':code,'frames':frames,
+        'phase':phase,'nodeErrors':owned_node_diagnostics(stderr),'exitStatus':returncode,'signal':signal_name,'errorKind':kind,'errorCode':code,'frames':frames,
         'stdoutBytes':len(stdout.encode('utf8')),'stderrBytes':len(stderr.encode('utf8')),'rawChildOutputRetained':False}
 
 
@@ -157,9 +205,40 @@ def report_child_failure(result, source_roots, forward_mode, bridge_directory=No
     encoded=json.dumps(diagnostic,separators=(',',':'))
     while len(encoded.encode('utf8'))>8192 and diagnostic['bridgeErrors']:
         diagnostic['bridgeErrors'].pop(0);encoded=json.dumps(diagnostic,separators=(',',':'))
+    while len(encoded.encode('utf8'))>8192 and diagnostic['nodeErrors']:
+        diagnostic['nodeErrors'].pop(0);encoded=json.dumps(diagnostic,separators=(',',':'))
     if len(encoded.encode('utf8'))>8192:raise ValueError('OWNED_CHILD_DIAGNOSTIC_BOUND_REFUSED')
     print('OWNED_P2_RECOVERY_CHILD_FAILED',file=sys.stderr,flush=True)
     print(encoded,file=sys.stderr,flush=True)
+
+
+def run_owned_composed_diagnostic_controls(node,root,connections,bridge_directory,bridge_codes):
+    graph=Path(connections['forwardFixture']['graph'])
+    if list(Path(bridge_directory).iterdir()):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_EMPTY_START_REQUIRED')
+    receipts=[]
+    for mode in ('python-source-guard','node-pre-spawn','node-checkpoint','node-message-collision'):
+        packet={**connections,'ownedComposedDiagnosticControl':mode}
+        result=subprocess.run([node,'--import',str(Path(root)/'node_modules/tsx/dist/loader.mjs'),str(Path(root)/'ops/platform/test-p2-recovery-owned.mjs')],
+            cwd=root,env=child_environment(P2_RECOVERY_OWNED_TEST='true',P2_RECOVERY_OWNED_CONNECTIONS=json.dumps(packet)),capture_output=True,text=True,timeout=60)
+        output=io.StringIO()
+        with contextlib.redirect_stderr(output):report_child_failure(result,{'frontend':root,'frontend-fixture':graph.parent.parent},True,bridge_directory,bridge_codes)
+        lines=output.getvalue().splitlines();value=json.loads(lines[1])
+        if result.returncode!=1 or result.stdout or value['phase']!='forward-composed-failure-control':raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_CHILD_REFUSAL_REQUIRED')
+        if mode=='python-source-guard':
+            if not any(row['guardCode']=='P2_FORWARD_CONCLUSIVE_FAILED_BUILD_REQUIRED' for error in value['bridgeErrors'] for row in error['chain']):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_PYTHON_SOURCE_REQUIRED')
+        elif mode=='node-message-collision':
+            if value['bridgeErrors'] or not value['nodeErrors'] or any(error['guardCode']!='unknown' for error in value['nodeErrors']):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_UNBOUND_COLLISION_REFUSED')
+        elif value['bridgeErrors'] or not any(error['guardCode']==('P2_RECOVERY_CURRENT_DATABASE_REFUSED' if mode=='node-checkpoint' else 'P2_RECOVERY_FRONTEND_RECHECK_REFUSED') and error['frames'] for error in value['nodeErrors']):
+            raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_NODE_SOURCE_REQUIRED')
+        encoded=json.dumps(value)
+        if any(secret and secret in encoded for secret in (connections.get('password'),connections.get('frontend'),'owned-token-marker')):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_PRIVATE_VALUE_REFUSED')
+        receipts.append(value)
+        # These are only this control's source-created private diagnostics. Do
+        # not let intentional refusals masquerade as a later unexpected failure.
+        for path in Path(bridge_directory).iterdir():
+            if path.is_symlink() or not re.fullmatch(r'[1-9][0-9]{0,9}\.json',path.name):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_CONTROL_PATH_REFUSED')
+            path.unlink()
+    return receipts
 
 
 forward_mode=sys.argv[1:]==['--forward-brand']
@@ -289,26 +368,11 @@ try:
         # inputs. They have not been used by a builder. In this distinct test
         # mode, only actual Node current-readback results are first published.
         for path in Path(provider_fixture.context['directory']).glob('*.json'):path.unlink()
-        graph=Fixture.root/'forward-app';platform=graph/'ops/platform';host=platform/'host';host.mkdir(parents=True)
-        (graph/'package.json').write_text('{"type":"module"}\n');(graph/'node_modules').symlink_to(root/'node_modules',target_is_directory=True)
-        for source in (root/'ops/platform').glob('*.mjs'):
-            destination=platform/source.name
-            if source.name in ('frontend-release-adapters.mjs','p2-recovery-frontend-observation.mjs'):shutil.copyfile(source,destination)
-            else:destination.symlink_to(source)
-        shim="import sys,ssl,re\nsys.path.insert(0,"+repr(str(root/'ops/platform/host'))+")\nimport frontend_probe,vercel\nvercel.API_ORIGIN="+repr(provider_fixture.origin)+"\noriginal_ssl=ssl.create_default_context\nssl.create_default_context=lambda *args,**kwargs: original_ssl(cafile="+repr(str(forward_tests.provider_fixture.vercel_test.VercelControlTests.cert))+")\noriginal_probe=frontend_probe.ProbeClient.request\nfrontend_probe.DEPLOYMENT_URL=re.compile(re.escape(vercel.API_ORIGIN))\ndef mapped_probe(self,url,*args,**kwargs):\n    assert url=='https://owned.vercel.app'\n    return original_probe(self,vercel.API_ORIGIN,*args,**kwargs)\nfrontend_probe.ProbeClient.request=mapped_probe\n"
-        bridge_directory=Fixture.root/'bridge-failures';bridge_directory.mkdir(mode=0o700)
-        bridge_codes=owned_bridge_guard_codes(root)
-        projection=("import os,json,traceback,urllib.error,ssl\nfrom pathlib import Path\n"+
-            "OWNED_BRIDGE_SOURCE_FILES="+repr(OWNED_BRIDGE_SOURCE_FILES)+"\nOWNED_BRIDGE_ERROR_KINDS="+repr(OWNED_BRIDGE_ERROR_KINDS)+"\n"+
-            inspect.getsource(owned_bridge_diagnostic)+"\n")
-        failure=("\ntry:actual.main()\nexcept BaseException as error:\n"+
-            "    diagnostic=owned_bridge_diagnostic(error,"+repr(bridge_codes)+","+repr(str(root))+")\n"+
-            "    descriptor=os.open("+repr(str(bridge_directory))+"+'/'+str(os.getpid())+'.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)\n"+
-            "    try:os.write(descriptor,json.dumps(diagnostic,separators=(',',':')).encode());os.fsync(descriptor)\n"+
-            "    finally:os.close(descriptor)\n    raise SystemExit(1)\n")
-        for name in ('p2_recovery_frontend_observation','frontend_release_adapters'):
-            (host/(name+'.py')).write_text(shim+projection+'import '+name+' as actual\n'+failure)
+        graph,platform,bridge_directory,bridge_codes=prepare_owned_forward_graph(root,Fixture.root,provider_fixture.origin,forward_tests.provider_fixture.vercel_test.VercelControlTests.cert)
         connections['forwardFixture']={'context':provider_fixture.context,'graph':str(platform),'runtimeFaultFlag':provider_fixture.runtime_fault_flag,'foreignRouteFlag':str(foreign_route_flag)}
+        before_control=len(provider_fixture.calls)
+        run_owned_composed_diagnostic_controls(node,root,connections,bridge_directory,bridge_codes)
+        if any(row['method']!='GET' for row in provider_fixture.calls[before_control:]):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_GET_ONLY_REQUIRED')
     sentinel=Fixture.root/'ambient-node-option-executed'
     injection=Fixture.root/'ambient-node-option.cjs'
     injection.write_text("require('node:fs').writeFileSync("+json.dumps(str(sentinel))+",'executed');process.exit(47);\n")
