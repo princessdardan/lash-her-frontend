@@ -234,7 +234,7 @@ cookies, or accept an arbitrary origin.
 
 The source parent must invoke `p2_canonical_browser_origin.observe` before ARM and
 throughout its actual current-state verifier. The fixed read-only helper brackets
-an authenticated phase2 workload challenge **on the canonical alias** with two
+an authenticated `phase2-auth-origins` workload challenge **on the canonical alias** with two
 provider alias readbacks and immutable READY/source/project/release/current-target
 checks. Promotion metadata alone does not prove the custom alias. Redirected,
 deleted, foreign or microfrontend aliases refuse. The common Node validator is a
@@ -252,6 +252,9 @@ still apply. The existing Python immutable-deployment probe is unchanged; the
 new fixed canonical-origin HTTPS client uses normal verified TLS and refuses
 redirects. No lifetime extension or automatic probe regeneration is provided.
 Expired original private probe input makes this observation ineligible.
-Actual canonical auth settings and Google/Resend callback configuration still
-require source-bound runtime/provider qualification at apply. Owned HTTPS
-responses are not deployed evidence.
+The helper requires the exact closed runtime `authenticationOrigins` projection:
+customer/admin origins both canonical, no admin redirect proxy, and the customer
+redirect proxy disabled. A missing, foreign, or additional field refuses. The
+existing phase2 mode is insufficient. Actual Google/Resend provider callback
+configuration and normal sign-in still require deployed qualification. Owned
+HTTPS responses are not deployed evidence.

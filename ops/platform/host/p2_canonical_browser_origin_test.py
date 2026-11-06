@@ -24,7 +24,14 @@ class CanonicalBrowserOriginTests(unittest.TestCase):
         self.addCleanup(self.base.tearDown)
         self.context, self.fixture = self.base.context, self.base.fixture
         self.probe = origin.CanonicalBrowserProbeClient()
-        self.probe._opener = self.base.probe._opener
+        owned = self.base.probe._opener
+        class ExactCanonicalTransport:
+            def open(inner, request, timeout):
+                self.assertEqual(request.full_url, origin.ORIGIN+"/api/internal/release-probe")
+                self.assertEqual(request.get_header("X-lash-release-mode"), "phase2-auth-origins")
+                self.assertIsNone(request.get_header("Host"))
+                return owned.open(request, timeout)
+        self.probe._opener = ExactCanonicalTransport()
 
     def alias(self):
         return {"alias": origin.HOST, "projectId": origin.PROJECT, "deploymentId": "dpl_fixture",
@@ -33,7 +40,7 @@ class CanonicalBrowserOriginTests(unittest.TestCase):
     def enqueue(self, first_alias=None, last_alias=None, response=None):
         self.base.enqueue_metadata()
         self.fixture.enqueue(first_alias or self.alias(), self.base.project())
-        self.fixture.responses.append((200, response or self.base.response(), {"Content-Type": "application/json", "Cache-Control": "private, no-store"}))
+        self.fixture.responses.append((200, response or {**self.base.response(), "authenticationOrigins": origin.AUTHENTICATION_ORIGINS}, {"Content-Type": "application/json", "Cache-Control": "private, no-store"}))
         self.fixture.enqueue(last_alias or self.alias())
         self.base.enqueue_metadata()
 
@@ -70,10 +77,20 @@ class CanonicalBrowserOriginTests(unittest.TestCase):
             origin.observe(self.context, self.fixture.client, self.probe)
         # Discard only this owned fixture's unused final readbacks.
         self.fixture.responses.clear()
-        response = copy.deepcopy(self.base.response()); response["writerAdmissionBinding"]["targetSha256"] = "9"*64
+        response = {**copy.deepcopy(self.base.response()), "authenticationOrigins": origin.AUTHENTICATION_ORIGINS}; response["writerAdmissionBinding"]["targetSha256"] = "9"*64
         self.enqueue(response=response)
         with self.assertRaisesRegex(ValueError, "WORKLOAD_BINDING"):
             origin.observe(self.context, self.fixture.client, self.probe)
+
+    def test_missing_foreign_or_extra_auth_origin_projection_refuses(self):
+        for origins in (None, {**origin.AUTHENTICATION_ORIGINS, "customerOrigin": "https://foreign.invalid"},
+                {**origin.AUTHENTICATION_ORIGINS, "extra": True}, {**origin.AUTHENTICATION_ORIGINS, "customerRedirectProxyEnabled": 0}, {**origin.AUTHENTICATION_ORIGINS, "customerRedirectProxyEnabled": True}):
+            with self.subTest(origins=origins):
+                response = {**self.base.response(), "authenticationOrigins": origins}
+                self.enqueue(response=response)
+                with self.assertRaisesRegex(ValueError, "WORKLOAD_BINDING"):
+                    origin.observe(self.context, self.fixture.client, self.probe)
+                self.fixture.responses.clear()
 
     def test_expired_existing_probe_is_not_extended_or_reconfigured(self):
         self.base.enqueue_metadata(); self.fixture.enqueue(self.alias())

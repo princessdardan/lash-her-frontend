@@ -21,6 +21,7 @@ import vercel
 ORIGIN = "https://staging.lashher.com"
 HOST = "staging.lashher.com"
 PROJECT = "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM"
+AUTHENTICATION_ORIGINS = {"customerOrigin": ORIGIN, "adminOrigin": ORIGIN, "adminRedirectProxyOrigin": None, "customerRedirectProxyEnabled": False}
 demand = migrate.demand
 
 
@@ -38,7 +39,7 @@ class CanonicalBrowserProbeClient:
             and isinstance(challenge, str) and len(challenge) == 64, "P2_CANONICAL_PROBE_FIXED_ORIGIN_REQUIRED")
         request = urllib.request.Request(ORIGIN+"/api/internal/release-probe", method="GET", headers={
             "authorization": "Bearer "+secret, "x-vercel-protection-bypass": bypass,
-            "x-lash-release-challenge": challenge, "x-lash-release-mode": "phase2", "accept": "application/json", "cache-control": "no-cache"})
+            "x-lash-release-challenge": challenge, "x-lash-release-mode": "phase2-auth-origins", "accept": "application/json", "cache-control": "no-cache"})
         try:
             with self._opener.open(request, timeout=20) as response:
                 demand(response.status == 200 and response.headers.get_content_type() == "application/json"
@@ -86,6 +87,8 @@ def observe(context, client, probe=None):
         and result.get("environment") == "staging" and result.get("projectId") == PROJECT and result.get("sourceCommit") == plan["sourceCommit"]
         and result.get("contractPhase") == "p2" and result.get("gatewayOrigin") == private["gatewayOrigin"]
         and result.get("checks") == ["gateway-course-catalog-p2"]
+        and isinstance(result.get("authenticationOrigins"), dict) and result["authenticationOrigins"] == AUTHENTICATION_ORIGINS
+        and result["authenticationOrigins"].get("customerRedirectProxyEnabled") is False
         and frontend_probe.valid_feature_controls(result.get("featureControls")) and result["featureControls"] == plan["featureControls"]
         and frontend_probe.valid_writer_admission_binding(result.get("writerAdmissionBinding")) and result["writerAdmissionBinding"] == plan["writerAdmissionBinding"],
         "P2_CANONICAL_WORKLOAD_BINDING_REFUSED")
@@ -97,6 +100,7 @@ def observe(context, client, probe=None):
         "projectId": PROJECT, "deploymentId": plan["deploymentId"], "deploymentUrl": plan["deploymentUrl"], "sourceCommit": plan["sourceCommit"],
         "releaseId": plan["actionId"], "configurationRecordSha256": plan["configurationRecordSha256"],
         "featureControls": result["featureControls"], "writerAdmissionBinding": result["writerAdmissionBinding"],
+        "authenticationOrigins": result["authenticationOrigins"],
         "aliasReadbackSha256": _digest(alias), "protectedWorkloadSha256": _digest(result), "aliasReadbacks": 2,
         "aliasRedirect": False, "workloadChallengeVerified": True, "tlsVerified": True, "probeExpiryExtended": False,
         "observedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"), "releaseAccepted": False}
