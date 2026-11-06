@@ -519,6 +519,32 @@ class HttpsScopeTests(unittest.TestCase):
         result = component.observe_scoped_effects(self.client, self.reviewed, self.rows, self.verified)
         self.assertGreater(result["uncertainEffects"], 0)
 
+    def test_actual_https_no_show_payment_and_invoice_webhook_success_both_reconcile(self):
+        for event_type, stored_status in (("payment.updated", "COMPLETED"), ("invoice.payment_made", "PAID")):
+            with self.subTest(event_type=event_type):
+                self.rows = empty()
+                self.rows["noShowRecords"] = [row("noShowRecords", hold_id="owned-hold", status="charged",
+                    provider_status=stored_status, invoice_id="owned-invoice", provider_order_id="owned-order",
+                    provider_payment_id="owned-payment", amount_cents=100, currency="CAD", customer_id="owned-customer")]
+                self.rows["noShowAttempts"] = [row("noShowAttempts", no_show_charge_record_id="owned-noShowRecords",
+                    status="charged", provider_payment_id="owned-payment", invoice_id="owned-invoice",
+                    amount_cents=100, currency="CAD", processed_at=TIME)]
+                self.memory.provider["customers"]["owned-customer"] = {"id": "owned-customer"}
+                self.memory.provider["orders"]["owned-order"] = {"id": "owned-order", "location_id": component.LOCATION,
+                    "reference_id": "owned-hold", "state": "COMPLETED", "created_at": TIME,
+                    "total_money": {"amount": 100, "currency": "CAD"}}
+                self.memory.provider["payments"]["owned-payment"] = {"id": "owned-payment", "location_id": component.LOCATION,
+                    "order_id": "owned-order", "customer_id": "owned-customer", "status": "COMPLETED", "created_at": TIME,
+                    "application_details": {"application_id": "sandbox-owned-application"},
+                    "amount_money": {"amount": 100, "currency": "CAD"}}
+                self.memory.provider["invoices"]["owned-invoice"] = {"id": "owned-invoice", "location_id": component.LOCATION,
+                    "order_id": "owned-order", "status": "PAID", "version": 1, "primary_recipient": {"customer_id": "owned-customer"}}
+                self.reviewed, self.verified = review(self.rows), closures(source())
+                self.client.reviewed = self.reviewed
+                result = component.observe_scoped_effects(self.client, self.reviewed, self.rows, self.verified)
+                self.assertEqual((result["activeExecutions"], result["uncertainEffects"]), (0, 0), result)
+                self.assertTrue(all(effect["immutableMatch"] for effect in result["effects"]))
+
     def test_stored_legacy_and_no_show_invoice_states_are_compared_with_the_actual_provider(self):
         self.invoice_scope()
         provider = component._provider_summary("invoices", self.memory.provider["invoices"]["owned-invoice"], self.reviewed)

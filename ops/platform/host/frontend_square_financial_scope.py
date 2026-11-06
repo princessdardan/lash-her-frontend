@@ -491,7 +491,12 @@ def _join(family, provider, references, rows):
                     if state not in business.get(context.get("status"), set()):
                         reasons.append("database-invoice-order-status-mismatch")
                 elif group in ("noShowRecords", "noShowAttempts"):
-                    if context.get("provider_status") != state:
+                    # The source stores the provider status of the triggering
+                    # webhook: payment.updated uses COMPLETED, whereas
+                    # invoice.payment_made uses PAID for the same paid invoice.
+                    stored = context.get("provider_status")
+                    payment_completed = context.get("status") == "charged" and stored == "COMPLETED" and state == "PAID"
+                    if stored != state and not payment_completed:
                         reasons.append("database-invoice-provider-status-mismatch")
                     expected = {"charged": {"PAID"}, "charge_failed": {"CANCELED", "FAILED"}, "voided": {"CANCELED"},
                         "provider_draft_created": {"DRAFT"}, "charge_pending": {"DRAFT", "UNPAID", "SCHEDULED", "PARTIALLY_PAID", "PAYMENT_PENDING"}}
