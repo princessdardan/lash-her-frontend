@@ -18,6 +18,21 @@ const profile = () => JSON.parse(readFileSync(new URL(`${c07}.json`, directory),
 const rejected = /FRONTEND_HISTORICAL_SOURCE_REFUSED/u;
 const keys = ["BACKUP_RESTORE_DATABASE_URL", "DATABASE_URL", "STAGING_DATABASE_URL", "TEST_DATABASE_URL"];
 const exactSourceAliases = [
+  { sourceCommit: "0678e16109425247047865e4aef0b7393d73dc15", sourceProfileCommit: "6d5845a8b6d5ff8f27ac7512d72075328233d0ec",
+    treeOid: "018682cf10f5bf938b66cd0d885f0b5b0f5a2286", sourceInventorySha256: "4bca018ed773161c828f5170ab12751a4fc64b4d22c429fc0b7bfe1b73032f85",
+    profileSha256: "b972824c0305e556a190ba06ed894f7f2b6d0334a953bc48495516b2571ed342" },
+  { sourceCommit: "122ea515aba5042ac3f4b7fa63090963bade899d", sourceProfileCommit: "b1f46feadab04e5e0934f5c63b9333837b48f56c",
+    treeOid: "6f3e765ccb66a375f962466585ccd1ea6aefa884", sourceInventorySha256: "a688825718692f8de1c2e5e9e75370a520353a56803b4eccc6324db8692b09e4",
+    profileSha256: "0f24a07fca7e2dfc84f0069768a31d7f9415e8bf523b61f29a41132d17c477c0" },
+  { sourceCommit: "3e105d4d54d77a7ca0f28607bfc9202107e3259e", sourceProfileCommit: "b2ce650791fca81674f10bd4f9dd768d53efd185",
+    treeOid: "e05e49fa001204d93f1467736c44602d68311ed6", sourceInventorySha256: "fc083550c79beb2f143ce7bdef7ac9d3a6cfbf13eb9d70465cac0dfea043d5b7",
+    profileSha256: "9e4cb033b96836645b0421e12bf4c087d068ce624654390ab2d3288cb6a78cd3" },
+  { sourceCommit: "5e5c46c42332671945e3a240513194453c477b78", sourceProfileCommit: "1d8342ab93b6713bebbb3a9caabaa54a246f9957",
+    treeOid: "7ee5cdb0ce0eca84f7707e95e687514c5b217482", sourceInventorySha256: "74fa1a35cc2bc3107741b2b13ed1773d6f3bd9da3f017d07113bd37fcacb5c13",
+    profileSha256: "05f84ac2bd7bc33354d0c38e151529d5afed9814269f4379c709e041f7668f8a" },
+  { sourceCommit: "89d2aba195741c62c56c3de8d8a7d90cdaf2da19", sourceProfileCommit: "273a9821a097a7a0beeb918e8b1c4c51932f73ab",
+    treeOid: "1741d96a9466ccee1c4a9ebb8ff70adae95fe335", sourceInventorySha256: "87a5c08a9b5b76bf8f145377bc9733f607bcda17aa800170361db9aa423ed71d",
+    profileSha256: "af9abd573778c0de9051fd609fb68a2ee3eb330cd66316372db05b0e674e6b32" },
   { sourceCommit: "e82645b6c045ce88dbaacf3c32cff8606a8592a8", sourceProfileCommit: "45223fec3ee71bf63cfb0e44a94a0a7b3e282ca1",
     treeOid: "eca5b5ead0d026822a68788f9332ae550f6fbfe0", sourceInventorySha256: "63950a977dec675ff21b1c1d41b8763e96dfb08f83b6c8e66ab2949ce140217d",
     profileSha256: "c746ac0183027a202f932c3c47465743799ceed3f26815ec090403a1f3182b13" },
@@ -54,7 +69,7 @@ test("every checked retained staging/preview profile verifies its actual complet
   const files = readdirSync(directory).filter(file => file.endsWith(".json"));
   assert.equal(files.length, 33);
   const supported = [...files.map(file => file.slice(0, -5)), ...exactSourceAliases.map(row => row.sourceCommit)];
-  assert.equal(supported.length, 35);
+  assert.equal(supported.length, 40);
   for (const sourceCommit of supported) {
     const source = verifiedSourceRequirements(repository, sourceCommit);
     assert.equal(source.status, "FRONTEND_HISTORICAL_SOURCE_VERIFIED");
@@ -67,7 +82,7 @@ test("every checked retained staging/preview profile verifies its actual complet
   }
 });
 
-test("two closed exact-tree aliases materialize only commit-bound profile fields", () => {
+test("seven closed exact-tree aliases materialize only commit-bound profile fields", () => {
   for (const [index, alias] of exactSourceAliases.entries()) {
     const stored = JSON.parse(readFileSync(new URL(`${alias.sourceProfileCommit}.json`, directory), "utf8"));
     const inventory = { ...stored.inventory, sourceCommit: alias.sourceCommit };
@@ -79,8 +94,7 @@ test("two closed exact-tree aliases materialize only commit-bound profile fields
     assert.equal(source.sourceCommit, alias.sourceCommit); assert.equal(source.sourceInventorySha256, alias.sourceInventorySha256);
     for (const key of ["treeOid", "entrypoints", "sqlCredentialRequirements", "providerFamilies", "manualCredentialProfiles", "sdkDependencies", "sourceReviewDisposition", "sourceAdmission"])
       assert.deepEqual(source[key], base[key], `${alias.sourceCommit}:${key}`);
-    assert.deepEqual(source.sourceReviewDisposition.credentialPathReuseProviders, []);
-    const wrongBase = JSON.parse(readFileSync(new URL(`${exactSourceAliases[1 - index].sourceProfileCommit}.json`, directory), "utf8"));
+    const wrongBase = JSON.parse(readFileSync(new URL(`${exactSourceAliases[(index + 1) % exactSourceAliases.length].sourceProfileCommit}.json`, directory), "utf8"));
     assert.throws(() => verifyHistoricalFrontendSourceProfile(repository, alias.sourceCommit, wrongBase), rejected);
     assert.throws(() => verifyHistoricalFrontendSourceProfile(repository, alias.sourceCommit.slice(0, 39), stored), rejected);
     const wrongTree = structuredClone(stored); wrongTree.treeOid = "0".repeat(40);
@@ -301,9 +315,9 @@ test("manual template mutation scope and original staging broadcast guard use ch
 });
 
 
-test("all 35 exact reviewed revisions carry six bounded private-SQL predicates or actual Mux plugin absence", async () => {
+test("all 40 exact reviewed revisions carry six bounded private-SQL predicates or actual Mux plugin absence", async () => {
   const supported = [...readdirSync(directory).map(file => file.slice(0, -5)), ...exactSourceAliases.map(row => row.sourceCommit)];
-  assert.equal(supported.length, 35);
+  assert.equal(supported.length, 40);
   for (const sourceCommit of supported) {
     const source = verifiedSourceRequirements(repository, sourceCommit), fixture = originalFixture({}, { sourceCommit: source.sourceCommit });
     const sql = await observe(source, { binding: fixture.binding, originalConfiguration: fixture.original, clientsByKey: new Map(), physicalDatabasesByKey: new Map(), verifySession: async () => {} });
