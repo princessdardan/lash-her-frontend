@@ -50,15 +50,15 @@ OWNED_BRIDGE_ERROR_KINDS = frozenset(('ValueError','TypeError','RuntimeError','A
 
 
 def owned_bridge_guard_codes(source_root):
-    codes=set()
+    codes={}
     for name in OWNED_BRIDGE_SOURCE_FILES:
         for node in ast.walk(ast.parse((Path(source_root)/name).read_text())):
             if not isinstance(node,ast.Call) or not node.args:continue
             function=node.func.id if isinstance(node.func,ast.Name) else node.func.attr if isinstance(node.func,ast.Attribute) else ''
             value=node.args[-1]
             if function in ('demand','require','ValueError') and isinstance(value,ast.Constant) and isinstance(value.value,str) and re.fullmatch(r'[A-Z][A-Z0-9_]{1,80}',value.value):
-                codes.add(value.value)
-    return frozenset(codes)
+                codes.setdefault(value.value,[]).append((name,node.lineno,node.end_lineno))
+    return {code:tuple(sites) for code,sites in codes.items()}
 
 
 def owned_bridge_diagnostic(error, allowed_codes, source_root):
@@ -66,20 +66,33 @@ def owned_bridge_diagnostic(error, allowed_codes, source_root):
     while pending and len(chain)<8:
         current=pending.pop(0)
         if not isinstance(current,BaseException) or id(current) in seen:continue
-        seen.add(id(current));kind=type(current).__name__
-        code=current.args[0] if len(current.args)==1 and isinstance(current.args[0],str) and current.args[0] in allowed_codes else 'unknown'
-        http=current.code if isinstance(current,urllib.error.HTTPError) and type(current.code) is int and 100<=current.code<=599 else None
-        tls=current.verify_code if isinstance(current,ssl.SSLCertVerificationError) and type(current.verify_code) is int and 0<=current.verify_code<=1000 else None
-        chain.append({'kind':kind if kind in OWNED_BRIDGE_ERROR_KINDS else 'unknown','guardCode':code,'httpStatus':http,'tlsVerifyCode':tls})
-        for frame in traceback.extract_tb(current.__traceback__):
+        seen.add(id(current))
+        def safe(name):
+            try:return getattr(current,name,None)
+            except BaseException:return None
+        try:kind=type(current).__name__
+        except BaseException:kind='unknown'
+        try:source_frames=traceback.extract_tb(safe('__traceback__'))
+        except BaseException:source_frames=[]
+        sites=[]
+        for frame in source_frames:
             try:relative=str(Path(frame.filename).resolve().relative_to(Path(source_root).resolve()))
             except (ValueError,OSError):continue
             if relative not in OWNED_BRIDGE_SOURCE_FILES or not 1<=frame.lineno<=1000000:continue
+            sites.append((relative,frame.lineno))
             value={'source':'frontend','file':relative,'line':frame.lineno}
             if value not in frames and len(frames)<12:frames.append(value)
+        args=safe('args');candidate=args[0] if type(args) is tuple and len(args)==1 and type(args[0]) is str else None
+        selected=allowed_codes.get(candidate,()) if isinstance(allowed_codes,dict) else ()
+        code=candidate if any(file==source and first<=line<=last for file,line in sites for source,first,last in selected) else 'unknown'
+        http=safe('code') if isinstance(current,urllib.error.HTTPError) else None
+        tls=safe('verify_code') if isinstance(current,ssl.SSLCertVerificationError) else None
+        chain.append({'kind':kind if kind in OWNED_BRIDGE_ERROR_KINDS else 'unknown','guardCode':code,
+            'httpStatus':http if type(http) is int and 100<=http<=599 else None,
+            'tlsVerifyCode':tls if type(tls) is int and 0<=tls<=1000 else None})
         # Suppressed contexts contain the actual transport failure beneath the
         # source's deliberately generic outer exception. Never print messages.
-        pending.extend(value for value in (current.__cause__,current.__context__,getattr(current,'reason',None)) if isinstance(value,BaseException))
+        pending.extend(value for value in (safe('__cause__'),safe('__context__'),safe('reason')) if isinstance(value,BaseException))
     return {'version':1,'status':'OWNED_P2_FORWARD_BRIDGE_DIAGNOSTIC','chain':chain,'frames':frames,'rawOutputRetained':False}
 
 
@@ -93,7 +106,7 @@ def read_owned_bridge_diagnostics(directory, allowed_codes):
         except (ValueError,OSError):continue
         if not isinstance(value,dict) or set(value)!={'version','status','chain','frames','rawOutputRetained'} or value.get('version')!=1 or value.get('status')!='OWNED_P2_FORWARD_BRIDGE_DIAGNOSTIC' or value.get('rawOutputRetained') is not False:continue
         if not isinstance(value['chain'],list) or not 1<=len(value['chain'])<=8 or not isinstance(value['frames'],list) or len(value['frames'])>12:continue
-        if any(not isinstance(row,dict) or set(row)!={'kind','guardCode','httpStatus','tlsVerifyCode'} or not isinstance(row['kind'],str) or row['kind'] not in OWNED_BRIDGE_ERROR_KINDS|{'unknown'} or not isinstance(row['guardCode'],str) or row['guardCode'] not in allowed_codes|{'unknown'} or
+        if any(not isinstance(row,dict) or set(row)!={'kind','guardCode','httpStatus','tlsVerifyCode'} or not isinstance(row['kind'],str) or row['kind'] not in OWNED_BRIDGE_ERROR_KINDS|{'unknown'} or not isinstance(row['guardCode'],str) or row['guardCode'] not in set(allowed_codes)|{'unknown'} or
             not (row['httpStatus'] is None or type(row['httpStatus']) is int and 100<=row['httpStatus']<=599) or not (row['tlsVerifyCode'] is None or type(row['tlsVerifyCode']) is int and 0<=row['tlsVerifyCode']<=1000) for row in value['chain']):continue
         if any(not isinstance(row,dict) or set(row)!={'source','file','line'} or row['source']!='frontend' or not isinstance(row['file'],str) or row['file'] not in OWNED_BRIDGE_SOURCE_FILES or type(row['line']) is not int or not 1<=row['line']<=1000000 for row in value['frames']):continue
         values.append(value)

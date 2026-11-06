@@ -71,17 +71,17 @@ class OwnedRecoveryDiagnosticsTests(unittest.TestCase):
         self.assertFalse(set(value)&{'NODE_OPTIONS','DATABASE_URL','VERCEL_TOKEN','PGPASSWORD'});self.assertNotIn('PRIVATE_',json.dumps(value))
 
     def test_actual_source_guard_and_suppressed_http_cause_survive_without_private_text(self):
-        import migrate
+        import frontend_probe
         allowed=NS['owned_bridge_guard_codes'](ROOT)
-        self.assertIn('FRONTEND_WORKLOAD_VERIFICATION_FAILED',allowed)
+        self.assertIn('FRONTEND_PROBE_ORIGIN_REFUSED',allowed)
         try:
             try:raise urllib.error.HTTPError('https://PRIVATE_HOST.invalid/PRIVATE_PATH',401,'PRIVATE_MESSAGE',{},None)
             except urllib.error.HTTPError as inner:
                 inner.close()
-                migrate.demand(False,'FRONTEND_WORKLOAD_VERIFICATION_FAILED')
+                frontend_probe.ProbeClient().request('https://foreign.invalid','owned','owned','1'*64)
         except ValueError as error:value=NS['owned_bridge_diagnostic'](error,allowed,ROOT)
         encoded=json.dumps(value)
-        self.assertEqual(value['chain'][0]['guardCode'],'FRONTEND_WORKLOAD_VERIFICATION_FAILED')
+        self.assertEqual(value['chain'][0]['guardCode'],'FRONTEND_PROBE_ORIGIN_REFUSED')
         self.assertEqual(value['chain'][1]['httpStatus'],401)
         self.assertTrue(any(row['file']=='ops/platform/host/migrate.py' for row in value['frames']))
         for private in ('PRIVATE_HOST','PRIVATE_PATH','PRIVATE_MESSAGE','https://',str(ROOT)):
@@ -92,6 +92,24 @@ class OwnedRecoveryDiagnosticsTests(unittest.TestCase):
         value=NS['owned_bridge_diagnostic'](error,NS['owned_bridge_guard_codes'](ROOT),ROOT)
         self.assertEqual(value['chain'][0]['guardCode'],'unknown');self.assertEqual(value['frames'],[])
         self.assertNotIn('PRIVATE_',json.dumps(value))
+
+    def test_guard_literal_collision_without_matching_source_site_stays_unknown(self):
+        allowed=NS['owned_bridge_guard_codes'](ROOT)
+        for error in (ValueError('FRONTEND_PROBE_ORIGIN_REFUSED'),ValueError('FRONTEND_WORKLOAD_VERIFICATION_FAILED')):
+            value=NS['owned_bridge_diagnostic'](error,allowed,ROOT)
+            self.assertEqual(value['chain'][0]['guardCode'],'unknown')
+
+    def test_incomplete_ssl_and_throwing_exception_properties_cannot_break_projection(self):
+        class Hostile(urllib.error.HTTPError):
+            def __init__(self):Exception.__init__(self,'PRIVATE_PROPERTY_MESSAGE')
+            def __getattribute__(self,name):
+                if name in ('args','code','reason','__cause__','__context__','__traceback__'):raise ValueError('PRIVATE_PROPERTY_MESSAGE')
+                return super().__getattribute__(name)
+        allowed=NS['owned_bridge_guard_codes'](ROOT)
+        for error in (ssl.SSLCertVerificationError('PRIVATE_CERT_MESSAGE'),Hostile()):
+            value=NS['owned_bridge_diagnostic'](error,allowed,ROOT)
+            self.assertEqual(value['chain'][0]['guardCode'],'unknown');self.assertIsNone(value['chain'][0]['tlsVerifyCode'])
+            self.assertIsNone(value['chain'][0]['httpStatus']);self.assertNotIn('PRIVATE_',json.dumps(value))
 
     def test_bridge_record_reader_refuses_extra_keys_unknown_codes_booleans_and_symlinks(self):
         allowed=NS['owned_bridge_guard_codes'](ROOT)
