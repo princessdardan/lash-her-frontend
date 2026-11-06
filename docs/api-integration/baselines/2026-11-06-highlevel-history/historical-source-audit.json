@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "treeOid": "dee14e1844868d2692c013daec66bee229dda7e7",
+  "scope": "C07 exact historical source; current admission behavior is not applied retroactively",
+  "files": [
+    {
+      "path": "src/lib/highlevel/sync.ts",
+      "blobOid": "6b121045e58ab1f7e0242f5ddc08e82b1e3b0c68",
+      "sha256": "341fae4ba19139594903a69749d09de772f59a6758ae7df837fa3f4618b27d5b",
+      "ranges": [
+        [
+          96,
+          173
+        ],
+        [
+          333,
+          365
+        ],
+        [
+          519,
+          578
+        ],
+        [
+          680,
+          714
+        ]
+      ]
+    },
+    {
+      "path": "src/lib/highlevel/config.ts",
+      "blobOid": "c586960f80ee7e43635d7dbdf90922f3453b5d50",
+      "sha256": "f260e279d8fcefd3df0af8545cedac2d2043b922164533167c1e28169d0dee32",
+      "ranges": [
+        [
+          18,
+          45
+        ]
+      ]
+    },
+    {
+      "path": "src/lib/highlevel/worker.ts",
+      "blobOid": "4bd5db0c4aece801d47b965277769c3f246ab1d2",
+      "sha256": "4cdb14a6f2882ca0a66d8eb0a5cd390d28952de70030d4d884005b1acde5506f",
+      "ranges": [
+        [
+          25,
+          40
+        ],
+        [
+          80,
+          101
+        ]
+      ]
+    },
+    {
+      "path": "src/lib/highlevel/retention.ts",
+      "blobOid": "277dda710ff9c66c74064c529fcee6c57adacab1",
+      "sha256": "8320850bdda257a9d8a64464b15417dd2507c4be1acffbd93e1b1db46aea29cb",
+      "ranges": [
+        [
+          11,
+          31
+        ],
+        [
+          41,
+          79
+        ]
+      ]
+    },
+    {
+      "path": "src/lib/highlevel/webhook.ts",
+      "blobOid": "31d3f439ba08b882dab20be616cf682f841a4e2f",
+      "sha256": "e5a651aca9be7ac8b7dbd6619133caec67b77867529446e14ee500d2d004149e",
+      "ranges": [
+        [
+          29,
+          52
+        ],
+        [
+          110,
+          135
+        ],
+        [
+          138,
+          185
+        ]
+      ]
+    },
+    {
+      "path": "src/lib/highlevel/client.ts",
+      "blobOid": "204dd6baa6d289d040a550778367de1e125ecd04",
+      "sha256": "8b40f2f997b54ede08fdab1c04914882d2ad0cbdbc0657be4d12e4da7509b544",
+      "ranges": [
+        [
+          15,
+          85
+        ]
+      ]
+    },
+    {
+      "path": "src/lib/highlevel/oauth.ts",
+      "blobOid": "792509385b4d663c542b477b16f80c6efbbbfd9c",
+      "sha256": "c87f25ac8a813a6d4a2b4cef96668fe26eb72af2f2b7e616104b878512d41fcf",
+      "ranges": []
+    }
+  ]
+}
