@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { createServer } from "node:net";
 import { Client } from "pg";
-import { CONTEXTS, SQL, STARTUP_OPTIONS, parseGroup, sanitizeMetadata } from "./observe.mjs";
+import { CONTEXTS, SQL, STARTUP_OPTIONS, parseGroup, sanitizeMetadata, identityDiagnostic, checkIdentity } from "./observe.mjs";
 
 const directory = dirname(fileURLToPath(import.meta.url));
 function group(context = CONTEXTS[0], overrides = {}) {
@@ -96,6 +96,31 @@ test("literal SQL closure contains catalog reads only and startup settings prece
   assert.match(SQL.databaseRoleSettings, /split_part\(config.setting, '=', 1\)/u);
 });
 
+test("production identity diagnostics retain safe per-field booleans while the exact guard still refuses every mismatch", () => {
+  const context = CONTEXTS[0];
+  const row = { database_name: context.database, authenticated_role: context.runtimeRole, session_role: context.runtimeRole, server_major: 18,
+    read_only: "on", session_search_path: "pg_catalog,public", server_reports_tls: true, backend_pid: 123 };
+  const client = { connection: { stream: { encrypted: true, authorized: true, getProtocol: () => "TLSv1.3" } }, connectionParameters: { host: context.host, port: context.port } };
+  assert.equal(checkIdentity([row], context, client), row);
+  for (const [field, value, failed] of [["database_name", "private-db", "database"], ["authenticated_role", "private-person@example.invalid", "authenticatedRole"],
+    ["session_role", "private-session", "sessionRole"], ["server_major", 19, "serverMajor"], ["read_only", "off", "readOnly"],
+    ["session_search_path", "private-setting-value", "searchPath"], ["server_reports_tls", false, "serverReportsTls"], ["backend_pid", 0, "positiveBackendPid"]]) {
+    const modified = { ...row, [field]: value }, diagnostic = identityDiagnostic([modified], context, client);
+    assert.deepEqual(Object.entries(diagnostic.matches).filter(([, matched]) => !matched).map(([name]) => name), [failed]);
+    assert.throws(() => checkIdentity([modified], context, client), code("EXACT_READONLY_IDENTITY_REQUIRED"));
+    assert.doesNotMatch(JSON.stringify(diagnostic), /private-db|private-person|private-session|private-setting-value/u);
+  }
+  const serverTlsFalse = identityDiagnostic([{ ...row, server_reports_tls: false }], context, client);
+  assert.equal(serverTlsFalse.matches.serverReportsTls, false); assert.equal(serverTlsFalse.matches.clientAuthorized, true);
+  assert.deepEqual(serverTlsFalse.observed, { serverMajor: 18, transactionReadOnly: "on", clientTlsProtocol: "TLSv1.3" });
+  for (const [container, field] of [[client.connection.stream, "encrypted"], [client.connection.stream, "authorized"]]) {
+    container[field] = false; assert.throws(() => checkIdentity([row], context, client), code("EXACT_READONLY_IDENTITY_REQUIRED")); container[field] = true;
+  }
+  client.connectionParameters.host = "foreign.invalid"; assert.throws(() => checkIdentity([row], context, client), code("EXACT_READONLY_IDENTITY_REQUIRED")); client.connectionParameters.host = context.host;
+  client.connectionParameters.port = "5432"; assert.throws(() => checkIdentity([row], context, client), code("EXACT_READONLY_IDENTITY_REQUIRED"));
+  assert.throws(() => checkIdentity([], context, client), code("IDENTITY_ROW_REQUIRED"));
+});
+
 test("all six literal metadata queries execute twice against an actual owned PG16 cluster", { skip: process.env.OWNED_METADATA_SQL_TEST !== "true" && "set OWNED_METADATA_SQL_TEST=true and fixed PG_BIN to run the owned cluster" }, async () => {
   const binaries = process.env.PG_BIN; assert.equal(binaries, "/opt/homebrew/opt/postgresql@16/bin");
   const run = (name, args) => execFileSync(join(binaries, name), args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { PATH: "/usr/bin:/bin", LANG: "C" } });
@@ -112,6 +137,9 @@ test("all six literal metadata queries execute twice against an actual owned PG1
     for (let iteration = 0; iteration < 2; iteration++) {
       const result = {}; result.identity = (await client.query(SQL.identity)).rows;
       assert.equal(result.identity[0].read_only, "on"); assert.equal(result.identity[0].session_search_path, "pg_catalog,public");
+      const diagnostic = identityDiagnostic(result.identity, CONTEXTS[0], client);
+      assert.equal(diagnostic.observed.serverMajor, 16); assert.equal(diagnostic.observed.transactionReadOnly, "on");
+      assert.equal(diagnostic.matches.serverMajor, false); assert.equal(diagnostic.matches.clientEncrypted, false);
       result.roles = (await client.query(SQL.roles, [["owned_metadata", "pg_database_owner"]])).rows; const oids = result.roles.map(row => row.role_oid);
       for (const [name, parameters] of [["memberships", [oids]], ["schemas", []], ["schemaAcl", []], ["databaseRoleSettings", [oids]]]) result[name] = (await client.query(SQL[name], parameters)).rows;
       observations.push(result);

@@ -155,14 +155,31 @@ function credentials() {
   return CONTEXTS.map(context => ({ context, configuration: parseGroup(context, Object.fromEntries(context.files.map(name => [name, readBounded(join(runtimeRoot, name), true)])), receipt.binding.configurationSha256) }));
 }
 
-function checkIdentity(rows, context, client) {
-  demand(rows.length === 1, "IDENTITY_ROW_REQUIRED"); const row = rows[0];
-  demand(row.database_name === context.database && row.authenticated_role === context.runtimeRole && row.session_role === context.runtimeRole &&
-    row.server_major === context.serverMajor && row.read_only === "on" && /^\s*pg_catalog\s*,\s*public\s*$/u.test(row.session_search_path) &&
-    row.server_reports_tls === true && Number.isInteger(row.backend_pid) && row.backend_pid > 0 &&
-    client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true &&
-    client.connectionParameters.host === context.host && client.connectionParameters.port === context.port, "EXACT_READONLY_IDENTITY_REQUIRED");
-  return row;
+export function identityDiagnostic(rows, context, client) {
+  const row = rows.length === 1 ? rows[0] : {}, stream = client.connection?.stream;
+  const protocol = stream?.getProtocol?.();
+  return {
+    matches: {
+      singleton: rows.length === 1, database: row.database_name === context.database,
+      authenticatedRole: row.authenticated_role === context.runtimeRole, sessionRole: row.session_role === context.runtimeRole,
+      serverMajor: row.server_major === context.serverMajor, readOnly: row.read_only === "on",
+      searchPath: typeof row.session_search_path === "string" && /^\s*pg_catalog\s*,\s*public\s*$/u.test(row.session_search_path),
+      serverReportsTls: row.server_reports_tls === true, positiveBackendPid: Number.isInteger(row.backend_pid) && row.backend_pid > 0,
+      clientEncrypted: stream?.encrypted === true, clientAuthorized: stream?.authorized === true,
+      selectedHost: client.connectionParameters?.host === context.host, selectedPort: client.connectionParameters?.port === context.port,
+    },
+    observed: {
+      serverMajor: Number.isInteger(row.server_major) && row.server_major > 0 && row.server_major < 100 ? row.server_major : null,
+      transactionReadOnly: ["on", "off"].includes(row.read_only) ? row.read_only : null,
+      clientTlsProtocol: ["TLSv1.2", "TLSv1.3"].includes(protocol) ? protocol : null,
+    },
+  };
+}
+
+export function checkIdentity(rows, context, client) {
+  demand(rows.length === 1, "IDENTITY_ROW_REQUIRED");
+  demand(Object.values(identityDiagnostic(rows, context, client).matches).every(Boolean), "EXACT_READONLY_IDENTITY_REQUIRED");
+  return rows[0];
 }
 
 async function snapshot(client, context) {
@@ -178,7 +195,9 @@ async function snapshot(client, context) {
 }
 
 function record(directory, name, value) { writeFileSync(join(directory, name), JSON.stringify(value, null, 2) + "\n", { mode: 0o600, flag: "wx" }); }
-export async function observe() {
+export const observe = () => runObservation(false);
+export const diagnoseIdentity = () => runObservation(true);
+async function runObservation(identityOnly) {
   demand(process.versions.node === "24.18.0" && process.execArgv.length === 0 && Object.keys(process.env).every(name =>
     !/^(?:PG|NODE_OPTIONS$|NODE_EXTRA_CA_CERTS$|NODE_TLS_|SSL_CERT_|LD_|DYLD_)/u.test(name)), "CLOSED_PINNED_RUNTIME_REQUIRED");
   const lock = JSON.parse(readBounded(join(repository, "package-lock.json"))), pgVersion = require("pg/package.json").version;
@@ -187,19 +206,27 @@ export async function observe() {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "lash-p2-managed-api-role-metadata-"))); chmodSync(directory, 0o700);
   const results = [];
   for (const { context, configuration } of groups) {
-    let phase = "connect", client, initial, final, failure = null, closeAwaited = false, connected = false, idleError = false;
+    let phase = "connect", client, initial, final, failure = null, closeAwaited = false, connected = false, idleError = false, diagnostic = null, sourceReadbackVerified = false;
     try {
       client = new Client({ ...configuration, application_name: "lash-p2-api-role-metadata-readonly", options: STARTUP_OPTIONS,
         ssl: { ca: [...rootCertificates], servername: context.host, rejectUnauthorized: true },
         connectionTimeoutMillis: 5000, query_timeout: 6000 });
       client.on("error", () => { idleError = true; });
       await client.connect(); connected = true;
-      phase = "initial-metadata"; initial = await snapshot(client, context);
-      phase = "final-metadata"; final = await snapshot(client, context);
-      phase = "stable-readback"; demand(!idleError && isDeepStrictEqual(initial, final), "METADATA_CHANGED_DURING_OBSERVATION");
-      phase = "source-readback"; credentials();
+      if (identityOnly) {
+        phase = "identity-diagnostic";
+        const rows = (await client.query(SQL.identity)).rows;
+        diagnostic = identityDiagnostic(rows, context, client);
+        checkIdentity(rows, context, client);
+      } else {
+        phase = "initial-metadata"; initial = await snapshot(client, context);
+        phase = "final-metadata"; final = await snapshot(client, context);
+        phase = "stable-readback"; demand(!idleError && isDeepStrictEqual(initial, final), "METADATA_CHANGED_DURING_OBSERVATION");
+      }
     } catch (error) { failure = { phase, code: error.publicCode ?? "MANAGED_API_METADATA_UNKNOWN" }; }
     finally {
+      try { credentials(); sourceReadbackVerified = true; }
+      catch { failure = { phase: "source-readback", code: "ACCEPTED_RUNTIME_READBACK_UNKNOWN" }; }
       if (client) {
         let timer;
         try { await Promise.race([client.end(), new Promise((_, reject) => { timer = setTimeout(() => { client.connection?.stream?.destroy(); reject(Error("close")); }, 5000); })]); closeAwaited = true; }
@@ -207,15 +234,22 @@ export async function observe() {
         finally { clearTimeout(timer); }
       }
     }
-    const raw = { context: context.context, target: scopeFields(context), connected, initial, final, failure, closeAwaited };
+    if (idleError) failure = { phase: "connection", code: "CONNECTION_ERROR_OBSERVED" };
+    const raw = { context: context.context, target: scopeFields(context), connected, initial, final, failure, closeAwaited,
+      ...(identityOnly ? { identityDiagnostic: diagnostic, strictIdentityAccepted: Boolean(diagnostic && Object.values(diagnostic.matches).every(Boolean)), sourceReadbackVerified } : {}) };
     record(directory, context.context + "-private-raw.json", raw);
-    const sanitized = sanitizeMetadata({ version: 1, status: failure ? "P2_MANAGED_API_ROLE_METADATA_UNKNOWN" : "P2_MANAGED_API_ROLE_METADATA_OBSERVED",
-      ...raw, sourceBindingVerified: true, tlsAuthorized: Boolean(initial), rowBoundsComplete: Boolean(initial && final), readbackStable: Boolean(!failure && initial && final),
+    const diagnosticRecorded = Boolean(identityOnly && diagnostic && sourceReadbackVerified && closeAwaited && !idleError);
+    const sanitized = sanitizeMetadata({ version: 1, status: identityOnly ? (diagnosticRecorded ? "P2_MANAGED_API_IDENTITY_DIAGNOSTIC_RECORDED" : "P2_MANAGED_API_IDENTITY_DIAGNOSTIC_UNKNOWN") :
+      (failure ? "P2_MANAGED_API_ROLE_METADATA_UNKNOWN" : "P2_MANAGED_API_ROLE_METADATA_OBSERVED"),
+      ...raw, sourceBindingVerified: true, tlsAuthorized: identityOnly ? (diagnostic ? diagnostic.matches.clientEncrypted && diagnostic.matches.clientAuthorized : null) : Boolean(initial),
+      rowBoundsComplete: Boolean(initial && final), readbackStable: Boolean(!failure && initial && final),
       metadataOnly: true, observerImposed: { searchPath: "pg_catalog,public", defaultTransactionReadOnly: "on", statementTimeoutMs: 5000, lockTimeoutMs: 1000, idleInTransactionSessionTimeoutMs: 5000 },
       caSource: "Node24.18.0-built-in-rootCertificates", pgVersion, frontendQualified: false, migrationAuthorized: false, rolePreparationAuthorized: false, wholeReleaseAccepted: false });
     record(directory, context.context + "-sanitized.json", sanitized); results.push(sanitized);
   }
-  const summary = { version: 1, status: results.every(result => result.status === "P2_MANAGED_API_ROLE_METADATA_OBSERVED") ? "P2_MANAGED_API_METADATA_OBSERVED" : "P2_MANAGED_API_METADATA_UNKNOWN",
+  const summary = { version: 1, status: identityOnly ? (results.every(result => result.status === "P2_MANAGED_API_IDENTITY_DIAGNOSTIC_RECORDED") ? "P2_MANAGED_API_IDENTITY_DIAGNOSTIC_RECORDED" : "P2_MANAGED_API_IDENTITY_DIAGNOSTIC_UNKNOWN") :
+    (results.every(result => result.status === "P2_MANAGED_API_ROLE_METADATA_OBSERVED") ? "P2_MANAGED_API_METADATA_OBSERVED" : "P2_MANAGED_API_METADATA_UNKNOWN"),
+    observationMode: identityOnly ? "identity-only-diagnostic" : "full-metadata",
     observedAt: new Date().toISOString(), privateReceiptDirectory: directory, managedConnectionAttempts: results.length, results,
     readonlyPreparationOnly: true, frontendQualified: false, wholeReleaseAccepted: false };
   record(directory, "summary-sanitized.json", summary); return summary;
@@ -223,8 +257,8 @@ export async function observe() {
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   if (process.argv.length === 2) process.stdout.write(JSON.stringify({ status: "P2_MANAGED_API_METADATA_PLAN", contexts: CONTEXTS.map(scopeFields), metadataOnly: true, connectionsOpened: 0 }) + "\n");
-  else if (process.argv.length === 3 && process.argv[2] === "--observe-read-only") {
-    observe().then(value => process.stdout.write(JSON.stringify(value) + "\n")).catch(error => {
+  else if (process.argv.length === 3 && ["--observe-read-only", "--diagnose-identity-read-only"].includes(process.argv[2])) {
+    (process.argv[2] === "--observe-read-only" ? observe() : diagnoseIdentity()).then(value => process.stdout.write(JSON.stringify(value) + "\n")).catch(error => {
       process.stdout.write(JSON.stringify({ status: "P2_MANAGED_API_METADATA_UNKNOWN", code: error.publicCode ?? "PRECONNECTION_CONTEXT_UNKNOWN", connectionsOpened: 0 }) + "\n"); process.exitCode = 1;
     });
   } else { process.stdout.write('{"status":"P2_MANAGED_API_METADATA_REFUSED"}\n'); process.exitCode = 1; }
