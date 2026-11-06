@@ -1,0 +1,7 @@
+The corrected receipt describes only zero counts in the enumerated core catalogs. It emits `completeDatabaseEmptyProven:false` and explicitly lists unobserved classes; it cannot authorize first use.
+
+The actual PG18 fixture creates a custom public collation and a selected-user per-database role setting. Each remains outside the observed counts and selected `pg_roles` hash, while the corrected receipt retains all authority fields false. The fixture repairs both controls and completes its existing session/lock/backend/host-process faults: 11 checks, no skips. Four Node tests, seven host tests, and lint also pass.
+
+The original evidence directory is byte-identical. Its broad empty-database status is superseded only as a claim, not rewritten as historical evidence. The corrected code adds no catalog query, migration executor, or authority constructor. A future authentic authority factory needs complete independent proof before first use; no caller boolean can waive the missing scope.
+
+The owned private registry and Docker metadata remain projected. Actual allocation, provider/custody/creation evidence, profile integration, Docker/SSH/root installation and complete first-install composition remain unqualified. The initial default-temp start refusal is retained; its underlying PostgreSQL startup cause is unknown. The exact frozen source passed using the short owned temporary root recorded in the manifest.
