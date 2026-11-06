@@ -1,0 +1,29 @@
+E
+======================================================================
+ERROR: test_normal_migrate_actual_suspension_retains_zero_before_api_sql_and_preserves_frontend_receipt (p2_prior_gateway_test.PriorGatewayTests.test_normal_migrate_actual_suspension_retains_zero_before_api_sql_and_preserves_frontend_receipt)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-api-suspension-boundary/ops/platform/host/p2_prior_gateway_test.py", line 371, in test_normal_migrate_actual_suspension_retains_zero_before_api_sql_and_preserves_frontend_receipt
+    outcome=self.normal_migrate(bundle,results)
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-api-suspension-boundary/ops/platform/host/p2_prior_gateway_test.py", line 367, in normal_migrate
+    return migrate.execute(bundle,results,True,'staging/'+self.selected['releaseId'],self.root/'normal-environment.lock',_p2_scope=self.normal_scope)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-api-suspension-boundary/ops/platform/host/migrate.py", line 385, in execute
+    _p2_scope.verify()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-api-suspension-boundary/ops/platform/host/p2_release_scope.py", line 45, in verify
+    self.prior_gateway.verify()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-api-suspension-boundary/ops/platform/host/p2_prior_gateway.py", line 333, in verify
+    actual = observe_prior_gateway(self.initial,self.selected,self.verify_session,self.command,self.assert_host)
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-api-suspension-boundary/ops/platform/host/p2_prior_gateway.py", line 210, in observe_prior_gateway
+    require(process['running'] and process['pid'] > 0, 'PRIOR_GATEWAY_STOPPED_PROOF_REQUIRED')
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-api-suspension-boundary/ops/platform/host/migrate.py", line 26, in demand
+    raise ValueError(code)
+ValueError: PRIOR_GATEWAY_STOPPED_PROOF_REQUIRED
+
+----------------------------------------------------------------------
+Ran 1 test in 0.286s
+
+FAILED (errors=1)

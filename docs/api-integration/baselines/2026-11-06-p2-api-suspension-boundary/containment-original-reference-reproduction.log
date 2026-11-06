@@ -1,0 +1,23 @@
+F
+======================================================================
+FAIL: test_normal_post_stop_guard_retains_source_zero_from_latest_without_mutating_original_reference (p2_prior_gateway_test.PriorGatewayTests.test_normal_post_stop_guard_retains_source_zero_from_latest_without_mutating_original_reference)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-api-suspension-boundary/ops/platform/host/p2_prior_gateway_test.py", line 447, in test_normal_post_stop_guard_retains_source_zero_from_latest_without_mutating_original_reference
+    result=self.guard_containment(normal=True,update_reference=False)
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-api-suspension-boundary/ops/platform/host/p2_prior_gateway_test.py", line 293, in guard_containment
+    self.assertEqual(calls,['frontend-fence','runtime-stop'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: ['frontend-fence'] != ['frontend-fence', 'runtime-stop']
+
+Second list contains 1 additional elements.
+First extra element 1:
+'runtime-stop'
+
+- ['frontend-fence']
++ ['frontend-fence', 'runtime-stop']
+
+----------------------------------------------------------------------
+Ran 1 test in 0.441s
+
+FAILED (failures=1)

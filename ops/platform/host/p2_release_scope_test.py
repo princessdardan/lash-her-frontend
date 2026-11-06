@@ -83,7 +83,8 @@ class P2ScopeTests(unittest.TestCase):
         with patch.dict(os.environ, {'COURSE_STAGING_DATABASE_URL': 'owned-fixture-url',
                                      'COMMUNITY_STAGING_DATABASE_URL': 'owned-fixture-url'}, clear=False), \
              patch.object(migrate.subprocess, 'run', side_effect=docker), \
-             patch.object(self.scope, 'run', side_effect=docker):
+             patch.object(self.scope, 'run', side_effect=docker), \
+             patch.object(self.scope, 'before_api_suspension'), patch.object(self.scope, 'after_api_suspension'):
             outcome = migrate.execute(self.bundle, self.results, True, 'staging/test-release', self.path, _p2_scope=self.scope)
         self.assertEqual(outcome['status'], 'API_DATABASES_VERIFIED_FRONTEND_CONTINUATION_OPEN')
         frontend = self.results / 'test-release/frontend'

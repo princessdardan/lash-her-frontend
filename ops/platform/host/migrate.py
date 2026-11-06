@@ -378,7 +378,11 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 # An empty reviewed list alone never establishes a no-op.
                 prepared.sort(key=lambda item: item[0] != "frontend")
             outcome["phase"] = "suspend-runtime"
+            if _p2_scope is not None:
+                _p2_scope.before_api_suspension()
             outcome["stoppedRuntimeContainers"] = suspend_runtime(environment, base_env)
+            if _p2_scope is not None:
+                _p2_scope.after_api_suspension()
             outcome["runtimeResumed"] = False
             for name, info, inputs, receipts in prepared:
                 if _p2_scope is not None:

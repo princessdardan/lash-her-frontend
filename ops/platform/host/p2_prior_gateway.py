@@ -281,7 +281,7 @@ def observe_stopped_prior_gateway(initial, selected, verify, command=None):
         (ref['kind'] == 'retained-runtime' or before['candidateSha256'] == initial['candidateSha256']) and
         stopped.get('actionId') == before.get('actionId') and isinstance(before.get('actionId'), str) and
         (directory.name in ('p2-'+before['actionId'],'p2-recovery-'+before['actionId'],'p2-certification-'+before['actionId']) or
-         directory.name in ('prior-gateway-after-quiescence','prior-gateway-broker-fallback') and directory.parent.name in ('p2-'+before['actionId'],'p2-recovery-'+before['actionId'],'p2-certification-'+before['actionId'])) and
+         directory.name in ('prior-gateway-after-quiescence','prior-gateway-broker-fallback','prior-gateway-api-suspension') and directory.parent.name in ('p2-'+before['actionId'],'p2-recovery-'+before['actionId'],'p2-certification-'+before['actionId'])) and
         stopped.get('status') == 'PRIOR_GATEWAY_ORDERED_STOP_OBSERVED' and before.get('status') == 'PRIOR_GATEWAY_PRESTOP_OBSERVED' and
         _closed_observed(before.get('observation') or {}), 'PRIOR_GATEWAY_STOP_PROOF_REQUIRED')
     observation = before['observation']
@@ -310,7 +310,7 @@ def _stopped_observation(initial,selected,verify,command):
 
 
 class PriorGatewayBoundary:
-    def __init__(self, authority, initial, selected, verify, command, assert_host, observation, stopped=False):
+    def __init__(self, authority, initial, selected, verify, command, assert_host, observation, stopped=False, *, output=None):
         require(authority is _AUTHORITY, 'PRIOR_GATEWAY_SOURCE_AUTHORITY_REQUIRED')
         # Never retain credentials or mutable caller state in the authority.
         self.initial = copy.deepcopy({key:initial[key] for key in ('candidateSha256','hostMachineId','configurationSha256','priorGatewayReference','recoveryActionId','certificationActionId') if key in initial})
@@ -320,8 +320,11 @@ class PriorGatewayBoundary:
         self.replacement_started = self.replacement_finished = False
         self.stopped = stopped
         self.stage_index, self.stage_active = 0, None
+        self.output = _path(str(output)) if output is not None else None
+        self.api_suspension_started = self.api_suspension_finished = False
 
     def verify(self):
+        require(not self.api_suspension_started or self.api_suspension_finished, 'PRIOR_GATEWAY_API_SUSPENSION_UNVERIFIED')
         if self.replacement_started and not self.replacement_finished:
             self.verify_session();return  # Only the fixed gateway-last command owns this transition.
         if self.replacement_finished:
@@ -334,8 +337,43 @@ class PriorGatewayBoundary:
             require(actual['process'] == self.observation['process'] and actual['binding'] == self.observation['binding'] and _zero(actual),
                 'PRIOR_GATEWAY_BOUNDARY_CHANGED')
 
+    def before_api_suspension(self):
+        require(not self.api_suspension_started and self.stage_index == 0 and self.stage_active is None and
+            not self.replacement_started and self.output is not None, 'PRIOR_GATEWAY_API_SUSPENSION_STAGE_REQUIRED')
+        action = self.initial['recoveryActionId']
+        require(self.output.name in ('p2-'+action,'p2-recovery-'+action,'p2-certification-'+action),
+            'PRIOR_GATEWAY_API_SUSPENSION_DIRECTORY_REQUIRED')
+        self._verify_old()
+        self.api_suspension_started = True
+        self.api_suspension_directory = self.output / 'prior-gateway-api-suspension'
+        self.api_suspension_directory.mkdir(mode=0o700)
+        before = capture_before_stop(self.initial,self.selected,self.api_suspension_directory,self.verify_session,self.command,self.assert_host)
+        require(before['status'] == 'PRIOR_GATEWAY_PRESTOP_OBSERVED' and _zero(before.get('observation') or {}) and
+            before['observation']['process'] == self.observation['process'] and before['observation']['binding'] == self.observation['binding'],
+            'PRIOR_GATEWAY_API_PRESTOP_ZERO_REQUIRED')
+        self.api_suspension_before = before
+
+    def after_api_suspension(self):
+        require(self.api_suspension_started and not self.api_suspension_finished and hasattr(self,'api_suspension_before'),
+            'PRIOR_GATEWAY_API_SUSPENSION_NOT_STARTED')
+        record = retain_ordered_stop(self.api_suspension_before,self.api_suspension_directory,self.verify_session,self.command)
+        require(record['status'] == 'PRIOR_GATEWAY_ORDERED_STOP_OBSERVED', 'PRIOR_GATEWAY_API_STOP_UNVERIFIED')
+        stop = {'stopReceiptDirectory':str(self.api_suspension_directory),
+            'stopReceiptSha256':migrate.file_hash(migrate.read_input(self.api_suspension_directory,STOPPED))}
+        if self.observation['binding']['candidateSha256'] == self.initial['candidateSha256']:
+            reference = {'kind':'stopped-current-candidate',**stop}
+        else:
+            reference = {**self.initial['priorGatewayReference'],**stop}
+            require(reference.get('kind') == 'retained-runtime', 'PRIOR_GATEWAY_RETAINED_REFERENCE_REQUIRED')
+        initial = {**self.initial,'priorGatewayReference':reference}
+        actual = _stopped_observation(initial,self.selected,self.verify_session,self.command)
+        require(actual['process'] == self.observation['process'] and actual['binding'] == self.observation['binding'],
+            'PRIOR_GATEWAY_API_STOP_BINDING_CHANGED')
+        self.initial, self.observation = initial, actual
+        self.stopped = self.api_suspension_finished = True
 
     def before_stage(self, stage):
+        require(not self.api_suspension_started or self.api_suspension_finished, 'PRIOR_GATEWAY_API_SUSPENSION_UNVERIFIED')
         require(self.stage_active is None and self.stage_index < len(runtime.STAGES) and tuple(stage) == runtime.STAGES[self.stage_index] and not self.replacement_finished, 'PRIOR_GATEWAY_STAGE_REQUIRED')
         self._verify_old()
         self.stage_active = tuple(stage)
@@ -395,7 +433,7 @@ def prepare_prior_gateway(initial, selected, output, verify, command=None, asser
                 'stopReceiptSha256':initial['priorGatewayReference']['stopReceiptSha256']} if stopped else {}))
         require(_zero(actual), 'PRIOR_GATEWAY_UNCERTAIN_REQUIRES_RECONCILIATION')
         outcome['status'] = 'PRIOR_GATEWAY_CLOSED_ZERO'
-        return PriorGatewayBoundary(_AUTHORITY, initial, selected, verify, command, assert_host, actual, stopped)
+        return PriorGatewayBoundary(_AUTHORITY, initial, selected, verify, command, assert_host, actual, stopped, output=output)
     except BaseException as error:
         if outcome['observation'] is None and isinstance(error,PriorGatewayObservationError):outcome['observation']=error.partial
         try: _remember(initial,outcome['observation'],'preparation-refused')
@@ -403,6 +441,28 @@ def prepare_prior_gateway(initial, selected, output, verify, command=None, asser
         raise
     finally:
         migrate.write_json(output,'prior-gateway-boundary.json',outcome)
+
+
+def _stopped_for_containment(initial, selected, verify, command):
+    try:
+        return observe_stopped_prior_gateway(initial,selected,verify,command)
+    except (ValueError,OSError):
+        # A source stop in this action may postdate the original forked input.
+        # Only containment can discover that fixed-root latest receipt; ordinary
+        # preflight/preparation still requires its explicit reviewed reference.
+        pointer = _read_lineage()
+        require(pointer is not None and pointer['state'] == 'stopped-observed' and
+            pointer['candidateSha256'] == initial['candidateSha256'] and isinstance(pointer.get('binding'),dict) and
+            pointer['binding'].get('hostMachineId') == initial['hostMachineId'], 'PRIOR_GATEWAY_CONTAINMENT_LATEST_REQUIRED')
+        stop = {'stopReceiptDirectory':pointer['stopReceiptDirectory'],'stopReceiptSha256':pointer['stopReceiptSha256']}
+        if pointer['binding'].get('candidateSha256') == initial['candidateSha256']:
+            reference = {'kind':'stopped-current-candidate',**stop}
+        else:
+            prior = initial.get('priorGatewayReference') or {}
+            require(prior.get('kind') == 'retained-runtime' and prior.get('candidateSha256') == pointer['binding'].get('candidateSha256') and
+                prior.get('configurationDirectory') == pointer['binding'].get('configurationDirectory'), 'PRIOR_GATEWAY_CONTAINMENT_PRIOR_REQUIRED')
+            reference = {**prior,**stop}
+        return observe_stopped_prior_gateway({**initial,'priorGatewayReference':reference},selected,verify,command)
 
 
 def capture_before_stop(initial, selected, output, verify, command=None, assert_host=None, clock=time):
@@ -413,7 +473,7 @@ def capture_before_stop(initial, selected, output, verify, command=None, assert_
     try:
         ids = _inventory(command,verify)
         if not ids or not _process(ids[0],command,verify)['running']:
-            record['observation'] = observe_stopped_prior_gateway(initial,selected,verify,command)
+            record['observation'] = _stopped_for_containment(initial,selected,verify,command)
         else:
             record['observation'] = _close(initial, selected, verify, command, assert_host, clock, lambda value:record.update(observation=value))
         record['status'] = 'PRIOR_GATEWAY_PRESTOP_OBSERVED'

@@ -63,6 +63,7 @@ class PriorGatewayTests(unittest.TestCase):
         self.commands.append(args)
         if args[1:3]==['container','ls']:return self.identity if self.present else ''
         if args[1:3]==['image','inspect']:return 'sha256:'+'3'*64
+        if args[1]=='inspect' and (not self.present or not self.running and getattr(self,'stop_fault',None)=='readback'):raise ValueError('OWNED_STOPPED_CONTAINER_READBACK_UNAVAILABLE')
         if args[1]=='inspect' and args[3]==gate.PROCESS_FIELDS:return '|'.join(['sha256:'+'3'*64,str(self.running).lower(),str(self.child.pid if self.running else 0),self.started,str(self.restart),'lash-her-staging','gateway'])
         if args[1]=='inspect' and args[3]=='{{json .Mounts}}':return json.dumps([{'Destination':dest,'Source':str(source),'Type':'bind','RW':self.bad_mount}for dest,source in(('/config/gateway.json',self.configuration/'gateway.json'),('/admission',self.configuration/'admission'))])
         if args[1]=='inspect':return 'sha256:'+'3'*64+'|true|healthy|lash-her-staging|gateway'
@@ -271,7 +272,7 @@ class PriorGatewayTests(unittest.TestCase):
         self.assertFalse(gate._zero(before['observation']))
 
 
-    def guard_containment(self):
+    def guard_containment(self,normal=False,update_reference=True):
         import p2_release_supervisor as supervisor
         calls=[]
         class Observer:
@@ -282,18 +283,20 @@ class PriorGatewayTests(unittest.TestCase):
             retained=json.loads((self.output/gate.BEFORE_STOP).read_bytes())
             self.assertEqual(retained['observation']['process']['pid'],self.child.pid)
             calls.append('runtime-stop');self.child.terminate();self.child.wait(5);self.running=False
+        observer='ops/platform/p2-frontend-live-probe.mjs' if normal else 'ops/platform/p2-recovery-current-probe.mjs'
         initial={**self.initial,'candidate':self.selected,'results':str(self.root),
             'credentials':{'FRONTEND_STAGING_MIGRATION_DATABASE_URL':'synthetic-owned-only'},
-            'sourceSha256':{'ops/platform/p2-recovery-current-probe.mjs':'f'*64},
-            '_guardLayout':supervisor.RECOVERY_LAYOUT,'_guardObserverSource':'ops/platform/p2-recovery-current-probe.mjs'}
+            'sourceSha256':{observer:'f'*64},
+            '_guardLayout':supervisor.DEFAULT_LAYOUT if normal else supervisor.RECOVERY_LAYOUT,'_guardObserverSource':observer}
         with patch.object(supervisor,'verify_guard_boundary',side_effect=lambda *_:self.verify()),patch.object(supervisor,'private_observer_program',return_value=self.root/'owned-program'),patch.object(supervisor,'PhysicalObserver',Observer),patch.object(supervisor.runtime,'command',return_value=''),patch.object(gate,'_command',side_effect=self.command),patch.object(supervisor.runtime,'assert_host'),patch.object(supervisor.migrate,'suspend_runtime',side_effect=stop),patch.object(supervisor,'cleanup_recovery_current_containers'):
             result=supervisor.fail_closed(initial,{'owned':True},self.root)
         self.assertEqual(calls,['frontend-fence','runtime-stop'])
         self.assertTrue(result['runtimeStopped']);self.assertTrue(result['gatewayAdmissionAcknowledged'])
         self.assertEqual(result['priorGatewayStopReceiptDirectory'],str(self.output))
         self.assertEqual(result['priorGatewayStopReceiptSha256'],migrate.file_hash((self.output/gate.STOPPED).read_bytes()))
-        self.initial['priorGatewayReference']={'kind':'stopped-current-candidate','stopReceiptDirectory':str(self.output),
-            'stopReceiptSha256':result['priorGatewayStopReceiptSha256']}
+        if update_reference:
+            stop={'stopReceiptDirectory':str(self.output),'stopReceiptSha256':result['priorGatewayStopReceiptSha256']}
+            self.initial['priorGatewayReference']=({'kind':'stopped-current-candidate',**stop} if result['priorGatewayBeforeStop']['observation']['binding']['candidateSha256']==self.initial['candidateSha256'] else {**self.initial['priorGatewayReference'],**stop})
         return result
 
     def test_independent_guard_uses_actual_mounted_gateway_and_preserves_zero_stop_chain(self):
@@ -308,6 +311,195 @@ class PriorGatewayTests(unittest.TestCase):
         self.assertEqual(result['priorGatewayOrderedStop']['status'],'PRIOR_GATEWAY_ORDERED_STOP_OBSERVED')
         with self.assertRaisesRegex(ValueError,'STOP_PROOF'):
             gate.preflight_prior_gateway(self.initial,self.selected,self.verify,self.command,lambda _:None)
+
+    def normal_migration_fixture(self, prior_p1=False):
+        import p2_release_scope_test as scope_fixture
+        from p2_release_scope import P2ReleaseScope
+        fixture=scope_fixture.P2ScopeTests();fixture.setUp();self.addCleanup(fixture.tearDown)
+        fixture.release['workload']={'projectId':'prj_test'}
+        fixture.release['artifacts']['gateway']={'image':self.image}
+        fixture.save()
+        bundle=self.root/'migration-bundle';shutil.copytree(fixture.bundle,bundle)
+        results=self.root/'migration-results';results.mkdir(mode=0o700)
+        selected,jobs=migrate.make_plan(bundle)
+        candidate_sha=migrate.file_hash((bundle/'release.candidate.json').read_bytes())
+        self.selected=selected;self.binding.update(releaseId=selected['releaseId'],candidateSha256=candidate_sha)
+        for name in ('runtime.json','gateway.json'):
+            path=self.configuration/name;value=json.loads(path.read_bytes())
+            if name=='runtime.json':value['releaseId']=selected['releaseId']
+            else:value['admission'].update(releaseId=selected['releaseId'],candidateSha256=candidate_sha)
+            path.write_text(json.dumps(value))
+        self.save_open();args=list(self.child.args);self.child.terminate();self.child.wait(5)
+        for stream in (self.child.stdin,self.child.stdout,self.child.stderr):stream.close()
+        self.child=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        self.port=json.loads(self.child.stdout.readline())['port']
+        self.initial={'candidate':selected,'candidateSha256':candidate_sha,'hostMachineId':'1'*32,'configurationSha256':{name:migrate.file_hash((self.configuration/name).read_bytes())for name in ('runtime.json','gateway.json')}}
+        self.output=self.root/('p2-'+selected['releaseId']);self.output.mkdir(mode=0o700)
+        self.next_configuration=self.root/'next-runtime-configuration';shutil.copytree(self.configuration,self.next_configuration)
+        if prior_p1:self.install_prior_p1_gateway()
+        self.migration_applies=[];self.stop_calls=0;self.stop_fault=None
+        descriptor=os.open(self.root/'normal-environment.lock',os.O_RDWR|os.O_CREAT,0o600);self.descriptors.append(descriptor)
+        fcntl.flock(descriptor,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        self.normal_scope=P2ReleaseScope(descriptor,self.root/'normal-environment.lock',self.verify,fixture.receipt,candidate_sha,release=selected,jobs=jobs)
+        self.normal_scope.bind_prior_gateway(self.prepare())
+        migrate.write_json(self.root,'original-frontend-database-receipt.json',fixture.receipt)
+        self.original_frontend_bytes=(self.root/'original-frontend-database-receipt.json').read_bytes()
+        return bundle,results,fixture
+
+    def install_prior_p1_gateway(self):
+        import release_test
+        prior=release_test.RuntimeReleaseTests();prior.setUp();self.addCleanup(prior.tearDown)
+        prior.fixture.add_frontend();prior.fixture.release['releaseId']='prior-p1'
+        prior.fixture.release['workload']={'projectId':'prj_test'};prior.fixture.release['artifacts']['gateway']['image']=self.image
+        for job in prior.fixture.jobs.values():job['releaseId']='prior-p1'
+        prior.fixture.save();bundle=self.root/'prior-p1-bundle';shutil.copytree(prior.bundle,bundle)
+        candidate_sha=migrate.file_hash((bundle/'release.candidate.json').read_bytes())
+        for name in ('runtime.json','gateway.json','course-tls.json','community-tls.json'):
+            shutil.copyfile(prior.configuration/name,self.configuration/name)
+        shutil.copyfile(prior.compose,self.configuration/'compose.yaml')
+        target=json.loads((self.configuration/'runtime.json').read_bytes());target['releaseId']='prior-p1'
+        (self.configuration/'runtime.json').write_text(json.dumps(target))
+        gateway=json.loads((self.configuration/'gateway.json').read_bytes());gateway.update(projectId='prj_test',admission={'file':'/admission/state.json','releaseId':'prior-p1','candidateSha256':candidate_sha})
+        (self.configuration/'gateway.json').write_text(json.dumps(gateway))
+        gate.staging_admission.persist_state(self.configuration,{'releaseId':'prior-p1','candidateSha256':candidate_sha},'owned-prior-open',new_work=True,recovery=True)
+        args=list(self.child.args);self.child.terminate();self.child.wait(5)
+        for stream in (self.child.stdin,self.child.stdout,self.child.stderr):stream.close()
+        self.child=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        self.port=json.loads(self.child.stdout.readline())['port'];self.started='2026-11-06T00:30:00.000000000Z'
+        receipts=self.root/'prior-p1-runtime';receipts.mkdir(mode=0o700)
+        migrate.write_json(receipts,'runtime-outcome.json',{'status':'API_RUNTIME_READY','phase':'completed','environment':'staging','releaseId':'prior-p1','candidateSha256':candidate_sha,
+            'containers':[{'service':service,'containerId':self.identity if service=='gateway' else format(index+1,'064x'),
+                'image':prior.fixture.release['artifacts'][gate.runtime.IMAGE_KEYS[service]]['image']}for index,service in enumerate(('community-api','course-api','community-tls','course-tls','course-snapshot','community-worker','course-publisher','gateway'))]})
+        self.initial['priorGatewayReference']={'kind':'retained-runtime','candidateDirectory':str(bundle),'configurationDirectory':str(self.configuration),
+            'runtimeReceiptDirectory':str(receipts),'candidateSha256':candidate_sha,'runtimeReceiptSha256':migrate.file_hash((receipts/'runtime-outcome.json').read_bytes())}
+
+    def replace_migrated_gateway(self):
+        boundary=self.normal_scope.prior_gateway
+        for stage in gate.runtime.STAGES[:-1]:
+            self.normal_scope.before_runtime_stage(stage);self.normal_scope.after_runtime_stage(stage)
+            self.assertTrue(boundary.stopped);self.normal_scope.verify()
+        self.normal_scope.before_runtime_stage(('gateway',))
+        old_pid=self.child.pid
+        for stream in (self.child.stdin,self.child.stdout,self.child.stderr):stream.close()
+        self.configuration=self.next_configuration
+        gate.staging_admission.persist_state(self.configuration,self.binding,'p2-release-held-'+self.selected['releaseId'],new_work=False,recovery=False)
+        args=list(self.child.args);args[-2:]=[str(self.configuration/'gateway.json'),str(self.configuration)]
+        self.child=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        self.port=json.loads(self.child.stdout.readline())['port'];self.running=True;self.identity='b'*64;self.started='2026-11-06T04:00:00.000000000Z'
+        self.normal_scope.after_runtime_stage(('gateway',));self.assertNotEqual(old_pid,self.child.pid)
+        self.assertEqual(boundary.current['process']['containerId'],self.identity);self.normal_scope.verify()
+
+    def migration_docker(self,args,**kwargs):
+        if args[1]=='ps':
+            output=(self.identity+' gateway\n')if self.running and self.present else ''
+            return subprocess.CompletedProcess(args,0,stdout=output,stderr='')
+        if args[1]=='stop':
+            self.stop_calls+=1;self.child.terminate();self.child.wait(5);self.running=False
+            if self.stop_fault=='missing':self.present=False
+            if self.stop_fault=='restarted':self.started='2026-11-06T03:00:00.000000000Z'
+            if self.stop_fault=='lost-stop':raise subprocess.TimeoutExpired('owned-source-stop',1)
+            return subprocess.CompletedProcess(args,0,stdout='',stderr='')
+        if '--execute'in args:
+            name='course'if any('lash-migrate-course-'in str(value)for value in args)else'community'
+            self.migration_applies.append(name)
+            mount=next(value for value in args if isinstance(value,str)and value.endswith('dst=/run/release-receipts'))
+            directory=Path(mount.split(',src=')[1].split(',dst=')[0]);job=self.normal_scope.jobs[name]['job']
+            migrate.write_json(directory,'database-receipt.json',{**job,'service':self.normal_scope.jobs[name]['service'],'status':'DATABASE_VERIFIED','failureCode':None})
+            migrate.write_json(directory,'job-outcome.json',{'status':'DATABASE_VERIFIED',**migrate.contract_identity(self.selected)})
+        return subprocess.CompletedProcess(args,0,stdout='',stderr='')
+
+    def normal_migrate(self,bundle,results):
+        def runner(args,**kwargs):
+            self.normal_scope.verify();result=self.migration_docker(args,**kwargs);self.normal_scope.verify();return result
+        with patch.dict(os.environ,{'COURSE_STAGING_DATABASE_URL':'owned-synthetic','COMMUNITY_STAGING_DATABASE_URL':'owned-synthetic'},clear=False),patch.object(migrate.subprocess,'run',side_effect=self.migration_docker),patch.object(self.normal_scope,'run',side_effect=runner):
+            return migrate.execute(bundle,results,True,'staging/'+self.selected['releaseId'],self.root/'normal-environment.lock',_p2_scope=self.normal_scope)
+
+    def test_normal_migrate_actual_suspension_retains_zero_before_api_sql_and_preserves_frontend_receipt(self):
+        bundle,results,_fixture=self.normal_migration_fixture()
+        outcome=self.normal_migrate(bundle,results)
+        self.assertEqual(outcome['status'],'API_DATABASES_VERIFIED_FRONTEND_CONTINUATION_OPEN')
+        self.assertEqual(self.stop_calls,1);self.assertEqual(self.migration_applies,['course','community'])
+        self.assertFalse(self.running);self.assertIsNotNone(self.child.poll());self.assertTrue(self.normal_scope.prior_gateway.stopped)
+        self.normal_scope.verify()
+        frontend=results/self.selected['releaseId']/'frontend'
+        self.assertEqual((frontend/'database-receipt.json').read_bytes(),self.original_frontend_bytes)
+        self.assertFalse((frontend/'job-outcome.json').exists())
+        self.assertEqual((self.root/'original-frontend-database-receipt.json').read_bytes(),self.original_frontend_bytes)
+        self.replace_migrated_gateway()
+
+    def test_normal_first_p2_migrate_preserves_prior_p1_reference_through_stop_and_new_gateway(self):
+        bundle,results,_fixture=self.normal_migration_fixture(prior_p1=True)
+        self.assertEqual(self.normal_scope.prior_gateway.observation['binding']['releaseId'],'prior-p1')
+        outcome=self.normal_migrate(bundle,results)
+        boundary=self.normal_scope.prior_gateway
+        self.assertEqual(outcome['status'],'API_DATABASES_VERIFIED_FRONTEND_CONTINUATION_OPEN')
+        self.assertEqual(boundary.initial['priorGatewayReference']['kind'],'retained-runtime')
+        self.assertEqual(boundary.observation['binding']['releaseId'],'prior-p1')
+        self.assertEqual(boundary.initial['priorGatewayReference']['stopReceiptDirectory'],str(self.output/'prior-gateway-api-suspension'))
+        self.assertEqual(self.migration_applies,['course','community'])
+        self.replace_migrated_gateway()
+
+    def test_normal_post_stop_guard_retains_source_zero_from_latest_without_mutating_original_reference(self):
+        bundle,results,_fixture=self.normal_migration_fixture(prior_p1=True)
+        original=copy.deepcopy(self.initial)
+        self.normal_migrate(bundle,results);self.normal_scope.revoke()
+        with self.assertRaisesRegex(ValueError,'STOP_REFERENCE'):
+            gate.preflight_prior_gateway(self.initial,self.selected,self.verify,self.command,lambda _:None)
+        result=self.guard_containment(normal=True,update_reference=False)
+        self.assertEqual(self.initial,original)
+        self.assertEqual(result['priorGatewayBeforeStop']['status'],'PRIOR_GATEWAY_PRESTOP_OBSERVED')
+        self.assertEqual(result['priorGatewayBeforeStop']['observation']['admission']['uncertain'],{'newWork':0,'recovery':0})
+        with self.assertRaisesRegex(ValueError,'STOP_REFERENCE'):
+            gate.preflight_prior_gateway(self.initial,self.selected,self.verify,self.command,lambda _:None)
+        reference={**original['priorGatewayReference'],'stopReceiptDirectory':result['priorGatewayStopReceiptDirectory'],'stopReceiptSha256':result['priorGatewayStopReceiptSha256']}
+        self.assertEqual(gate.preflight_prior_gateway({**original,'priorGatewayReference':reference},self.selected,self.verify,self.command,lambda _:None)['binding']['releaseId'],'prior-p1')
+        self.assertEqual((self.root/'original-frontend-database-receipt.json').read_bytes(),self.original_frontend_bytes)
+
+    def test_containment_latest_stop_keeps_known_uncertainty_and_never_grants_ordinary_zero(self):
+        self.control({'mode':'drop'});self.stop_proof();original=copy.deepcopy(self.initial);original.pop('priorGatewayReference')
+        directory=self.output/'prior-gateway-after-quiescence';directory.mkdir(mode=0o700)
+        before=gate.capture_before_stop(original,self.selected,directory,self.verify,self.command,lambda _:None)
+        self.assertEqual(before['status'],'PRIOR_GATEWAY_PRESTOP_OBSERVED')
+        self.assertEqual(before['observation']['admission']['uncertain']['recovery'],1)
+        gate.retain_ordered_stop(before,directory,self.verify,self.command)
+        with self.assertRaisesRegex(ValueError,'STOP_REFERENCE'):gate.preflight_prior_gateway(original,self.selected,self.verify,self.command,lambda _:None)
+        reference={'kind':'stopped-current-candidate','stopReceiptDirectory':str(directory),'stopReceiptSha256':migrate.file_hash((directory/gate.STOPPED).read_bytes())}
+        with self.assertRaisesRegex(ValueError,'STOP_PROOF_REQUIRES_ZERO'):
+            gate.preflight_prior_gateway({**original,'priorGatewayReference':reference},self.selected,self.verify,self.command,lambda _:None)
+
+    def test_containment_latest_stop_wrong_candidate_remains_unknown(self):
+        bundle,results,_fixture=self.normal_migration_fixture();self.normal_migrate(bundle,results)
+        pointer=json.loads((self.root/'.p2-gateway-lineage.json').read_bytes());pointer['candidateSha256']='f'*64;gate._write_lineage(pointer)
+        directory=self.output/'prior-gateway-after-quiescence';directory.mkdir(mode=0o700)
+        before=gate.capture_before_stop(self.initial,self.selected,directory,self.verify,self.command,lambda _:None)
+        self.assertEqual(before['status'],'PRIOR_GATEWAY_PRESTOP_UNKNOWN');self.assertIsNone(before['observation']['admission'])
+        self.assertFalse(gate._zero(before['observation']))
+
+    def assert_api_stop_fault_refuses(self,fault):
+        bundle,results,_fixture=self.normal_migration_fixture();self.stop_fault=fault
+        with self.assertRaises((ValueError,subprocess.TimeoutExpired)):self.normal_migrate(bundle,results)
+        self.assertEqual(self.migration_applies,[]);self.assertEqual(self.stop_calls,1)
+        self.assertFalse((results/self.selected['releaseId']/'frontend/database-receipt.json').exists())
+        self.assertEqual((self.root/'original-frontend-database-receipt.json').read_bytes(),self.original_frontend_bytes)
+        with self.assertRaisesRegex(ValueError,'API_SUSPENSION_UNVERIFIED'):self.normal_scope.verify()
+
+    def test_normal_api_stop_missing_container_readback_refuses_before_sql(self):self.assert_api_stop_fault_refuses('missing')
+    def test_normal_api_stop_failed_readback_refuses_before_sql(self):self.assert_api_stop_fault_refuses('readback')
+    def test_normal_api_stop_changed_process_refuses_before_sql(self):self.assert_api_stop_fault_refuses('restarted')
+    def test_normal_api_stop_lost_ack_refuses_before_sql(self):self.assert_api_stop_fault_refuses('lost-stop')
+
+    def test_normal_api_suspension_pending_transition_never_authorizes_other_scope_commands(self):
+        self.normal_migration_fixture();self.normal_scope.before_api_suspension()
+        with self.assertRaisesRegex(ValueError,'API_SUSPENSION_UNVERIFIED'):self.normal_scope.verify()
+        with self.assertRaisesRegex(ValueError,'API_SUSPENSION_UNVERIFIED'):self.normal_scope.before_runtime_stage(gate.runtime.STAGES[0])
+        self.assertEqual(self.stop_calls,0);self.assertEqual(self.migration_applies,[])
+
+    def test_normal_api_stop_cannot_erase_new_uncertainty_after_preparation(self):
+        bundle,results,_fixture=self.normal_migration_fixture()
+        self.save_open();self.control({'mode':'drop'})
+        with self.assertRaisesRegex(ValueError,'BOUNDARY_CHANGED'):self.normal_migrate(bundle,results)
+        self.assertEqual(self.stop_calls,0);self.assertEqual(self.migration_applies,[])
+        self.assertEqual(self.observe()['admission']['uncertain']['recovery'],1)
 
     def recovery_scope(self):
         from p2_recovery_scope import P2RecoveryScope

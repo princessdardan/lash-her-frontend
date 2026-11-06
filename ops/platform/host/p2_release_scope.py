@@ -55,6 +55,18 @@ class P2ReleaseScope:
             raise ValueError('P2_PRIOR_GATEWAY_NOT_PREPARED')
         self.prior_gateway.verify()
 
+    def before_api_suspension(self):
+        self.verify(); self.require_prior_gateway()
+        self.prior_gateway.before_api_suspension()
+
+    def after_api_suspension(self):
+        if self.prior_gateway is None:
+            raise ValueError('P2_PRIOR_GATEWAY_NOT_PREPARED')
+        # The source stop transition must qualify its actual stopped readback
+        # before ordinary scope verification can use the retained zero proof.
+        self.prior_gateway.after_api_suspension()
+        self.verify()
+
     def before_runtime_stage(self, stage):
         self.verify(); self.require_prior_gateway(); self.prior_gateway.before_stage(stage)
 
