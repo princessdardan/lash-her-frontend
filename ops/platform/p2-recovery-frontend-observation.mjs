@@ -6,6 +6,7 @@ import {readP2RecoveryForwardScope} from './p2-recovery-current-probe.mjs';
 const require=ok=>{if(!ok)throw new Error('P2_RECOVERY_FRONTEND_RECHECK_REFUSED');};
 async function invoke(context,operation,expectedStatus){
  const value=await context.getProviderContext();require(typeof value.vercelToken==='string'&&typeof value.privateConfigurationDirectory==='string');
+ const runtimeCredential=value.frontendRuntimeDatabaseUrl;
  const selectedProducer=context.plan.runtimeProducerSha256??context.plan.bootstrapCompatibility?.runtimeProducerSha256;
  const candidates=context.plan.producers.filter(row=>row.role.name===context.job.target.runtimeRole&&row.producerSha256===selectedProducer);require(candidates.length===1);
  const expectedWriterBinding={mode:'enforce',targetSha256:context.plan.targetSha256,producerSha256:candidates[0].producerSha256,sourceCommit:context.plan.sourceCommit,roleName:context.job.target.runtimeRole};
@@ -13,9 +14,10 @@ async function invoke(context,operation,expectedStatus){
  const input={operation,candidate:context.candidate,plan:context.plan,originalDirectory:context.originalDirectory,receiptDirectory:forward?.directory??context.originalDirectory,
    directory:context.directory,privateConfigurationDirectory:forward?context.action.forwardPrivateConfigurationDirectory:value.privateConfigurationDirectory,
    vercelToken:value.vercelToken,expectedWriterBinding};
- const verify=operation==='build-forward'?context.verifyMutationScope:context.verifyLockedSession;require(typeof verify==='function');
+ require(typeof(operation==='build-forward'?context.verifyMutationScope:context.verifyLockedSession)==='function');
+ const verify=operation==='build-forward'?()=>context.verifyMutationScope(runtimeCredential):context.verifyLockedSession;
  if(operation!=='observe')Object.assign(input,{bindings:prepareFrontendProviderBindings(value.bindings,context.plan),action:context.action,
-   writerTarget:context.bootstrapRuntimeTarget,frontendRuntimeDatabaseUrl:value.frontendRuntimeDatabaseUrl,gatewayHost:value.gatewayHost,
+   writerTarget:context.bootstrapRuntimeTarget,frontendRuntimeDatabaseUrl:runtimeCredential,gatewayHost:value.gatewayHost,
    newPrivateConfigurationDirectory:context.action.forwardPrivateConfigurationDirectory});
  await verify();
  const child=spawn('python3',['-I','-u',fileURLToPath(new URL('./host/p2_recovery_frontend_observation.py',import.meta.url))],{stdio:['pipe','pipe','pipe'],env:Object.fromEntries(['PATH','HOME','LANG'].filter(key=>process.env[key]!==undefined).map(key=>[key,process.env[key]]))});

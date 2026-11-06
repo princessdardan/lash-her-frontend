@@ -107,6 +107,7 @@ class P2RecoveryBroker(Broker):
     def finish_receipts(self, value):
         require(self.closing_at is not None and not self.finished, 'P2_RECOVERY_CLOSE_NOT_PREPARED')
         raw, outcome = decode(value['recovery'])
+        migrate.require_contract_identity(self.selected,outcome)
         require(outcome.get('status') == 'P2_STAGING_RECOVERY_RESTORATION_VERIFIED' and outcome.get('recoveryActionId') == self.action_id() and
                 outcome.get('originalReleaseId') == self.selected['releaseId'] and outcome.get('candidateSha256') == self.initial['candidateSha256'] and
                 outcome.get('sourceCommit') == self.selected['sources']['frontend']['commit'] and outcome.get('admissionRestored') is True and

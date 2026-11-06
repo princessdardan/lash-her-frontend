@@ -3,6 +3,7 @@ import copy
 import fcntl
 import json
 import io
+import base64
 import os
 from pathlib import Path
 import subprocess
@@ -133,6 +134,29 @@ class RecoveryScopeTests(unittest.TestCase):
         self.assertNotIn('stage_frontend(',broker)
         self.assertNotIn('promote_frontend(',broker)
 
+    def test_terminal_requires_exact_phase2_contract_before_persistence_or_update(self):
+        pair={'contractPhase':'p2','phase2ContractManifestSha256':'sha256:'+'f'*64}
+        def prepared():
+            broker=object.__new__(P2RecoveryBroker);broker.closing_at=1;broker.finished=False;broker.directory=self.root/'terminal'
+            broker.directory.mkdir(mode=0o700,exist_ok=True);broker.worker_done=threading.Event();broker.worker_done.set();broker.failed=threading.Event()
+            broker.promoted={};broker.gateway_flags={'newWork':True,'recovery':True};broker.released=threading.Event();broker.frontend_raw=b'{}'
+            broker.selected={'releaseId':'original','sources':{'frontend':{'commit':'a'*40}},**pair}
+            broker.initial={'sourceCommit':'b'*40,'recoveryActionId':'fresh','candidateSha256':'1'*64,'inventorySha256':'2'*64,
+                'targetSha256':'3'*64,'configurationBindingSha256':'4'*64,'originalReceiptSha256':{'job-outcome.json':None}}
+            broker.outcome={'retained':'unchanged',**pair};return broker
+        outcome={**pair,'status':'P2_STAGING_RECOVERY_RESTORATION_VERIFIED','recoveryActionId':'fresh','originalReleaseId':'original','candidateSha256':'1'*64,
+            'sourceCommit':'a'*40,'admissionRestored':True,'inventorySha256':'2'*64,'targetSha256':'3'*64,'configurationSha256':'4'*64,
+            'originalReceiptSha256':{'job-outcome.json':None},'originalFrontendTerminalRecreated':False,'sqlReplayed':False,
+            'rolePreparationAuthorized':False,'historicalLoginsRestored':False,'failedBuildForwardAction':'OPEN'}
+        for change in ({'phase2ContractManifestSha256':'sha256:'+'e'*64},{'phase2ContractManifestSha256':None},{'contractPhase':None}):
+            broker=prepared();value={key:item for key,item in {**outcome,**change}.items() if item is not None};before=copy.deepcopy(broker.outcome)
+            with self.assertRaisesRegex(ValueError,'CONTRACT'):
+                broker.finish_receipts({'recovery':base64.b64encode(json.dumps(value).encode()).decode()})
+            self.assertEqual(broker.outcome,before);self.assertFalse(broker.finished);self.assertFalse(broker.released.is_set())
+            self.assertFalse((broker.directory/'p2-recovery-frontend-verification.json').exists())
+        broker=prepared();actual=broker.finish_receipts({'recovery':base64.b64encode(json.dumps(outcome).encode()).decode()})
+        self.assertEqual(actual['phase2ContractManifestSha256'],pair['phase2ContractManifestSha256']);self.assertTrue(broker.finished)
+
 
 
 import frontend_release_adapters_test as provider_fixture
@@ -240,6 +264,7 @@ class RecoveryForwardBuildTests(RecoveryProviderReadTests):
         owner=self;original_handler=self.server.RequestHandlerClass
         class ForwardHandler(original_handler):
             def do_GET(self):
+                if getattr(owner,'runtime_fault_flag',None) and Path(owner.runtime_fault_flag).exists():owner.runtime_fault_calls+=1
                 path=self.path.split('?',1)[0]
                 if self.command=='POST' and path=='/v13/deployments':
                     raw=self.rfile.read(int(self.headers.get('Content-Length','0')))
@@ -433,6 +458,17 @@ class RecoveryForwardBuildTests(RecoveryProviderReadTests):
         self.assertFalse(observed['reviewedInventoryMatches']);self.assertIsNone(observed['activeExecutions']);self.assertIsNone(observed['uncertainEffects'])
         self.deployments.pop();self.assertTrue(self.execute('observe-vercel')['reviewedInventoryMatches'])
         self.assertTrue(all(call['method']=='GET' for call in self.calls[before:]));self.preserved()
+
+    def test_private_probe_overlap_refuses_before_attempt_write_or_provider_call(self):
+        self.prepare_forward();recovery=Path(self.context['directory']);original=Path(self.context['originalDirectory']);old=Path(self.context['privateConfigurationDirectory'])
+        old_parent=old.parent/'private-container';old_parent.mkdir(mode=0o700);old=old.rename(old_parent/'old-private');self.context['privateConfigurationDirectory']=str(old)
+        for parent in (original,recovery,old):(parent/'new-private-nested').mkdir(mode=0o700)
+        baseline={str(path):path.read_bytes() for parent in (original,recovery,old) for path in parent.rglob('*') if path.is_file()}
+        for path in (original,recovery,old,old_parent,original.parent,original/'new-private-nested',recovery/'new-private-nested',old/'new-private-nested'):
+            self.context['newPrivateConfigurationDirectory']=str(path);before=len(self.calls)
+            with self.assertRaisesRegex(ValueError,'NEW_PRIVATE_PROBE'):self.build()
+            self.assertEqual(len(self.calls),before);self.assertFalse((recovery/'vercel').exists())
+            for name,raw in baseline.items():self.assertEqual(Path(name).read_bytes(),raw)
 
 if __name__=='__main__':
     unittest.main()

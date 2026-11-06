@@ -142,9 +142,13 @@ def build_forward(context,client,verify,probe_client=None):
     action=context['action'];directory=Path(context['directory']);attempt=directory/'vercel';private=Path(context['newPrivateConfigurationDirectory'])
     migrate.private_directory(directory);frontend_probe._private_configuration(private)
     old_private=Path(context['privateConfigurationDirectory']).resolve()
-    require(private.resolve()!=old_private and old_private not in private.resolve().parents and private.resolve() not in old_private.parents and
+    require(all(Path(value).is_absolute() and Path(value)==Path(value).resolve() for value in
+        (context['newPrivateConfigurationDirectory'],context['privateConfigurationDirectory'],context['originalDirectory'],context['directory'])) and
+        all(private.resolve()!=bound and bound not in private.resolve().parents and private.resolve() not in bound.parents
+            for bound in (old_private,Path(context['originalDirectory']).resolve(),directory.resolve())) and
         not any(private.iterdir()) and context.get('gatewayHost')==context['bindings'].get('gatewayHost') and isinstance(context.get('gatewayHost'),str) and
         re.fullmatch(r'[a-z0-9-]+(?:\.[a-z0-9-]+)+',context['gatewayHost']),'P2_FORWARD_NEW_PRIVATE_PROBE_REQUIRED')
+    verify()
     require(not attempt.exists(),'P2_FORWARD_NEW_ATTEMPT_REQUIRED');attempt.mkdir(mode=0o700)
     intent_raw=migrate.read_input(directory,'p2-recovery-forward-started.json');intent=json.loads(intent_raw)
     selected=frontend_release_adapters.identity(context)

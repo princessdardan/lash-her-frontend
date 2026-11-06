@@ -127,7 +127,7 @@ export async function runP2PostSqlRecovery(input, dependencies) {
             apiRuntimeReceiptSha256:frontendCoordinationHash(readFrontendReleaseEvidence(dependencies.directory,'p2-recovery-api-runtime.json')),
             priorReconciliationReceiptSha256:frontendCoordinationHash(readFrontendReleaseEvidence(dependencies.directory,'p2-recovery-forward-original.json')),
             expectedWriterAdmissionBinding,featureControls:plan.certification.featureControls});
-          const result=await buildP2RecoveryForward({...providerContext,plan,job:migration.job,verifyMutationScope:()=>verifyP2RecoveryForwardMutation(session)});
+          const result=await buildP2RecoveryForward({...providerContext,plan,job:migration.job,verifyMutationScope:runtimeCredential=>verifyP2RecoveryForwardMutation(session,{...providerContext,plan},runtimeCredential)});
           require(result.status==='P2_RECOVERY_NEW_BUILD_VERIFIED');
           providerContext.forwardRecoveryScope=await issueP2RecoveryForwardScope(session,{...providerContext,plan});
           observed=await adapters.observeCompatibleFrontend({plan,inventorySha256,checkpoint:'recovery',...providerContext,admissionObservation:{newWork:false,recovery:false,active:0,uncertain:0}});

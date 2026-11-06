@@ -13,6 +13,22 @@ import { P2_CERTIFICATION_PROFILE } from './p2-certification-profile.mjs';
 import { prepareP2PostSqlRecovery,bindOriginalRecoveryReceipts,p2RecoveryProviderContext } from './p2-post-sql-recovery.mjs';
 import { frontendProviderBindingsArtifact,FRONTEND_VERCEL_PROJECT,FRONTEND_VERCEL_TEAM,FRONTEND_VERCEL_REPOSITORY } from './frontend-provider-bindings.mjs';
 import {readP2RecoveryForwardScope} from './p2-recovery-current-probe.mjs';
+import {requireP2RecoveryPrivateDirectories} from './p2-recovery.mjs';
+
+test('forward private probe directory is canonically disjoint from both common trees and old private tree',()=>{
+  const root=realpathSync(mkdtempSync(join(tmpdir(),'p2-private-boundary-')));chmodSync(root,0o700);
+  try{
+    const oldParent=join(root,'private-container');mkdirSync(oldParent,{mode:0o700});
+    const original=join(root,'original'),directory=join(root,'fresh'),old=join(oldParent,'old-private'),good=join(root,'new-private');
+    for(const path of [original,directory,old]){mkdirSync(path,{mode:0o700});mkdirSync(join(path,'nested'),{mode:0o700});writeFileSync(join(path,'unchanged.json'),'{}\n',{mode:0o600});}
+    const options={originalDirectory:original,directory,oldPrivateDirectory:old};
+    assert.equal(requireP2RecoveryPrivateDirectories(good,options),good);
+    for(const path of [original,directory,old,oldParent,root,...[original,directory,old].map(path=>join(path,'nested'))])assert.throws(()=>requireP2RecoveryPrivateDirectories(path,options));
+    const alias=join(root,'alias');symlinkSync(original,alias);assert.throws(()=>requireP2RecoveryPrivateDirectories(join(alias,'planned'),options));
+    assert.equal(readdirSync(root).includes('new-private'),false);
+    for(const path of [original,directory,old])assert.equal(readFileSync(join(path,'unchanged.json'),'utf8'),'{}\n');
+  }finally{rmSync(root,{recursive:true,force:true});}
+});
 
 function fixture(){
   const sourceInventory={version:2,scope:'candidate-source-only',sourceManifestSha256:'1'.repeat(64),routes:[{file:'src/app/api/owned/route.ts',methods:['POST'],sourceSha256:'2'.repeat(64)}],actionModules:[],renderEntries:[],manualEntries:[],inlineActions:[],deferredSites:[],databaseConstructors:[],schedules:[]};

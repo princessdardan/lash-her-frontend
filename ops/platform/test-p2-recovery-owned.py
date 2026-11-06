@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import socketserver
+import select
+import threading
 import tempfile
 import uuid
 import re
@@ -63,7 +66,7 @@ class Fixture:
             if cls.started:subprocess.run([str(cls.bin/'pg_ctl'),'-D',str(cls.data),'-m','immediate','-w','stop'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
         finally:
             if hasattr(cls,'cluster'):cls.cluster.cleanup()
-provider_fixture=None
+provider_fixture=None;foreign_fixture=None;proxy=None
 try:
     Fixture.setUpClass()
     api_roots={name:Path(os.environ.get(name.upper()+'_RECOVERY_SOURCE_ROOT','/Users/dardan/workspace/lash-her-'+name+'-api/.worktrees/phase2-'+name)).resolve() for name in ('course','community')}
@@ -97,12 +100,33 @@ try:
         sql(database,'SET ROLE '+migration+'; CREATE SEQUENCE public.recovery_acl_probe; GRANT USAGE ON SCHEMA public TO '+runtime+'; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO '+runtime+'; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO '+runtime+'; REVOKE ALL ON SCHEMA drizzle FROM PUBLIC;')
         connections[name]=url(migration,database);connections[name+'Admin']=url('frontend_provider_fixture',database)
     if forward_mode:
+        foreign_fixture=type('ForeignFixture',(Fixture,),{'started':False})
+        foreign_fixture.setUpClass()
+        foreign_fixture.sql("CREATE ROLE recovery_runtime LOGIN NOINHERIT PASSWORD '"+Fixture.password+"';")
+        foreign_route_flag=Fixture.root/'foreign-runtime-route'
+        class Route(socketserver.BaseRequestHandler):
+            def handle(self):
+                backend=socket.create_connection(('127.0.0.1',foreign_fixture.port if foreign_route_flag.exists() else Fixture.port))
+                try:
+                    while True:
+                        readable,_,_=select.select([self.request,backend],[],[],30)
+                        if not readable:return
+                        for source in readable:
+                            raw=source.recv(65536)
+                            if not raw:return
+                            (backend if source is self.request else self.request).sendall(raw)
+                except OSError:pass
+                finally:backend.close()
+        class Proxy(socketserver.ThreadingTCPServer):daemon_threads=True
+        proxy=Proxy(('127.0.0.1',0),Route);proxy_thread=threading.Thread(target=proxy.serve_forever,daemon=True);proxy_thread.start()
+        connections['frontend']=connections['frontend'].replace(':'+str(Fixture.port)+'/',':'+str(proxy.server_address[1])+'/')
+        trusted_ca=Fixture.root/'trusted-owned-clusters.pem';trusted_ca.write_bytes(Fixture.cert.read_bytes()+foreign_fixture.cert.read_bytes())
         sys.path.insert(0,str(root/'ops/platform/host'))
         import p2_recovery_test as forward_tests
         forward_tests.RecoveryForwardBuildTests.setUpClass()
         provider_fixture=forward_tests.RecoveryForwardBuildTests('test_reviewed_failed_build_creates_one_same_source_deployment_and_actual_private_probe')
         provider_fixture.setUp()
-        physical={'host':'127.0.0.1','port':Fixture.port,'database':'postgres','user':'recovery_creator','serverMajor':major}
+        physical={'host':'127.0.0.1','port':proxy.server_address[1],'database':'postgres','user':'recovery_creator','serverMajor':major}
         provider_fixture.database['target']=physical
         target_hash=hashlib.sha256(json.dumps({'environment':'staging',**physical},separators=(',',':')).encode()).hexdigest()
         provider_fixture.context['plan']['targetSha256']=target_hash;provider_fixture.context['bindings']['targetSha256']=target_hash
@@ -110,9 +134,10 @@ try:
         def physical_bootstrap():
             original_bootstrap()
             provider_fixture.context['writerTarget']={'environment':'staging','targetSha256':target_hash,**physical,'user':'recovery_runtime'}
-            provider_fixture.context['frontendRuntimeDatabaseUrl']=url('recovery_runtime','postgres')
+            provider_fixture.context['frontendRuntimeDatabaseUrl']=url('recovery_runtime','postgres').replace(':'+str(Fixture.port)+'/',':'+str(proxy.server_address[1])+'/')
         provider_fixture.bootstrap_context=physical_bootstrap
         provider_fixture.prepare_forward()
+        provider_fixture.runtime_fault_flag=str(Fixture.root/'runtime-credential-fault-active');provider_fixture.runtime_fault_calls=0
         # The existing host component fixture creates placeholder current/API
         # inputs. They have not been used by a builder. In this distinct test
         # mode, only actual Node current-readback results are first published.
@@ -126,7 +151,7 @@ try:
         shim="import sys,ssl,re\nsys.path.insert(0,"+repr(str(root/'ops/platform/host'))+")\nimport frontend_probe,vercel\nvercel.API_ORIGIN="+repr(provider_fixture.origin)+"\noriginal_ssl=ssl.create_default_context\nssl.create_default_context=lambda *args,**kwargs: original_ssl(cafile="+repr(str(forward_tests.provider_fixture.vercel_test.VercelControlTests.cert))+")\noriginal_probe=frontend_probe.ProbeClient.request\nfrontend_probe.DEPLOYMENT_URL=re.compile(re.escape(vercel.API_ORIGIN))\ndef mapped_probe(self,url,*args,**kwargs):\n    assert url=='https://owned.vercel.app'\n    return original_probe(self,vercel.API_ORIGIN,*args,**kwargs)\nfrontend_probe.ProbeClient.request=mapped_probe\n"
         for name in ('p2_recovery_frontend_observation','frontend_release_adapters'):
             (host/(name+'.py')).write_text(shim+'import '+name+' as actual\nactual.main()\n')
-        connections['forwardFixture']={'context':provider_fixture.context,'graph':str(platform)}
+        connections['forwardFixture']={'context':provider_fixture.context,'graph':str(platform),'runtimeFaultFlag':provider_fixture.runtime_fault_flag,'foreignRouteFlag':str(foreign_route_flag)}
     sentinel=Fixture.root/'ambient-node-option-executed'
     injection=Fixture.root/'ambient-node-option.cjs'
     injection.write_text("require('node:fs').writeFileSync("+json.dumps(str(sentinel))+",'executed');process.exit(47);\n")
@@ -141,7 +166,7 @@ try:
     original={key:os.environ.get(key) for key in poison}
     try:
         os.environ.update(poison)
-        environment=child_environment(NODE_EXTRA_CA_CERTS=str(Fixture.cert),P2_RECOVERY_OWNED_TEST='true',P2_RECOVERY_OWNED_CONNECTIONS=json.dumps(connections))
+        environment=child_environment(NODE_EXTRA_CA_CERTS=str(trusted_ca if forward_mode else Fixture.cert),P2_RECOVERY_OWNED_TEST='true',P2_RECOVERY_OWNED_CONNECTIONS=json.dumps(connections))
         if set(environment)&set(poison):
             raise ValueError('OWNED_AMBIENT_ENVIRONMENT_LEAKED')
         result=subprocess.run([node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),str(root/'ops/platform/test-p2-recovery-owned.mjs')],cwd=root,env=environment,capture_output=True,text=True)
@@ -153,6 +178,7 @@ try:
             print('OWNED_P2_RECOVERY_CHILD_FAILED',file=sys.stderr,flush=True)
         else:
             if forward_mode:
+                if provider_fixture.runtime_fault_calls!=0:raise ValueError('OWNED_RUNTIME_CREDENTIAL_FAULT_PROVIDER_CALL')
                 calls=provider_fixture.calls[provider_fixture.before_calls:]
                 creates=[row for row in calls if row['method']=='POST' and row['path'].split('?',1)[0]=='/v13/deployments']
                 promotions=[row for row in calls if row['method']=='POST' and '/promote/' in row['path']]
@@ -170,6 +196,7 @@ try:
             if not isinstance(value,dict) or value.get('status')!=expected_status or value.get('childEnvironmentAllowlistEnforced') is not True:
                 raise ValueError('OWNED_RECOVERY_SOURCE_RECEIPT_MISSING')
             value.pop('childEnvironmentAllowlistEnforced')
+            if forward_mode:value['runtimeCredentialFaultProviderCalls']=provider_fixture.runtime_fault_calls
             print(json.dumps({**value,'status':'OWNED_P2_RECOVERY_FORWARD_CHECKS_PASS' if forward_mode else 'OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS','environmentIsolation':{
                 'nodeOptionsPositiveControlExecuted':True,'poisonedParentEnvironment':True,'ambientNodeOptionsExecuted':False,
                 'ambientConfigVariablesAbsent':True,'childEnvironmentAllowlistEnforced':True}}),flush=True)
@@ -181,4 +208,7 @@ try:
 finally:
     if provider_fixture is not None:
         provider_fixture.tearDown();forward_tests.RecoveryForwardBuildTests.tearDownClass()
+    if proxy is not None:
+        proxy.shutdown();proxy.server_close();proxy_thread.join(2)
+    if foreign_fixture is not None:foreign_fixture.cleanup()
     Fixture.cleanup()

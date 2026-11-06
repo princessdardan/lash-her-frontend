@@ -1,12 +1,12 @@
 // Explicit disposable PG16 fixture only; no configured/live URL is accepted.
 import assert from 'node:assert/strict';
-import { readFileSync,writeFileSync,existsSync } from 'node:fs';
+import { readFileSync,writeFileSync,existsSync,unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Client } from 'pg';
 import { frontendMigrationArtifact } from './frontend-migration.mjs';
 import { readMigrationCatalog } from './frontend-schema.mjs';
-import { withRecoveryFrontendSession, observeRecoveryPhysical,issueP2RecoveryForwardScope,readP2RecoveryForwardScope,verifyP2RecoveryForwardMutation } from './p2-recovery-current-probe.mjs';
+import { withRecoveryFrontendSession, observeRecoveryPhysical,issueP2RecoveryForwardScope,readP2RecoveryForwardScope,verifyP2RecoveryForwardMutation,RECOVERY_HELD_LOCK } from './p2-recovery-current-probe.mjs';
 import { observeRecoveryApiCurrent } from './p2-recovery-api-current-probe.mjs';
 import { frontendCoordinationHash as hash } from './frontend-release-inventory.mjs';
 import {frontendReleaseReceiptStore,readFrontendReleaseEvidence} from './frontend-release-receipts.mjs';
@@ -20,7 +20,7 @@ const assertOwnedEnvironment=()=>assert.deepEqual(Object.keys(process.env).filte
 assertOwnedEnvironment();
 const privateInput=JSON.parse(process.env.P2_RECOVERY_OWNED_CONNECTIONS);const serverMajor=privateInput.serverMajor;assert.ok([16,18].includes(serverMajor));
 assert.equal(new URL(privateInput.frontend).hostname,'127.0.0.1');
-const connect=async url=>{const client=new Client({connectionString:url,ssl:{rejectUnauthorized:true}});await client.connect();return client;};
+const connect=async (url,options={})=>{const client=new Client({connectionString:url,ssl:{rejectUnauthorized:true},...options});await client.connect();return client;};
 const admin=await connect(privateInput.frontend),artifact=frontendMigrationArtifact();
 let checks=0,legacyApiVerifierRefusals=0;
 const privilegeFaults=[];
@@ -71,7 +71,7 @@ try{
     const forwardAction={...supplied.action,candidateSha256:hash(Buffer.from(JSON.stringify(candidate)+'\n')),inventorySha256:hash(plan)};
     const store=frontendReleaseReceiptStore(supplied.directory),base={...forwardAction,targetSha256};
     const bridge=await import(pathToFileURL(join(fixture.graph,'p2-recovery-frontend-observation.mjs'))),adapters=await import(pathToFileURL(join(fixture.graph,'frontend-release-adapters.mjs')));
-    let retainedScope,retainedContext,mutationRefusals=0;
+    let retainedScope,retainedContext,mutationRefusals=0,runtimeCredentialRefusals=0;
     await store.record('p2-recovery-started.json',{...base,status:'P2_POST_SQL_RECOVERY_STARTED'});
     await withRecoveryFrontendSession(prepared,forwardAction,deps,async({session,client,verify,receipt,probe})=>{
       const context={candidate,plan,job,action:forwardAction,checkpoint:'recovery',inventorySha256:forwardAction.inventorySha256,recoveryActionId:forwardAction.recoveryActionId,
@@ -79,7 +79,7 @@ try{
         bootstrapRuntimeTarget:{environment:'staging',targetSha256,host:target.host,port:target.port,database:target.database,user:target.runtimeRole,serverMajor},
         getProviderContext:async()=>({bindings,vercelToken:'owned-token-marker',privateConfigurationDirectory:supplied.privateConfigurationDirectory,
           gatewayHost:supplied.gatewayHost,frontendRuntimeDatabaseUrl:supplied.frontendRuntimeDatabaseUrl}),
-        verifyMutationScope:()=>verifyP2RecoveryForwardMutation(session)};
+        verifyMutationScope:runtimeCredential=>verifyP2RecoveryForwardMutation(session,context,runtimeCredential)};
       context.action.forwardPrivateConfigurationDirectory=supplied.newPrivateConfigurationDirectory;
       await store.record('p2-recovery-current-database.json',receipt);
       assert.equal((await observeRecoveryPhysical({...probe,operation:'verify-schema'},deps)).status,'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED');
@@ -101,7 +101,54 @@ try{
         apiRuntimeReceiptSha256:hash(readFrontendReleaseEvidence(supplied.directory,'p2-recovery-api-runtime.json')),
         priorReconciliationReceiptSha256:hash(readFrontendReleaseEvidence(supplied.directory,'p2-recovery-forward-original.json')),
         expectedWriterAdmissionBinding:{mode:'enforce',targetSha256,producerSha256,sourceCommit,roleName:target.runtimeRole},featureControls:plan.certification.featureControls});
+      const getProvider=context.getProviderContext,validProvider=await getProvider();let credentialRefusals=0;
+      const runtimeRefusal=async task=>{writeFileSync(fixture.runtimeFaultFlag,'active',{mode:0o600,flag:'wx'});try{await assert.rejects(task);credentialRefusals++;}finally{unlinkSync(fixture.runtimeFaultFlag);}};
+      const runtimePositive=async()=>{
+        const runtime=await connect(validProvider.frontendRuntimeDatabaseUrl,{options:'-c default_transaction_read_only=on -c search_path=pg_catalog,public'});
+        try{
+          assert.equal(runtime.connection.stream.encrypted,true);assert.equal(runtime.connection.stream.authorized,true);await runtime.query('BEGIN READ ONLY');
+          assert.deepEqual((await runtime.query('SELECT current_user AS role,(SELECT oid::text FROM pg_catalog.pg_roles WHERE rolname=current_user) AS oid')).rows,[{role:target.runtimeRole,oid:receipt.runtime.oid}]);
+          assert.equal((await runtime.query(RECOVERY_HELD_LOCK.replace('pid=pg_backend_pid()','pid=$2'),[probe.marker,probe.backendPid])).rows[0].held,true);await runtime.query('ROLLBACK');
+        }finally{await runtime.end();}
+      };
+      for(const change of [url=>{url.password='owned-wrong-password';},url=>{url.username='recovery_creator';},url=>{url.hostname='localhost';},url=>{url.pathname='/course_recovery_owned';}]){
+        await runtimePositive();
+        const invalid=new URL(validProvider.frontendRuntimeDatabaseUrl);change(invalid);
+        context.getProviderContext=async()=>({...validProvider,frontendRuntimeDatabaseUrl:invalid.href});
+        await runtimeRefusal(()=>bridge.buildP2RecoveryForward(context));
+        assert.equal(existsSync(join(context.directory,'vercel')),false);
+        assert.equal((await admin.query('SELECT new_work,recovery FROM frontend_admission.control WHERE singleton')).rows[0].new_work,false);
+        context.getProviderContext=getProvider;await context.verifyMutationScope(validProvider.frontendRuntimeDatabaseUrl);
+      }
+      let reads=0;context.getProviderContext=async()=>({...validProvider,frontendRuntimeDatabaseUrl:++reads===1?validProvider.frontendRuntimeDatabaseUrl:validProvider.frontendRuntimeDatabaseUrl.replace('recovery_runtime:','recovery_creator:')});
+      await runtimeRefusal(()=>bridge.buildP2RecoveryForward(context));assert.equal(existsSync(join(context.directory,'vercel')),false);
+      context.getProviderContext=getProvider;await context.verifyMutationScope(validProvider.frontendRuntimeDatabaseUrl);
+      const replaced=new URL(validProvider.frontendRuntimeDatabaseUrl);replaced.password='owned-stale-password';
+      const mutableProvider={...validProvider,frontendRuntimeDatabaseUrl:replaced.href};
+      Object.defineProperty(mutableProvider,'gatewayHost',{get(){mutableProvider.frontendRuntimeDatabaseUrl=validProvider.frontendRuntimeDatabaseUrl;return validProvider.gatewayHost;}});
+      context.getProviderContext=async()=>mutableProvider;
+      await runtimeRefusal(()=>bridge.buildP2RecoveryForward(context));assert.equal(existsSync(join(context.directory,'vercel')),false);
+      context.getProviderContext=getProvider;await context.verifyMutationScope(validProvider.frontendRuntimeDatabaseUrl);
+      writeFileSync(fixture.foreignRouteFlag,'active',{mode:0o600,flag:'wx'});
+      try{
+        const foreign=await connect(validProvider.frontendRuntimeDatabaseUrl);
+        try{
+          assert.equal(foreign.connection.stream.encrypted,true);assert.equal(foreign.connection.stream.authorized,true);
+          assert.deepEqual((await foreign.query('SELECT current_user AS role,current_database() AS database')).rows,[{role:'recovery_runtime',database:'postgres'}]);
+          assert.equal((await foreign.query(RECOVERY_HELD_LOCK.replace('pid=pg_backend_pid()','pid=$2'),[probe.marker,probe.backendPid])).rows[0].held,false);
+        }finally{await foreign.end();}
+        await runtimeRefusal(()=>bridge.buildP2RecoveryForward(context));assert.equal(existsSync(join(context.directory,'vercel')),false);
+      }
+      finally{unlinkSync(fixture.foreignRouteFlag);}
+      await context.verifyMutationScope(validProvider.frontendRuntimeDatabaseUrl);
+      await client.query('SELECT pg_advisory_unlock(hashtext($1))',[probe.marker]);
+      try{await runtimeRefusal(()=>bridge.buildP2RecoveryForward(context));assert.equal(existsSync(join(context.directory,'vercel')),false);}
+      finally{await client.query('SELECT pg_advisory_lock(hashtext($1))',[probe.marker]);}
+      await context.verifyMutationScope(validProvider.frontendRuntimeDatabaseUrl);
       assert.equal((await bridge.buildP2RecoveryForward(context)).status,'P2_RECOVERY_NEW_BUILD_VERIFIED');
+      const anotherPassword=new URL(validProvider.frontendRuntimeDatabaseUrl);anotherPassword.password='owned-another-password';
+      context.getProviderContext=async()=>({...validProvider,frontendRuntimeDatabaseUrl:anotherPassword.href});
+      await runtimeRefusal(()=>context.verifyMutationScope(anotherPassword.href));context.getProviderContext=getProvider;await context.verifyMutationScope(validProvider.frontendRuntimeDatabaseUrl);runtimeCredentialRefusals=credentialRefusals;
       context.forwardRecoveryScope=await issueP2RecoveryForwardScope(session,context);retainedScope=context.forwardRecoveryScope;retainedContext=context;
       const projection=await readP2RecoveryForwardScope(context.forwardRecoveryScope,context);assert.equal(projection.mode,'reviewed-new-build');assert.equal(Object.keys(projection).length,12);
       const originals=Object.fromEntries(Object.entries(projection.originalReceiptSha256).map(([file,expected])=>[file,expected===null?null:readFileSync(join(projection.originalDirectory,file))]));
@@ -128,7 +175,7 @@ try{
       for(const result of [inventory,observed]){assert.equal(result.forwardRecovery.recoveryActionId,projection.recoveryActionId);assert.deepEqual(result.forwardRecovery.originalReceiptSha256,projection.originalReceiptSha256);}
       assert.equal((await bridge.observeP2RecoveryFrontend(context)).status,'P2_RECOVERY_FRONTEND_RUNTIME_VERIFIED');
       await admin.query('UPDATE frontend_admission.control SET recovery=true');
-      await assert.rejects(context.verifyMutationScope());mutationRefusals++;
+      await assert.rejects(context.verifyMutationScope(supplied.frontendRuntimeDatabaseUrl));mutationRefusals++;
       // The same verified receipt scope remains valid for GET after ordered
       // admission opening; it never grants another mutation or probe extension.
       assert.equal((await adapters.observeCompatibleFrontend(context)).readyState,'READY');
@@ -151,8 +198,9 @@ try{
       communityMigrations:JSON.parse(readFileSync(join(privateInput.apiRoots.community,'drizzle/meta/_journal.json'))).entries.length,
       checks:['actual-fe-physical-session','both-api-current-readonly','actual-tls-build-probe-promote','same-source-candidate-new-action','real-opaque-scope-shared-observer','selected-workload-bytes',
         'cloned-plain-scope-refused','wrong-client-verifier-refused','wrong-plan-candidate-target-directory-refused','wrong-inventory-action-refused','shared-mutation-operations-refused',
-        'receipt-drift-refused','expired-session-refused','open-admission-mutation-refused','opened-admission-get-retained','original-terminal-retained-not-current','original-receipts-preserved'],
-      mutationRefusals,noSqlReplay:true,journalDigestsUnchanged:true,originalFrontendTerminalRecreated:false,skipped:0,fixtureOnly:true,providerTouched:false,actualRuntimeContainers:false,childEnvironmentAllowlistEnforced:true}));
+        'receipt-drift-refused','expired-session-refused','open-admission-mutation-refused','opened-admission-get-retained','original-terminal-retained-not-current','original-receipts-preserved',
+        'actual-runtime-credential-tls-physical-binding','bad-runtime-credential-and-foreign-physical-refused'],
+      mutationRefusals,runtimeCredentialRefusals,foreignRuntimeTlsAuthenticated:true,noSqlReplay:true,journalDigestsUnchanged:true,originalFrontendTerminalRecreated:false,skipped:0,fixtureOnly:true,providerTouched:false,actualRuntimeContainers:false,childEnvironmentAllowlistEnforced:true}));
   }else{
   const checkFrontendFault=async(id,install,remove,afterInstall=async()=>{})=>{
     const checkpoint=id==='frontend-operator-superuser'?'operator-role-policy':id==='frontend-runtime-role-settings'?'runtime-role-settings':id==='frontend-runtime-database-settings'?'selected-role-database-settings':id==='frontend-runtime-rogue-ownership'?'runtime-ownership':id==='frontend-runtime-public-schema-access'?'runtime-schema-access':/inbound|outbound|rogue-admin/u.test(id)?'role-memberships':/default/u.test(id)?'runtime-default-grants':'runtime-extra-privileges';

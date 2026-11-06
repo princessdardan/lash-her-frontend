@@ -94,10 +94,36 @@ export async function readP2RecoveryForwardScope(scope,context){
   return structuredClone(selected.projection);
 }
 
-export async function verifyP2RecoveryForwardMutation(session){
-  const record=recoverySessions.get(session);require(record&&record.action.frontendMode==='reviewed-new-build','forward-session');await record.verify();
+async function verifyForwardRuntimeCredential(record,context,value){
+  let runtime,lost=false;
+  try{
+    require(typeof value==='string'&&value.length>0&&value===(await context.getProviderContext()).frontendRuntimeDatabaseUrl&&
+      (record.runtimeCredential===undefined||record.runtimeCredential===value),'runtime-credential');
+    const target={...record.prepared.migration.job.target,user:record.prepared.migration.job.target.runtimeRole,approvedPendingTags:[]};
+    runtime=new Client({...recoveryConnectionOptions(value,target),application_name:'lash-her-p2-recovery-runtime-credential',options:'-c default_transaction_read_only=on -c search_path=pg_catalog,public'});
+    runtime.on('error',()=>{lost=true;});await runtime.connect();
+    require(runtime.connection?.stream?.encrypted===true&&runtime.connection.stream.authorized===true,'runtime-credential');
+    await runtime.query('BEGIN READ ONLY');
+    const actual=(await runtime.query(`SELECT current_user AS username,pg_catalog.current_database() AS database,
+      pg_catalog.current_setting('server_version_num')::int/10000 AS major,pg_catalog.current_setting('transaction_read_only') AS readonly,
+      (SELECT oid::text FROM pg_catalog.pg_roles WHERE rolname=current_user) AS role_oid,
+      (SELECT oid::text FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database()) AS database_oid`)).rows[0];
+    require(actual?.username===target.user&&actual.database===target.database&&actual.major===target.serverMajor&&actual.readonly==='on'&&
+      actual.role_oid===record.receipt.runtime.oid&&actual.database_oid===record.physical.databaseOid,'runtime-credential');
+    for(const key of [FRONTEND_MIGRATION_LOCK,record.physical.marker]){
+      const held=await runtime.query(RECOVERY_HELD_LOCK.replace('pid=pg_backend_pid()','pid=$2'),[key,record.physical.pid]);
+      require(held.rows[0]?.held===true,'runtime-physical-session');
+    }
+    await runtime.query('ROLLBACK');await record.verify();require(!lost,'runtime-credential');record.runtimeCredential=value;
+  }catch{throw new Error('P2_RECOVERY_RUNTIME_CREDENTIAL_REFUSED');}
+  finally{if(runtime)try{await runtime.end();require(!lost);}catch{throw new Error('P2_RECOVERY_RUNTIME_CREDENTIAL_CLEANUP_UNCERTAIN');}}
+}
+
+export async function verifyP2RecoveryForwardMutation(session,context,runtimeCredential){
+  const record=await forwardSession(session,context);require(record.action.frontendMode==='reviewed-new-build','forward-session');
   const actual=await readRecoveryFrontendCurrent(record.client,record.prepared,record.action,record.verify);
   require(actual.admissionEpoch===record.receipt.admissionEpoch,'forward-admission-drift');await record.verify();
+  await verifyForwardRuntimeCredential(record,context,runtimeCredential);
 }
 
 async function verifyRecoveryMemberships(client, runtimeOid, owner) {
@@ -236,7 +262,7 @@ export async function withRecoveryFrontendSession(prepared, action, dependencies
   client.on('error', () => { lost = true; });
   const verify = async () => {
     await dependencies.verifyEnvironment(); require(!lost && client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true);
-    const actual = (await client.query('SELECT pg_backend_pid() AS pid,current_user AS username,current_database() AS database,current_setting(\'server_version_num\')::int/10000 AS major')).rows[0];
+    const actual = (await client.query('SELECT pg_backend_pid() AS pid,current_user AS username,current_database() AS database,current_setting(\'server_version_num\')::int/10000 AS major,(SELECT oid::text FROM pg_catalog.pg_database WHERE datname=current_database()) AS database_oid')).rows[0];
     require(actual.username === target.user && actual.database === target.database && actual.major === target.serverMajor && (!identity || actual.pid === identity.pid)); identity = actual;
     if (locked) require((await client.query(RECOVERY_HELD_LOCK, [FRONTEND_MIGRATION_LOCK])).rows[0]?.held === true);
     require(!lost);
@@ -247,7 +273,7 @@ export async function withRecoveryFrontendSession(prepared, action, dependencies
     const marker = randomBytes(32).toString('hex'); await client.query('SELECT pg_advisory_lock(hashtext($1))', [marker]);
     const backendStart = (await client.query('SELECT backend_start::text FROM pg_stat_activity WHERE pid=pg_backend_pid()')).rows[0]?.backend_start; require(typeof backendStart === 'string');
     const receipt = await readRecoveryFrontendCurrent(client, prepared, action, verify);
-    session=Object.freeze({});recoverySessions.set(session,{client,verify,prepared,action:structuredClone(action),receipt:structuredClone(receipt),candidate:structuredClone(prepared.migration.candidate),plan:structuredClone(prepared.plan)});
+    session=Object.freeze({});recoverySessions.set(session,{client,verify,prepared,action:structuredClone(action),receipt:structuredClone(receipt),candidate:structuredClone(prepared.migration.candidate),plan:structuredClone(prepared.plan),physical:{pid:identity.pid,databaseOid:identity.database_oid,marker}});
     const result = await task({ client, verify, receipt,session, probe: { version: 1, marker, backendPid: identity.pid, backendStart, applicationName: RECOVERY_LOCK_APPLICATION,
       job: prepared.migration.job, baseline: prepared.migration.baseline, targetSha256: prepared.plan.targetSha256, owner: prepared.plan.owner, receipt } });
     await verify(); return result;
