@@ -1,0 +1,310 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-06",
+  "scope": "read-only isolated P2 qualification target seam inventory",
+  "sources": {
+    "frontend": "3d92f1b8579e9dc8076cc188e3624869700e0e4d",
+    "course": "a447bfde20299e12afab68a3331b3792ddd07598",
+    "community": "939de65dd52f0b1a43993a25c7c428dce6e2bb43"
+  },
+  "recommendedModel": {
+    "businessEnvironment": "staging",
+    "workloadEnvironment": "production",
+    "selector": "closed source-owned qualificationTargetProfile id plus canonical sha256",
+    "initialProfiles": ["current staging only"],
+    "isolatedProfileState": "absent/refused until real reviewed IDs exist",
+    "hostIsolation": "separate Linux host"
+  },
+  "findings": [
+    {
+      "id": "FE-CANDIDATE-01",
+      "repository": "frontend",
+      "file": "ops/platform/release.candidate.json",
+      "lines": [2, 4, 31, 32, 46, 49],
+      "category": "candidate",
+      "currentBinding": "environment and one Vercel workload project; no target profile identity",
+      "requiredChange": "bind closed profile id and digest in candidate and approval",
+      "preserve": "exact repositories, source commits, workload environment production"
+    },
+    {
+      "id": "FE-RELEASE-02",
+      "repository": "frontend",
+      "file": "ops/platform/release.mjs",
+      "lines": [20, 27, 45, 65],
+      "category": "candidate-validation",
+      "currentBinding": "validates release/environment and only the syntax of workload projectId",
+      "requiredChange": "resolve project and all target identities from the selected reviewed profile; bind profile to staging evidence",
+      "preserve": "production promotion must still require exact staging-tested sources and images"
+    },
+    {
+      "id": "FE-APPENV-03",
+      "repository": "frontend",
+      "file": "src/lib/env/application-environment.mjs",
+      "lines": [3, 14, 61, 90],
+      "category": "application-target",
+      "currentBinding": "one staging Vercel project and one staging Sanity project",
+      "requiredChange": "consume a source-reviewed profile binding while returning business environment staging",
+      "preserve": "team/project verification and preview refusal semantics"
+    },
+    {
+      "id": "FE-PROBE-04",
+      "repository": "frontend",
+      "file": "src/app/api/internal/release-probe/handler.ts",
+      "lines": [12, 27, 49, 58, 83, 97],
+      "category": "release-probe",
+      "currentBinding": "fixed staging auth origin and environment-derived gateway origin",
+      "requiredChange": "bind project, canonical origin and gateway origin to the selected profile and include profile identity in retained evidence",
+      "preserve": "authentication, no-store behavior, closed modes and no incoming credential forwarding"
+    },
+    {
+      "id": "FE-VERCEL-05",
+      "repository": "frontend",
+      "file": "ops/platform/host/vercel.py",
+      "lines": [15, 18, 69, 90],
+      "category": "vercel-control-plane",
+      "currentBinding": "fixed team, staging/production projects and GitHub repository ID",
+      "requiredChange": "select only a source-owned profile project; keep repository identity exact",
+      "preserve": "fixed Vercel API origin, TLS, no redirects, bounded response and secret-safe errors"
+    },
+    {
+      "id": "FE-BROWSER-06",
+      "repository": "frontend",
+      "file": "ops/platform/p2-canonical-browser-origin.mjs",
+      "lines": [4, 21],
+      "category": "canonical-origin",
+      "currentBinding": "staging.lashher.com and current staging Vercel project",
+      "requiredChange": "resolve exact origin, host and project from the reviewed profile",
+      "preserve": "two alias readbacks, workload challenge, TLS and no promotion acceptance"
+    },
+    {
+      "id": "FE-NATIVE-07",
+      "repository": "frontend",
+      "file": "ops/platform/p2-lifecycle-native.mjs",
+      "lines": [11, 12, 52, 84, 151, 165],
+      "category": "native-cron",
+      "currentBinding": "fixed project, staging environment, deployment and provider request observation",
+      "requiredChange": "bind profile project/origin/target and digest throughout plan and observations",
+      "preserve": "cron path and schedule, source policy, feature controls, admission, drain and final disabled state"
+    },
+    {
+      "id": "FE-LIFECYCLE-08",
+      "repository": "frontend",
+      "file": "ops/platform/p2-lifecycle-suspension-evidence.mjs",
+      "lines": [43, 84, 88, 114],
+      "category": "lifecycle-certification",
+      "currentBinding": "current candidate project, browser origin, host, database target and source",
+      "requiredChange": "add exact profile id/digest and compare against persistence target and deployment",
+      "preserve": "source eligibility, actual UI flow, 840-second window and final closed state"
+    },
+    {
+      "id": "FE-GATEWAY-09",
+      "repository": "frontend",
+      "file": "ops/gateway/p2-certification-fault.mjs",
+      "lines": [10, 10, 48, 67],
+      "category": "fault-injection",
+      "currentBinding": "fixed Vercel project/team and api-staging public host",
+      "requiredChange": "consume a source-issued selected profile in the lease/config join",
+      "preserve": "single-use lease, 120-second maximum, exact modes and records"
+    },
+    {
+      "id": "FE-HOST-10",
+      "repository": "frontend",
+      "file": "ops/platform/host/release.py",
+      "lines": [56, 94, 97, 103],
+      "category": "host-runtime",
+      "currentBinding": "release, host machine, gateway, images and database targets but no profile identity",
+      "requiredChange": "join profile id/digest through runtime.json, gateway.json, plans and receipts; select a separate actual host",
+      "preserve": "Linux root, exact machine-id, local Docker socket and amd64 checks"
+    },
+    {
+      "id": "FE-COMPOSE-11",
+      "repository": "frontend",
+      "file": "ops/platform/compose.yaml",
+      "lines": [1, 1, 23, 230],
+      "category": "compose-runtime",
+      "currentBinding": "project name derived only from APP_ENV; fixed service/network topology",
+      "requiredChange": "separate-host profile-specific rendered project and release directory",
+      "preserve": "service names, private origins, network policy, images and process commands"
+    },
+    {
+      "id": "FE-TLS-12",
+      "repository": "frontend",
+      "file": "ops/platform/host/certificates.py",
+      "lines": [23, 49],
+      "category": "tls-host",
+      "currentBinding": "api-staging host, lash-her-staging project and staging storage roots",
+      "requiredChange": "closed profile host/project/storage plan on the selected host",
+      "preserve": "private file ownership, certificate verification and retained previous keys"
+    },
+    {
+      "id": "FE-OBSERVERS-13",
+      "repository": "frontend",
+      "file": "ops/platform/host/frontend_gateway_observation.py",
+      "lines": [35, 41],
+      "category": "runtime-observation",
+      "currentBinding": "requires Compose project label lash-her-staging",
+      "requiredChange": "compare the exact source-owned profile compose project",
+      "preserve": "exact container ID/image/health/service observation"
+    },
+    {
+      "id": "FE-FRONTEND-DB-14",
+      "repository": "frontend",
+      "file": "ops/platform/frontend-role-preparation.mjs",
+      "lines": [8, 8],
+      "category": "database-role-policy",
+      "currentBinding": "fixed frontend staging owner and runtime role names",
+      "requiredChange": "closed per-profile role policy with actual reviewed names/OIDs",
+      "preserve": "least privilege, no generic caller-selected role names"
+    },
+    {
+      "id": "FE-FRONTEND-BOOTSTRAP-15",
+      "repository": "frontend",
+      "file": "ops/platform/frontend-migration.mjs",
+      "lines": [105, 105, 238, 253],
+      "category": "database-bootstrap",
+      "currentBinding": "explicit allowEmptyBootstrap and refusal of unjournaled nonempty database",
+      "requiredChange": "bind bootstrap authorization and target to the profile and full expected migration chain",
+      "preserve": "true-empty catalog proof, physical lock, admission fencing and no automatic replay"
+    },
+    {
+      "id": "FE-PROVIDERS-16",
+      "repository": "frontend",
+      "file": "ops/platform/frontend-provider-bindings.mjs",
+      "lines": [7, 10, 87, 150],
+      "category": "provider-identity",
+      "currentBinding": "current Vercel, Resend, Square, Sanity and Google targets",
+      "requiredChange": "separate source records per reviewed profile; no isolated entry until actual IDs exist",
+      "preserve": "current provider retirement/fencing stays current-profile-only"
+    },
+    {
+      "id": "FE-WEBHOOK-17",
+      "repository": "frontend",
+      "file": "ops/staging/configure-webhook-ingress.mjs",
+      "lines": [8, 8, 16, 33],
+      "category": "provider-callback",
+      "currentBinding": "current Vercel project/team and staging webhook origins",
+      "requiredChange": "new profile-specific qualification adapter after real callback IDs exist",
+      "preserve": "this current staging mutation script unchanged and unable to select isolated resources"
+    },
+    {
+      "id": "FE-CI-18",
+      "repository": "frontend",
+      "file": ".github/workflows/ci.yml",
+      "lines": [72, 129],
+      "category": "offline-ci",
+      "currentBinding": "owned PostgreSQL 18 source/role/recovery/lifecycle fixtures",
+      "requiredChange": "add profile schema negatives only; keep live qualification separate",
+      "preserve": "offline receipts must not be called deployed isolated evidence"
+    },
+    {
+      "id": "FE-ARTIFACT-CI-19",
+      "repository": "frontend",
+      "file": ".github/workflows/platform-artifacts.yml",
+      "lines": [450, 540],
+      "category": "candidate-ci",
+      "currentBinding": "exact source/image candidate attestation without target profile",
+      "requiredChange": "attest profile id/digest in candidate and create a separate manual certification dispatch; optional GitHub Environment isolation must not add mandatory approval",
+      "preserve": "source recheck, immutable digests, provenance and no deployment in artifact job"
+    },
+    {
+      "id": "COURSE-TARGET-20",
+      "repository": "course",
+      "file": "src/db/operator-migration.ts",
+      "lines": [15, 38, 83, 94, 123, 149],
+      "category": "migration-target-role-policy",
+      "currentBinding": "target schema has environment only; source policy hardcodes current Neon database/owner and staging roles",
+      "requiredChange": "strict profile id/digest plus exact isolated database/owner/role policy",
+      "preserve": "actual role/ACL/default privilege/membership checks"
+    },
+    {
+      "id": "COURSE-EMPTY-21",
+      "repository": "course",
+      "file": "src/db/migration-lineage.ts",
+      "lines": [202, 223],
+      "category": "empty-bootstrap",
+      "currentBinding": "supports verified empty database with explicit allowEmptyBootstrap and exact pending tags",
+      "requiredChange": "profile-bind the approved target and provider identity",
+      "preserve": "empty non-system catalog, exact role/database/major and TLS proof"
+    },
+    {
+      "id": "COURSE-RECEIPT-22",
+      "repository": "course",
+      "file": "src/db/migration-release.ts",
+      "lines": [20, 38, 47, 66, 87, 104, 174, 185],
+      "category": "migration-plan-receipt",
+      "currentBinding": "plan/receipt bind environment, source, images, contract and target but not profile",
+      "requiredChange": "include and exactly compare profile id/digest in plan, authorization and terminal receipt",
+      "preserve": "postflight allowEmptyBootstrap=false and one locked apply"
+    },
+    {
+      "id": "COMMUNITY-TARGET-23",
+      "repository": "community",
+      "file": "src/db/operator-migration.ts",
+      "lines": [15, 38, 83, 94, 123, 149],
+      "category": "migration-target-role-policy",
+      "currentBinding": "target schema has environment only; source policy hardcodes current Neon database/owner and staging roles",
+      "requiredChange": "strict profile id/digest plus exact isolated database/owner/role policy",
+      "preserve": "actual role/ACL/default privilege/membership checks"
+    },
+    {
+      "id": "COMMUNITY-EMPTY-24",
+      "repository": "community",
+      "file": "src/db/migration-lineage.ts",
+      "lines": [202, 223],
+      "category": "empty-bootstrap",
+      "currentBinding": "supports verified empty database with explicit allowEmptyBootstrap and exact pending tags",
+      "requiredChange": "profile-bind the approved target and provider identity",
+      "preserve": "empty non-system catalog, exact role/database/major and TLS proof"
+    },
+    {
+      "id": "COMMUNITY-RECEIPT-25",
+      "repository": "community",
+      "file": "src/db/migration-release.ts",
+      "lines": [20, 38, 47, 66, 87, 104, 174, 185],
+      "category": "migration-plan-receipt",
+      "currentBinding": "plan/receipt bind environment, source, images, contract and target but not profile",
+      "requiredChange": "include and exactly compare profile id/digest in plan, authorization and terminal receipt",
+      "preserve": "postflight allowEmptyBootstrap=false and one locked apply"
+    },
+    {
+      "id": "COMMUNITY-DEPLOYED-CI-26",
+      "repository": "community",
+      "file": ".github/workflows/deployed-e2e.yml",
+      "lines": [5, 21, 31, 41],
+      "category": "deployed-ci",
+      "currentBinding": "single staging input maps directly to GitHub Environment staging",
+      "requiredChange": "closed profile choice mapped to exact nonsecret URLs; a dedicated environment is optional and must not add mandatory approval",
+      "preserve": "manual-only execution and environment-held credentials"
+    },
+    {
+      "id": "COMMUNITY-PROTOCOL-27",
+      "repository": "community",
+      "file": "src/config/env.ts",
+      "lines": [183, 199],
+      "category": "protocol-invariant",
+      "currentBinding": "canonical Course/Community issuers, audiences, subjects, TTL and skew",
+      "requiredChange": "none",
+      "preserve": "do not profile service JWT identities"
+    }
+  ],
+  "unknownRequiredInputs": [
+    "isolated Vercel project/team decision and canonical origin",
+    "gateway DNS/certificate and selected Linux host machine ID",
+    "three direct database identities, roles and OIDs",
+    "Google project and OAuth client IDs",
+    "Resend domain ID/name",
+    "Sanity project/dataset sharing decision",
+    "Mux organization/environment/webhook IDs",
+    "Square sandbox IDs if exercised",
+    "CI target mapping and runtime-only secret inventory; optional GitHub Environment without an additional mandatory approval"
+  ],
+  "explicitNonGoals": [
+    "production activation",
+    "Phase 3 migration or cutover",
+    "paid checkout",
+    "Community member features",
+    "generalizing current historical recovery or provider retirement",
+    "reading or copying credentials",
+    "changing public API contracts or service JWT identities"
+  ]
+}

@@ -1,0 +1,466 @@
+{
+  "version": 1,
+  "status": "P2_KNOWN_ACK_WHOLE_ROUTE_PASS",
+  "actualAppCron": true,
+  "actualDispatcher": true,
+  "actualTlsGateway": true,
+  "actualTlsReceivers": true,
+  "actualCanonicalApiReceivers": true,
+  "actualThreeDatabaseDomainProof": true,
+  "actualTlsPostgres": true,
+  "actualProvider": false,
+  "modeledOidc": true,
+  "firstHttpStatus": 503,
+  "firstFrontendLedgerState": "uncertain",
+  "firstFrontendUncertain": 1,
+  "firstGatewayUncertain": 1,
+  "firstDeliveries": [
+    {
+      "receiver": "community",
+      "status": "acknowledged",
+      "attempts": 1,
+      "lease_id": null,
+      "lease_until": null
+    },
+    {
+      "receiver": "course",
+      "status": "pending",
+      "attempts": 1,
+      "lease_id": null,
+      "lease_until": null
+    }
+  ],
+  "replayHttpStatus": 200,
+  "finalFrontendUncertain": 1,
+  "finalGatewayUncertain": 1,
+  "finalDeliveries": [
+    {
+      "receiver": "community",
+      "status": "acknowledged",
+      "attempts": 1,
+      "lease_id": null,
+      "lease_until": null
+    },
+    {
+      "receiver": "course",
+      "status": "acknowledged",
+      "attempts": 2,
+      "lease_id": null,
+      "lease_until": null
+    }
+  ],
+  "sourceTraceMatchesOperation": true,
+  "settledFrontendUncertain": 0,
+  "specificFrontendOperationReconciled": true,
+  "gatewayCounterReset": false,
+  "domainProofSha256": "a30212a01eeab7d9dbb76b18415c5544c5917a6a722afbda14f1e5e4206c513a",
+  "canonicalFaultRefusals": 2,
+  "immutableReceiptRewriteRefusals": 2,
+  "sourceDomainReducer": {
+    "status": "P2_KNOWN_ACK_SOURCE_DOMAIN_REDUCER_PASS",
+    "faultRefusals": 11,
+    "backendFaultRefusals": 21,
+    "plainReceiptAuthorityRefused": true,
+    "authorityIssued": false
+  },
+  "sourceSettlementReducer": {
+    "status": "P2_KNOWN_ACK_SPECIFIC_SETTLEMENT_REDUCER_PASS",
+    "extraCompletedOperationRefused": true,
+    "authorityIssued": false
+  },
+  "backendEligibility": {
+    "actualReadOnlyProjections": true,
+    "sourceSchedulerBaseline": true,
+    "sourceRetentionBaseline": true,
+    "faultRefusals": 21,
+    "faultNames": [
+      "missing-scheduler-receipts",
+      "community-retention-schedule-horizon",
+      "missing-course-control",
+      "projection-completeness-bound",
+      "future-course-outbox",
+      "course-outbox-lease",
+      "completed-course-effect-projection",
+      "course-snapshot-work",
+      "course-snapshot-expiry-horizon",
+      "course-retention-horizon",
+      "course-media-horizon",
+      "course-export-expiry-horizon",
+      "community-export-expiry-horizon",
+      "future-community-repair",
+      "completed-community-effect-projection",
+      "community-reconciliation-work",
+      "community-reconciliation-schedule-horizon",
+      "unrelated-course-lifecycle-command",
+      "unrelated-community-lifecycle-command",
+      "unrelated-course-mutable-lifecycle-state",
+      "unrelated-community-mutable-lifecycle-state"
+    ],
+    "entireParentHorizonSeconds": 900,
+    "liveWorkerProcesses": false
+  },
+  "journalSha256Before": {
+    "frontend": "79216f67827004f1cb69a623110a07d11568c84c73b61e2e7d56d078c1a48dab",
+    "course": "e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899",
+    "community": "b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a"
+  },
+  "journalSha256After": {
+    "frontend": "79216f67827004f1cb69a623110a07d11568c84c73b61e2e7d56d078c1a48dab",
+    "course": "e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899",
+    "community": "b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a"
+  },
+  "allThreeJournalsUnchanged": true,
+  "noSqlReplay": true,
+  "noRoleChange": true,
+  "noRuntimeRestart": true,
+  "fixtureOnly": true,
+  "restoration": {
+    "status": "P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS",
+    "serverMajor": 18,
+    "migrations": {
+      "frontend": 83,
+      "course": 22,
+      "community": 11
+    },
+    "actualThreeDatabases": true,
+    "actualTlsScram": true,
+    "oldProcessExited": true,
+    "oldBackendEnded": true,
+    "newFrontendBackend": true,
+    "newHostProcess": true,
+    "actualHostFlock": true,
+    "newSourceCapability": true,
+    "oldOneRetained": true,
+    "newZeroVerifiedInProjectedRuntime": true,
+    "allTenSourceStages": true,
+    "allThreeJournalsUnchanged": true,
+    "sqlReplayed": false,
+    "frontendReadinessVerified": false,
+    "trafficAuthorized": false,
+    "providerTouched": false,
+    "actualDocker": false,
+    "runtimeTransportProjected": true,
+    "requestCount": 6285,
+    "originalCausalReceiptSha256": {
+      "recovery-intent.json": "93d2417a5cc239f2af50b320cf69d3d39084deabd1cb1cfc23883a16e531324a",
+      "baseline.json": "0c5b63e352079ddb0346c7224f7bda9ee40d1f4f7760610c110af2c6e844c94c",
+      "request-details.json": "aab66501ce55479fc22748034da3d46818c9999e9b774101078865f799c9a4e5",
+      "domain.json": "5dd746224ba234fa44c34dc5a68335a6579c673583236fe887ec2410812cdec6",
+      "settlement.json": "7b4266b1f37c10ad3681d7e8ee1e735dc1de9aa788a87c4838056fc3e0f42dc4",
+      "replacement-authorization.json": "6f22f51b14d287025399c82629166480815158118f746e8ddc12beff5d0a3d8b"
+    },
+    "terminalReceiptSha256": "c2db5dcb79a003be881752598ab756621e92bbd9a297e92d5cce62a93eeeb8f2",
+    "terminalReceipt": {
+      "status": "P2_KNOWN_ACK_INTERRUPTED_RUNTIME_RESTORED_FENCED",
+      "environment": "staging",
+      "releaseId": "owned-known-ack",
+      "recoveryActionId": "owned-interrupted-restoration-c",
+      "candidateSha256": "8948f0bba4403e25e4319920300b524b5007c693fab4906dcde49b9e93ceda54",
+      "apiDatabases": {
+        "course": {
+          "version": 1,
+          "status": "P2_RECOVERY_API_DATABASE_CURRENT",
+          "service": "lash-her-course-api",
+          "environment": "staging",
+          "releaseId": "owned-known-ack",
+          "sourceCommit": "a447bfde20299e12afab68a3331b3792ddd07598",
+          "migrationImageDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "runtimeImageDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "schemaBaselineSha256": "1a176b23c239e94dd7f3de49073c4c01a4c0560ebf9db37ec954c6d2f457e553",
+          "contractSha256": "7777777777777777777777777777777777777777777777777777777777777777",
+          "contractPhase": "p2",
+          "phase2ContractManifestSha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "candidateSha256": "8948f0bba4403e25e4319920300b524b5007c693fab4906dcde49b9e93ceda54",
+          "recoveryActionId": "owned-interrupted-restoration-c",
+          "journalSha256": "e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899",
+          "artifactSha256": "9dda27357f6bf42bd8232f91c027e8d9ec67b7f8b977bd88ea58a3f1960b4749",
+          "pendingTags": [],
+          "readOnlyVerified": true,
+          "schemaVerified": true,
+          "runtimeRoleVerified": true,
+          "sqlReplayed": false
+        },
+        "community": {
+          "version": 1,
+          "status": "P2_RECOVERY_API_DATABASE_CURRENT",
+          "service": "lash-her-community-api",
+          "environment": "staging",
+          "releaseId": "owned-known-ack",
+          "sourceCommit": "939de65dd52f0b1a43993a25c7c428dce6e2bb43",
+          "migrationImageDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "runtimeImageDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "schemaBaselineSha256": "38f62c85f007cb57f66fec6243cd66fdf6134dd0a8a1d0e9801bdd1e3758da99",
+          "contractSha256": "7777777777777777777777777777777777777777777777777777777777777777",
+          "contractPhase": "p2",
+          "phase2ContractManifestSha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "candidateSha256": "8948f0bba4403e25e4319920300b524b5007c693fab4906dcde49b9e93ceda54",
+          "recoveryActionId": "owned-interrupted-restoration-c",
+          "journalSha256": "b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a",
+          "artifactSha256": "58d3f193626720d700da9b07babd32792731e5ed670789ea043a2d094050e851",
+          "pendingTags": [],
+          "readOnlyVerified": true,
+          "schemaVerified": true,
+          "runtimeRoleVerified": true,
+          "sqlReplayed": false
+        }
+      },
+      "containers": [
+        {
+          "service": "community-api",
+          "containerId": "00000000000000000000000000000000000000000000000000000000000007d0",
+          "image": "ghcr.io/princessdardan/owned-communityruntime@sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "health": "healthy"
+        },
+        {
+          "service": "course-api",
+          "containerId": "00000000000000000000000000000000000000000000000000000000000007d1",
+          "image": "ghcr.io/princessdardan/owned-courseruntime@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "health": "healthy"
+        },
+        {
+          "service": "community-tls",
+          "containerId": "00000000000000000000000000000000000000000000000000000000000007d2",
+          "image": "ghcr.io/princessdardan/owned-gateway@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "health": "none"
+        },
+        {
+          "service": "course-tls",
+          "containerId": "00000000000000000000000000000000000000000000000000000000000007d3",
+          "image": "ghcr.io/princessdardan/owned-gateway@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "health": "none"
+        },
+        {
+          "service": "course-snapshot",
+          "containerId": "00000000000000000000000000000000000000000000000000000000000007d4",
+          "image": "ghcr.io/princessdardan/owned-courseruntime@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "health": "healthy"
+        },
+        {
+          "service": "community-worker",
+          "containerId": "00000000000000000000000000000000000000000000000000000000000007d5",
+          "image": "ghcr.io/princessdardan/owned-communityruntime@sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "health": "healthy"
+        },
+        {
+          "service": "course-media",
+          "containerId": "00000000000000000000000000000000000000000000000000000000000007d6",
+          "image": "ghcr.io/princessdardan/owned-courseruntime@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "health": "healthy"
+        },
+        {
+          "service": "course-export-cleanup",
+          "containerId": "00000000000000000000000000000000000000000000000000000000000007d7",
+          "image": "ghcr.io/princessdardan/owned-courseruntime@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "health": "healthy"
+        },
+        {
+          "service": "course-publisher",
+          "containerId": "00000000000000000000000000000000000000000000000000000000000007d8",
+          "image": "ghcr.io/princessdardan/owned-courseruntime@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "health": "healthy"
+        },
+        {
+          "service": "gateway",
+          "containerId": "00000000000000000000000000000000000000000000000000000000000007d9",
+          "image": "ghcr.io/princessdardan/owned-gateway@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "health": "healthy"
+        }
+      ],
+      "boundaryChecks": [
+        "private-application-credential-required",
+        "private-community-peer-denied",
+        "private-course-tls-catalog",
+        "public-metrics-hidden",
+        "public-tls-missing-workload-denied"
+      ],
+      "sqlReplayed": false,
+      "rolePreparationRepeated": false,
+      "trafficAuthorized": false,
+      "contractPhase": "p2",
+      "phase2ContractManifestSha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "restorationActionId": "owned-interrupted-restoration-c",
+      "originalCertificationActionId": "owned-b-certification",
+      "originalRecoveryActionId": "owned-b-replacement",
+      "oldGateway": {
+        "admission": {
+          "active": {
+            "newWork": 0,
+            "recovery": 0
+          },
+          "newWork": false,
+          "recovery": false,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "uncertain": {
+            "newWork": 0,
+            "recovery": 1
+          }
+        },
+        "binding": {
+          "candidateSha256": "8948f0bba4403e25e4319920300b524b5007c693fab4906dcde49b9e93ceda54",
+          "configurationDirectory": "/private/tmp/p2-known-ack-owned-wywmrB/c-operator/root/original-runtime/configuration",
+          "gatewayConfigurationSha256": "298aab7da15821c6c0db08fa76294b6fb2e561d8fec25f38b7129c9257956256",
+          "gatewayImage": "ghcr.io/princessdardan/owned-gateway@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "hostMachineId": "11111111111111111111111111111111",
+          "releaseId": "owned-known-ack",
+          "runtimeConfigurationSha256": "3672805edb06a4c6a886c684568fccf934f43e57a0e0e79fdb5f306cbc000856"
+        },
+        "process": {
+          "containerId": "000000000000000000000000000000000000000000000000000000000000000a",
+          "imageId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "pid": 20582,
+          "restartCount": 0,
+          "running": true,
+          "startedAt": "2026-11-06T01:00:00.000000000Z"
+        },
+        "status": "PRIOR_GATEWAY_OBSERVED"
+      },
+      "newGateway": {
+        "status": "PRIOR_GATEWAY_OBSERVED",
+        "binding": {
+          "releaseId": "owned-known-ack",
+          "candidateSha256": "8948f0bba4403e25e4319920300b524b5007c693fab4906dcde49b9e93ceda54",
+          "hostMachineId": "11111111111111111111111111111111",
+          "gatewayImage": "ghcr.io/princessdardan/owned-gateway@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runtimeConfigurationSha256": "3672805edb06a4c6a886c684568fccf934f43e57a0e0e79fdb5f306cbc000856",
+          "gatewayConfigurationSha256": "298aab7da15821c6c0db08fa76294b6fb2e561d8fec25f38b7129c9257956256",
+          "configurationDirectory": "/private/tmp/p2-known-ack-owned-wywmrB/c-operator/root/runtime-recovery-owned-interrupted-restoration-c/configuration"
+        },
+        "process": {
+          "containerId": "00000000000000000000000000000000000000000000000000000000000007d9",
+          "imageId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "running": true,
+          "pid": 2009,
+          "startedAt": "2026-11-06T01:00:00.000000000Z",
+          "restartCount": 0
+        },
+        "admission": {
+          "newWork": false,
+          "recovery": false,
+          "active": {
+            "newWork": 0,
+            "recovery": 0
+          },
+          "uncertain": {
+            "newWork": 0,
+            "recovery": 0
+          },
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      },
+      "apiDatabasesAfter": {
+        "course": {
+          "version": 1,
+          "status": "P2_RECOVERY_API_DATABASE_CURRENT",
+          "service": "lash-her-course-api",
+          "environment": "staging",
+          "releaseId": "owned-known-ack",
+          "sourceCommit": "a447bfde20299e12afab68a3331b3792ddd07598",
+          "migrationImageDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "runtimeImageDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "schemaBaselineSha256": "1a176b23c239e94dd7f3de49073c4c01a4c0560ebf9db37ec954c6d2f457e553",
+          "contractSha256": "7777777777777777777777777777777777777777777777777777777777777777",
+          "contractPhase": "p2",
+          "phase2ContractManifestSha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "candidateSha256": "8948f0bba4403e25e4319920300b524b5007c693fab4906dcde49b9e93ceda54",
+          "recoveryActionId": "owned-interrupted-restoration-c",
+          "journalSha256": "e8a23391c277425f8a18b2e05381dfce12baf5139036d92a3f3e7602ef84d899",
+          "artifactSha256": "9dda27357f6bf42bd8232f91c027e8d9ec67b7f8b977bd88ea58a3f1960b4749",
+          "pendingTags": [],
+          "readOnlyVerified": true,
+          "schemaVerified": true,
+          "runtimeRoleVerified": true,
+          "sqlReplayed": false
+        },
+        "community": {
+          "version": 1,
+          "status": "P2_RECOVERY_API_DATABASE_CURRENT",
+          "service": "lash-her-community-api",
+          "environment": "staging",
+          "releaseId": "owned-known-ack",
+          "sourceCommit": "939de65dd52f0b1a43993a25c7c428dce6e2bb43",
+          "migrationImageDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "runtimeImageDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "schemaBaselineSha256": "38f62c85f007cb57f66fec6243cd66fdf6134dd0a8a1d0e9801bdd1e3758da99",
+          "contractSha256": "7777777777777777777777777777777777777777777777777777777777777777",
+          "contractPhase": "p2",
+          "phase2ContractManifestSha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "candidateSha256": "8948f0bba4403e25e4319920300b524b5007c693fab4906dcde49b9e93ceda54",
+          "recoveryActionId": "owned-interrupted-restoration-c",
+          "journalSha256": "b6487653c641c14c3f237d30f7d8c50c21738e0c7c769b89afacdd44ed575e9a",
+          "artifactSha256": "58d3f193626720d700da9b07babd32792731e5ed670789ea043a2d094050e851",
+          "pendingTags": [],
+          "readOnlyVerified": true,
+          "schemaVerified": true,
+          "runtimeRoleVerified": true,
+          "sqlReplayed": false
+        }
+      },
+      "originalGatewayUncertaintyPreserved": true,
+      "ordinaryClosedZeroGate": false,
+      "runtimeReplacements": 1,
+      "nativeDisabled": true,
+      "frontendReadinessVerified": false,
+      "frontendWorkloadProbePerformed": false,
+      "originalTerminalRecreated": false,
+      "frontendJournalSha256": "79216f67827004f1cb69a623110a07d11568c84c73b61e2e7d56d078c1a48dab",
+      "originalCausalReceiptSha256": {
+        "recovery-intent.json": "93d2417a5cc239f2af50b320cf69d3d39084deabd1cb1cfc23883a16e531324a",
+        "baseline.json": "0c5b63e352079ddb0346c7224f7bda9ee40d1f4f7760610c110af2c6e844c94c",
+        "request-details.json": "aab66501ce55479fc22748034da3d46818c9999e9b774101078865f799c9a4e5",
+        "domain.json": "5dd746224ba234fa44c34dc5a68335a6579c673583236fe887ec2410812cdec6",
+        "settlement.json": "7b4266b1f37c10ad3681d7e8ee1e735dc1de9aa788a87c4838056fc3e0f42dc4",
+        "replacement-authorization.json": "6f22f51b14d287025399c82629166480815158118f746e8ddc12beff5d0a3d8b"
+      }
+    },
+    "elapsedSeconds": 144.8,
+    "ownedSourceSha256": {
+      "ops/platform/p2-known-ack-interrupted-restoration.mjs": "001de53a81d592b8b814a74d6f16aca3075ecf071509a6b5d5117c257062f802",
+      "ops/platform/host/p2_known_ack_interrupted_restoration.py": "a0801a1ea55cba4a9d792f7804bf73b7a954bcfff0c9288dc17f473f61e42c90",
+      "ops/platform/host/p2_release_broker.py": "e38083aee97c89ffe24ed207d0dde3a7e094662629d68b852b87bbdc2d7cab6d",
+      "ops/platform/host/p2_release_supervisor.py": "b0c448e3e9bc65bc90477dbb1f528797a55f9b0c93171f922597cf19e74e771e",
+      "ops/gateway/server.mjs": "3ea145d46ca3a6705f28e8fe7212f6678da87cfd203838b5b975deaee4b4169d",
+      "ops/gateway/p2-certification-fault.mjs": "bd1d0e69d897df1d2360111863750b7c7823bb0b04a13aeb9e295191341b7c52",
+      "ops/gateway/package.json": "753a5bbda9e38709e3bfc7105b2e3f5bffdf0c52cb391eadbf26b41bab3c0805",
+      "ops/gateway/package-lock.json": "def7176c2a73e5686d87ae37c4fb299c5dd99835233a29ed6740e2215a27b5d0",
+      "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/run-owned.mjs": "ba2cb8253fa8402685b1d935e910a326e59797fbcf817efacf197e47a6cf1b10",
+      "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-process.mjs": "8f67f020f4e01005ebfd4bb9e8718d80f8ac82dbc52672098fa1ff92584710a7",
+      "docs/api-integration/baselines/2026-11-06-p2-known-ack-interrupted-restoration/owned-engine.py": "a582e062865f96191a2171ce110301b361bf96cc1268d68302d4749555a68314"
+    },
+    "gatewayDependency": {
+      "package": "jose",
+      "version": "6.2.3",
+      "resolution": "ops/gateway/node_modules/jose",
+      "packageSha256": "cbd17f658085419b9ee540e78e40cbe4d4f7916a51578af1d650c84d49525fdf"
+    }
+  },
+  "postgresMajor": 18,
+  "migrations": {
+    "frontend": 83,
+    "course": 22,
+    "community": 11
+  },
+  "frontendSourceCommit": "36bb3bd3873b4b68f708f9e88568f000cf47f210",
+  "apiSourceCommits": {
+    "course": "a447bfde20299e12afab68a3331b3792ddd07598",
+    "community": "939de65dd52f0b1a43993a25c7c428dce6e2bb43"
+  },
+  "apiSourceArchives": {
+    "course": {
+      "sha256": "84ff026ee80024fc0890e2ade42a692c5cf2072010aa428b6472e34d46702d51",
+      "lockSha256": "0153a941a3e767889cc356b1d3cc72823b03a7d46f97fd07f66b7e53f3e8c8fa"
+    },
+    "community": {
+      "sha256": "616d8f504481ab24d4335bce3ebdd42b9ff2bc75f2ec47321b48d56d42ea14d1",
+      "lockSha256": "03e332482b3f4d4f1a572a8ba00d79a0e7d9a27497e67973103fbdc2833e4bfe"
+    }
+  },
+  "fixtureSourceSha256": {
+    "p2-known-ack-loss-probe.mjs": "1b685b6c2ea7c40bb129f92d05fb88a3a81eceb2a90f3fec90d9239a451c7991",
+    "host/p2_known_ack_loss.py": "445fe8aba68bb4e708e4777c936466f6c5fd54b5500f7160664cf43cd1ddf3db",
+    "harness/owned-p2-known-ack-loss.mjs": "eb1149fd634e263d04c421ccf92fd3ec9362432eaf11a14db080d771e8c0d8fe",
+    "harness/owned-phase2-lifecycle-receiver.mjs": "65e9e483cb4eba3b1804ac4725d15e0ffea13fa6703a7af877f9882129fc3c44"
+  },
+  "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+  "actualVercelNativeEvidence": false,
+  "providerTouched": false
+}

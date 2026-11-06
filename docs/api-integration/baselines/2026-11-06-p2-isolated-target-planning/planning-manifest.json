@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "scope": "Original reviewed planning draft plus portable approval-status addendum. User approved revised acceptance and source implementation; no allocation/spending/publication/live approval.",
+  "originalPlan": {
+    "path": "/private/tmp/p2-isolated-lane-plan-20261106/plan.md",
+    "bytes": 40938,
+    "sha256": "7375857b8d5107f66fec0da723d21cf501f74ca3a5b89e725a4aa108d9daa06b"
+  },
+  "portablePlan": {
+    "file": "../../decisions/2026-11-06-isolated-p2-qualification-lane.md",
+    "bytes": 41564,
+    "sha256": "5f7f14e7027f2ae93ebf8a7e2cab4088da4a07af63f9ca967c273c11b4fc2c0f",
+    "adaptations": [
+      "absolute evidence links made repository-relative",
+      "clarify 81 registered surfaces vs76 source-qualified surfaces",
+      "record subsequent explicit user approval of revised acceptance and source implementation; original reviewed draft remains separately retained"
+    ]
+  },
+  "provenance": {
+    "file": "planning-provenance.json",
+    "sha256": "c842b6e5368135df52fd742677315b8116a66e88613d9acaf543a06de17a8baa"
+  },
+  "review": {
+    "file": "independent-review.json",
+    "bytes": 2634,
+    "sha256": "446b35f8686635f1d304d50fc55ec54948b700aed8846f2ff5fdb51de4267136",
+    "scope": "Cleared planning draft7375857b only; no implementation/live authority."
+  },
+  "authorization": {
+    "recordedDate": "2026-11-06",
+    "userAnswer": "Approve revised scope and source implementation",
+    "sourceImplementation": true,
+    "revisedAcceptance": true,
+    "allocation": false,
+    "spending": false,
+    "candidatePublication": false,
+    "liveRelease": false
+  }
+}

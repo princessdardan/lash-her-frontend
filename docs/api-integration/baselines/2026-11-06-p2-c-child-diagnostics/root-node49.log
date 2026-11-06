@@ -1,0 +1,61 @@
+(node:29633) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-integration/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ new action binds exact original bytes while preserving old-one and fenced-only semantics (1.745459ms)
+✔ JSON authority/counter/container overrides and old action IDs are refused (0.535791ms)
+✔ partial original stage prefix is evidence while gaps and complete replacements use no C path (0.238791ms)
+✔ new host process holds actual flock and permits one explicit restore with fenced terminal (63.984959ms)
+✔ wrong ordering and host death cannot commit a C terminal or replay restoration (46.9875ms)
+✔ owned failure metadata excludes messages, values, raw URLs and non-source frames and bounds causes (1.647292ms)
+✔ actual failing original child reaches outer private capture through fixed catch and cleanup (211.17675ms)
+✔ fixed PG18 manifest verifies exact mounted frontend and API closures (33.648125ms)
+✔ manifest refuses wrong revisions, unordered maps and extra authority fields (22.495792ms)
+✔ source closure refuses symlinked roots and fixed-file parent directories (8.1385ms)
+✔ frontend source proof accepts only the two fixed actions/checkout HTTPS remote spellings (231.903708ms)
+✔ prepares exact manifest sources with fixed clean builds and requires all 19 actual tests (18.224666ms)
+✔ recovery mode runs current and forward PostgreSQL 18 fixtures after all identity checks in separate containers (32.404875ms)
+✔ lifecycle mode sends one internally built exact source manifest to an isolated PostgreSQL 18 fixture (95.172292ms)
+✔ legacy lifecycle manifests verify against only their actual mounts while C keeps its separate fixed readset (263.125042ms)
+✔ actual C entry rejects unknown arguments and missing ownership before dependency or PostgreSQL work (217.354875ms)
+✔ actual final PG18 C receipt qualifies only against its source pins and independent B prefix (81.167875ms)
+✔ C parser refuses partial B proof, source substitution, skips and projected-runtime overclaims (87.081083ms)
+✔ C terminal is independently closed and joined to all three journals, current APIs and fenced old/new gateways (93.46ms)
+✔ fixed C negatives require every named refusal and actual active-loss containment condition (89.179584ms)
+✔ negative C failures and post-run source drift refuse before checkout cleanup completes (313.880458ms)
+✔ C dependency eligibility rejects root fallback, wrong gateway version and changed source before cleanup (319.918ms)
+✔ C nonzero, transport and malformed receipts refuse and retain only bounded private diagnostics (459.848417ms)
+✔ generated C child diagnostic survives actual parent forwarding and private adapter retention (152.620792ms)
+✔ operator CI installs exact gateway dependencies and retains the fifth-stage aggregate on success and failure (10.795583ms)
+✔ lifecycle receipt parser refuses missing, extra, drifted, skipped and partial source evidence (70.7295ms)
+✔ receiver receipt parser requires PostgreSQL 18, all twelve checks, eight HTTP cases, and exact mounted source evidence (70.648375ms)
+✔ lifecycle mode refuses source aliases and mounted hash, extra, or missing drift with fixed diagnostics (128.3945ms)
+✔ lifecycle mode cannot be selected without current and forward recovery (8.974458ms)
+✔ lifecycle child failures expose only fixed persistence diagnostics (120.882542ms)
+✔ receiver child failures expose only fixed receiver diagnostics and retain private output (201.641042ms)
+✔ Docker child failure output is retained privately outside disposable checkout with commit binding (19.956125ms)
+✔ CI uploads only the fixed private failure directory and wrapper receipt for three days (6.256333ms)
+✔ Docker context accepts only an existing local Unix socket (0.342458ms)
+✔ recovery failures expose only fixed Docker transport and child exit diagnostics (66.454667ms)
+✔ recovery mode refuses persisted API Git authentication before permission changes or Docker (14.739208ms)
+✔ recovery mode refuses a frontend mount that resolves outside the exact source (16.315709ms)
+✔ refuses ignored source, environment configuration, and unreviewed dependency roots (50.436459ms)
+✔ refuses a noncanonical repository, mismatched event revision, or artifact digest (0.1745ms)
+✔ refuses skipped, failed, partial, or duplicated TAP summaries (0.105666ms)
+✔ recovery receipt refuses wrong major, migration counts, skips, replay, or extra output (0.370208ms)
+✔ forward recovery receipt refuses wrong mode, PG16, echoed current proof, missing checks, skips, and runtime claims (0.392959ms)
+✔ forward parser matches the retained actual nineteen-case producer receipt (0.395375ms)
+✔ a forward qualification failure reports only the fixed forward mode and no child output (54.591333ms)
+✔ failures expose only fixed diagnostic phases and never private child output (68.994875ms)
+✔ refuses a non-Node-24 executor before source fetch (8.196333ms)
+✔ refuses a missing or structurally unsafe private source token before Git (22.912375ms)
+✔ removes the complete disposable checkout after a build refusal (9.889125ms)
+✔ fixture manifest used by the test remains byte readable (7.790208ms)
+ℹ tests 49
+ℹ suites 0
+ℹ pass 49
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3477.716709

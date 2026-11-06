@@ -1,0 +1,56 @@
+{
+  "acceptanceAmendmentApproved": false,
+  "liveCalls": false,
+  "matrixCasesVerified": [
+    "S01",
+    "S02",
+    "S03",
+    "S04",
+    "S05",
+    "S06",
+    "S07",
+    "S08",
+    "S09",
+    "S10",
+    "S11",
+    "S12",
+    "S13",
+    "S14",
+    "S15",
+    "S16",
+    "S17"
+  ],
+  "outstandingFindings": [],
+  "planPath": "/private/tmp/p2-isolated-lane-plan-20261106/plan.md",
+  "planSha256": "7375857b8d5107f66fec0da723d21cf501f74ca3a5b89e725a4aa108d9daa06b",
+  "provenanceSha256": "c842b6e5368135df52fd742677315b8116a66e88613d9acaf543a06de17a8baa",
+  "provisioning": false,
+  "resolvedPlanningFindings": [
+    {
+      "issue": "real rollback predecessor absent from first-install sequence",
+      "originalReference": "v1 plan.md:87-91",
+      "resolution": "revision2 defines closed installation A then separately intended B; source-controlled rollback to A and return to B; same-candidate deployment rehearsal explicitly does not claim changed API/schema compatibility"
+    },
+    {
+      "issue": "unconfigured integration denial could obscure functional S17 requirements",
+      "originalReference": "v1 plan.md:11,115,123,154",
+      "resolution": "revision2 distinguishes denial from functionality and explicitly preserves unconfigured functional/history subclaims OPEN outside only the proposed accepted amendment"
+    }
+  ],
+  "reviewedBoundaries": [
+    "plan only; no target/acceptance/provision/source/release authorization inferred",
+    "old broad runtime/machine/admin/DNS/store/provider access must be excluded by authentic selected-scope evidence",
+    "new empty databases use real existing migration primitives under newly qualified virgin-target composition; no absent-prior or historical-zero shortcut",
+    "G1 remains scoped to original C07; affected initial qualification is repeated on new target",
+    "S01-S17 retained; real 24-hour export observation and S10 paid-grant behavior remain mandatory",
+    "S10 proposal uses actual backend orderless audited grant primitive through a new source-owned authenticated owner entrypoint; no ad hoc JWT, seed or checkout",
+    "S17 functional/history exclusions require explicit acceptance amendment and never close old P2-00/original goal",
+    "no mandatory extra GitHub approval environment or signer; no fabricated resource IDs or static precreation OIDs",
+    "source changes require new exact source/CI/images/candidate, while allocation and source-only work can proceed in parallel only after their own authorizations"
+  ],
+  "runtimeTests": false,
+  "secretReads": false,
+  "sourceEdits": false,
+  "status": "PLANNING_DOCUMENT_CLEARED",
+  "version": 1
+}

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "scope": "Read-only source seam inventory; recommendations are subject to final plan/release-policy dispositions. No source or live target change.",
+  "files": [
+    {
+      "original": "/private/tmp/p2-isolated-target-seams-20261106/report.md",
+      "file": "source-seams.md",
+      "bytes": 17674,
+      "sha256": "1cbad6f9323da37c8ce8768a367e745bfb0008171e953b6c9ae3a3a5eb970c69",
+      "originalSha256": "1cbad6f9323da37c8ce8768a367e745bfb0008171e953b6c9ae3a3a5eb970c69"
+    },
+    {
+      "original": "/private/tmp/p2-isolated-target-seams-20261106/findings.json",
+      "file": "findings.json",
+      "bytes": 14894,
+      "sha256": "ae7eaed0caabc0cd3d2ab2a72ce10a2b466aa3c53339de58ed8df22aeae32059",
+      "originalSha256": "ae7eaed0caabc0cd3d2ab2a72ce10a2b466aa3c53339de58ed8df22aeae32059"
+    }
+  ]
+}
