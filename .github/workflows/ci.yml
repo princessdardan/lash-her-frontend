@@ -108,6 +108,10 @@ jobs:
             --mount "type=bind,src=$PWD/contracts/api-integration/p2-candidate,dst=/source/contracts/api-integration/p2-candidate,readonly" \
             --entrypoint node lash-her-frontend-migration:postgres18-test \
             ops/platform/test-p2-platform-local.mjs > "$RUNNER_TEMP/p2-platform-postgres18.json"
+      - name: Exercise exact API identity and current-only recovery on owned PostgreSQL 18
+        env:
+          PLATFORM_SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
+        run: node ops/platform/prepare-p2-identity-probe-fixtures.mjs --recovery-postgres18
       - name: Verify initial Course logins on owned PostgreSQL 18
         run: |
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
@@ -187,10 +191,6 @@ jobs:
       - run: npm ci --ignore-scripts --prefix ops/gateway
       - run: node --test ops/gateway/*.test.mjs ops/platform/*.test.mjs
       - run: python3 -m unittest discover -s ops/platform/host -p '*_test.py'
-      - name: Exercise identity negative probes against the exact selected API modules and owned TLS
-        env:
-          PLATFORM_SOURCE_READ_TOKEN: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
-        run: node ops/platform/prepare-p2-identity-probe-fixtures.mjs
       - name: Rehearse host forwarding rules in an isolated network namespace
         run: |
           docker build -f ops/platform/host/Dockerfile.test -t lash-her-firewall-test:ci ops/platform/host
