@@ -1,5 +1,4 @@
-// Joint schema c2c44f38...: DATA codecs, never resource/session authority.
-// No live plan, parent factory, response wrapper or private capture material.
+// Frozen DATA codecs; no resource/session authority.
 import { createHash } from "node:crypto";
 import { decodeQualificationTargetJson } from "./qualification-target-profile.mjs";
 
@@ -36,13 +35,14 @@ const uuid = v => typeof v === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-
 const request = v => uuid(v) && v[14] === "4";
 const integer = (v, min = 0, max = Number.MAX_SAFE_INTEGER) => typeof v === "number" && Number.isSafeInteger(v) && !Object.is(v, -0) && v >= min && v <= max;
 const decimal = (v, max) => typeof v === "string" && /^(?:0|[1-9][0-9]*)$/u.test(v) && v.length <= max;
+const data = (value, key) => { const d = Object.getOwnPropertyDescriptor(value, key); return d?.enumerable === true && Object.hasOwn(d, "value"); };
 const closed = (value, expected) => {
   demand(value && typeof value === "object" && [Object.prototype, null].includes(Object.getPrototypeOf(value)));
   const own = Reflect.ownKeys(value); demand(own.length === expected.length && own.every(key => typeof key === "string" && expected.includes(key)));
-  for (const key of expected) demand(Object.hasOwn(Object.getOwnPropertyDescriptor(value, key) ?? {}, "value"));
+  for (const key of expected) demand(data(value, key));
 };
 const list = (value, max) => { demand(Array.isArray(value) && Object.getPrototypeOf(value) === Array.prototype && value.length <= max);
-  demand(Reflect.ownKeys(value).length === value.length + 1); for (let i = 0; i < value.length; i++) demand(Object.hasOwn(Object.getOwnPropertyDescriptor(value, String(i)) ?? {}, "value")); };
+  demand(Reflect.ownKeys(value).length === value.length + 1); for (let i = 0; i < value.length; i++) demand(data(value, String(i))); };
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const bytes = value => Buffer.from(JSON.stringify(canonical(value)) + "\n");
 const limit = kind => kind === "lease" ? 8192 : kind === "globalRequest" ? 768 : 16384;
@@ -120,12 +120,14 @@ export function decodeP2QMuxValue(kind, raw) {
 }
 export function p2qMuxValueSha256(kind, value) { return createHash("sha256").update(encodeP2QMuxValue(kind, value)).digest("hex"); }
 
+function captureBinding(lease, row) {
+  demand(row.leaseSha256 === p2qMuxValueSha256("lease", lease) && row.slot < lease.maxCaptures && row.event.type === P2Q_MUX_CASES[lease.caseId].events[row.slot]);
+  for (const key of ["environmentId", "lessonId", "attemptId", "generation", "assetId"]) demand(row.event[key] === lease.selection[key]);
+}
 export function validateP2QMuxCaptureSet(lease, captures) {
   lease = validateP2QMuxValue("lease", lease); list(captures, 2); demand(captures.length === lease.maxCaptures);
-  const selected = lease.selection, spec = P2Q_MUX_CASES[lease.caseId], leaseSha = p2qMuxValueSha256("lease", lease);
   for (const [slot, raw] of captures.entries()) { const row = validateP2QMuxValue("safeCapture", raw);
-    demand(row.slot === slot && row.leaseSha256 === leaseSha && row.event.type === spec.events[slot]);
-    for (const key of ["environmentId", "lessonId", "attemptId", "generation", "assetId"]) demand(row.event[key] === selected[key]);
+    demand(row.slot === slot); captureBinding(lease, row);
     const captured = iso(row.capturedAt), signed = row.headerTimestamp * 1000;
     demand(captured >= iso(lease.issuedAt) && captured <= iso(lease.expiresAt) && captured >= signed && captured - signed <= 300000);
   }
@@ -134,7 +136,7 @@ export function validateP2QMuxCaptureSet(lease, captures) {
 }
 export function assessP2QMuxSendBudget(lease, capture, nowIso, elapsedMilliseconds) {
   lease = validateP2QMuxValue("lease", lease); capture = validateP2QMuxValue("safeCapture", capture);
-  demand(capture.leaseSha256 === p2qMuxValueSha256("lease", lease) && capture.slot < lease.maxCaptures && integer(elapsedMilliseconds));
+  captureBinding(lease, capture); demand(integer(elapsedMilliseconds));
   const now = iso(nowIso), issued = iso(lease.issuedAt), captured = iso(capture.capturedAt), signed = capture.headerTimestamp * 1000;
   const deadline = Math.min(iso(lease.expiresAt), issued + 120000, signed + 300000);
   const remaining = Math.min(deadline - now, 120000 - elapsedMilliseconds);
@@ -170,6 +172,5 @@ export function p2qMuxEvidenceByteLength(records) {
     demand(kind !== undefined); total += encodeP2QMuxValue(kind, value).length; demand(total <= 196608); }
   return total;
 }
-// No inputs, profile, JSON, callback, test issuer or registry edit can activate
-// this boundary. Real source authority/parent/observer interfaces are absent.
+// No source authority exists; inputs cannot activate dispatch.
 export function dispatchP2QMuxCapture() { throw new P2QMuxCaptureError("P2Q_MUX_SOURCE_AUTHORITY_UNAVAILABLE"); }
