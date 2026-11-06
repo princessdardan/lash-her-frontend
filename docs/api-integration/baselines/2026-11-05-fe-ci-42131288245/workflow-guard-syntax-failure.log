@@ -1,0 +1,57 @@
+(node:59248) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ packaged source binds the migration executable, SQL, lineage and minimal dependencies (106.825292ms)
+✔ extra SQL or omitted source cannot silently enter a packaged image (81.291333ms)
+✔ packaged image refuses modified P2 manifest.json (49.699792ms)
+✔ packaged image refuses modified P2 course-api.json (50.081292ms)
+✔ packaged image refuses modified P2 community-api.json (48.005917ms)
+✔ packaged image refuses modified P2 enrollment-event.schema.json (49.196083ms)
+✔ packaged image refuses modified P2 boundary-contracts.json (46.783125ms)
+✔ packaged image refuses modified P2 README.md (46.414417ms)
+✔ released P2 image source requires and binds the fixed compatibility review and verifier source (49.266083ms)
+✔ minimal image dependencies stay aligned with the application lock (7.600875ms)
+✔ image entrypoint never offers checkout or environment source-verification bypasses (60.130625ms)
+file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-artifacts/ops/platform/frontend-source-copy.test.mjs:53
+  const mounts = [...run.matchAll(/--mount "type=bind,src=([^,\"]+),dst=([^,\"]+),readonly"/gu)]
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+SyntaxError: Invalid regular expression: /--mount "type=bind,src=([^,\"]+),dst=([^,\"]+),readonly"/gu: Invalid escape
+    at compileSourceTextModule (node:internal/modules/esm/utils:318:16)
+    at ModuleLoader.moduleStrategy (node:internal/modules/esm/translators:89:18)
+    at #translate (node:internal/modules/esm/loader:434:20)
+    at afterLoad (node:internal/modules/esm/loader:502:29)
+    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:507:12)
+    at #getOrCreateModuleJobAfterResolve (node:internal/modules/esm/loader:560:36)
+    at afterResolve (node:internal/modules/esm/loader:607:52)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:613:12)
+    at node:internal/modules/esm/loader:632:32
+    at TracingChannel.tracePromise (node:diagnostics_channel:362:14)
+
+Node.js v24.18.0
+✖ ops/platform/frontend-source-copy.test.mjs (27.255667ms)
+✔ lightsail-host: Lightsail-prefixed user data runs under POSIX sh and emits valid SSH lines (12.590542ms)
+✔ lightsail-access-recovery: Lightsail-prefixed user data runs under POSIX sh and emits valid SSH lines (11.087167ms)
+✔ monitoring is deferred outside the default runtime and release gate (1.776958ms)
+✔ topology publishes only gateway HTTPS; runtime and migration security boundaries cannot regress (0.4565ms)
+✔ private policies isolate workload, publisher, authority and operational peers (0.200792ms)
+✔ unfilled release candidate refuses and structural validation does not infer approvals (0.136291ms)
+✔ release completeness needs no billing access, forecast or verified spending controls (0.537125ms)
+✔ host watchdog uses the stock Python runtime and a bounded hardened systemd unit (0.870167ms)
+✔ candidate publication uses sole-operator dispatch, a scoped read token and never deploys (7.647166ms)
+✔ native qualification uses the explicit supported Ubuntu baseline without altering its verifier (5.410167ms)
+ℹ tests 22
+ℹ suites 0
+ℹ pass 21
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 674.579833
+
+✖ failing tests:
+
+test at ops/platform/frontend-source-copy.test.mjs:1:1
+✖ ops/platform/frontend-source-copy.test.mjs (27.255667ms)
+  'test failed'

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "acceptedFrontend": "0d45f462c92a3de0af700e6f246bc4c57c8617b3",
+  "failedSource": "d3cf6f9952c5ca3bac740b1d75432f1c145d3e65",
+  "workflowCorrection": "afdf0b64c2c125eb08f18fa627bdb1e8348fbbc5",
+  "files": {
+    "ops/gateway/runtime/README.md": "c4a9f599e61ba20d4aae9cef50a6f103bdf3cf25063b378c1e4a49151108e554",
+    "ops/gateway/runtime/backport.patch": "69555c1182f7b7a6d5559c06437e8c63a87a7aecf2836d5694b860d60ad47816",
+    "ops/gateway/runtime/build.sh": "e13442a0b92a8d4132dd64d18031b3001caaae132eac763b23ffce7e9bdef892",
+    "ops/gateway/runtime/failed-write.c": "1bf462e84c75fac033e13fb1de35c4332c3f181cc1cb6112ce0a71192ff6d1fd",
+    "ops/gateway/runtime/inputs.lock.json": "74ef1c74c0c0d119c8a0704314be61dfc9e9d26bb2c3416e9ca36db51a8ff69c",
+    "ops/gateway/runtime/upstream.patch": "110ff14375733173d8aa54574473424fbd7dfe4b81f1ca34a759c6fe14b15b14",
+    "ops/gateway/runtime/verify.mjs": "e88f1a5050e02268f7837aecf0cf40c35f60e2f5dce98ef07f5063b8cd3d98a7"
+  }
+}
