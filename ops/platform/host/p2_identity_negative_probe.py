@@ -74,7 +74,7 @@ def validate_reviewed(value):
         "P2_IDENTITY_ACTION_ID_REQUIRED")
     demand(all(_digest(value[name]) for name in ("candidateSha256", "configurationSha256", "programSha256")) and
         _digest(value["hostMachineId"], 32), "P2_IDENTITY_EXACT_BINDINGS_REQUIRED")
-    demand(isinstance(value["operatorSourceFiles"], dict) and 1 <= len(value["operatorSourceFiles"]) <= 496 and
+    demand(isinstance(value["operatorSourceFiles"], dict) and 1 <= len(value["operatorSourceFiles"]) <= 512 and
         SOURCE_ANCHORS.issubset(value["operatorSourceFiles"]) and all(_source_path(name) and _digest(item) for name, item in value["operatorSourceFiles"].items()) and
         value["operatorSourceSha256"] == _hash(_canonical(value["operatorSourceFiles"])), "P2_IDENTITY_SOURCE_CLOSURE_REQUIRED")
     demand(_closed(value["priorEvidence"], ("originalReleaseReceiptSha256", "frontendDeploymentRecordSha256")) and
@@ -121,7 +121,7 @@ def source_closure(source):
     demand(not any(file.is_symlink() for file in entries), "P2_IDENTITY_OPERATOR_SYMLINK_REFUSED")
     paths = sorted(file.relative_to(source).as_posix() for file in entries if file.is_file() and
         file.suffix in SOURCE_SUFFIXES and not file.relative_to(source).as_posix().startswith("ops/platform/evidence/"))
-    demand(1 <= len(paths) <= 496 and SOURCE_ANCHORS.issubset(paths) and all(_source_path(name) for name in paths), "P2_IDENTITY_SOURCE_CLOSURE_REQUIRED")
+    demand(1 <= len(paths) <= 512 and SOURCE_ANCHORS.issubset(paths) and all(_source_path(name) for name in paths), "P2_IDENTITY_SOURCE_CLOSURE_REQUIRED")
     return {name: _hash(migrate.read_input(source, name)) for name in paths}
 
 

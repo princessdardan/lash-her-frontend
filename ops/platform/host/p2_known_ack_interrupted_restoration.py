@@ -128,7 +128,7 @@ def original_source(commit, expected):
         info = p.stat()
         require(info.st_uid == os.getuid() and not info.st_mode & 0o022 and 0 < info.st_size <= 2_000_000, 'P2_INTERRUPTED_ORIGINAL_SOURCE_PERMISSIONS')
         total += info.st_size
-        require(total <= 41_000_000 and len(manifest) < 496, 'P2_INTERRUPTED_ORIGINAL_SOURCE_BOUNDS')
+        require(total <= 41_000_000 and len(manifest) < 512, 'P2_INTERRUPTED_ORIGINAL_SOURCE_BOUNDS')
         manifest[p.relative_to(directory).as_posix()] = sha(p.read_bytes())
     verify_source_closure({'sourceSha256': manifest, 'sourceClosureSha256': expected}, directory)
     return directory, manifest

@@ -89,7 +89,7 @@ def _reviewed(value):
             and row["health"] in ("healthy", "none") for row in value["containers"])
         and len({row["containerId"] for row in value["containers"]}) == len(runtime.SERVICES), "P2_PERSISTENCE_CONTAINERS_REQUIRED")
     demand(isinstance(value["operatorSourceFiles"], dict) and identity_probe.SOURCE_ANCHORS.issubset(value["operatorSourceFiles"])
-        and 1 <= len(value["operatorSourceFiles"]) <= 496 and all(identity_probe._source_path(name) and SHA.fullmatch(item) for name, item in value["operatorSourceFiles"].items())
+        and 1 <= len(value["operatorSourceFiles"]) <= 512 and all(identity_probe._source_path(name) and SHA.fullmatch(item) for name, item in value["operatorSourceFiles"].items())
         and _hash(_canonical(value["operatorSourceFiles"])) == plan["operatorSourceSha256"] and SHA.fullmatch(value["programSha256"]),
         "P2_PERSISTENCE_SOURCE_BINDING_REQUIRED")
     directory = Path(value["privateDirectory"])

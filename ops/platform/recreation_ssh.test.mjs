@@ -94,9 +94,9 @@ exec(compile(code,'<owned-fixed-source-installer>','exec'))
   let selection=0;
   const file=(index,bytes)=>({path:`ops/owned-${index}.mjs`,sha256:createHash("sha256").update(bytes).digest("hex"),data:bytes.toString("base64")});
   const payload=files=>({commit:(++selection).toString(16).padStart(40,"0"),files});
-  const small=Array.from({length:496},(_,index)=>file(index,Buffer.from("owned")));
-  assert.equal((await f.ssh.installSource(payload(small))).files,496);
-  await assert.rejects(f.ssh.installSource(payload([...small,file(496,Buffer.from("owned"))])));
+  const small=Array.from({length:512},(_,index)=>file(index,Buffer.from("owned")));
+  assert.equal((await f.ssh.installSource(payload(small))).files,512);
+  await assert.rejects(f.ssh.installSource(payload([...small,file(512,Buffer.from("owned"))])));
   assert.match(outcomes.at(-1),/SOURCE_FILES_REQUIRED/u);
   await assert.rejects(f.ssh.installSource(payload([file(0,Buffer.alloc(2_000_001,120))])));
   assert.match(outcomes.at(-1),/SOURCE_HASH_REFUSED/u);

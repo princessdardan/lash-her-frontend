@@ -19,6 +19,65 @@ def selection():
       'priorGatewayReference':{'kind':'stopped-current-candidate','stopReceiptDirectory':'/var/lib/lash-her/releases/staging/p2-certification-replace-old','stopReceiptSha256':'a'*64}}
 
 
+class OriginalSourceBoundsTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.operators = Path(self.temp.name).resolve() / 'operators'
+        self.commit = 'b' * 40
+        self.source = self.operators / self.commit
+        self.source.mkdir(parents=True)
+        self.manifest = {}
+        for name in sorted(REQUIRED):
+            self.write(name, b'owned source')
+        patcher = patch.object(c, 'OPERATORS', self.operators)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def write(self, name, raw):
+        target = self.source / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+        self.manifest[name] = c.sha(raw)
+
+    def observe(self):
+        return c.original_source(self.commit, c.sha(c.canonical(sorted(self.manifest.items()))))
+
+    def test_actual_original_source_accepts_512_and_refuses_513_and_wrong_digest(self):
+        while len(self.manifest) < 512:
+            self.write(f'ops/platform/owned-count-{len(self.manifest)}.mjs', b'owned source')
+        source, manifest = self.observe()
+        self.assertEqual(source, self.source)
+        self.assertEqual(len(manifest), 512)
+        self.assertEqual(manifest, self.manifest)
+        with self.assertRaisesRegex(ValueError, 'SOURCE_CLOSURE_DIGEST_REQUIRED'):
+            c.original_source(self.commit, '0' * 64)
+        self.write('ops/platform/owned-overflow.mjs', b'owned source')
+        with self.assertRaisesRegex(ValueError, 'ORIGINAL_SOURCE_BOUNDS'):
+            self.observe()
+
+    def test_actual_original_source_retains_two_mb_per_file_bound(self):
+        self.write('ops/platform/owned-size.mjs', b'x' * 2_000_000)
+        self.observe()
+        self.write('ops/platform/owned-size.mjs', b'x' * 2_000_001)
+        with self.assertRaisesRegex(ValueError, 'ORIGINAL_SOURCE_PERMISSIONS'):
+            self.observe()
+
+    def test_actual_original_source_retains_41mb_decoded_bound(self):
+        remaining = 41_000_000 - sum((self.source / name).stat().st_size for name in self.manifest)
+        index = 0
+        while remaining:
+            name = f'ops/platform/owned-bytes-{index}.mjs'
+            size = min(remaining, 2_000_000)
+            self.write(name, b'x' * size)
+            remaining -= size
+            index += 1
+        self.observe()
+        self.write(name, (self.source / name).read_bytes() + b'x')
+        with self.assertRaisesRegex(ValueError, 'ORIGINAL_SOURCE_BOUNDS'):
+            self.observe()
+
+
 class RetainedChainTests(unittest.TestCase):
     def setUp(self):
         f=release_test.RuntimeReleaseTests()

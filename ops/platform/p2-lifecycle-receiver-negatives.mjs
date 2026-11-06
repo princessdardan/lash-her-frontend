@@ -32,7 +32,7 @@ export function prepareP2LifecycleReceiverPlan(reviewed) {
     && reviewed.persistence.containers.every(row => closed(row, ["service", "containerId", "image", "health"]) && digest(row.containerId)
       && /^ghcr\.io\/princessdardan\/[a-z0-9-]+@sha256:[a-f0-9]{64}$/u.test(row.image)
       && row.health === (row.service.endsWith("-tls") ? "none" : "healthy")));
-  demand(reviewed.operatorSourceFiles && Object.keys(reviewed.operatorSourceFiles).length > 0 && Object.keys(reviewed.operatorSourceFiles).length <= 496
+  demand(reviewed.operatorSourceFiles && Object.keys(reviewed.operatorSourceFiles).length > 0 && Object.keys(reviewed.operatorSourceFiles).length <= 512
     && Object.entries(reviewed.operatorSourceFiles).every(([name, hash]) => /^ops\/[A-Za-z0-9_./-]+$/u.test(name) && !name.split("/").includes("..") && digest(hash)));
   const sourceSha256 = createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.keys(reviewed.operatorSourceFiles).sort()
     .map(name => [name, reviewed.operatorSourceFiles[name]])))).digest("hex");

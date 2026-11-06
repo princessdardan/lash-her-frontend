@@ -66,7 +66,7 @@ export function readOperatorSourceFiles(source) {
   const paths=git(["ls-files","-z","--","ops"]).split("\0").filter(path=>path&&/\.(?:py|mjs|json|yaml|yml|service|timer|sh|guard)$/u.test(path));
   // Complete integration includes fixed certification and rotation packages.
   // Keep source count finite; aggregate and transport bytes are bounded separately.
-  assert.ok(paths.length>0&&paths.length<=496);
+  assert.ok(paths.length>0&&paths.length<=512);
   let total=0;
   return paths.map(path=> {
     assert.ok(path.startsWith("ops/")&&!path.split("/").includes(".."));

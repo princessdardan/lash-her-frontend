@@ -27,7 +27,7 @@ class PersistenceProbeTests(unittest.TestCase):
         self.assertIn(probe.PROGRAM_FILES[0], closure)
         self.assertIn(probe.PROGRAM_FILES[1], closure)
 
-    def test_reviewed_source_accepts_496_and_refuses_497_with_valid_digests(self):
+    def test_reviewed_source_accepts_512_and_refuses_513_with_valid_digests(self):
         result = subprocess.run(['node', '--input-type=module', '-e',
             'import {receiverReviewedFixture} from "./ops/platform/p2-lifecycle-receiver-negatives.fixture.mjs";'
             'process.stdout.write(JSON.stringify(receiverReviewedFixture().persistence));'],
@@ -36,7 +36,7 @@ class PersistenceProbeTests(unittest.TestCase):
         files = reviewed['operatorSourceFiles']
         for name in probe.identity_probe.SOURCE_ANCHORS:
             files.setdefault(name, 'a' * 64)
-        while len(files) < 496:
+        while len(files) < 512:
             files[f'ops/platform/owned-bound-{len(files)}.mjs'] = 'a' * 64
         reviewed['plan']['operatorSourceSha256'] = probe._hash(probe._canonical(files))
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(probe, 'ROOT', Path(directory).resolve()):

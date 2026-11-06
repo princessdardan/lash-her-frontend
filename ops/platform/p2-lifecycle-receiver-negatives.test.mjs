@@ -67,10 +67,10 @@ test("plan leaves the live future gap OPEN and exposes no command or credential"
   const changed = receiverReviewedFixture(); changed.quiescence = { held: true }; assert.throws(() => prepareP2LifecycleReceiverPlan(changed));
 });
 
-test("receiver reviewed source count accepts 496 and refuses 497 without weakening the source digest", () => {
+test("receiver reviewed source count accepts 512 and refuses 513 without weakening the source digest", () => {
   const reviewed = structuredClone(receiverReviewedFixture());
   const files = reviewed.operatorSourceFiles;
-  while (Object.keys(files).length < 496) files[`ops/platform/count-bound-${Object.keys(files).length}.mjs`] = "a".repeat(64);
+  while (Object.keys(files).length < 512) files[`ops/platform/count-bound-${Object.keys(files).length}.mjs`] = "a".repeat(64);
   reviewed.persistence.operatorSourceFiles = structuredClone(files);
   const bind = () => {
     reviewed.persistence.plan.operatorSourceSha256 = createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.keys(files).sort()

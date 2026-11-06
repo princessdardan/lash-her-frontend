@@ -64,13 +64,13 @@ test("the complete committed operator source fits the real public installation e
   assert.equal(files.filter(file=>file.path.startsWith("ops/platform/profiles/frontend-historical-sources/")).length,33);
   assert.ok(Buffer.byteLength(JSON.stringify({commit:sourceCommit,files}))<=56_000_000);
 });
-test("actual Git source handoff accepts 496 files and refuses 497 with the per-file byte limit intact",()=> {
+test("actual Git source handoff accepts 512 files and refuses 513 with the per-file byte limit intact",()=> {
   const directory=mkdtempSync(join(tmpdir(),"p2-source-count-"));
   const git=args=>execFileSync("git",["-C",directory,...args],{stdio:["ignore","pipe","pipe"]});
   try {
     git(["init","--quiet"]);mkdirSync(join(directory,"ops"));
-    for(let index=0;index<496;index++)writeFileSync(join(directory,`ops/owned-${index}.mjs`),"// owned source\n");
-    git(["add","ops"]);assert.equal(readOperatorSourceFiles(directory).length,496);
+    for(let index=0;index<512;index++)writeFileSync(join(directory,`ops/owned-${index}.mjs`),"// owned source\n");
+    git(["add","ops"]);assert.equal(readOperatorSourceFiles(directory).length,512);
     writeFileSync(join(directory,"ops/overflow.mjs"),"// owned source\n");git(["add","ops/overflow.mjs"]);
     assert.throws(()=>readOperatorSourceFiles(directory));
     git(["rm","--cached","ops/overflow.mjs"]);
