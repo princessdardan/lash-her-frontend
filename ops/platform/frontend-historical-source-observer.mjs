@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { verifiedSourceRequirements, prepareHistoricalSourceOriginalConfiguration,
   historicalSourceSqlCredentialQueryPlan, observeHistoricalSourceSqlCredentials,
-  deriveHistoricalSourceCapabilityClosures } from "./frontend-historical-source.mjs";
+  deriveHistoricalSourceCapabilityClosures, observeHistoricalSourceAlternateStores, historicalSourceSha256 as sourceHash } from "./frontend-historical-source.mjs";
 const repository = realpathSync(fileURLToPath(new URL("../..", import.meta.url)));
 const demand = ok => { if (!ok) throw new Error("FRONTEND_HISTORICAL_SOURCE_OBSERVATION_REFUSED"); };
 const privateValues = new WeakMap();
@@ -78,9 +78,14 @@ export async function observeFrontendHistoricalSourceContexts(context, bindings,
             role: prepared.databaseRoles.find(row => row.key === key), database: identity[0].database, major: identity[0].major });
           await verify(); demand(!failed);
         }
+        const allSelected = facts.every(row => row.sameSelectedPhysicalDatabase);
+        const selectedPhysical = allSelected && prepared.configuredSqlKeys.length ? physical.get(prepared.configuredSqlKeys[0]) : undefined;
         const sql = await observeHistoricalSourceSqlCredentials(source, { binding, originalConfiguration: original,
-          clientsByKey: clients, physicalDatabasesByKey: physical, verifySession: verify });
-        const closures = deriveHistoricalSourceCapabilityClosures(source, binding, original, sql);
+          clientsByKey: clients, physicalDatabasesByKey: physical, ...(selectedPhysical ? { physicalDatabase: selectedPhysical } : {}), verifySession: verify });
+        // Application-row store discovery is permitted only on positively
+        // selected staging peers. Alternate peers stay catalog/marker-only.
+        const stores = allSelected ? await observeHistoricalSourceAlternateStores(source, binding, original, sql) : undefined;
+        const closures = deriveHistoricalSourceCapabilityClosures(source, binding, original, sql, stores);
         for (const fact of facts.filter(row => row.sameSelectedPhysicalDatabase)) demand(context.plan.historicalLogins.retiredLogins.some(role =>
           role.name === fact.role.name && role.oid === fact.role.oid));
         const selectedCount = (await parent.query(historicalSourceSqlCredentialQueryPlan(source).markers, [
@@ -93,13 +98,31 @@ export async function observeFrontendHistoricalSourceContexts(context, bindings,
         const credentialKeys = { squareRetiredToken: "SQUARE_ACCESS_TOKEN", resendRetiredToken: "RESEND_API_KEY",
           chitchatsRetiredToken: "CHITCHATS_ACCESS_TOKEN",
           googleIdentityRetiredSecret: "AUTH_GOOGLE_SECRET", googleCalendarRetiredSecret: "GOOGLE_CLIENT_SECRET" };
+        const stagedOriginal = binding.sourceConfiguration.nonSecretSelectors?.APP_ENV === "staging" && original.environment.APP_ENV === "staging";
+        const originalSelection = key => {
+          if (!stagedOriginal) return false;
+          const env = original.environment;
+          if (key === "squareRetiredToken") return typeof bindings.squareRetirement?.locationId === "string" &&
+            typeof bindings.squareRetirement?.applicationId === "string" && env.SQUARE_ENVIRONMENT === "sandbox" &&
+            env.SQUARE_LOCATION_ID === bindings.squareRetirement?.locationId && env.SQUARE_APPLICATION_ID === bindings.squareRetirement?.applicationId;
+          if (key === "chitchatsRetiredToken") return typeof bindings.chitchatsRetirement?.clientId === "string" && env.CHITCHATS_ENVIRONMENT === "staging" &&
+            env.CHITCHATS_CLIENT_ID === bindings.chitchatsRetirement?.clientId;
+          if (key === "resendRetiredToken") return bindings.resendRetirement?.domainName === "mail.staging.lashher.com";
+          if (key === "googleIdentityRetiredSecret") return typeof bindings.googleRetirement?.clients?.identity === "string" &&
+            env.AUTH_GOOGLE_ID === bindings.googleRetirement.clients.identity;
+          if (key === "googleCalendarRetiredSecret") return typeof bindings.googleRetirement?.clients?.calendar === "string" &&
+            env.GOOGLE_CLIENT_ID === bindings.googleRetirement.clients.calendar &&
+            (Object.hasOwn(env, "GOOGLE_CALENDAR_ID") ? Boolean(env.GOOGLE_CALENDAR_ID) && sourceHash(env.GOOGLE_CALENDAR_ID) === bindings.googleRetirement.legacyCalendarSha256 : bindings.googleRetirement.legacyCalendarSha256 === null);
+          return false;
+        };
         const providerCredentialBindings = binding.providerCredentials.map(row => ({ ...row,
           originalCredentialEqualityVerified: typeof privateRuntime[row.runtimeKey] === "string" && privateRuntime[row.runtimeKey].length > 0 &&
-            original.environment[credentialKeys[row.runtimeKey]] === privateRuntime[row.runtimeKey] }));
+            original.environment[credentialKeys[row.runtimeKey]] === privateRuntime[row.runtimeKey],
+          originalProviderSelectionVerified: originalSelection(row.runtimeKey) }));
         result.bindings.push({ surfaceSha256: binding.surfaceSha256, sourceCommit: binding.sourceCommit,
           configurationRecordSha256: binding.configurationRecordSha256, provenanceSha256: binding.sourceConfiguration.provenanceSha256,
           sourceInventorySha256: source.sourceInventorySha256, requirementsSha256: source.requirementsSha256,
-          sqlEvidence: sql, sqlPhysicalBindings: facts, providerCredentialBindings, requirements: { ...source, ...closures } });
+          sqlEvidence: sql, alternateStoreEvidence: stores ?? null, sqlPhysicalBindings: facts, providerCredentialBindings, requirements: { ...source, ...closures } });
       } finally {
         let cleanupFailed = false;
         for (const [client, marker] of locks.reverse()) {

@@ -6,7 +6,7 @@ import {
   historicalSourceSha256 as hash, verifiedSourceRequirements,
   verifyHistoricalFrontendSourceProfile, prepareHistoricalSourceOriginalConfiguration as prepare,
   historicalSourceSqlCredentialQueryPlan, observeHistoricalSourceSqlCredentials as observe,
-  deriveHistoricalSourceCapabilityClosures as derive,
+  deriveHistoricalSourceCapabilityClosures as derive, historicalSourceAlternateStoreQueryPlan as storePlan, observeHistoricalSourceAlternateStores as stores,
 } from "./frontend-historical-source.mjs";
 
 const repository = realpathSync(fileURLToPath(new URL("../..", import.meta.url)));
@@ -90,7 +90,7 @@ test("different preview source receives facts and unresolved capabilities rather
   const result = derive(source, fixture.binding, fixture.original, sql);
   for (const family of source.providerFamilies.filter(row => preview.sourceReviewDisposition.unknownCapabilityProviders.includes(row.provider))) {
     assert.equal(family.sourceDisposition, "reachable");
-    assert.ok(result.unresolvedFamilyIds.includes(family.familyId));
+    if (!preview.sourceReviewDisposition.auditedPrivateSqlPredicateFamilies.includes(family.familyId)) assert.ok(result.unresolvedFrontendSqlFamilyIds.includes(family.familyId));
     assert.ok(family.untrackedPotentialRequests.length > 0);
   }
 });
@@ -113,7 +113,7 @@ test("actual reducer pipeline closes an absent original capability with exact re
   assert.equal(checkpoints, 2); assert.equal(sql.facts.length, 4);
   assert.ok(sql.facts.every(row => row.disposition === "absent-from-immutable-original-key-catalog"));
   const result = derive(requirements, fixture.binding, fixture.original, sql);
-  assert.equal(result.capabilityClosures.length, 30);
+  assert.equal(result.capabilityClosures.length, 36);
   for (const closure of result.capabilityClosures) {
     assert.deepEqual(closure.requirementIds, closureIds(requirements, requirements.providerFamilies.find(row => row.familyId === closure.familyId)));
     assert.equal(closure.surfaceSha256, fixture.binding.surfaceSha256);
@@ -121,8 +121,10 @@ test("actual reducer pipeline closes an absent original capability with exact re
     assert.equal(closure.provenanceSha256, fixture.binding.sourceConfiguration.provenanceSha256);
     assert.ok(closure.evidenceIds.every(id => /^[a-f0-9]{64}$/u.test(id)));
   }
-  assert.ok(result.unresolvedFamilyIds.includes("google.calendar"));
-  assert.ok(result.unresolvedFamilyIds.includes("sanity.editorial"));
+  assert.deepEqual(result.unresolvedFrontendSqlFamilyIds, []);
+  assert.deepEqual(result.unresolvedExternalCapabilityFamilyIds, ["mux.studio", "sanity.editorial"]);
+  assert.deepEqual(result.unresolvedFamilyIds, result.unresolvedExternalCapabilityFamilyIds);
+  assert.equal(result.capabilityClosures.find(r => r.familyId === "mux.studio").externalProviderCapability, "not-declared-absent");
 });
 
 test("configured SQL key needs the actual TLS credential/role/database/readonly session and four parent-held markers", async () => {
@@ -177,7 +179,7 @@ test("present empty/masked credentials remain potential capabilities and differe
     const sql = await collect(fixture, new Map([["DATABASE_URL", sqlPeer()]]));
     const result = derive(requirements, fixture.binding, fixture.original, sql);
     for (const family of ["square.customers", "chitchats.drafts", "resend.events", "highlevel.contacts", "highlevel.webhooks"])
-      assert.ok(result.unresolvedFamilyIds.includes(family), family);
+      assert.ok(result.unresolvedFrontendSqlFamilyIds.includes(family), family);
   }
 });
 
@@ -197,4 +199,122 @@ test("manual template mutation scope and original staging broadcast guard use ch
   assert.throws(() => prepare(requirements, invalid.binding, invalid.original), rejected);
   const unsupported = originalFixture({}, { kind: "direct-caller", entrypoint: "ops/unknown.mjs" });
   assert.throws(() => prepare(requirements, unsupported.binding, unsupported.original), rejected);
+});
+
+
+test("all 33 exact reviewed sources carry six bounded private-SQL predicates or actual Mux plugin absence", async () => {
+  for (const file of readdirSync(directory)) {
+    const source = verifiedSourceRequirements(repository, file.slice(0, -5)), fixture = originalFixture({}, { sourceCommit: source.sourceCommit });
+    const sql = await observe(source, { binding: fixture.binding, originalConfiguration: fixture.original, clientsByKey: new Map(), physicalDatabasesByKey: new Map(), verifySession: async () => {} });
+    const result = derive(source, fixture.binding, fixture.original, sql);
+    for (const familyId of ["google.identity", "google.oauth", "google.calendar", "sanity.editorial", "sanity.callbacks", "mux.studio"])
+      assert.ok(result.capabilityClosures.some(r => r.familyId === familyId), `${source.sourceCommit}:${familyId}`);
+    assert.deepEqual(source.sqlCredentialRequirements.map(r => r.key), keys);
+    assert.ok(source.sdkDependencies.some(r => r.name === "@auth/core" && r.version === "0.41.3"));
+  }
+});
+
+test("every accepted signing-secret alias blocks Google identity/OAuth absence, including retained or masked values", async () => {
+  for (const key of ["AUTH_SECRET", "NEXTAUTH_SECRET", "AUTH_SECRET_1", "AUTH_SECRET_2", "AUTH_SECRET_3"]) for (const value of ["", "[masked]", "owned-signing-fixture"]) {
+    const fixture = originalFixture({ [key]: value }), sql = await collect(fixture), result = derive(requirements, fixture.binding, fixture.original, sql);
+    for (const family of ["google.identity", "google.oauth"]) assert.ok(result.unresolvedFrontendSqlFamilyIds.includes(family), `${key}:${family}`);
+  }
+});
+
+test("SQL grants and either original legacy Redis credential independently prevent Calendar/OAuth absence", async () => {
+  for (const key of keys) {
+    const fixture = originalFixture({ [key]: ownedUrl }), sql = await collect(fixture, new Map([[key, sqlPeer()]]));
+    const result = derive(requirements, fixture.binding, fixture.original, sql);
+    for (const family of ["google.oauth", "google.calendar"]) assert.ok(result.unresolvedFrontendSqlFamilyIds.includes(family), `${key}:${family}`);
+  }
+  for (const key of ["KV_REST_API_URL", "KV_REST_API_TOKEN"]) for (const value of ["", "[masked]", "owned-fixture"]) {
+    const fixture = originalFixture({ [key]: value }), sql = await collect(fixture), result = derive(requirements, fixture.binding, fixture.original, sql);
+    assert.ok(result.unresolvedFrontendSqlFamilyIds.includes("google.oauth")); assert.ok(result.unresolvedFrontendSqlFamilyIds.includes("google.calendar"));
+    await assert.rejects(stores(requirements, fixture.binding, fixture.original, sql), rejected);
+  }
+});
+
+test("signed Sanity ingress stays unresolved for every retained key; Studio/Mux public scope never claims credential retirement", async () => {
+  for (const value of ["", "[masked]", "owned-hook-fixture"]) {
+    const fixture = originalFixture({ SANITY_WEBHOOK_SECRET: value, DATABASE_URL: ownedUrl }), sql = await collect(fixture, new Map([["DATABASE_URL", sqlPeer()]]));
+    const result = derive(requirements, fixture.binding, fixture.original, sql);
+    assert.ok(result.unresolvedFrontendSqlFamilyIds.includes("sanity.callbacks")); assert.ok(result.unresolvedFrontendSqlFamilyIds.includes("sanity.editorial"));
+    const mux = result.capabilityClosures.find(r => r.familyId === "mux.studio");
+    assert.equal(mux.effectScope, "frontend-private-sql-and-protected-continuations"); assert.equal(mux.externalProviderCapability, "not-declared-absent");
+  }
+});
+
+test("source-owned alternate store observer returns no secret values and cannot accept forged, foreign or serialized facts", async () => {
+  const fixture = originalFixture(), sql = await collect(fixture), result = await stores(requirements, fixture.binding, fixture.original, sql);
+  assert.equal(result.hasRetainedGoogleState, false); assert.equal(result.redis.disposition, "absent-from-immutable-original-key-catalog");
+  assert.equal(derive(requirements, fixture.binding, fixture.original, sql, result).capabilityClosures.length, 36);
+  for (const value of [structuredClone(result), { ...result, hasRetainedGoogleState: false }, { complete: true }])
+    assert.throws(() => derive(requirements, fixture.binding, fixture.original, sql, value), rejected);
+  await assert.rejects(stores(structuredClone(requirements), fixture.binding, fixture.original, sql), rejected);
+  const other = originalFixture({}, { surface: "foreign-store" });
+  await assert.rejects(stores(requirements, other.binding, other.original, sql), rejected);
+  assert.throws(() => storePlan(structuredClone(requirements)), rejected);
+  assert.ok(storePlan(requirements).sql.every(r => /^SELECT count\(\*\)/u.test(r.query)));
+});
+
+test("retained actual encrypted/secret-ref grant, event and checkout rows cannot be discarded by a source closure", async () => {
+  for (const retained of storePlan(requirements).sql) {
+    const fixture = originalFixture({ DATABASE_URL: ownedUrl }), peer = sqlPeer(), read = peer.query;
+    peer.query = async query => storePlan(requirements).sql.some(r => r.query === query) ? { rows: [{ count: query === retained.query ? 1 : 0 }] } : read(query);
+    const sql = await collect(fixture, new Map([["DATABASE_URL", peer]])), observed = await stores(requirements, fixture.binding, fixture.original, sql);
+    assert.equal(observed.hasRetainedGoogleState, true);
+    const result = derive(requirements, fixture.binding, fixture.original, sql, observed);
+    for (const family of ["google.identity", "google.oauth", "google.calendar"]) assert.ok(result.unresolvedFrontendSqlFamilyIds.includes(family));
+    assert.equal(observed.configuredStoreEmptyDisposition, "unresolved-historical-accepted-request-completeness");
+  }
+});
+
+test("empty configured store is observation only and changing SQL/markers/private source state refuses a proof", async () => {
+  const fixture = originalFixture({ DATABASE_URL: ownedUrl }), peer = sqlPeer(), read = peer.query;
+  peer.query = async query => storePlan(requirements).sql.some(r => r.query === query) ? { rows: [{ count: 0 }] } : read(query);
+  const sql = await collect(fixture, new Map([["DATABASE_URL", peer]])), observed = await stores(requirements, fixture.binding, fixture.original, sql);
+  assert.equal(observed.hasRetainedGoogleState, false);
+  assert.ok(derive(requirements, fixture.binding, fixture.original, sql, observed).unresolvedFrontendSqlFamilyIds.includes("google.calendar"));
+  let count = 0; peer.query = async query => storePlan(requirements).sql.some(r => r.query === query) ? { rows: [{ count: ++count }] } : read(query);
+  await assert.rejects(stores(requirements, fixture.binding, fixture.original, sql), rejected);
+  peer.connection.stream.authorized = false;
+  await assert.rejects(stores(requirements, fixture.binding, fixture.original, sql), rejected);
+});
+
+
+test("only the four exact source-reviewed unrelated direct callers can narrow the six deployed families", async () => {
+  const environment = { AUTH_SECRET: "owned-existing-jwt-signing", KV_REST_API_URL: "[masked]", KV_REST_API_TOKEN: "[masked]", SANITY_WEBHOOK_SECRET: "owned-existing-hook" };
+  for (const entrypoint of requirements.manualCredentialProfiles) {
+    const fixture = originalFixture(environment, { kind: "direct-caller", entrypoint });
+    const sql = await collect(fixture), result = derive(requirements, fixture.binding, fixture.original, sql);
+    for (const familyId of ["google.identity", "google.oauth", "google.calendar", "sanity.editorial", "sanity.callbacks", "mux.studio"])
+      assert.ok(result.capabilityClosures.some(row => row.familyId === familyId), entrypoint + ":" + familyId);
+  }
+  for (const entrypoint of ["scripts/backfill-product-stock.ts", "scripts/migrate-strapi-to-sanity.ts", "src/lib/booking/google-calendar.ts"])
+    assert.throws(() => { const f = originalFixture(environment, { kind: "direct-caller", entrypoint }); prepare(requirements, f.binding, f.original); }, rejected);
+});
+
+
+test("private-SQL closures retain required external residuals and cannot qualify global provider retirement", async () => {
+  for (const file of readdirSync(directory)) {
+    const source = verifiedSourceRequirements(repository, file.slice(0, -5)), fixture = originalFixture({}, { sourceCommit: source.sourceCommit });
+    const sql = await observe(source, { binding: fixture.binding, originalConfiguration: fixture.original, clientsByKey: new Map(), physicalDatabasesByKey: new Map(), verifySession: async () => {} });
+    const result = derive(source, fixture.binding, fixture.original, sql);
+    const external = source.providerFamilies.filter(f => ["sanity.editorial", "mux.studio"].includes(f.familyId) && f.sourceDisposition === "reachable").map(f => f.familyId).sort();
+    assert.deepEqual(result.unresolvedExternalCapabilityFamilyIds, external);
+    assert.deepEqual(result.unresolvedFamilyIds, [...new Set([...result.unresolvedFrontendSqlFamilyIds, ...external])].sort());
+    assert.ok(result.unresolvedFamilyIds.length > 0, "the broad residual channel cannot report complete provider retirement");
+    for (const id of external) {
+      assert.ok(!result.unresolvedFrontendSqlFamilyIds.includes(id));
+      const scoped = result.capabilityClosures.find(row => row.familyId === id);
+      assert.equal(scoped.effectScope, "frontend-private-sql-and-protected-continuations");
+      assert.equal(scoped.externalProviderCapability, "not-declared-absent");
+      assert.ok(result.unresolvedFamilyIds.includes(id), "a scoped closure cannot suppress external uncertainty");
+    }
+  }
+  const fixture = originalFixture({ SANITY_WEBHOOK_SECRET: "owned-retained-secret", DATABASE_URL: ownedUrl });
+  const sql = await collect(fixture, new Map([["DATABASE_URL", sqlPeer()]])), result = derive(requirements, fixture.binding, fixture.original, sql);
+  assert.ok(result.unresolvedFrontendSqlFamilyIds.includes("sanity.callbacks"), "signed SQL callbacks remain a hard barrier requirement");
+  assert.ok(result.unresolvedFrontendSqlFamilyIds.includes("sanity.editorial"));
+  assert.deepEqual(result.unresolvedExternalCapabilityFamilyIds, ["mux.studio", "sanity.editorial"]);
 });

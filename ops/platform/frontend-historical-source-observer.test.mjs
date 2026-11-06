@@ -41,6 +41,22 @@ test("present empty original SQL key and substituted immutable values refuse bef
   await assert.rejects(observeFrontendHistoricalSourceContexts(g.context, g.bindings, g.privateRuntime));
 });
 
+test("foreign-preview capability selection uses reviewed original staging selectors as well as private credential equality", async () => {
+  for (const business of ["staging", "production"]) {
+    const f = fixture({ APP_ENV: business, RESEND_API_KEY: "owned-original-provider-token" });
+    f.original.provenance.nonSecretSelectors = { APP_ENV: business };
+    f.binding.sourceConfiguration.nonSecretSelectors = { APP_ENV: business };
+    f.binding.sourceConfiguration.provenanceSha256 = hash(f.original.provenance);
+    f.binding.providerCredentials.push({ runtimeKey: "resendRetiredToken", providerSurfaceSha256: hash("owned-resend") });
+    f.bindings.resendRetirement = { domainName: "mail.staging.lashher.com" };
+    f.privateRuntime.resendRetiredToken = "owned-original-provider-token";
+    const result = await observeFrontendHistoricalSourceContexts(f.context, f.bindings, f.privateRuntime);
+    const credential = result.bindings[0].providerCredentialBindings[0];
+    assert.equal(credential.originalCredentialEqualityVerified, true);
+    assert.equal(credential.originalProviderSelectionVerified, business === "staging");
+  }
+});
+
 test("fixed source intent tables are read only with bounded counts, and absent tables remain unknown", async () => {
   const queries = [], context = { verifyLockedSession: async () => {}, databaseClient: { async query(sql) {
     queries.push(sql); return { rows: sql.includes("to_regclass") ? [{ present: false }] : [] };
