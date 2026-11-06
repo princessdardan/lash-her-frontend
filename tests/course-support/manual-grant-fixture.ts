@@ -14,10 +14,10 @@ const initial = { id: courseId, title: "Paid course", slug: "paid-course", descr
 export const body = () => ({ userId, reason: "Owner support", expectedCourseRevision: 3, idempotencyKey: randomUUID() });
 export function fixture(admissionRun?: WriterAdmissionRunner) {
   const state = { actor, course: { ...initial }, post: 0, calls: 0, admissions: 0, inside: false, activeCustomer: true, lostAck: false, failReadback: false,
-    race: false, tamperAudit: false, commands: [] as Array<Record<string, unknown>>, grants: [] as Array<Record<string, unknown>> };
+    race: false, tamperAudit: false, postReceiptOverride: {} as Record<string, unknown>, commands: [] as Array<Record<string, unknown>>, grants: [] as Array<Record<string, unknown>> };
   const run = async <T>(_kind: "new-work" | "recovery", work: () => Promise<T>) => {
     assert.equal(state.inside, false); state.inside = true; state.admissions++;
-    try { return await (admissionRun ? admissionRun(_kind, () => withWriterOperationContext(work)) : withWriterOperationContext(work)); } finally { state.inside = false; }
+    try { return await (admissionRun ? admissionRun(_kind, work) : withWriterOperationContext(work)); } finally { state.inside = false; }
   };
   const authorize = async () => {
     assert.equal(state.inside, true);
@@ -49,7 +49,7 @@ export function fixture(admissionRun?: WriterAdmissionRunner) {
       revokedAt: null, expiresAt: null, status: "active", revokeIdempotencyKey: null, createdAt: now, updatedAt: now });
     if (state.race) state.course = { ...state.course, status: "archived", revision: 4 };
     if (state.lostAck) throw new Error("owned lost ACK");
-    return Response.json(command, { status: 201 });
+    return Response.json({ ...command, ...state.postReceiptOverride }, { status: 201 });
   } });
   const handler = createManualCourseGrantHandler({ enabled: () => true, origin: () => origin, run, authorize,
     activeCustomer: async () => { assert.equal(state.inside, true); return state.activeCustomer; }, client: () => client });

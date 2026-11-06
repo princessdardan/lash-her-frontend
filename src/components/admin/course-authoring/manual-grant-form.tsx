@@ -3,7 +3,7 @@
 import { useState, useSyncExternalStore, type FormEvent } from "react";
 import { buttonClass, secondaryClass } from "./course-fields";
 
-type Receipt = { state: "confirmed" | "accepted-needs-review" | "not-observed"; idempotencyKey: string;
+type Receipt = { state: "confirmed" | "accepted-needs-review" | "not-observed" | "outcome-unknown"; idempotencyKey: string;
   command?: { commandId: string; userId: string; courseId: string; effects: { grantId: string }[] }; communityDeliveryVerified?: false };
 function subscribeReference(listener: () => void) {
   window.addEventListener("owner-grant-reference", listener);
@@ -30,11 +30,12 @@ export function ManualGrantForm({ courseId, revision, eligible }: { courseId: st
       });
       if (!response.ok) throw new Error("No grant outcome was confirmed. Check the recorded outcome before any further action.");
       const value = await response.json() as Receipt;
-      if (!["confirmed", "accepted-needs-review", "not-observed"].includes(value.state) || value.idempotencyKey !== id) throw new Error("Invalid grant receipt.");
+      if (!["confirmed", "accepted-needs-review", "not-observed", "outcome-unknown"].includes(value.state) || value.idempotencyKey !== id) throw new Error("Invalid grant receipt.");
       setReceipt(value);
       setMessage(value.state === "confirmed" ? "Manual grant and audit confirmed. Community delivery still requires its actual downstream receipt."
         : value.state === "not-observed" ? "No command was observed. This does not prove a pending request was cancelled. No grant was retried."
-          : "A grant was accepted and requires review. Keep this request reference; no grant was retried.");
+          : value.state === "outcome-unknown" ? "The grant outcome is unknown. Check the recorded outcome; no grant was retried."
+            : "A grant was accepted and requires review. Keep this request reference; no grant was retried.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "The outcome is unknown. Check the recorded outcome; do not resubmit."); }
     finally { setPending(false); }
   }

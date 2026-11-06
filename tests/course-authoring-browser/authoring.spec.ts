@@ -94,6 +94,22 @@ test("owner manual access uses real auth/Course SQL audit and explicit lost-ack 
     await expect(page.getByRole("region", { name: "Manual course access" }).getByRole("status")).toContainText(/fetch|unknown|outcome/i);
     await page.getByRole("button", { name: "Check recorded outcome" }).click(); await expect(page.getByRole("region", { name: "Manual course access" }).getByRole("status")).toContainText("Manual grant and audit confirmed");
     expect(posts).toBe(1); expect((await sql.query("select id from entitlement_grants where user_id=$1 and course_id=$2", [states.manualGrantCustomerIds[1], id])).rows).toHaveLength(1);
+    // Model only the safe unknown envelope here. Schema-valid mismatched Course
+    // receipts are independently exercised through the actual named client.
+    await page.unroute(`**/api/admin/courses/${id}/manual-grants`);
+    await page.getByRole("button", { name: "Prepare another grant" }).click();
+    await page.getByLabel("Customer UUID").fill(states.manualGrantCustomerIds[0]); await page.getByLabel("Grant reason").fill("Owned unknown outcome presentation");
+    let unknownPosts = 0;
+    await page.route(`**/api/admin/courses/${id}/manual-grants`, async route => {
+      unknownPosts++;
+      await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ state: "outcome-unknown",
+        idempotencyKey: route.request().postDataJSON().idempotencyKey, command: null, mutationRetried: false, communityDeliveryVerified: false }) });
+    });
+    await page.getByRole("button", { name: "Grant manual access", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Manual course access" }).getByRole("status")).toHaveText("The grant outcome is unknown. Check the recorded outcome; no grant was retried.");
+    await expect(page.getByText("Command receipt", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Grant manual access", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Prepare another grant" })).toHaveCount(0); expect(unknownPosts).toBe(1);
     const staff = await ownedContext(browser, states.admin);
     try {
       const denied = await staff.request.post(`/api/admin/courses/${id}/manual-grants`, { headers, data: { userId: states.manualGrantCustomerIds[1], expectedCourseRevision: 4, reason: "Unauthorized", idempotencyKey: crypto.randomUUID() } });

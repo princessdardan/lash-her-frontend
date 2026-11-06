@@ -7,10 +7,14 @@ import { mkdtempSync, readFileSync, writeFileSync, chmodSync, rmSync } from "nod
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { mock } from "node:test";
+import { renderToStaticMarkup } from "react-dom/server";
 import { Client } from "pg";
 import { changeFrontendAdmission } from "../../ops/platform/frontend-admission.mjs";
 import { createWriterAdmissionRunner } from "@/lib/writer-admission/runtime";
-import { body, fixture } from "./manual-grant-fixture";
+import { AdminAuthError, type AdminActor } from "@/lib/admin/types";
+import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
+import { currentWriterOperationIdentity, markWriterOperationUncertain } from "@/lib/writer-admission/context";
 
 const bins = process.env.PG_BIN;
 if (!bins?.startsWith("/") || process.env.P2Q_MANUAL_GRANT_OWNED !== "true") throw new Error("OWNED_MANUAL_GRANT_CONFIGURATION_REQUIRED");
@@ -48,20 +52,89 @@ try {
   await owner.query("GRANT EXECUTE ON ALL ROUTINES IN SCHEMA frontend_admission TO p2q_grant_runtime"); await owner.query("COMMIT");
   const run = createWriterAdmissionRunner({ getConfiguration: () => ({ target: { environment: "staging", host: "127.0.0.1", port, database: "p2q_grant_owned", user: "p2q_grant_runtime", serverMajor: major as 16 | 18, targetSha256 },
     sourceSha, producerSha256, connection: { ...base, database: "p2q_grant_owned", user: "p2q_grant_runtime", enableChannelBinding: true, application_name: "owned-manual-grant" } }) });
+  // Load the actual page with only identity and Course reads modeled. Its real
+  // semantic parent, runner, SQL ledger, navigation and unavailable view execute.
+  const pageActor: AdminActor = { bookingProviderResourceIds: [], bookingResourceIds: [], user: {
+    id: randomUUID(), email: "owned@example.invalid", emailNormalized: "owned@example.invalid", displayName: null,
+    providerUserId: "owned", role: "owner", status: "active" } };
+  let actor = pageActor, authError: Error | undefined, courseError: Error | undefined, uncertainAuth = false, authCalls = 0, reads = 0;
+  const pageCourseId = randomUUID();
+  const mocks = [
+    mock.module(new URL("../../src/lib/writer-admission/runtime.ts", import.meta.url), { namedExports: { createWriterAdmissionRunner, runWriterAdmission: run } }),
+    mock.module(new URL("../../src/lib/admin/auth.ts", import.meta.url), { namedExports: { requirePermission: async (permission: string) => {
+      assert.equal(permission, "courses:support"); assert.ok(currentWriterOperationIdentity()); authCalls++;
+      if (uncertainAuth) markWriterOperationUncertain();
+      if (authError) throw authError; return actor;
+    } } }),
+    mock.module(new URL("../../src/lib/api-integration/course-client.ts", import.meta.url), { namedExports: { getCourseClient: () => ({ getAdminCourse: async () => {
+      reads++; if (courseError) throw courseError;
+      return { course: { id: pageCourseId, title: "Owned paid course", revision: 3, status: "published", accessMode: "paid" } };
+    } }) } }),
+    mock.module(new URL("../../src/lib/api-integration/rollout-flags.ts", import.meta.url), { namedExports: { isIntegrationFeatureEnabled: () => true } }),
+  ];
+  let pageCompleted = 0;
+  try {
+    const { default: page } = await import("../../src/app/admin/(protected)/courses/[courseId]/manual-grants/page");
+    const load = () => page({ params: Promise.resolve({ courseId: pageCourseId }) });
+    const unavailable = (view: Awaited<ReturnType<typeof load>>) => {
+      const html = renderToStaticMarkup(view);
+      assert.match(html, /Manual access unavailable/); assert.match(html, /The service is temporarily unavailable\./);
+      assert.doesNotMatch(html, /Writer admission|owned internal|secret|password/u);
+    };
+    unavailable(await load()); assert.equal(authCalls, 0); assert.equal(reads, 0);
+    assert.equal((await owner.query("SELECT count(*)::int AS count FROM frontend_admission.operations")).rows[0].count, 0);
+    await changeFrontendAdmission(owner, { environment: "staging", targetSha256 }, "1", { newWork: true, recovery: false });
+    actor = { ...pageActor, user: { ...pageActor.user, role: "admin" } };
+    await assert.rejects(load, (error: unknown) => (error as { digest?: string }).digest === "NEXT_HTTP_ERROR_FALLBACK;404");
+    assert.equal(reads, 0);
+    actor = pageActor; authError = new AdminAuthError("forbidden");
+    await assert.rejects(load, (error: unknown) => (error as { digest?: string }).digest === "NEXT_HTTP_ERROR_FALLBACK;404");
+    assert.equal(reads, 0); authError = undefined;
+    courseError = new IntegrationServiceError("not_found", 404);
+    await assert.rejects(load, (error: unknown) => (error as { digest?: string }).digest === "NEXT_HTTP_ERROR_FALLBACK;404");
+    courseError = new IntegrationServiceError("service_unavailable", 503);
+    unavailable(await load()); courseError = undefined;
+    assert.match(renderToStaticMarkup(await load()), /Manual access: Owned paid course/);
+    const pageRows = (await owner.query("SELECT state FROM frontend_admission.operations ORDER BY started_at,id")).rows;
+    assert.deepEqual(pageRows.map(row => row.state), Array(5).fill("completed")); pageCompleted = pageRows.length;
+    assert.equal((await owner.query("SELECT count(*)::int AS count FROM frontend_admission.operations WHERE state IN ('active','uncertain')")).rows[0].count, 0,
+      "nonowner, known auth denial, missing course and known upstream failure settle before safe page control flow");
+  } finally { for (const entry of mocks.reverse()) entry.restore(); }
+  const { body, fixture } = await import("./manual-grant-fixture");
+  // The page above opened admission. The route closed-refusal check must still
+  // exercise the actual closed policy rather than relying on prior local state.
+  await changeFrontendAdmission(owner, { environment: "staging", targetSha256 }, "2", { newWork: false, recovery: false });
   const closed = fixture(run); assert.equal((await closed.call(body())).status, 503); assert.equal(closed.state.calls, 0);
-  await changeFrontendAdmission(owner, { environment: "staging", targetSha256 }, "1", { newWork: true, recovery: false });
+  await changeFrontendAdmission(owner, { environment: "staging", targetSha256 }, "3", { newWork: true, recovery: false });
   const confirmed = fixture(run); assert.equal((await confirmed.call(body())).status, 200);
   let rows = (await owner.query("SELECT state FROM frontend_admission.operations ORDER BY started_at,id")).rows;
-  assert.deepEqual(rows, [{ state: "completed" }]); assert.equal(confirmed.state.post, 1);
+  assert.deepEqual(rows.slice(pageCompleted), [{ state: "completed" }]); assert.equal(confirmed.state.post, 1);
   const unknown = fixture(run), attempt = body(); unknown.state.lostAck = true;
   assert.equal((await unknown.call(attempt)).status, 503);
   rows = (await owner.query("SELECT state FROM frontend_admission.operations ORDER BY started_at,id")).rows;
-  assert.deepEqual(rows.map(row => row.state), ["completed", "uncertain"]);
+  assert.deepEqual(rows.slice(pageCompleted).map(row => row.state), ["completed", "uncertain"]);
   unknown.state.lostAck = false; assert.equal((await unknown.call(attempt, "GET")).status, 200); assert.equal(unknown.state.post, 1);
   rows = (await owner.query("SELECT state FROM frontend_admission.operations ORDER BY started_at,id")).rows;
-  assert.deepEqual(rows.map(row => row.state), ["completed", "uncertain", "completed"], "read reconciliation does not clear original uncertainty");
+  assert.deepEqual(rows.slice(pageCompleted).map(row => row.state), ["completed", "uncertain", "completed"], "read reconciliation does not clear original uncertainty");
+  const untrusted = fixture(run); untrusted.state.postReceiptOverride = { actorUserId: randomUUID() };
+  const untrustedResponse = await untrusted.call(body()), untrustedBody = await untrustedResponse.json();
+  assert.equal(untrustedResponse.status, 503); assert.equal(untrustedBody.command, undefined); assert.equal(untrusted.state.post, 1);
+  assert.equal((await owner.query("SELECT count(*)::int AS count FROM frontend_admission.operations WHERE state='uncertain'")).rows[0].count, 2);
+  // Unexpected auth/persistence errors are still uncertain. Settling a known
+  // denial must not become a broad catch that can launder failed writes.
+  // Reuse the actual page's bound authorizer via the live test closure above;
+  // no new module copy or alternate page implementation is used.
+  for (const error of [new Error("owned internal write outcome unknown"), new AdminAuthError("forbidden")]) {
+    authError = error; uncertainAuth = error instanceof AdminAuthError;
+    const { default: page } = await import("../../src/app/admin/(protected)/courses/[courseId]/manual-grants/page");
+    const html = renderToStaticMarkup(await page({ params: Promise.resolve({ courseId: pageCourseId }) }));
+    assert.match(html, /Manual access unavailable/); assert.doesNotMatch(html, /owned internal|Writer admission/u);
+  }
+  assert.equal((await owner.query("SELECT count(*)::int AS count FROM frontend_admission.operations WHERE state='uncertain'")).rows[0].count, 4,
+    "both uncaught auth errors and a marked uncertain auth write followed by a known denial remain uncertain");
   assert.equal((await owner.query("SELECT bool_and(ssl) AS tls FROM pg_stat_ssl WHERE pid=pg_backend_pid()")).rows[0].tls, true);
-  summary = { status: "OWNED_MANUAL_GRANT_ADMISSION_PASS", postgresMajor: major, checks: ["closed-before-auth-or-provider", "whole-operation-single-completed-ledger", "lost-ack-sticky-uncertain", "GET-readback-no-POST-or-counter-clear", "verified-TLS-SCRAM-role"], providerReplies: "modeled", liveActions: false };
+  summary = { status: "OWNED_MANUAL_GRANT_ADMISSION_PASS", postgresMajor: major, checks: ["closed-before-auth-or-provider", "whole-operation-single-completed-ledger", "lost-ack-sticky-uncertain", "GET-readback-no-POST-or-counter-clear", "verified-TLS-SCRAM-role",
+    "actual-page-nonowner-and-auth-denial-settled-404", "actual-page-missing-course-settled-404", "actual-page-known-upstream-failure-settled-safe-view", "actual-page-closed-admission-safe-view-before-auth", "actual-page-unknown-auth-write-sticky-uncertain", "mismatched-POST-receipt-sticky-uncertain-no-exposure"], providerReplies: "modeled", liveActions: false };
 } finally {
   await owner?.end(); await admin?.end();
   if (started) execute(join(bins, "pg_ctl"), ["-D", data, "-m", "immediate", "-w", "stop"]);

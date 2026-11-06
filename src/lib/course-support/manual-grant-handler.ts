@@ -79,8 +79,8 @@ export function createManualCourseGrantHandler(dependencies: {
               // The receiver retains the immutable command and its effects even
               // if a later read fails. Never hide or automatically undo it.
               accepted = true;
-              command = actual;
               if (actual.action !== "grant" || actual.scope !== "userCourse" || actual.courseId !== courseId || actual.userId !== selected.userId || actual.actorUserId !== actor.user.id || actual.reason !== reason(selected.expectedCourseRevision, selected.reason)) throw new Error("GRANT_RECEIPT_MISMATCH");
+              command = actual;
             }
             retained = command;
             const saved = await client.listEntitlementCommands({ commandId: command.commandId, idempotencyKey: key(attempt), limit: 2 });
@@ -103,7 +103,7 @@ export function createManualCourseGrantHandler(dependencies: {
           } catch (error) {
             if (!command && !accepted) throw error;
             markWriterOperationUncertain();
-            return Response.json({ state: "accepted-needs-review", idempotencyKey: attempt, command: command ?? null, mutationRetried: false, communityDeliveryVerified: false }, { status: 202, headers });
+            return Response.json({ state: retained ? "accepted-needs-review" : "outcome-unknown", idempotencyKey: attempt, command: retained ?? null, mutationRetried: false, communityDeliveryVerified: false }, { status: 202, headers });
           }
         } catch (error) {
           if (error instanceof AdminAuthError) return integrationErrorResponse(new IntegrationServiceError(error.code === "unauthenticated" ? "sign_in_required" : "forbidden", error.code === "unauthenticated" ? 401 : 403));

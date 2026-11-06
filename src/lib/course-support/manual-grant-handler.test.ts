@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { actor, body, fixture, otherId, userId } from "../../../tests/course-support/manual-grant-fixture";
+import { createWriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 
 test("owner grant uses one semantic admission, canonical support client, immutable audit and orderless readback", async () => {
   const { state, call } = fixture(); const input = body(); const response = await call(input); const receipt = await response.json();
@@ -45,4 +46,24 @@ test("post-accept readback failure or mismatched audit poisons admission and ret
 });
 test("GET absence is explicitly not observed, not cancellation or retry authority", async () => {
   const { state, call } = fixture(); const response = await call(body(), "GET"); assert.equal(response.status, 202); assert.equal((await response.json()).state, "not-observed"); assert.equal(state.post, 0);
+});
+test("admission OFF never exposes an unvalidated POST receipt or claims it was accepted", async () => {
+  const off = createWriterAdmissionRunner({ getConfiguration: () => null });
+  for (const override of [{ actorUserId: otherId }, { courseId: otherId }, { userId: otherId }, { action: "revoke" }, { scope: "grantId" }, { reason: "Another intent" }]) {
+    const { state, call } = fixture(off); state.postReceiptOverride = override;
+    const input = body(), response = await call(input), receipt = await response.json();
+    assert.equal(response.status, 202); assert.equal(receipt.state, "outcome-unknown"); assert.equal(receipt.command, null);
+    assert.equal(receipt.mutationRetried, false); assert.equal(state.post, 1);
+    assert.equal(JSON.stringify(receipt).includes(state.commands[0].commandId as string), false);
+    // The original immutable command remains discoverable by an explicit GET;
+    // the mismatched POST response is never promoted into accepted authority.
+    assert.equal((await call(input, "GET")).status, 200); assert.equal(state.post, 1);
+  }
+});
+test("admission OFF retains a validated accepted receipt when its later audit read fails", async () => {
+  const { state, call } = fixture(createWriterAdmissionRunner({ getConfiguration: () => null }));
+  state.failReadback = true;
+  const response = await call(body()), receipt = await response.json();
+  assert.equal(response.status, 202); assert.equal(receipt.state, "accepted-needs-review");
+  assert.equal(receipt.command.commandId, state.commands[0].commandId); assert.equal(state.post, 1);
 });
