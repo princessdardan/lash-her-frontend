@@ -57,7 +57,7 @@ async function googleFixture(){
   .replace("const OWNER_UID=0,CASE_ROOT='/var/lib/lash-her/p2q/google-projects';",`const OWNER_UID=${process.getuid()},CASE_ROOT=${JSON.stringify(cases)};`)
   .replace("privatePath(path);let current='/';\n  for(const part of path.split('/').filter(Boolean))",`privatePath(path);demand(path===${JSON.stringify(root)}||path.startsWith(${JSON.stringify(root+'/')}),'PRIVATE_DIRECTORY_REQUIRED');let current=${JSON.stringify(root)};\n  for(const part of relative(current,path).split('/').filter(Boolean))`)
   .replace("'/run/lash-her-p2q-private/'",JSON.stringify(handoff+'/'));
- const path=join(root,'producer.mjs');file.writeFileSync(path,projected+'\nexport const ownedPrivate={casePlan,PrivateCase,execute,cleanAmbient,route,cliArgs,childEnvironment,request,physicalTree,verifyToolchain,readFile,writeFile,parse,principalClaim,UMASK_WRAPPER};\n');
+ const path=join(root,'producer.mjs');file.writeFileSync(path,projected+'\nexport const ownedPrivate={casePlan,PrivateCase,execute,cleanAmbient,route,cliArgs,childEnvironment,request,physicalTree,verifyToolchain,readFile,writeFile,parse,principalClaim,claimMayClose,UMASK_WRAPPER};\n');
  const api=(await import(pathToFileURL(path).href)).ownedPrivate;
  const principalPath=join(handoff,'principal.json'),principal='new-owner@example.test';
  const bytes=Buffer.from(JSON.stringify({version:1,principal})+'\n');file.writeFileSync(principalPath,bytes,{mode:0o600});
@@ -128,7 +128,7 @@ test('Google lost ACK is never re-POSTed; GET-only reconciliation distinguishes 
   const next=googleModel(f,{reconcileFound:found});const result=await f.api.execute(f.plan,'reconcile',new f.api.PrivateCase(f.plan,'reconcile'),next.rt);publicGoogleSafe(result);
   assert.equal(result.creationPostCount,0);assert.equal(next.events.some(x=>x[0]==='http'&&x[1]==='create'),false);assert.equal(result.originalCreationAcknowledged,false);
   assert.equal(result.status,found?'P2Q_GOOGLE_RECONCILED_CURRENT_NOT_ORIGINAL_CREATION':'P2Q_GOOGLE_REQUIRES_REVIEW');
-  if(!found){assert.equal(result.code,'P2Q_GOOGLE_OBSERVATION_UNKNOWN');assert.equal(next.searches,12);}else assert.equal(result.code,null);
+  assert.equal(result.code,'P2Q_GOOGLE_OBSERVATION_UNKNOWN');assert.equal(result.requiresOwnerReview,true);if(!found)assert.equal(next.searches,12);
  }finally{f.close();}}
 });
 test('Google same-process lost ACK can GET current state while retaining UNKNOWN creation outcome',async()=>{
@@ -270,5 +270,32 @@ test('Google private root permission drift and response-parent symlink refuse be
   assert.throws(()=>store.verify(),{code:'P2Q_GOOGLE_PRIVATE_DIRECTORY_REQUIRED'});file.chmodSync(f.cases,0o700);
   file.rmdirSync(join(store.path,'responses'));const alternate=join(f.root,'alternate');file.mkdirSync(alternate,{mode:0o700});file.symlinkSync(alternate,join(store.path,'responses'));
   assert.throws(()=>store.response('project',200,Buffer.from('{}')));assert.deepEqual(file.readdirSync(alternate),[]);
+ }finally{f.close();}
+});
+test('Google missing original ACK stays review-required and cannot release the principal claim',async()=>{
+ const f=await googleFixture();try{const original=await f.api.execute(f.plan,'create',new f.api.PrivateCase(f.plan,'create'),googleModel(f).rt);
+  assert.equal(f.api.claimMayClose(original),true);file.unlinkSync(join(f.cases,f.plan.actionId,'create-ack.json'));
+  const result=await f.api.execute(f.plan,'reconcile',new f.api.PrivateCase(f.plan,'reconcile'),googleModel(f,{reconcileFound:true}).rt);publicGoogleSafe(result);
+  assert.equal(result.creationOutcome,'UNKNOWN');assert.equal(result.code,'P2Q_GOOGLE_OBSERVATION_UNKNOWN');assert.equal(result.requiresOwnerReview,true);
+  assert.equal(result.originalCreationAcknowledged,false);assert.equal(f.api.claimMayClose(result),false);
+ }finally{f.close();}
+});
+test('Google source drift during CREATE token command is refused before HTTP or attempt marking',async()=>{
+ const f=await googleFixture();try{const store=new f.api.PrivateCase(f.plan,'create'),model=googleModel(f),command=model.rt.command,verify=model.rt.verify;let drift=false;
+  model.rt.command=async(kind,expected)=>{const raw=await command(kind,expected);if(kind==='token'&&model.events.some(x=>x[0]==='http'&&x[1]==='search'))drift=true;return raw;};
+  model.rt.verify=async()=>{if(drift){const e=Error('PRIVATE_SOURCE_CANARY');e.code='P2Q_GOOGLE_SOURCE_REQUIRED';throw e;}return verify();};
+  const result=await f.api.execute(f.plan,'create',store,model.rt);publicGoogleSafe(result);assert.equal(drift,true);
+  assert.equal(result.code,'P2Q_GOOGLE_SOURCE_REQUIRED');assert.equal(result.creationPostCount,0);assert.equal(result.creationPostAttempted,false);
+  assert.equal(model.events.some(x=>x[0]==='http'&&x[1]==='create'),false);assert.equal(file.existsSync(join(store.path,'create-started.json')),true);
+ }finally{f.close();}
+});
+test('Google cleanup drift after identity read prevents SDK revoke and retains credential custody',async()=>{
+ const f=await googleFixture();try{const model=googleModel(f),verify=model.rt.verify,command=model.rt.command;let drift=false;
+  model.rt.command=async(kind,expected)=>{const raw=await command(kind,expected);
+   if(kind==='list'&&model.events.filter(x=>x[0]==='http'&&x[1]==='project').length===2)drift=true;return raw;};
+  model.rt.verify=async()=>{if(drift){const e=Error('PRIVATE_TOOLCHAIN_CANARY');e.code='P2Q_GOOGLE_TOOLCHAIN_REQUIRED';throw e;}return verify();};
+  const store=new f.api.PrivateCase(f.plan,'create'),result=await f.api.execute(f.plan,'create',store,model.rt);publicGoogleSafe(result);
+  assert.equal(drift,true);assert.equal(model.events.some(x=>x[0]==='cli'&&x[1]==='revoke'),false);
+  assert.equal(result.custodyIncomplete,true);assert.equal(result.requiresOwnerReview,true);assert.equal(f.api.claimMayClose(result),false);assert.equal(file.existsSync(join(store.path,'config')),true);
  }finally{f.close();}
 });

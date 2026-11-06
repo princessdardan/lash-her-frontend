@@ -202,15 +202,15 @@ function iam(value,expected){
 }
 function safeCode(e){return e&&typeof e.code==='string'&&e.code.startsWith('P2Q_GOOGLE_')&&codes.has(e.code.slice(11))?e.code:'P2Q_GOOGLE_OBSERVATION_UNKNOWN';}
 function receipt(plan,status,details){return Object.freeze({version:1,actionId:plan.actionId,projectId:plan.project.projectId,status,...flags,...details});}
-function productionRuntime(plan,store){let baseline;return {
-  now:()=>new Date().toISOString(),wait:()=>new Promise(r=>setTimeout(r,2000)),
-  verify:()=>{store.verify();principal(plan);verifyToolchain(plan);const current=sourceObservation(plan);if(baseline)demand(isDeepStrictEqual(current,baseline),'SOURCE_REQUIRED');else baseline=current;return current;},
-  command:(kind,expected)=>cli(plan,store,kind,expected),http:(kind,name,token,body)=>request(plan,kind,name,token,body),
+function productionRuntime(plan,store){let baseline;
+  const verify=()=>{store.verify();principal(plan);verifyToolchain(plan);const current=sourceObservation(plan);if(baseline)demand(isDeepStrictEqual(current,baseline),'SOURCE_REQUIRED');else baseline=current;return current;};
+  return {now:()=>new Date().toISOString(),wait:()=>new Promise(r=>setTimeout(r,2000)),verify,
+  command:(kind,expected)=>{verify();return cli(plan,store,kind,expected);},http:(kind,name,token,body)=>request(plan,kind,name,token,body),
   principal:()=>principal(plan),
 };}
 async function cleanup(store,rt,expected,loginAttempted){
-  if(!loginAttempted)return true;try{await rt.verify();assertPrincipal(await rt.command('list',expected),expected);await rt.command('revoke',expected);
-    assertPrincipal(await rt.command('list',expected),expected,true);await rt.verify();const config=join(store.path,'config');directory(config,true);
+  if(!loginAttempted)return true;try{await rt.verify();assertPrincipal(await rt.command('list',expected),expected);await rt.verify();await rt.command('revoke',expected);
+    await rt.verify();assertPrincipal(await rt.command('list',expected),expected,true);await rt.verify();const config=join(store.path,'config');directory(config,true);
     function inspect(path){for(const name of fs.readdirSync(path)){const p=join(path,name),s=fs.lstatSync(p);demand(!s.isSymbolicLink()&&s.uid===OWNER_UID,'PRIVATE_FILE_REQUIRED');if(s.isDirectory())inspect(p);else demand(s.isFile(),'PRIVATE_FILE_REQUIRED');}}
     inspect(config);fs.rmSync(config,{recursive:true});syncDirectory(store.path);return true;
   }catch{return false;}
@@ -220,7 +220,8 @@ async function execute(plan,mode,store,rt){
   let requestCount=0,creationPosts=0,readPosts=0,originalIntent,operationName;
   async function call(kind,name,body){await rt.verify();assertPrincipal(await rt.command('list',expected),expected);
     const raw=await rt.command('token',expected);let token=new TextDecoder('utf-8',{fatal:true}).decode(raw).trim();demand(/^[A-Za-z0-9._~+\/-]{16,8192}$/u.test(token),'AUTH_TOKEN_REQUIRED');
-    assertPrincipal(await rt.command('list',expected),expected);if(kind==='create'){postAttempted=true;creationPosts++;}if(kind==='iam')readPosts++;requestCount++;
+    assertPrincipal(await rt.command('list',expected),expected);await rt.verify();
+    if(kind==='create'){postAttempted=true;creationPosts++;}if(kind==='iam')readPosts++;requestCount++;
     let response;try{response=await rt.http(kind,name,token,body);}finally{token=undefined;}
     // Raw bytes and their status are durable before any JSON is interpreted.
     const value=store.response(kind,response.status,response.raw);await rt.verify();
@@ -257,6 +258,7 @@ async function execute(plan,mode,store,rt){
     const last=(await call('project',name)).value;project(last,plan,originalIntent.startedAt,rt.now(),name);
     demand(isDeepStrictEqual(current,last),'PROJECT_REQUIRED');
     status=acknowledged?'P2Q_GOOGLE_ORIGINAL_CREATE_OBSERVED':'P2Q_GOOGLE_RECONCILED_CURRENT_NOT_ORIGINAL_CREATION';
+    if(!acknowledged&&code===null)code='P2Q_GOOGLE_OBSERVATION_UNKNOWN';
   }catch(e){code=safeCode(e);}
   const cleaned=await cleanup(store,rt,expected,loginAttempted);
   const result=receipt(plan,status,{code,creationPostAttempted:postAttempted,creationPostCount:creationPosts,readPostCount:readPosts,requestCount,
@@ -274,6 +276,7 @@ function principalClaim(plan,expected){
   // holder needs a separate reviewed recovery boundary, which is absent here.
   return ()=>{demand(readFile(path,MAX_RAW,true).equals(bytes),'PRINCIPAL_CLAIM_REQUIRES_REVIEW');fs.unlinkSync(path);syncDirectory(CASE_ROOT);};
 }
+function claimMayClose(result){return result.code===null&&result.originalCreationAcknowledged===true&&result.requiresOwnerReview===false&&result.credentialCleanupVerified===true&&result.custodyIncomplete===false;}
 async function run(actionId,mode){
   // Compiled policy is empty. No file, environment, auth, child or network read
   // may occur before exact source-registry selection.
@@ -283,7 +286,7 @@ async function run(actionId,mode){
   if(mode==='create')demand(!fs.existsSync(join(CASE_ROOT,plan.actionId)),'CASE_ALREADY_BURNED');
   const releaseClaim=principalClaim(plan,principal(plan));let store,result;
   try{store=new PrivateCase(plan,mode);result=await execute(plan,mode,store,productionRuntime(plan,store));
-    if(result.code===null&&result.credentialCleanupVerified){releaseClaim();return {...result,principalSerialization:'exclusive-private-claim',holderRecoveryRequired:false};}
+    if(claimMayClose(result)){releaseClaim();return {...result,principalSerialization:'exclusive-private-claim',holderRecoveryRequired:false};}
   }catch(e){if(!store)throw e;result=receipt(plan,'P2Q_GOOGLE_REQUIRES_REVIEW',{code:safeCode(e),requiresOwnerReview:true,custodyIncomplete:true});}
   return {...result,principalSerialization:'exclusive-private-claim',holderRecoveryRequired:true};
 }
