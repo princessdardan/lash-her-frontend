@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "reviewedCommit": "2abdfe451453eda6f761894115fd6f4e3011a784",
+  "sourceHashCommit": "2abdfe451453eda6f761894115fd6f4e3011a784",
+  "status": "SOURCE_PREPARATION_CLEARED_CORRECTED_LINUX_CI_REQUIRED",
+  "findings": [],
+  "source": {
+    "ops/platform/test-p2-recovery-owned.mjs": {
+      "sha256": "01e1b04240cae81862de3e1abb40539c192c5b66bbf756ac4955e761f4e7f35c",
+      "matchesManifest": true,
+      "currentEqualsFrozen": true
+    },
+    "ops/platform/test-p2-recovery-owned.py": {
+      "sha256": "fd1b85bef4527dd9b3e71776fb217e61c058d772e00b40855527783e2cd1ffd2",
+      "matchesManifest": true,
+      "currentEqualsFrozen": true
+    },
+    "ops/platform/host/p2_recovery_owned_diagnostics_test.py": {
+      "sha256": "d46b1d71383dbb9219a3c82bcc8c2004177ce02929f0f59c27625cd9146124ab",
+      "matchesManifest": true,
+      "currentEqualsFrozen": true
+    }
+  },
+  "independentFocusedTests": {
+    "passed": 17,
+    "failed": 0,
+    "skipped": 0,
+    "actualOwnedLoopback": true,
+    "fullPgReviewerRerun": false
+  },
+  "retainedEvidence": {
+    "artifactHashesMatched": 34,
+    "totalArtifactHashes": 35,
+    "movingDocManifestMismatch": [
+      "README.md"
+    ],
+    "ownerNotifiedToRefreshDocs": true,
+    "byteExactGit47AndB44RouteVerified": true,
+    "originalIdleElapsedSeconds": 30.030819417,
+    "originalBackendGone": true,
+    "fixedSameBackendTlsJournal": {
+      "sameBackend": true,
+      "journalUnchanged": true,
+      "tlsAuthorized": true
+    },
+    "actualEofClosedBothCases": true,
+    "fullSlowAndDefaultChecks": 19,
+    "literalIdleProofSeconds": 31,
+    "defaultReceiptByteEqual0c": true,
+    "defaultIdleFieldAbsent": true,
+    "lateActualControls": 2,
+    "slowAndDefaultStderrBytes": [
+      0,
+      0
+    ],
+    "maximumEnvelopeBytes": 7808,
+    "fixedLimit": 8192,
+    "accepted": 9,
+    "retained": 2,
+    "truncated": 7,
+    "finalUncaughtKept": true,
+    "conservativeLastRecordBound": 6581
+  },
+  "sourceAssessment": [
+    "Only empty readiness poll changes return to continue; real EOF/OSError still exits and closes backend in finally. Owned loopback idle/data/EOF regression passes.",
+    "Exact new owned argv inserts literal31s idle, no caller duration/URL/transport/command hooks.",
+    "Default19 assertions, closed child environment, TLS/physical/API/auth guards unchanged; no exception listener swallows fatal errors.",
+    "Fixed8192 output bound preserved; old bridge/Node records trimmed while lastfinal kept, retained/truncated recomputed after byte trimming; closed projection values only."
+  ],
+  "limits": [
+    "Actualownedrelaydefect reproduced; historicalLinuxCI cause stillinference until correctedexactCI.",
+    "OwneractualPG18 receipts inspected and hashesverified; no reviewerfullPG rerun.",
+    "No production transports changed, no liveprovider/managedDB/SSH/cloud/staging/secretstore calls; no repository edits."
+  ],
+  "releaseAccepted": false,
+  "g2Accepted": false
+}

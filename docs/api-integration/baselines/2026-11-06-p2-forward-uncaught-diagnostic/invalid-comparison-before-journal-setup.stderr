@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/private/tmp/p2-forward-47-relay-comparison.py", line 7, in <module>
+    Fixture.setUpClass();before=Fixture.sql('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at,id')
+                                ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-forward-node-framing/ops/platform/test-p2-recovery-owned.py", line 346, in sql
+    if result.returncode:raise ValueError('OWNED_P2_RECOVERY_SQL_FIXTURE_FAILED')
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: OWNED_P2_RECOVERY_SQL_FIXTURE_FAILED

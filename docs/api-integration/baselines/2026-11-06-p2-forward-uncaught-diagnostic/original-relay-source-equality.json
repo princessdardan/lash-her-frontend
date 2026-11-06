@@ -1,0 +1,1 @@
+{"status": "OWNED_ORIGINAL_RELAY_SOURCE_EQUAL", "originalCommit": "47d5b6a19c8f2d7f14335ce0a5c6d5a49100395b", "slowProofCommit": "b44e4714597e68ca51b9d7d0997d1d843845d2b0", "routeSha256": "0ed2106d71ad6f4966f7458177dc2fc54fad8b1638d4635e61e4623f1c84f03a", "byteEqual": true, "idleTimeoutSeconds": 30, "fixtureOnly": true}

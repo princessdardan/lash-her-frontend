@@ -8,17 +8,43 @@
     "ops/platform/host/p2_recovery_owned_diagnostics_test.py": "1a459f281bffbbe6b452ed81cd0234b064d35639a03b377795ea06a15be218b2"
   },
   "files": {
-    "README.md": "914fb0cdee1829dc3a681037c1bb1ecbbee7e774ce08e74ba5c743f91711a67a",
+    "README.md": "11673b010510c1cca36e3255d60865ad90ad34fa3a60f9f6d3169b0cf4ff74cf",
     "actual-late-session-envelopes.json": "d546060d6c98f0537b918fe9a7beda2dbf129573553d82103bfed6fa61a0d918",
+    "conservative-envelope-bound.json": "97f1e11c6401f9732c84d5d61f0e66f8c2f59eb092dc18ebd4f46da4803bbac7",
+    "final-actual-late-session-envelopes.json": "d546060d6c98f0537b918fe9a7beda2dbf129573553d82103bfed6fa61a0d918",
+    "final-lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "final-owned-pg18-forward.json": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
+    "final-owned-pg18-forward.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "final-unit15.log": "5af8236f701011a844eb371fd57b0f7b86887729e72d8181088beea318bfe774",
+    "fixed-relay-default-forward.json": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
+    "fixed-relay-default-forward.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "fixed-relay-full-slow-late.json": "0595da4fb7b42ffc2354d79b5bad29485bef42cebfe692ad94c7c38a612d7fbe",
+    "fixed-relay-full-slow.json": "cd31743ac381d610fc0a731defc5f3beb448d95cabe8a0a12efeec02e01e2efe",
+    "fixed-relay-full-slow.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "flat-composed-envelopes.json": "fd6fbc2fb793dd24ddef0a66950e209cbe5af6921827097f9062d59eba3ac226",
     "flat-composed-envelopes.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "independent-relay-budget-final-review.json": "df522e52c206fc0c4f9aaf7c576402c5d6159f9225242af9661ae98c6900a13c",
+    "independent-review.json": "a242a84eb13f36dfe3c76ebc6f0f933878eff354f968fd44192bf3ea099bf00a",
+    "invalid-comparison-before-journal-setup.stderr": "67214970b44406b9643872b693bb9602a4d892fd1cd4a9598488b5a4904fafee",
     "lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "maximum-shape-envelope.json": "167365a9f647d5006b86e059bb92cdd91c3a837d70e72d723bf56a680d513ba8",
+    "old-relay-full-slow.stderr": "3f0ddf2c5ad108ac2755a38c6759c737dc5f1fa1ac90f70e24f5e991baf66f95",
+    "old-relay-full-slow.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "original-47-ci-artifact.zip": "d5c8539e4f4abbd2a33c616e65cf7791dc6cf872f5a33a9f1c2982d2591cb0a2",
     "original-47-forward-failure.json": "2ef478f505938760d17478e233596884aaee852f1a3d25732602eacee55b9571",
     "original-47-forward-sanitized.stderr": "5eb33e0b19c6bda570e7125760c6efb44f3d95333a7be995501d9113b2561c30",
     "original-47-linux-platform-pg18.json": "41bcf78e731dff103790ef79aaaf8a12348470da86d088222fabb5d2aefaae9b",
+    "original-fixed-relay-comparison.json": "91234872c3030c29096be82e679b62e4c1026d8b80c907533a32f3db08197c6c",
+    "original-fixed-relay-comparison.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "original-relay-actual-pg18-idle.json": "906e7eb2fdaf0543119df2720c18cbfba419f18495c27aa0d6334e51c8a25577",
+    "original-relay-actual-pg18-idle.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "original-relay-source-equality.json": "869b3133470ebe3bfc55d2badb4bdc451e4793a4f70b2771291bece7fc4daa9c",
+    "owned-envelope-bound.py": "ac693aa77c5cd05e5c0439f6676ea7f0f348ed725c4ce000ccf15d1ee904f92c",
     "owned-pg18-forward.json": "09fa4a2ed1f18fa9d66e79ea008a144ebff1943343c4ee3ea7d8913a8c8be423",
     "owned-pg18-forward.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "owned-relay-comparison.py": "9907b9a2f8623d2e250c5e2cf924bf430e714e3b5a0cd37d7953563a72444c1f",
+    "relay-lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "relay-unit17.log": "da658303d41500234c58490772cd29a5ba411edb373584c46397cad83013fd1d",
     "unit.log": "86f606660ae3670aab29c5e28c3670786384b15a08025e1939eb01588e8402fa"
   },
   "qualification": {
@@ -29,5 +55,44 @@
     "fixtureOnly": true,
     "actualLinuxCauseResolved": false,
     "liveProviders": false
-  }
+  },
+  "finalSourceCommit": "2abdfe451453eda6f761894115fd6f4e3011a784",
+  "finalOwnedSources": {
+    "ops/platform/test-p2-recovery-owned.mjs": "01e1b04240cae81862de3e1abb40539c192c5b66bbf756ac4955e761f4e7f35c",
+    "ops/platform/test-p2-recovery-owned.py": "fd1b85bef4527dd9b3e71776fb217e61c058d772e00b40855527783e2cd1ffd2",
+    "ops/platform/host/p2_recovery_owned_diagnostics_test.py": "d46b1d71383dbb9219a3c82bcc8c2004177ce02929f0f59c27625cd9146124ab"
+  },
+  "finalQualification": {
+    "focusedTests": 17,
+    "normalForwardChecks": 19,
+    "fixedSlowForwardChecks": 19,
+    "fixedIdleSeconds": 31,
+    "actualOldAndNewRelayComparisonSeconds": 32,
+    "lateActualSessionControls": 2,
+    "defaultReceiptBytesUnchanged": true,
+    "outerMaxShapeBytes": 7808,
+    "conservativeSingleFinalRecordBytes": 6581,
+    "fixedEnvelopeLimitBytes": 8192,
+    "fixtureOnly": true,
+    "actualLinuxCauseResolved": false,
+    "liveProviders": false,
+    "independentFinalSourceCleared": true
+  },
+  "intermediateSourceCommit": "889a774a7b8cf5954f9a46bc3d9b6eed717f3a49",
+  "intermediateOwnedSources": {
+    "ops/platform/test-p2-recovery-owned.mjs": "cc1530562316b8aaa46004dbe11fb89e20b8b1a211863217d44535c889a66cc9",
+    "ops/platform/test-p2-recovery-owned.py": "f4e14505832eee431ed5639a053fc452f5e55178ac1740cb35aad8ec7e7b4739",
+    "ops/platform/host/p2_recovery_owned_diagnostics_test.py": "0374531bf53eee89b29fa386fdf2d363bdc1a37c13c7016c9c7cf9922b32c66f"
+  },
+  "intermediateQualification": {
+    "focusedTests": 15,
+    "normalForwardChecks": 19,
+    "lateActualSessionControls": 2,
+    "flatComposedControls": 6,
+    "fixtureOnly": true,
+    "actualLinuxCauseResolved": false,
+    "liveProviders": false,
+    "independentFinalSourceCleared": true
+  },
+  "finalReviewReportSha256": "df522e52c206fc0c4f9aaf7c576402c5d6159f9225242af9661ae98c6900a13c"
 }
