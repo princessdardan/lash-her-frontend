@@ -448,6 +448,10 @@ def _join(family, provider, references, rows):
                     reasons.append("database-provider-outcome-mismatch")
                 if group == "transactions" and row.get("provider_status") != provider.get("status"):
                     reasons.append("database-provider-outcome-mismatch")
+                if group in ("noShowRecords", "noShowAttempts"):
+                    outcomes = {"charged": {"COMPLETED"}, "charge_failed": {"FAILED", "CANCELED"}}
+                    if provider.get("status") not in outcomes.get(row.get("status"), set()):
+                        reasons.append("database-provider-outcome-mismatch")
             elif group == "refunds":
                 statuses = {"succeeded": ("COMPLETED",), "failed": ("FAILED", "REJECTED")}
                 if provider.get("status") not in statuses.get(row.get("status"), ()):

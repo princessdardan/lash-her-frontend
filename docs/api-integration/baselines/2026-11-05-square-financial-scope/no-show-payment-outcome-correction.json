@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "status": "OWNED_SQUARE_NO_SHOW_PAYMENT_OUTCOME_PASS",
+  "tests": {
+    "total": 29,
+    "failures": 0,
+    "skipped": 0,
+    "ownedHttps": true,
+    "isolatedPostgresql": 16,
+    "repositoryMigrations": 83
+  },
+  "positiveCases": [
+    "charged + local COMPLETED + actual payment COMPLETED/invoice PAID/order COMPLETED",
+    "charged + local PAID + actual payment COMPLETED/invoice PAID/order COMPLETED"
+  ],
+  "negativeCases": [
+    "charged no-show record/attempt + actual payment FAILED",
+    "charged no-show record/attempt + actual payment CANCELED"
+  ],
+  "sourceSha256": {
+    "ops/platform/host/frontend_square_financial_scope.py": "03c3b579029d037796bf3baf4bc2f6564059a14b61be030731cab4c99205c049",
+    "ops/platform/host/frontend_square_financial_scope_test.py": "6354d3896fd54b1c409b9a8e7ad3fc73bdb649b505cf09eeab6104639b5258d6"
+  },
+  "liveQualification": false
+}

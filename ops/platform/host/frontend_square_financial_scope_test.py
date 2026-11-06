@@ -544,6 +544,13 @@ class HttpsScopeTests(unittest.TestCase):
                 result = component.observe_scoped_effects(self.client, self.reviewed, self.rows, self.verified)
                 self.assertEqual((result["activeExecutions"], result["uncertainEffects"]), (0, 0), result)
                 self.assertTrue(all(effect["immutableMatch"] for effect in result["effects"]))
+                for denied_status in ("FAILED", "CANCELED"):
+                    self.memory.provider["payments"]["owned-payment"]["status"] = denied_status
+                    refused = component.observe_scoped_effects(self.client, self.reviewed, self.rows, self.verified)
+                    payment = next(effect for effect in refused["effects"] if effect["familyId"] == "square.payments")
+                    self.assertIn("database-provider-outcome-mismatch", payment["unresolvedReasons"])
+                    self.assertGreater(refused["uncertainEffects"], 0)
+                self.memory.provider["payments"]["owned-payment"]["status"] = "COMPLETED"
 
     def test_stored_legacy_and_no_show_invoice_states_are_compared_with_the_actual_provider(self):
         self.invoice_scope()
