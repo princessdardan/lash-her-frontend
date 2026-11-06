@@ -1,0 +1,151 @@
+{
+  "acceptancePredicateUnchanged": true,
+  "baselineSourcePRs": {
+    "community": {
+      "localVerifyTests": 364,
+      "nativeGuardTests": 26,
+      "nativeInputsLockSha256": "dfc40ded4946d22ee705f8d68f1131f170da4a144963ac9beae1401220d2122a",
+      "openapiSha256": "0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1",
+      "pr": "https://github.com/princessdardan/lash-her-community-api/pull/5",
+      "simulatedDiagnosticCases": 5,
+      "source": "0c98ef27a962f0e75812c63ec716ab53981705a8"
+    },
+    "course": {
+      "localVerifyTests": 697,
+      "openapiSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "pr": "https://github.com/princessdardan/lash-her-course-api/pull/6",
+      "source": "56d783912a90a15cf4646b56832cd25476561119"
+    }
+  },
+  "capabilitiesOrSecurityOptionsChanged": false,
+  "nativeByteIdentity": {
+    "path": "/private/tmp/phase2-api-merged-native-byte-identity.json",
+    "sha256": "8476d33836dfe2b43d23bda59c7dfbc040e22fb2412cbcaefdb5b4b99510f2b5"
+  },
+  "observedSignalDelivery": "Python SIGABRT control in Ubuntu26 engine-driver reference failed with PermissionError errno13; unpatched reproducer reportedSIGSEGV (-11) after expected assertion; initial Buildx build reportedSIGABRT (-6).",
+  "preciseKernelOrSecurityRuleEstablished": false,
+  "sourceIdentity": {
+    "path": "/private/tmp/phase2-api-postmerge-source-and-ci.json",
+    "sha256": "f4476369625d1673f3e5c376b35b7d8183b1ceba4c1460f89d3173bd0349c795"
+  },
+  "status": "NATIVE_UNSUPPORTED_HOST_INVESTIGATION_RECORDED",
+  "supportedNativeHost": "ubuntu-24.04 / linux-amd64",
+  "unsupportedRuns": [
+    {
+      "log": "/private/tmp/phase2-community-main-42130005740-containers.log",
+      "logSha256": "66c0d8a799936058917e9f272c56103c7c8783470888b1e86157b24151ecf555",
+      "run": 42130005740,
+      "source": "a454702be10362a4054f60579e92aa3b4641ff51"
+    },
+    {
+      "artifacts": [
+        {
+          "digest": "sha256:3cc84669cfb94da50157babd153bd0fe07a2e9973833af421caf2dead56dde7e",
+          "id": 13463966155,
+          "name": "community-native-runtime-qualification",
+          "qualification": "FAILED_RUN_EVIDENCE_ONLY"
+        },
+        {
+          "digest": "sha256:b7fddb9a2dd07deb3aa53d6c8e08b69fb9945554d50a81b80d0f125b9c3890af",
+          "id": 13463187672,
+          "name": "operator-schema-postgres18",
+          "qualification": "DATABASE_REHEARSAL_ONLY"
+        }
+      ],
+      "events": [
+        {
+          "abortControlReturncode": null,
+          "coreLimit": [
+            0,
+            0
+          ],
+          "event": "ZLIB_UNPATCHED_REGRESSION_DIAGNOSTIC",
+          "expectedAssertionPresent": true,
+          "expectedSigabrtReturncode": -6,
+          "kernelRelease": "7.0.0-1019-azure",
+          "machine": "x86_64",
+          "platform": "linux",
+          "pythonVersion": "3.13.5",
+          "returncode": -6,
+          "signalNumber": 6
+        },
+        {
+          "abortControlReturncode": 1,
+          "coreLimit": [
+            0,
+            0
+          ],
+          "event": "ZLIB_UNPATCHED_REGRESSION_DIAGNOSTIC",
+          "expectedAssertionPresent": true,
+          "expectedSigabrtReturncode": -6,
+          "kernelRelease": "7.0.0-1019-azure",
+          "machine": "x86_64",
+          "platform": "linux",
+          "pythonVersion": "3.13.5",
+          "returncode": -11,
+          "signalNumber": 11
+        }
+      ],
+      "log": "/private/tmp/phase2-community-native-diagnostic-42131327489.log",
+      "logSha256": "a1267d970f90f21d55070825e61bf9340fb1ac135e61b2b81c751960941db94c",
+      "run": 42131327489,
+      "source": "fe9015bacfa839499a1b705dbcc69921c8bb7b30"
+    },
+    {
+      "artifacts": [
+        {
+          "digest": "sha256:f271816e3a1cca3662ce1d30e99b535b3f05d5ab01590fffb9ca0ce1c90eb16f",
+          "id": 13464840303,
+          "name": "community-native-runtime-qualification",
+          "qualification": "FAILED_RUN_EVIDENCE_ONLY"
+        },
+        {
+          "digest": "sha256:502705894dd0192bb2bf5e29b8e68ee7694bc01ea7b04dbb80c7a126bc8c159f",
+          "id": 13464730287,
+          "name": "operator-schema-postgres18",
+          "qualification": "DATABASE_REHEARSAL_ONLY"
+        }
+      ],
+      "events": [
+        {
+          "abortControlReturncode": null,
+          "abortControlStderr": null,
+          "coreLimit": [
+            0,
+            0
+          ],
+          "event": "ZLIB_UNPATCHED_REGRESSION_DIAGNOSTIC",
+          "expectedAssertionPresent": true,
+          "expectedSigabrtReturncode": -6,
+          "kernelRelease": "7.0.0-1019-azure",
+          "machine": "x86_64",
+          "platform": "linux",
+          "pythonVersion": "3.13.5",
+          "returncode": -6,
+          "signalNumber": 6
+        },
+        {
+          "abortControlReturncode": 1,
+          "abortControlStderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import signal; signal.raise_signal(signal.SIGABRT)\n                   ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^\nPermissionError: [Errno 13] Permission denied\n",
+          "coreLimit": [
+            0,
+            0
+          ],
+          "event": "ZLIB_UNPATCHED_REGRESSION_DIAGNOSTIC",
+          "expectedAssertionPresent": true,
+          "expectedSigabrtReturncode": -6,
+          "kernelRelease": "7.0.0-1019-azure",
+          "machine": "x86_64",
+          "platform": "linux",
+          "pythonVersion": "3.13.5",
+          "returncode": -11,
+          "signalNumber": 11
+        }
+      ],
+      "log": "/private/tmp/phase2-community-native-control-stderr-42132072511.log",
+      "logSha256": "54a68fcab9308ba5273452e71ad30b996911380980780b0f0861341b11aefa86",
+      "run": 42132072511,
+      "source": "f9dce46548f6c31160bc70c7abddf52c6e7164d8"
+    }
+  ]
+}

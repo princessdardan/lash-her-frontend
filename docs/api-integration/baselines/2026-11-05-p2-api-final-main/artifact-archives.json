@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "artifacts": [
+    {
+      "file": "community-native-13464594219.zip",
+      "sha256": "c1ddb42b091f6b58961d05f0685a37052e05ca780dc67dfe65661efec3b6e15f",
+      "bytes": 242126,
+      "originalRetainedPrivately": true,
+      "entries": [
+        "community-api-raw-scan.json",
+        "community-api-runtime/fixed.vex.json",
+        "community-api-runtime/sbom.json",
+        "community-api-runtime/scan.json",
+        "community-api-runtime/verification.json",
+        "community-worker-raw-scan.json",
+        "community-worker-runtime/fixed.vex.json",
+        "community-worker-runtime/sbom.json",
+        "community-worker-runtime/scan.json",
+        "community-worker-runtime/verification.json",
+        "community-migration-raw-scan.json",
+        "community-migration-runtime/fixed.vex.json",
+        "community-migration-runtime/sbom.json",
+        "community-migration-runtime/scan.json",
+        "community-migration-runtime/verification.json"
+      ]
+    },
+    {
+      "file": "community-postgres18-13464084689.zip",
+      "sha256": "eb08af65e642ba58111a56cdf5ccf96d5f2e256b99527f358353ab2c6fd24b7f",
+      "bytes": 5898,
+      "originalRetainedPrivately": true,
+      "entries": [
+        "operator-schema-postgres18.json"
+      ]
+    },
+    {
+      "file": "course-native-13463814852.zip",
+      "sha256": "37cfd9e31b06498d2384c9bf6595e0771f2c604ecb6c8079d6a1714c4b8a50f1",
+      "bytes": 167859,
+      "originalRetainedPrivately": true,
+      "entries": [
+        "course-api-raw-scan.json",
+        "course-api-runtime/fixed.vex.json",
+        "course-api-runtime/sbom.json",
+        "course-api-runtime/scan.json",
+        "course-api-runtime/verification.json",
+        "course-migration-raw-scan.json",
+        "course-migration-runtime/fixed.vex.json",
+        "course-migration-runtime/sbom.json",
+        "course-migration-runtime/scan.json",
+        "course-migration-runtime/verification.json"
+      ]
+    },
+    {
+      "file": "course-postgres18-13463914533.zip",
+      "sha256": "40245fb79a5213a526d1685b4b503722987f78579e9e5e776205a197d45e3112",
+      "bytes": 13934,
+      "originalRetainedPrivately": true,
+      "entries": [
+        "operator-schema-postgres18.json"
+      ]
+    }
+  ],
+  "schemaDefinitionsPublished": false,
+  "privateArchiveLocation": ".tmp/phase2-api-main-20261105"
+}

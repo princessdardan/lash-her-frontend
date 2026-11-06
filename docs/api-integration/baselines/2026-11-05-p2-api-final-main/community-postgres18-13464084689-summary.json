@@ -1,0 +1,30 @@
+{
+  "status": "OPERATOR_MIGRATION_OWNED_POSTGRES_PASS",
+  "service": "lash-her-community-api",
+  "postgresMajor": 18,
+  "migrations": 11,
+  "checks": [
+    "verified-client-tls-backend-plaintext",
+    "wrong-peer-hostname-refused",
+    "forward-apply",
+    "data-bearing-upgrade",
+    "lock-contention",
+    "already-current",
+    "wrong-ca",
+    "wrong-role",
+    "phase2-contract-binding",
+    "historical-v1-contract-binding",
+    "changed-lineage",
+    "schema-drift",
+    "runtime-ddl-journal-isolation",
+    "production-artifact-promotion"
+  ],
+  "providerTouched": false,
+  "schemaBaseline": {
+    "schemaVersion": 1,
+    "serverMajor": 18,
+    "artifactSha256": "58d3f193626720d700da9b07babd32792731e5ed670789ea043a2d094050e851",
+    "catalogSha256": "ec669e4538f060a3241fb60feb58cac8e2205b6570281740fc09d9ebed62e232"
+  },
+  "schemaDefinitionsOmitted": true
+}
