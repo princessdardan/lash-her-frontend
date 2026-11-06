@@ -1,0 +1,824 @@
+{
+  "status": "FRONTEND_ROLES_OWNED_PASS",
+  "fixtureOnly": true,
+  "postgresMajor": 16,
+  "actualTls": true,
+  "actualScram": true,
+  "actualFlockContention": true,
+  "actualPhysicalLockContention": true,
+  "executedChecks": 22,
+  "skipped": 0,
+  "checks": [
+    "actual-environment-flock-contention-refuses-second-parent",
+    "actual-physical-lock-contention-refuses-before-role-mutation",
+    "actual-wrong-target-refused",
+    "actual-wrong-session-role-refused",
+    "unrelated-existing-name-is-not-coerced",
+    "actual-role-creation-rollback-retains-intent-and-private-credential",
+    "failed-action-is-never-replayed",
+    "missing-private-credential-receipt-refuses-before-role-sql",
+    "real-postgres-assigned-oids-and-private-credential-retained",
+    "public-output-does-not-serialize-private-credentials",
+    "actual-runtime-public-crud-and-sequence-usage",
+    "actual-runtime-persistent-ddl-journal-and-membership-denied",
+    "owner-can-create-schema-only-through-operator-set-role",
+    "actual-future-table-and-sequence-default-grants",
+    "exact-approved-oid-grant-and-private-credential-reuse",
+    "wrong-reuse-oid-refused",
+    "existing-role-extra-grants-refused-without-coercion",
+    "old-role-oid-flags-access-and-actual-data-journal-preserved",
+    "no-admission-ledger-application-migration-or-feature-activation",
+    "actual-commit-then-lost-ack-retains-unknown-and-private-recovery-material",
+    "lost-commit-acknowledgment-is-never-replayed",
+    "owned-server-logs-and-public-receipts-contain-no-password-or-scram-verifier"
+  ],
+  "outcomes": [
+    {
+      "version": 1,
+      "environment": "staging",
+      "actionId": "owned-role-5-rollback",
+      "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "candidateSha256": "75b662e6c305533291722bba6e6cf3f760c9620780fcfc284a56fa061c394160",
+      "jobSha256": "432f090efff1bd5c63aec9ffb5bc631725063442ac05a6609c4cf0a0f5765849",
+      "targetSha256": "16f54f3934076a25a819a80063570dd4ea37cd30cb36af2f09a77d31330999bc",
+      "phase2ContractManifestSha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "sqlArtifactSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "migrationImageDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "recoveryRef": "owned/recovery-1",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 59914,
+        "database": "frontend_role_owned",
+        "user": "frontend_operator",
+        "runtimeRole": "lash_her_frontend_staging_runtime_p2",
+        "serverMajor": 16
+      },
+      "desiredRoles": {
+        "owner": "lash_her_frontend_staging_admission_owner_p2",
+        "runtime": "lash_her_frontend_staging_runtime_p2"
+      },
+      "producerSha256": [
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      ],
+      "rolePolicy": "p2-staging-noinherit-public-crud-v1",
+      "roleSpecification": {
+        "owner": {
+          "login": false,
+          "inherit": false,
+          "superuser": false,
+          "createdb": false,
+          "createrole": false,
+          "replication": false,
+          "bypassrls": false,
+          "database": [
+            "CREATE"
+          ],
+          "persistentObjectOwnershipBeforeBootstrap": false,
+          "operatorSetRole": true
+        },
+        "runtime": {
+          "login": true,
+          "inherit": false,
+          "superuser": false,
+          "createdb": false,
+          "createrole": false,
+          "replication": false,
+          "bypassrls": false,
+          "database": [
+            "CONNECT"
+          ],
+          "publicSchema": [
+            "USAGE"
+          ],
+          "publicTables": [
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE"
+          ],
+          "publicSequences": [
+            "USAGE",
+            "SELECT"
+          ],
+          "futurePublicObjects": "same-table-and-sequence-grants-for-migration-operator",
+          "outboundMemberships": false,
+          "persistentDDL": false,
+          "journalAccess": false
+        },
+        "inheritedPublicTemporaryPrivilege": "observe-without-changing",
+        "automaticCreatorAdminMembership": "operator-inbound-only-no-set-no-inherit"
+      },
+      "trafficAuthorized": false,
+      "migrationAuthorized": false,
+      "planSha256": "2ea8e0dac8a91f20b79036a155dc6835e31ab4f6da5c275f4e82d9d04fb785d8",
+      "admissionChanged": false,
+      "featuresEnabled": false,
+      "providerTouched": false,
+      "status": "FAILED_REQUIRES_REVIEW",
+      "phase": "role-transaction",
+      "sqlOutcome": "rolled-back",
+      "roleSqlAttempted": true,
+      "automaticReplayAllowed": false
+    },
+    {
+      "version": 1,
+      "environment": "staging",
+      "actionId": "owned-role-6-missing-private",
+      "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "candidateSha256": "bf1881b49c3348f3c2ce62e0f96e6991623490de36632b542b712bd4e6f9a278",
+      "jobSha256": "d60c8fb6e0dbc4d82efd0d1b35a1286b477badf2d9f62c278e6688b43ba68baa",
+      "targetSha256": "16f54f3934076a25a819a80063570dd4ea37cd30cb36af2f09a77d31330999bc",
+      "phase2ContractManifestSha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "sqlArtifactSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "migrationImageDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "recoveryRef": "owned/recovery-1",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 59914,
+        "database": "frontend_role_owned",
+        "user": "frontend_operator",
+        "runtimeRole": "lash_her_frontend_staging_runtime_p2",
+        "serverMajor": 16
+      },
+      "desiredRoles": {
+        "owner": "lash_her_frontend_staging_admission_owner_p2",
+        "runtime": "lash_her_frontend_staging_runtime_p2"
+      },
+      "producerSha256": [
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      ],
+      "rolePolicy": "p2-staging-noinherit-public-crud-v1",
+      "roleSpecification": {
+        "owner": {
+          "login": false,
+          "inherit": false,
+          "superuser": false,
+          "createdb": false,
+          "createrole": false,
+          "replication": false,
+          "bypassrls": false,
+          "database": [
+            "CREATE"
+          ],
+          "persistentObjectOwnershipBeforeBootstrap": false,
+          "operatorSetRole": true
+        },
+        "runtime": {
+          "login": true,
+          "inherit": false,
+          "superuser": false,
+          "createdb": false,
+          "createrole": false,
+          "replication": false,
+          "bypassrls": false,
+          "database": [
+            "CONNECT"
+          ],
+          "publicSchema": [
+            "USAGE"
+          ],
+          "publicTables": [
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE"
+          ],
+          "publicSequences": [
+            "USAGE",
+            "SELECT"
+          ],
+          "futurePublicObjects": "same-table-and-sequence-grants-for-migration-operator",
+          "outboundMemberships": false,
+          "persistentDDL": false,
+          "journalAccess": false
+        },
+        "inheritedPublicTemporaryPrivilege": "observe-without-changing",
+        "automaticCreatorAdminMembership": "operator-inbound-only-no-set-no-inherit"
+      },
+      "trafficAuthorized": false,
+      "migrationAuthorized": false,
+      "planSha256": "645f9912e3ee5238408fc3935f70b614b9411d445bece424238889f95be8187f",
+      "admissionChanged": false,
+      "featuresEnabled": false,
+      "providerTouched": false,
+      "status": "FAILED_REQUIRES_REVIEW",
+      "phase": "durable-intent",
+      "sqlOutcome": "not-started",
+      "roleSqlAttempted": false,
+      "automaticReplayAllowed": false
+    },
+    {
+      "version": 1,
+      "environment": "staging",
+      "actionId": "owned-role-7-positive",
+      "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "candidateSha256": "b25ab4c1c483ea72f70520225ab4cb765f65e94d0282b7e7e5611a8ebfd99195",
+      "jobSha256": "0601ac1c92cd5f252d3a7b34f25cab7db7e7b9572b85c63623ad5040147f060f",
+      "targetSha256": "16f54f3934076a25a819a80063570dd4ea37cd30cb36af2f09a77d31330999bc",
+      "phase2ContractManifestSha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "sqlArtifactSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "migrationImageDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "recoveryRef": "owned/recovery-1",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 59914,
+        "database": "frontend_role_owned",
+        "user": "frontend_operator",
+        "runtimeRole": "lash_her_frontend_staging_runtime_p2",
+        "serverMajor": 16
+      },
+      "desiredRoles": {
+        "owner": "lash_her_frontend_staging_admission_owner_p2",
+        "runtime": "lash_her_frontend_staging_runtime_p2"
+      },
+      "producerSha256": [
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      ],
+      "rolePolicy": "p2-staging-noinherit-public-crud-v1",
+      "roleSpecification": {
+        "owner": {
+          "login": false,
+          "inherit": false,
+          "superuser": false,
+          "createdb": false,
+          "createrole": false,
+          "replication": false,
+          "bypassrls": false,
+          "database": [
+            "CREATE"
+          ],
+          "persistentObjectOwnershipBeforeBootstrap": false,
+          "operatorSetRole": true
+        },
+        "runtime": {
+          "login": true,
+          "inherit": false,
+          "superuser": false,
+          "createdb": false,
+          "createrole": false,
+          "replication": false,
+          "bypassrls": false,
+          "database": [
+            "CONNECT"
+          ],
+          "publicSchema": [
+            "USAGE"
+          ],
+          "publicTables": [
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE"
+          ],
+          "publicSequences": [
+            "USAGE",
+            "SELECT"
+          ],
+          "futurePublicObjects": "same-table-and-sequence-grants-for-migration-operator",
+          "outboundMemberships": false,
+          "persistentDDL": false,
+          "journalAccess": false
+        },
+        "inheritedPublicTemporaryPrivilege": "observe-without-changing",
+        "automaticCreatorAdminMembership": "operator-inbound-only-no-set-no-inherit"
+      },
+      "trafficAuthorized": false,
+      "migrationAuthorized": false,
+      "planSha256": "b299fcf3e26efe959b55969e3ef6d8d90118188b712e85623a34d363b55f9705",
+      "admissionChanged": false,
+      "featuresEnabled": false,
+      "providerTouched": false,
+      "status": "FRONTEND_ROLES_PREPARED",
+      "owner": {
+        "name": "lash_her_frontend_staging_admission_owner_p2",
+        "oid": "16405"
+      },
+      "runtime": {
+        "name": "lash_her_frontend_staging_runtime_p2",
+        "oid": "16407"
+      },
+      "observed": {
+        "owner": {
+          "name": "lash_her_frontend_staging_admission_owner_p2",
+          "oid": "16405"
+        },
+        "runtime": {
+          "name": "lash_her_frontend_staging_runtime_p2",
+          "oid": "16407"
+        },
+        "attributes": [
+          {
+            "oid": "16405",
+            "rolname": "lash_her_frontend_staging_admission_owner_p2",
+            "rolcanlogin": false,
+            "rolsuper": false,
+            "rolcreatedb": false,
+            "rolcreaterole": false,
+            "rolreplication": false,
+            "rolbypassrls": false,
+            "rolinherit": false,
+            "rolconnlimit": -1,
+            "rolvaliduntil": null,
+            "rolconfig": null
+          },
+          {
+            "oid": "16407",
+            "rolname": "lash_her_frontend_staging_runtime_p2",
+            "rolcanlogin": true,
+            "rolsuper": false,
+            "rolcreatedb": false,
+            "rolcreaterole": false,
+            "rolreplication": false,
+            "rolbypassrls": false,
+            "rolinherit": false,
+            "rolconnlimit": -1,
+            "rolvaliduntil": null,
+            "rolconfig": null
+          }
+        ],
+        "memberships": [
+          {
+            "roleid": "16405",
+            "member": "16384",
+            "grantor": "10",
+            "admin_option": true,
+            "inherit_option": false,
+            "set_option": false,
+            "grantor_super": true
+          },
+          {
+            "roleid": "16405",
+            "member": "16384",
+            "grantor": "16384",
+            "admin_option": false,
+            "inherit_option": false,
+            "set_option": true,
+            "grantor_super": false
+          },
+          {
+            "roleid": "16407",
+            "member": "16384",
+            "grantor": "10",
+            "admin_option": true,
+            "inherit_option": false,
+            "set_option": false,
+            "grantor_super": true
+          }
+        ],
+        "privileges": [
+          {
+            "role": {
+              "name": "lash_her_frontend_staging_admission_owner_p2",
+              "oid": "16405"
+            },
+            "effective": {
+              "connect": true,
+              "database_create": true,
+              "temporary": true,
+              "public_usage": true,
+              "schema_create": false,
+              "journal_usage": false,
+              "journal_objects": false
+            },
+            "tables": [
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "DELETE",
+                "allowed": false,
+                "grantable": false
+              },
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "INSERT",
+                "allowed": false,
+                "grantable": false
+              },
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "REFERENCES",
+                "allowed": false,
+                "grantable": false
+              },
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "SELECT",
+                "allowed": false,
+                "grantable": false
+              },
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "TRIGGER",
+                "allowed": false,
+                "grantable": false
+              },
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "TRUNCATE",
+                "allowed": false,
+                "grantable": false
+              },
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "UPDATE",
+                "allowed": false,
+                "grantable": false
+              }
+            ],
+            "sequences": [
+              {
+                "oid": "16387",
+                "relname": "preserved_data_id_seq",
+                "privilege": "SELECT",
+                "allowed": false,
+                "grantable": false
+              },
+              {
+                "oid": "16387",
+                "relname": "preserved_data_id_seq",
+                "privilege": "UPDATE",
+                "allowed": false,
+                "grantable": false
+              },
+              {
+                "oid": "16387",
+                "relname": "preserved_data_id_seq",
+                "privilege": "USAGE",
+                "allowed": false,
+                "grantable": false
+              }
+            ],
+            "defaults": []
+          },
+          {
+            "role": {
+              "name": "lash_her_frontend_staging_runtime_p2",
+              "oid": "16407"
+            },
+            "effective": {
+              "connect": true,
+              "database_create": false,
+              "temporary": true,
+              "public_usage": true,
+              "schema_create": false,
+              "journal_usage": false,
+              "journal_objects": false
+            },
+            "tables": [
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "DELETE",
+                "allowed": true,
+                "grantable": false
+              },
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "INSERT",
+                "allowed": true,
+                "grantable": false
+              },
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "REFERENCES",
+                "allowed": false,
+                "grantable": false
+              },
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "SELECT",
+                "allowed": true,
+                "grantable": false
+              },
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "TRIGGER",
+                "allowed": false,
+                "grantable": false
+              },
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "TRUNCATE",
+                "allowed": false,
+                "grantable": false
+              },
+              {
+                "oid": "16388",
+                "relname": "preserved_data",
+                "privilege": "UPDATE",
+                "allowed": true,
+                "grantable": false
+              }
+            ],
+            "sequences": [
+              {
+                "oid": "16387",
+                "relname": "preserved_data_id_seq",
+                "privilege": "SELECT",
+                "allowed": true,
+                "grantable": false
+              },
+              {
+                "oid": "16387",
+                "relname": "preserved_data_id_seq",
+                "privilege": "UPDATE",
+                "allowed": false,
+                "grantable": false
+              },
+              {
+                "oid": "16387",
+                "relname": "preserved_data_id_seq",
+                "privilege": "USAGE",
+                "allowed": true,
+                "grantable": false
+              }
+            ],
+            "defaults": [
+              {
+                "kind": "S",
+                "privilege": "SELECT",
+                "is_grantable": false
+              },
+              {
+                "kind": "S",
+                "privilege": "USAGE",
+                "is_grantable": false
+              },
+              {
+                "kind": "r",
+                "privilege": "DELETE",
+                "is_grantable": false
+              },
+              {
+                "kind": "r",
+                "privilege": "INSERT",
+                "is_grantable": false
+              },
+              {
+                "kind": "r",
+                "privilege": "SELECT",
+                "is_grantable": false
+              },
+              {
+                "kind": "r",
+                "privilege": "UPDATE",
+                "is_grantable": false
+              }
+            ]
+          }
+        ],
+        "directAcl": [
+          {
+            "kind": "database",
+            "object_oid": "16386",
+            "schema_name": "frontend_role_owned",
+            "creator": null,
+            "grantee": "16405",
+            "privilege_type": "CREATE",
+            "is_grantable": false
+          },
+          {
+            "kind": "database",
+            "object_oid": "16386",
+            "schema_name": "frontend_role_owned",
+            "creator": null,
+            "grantee": "16407",
+            "privilege_type": "CONNECT",
+            "is_grantable": false
+          },
+          {
+            "kind": "default-S",
+            "object_oid": "16411",
+            "schema_name": "public",
+            "creator": "frontend_operator",
+            "grantee": "16407",
+            "privilege_type": "SELECT",
+            "is_grantable": false
+          },
+          {
+            "kind": "default-S",
+            "object_oid": "16411",
+            "schema_name": "public",
+            "creator": "frontend_operator",
+            "grantee": "16407",
+            "privilege_type": "USAGE",
+            "is_grantable": false
+          },
+          {
+            "kind": "default-r",
+            "object_oid": "16410",
+            "schema_name": "public",
+            "creator": "frontend_operator",
+            "grantee": "16407",
+            "privilege_type": "DELETE",
+            "is_grantable": false
+          },
+          {
+            "kind": "default-r",
+            "object_oid": "16410",
+            "schema_name": "public",
+            "creator": "frontend_operator",
+            "grantee": "16407",
+            "privilege_type": "INSERT",
+            "is_grantable": false
+          },
+          {
+            "kind": "default-r",
+            "object_oid": "16410",
+            "schema_name": "public",
+            "creator": "frontend_operator",
+            "grantee": "16407",
+            "privilege_type": "SELECT",
+            "is_grantable": false
+          },
+          {
+            "kind": "default-r",
+            "object_oid": "16410",
+            "schema_name": "public",
+            "creator": "frontend_operator",
+            "grantee": "16407",
+            "privilege_type": "UPDATE",
+            "is_grantable": false
+          },
+          {
+            "kind": "schema",
+            "object_oid": "2200",
+            "schema_name": "public",
+            "creator": null,
+            "grantee": "16407",
+            "privilege_type": "USAGE",
+            "is_grantable": false
+          },
+          {
+            "kind": "sequence",
+            "object_oid": "16387",
+            "schema_name": "public",
+            "creator": null,
+            "grantee": "16407",
+            "privilege_type": "SELECT",
+            "is_grantable": false
+          },
+          {
+            "kind": "sequence",
+            "object_oid": "16387",
+            "schema_name": "public",
+            "creator": null,
+            "grantee": "16407",
+            "privilege_type": "USAGE",
+            "is_grantable": false
+          },
+          {
+            "kind": "table",
+            "object_oid": "16388",
+            "schema_name": "public",
+            "creator": null,
+            "grantee": "16407",
+            "privilege_type": "DELETE",
+            "is_grantable": false
+          },
+          {
+            "kind": "table",
+            "object_oid": "16388",
+            "schema_name": "public",
+            "creator": null,
+            "grantee": "16407",
+            "privilege_type": "INSERT",
+            "is_grantable": false
+          },
+          {
+            "kind": "table",
+            "object_oid": "16388",
+            "schema_name": "public",
+            "creator": null,
+            "grantee": "16407",
+            "privilege_type": "SELECT",
+            "is_grantable": false
+          },
+          {
+            "kind": "table",
+            "object_oid": "16388",
+            "schema_name": "public",
+            "creator": null,
+            "grantee": "16407",
+            "privilege_type": "UPDATE",
+            "is_grantable": false
+          }
+        ]
+      },
+      "producers": [
+        {
+          "producerSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "role": {
+            "name": "lash_her_frontend_staging_runtime_p2",
+            "oid": "16407"
+          }
+        }
+      ],
+      "committed": true,
+      "runtimeCredentialVerified": true,
+      "proofSha256": "cfbb89596fd218d8b780d7c3a8a7cad98fe7dd6e471c51e01c850863fe991926"
+    },
+    {
+      "version": 1,
+      "environment": "staging",
+      "actionId": "owned-role-11-lost-ack",
+      "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "candidateSha256": "1c5eaa6e1a627d18c5bc7c43f6d652ce1312435f7581be9e4baa0ab029a7cfd9",
+      "jobSha256": "5c1d954a40d3af0e25d73062f621ce459795484a7b14fb8d89bc11ab0ec417bb",
+      "targetSha256": "16f54f3934076a25a819a80063570dd4ea37cd30cb36af2f09a77d31330999bc",
+      "phase2ContractManifestSha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "sqlArtifactSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "migrationImageDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "recoveryRef": "owned/recovery-1",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 59914,
+        "database": "frontend_role_owned",
+        "user": "frontend_operator",
+        "runtimeRole": "lash_her_frontend_staging_runtime_p2",
+        "serverMajor": 16
+      },
+      "desiredRoles": {
+        "owner": "lash_her_frontend_staging_admission_owner_p2",
+        "runtime": "lash_her_frontend_staging_runtime_p2"
+      },
+      "producerSha256": [
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      ],
+      "rolePolicy": "p2-staging-noinherit-public-crud-v1",
+      "roleSpecification": {
+        "owner": {
+          "login": false,
+          "inherit": false,
+          "superuser": false,
+          "createdb": false,
+          "createrole": false,
+          "replication": false,
+          "bypassrls": false,
+          "database": [
+            "CREATE"
+          ],
+          "persistentObjectOwnershipBeforeBootstrap": false,
+          "operatorSetRole": true
+        },
+        "runtime": {
+          "login": true,
+          "inherit": false,
+          "superuser": false,
+          "createdb": false,
+          "createrole": false,
+          "replication": false,
+          "bypassrls": false,
+          "database": [
+            "CONNECT"
+          ],
+          "publicSchema": [
+            "USAGE"
+          ],
+          "publicTables": [
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE"
+          ],
+          "publicSequences": [
+            "USAGE",
+            "SELECT"
+          ],
+          "futurePublicObjects": "same-table-and-sequence-grants-for-migration-operator",
+          "outboundMemberships": false,
+          "persistentDDL": false,
+          "journalAccess": false
+        },
+        "inheritedPublicTemporaryPrivilege": "observe-without-changing",
+        "automaticCreatorAdminMembership": "operator-inbound-only-no-set-no-inherit"
+      },
+      "trafficAuthorized": false,
+      "migrationAuthorized": false,
+      "planSha256": "9eee52584adb03ecb2f0080b73d79b57d6472db56ddd6c0fa67c81a0b556c4cb",
+      "admissionChanged": false,
+      "featuresEnabled": false,
+      "providerTouched": false,
+      "status": "FAILED_REQUIRES_REVIEW",
+      "phase": "commit",
+      "sqlOutcome": "commit-acknowledgment-unknown",
+      "roleSqlAttempted": true,
+      "automaticReplayAllowed": false
+    }
+  ],
+  "sourceModuleSha256": "6d053711527adbdd7069ac4ad3f36782e642a79c626d51520e92c0aed9611bbc",
+  "providerTouched": false,
+  "migrationAuthorized": false
+}

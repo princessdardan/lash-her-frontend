@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "kind": "owned-staging-role-preparation-qualification",
+  "baseCommit": "2852c38761ccb9fe7d02bede3d46e488bff8ebac",
+  "fixtureOnly": true,
+  "providerTouched": false,
+  "migrationAuthorized": false,
+  "files": [
+    {
+      "file": "ops/platform/frontend-role-preparation.mjs",
+      "sha256": "6d053711527adbdd7069ac4ad3f36782e642a79c626d51520e92c0aed9611bbc"
+    },
+    {
+      "file": "ops/platform/prepare-frontend-roles.mjs",
+      "sha256": "6b7ba5cb4aa527a2a85e175beba20ef5011463a1e2fd274960a79aee41ee2183"
+    },
+    {
+      "file": "ops/platform/frontend-role-preparation.test.mjs",
+      "sha256": "2e3299fc0c2785def21bb1a6b838cfa920907ca60924e3910ec1196123fb952b"
+    },
+    {
+      "file": "ops/platform/test-frontend-roles-local.mjs",
+      "sha256": "529341e49c5f442aa5c6e817a3493985b1429a08848dbd8498776740dacefceb"
+    },
+    {
+      "file": "docs/api-integration/frontend-role-preparation.md",
+      "sha256": "3e4e5724c80b50d85799e16e13e082f6d6cc932225fe29958bf45785c4d2b554"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-role-preparation/attempts.json",
+      "sha256": "977004df0b6713c9d036b3cc6ebcf85a058981277d56854bb7dfb49bdcb62e9c"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-role-preparation/postgres16.json",
+      "sha256": "8af9217f097c2a5d15f43eba168def1e258fa1600e271dd021232f5ab9c8617a"
+    },
+    {
+      "file": "docs/api-integration/baselines/2026-11-05-p2-role-preparation/unit.tap",
+      "sha256": "c0449f985935452deeb63fe6ccdf1b6830d6955140982af519f0d05a7fdcd6e1"
+    }
+  ]
+}
