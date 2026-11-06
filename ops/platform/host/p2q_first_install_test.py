@@ -9,8 +9,10 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 import p2q_first_install as source
 
+PROFILE=source.profile
 REF={'version':1,'id':'owned-first-install','sha256':'a'*64}
 
 
@@ -78,6 +80,20 @@ class HostObservationTests(unittest.TestCase):
             before=guard.observe();path.write_text('PASSWORD=CANARY_TWO\n');after=guard.observe()
             self.assertEqual(before,after);self.assertEqual(after['retainedMetadata']['entryCount'],1)
             self.assertNotIn('CANARY',json.dumps(after));self.assertIs(after['credentialDeliveryHistoryProven'],False)
+
+    def test_profiled_carrier_types_and_public_source_fields_refuse_before_host_work(self):
+        registry=SimpleNamespace(require_qualification_target_profile=lambda ref,*_carriers:ref,resolve_qualification_target_profile=lambda _ref:{'kind':'isolated-allocated','selectionPolicy':'isolated-allocated-v1','environment':'staging'})
+        with patch.dict(sys.modules,{'qualification_target_profile':registry}):
+            PROFILE(request())
+            for kind in ('candidate-version','job-version','release-object','source-value','boolean-action'):
+                value=request()
+                if kind=='candidate-version':value['candidate']['version']=3.0
+                elif kind=='job-version':value['job']['version']=2.0
+                elif kind=='release-object':value['candidate']['releaseId']=value['job']['releaseId']={'private':'NEVER_OUTPUT'}
+                elif kind=='source-value':value['candidate']['sources']['frontend']['commit']=value['job']['sourceCommit']='NEVER_OUTPUT'
+                else:value['actionId']=True
+                with self.subTest(kind=kind),self.assertRaises(ValueError):PROFILE(value)
+        self.assertEqual(self.calls,[])
 
     def test_symlinks_and_profile_mutation_are_not_adopted(self):
         with source.HostObservation(request()) as guard:

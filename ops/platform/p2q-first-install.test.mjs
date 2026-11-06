@@ -25,7 +25,7 @@ test('owned fixture resolver only models selection and emits no install permissi
   const ref=ownedP2qObservationFixture(directory),collector=await import(pathToFileURL(join(directory,'p2q-first-install.mjs')).href),input=request(ref);
   const plan=await collector.prepareP2qFirstInstallObservation(input);assert.equal(plan.observationOnly,true);
   for(const key of ['firstUseAuthorized','migrationAuthorized','rolePreparationAuthorized'])assert.equal(plan[key],false);
-  for(const mutate of [v=>{v.job.version=1;},v=>{v.candidate.version=2;},v=>{v.job.target.allowEmptyBootstrap=false;},v=>{v.job.qualificationTargetProfile={...ref,sha256:'f'.repeat(64)};}]){const bad=structuredClone(input);mutate(bad);await assert.rejects(collector.prepareP2qFirstInstallObservation(bad));}
+  for(const mutate of [v=>{v.actionId=true;},v=>{v.candidate.releaseId=v.job.releaseId={password:'NEVER_OUTPUT'};},v=>{v.job.version=1;},v=>{v.candidate.version=2;},v=>{v.job.target.allowEmptyBootstrap=false;},v=>{v.job.qualificationTargetProfile={...ref,sha256:'f'.repeat(64)};}]){const bad=structuredClone(input);mutate(bad);await assert.rejects(collector.prepareP2qFirstInstallObservation(bad));}
  }finally{rmSync(directory,{recursive:true,force:true});}
 });
 

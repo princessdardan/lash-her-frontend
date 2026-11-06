@@ -37,13 +37,14 @@ const rolesSql=`SELECT oid::text,rolname,rolcanlogin,rolsuper,rolinherit,rolcrea
  rolconfig IS NOT NULL AS has_settings FROM pg_catalog.pg_roles ORDER BY rolname LIMIT 4097`;
 
 export async function prepareP2qFirstInstallObservation(request){
- require(exact(request,['qualificationTargetProfile','candidate','job','actionId'])&&/^[a-z0-9][a-z0-9-]{0,63}$/u.test(request.actionId),'P2Q_FIRST_INSTALL_REQUEST_REFUSED');
+ require(exact(request,['qualificationTargetProfile','candidate','job','actionId'])&&typeof request.actionId==='string'&&/^[a-z0-9][a-z0-9-]{0,63}$/u.test(request.actionId),'P2Q_FIRST_INSTALL_REQUEST_REFUSED');
  let registry;try{registry=await import('./qualification-target-profile.mjs');}catch{throw fail('P2Q_FIRST_INSTALL_PROFILE_REGISTRY_REQUIRED');}
  const ref=registry.requireQualificationTargetProfile(request.qualificationTargetProfile,request.candidate,request.job);
  const profile=registry.resolveQualificationTargetProfile(ref);
  require(profile.kind==='isolated-allocated'&&profile.selectionPolicy==='isolated-allocated-v1'&&profile.environment==='staging','QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED');
  const {candidate,job}=request,target=job.target;
- require(candidate.version===3&&candidate.environment==='staging'&&candidate.contractPhase==='p2'&&job.version===2&&job.environment==='staging'&&
+ require(candidate&&Object.getPrototypeOf(candidate)===Object.prototype&&job&&Object.getPrototypeOf(job)===Object.prototype&&
+  typeof candidate.releaseId==='string'&&/^[a-z0-9][a-z0-9-]{0,63}$/u.test(candidate.releaseId)&&candidate.version===3&&candidate.environment==='staging'&&candidate.contractPhase==='p2'&&job.version===2&&job.environment==='staging'&&
   job.releaseId===candidate.releaseId&&job.sourceCommit===candidate.sources?.frontend?.commit&&/^[a-f0-9]{40}$/u.test(job.sourceCommit)&&
   job.contractPhase==='p2'&&job.phase2ContractManifestSha256===candidate.phase2ContractManifestSha256&&/^sha256:[a-f0-9]{64}$/u.test(job.phase2ContractManifestSha256),
  'P2Q_FIRST_INSTALL_SOURCE_BINDING_REQUIRED');

@@ -29,7 +29,7 @@ def require(value,code):
 def profile(request):
     require(type(request) is dict and set(request)=={'version','operation','qualificationTargetProfile','candidate','job','actionId'} and
             type(request['version']) is int and request['version']==1 and request['operation']=='observe' and
-            re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}',request['actionId'] or ''),'P2Q_FIRST_INSTALL_HOST_REQUEST_REFUSED')
+            type(request['actionId']) is str and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}',request['actionId']),'P2Q_FIRST_INSTALL_HOST_REQUEST_REFUSED')
     try:
         from qualification_target_profile import require_qualification_target_profile,resolve_qualification_target_profile
     except ImportError:
@@ -38,9 +38,11 @@ def profile(request):
     definition=resolve_qualification_target_profile(ref)
     require(definition['kind']=='isolated-allocated' and definition['selectionPolicy']=='isolated-allocated-v1' and definition['environment']=='staging',
             'QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED')
-    require(request['candidate'].get('version')==3 and request['candidate'].get('environment')=='staging' and
-            request['job'].get('version')==2 and request['job'].get('environment')=='staging' and
-            request['candidate']['releaseId']==request['job']['releaseId'] and
+    require(type(request['candidate']) is dict and type(request['job']) is dict and
+            type(request['candidate'].get('version')) is int and request['candidate']['version']==3 and request['candidate'].get('environment')=='staging' and
+            type(request['job'].get('version')) is int and request['job']['version']==2 and request['job'].get('environment')=='staging' and
+            type(request['candidate'].get('releaseId')) is str and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}',request['candidate']['releaseId']) and
+            request['candidate']['releaseId']==request['job']['releaseId'] and type(request['job'].get('sourceCommit')) is str and re.fullmatch(r'[a-f0-9]{40}',request['job']['sourceCommit']) and
             request['candidate']['sources']['frontend']['commit']==request['job']['sourceCommit'],'P2Q_FIRST_INSTALL_SOURCE_BINDING_REQUIRED')
     return ref
 
