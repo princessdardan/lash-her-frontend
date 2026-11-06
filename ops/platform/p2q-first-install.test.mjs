@@ -83,8 +83,7 @@ function googleModel(fixture,options={}){
    if(kind==='token')return Buffer.from('owned-not-a-real-access-token-0000\n');
    if(kind==='revoke'){if(options.cleanupFails)throw Error('PRIVATE_CREDENTIAL_CANARY');revoked=true;return Buffer.alloc(0);}throw Error('unexpected CLI');},
   http:async(kind,name,token,body)=>{assert.equal(token,'owned-not-a-real-access-token-0000');const [method,path]=fixture.api.route(kind,name);events.push(['http',kind,method,path]);
-   if(kind==='preflight')return raw(options.existing?200:404,options.existing?current:{error:{code:404}});
-   if(kind==='search'){searches++;return raw(200,{projects:options.reconcileFound||created&&options.postCreateFound?[current]:[]});}
+   if(kind==='search'){searches++;return raw(options.searchStatus??200,options.searchResponse??{projects:options.existing||options.reconcileFound||created&&options.postCreateFound?[current]:[]});}
    if(kind==='create'){
     assert.equal(file.existsSync(join(fixture.cases,plan.actionId,'create-intent.json')),true);
     assert.equal(file.existsSync(join(fixture.cases,plan.actionId,'create-started.json')),true);
@@ -95,8 +94,8 @@ function googleModel(fixture,options={}){
     return raw(options.alreadyExists?409:200,options.alreadyExists?{error:{code:409,status:'ALREADY_EXISTS'}}:options.createResponse??operation);
    }
    if(kind==='operation'){operations++;return raw(200,options.operationResponse??{...operation,done:true,response:{'@type':'type.googleapis.com/google.cloud.resourcemanager.v3.Project',...current}});}
-   if(kind==='project')return raw(200,options.projectResponse??current);
-   if(kind==='iam'){assert.deepEqual(body,{options:{requestedPolicyVersion:3}});return raw(200,options.iam??{version:3,bindings:[{role:'roles/owner',members:['user:'+principal]}]});}
+   if(kind==='project'){assert.match(name,/^projects\/[1-9][0-9]*$/u);return raw(200,options.projectResponse??current);}
+   if(kind==='iam'){assert.match(name,/^projects\/[1-9][0-9]*$/u);assert.deepEqual(body,{options:{requestedPolicyVersion:3}});return raw(200,options.iam??{version:3,bindings:[{role:'roles/owner',members:['user:'+principal]}]});}
    throw Error('unexpected HTTPS');}};
  return {rt,events,current,get searches(){return searches;},get operations(){return operations;}};
 }
@@ -120,8 +119,9 @@ test('Google private protocol creates once after durable intent and captures ori
   const result=await f.api.execute(f.plan,'create',store,model.rt);publicGoogleSafe(result);
   assert.equal(result.status,'P2Q_GOOGLE_ORIGINAL_CREATE_OBSERVED');assert.equal(result.originalCreationAcknowledged,true);assert.equal(result.creationPostCount,1);assert.equal(result.readPostCount,1);
   assert.equal(result.credentialCleanupVerified,true);assert.equal(result.custodyIncomplete,false);
-  assert.deepEqual(model.events.filter(x=>x[0]==='http').map(x=>x.slice(1,3)),[['preflight','GET'],['search','GET'],['create','POST'],['operation','GET'],['project','GET'],['iam','POST'],['project','GET']]);
-  const response=join(store.path,'responses','002-create.raw');assert.equal(file.statSync(response).mode&0o777,0o600);assert.equal(JSON.parse(file.readFileSync(response)).name,'operations/cp.123456789012');
+  assert.deepEqual(model.events.filter(x=>x[0]==='http').map(x=>x.slice(1,3)),[['search','GET'],['create','POST'],['operation','GET'],['project','GET'],['iam','POST'],['project','GET']]);
+  assert.equal(model.events.filter(x=>x[0]==='http').some(x=>x[3]==='/v3/projects/'+f.plan.project.projectId),false);
+  const response=join(store.path,'responses','001-create.raw');assert.equal(file.statSync(response).mode&0o777,0o600);assert.equal(JSON.parse(file.readFileSync(response)).name,'operations/cp.123456789012');
   assert.equal(file.existsSync(join(store.path,'config')),false);assert.throws(()=>new f.api.PrivateCase(f.plan,'create'),{code:'P2Q_GOOGLE_CASE_ALREADY_BURNED'});
  }finally{f.close();}
 });
@@ -143,7 +143,7 @@ test('Google same-process lost ACK can GET current state while retaining UNKNOWN
   assert.equal(model.events.filter(x=>x[0]==='http'&&x[1]==='create').length,1);
  }finally{f.close();}
 });
-test('Google preflight existing/wrong or multiple principals and source drift permit zero creation',async()=>{
+test('Google visible existing/wrong or multiple principals and source drift permit zero creation',async()=>{
  const variants=[{existing:true},{accounts:[{account:'wrong@example.test',status:'ACTIVE'}]},
   {accounts:[{account:'new-owner@example.test',status:'ACTIVE'},{account:'old@example.test',status:'INACTIVE'}]}];
  for(const variant of variants){const f=await googleFixture();try{const model=googleModel(f,variant),result=await f.api.execute(f.plan,'create',new f.api.PrivateCase(f.plan,'create'),model.rt);
@@ -176,14 +176,16 @@ test('Google clean child environment rejects ambient auth/ADC/impersonation/Pyth
   assert.deepEqual(f.api.cliArgs('login',f.principal),['auth','login',f.principal,'--no-launch-browser','--brief','--verbosity=none']);
   assert.deepEqual(f.api.cliArgs('token',f.principal),['auth','print-access-token',f.principal,'--verbosity=none']);
   assert.deepEqual(f.api.cliArgs('revoke',f.principal),['auth','revoke',f.principal,'--quiet','--verbosity=none']);
-  for(const kind of ['delete','patch','retry'])assert.throws(()=>f.api.route(kind,'projects/123'));
+  for(const kind of ['delete','patch','retry','preflight'])assert.throws(()=>f.api.route(kind,'projects/123'));
+  assert.throws(()=>f.api.route('preflight',f.plan.project.projectId));assert.throws(()=>f.api.route('project',f.plan.project.projectId));
+  assert.throws(()=>f.api.route('project','projects/'+f.plan.project.projectId));
  }finally{f.close();}
 });
 test('Google raw truncation/symlink and cleanup uncertainty retain private evidence',async()=>{
  const f=await googleFixture();try{
   const store=new f.api.PrivateCase(f.plan,'create'),model=googleModel(f,{cleanupFails:true}),result=await f.api.execute(f.plan,'create',store,model.rt);
   publicGoogleSafe(result);assert.equal(result.custodyIncomplete,true);assert.equal(result.requiresOwnerReview,true);assert.equal(file.existsSync(join(store.path,'config')),true);
-  const response=join(store.path,'responses','002-create.raw');file.truncateSync(response,3);assert.throws(()=>store.readResponse('create'),{code:'P2Q_GOOGLE_RESPONSE_REFUSED'});
+  const response=join(store.path,'responses','001-create.raw');file.truncateSync(response,3);assert.throws(()=>store.readResponse('create'),{code:'P2Q_GOOGLE_RESPONSE_REFUSED'});
   file.symlinkSync('case.json',join(store.path,'symlink.json'));assert.throws(()=>store.write('symlink.json',Buffer.from('{}')),{code:'P2Q_GOOGLE_PRIVATE_WRITE_FAILED'});
  }finally{f.close();}
 });
@@ -192,12 +194,12 @@ test('Google actual file-write/fsync faults preserve burn and never replay CREAT
   const f=await googleFixture(),original={openSync:fsMutable.openSync,writeSync:fsMutable.writeSync,fsyncSync:fsMutable.fsyncSync};
   try{const store=new f.api.PrivateCase(f.plan,'create'),model=googleModel(f),paths=new Map();let partial=false;
    fsMutable.openSync=function(path,...args){const fd=original.openSync.call(this,path,...args);paths.set(fd,String(path));return fd;};
-   fsMutable.writeSync=function(fd,buffer,offset,length,...args){if(phase==='raw-partial'&&paths.get(fd)?.endsWith('002-create.raw')){
+   fsMutable.writeSync=function(fd,buffer,offset,length,...args){if(phase==='raw-partial'&&paths.get(fd)?.endsWith('001-create.raw')){
     if(partial)return 0;partial=true;return original.writeSync.call(this,fd,buffer,offset,3,...args);}
     return original.writeSync.call(this,fd,buffer,offset,length,...args);};
    fsMutable.fsyncSync=function(fd){const path=paths.get(fd)??'';
-    if(phase==='intent-fsync'&&path.endsWith('create-intent.json')||phase==='burn-fsync'&&path.endsWith('create-started.json')||phase==='raw-fsync'&&path.endsWith('002-create.raw'))throw Error('PRIVATE_FSYNC_CANARY');
-    const value=original.fsyncSync.call(this,fd);if(phase==='raw-loss'&&path.endsWith('002-create.raw'))fsMutable.unlinkSync(path);return value;};
+    if(phase==='intent-fsync'&&path.endsWith('create-intent.json')||phase==='burn-fsync'&&path.endsWith('create-started.json')||phase==='raw-fsync'&&path.endsWith('001-create.raw'))throw Error('PRIVATE_FSYNC_CANARY');
+    const value=original.fsyncSync.call(this,fd);if(phase==='raw-loss'&&path.endsWith('001-create.raw'))fsMutable.unlinkSync(path);return value;};
    syncBuiltinESMExports();const result=await f.api.execute(f.plan,'create',store,model.rt);publicGoogleSafe(result);
    assert.equal(result.code,'P2Q_GOOGLE_PRIVATE_WRITE_FAILED');assert.equal(result.creationPostCount,phase.startsWith('raw-')?1:0);assert.equal(result.originalCreationAcknowledged,false);
    assert.throws(()=>new f.api.PrivateCase(f.plan,'create'),{code:'P2Q_GOOGLE_CASE_ALREADY_BURNED'});
@@ -243,7 +245,7 @@ test('Google reconciliation preserves exact original source, plan and raw ACK co
  for(const mutation of ['source','plan','ack']){const f=await googleFixture();try{
   const result=await f.api.execute(f.plan,'create',new f.api.PrivateCase(f.plan,'create'),googleModel(f).rt);assert.equal(result.code,null);
   const path=join(f.cases,f.plan.actionId);if(mutation==='source'){const name=join(path,'source.json'),value=JSON.parse(file.readFileSync(name));value.sourceCommit='0'.repeat(40);file.writeFileSync(name,JSON.stringify(value));}
-  if(mutation==='ack'){const name=join(path,'responses','002-create.raw'),value=JSON.parse(file.readFileSync(name));value.name='operations/foreign';file.writeFileSync(name,JSON.stringify(value));}
+  if(mutation==='ack'){const name=join(path,'responses','001-create.raw'),value=JSON.parse(file.readFileSync(name));value.name='operations/foreign';file.writeFileSync(name,JSON.stringify(value));}
   if(mutation==='plan')assert.throws(()=>new f.api.PrivateCase({...f.plan,bootstrapQuotaProject:'different-quota'},'reconcile'),{code:'P2Q_GOOGLE_ORIGINAL_INTENT_REQUIRED'});
   else{const model=googleModel(f),next=await f.api.execute(f.plan,'reconcile',new f.api.PrivateCase(f.plan,'reconcile'),model.rt);publicGoogleSafe(next);
    assert.equal(next.requiresOwnerReview,true);assert.equal(next.creationPostCount,0);assert.equal(model.events.some(x=>x[0]==='http'),false);}
@@ -357,4 +359,20 @@ test('Google actual SDK dispatch model receives fixed isolation and refuses drif
   const ca=join(f.plan.toolchain.sdk.root,f.api.SDK_CA_RELATIVE);file.unlinkSync(ca);file.symlinkSync(join(store.path,'sdk.netrc'),ca);
   await assert.rejects(f.api.cli(f.plan,store,'list',f.principal));assert.equal(calls,1);
  }finally{childMutable.spawn=original;syncBuiltinESMExports();f.close();}
+});
+test('Google documented search-first refuses visible matches and pagination ambiguity with zero CREATE',async()=>{
+ for(const options of [{searchResponse:{projects:[{name:'projects/123'}]}},{searchResponse:{projects:[],nextPageToken:'opaque'}},
+  {searchResponse:{projects:[],nextPageToken:false}},{searchResponse:{projects:[],nextPageToken:null}},{searchResponse:{projects:null}},{searchStatus:404}]){
+  const f=await googleFixture();try{const store=new f.api.PrivateCase(f.plan,'create'),model=googleModel(f,options),result=await f.api.execute(f.plan,'create',store,model.rt);publicGoogleSafe(result);
+   assert.equal(result.creationPostCount,0);assert.equal(result.creationPostAttempted,false);assert.equal(result.requiresOwnerReview,true);
+   assert.deepEqual(model.events.filter(x=>x[0]==='http').map(x=>x.slice(1,3)),[['search','GET']]);
+   assert.equal(file.existsSync(join(store.path,'create-intent.json')),false);assert.equal(file.existsSync(join(store.path,'create-started.json')),false);
+  }finally{f.close();}
+ }
+});
+test('Google global ID collision stays review-required without adoption, polling or another CREATE',async()=>{
+ const f=await googleFixture();try{const model=googleModel(f,{alreadyExists:true}),result=await f.api.execute(f.plan,'create',new f.api.PrivateCase(f.plan,'create'),model.rt);publicGoogleSafe(result);
+  assert.equal(result.code,'P2Q_GOOGLE_CREATE_ALREADY_EXISTS');assert.equal(result.creationPostCount,1);assert.equal(result.originalCreationAcknowledged,false);assert.equal(result.requiresOwnerReview,true);
+  assert.deepEqual(model.events.filter(x=>x[0]==='http').map(x=>x.slice(1,3)),[['search','GET'],['create','POST']]);
+ }finally{f.close();}
 });

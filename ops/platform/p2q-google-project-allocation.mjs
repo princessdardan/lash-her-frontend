@@ -189,7 +189,6 @@ function assertPrincipal(raw,expected,empty=false){const rows=parse(raw);demand(
   closed(row,['account','status']);return row.account===expected&&row.status==='ACTIVE'&&account(row.account); }),'AUTH_PRINCIPAL_REQUIRED');}
 function route(kind,name){
   if(kind==='search'){demand(projectId(name),'PROJECT_REQUIRED');return ['GET','/v3/projects:search?query='+encodeURIComponent('projectId:'+name)+'&pageSize=100'];}
-  if(kind==='preflight'){demand(projectId(name),'PROJECT_REQUIRED');return ['GET','/v3/projects/'+name];}
   if(kind==='create')return ['POST','/v3/projects'];
   if(kind==='operation'){demand(typeof name==='string'&&name.length<=512&&/^operations\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/u.test(name)&&!name.split('/').some(s=>s==='.'||s==='..'),'OPERATION_REQUIRED');return ['GET','/v3/'+name];}
   demand(projectName(name),'PROJECT_REQUIRED');if(kind==='project')return ['GET','/v3/'+name];if(kind==='iam')return ['POST','/v3/'+name+':getIamPolicy'];throw error('HTTP_STATUS_REFUSED');
@@ -205,6 +204,10 @@ async function request(plan,kind,name,token,body){
     timer=setTimeout(()=>{req.destroy();fail();},15000);req.setTimeout(15000,()=>{req.destroy();fail();});req.once('error',fail);if(raw)req.write(raw);req.end();});
 }
 function creationBody(plan){const {parent,...body}=plan.project;return parent===null?body:{...body,parent};}
+function searchRows(value,code){
+  demand(value&&typeof value==='object'&&!Array.isArray(value)&&(value.projects===undefined||Array.isArray(value.projects))&&
+    (value.nextPageToken===undefined||value.nextPageToken===''),code);return value.projects??[];
+}
 function operation(value,expectedName){
   demand(value&&typeof value==='object'&&typeof value.name==='string','OPERATION_REQUIRED');route('operation',value.name);if(expectedName)demand(value.name===expectedName,'OPERATION_REQUIRED');
   demand(value.done===undefined||typeof value.done==='boolean','OPERATION_REQUIRED');demand(!value.error,'OPERATION_ERROR');
@@ -250,7 +253,7 @@ async function execute(plan,mode,store,rt){
     // Raw bytes and their status are durable before any JSON is interpreted.
     const value=store.response(kind,response.status,response.raw);await rt.verify();
     if(response.status===409&&kind==='create')throw error('CREATE_ALREADY_EXISTS');
-    if(response.status!==200&&!(kind==='preflight'&&response.status===404))throw error('HTTP_STATUS_REFUSED');return {status:response.status,value,rawSha256:digest(response.raw)};
+    if(response.status!==200)throw error('HTTP_STATUS_REFUSED');return {status:response.status,value,rawSha256:digest(response.raw)};
   }
   try{
     source=await rt.verify();expected=rt.principal();demand(account(expected),'AUTH_PRINCIPAL_REQUIRED');
@@ -260,8 +263,7 @@ async function execute(plan,mode,store,rt){
         isDeepStrictEqual(originalIntent.body,creationBody(plan))&&burn.intentSha256===digest(store.read('create-intent.json')),'ORIGINAL_INTENT_REQUIRED');}
     loginAttempted=true;await rt.command('login',expected);assertPrincipal(await rt.command('list',expected),expected);
     if(mode==='create'){
-      const pre=await call('preflight',plan.project.projectId);demand(pre.status===404,'EXISTING_PROJECT_REQUIRES_REVIEW');
-      const found=(await call('search',plan.project.projectId)).value;demand(found&&Array.isArray(found.projects??[])&&(found.projects??[]).length===0&&!found.nextPageToken,'EXISTING_PROJECT_REQUIRES_REVIEW');
+      const found=searchRows((await call('search',plan.project.projectId)).value,'EXISTING_PROJECT_REQUIRES_REVIEW');demand(found.length===0,'EXISTING_PROJECT_REQUIRES_REVIEW');
       originalIntent={version:1,actionId:plan.actionId,planSha256:store.planSha256,programSha256:plan.programSha256,startedAt:rt.now(),body:creationBody(plan)};
       const intent=encoded(originalIntent);store.write('create-intent.json',intent);store.write('create-started.json',encoded({version:1,intentSha256:digest(intent)}));
       let response;try{response=await call('create',null,creationBody(plan));}catch(e){if(safeCode(e)!=='P2Q_GOOGLE_HTTP_UNCERTAIN')throw e;code=safeCode(e);}
@@ -274,9 +276,8 @@ async function execute(plan,mode,store,rt){
       }catch(e){if(fs.existsSync(join(store.path,'create-ack.json')))throw e;}
     }
     if(operationName){for(let i=0;observed===null&&i<24;i++){await rt.wait();observed=operation((await call('operation',operationName)).value,operationName).project;}}
-    else{for(let i=0;i<12&&observed===null;i++){const found=(await call('search',plan.project.projectId)).value;
-      demand(found&&Array.isArray(found.projects??[])&&(found.projects??[]).length<=1&&!found.nextPageToken,'OBSERVATION_UNKNOWN');
-      if(found.projects?.length)observed=found.projects[0];else await rt.wait();}}
+    else{for(let i=0;i<12&&observed===null;i++){const found=searchRows((await call('search',plan.project.projectId)).value,'OBSERVATION_UNKNOWN');
+      demand(found.length<=1,'OBSERVATION_UNKNOWN');if(found.length)observed=found[0];else await rt.wait();}}
     demand(observed!==null,'OBSERVATION_UNKNOWN');const name=project(observed,plan,originalIntent.startedAt,rt.now());
     const current=(await call('project',name)).value;project(current,plan,originalIntent.startedAt,rt.now(),name);iam((await call('iam',name,{options:{requestedPolicyVersion:3}})).value,expected);
     const last=(await call('project',name)).value;project(last,plan,originalIntent.startedAt,rt.now(),name);
