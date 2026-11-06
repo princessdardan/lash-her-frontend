@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "status": "SOURCE_COMPONENTS_ONLY_PUBLIC_ARM_UNAVAILABLE",
+  "baseCommit": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c",
+  "sourceCommit": "3d1b1c6542fc55077d867b68218ed078c48caa5b",
+  "sourceFiles": [
+    {
+      "path": "ops/gateway/p2q-mux-capture.mjs",
+      "bytes": 27463,
+      "sha256": "9d821df6a2d2654492f38744ee5b71ad80ce571c8fd778fc57732085403b25de"
+    },
+    {
+      "path": "ops/gateway/p2q-mux-capture.test.mjs",
+      "bytes": 28577,
+      "sha256": "93ab6be37557037456798a6ece893a01f5f707e3b215d175a002444c6f7b33a1"
+    }
+  ],
+  "combinedBytes": 56040,
+  "combinedLimitBytes": 57344,
+  "jointSchemaSha256": "c2c44f3895117af792b56bc0cd838e2a4f158f4e59a14d2be791b6f7349e1c8a",
+  "jointManifestSha256": "2bc1ac2ffb51f71e262d0097b6d0be1f297473aae19b3d5c0b048b6044e8242f",
+  "testResults": {
+    "component": {
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0
+    },
+    "gatewayRegression": {
+      "passed": 58,
+      "failed": 0,
+      "skipped": 0
+    },
+    "lint": {
+      "exitCode": 0
+    }
+  },
+  "initialFixtureFailure": {
+    "passed": 14,
+    "failed": 4,
+    "cause": "noncanonical macOS temp-path symlink correctly refused",
+    "guardWeakened": false,
+    "originalLogPreserved": true,
+    "originalTestFileSeparatelyFrozen": false
+  },
+  "preservedRuntimeTreeOid": "3a430ac5718b0079846c89bbd0c73f874d2eb455",
+  "publicFactory": {
+    "hooks": 5,
+    "alwaysNoop": true,
+    "noIo": true,
+    "activationAvailable": false
+  },
+  "qualificationLimits": {
+    "privateComponentInputsProjected": true,
+    "actualLocalFilesystem": true,
+    "actualAllocatedLinuxUid65532": false,
+    "actualDockerBind": false,
+    "actualCourseReceiverHttpPg": false,
+    "actualMuxSignatureAuthentication": false,
+    "actualProviderCaptureOrReplay": false,
+    "actualHostOrFeLease": false,
+    "actualProducerCoverageOrDrain": false,
+    "historicalProducerFsyncAuthority": false,
+    "providerQueueZero": false,
+    "liveAuthority": false
+  },
+  "providerActions": false,
+  "credentialsRead": false,
+  "resourceAllocation": false,
+  "independentReviewPending": true
+}

@@ -1,0 +1,28 @@
+✔ public five-hook factory is always a no-I/O no-throw no-op, including current/unknown/forged authority (0.737583ms)
+✔ canonical lease codecs are syntax-only, exact-byte, closed, and reject numeric bool/negative-zero/alternate lexical forms (3.270375ms)
+✔ private envelope preserves original noncanonical signed bytes; no signing or canonical body rewrite (0.512291ms)
+✔ projected raw capture requires exact managed200, original body, selected environment/asset/passthrough and local finish (1.139459ms)
+✔ unaccepted/ambiguous managed200 projections or dropped local response never produce a capture (1.116125ms)
+✔ wrong environment/ownership, altered header shapes, old/future signatures and route bypass refuse selection only (0.986958ms)
+✔ calendar/nanosecond ordering is exact and rejects normalized invalid dates/leap seconds (0.117333ms)
+✔ two raw slots do not exhaust two separate prescribed reverse-replay metadata slots (0.764291ms)
+✔ R1 same track, distinct event and strictly increasing creation time required; missing/forged private intents refuse (2.302875ms)
+✔ naturally raced metadata cannot be relabeled as the sender; same intent slot burns and no raw recapture (0.360958ms)
+✔ global metadata includes unrelated category traffic, copies route template, and does not claim drain (0.165917ms)
+✔ bounded global ledger and duplicated request IDs fail closed without rejecting ordinary traffic via public hooks (0.569125ms)
+✔ expiry, wall rollback, monotonic expiry and explicit revocation prevent capture/publication (1.446041ms)
+✔ actual owned filesystem commits raw0600 then metadata and ledger with directory fsync; no historical authority claim (36.058417ms)
+✔ actual wx-only directory cannot support Node O_RDONLY directory fsync; corrected0770 works without O_PATH (11.645834ms)
+✔ existing/raw symlink, changed inode and commit collision never overwrite or falsely commit (6.551541ms)
+✔ revocation during awaited directory-open closes acquired FD before refusing, with zero publication (1.246583ms)
+✔ file-fsync failure preserves partial private evidence, omits commit and sanitizes error (1.629875ms)
+✔ a failed first reverse-replay observation cannot authorize the next metadata sequence (0.530333ms)
+✔ revocation clears pending private raw buffers; elapsed publication deadline refuses without another hook (12.193542ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 122.773208

@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "sourceCommit": "3d1b1c6542fc55077d867b68218ed078c48caa5b",
+  "files": [
+    {
+      "name": "README.md",
+      "bytes": 4385,
+      "sha256": "98a7093a02ec1c9b6429b4443977e8710b8ecb77e2f54b63d1fe02c618430395"
+    },
+    {
+      "name": "component-tests.log",
+      "bytes": 2501,
+      "sha256": "655292d351c550bf3ec3c318618525d224a73cdc760b7083cc46610331c295ca"
+    },
+    {
+      "name": "gateway-regressions.log",
+      "bytes": 6353,
+      "sha256": "44472cfee089dad1899982e00271b844518a93782ec086098681c98df7b8ffbf"
+    },
+    {
+      "name": "initial-component-failure.log",
+      "bytes": 149184,
+      "sha256": "695456a647fc45787ebbd03fe1cf39b2fd8cfb7384812903cae0020b3ad4f7ba"
+    },
+    {
+      "name": "joint-interface/README.md",
+      "bytes": 2665,
+      "sha256": "aa63e85fe9b148fd3d9fb791117678e974dc475c25874fa6669aa2419b35f66d"
+    },
+    {
+      "name": "joint-interface/joint-schemas.json",
+      "bytes": 14160,
+      "sha256": "c2c44f3895117af792b56bc0cd838e2a4f158f4e59a14d2be791b6f7349e1c8a"
+    },
+    {
+      "name": "joint-interface/manifest.json",
+      "bytes": 528,
+      "sha256": "2bc1ac2ffb51f71e262d0097b6d0be1f297473aae19b3d5c0b048b6044e8242f"
+    },
+    {
+      "name": "joint-interface/original-3458/README.md",
+      "bytes": 2419,
+      "sha256": "3fb081b3b643e1426fad98fe939a7734ca46cc7e9c5457be9877646191352757"
+    },
+    {
+      "name": "joint-interface/original-3458/joint-schemas.json",
+      "bytes": 13890,
+      "sha256": "3458d245b54e5fe63aaea0354bbd40327f6b0180b97e6f62fd5b4cb40fb0e2b8"
+    },
+    {
+      "name": "joint-interface/original-3458/manifest.json",
+      "bytes": 421,
+      "sha256": "6b80b313ac39455604984b09577c061db34fbc7cc59e34abcb0398fb3726ca99"
+    },
+    {
+      "name": "lint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "validation.json",
+      "bytes": 2108,
+      "sha256": "f818cb3e4458b6a7b68b4051bc7321f491557af4e6ec6d2108d3cafbab78ad76"
+    }
+  ]
+}
