@@ -11,26 +11,47 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { runOwnedPersistenceScenario } from "./harness/owned-p2-lifecycle-persistence.mjs";
 import { p2LifecyclePersistenceTargetSha256 } from "./p2-lifecycle-persistence-probe.mjs";
+import { verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const apiPins = { course: "a447bfde20299e12afab68a3331b3792ddd07598", community: "939de65dd52f0b1a43993a25c7c428dce6e2bb43" };
 const hash = value => createHash("sha256").update(value).digest("hex");
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
 let phase = "preflight";
+const POSTGRES18_MODE = "--postgres18-manifest";
+async function readManifest() {
+  let size = 0; const chunks = [];
+  for await (const chunk of process.stdin) { size += chunk.length; assert.ok(size <= 512_000, "Source manifest too large"); chunks.push(chunk); }
+  assert.ok(size > 0, "Source manifest required"); return Buffer.concat(chunks);
+}
 
 async function main() {
   assert.equal(process.env.P2_LIFECYCLE_PERSISTENCE_OWNED_TEST, "true", "Explicit owned test opt-in required");
   assert.equal(process.versions.node.split(".")[0], "24", "Node 24 required");
+  const containerMode = process.argv.length === 3 && process.argv[2] === POSTGRES18_MODE;
+  assert.equal(process.argv.length, containerMode ? 3 : 2, "Fixed owned mode required");
+  const postgresMajor = Number(process.env.OWNED_POSTGRES_MAJOR ?? "16");
+  assert.equal(postgresMajor, containerMode ? 18 : 16, "Selected PostgreSQL major required");
   const pgBin = process.env.PG_BIN; assert.ok(pgBin?.startsWith("/"));
-  assert.match(run(join(pgBin, "postgres"), ["--version"]), /PostgreSQL\) 16\./u);
-  const sources = { frontend: root, course: resolve(process.env.P2_COURSE_SOURCE_ROOT ?? "/Users/dardan/workspace/lash-her-course-api/.worktrees/phase2-course"),
-    community: resolve(process.env.P2_COMMUNITY_SOURCE_ROOT ?? "/Users/dardan/workspace/lash-her-community-api/.worktrees/phase2-community") };
-  const commits = Object.fromEntries(Object.entries(sources).map(([name, source]) => [name, run("git", ["rev-parse", "HEAD"], { cwd: source }).trim()]));
-  assert.equal(commits.course, apiPins.course); assert.equal(commits.community, apiPins.community); assert.match(commits.frontend, /^[a-f0-9]{40}$/u);
-  for (const [name, source] of Object.entries(sources)) {
-    assert.equal(run("git", ["remote", "get-url", "origin"], { cwd: source }).trim(), `https://github.com/princessdardan/lash-her-${name === "frontend" ? "frontend" : name + "-api"}.git`);
-    assert.equal(run("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: source }), "", `${name} source must be exact and clean`);
+  if (containerMode) assert.equal(pgBin, "/usr/lib/postgresql/18/bin", "Fixed PostgreSQL 18 binary directory required");
+  assert.match(run(join(pgBin, "postgres"), ["--version"]), new RegExp(`PostgreSQL\\) ${postgresMajor}\\.`, "u"));
+  const sources = containerMode ? { frontend: "/source", course: "/exact-sources/lash-her-course-api", community: "/exact-sources/lash-her-community-api" }
+    : { frontend: root, course: resolve(process.env.P2_COURSE_SOURCE_ROOT ?? "/Users/dardan/workspace/lash-her-course-api/.worktrees/phase2-course"),
+      community: resolve(process.env.P2_COMMUNITY_SOURCE_ROOT ?? "/Users/dardan/workspace/lash-her-community-api/.worktrees/phase2-community") };
+  let commits, sourceManifestSha256 = null;
+  if (containerMode) {
+    phase = "exact-source-manifest";
+    const verified = verifyP2LifecycleOwnedSourceManifest(await readManifest(), sources);
+    commits = Object.fromEntries(Object.entries(verified.manifest.sources).map(([name, source]) => [name, source.revision]));
+    sourceManifestSha256 = verified.sourceManifestSha256;
+  } else {
+    commits = Object.fromEntries(Object.entries(sources).map(([name, source]) => [name, run("git", ["rev-parse", "HEAD"], { cwd: source }).trim()]));
+    for (const [name, source] of Object.entries(sources)) {
+      assert.equal(run("git", ["remote", "get-url", "origin"], { cwd: source }).trim(), `https://github.com/princessdardan/lash-her-${name === "frontend" ? "frontend" : name + "-api"}.git`);
+      assert.equal(run("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: source }), "", `${name} source must be exact and clean`);
+    }
   }
+  assert.equal(commits.course, apiPins.course); assert.equal(commits.community, apiPins.community); assert.match(commits.frontend, /^[a-f0-9]{40}$/u);
 
   const directory = mkdtempSync(join(tmpdir(), "p2-lifecycle-persistence-")); chmodSync(directory, 0o700);
   const data = join(directory, "data"), certificate = join(directory, "server.crt"), key = join(directory, "server.key");
@@ -71,7 +92,7 @@ async function main() {
       phase = `verify-${name}-runtime`;
       runtime[name] = await connect({ host: "localhost", port, user: role, password, database }, true);
       const identity = (await runtime[name].query("select current_user::regrole::oid::text as oid")).rows[0];
-      targets[name] = { host: "localhost", port, database, runtimeRole: role, runtimeRoleOid: identity.oid, serverMajor: 16 };
+      targets[name] = { host: "localhost", port, database, runtimeRole: role, runtimeRoleOid: identity.oid, serverMajor: postgresMajor };
       targets[name].targetSha256 = p2LifecyclePersistenceTargetSha256(name, targets[name]);
       migrations[name] = Number((await admin[name].query("select count(*)::int as count from drizzle.__drizzle_migrations")).rows[0].count);
     }
@@ -79,10 +100,11 @@ async function main() {
     phase = "actual-three-domain-observer";
     const plan = { candidateSha256: hash("owned-candidate"), configurationSha256: hash("owned-configuration"), sources: commits, targets };
     const result = await runOwnedPersistenceScenario({ admin, runtime, plan });
-    const receipt = { version: 1, status: "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES16_PASS", postgresMajor: 16, frontendMigrations: 83,
+    const receipt = { version: 1, status: `P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES${postgresMajor}_PASS`, postgresMajor, frontendMigrations: 83,
       courseMigrations: 22, communityMigrations: 11, sourceCommits: commits, checks: result.checks, skipped: 0, readOnly: true,
-      fixtureOnly: true, providerTouched: false, liveCertification: false,
-      sourceSha256: Object.fromEntries(["p2-lifecycle-state-witness.mjs", "p2-lifecycle-persistence-probe.mjs", "harness/owned-p2-lifecycle-persistence.mjs", "test-p2-lifecycle-persistence-local.mjs"]
+      fixtureOnly: true, providerTouched: false, liveCertification: false, sourceMode: containerMode ? "parent-issued-manifest-and-mounted-readback" : "clean-git-checkouts",
+      sourceManifestSha256,
+      sourceSha256: Object.fromEntries(["p2-lifecycle-state-witness.mjs", "p2-lifecycle-persistence-probe.mjs", "p2-lifecycle-owned-source-manifest.mjs", "harness/owned-p2-lifecycle-persistence.mjs", "test-p2-lifecycle-persistence-local.mjs"]
         .map(name => [name, hash(readFileSync(join(root, "ops/platform", name)))])) };
     console.log(JSON.stringify(receipt));
   } finally {
@@ -93,7 +115,7 @@ async function main() {
 }
 
 try { await main(); }
-catch (error) { console.error(JSON.stringify({ status: "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES16_FAILED", phase, code: error?.code ?? error?.name ?? "Error",
+catch (error) { console.error(JSON.stringify({ status: "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES_FAILED", phase, code: error?.code ?? error?.name ?? "Error",
   ...(typeof error?.constraint === "string" ? { constraint: error.constraint } : {}), ...(typeof error?.table === "string" ? { table: error.table } : {}),
   ...(typeof error?.check === "string" ? { check: error.check } : {}),
   diagnostic: String(error?.message ?? "failure").replace(/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/gu, "{uuid}").replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/gu, "{email}").slice(0, 180), providerTouched: false })); process.exitCode = 1; }

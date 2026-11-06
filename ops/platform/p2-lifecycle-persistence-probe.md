@@ -168,3 +168,19 @@ databases and uses an explicit synthetic pre-expiry observation time; it is
 not a real 24-hour wait, deployed container proof, cleanup scheduling proof, or
 staging certification. PostgreSQL 18 CI and all three actual current-stage runs
 remain required.
+
+The fixed CI-only PostgreSQL 18 mode is:
+
+```sh
+node --import tsx ops/platform/test-p2-lifecycle-persistence-local.mjs \
+  --postgres18-manifest
+```
+
+It additionally requires `OWNED_POSTGRES_MAJOR=18`, PostgreSQL 18 `PG_BIN`, and
+the bounded `P2_LIFECYCLE_OWNED_SOURCE_MANIFEST` on stdin. The parent preparation
+helper has already fixed the canonical revisions and built dependencies; the
+runner independently hashes the exact read-only frontend and API source
+closures, refuses missing/extra/symlink/drifted files, and observes PostgreSQL 18
+at the binary, database identity, target and receipt boundaries. It accepts no
+repository, revision, path, URL, credential or command override. A future CI run
+of this mode is required; local PostgreSQL 16 evidence does not qualify it.
