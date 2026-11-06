@@ -8,13 +8,15 @@ import { createServer, request } from "node:https";
 import { createServer as createHttpServer } from "node:http";
 import { createGateway } from "./server.mjs";
 import { createPrivateTlsProxy } from "./private-tls.mjs";
+import { createHash } from "node:crypto";
+import { createP2CertificationFault, p2GatewayProcessBinding } from "./p2-certification-fault.mjs";
 
 let folder, key, cert, keyFile, certFile, wrongCertFile;
 before(() => {
   folder = mkdtempSync(join(tmpdir(), "lash-gateway-test-"));
   keyFile = join(folder, "key.pem"); certFile = join(folder, "cert.pem");
   execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-keyout", keyFile,
-    "-out", certFile, "-subj", "/CN=localhost.localdomain", "-addext", "subjectAltName=DNS:localhost.localdomain,DNS:other.test,IP:127.0.0.1"], { stdio: "ignore" });
+    "-out", certFile, "-subj", "/CN=localhost.localdomain", "-addext", "subjectAltName=DNS:localhost.localdomain,DNS:other.test,DNS:api-staging.lashher.com,IP:127.0.0.1"], { stdio: "ignore" });
   wrongCertFile = join(folder, "wrong-cert.pem");
   execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-keyout", join(folder, "wrong-key.pem"),
     "-out", wrongCertFile, "-subj", "/CN=untrusted.test"], { stdio: "ignore" });
@@ -42,7 +44,7 @@ async function fixture(t, handler, overrides = {}, options = {}) {
   });
   return {
     counters, admissionState,
-    send: ({ path = "/course/v1/courses", method = "GET", headers = {}, body, servername = "localhost.localdomain", rawHeaders } = {}) => new Promise((resolve, reject) => {
+    send: ({ path = "/course/v1/courses", method = "GET", headers = {}, body, servername = config.publicHost.split(":")[0], rawHeaders } = {}) => new Promise((resolve, reject) => {
       const call = request({ host: "127.0.0.1", port: server.address().port, path, method, servername, ca: cert,
         headers: rawHeaders ?? { host: config.publicHost, "x-lash-workload-token": "synthetic-valid-proof", ...headers } }, (reply) => {
         const chunks = [];
@@ -54,6 +56,114 @@ async function fixture(t, handler, overrides = {}, options = {}) {
     }),
   };
 }
+
+let certificationSequence = 0;
+const certificationHash = value => createHash("sha256").update(value).digest("hex");
+const certificationCanonical = value => JSON.stringify(value, (_key, child) => child && typeof child === "object" && !Array.isArray(child)
+  ? Object.fromEntries(Object.entries(child).sort(([a], [b]) => a.localeCompare(b))) : child);
+async function certificationFixture(t, handler, mode = "drop-after-ack", profile = "lifecycle-known-command-v1") {
+  const candidateSha256 = "a".repeat(64), file = join(folder, `certification-admission-${++certificationSequence}.json`);
+  const admission = { file, candidateSha256, releaseId: "owned-certification" };
+  const saveAdmission = recovery => writeFileSync(file, JSON.stringify({ version: 1, environment: "staging", candidateSha256,
+    releaseId: admission.releaseId, actionId: "owned-certification", newWork: false, recovery }));
+  saveAdmission(true);
+  const command = { version: 1, commandId: "00000000-0000-4000-8000-000000000001", userId: "00000000-0000-4000-8000-000000000002",
+    accountVersion: 2, action: "suspend", issuedAt: new Date().toISOString() };
+  const record = profile === "lifecycle-known-command-v1"
+    ? { commandId: command.commandId, accountVersion: command.accountVersion, canonicalSha256: certificationHash(certificationCanonical(command)) }
+    : { attemptId: "00000000-0000-4000-8000-000000000003", lessonId: "00000000-0000-4000-8000-000000000004", generation: 2,
+      environmentId: "owned-environment", assetId: "owned-asset", uploadId: "owned-upload", eventType: "video.asset.track.ready" };
+  const effects = [];
+  let lease;
+  const f = await fixture(t, handler, { admission, ownerId: "team_2Hrn5eMZyZxfAWdmYvyKi9t3", projectId: "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    publicHost: "api-staging.lashher.com" }, {
+    certificationFault(config) {
+      const gateway = Buffer.from(JSON.stringify(config));
+      const processBinding = p2GatewayProcessBinding({ bootId: "00000000-0000-4000-8000-000000000005", pid: 1, startTicks: "123" });
+      const now = Date.now();
+      lease = { version: 1, environment: "staging", profile, stageId: "owned-certification", releaseId: admission.releaseId, candidateSha256,
+        configurationSha256: "b".repeat(64), gatewayConfigurationSha256: certificationHash(gateway), gatewayProcessSha256: processBinding,
+        gatewayImageSha256: "c".repeat(64), sourceWitnessSha256: "d".repeat(64), issuedAt: new Date(now).toISOString(),
+        expiresAt: new Date(now + 120000).toISOString(), maxMatches: 1, mode, receiver: "course", record };
+      // Only fixed filesystem/process readers are projected for this owned
+      // fixture. Real gateway auth, admission and both TLS hops remain active.
+      return createP2CertificationFault({ ...config, admission: { ...config.admission, file: "/admission/state.json" } }, {
+        readLease: () => Buffer.from(JSON.stringify(lease)), readGateway: () => gateway, processBinding: () => processBinding,
+        emit: receipt => effects.push(receipt),
+      });
+    },
+  });
+  return { ...f, effects, command, record, saveAdmission, input: { method: "POST", path: "/course/v1/internal/accounts/commands",
+    headers: { authorization: "Bearer owned.lifecycle.jwt", "x-idempotency-key": command.commandId }, body: JSON.stringify(command) } };
+}
+
+test("certification503 runs only after actual auth/admission and before any TLS upstream effect", async t => {
+  let calls = 0;
+  const f = await certificationFixture(t, (_req, res) => { calls++; res.end("{}"); }, "503-before-upstream");
+  assert.equal((await f.send({ ...f.input, headers: { ...f.input.headers, "x-lash-workload-token": "" } })).status, 401);
+  assert.equal((await f.send({ ...f.input, headers: { ...f.input.headers, authorization: "" } })).status, 401);
+  f.saveAdmission(false);
+  assert.equal((await f.send(f.input)).status, 503);
+  assert.equal(f.effects.length, 0); assert.equal(calls, 0);
+  f.saveAdmission(true);
+  const refused = await f.send(f.input);
+  assert.equal(refused.status, 503); assert.equal(refused.headers["retry-after"], "1"); assert.equal(calls, 0);
+  assert.equal(JSON.parse(refused.body).error.code, "upstream_unavailable");
+  assert.equal(f.effects.length, 1); assert.equal(f.effects[0].upstreamStarted, false);
+  assert.equal((await f.send(f.input)).status, 200); assert.equal(calls, 1);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(f.admissionState().active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(f.admissionState().uncertain, { newWork: 0, recovery: 0 });
+});
+
+test("certification ACK loss drops actual complete upstream200 before response bytes and preserves uncertainty", async t => {
+  let calls = 0, f;
+  f = await certificationFixture(t, async (req, res) => {
+    calls++; const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    assert.equal(Buffer.concat(chunks).toString(), f.input.body);
+    res.writeHead(200, { "content-type": "application/json", "retry-after": "7" });
+    res.end(JSON.stringify({ commandId: f.command.commandId, accountVersion: 2, status: calls === 1 ? "accepted" : "duplicate" }));
+  });
+  await assert.rejects(f.send(f.input), error => error.code === "ECONNRESET");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 1); assert.equal(f.effects.length, 1); assert.equal(f.effects[0].downstreamBytesStarted, false);
+  assert.equal(f.effects[0].upstreamReceiptVerified, true);
+  assert.deepEqual(f.admissionState().active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(f.admissionState().uncertain, { newWork: 0, recovery: 1 });
+  const replay = await f.send(f.input);
+  assert.equal(replay.status, 200); assert.equal(replay.headers["retry-after"], "7");
+  assert.equal(JSON.parse(replay.body).status, "duplicate"); assert.equal(calls, 2); assert.equal(f.effects.length, 1);
+  assert.equal(f.admissionState().uncertain.recovery, 1);
+});
+
+test("certification never turns untyped or unsuccessful upstream replies into ACK-loss proof", async t => {
+  for (const [status, body] of [[200, '{"unrelated":true}'], [409, '{"error":{"code":"ACCOUNT_VERSION_CONFLICT"}}']]) {
+    const f = await certificationFixture(t, (_req, res) => { res.writeHead(status); res.end(body); });
+    const value = await f.send(f.input);
+    assert.equal(value.status, status); assert.equal(value.body, body); assert.deepEqual(f.effects, []);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.admissionState().uncertain.recovery, 0);
+  }
+});
+
+test("certification Mux profile sees actual raw bytes and signature then drops only verified managed200", async t => {
+  let f, received, signature;
+  f = await certificationFixture(t, async (req, res) => {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    received = Buffer.concat(chunks).toString(); signature = req.headers["mux-signature"];
+    res.end(JSON.stringify({ videoAsset: { id: f.record.attemptId, lessonId: f.record.lessonId, status: "ready" } }));
+  }, "drop-after-ack", "mux-managed-track-ready-v1");
+  const body = JSON.stringify({ id: "owned-event", type: f.record.eventType, created_at: new Date().toISOString(), environment: { id: f.record.environmentId },
+    data: { id: "owned-track", asset_id: f.record.assetId, passthrough: `lash-her-course:${f.record.environmentId}:${f.record.attemptId}` } });
+  const input = { method: "POST", path: "/course/v1/webhooks/mux", body, headers: { "mux-signature": "owned-signature-private" } };
+  await assert.rejects(f.send(input), error => error.code === "ECONNRESET");
+  assert.equal(received, body); assert.equal(signature, "owned-signature-private");
+  assert.deepEqual(f.effects.map(value => value.status), ["P2_MUX_VERIFIED_INGRESS_OBSERVED", "P2_TRANSPORT_FAULT_INJECTED"]);
+  assert.equal(f.effects[0].sourceManagedRowJoinRequired, true);
+  assert.equal((await f.send(input)).status, 200);
+  assert.equal(f.effects.filter(value => value.status === "P2_TRANSPORT_FAULT_INJECTED").length, 1);
+  assert.equal(JSON.stringify(f.effects).includes("owned-signature-private"), false);
+});
 
 test("private TLS upstream receives only selected headers, original query and application authorization", async (t) => {
   let received;

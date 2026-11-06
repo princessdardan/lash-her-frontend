@@ -12,7 +12,7 @@ WORKDIR /app
 COPY --from=zlib-build /out/rootfs/ /
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY package.json package-lock.json ./
-COPY server.mjs oidc.mjs policy.mjs admission.mjs private-tls.mjs operations.mjs routes.json release-probe.mjs ./
+COPY server.mjs oidc.mjs policy.mjs admission.mjs p2-certification-fault.mjs private-tls.mjs operations.mjs routes.json release-probe.mjs ./
 ENV NODE_ENV=production
 ENV PATH=/nodejs/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 USER nonroot:nonroot
