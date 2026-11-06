@@ -29,7 +29,7 @@ class IdentityKeyRotationPlanTests(unittest.TestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(actual / name, target)
         self.bundle = self.root / "bundle"
-        self.bundle.mkdir()
+        self.bundle.mkdir(mode=0o700)
         candidate = b'{"owned":"rotation"}\n'
         (self.bundle / "release.candidate.json").write_bytes(candidate)
         source_files = identity.source_closure(actual)
@@ -73,14 +73,18 @@ class IdentityKeyRotationPlanTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     rotation.validate_reviewed(changed)
 
-    def test_plan_binds_source_candidate_four_profiles_and_remains_live_ineligible(self):
+    def test_plan_binds_source_candidate_four_profiles_and_source_parent_without_live_qualification(self):
         with self.patches():
-            value = rotation.make_plan(self.bundle, self.reviewed, self.source)
+            value = rotation.execute(self.bundle, self.reviewed, self.source, "plan")
+            with self.assertRaises(ValueError):
+                rotation.execute(self.bundle, self.reviewed, self.source, "apply")
         self.assertEqual(value["status"], "P2_IDENTITY_KEY_ROTATION_PLAN")
         self.assertEqual(set(value["profiles"]), set(rotation.PROFILES))
-        self.assertFalse(value["parentAdapterReady"])
+        self.assertTrue(value["parentAdapterReady"])
         self.assertFalse(value["liveEligible"])
         self.assertFalse(value["keyRemovalVerified"])
+        self.assertFalse(value["releaseAccepted"])
+        self.assertFalse(value["providerCalled"])
         self.assertFalse(value["credentialValuesRead"])
         self.assertEqual(value["evidenceClasses"]["community-member"], "deployed-private-community-verifier")
 
