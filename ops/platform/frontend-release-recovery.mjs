@@ -70,7 +70,7 @@ export async function observeFrontendReleaseRecovery(input, dependencies) {
         // Force every transaction to read-only, including provider observation
         // wait time. The explicit session locks themselves remain available.
         const options = frontendConnectionOptions(await dependencies.getUrl(), target);
-        client = (dependencies.createClient ?? (options => new Client(options)))({ ...options, options: "-c default_transaction_read_only=on", application_name: "lash-her-frontend-recovery-observer" });
+        client = (dependencies.createClient ?? (options => new Client(options)))({ ...options, options: "-c search_path=pg_catalog,public -c default_transaction_read_only=on", application_name: "lash-her-frontend-recovery-observer" });
         client.on("error", () => { lost = true; });
         await client.connect(); await verify();
         demand((await client.query("SHOW default_transaction_read_only")).rows[0]?.default_transaction_read_only === "on");

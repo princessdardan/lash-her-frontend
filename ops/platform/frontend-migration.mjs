@@ -153,7 +153,9 @@ export function frontendConnectionOptions(value, target) {
     [...url.searchParams].length === 1 && url.searchParams.get("sslmode") === "verify-full", "FRONTEND_CREDENTIAL_TARGET_REFUSED");
   return { host: target.host, port: target.port, database: target.database, user: target.user, password: decodeURIComponent(url.password),
     ssl: { rejectUnauthorized: true }, enableChannelBinding: true, connectionTimeoutMillis: 15_000,
-    options: target.approvedPendingTags?.length === 0 ? "-c default_transaction_read_only=on" : "",
+    // Keep pg_catalog implicitly first and unqualified application DDL in
+    // public, irrespective of the privileged operator's role/database settings.
+    options: "-c search_path=public" + (target.approvedPendingTags?.length === 0 ? " -c default_transaction_read_only=on" : ""),
     statement_timeout: 120_000, lock_timeout: 15_000, application_name: "lash-her-operator-frontend-migration" };
 }
 

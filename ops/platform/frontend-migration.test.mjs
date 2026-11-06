@@ -74,6 +74,9 @@ test("frontend preparation binds exact source, target and reviewed SQL/schema wi
 test("frontend credential parsing requires exact identity and explicit verified TLS", () => {
   const f = fixture(), valid = "postgresql://frontend_migration:owned-private-marker@127.0.0.1:5432/frontend_owned?sslmode=verify-full";
   assert.equal(frontendConnectionOptions(valid, f.job.target).ssl.rejectUnauthorized, true);
+  assert.equal(frontendConnectionOptions(valid, f.job.target).options, "-c search_path=public");
+  assert.equal(frontendConnectionOptions(valid, { ...f.job.target, approvedPendingTags: [] }).options,
+    "-c search_path=public -c default_transaction_read_only=on");
   for (const value of [valid.replace("verify-full", "require"), valid.replace("frontend_migration", "frontend_runtime"), valid.replace("frontend_owned?", "other?"), valid + "&sslmode=disable", undefined]) {
     assert.throws(() => frontendConnectionOptions(value, f.job.target), (error) => !error.message.includes("owned-private-marker"));
   }
@@ -266,7 +269,7 @@ test("current frontend uses a server-enforced read-only session and issues no sc
     return result;
   };
   const result = await r.run();
-  assert.equal(selectedOptions.options, "-c default_transaction_read_only=on");
+  assert.equal(selectedOptions.options, "-c search_path=public -c default_transaction_read_only=on");
   assert.equal(result.migrationMode, "verify-current-only"); assert.equal(result.readOnlyVerified, true);
   assert.deepEqual(r.records[0].value.applied, []); assert.equal(r.records[0].value.schemaVerified, true);
   assert.equal(r.records[0].value.runtimeRoleVerified, true);
