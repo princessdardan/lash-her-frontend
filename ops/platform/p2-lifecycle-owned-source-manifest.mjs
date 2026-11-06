@@ -31,6 +31,7 @@ const FRONTEND_FILES = Object.freeze([
   "src/lib/private-db/migration-lineage.ts", "scripts/api-contract-compatibility-review.mjs", "scripts/api-contract-tools.mjs",
   "ops/platform/frontend-migration.mjs", "ops/platform/frontend-schema.mjs", "ops/platform/source-checkout.mjs",
   "ops/platform/release.mjs", "ops/platform/release-inputs.mjs", "ops/platform/source-policy.mjs",
+  "ops/platform/qualification-target-profile.mjs", "ops/platform/qualification-target-profiles.json",
   "ops/platform/p2-lifecycle-state-witness.mjs", "ops/platform/p2-lifecycle-persistence-probe.mjs",
   "ops/platform/p2-lifecycle-owned-source-manifest.mjs", "ops/platform/harness/owned-p2-lifecycle-persistence.mjs",
   "ops/platform/test-p2-lifecycle-persistence-local.mjs", "ops/platform/p2-lifecycle-receiver-post.mjs",

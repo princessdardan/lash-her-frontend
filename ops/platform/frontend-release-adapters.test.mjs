@@ -256,8 +256,9 @@ async function protocolFixture(code, task) {
     for (const name of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"])
       copyFileSync(join(root, "scripts", name), join(app, "scripts", name));
     const modules = ["p2-recovery-current-probe", "frontend-provider-effect-scopes", "frontend-historical-source-observer", "frontend-historical-source", "p2-certification-profile", "frontend-release-restoration", "frontend-admission", "frontend-square-effects", "frontend-google-effects", "frontend-crm-shipping-effects", "frontend-historical-capabilities", "frontend-provider-fence-join", "frontend-release-adapters", "frontend-provider-bindings", "frontend-release-inventory", "frontend-release-receipts", "frontend-admission-bootstrap", "frontend-historical-logins", "frontend-bootstrap-compatibility",
-      "frontend-migration", "frontend-schema", "source-checkout", "source-policy", "release-inputs", "release"];
+      "frontend-migration", "frontend-schema", "source-checkout", "source-policy", "release-inputs", "release", "qualification-target-profile"];
     for (const name of modules) copyFileSync(join(root, "ops/platform", `${name}.mjs`), join(app, "ops/platform", `${name}.mjs`));
+    copyFileSync(join(root, "ops/platform/qualification-target-profiles.json"), join(app, "ops/platform/qualification-target-profiles.json"));
     copyFileSync(join(root, "src/lib/private-db/migration-lineage.ts"), join(app, "src/lib/private-db/migration-lineage.ts"));
     writeFileSync(join(app, "package.json"), '{"type":"module"}\n');
     symlinkSync(join(root, "node_modules"), join(app, "node_modules"), "dir");

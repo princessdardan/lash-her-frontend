@@ -31,6 +31,8 @@ test("the actual owned source-copy branch produces an executable migration CLI w
       cwd: app, env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10_000,
     });
     const result = invoke(); assert.ifError(result.error); assert.equal(result.status, 0, result.stderr);
+    for (const name of ["qualification-target-profile.mjs", "qualification-target-profiles.json"])
+      assert.deepEqual(readFileSync(join(app, "ops/platform", name)), readFileSync(join(source, "ops/platform", name)));
     const manifest = JSON.parse(result.stdout), expected = frontendMigrationArtifact(source);
     for (const key of ["sqlArtifactSha256", "contractManifestSha256", "contractPhase", "phase2ContractManifestSha256"]) assert.equal(manifest[key], expected[key]);
     for (const file of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"]) {

@@ -43,6 +43,8 @@ test("fixed PG18 manifest verifies exact mounted frontend and API closures", () 
     const roots = Object.fromEntries(["frontend", "course", "community"].map(service => { const root = join(directory, service); mkdirSync(root); source(root, service); return [service, root]; }));
     const value = manifest(roots), raw = Buffer.from(JSON.stringify(value));
     const verified = verifyP2LifecycleOwnedSourceManifest(raw, roots);
+    for (const name of ["qualification-target-profile.mjs", "qualification-target-profiles.json"])
+      assert.ok(verified.manifest.sources.frontend.files[`ops/platform/${name}`]);
     assert.equal(verified.manifest.sources.course.revision, P2_LIFECYCLE_OWNED_API_REVISIONS.course);
     assert.match(verified.sourceManifestSha256, /^[a-f0-9]{64}$/u);
     for (const service of ["frontend", "course", "community"]) {
