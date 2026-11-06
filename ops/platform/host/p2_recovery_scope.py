@@ -38,6 +38,7 @@ class P2RecoveryScope(P2ReleaseScope):
     def initialize_runtime(self,snapshot,release):
         import staging_admission
         self.verify()
+        self.require_prior_gateway()
         gateway=json.loads((snapshot/'gateway.json').read_bytes())
         migrate.demand(gateway.get('admission')=={'file':'/admission/state.json','releaseId':release['releaseId'],'candidateSha256':self.candidate_sha256},'P2_RECOVERY_GATEWAY_BINDING_REQUIRED')
         staging_admission.persist_state(snapshot,{'releaseId':release['releaseId'],'candidateSha256':self.candidate_sha256},

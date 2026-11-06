@@ -322,11 +322,11 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
             prefix, env = compose_command(snapshot, release["environment"]), runtime_environment(release, snapshot)
             for stage in STAGES:
                 if _p2_scope is not None:
-                    _p2_scope.verify()
+                    _p2_scope.before_runtime_stage(stage)
                 outcome["phase"] = "start-" + "+".join(stage)
                 command([*prefix, "up", "--detach", "--no-deps", "--pull", "never", "--force-recreate", "--wait", "--wait-timeout", "90", *stage], env, 120)
                 if _p2_scope is not None:
-                    _p2_scope.verify()
+                    _p2_scope.after_runtime_stage(stage)
             outcome["phase"] = "runtime-boundary-probes"
             probe = json.loads(command([*prefix, "exec", "-T", "gateway", "node", "release-probe.mjs"], env, 30))
             demand(probe.get("status") == "API_RUNTIME_BOUNDARIES_PASS" and isinstance(probe.get("checks"), list)

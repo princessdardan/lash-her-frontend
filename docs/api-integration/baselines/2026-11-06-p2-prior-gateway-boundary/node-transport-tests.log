@@ -1,0 +1,29 @@
+(node:55840) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-prior-gateway-boundary/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-prior-gateway-boundary/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ retained READY recovery uses actual inherited pipe/flock without needing or creating old terminal (65.979084ms)
+✔ recovery arm cannot bypass prior gateway preparation (25.504625ms)
+✔ reviewed forward recovery transmits only the newly verified workload bytes (29.424209ms)
+✔ reviewed forward recovery refuses omitted or mismatched new workload bytes before host verification (48.778459ms)
+✔ remote process death aborts recovery before frontend/promotion/admission work (23.145333ms)
+(node:55841) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-prior-gateway-boundary/src/lib/private-db/migration-lineage.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-prior-gateway-boundary/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ fixed P2 profile excludes checkout, member access and native schedule activation (0.847958ms)
+✔ Node and fixed host enforce identical closed certification and runtime profiles (19.597417ms)
+✔ host settings cannot override source, candidate, credentials or staging scope (0.361041ms)
+✔ prior gateway references contain only closed retained-evidence paths and hashes (0.400167ms)
+✔ API start cannot bypass prior gateway preparation (23.402541ms)
+✔ actual guardian pipe retains host flock, joins receipts and never places credentials in SSH args/env (62.012667ms)
+✔ guardian process death during API stage aborts continuation before frontend mutation (20.240333ms)
+✔ missing frontend terminal receipt refuses the parent join without a replay (22.986708ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 359.876458

@@ -23,6 +23,7 @@ class P2ReleaseScope:
         self.release, self.jobs = copy.deepcopy(release), copy.deepcopy(jobs)
         self.configuration_sha256 = copy.deepcopy(configuration_sha256)
         self.closed = False
+        self.prior_gateway = None
         self.revoked = threading.Event()
         self.processes, self.mutations = set(), threading.Lock()
         self.verify()
@@ -40,6 +41,25 @@ class P2ReleaseScope:
         # Rechecking the same open file description never acquires a second lock.
         fcntl.flock(self.descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         self.verify_frontend()
+        if self.prior_gateway is not None:
+            self.prior_gateway.verify()
+
+    def bind_prior_gateway(self, boundary):
+        from p2_prior_gateway import PriorGatewayBoundary
+        if type(boundary) is not PriorGatewayBoundary or boundary.selected != self.release or boundary.initial['candidateSha256'] != self.candidate_sha256 or self.prior_gateway is not None:
+            raise ValueError('P2_SOURCE_PRIOR_GATEWAY_BOUNDARY_REQUIRED')
+        boundary.verify(); self.prior_gateway = boundary
+
+    def require_prior_gateway(self):
+        if self.prior_gateway is None:
+            raise ValueError('P2_PRIOR_GATEWAY_NOT_PREPARED')
+        self.prior_gateway.verify()
+
+    def before_runtime_stage(self, stage):
+        self.verify(); self.require_prior_gateway(); self.prior_gateway.before_stage(stage)
+
+    def after_runtime_stage(self, stage):
+        self.prior_gateway.after_stage(stage); self.verify()
 
     def revoke(self):
         self.revoked.set()
@@ -122,6 +142,7 @@ class P2ReleaseScope:
         """The new gateway starts closed; no previous admission file is reused."""
         import staging_admission
         self.verify()
+        self.require_prior_gateway()
         gateway = json.loads((snapshot / "gateway.json").read_bytes())
         if gateway.get("admission") != {"file": "/admission/state.json", "releaseId": release["releaseId"],
                                        "candidateSha256": self.candidate_sha256}:

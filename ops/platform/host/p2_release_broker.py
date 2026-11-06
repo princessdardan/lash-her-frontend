@@ -21,6 +21,7 @@ import migrate
 import release as runtime
 from p2_release_scope import P2ReleaseScope
 import staging_admission
+import p2_prior_gateway
 import staging_state
 import vercel
 import frontend_gateway_observation
@@ -229,6 +230,9 @@ class Broker:
         self.outcome.update(migrate.contract_identity(self.selected))
         migrate.write_json(self.directory, 'p2-release-started.json', self.outcome)
         self.check()
+        self.prior_gateway = None
+        self.prior_gateway_preflight = p2_prior_gateway.preflight_prior_gateway(p, self.selected, self.check)
+        migrate.write_json(self.directory, 'prior-gateway-preflight.json', self.prior_gateway_preflight)
         def parent_watch():
             while not self.committed.wait(1):
                 if self.failed.is_set():
@@ -263,6 +267,12 @@ class Broker:
         if self.closing_at is not None and not self.finished:
             require(time.monotonic() - self.closing_at < 10, 'P2_FRONTEND_CLOSE_TIMEOUT')
 
+    def prepare_prior_gateway(self):
+        self.check()
+        require(self.worker is None and self.scope is None and self.closing_at is None and self.prior_gateway is None, 'P2_PRIOR_GATEWAY_ALREADY_PREPARED')
+        self.prior_gateway = p2_prior_gateway.prepare_prior_gateway(self.initial, self.selected, self.directory, self.check)
+        return {'status':'PRIOR_GATEWAY_CLOSED_ZERO','candidateSha256':self.initial['candidateSha256'],'observation':self.prior_gateway.observation}
+
     def start(self, identity, request):
         self.check()
         require(self.worker is None and self.closing_at is None, 'P2_API_STAGE_ALREADY_STARTED')
@@ -282,6 +292,7 @@ class Broker:
         self.scope = P2ReleaseScope(self.lock_fd, LOCK, self.check, receipt, self.outcome['candidateSha256'],
                                     release=self.selected, jobs=self.jobs, configuration_sha256=self.initial['configurationSha256'])
         self.scope.require_frontend(self.selected, self.jobs['frontend'])
+        self.scope.bind_prior_gateway(self.prior_gateway)
         def ready(attempt, migration_attempt, snapshot, selected, outcome):
             require(selected == self.selected and outcome.get('status') == 'API_RUNTIME_READY', 'P2_API_READY_BINDING_REFUSED')
             self.runtime_snapshot, self.ready = snapshot, outcome
@@ -390,18 +401,33 @@ class Broker:
                 self.outcome.update(trafficAuthorized=False, newWorkAuthorized=False, recoveryAuthorized=False)
             except BaseException:
                 self.outcome['frontendAdmissionClosedOnFailure'] = None
-        if self.runtime_snapshot is not None:
-            try:
-                from p2_release_supervisor import close_gateway
-                self.outcome.update(close_gateway(self.initial, self.selected, self.runtime_snapshot))
-            except BaseException:
-                self.outcome['gatewayAdmissionFileClosed'] = None
+        prior, gateway_directory = None, None
         if self.observer or self.worker:
+            try:
+                # The independent guard is dead; this survivor still owns the
+                # actual flock. No revoked frontend/scope query can block stop.
+                def containment_verify():
+                    current, opened = os.lstat(LOCK), os.fstat(self.lock_fd)
+                    require(stat.S_ISREG(current.st_mode) and current.st_uid == os.getuid() and not current.st_mode & 0o077 and
+                        (current.st_dev,current.st_ino) == (opened.st_dev,opened.st_ino), 'P2_FALLBACK_LOCK_CHANGED')
+                    fcntl.flock(self.lock_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                    verify_source_closure(self.initial,self.source)
+                gateway_directory = self.directory / 'prior-gateway-broker-fallback'
+                gateway_directory.mkdir(mode=0o700)
+                prior = p2_prior_gateway.capture_before_stop(self.initial,self.selected,gateway_directory,containment_verify)
+                self.outcome['priorGatewayBeforeStop'] = prior
+            except BaseException:
+                self.outcome['priorGatewayBeforeStopUnknown'] = True
             try:
                 migrate.suspend_runtime('staging', runtime.SAFE_ENV)
                 self.outcome['runtimeStopped'] = True
             except BaseException:
                 self.outcome['runtimeStopped'] = None
+            if prior is not None:
+                try:
+                    self.outcome['priorGatewayOrderedStop'] = p2_prior_gateway.retain_ordered_stop(prior,gateway_directory,containment_verify)
+                except BaseException:
+                    self.outcome['priorGatewayOrderedStopUnknown'] = True
         if getattr(self, 'selected', None) and self.worker:
             for name in ('course', 'community'):
                 container = 'lash-migrate-' + name + '-' + self.selected['releaseId']
@@ -424,6 +450,9 @@ class Broker:
         self.last_command = time.monotonic()
         if operation == 'check':
             self.send(identity, 'HELD')
+        elif operation == 'prepare-prior-gateway':
+            require(set(value) == {'id','operation'}, 'P2_PRIOR_GATEWAY_EVENT_FIELDS_REFUSED')
+            self.send(identity,'PRIOR_GATEWAY_PREPARED',receipt=self.prepare_prior_gateway())
         elif operation == 'roles-prepared':
             require(self.worker is None and self.observer is None and self.initial.get('rolePreparation') is not None
                     and not hasattr(self, 'roles_proof'), 'P2_ROLE_PREPARATION_STAGE_REFUSED')

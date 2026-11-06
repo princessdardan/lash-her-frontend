@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import migrate
 import release as runtime
 import staging_admission
+import p2_prior_gateway
 from p2_release_broker import Broker, PhysicalObserver, MAXIMUM, LOCK
 from p2_source_closure import verify_source_closure, private_observer_program
 
@@ -168,6 +169,21 @@ def close_gateway(initial, selected, configuration):
             'closedGatewayAdmissionSha256': digest}
 
 
+def verify_guard_boundary(initial, source):
+    # Source-selected inherited open file description, never an operator DTO.
+    descriptor = initial.get('_guardLockDescriptor')
+    require(type(descriptor) is int, 'P2_GUARD_BOUNDARY_LOCK_REQUIRED')
+    opened, current = os.fstat(descriptor), os.lstat(LOCK)
+    require(stat.S_ISREG(current.st_mode) and current.st_uid == 0 and not current.st_mode & 0o077 and
+        (current.st_dev,current.st_ino) == (opened.st_dev,opened.st_ino), 'P2_GUARD_BOUNDARY_LOCK_CHANGED')
+    fcntl.flock(descriptor,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    verify_source_closure(initial,source)
+
+
+def capture_gateway_before_stop(initial, selected, directory, source):
+    return p2_prior_gateway.capture_before_stop(initial,selected,directory,lambda:verify_guard_boundary(initial,source))
+
+
 def fail_closed(initial, armed, source, *, group=None, record_name='p2-independent-guard-outcome.json', observer_type=None,
                 native_containment=None):
     result = {'status': 'P2_INDEPENDENT_GUARD_FAILED_CLOSED_REQUIRES_REVIEW', 'trafficAuthorized': None,
@@ -220,10 +236,28 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
     # release/recovery it neither creates nor restores a runtime snapshot.
     snapshot = (Path(initial['configuration']) if layout == CERTIFICATION_LAYOUT else
                 Path(initial['results']) / (layout['runtimePrefix'] + identity) / 'configuration')
+    directory = Path(initial['results']) / (layout['receiptPrefix'] + identity)
+    gateway_directory = directory
+    if record_name == 'p2-independent-guard-after-quiescence.json':
+        gateway_directory = directory / 'prior-gateway-after-quiescence'
+        try: gateway_directory.mkdir(mode=0o700)
+        except FileExistsError: pass
+    prior = None
     try:
-        result.update(close_gateway(initial, selected, snapshot))
+        prior = capture_gateway_before_stop(initial,selected,gateway_directory,source)
+        result['priorGatewayBeforeStopSha256'] = migrate.file_hash(migrate.read_input(gateway_directory,p2_prior_gateway.BEFORE_STOP))
+        result['priorGatewayBeforeStop'] = prior
+        admission = (prior.get('observation') or {}).get('admission') or {}
+        acknowledged = prior['status'] == 'PRIOR_GATEWAY_PRESTOP_OBSERVED'
+        result.update(gatewayAdmissionFileClosed=acknowledged or None,gatewayAdmissionAcknowledged=acknowledged or None,
+            closedGatewayAdmissionSha256=admission.get('sha256'))
     except BaseException:
-        result['gatewayAdmissionFileClosed'] = None
+        result['priorGatewayBeforeStopUnknown'] = True
+    if prior is None or prior['status'] != 'PRIOR_GATEWAY_PRESTOP_OBSERVED':
+        # Best-effort closure of a newly prepared snapshot does not prove that
+        # it was mounted. Preserve the actual observation's unknown status.
+        try: result.update(close_gateway(initial, selected, snapshot))
+        except BaseException: result['gatewayAdmissionFileClosed'] = None
     # The only processes allowed to start containers have been revoked/reaped.
     # Close known migration containers first, then stop all API/runtime services.
     for name in ('course', 'community'):
@@ -245,6 +279,13 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
         result['runtimeStopped'] = True
     except BaseException:
         pass
+    if prior is not None:
+        try:
+            stopped = p2_prior_gateway.retain_ordered_stop(prior,gateway_directory,lambda:verify_guard_boundary(initial,source))
+            result['priorGatewayOrderedStop'] = stopped
+            result['priorGatewayStopReceiptDirectory'] = str(gateway_directory)
+            result['priorGatewayStopReceiptSha256'] = migrate.file_hash(migrate.read_input(gateway_directory,p2_prior_gateway.STOPPED))
+        except BaseException: result['priorGatewayOrderedStopUnknown'] = True
     directory = Path(initial['results']) / (layout['receiptPrefix'] + identity)
     if directory.is_dir():
         try:
@@ -297,6 +338,7 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
     info = os.fstat(fd)
     require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o077, 'P2_GUARD_LOCK_REFUSED')
     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    initial['_guardLockDescriptor'] = fd
     safety_read, safety_write = os.pipe()
     health_read, health_write = os.pipe()
     child = os.fork()

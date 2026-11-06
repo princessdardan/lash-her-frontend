@@ -61,6 +61,7 @@ class P2RecoveryRuntime:
         self.scope.require_configuration(self.configuration)
         self.scope.require_frontend(self.selected, self.jobs['frontend'])
         migrate.private_directory(self.output)
+        self.scope.require_prior_gateway()
         verified = {name: self.verify_api_current(name, self.output) for name in ('course', 'community')}
         self.scope.verify()
         snapshot = self.output / 'configuration'
@@ -76,7 +77,9 @@ class P2RecoveryRuntime:
             runtime.preflight(self.selected, snapshot, self.jobs)
             for stage in runtime.STAGES:
                 self.scope.require_configuration(self.configuration)
+                self.scope.before_runtime_stage(stage)
                 self.command([*prefix, 'up', '--detach', '--no-deps', '--pull', 'never', '--force-recreate', '--wait', '--wait-timeout', '90', *stage], env, 120)
+                self.scope.after_runtime_stage(stage)
             probe = json.loads(self.command([*prefix, 'exec', '-T', 'gateway', 'node', 'release-probe.mjs'], env, 30))
             migrate.demand(probe.get('status') == 'API_RUNTIME_BOUNDARIES_PASS' and set(probe.get('checks', [])) == runtime.PROBE_CHECKS, 'P2_RECOVERY_RUNTIME_BOUNDARIES_REQUIRED')
             containers = runtime.check_containers(self.selected, snapshot)

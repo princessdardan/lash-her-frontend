@@ -63,6 +63,7 @@ class P2RecoveryBroker(Broker):
         self.observer.start(self.abort)
         self.scope = P2RecoveryScope(self.lock_fd, LOCK, self.check, receipt, self.initial['candidateSha256'],
             recovery_action_id=self.action_id(), release=self.selected, jobs=self.jobs, configuration_sha256=self.initial['configurationSha256'])
+        self.scope.bind_prior_gateway(self.prior_gateway)
         self.armed_probe = probe
 
     def start(self, identity, request):

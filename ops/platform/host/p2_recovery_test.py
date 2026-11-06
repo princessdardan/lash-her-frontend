@@ -83,7 +83,7 @@ class RecoveryScopeTests(unittest.TestCase):
             if name=='community':
                 raise ValueError('P2_RECOVERY_CURRENT_API_REQUIRED')
             return {'status':'P2_RECOVERY_API_DATABASE_CURRENT'}
-        with patch.object(component,'verify_api_current',side_effect=current),patch.object(runtime,'snapshot_configuration') as snapshot,patch.object(migrate,'execute',side_effect=AssertionError('SQL replay forbidden')):
+        with patch.object(scope,'require_prior_gateway'),patch.object(component,'verify_api_current',side_effect=current),patch.object(runtime,'snapshot_configuration') as snapshot,patch.object(migrate,'execute',side_effect=AssertionError('SQL replay forbidden')):
             with self.assertRaisesRegex(ValueError,'CURRENT_API'):
                 component.restore()
         self.assertEqual(calls,['course','community']);snapshot.assert_not_called()
@@ -108,7 +108,8 @@ class RecoveryScopeTests(unittest.TestCase):
             if 'release-probe.mjs' in args:return json.dumps({'status':'API_RUNTIME_BOUNDARIES_PASS','checks':sorted(runtime.PROBE_CHECKS)})
             return ''
         containers=[{'service':name,'image':scope.release['artifacts'][runtime.IMAGE_KEYS[name]]['image']} for name in runtime.SERVICES]
-        with patch.object(component,'verify_api_current',side_effect=current),patch.object(runtime,'snapshot_configuration',side_effect=snapshot),patch.object(runtime,'preflight'),patch.object(component,'command',side_effect=command),patch.object(runtime,'check_containers',return_value=containers),patch.object(migrate,'execute',side_effect=AssertionError('SQL replay forbidden')):
+        # This topology-only case supplies the separately tested gateway boundary seam.
+        with patch.object(scope,'require_prior_gateway'),patch.object(scope,'before_runtime_stage'),patch.object(scope,'after_runtime_stage'),patch.object(component,'verify_api_current',side_effect=current),patch.object(runtime,'snapshot_configuration',side_effect=snapshot),patch.object(runtime,'preflight'),patch.object(component,'command',side_effect=command),patch.object(runtime,'check_containers',return_value=containers),patch.object(migrate,'execute',side_effect=AssertionError('SQL replay forbidden')):
             outcome=component.restore()
         self.assertEqual(outcome['status'],'P2_RECOVERY_API_RUNTIME_READY');self.assertEqual(order[2:],list(runtime.SERVICES))
         self.assertEqual(len(outcome['containers']),10);self.assertFalse(outcome['sqlReplayed'])
