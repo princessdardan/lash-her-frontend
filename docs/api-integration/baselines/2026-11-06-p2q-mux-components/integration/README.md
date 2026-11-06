@@ -1,0 +1,11 @@
+# Inactive Mux component integration
+
+Gateway capture codecs/state, Node metadata codecs and host observation/replay models are integrated on the existing isolated source branch. Their public activation/dispatch entrypoints remain unavailable. No source producer, server, Dockerfile, parent coordinator or physical observer was wired to a positive path. The static Compose override is not selected by any release/recreation entrypoint.
+
+[Validation](validation.json) records original-to-integrated commits, exact source hashes, the corrected common data-schema freeze and combined local checks. Node 24: 712 passed, 17 conditional skips, zero failures; host: 23 test groups passed; focused lint produced no diagnostics. These checks qualify components and representations only. The latest exact source with all ten CI jobs remains `ff4c0a340b578e0d2c4df1c2c942209227a9f24c` until the new source completes CI.
+
+The gateway and host packages passed independent review. Node review identified lossy non-enumerable property validation, insufficient case/selection binding and profile-registry import I/O; all three were corrected and independently cleared. Static Compose review required explicit `rprivate`; this was added and independently cleared. Original failure records, schema revision and worker Git objects remain retained. Earlier evidence fields saying review was pending describe the original observations and are not rewritten.
+
+The common reference is data syntax only. Current filesystem inspection does not prove a historical producer fsync acknowledgement. Coverage consistency does not establish frontend/gateway drain, cumulative source observations or a closed provider queue. The tests do not establish actual Docker merge/mount/UID/fsync behavior, database authority, allocated profile, first installation or provider replay. S05 live certification remains open.
+
+The owner requested clarification of independently administered scopes; their existence remains UNKNOWN. This means old administrative credentials cannot privately access or control the new lane, including inherited and recovery/control paths. The same human can own both lanes. No account creation, allocation, spending, candidate publication or live release follows from that clarification.

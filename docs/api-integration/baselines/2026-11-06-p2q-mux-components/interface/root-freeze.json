@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "status": "DATA_COMPONENT_SCHEMA_FROZEN_NOT_AUTHORITY",
+  "schemaSha256": "c2c44f3895117af792b56bc0cd838e2a4f158f4e59a14d2be791b6f7349e1c8a",
+  "manifestSha256": "2bc1ac2ffb51f71e262d0097b6d0be1f297473aae19b3d5c0b048b6044e8242f",
+  "designRevision2Sha256": "58aa846dd76f3a457d69a12bdd3e6c9a4b0473033c4bb35f312547015483200c",
+  "sourceBaseline": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c",
+  "ownersAck": [
+    "gateway",
+    "host",
+    "node"
+  ],
+  "rootReviewed": true,
+  "clarifications": [
+    "Exact canonical compact sorted-key JSON plus LF only; reject duplicate/alternate number/order/whitespace; raw Mux bytes unchanged.",
+    "64 records,16KiB record and192KiB aggregate are simultaneous upper limits, not exceptions.",
+    "Current filesystem inspection cannot establish historical producer fsync ACK.",
+    "Global coverage consistency does not prove actual FE/gateway drain or provider queue closure."
+  ],
+  "productionActivationImplemented": false,
+  "authorityFactoryPresent": false,
+  "allocatedProfilePresent": false,
+  "physicalObserverAcceptancePresent": false,
+  "liveDispatchApproved": false,
+  "scope": "Only disabled/no-lease components, codecs, safe protocol syntax, private reducers and fixture/model tests. Later positive source integration and real authorization remain required.",
+  "controlledCorrection": {
+    "previousSchemaSha256": "3458d245b54e5fe63aaea0354bbd40327f6b0180b97e6f62fd5b4cb40fb0e2b8",
+    "retainedDirectory": "original-3458",
+    "change": "Preserve the original shared reference syntax by rejecting the all-zero profile digest; other SHA data fields unchanged."
+  }
+}

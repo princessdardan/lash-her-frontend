@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "status": "INACTIVE_COMPONENT_UNION_LOCAL_CHECKS_PASSED_REVIEW_PENDING",
+  "sourceCommit": "bf05957c9af94eda38f8fe105b48a3fbc15c6684",
+  "latestAllTenCiSource": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c",
+  "sourceMapping": [
+    {
+      "original": "3d1b1c6542fc55077d867b68218ed078c48caa5b",
+      "integrated": "979a644dcbdc3ca686cdadba661a728963538ee5"
+    },
+    {
+      "original": "ba452de188ea58b22b5e6b3478ae7bfb9cff216f",
+      "integrated": "db079f30e05bc9e1c6c8ea793934931ad2c22da2"
+    },
+    {
+      "original": "dcea40053ed51e7ffe59649279097a0701d672e7",
+      "integrated": "2b23d838f3f58aaef7839fb1696abf50ecae4eee"
+    },
+    {
+      "original": "5cd9817d4c6244cf614f05e1aa44d4fe81afe45e",
+      "integrated": "099417e372fbe6d27832bf2558684751d67a8633"
+    },
+    {
+      "original": "c488aa1a2ab8ef16fd9b44ab08a81dd8b5fd019b",
+      "integrated": "e6824e2b7ea0123aac1effdffe93c451d4b3a36d"
+    },
+    {
+      "original": "83fcfcef9da54acdf0b6626c708fe6c2a629a3c7",
+      "integrated": "ef2c331755aa25f04d8faffe512b14dfc0a8f5f6"
+    },
+    {
+      "original": "ecb9824b43a389fffbc537fd6773c23f99e44f1e",
+      "integrated": "c2a3cd8936bbafd49553fca30048eef10f982a09"
+    },
+    {
+      "original": "2ff5daac7756ac65a38dbc49a324d4568b9f867e",
+      "integrated": "ff938449fdbda76a532a985116debdb39e24da1e"
+    },
+    {
+      "original": "8e323605831f2a479c8778bc2a61b1e5da78c882",
+      "integrated": "183ab9f7606a6fcd8a1d2cebacd504e4584afae8"
+    },
+    {
+      "original": "04c2b308183ae32fad565c905eda97385dd8ee55",
+      "integrated": "d83c4f548a0efe5b281dc8b5c48d3252b596b0d7"
+    }
+  ],
+  "rootStaticOverrideCommit": "bf05957c9af94eda38f8fe105b48a3fbc15c6684",
+  "sourceFiles": {
+    "ops/gateway/p2q-mux-capture.mjs": {
+      "bytes": 27463,
+      "sha256": "9d821df6a2d2654492f38744ee5b71ad80ce571c8fd778fc57732085403b25de"
+    },
+    "ops/gateway/p2q-mux-capture.test.mjs": {
+      "bytes": 28577,
+      "sha256": "93ab6be37557037456798a6ece893a01f5f707e3b215d175a002444c6f7b33a1"
+    },
+    "ops/platform/p2q-mux-capture.mjs": {
+      "bytes": 16677,
+      "sha256": "4d8b7ebd1b6bcbe87bb69b8ddedb6830e46b01b1378936b19f8f9d1fda1680bc"
+    },
+    "ops/platform/p2q-mux-capture.test.mjs": {
+      "bytes": 18154,
+      "sha256": "faf0b079d024ce7b03e146ac9ca20333d93a7582140658e7b62aebc3603c3409"
+    },
+    "ops/platform/host/p2q_mux_capture.py": {
+      "bytes": 38483,
+      "sha256": "4a872b04d0441029f0a0efdad0233b1e7999ae164f21fe87f26782983668204f"
+    },
+    "ops/platform/host/p2q_mux_capture_test.py": {
+      "bytes": 31959,
+      "sha256": "dfa0101941f7404ef51244833b6b082cd9bb76d6fbd126efe812ed9859135dc9"
+    },
+    "ops/platform/compose.p2q-mux.yaml": {
+      "bytes": 473,
+      "sha256": "edb236e6f15aaa0fd383fb899e4ba88e2f7a556b1d3f9615466f6ca2aeaae41c"
+    },
+    "ops/platform/platform.test.mjs": {
+      "bytes": 17519,
+      "sha256": "11a8de81005cba802be5a1bf7ec6b1306125f4c26f5881e9ab69b419492f91a1"
+    }
+  },
+  "jointSchemaSha256": "c2c44f3895117af792b56bc0cd838e2a4f158f4e59a14d2be791b6f7349e1c8a",
+  "jointManifestSha256": "2bc1ac2ffb51f71e262d0097b6d0be1f297473aae19b3d5c0b048b6044e8242f",
+  "rootFreezeSha256": "f8d38a9700e17ffaac1f1aee351c42ee1eb6cfe7523f1348c6e792d8b031c243",
+  "verification": {
+    "node": {
+      "runtime": "24.18.0",
+      "total": 729,
+      "passed": 712,
+      "failed": 0,
+      "conditionalSkipped": 17,
+      "log": "node-tests.log"
+    },
+    "host": {
+      "groupsPassed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "log": "host-tests.log"
+    },
+    "lint": {
+      "diagnosticBytes": 0,
+      "log": "lint.log"
+    }
+  },
+  "logs": {
+    "node-tests.log": {
+      "bytes": 91592,
+      "sha256": "9a4ea13766c3133c38cc9308fb1d80e7221b8e0de00bea132f9f2a4d4ae4e295"
+    },
+    "host-tests.log": {
+      "bytes": 122,
+      "sha256": "18eca533405311dbbaac8b63fae6a90b988971f5904b784c6fe5375ed26fb05a"
+    },
+    "lint.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "originalGitObjects": {
+    "archive": "/Users/dardan/.local/share/lash-her/phase2-goal-evidence/2026-11-06/p2q-mux-original-git/original-components.bundle",
+    "bytes": 139608,
+    "sha256": "13aac85fa272c448dbfe51f18a557b8e95c4a101f447408ee3c0bc0ece8d3a4f",
+    "requiredBase": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c"
+  },
+  "capabilities": {
+    "componentOnly": true,
+    "sourceProducerIntegrated": false,
+    "productionArmAvailable": false,
+    "positiveAuthorityFactoryPresent": false,
+    "allocatedTargetProfileRegistered": false,
+    "physicalObserverIntegrated": false,
+    "liveProviderQualification": false,
+    "s05Complete": false
+  },
+  "policies": {
+    "independentAdministrativeScopes": "UNKNOWN",
+    "resourceAllocationApproved": false,
+    "spendingApproved": false,
+    "candidatePublicationApproved": false,
+    "liveReleaseApproved": false
+  }
+}
