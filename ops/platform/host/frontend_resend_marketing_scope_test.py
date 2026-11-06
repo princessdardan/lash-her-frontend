@@ -49,7 +49,7 @@ def contact():
 
 def job():
     return {"id": JOB, "contact_id": CONTACT, "submission_id": None, "consent_event_id": None, "email_sha256": EMAIL_SHA,
-        "source": "contact_popup", "kind": "unsubscribe_sync", "status": "succeeded", "attempts": 1, "lease_held": False,
+        "source": "contact_popup", "kind": "unsubscribe_sync", "status": "succeeded", "attempts": 1, "max_attempts": 5, "lease_held": False,
         "succeeded_at": LATER, "skipped_at": None, "updated_at": LATER}
 
 
@@ -315,12 +315,23 @@ class MarketingScopeTests(unittest.TestCase):
     def test_normal_job_completion_uses_same_original_prestate_without_reapproval(self):
         self.populated(); before = deepcopy(self.rows)
         before["syncJobs"][0].update(status="processing", lease_held=True, succeeded_at=None, updated_at=TIME)
+        self.rows["syncJobs"][0]["attempts"] = 4
         result = self.observe(before)
         self.assertTrue(result["complete"])
         self.assertNotEqual(result["originalDatabaseSnapshotSha256"], result["observedDatabaseSnapshotSha256"])
         self.assertEqual(result["databaseTransition"]["changedJobs"], 1)
         self.rows["syncJobs"][0]["email_sha256"] = "f" * 64
         with self.assertRaisesRegex(ValueError, "UNDECLARED_DATABASE_TRANSITION"): self.observe(before)
+
+    def test_completion_cannot_expand_original_retry_budget_or_decrease_attempts(self):
+        self.populated(); before = deepcopy(self.rows)
+        before["syncJobs"][0].update(status="processing", attempts=2, succeeded_at=None, updated_at=TIME)
+        self.rows["syncJobs"][0].update(attempts=4, max_attempts=6)
+        with self.assertRaisesRegex(ValueError, "UNDECLARED_DATABASE_TRANSITION"): self.observe(before)
+        self.rows["syncJobs"][0].update(attempts=1, max_attempts=5)
+        with self.assertRaisesRegex(ValueError, "UNDECLARED_DATABASE_TRANSITION"): self.observe(before)
+        self.rows["syncJobs"][0]["attempts"] = 6
+        with self.assertRaisesRegex(ValueError, "RETRY_BUDGET_REFUSED"): component.normalize_snapshot(self.rows)
 
     def test_source_callback_unsubscribe_reduces_only_owned_contact_and_cancels_matching_optin(self):
         self.populated(); before = deepcopy(self.rows)
@@ -453,7 +464,7 @@ class MarketingDatabaseTests(unittest.TestCase):
           INSERT INTO marketing_contact_sync_jobs(id,idempotency_key,contact_id,email,email_normalized,source,kind,payload,status,attempts,locked_by,locked_until,updated_at)
           VALUES ('{JOB}','owned-sync','{CONTACT}','{EMAIL}','{EMAIL}','contact_popup','unsubscribe_sync','{{}}','processing',1,'owned-worker','{LATER}','{TIME}');""")
         before = self.actual()
-        self.sql(f"UPDATE marketing_contact_sync_jobs SET status='succeeded',locked_by=NULL,locked_until=NULL,succeeded_at='{LATER}',updated_at='{LATER}' WHERE id='{JOB}'")
+        self.sql(f"UPDATE marketing_contact_sync_jobs SET status='succeeded',attempts=3,locked_by=NULL,locked_until=NULL,succeeded_at='{LATER}',updated_at='{LATER}' WHERE id='{JOB}'")
         self.rows = self.actual(); self.provider_contacts = [{"id": PROVIDER, "email": EMAIL, "unsubscribed": True}]
         result = self.observe(before)
         self.assertTrue(result["complete"])

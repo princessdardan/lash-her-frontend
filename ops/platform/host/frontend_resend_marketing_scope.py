@@ -21,7 +21,7 @@ COLUMNS = {
     "contacts": "id email_sha256 source unsubscribed_at last_consented_at updated_at",
     "submissions": "id email_sha256 submission_type consent_choice submitted_at",
     "consents": "id contact_id submission_id email_sha256 event_type source provider_contact_id occurred_at",
-    "syncJobs": "id contact_id submission_id consent_event_id email_sha256 source kind status attempts lease_held succeeded_at skipped_at updated_at",
+    "syncJobs": "id contact_id submission_id consent_event_id email_sha256 source kind status attempts max_attempts lease_held succeeded_at skipped_at updated_at",
     "campaigns": "id status provider_broadcast_id provider_segment_id scheduled_at sent_at updated_at",
     "outbox": "id submission_id email_sha256 status provider_message_id attempt_count lease_held redacted sent_at updated_at",
 }
@@ -76,7 +76,7 @@ def database_queries(reviewed):
         ("contacts", "SELECT id::text, encode(sha256(convert_to(lower(trim(email_normalized)),'UTF8')),'hex') AS email_sha256, source, unsubscribed_at::text, last_consented_at::text, updated_at::text FROM public.marketing_contacts ORDER BY id LIMIT 4097", []),
         ("submissions", "SELECT id::text, encode(sha256(convert_to(lower(trim(email_normalized)),'UTF8')),'hex') AS email_sha256, submission_type::text, consent_choice, submitted_at::text FROM public.marketing_contact_submissions ORDER BY id LIMIT 4097", []),
         ("consents", "SELECT id::text, contact_id::text, submission_id::text, encode(sha256(convert_to(lower(trim(email_normalized)),'UTF8')),'hex') AS email_sha256, event_type::text, source, metadata->>'resendContactId' AS provider_contact_id, occurred_at::text FROM public.marketing_consent_events ORDER BY id LIMIT 4097", []),
-        ("syncJobs", "SELECT id::text, contact_id::text, submission_id::text, consent_event_id::text, encode(sha256(convert_to(lower(trim(email_normalized)),'UTF8')),'hex') AS email_sha256, source, kind::text, status::text, attempts, (locked_by IS NOT NULL OR locked_until IS NOT NULL) AS lease_held, succeeded_at::text, skipped_at::text, updated_at::text FROM public.marketing_contact_sync_jobs ORDER BY id LIMIT 4097", []),
+        ("syncJobs", "SELECT id::text, contact_id::text, submission_id::text, consent_event_id::text, encode(sha256(convert_to(lower(trim(email_normalized)),'UTF8')),'hex') AS email_sha256, source, kind::text, status::text, attempts, max_attempts, (locked_by IS NOT NULL OR locked_until IS NOT NULL) AS lease_held, succeeded_at::text, skipped_at::text, updated_at::text FROM public.marketing_contact_sync_jobs ORDER BY id LIMIT 4097", []),
         ("campaigns", "SELECT id::text, status::text, resend_broadcast_id AS provider_broadcast_id, resend_segment_id AS provider_segment_id, scheduled_at::text, sent_at::text, updated_at::text FROM public.marketing_campaigns ORDER BY id LIMIT 4097", []),
         ("outbox", "SELECT id::text, submission_id::text, CASE WHEN recipient_email_normalized IS NULL THEN NULL ELSE encode(sha256(convert_to(lower(trim(recipient_email_normalized)),'UTF8')),'hex') END AS email_sha256, status, provider_message_id, attempt_count, (lease_owner IS NOT NULL OR lease_expires_at IS NOT NULL) AS lease_held, redacted_at IS NOT NULL AS redacted, sent_at::text, updated_at::text FROM public.customer_email_outbox WHERE delivery_provider='resend' AND kind='contact_popup_offer' ORDER BY id LIMIT 4097", []),
     ]
@@ -109,13 +109,15 @@ def normalize_snapshot(actual):
                     demand(digest(value) or kind == "outbox" and value is None, "RESEND_MARKETING_EMAIL_HASH_REQUIRED")
                 elif key in ("lease_held", "redacted"):
                     demand(type(value) is bool, "RESEND_MARKETING_DATABASE_BOOLEAN_REQUIRED")
-                elif key in ("attempts", "attempt_count"):
-                    demand(type(value) is int and 0 <= value <= 1_000_000, "RESEND_MARKETING_ATTEMPT_COUNT_REFUSED")
+                elif key in ("attempts", "attempt_count", "max_attempts"):
+                    demand(type(value) is int and (1 if key == "max_attempts" else 0) <= value <= 1_000_000, "RESEND_MARKETING_ATTEMPT_COUNT_REFUSED")
                 elif key.endswith("_at"):
                     if value is not None:
                         _instant(value)
                 else:
                     demand(isinstance(value, str) and re.fullmatch(r"[a-z_]{1,64}", value), "RESEND_MARKETING_DATABASE_STATE_REFUSED")
+        if kind == "syncJobs":
+            demand(all(row["attempts"] <= row["max_attempts"] for row in rows), "RESEND_MARKETING_RETRY_BUDGET_REFUSED")
         demand(len({row["id"] for row in rows}) == len(rows), "RESEND_MARKETING_DATABASE_DUPLICATE")
         result[kind] = sorted((dict(row) for row in rows), key=lambda row: row["id"])
     return result
@@ -267,7 +269,7 @@ def _reduce(reviewed, actual, before):
         if new == old:
             continue
         complete = (old["status"] in ("queued", "processing", "retryable_failed") and new["status"] == "succeeded" and
-            new["lease_held"] is False and old["attempts"] <= new["attempts"] <= old["attempts"] + 1 and
+            new["lease_held"] is False and old["attempts"] <= new["attempts"] <= old["max_attempts"] and
             new["attempts"] > 0 and new["succeeded_at"] is not None and
             _instant(new["succeeded_at"]) >= _instant(old["updated_at"]))
         cancel = (new["email_sha256"] in callback_emails and new["kind"] == "opt_in_sync" and
