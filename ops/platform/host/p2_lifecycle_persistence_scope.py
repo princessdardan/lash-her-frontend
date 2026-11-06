@@ -12,6 +12,22 @@ class CurrentLifecyclePersistenceScope(CurrentIdentityProbeScope):
     def __init__(self, selected, reviewed, configuration, program, verify_inputs):
         super().__init__(selected, reviewed, configuration, program, verify_inputs)
         self.persistence_program = program
+        self.runtime_bound = False
+
+    def _actual_runtime(self):
+        actual = super().inventory(self.selected, self.configuration)
+        migrate.demand(actual == self.reviewed["containers"], "P2_PERSISTENCE_RUNTIME_CHANGED")
+
+    def bind_runtime(self):
+        migrate.demand(not self.runtime_bound, "P2_PERSISTENCE_RUNTIME_ALREADY_BOUND")
+        self._actual_runtime()
+        self.runtime_bound = True
+
+    def verify_runtime(self):
+        migrate.demand(self.runtime_bound, "P2_PERSISTENCE_RUNTIME_NOT_BOUND")
+        self.verify()
+        self._actual_runtime()
+        self.verify()
 
     def _allowed(self, args, private_input, environment):
         if private_input is None:

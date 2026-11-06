@@ -51,13 +51,16 @@ sudo -n /usr/bin/python3 -I -u \
 
 Invoke it only through the existing pinned SSH transport. Its bounded stdin
 packet has exactly `version`, `operation`, `bundleDirectory`,
-`configurationDirectory`, `reviewed`, and `private`. `operation` is `plan` or
-one of the fixed stage names. There is no URL, SQL, command, endpoint, output
-path, or arbitrary query field.
+`configurationDirectory`, `reviewed`, `private`, and `releaseEvidence`.
+`releaseEvidence` contains the exact original-release and frontend-deployment
+bytes whose hashes were approved in the plan; it is null for planning.
+`operation` is `plan` or one of the fixed stage names. There is no SQL,
+command, endpoint, arbitrary query, or caller-selected prior-record field.
 
 The private witness contains the dedicated user UUID, original normalized email,
-exact export command, exact attempt/grant/Community stream/inbox UUIDs, and, for
-the final stage, the exact delete command and previous private record. The email
+exact export command, the complete bounded account-attempt inventory, exact
+grant/Community stream/inbox UUIDs, and, for the final stage, the exact delete
+command. The email
 is required because `customer_verification_tokens.identifier` has no user
 foreign key. It is checked against the actual pre-delete frontend account; the
 tombstone email can never substitute for it.
@@ -69,20 +72,35 @@ runtime database environments. Do not fetch a secret value into a shell or
 agent context. If an AWS-held value must be resolved for an invocation, use
 `asm-exec` with a `{{resolve:secretsmanager:...}}` dynamic reference.
 
-The exact `p2LifecycleStateWitnessV1` is retained in a new mode-0600 private
-record. Use a distinct reviewed `privateDirectory` with a pre-existing
-mode-0700 parent for every stage; a stage never adopts or overwrites a prior
-directory. Common stdout contains only fixed status, booleans, integer counts,
+The exact `p2LifecycleStateWitnessV1` is retained in a mode-0600 private record.
+Use one reviewed case-specific `privateDirectory` under a pre-existing
+mode-0700 parent. Each stage creates its fixed filename with `O_EXCL`; later
+stages read those original root-owned bytes directly and verify their source,
+candidate, configuration, target, subject, deadline, and record-hash chain.
+No prior record is accepted from request JSON and no record is overwritten.
+Common stdout contains only fixed status, booleans, integer counts,
 source/binding/witness hashes, and nonsecret receipt hashes. It never contains
 the account/email/record UUIDs, timestamps, PII, answers, export data, provider
 values, credentials, or credential hashes.
 
+Other fixed certification owners consume retained bytes only through the
+in-process `load_retained_capture` host adapter. It opens the fixed root-owned
+stage file and validates the full reviewed-plan context before returning the
+private record and its actual byte hash. Caller-supplied witness or hash JSON is
+never artifact authority.
+
 ## Database boundary
 
-The current identity probe's Linux/root host-lock, container-inventory,
-source/configuration recheck, timeout, and process-group cleanup are reused by a
-narrow subclass. Only the exact selected Course or Community container can run
-the fixed Node child. No public or private HTTP endpoint is added.
+The current identity probe's Linux/root host-lock, container inventory,
+timeout, and process-group cleanup are reused by a narrow subclass. The host
+entry checks the selected machine and local Docker engine, joins all reviewed
+database targets and runtime roles to the selected jobs, joins every container
+image to the candidate, verifies the complete installed operator-source
+closure, and rereads the candidate/configuration/source/job bindings around
+every child. Full current runtime inventory is checked before and after the
+protected observation, including failures. Only the exact selected Course or
+Community container can run the fixed Node child. No public or private HTTP
+endpoint is added.
 
 Every database connection verifies the exact host, port, database, runtime role
 and role OID, PostgreSQL major, SNI, built-in CA set, `rejectUnauthorized`, and
@@ -98,7 +116,9 @@ The export-ready stage requires the exact frontend export command, two
 acknowledged deliveries without leases or later commands, present frontend and
 receiver artifacts, Course/Community expiry exactly 24 hours after readiness,
 and frontend expiry equal to the minimum of its own 24-hour bound and the two
-receiver expiries. Export JSON is never selected.
+receiver expiries. Each artifact must still be before its own expiry when
+captured. The source-issued private record retains the original readiness and
+deadline tuple. Export JSON is never selected.
 
 The post-expiry stage requires the frontend artifact to be expired with both
 private byte fields null, both receiver artifacts absent, and immutable command
@@ -117,6 +137,11 @@ attempt deidentification; and Community tombstone/export removal. It compares
 only the approved immutable attempt outcomes, minimal grant references, and
 Community operational identities/digests. It does not require mutable grant
 status fields to remain byte-identical and never hashes answers or PII payloads.
+The baseline enumerates every attempt reachable through the selected user or
+the user's enrollments, refuses more than 100 or a partial caller list, and the
+final observation requires every captured attempt deidentified plus zero
+remaining account-identified attempt. The earlier named export command and its
+two acknowledged deliveries must remain present in all three command histories.
 
 HTTP denial, exact/conflicting replay, stale restore, delayed enrollment and
 terminal access remain their owning staging scenarios. This observer reports
@@ -136,8 +161,10 @@ node --import tsx ops/platform/test-p2-lifecycle-persistence-local.mjs
 
 It applies the actual 83/22/11 migration histories to three owned TLS/SCRAM
 databases and exercises positive export/deletion observations plus wrong-email,
-missing-acknowledgement, identified-attempt, retained-export and output-leak
-refusals. Its fixture advances state directly inside disposable databases; it is
+missing-acknowledgement, wrong-version, partial-attempt, expired-ready,
+identified-attempt, missing-history, cross-bound-prior, retained-export and
+output-leak refusals. Its fixture advances state directly inside disposable
+databases and uses an explicit synthetic pre-expiry observation time; it is
 not a real 24-hour wait, deployed container proof, cleanup scheduling proof, or
 staging certification. PostgreSQL 18 CI and all three actual current-stage runs
 remain required.

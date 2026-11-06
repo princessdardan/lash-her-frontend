@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { runOwnedPersistenceScenario } from "./harness/owned-p2-lifecycle-persistence.mjs";
+import { p2LifecyclePersistenceTargetSha256 } from "./p2-lifecycle-persistence-probe.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const apiPins = { course: "a447bfde20299e12afab68a3331b3792ddd07598", community: "939de65dd52f0b1a43993a25c7c428dce6e2bb43" };
@@ -26,7 +27,10 @@ async function main() {
     community: resolve(process.env.P2_COMMUNITY_SOURCE_ROOT ?? "/Users/dardan/workspace/lash-her-community-api/.worktrees/phase2-community") };
   const commits = Object.fromEntries(Object.entries(sources).map(([name, source]) => [name, run("git", ["rev-parse", "HEAD"], { cwd: source }).trim()]));
   assert.equal(commits.course, apiPins.course); assert.equal(commits.community, apiPins.community); assert.match(commits.frontend, /^[a-f0-9]{40}$/u);
-  for (const [name, source] of Object.entries(sources)) assert.equal(run("git", ["remote", "get-url", "origin"], { cwd: source }).trim(), `https://github.com/princessdardan/lash-her-${name === "frontend" ? "frontend" : name + "-api"}.git`);
+  for (const [name, source] of Object.entries(sources)) {
+    assert.equal(run("git", ["remote", "get-url", "origin"], { cwd: source }).trim(), `https://github.com/princessdardan/lash-her-${name === "frontend" ? "frontend" : name + "-api"}.git`);
+    assert.equal(run("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: source }), "", `${name} source must be exact and clean`);
+  }
 
   const directory = mkdtempSync(join(tmpdir(), "p2-lifecycle-persistence-")); chmodSync(directory, 0o700);
   const data = join(directory, "data"), certificate = join(directory, "server.crt"), key = join(directory, "server.key");
@@ -67,7 +71,8 @@ async function main() {
       phase = `verify-${name}-runtime`;
       runtime[name] = await connect({ host: "localhost", port, user: role, password, database }, true);
       const identity = (await runtime[name].query("select current_user::regrole::oid::text as oid")).rows[0];
-      targets[name] = { targetSha256: hash(`${name}:${database}:${role}`), host: "localhost", port, database, runtimeRole: role, runtimeRoleOid: identity.oid, serverMajor: 16 };
+      targets[name] = { host: "localhost", port, database, runtimeRole: role, runtimeRoleOid: identity.oid, serverMajor: 16 };
+      targets[name].targetSha256 = p2LifecyclePersistenceTargetSha256(name, targets[name]);
       migrations[name] = Number((await admin[name].query("select count(*)::int as count from drizzle.__drizzle_migrations")).rows[0].count);
     }
     assert.deepEqual(migrations, { frontend: 83, course: 22, community: 11 });

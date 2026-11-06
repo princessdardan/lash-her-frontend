@@ -15,22 +15,32 @@ const canonical = value => JSON.stringify(value, (_key, child) => child && typeo
 const closed = (value, fields) => Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join() === [...fields].sort().join());
 export class P2LifecyclePersistenceError extends Error { constructor(check) { super("P2_LIFECYCLE_PERSISTENCE_REFUSED"); this.check = check; } }
 const demand = (condition, check) => { if (!condition) throw new P2LifecyclePersistenceError(check); };
-function validateTarget(value) {
+export function p2LifecyclePersistenceTargetSha256(service, value) {
+  demand(["frontend", "course", "community"].includes(service), "target-service");
+  return sha({ version: 1, environment: "staging", service, host: value.host, port: value.port, database: value.database,
+    runtimeRole: value.runtimeRole, runtimeRoleOid: value.runtimeRoleOid, serverMajor: value.serverMajor });
+}
+
+function validateTarget(service, value) {
   demand(closed(value, ["targetSha256", "host", "port", "database", "runtimeRole", "runtimeRoleOid", "serverMajor"])
     && SHA.test(value.targetSha256) && typeof value.host === "string" && /^[a-z0-9.-]+$/u.test(value.host) && !value.host.includes("..")
     && Number.isSafeInteger(value.port) && value.port > 0 && value.port < 65536 && ROLE.test(value.database) && ROLE.test(value.runtimeRole)
-    && /^[1-9][0-9]*$/u.test(value.runtimeRoleOid) && [16, 18].includes(value.serverMajor), "target-binding");
+    && /^[1-9][0-9]*$/u.test(value.runtimeRoleOid) && [16, 18].includes(value.serverMajor)
+    && value.targetSha256 === p2LifecyclePersistenceTargetSha256(service, value), "target-binding");
   return value;
 }
 
 export function prepareP2LifecyclePersistencePlan(input) {
-  demand(closed(input, ["version", "environment", "releaseId", "candidateSha256", "configurationSha256", "sources", "targets", "containerImages", "operatorSourceSha256", "frontendDeploymentSha256", "originalReleaseSha256", "expectedMigrations"])
+  demand(closed(input, ["version", "environment", "releaseId", "hostMachineId", "candidateSha256", "configurationSha256", "sources", "targets", "containerImages", "operatorSourceSha256", "frontendDeploymentSha256", "originalReleaseSha256", "expectedMigrations"])
     && input.version === 1 && input.environment === "staging" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.releaseId)
+    && /^[a-f0-9]{32}$/u.test(input.hostMachineId) && input.hostMachineId !== "0".repeat(32)
     && [input.candidateSha256, input.configurationSha256, input.operatorSourceSha256, input.frontendDeploymentSha256, input.originalReleaseSha256].every(value => SHA.test(value)), "plan-binding");
   demand(closed(input.sources, ["frontend", "course", "community"]) && Object.values(input.sources).every(value => COMMIT.test(value)), "plan-sources");
   demand(closed(input.targets, ["frontend", "course", "community"]), "plan-target-set");
-  for (const target of Object.values(input.targets)) validateTarget(target);
-  demand(closed(input.containerImages, ["course", "community"]) && Object.values(input.containerImages).every(value => /^sha256:[a-f0-9]{64}$/u.test(value)), "plan-images");
+  for (const [service, target] of Object.entries(input.targets)) validateTarget(service, target);
+  demand(closed(input.containerImages, ["course", "community"])
+    && typeof input.containerImages.course === "string" && /^ghcr\.io\/princessdardan\/lash-her-platform-course-runtime@sha256:[a-f0-9]{64}$/u.test(input.containerImages.course)
+    && typeof input.containerImages.community === "string" && /^ghcr\.io\/princessdardan\/lash-her-platform-community-runtime@sha256:[a-f0-9]{64}$/u.test(input.containerImages.community), "plan-images");
   demand(closed(input.expectedMigrations, ["frontend", "course", "community"]) && input.expectedMigrations.frontend === 83 && input.expectedMigrations.course === 22 && input.expectedMigrations.community === 11, "plan-migrations");
   return Object.freeze({ ...structuredClone(input), operation: "p2-lifecycle-persistence-readonly", stages: [...STAGES],
     finalDisposition: "observed-only", mutationsAuthorized: false, credentialsRead: false, networkCalled: false });
@@ -83,6 +93,7 @@ const SQL = Object.freeze({
     user: "SELECT (email IS NOT NULL) AS email_present FROM users WHERE id=$1::uuid",
     progress: "SELECT id::text,lesson_id::text,enrollment_id::text,revision,completed_quiz_revision,completed_at,last_watched_at,created_at,updated_at FROM lesson_progress WHERE user_id=$1::uuid ORDER BY id",
     attempts: "SELECT id::text,lesson_id::text,quiz_revision_id::text,user_id::text,enrollment_id::text,request_id::text,request_hash,(answers='[]'::jsonb) AS answers_empty,jsonb_array_length(answers) AS answer_count,correct_count,total_count,passed,completed,created_at,deidentified_at FROM quiz_attempts WHERE id=ANY($1::uuid[]) ORDER BY id",
+    attemptsForAccount: "SELECT qa.id::text,qa.lesson_id::text,qa.quiz_revision_id::text,qa.user_id::text,qa.enrollment_id::text,qa.request_id::text,qa.request_hash,(qa.answers='[]'::jsonb) AS answers_empty,jsonb_array_length(qa.answers) AS answer_count,qa.correct_count,qa.total_count,qa.passed,qa.completed,qa.created_at,qa.deidentified_at FROM quiz_attempts qa WHERE qa.user_id=$1::uuid OR qa.enrollment_id IN (SELECT e.id FROM enrollments e WHERE e.user_id=$1::uuid) ORDER BY qa.id LIMIT 101",
     grants: "SELECT id::text,user_id::text,course_id::text,grant_reason,granted_at FROM entitlement_grants WHERE id=ANY($1::uuid[]) ORDER BY id",
     attemptsByUser: "SELECT id::text,lesson_id::text,quiz_revision_id::text,user_id::text,enrollment_id::text,request_id::text,request_hash,(answers='[]'::jsonb) AS answers_empty,jsonb_array_length(answers) AS answer_count,correct_count,total_count,passed,completed,created_at,deidentified_at FROM quiz_attempts WHERE user_id=$1::uuid ORDER BY id",
     grantsByUser: "SELECT id::text,user_id::text,course_id::text,grant_reason,granted_at FROM entitlement_grants WHERE user_id=$1::uuid ORDER BY id",
@@ -108,7 +119,7 @@ async function read(client, service, name, values = []) {
 }
 
 export async function observePersistenceDomain(service, input, target, client) {
-  demand(["frontend", "course", "community"].includes(service), "service"); validatePersistenceWitnessInput(input, input.stage); validateTarget(target);
+  demand(["frontend", "course", "community"].includes(service), "service"); validatePersistenceWitnessInput(input, input.stage); validateTarget(service, target);
   let begun = false;
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"); begun = true;
@@ -120,6 +131,7 @@ export async function observePersistenceDomain(service, input, target, client) {
     const user = input.userId;
     const account = await read(client, service, "account", [user]);
     const command = await read(client, service, "command", [selectedCommand.commandId, user]);
+    const exportCommand = input.stage === "lifecycle-account" ? [] : await read(client, service, "command", [input.exportCommand.commandId, user]);
     const commands = await read(client, service, "commands", [user]);
     const exports = await read(client, service, "exports", [user]);
     const now = date((await read(client, service, "now"))[0].now);
@@ -129,15 +141,16 @@ export async function observePersistenceDomain(service, input, target, client) {
       const links = count(await read(client, service, "links", [user]));
       const proofs = input.stage === "lifecycle-account" ? 0 : count(await read(client, service, "proofs", [input.originalEmail]));
       const preferences = count(await read(client, service, "preferences", [user]));
-      return { service, identity, now, account, command, commands, deliveries, exports, sessions, links, proofs, preferences,
+      return { service, identity, now, account, command, exportCommand, commands, deliveries, exports, sessions, links, proofs, preferences,
         originalEmailMatchesAccount: input.stage === "lifecycle-account" ? null : account.length === 1 && account[0].email === input.originalEmail,
         tombstoneEmailMatches: account.length === 1 && account[0].email === `deleted+${user}@account.invalid` };
     }
-    if (service === "course") return { service, identity, now, account, command, commands, exports,
+    if (service === "course") return { service, identity, now, account, command, exportCommand, commands, exports,
       user: await read(client, service, "user", [user]), progress: await read(client, service, "progress", [user]),
       attempts: input.stage === "lifecycle-account" ? await read(client, service, "attemptsByUser", [user]) : await read(client, service, "attempts", [input.attemptIds]),
+      accountAttempts: input.stage === "lifecycle-account" ? [] : await read(client, service, "attemptsForAccount", [user]),
       grants: input.stage === "lifecycle-account" ? await read(client, service, "grantsByUser", [user]) : await read(client, service, "grants", [input.grantIds]) };
-    return { service, identity, now, account, command, commands, exports,
+    return { service, identity, now, account, command, exportCommand, commands, exports,
       projections: input.stage === "lifecycle-account" ? await read(client, service, "projectionsByUser", [user]) : await read(client, service, "projections", [input.streamIds]),
       inbox: input.stage === "lifecycle-account" ? await read(client, service, "inboxByUser", [user]) : await read(client, service, "inbox", [input.inboxEventIds]) };
   } finally { if (begun) await client.query("ROLLBACK"); }
@@ -179,7 +192,9 @@ export function buildP2LifecycleStateWitness(plan, input, observations) {
   const front = observations.frontend, selected = front.command[0];
   demand(front.command.length === 1 && selected.user_id === input.userId, "frontend-command");
   const command = selected.command;
-  demand(command && command.commandId === selected.command_id && command.userId === input.userId && command.accountVersion === Number(selected.account_version)
+  const requested = input.stage === "lifecycle-account" ? input.selectedCommand : input.stage === "verify-delete" ? input.deleteCommand : input.exportCommand;
+  demand(command && selected.command_id === requested.commandId && Number(selected.account_version) === requested.accountVersion
+    && command.commandId === selected.command_id && command.userId === input.userId && command.accountVersion === Number(selected.account_version)
     && command.action === selected.action && canonicalCommandDigest(command) === observations.course.command[0]?.canonical_digest
     && observations.course.command[0]?.canonical_digest === observations.community.command[0]?.canonical_digest, "canonical-command");
   const relevant = front.deliveries.filter(row => row.command_id === selected.command_id).map(normalizeDelivery);
@@ -198,20 +213,73 @@ export function buildP2LifecycleStateWitness(plan, input, observations) {
 
 function exportByCommand(observation, commandId) { return observation.exports.find(row => row.command_id === commandId); }
 function allAcknowledged(witness) { return witness.frontend.deliveries.every(row => row.status === "acknowledged" && row.attempts >= 1 && row.leaseId === null && row.leaseUntil === null && row.acknowledgedAt !== null); }
-export function qualifyPersistenceStage(input, observations, witness, priorWitness = null) {
+function sameWitnessContext(current, prior) {
+  return prior && current.environment === prior.environment && current.candidateSha256 === prior.candidateSha256
+    && current.configurationSha256 === prior.configurationSha256 && current.userId === prior.userId
+    && canonical(current.sources) === canonical(prior.sources) && canonical(current.targetSha256) === canonical(prior.targetSha256);
+}
+function exactAccountAttemptSet(input, observation) {
+  const actual = observation.accountAttempts.map(row => row.id).sort();
+  demand(actual.length <= 100 && canonical(actual) === canonical([...input.attemptIds].sort()), "complete-account-attempt-set");
+}
+function retainedExportHistory(input, observations, priorWitness) {
+  demand(input.exportCommand.commandId === priorWitness.command.commandId && input.exportCommand.accountVersion === priorWitness.command.accountVersion
+    && priorWitness.command.action === "export", "retained-export-command");
+  const frontend = observations.frontend.exportCommand, course = observations.course.exportCommand, community = observations.community.exportCommand;
+  demand(frontend.length === 1 && course.length === 1 && community.length === 1
+    && [frontend[0], course[0], community[0]].every(row => row.command_id === priorWitness.command.commandId
+      && Number(row.account_version) === priorWitness.command.accountVersion && row.action === "export")
+    && canonicalCommandDigest(frontend[0].command) === priorWitness.command.canonicalSha256
+    && course[0].canonical_digest === priorWitness.command.canonicalSha256 && community[0].canonical_digest === priorWitness.command.canonicalSha256,
+  "retained-export-command");
+  const deliveries = observations.frontend.deliveries.filter(row => row.command_id === input.exportCommand.commandId).map(normalizeDelivery);
+  demand(deliveries.length === 2 && deliveries.map(row => row.receiver).join() === "course,community"
+    && deliveries.every(row => row.status === "acknowledged" && row.attempts >= 1 && row.leaseId === null && row.leaseUntil === null && row.acknowledgedAt),
+  "retained-export-acknowledgements");
+}
+function validatePrivateStageEvidence(value, stage) {
+  demand(closed(value, ["version", "stage", "export"]) && value.version === 1 && value.stage === stage
+    && closed(value.export, ["frontend", "course", "community"]), "private-stage-evidence");
+  for (const service of ["frontend", "course", "community"]) demand(closed(value.export[service], ["readyAt", "expiresAt"])
+    && !Number.isNaN(Date.parse(value.export[service].readyAt)) && !Number.isNaN(Date.parse(value.export[service].expiresAt)), "private-stage-evidence");
+  return value;
+}
+export function persistencePrivateStageEvidence(input, observations, priorEvidence = null) {
+  if (input.stage === "capture-export-ready") {
+    const selected = Object.fromEntries(["frontend", "course", "community"].map(service => {
+      const row = exportByCommand(observations[service], input.exportCommand.commandId);
+      demand(row, "private-stage-evidence");
+      return [service, { readyAt: date(row.ready_at), expiresAt: date(row.expires_at) }];
+    }));
+    return validatePrivateStageEvidence({ version: 1, stage: input.stage, export: selected }, input.stage);
+  }
+  const expected = input.stage === "capture-delete-baseline" ? "capture-export-ready" : "capture-delete-baseline";
+  validatePrivateStageEvidence(priorEvidence, expected);
+  return validatePrivateStageEvidence({ version: 1, stage: input.stage, export: structuredClone(priorEvidence.export) }, input.stage);
+}
+export function qualifyPersistenceStage(input, observations, witness, priorWitness = null, priorEvidence = null) {
   validateP2LifecycleStateWitness(witness); const stage = input.stage;
   demand(allAcknowledged(witness) && witness.frontend.laterCommandCount === 0 && witness.frontend.pendingOrDeliveringCount === 0, "ordered-acknowledgements");
   const fexp = exportByCommand(observations.frontend, input.exportCommand.commandId), cexp = exportByCommand(observations.course, input.exportCommand.commandId), mexp = exportByCommand(observations.community, input.exportCommand.commandId);
   if (stage === "capture-export-ready") {
     demand(fexp && cexp && mexp, "export-ready");
     const frontendBound = Math.min(new Date(fexp.ready_at).getTime() + 86_400_000, new Date(cexp.expires_at).getTime(), new Date(mexp.expires_at).getTime());
-    demand(witness.command.action === "export" && fexp?.status === "ready" && fexp.data_present === true && fexp.frontend_data_present === false
+    demand(witness.command.action === "export" && observations.frontend.originalEmailMatchesAccount
+      && fexp?.status === "ready" && fexp.data_present === true && fexp.frontend_data_present === false
       && cexp?.data_present === true && mexp?.data_present === true && [cexp, mexp].every(row => new Date(row.expires_at).getTime() - new Date(row.ready_at).getTime() === 86_400_000)
-      && new Date(fexp.expires_at).getTime() === frontendBound, "export-ready");
+      && new Date(fexp.expires_at).getTime() === frontendBound
+      && new Date(observations.frontend.now).getTime() < new Date(fexp.expires_at).getTime()
+      && new Date(observations.course.now).getTime() < new Date(cexp.expires_at).getTime()
+      && new Date(observations.community.now).getTime() < new Date(mexp.expires_at).getTime(), "export-ready");
+    exactAccountAttemptSet(input, observations.course);
   } else if (stage === "capture-delete-baseline") {
-    demand(priorWitness && priorWitness.profile === "export-ready-v1" && priorWitness.userId === input.userId && priorWitness.command.commandId === input.exportCommand.commandId, "export-prior-witness");
+    demand(priorWitness?.profile === "export-ready-v1" && sameWitnessContext(witness, priorWitness)
+      && priorWitness.command.commandId === input.exportCommand.commandId && priorWitness.command.accountVersion === input.exportCommand.accountVersion, "export-prior-witness");
+    validatePrivateStageEvidence(priorEvidence, "capture-export-ready");
     demand(fexp?.status === "expired" && fexp.data_present === false && fexp.frontend_data_present === false && !cexp && !mexp
-      && new Date(observations.frontend.now).getTime() >= new Date(fexp.expires_at).getTime(), "export-scrubbed");
+      && date(fexp.ready_at) === priorEvidence.export.frontend.readyAt && date(fexp.expires_at) === priorEvidence.export.frontend.expiresAt
+      && new Date(observations.frontend.now).getTime() >= new Date(priorEvidence.export.frontend.expiresAt).getTime(), "export-scrubbed");
+    exactAccountAttemptSet(input, observations.course);
     demand(observations.frontend.originalEmailMatchesAccount && observations.frontend.sessions >= 1 && observations.frontend.links >= 1 && observations.frontend.proofs >= 1 && observations.frontend.preferences === 1
       && observations.course.user.length === 1 && observations.course.user[0].email_present === true && observations.course.progress.length >= 1
       && observations.course.attempts.length === input.attemptIds.length && observations.course.attempts.every(row => row.user_id === input.userId && row.enrollment_id && row.request_id && row.request_hash && row.answer_count > 0 && row.deidentified_at === null)
@@ -219,13 +287,16 @@ export function qualifyPersistenceStage(input, observations, witness, priorWitne
       && observations.community.projections.length === input.streamIds.length && observations.community.projections.every(row => row.user_id === input.userId)
       && observations.community.inbox.length === input.inboxEventIds.length && observations.community.inbox.every(row => row.user_id === input.userId), "delete-baseline");
   } else if (stage === "verify-delete") {
-    demand(priorWitness && priorWitness.profile === "delete-baseline-v1" && priorWitness.userId === input.userId && witness.command.action === "delete"
+    demand(priorWitness?.profile === "delete-baseline-v1" && sameWitnessContext(witness, priorWitness) && witness.command.action === "delete"
       && witness.command.accountVersion === priorWitness.frontend.accountVersion + 1, "delete-prior-witness");
+    validatePrivateStageEvidence(priorEvidence, "capture-delete-baseline");
+    retainedExportHistory(input, observations, priorWitness);
     demand(observations.frontend.tombstoneEmailMatches && observations.frontend.account[0].status === "deleted" && observations.frontend.account[0].name === null && observations.frontend.account[0].email_verified === null
       && observations.frontend.sessions === 0 && observations.frontend.links === 0 && observations.frontend.proofs === 0 && observations.frontend.preferences === 0
       && observations.frontend.exports.every(row => !row.data_present && !row.frontend_data_present), "frontend-delete-persisted");
     const accepted = new Date(observations.course.command[0].accepted_at).getTime();
     demand(observations.course.account[0].status === "deleted" && observations.course.user[0]?.email_present === false && observations.course.progress.length === 0 && observations.course.exports.length === 0
+      && observations.course.accountAttempts.length === 0
       && observations.course.attempts.length === input.attemptIds.length && observations.course.attempts.every(row => row.user_id === null && row.enrollment_id === null && row.request_id === null && row.request_hash === null && row.answers_empty === true && row.deidentified_at && new Date(row.deidentified_at).getTime() >= accepted)
       && observations.course.grants.length === input.grantIds.length, "course-delete-persisted");
     demand(observations.community.account[0].status === "deleted" && observations.community.exports.length === 0
@@ -255,13 +326,15 @@ export async function runPrivatePersistenceProbeFromStdin() {
   try {
     for await (const chunk of process.stdin) { size += chunk.length; demand(size <= 262_144, "private-input-bound"); chunks.push(chunk); }
     const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    if (closed(input, ["version", "mode", "environment", "plan", "witness", "observations", "priorWitness"]) && input.mode === "combine") {
+    if (closed(input, ["version", "mode", "environment", "plan", "witness", "observations", "priorCapture"]) && input.mode === "combine") {
       demand(input.version === 1 && input.environment === "staging", "private-combine-mode");
       const witness = buildP2LifecycleStateWitness(input.plan, input.witness, input.observations);
+      const priorWitness = input.priorCapture?.witness ?? null, priorEvidence = input.priorCapture?.privateEvidence ?? null;
       const receipt = input.witness.stage === "lifecycle-account"
         ? { ...lifecycleWitnessPublicReceipt(witness), status: "P2_LIFECYCLE_ACCOUNT_STATE_WITNESSED", providerTouched: false, releaseAccepted: false }
-        : qualifyPersistenceStage(input.witness, input.observations, witness, input.priorWitness);
-      process.stdout.write(JSON.stringify({ version: 1, status: "P2_LIFECYCLE_PERSISTENCE_PRIVATE_COMBINED", witness, receipt, readOnly: true }) + "\n");
+        : qualifyPersistenceStage(input.witness, input.observations, witness, priorWitness, priorEvidence);
+      const privateEvidence = input.witness.stage === "lifecycle-account" ? null : persistencePrivateStageEvidence(input.witness, input.observations, priorEvidence);
+      process.stdout.write(JSON.stringify({ version: 1, status: "P2_LIFECYCLE_PERSISTENCE_PRIVATE_COMBINED", witness, privateEvidence, receipt, readOnly: true }) + "\n");
       return;
     }
     demand(closed(input, ["version", "mode", "environment", "target", "witness", "connectionUrl"]) && input.version === 1 && input.environment === "staging"
