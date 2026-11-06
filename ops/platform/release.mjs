@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { isUtf8 } from "node:buffer";
+import { closeSync, constants, fstatSync, openSync, readFileSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { assertCompatibilityReviewRecord, compatibilityReviewFile } from "../../scripts/api-contract-compatibility-review.mjs";
+import { decodeQualificationTargetJson, parseQualificationTargetProfileRef, QualificationTargetProfileError,
+  requireQualificationTargetProfile, resolveQualificationTargetProfile,
+  STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE } from "./qualification-target-profile.mjs";
 
 const REPOSITORIES = {
   frontend: "https://github.com/princessdardan/lash-her-frontend.git",
@@ -11,13 +15,32 @@ const REPOSITORIES = {
 };
 const ARTIFACTS = ["courseRuntime", "courseMigration", "communityRuntime", "communityMigration", "gateway", "frontendMigration"];
 
-export function validatePlatformRelease(value, now = new Date()) {
+const ownProfile = (value) => value && typeof value === "object" && Object.hasOwn(value, "qualificationTargetProfile");
+
+function profiledCandidateCarriers(value) {
+  return [value, value?.sourceApproval, value?.integration, ...Object.values(value?.sources ?? {}), value?.workload,
+    value?.approval, ...(value?.frontendMigration === undefined ? [] : [value.frontendMigration])];
+}
+
+export function validatePlatformRelease(value, now = new Date(), expectedQualificationTargetProfile) {
   const failures = [];
   const require = (condition, message) => { if (!condition) failures.push(message); };
   const digest = (value) => typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value) && !/^sha256:0+$/u.test(value);
   const commit = (value) => typeof value === "string" && /^[0-9a-f]{40}$/u.test(value) && !/^0+$/u.test(value);
   if (!value || typeof value !== "object") return ["Release manifest required"];
-  require(value.version === 2, "Unsupported release version");
+  let expected, profile;
+  try {
+    if (expectedQualificationTargetProfile !== undefined) {
+      expected = parseQualificationTargetProfileRef(expectedQualificationTargetProfile);
+      profile = resolveQualificationTargetProfile(expected);
+      requireQualificationTargetProfile(expected, ...profiledCandidateCarriers(value));
+    } else if (profiledCandidateCarriers(value).some(ownProfile)) {
+      throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_REFUSED");
+    }
+  } catch (error) {
+    failures.push(error instanceof QualificationTargetProfileError ? error.code : "QUALIFICATION_TARGET_PROFILE_REFUSED");
+  }
+  require(value.version === (expected === undefined ? 2 : 3), "Unsupported release version");
   require(["staging", "production"].includes(value.environment), "Explicit environment required");
   require(typeof value.releaseId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(value.releaseId), "Invalid release identifier");
   for (const [name, repository] of Object.entries(REPOSITORIES)) {
@@ -63,10 +86,33 @@ export function validatePlatformRelease(value, now = new Date()) {
   // Dardan's November 1 scope decision removes billing/spending evidence from
   // release acceptance. Affordability metadata is advisory, not authorization.
   require(value.workload?.environment === "production" && typeof value.workload?.projectId === "string" && /^prj_[A-Za-z0-9]+$/u.test(value.workload.projectId), "Exact workload project/target required");
+  if (expected !== undefined) require(profile?.kind === "existing-staging" && profile.selectionPolicy === "existing-staging-v1" &&
+    value.environment === profile.environment && value.environment === "staging" &&
+    value.workload?.environment === profile.frontend?.workloadEnvironment && value.workload?.projectId === profile.frontend?.projectId,
+  "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
   require(value.scheduler?.state === "verified" && value.scheduler?.cancellation === "verified", "Qualified scheduler and strict cancellation required");
   // Operational monitoring/alerts are deferred by the operator's October 29
   // scope decision. They do not gate this plan's release manifest.
   return failures;
+}
+
+function readCarrier(file) {
+  let descriptor;
+  try {
+    descriptor = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const before = fstatSync(descriptor);
+    if (!before.isFile() || before.size < 1 || before.size > 2_000_000) throw new Error("Release manifest input refused");
+    const bytes = Buffer.alloc(before.size); let offset = 0;
+    while (offset < bytes.length) {
+      const count = readSync(descriptor, bytes, offset, bytes.length - offset, null);
+      if (count < 1) throw new Error("Release manifest input refused");
+      offset += count;
+    }
+    if (readSync(descriptor, Buffer.alloc(1), 0, 1, null) !== 0 || !isUtf8(bytes)) throw new Error("Release manifest input refused");
+    const after = fstatSync(descriptor);
+    if (["dev", "ino", "size", "mtimeMs", "ctimeMs"].some((key) => before[key] !== after[key])) throw new Error("Release manifest input refused");
+    return decodeQualificationTargetJson(bytes, "carrier");
+  } finally { if (descriptor !== undefined) closeSync(descriptor); }
 }
 
 export function contractManifestHash() {
@@ -103,13 +149,22 @@ export function phase2ContractManifestBinding(sourceRoot = fileURLToPath(new URL
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (process.argv.length !== 3) throw new Error("Usage: node ops/platform/release.mjs <manifest.json>");
-  const manifest = JSON.parse(readFileSync(process.argv[2], "utf8"));
-  const failures = validatePlatformRelease(manifest);
-  if (manifest.contractManifestSha256 !== contractManifestHash()) failures.push("Pinned contract manifest does not match source");
-  if (manifest.contractPhase === "p2" && manifest.phase2ContractManifestSha256 !== phase2ContractManifestBinding().phase2ContractManifestSha256)
-    failures.push("Pinned phase 2 contract manifest does not match source");
-  // Only fixed diagnostics are printed; manifest inputs can contain private data.
-  if (failures.length) { process.stderr.write(`${failures.join("\n")}\n`); process.exitCode = 1; }
-  else process.stdout.write("Platform manifest structure passed; actual release receipt/provenance verification remains required\n");
+  try {
+    const args = process.argv.slice(2);
+    const profiled = args[0] === "--check-profiled-current";
+    if (!(args.length === 1 || profiled && args.length === 2)) throw new Error("ARGUMENTS_REFUSED");
+    // Source policy is selected and resolved before any caller carrier is opened.
+    const expected = profiled ? STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE : undefined;
+    if (expected !== undefined) resolveQualificationTargetProfile(expected);
+    const manifest = readCarrier(args[profiled ? 1 : 0]);
+    const failures = validatePlatformRelease(manifest, new Date(), expected);
+    if (manifest.contractManifestSha256 !== contractManifestHash()) failures.push("Pinned contract manifest does not match source");
+    if (manifest.contractPhase === "p2" && manifest.phase2ContractManifestSha256 !== phase2ContractManifestBinding().phase2ContractManifestSha256)
+      failures.push("Pinned phase 2 contract manifest does not match source");
+    // Only fixed diagnostics are printed; manifest inputs can contain private data.
+    if (failures.length) { process.stderr.write(`${failures.join("\n")}\n`); process.exitCode = 1; }
+    else process.stdout.write("Platform manifest structure passed; actual release receipt/provenance verification remains required\n");
+  } catch {
+    process.stderr.write("Platform manifest verification refused\n"); process.exitCode = 1;
+  }
 }
