@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "sourceCommit": "96df28f3eedffa5607637f4f2fa3b48f9489c3f1",
+  "runId": 42262251250,
+  "url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/42262251250",
+  "conclusion": "failure",
+  "jobs": [
+    {
+      "id": 128044939112,
+      "name": "gateway-and-platform",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128044939190,
+      "name": "browser (webkit)",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 128044939207,
+      "name": "browser (chromium)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128044939214,
+      "name": "database",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128044939343,
+      "name": "build",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128044939363,
+      "name": "audit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128044939393,
+      "name": "browser (firefox)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128044939501,
+      "name": "frontend-operator-migrations",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 128044939577,
+      "name": "quality-and-unit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128056167406,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "failure"
+    }
+  ],
+  "operator": {
+    "jobId": 128044939501,
+    "artifactId": 13525288557,
+    "artifactBytes": 4547,
+    "artifactSha256": "cf786b3956ae54a350e1bfcabfa98864f3d4755f9c51ba5c33c9babe93f42f14",
+    "innerDiagnostic": {
+      "phase": "actual-source-route",
+      "kind": "Error",
+      "code": null,
+      "module": null,
+      "frames": [
+        {
+          "file": "owned-fixture/old-b-process.mjs",
+          "line": 45,
+          "column": 201
+        }
+      ]
+    },
+    "cause": "Actual receiver IPC rejects its archive root under /tmp; unchanged source guard requires /private/ or /var/. Direct exact-source reproduction retained separately.",
+    "fullPairedLinuxPass": false
+  },
+  "webkit": {
+    "jobId": 128044939190,
+    "failedStep": "Run npx playwright install --with-deps webkit",
+    "result": "20-minute dependency installer timeout; browser suite did not start. Missing report upload consequently fails.",
+    "suitePassed": false
+  },
+  "lastAllTenPass": "e7ab752e604ba43bc5b6443a9197a56e2a6e0cad",
+  "releaseAccepted": false,
+  "g2Accepted": false
+}

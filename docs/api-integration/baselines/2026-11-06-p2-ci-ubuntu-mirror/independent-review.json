@@ -1,0 +1,31 @@
+{
+  "actualLinuxAvailabilityPerformanceStillRequiresCi": true,
+  "baseCommit": "96df28f3eedffa5607637f4f2fa3b48f9489c3f1",
+  "checks": {
+    "actualMirrorAndKeyringGuardsPresent": true,
+    "aptRetries1Timeout15Unchanged": true,
+    "bashSyntaxPassed": true,
+    "browserMatrix": [
+      "chromium",
+      "firefox",
+      "webkit"
+    ],
+    "existingMirrorFileMechanismPreserved": true,
+    "fullPlaywrightInstallAndTestsUnchanged": true,
+    "installTimeoutMinutes": 20,
+    "jobTimeoutMinutes": 30,
+    "noNewNonstandardCiToolDependency": true,
+    "officialRunnerImageSourceVerified": "https://github.com/actions/runner-images/blob/ubuntu24/20261101.360/images/ubuntu/scripts/build/configure-apt-sources.sh",
+    "onlyOfficialHttpsArchiveAndSecurityUris": true,
+    "ubuntuSourcesSuitesComponentsSignedByUnmodified": true,
+    "yamlParsePassed": true
+  },
+  "diffSha256": "7a7d690201bd77d6637cb3ce6b0b4c313c8032cab303da02ae83fd77eb065156",
+  "outstandingFindings": [],
+  "packageOperationsExecuted": false,
+  "repositoryEdits": false,
+  "scope": "only browser-tests apt mirror block",
+  "status": "NARROW_CI_MIRROR_CHANGE_CLEARED",
+  "version": 1,
+  "workflowSha256": "275a8970924f65270f19b9fac6d5c0faf7db80eac6f5b3e69b29da5ea269a7f2"
+}

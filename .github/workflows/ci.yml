@@ -922,13 +922,23 @@ jobs:
       - run: npm run db:migrate
       - name: Seed enabled commerce readiness fixtures
         run: npm run test:e2e:seed-commerce
-      - name: Bound Ubuntu package acquisition for browser dependencies
+      - name: Prefer official Ubuntu HTTPS archives and bound browser dependency acquisition
         run: |
+          printf '%s\tpriority:%s\n' \
+            'https://archive.ubuntu.com/ubuntu/' 1 \
+            'https://security.ubuntu.com/ubuntu/' 2 |
+            sudo tee /etc/apt/apt-mirrors.txt > /dev/null
           sudo tee /etc/apt/apt.conf.d/zz-retries > /dev/null <<'APT'
           Acquire::Retries "1";
           Acquire::http::Timeout "15";
           Acquire::https::Timeout "15";
           APT
+          diff -u <(printf '%s\tpriority:%s\n' \
+            'https://archive.ubuntu.com/ubuntu/' 1 \
+            'https://security.ubuntu.com/ubuntu/' 2) \
+            /etc/apt/apt-mirrors.txt
+          grep -Fq 'mirror+file:/etc/apt/apt-mirrors.txt' /etc/apt/sources.list.d/ubuntu.sources
+          grep -Fq 'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' /etc/apt/sources.list.d/ubuntu.sources
           apt-config dump | grep -E '^Acquire::(Retries|https?::Timeout) '
       - run: npx playwright install --with-deps ${{ matrix.browser }}
         timeout-minutes: 20
