@@ -28,6 +28,7 @@ const approved = {
   "6e0e3d41bedd8ea672bf1eff6ff4cb107fc368c6": {"treeOid":"31b019df96a5986d06ff32a3d72d53c278ad7b51","profileSha256":"c6961028fc84f467735c9e1f0253c41608b1667237e959858b5fb352c34427db"},
   "73beea0db10099c3b45cff6fac5dcd9a31f12762": {"treeOid":"00fbdc67c20fd225f0ed79a64f9d7cf70c73deb5","profileSha256":"b1d49e31881aac65ba51fa5de6de32db676c0d2098f9b18c7dae09763d090f44"},
   "78c6f7cc92b3e5a2adc0ef60720899db7c902af2": {"treeOid":"04ed775afdb4eccfd9f1cfb99ff31539511dff27","profileSha256":"59008f22f803be864dc2be0da9fd1acd0066867a99fc794bc3b2fd63d3f243cf"},
+  "85dea97b0deae17cff19e345268bddafeba9fe28": {"treeOid":"aa9ccfc57e3e4e6a385dad83aacde571a822bb52","profileSha256":"5c1c39650e35589f95bdedea22a39ff3023659cbb98bf423986d585483d0c98d","sourceProfileCommit":"13142937adf542e41d0a12807d2503389933f74e"},
   "9b899e4e02afe787f25315a5ef1912d4d32d6080": {"treeOid":"39b58c331bcba718354cb4b5cecacc1fe3c63cc9","profileSha256":"722c0fa3650873c224737ab75ad7921a2407c94da2adf35e010392099b3b5748"},
   "a05f38d4d9452be6ee80c9b51d1b2f9188c54242": {"treeOid":"42f90f43a2fd7a9c1e053bd785d62919ba07064a","profileSha256":"a1cce58135d6a9c3af18b45297b2e48cfe44f6e60b7b6e1e8dc628e9d2cde1a0"},
   "b1f46feadab04e5e0934f5c63b9333837b48f56c": {"treeOid":"6f3e765ccb66a375f962466585ccd1ea6aefa884","profileSha256":"d6385b534a5d03277b47cc614443f4428065cdd14626dc37e21499374cda7ce6"},
@@ -38,6 +39,7 @@ const approved = {
   "e01ad6b6e6e319d63440f84b836f22594897b1d4": {"treeOid":"6399666aa67c666c52130aec93f2c6be95efbc20","profileSha256":"3ac3bd43c133b67875eaa711a8be3e4ed5832479857f979d879dcd77082869b7"},
   "e4040282b708d632bb4d45a45180905525b4da8a": {"treeOid":"ec01b34a72a3e1d417917a320f2dea239768ba23","profileSha256":"e2f8462fdcc6cb026f0d6d3449cc86c8e97e4cacfbfb9889153b6df71dccf8e6"},
   "e6ee380122131505583a106437542591badf2172": {"treeOid":"59938d0dd865fbd80bd56b9b2dd8a3a322221a52","profileSha256":"e6f0f75794ddddacbe84adb00b5502a1012fa257baba571394640f5cc1c67f01"},
+  "e82645b6c045ce88dbaacf3c32cff8606a8592a8": {"treeOid":"eca5b5ead0d026822a68788f9332ae550f6fbfe0","profileSha256":"c746ac0183027a202f932c3c47465743799ceed3f26815ec090403a1f3182b13","sourceProfileCommit":"45223fec3ee71bf63cfb0e44a94a0a7b3e282ca1"},
   "ea1772b20453a494dcd3ff635066ebd385906f6b": {"treeOid":"87087786f4795b67eb4781efc0c8dc5a1c71c937","profileSha256":"dc00e364f01be0da4f591913cb4c69ac6cbc43e7f388033bf3de78ed71319484"},
   "fd08fe169b529f7d9edde3197873136a991ce863": {"treeOid":"96428ec3cb30f98f6809fab459e6172eb043f534","profileSha256":"07e230b1cf2985f1db65bd5ee7a39c07b631cb80d74730f2bc5eab17d094e0d8"},
 };
@@ -53,6 +55,20 @@ const freeze = value => { if (value && typeof value === "object") { Object.value
 const codeFile = file => /^(?:src|scripts|ops)\//u.test(file) && /\.(?:[cm]?[jt]sx?|py|sh)$/u.test(file) &&
   !/(?:^|\/)(?:tests|__tests__|__pycache__)(?:\/|$)|\.(?:test|spec)\./u.test(file);
 const configurationFile = file => ["package.json", "package-lock.json", "vercel.json", "vercel.mjs", "next.config.ts", "sanity.config.ts", "sanity.cli.ts"].includes(file) || /^\.github\/workflows\/[^/]+\.ya?ml$/u.test(file);
+
+function materializeExactSourceProfile(sourceCommit, storedProfile) {
+  const selected = approved[sourceCommit], sourceProfileCommit = selected?.sourceProfileCommit;
+  if (!sourceProfileCommit) return storedProfile;
+  const stored = approved[sourceProfileCommit];
+  demand(stored && stored.sourceProfileCommit === undefined && selected.treeOid === stored.treeOid &&
+    storedProfile?.sourceCommit === sourceProfileCommit && storedProfile.inventory?.sourceCommit === sourceProfileCommit &&
+    storedProfile.treeOid === stored.treeOid && historicalSourceSha256(storedProfile) === stored.profileSha256 &&
+    historicalSourceSha256(storedProfile.inventory) === storedProfile.sourceInventorySha256);
+  const inventory = { ...storedProfile.inventory, sourceCommit };
+  const materialized = { ...storedProfile, sourceCommit, sourceInventorySha256: historicalSourceSha256(inventory), inventory };
+  demand(historicalSourceSha256(materialized) === selected.profileSha256);
+  return materialized;
+}
 
 function gitReader(repository) {
   demand(typeof repository === "string" && realpathSync(repository) === repository);
@@ -84,6 +100,7 @@ function readBlobs(git, rows) {
 export function verifyHistoricalFrontendSourceProfile(repository, sourceCommit, profile) {
   try {
     demand(commit(sourceCommit) && approved[sourceCommit]);
+    profile = materializeExactSourceProfile(sourceCommit, profile);
     demand(profile?.version === 1 && profile.sourceCommit === sourceCommit && historicalSourceSha256(profile) === approved[sourceCommit].profileSha256);
     const git = gitReader(repository);
     demand(git(["cat-file", "-t", sourceCommit]).toString("utf8").trim() === "commit");
@@ -113,7 +130,8 @@ export function verifyHistoricalFrontendSourceProfile(repository, sourceCommit, 
 export function verifiedSourceRequirements(repository, sourceCommit) {
   try {
     demand(commit(sourceCommit) && approved[sourceCommit]);
-    const profile = JSON.parse(readFileSync(new URL(`./profiles/frontend-historical-sources/${sourceCommit}.json`, import.meta.url), "utf8"));
+    const profileCommit = approved[sourceCommit].sourceProfileCommit ?? sourceCommit;
+    const profile = JSON.parse(readFileSync(new URL(`./profiles/frontend-historical-sources/${profileCommit}.json`, import.meta.url), "utf8"));
     return verifyHistoricalFrontendSourceProfile(repository, sourceCommit, profile);
   } catch { throw refusal(); }
 }

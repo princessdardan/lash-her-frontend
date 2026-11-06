@@ -17,6 +17,14 @@ const requirements = verifiedSourceRequirements(repository, c07);
 const profile = () => JSON.parse(readFileSync(new URL(`${c07}.json`, directory), "utf8"));
 const rejected = /FRONTEND_HISTORICAL_SOURCE_REFUSED/u;
 const keys = ["BACKUP_RESTORE_DATABASE_URL", "DATABASE_URL", "STAGING_DATABASE_URL", "TEST_DATABASE_URL"];
+const exactSourceAliases = [
+  { sourceCommit: "e82645b6c045ce88dbaacf3c32cff8606a8592a8", sourceProfileCommit: "45223fec3ee71bf63cfb0e44a94a0a7b3e282ca1",
+    treeOid: "eca5b5ead0d026822a68788f9332ae550f6fbfe0", sourceInventorySha256: "63950a977dec675ff21b1c1d41b8763e96dfb08f83b6c8e66ab2949ce140217d",
+    profileSha256: "c746ac0183027a202f932c3c47465743799ceed3f26815ec090403a1f3182b13" },
+  { sourceCommit: "85dea97b0deae17cff19e345268bddafeba9fe28", sourceProfileCommit: "13142937adf542e41d0a12807d2503389933f74e",
+    treeOid: "aa9ccfc57e3e4e6a385dad83aacde571a822bb52", sourceInventorySha256: "d9a2b1cc0a6a9e684fde632193393378f0f5e74d33b2f49752dacfbb5178a56b",
+    profileSha256: "5c1c39650e35589f95bdedea22a39ff3023659cbb98bf423986d585483d0c98d" },
+];
 const database = { database: "frontend_historical_owned", major: 16, parentPid: 101, markers: ["1001", "1002", "1003", "1004"] };
 
 function originalFixture(environment = {}, options = {}) {
@@ -45,8 +53,10 @@ const closureIds = (source, family) => [...new Set([...source.sqlCredentialRequi
 test("every checked retained staging/preview profile verifies its actual complete selected Git tree and blobs", () => {
   const files = readdirSync(directory).filter(file => file.endsWith(".json"));
   assert.equal(files.length, 33);
-  for (const file of files) {
-    const source = verifiedSourceRequirements(repository, file.slice(0, -5));
+  const supported = [...files.map(file => file.slice(0, -5)), ...exactSourceAliases.map(row => row.sourceCommit)];
+  assert.equal(supported.length, 35);
+  for (const sourceCommit of supported) {
+    const source = verifiedSourceRequirements(repository, sourceCommit);
     assert.equal(source.status, "FRONTEND_HISTORICAL_SOURCE_VERIFIED");
     assert.equal(source.providerFamilies.length, 36);
     assert.ok(source.entrypoints.routes.length >= 40);
@@ -54,6 +64,56 @@ test("every checked retained staging/preview profile verifies its actual complet
     assert.ok(source.entrypoints.manual.length > 0 && source.entrypoints.deferred.length > 0);
     assert.equal(source.sourceAdmission, "not-qualified-by-current-candidate");
     assert.ok(Object.isFrozen(source.providerFamilies[0]));
+  }
+});
+
+test("two closed exact-tree aliases materialize only commit-bound profile fields", () => {
+  for (const [index, alias] of exactSourceAliases.entries()) {
+    const stored = JSON.parse(readFileSync(new URL(`${alias.sourceProfileCommit}.json`, directory), "utf8"));
+    const inventory = { ...stored.inventory, sourceCommit: alias.sourceCommit };
+    const materialized = { ...stored, sourceCommit: alias.sourceCommit, sourceInventorySha256: hash(inventory), inventory };
+    assert.equal(materialized.treeOid, stored.treeOid); assert.equal(materialized.treeOid, alias.treeOid);
+    assert.equal(materialized.sourceInventorySha256, alias.sourceInventorySha256); assert.equal(hash(materialized), alias.profileSha256);
+    const source = verifyHistoricalFrontendSourceProfile(repository, alias.sourceCommit, stored);
+    const base = verifiedSourceRequirements(repository, alias.sourceProfileCommit);
+    assert.equal(source.sourceCommit, alias.sourceCommit); assert.equal(source.sourceInventorySha256, alias.sourceInventorySha256);
+    for (const key of ["treeOid", "entrypoints", "sqlCredentialRequirements", "providerFamilies", "manualCredentialProfiles", "sdkDependencies", "sourceReviewDisposition", "sourceAdmission"])
+      assert.deepEqual(source[key], base[key], `${alias.sourceCommit}:${key}`);
+    assert.deepEqual(source.sourceReviewDisposition.credentialPathReuseProviders, []);
+    const wrongBase = JSON.parse(readFileSync(new URL(`${exactSourceAliases[1 - index].sourceProfileCommit}.json`, directory), "utf8"));
+    assert.throws(() => verifyHistoricalFrontendSourceProfile(repository, alias.sourceCommit, wrongBase), rejected);
+    assert.throws(() => verifyHistoricalFrontendSourceProfile(repository, alias.sourceCommit.slice(0, 39), stored), rejected);
+    const wrongTree = structuredClone(stored); wrongTree.treeOid = "0".repeat(40);
+    assert.throws(() => verifyHistoricalFrontendSourceProfile(repository, alias.sourceCommit, wrongTree), rejected);
+    const changed = structuredClone(stored); changed.providerFamilies[0].untrackedPotentialRequests.pop();
+    assert.throws(() => verifyHistoricalFrontendSourceProfile(repository, alias.sourceCommit, changed), rejected);
+    assert.throws(() => verifyHistoricalFrontendSourceProfile(repository, alias.sourceCommit, materialized), rejected);
+  }
+});
+
+test("exact-tree aliases retain empty and configured catalog predicates plus external residuals", async () => {
+  const closureShape = result => ({ closures: result.capabilityClosures.map(row => ({ familyId: row.familyId, disposition: row.disposition,
+    effectScope: row.effectScope, sourcePredicate: row.sourcePredicate, externalProviderCapability: row.externalProviderCapability })),
+    unresolvedFrontendSqlFamilyIds: result.unresolvedFrontendSqlFamilyIds,
+    unresolvedExternalCapabilityFamilyIds: result.unresolvedExternalCapabilityFamilyIds,
+    unresolvedFamilyIds: result.unresolvedFamilyIds });
+  const observed = async (sourceCommit, keyCatalog = []) => {
+    const source = verifiedSourceRequirements(repository, sourceCommit), fixture = originalFixture({}, { sourceCommit, keyCatalog });
+    const sql = await observe(source, { binding: fixture.binding, originalConfiguration: fixture.original, clientsByKey: new Map(),
+      physicalDatabasesByKey: new Map(), verifySession: async () => {} });
+    return derive(source, fixture.binding, fixture.original, sql);
+  };
+  for (const alias of exactSourceAliases) {
+    const emptyResult = await observed(alias.sourceCommit), baseEmptyResult = await observed(alias.sourceProfileCommit);
+    assert.deepEqual(closureShape(emptyResult), closureShape(baseEmptyResult));
+    assert.equal(emptyResult.capabilityClosures.length, 6);
+    assert.deepEqual(emptyResult.unresolvedExternalCapabilityFamilyIds, ["mux.studio", "sanity.editorial"]);
+    const configuredResult = await observed(alias.sourceCommit, ["AUTH_SECRET", "SANITY_WEBHOOK_SECRET"]);
+    const baseConfiguredResult = await observed(alias.sourceProfileCommit, ["AUTH_SECRET", "SANITY_WEBHOOK_SECRET"]);
+    assert.deepEqual(closureShape(configuredResult), closureShape(baseConfiguredResult));
+    for (const family of ["google.identity", "google.oauth", "sanity.callbacks"])
+      assert.ok(configuredResult.unresolvedFrontendSqlFamilyIds.includes(family), `${alias.sourceCommit}:${family}`);
+    assert.deepEqual(configuredResult.unresolvedExternalCapabilityFamilyIds, emptyResult.unresolvedExternalCapabilityFamilyIds);
   }
 });
 
@@ -241,9 +301,11 @@ test("manual template mutation scope and original staging broadcast guard use ch
 });
 
 
-test("all 33 exact reviewed sources carry six bounded private-SQL predicates or actual Mux plugin absence", async () => {
-  for (const file of readdirSync(directory)) {
-    const source = verifiedSourceRequirements(repository, file.slice(0, -5)), fixture = originalFixture({}, { sourceCommit: source.sourceCommit });
+test("all 35 exact reviewed revisions carry six bounded private-SQL predicates or actual Mux plugin absence", async () => {
+  const supported = [...readdirSync(directory).map(file => file.slice(0, -5)), ...exactSourceAliases.map(row => row.sourceCommit)];
+  assert.equal(supported.length, 35);
+  for (const sourceCommit of supported) {
+    const source = verifiedSourceRequirements(repository, sourceCommit), fixture = originalFixture({}, { sourceCommit: source.sourceCommit });
     const sql = await observe(source, { binding: fixture.binding, originalConfiguration: fixture.original, clientsByKey: new Map(), physicalDatabasesByKey: new Map(), verifySession: async () => {} });
     const result = derive(source, fixture.binding, fixture.original, sql);
     for (const familyId of ["google.identity", "google.oauth", "google.calendar", "sanity.editorial", "sanity.callbacks", "mux.studio"])
