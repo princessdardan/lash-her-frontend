@@ -42,7 +42,7 @@ export function ManualGrantForm({ courseId, revision, eligible }: { courseId: st
     event.preventDefault();
     if (!eligible || !ready || pending || attempt) return;
     const id = crypto.randomUUID();
-    try { sessionStorage.setItem(storageKey, id); } catch { setMessage("The request reference could not be retained. No grant was submitted."); return; }
+    try { if (sessionStorage.getItem(storageKey)) return; sessionStorage.setItem(storageKey, id); } catch { setMessage("The request reference could not be retained. No grant was submitted."); return; }
     window.dispatchEvent(new Event("owner-grant-reference"));
     await request("POST", id);
   }

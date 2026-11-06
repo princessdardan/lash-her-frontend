@@ -90,7 +90,7 @@ test("owner manual access uses real auth/Course SQL audit and explicit lost-ack 
     await page.route(`**/api/admin/courses/${id}/manual-grants`, async route => {
       if (route.request().method() === "POST") { posts++; await route.fetch(); await route.abort("failed"); } else await route.continue();
     });
-    await page.getByRole("button", { name: "Grant manual access", exact: true }).click();
+    await page.locator("section[aria-label=\"Manual course access\"] form").evaluate(form => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
     await expect(page.getByRole("region", { name: "Manual course access" }).getByRole("status")).toContainText(/fetch|unknown|outcome/i);
     await page.getByRole("button", { name: "Check recorded outcome" }).click(); await expect(page.getByRole("region", { name: "Manual course access" }).getByRole("status")).toContainText("Manual grant and audit confirmed");
     expect(posts).toBe(1); expect((await sql.query("select id from entitlement_grants where user_id=$1 and course_id=$2", [states.manualGrantCustomerIds[1], id])).rows).toHaveLength(1);
