@@ -16,6 +16,7 @@ import threading
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.modules.setdefault("p2_identity_key_rotation_parent", sys.modules[__name__])
 import migrate
 import p2_identity_key_rotation as rotation_source
 import release as runtime
@@ -595,12 +596,6 @@ class P2IdentityRotationBroker(Broker):
         super().close(committed)
 
 
-ROTATION_LAYOUT = {"actionIdKey": "rotationActionId", "receiptPrefix": "p2-identity-key-rotation-",
-                   "runtimePrefix": "runtime-identity-key-rotation-",
-                   "terminalName": "p2-identity-key-rotation-outcome.json",
-                   "terminalStatus": "P2_IDENTITY_KEY_ROTATION_QUALIFIED"}
-
-
 def main():
     raw = sys.stdin.buffer.readline(MAXIMUM + 1)
     require(0 < len(raw) <= MAXIMUM and raw.endswith(b"\n"), "P2_ROTATION_INITIAL_INPUT_REFUSED")
@@ -608,7 +603,7 @@ def main():
     require(initial.get("mode") == "p2-identity-key-rotation", "P2_ROTATION_FIXED_MODE_REQUIRED")
     # The shared supervisor must explicitly register ROTATION_LAYOUT and these
     # exact types before this source can become live-eligible.
-    from p2_release_supervisor import supervise
+    from p2_release_supervisor import supervise, ROTATION_LAYOUT
     supervise(initial, broker_type=P2IdentityRotationBroker, observer_type=P2IdentityRotationPhysicalObserver,
               observer_source=OBSERVER_SOURCE, layout=ROTATION_LAYOUT)
 

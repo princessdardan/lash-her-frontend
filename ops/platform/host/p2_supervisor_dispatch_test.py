@@ -3,7 +3,8 @@ from pathlib import Path
 from unittest.mock import patch
 import unittest
 from p2_release_broker import Broker, PhysicalObserver
-from p2_release_supervisor import supervise, DEFAULT_LAYOUT, RECOVERY_LAYOUT, CERTIFICATION_LAYOUT, cleanup_recovery_current_containers
+from p2_release_supervisor import supervise, DEFAULT_LAYOUT, RECOVERY_LAYOUT, CERTIFICATION_LAYOUT, ROTATION_LAYOUT, cleanup_recovery_current_containers, cleanup_rotation_readonly_containers
+from p2_identity_key_rotation_parent import P2IdentityRotationBroker, P2IdentityRotationPhysicalObserver
 
 
 class FixedDispatchTests(unittest.TestCase):
@@ -82,3 +83,41 @@ class FixedDispatchTests(unittest.TestCase):
         self.assertIn('name=^/lash-p2-recovery-current-(course|community)-[a-f0-9]{32}$',commands[0])
         with patch('p2_release_supervisor.runtime.command', return_value='invalid id'):
             with self.assertRaisesRegex(ValueError,'RECOVERY_CONTAINER_ID_REFUSED'): cleanup_recovery_current_containers()
+
+    def test_rotation_dispatch_is_exact_and_cannot_be_selected_by_private_json(self):
+        initial = {'candidate': {'releaseId': 'original'}, 'mode': 'p2-identity-key-rotation',
+                   'rotationActionId': 'p2-key-rotation-owned', '_guardLayout': ROTATION_LAYOUT}
+        with patch('p2_release_supervisor.os.geteuid', return_value=1):
+            with self.assertRaisesRegex(ValueError, 'LINUX_ROOT_GUARD_REQUIRED'):
+                supervise(initial)
+        self.assertEqual(initial['_guardLayout'], DEFAULT_LAYOUT)
+        options = {'broker_type': P2IdentityRotationBroker,
+                   'observer_type': P2IdentityRotationPhysicalObserver,
+                   'observer_source': 'ops/platform/p2-recovery-current-probe.mjs',
+                   'layout': ROTATION_LAYOUT}
+        with patch('p2_release_supervisor.os.geteuid', return_value=1):
+            with self.assertRaisesRegex(ValueError, 'LINUX_ROOT_GUARD_REQUIRED'):
+                supervise(initial, **options)
+        self.assertEqual(initial['_guardLayout'], ROTATION_LAYOUT)
+        for changed in ({**options, 'observer_source': 'ops/platform/p2-frontend-live-probe.mjs'},
+                        {**options, 'layout': {**ROTATION_LAYOUT, 'terminalName': '../out.json'}},
+                        {**options, 'broker_type': Broker},
+                        {**options, 'observer_type': PhysicalObserver}):
+            with self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
+                supervise(initial, **changed)
+
+    def test_rotation_readonly_cleanup_accepts_only_fixed_names_and_docker_ids(self):
+        commands = []
+        def command(args, *_):
+            commands.append(args)
+            if len(commands) in (1, 4): return ('a' if len(commands) == 1 else 'b') * 12 + '\n'
+            return ''
+        with patch('p2_release_supervisor.runtime.command', side_effect=command):
+            cleanup_rotation_readonly_containers()
+        self.assertEqual(commands[1], ['docker', 'rm', '--force', 'a'*12])
+        self.assertEqual(commands[4], ['docker', 'rm', '--force', 'b'*12])
+        self.assertIn('rotation-current-(course|community)', commands[0][-3])
+        self.assertIn('rotation-close-', commands[3][-3])
+        with patch('p2_release_supervisor.runtime.command', return_value='not-an-id'):
+            with self.assertRaisesRegex(ValueError, 'ROTATION_CONTAINER_ID_REFUSED'):
+                cleanup_rotation_readonly_containers()

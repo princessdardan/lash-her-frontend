@@ -36,6 +36,10 @@ RECOVERY_LAYOUT = {'actionIdKey': 'recoveryActionId', 'receiptPrefix': 'p2-recov
                    'terminalName': 'p2-recovery-outcome.json', 'terminalStatus': 'P2_STAGING_RECOVERY_RESTORATION_VERIFIED'}
 CERTIFICATION_LAYOUT = {'actionIdKey': 'certificationActionId', 'receiptPrefix': 'p2-certification-', 'runtimePrefix': 'runtime-certification-',
                         'terminalName': 'p2-certification-outcome.json', 'terminalStatus': 'P2_BOUNDED_CERTIFICATION_CONTAINED'}
+ROTATION_LAYOUT = {'actionIdKey': 'rotationActionId', 'receiptPrefix': 'p2-identity-key-rotation-',
+                   'runtimePrefix': 'runtime-identity-key-rotation-',
+                   'terminalName': 'p2-identity-key-rotation-outcome.json',
+                   'terminalStatus': 'P2_IDENTITY_KEY_ROTATION_QUALIFIED'}
 
 
 def fixed_layout(initial):
@@ -60,6 +64,19 @@ def cleanup_recovery_current_containers():
         require(re.fullmatch(r'[a-f0-9]{12,64}', identity), 'P2_GUARD_RECOVERY_CONTAINER_ID_REFUSED')
         runtime.command(['docker', 'rm', '--force', identity], runtime.SAFE_ENV, 30)
     require(not runtime.command(query, runtime.SAFE_ENV, 15), 'P2_GUARD_RECOVERY_CONTAINER_REMAINS')
+
+
+def cleanup_rotation_readonly_containers():
+    # Fixed read-only observer containers only. The broker and all registered
+    # mutators are reaped before this selector can run.
+    patterns = ('^/lash-p2-rotation-current-(course|community)-[a-f0-9]{32}$',
+                '^/lash-p2-rotation-close-[a-f0-9]{32}$')
+    for pattern in patterns:
+        query = ['docker', 'container', 'ls', '--all', '--filter', 'name=' + pattern, '--format', '{{.ID}}']
+        for identity in runtime.command(query, runtime.SAFE_ENV, 15).splitlines():
+            require(re.fullmatch(r'[a-f0-9]{12,64}', identity), 'P2_GUARD_ROTATION_CONTAINER_ID_REFUSED')
+            runtime.command(['docker', 'rm', '--force', identity], runtime.SAFE_ENV, 30)
+        require(not runtime.command(query, runtime.SAFE_ENV, 15), 'P2_GUARD_ROTATION_CONTAINER_REMAINS')
 
 
 
@@ -198,6 +215,7 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
         # Certification starts from an existing runtime but cannot issue any
         # mutator before its separate source-selected armed handshake.
         status = ('P2_GUARD_REFUSED_BEFORE_CERTIFICATION_STAGE' if fixed_layout(initial) == CERTIFICATION_LAYOUT
+                  else 'P2_GUARD_REFUSED_BEFORE_ROTATION_STAGE' if fixed_layout(initial) == ROTATION_LAYOUT
                   else 'P2_GUARD_REFUSED_BEFORE_API_STAGE')
         result.update(status=status, runtimeStopAttempted=False)
         return result
@@ -234,7 +252,7 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
         pass
     # Certification adopts the exact currently mounted configuration; unlike
     # release/recovery it neither creates nor restores a runtime snapshot.
-    snapshot = (Path(initial['configuration']) if layout == CERTIFICATION_LAYOUT else
+    snapshot = (Path(initial['configuration']) if layout in (CERTIFICATION_LAYOUT, ROTATION_LAYOUT) else
                 Path(initial['results']) / (layout['runtimePrefix'] + identity) / 'configuration')
     directory = Path(initial['results']) / (layout['receiptPrefix'] + identity)
     gateway_directory = directory
@@ -274,6 +292,11 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
             cleanup_recovery_current_containers()
         except BaseException:
             result['recoveryCurrentContainerCleanupUncertain'] = True
+    if layout == ROTATION_LAYOUT:
+        try:
+            cleanup_rotation_readonly_containers()
+        except BaseException:
+            result['rotationReadonlyContainerCleanupUncertain'] = True
     try:
         migrate.suspend_runtime('staging', runtime.SAFE_ENV)
         result['runtimeStopped'] = True
@@ -312,12 +335,19 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
               observer_source='ops/platform/p2-frontend-live-probe.mjs', layout=None, native_containment=None):
     layout = dict(DEFAULT_LAYOUT if layout is None else layout)
     require(issubclass(broker_type, Broker) and issubclass(observer_type, PhysicalObserver), 'P2_FIXED_SOURCE_TYPES_REQUIRED')
+    rotation_types = None
+    if layout == ROTATION_LAYOUT:
+        from p2_identity_key_rotation_parent import P2IdentityRotationBroker, P2IdentityRotationPhysicalObserver
+        rotation_types = (P2IdentityRotationBroker, P2IdentityRotationPhysicalObserver)
     require((layout == DEFAULT_LAYOUT and broker_type is Broker and observer_type is PhysicalObserver
              and observer_source == 'ops/platform/p2-frontend-live-probe.mjs' and native_containment is None) or
             (layout == RECOVERY_LAYOUT and initial.get('mode') == 'p2-post-sql-recovery'
              and observer_source == 'ops/platform/p2-recovery-current-probe.mjs' and native_containment is None) or
             (layout == CERTIFICATION_LAYOUT and initial.get('mode') == 'p2-bounded-certification'
-             and observer_source == 'ops/platform/p2-certification-current-probe.mjs' and callable(native_containment)),
+             and observer_source == 'ops/platform/p2-certification-current-probe.mjs' and callable(native_containment)) or
+            (layout == ROTATION_LAYOUT and initial.get('mode') == 'p2-identity-key-rotation'
+             and rotation_types == (broker_type, observer_type)
+             and observer_source == 'ops/platform/p2-recovery-current-probe.mjs' and native_containment is None),
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     initial['_guardLayout'], initial['_guardObserverSource'] = layout, observer_source
     identity = action_id(initial)

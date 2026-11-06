@@ -40,7 +40,7 @@ FILES = (PROGRAM, "ops/platform/p2-identity-key-rotation.test.mjs", "ops/platfor
     "ops/platform/p2-identity-key-rotation.md")
 PHASES = ("baseline", "overlap", "currentOnly", "restoration")
 PROFILES = ("course-learner", "course-admin", "community-member", "community-admin")
-PARENT_ADAPTER_READY = False
+PARENT_ADAPTER_READY = True
 SHA = re.compile(r"^[a-f0-9]{64}$")
 demand = migrate.demand
 

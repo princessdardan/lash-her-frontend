@@ -94,5 +94,5 @@ export async function withP2IdentityRotationTransport(handle, plan, task) {
   const factory = handles.get(handle); demand(factory && typeof task === "function"); handles.delete(handle); return factory(plan, task);
 }
 
-export const P2_IDENTITY_ROTATION_TRANSPORT = Object.freeze({ sharedSupervisorLayoutIntegrated: false,
+export const P2_IDENTITY_ROTATION_TRANSPORT = Object.freeze({ sharedSupervisorLayoutIntegrated: true,
   fixedHostEntry: "ops/platform/host/p2_identity_key_rotation_parent.py", reusable: false });

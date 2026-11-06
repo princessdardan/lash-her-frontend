@@ -14,12 +14,12 @@ a Community feature or a public debug/token endpoint.
 
 ## Current execution boundary
 
-The package includes a source-fixed config-only parent, SSH transport, typed
-host broker/scope, and normal frontend Course read recorder, but remains
-live-ineligible. The shared supervisor has not yet registered the fixed
-rotation layout and dispatch, so `PARENT_ADAPTER_READY` and
-`sourceParentDispatchIntegrated` remain false and `keyRemovalVerified` remains
-false outside a future actual joined run. The parent retains the Linux release
+The package includes a source-fixed config-only parent, single-use SSH
+transport, exact source-CI/install operator, typed host broker/scope, canonical
+staging-origin observer, and normal frontend Course read recorder. Source
+dispatch is integrated, but the action remains live-ineligible until its
+actual Linux/Docker/Vercel/staging qualification. `keyRemovalVerified` remains
+false outside a successful joined run. The parent retains the Linux release
 flock and frontend PostgreSQL physical advisory/nonce lock throughout each
 configuration mutation, runtime recreation, frontend build/promotion, and
 proof. Retained-READY recovery and failed/canceled forward recovery are not
@@ -28,6 +28,13 @@ rotation authority.
 The fixed components have no standalone activation path or generic command
 callback. The transport handle and controller authority are process-private,
 single-use capabilities minted only by the fixed source parent.
+
+Browser authentication and Course reads use only the fixed canonical origin
+`https://staging.lashher.com`. The immutable `*.vercel.app` deployment URL is
+retained separately as provenance. Before arm and continuously while active,
+the host brackets a protected workload request with two provider alias reads
+and requires the alias, READY deployment, source, release, configuration,
+authentication origins, feature controls, and writer binding to remain exact.
 
 ## Reviewed private configurations
 
@@ -163,10 +170,13 @@ keys, key hashes, subjects, customer data, or provider credentials.
 node --test ops/platform/p2-identity-key-rotation.test.mjs
 node --test ops/platform/p2-identity-key-rotation-controller.test.mjs
 node --test \
+  ops/platform/p2-identity-key-rotation-operator.test.mjs \
+  ops/platform/p2-canonical-browser-origin.test.mjs \
   ops/platform/p2-identity-key-rotation-parent.test.mjs \
   ops/platform/p2-identity-key-rotation-browser-recorder.test.mjs \
   ops/platform/p2-identity-key-rotation-session-closed.test.mjs
 python3 -m unittest \
+  ops/platform/host/p2_canonical_browser_origin_test.py \
   ops/platform/host/p2_identity_key_rotation_test.py \
   ops/platform/host/p2_identity_key_rotation_adapter_test.py \
   ops/platform/host/p2_identity_key_rotation_parent_test.py

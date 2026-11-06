@@ -229,6 +229,6 @@ export async function runP2IdentityRotationParent(plan, input, options = {}) {
   });
 }
 
-export const P2_IDENTITY_ROTATION_PARENT = Object.freeze({ sourceDispatchIntegrated: false,
+export const P2_IDENTITY_ROTATION_PARENT = Object.freeze({ sourceDispatchIntegrated: true,
   requiresDedicatedSupervisorLayout: true, configOnly: true, nativeSchedulesEnabled: false,
   businessSchedulesEnabled: false, sqlAuthorized: false, rolePreparationAuthorized: false, loginChangeAuthorized: false });
