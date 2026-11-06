@@ -12,6 +12,7 @@ import { committedOperatorSource, verifyOperatorCi } from "./recreation_source.m
 import { githubSourceApi } from "./release-inputs.mjs";
 import { recreationSsh } from "./recreation_ssh.mjs";
 import { frontendPrivateReceiptDirectory } from "./frontend-release-receipts.mjs";
+import { frontendCoordinationHash } from "./frontend-release-inventory.mjs";
 import { prepareP2IdentityRotationParent, runP2IdentityRotationParent } from "./p2-identity-key-rotation-parent.mjs";
 import { p2IdentityRotationEnvironmentLock } from "./p2-identity-key-rotation-transport.mjs";
 
@@ -57,6 +58,7 @@ export function prepareP2IdentityRotationPlanFromChecked(settings, checked, bind
     && checked.original.candidate.sources.frontend.commit === settings.operatorSourceCommit
     && exact(rotation, ["actionId", "courseId", "subjects", "configuration", "privateConfigurationSha256", "baseline", "readyReceiptSha256"])
     && /^p2-key-rotation-[a-z0-9-]{1,40}$/u.test(rotation.actionId) && UUID.test(rotation.courseId)
+    && exact(rotation.baseline, ["deploymentId", "deploymentUrl", "configurationRecordSha256"])
     && exact(rotation.subjects, profiles) && Object.values(rotation.subjects).every(value => UUID.test(value))
     && exact(rotation.configuration, phases) && exact(rotation.privateConfigurationSha256, phases));
   for (const phase of phases) {
@@ -104,7 +106,9 @@ export async function p2IdentityRotationOperator(settings, { apply = false, conf
   const sourceClosureSha256 = hash(Object.entries(sourceSha256).sort(([a], [b]) => a.localeCompare(b)));
   const context = privateObject(settings.providerContext);
   demand(typeof context.vercelToken === "string" && context.vercelToken.length > 0 && context.vercelToken.length <= 8192
-    && typeof context.privateConfigurationDirectory === "string" && typeof context.gatewayHost === "string");
+    && typeof context.privateConfigurationDirectory === "string" && typeof context.gatewayHost === "string"
+    && context.bindings?.gatewayHost === context.gatewayHost
+    && frontendCoordinationHash(context.bindings?.gatewayObservation) === selected.checked.prepared.plan.restoration.gatewayBindingSha256);
   const privateProbe = privateObject(join(context.privateConfigurationDirectory, "frontend-probe-private.json"), 8192);
   demand(privateProbe.environment === "staging" && privateProbe.projectId === selected.nativePlan.projectId
     && privateProbe.sourceCommit === selected.nativePlan.sourceCommit && privateProbe.releaseId === selected.nativePlan.actionId
