@@ -14,19 +14,20 @@ a Community feature or a public debug/token endpoint.
 
 ## Current execution boundary
 
-The package is source-complete but live-ineligible. `PARENT_ADAPTER_READY` and
-`sourceParentDispatchIntegrated` are false, `keyRemovalVerified` remains false,
-and the controller refuses non-fixture execution. Live execution requires a
-separately reviewed fixed certification
-parent that retains the actual Linux release flock and frontend PostgreSQL
-physical advisory/nonce lock throughout each configuration mutation, runtime
-recreation, frontend build/promotion, and proof. Retained-READY recovery and
-failed/canceled forward recovery are not rotation authority.
+The package includes a source-fixed config-only parent, SSH transport, typed
+host broker/scope, and normal frontend Course read recorder, but remains
+live-ineligible. The shared supervisor has not yet registered the fixed
+rotation layout and dispatch, so `PARENT_ADAPTER_READY` and
+`sourceParentDispatchIntegrated` remain false and `keyRemovalVerified` remains
+false outside a future actual joined run. The parent retains the Linux release
+flock and frontend PostgreSQL physical advisory/nonce lock throughout each
+configuration mutation, runtime recreation, frontend build/promotion, and
+proof. Retained-READY recovery and failed/canceled forward recovery are not
+rotation authority.
 
-The fixed controller, physical observer, typed host scope, configuration
-validator, API recreation adapter, Vercel rollout adapter, and private
-JavaScript child are implemented for that future parent. They have no
-standalone activation path or generic command callback.
+The fixed components have no standalone activation path or generic command
+callback. The transport handle and controller authority are process-private,
+single-use capabilities minted only by the fixed source parent.
 
 ## Reviewed private configurations
 
@@ -84,6 +85,14 @@ metadata inventory and remains closed for review.
    deliberately reports no configuration-observation claim.
 3. Create and promote one exact frontend `overlap` build. Verify the actual
    protected Course learner/admin frontend operations use the new current key.
+   Customer and administrator browser contexts authenticate through the normal
+   frontend. The parent then durably records one exact source-issued read
+   window, enables frontend `newWork` only for that window, keeps recovery and
+   gateway admission closed, performs the existing learner and administrator
+   Course GETs, closes admission, and proves zero active and uncertain ledger
+   operations. The signer-read window is fixed at at most 60 seconds. It is not
+   globally read-only because the existing administrator GET writes its
+   admission-ledger operation.
 4. Record when the old frontend deployment stopped issuing. Keep overlap for at
    least 330 seconds: the 300-second maximum token lifetime plus 30-second
    verifier skew. Continuous guards must retain source, candidate,
@@ -106,6 +115,14 @@ metadata inventory and remains closed for review.
 8. Re-prove actual frontend protected Course operations and qualified
    restoration readiness. Only the final joined receipt may set
    `keyRemovalVerified: true`.
+
+Outside the source-fixed authentication and signer-read windows, frontend
+admission remains closed. Each authentication window is fixed at 300 seconds;
+each signer-read window is fixed at 60 seconds. The independent observer
+accepts only the exact recorded phase, deployment, configuration, source,
+physical session, epoch transition, and bounded active operation count.
+Network errors, expiry, process loss, uncertain operations, or an unverified
+drain fence the action closed.
 
 ## Failure and restoration
 
@@ -140,9 +157,13 @@ keys, key hashes, subjects, customer data, or provider credentials.
 ```sh
 node --test ops/platform/p2-identity-key-rotation.test.mjs
 node --test ops/platform/p2-identity-key-rotation-controller.test.mjs
+node --test \
+  ops/platform/p2-identity-key-rotation-parent.test.mjs \
+  ops/platform/p2-identity-key-rotation-browser-recorder.test.mjs
 python3 -m unittest \
   ops/platform/host/p2_identity_key_rotation_test.py \
-  ops/platform/host/p2_identity_key_rotation_adapter_test.py
+  ops/platform/host/p2_identity_key_rotation_adapter_test.py \
+  ops/platform/host/p2_identity_key_rotation_parent_test.py
 ```
 
 These are non-live checks. They use synthetic keys, owned HTTP/verifier

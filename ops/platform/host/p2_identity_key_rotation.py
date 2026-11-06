@@ -24,6 +24,10 @@ FILES = (PROGRAM, "ops/platform/p2-identity-key-rotation.test.mjs", "ops/platfor
     "ops/platform/host/p2_identity_key_rotation_test.py", "ops/platform/p2-identity-key-rotation-controller.mjs",
     "ops/platform/p2-identity-key-rotation-controller.test.mjs", "ops/platform/p2-identity-key-rotation-observer.mjs",
     "ops/platform/host/p2_identity_key_rotation_adapter.py", "ops/platform/host/p2_identity_key_rotation_adapter_test.py",
+    "ops/platform/p2-identity-key-rotation-parent.mjs", "ops/platform/p2-identity-key-rotation-parent.test.mjs",
+    "ops/platform/p2-identity-key-rotation-transport.mjs", "ops/platform/p2-identity-key-rotation-browser-recorder.mjs",
+    "ops/platform/p2-identity-key-rotation-browser-recorder.test.mjs",
+    "ops/platform/host/p2_identity_key_rotation_parent.py", "ops/platform/host/p2_identity_key_rotation_parent_test.py",
     "ops/platform/p2-identity-key-rotation.md")
 PHASES = ("baseline", "overlap", "currentOnly", "restoration")
 PROFILES = ("course-learner", "course-admin", "community-member", "community-admin")

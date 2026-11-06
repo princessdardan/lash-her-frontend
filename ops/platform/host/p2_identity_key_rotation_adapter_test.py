@@ -118,6 +118,37 @@ class Scope:
 
 
 class AdapterTest(unittest.TestCase):
+    def test_browser_source_record_is_bound_to_current_deployment_and_retained_as_signer_receipt(self):
+        output = Path(tempfile.mkdtemp()); os.chmod(output, 0o700)
+        attempt = output / "frontend-overlap"; attempt.mkdir(mode=0o700)
+        adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
+        adapter.output = output
+        adapter.scope = types.SimpleNamespace(action_id="p2-key-rotation-owned", binding_sha256="b" * 64,
+            candidate_sha256="c" * 64, source_commit="a" * 40)
+        adapter.configurations = types.SimpleNamespace(hashes={"overlap": "d" * 64})
+        adapter.frontend_deployment = lambda _phase: {"phase": "overlap", "deploymentId": "dpl_owned",
+            "deploymentUrl": "https://owned.vercel.app", "sourceCommit": "a" * 40,
+            "configurationSha256": "d" * 64, "workloadReceiptSha256": "e" * 64}
+        source = {"version": 1, "status": "P2_IDENTITY_ROTATION_BROWSER_READS_RECORDED", "environment": "staging",
+            "actionId": "p2-key-rotation-owned", "bindingSha256": "b" * 64, "sourceCommit": "a" * 40,
+            "candidateSha256": "c" * 64, "phase": "overlap", "configurationSha256": "d" * 64,
+            "deploymentId": "dpl_owned", "deploymentUrl": "https://owned.vercel.app", "workloadReceiptSha256": "e" * 64,
+            "windowStartedAt": "2027-01-15T07:00:00.000Z", "windowCompletedAt": "2027-01-15T07:00:30.000Z",
+            "evidenceClass": "actual-frontend-normal-course-signer-protected-http",
+            "profiles": [{"profile": profile, "httpStatus": 200,
+                "requestId": f"{index}" * 8 + "-1111-4111-8111-111111111111",
+                "observedAt": f"2027-01-15T07:00:{10 + index:02d}.000Z", "privateNoStore": True,
+                "courseBindingVerified": True} for index, profile in enumerate(("course-learner", "course-admin"), 1)],
+            "contextsIsolated": True, "sessionsFabricated": False, "requestsIntercepted": False,
+            "storageInjected": False, "tokenBytesOutput": False, "credentialHashesOutput": False,
+            "releaseAccepted": False}
+        signer = adapter.retain_frontend_signer("overlap", source)
+        self.assertEqual(signer["issuanceCutoffAt"], source["windowCompletedAt"])
+        self.assertEqual(signer["deploymentId"], "dpl_owned")
+        self.assertEqual(adapter.observe_frontend_signer("overlap"), signer)
+        with self.assertRaises(ValueError):
+            adapter.retain_frontend_signer("overlap", {**source, "deploymentId": "dpl_other"})
+
     def test_frontend_inventory_never_requests_secret_values(self):
         adapter = rotation.P2IdentityRotationHostAdapter.__new__(rotation.P2IdentityRotationHostAdapter)
         calls = []
@@ -158,7 +189,7 @@ class AdapterTest(unittest.TestCase):
         adapter.client = types.SimpleNamespace(request=lambda method, path, body: (
             calls.append((method, path, body["key"])) or {"failed": [], "created": {"key": body["key"],
                 "target": ["production"], "type": "sensitive", "gitBranch": None, "customEnvironmentIds": []}}))
-        adapter._configure_frontend("overlap", attempt)
+        adapter._configure_frontend("overlap", attempt, ("baseline",))
         self.assertEqual(len(calls), 8)
         self.assertTrue(all(method == "POST" and "?upsert=true" in path for method, path, _key in calls))
         receipt = json.loads((attempt / "rotation-frontend-configuration.json").read_text())
@@ -249,24 +280,19 @@ class AdapterTest(unittest.TestCase):
         adapter.selected = {"releaseId": "release"}; adapter.client = object(); adapter.gateway_host = "gateway.example.com"
         adapter.output = Path(tempfile.mkdtemp()); os.chmod(adapter.output, 0o700)
         adapter.configurations = types.SimpleNamespace(hashes={"overlap": "a" * 64})
-        adapter._configure_frontend = lambda _phase, _attempt: None
-        adapter.frontend_signer_verifier = lambda phase, _release, _attempt, deployment: {
-            "version": 1, "status": "P2_IDENTITY_ROTATION_FRONTEND_SIGNER_VERIFIED", "phase": phase,
-            "bindingSha256": "b" * 64, "candidateSha256": "c" * 64, "sourceCommit": "a" * 40,
-            "configurationSha256": "a" * 64, "deploymentId": deployment["deploymentId"],
-            "issuanceCutoffAt": "2027-01-15T07:00:00.000Z", "receiptSha256": "d" * 64,
-            "profiles": [{"profile": "course-learner", "status": 200, "requestId": "owned-learner"},
-                         {"profile": "course-admin", "status": 200, "requestId": "owned-admin"}],
-            "evidenceClass": "actual-frontend-normal-course-signer-protected-http",
-            "tokenBytesOutput": False, "releaseAccepted": False}
+        adapter._configure_frontend = lambda _phase, _attempt, _before: None
         adapter.observe_frontend_configuration = lambda _phase: {"deploymentId": "dpl_owned"}
         calls = []
         def promote(_client, selected, attempt, verify):
-            calls.append("promote"); verify(selected, {"deploymentId": "dpl_owned"})
+            calls.append("promote"); verify(selected, {"deploymentId": "dpl_owned", "url": "https://owned.vercel.app"})
             return {"frontendDomainsPromoted": True, "deploymentId": "dpl_owned"}
+        def verify_workload(*_args, **_kwargs):
+            value = {"status": "FRONTEND_VERIFIED", "environment": "staging", "projectId": "project",
+                     "sourceCommit": "a" * 40, "releaseId": "release", "deploymentId": "dpl_owned"}
+            (adapter.output / "frontend-overlap" / "frontend-workload-outcome.json").write_text(json.dumps(value))
+            return value
         with patch.object(frontend_probe := rotation.frontend_probe, "prepare", side_effect=lambda *args, **kwargs: calls.append("prepare")), \
-             patch.object(frontend_probe, "verify", return_value={"status": "FRONTEND_VERIFIED", "environment": "staging",
-                 "projectId": "project", "sourceCommit": "a" * 40, "releaseId": "release", "deploymentId": "dpl_owned"}), \
+             patch.object(frontend_probe, "verify", side_effect=verify_workload), \
              patch.object(rotation.vercel, "stage_frontend", side_effect=lambda *args: calls.append("stage")), \
              patch.object(rotation.vercel, "promote_frontend", side_effect=promote):
             result = adapter.rollout_frontend("overlap", {}, {})
@@ -278,7 +304,6 @@ class AdapterTest(unittest.TestCase):
         attempt = output / "frontend-overlap"; attempt.mkdir(mode=0o700)
         for name, value in {
             "frontend-workload-outcome.json": {"status": "FRONTEND_VERIFIED", "deploymentId": "dpl_owned"},
-            "rotation-frontend-signer.json": {"owned": True},
             "rotation-frontend-configuration.json": {"owned": True},
         }.items():
             (attempt / name).write_text(json.dumps(value)); (attempt / name).chmod(0o600)
@@ -286,7 +311,6 @@ class AdapterTest(unittest.TestCase):
         adapter.output = output; adapter.selected = {}; adapter.client = object()
         adapter.configurations = types.SimpleNamespace(hashes={"overlap": "a" * 64})
         adapter._intent = lambda intent: intent
-        adapter._validate_frontend_signer = lambda value, phase, deployment: True
         adapter._validate_frontend_configuration_receipt = lambda value, phase: value
         adapter.observe_frontend_configuration = lambda phase: {
             "configurationSha256": "a" * 64, "deploymentId": "dpl_owned"}

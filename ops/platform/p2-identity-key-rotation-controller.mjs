@@ -2,6 +2,7 @@ import { closeSync, constants, existsSync, fstatSync, fsyncSync, lstatSync, open
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { observeIdentityRotationBoundary } from "./p2-identity-key-rotation-observer.mjs";
+import { isP2IdentityRotationParentAuthority } from "./p2-identity-key-rotation-parent.mjs";
 
 const SHA = /^[a-f0-9]{64}$/u;
 const COMMIT = /^[a-f0-9]{40}$/u;
@@ -177,7 +178,8 @@ function retainedEvidenceMatchesCaptures(receipts, captures) {
 }
 
 export async function runIdentityKeyRotationController(planValue, parent, dependencies, options = {}) {
-  demand(options.fixture === true, "source-parent-dispatch-not-integrated");
+  demand(options.fixture === true || isP2IdentityRotationParentAuthority(options.parentAuthority, planValue),
+    "source-parent-dispatch-not-integrated");
   const plan = validatePlan(planValue, options);
   demand(parent && parent.sourceOwnedFixedAction === true && parent.hostLockHeld === true && parent.frontendPhysicalLockHeld === true
     && parent.configOnly === true && parent.nativeSchedulesEnabled === false && parent.businessSchedulesEnabled === false

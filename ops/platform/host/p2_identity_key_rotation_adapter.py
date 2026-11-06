@@ -5,6 +5,7 @@ P2IdentityRotationScope, the reviewed release inputs, and the fixed three
 private configuration directories.
 """
 import copy
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -167,12 +168,10 @@ class RotationConfigurationSet:
 
 class P2IdentityRotationHostAdapter:
     def __init__(self, scope, selected, jobs, configuration_root, output, compose_file, client, gateway_host,
-                 frontend_signer_verifier, operator_source, operator_program_sha256):
-        demand(type(scope) is P2IdentityRotationScope and callable(frontend_signer_verifier),
-               "P2_ROTATION_TYPED_SCOPE_REQUIRED")
+                 operator_source, operator_program_sha256):
+        demand(type(scope) is P2IdentityRotationScope, "P2_ROTATION_TYPED_SCOPE_REQUIRED")
         self.scope, self.selected, self.jobs, self.output = scope, copy.deepcopy(selected), copy.deepcopy(jobs), Path(output)
         self.compose_file, self.client, self.gateway_host = Path(compose_file), client, gateway_host
-        self.frontend_signer_verifier = frontend_signer_verifier
         operator_source = Path(operator_source)
         demand(operator_source.is_absolute() and operator_source.resolve() == operator_source
                and operator_source == Path("/opt/lash-her/operators") / scope.source_commit
@@ -343,6 +342,50 @@ class P2IdentityRotationHostAdapter:
             "receipts": receipts})
         return receipts
 
+    def qualified_profile_evidence(self):
+        expected_profiles = {"course-learner", "course-admin", "community-member", "community-admin"}
+        evidence = {}
+        timing = {}
+        for phase in ("overlap", "current-only"):
+            value = migrate.read_json(self.output, f"rotation-{phase}-profile-observations.json")
+            demand(isinstance(value, dict) and set(value) == {"version", "status", "actionId", "bindingSha256",
+                "configurationSha256", "receipts"} and value.get("version") == 1
+                and value.get("status") == "P2_IDENTITY_ROTATION_PROFILE_OBSERVATIONS_RETAINED"
+                and value.get("actionId") == self.scope.action_id
+                and value.get("bindingSha256") == self.scope.binding_sha256
+                and value.get("configurationSha256") == self.configurations.hashes[phase]
+                and isinstance(value.get("receipts"), list) and len(value["receipts"]) == 4
+                and {row.get("profile") for row in value["receipts"]} == expected_profiles,
+                "ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED")
+            for row in value["receipts"]:
+                profile = row["profile"]
+                expected_class = "actual-protected-course-http" if profile.startswith("course-") else "deployed-private-community-verifier"
+                demand(row.get("status") == "P2_IDENTITY_ROTATION_PRIVATE_OBSERVED"
+                       and row.get("phase") == phase and row.get("bindingSha256") == self.scope.binding_sha256
+                       and row.get("configurationSha256") == self.configurations.hashes[phase]
+                       and row.get("evidenceClass") == expected_class
+                       and row.get("oldResult") == ("accepted" if phase == "overlap" else "rejected")
+                       and row.get("newResult") == "accepted" and row.get("retainedTokenContinuityVerified") is True
+                       and row.get("capabilityEnforced") is True and row.get("tokenBytesOutput") is False
+                       and row.get("credentialHashesOutput") is False and row.get("releaseAccepted") is False,
+                       "ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED")
+                try:
+                    issued = datetime.fromisoformat(row["oldTokenIssuedAt"].replace("Z", "+00:00"))
+                    expires = datetime.fromisoformat(row["oldTokenExpiresAt"].replace("Z", "+00:00"))
+                    observed = datetime.fromisoformat(row["observedAt"].replace("Z", "+00:00"))
+                except (KeyError, TypeError, ValueError):
+                    raise ValueError("ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED") from None
+                demand((expires - issued).total_seconds() == 300 and issued <= observed < expires,
+                       "ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED")
+                previous = timing.setdefault(profile, (row["oldTokenIssuedAt"], row["oldTokenExpiresAt"]))
+                demand(previous == (row["oldTokenIssuedAt"], row["oldTokenExpiresAt"]),
+                       "ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED")
+                evidence.setdefault(profile, {})[phase] = migrate.file_hash(
+                    json.dumps(row, sort_keys=True, separators=(",", ":")).encode())
+        demand(set(evidence) == expected_profiles and all(set(value) == {"overlap", "current-only"}
+               for value in evidence.values()), "ROTATION_RETAINED_PROFILE_EVIDENCE_CHANGED")
+        return evidence
+
     def observe_api_configuration(self, phase):
         self.scope.verify()
         snapshot = self._snapshot(phase)
@@ -366,8 +409,27 @@ class P2IdentityRotationHostAdapter:
         self.scope.verify()
         return {"configurationSha256": self.configurations.hashes[phase], "containers": containers, "runtimeVerified": True}
 
+    def observe_closed_gateway_and_native(self, phase):
+        demand(phase in PHASES, "ROTATION_GUARD_PHASE_REQUIRED")
+        snapshot = self._snapshot(phase)
+        prefix, environment = runtime.compose_command(snapshot, "staging"), runtime.runtime_environment(self.selected, snapshot)
+        program = ('const r=await fetch("http://127.0.0.1:9100/admission");if(!r.ok)process.exit(9);'
+                   'const x=await r.json();process.stdout.write(JSON.stringify(x))')
+        value = json.loads(self._command([*prefix, "exec", "-T", "gateway", "node", "--input-type=module", "--eval", program],
+                                         environment, 15))
+        demand(value.get("valid") is True and value.get("newWork") is False and value.get("recovery") is False
+               and all(isinstance(value.get(group), dict)
+                       and value[group].get("newWork") == 0 and value[group].get("recovery") == 0
+                       for group in ("active", "uncertain")), "ROTATION_GATEWAY_NOT_CLOSED")
+        project = vercel.release_identity(self.selected)[1]
+        provider = vercel.promotion_state(self.client, project)
+        demand(provider.get("cronsEnabled") is False, "ROTATION_NATIVE_SCHEDULES_NOT_DISABLED")
+        return {"gatewayAdmissionClosed": True, "gatewayActive": 0, "gatewayUncertain": 0,
+                "nativeSchedulesEnabled": False, "phase": phase,
+                "configurationSha256": self.configurations.hashes[phase]}
+
     def recreate_apis(self, phase):
-        demand(phase in ("overlap", "current-only"), "ROTATION_MUTATING_PHASE_REQUIRED")
+        demand(phase in PHASES, "ROTATION_MUTATING_PHASE_REQUIRED")
         self.scope.verify()
         snapshot = self._snapshot(phase)
         token = runtime._command_scope.set(self.scope)
@@ -415,6 +477,22 @@ class P2IdentityRotationHostAdapter:
         demand(all(actual[key]["type"] == "sensitive" for key in set(expected).intersection(PROFILE_KEYS)),
                "ROTATION_PROFILE_KEY_VISIBILITY_REFUSED")
 
+    def _assert_frontend_inventory_one_of(self, actual, phases, *, require_overlay=True):
+        demand(isinstance(phases, tuple) and phases and all(phase in PHASES for phase in phases),
+               "ROTATION_FRONTEND_PRIOR_PHASE_REFUSED")
+        matched = False
+        for phase in phases:
+            expected = self.configurations.frontend[phase]
+            overlay = set(actual) - set(expected)
+            overlay_types = {"LASH_RELEASE_PROBE_SECRET": "sensitive", "LASH_RELEASE_PROBE_EXPIRES_AT": "plain",
+                             "LASH_RELEASE_SCHEDULER_QUALIFICATION": "plain", "API_GATEWAY_STAGING_ORIGIN": "plain"}
+            if (set(expected).issubset(actual) and overlay.issubset(PROBE_OVERLAY_KEYS)
+                    and (not require_overlay or overlay == PROBE_OVERLAY_KEYS)
+                    and all(actual[key]["type"] == overlay_types[key] for key in overlay)
+                    and all(actual[key]["type"] == "sensitive" for key in set(expected).intersection(PROFILE_KEYS))):
+                matched = True
+        demand(matched, "ROTATION_FRONTEND_CONFIGURATION_CHANGED")
+
     def _retain_frontend_base_metadata(self, actual):
         expected = set(self.configurations.frontend["baseline"]) - PROFILE_KEYS
         metadata = {key: {field: actual[key].get(field) for field in ("id", "type", "target", "updatedAt")}
@@ -442,10 +520,10 @@ class P2IdentityRotationHostAdapter:
         return {"configurationSha256": self.configurations.hashes[phase], "deploymentId": state["productionDeploymentId"],
                 "cronsEnabled": False, "aliasJobActive": False}
 
-    def _configure_frontend(self, phase, attempt):
+    def _configure_frontend(self, phase, attempt, before_phases):
         self.configurations.directory(phase)
         project, before = self._frontend_environment()
-        self._assert_frontend_inventory(before, "baseline" if phase == "overlap" else "overlap", require_overlay=False)
+        self._assert_frontend_inventory_one_of(before, before_phases, require_overlay=False)
         self._retain_frontend_base_metadata(before)
         desired = {key: value for key, value in self.configurations.frontend[phase].items() if key in PROFILE_KEYS}
         acknowledgements = []
@@ -478,32 +556,145 @@ class P2IdentityRotationHostAdapter:
         self.configurations.directory(phase)
         return {"configurationSha256": self.configurations.hashes[phase]}
 
-    def rollout_frontend(self, phase, expected_feature_controls, expected_writer_binding):
-        demand(phase in ("overlap", "current-only"), "ROTATION_MUTATING_PHASE_REQUIRED")
-        attempt = self.output / f"frontend-{phase}"
-        private = self.output / f"frontend-{phase}-private"
+    def _rollout_frontend(self, phase, expected_feature_controls, expected_writer_binding, stem, before_phases):
+        demand(phase in PHASES and re.fullmatch(r"frontend-(?:overlap|current-only|restoration-(?:baseline|overlap))", stem),
+               "ROTATION_MUTATING_PHASE_REQUIRED")
+        attempt = self.output / stem
+        private = self.output / f"{stem}-private"
         attempt.mkdir(mode=0o700); private.mkdir(mode=0o700)
-        self.scope.verify(); self._configure_frontend(phase, attempt); self.scope.verify()
+        self.scope.verify(); self._configure_frontend(phase, attempt, before_phases); self.scope.verify()
         frontend_probe.prepare(self.client, self.selected, private, attempt, self.gateway_host, scheduler_qualification=False)
         vercel.stage_frontend(self.client, self.selected, attempt)
 
-        def verify(release, _deployment):
+        verified_deployment = {}
+        def verify(release, deployment):
             workload = frontend_probe.verify(self.client, release, attempt, private,
                                               expected_feature_controls=expected_feature_controls,
                                               expected_writer_admission_binding=expected_writer_binding)
-            signer = self.frontend_signer_verifier(phase, release, attempt, _deployment)
-            self._validate_frontend_signer(signer, phase, _deployment.get("deploymentId"))
-            migrate.write_json(attempt, "rotation-frontend-signer.json", signer)
+            verified_deployment.update(deployment)
             return workload
 
         promotion = vercel.promote_frontend(self.client, self.selected, attempt, verify)
         demand(promotion.get("frontendDomainsPromoted") is True, "ROTATION_FRONTEND_PROMOTION_UNVERIFIED")
         state = self.observe_frontend_configuration(phase)
-        demand(state["deploymentId"] == promotion["deploymentId"], "ROTATION_FRONTEND_CURRENT_DEPLOYMENT_CHANGED")
+        demand(state["deploymentId"] == promotion["deploymentId"] == verified_deployment.get("deploymentId")
+               and re.fullmatch(r"https://[a-z0-9][a-z0-9-]*\.vercel\.app", verified_deployment.get("url", "")),
+               "ROTATION_FRONTEND_CURRENT_DEPLOYMENT_CHANGED")
+        workload_sha256 = migrate.file_hash(migrate.read_input(attempt, "frontend-workload-outcome.json"))
         return {"status": "P2_IDENTITY_ROTATION_FRONTEND_PROMOTED", "phase": phase,
                 "configurationSha256": self.configurations.hashes[phase], "deploymentId": promotion["deploymentId"],
+                "deploymentUrl": verified_deployment["url"], "sourceCommit": self.scope.source_commit,
+                "workloadReceiptSha256": workload_sha256,
                 "mutationCount": 1, "runtimeVerified": True, "sqlExecuted": False,
                 "rolesPrepared": False, "loginChanged": False}
+
+    def rollout_frontend(self, phase, expected_feature_controls, expected_writer_binding):
+        demand(phase in ("overlap", "current-only"), "ROTATION_MUTATING_PHASE_REQUIRED")
+        before = ("baseline",) if phase == "overlap" else ("overlap",)
+        return self._rollout_frontend(phase, expected_feature_controls, expected_writer_binding, f"frontend-{phase}", before)
+
+    def restore_qualified(self, phase, expected_configuration_sha256, expected_feature_controls,
+                          expected_writer_binding):
+        demand(phase in ("baseline", "overlap")
+               and expected_configuration_sha256 == self.configurations.hashes[phase],
+               "ROTATION_RESTORATION_PHASE_REFUSED")
+        self.scope.verify()
+        api = self.recreate_apis(phase)
+        before = ("baseline", "overlap") if phase == "baseline" else ("overlap", "current-only")
+        frontend = self._rollout_frontend(phase, expected_feature_controls, expected_writer_binding,
+                                          f"frontend-restoration-{phase}", before)
+        observed_api = self.observe_api_configuration(phase)
+        observed_frontend = self.observe_frontend_configuration(phase)
+        self.scope.verify()
+        demand(observed_api.get("configurationSha256") == expected_configuration_sha256
+               and observed_frontend.get("configurationSha256") == expected_configuration_sha256
+               and observed_frontend.get("deploymentId") == frontend.get("deploymentId"),
+               "ROTATION_RESTORATION_UNVERIFIED")
+        return {"status": "P2_IDENTITY_ROTATION_LAST_QUALIFIED_PHASE_RESTORED", "phase": phase,
+                "configurationSha256": expected_configuration_sha256,
+                "apiMutationCount": api["mutationCount"], "frontendMutationCount": frontend["mutationCount"],
+                "sqlExecuted": False, "rolesPrepared": False, "loginChanged": False,
+                "trafficAuthorized": False}
+
+    def frontend_deployment(self, phase):
+        demand(phase in ("overlap", "current-only"), "ROTATION_FRONTEND_PHASE_REQUIRED")
+        attempt = self.output / f"frontend-{phase}"
+        staged = migrate.read_json(attempt, "frontend-build-outcome.json")
+        workload = migrate.read_input(attempt, "frontend-workload-outcome.json")
+        promotion = (migrate.read_json(attempt, "frontend-promotion-outcome.json")
+                     if (attempt / "frontend-promotion-outcome.json").exists() else None)
+        if not (isinstance(promotion, dict) and promotion.get("status") == "FRONTEND_DOMAINS_PROMOTED"
+                and promotion.get("frontendDomainsPromoted") is True):
+            promotion = vercel.observe_frontend_promotion(self.client, self.selected, attempt)
+        provider = self.observe_frontend_configuration(phase)
+        demand(isinstance(staged, dict) and staged.get("status") == "FRONTEND_STAGED"
+               and staged.get("readyState") == "READY" and staged.get("sourceCommit") == self.scope.source_commit
+               and re.fullmatch(r"https://[a-z0-9][a-z0-9-]*\.vercel\.app", staged.get("url", ""))
+               and promotion.get("deploymentId") == staged.get("deploymentId") == provider.get("deploymentId"),
+               "ROTATION_FRONTEND_DEPLOYMENT_UNVERIFIED")
+        return {"phase": phase, "deploymentId": staged["deploymentId"], "deploymentUrl": staged["url"],
+                "sourceCommit": self.scope.source_commit, "configurationSha256": self.configurations.hashes[phase],
+                "workloadReceiptSha256": migrate.file_hash(workload)}
+
+    def retain_frontend_signer(self, phase, source_record):
+        deployment = self.frontend_deployment(phase)
+        fields = {"version", "status", "environment", "actionId", "bindingSha256", "sourceCommit",
+                  "candidateSha256", "phase", "configurationSha256", "deploymentId", "deploymentUrl",
+                  "workloadReceiptSha256", "windowStartedAt", "windowCompletedAt", "evidenceClass", "profiles",
+                  "contextsIsolated", "sessionsFabricated", "requestsIntercepted", "storageInjected",
+                  "tokenBytesOutput", "credentialHashesOutput", "releaseAccepted"}
+        demand(isinstance(source_record, dict) and set(source_record) == fields and source_record.get("version") == 1
+               and source_record.get("status") == "P2_IDENTITY_ROTATION_BROWSER_READS_RECORDED"
+               and source_record.get("environment") == "staging" and source_record.get("actionId") == self.scope.action_id
+               and source_record.get("bindingSha256") == self.scope.binding_sha256
+               and source_record.get("candidateSha256") == self.scope.candidate_sha256
+               and source_record.get("sourceCommit") == self.scope.source_commit and source_record.get("phase") == phase
+               and all(source_record.get(key) == deployment[key] for key in ("configurationSha256", "deploymentId",
+                    "deploymentUrl", "workloadReceiptSha256"))
+               and source_record.get("evidenceClass") == "actual-frontend-normal-course-signer-protected-http"
+               and all(source_record.get(key) is expected for key, expected in {
+                    "contextsIsolated": True, "sessionsFabricated": False, "requestsIntercepted": False,
+                    "storageInjected": False, "tokenBytesOutput": False, "credentialHashesOutput": False,
+                    "releaseAccepted": False}.items())
+               and isinstance(source_record.get("windowStartedAt"), str)
+               and isinstance(source_record.get("windowCompletedAt"), str)
+               and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", source_record["windowStartedAt"])
+               and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", source_record["windowCompletedAt"]),
+               "ROTATION_FRONTEND_BROWSER_SOURCE_REFUSED")
+        started = source_record["windowStartedAt"].replace("Z", "+00:00")
+        completed = source_record["windowCompletedAt"].replace("Z", "+00:00")
+        started_at, completed_at = datetime.fromisoformat(started), datetime.fromisoformat(completed)
+        demand(completed_at >= started_at and (completed_at - started_at).total_seconds() <= 60,
+               "ROTATION_FRONTEND_BROWSER_WINDOW_REFUSED")
+        rows = source_record.get("profiles")
+        demand(isinstance(rows, list) and len(rows) == 2
+               and {row.get("profile") for row in rows} == {"course-learner", "course-admin"}
+               and all(isinstance(row, dict) and set(row) == {"profile", "httpStatus", "requestId", "observedAt",
+                    "privateNoStore", "courseBindingVerified"} and row.get("httpStatus") == 200
+                    and row.get("privateNoStore") is True and row.get("courseBindingVerified") is True
+                    and re.fullmatch(r"[a-f0-9-]{36}", row.get("requestId", ""))
+                    and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", row.get("observedAt", ""))
+                    and started_at <= datetime.fromisoformat(row["observedAt"].replace("Z", "+00:00")) <= completed_at
+                    for row in rows), "ROTATION_FRONTEND_BROWSER_PROFILES_REFUSED")
+        source_sha256 = migrate.file_hash(json.dumps(source_record, sort_keys=True, separators=(",", ":")).encode())
+        signer = {"version": 1, "status": "P2_IDENTITY_ROTATION_FRONTEND_SIGNER_VERIFIED", "phase": phase,
+                  "bindingSha256": self.scope.binding_sha256, "candidateSha256": self.scope.candidate_sha256,
+                  "sourceCommit": self.scope.source_commit, "configurationSha256": self.configurations.hashes[phase],
+                  "deploymentId": deployment["deploymentId"], "issuanceCutoffAt": source_record["windowCompletedAt"],
+                  "receiptSha256": source_sha256,
+                  "profiles": [{"profile": row["profile"], "status": row["httpStatus"], "requestId": row["requestId"]}
+                               for row in rows],
+                  "evidenceClass": source_record["evidenceClass"], "tokenBytesOutput": False, "releaseAccepted": False}
+        self._validate_frontend_signer(signer, phase, deployment["deploymentId"])
+        attempt = self.output / f"frontend-{phase}"
+        migrate.write_json(attempt, "rotation-frontend-browser-source.json", source_record)
+        migrate.write_json(attempt, "rotation-frontend-signer.json", signer)
+        return copy.deepcopy(signer)
+
+    def observe_frontend_signer(self, phase):
+        deployment = self.frontend_deployment(phase)
+        signer = migrate.read_json(self.output / f"frontend-{phase}", "rotation-frontend-signer.json")
+        return copy.deepcopy(self._validate_frontend_signer(signer, phase, deployment["deploymentId"]))
 
     def _validate_frontend_signer(self, signer, phase, deployment_id):
         fields = {"version", "status", "phase", "bindingSha256", "candidateSha256", "sourceCommit",
@@ -584,13 +775,11 @@ class P2IdentityRotationHostAdapter:
             except BaseException:
                 raise ValueError("ROTATION_FRONTEND_RECONCILIATION_UNRESOLVED") from None
         workload = migrate.read_json(attempt, "frontend-workload-outcome.json")
-        signer = migrate.read_json(attempt, "rotation-frontend-signer.json")
         configured = migrate.read_json(attempt, "rotation-frontend-configuration.json")
         provider = self.observe_frontend_configuration(phase)
         demand(promotion.get("status") == "FRONTEND_DOMAINS_PROMOTED" and promotion.get("frontendDomainsPromoted") is True
                and promotion.get("deploymentId") == staged["deploymentId"] == provider.get("deploymentId")
-               and workload.get("status") == "FRONTEND_VERIFIED" and workload.get("deploymentId") == staged["deploymentId"]
-               and self._validate_frontend_signer(signer, phase, staged["deploymentId"]),
+               and workload.get("status") == "FRONTEND_VERIFIED" and workload.get("deploymentId") == staged["deploymentId"],
                "ROTATION_FRONTEND_RECONCILIATION_UNRESOLVED")
         self._validate_frontend_configuration_receipt(configured, phase)
         return self._result(intent, True)

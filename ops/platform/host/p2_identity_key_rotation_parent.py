@@ -1,0 +1,421 @@
+#!/usr/bin/env python3
+"""Fixed supervised parent for the staging application-user key rotation.
+
+This module has no standalone executor. The shared supervisor must select its
+exact broker, observer, source program and layout. No caller command, callback
+or JSON flag can substitute for that source selection.
+"""
+import base64
+import copy
+import hashlib
+import json
+from pathlib import Path
+import re
+import sys
+import threading
+import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import migrate
+import release as runtime
+import vercel
+import frontend_probe
+from p2_release_broker import Broker, LOCK, MAXIMUM, decode
+from p2_recovery_broker import P2RecoveryPhysicalObserver
+from p2_identity_key_rotation_adapter import P2IdentityRotationHostAdapter, P2IdentityRotationScope
+
+require = migrate.demand
+PHASES = ("baseline", "overlap", "current-only")
+WINDOWS = {"authentication": 300, "signer-read": 60}
+OBSERVER_SOURCE = "ops/platform/p2-recovery-current-probe.mjs"
+
+
+class P2IdentityRotationPhysicalObserver(P2RecoveryPhysicalObserver):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        epoch = self.request.get("receipt", {}).get("admissionEpoch")
+        require(isinstance(epoch, str) and re.fullmatch(r"[1-9][0-9]{0,17}", epoch),
+                "ROTATION_ADMISSION_EPOCH_REQUIRED")
+        self.expectation_lock = threading.Lock()
+        self.allowed = {(epoch, False, False)}
+        self.window_deadline = None
+
+    def transition(self, before_epoch, opening, maximum_seconds=None):
+        require(isinstance(before_epoch, str) and re.fullmatch(r"[1-9][0-9]{0,17}", before_epoch),
+                "ROTATION_WINDOW_EPOCH_REQUIRED")
+        after = str(int(before_epoch) + 1)
+        with self.expectation_lock:
+            self.allowed = {(before_epoch, opening is False, False), (after, opening is True, False)}
+            if opening:
+                self.window_deadline = time.monotonic() + maximum_seconds
+        return after
+
+    def exact(self, epoch, new_work, maximum_seconds=None):
+        with self.expectation_lock:
+            self.allowed = {(epoch, new_work, False)}
+            if new_work:
+                require(type(maximum_seconds) is int and maximum_seconds in WINDOWS.values(),
+                        "ROTATION_WINDOW_DURATION_REFUSED")
+                deadline = time.monotonic() + maximum_seconds
+                self.window_deadline = deadline if self.window_deadline is None else min(self.window_deadline, deadline)
+            else:
+                self.window_deadline = None
+
+    def probe(self, operation):
+        value = super().probe(operation)
+        if operation == "fence":
+            return value
+        admission = value.get("admission", {})
+        actual = (admission.get("epoch"), admission.get("newWork"), admission.get("recovery"))
+        with self.expectation_lock:
+            require(actual in self.allowed and admission.get("uncertain") == 0
+                    and (admission.get("active") in (0, 1) if actual[1] is True else admission.get("active") == 0),
+                    "ROTATION_FRONTEND_ADMISSION_WINDOW_CHANGED")
+            if actual[1] is True:
+                require(self.window_deadline is not None and time.monotonic() <= self.window_deadline,
+                        "ROTATION_FRONTEND_ADMISSION_WINDOW_EXPIRED")
+        return value
+
+
+class P2IdentityRotationBroker(Broker):
+    def action_id(self):
+        return self.initial["rotationActionId"]
+
+    def directory_name(self):
+        return "p2-identity-key-rotation-" + self.action_id()
+
+    def terminal_filename(self):
+        return "p2-identity-key-rotation-outcome.json"
+
+    def select_release(self, initial):
+        selected, jobs, plan, compose = runtime.make_plan(Path(initial["bundle"]), Path(initial["configuration"]),
+                                                           self.source / "ops/platform/compose.yaml")
+        rotation = initial.get("rotationPlan")
+        require(selected == initial.get("candidate") and selected.get("contractPhase") == "p2"
+                and selected.get("environment") == "staging" and set(jobs) == {"frontend", "course", "community"}
+                and rotation.get("version") == 1 and rotation.get("environment") == "staging"
+                and rotation.get("actionId") == initial.get("rotationActionId")
+                and rotation.get("sourceCommit") == initial.get("sourceCommit")
+                and rotation.get("candidateSha256") == initial.get("candidateSha256")
+                and rotation.get("hostMachineId") == plan.get("hostMachineId"),
+                "P2_ROTATION_REVIEWED_CANDIDATE_REQUIRED")
+        return selected, jobs, plan, compose
+
+    def initialize(self):
+        super().initialize()
+        p, rotation = self.initial, self.initial["rotationPlan"]
+        require(p.get("mode") == "p2-identity-key-rotation"
+                and p.get("confirmation") == "staging/" + self.action_id()
+                and p.get("rotationActionId") == rotation["actionId"]
+                and p.get("sourceSha256", {}).get(OBSERVER_SOURCE) == migrate.file_hash(
+                    migrate.read_input(self.source, OBSERVER_SOURCE))
+                and p.get("operatorProgramSha256") == migrate.file_hash(
+                    migrate.read_input(self.source, "ops/platform/p2-identity-key-rotation.mjs")),
+                "P2_ROTATION_FIXED_SOURCE_REQUIRED")
+        require(p.get("expectedFeatureControls") == p.get("certification", {}).get("featureControls")
+                and frontend_probe.valid_writer_admission_binding(p.get("expectedWriterAdmissionBinding"))
+                and p["expectedWriterAdmissionBinding"].get("sourceCommit") == rotation["sourceCommit"],
+                "P2_ROTATION_WORKLOAD_EXPECTATION_REFUSED")
+        root = Path(p.get("rotationConfiguration", ""))
+        require(root.is_absolute() and root.resolve() == root
+                and root.is_relative_to(Path("/var/lib/lash-her/releases/staging")),
+                "P2_ROTATION_CONFIGURATION_ROOT_REQUIRED")
+        self.rotation_configuration = root
+        self.runtime_phase = self.frontend_phase = "baseline"
+        self.window = None
+        self.guard_last_verified = 0
+        self.guard_stop = threading.Event()
+        self.outcome.update(status="P2_IDENTITY_KEY_ROTATION_FAILED_REQUIRES_REVIEW",
+                            actionId=self.action_id(), bindingSha256=rotation["bindingSha256"],
+                            keyRemovalVerified=False, trafficAuthorized=False,
+                            sqlExecuted=False, rolesPrepared=False, loginChanged=False)
+
+    def arm(self, request):
+        self.check()
+        require(self.observer is None and self.scope is None, "P2_ROTATION_ALREADY_ARMED")
+        raw, receipt = decode(request.get("receipt"))
+        probe, rotation = request.get("probe"), self.initial["rotationPlan"]
+        require(isinstance(probe, dict) and probe.get("job") == self.jobs["frontend"]["job"]
+                and probe.get("baseline") == json.loads(self.jobs["frontend"]["schema"])
+                and probe.get("receipt") == receipt and probe.get("owner") == self.initial.get("owner")
+                and probe.get("targetSha256") == self.initial.get("targetSha256")
+                and receipt.get("status") == "P2_RECOVERY_DATABASE_CURRENT"
+                and receipt.get("sourceCommit") == rotation["sourceCommit"]
+                and receipt.get("candidateSha256") == rotation["candidateSha256"]
+                and receipt.get("trafficAuthorized") is False,
+                "P2_ROTATION_CURRENT_FRONTEND_PROOF_REQUIRED")
+        self.frontend_raw = raw
+        self.safety({"operation": "armed", "probe": probe})
+        self.observer = P2IdentityRotationPhysicalObserver(self.selected, probe, self.source,
+            self.initial["credentials"]["FRONTEND_STAGING_MIGRATION_DATABASE_URL"], program=self.observer_program,
+            program_sha256=self.initial["sourceSha256"][OBSERVER_SOURCE])
+        self.observer.start(self.abort)
+        public = {phase: rotation["configuration"][phase]["sha256"] for phase in PHASES}
+        private = self.initial.get("privateRotationConfigurationSha256")
+        self.scope = P2IdentityRotationScope(self.lock_fd, LOCK,
+            self.check, receipt, rotation["candidateSha256"], action_id=self.action_id(),
+            binding_sha256=rotation["bindingSha256"], source_commit=rotation["sourceCommit"],
+            release=self.selected, jobs=self.jobs, configuration_sha256=public,
+            private_configuration_sha256=private)
+        self.adapter = P2IdentityRotationHostAdapter(self.scope, self.selected, self.jobs,
+            self.rotation_configuration, self.directory, self.source / "ops/platform/compose.yaml", self.vercel,
+            self.initial["gatewayHost"], self.source, self.initial["operatorProgramSha256"])
+        self._guard_external()
+        self._start_rotation_guard()
+        return {"status": "P2_IDENTITY_ROTATION_PARENT_ARMED", "actionId": self.action_id(),
+                "bindingSha256": rotation["bindingSha256"], "sourceCommit": rotation["sourceCommit"],
+                "candidateSha256": rotation["candidateSha256"], "trafficAuthorized": False}
+
+    def _guard_external(self):
+        value = self.adapter.observe_closed_gateway_and_native(self.runtime_phase)
+        require(value.get("gatewayAdmissionClosed") is True and value.get("gatewayActive") == 0
+                and value.get("gatewayUncertain") == 0 and value.get("nativeSchedulesEnabled") is False,
+                "P2_ROTATION_EXTERNAL_GUARD_REFUSED")
+        self.guard_last_verified = time.monotonic()
+        return value
+
+    def _start_rotation_guard(self):
+        def guard():
+            while not self.guard_stop.wait(2):
+                try:
+                    self.observer.probe("observe")
+                    self._guard_external()
+                except BaseException:
+                    self.abort()
+                    return
+        self.rotation_guard = threading.Thread(target=guard, daemon=True)
+        self.rotation_guard.start()
+
+    def check(self):
+        super().check()
+        if hasattr(self, "adapter"):
+            require(not self.guard_stop.is_set() and time.monotonic() - self.guard_last_verified < 35,
+                    "P2_ROTATION_CONTINUOUS_GUARD_LOST")
+
+    def _window_value(self, value):
+        rotation, window = self.initial["rotationPlan"], value.get("window")
+        fields = {"version", "actionId", "bindingSha256", "phase", "kind", "maximumSeconds", "source",
+                  "deploymentId", "configurationSha256", "sourceCommit", "candidateSha256"}
+        require(isinstance(window, dict) and fields.issubset(window) and set(window).issubset(fields | {"epoch", "drain"})
+                and window.get("version") == 1
+                and window.get("actionId") == self.action_id() and window.get("bindingSha256") == rotation["bindingSha256"]
+                and window.get("phase") in ("overlap", "current-only")
+                and window.get("kind") in WINDOWS and window.get("maximumSeconds") == WINDOWS[window["kind"]]
+                and window.get("sourceCommit") == rotation["sourceCommit"]
+                and window.get("candidateSha256") == rotation["candidateSha256"]
+                and window.get("configurationSha256") == rotation["configuration"][window["phase"]]["sha256"]
+                and isinstance(window.get("source"), dict) and set(window["source"]) == {"challenge", "bindingSha256"}
+                and re.fullmatch(r"[a-f0-9]{64}", window["source"].get("challenge", ""))
+                and window["source"].get("bindingSha256") == rotation["bindingSha256"],
+                "P2_ROTATION_BROWSER_WINDOW_BINDING_REFUSED")
+        deployment = self.adapter.frontend_deployment(window["phase"])
+        require(all(window.get(key) == deployment.get(key) for key in ("deploymentId", "configurationSha256")),
+                "P2_ROTATION_BROWSER_DEPLOYMENT_CHANGED")
+        return {key: copy.deepcopy(window[key]) for key in fields}
+
+    def _begin_window(self, value):
+        require(self.window is None, "P2_ROTATION_BROWSER_WINDOW_ALREADY_ACTIVE")
+        window = self._window_value(value)
+        proof = self.observer.probe("observe")
+        epoch = proof["admission"]["epoch"]
+        require(proof["admission"] == {"epoch": epoch, "newWork": False, "recovery": False,
+                                      "active": 0, "uncertain": 0},
+                "P2_ROTATION_BROWSER_WINDOW_NOT_CLOSED")
+        expected = self.observer.transition(epoch, True, window["maximumSeconds"])
+        record = {**copy.deepcopy(window), "status": "P2_IDENTITY_ROTATION_BROWSER_WINDOW_INTENT",
+                  "beforeEpoch": epoch, "expectedOpenEpoch": expected}
+        migrate.write_json(self.directory, f"browser-{window['phase']}-{window['kind']}-intent.json", record)
+        self.window = {"value": window, "before": epoch, "open": expected, "stage": "opening"}
+        return record
+
+    def _opened_window(self, value):
+        require(self.window is not None and self.window["stage"] == "opening", "P2_ROTATION_BROWSER_WINDOW_STAGE_REFUSED")
+        window = self._window_value(value)
+        require(window == self.window["value"] and value.get("window", {}).get("epoch") == self.window["open"],
+                "P2_ROTATION_BROWSER_OPEN_EPOCH_REFUSED")
+        proof = self.observer.probe("observe")
+        require(proof["admission"].get("epoch") == self.window["open"]
+                and proof["admission"].get("newWork") is True and proof["admission"].get("recovery") is False,
+                "P2_ROTATION_BROWSER_WINDOW_NOT_OPEN")
+        self.observer.exact(self.window["open"], True, window["maximumSeconds"])
+        self.window["stage"] = "open"
+        return {"status": "P2_IDENTITY_ROTATION_BROWSER_WINDOW_OPENED", "epoch": self.window["open"],
+                "phase": window["phase"], "kind": window["kind"], "bindingSha256": window["bindingSha256"]}
+
+    def _closing_window(self, value):
+        require(self.window is not None and self.window["stage"] == "open", "P2_ROTATION_BROWSER_WINDOW_STAGE_REFUSED")
+        window = self._window_value(value)
+        require(window == self.window["value"] and value.get("window", {}).get("epoch") == self.window["open"],
+                "P2_ROTATION_BROWSER_CLOSE_EPOCH_REFUSED")
+        self.window["closed"] = self.observer.transition(self.window["open"], False)
+        self.window["stage"] = "closing"
+        return {"status": "P2_IDENTITY_ROTATION_BROWSER_WINDOW_CLOSING", "epoch": self.window["open"],
+                "phase": window["phase"], "kind": window["kind"]}
+
+    def _end_window(self, value):
+        require(self.window is not None and self.window["stage"] == "closing", "P2_ROTATION_BROWSER_WINDOW_STAGE_REFUSED")
+        window, supplied = self._window_value(value), value.get("window")
+        drain = supplied.get("drain")
+        require(all(supplied.get(key) == item for key, item in self.window["value"].items())
+                and supplied.get("epoch") == self.window["closed"]
+                and isinstance(drain, dict) and drain.get("epoch") == self.window["closed"]
+                and drain.get("newWork") is False and drain.get("recovery") is False
+                and drain.get("active") == 0 and drain.get("uncertain") == 0 and drain.get("ledgerDrained") is True,
+                "P2_ROTATION_BROWSER_WINDOW_DRAIN_REFUSED")
+        proof = self.observer.probe("observe")
+        require(proof["admission"] == {"epoch": self.window["closed"], "newWork": False, "recovery": False,
+                                      "active": 0, "uncertain": 0},
+                "P2_ROTATION_BROWSER_WINDOW_NOT_CLOSED")
+        self.observer.exact(self.window["closed"], False)
+        self._guard_external()
+        result = {"status": "P2_IDENTITY_ROTATION_BROWSER_WINDOW_CLOSED", "epoch": self.window["closed"],
+                  "phase": window["phase"], "kind": window["kind"], "active": 0, "uncertain": 0}
+        migrate.write_json(self.directory, f"browser-{window['phase']}-{window['kind']}-closed.json", result)
+        self.window = None
+        return result
+
+    def _finish(self, outcome):
+        rotation = self.initial["rotationPlan"]
+        require(self.window is None and outcome.get("status") == "P2_IDENTITY_KEY_ROTATION_CONTROLLER_QUALIFIED"
+                and outcome.get("sourceMechanicsQualified") is True and outcome.get("keyRemovalVerified") is False
+                and outcome.get("actionId") == self.action_id() and outcome.get("bindingSha256") == rotation["bindingSha256"]
+                and outcome.get("sourceCommit") == rotation["sourceCommit"]
+                and outcome.get("candidateSha256") == rotation["candidateSha256"]
+                and outcome.get("lastFullyQualifiedPhase") == "current-only"
+                and all(outcome.get(key) is False for key in ("sqlExecuted", "rolesPrepared", "loginChanged", "trafficAuthorized")),
+                "P2_ROTATION_CONTROLLER_OUTCOME_REFUSED")
+        self.observer.probe("observe")
+        self._guard_external()
+        signer = {phase: self.adapter.observe_frontend_signer(phase) for phase in ("overlap", "current-only")}
+        self.adapter.observe_api_configuration("current-only")
+        profile_receipts = self.adapter.qualified_profile_evidence()
+        profile_classes = {"course-learner": "actual-protected-course-http",
+                           "course-admin": "actual-protected-course-http",
+                           "community-member": "deployed-private-community-verifier",
+                           "community-admin": "deployed-private-community-verifier"}
+        result = {"version": 1, "status": "P2_IDENTITY_KEY_ROTATION_QUALIFIED", "environment": "staging",
+                  "actionId": self.action_id(), "bindingSha256": rotation["bindingSha256"],
+                  "sourceCommit": rotation["sourceCommit"], "candidateSha256": rotation["candidateSha256"],
+                  "configurationSha256": rotation["configuration"]["current-only"]["sha256"],
+                  "profileEvidenceClass": profile_classes,
+                  "profileReceiptSha256": profile_receipts,
+                  "frontendSignerReceiptSha256": {phase: value["receiptSha256"] for phase, value in signer.items()},
+                  "keyRemovalVerified": True, "sourceParentDispatchIntegrated": True,
+                  "sqlExecuted": False, "rolesPrepared": False, "loginChanged": False,
+                  "nativeSchedulesEnabled": False, "trafficAuthorized": False,
+                  "tokenBytesOutput": False, "credentialHashesOutput": False,
+                  "communityMemberFeatureAdded": False, "newPublicEndpoint": False,
+                  "releaseAccepted": False, "g2Accepted": False}
+        migrate.write_json(self.directory, "p2-identity-key-rotation-qualified.json", result)
+        self.finished = True
+        self.joined = copy.deepcopy(result)
+        self.outcome.update(result)
+        return result
+
+    def command(self, value):
+        identity, operation = value.get("id"), value.get("operation")
+        require(type(identity) is int and 0 < identity < 1_000_000, "P2_PROTOCOL_ID_REFUSED")
+        self.check(); self.last_command = time.monotonic()
+        if operation == "check":
+            self.send(identity, "HELD")
+        elif operation == "rotation-arm":
+            self.send(identity, "ROTATION_ARMED", receipt=self.arm(value))
+        elif operation == "rotation-observe-runtime":
+            self.send(identity, "ROTATION_OBSERVED", receipt=self.adapter.observe_api_configuration(self.runtime_phase))
+        elif operation == "rotation-observe-frontend":
+            self.send(identity, "ROTATION_OBSERVED", receipt=self.adapter.observe_frontend_configuration(self.frontend_phase))
+        elif operation in ("rotation-apply-mutation", "rotation-reconcile-mutation"):
+            intent = value.get("intent")
+            method = self.adapter.apply_mutation if operation == "rotation-apply-mutation" else self.adapter.reconcile_mutation
+            if operation == "rotation-apply-mutation":
+                receipt = method(intent, self.initial["expectedFeatureControls"], self.initial["expectedWriterAdmissionBinding"])
+            else:
+                receipt = method(intent)
+            if intent["kind"] == "api": self.runtime_phase = intent["phase"]
+            else: self.frontend_phase = intent["phase"]
+            self._guard_external()
+            self.send(identity, "ROTATION_MUTATION", receipt=receipt)
+        elif operation == "rotation-capture":
+            rotation = self.initial["rotationPlan"]
+            self.send(identity, "ROTATION_CAPTURED", receipt=self.adapter.capture_tokens(
+                rotation["subjects"], rotation["courseId"], rotation["bindingSha256"]))
+        elif operation == "rotation-observe-profiles":
+            rotation, phase = self.initial["rotationPlan"], value.get("phase")
+            self.send(identity, "ROTATION_PROFILES_OBSERVED", receipt=self.adapter.observe_profiles(
+                phase, rotation["subjects"], rotation["courseId"]))
+        elif operation == "rotation-frontend-deployment":
+            self.send(identity, "ROTATION_FRONTEND_DEPLOYMENT", receipt=self.adapter.frontend_deployment(value.get("phase")))
+        elif operation == "rotation-browser-window-begin":
+            self.send(identity, "ROTATION_BROWSER_WINDOW_INTENT", receipt=self._begin_window(value))
+        elif operation == "rotation-browser-window-opened":
+            self.send(identity, "ROTATION_BROWSER_WINDOW_OPENED", receipt=self._opened_window(value))
+        elif operation == "rotation-browser-window-closing":
+            self.send(identity, "ROTATION_BROWSER_WINDOW_CLOSING", receipt=self._closing_window(value))
+        elif operation == "rotation-browser-window-end":
+            self.send(identity, "ROTATION_BROWSER_WINDOW_CLOSED", receipt=self._end_window(value))
+        elif operation == "rotation-retain-signer":
+            self.send(identity, "ROTATION_SIGNER_RETAINED", receipt=self.adapter.retain_frontend_signer(
+                value.get("phase"), value.get("record")))
+        elif operation == "rotation-observe-signer":
+            self.send(identity, "ROTATION_SIGNER_OBSERVED", receipt=self.adapter.observe_frontend_signer(value.get("phase")))
+        elif operation == "rotation-fail-closed":
+            self.observer.probe("fence")
+            proof = P2RecoveryPhysicalObserver.probe(self.observer, "observe")
+            self.observer.exact(proof["admission"]["epoch"], False)
+            self.window = None
+            self._guard_external()
+            self.send(identity, "ROTATION_CONTAINED", receipt={"status": "P2_IDENTITY_ROTATION_CONTAINED",
+                "phase": value.get("state", {}).get("phase"), "mutationUncertain": value.get("state", {}).get("mutationUncertain"),
+                "newWork": False, "recovery": False, "active": 0, "uncertain": 0})
+        elif operation == "rotation-restore":
+            receipt = self.adapter.restore_qualified(value.get("phase"), value.get("configuration", {}).get("sha256"),
+                self.initial["expectedFeatureControls"], self.initial["expectedWriterAdmissionBinding"])
+            self.runtime_phase = self.frontend_phase = value["phase"]
+            self._guard_external()
+            self.send(identity, "ROTATION_RESTORED", receipt=receipt)
+        elif operation == "rotation-finish":
+            self.send(identity, "ROTATION_JOINED", receipt=self._finish(value.get("outcome")))
+        elif operation == "commit":
+            require(self.finished and not self.failed.is_set(), "P2_ROTATION_JOIN_REQUIRED")
+            self.observer.probe("observe"); self._guard_external()
+            require(self.joined.get("status") == "P2_IDENTITY_KEY_ROTATION_QUALIFIED", "P2_ROTATION_JOIN_REQUIRED")
+            migrate.write_json(self.directory, self.terminal_filename(), self.joined)
+            self.safety({"operation": "committed", "sha256": migrate.file_hash(
+                migrate.read_input(self.directory, self.terminal_filename()))})
+            self.committed.set(); self.send(identity, "COMMITTED", receipt=self.joined)
+            return False
+        else:
+            raise ValueError("P2_ROTATION_PROTOCOL_OPERATION_REFUSED")
+        return True
+
+    def close(self, committed=False):
+        self.guard_stop.set()
+        if hasattr(self, "rotation_guard") and self.rotation_guard is not threading.current_thread():
+            self.rotation_guard.join(35)
+        super().close(committed)
+
+
+ROTATION_LAYOUT = {"actionIdKey": "rotationActionId", "receiptPrefix": "p2-identity-key-rotation-",
+                   "runtimePrefix": "runtime-identity-key-rotation-",
+                   "terminalName": "p2-identity-key-rotation-outcome.json",
+                   "terminalStatus": "P2_IDENTITY_KEY_ROTATION_QUALIFIED"}
+
+
+def main():
+    raw = sys.stdin.buffer.readline(MAXIMUM + 1)
+    require(0 < len(raw) <= MAXIMUM and raw.endswith(b"\n"), "P2_ROTATION_INITIAL_INPUT_REFUSED")
+    initial = json.loads(raw)
+    require(initial.get("mode") == "p2-identity-key-rotation", "P2_ROTATION_FIXED_MODE_REQUIRED")
+    # The shared supervisor must explicitly register ROTATION_LAYOUT and these
+    # exact types before this source can become live-eligible.
+    from p2_release_supervisor import supervise
+    supervise(initial, broker_type=P2IdentityRotationBroker, observer_type=P2IdentityRotationPhysicalObserver,
+              observer_source=OBSERVER_SOURCE, layout=ROTATION_LAYOUT)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except BaseException:
+        print("P2_IDENTITY_KEY_ROTATION_FAILED_REQUIRES_REVIEW", file=sys.stderr)
+        raise SystemExit(1)
