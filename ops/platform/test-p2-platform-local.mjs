@@ -11,7 +11,8 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const require = ok => { if (!ok) throw new Error('P2_PLATFORM_OWNED_FIXTURE_REFUSED'); };
 const maximumOutput = 4_000_000;
 const failureStatuses = new Set(['FRONTEND_ROLES_OWNED_FAILED', 'FRONTEND_RELEASE_OWNED_POSTGRES_FAILED',
-  'OWNED_ROLE_COMPOSITION_DETAIL', 'P2_LIFECYCLE_NATIVE_OWNED_FAILED', 'P2_NATIVE_OWNED_CHILD_FAILED']);
+  'OWNED_ROLE_COMPOSITION_DETAIL', 'P2_LIFECYCLE_NATIVE_OWNED_FAILED', 'P2_NATIVE_OWNED_CHILD_FAILED',
+  'P2_CERTIFICATION_CURRENT_OWNED_FAILED']);
 export const P2_OWNED_FIXTURES = Object.freeze([
   Object.freeze({ id: 'roles', file: 'test-frontend-roles-local.mjs', flag: 'FRONTEND_ROLES_OWNED_TEST', status: 'FRONTEND_ROLES_OWNED_PASS', required: Object.freeze([
     'actual-environment-flock-contention-refuses-second-parent',
@@ -53,6 +54,16 @@ export const P2_OWNED_FIXTURES = Object.freeze([
     'actual-source-admission-closure-and-global-active-uncertain-zero',
     'private-credentials-not-in-common-evidence',
   ]) }),
+  Object.freeze({ id: 'certification', file: 'test-p2-certification-local.mjs', flag: 'P2_CERTIFICATION_OWNED_TEST', status: 'P2_CERTIFICATION_CURRENT_OWNED_PASS', required: Object.freeze([
+    'actual83-current-lineage-schema-prepared-roles-and-old-login-denial',
+    'actual-exclusive-global-and-random-lock-session-lifetime-and-fixed-native-epochs',
+    'initial-and-continuous-runtime-inbound-refusal-and-repair',
+    'initial-and-continuous-runtime-database-setting-refusal-and-repair',
+    'initial-and-continuous-runtime-public-shadow-schema-refusal-and-repair',
+    'actual-fixed-auth-preparation-open-close-epochs-only',
+    'actual-fixed-browser-pending-open-close-epochs-only',
+    'independent-fence-after-parent-session-loss-and-without-native-credential',
+  ]) }),
 ]);
 
 export function p2OwnedFixtureEnvironment(ambient, fixture, major) {
@@ -66,7 +77,7 @@ export function p2OwnedFixtureEnvironment(ambient, fixture, major) {
 
 export function validateP2FixtureReceipt(fixture, value, major) {
   require(P2_OWNED_FIXTURES.includes(fixture) && [16, 18].includes(major) && value && typeof value === 'object' && !Array.isArray(value) &&
-    value.status === fixture.status && value.postgresMajor === major && value.providerTouched === false &&
+    value.status === fixture.status && (fixture.id === 'certification' ? value.serverMajor : value.postgresMajor) === major && value.providerTouched === false &&
     (value.skipped === undefined || value.skipped === 0) && Array.isArray(value.checks) && value.checks.length > 0 &&
     value.checks.every(check => typeof check === 'string' && /^[a-z0-9][a-z0-9-]{0,240}$/u.test(check)) &&
     new Set(value.checks).size === value.checks.length && fixture.required.every(check => value.checks.includes(check)));
@@ -74,6 +85,13 @@ export function validateP2FixtureReceipt(fixture, value, major) {
     value.actualScram === true && value.actualFlockContention === true && value.actualPhysicalLockContention === true &&
     value.executedChecks === value.checks.length && value.migrationAuthorized === false);
   if (fixture.id === 'release') require(value.liveAdapterQualified === false && value.migrationAuthorized === false && value.trafficAuthorized === false);
+  if (fixture.id === 'certification') {
+    const fields = ['version', 'status', 'serverMajor', 'frontendMigrations', 'checks', 'skipped', 'actualTlsPostgres',
+      'noSqlReplay', 'providerTouched', 'actualHostDocker', 'browserQualified', 'nativeInvocationQualified', 'fixtureOnly'];
+    require(JSON.stringify(Object.keys(value).sort()) === JSON.stringify(fields.sort()) && value.version === 1 && value.frontendMigrations === 83 &&
+      JSON.stringify(value.checks) === JSON.stringify(fixture.required) && value.skipped === 0 && value.actualTlsPostgres === true &&
+      value.noSqlReplay === true && value.actualHostDocker === false && value.browserQualified === false && value.nativeInvocationQualified === false && value.fixtureOnly === true);
+  }
   if (fixture.id === 'native') require(value.fixtureOnly === true && value.skipped === 0 && value.executedChecks === value.checks.length &&
     value.actualTlsPostgres === true && value.actualTlsReceivers === true && value.actualAppCron === true &&
     value.actualRuntimeTrace === true && value.actualProvider === false && value.actualVercelNativeEvidence === false &&

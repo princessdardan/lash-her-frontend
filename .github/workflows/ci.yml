@@ -90,7 +90,7 @@ jobs:
           FRONTEND_MIGRATION_IMAGE_DIGEST: ${{ steps.build-frontend-migration.outputs.digest }}
           FRONTEND_FIXTURE_RESULTS: ${{ runner.temp }}/frontend-schema/postgres18.json
           FRONTEND_FIXTURE_SUMMARY: ${{ runner.temp }}/frontend-schema-summary.json
-      - name: Qualify Phase 2 role preparation and release failure paths on owned PostgreSQL 18
+      - name: Qualify Phase 2 roles, release failure and certification scopes on owned PostgreSQL 18
         run: |
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             --memory 1g --pids-limit 256 --shm-size 256m --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \

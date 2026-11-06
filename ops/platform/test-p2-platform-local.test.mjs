@@ -9,6 +9,9 @@ function receipt(fixture, major = 18) {
   if (fixture.id === 'roles') return { ...common, fixtureOnly: true, skipped: 0, actualTls: true, actualScram: true,
     actualFlockContention: true, actualPhysicalLockContention: true, executedChecks: common.checks.length, migrationAuthorized: false };
   if (fixture.id === 'release') return { ...common, liveAdapterQualified: false, migrationAuthorized: false, trafficAuthorized: false };
+  if (fixture.id === 'certification') return { version: 1, status: common.status, serverMajor: major, frontendMigrations: 83, checks: common.checks,
+    skipped: 0, actualTlsPostgres: true, noSqlReplay: true, providerTouched: false, actualHostDocker: false,
+    browserQualified: false, nativeInvocationQualified: false, fixtureOnly: true };
   return { ...common, fixtureOnly: true, skipped: 0, executedChecks: common.checks.length, actualTlsPostgres: true, actualTlsReceivers: true,
     actualAppCron: true, actualRuntimeTrace: true, actualProvider: false, actualVercelNativeEvidence: false, modeledProviderNativeClassification: true,
     result: { status: 'P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED', nativeEnabled: false,
@@ -34,11 +37,20 @@ test('receipt must prove the selected actual major, every required physical scen
   for (const fixture of P2_OWNED_FIXTURES) {
     const actual = receipt(fixture);
     assert.equal(validateP2FixtureReceipt(fixture, actual, 18).executedChecks, fixture.required.length);
-    for (const changed of [null, {}, { ...actual, postgresMajor: 16 }, { ...actual, skipped: 1 },
+    for (const changed of [null, {}, { ...actual, [fixture.id === 'certification' ? 'serverMajor' : 'postgresMajor']: 16 }, { ...actual, skipped: 1 },
       { ...actual, checks: [] }, { ...actual, checks: actual.checks.slice(1) },
       { ...actual, checks: [...actual.checks, actual.checks[0]] }, { ...actual, providerTouched: true }]) {
       assert.throws(() => validateP2FixtureReceipt(fixture, changed, 18));
     }
+  }
+});
+
+test('certification fixture requires all eight current/physical cases and cannot claim deployed qualification', () => {
+  const fixture = P2_OWNED_FIXTURES.find(value => value.id === 'certification'), actual = receipt(fixture);
+  for (const change of [value => { value.frontendMigrations = 82; }, value => { value.actualTlsPostgres = false; },
+    value => { value.noSqlReplay = false; }, value => { value.browserQualified = true; }, value => { value.nativeInvocationQualified = true; },
+    value => { value.actualHostDocker = true; }, value => { value.postgresMajor = 18; }, value => { value.checks.reverse(); }]) {
+    const changed = structuredClone(actual); change(changed); assert.throws(() => validateP2FixtureReceipt(fixture, changed, 18));
   }
 });
 

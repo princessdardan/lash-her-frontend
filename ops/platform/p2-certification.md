@@ -5,6 +5,12 @@ not authorize a live start. Dardan must review the exact candidate, source,
 configuration, action, state/epoch, retained READY receipts and private inputs
 before `apply --confirm staging/<certificationActionId>`.
 
+`settings.host.configuration` must select the actual mounted runtime snapshot,
+such as the retained release or recovery snapshot's `configuration` directory.
+The local `settings.configuration` may remain the original byte-identical private
+input. The host checks actual gateway mounts and admission state; supplying the
+original remote input directory instead of its mounted snapshot is a refusal.
+
 `node --experimental-strip-types ops/platform/p2-certification.mjs plan SETTINGS`
 is read only and does not resolve credentials or contact providers. `apply`
 requires Node24, exact committed operator source with passing source CI, pinned
