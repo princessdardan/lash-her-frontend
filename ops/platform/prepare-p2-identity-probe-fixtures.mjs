@@ -303,7 +303,7 @@ function recoveryDockerArguments(frontendRoot, directories) {
   const mounts = RECOVERY_MOUNTS.map(({ source, target, kind }) => mount(join(frontendRoot, source), target, kind, frontendRoot));
   mounts.push(mount(directories.course, "/exact-sources/lash-her-course-api", "directory", directories.course));
   mounts.push(mount(directories.community, "/exact-sources/lash-her-community-api", "directory", directories.community));
-  return ["run", "--rm", "-i", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+  return ["run", "--rm", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
     "--memory=1g", "--pids-limit=256", "--shm-size=256m", "--tmpfs=/tmp:rw,nosuid,nodev,size=512m,mode=1777", "--workdir=/source",
     "--env=PG_BIN=/usr/lib/postgresql/18/bin", "--env=OWNED_POSTGRES_MAJOR=18", "--env=P2_RECOVERY_OWNED_TEST=true",
     "--env=NODE_BIN=/usr/local/bin/node", "--env=COURSE_RECOVERY_SOURCE_ROOT=/exact-sources/lash-her-course-api",
@@ -324,7 +324,7 @@ function lifecyclePersistenceDockerArguments(frontendRoot, directories) {
     for (const { source, kind } of LIFECYCLE_API_MOUNTS)
       mounts.push(mount(join(directory, source), `${targetRoot}/${source}`, kind, directory));
   }
-  return ["run", "--rm", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+  return ["run", "--rm", "-i", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
     "--memory=1g", "--pids-limit=256", "--shm-size=256m", "--tmpfs=/tmp:rw,nosuid,nodev,size=512m,mode=1777", "--workdir=/source",
     "--env=PG_BIN=/usr/lib/postgresql/18/bin", "--env=OWNED_POSTGRES_MAJOR=18", "--env=P2_LIFECYCLE_PERSISTENCE_OWNED_TEST=true",
     ...mounts.flatMap(value => ["--mount", value]), "--entrypoint=/usr/local/bin/node", RECOVERY_IMAGE, "--import", "tsx",

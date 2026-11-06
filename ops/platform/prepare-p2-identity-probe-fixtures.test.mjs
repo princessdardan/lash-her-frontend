@@ -290,7 +290,7 @@ test("recovery mode runs current and forward PostgreSQL 18 fixtures after all id
     assert.deepEqual(Object.keys(context.env).sort(), ["HOME", "LANG", "LC_ALL", "PATH"]);
     const docker = dockerCalls[0], forwardDocker = dockerCalls[1];
     assert.deepEqual(docker.args.slice(0, 3), ["--host", `unix://${value.dockerSocketPath}`, "run"]);
-    for (const argument of ["-i", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+    for (const argument of ["--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
       "--memory=1g", "--pids-limit=256", "--shm-size=256m", "--tmpfs=/tmp:rw,nosuid,nodev,size=512m,mode=1777",
       "--env=PG_BIN=/usr/lib/postgresql/18/bin", "--env=OWNED_POSTGRES_MAJOR=18", "--env=P2_RECOVERY_OWNED_TEST=true",
       "--env=NODE_BIN=/usr/local/bin/node", "--env=COURSE_RECOVERY_SOURCE_ROOT=/exact-sources/lash-her-course-api",
@@ -330,6 +330,7 @@ test("lifecycle mode sends one internally built exact source manifest to an isol
     assert.equal(Object.keys(result.lifecyclePersistence.sourceSha256).length, 5);
     const dockerCalls = value.calls.filter(call => call.file === "docker" && call.args[0] === "--host");
     assert.equal(dockerCalls.length, 3);
+    assert.equal(dockerCalls[0].args.includes("-i"), false); assert.equal(dockerCalls[1].args.includes("-i"), false);
     const persistence = dockerCalls[2];
     assert.equal(Buffer.isBuffer(persistence.input), true);
     assert.equal(sha(persistence.input), result.lifecyclePersistence.sourceManifestSha256);
@@ -342,11 +343,12 @@ test("lifecycle mode sends one internally built exact source manifest to an isol
       const names = Object.keys(manifest.sources[service].files);
       assert.deepEqual(names, [...names].sort()); assert.equal(names.length > 5, true);
     }
-    for (const argument of ["--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+    for (const argument of ["-i", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
       "--env=PG_BIN=/usr/lib/postgresql/18/bin", "--env=OWNED_POSTGRES_MAJOR=18",
       "--env=P2_LIFECYCLE_PERSISTENCE_OWNED_TEST=true", "--entrypoint=/usr/local/bin/node", "--import", "tsx",
       "ops/platform/test-p2-lifecycle-persistence-local.mjs", "--postgres18-manifest"])
       assert.equal(persistence.args.includes(argument), true, argument);
+    assert.deepEqual(persistence.args.slice(-4), ["--import", "tsx", "ops/platform/test-p2-lifecycle-persistence-local.mjs", "--postgres18-manifest"]);
     const mounts = persistence.args.filter((argument, index) => persistence.args[index - 1] === "--mount");
     assert.equal(mounts.length, 25); assert.equal(mounts.every(value => value.endsWith(",readonly")), true);
     assert.equal(mounts.some(mount => mount.includes("dst=/source/package-lock.json")), true);
