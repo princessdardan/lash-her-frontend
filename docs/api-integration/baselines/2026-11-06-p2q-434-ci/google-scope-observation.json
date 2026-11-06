@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "observedAt": "2026-11-06T21:42:31.066Z",
+  "method": "Read-only Google Cloud Console UI via signed-in Codex in-app browser",
+  "scope": "Current browser principal only; no assertion of global completeness or administrative/recovery isolation.",
+  "visibleAllProjectPicker": {
+    "organizationLabel": "No organization",
+    "projectIds": [
+      "focal-potion-g213t",
+      "gen-lang-client-0317903781",
+      "acoustic-apex-477400-d6",
+      "quick-bonfire-477400-r2"
+    ],
+    "p2qNamedProjectVisible": false
+  },
+  "inspectedProject": {
+    "id": "quick-bonfire-477400-r2",
+    "number": "1024154382623",
+    "name": "My Maps Project",
+    "clientsUrl": "https://console.cloud.google.com/auth/clients?project=quick-bonfire-477400-r2",
+    "visibleState": "Google Auth Platform not configured yet",
+    "getStartedLinkObserved": true,
+    "configuredOrMutated": false
+  },
+  "consequences": [
+    "Client creation controls were not reached or validated.",
+    "Before a live client-capture action, observe exact target Auth Platform state and capture any required branding/audience setup under its own reviewed action.",
+    "Existing inspected project is not selected or qualified for P2Q.",
+    "Independent Google principal/project/recovery remains UNKNOWN."
+  ],
+  "credentialValuesRead": false,
+  "downloadPerformed": false,
+  "providerMutationPerformed": false,
+  "temporaryBrowserTabClosed": true
+}

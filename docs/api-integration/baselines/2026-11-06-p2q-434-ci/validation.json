@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "status": "EXACT_SOURCE_ALL_TEN_CI_AND_ARTIFACT_CHECKS_PASSED_WITH_DISCLOSED_BROWSER_RETRY",
+  "qualifiedSourceCommit": "434ff029b354cf6574df64906c9f1ec068777995",
+  "runId": 42298515803,
+  "allTenJobsSucceeded": true,
+  "artifactVerificationSha256": "1fe414a919a106293d96bbe77a559ec6a0b9c9bd0a456820309d0c88f9eb7d87",
+  "browserDisclosure": {
+    "expected": 581,
+    "skipped": 159,
+    "unexpected": 0,
+    "flaky": 1,
+    "failedAttemptTraceAvailable": false,
+    "rootCauseEstablished": false,
+    "sourceChangeJustifiedByThisEvidence": false
+  },
+  "sourceOperatorFiles": 511,
+  "decodedSourceBytes": 40857723,
+  "publicSourceBytes": 54551607,
+  "latestPriorAllTenCiSource": "ff4c0a340b578e0d2c4df1c2c942209227a9f24c",
+  "qualification": {
+    "sourceOnly": true,
+    "positiveFirstUseAuthorityAvailable": false,
+    "isolatedTargetRegistered": false,
+    "independentAdministrativeScopesKnown": false,
+    "resourceAllocationApproved": false,
+    "candidatePublicationApproved": false,
+    "liveReleaseApproved": false,
+    "g2qComplete": false,
+    "originalP2GoalComplete": false
+  },
+  "files": {
+    "artifact-verification.json": {
+      "bytes": 5161,
+      "sha256": "1fe414a919a106293d96bbe77a559ec6a0b9c9bd0a456820309d0c88f9eb7d87"
+    },
+    "browser-retry-review.json": {
+      "bytes": 2744,
+      "sha256": "600a407bcb45c9602270a2b98fd9e7eff54631c718a31611f1d64af5373056fc"
+    },
+    "google-scope-observation.json": {
+      "bytes": 1430,
+      "sha256": "7bd82b2bb5a5b2ab5dab530a11c2ba9d0072421c7ad60e64f669b22bcab8f69e"
+    },
+    "original-terminal-jobs.json": {
+      "bytes": 1529,
+      "sha256": "fb8ebab2e5cc5f64d39b629074509a8c3e6b4d15d50e9c4e806376bfa8e01498"
+    },
+    "sanity-scope-observation.json": {
+      "bytes": 966,
+      "sha256": "dbfdb2844f8476b9f23688805beeff7795ea412db0405dfb42f12b7f983130ea"
+    },
+    "source-and-contracts.json": {
+      "bytes": 463,
+      "sha256": "62b3a5620d28857191e4492b77c9f66081d9a441ad36a1c3de7780aa3dbd9c8d"
+    }
+  },
+  "durableEvidence": {
+    "archive": "/Users/dardan/.local/share/lash-her/phase2-goal-evidence/2026-11-06/p2q-434-ci-qualified",
+    "manifestSha256": "23f0a884e674799cac5ad4bff4244403ee8277a9ddd859d46ce945c4b1f09c66",
+    "filesIncludingManifest": 32,
+    "totalBytes": 6478944,
+    "directoriesMode": "0700",
+    "filesMode": "0600",
+    "originalReportPreserved": true
+  }
+}

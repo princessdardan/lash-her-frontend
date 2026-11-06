@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "sourceCommit": "434ff029b354cf6574df64906c9f1ec068777995",
+  "runId": 42298515803,
+  "observedAt": "2026-11-06T21:53:00.642Z",
+  "jobs": [
+    {
+      "id": 128169919469,
+      "name": "build",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128169919724,
+      "name": "database",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128169919755,
+      "name": "browser (webkit)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128169919831,
+      "name": "gateway-and-platform",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128169919848,
+      "name": "browser (chromium)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128169919889,
+      "name": "audit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128169919922,
+      "name": "frontend-operator-migrations",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128169920009,
+      "name": "quality-and-unit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128169920070,
+      "name": "browser (firefox)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128175340791,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "allTenSuccess": true,
+  "artifactVerificationPending": true
+}
