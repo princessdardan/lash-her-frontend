@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { Client } from "pg";
 import { withFrontendEnvironmentLock } from "./frontend-environment-lock.mjs";
 import { prepareFrontendRolesPlan, applyPreparedFrontendRoles, FRONTEND_PREPARATION_ROLES as names, frontendRolesHash } from "./frontend-role-preparation.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as current } from "./qualification-target-profile.mjs";
 
 const execute = (file, args) => execFileSync(file, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const lockName = "lash-her:private-db:migrations";
@@ -47,7 +48,7 @@ async function main() {
     const before = { data: (await operator.query("TABLE public.preserved_data")).rows, journal: (await operator.query("TABLE drizzle.__drizzle_migrations")).rows,
       oldRole: (await operator.query("SELECT oid::text,rolname,rolcanlogin,rolinherit,rolsuper,rolcreaterole FROM pg_roles WHERE rolname='old_frontend_runtime'")).rows,
       oldAcl: (await operator.query("SELECT relacl::text FROM pg_class WHERE oid='public.preserved_data'::regclass")).rows };
-    const fixture = (suffix = "case", reuse) => {
+    const fixture = (suffix = "case", reuse, expectedProfile = undefined) => {
       const action = `owned-role-${++scenario}-${suffix}`, sourceCommit = "a".repeat(40), sqlArtifactSha256 = "b".repeat(64), contract = `sha256:${"c".repeat(64)}`, image = `sha256:${"d".repeat(64)}`;
       const candidate = { version: 2, environment: "staging", releaseId: action, integration: { state: "passed" }, sourceApproval: { mode: "single-operator-dispatch", operatorGithubUserId: "8996309" },
         sources: { frontend: { repository: "https://github.com/princessdardan/lash-her-frontend.git", commit: sourceCommit, requiredChecks: "passed" } },
@@ -57,7 +58,12 @@ async function main() {
         contractManifestSha256: candidate.contractManifestSha256, migrationImageDigest: image, recoveryRef: "owned/recovery-1",
         target: { host: "127.0.0.1", port, database: "frontend_role_owned", user: "frontend_operator", runtimeRole: names.runtime, serverMajor: major } };
       const receipts = join(directory, `${action}-receipts`), privatePath = join(directory, `${action}-private`); mkdirSync(receipts, { mode: 0o700 }); mkdirSync(privatePath, { mode: 0o700 });
-      return { candidate, job, plan: prepareFrontendRolesPlan(candidate, job, { version: 1, producerSha256: ["f".repeat(64)], ...(reuse ? { reuse } : {}) }), directory: receipts, privateDirectory: privatePath };
+      const specification = { version: expectedProfile === undefined ? 1 : 2, producerSha256: ["f".repeat(64)], ...(reuse ? { reuse } : {}) };
+      if (expectedProfile !== undefined) {
+        candidate.version = 3; job.version = 2;
+        for (const value of [candidate, candidate.frontendMigration, job, job.target, specification]) value.qualificationTargetProfile = expectedProfile;
+      }
+      return { candidate, job, plan: prepareFrontendRolesPlan(candidate, job, specification, expectedProfile), directory: receipts, privateDirectory: privatePath };
     };
     const pid = (await operator.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
     const verifySession = async () => assert.equal((await operator.query("SELECT pg_backend_pid() AS pid")).rows[0].pid, pid);
@@ -185,6 +191,34 @@ async function main() {
       assert.equal(lostOutcome.sqlOutcome, "commit-acknowledgment-unknown"); assert.equal((await existingNewRoles()).length, 2); assert.equal(commits, 1);
       assert.equal(statSync(join(lost.privateDirectory, "frontend-role-credentials.json")).mode & 0o777, 0o600); outcomes.push(lostOutcome); record("actual-commit-then-lost-ack-retains-unknown-and-private-recovery-material");
       await assert.rejects(run(lost, losing)); assert.equal(roleQueries, 2); assert.equal(commits, 1); record("lost-commit-acknowledgment-is-never-replayed");
+      phase = "profiled-current-role-creation-and-reuse";
+      await resetNewRoles();
+      const profileRun = (f, extra = {}) => applyPreparedFrontendRoles(f.plan, operator, { ...f, confirmation: `staging/${f.plan.actionId}`, verifyEnvironment, verifySession, ...extra }, current);
+      const profiled = fixture("profiled-fresh", undefined, current), profileProof = await profileRun(profiled);
+      assert.equal(profileProof.version, 2); assert.deepEqual(profileProof.qualificationTargetProfile, current);
+      assert.deepEqual(profileProof.target.qualificationTargetProfile, current);
+      assert.notEqual(profileProof.owner.oid, prepared.owner.oid); assert.notEqual(profileProof.runtime.oid, prepared.runtime.oid);
+      const profileCredential = JSON.parse(readFileSync(join(profiled.privateDirectory, "frontend-role-credentials.json")));
+      assert.equal(profileCredential.version, 2); assert.deepEqual(profileCredential.qualificationTargetProfile, current);
+      assert.equal(profileProof.runtimeCredentialVerified, true); outcomes.push(profileProof);
+      record("profiled-current-roles-fresh-actual-oids-credential-and-public-private-v2-bindings");
+      const profileReuse = { ownerOid: profileProof.owner.oid, runtimeOid: profileProof.runtime.oid, proofSha256: profileProof.proofSha256 };
+      const profiledAgain = fixture("profiled-reuse", profileReuse, current), profileReuseProof = await profileRun(profiledAgain,
+        { reuseDirectory: profiled.directory, reusePrivateDirectory: profiled.privateDirectory });
+      assert.deepEqual(profileReuseProof.owner, profileProof.owner); assert.deepEqual(profileReuseProof.runtime, profileProof.runtime);
+      assert.equal(profileReuseProof.version, 2); assert.deepEqual(profileReuseProof.qualificationTargetProfile, current);
+      record("profiled-current-roles-reuse-original-v2-receipts-and-actual-oid-readback");
+      const oldProofAttempt = fixture("profiled-old-proof", reuse, current); let oldProofQueries = 0;
+      const noOldProofQuery = { query: async () => { oldProofQueries++; throw Error("owned-old-proof-reached-sql"); } };
+      await assert.rejects(applyPreparedFrontendRoles(oldProofAttempt.plan, noOldProofQuery,
+        { ...oldProofAttempt, confirmation: `staging/${oldProofAttempt.plan.actionId}`, verifyEnvironment, verifySession,
+          reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory }, current), /QUALIFICATION_TARGET_PROFILE_REQUIRED/u);
+      assert.equal(oldProofQueries, 0); assert.deepEqual(readdirSync(oldProofAttempt.directory), []); assert.deepEqual(readdirSync(oldProofAttempt.privateDirectory), []);
+      record("profiled-current-roles-legacy-reuse-refused-before-sql-or-new-private-intent");
+      assert.deepEqual((await operator.query("TABLE public.preserved_data")).rows, before.data);
+      assert.deepEqual((await operator.query("TABLE drizzle.__drizzle_migrations")).rows, before.journal);
+      assert.deepEqual((await oldReader.query("TABLE public.preserved_data")).rows, before.data);
+      record("profiled-role-preparation-preserves-old-role-data-and-application-journal");
       await operator.query("SELECT pg_advisory_unlock(hashtext($1))", [lockName]);
     }, { path: join(directory, "environment.lock") });
     const serverLog = readFileSync(join(directory, "postgres.log"), "utf8");

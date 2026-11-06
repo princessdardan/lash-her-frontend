@@ -9,8 +9,9 @@ import { frontendMigrationArtifact, prepareFrontendMigration } from "./frontend-
 import { bootstrapFrontendAdmission, frontendAdmissionBootstrapArtifact, frontendAdmissionTargetSha256, prepareFrontendAdmissionBootstrap } from "./frontend-admission-bootstrap.mjs";
 import { frontendCandidateSurfaces, frontendCoordinationHash as hash, prepareFrontendReleaseInventory, prepareFrontendReleaseRoleTemplate, validateFrontendFenceObservation } from "./frontend-release-inventory.mjs";
 import { frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
-import { loadFrontendReleaseAdapters } from "./frontend-release-coordinator.mjs";
+import { loadFrontendReleaseAdapters, prepareFrontendReleaseCoordination, runFrontendReleaseCoordination } from "./frontend-release-coordinator.mjs";
 import { withFrontendEnvironmentLock } from "./frontend-environment-lock.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as current } from "./qualification-target-profile.mjs";
 
 const directory = () => realpathSync(mkdtempSync(join(tmpdir(), "frontend-release-test-")));
 const source = { version: 2, scope: "candidate-source-only", sourceManifestSha256: "1".repeat(64),
@@ -54,6 +55,45 @@ function fixture() {
     producers: plan.producers.map(p => ({ ...p, sourceCommit: plan.sourceCommit })) };
   return { source, artifact, migration, inventory, plan, bootstrap };
 }
+
+test("profiled pure inventory binds genuine child contexts while coordination execution refuses before stores, locks or SQL", async () => {
+  const f = fixture(), candidate = structuredClone(f.migration.candidate), job = structuredClone(f.migration.job), inventory = structuredClone(f.inventory);
+  candidate.version = 3; job.version = 2; inventory.version = 2;
+  for (const value of [candidate, candidate.frontendMigration, job, job.target, inventory]) value.qualificationTargetProfile = current;
+  inventory.historicalLogins.version = 2; inventory.bootstrapCompatibility.version = 2;
+  for (const value of [inventory.historicalLogins, inventory.historicalLogins.target, inventory.bootstrapCompatibility]) value.qualificationTargetProfile = current;
+  const migration = prepareFrontendMigration(candidate, job, f.migration.baseline, f.artifact, current);
+  const plan = prepareFrontendReleaseInventory(inventory, migration, f.source, current);
+  assert.equal(plan.version, 2); assert.deepEqual(plan.qualificationTargetProfile, current);
+  assert.equal(plan.historicalLogins.version, 2); assert.deepEqual(plan.historicalLogins.qualificationTargetProfile, current);
+  assert.equal(plan.bootstrapCompatibility.version, 2); assert.deepEqual(plan.bootstrapCompatibility.qualificationTargetProfile, current);
+  const desired = structuredClone(inventory); delete desired.owner.oid; for (const p of desired.producers) delete p.role.oid;
+  assert.equal(prepareFrontendReleaseRoleTemplate(desired, migration, f.source, current).version, 2);
+  const prepared = prepareFrontendReleaseCoordination(candidate, job, f.migration.baseline, inventory, f.source, current);
+  assert.deepEqual(prepared.qualificationTargetProfile, current);
+  let effects = 0;
+  await assert.rejects(runFrontendReleaseCoordination(prepared, { get directory() { effects++; throw new Error("store-before-context"); },
+    withEnvironmentLock() { effects++; }, getUrl() { effects++; } }, current), /QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED/u);
+  assert.equal(effects, 0);
+  assert.throws(() => prepareFrontendReleaseInventory(inventory, migration, f.source), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  delete inventory.historicalLogins.qualificationTargetProfile;
+  assert.throws(() => prepareFrontendReleaseInventory(inventory, migration, f.source, current), /QUALIFICATION_TARGET_PROFILE_REQUIRED/u);
+});
+
+test("profiled bootstrap joins target context and retains matching v2 success and failed outcome records", async () => {
+  for (const fail of [false, true]) {
+    const f = bootstrapRunner(); f.bootstrap.version = 2; f.bootstrap.qualificationTargetProfile = current; f.bootstrap.target.qualificationTargetProfile = current;
+    const prepared = prepareFrontendAdmissionBootstrap(f.bootstrap, current);
+    assert.equal(prepared.version, 2); assert.deepEqual(prepared.target.qualificationTargetProfile, current);
+    if (fail) f.state.oid = "999";
+    const result = bootstrapFrontendAdmission(f.bootstrap, f.client, f.dependencies, current);
+    if (fail) await assert.rejects(result); else assert.equal((await result).newWork, false);
+    for (const row of f.records) { assert.equal(row.value.version, 2); assert.deepEqual(row.value.qualificationTargetProfile, current); }
+  }
+  const f = bootstrapRunner();
+  await assert.rejects(bootstrapFrontendAdmission(f.bootstrap, f.client, f.dependencies, current), /QUALIFICATION_TARGET_PROFILE_REQUIRED/u);
+  assert.equal(f.calls.length, 0); assert.equal(f.records.length, 0);
+});
 
 test("pure inventory requires complete exact-source coverage, all external surface classes and exact protected targets", () => {
   const f = fixture();
@@ -180,6 +220,27 @@ test("external fence checks require retained exact bytes for every surface and f
   }
   await assert.rejects(validateFrontendFenceObservation(plan, nonce, observation(plan, nonce), () => { throw new Error("storage refused"); }));
   await assert.rejects(validateFrontendFenceObservation(plan, nonce, { historicalWritersFenced: true }, () => {}));
+});
+
+test("profiled fence acceptance requires v2 exact bytes on every envelope, evidence and observation before retention", async () => {
+  const { plan: legacy } = fixture(), nonce = "e".repeat(64), plan = { ...legacy, version: 2, qualificationTargetProfile: current };
+  const observed = observation(plan, nonce); observed.version = 2; observed.qualificationTargetProfile = current;
+  for (const row of observed.surfaces) {
+    for (const key of ["observation", "reconciliation"]) row[key] = Buffer.from(JSON.stringify({ ...JSON.parse(row[key]), version: 2, qualificationTargetProfile: current }));
+    row.evidence = Buffer.from(JSON.stringify({ ...JSON.parse(row.evidence), version: 2, qualificationTargetProfile: current,
+      observationSha256: hash(row.observation), reconciliationSha256: hash(row.reconciliation) }));
+    row.evidenceSha256 = hash(row.evidence);
+  }
+  let retained = 0; const result = await validateFrontendFenceObservation(plan, nonce, observed, () => { retained++; }, {}, current);
+  assert.deepEqual(result.qualificationTargetProfile, current); assert.equal(retained, plan.externalSurfaces.length * 3);
+  for (const key of ["evidence", "observation", "reconciliation"]) {
+    const value = structuredClone(observed); for (const row of value.surfaces) for (const field of ["evidence", "observation", "reconciliation"]) row[field] = Buffer.from(row[field]);
+    const row = value.surfaces[0], artifact = JSON.parse(row[key]); delete artifact.qualificationTargetProfile; row[key] = Buffer.from(JSON.stringify(artifact));
+    if (key !== "evidence") { const e = JSON.parse(row.evidence); e[key + "Sha256"] = hash(row[key]); row.evidence = Buffer.from(JSON.stringify(e)); }
+    row.evidenceSha256 = hash(row.evidence); retained = 0;
+    await assert.rejects(validateFrontendFenceObservation(plan, nonce, value, () => { retained++; }, {}, current), /QUALIFICATION_TARGET_PROFILE_REQUIRED/u);
+    assert.equal(retained, 0);
+  }
 });
 
 test("native flock serializes with other contenders, stays held through asynchronous continuation and refuses inode replacement", async () => {

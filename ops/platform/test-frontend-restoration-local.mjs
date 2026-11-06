@@ -15,12 +15,18 @@ import { restoreFrontendAdmission } from "./frontend-release-restoration.mjs";
 import { frontendReleaseReceiptStore } from "./frontend-release-receipts.mjs";
 import { frontendCoordinationHash as hash } from "./frontend-release-inventory.mjs";
 import { observeFrontendSquareEffects } from "./frontend-square-effects.mjs";
+import { decodeQualificationTargetJson, parseQualificationTargetProfileRef, requireQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile } from "./qualification-target-profile.mjs";
+import { frontendAdmissionTargetSha256, frontendAdmissionBootstrapArtifact, bootstrapFrontendAdmission } from "./frontend-admission-bootstrap.mjs";
+import { prepareHistoricalFrontendLogins } from "./frontend-historical-logins.mjs";
 
 const script = fileURLToPath(import.meta.url), root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const run = (command, args) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const lockName = "lash-her:private-db:migrations";
-async function child() {
-  let raw = ""; for await (const part of process.stdin) raw += part; const input = JSON.parse(raw);
+async function child(expectedProfile = undefined) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+  let raw = ""; for await (const part of process.stdin) raw += part; const input = decodeQualificationTargetJson(raw, "private-packet");
+  if (expectedProfile === undefined) assert.equal(Object.hasOwn(input, "qualificationTargetProfile") || Object.hasOwn(input.plan, "qualificationTargetProfile"), false);
+  else requireQualificationTargetProfile(expectedProfile, input, input.plan, input.plan.restoration, input.plan.historicalLogins, input.plan.historicalLogins.target);
   const client = new Client(input.database); client.on("error", () => {}); await client.connect();
   const original = client.query.bind(client); let lose = false;
   if (input.lostCommit) client.query = async (...args) => {
@@ -56,7 +62,7 @@ async function child() {
           assert.equal(actual.historicalIngressRetired, true); assert.equal(actual.activeExecutions, 0); assert.equal(actual.uncertainEffects, 0);
           assert.equal(admission.uncertain, 0); await verifySession();
         },
-      });
+      }, expectedProfile);
       process.stdout.write(JSON.stringify({ status: result.status, epoch: result.epoch }));
     }, { path: input.lockPath });
   } finally { await client.end().catch(() => {}); }
@@ -96,21 +102,53 @@ async function main() {
     await new Promise(resolve => provider.listen(0, "127.0.0.1", resolve)); const providerPort = provider.address().port;
     const make = async (name, extra = {}) => {
       const database = `restore_${name.replaceAll("-", "_")}`; await admin.query(`CREATE DATABASE ${database}`); const client = await connect(database);
-      await client.query(`GRANT CREATE ON DATABASE ${database} TO restoration_owner`); await client.query("SET ROLE restoration_owner");
-      await client.query(readFileSync(join(root, "ops/platform/frontend-admission.sql"), "utf8"));
+      await client.query(`GRANT CREATE ON DATABASE ${database} TO restoration_owner`);
       const plan = { version: 1, environment: "staging", actionId: `owned-${name}`, sourceCommit: "a".repeat(40), targetSha256: "b".repeat(64),
         restoration: { version: 1, recovery: true, newWork: true, nativeSchedulesEnabled: false, providerIngress: "keep-retired", gatewayBindingSha256: "c".repeat(64) },
         historicalLogins: { retiredLogins: [{ name: "restoration_old", oid: oldOid }] }, producers: [{ producerSha256: "d".repeat(64), role: { name: "restoration_runtime", oid: runtimeOid } }] };
-      await client.query("INSERT INTO frontend_admission.control(environment,target_sha256,new_work,recovery) VALUES('staging',$1,false,false)", [plan.targetSha256]);
-      await client.query("INSERT INTO frontend_admission.producers(producer_sha256,source_sha,database_role,enabled) VALUES($1,$2,$3::oid,true)", [plan.producers[0].producerSha256, plan.sourceCommit, runtimeOid]); await client.query("RESET ROLE");
+      if (extra.profiledCurrent) {
+        plan.version = 2; plan.restoration.version = 2; plan.historicalLogins.version = 2;
+        plan.historicalLogins.target = { qualificationTargetProfile: currentProfile, host: "127.0.0.1", port, database, user: "restoration_admin",
+          serverMajor: major, currentRuntimeRole: "restoration_runtime", admissionOwnerRole: "restoration_owner" };
+        plan.historicalLogins.environment = "staging"; plan.historicalLogins.actionId = plan.actionId; plan.historicalLogins.sourceCommit = plan.sourceCommit;
+        plan.historicalLogins.clusterScopeSha256 = "c".repeat(64);
+        for (const value of [plan, plan.restoration, plan.historicalLogins]) value.qualificationTargetProfile = currentProfile;
+        plan.historicalLogins = prepareHistoricalFrontendLogins(plan.historicalLogins, currentProfile);
+        plan.targetSha256 = frontendAdmissionTargetSha256("staging", plan.historicalLogins.target);
+      }
+      if (extra.profiledCurrent) {
+        const bootstrapDirectory = join(directory, name + "-bootstrap"); mkdirSync(bootstrapDirectory, { mode: 0o700 });
+        const bootstrapStore = frontendReleaseReceiptStore(bootstrapDirectory), bootstrapRecords = [];
+        await withFrontendEnvironmentLock(async verifyEnvironment => {
+          await client.query("SELECT pg_advisory_lock(hashtext($1))", [lockName]); const pid = client.processID;
+          const verifySession = async () => {
+            await verifyEnvironment(); assert.equal(client.connection.stream.encrypted, true); assert.equal(client.connection.stream.authorized, true);
+            const actual = (await client.query("SELECT pg_backend_pid() AS pid,EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='advisory' AND granted) AS held")).rows[0];
+            assert.equal(actual.pid, pid); assert.equal(actual.held, true);
+          };
+          try {
+            const result = await bootstrapFrontendAdmission({ version: 2, qualificationTargetProfile: currentProfile, environment: "staging", actionId: plan.actionId,
+              sourceCommit: plan.sourceCommit, ...frontendAdmissionBootstrapArtifact(), inventorySha256: hash({ ownedCase: name }), targetSha256: plan.targetSha256,
+              target: plan.historicalLogins.target, owner: { name: "restoration_owner", oid: await roleOid("restoration_owner") },
+              producers: plan.producers.map(value => ({ ...value, sourceCommit: plan.sourceCommit })) }, client,
+            { confirmation: "staging/" + plan.actionId, verifySession, record(name, value) { bootstrapStore.record(name, value); bootstrapRecords.push(value); } }, currentProfile);
+            assert.equal(result.newWork, false); assert.equal(result.recovery, false); assert.equal(result.epoch, "1");
+            for (const value of bootstrapRecords) { assert.equal(value.version, 2); assert.deepEqual(value.qualificationTargetProfile, currentProfile); }
+          } finally { await client.query("SELECT pg_advisory_unlock(hashtext($1))", [lockName]); }
+        }, { path: join(directory, `${name}.lock`) });
+      } else {
+        await client.query("SET ROLE restoration_owner"); await client.query(readFileSync(join(root, "ops/platform/frontend-admission.sql"), "utf8"));
+        await client.query("INSERT INTO frontend_admission.control(environment,target_sha256,new_work,recovery) VALUES('staging',$1,false,false)", [plan.targetSha256]);
+        await client.query("INSERT INTO frontend_admission.producers(producer_sha256,source_sha,database_role,enabled) VALUES($1,$2,$3::oid,true)", [plan.producers[0].producerSha256, plan.sourceCommit, runtimeOid]); await client.query("RESET ROLE");
+      }
       const receipts = join(directory, name); mkdirSync(receipts, { mode: 0o700 });
       const scenario = { client, plan, receipts, lockPath: join(directory, `${name}.lock`), stages: [], ...extra }; scenarios.set(plan.actionId, scenario);
       scenario.execute = () => new Promise((resolve, reject) => {
-        const process = spawn(globalThis.process.execPath, [script, "--child"], { stdio: ["pipe", "pipe", "pipe"], env: { PATH: globalThis.process.env.PATH } });
+        const process = spawn(globalThis.process.execPath, [script, extra.profiledCurrent ? "--child-profiled-current" : "--child"], { stdio: ["pipe", "pipe", "pipe"], env: { PATH: globalThis.process.env.PATH } });
         let stdout = "", stderr = ""; process.stdout.on("data", bytes => { stdout += bytes; }); process.stderr.on("data", bytes => { stderr += bytes; }); process.once("error", reject);
         const timer = setTimeout(() => { process.kill("SIGKILL"); reject(new Error("OWNED_CHILD_TIMEOUT")); }, 15_000);
         process.once("close", (code, signal) => { clearTimeout(timer); resolve({ code, signal, stdout, stderr }); });
-        process.stdin.end(JSON.stringify({ database: connection(database), plan, receipts, lockPath: scenario.lockPath, providerPort,
+        process.stdin.end(JSON.stringify({ ...(extra.profiledCurrent ? { qualificationTargetProfile: currentProfile } : {}), database: connection(database), plan, receipts, lockPath: scenario.lockPath, providerPort,
           killAfter: scenario.killAfter, lostCommit: scenario.lostCommit, failAfter: scenario.failAfter }));
       });
       scenario.controls = async () => (await client.query("SELECT new_work,recovery,epoch::text FROM frontend_admission.control")).rows[0];
@@ -140,6 +178,19 @@ async function main() {
     assert.deepEqual(await login.controls(), { new_work: false, recovery: false, epoch: "1" }); await admin.query("ALTER ROLE restoration_old NOLOGIN"); checks.push("actual-historical-login-drift-refuses-before-opening");
     const storage = await make("storage-failure", { failAfter: "frontend-restoration-recovery-verified.json" }); assert.notEqual((await storage.execute()).code, 0);
     assert.deepEqual(await storage.controls(), { new_work: false, recovery: true, epoch: "2" }); checks.push("failed-restoration-receipt-does-not-open-next-stage");
+    const profiled = await make("profiled-success", { profiledCurrent: true }); assert.equal((await profiled.execute()).code, 0);
+    assert.deepEqual(await profiled.controls(), { new_work: true, recovery: true, epoch: "3" });
+    const profileOutcome = JSON.parse(readFileSync(join(profiled.receipts, "frontend-restoration-outcome.json")));
+    assert.equal(profileOutcome.version, 2); assert.deepEqual(profileOutcome.qualificationTargetProfile, currentProfile);
+    assert.equal(profileOutcome.selected.version, 2); assert.deepEqual(profileOutcome.selected.qualificationTargetProfile, currentProfile);
+    checks.push("profiled-current-actual-tls-locks-ordered-restoration-v2-profiled-outcome");
+    checks.push("profiled-current-actual-closed-bootstrap-owner-oids-grants-and-v2-receipts");
+    const profiledLost = await make("profiled-lost-ack", { profiledCurrent: true, lostCommit: true }); assert.notEqual((await profiledLost.execute()).code, 0);
+    const profileFailure = JSON.parse(readFileSync(join(profiledLost.receipts, "frontend-restoration-outcome.json")));
+    assert.equal(profileFailure.version, 2); assert.deepEqual(profileFailure.qualificationTargetProfile, currentProfile);
+    assert.equal(profileFailure.mutationOutcomeUncertain, true); assert.equal(profileFailure.admissionRestored, false);
+    assert.deepEqual(await profiledLost.controls(), { new_work: false, recovery: true, epoch: "2" });
+    checks.push("profiled-current-actual-lost-commit-preserves-v2-uncertain-receipt-without-reopen");
     // Exercise the exact financial SQL against real PostgreSQL. No buyer or
     // credential fields exist in these owned fixtures; no domain writes occur.
     const financial = await make("financial-rows"), id = randomUUID(), refund = randomUUID();
@@ -167,5 +218,8 @@ async function main() {
     rmSync(directory, { recursive: true, force: true });
   }
 }
-try { if (process.argv.includes("--child")) await child(); else await main(); }
+try {
+  if (process.argv.length === 3 && process.argv[2] === "--child-profiled-current") await child(currentProfile);
+  else if (process.argv.includes("--child")) await child(); else await main();
+}
 catch { console.error("FRONTEND_RESTORATION_OWNED_TEST_REFUSED"); process.exitCode = 1; }

@@ -4,6 +4,7 @@ import { constants, openSync, closeSync, fstatSync, lstatSync, realpathSync, rea
 import { dirname, join, resolve } from "node:path";
 import { Client } from "pg";
 import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
+import { decodeQualificationTargetJson, parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
 export const FRONTEND_PREPARATION_ROLES = Object.freeze({ owner: "lash_her_frontend_staging_admission_owner_p2", runtime: "lash_her_frontend_staging_runtime_p2" });
 const roleSpecification = {
@@ -28,14 +29,23 @@ const heldLock = `SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory'
   AND database=(SELECT oid FROM pg_database WHERE datname=current_database())
   AND classid=((hashtext($1)::bigint >> 32) & 4294967295)::oid AND objid=(hashtext($1)::bigint & 4294967295)::oid
   AND objsubid=1 AND mode='ExclusiveLock' AND granted) AS held`;
+function profileContext(expected, ...carriers) {
+  if (expected === undefined) {
+    if (carriers.some(value => value && Object.hasOwn(value, "qualificationTargetProfile"))) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_REFUSED");
+    return undefined;
+  }
+  return requireQualificationTargetProfile(expected, ...carriers);
+}
 
-export function prepareFrontendRolesPlan(candidate, job, specification) {
+export function prepareFrontendRolesPlan(candidate, job, specification, expectedProfile = undefined) {
   try {
-    demand(candidate?.version === 2 && candidate.environment === "staging" && candidate.integration?.state === "passed" &&
+    if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+    const profile = profileContext(expectedProfile, candidate, candidate?.frontendMigration, job, job?.target, specification);
+    demand(candidate?.version === (profile ? 3 : 2) && candidate.environment === "staging" && candidate.integration?.state === "passed" &&
       candidate.sourceApproval?.mode === "single-operator-dispatch" && candidate.sourceApproval.operatorGithubUserId === "8996309" &&
       candidate.sources?.frontend?.repository === "https://github.com/princessdardan/lash-her-frontend.git" && candidate.sources.frontend.requiredChecks === "passed" &&
       candidate.contractPhase === "p2" && /^sha256:[a-f0-9]{64}$/u.test(candidate.phase2ContractManifestSha256 ?? "") &&
-      job?.version === 1 && job.operator === "Dardan" && job.environment === "staging" && job.releaseId === candidate.releaseId &&
+      job?.version === (profile ? 2 : 1) && job.operator === "Dardan" && job.environment === "staging" && job.releaseId === candidate.releaseId &&
       /^[a-z0-9][a-z0-9-]{0,63}$/u.test(job.releaseId ?? "") && digest(job.sourceCommit, 40) && job.sourceCommit === candidate.sources.frontend.commit &&
       job.contractPhase === "p2" && job.phase2ContractManifestSha256 === candidate.phase2ContractManifestSha256 &&
       job.contractManifestSha256 === candidate.contractManifestSha256 && /^sha256:[a-f0-9]{64}$/u.test(job.contractManifestSha256 ?? "") && digest(job.sqlArtifactSha256) &&
@@ -47,7 +57,7 @@ export function prepareFrontendRolesPlan(candidate, job, specification) {
       typeof job.recoveryRef === "string" && /^[A-Za-z0-9_./:-]{1,200}$/u.test(job.recoveryRef));
     const targetSha256 = frontendAdmissionTargetSha256("staging", job.target);
     demand(job.target.runtimeRole === FRONTEND_PREPARATION_ROLES.runtime && !Object.values(FRONTEND_PREPARATION_ROLES).includes(job.target.user) &&
-      specification?.version === 1 && Array.isArray(specification.producerSha256) && specification.producerSha256.length > 0 && specification.producerSha256.length <= 256 &&
+      specification?.version === (profile ? 2 : 1) && Array.isArray(specification.producerSha256) && specification.producerSha256.length > 0 && specification.producerSha256.length <= 256 &&
       specification.producerSha256.every(value => digest(value)) && new Set(specification.producerSha256).size === specification.producerSha256.length);
     let reuse;
     if (specification.reuse !== undefined) {
@@ -57,14 +67,14 @@ export function prepareFrontendRolesPlan(candidate, job, specification) {
     // Input documents are public reviewed artifacts; reject accidental secret-bearing material.
     const inspect = value => { if (!value || typeof value !== "object") return; for (const [key, child] of Object.entries(value)) { demand(!/password|credential|databaseurl|access.?token|private.?key/iu.test(key)); inspect(child); } };
     inspect(candidate); inspect(job);
-    const base = { version: 1, environment: "staging", actionId: job.releaseId, sourceCommit: job.sourceCommit,
+    const base = { version: profile ? 2 : 1, ...(profile ? { qualificationTargetProfile: profile } : {}), environment: "staging", actionId: job.releaseId, sourceCommit: job.sourceCommit,
       candidateSha256: frontendRolesHash(candidate), jobSha256: frontendRolesHash(job), targetSha256,
       phase2ContractManifestSha256: job.phase2ContractManifestSha256, sqlArtifactSha256: job.sqlArtifactSha256, migrationImageDigest: job.migrationImageDigest,
-      recoveryRef: job.recoveryRef, target: Object.fromEntries(["host", "port", "database", "user", "runtimeRole", "serverMajor"].map(key => [key, job.target[key]])),
+      recoveryRef: job.recoveryRef, target: { ...Object.fromEntries(["host", "port", "database", "user", "runtimeRole", "serverMajor"].map(key => [key, job.target[key]])), ...(profile ? { qualificationTargetProfile: profile } : {}) },
       desiredRoles: { ...FRONTEND_PREPARATION_ROLES }, producerSha256: [...specification.producerSha256].sort(), ...(reuse ? { reuse } : {}),
       rolePolicy: "p2-staging-noinherit-public-crud-v1", roleSpecification, trafficAuthorized: false, migrationAuthorized: false };
     const plan = freeze({ ...base, planSha256: frontendRolesHash(base) }); plans.add(plan); return plan;
-  } catch { throw refuse(); }
+  } catch (error) { if (error instanceof QualificationTargetProfileError) throw error; throw refuse(); }
 }
 
 function privateDirectory(directory) {
@@ -86,16 +96,18 @@ function retain(directory, name, value) {
 function readPrivate(directory, name) {
   privateDirectory(directory);
   const fd = openSync(join(directory, name), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  try { const info = fstatSync(fd); demand(info.isFile() && info.uid === process.getuid() && (info.mode & 0o077) === 0 && info.size > 0 && info.size <= 1_000_000); return JSON.parse(readFileSync(fd, "utf8")); }
+  try { const info = fstatSync(fd); demand(info.isFile() && info.uid === process.getuid() && (info.mode & 0o077) === 0 && info.size > 0 && info.size <= 1_000_000); return decodeQualificationTargetJson(readFileSync(fd), "carrier"); }
   finally { closeSync(fd); }
 }
-export function readFrontendRolesMigrationCredential(directory) {
+export function readFrontendRolesMigrationCredential(directory, expectedProfile = undefined) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
   const value = readPrivate(directory, "migration-connection.json");
+  profileContext(expectedProfile, value);
   demand(typeof value.databaseUrl === "string"); return value.databaseUrl;
 }
 function credentials(plan, password) {
   const url = new URL(`postgresql://${plan.target.host}:${plan.target.port}`); url.username = FRONTEND_PREPARATION_ROLES.runtime; url.password = password; url.pathname = `/${plan.target.database}`; url.searchParams.set("sslmode", "verify-full");
-  return { version: 1, planSha256: plan.planSha256, targetSha256: plan.targetSha256, role: FRONTEND_PREPARATION_ROLES.runtime, password, runtimeDatabaseUrl: url.href };
+  return { version: plan.version, ...(plan.qualificationTargetProfile ? { qualificationTargetProfile: plan.qualificationTargetProfile } : {}), planSha256: plan.planSha256, targetSha256: plan.targetSha256, role: FRONTEND_PREPARATION_ROLES.runtime, password, runtimeDatabaseUrl: url.href };
 }
 // Transmit a SCRAM verifier rather than the plaintext password in role SQL.
 // Both remain private; no exception/query text is copied to public receipts.
@@ -188,11 +200,21 @@ async function observeRoles(client, plan) {
   return { owner: { name: owner.rolname, oid: owner.oid }, runtime: { name: runtime.rolname, oid: runtime.oid }, attributes: rows, memberships, privileges, directAcl };
 }
 
-export async function applyPreparedFrontendRoles(plan, client, dependencies) {
+export async function applyPreparedFrontendRoles(plan, client, dependencies, expectedProfile = undefined) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+  const profile = profileContext(expectedProfile, plan, plan?.target);
+  demand(plan?.version === (profile ? 2 : 1));
   demand(plans.has(plan) && dependencies?.confirmation === `staging/${plan.actionId}` && typeof dependencies.verifyEnvironment === "function" && typeof dependencies.verifySession === "function");
   const { directory, privateDirectory: privatePath } = dependencies;
   privateDirectory(directory); privateDirectory(privatePath); demand(directory !== privatePath);
   demand(!existsSync(join(directory, "roles-preparation-started.json")) && !existsSync(join(directory, "roles-preparation-outcome.json")) && !existsSync(join(privatePath, "frontend-role-credentials.json")));
+  // Refuse a legacy reuse graph before any physical-session/SQL work. Genuine
+  // original records remain unmodified; profile identity is never inferred.
+  if (profile && plan.reuse) {
+    const previous = readPrivate(dependencies.reuseDirectory, "roles-preparation-outcome.json"), priorPrivate = readPrivate(dependencies.reusePrivateDirectory, "frontend-role-credentials.json");
+    profileContext(profile, previous, previous.target, priorPrivate);
+    demand(previous.version === 2 && priorPrivate.version === 2);
+  }
   let phase = "locked-target-preflight", started = false, transaction = false, commitAttempted = false, committed = false, rollbackAcknowledged = false, roleSqlAttempted = false, physicalPid;
   const base = { ...plan, admissionChanged: false, featuresEnabled: false, providerTouched: false };
   const verify = async () => {
@@ -212,10 +234,12 @@ export async function applyPreparedFrontendRoles(plan, client, dependencies) {
     let privateRecord;
     if (plan.reuse) {
       const previous = readPrivate(dependencies.reuseDirectory, "roles-preparation-outcome.json");
+      profileContext(profile, previous, previous.target);
       const { proofSha256: previousSha256, ...previousProof } = previous;
       demand(previous.status === "FRONTEND_ROLES_PREPARED" && previousSha256 === frontendRolesHash(previousProof) && previousSha256 === plan.reuse.proofSha256 && previous.targetSha256 === plan.targetSha256 &&
         previous.owner?.name === FRONTEND_PREPARATION_ROLES.owner && previous.owner.oid === plan.reuse.ownerOid && previous.runtime?.name === FRONTEND_PREPARATION_ROLES.runtime && previous.runtime.oid === plan.reuse.runtimeOid);
       const priorPrivate = readPrivate(dependencies.reusePrivateDirectory, "frontend-role-credentials.json");
+      profileContext(profile, priorPrivate); demand(!profile || priorPrivate.version === plan.version);
       demand(priorPrivate.targetSha256 === plan.targetSha256 && priorPrivate.role === FRONTEND_PREPARATION_ROLES.runtime && typeof priorPrivate.password === "string" && priorPrivate.password.length >= 64);
       privateRecord = credentials(plan, priorPrivate.password);
       demand(priorPrivate.runtimeDatabaseUrl === privateRecord.runtimeDatabaseUrl);

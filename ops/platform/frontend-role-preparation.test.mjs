@@ -3,8 +3,9 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { prepareFrontendRolesPlan, applyPreparedFrontendRoles, FRONTEND_PREPARATION_ROLES, frontendRolesHash } from "./frontend-role-preparation.mjs";
+import { prepareFrontendRolesPlan, applyPreparedFrontendRoles, FRONTEND_PREPARATION_ROLES, frontendRolesHash, readFrontendRolesMigrationCredential } from "./frontend-role-preparation.mjs";
 import { frontendRolesCli } from "./prepare-frontend-roles.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as current } from "./qualification-target-profile.mjs";
 
 export function roleFixture(target = {}) {
   const image = `sha256:${"d".repeat(64)}`, sourceCommit = "a".repeat(40), sqlArtifactSha256 = "b".repeat(64), phase2ContractManifestSha256 = `sha256:${"c".repeat(64)}`;
@@ -24,6 +25,26 @@ test("offline plan binds qualified P2 candidate/job/target/recovery and fixed NO
   assert.equal(plan.candidateSha256, frontendRolesHash(fixture.candidate)); assert.equal(plan.jobSha256, frontendRolesHash(fixture.job));
   assert.deepEqual(plan.desiredRoles, FRONTEND_PREPARATION_ROLES); assert.equal(plan.migrationAuthorized, false);
   assert.ok(!JSON.stringify(plan).includes('"oid"')); assert.equal(plan.recoveryRef, fixture.job.recoveryRef); assert.ok(Object.isFrozen(plan.target));
+});
+test("profiled role plans require the separately selected candidate, target and specification context without inferring OIDs", async () => {
+  const f = roleFixture(); f.candidate.version = 3; f.job.version = 2; f.specification.version = 2;
+  for (const value of [f.candidate, f.candidate.frontendMigration, f.job, f.job.target, f.specification]) value.qualificationTargetProfile = current;
+  const plan = prepareFrontendRolesPlan(f.candidate, f.job, f.specification, current);
+  assert.equal(plan.version, 2); assert.deepEqual(plan.qualificationTargetProfile, current); assert.deepEqual(plan.target.qualificationTargetProfile, current);
+  assert.ok(!JSON.stringify(plan).includes('"oid"')); assert.equal(plan.migrationAuthorized, false);
+  assert.equal(plan.candidateSha256, frontendRolesHash(f.candidate));
+  assert.throws(() => prepareFrontendRolesPlan(f.candidate, f.job, f.specification), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  let queries = 0; const client = { query() { queries++; throw new Error("query-before-profile"); } };
+  await assert.rejects(applyPreparedFrontendRoles(plan, client, {}), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  await assert.rejects(applyPreparedFrontendRoles(plan, client, {}, null), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  await assert.rejects(applyPreparedFrontendRoles(structuredClone(plan), client, {}, current));
+  assert.equal(queries, 0);
+  delete f.job.target.qualificationTargetProfile;
+  assert.throws(() => prepareFrontendRolesPlan(f.candidate, f.job, f.specification, current), /QUALIFICATION_TARGET_PROFILE_REQUIRED/u);
+  for (const expected of [null, {}, { ...current, id: "p2q-20261106" }]) {
+    assert.throws(() => prepareFrontendRolesPlan({ get frontendMigration() { throw new Error("carrier-before-context"); } }, undefined, undefined, expected), /QUALIFICATION_TARGET_PROFILE_/u);
+    assert.throws(() => readFrontendRolesMigrationCredential("/must-not-read", expected), /QUALIFICATION_TARGET_PROFILE_/u);
+  }
 });
 test("role plan refuses wrong candidate/source/target/environment/name/producer and accidental credential material", () => {
   for (const mutate of [f => { f.candidate.environment = "production"; }, f => { f.job.sourceCommit = "0".repeat(40); },

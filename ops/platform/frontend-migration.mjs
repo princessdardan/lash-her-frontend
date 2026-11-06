@@ -9,6 +9,7 @@ import { buildExpectedPrivateDbMigrationLineage, assertAppliedMigrationLineage }
 import { readMigrationCatalog } from "./frontend-schema.mjs";
 import { assertSourceCheckout } from "./source-checkout.mjs";
 import { phase2ContractManifestBinding } from "./release.mjs";
+import { decodeQualificationTargetJson, parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile, resolveQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE } from "./qualification-target-profile.mjs";
 
 export const FRONTEND_MIGRATION_LOCK = "lash-her:private-db:migrations";
 // hashtext is sign-extended by pg_advisory_lock(bigint). Match both halves,
@@ -24,6 +25,15 @@ const demand = (ok, code) => { if (!ok) throw new Error(code); };
 const digest = (value) => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value) && !/^0+$/u.test(value);
 const sha = (value) => typeof value === "string" && /^[a-f0-9]{40}$/u.test(value) && !/^0+$/u.test(value);
 const safeName = (value) => typeof value === "string" && /^[A-Za-z0-9_-]{1,63}$/u.test(value);
+function profileContext(expected, ...carriers) {
+  if (expected === undefined) {
+    if (carriers.some(value => value && Object.hasOwn(value, "qualificationTargetProfile"))) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_REFUSED");
+    return undefined;
+  }
+  const selected = requireQualificationTargetProfile(expected, ...carriers), definition = resolveQualificationTargetProfile(selected);
+  if (definition.environment !== "staging" || definition.kind !== "existing-staging") throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
+  return selected;
+}
 
 function read(file) {
   const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -77,15 +87,22 @@ export function frontendMigrationArtifact(sourceRoot = root) {
     contractManifestSha256: "sha256:" + hash(read(join(sourceRoot, "contracts/api-integration/v1/manifest.json"))) };
 }
 
-export function prepareFrontendMigration(candidate, job, baseline, artifact = frontendMigrationArtifact()) {
-  demand(candidate?.version === 2 && candidate.integration?.state === "passed" &&
+export function prepareFrontendMigration(candidate, job, baseline, artifact = undefined, expectedProfile = undefined) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+  const profile = profileContext(expectedProfile, candidate, candidate?.frontendMigration, job, job?.target);
+  if (profile && (candidate?.version !== 3 || job?.version !== 2)) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_REQUIRED");
+  demand(!profile || candidate.environment === "staging", "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
+  demand(candidate?.version === (profile ? 3 : 2) && candidate.integration?.state === "passed" &&
     candidate.sourceApproval?.mode === "single-operator-dispatch" && candidate.sourceApproval.operatorGithubUserId === "8996309" &&
     candidate.sources?.frontend?.repository === "https://github.com/princessdardan/lash-her-frontend.git" &&
     candidate.sources.frontend.requiredChecks === "passed", "QUALIFIED_CANDIDATE_REQUIRED");
-  demand(job?.version === 1 && job.operator === "Dardan" && ["staging", "production"].includes(job.environment) && job.environment === candidate.environment &&
+  demand(job?.version === (profile ? 2 : 1) && job.operator === "Dardan" && ["staging", "production"].includes(job.environment) && job.environment === candidate.environment &&
     typeof job.releaseId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(job.releaseId) && job.releaseId === candidate.releaseId &&
     sha(job.sourceCommit) && job.sourceCommit === candidate.sources.frontend.commit &&
-    job.contractManifestSha256 === candidate.contractManifestSha256 && job.contractManifestSha256 === artifact.contractManifestSha256, "FRONTEND_RELEASE_BINDING_REFUSED");
+    job.contractManifestSha256 === candidate.contractManifestSha256, "FRONTEND_RELEASE_BINDING_REFUSED");
+  if (artifact === undefined) artifact = frontendMigrationArtifact();
+  profileContext(undefined, artifact, baseline);
+  demand(job.contractManifestSha256 === artifact.contractManifestSha256, "FRONTEND_RELEASE_BINDING_REFUSED");
   demand(candidate.frontendMigration?.sourceCommit === job.sourceCommit && candidate.frontendMigration.sqlArtifactSha256 === artifact.sqlArtifactSha256 &&
     candidate.frontendMigration.contractManifestSha256 === job.contractManifestSha256, "CANDIDATE_FRONTEND_SQL_BINDING_REQUIRED");
   const bindings = [artifact, candidate, candidate.frontendMigration, job];
@@ -123,26 +140,31 @@ export function prepareFrontendMigration(candidate, job, baseline, artifact = fr
       prior.database.failureCode === undefined && prior.terminal.failureCode === undefined,
     "EXACT_STAGING_FRONTEND_MIGRATION_REQUIRED");
   }
-  return { candidate: structuredClone(candidate), job: structuredClone(job), baseline: structuredClone(baseline), artifact };
+  return { ...(profile ? { qualificationTargetProfile: profile } : {}), candidate: structuredClone(candidate), job: structuredClone(job), baseline: structuredClone(baseline), artifact };
 }
 
 // Derive bindings mechanically from one candidate, maintained target settings
 // and the private owned-schema export; never copy an unknown credential field.
-export function prepareFrontendMigrationJob(candidate, settings, schemaExport, stagingVerification = undefined) {
+export function prepareFrontendMigrationJob(candidate, settings, schemaExport, stagingVerification = undefined, expectedProfile = undefined) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+  const profile = profileContext(expectedProfile, candidate, candidate?.frontendMigration, settings,
+    ...(stagingVerification === undefined ? [] : [stagingVerification, stagingVerification?.database, stagingVerification?.terminal]));
+  if (profile && candidate?.version !== 3) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_REQUIRED");
+  demand(candidate?.version === (profile ? 3 : 2) && (!profile || candidate.environment === "staging"), "QUALIFIED_CANDIDATE_REQUIRED");
   demand(schemaExport?.status === "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS" && schemaExport.providerTouched === false &&
     schemaExport.postgresMajor === settings?.serverMajor && schemaExport.schemaBaseline?.serverMajor === settings.serverMajor, "FRONTEND_SCHEMA_EXPORT_REQUIRED");
   if (candidate.contractPhase === "p2") demand(schemaExport.contractPhase === "p2" &&
     schemaExport.phase2ContractManifestSha256 === candidate.phase2ContractManifestSha256, "FRONTEND_PHASE2_SCHEMA_EXPORT_REQUIRED");
   const baseline = structuredClone(schemaExport.schemaBaseline);
-  const job = { version: 1, operator: "Dardan", releaseId: candidate.releaseId, environment: candidate.environment,
+  const job = { version: profile ? 2 : 1, ...(profile ? { qualificationTargetProfile: profile } : {}), operator: "Dardan", releaseId: candidate.releaseId, environment: candidate.environment,
     ...(candidate.contractPhase === "p2" ? { contractPhase: "p2", phase2ContractManifestSha256: candidate.phase2ContractManifestSha256 } : {}),
     sourceCommit: candidate.sources?.frontend?.commit, contractManifestSha256: candidate.contractManifestSha256,
     migrationImageDigest: candidate.artifacts?.frontendMigration?.image?.split("@")[1],
     sqlArtifactSha256: candidate.frontendMigration?.sqlArtifactSha256, schemaBaselineSha256: hash(JSON.stringify(baseline)),
     recoveryRef: settings.recoveryRef,
-    target: Object.fromEntries(["host", "port", "database", "user", "runtimeRole", "serverMajor", "allowEmptyBootstrap", "approvedPendingTags"].map((key) => [key, settings[key]])),
+    target: { ...Object.fromEntries(["host", "port", "database", "user", "runtimeRole", "serverMajor", "allowEmptyBootstrap", "approvedPendingTags"].map((key) => [key, settings[key]])), ...(profile ? { qualificationTargetProfile: profile } : {}) },
     ...(candidate.environment === "production" ? { stagingVerification } : {}) };
-  prepareFrontendMigration(candidate, job, baseline);
+  prepareFrontendMigration(candidate, job, baseline, undefined, profile);
   return { job, baseline };
 }
 
@@ -191,9 +213,13 @@ async function verifyRuntime(client, target, withTables) {
   }
 }
 
-export async function runFrontendMigration(prepared, dependencies) {
+export async function runFrontendMigration(prepared, dependencies, expectedProfile = undefined) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+  const profile = profileContext(expectedProfile, prepared, prepared?.candidate, prepared?.candidate?.frontendMigration, prepared?.job, prepared?.job?.target);
+  if (profile) prepared = prepareFrontendMigration(prepared.candidate, prepared.job, prepared.baseline, prepared.artifact, profile);
   const { job, artifact, baseline } = prepared, target = job.target;
   const readOnlyExpected = target.approvedPendingTags.length === 0;
+  demand(!profile || readOnlyExpected || typeof dependencies?.beforeDatabasePreflight === "function" && typeof dependencies?.afterDatabaseVerified === "function", "IN_PROCESS_FRONTEND_CONTINUATION_REQUIRED");
   demand(dependencies.confirmation === `${job.environment}/${job.releaseId}`, "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED");
   demand(dependencies.afterDatabaseVerified === undefined || typeof dependencies.afterDatabaseVerified === "function",
     "IN_PROCESS_FRONTEND_CONTINUATION_REQUIRED");
@@ -201,7 +227,7 @@ export async function runFrontendMigration(prepared, dependencies) {
     typeof dependencies.afterDatabaseVerified === "function", "IN_PROCESS_FRONTEND_FINALIZATION_REQUIRED");
   demand(dependencies.beforeDatabasePreflight === undefined || typeof dependencies.beforeDatabasePreflight === "function",
     "IN_PROCESS_FRONTEND_PREFLIGHT_REQUIRED");
-  const receiptBase = { version: 1, service: "frontend", environment: job.environment, releaseId: job.releaseId, sourceCommit: job.sourceCommit,
+  const receiptBase = { version: profile ? 2 : 1, ...(profile ? { qualificationTargetProfile: profile } : {}), service: "frontend", environment: job.environment, releaseId: job.releaseId, sourceCommit: job.sourceCommit,
     ...(job.contractPhase === "p2" ? { contractPhase: "p2", phase2ContractManifestSha256: job.phase2ContractManifestSha256 } : {}),
     migrationImageDigest: job.migrationImageDigest,
     sqlArtifactSha256: job.sqlArtifactSha256, schemaBaselineSha256: job.schemaBaselineSha256, contractManifestSha256: job.contractManifestSha256,
@@ -240,7 +266,7 @@ export async function runFrontendMigration(prepared, dependencies) {
       // provide code or turn a leaf-component receipt into SQL authority.
       phase = "locked-parent-preflight";
       await verifySession();
-      await dependencies.beforeDatabasePreflight({ client, verifySession });
+      await dependencies.beforeDatabasePreflight({ client, verifySession, ...(profile ? { qualificationTargetProfile: profile } : {}) });
       await verifySession();
     }
     phase = "lineage-preflight";
@@ -316,7 +342,7 @@ export async function runFrontendMigration(prepared, dependencies) {
         phase = "post-continuation-finalization";
         await verifySession();
         await dependencies.record("frontend-finalization-started.json", { ...receiptBase, status: "FRONTEND_FINALIZATION_STARTED", databaseVerified: true });
-        await dependencies.afterContinuationVerified({ database: frozen(structuredClone(databaseResult)), verifySession });
+        await dependencies.afterContinuationVerified({ database: frozen(structuredClone(databaseResult)), verifySession, ...(profile ? { qualificationTargetProfile: profile } : {}) });
         await verifySession();
         await dependencies.record("frontend-finalization-completed.json", { ...receiptBase, status: "FRONTEND_FINALIZATION_COMPLETED", databaseVerified: true });
       }
@@ -337,8 +363,11 @@ export async function runFrontendMigration(prepared, dependencies) {
 }
 
 export async function frontendMigrationCli(argv, options = {}) {
-  let receipts;
+  let receipts, profile;
   try {
+    if (["--check-profiled-current", "--execute-profiled-current"].includes(argv[0])) {
+      profile = STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE; resolveQualificationTargetProfile(profile);
+    }
     demand(process.versions.node.split(".")[0] === "24", "NODE24_REQUIRED");
     const [mode, candidateFile, jobFile, schemaFile, flag, confirmation, output] = argv;
     if (mode === "--manifest-only") {
@@ -347,29 +376,31 @@ export async function frontendMigrationCli(argv, options = {}) {
         ...(artifact.contractPhase === "p2" ? { contractPhase: "p2", phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 } : {}) }));
     }
     else {
-      demand((mode === "--check" && argv.length === 4) || (mode === "--execute" && argv.length === 7 && flag === "--confirm"), "ARGUMENTS_REFUSED");
-      const prepared = prepareFrontendMigration(JSON.parse(read(candidateFile)), JSON.parse(read(jobFile)), JSON.parse(read(schemaFile)));
+      const check = mode === "--check" || mode === "--check-profiled-current", execute = mode === "--execute" || mode === "--execute-profiled-current";
+      demand((check && argv.length === 4) || (execute && argv.length === 7 && flag === "--confirm"), "ARGUMENTS_REFUSED");
+      const prepared = prepareFrontendMigration(decodeQualificationTargetJson(read(candidateFile), "carrier"), decodeQualificationTargetJson(read(jobFile), "carrier"), decodeQualificationTargetJson(read(schemaFile), "carrier"), undefined, profile);
+      demand(!profile || !execute || prepared.job.target.approvedPendingTags.length === 0, "IN_PROCESS_FRONTEND_CONTINUATION_REQUIRED");
       if (options.assertSource) options.assertSource(root, prepared.job.sourceCommit);
-      if (mode === "--check") console.log(JSON.stringify({ status: "FRONTEND_INPUTS_CHECKED", credentialsRead: false, migrationAuthorized: false, sqlArtifactSha256: prepared.artifact.sqlArtifactSha256 }));
+      if (check) console.log(JSON.stringify({ ...(profile ? { qualificationTargetProfile: profile } : {}), status: "FRONTEND_INPUTS_CHECKED", credentialsRead: false, migrationAuthorized: false, sqlArtifactSha256: prepared.artifact.sqlArtifactSha256 }));
       else {
         demand(confirmation === `${prepared.job.environment}/${prepared.job.releaseId}`, "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED");
         const info = lstatSync(resolve(output)); receipts = realpathSync(output);
         demand(info.isDirectory() && !info.isSymbolicLink() && info.uid === process.getuid() && (info.mode & 0o077) === 0, "PRIVATE_RECEIPT_DIRECTORY_REQUIRED");
         for (let path = receipts; ; path = dirname(path)) { demand(!existsSync(join(path, ".git")), "RECEIPTS_OUTSIDE_CHECKOUT_REQUIRED"); if (dirname(path) === path) break; }
-        writeFrontendReceipt(receipts, "started.json", { releaseId: prepared.job.releaseId, environment: prepared.job.environment, trafficAuthorized: false });
-        const stop = () => { try { writeFrontendReceipt(receipts, "job-outcome.json", { status: "FAILED_REQUIRES_REVIEW", failureCode: "INTERRUPTED_OR_DEADLINE", trafficAuthorized: false }); } finally { process.exit(124); } };
+        writeFrontendReceipt(receipts, "started.json", { releaseId: prepared.job.releaseId, environment: prepared.job.environment, ...(profile ? { qualificationTargetProfile: profile } : {}), trafficAuthorized: false });
+        const stop = () => { try { writeFrontendReceipt(receipts, "job-outcome.json", { ...(profile ? { qualificationTargetProfile: profile } : {}), status: "FAILED_REQUIRES_REVIEW", failureCode: "INTERRUPTED_OR_DEADLINE", trafficAuthorized: false }); } finally { process.exit(124); } };
         const deadline = setTimeout(stop, 20 * 60_000);
         process.once("SIGTERM", stop); process.once("SIGINT", stop);
         try {
           await runFrontendMigration(prepared, { confirmation, ...(options.assertSource ? { assertSource: options.assertSource } : {}),
             getUrl: () => process.env[prepared.job.environment === "staging" ? "FRONTEND_STAGING_MIGRATION_DATABASE_URL" : "FRONTEND_PROD_MIGRATION_DATABASE_URL"],
-            record: (name, value) => writeFrontendReceipt(receipts, name, value) });
-          console.log('{"status":"DATABASE_VERIFIED","trafficAuthorized":false}');
+            record: (name, value) => writeFrontendReceipt(receipts, name, value) }, profile);
+          console.log(profile ? JSON.stringify({ qualificationTargetProfile: profile, status: "DATABASE_VERIFIED", trafficAuthorized: false }) : '{"status":"DATABASE_VERIFIED","trafficAuthorized":false}');
         } finally { clearTimeout(deadline); process.removeListener("SIGTERM", stop); process.removeListener("SIGINT", stop); }
       }
     }
   } catch {
-    console.error('{"status":"FRONTEND_MIGRATION_REFUSED","reviewRequired":true,"trafficAuthorized":false}'); process.exitCode = 1;
+    console.error(profile ? JSON.stringify({ qualificationTargetProfile: profile, status: "FRONTEND_MIGRATION_REFUSED", reviewRequired: true, trafficAuthorized: false }) : '{"status":"FRONTEND_MIGRATION_REFUSED","reviewRequired":true,"trafficAuthorized":false}'); process.exitCode = 1;
   }
 }
 

@@ -5,12 +5,20 @@ import { prepareHistoricalFrontendLogins } from "./frontend-historical-logins.mj
 import { prepareFrontendBootstrapCompatibility } from "./frontend-bootstrap-compatibility.mjs";
 import { prepareFrontendRestoration } from "./frontend-release-restoration.mjs";
 import { prepareP2CertificationProfile } from "./p2-certification-profile.mjs";
+import { decodeQualificationTargetJson, parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
 export const frontendCoordinationHash = value => createHash("sha256").update(typeof value === "string" || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest("hex");
 const demand = ok => { if (!ok) throw new Error("FRONTEND_RELEASE_INVENTORY_REFUSED"); };
 const digest = (v, size = 64) => typeof v === "string" && new RegExp(`^[a-f0-9]{${size}}$`, "u").test(v) && !/^0+$/u.test(v);
 const oid = v => typeof v === "string" && /^[1-9][0-9]{0,9}$/u.test(v) && Number(v) <= 4294967295;
 const roleName = v => typeof v === "string" && /^[a-z][a-z0-9_]{0,62}$/u.test(v);
+function profileContext(expected, ...carriers) {
+  if (expected === undefined) {
+    if (carriers.some(value => value && Object.hasOwn(value, "qualificationTargetProfile"))) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_REFUSED");
+    return undefined;
+  }
+  return requireQualificationTargetProfile(expected, ...carriers);
+}
 
 export function frontendCandidateSurfaces(source) {
   demand(source?.version === 2 && source.scope === "candidate-source-only" && digest(source.sourceManifestSha256));
@@ -42,19 +50,23 @@ export function frontendCandidateSurfaces(source) {
   return surfaces.sort((a, b) => a.surfaceSha256.localeCompare(b.surfaceSha256));
 }
 
-export function prepareFrontendReleaseInventory(input, migration, source) {
-  return normalizeFrontendReleaseInventory(input, migration, source, false);
+export function prepareFrontendReleaseInventory(input, migration, source, expectedProfile = undefined) {
+  return normalizeFrontendReleaseInventory(input, migration, source, false, expectedProfile);
 }
 
 // Review desired role names without making up PostgreSQL OIDs. This template
 // cannot execute: the coordinator always calls the observed-role validator.
-export function prepareFrontendReleaseRoleTemplate(input, migration, source) {
-  return normalizeFrontendReleaseInventory(input, migration, source, true);
+export function prepareFrontendReleaseRoleTemplate(input, migration, source, expectedProfile = undefined) {
+  return normalizeFrontendReleaseInventory(input, migration, source, true, expectedProfile);
 }
 
-function normalizeFrontendReleaseInventory(input, migration, source, desiredRoles) {
+function normalizeFrontendReleaseInventory(input, migration, source, desiredRoles, expectedProfile) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+  const profile = profileContext(expectedProfile, input, migration, migration?.candidate, migration?.candidate?.frontendMigration, migration?.job, migration?.job?.target);
+  if (profile) profileContext(profile, input?.historicalLogins, input?.historicalLogins?.target,
+    ...(input?.admissionMode === "bootstrap" ? [input.bootstrapCompatibility] : []));
   const job = migration?.job;
-  demand(input?.version === 1 && input.environment === "staging" && job?.environment === "staging" &&
+  demand(input?.version === (profile ? 2 : 1) && (!profile || job?.version === 2) && input.environment === "staging" && job?.environment === "staging" &&
     typeof input.actionId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.actionId) && input.actionId === job.releaseId &&
     input.sourceCommit === job.sourceCommit && digest(input.sourceCommit, 40) &&
     input.targetSha256 === frontendAdmissionTargetSha256("staging", job.target) &&
@@ -65,7 +77,7 @@ function normalizeFrontendReleaseInventory(input, migration, source, desiredRole
   let bootstrapCompatibility;
   if (input.admissionMode === "bootstrap") {
     demand(input.expectedEpoch === "1" && job.target.approvedPendingTags.length > 0 && input.bootstrapSqlSha256 === frontendAdmissionBootstrapArtifact().sqlSha256);
-    bootstrapCompatibility = prepareFrontendBootstrapCompatibility(input.bootstrapCompatibility);
+    bootstrapCompatibility = prepareFrontendBootstrapCompatibility(input.bootstrapCompatibility, profile);
   } else demand(input.bootstrapSqlSha256 === undefined && input.bootstrapCompatibility === undefined);
   const owner = input.owner;
   demand(roleName(owner?.name) && (desiredRoles ? owner.oid === undefined : oid(owner.oid)) && owner.name !== job.target.user &&
@@ -105,18 +117,18 @@ function normalizeFrontendReleaseInventory(input, migration, source, desiredRole
   }).sort((a, b) => a.surfaceSha256.localeCompare(b.surfaceSha256));
   demand(new Set(surfaces.map(row => row.surfaceSha256)).size === surfaces.length &&
     ["deployment", "provider", "scheduler", "direct-caller"].every(kind => surfaces.some(row => row.kind === kind)));
-  const historical = prepareHistoricalFrontendLogins(input.historicalLogins);
+  const historical = prepareHistoricalFrontendLogins(input.historicalLogins, profile);
   demand(historical.actionId === input.actionId && historical.sourceCommit === input.sourceCommit &&
     ["host", "port", "database", "user", "serverMajor"].every(key => historical.target[key] === job.target[key]) &&
     historical.target.currentRuntimeRole === job.target.runtimeRole && historical.target.admissionOwnerRole === owner.name);
-  return { version: 1, environment: "staging", actionId: input.actionId, sourceCommit: input.sourceCommit,
+  return { version: profile ? 2 : 1, ...(profile ? { qualificationTargetProfile: profile } : {}), environment: "staging", actionId: input.actionId, sourceCommit: input.sourceCommit,
     targetSha256: input.targetSha256, sourceInventorySha256: input.sourceInventorySha256,
     reviewSha256: input.reviewSha256, adaptersSha256: input.adaptersSha256,
     ...(input.providerBindingsSha256 ? { providerBindingsSha256: input.providerBindingsSha256 } : {}),
     ...(input.runtimeProducerSha256 ? { runtimeProducerSha256: input.runtimeProducerSha256 } : {}),
     ...(input.rolePreparationProofSha256 === undefined ? {} : (() => { demand(digest(input.rolePreparationProofSha256)); return { rolePreparationProofSha256: input.rolePreparationProofSha256 }; })()),
     observationBudgetSeconds: input.observationBudgetSeconds, admissionMode: input.admissionMode,
-    ...(input.restoration !== undefined ? { restoration: prepareFrontendRestoration(input.restoration) } : {}),
+    ...(input.restoration !== undefined ? { restoration: prepareFrontendRestoration(input.restoration, profile) } : {}),
     ...(input.certification !== undefined ? { certification: prepareP2CertificationProfile(input.certification) } : {}),
     ...(input.admissionMode === "bootstrap" ? { bootstrapSqlSha256: input.bootstrapSqlSha256, bootstrapCompatibility } : {}),
     expectedEpoch: input.expectedEpoch, owner: { name: owner.name, ...(!desiredRoles ? { oid: owner.oid } : {}) }, producers,
@@ -127,9 +139,11 @@ function normalizeFrontendReleaseInventory(input, migration, source, desiredRole
 // Observers return retained evidence bytes rather than boolean certificates.
 // This validates bindings/coverage; only the source-pinned provider adapter can
 // acquire real observations. No JSON input can install that adapter's code.
-export async function validateFrontendFenceObservation(plan, nonce, observed, retain, options = {}) {
+export async function validateFrontendFenceObservation(plan, nonce, observed, retain, options = {}, expectedProfile = undefined) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+  const profile = profileContext(expectedProfile, plan, observed);
   const requireFenced = options.requireFenced !== false;
-  demand(digest(nonce) && typeof retain === "function" && observed?.version === 1 && observed.nonce === nonce &&
+  demand(digest(nonce) && typeof retain === "function" && observed?.version === (profile ? 2 : 1) && (!profile || plan.version === 2) && observed.nonce === nonce &&
     observed.actionId === plan.actionId && observed.sourceCommit === plan.sourceCommit && observed.targetSha256 === plan.targetSha256 &&
     observed.inventorySha256 === frontendCoordinationHash(plan) && Array.isArray(observed.surfaces) &&
     observed.surfaces.length === plan.externalSurfaces.length);
@@ -140,8 +154,9 @@ export async function validateFrontendFenceObservation(plan, nonce, observed, re
     demand(row?.surfaceSha256 === expected.surfaceSha256 && Buffer.isBuffer(row.evidence) &&
       row.evidence.length > 0 && row.evidence.length <= 2_000_000 && digest(row.evidenceSha256) &&
       frontendCoordinationHash(row.evidence) === row.evidenceSha256);
-    let evidence; try { evidence = JSON.parse(row.evidence.toString("utf8")); } catch { demand(false); }
-    demand(evidence?.version === 1 && evidence.nonce === nonce && evidence.actionId === plan.actionId &&
+    let evidence; try { evidence = decodeQualificationTargetJson(row.evidence, "carrier"); } catch { demand(false); }
+    profileContext(profile, evidence);
+    demand(evidence?.version === (profile ? 2 : 1) && evidence.nonce === nonce && evidence.actionId === plan.actionId &&
       evidence.targetSha256 === plan.targetSha256 && evidence.sourceCommit === plan.sourceCommit &&
       evidence.surfaceSha256 === expected.surfaceSha256 && evidence.identitySha256 === expected.identitySha256 && evidence.kind === expected.kind &&
       (Number.isSafeInteger(evidence.activeExecutions) && evidence.activeExecutions >= 0 || !requireFenced && evidence.activeExecutions === null) &&
@@ -149,6 +164,10 @@ export async function validateFrontendFenceObservation(plan, nonce, observed, re
       digest(evidence.observationSha256) && digest(evidence.reconciliationSha256));
     for (const [key, expectedHash] of [["observation", evidence.observationSha256], ["reconciliation", evidence.reconciliationSha256]]) {
       demand(Buffer.isBuffer(row[key]) && row[key].length > 0 && row[key].length <= 2_000_000 && frontendCoordinationHash(row[key]) === expectedHash);
+      if (profile) {
+        const artifact = decodeQualificationTargetJson(row[key], "carrier");
+        profileContext(profile, artifact); demand(artifact?.version === 2);
+      }
       bytesRetained += row[key].length;
     }
     bytesRetained += row.evidence.length; demand(bytesRetained <= 32_000_000);
@@ -164,5 +183,5 @@ export async function validateFrontendFenceObservation(plan, nonce, observed, re
       observationSha256: evidence.observationSha256, reconciliationSha256: evidence.reconciliationSha256,
       state: evidence.state, activeExecutions: evidence.activeExecutions, uncertainEffects: evidence.uncertainEffects });
   }
-  return { nonce, inventorySha256: frontendCoordinationHash(plan), surfaces: summaries };
+  return { ...(profile ? { qualificationTargetProfile: profile } : {}), nonce, inventorySha256: frontendCoordinationHash(plan), surfaces: summaries };
 }

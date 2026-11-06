@@ -1,7 +1,7 @@
 // Owns a new loopback TLS/SCRAM cluster. No configured database URL is accepted.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, copyFileSync, symlinkSync, chmodSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, copyFileSync, symlinkSync, chmodSync, rmSync, existsSync } from "node:fs";
 import { createServer } from "node:net";
 import { randomUUID, createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -16,6 +16,7 @@ import { exerciseHistoricalFrontendLogins } from "./harness/owned-frontend-histo
 import { exerciseFrontendWriterRoutes } from "./harness/owned-frontend-writer-routes.mjs";
 import { frontendWriterInventory } from "./frontend-writer-inventory.mjs";
 import { runOwnedIdentityChild } from "./harness/owned-frontend-identity-receipt.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile } from "./qualification-target-profile.mjs";
 
 const source = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
@@ -120,7 +121,7 @@ async function main() {
       writeFileSync(jobFile, JSON.stringify(selected)); writeFileSync(candidateFile, JSON.stringify(selectedCandidate));
       const named = selected.environment === "staging" ? "FRONTEND_STAGING_MIGRATION_DATABASE_URL" : "FRONTEND_PROD_MIGRATION_DATABASE_URL";
       const env = { ...cleanEnv, NODE_EXTRA_CA_CERTS: certificate, [named]: `postgresql://${selected.target.user}:${password}@127.0.0.1:${port}/${selected.target.database}?sslmode=verify-full`, ...options.env };
-      const result = spawnSync(process.execPath, [cli, "--execute", candidateFile, jobFile, schemaFile,
+      const result = spawnSync(process.execPath, [cli, options.profiledCurrent ? "--execute-profiled-current" : "--execute", candidateFile, jobFile, schemaFile,
         "--confirm", `${selected.environment}/${selected.releaseId}`, output], { cwd: app, env, encoding: "utf8", timeout: 300_000 });
       return { result, output };
     };
@@ -144,6 +145,33 @@ async function main() {
     assert.equal(noopReceipt.migrationMode, "verify-current-only"); assert.equal(noopReceipt.readOnlyVerified, true);
     assert.equal(noopTerminal.migrationMode, "verify-current-only"); assert.equal(noopTerminal.readOnlyVerified, true);
     assert.deepEqual(noopReceipt.applied, []); records.push("server-enforced-current-only-read-session");
+    phase = "profiled-current-readonly-cli";
+    const profiledCandidate = structuredClone(candidate), profiledJob = structuredClone(current);
+    profiledCandidate.version = 3; profiledJob.version = 2;
+    for (const value of [profiledCandidate, profiledCandidate.frontendMigration, profiledJob, profiledJob.target]) value.qualificationTargetProfile = currentProfile;
+    const profileObserver = await connect("frontend_apply", "frontend_migration");
+    assert.equal(profileObserver.connection.stream.encrypted, true); assert.equal(profileObserver.connection.stream.authorized, true);
+    const profileBefore = (await profileObserver.query("SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at,id")).rows;
+    const profileCall = invoke("profiled-current", profiledJob, profiledCandidate, { profiledCurrent: true });
+    const profileReceipt = success("profiled-current-readonly-cli-v2-receipts-and-physical-lineage", profileCall);
+    const profileTerminal = JSON.parse(readFileSync(join(profileCall.output, "job-outcome.json"), "utf8"));
+    for (const value of [profileReceipt, profileTerminal]) {
+      assert.equal(value.version, 2); assert.deepEqual(value.qualificationTargetProfile, currentProfile);
+      assert.equal(value.readOnlyVerified, true); assert.equal(value.migrationMode, "verify-current-only");
+    }
+    const profileStarted = JSON.parse(readFileSync(join(profileCall.output, "started.json"), "utf8"));
+    assert.equal(Object.hasOwn(profileStarted, "version"), false); assert.deepEqual(profileStarted.qualificationTargetProfile, currentProfile);
+    assert.deepEqual(profileReceipt.applied, []);
+    const profiledPending = structuredClone(profiledJob); profiledPending.target.approvedPendingTags = artifact.migrations.map(value => value.tag);
+    const blockedProfile = invoke("profiled-pending", profiledPending, profiledCandidate, { profiledCurrent: true });
+    assert.equal(blockedProfile.result.status, 1); assert.equal(blockedProfile.result.stdout, "");
+    assert.deepEqual(JSON.parse(blockedProfile.result.stderr).qualificationTargetProfile, currentProfile);
+    assert.equal(existsSync(join(blockedProfile.output, "started.json")), false);
+    assert.equal(existsSync(join(blockedProfile.output, "database-receipt.json")), false);
+    assert.deepEqual((await profileObserver.query("SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at,id")).rows, profileBefore);
+    assert.deepEqual(await readMigrationCatalog(profileObserver), baseline.catalog);
+    records.push("profiled-current-pending-sql-refused-before-intent");
+    await profileObserver.end();
     phase = "locked-frontend-continuation";
     const component = await import(pathToFileURL(join(app, "ops/platform/frontend-migration.mjs")).href);
     const competing = await connect("frontend_apply", "frontend_migration"), continuationRecords = [];
@@ -321,6 +349,7 @@ async function main() {
       port, password, major, sourceManifestSha256: frontendWriterInventory(source).sourceManifestSha256,
     });
     const result={status:"FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",postgresMajor:major,migrations:artifact.migrations.length,checks:records,providerTouched:false,
+      profiledCurrent:{schemaVersion:2,qualificationTargetProfile:currentProfile,readOnlyVerified:true,pendingSqlRefusedBeforeIntent:true,originalJournalAndSchemaUnchanged:true,trafficAuthorized:false,virginInstallAuthorityIssued:false},
       admissionChecks,
       historicalLoginChecks,
       writerRouteChecks,

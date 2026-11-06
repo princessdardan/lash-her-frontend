@@ -1,22 +1,42 @@
 // Deliberate final stage only. Failure is never a request to retry a flag change,
 // reopen another producer, replay SQL or restore historical LOGIN credentials.
 import { changeFrontendAdmission, observeFrontendDrain } from "./frontend-admission.mjs";
+import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile } from "./qualification-target-profile.mjs";
+import { prepareHistoricalFrontendLogins } from "./frontend-historical-logins.mjs";
+import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
 
 const demand = ok => { if (!ok) throw new Error("FRONTEND_RESTORATION_REFUSED"); };
-export function prepareFrontendRestoration(input) {
-  demand(input?.version === 1 && typeof input.recovery === "boolean" && typeof input.newWork === "boolean" &&
+function profileContext(expected, ...carriers) {
+  if (expected === undefined) {
+    if (carriers.some(value => value && Object.hasOwn(value, "qualificationTargetProfile"))) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_REFUSED");
+    return undefined;
+  }
+  return requireQualificationTargetProfile(expected, ...carriers);
+}
+export function prepareFrontendRestoration(input, expectedProfile = undefined) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+  const profile = profileContext(expectedProfile, input);
+  demand(input?.version === (profile ? 2 : 1) && typeof input.recovery === "boolean" && typeof input.newWork === "boolean" &&
     (!input.newWork || input.recovery) && input.nativeSchedulesEnabled === false && input.providerIngress === "keep-retired" &&
     typeof input.gatewayBindingSha256 === "string" && /^[a-f0-9]{64}$/u.test(input.gatewayBindingSha256) && !/^0+$/u.test(input.gatewayBindingSha256));
-  return { version: 1, recovery: input.recovery, newWork: input.newWork, nativeSchedulesEnabled: false,
+  return { version: profile ? 2 : 1, ...(profile ? { qualificationTargetProfile: profile } : {}), recovery: input.recovery, newWork: input.newWork, nativeSchedulesEnabled: false,
     providerIngress: "keep-retired", gatewayBindingSha256: input.gatewayBindingSha256 };
 }
 
-export async function restoreFrontendAdmission(plan, client, expectedEpoch, dependencies) {
-  const selected = prepareFrontendRestoration(plan.restoration);
+export async function restoreFrontendAdmission(plan, client, expectedEpoch, dependencies, expectedProfile = undefined) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+  const profile = profileContext(expectedProfile, plan, plan?.historicalLogins, plan?.historicalLogins?.target);
+  const selected = prepareFrontendRestoration(plan.restoration, profile);
+  demand(!profile || plan?.version === 2);
+  if (profile) {
+    const historical = prepareHistoricalFrontendLogins(plan.historicalLogins, profile);
+    demand(historical.actionId === plan.actionId && historical.sourceCommit === plan.sourceCommit && historical.environment === plan.environment &&
+      frontendAdmissionTargetSha256(plan.environment, historical.target) === plan.targetSha256);
+  }
   demand(plan.environment === "staging" && typeof dependencies?.verifySession === "function" && typeof dependencies.withOwner === "function" &&
     typeof dependencies.verifyBoundary === "function" && typeof dependencies.record === "function");
-  const target = { environment: plan.environment, targetSha256: plan.targetSha256 };
-  const base = { version: 1, environment: plan.environment, actionId: plan.actionId, sourceCommit: plan.sourceCommit, targetSha256: plan.targetSha256,
+  const target = { environment: plan.environment, targetSha256: plan.targetSha256, ...(profile ? { qualificationTargetProfile: profile } : {}) };
+  const base = { version: profile ? 2 : 1, ...(profile ? { qualificationTargetProfile: profile } : {}), environment: plan.environment, actionId: plan.actionId, sourceCommit: plan.sourceCommit, targetSha256: plan.targetSha256,
     selected, historicalLoginsRestored: false, providerIngressRestored: false, nativeSchedulesRestored: false, sqlReplayAuthorized: false, wholeReleaseAccepted: false };
   let phase = "closed-boundary-verification", epoch = expectedEpoch, mutationAttempted = false, verifiedAdmission;
   const observe = async () => dependencies.withOwner(() => observeFrontendDrain(client, target, epoch));

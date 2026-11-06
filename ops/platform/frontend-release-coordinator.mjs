@@ -21,6 +21,7 @@ import { frontendReleaseReceiptStore } from "./frontend-release-receipts.mjs";
 import { withFrontendEnvironmentLock } from "./frontend-environment-lock.mjs";
 import { observeFrontendBootstrapSchema } from "./frontend-bootstrap-compatibility.mjs";
 import { observeFrontendOperationalProviderInventory } from "./frontend-operational-provider-inventory.mjs";
+import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const demand = ok => { if (!ok) throw new Error("FRONTEND_RELEASE_COORDINATION_REFUSED"); };
@@ -40,13 +41,16 @@ export async function loadFrontendReleaseAdapters(sourceRoot, expectedSha256) {
   return adapters;
 }
 
-export function prepareFrontendReleaseCoordination(candidate, job, baseline, inventory, source = frontendWriterInventory(root)) {
-  const migration = prepareFrontendMigration(candidate, job, baseline);
-  const plan = prepareFrontendReleaseInventory(inventory, migration, source);
+export function prepareFrontendReleaseCoordination(candidate, job, baseline, inventory, source = undefined, expectedProfile = undefined) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+  const migration = prepareFrontendMigration(candidate, job, baseline, undefined, expectedProfile);
+  if (expectedProfile !== undefined) requireQualificationTargetProfile(expectedProfile, inventory);
+  if (source === undefined) source = frontendWriterInventory(root);
+  const plan = prepareFrontendReleaseInventory(inventory, migration, source, expectedProfile);
   // Existing admission closure needs a writable control transaction as well.
   // The established current-only runner remains read-only and is unchanged.
   demand(job.target.approvedPendingTags.length > 0);
-  return { migration, plan, inventorySha256: frontendCoordinationHash(plan) };
+  return { ...(expectedProfile === undefined ? {} : { qualificationTargetProfile: migration.qualificationTargetProfile }), migration, plan, inventorySha256: frontendCoordinationHash(plan) };
 }
 
 function deploymentProof(plan, result, { bootstrap = false } = {}) {
@@ -81,9 +85,18 @@ function deploymentProof(plan, result, { bootstrap = false } = {}) {
       writerAdmissionBinding: structuredClone(result.writerAdmissionBinding), configurationRecordSha256: result.configurationRecordSha256 } : {}) };
 }
 
-export async function runFrontendReleaseCoordination(prepared, dependencies) {
+export async function runFrontendReleaseCoordination(prepared, dependencies, expectedProfile = undefined) {
+  if (expectedProfile !== undefined) {
+    parseQualificationTargetProfileRef(expectedProfile);
+    requireQualificationTargetProfile(expectedProfile, prepared, prepared?.migration, prepared?.migration?.candidate,
+      prepared?.migration?.candidate?.frontendMigration, prepared?.migration?.job, prepared?.migration?.job?.target, prepared?.plan);
+    // Pure v2 plan preparation is supported. Execution remains unavailable
+    // until the source-owned provider/host/admission observers all propagate
+    // the same expected context. A legacy child graph is not an adapter.
+    throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED");
+  }
   // Reconstruct preparation: mutated prepared objects must not bypass policy.
-  const fresh = prepareFrontendReleaseCoordination(prepared.migration.candidate, prepared.migration.job, prepared.migration.baseline, prepared.plan);
+  const fresh = prepareFrontendReleaseCoordination(prepared.migration.candidate, prepared.migration.job, prepared.migration.baseline, prepared.plan, undefined, expectedProfile);
   const { migration, plan, inventorySha256 } = fresh;
   demand(inventorySha256 === prepared.inventorySha256 && dependencies?.confirmation === `staging/${plan.actionId}` &&
     typeof dependencies.getUrl === "function");

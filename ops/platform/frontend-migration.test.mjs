@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { frontendMigrationArtifact, prepareFrontendMigration, prepareFrontendMigrationJob, frontendConnectionOptions, runFrontendMigration, writeFrontendReceipt } from "./frontend-migration.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as current } from "./qualification-target-profile.mjs";
 
 function fixture() {
   const artifact = frontendMigrationArtifact();
@@ -30,7 +31,14 @@ function fixture() {
   return { artifact, candidate, job, baseline };
 }
 
-function runner(f, overrides = {}) {
+function profiledFixture() {
+  const f = fixture();
+  f.candidate.version = 3; f.job.version = 2;
+  for (const value of [f.candidate, f.candidate.frontendMigration, f.job, f.job.target]) value.qualificationTargetProfile = current;
+  return f;
+}
+
+function runner(f, overrides = {}, expectedProfile = undefined) {
   const records = [], calls = [], state = { locked: false, ended: false, created: false };
   const client = Object.assign(new EventEmitter(), { connection: { stream: { encrypted: true, authorized: true } },
     connect: async () => {}, end: async () => { state.ended = true; },
@@ -56,8 +64,94 @@ function runner(f, overrides = {}) {
       if (name === "job-outcome.json") assert.equal((!state.created || state.ended) && !state.locked, true);
       records.push({ name, value });
     }, ...overrides };
-  return { dependencies, client, calls, records, state, run: () => runFrontendMigration(prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact), dependencies) };
+  return { dependencies, client, calls, records, state, run: () => runFrontendMigration(prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact, expectedProfile), dependencies, expectedProfile) };
 }
+
+test("profiled FE job preparation preserves immutable SQL identity and requires independently selected context on every target carrier", () => {
+  const f = profiledFixture();
+  const prepared = prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact, current);
+  assert.deepEqual(prepared.qualificationTargetProfile, current); assert.deepEqual(prepared.artifact, fixture().artifact);
+  const exported = { status: "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS", providerTouched: false, postgresMajor: 18, schemaBaseline: f.baseline,
+    contractPhase: f.job.contractPhase, phase2ContractManifestSha256: f.job.phase2ContractManifestSha256 };
+  const settings = { ...f.job.target, recoveryRef: f.job.recoveryRef };
+  const generated = prepareFrontendMigrationJob(f.candidate, settings, exported, undefined, current);
+  assert.deepEqual(generated.job, f.job); assert.deepEqual(generated.baseline, f.baseline);
+  for (const stamped of ["artifact", "baseline"]) {
+    const invalid = profiledFixture(); invalid[stamped].qualificationTargetProfile = current;
+    assert.throws(() => prepareFrontendMigration(invalid.candidate, invalid.job, invalid.baseline, invalid.artifact, current), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  }
+  assert.throws(() => prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  assert.throws(() => prepareFrontendMigrationJob(f.candidate, settings, exported), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  for (const mutate of [x => { delete x.candidate.qualificationTargetProfile; }, x => { delete x.candidate.frontendMigration.qualificationTargetProfile; },
+    x => { delete x.job.target.qualificationTargetProfile; }, x => { x.job.version = 1; }, x => { x.job.qualificationTargetProfile = { ...current, sha256: "f".repeat(64) }; }]) {
+    const value = profiledFixture(); mutate(value);
+    assert.throws(() => prepareFrontendMigration(value.candidate, value.job, value.baseline, value.artifact, current));
+  }
+  const poisoned = { get frontendMigration() { throw new Error("carrier-read-before-context"); } };
+  for (const expected of [null, {}, { ...current, id: "p2q-20261106" }]) {
+    assert.throws(() => prepareFrontendMigration(poisoned, undefined, undefined, undefined, expected), /QUALIFICATION_TARGET_PROFILE_/u);
+    assert.throws(() => prepareFrontendMigrationJob(poisoned, undefined, undefined, undefined, expected), /QUALIFICATION_TARGET_PROFILE_/u);
+  }
+});
+
+test("profiled SQL continuation and all versioned outcomes retain the same source profile and physical lock", async () => {
+  const f = profiledFixture(); let before = 0, after = 0;
+  const r = runner(f, { beforeDatabasePreflight: async context => {
+    before++; assert.deepEqual(context.qualificationTargetProfile, current); assert.equal(context.client, r.client); await context.verifySession();
+  }, afterDatabaseVerified: async (receipt, verify) => {
+    after++; assert.equal(r.state.locked, true); assert.equal(receipt.version, 2); assert.deepEqual(receipt.qualificationTargetProfile, current); await verify();
+  } }, current);
+  await r.run(); assert.equal(before, 1); assert.equal(after, 1);
+  assert.ok(r.records.length >= 4);
+  for (const row of r.records) { assert.equal(row.value.version, 2); assert.deepEqual(row.value.qualificationTargetProfile, current); }
+  assert.equal(r.records.at(-1).value.trafficAuthorized, false);
+});
+
+test("profiled pending SQL and stripped or missing expected contexts refuse before source, credential, client or receipt hooks", async () => {
+  const f = profiledFixture(), prepared = prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact, current);
+  let hooks = 0; const dependencies = { get confirmation() { hooks++; throw new Error("hook-before-refusal"); },
+    assertSource() { hooks++; }, getUrl() { hooks++; }, createClient() { hooks++; }, record() { hooks++; } };
+  await assert.rejects(runFrontendMigration(prepared, dependencies, current), /IN_PROCESS_FRONTEND_CONTINUATION_REQUIRED/u);
+  await assert.rejects(runFrontendMigration(prepared, dependencies), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  await assert.rejects(runFrontendMigration(prepared, dependencies, null), /QUALIFICATION_TARGET_PROFILE_REFUSED/u);
+  const legacy = fixture();
+  await assert.rejects(runFrontendMigration(prepareFrontendMigration(legacy.candidate, legacy.job, legacy.baseline, legacy.artifact), dependencies, current), /QUALIFICATION_TARGET_PROFILE_REQUIRED/u);
+  assert.equal(hooks, 0);
+});
+
+test("actual fixed profiled FE check refuses stripped carriers, legacy action and raw duplicate fields", () => {
+  const folder = mkdtempSync(join(tmpdir(), "frontend-profile-cli-"));
+  try {
+    const f = profiledFixture(), files = ["candidate", "job", "baseline"].map(key => {
+      const path = join(folder, key + ".json"); writeFileSync(path, JSON.stringify(f[key])); return path;
+    });
+    const run = mode => spawnSync(process.execPath, ["--import", "tsx", "ops/platform/frontend-migration.mjs", mode, ...files], { encoding: "utf8", env: { PATH: process.env.PATH }, timeout: 15_000 });
+    const good = run("--check-profiled-current"); assert.equal(good.status, 0, good.stderr);
+    assert.deepEqual(JSON.parse(good.stdout).qualificationTargetProfile, current);
+    assert.equal(run("--check").status, 1);
+    const legacy = fixture(); for (const [i, key] of ["candidate", "job", "baseline"].entries()) writeFileSync(files[i], JSON.stringify(legacy[key]));
+    assert.equal(run("--check-profiled-current").status, 1);
+    for (const [i, key] of ["candidate", "job", "baseline"].entries()) writeFileSync(files[i], JSON.stringify(f[key]));
+    writeFileSync(files[1], JSON.stringify(f.job).replace('"qualificationTargetProfile":', '"qualificationTargetProfile":null,"qualificationTargetProfile":'));
+    assert.equal(run("--check-profiled-current").status, 1);
+  } finally { rmSync(folder, { recursive: true, force: true }); }
+});
+
+test("actual profiled leaf execute cannot apply pending SQL or create a migration intent", () => {
+  const folder = mkdtempSync(join(tmpdir(), "frontend-profile-pending-"));
+  try {
+    const f = profiledFixture(), files = ["candidate", "job", "baseline"].map(key => {
+      const path = join(folder, key + ".json"); writeFileSync(path, JSON.stringify(f[key])); return path;
+    });
+    const output = mkdtempSync(join(tmpdir(), "frontend-profile-intent-"));
+    try {
+      const result = spawnSync(process.execPath, ["--import", "tsx", "ops/platform/frontend-migration.mjs", "--execute-profiled-current", ...files,
+        "--confirm", "staging/" + f.job.releaseId, output], { encoding: "utf8", env: { PATH: process.env.PATH }, timeout: 15_000 });
+      assert.equal(result.status, 1); assert.deepEqual(JSON.parse(result.stderr).qualificationTargetProfile, current);
+      assert.deepEqual(readdirSync(output), []);
+    } finally { rmSync(output, { recursive: true, force: true }); }
+  } finally { rmSync(folder, { recursive: true, force: true }); }
+});
 
 test("frontend preparation binds exact source, target and reviewed SQL/schema without credentials", () => {
   const f = fixture(), prepared = prepareFrontendMigration(f.candidate, f.job, f.baseline, f.artifact);

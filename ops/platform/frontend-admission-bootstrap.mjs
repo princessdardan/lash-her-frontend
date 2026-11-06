@@ -1,6 +1,7 @@
 // Reviewed in-process component only. No startup hook, CLI or ambient credentials.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
 const demand = ok => { if (!ok) throw new Error("FRONTEND_ADMISSION_BOOTSTRAP_REFUSED"); };
 const digest = (value, size = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${size}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -8,6 +9,13 @@ const name = value => typeof value === "string" && /^[a-z][a-z0-9_]{0,62}$/u.tes
 const oid = value => typeof value === "string" && /^[1-9][0-9]{0,9}$/u.test(value) && Number(value) <= 4294967295;
 const hash = value => createHash("sha256").update(value).digest("hex");
 const artifact = () => readFileSync(new URL("./frontend-admission.sql", import.meta.url), "utf8");
+function profileContext(expected, ...carriers) {
+  if (expected === undefined) {
+    if (carriers.some(value => value && Object.hasOwn(value, "qualificationTargetProfile"))) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_REFUSED");
+    return undefined;
+  }
+  return requireQualificationTargetProfile(expected, ...carriers);
+}
 
 export function frontendAdmissionBootstrapArtifact() { return { sqlSha256: hash(artifact()) }; }
 
@@ -18,8 +26,10 @@ export function frontendAdmissionTargetSha256(environment, target) {
   return hash(JSON.stringify({ environment, host: target.host, port: target.port, database: target.database, user: target.user, serverMajor: target.serverMajor }));
 }
 
-export function prepareFrontendAdmissionBootstrap(input) {
-  demand(input?.version === 1 && input.environment === "staging" && typeof input.actionId === "string" &&
+export function prepareFrontendAdmissionBootstrap(input, expectedProfile = undefined) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+  const profile = profileContext(expectedProfile, input, input?.target);
+  demand(input?.version === (profile ? 2 : 1) && input.environment === "staging" && typeof input.actionId === "string" &&
     /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.actionId) && digest(input.sourceCommit, 40) &&
     input.sqlSha256 === frontendAdmissionBootstrapArtifact().sqlSha256 && digest(input.inventorySha256));
   const target = input.target;
@@ -36,16 +46,16 @@ export function prepareFrontendAdmissionBootstrap(input) {
     roleOids.set(producer.role.oid, producer.role.name); roleNames.set(producer.role.name, producer.role.oid);
   }
   demand(!roleOids.has(input.owner.oid));
-  return { version: 1, environment: input.environment, actionId: input.actionId, sourceCommit: input.sourceCommit,
+  return { version: profile ? 2 : 1, ...(profile ? { qualificationTargetProfile: profile } : {}), environment: input.environment, actionId: input.actionId, sourceCommit: input.sourceCommit,
     sqlSha256: input.sqlSha256, inventorySha256: input.inventorySha256, targetSha256: input.targetSha256,
-    target: Object.fromEntries(["host", "port", "database", "user", "serverMajor"].map(key => [key, target[key]])),
+    target: { ...Object.fromEntries(["host", "port", "database", "user", "serverMajor"].map(key => [key, target[key]])), ...(profile ? { qualificationTargetProfile: profile } : {}) },
     owner: { name: input.owner.name, oid: input.owner.oid },
     producers: input.producers.map(p => ({ producerSha256: p.producerSha256, sourceCommit: p.sourceCommit,
       role: { name: p.role.name, oid: p.role.oid } })).sort((a, b) => a.producerSha256.localeCompare(b.producerSha256)) };
 }
 
-export async function bootstrapFrontendAdmission(input, client, dependencies) {
-  const plan = prepareFrontendAdmissionBootstrap(input);
+export async function bootstrapFrontendAdmission(input, client, dependencies, expectedProfile = undefined) {
+  const plan = prepareFrontendAdmissionBootstrap(input, expectedProfile);
   demand(dependencies?.confirmation === `staging/${plan.actionId}` && typeof dependencies.record === "function" && typeof dependencies.verifySession === "function");
   const base = { ...plan, trafficAuthorized: false, migrationAuthorized: false };
   let phase = "durable-intent", started = false;
