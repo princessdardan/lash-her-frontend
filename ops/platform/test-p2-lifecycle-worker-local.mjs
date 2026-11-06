@@ -22,7 +22,7 @@ async function main() {
   assert.ok([16,18].includes(major) && bin?.startsWith("/")); assert.match(execute(join(bin, "postgres"), ["--version"]), new RegExp(`PostgreSQL\\) ${major}\\.`, "u"));
   const sources = { frontend: root, course: resolve(process.env.P2_COURSE_SOURCE_ROOT ?? "/Users/dardan/workspace/lash-her-course-api/.worktrees/phase2-course"),
     community: resolve(process.env.P2_COMMUNITY_SOURCE_ROOT ?? "/Users/dardan/workspace/lash-her-community-api/.worktrees/phase2-community") };
-  const pins = { course: "a447bfde20299e12afab68a3331b3792ddd07598", community: "939de65dd52f0b1a43993a25c7c428dce6e2bb43" };
+  const pins = { course: "0bb054d5a04db71c481a8b3d182db6df19782cdc", community: "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4" };
   for (const service of ["course", "community"]) assert.equal(execute("git", ["rev-parse", "HEAD"], { cwd: sources[service] }).trim(), pins[service]);
   const directory = mkdtempSync(join(tmpdir(), "p2-worker-owned-")); chmodSync(directory, 0o700);
   const data = join(directory, "data"), cert = join(directory, "server.crt"), key = join(directory, "server.key"), password = randomBytes(32).toString("hex"), clients = [];

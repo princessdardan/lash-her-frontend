@@ -771,8 +771,13 @@ function runRecoveryQualification(run, dockerEndpoint, args, frontendRoot, envir
   return result;
 }
 
-function parseRecoveryQualification(parser, result, qualification, sourceCommit) {
-  try { return parser(result.stdout); }
+function parseRecoveryQualification(parser, result, qualification, sourceCommit, diagnostic) {
+  try {
+    const receipt = parser(result.stdout);
+    delete diagnostic.recoveryFailure;
+    delete diagnostic.recoveryQualification;
+    return receipt;
+  }
   catch (error) {
     retainPrivateDockerFailure(qualification, sourceCommit, "receipt-invalid", result);
     throw error;
@@ -918,7 +923,7 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
       const currentResult = runRecoveryQualification(run, dockerEndpoint, recoveryArguments,
         frontendRoot, recoveryEnvironment, diagnostic, "current", frontendCommit);
       const currentOutput = currentResult.stdout;
-      const receipt = parseRecoveryQualification(parseP2RecoveryPostgres18Receipt, currentResult, "current", frontendCommit);
+      const receipt = parseRecoveryQualification(parseP2RecoveryPostgres18Receipt, currentResult, "current", frontendCommit, diagnostic);
       recovery = { status: receipt.status, serverMajor: receipt.serverMajor, frontendMigrations: receipt.frontendMigrations,
         courseMigrations: receipt.courseMigrations, communityMigrations: receipt.communityMigrations, skipped: receipt.skipped,
         fixtureOnly: receipt.fixtureOnly, providerTouched: receipt.providerTouched, checks: receipt.checks,
@@ -935,7 +940,7 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
       const forwardResult = runRecoveryQualification(run, dockerEndpoint, forwardArguments,
         frontendRoot, recoveryEnvironment, diagnostic, "forward", frontendCommit);
       const forwardOutput = forwardResult.stdout;
-      const forwardReceipt = parseRecoveryQualification(parseP2ForwardRecoveryPostgres18Receipt, forwardResult, "forward", frontendCommit);
+      const forwardReceipt = parseRecoveryQualification(parseP2ForwardRecoveryPostgres18Receipt, forwardResult, "forward", frontendCommit, diagnostic);
       const apiSourcePins = Object.fromEntries(["course", "community"].map(service => [service, {
         revision: sources[service].revision, gitTree: sources[service].gitTree, packageSha256: sources[service].packageSha256,
         packageLockSha256: sources[service].packageLockSha256, artifactSha256: structuredClone(sources[service].artifactSha256),
@@ -961,7 +966,7 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
         const lifecycleResult = runRecoveryQualification(run, dockerEndpoint, lifecyclePersistenceDockerArguments(frontendRoot, directories),
           frontendRoot, recoveryEnvironment, diagnostic, "persistence", frontendCommit, lifecycleInput.manifestBytes);
         const lifecycleReceipt = parseRecoveryQualification(output =>
-          parseP2LifecyclePersistencePostgres18Receipt(output, lifecycleInput.expectedReceipt), lifecycleResult, "persistence", frontendCommit);
+          parseP2LifecyclePersistencePostgres18Receipt(output, lifecycleInput.expectedReceipt), lifecycleResult, "persistence", frontendCommit, diagnostic);
         mark(diagnostic, "exact-source-proof", "frontend");
         verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
           manifest, installEnvironment, sourceReadToken, qualificationFiles);
@@ -979,7 +984,7 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
         const receiverResult = runRecoveryQualification(run, dockerEndpoint, lifecycleReceiversDockerArguments(frontendRoot, directories),
           frontendRoot, recoveryEnvironment, diagnostic, "receivers", frontendCommit, lifecycleInput.manifestBytes);
         const receiverReceipt = parseRecoveryQualification(output =>
-          parseP2LifecycleReceiversPostgres18Receipt(output, lifecycleInput.expectedReceiverReceipt), receiverResult, "receivers", frontendCommit);
+          parseP2LifecycleReceiversPostgres18Receipt(output, lifecycleInput.expectedReceiverReceipt), receiverResult, "receivers", frontendCommit, diagnostic);
         mark(diagnostic, "exact-source-proof", "frontend");
         verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
           manifest, installEnvironment, sourceReadToken, qualificationFiles);
@@ -1001,7 +1006,7 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
         const interruptedResult = runRecoveryQualification(run, dockerEndpoint, interruptedRestorationDockerArguments(frontendRoot, directories),
           frontendRoot, recoveryEnvironment, diagnostic, "interrupted-restoration", frontendCommit);
         const interruptedReceipt = parseRecoveryQualification(output =>
-          parseP2InterruptedRestorationPostgres18Receipt(output, expectedInterrupted), interruptedResult, "interrupted-restoration", frontendCommit);
+          parseP2InterruptedRestorationPostgres18Receipt(output, expectedInterrupted), interruptedResult, "interrupted-restoration", frontendCommit, diagnostic);
         mark(diagnostic, "exact-source-proof", "frontend");
         verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
           manifest, installEnvironment, sourceReadToken, qualificationFiles);
@@ -1029,7 +1034,7 @@ function prepareP2IdentityProbeFixturesInternal(options, diagnostic) {
         const negativeResult = runRecoveryQualification(run, dockerEndpoint, interruptedNegativesDockerArguments(frontendRoot, directories),
           frontendRoot, recoveryEnvironment, diagnostic, "interrupted-negatives", frontendCommit);
         const negativeReceipt = parseRecoveryQualification(output =>
-          parseP2InterruptedNegativesPostgres18Receipt(output, expectedInterrupted), negativeResult, "interrupted-negatives", frontendCommit);
+          parseP2InterruptedNegativesPostgres18Receipt(output, expectedInterrupted), negativeResult, "interrupted-negatives", frontendCommit, diagnostic);
         mark(diagnostic, "exact-source-proof", "frontend");
         verifyLifecycleQualificationSources(run, frontendRoot, directories, frontendSource, sources,
           manifest, installEnvironment, sourceReadToken, qualificationFiles);

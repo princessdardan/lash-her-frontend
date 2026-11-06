@@ -6,8 +6,8 @@ const SHA = /^[a-f0-9]{64}$/u;
 const COMMIT = /^[a-f0-9]{40}$/u;
 const SAFE_PATH = /^[A-Za-z0-9_./-]{1,240}$/u;
 const API_REVISIONS = Object.freeze({
-  course: "a447bfde20299e12afab68a3331b3792ddd07598",
-  community: "939de65dd52f0b1a43993a25c7c428dce6e2bb43",
+  course: "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+  community: "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4",
 });
 const REPOSITORIES = Object.freeze({
   frontend: "lash-her-frontend",

@@ -12,14 +12,26 @@ import { p2IdentityFixtureFailureReceipt, parseP2DockerContextEndpoint,
   parseP2LifecycleReceiversPostgres18Receipt, buildP2InterruptedRestorationExpected, parseP2InterruptedRestorationPostgres18Receipt, parseP2InterruptedNegativesPostgres18Receipt,
   parseP2RecoveryPostgres18Receipt, prepareP2IdentityProbeFixtures,
   validateP2IdentityFixtureManifest, verifyP2FrontendSourceProof } from "./prepare-p2-identity-probe-fixtures.mjs";
-import { P2_LIFECYCLE_OWNED_SOURCE_CLOSURE, P2_INTERRUPTED_OWNED_SOURCE_FILES, P2_KNOWN_ACK_OWNED_SOURCE_FILES,
+import { P2_LIFECYCLE_OWNED_API_REVISIONS, P2_LIFECYCLE_OWNED_SOURCE_CLOSURE, P2_INTERRUPTED_OWNED_SOURCE_FILES, P2_KNOWN_ACK_OWNED_SOURCE_FILES,
   verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
-const revisions = { course: "a447bfde20299e12afab68a3331b3792ddd07598", community: "939de65dd52f0b1a43993a25c7c428dce6e2bb43" };
+const revisions = { course: "0bb054d5a04db71c481a8b3d182db6df19782cdc", community: "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4" };
 const contents = { course: Buffer.from('{"openapi":"3.1.0","info":{"title":"course"}}\n'), community: Buffer.from('{"openapi":"3.1.0","info":{"title":"community"}}\n'),
   enrollmentEvent: Buffer.from('{"$schema":"https://json-schema.org/draft/2020-12/schema"}\n') };
 const sourceReadToken = "fixture-source-token-value-not-secret";
+
+test("current lifecycle producers match the actual selected candidate API revisions", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../../contracts/api-integration/p2-candidate/manifest.json", import.meta.url)));
+  const selected = Object.fromEntries(["course", "community"].map(service => [service, manifest.artifacts[service].revision]));
+  assert.deepEqual(revisions, selected);
+  assert.deepEqual(P2_LIFECYCLE_OWNED_API_REVISIONS, selected);
+  for (const file of ["test-p2-lifecycle-persistence-local.mjs", "test-p2-lifecycle-receivers-local.mjs",
+    "test-p2-known-ack-loss-local.mjs", "test-p2-lifecycle-worker-local.mjs"]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    for (const revision of Object.values(selected)) assert.ok(source.includes(revision), `${file} must qualify the selected immutable API source`);
+  }
+});
 
 function withSourceReadToken(value, operation) {
   const present = Object.hasOwn(process.env, "PLATFORM_SOURCE_READ_TOKEN");
@@ -189,7 +201,10 @@ function interruptedReceipt(expected) {
   value.fixtureSourceSha256 = structuredClone(expected.fixtureSourceSha256);
   restored.ownedSourceSha256 = structuredClone(expected.ownedSourceSha256); restored.gatewayDependency = structuredClone(expected.gatewayDependency);
   const candidateSha256 = sha(JSON.stringify(expected.candidate) + "\n"); terminal.candidateSha256 = candidateSha256;
-  for (const service of ["course", "community"]) terminal.apiDatabases[service].candidateSha256 = candidateSha256;
+  for (const service of ["course", "community"]) {
+    terminal.apiDatabases[service].candidateSha256 = candidateSha256;
+    terminal.apiDatabases[service].sourceCommit = expected.apiSourceCommits[service];
+  }
   terminal.apiDatabasesAfter = structuredClone(terminal.apiDatabases);
   terminal.oldGateway.binding.candidateSha256 = terminal.newGateway.binding.candidateSha256 = candidateSha256;
   restored.terminalReceiptSha256 = sha(JSON.stringify(terminal) + "\n");
@@ -627,23 +642,17 @@ test("actual C entry rejects unknown arguments and missing ownership before depe
   }
 });
 
-test("actual final PG18 C receipt qualifies only against its source pins and independent B prefix", () => {
+test("retained original PG18 C bytes cannot certify the new current API sources", () => {
   const value = harness();
   try {
     runLifecycle(value);
     const expected = value.interruptedExpected(), retained = structuredClone(retainedInterruptedReceipt);
-    expected.frontendSourceCommit = retained.frontendSourceCommit;
-    expected.apiSourceLocks = Object.fromEntries(Object.entries(retained.apiSourceArchives).map(([service, archive]) => [service, archive.lockSha256]));
-    expected.ownedSourceSha256 = retained.restoration.ownedSourceSha256; expected.fixtureSourceSha256 = retained.fixtureSourceSha256;
-    expected.gatewayDependency = retained.restoration.gatewayDependency;
-    expected.candidate.sources.frontend.commit = retained.frontendSourceCommit;
-    expected.candidate.runtime.composeSha256 = "sha256:" + sha(readFileSync(new URL("./compose.yaml", import.meta.url)));
     const raw = JSON.stringify(retained, null, 2) + "\n";
     assert.equal(sha(raw), "758c9690999f214ae438db105e72dcaa9ff0bbf80b93fdbbe23b3d4dec295eec");
-    assert.equal(parseP2InterruptedRestorationPostgres18Receipt(raw, expected).restoration.status, "P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS");
-    const missingPrefix = structuredClone(retained); delete missingPrefix.restoration.originalCausalReceiptSha256;
-    assert.throws(() => parseP2InterruptedRestorationPostgres18Receipt(JSON.stringify(missingPrefix), expected));
-    assert.throws(() => parseP2InterruptedRestorationPostgres18Receipt(raw, value.interruptedExpected()));
+    assert.notDeepEqual(retained.apiSourceCommits, expected.apiSourceCommits);
+    assert.throws(() => parseP2InterruptedRestorationPostgres18Receipt(raw, expected));
+    const oldContext = { ...expected, apiSourceCommits: structuredClone(retained.apiSourceCommits) };
+    assert.throws(() => parseP2InterruptedRestorationPostgres18Receipt(raw, oldContext));
   } finally { value.cleanup(); }
 });
 
@@ -651,6 +660,7 @@ test("C parser refuses partial B proof, source substitution, skips and projected
   const value = harness();
   try {
     runLifecycle(value); const expected = value.interruptedExpected(), valid = interruptedReceipt(expected);
+    assert.equal(parseP2InterruptedRestorationPostgres18Receipt(JSON.stringify(valid), expected).restoration.status, "P2_INTERRUPTED_NEW_PROCESS_OWNED_PASS");
     const reject = mutate => { const changed = structuredClone(valid); mutate(changed); assert.throws(() => parseP2InterruptedRestorationPostgres18Receipt(JSON.stringify(changed), expected)); };
     for (const mutate of [
       item => { delete item.restoration; }, item => { item.skipped = 1; }, item => { item.extra = "PRIVATE_EXTRA"; },
@@ -767,8 +777,15 @@ test("negative C failures and post-run source drift refuse before checkout clean
     } finally { value.cleanup(); rmSync(runner, { recursive: true, force: true }); }
   }
   const value = harness(tap(), [], undefined, { interruptedNegativeSourceMutation: true });
-  try { assert.throws(() => runLifecycle(value)); assert.equal(existsSync(value.workspace), false); }
-  finally { value.cleanup(); }
+  try {
+    let observed;
+    try { runLifecycle(value); } catch (error) { observed = p2IdentityFixtureFailureReceipt(error); }
+    assert.ok(observed); assert.equal(observed.phase, "exact-source-proof");
+    assert.equal(observed.ownedDisposableDatabaseExecutionAttempted, true);
+    assert.equal(Object.hasOwn(observed, "recoveryFailure"), false);
+    assert.equal(Object.hasOwn(observed, "recoveryQualification"), false);
+    assert.equal(existsSync(value.workspace), false);
+  } finally { value.cleanup(); }
 });
 
 test("C dependency eligibility rejects root fallback, wrong gateway version and changed source before cleanup", () => {
@@ -783,8 +800,15 @@ test("C dependency eligibility rejects root fallback, wrong gateway version and 
     finally { value.cleanup(); }
   }
   const changed = harness(tap(), [], undefined, { interruptedSourceMutation: true });
-  try { assert.throws(() => runLifecycle(changed)); assert.equal(existsSync(changed.workspace), false); }
-  finally { changed.cleanup(); }
+  try {
+    let observed;
+    try { runLifecycle(changed); } catch (error) { observed = p2IdentityFixtureFailureReceipt(error); }
+    assert.ok(observed); assert.equal(observed.phase, "exact-source-proof");
+    assert.equal(observed.ownedDisposableDatabaseExecutionAttempted, true);
+    assert.equal(Object.hasOwn(observed, "recoveryFailure"), false);
+    assert.equal(Object.hasOwn(observed, "recoveryQualification"), false);
+    assert.equal(existsSync(changed.workspace), false);
+  } finally { changed.cleanup(); }
 });
 
 test("C nonzero, transport and malformed receipts refuse and retain only bounded private diagnostics", () => {

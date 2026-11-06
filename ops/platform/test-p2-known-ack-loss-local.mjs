@@ -39,7 +39,7 @@ async function main(){
     for(const service of ['course','community']){
       const repository=realpathSync(process.env[`P2_KNOWN_ACK_${service.toUpperCase()}_SOURCE_ROOT`]??`/Users/dardan/workspace/lash-her-${service}-api/.worktrees/phase2-role-qualification`);
       assert.equal(execute('git',['--no-replace-objects','--no-optional-locks','-C',repository,'remote','get-url','origin']).trim(),`https://github.com/princessdardan/lash-her-${service}-api.git`);
-      const commit=process.env[`P2_KNOWN_ACK_${service.toUpperCase()}_SOURCE_COMMIT`]??({course:'a447bfde20299e12afab68a3331b3792ddd07598',community:'939de65dd52f0b1a43993a25c7c428dce6e2bb43'}[service]);assert.match(commit,/^[a-f0-9]{40}$/u);
+      const commit=process.env[`P2_KNOWN_ACK_${service.toUpperCase()}_SOURCE_COMMIT`]??({course:'0bb054d5a04db71c481a8b3d182db6df19782cdc',community:'8594d953a5c0e0849e7a2e5e0de21f03537c4dc4'}[service]);assert.match(commit,/^[a-f0-9]{40}$/u);
       const root=join(directory,service);mkdirSync(root);
       const archive=execFileSync('git',['--no-replace-objects','--no-optional-locks','-C',repository,'archive',commit],{maxBuffer:64*1024*1024,env:safeEnvironment});
       const extracted=spawnSync('tar',['-xf','-','-C',root],{input:archive,env:safeEnvironment});assert.equal(extracted.status,0);
