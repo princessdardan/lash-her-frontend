@@ -1,0 +1,96 @@
+test_global_sql_requirements_cannot_be_omitted_from_any_closure (frontend_resend_marketing_scope_test.MarketingScopeTests.test_global_sql_requirements_cannot_be_omitted_from_any_closure) ... FAIL
+test_absent_disposition_cannot_close_reachable_source (frontend_resend_marketing_scope_test.MarketingScopeTests.test_absent_disposition_cannot_close_reachable_source) ... FAIL
+test_duplicate_closures_and_noncanonical_requirements_or_evidence_are_refused (frontend_resend_marketing_scope_test.MarketingScopeTests.test_duplicate_closures_and_noncanonical_requirements_or_evidence_are_refused) ... FAIL
+test_actual_source_context_must_match_reviewed_surface_and_each_closure (frontend_resend_marketing_scope_test.MarketingScopeTests.test_actual_source_context_must_match_reviewed_surface_and_each_closure) ... FAIL
+test_partial_broadcast_closure_cannot_erase_actual_sql_and_provider_mismatch (frontend_resend_marketing_scope_test.MarketingScopeTests.test_partial_broadcast_closure_cannot_erase_actual_sql_and_provider_mismatch) ... FAIL
+test_partial_broadcast_closure_does_not_hide_unmatched_provider_objects_without_sql (frontend_resend_marketing_scope_test.MarketingScopeTests.test_partial_broadcast_closure_does_not_hide_unmatched_provider_objects_without_sql) ... FAIL
+test_partial_contact_closure_cannot_erase_pending_intent_or_unmatched_provider (frontend_resend_marketing_scope_test.MarketingScopeTests.test_partial_contact_closure_cannot_erase_pending_intent_or_unmatched_provider) ... FAIL
+test_partial_event_closure_cannot_erase_an_attempted_optin (frontend_resend_marketing_scope_test.MarketingScopeTests.test_partial_event_closure_cannot_erase_an_attempted_optin) ... FAIL
+test_original_snapshot_cannot_be_ignored_on_unchanged_current_hash (frontend_resend_marketing_scope_test.MarketingScopeTests.test_original_snapshot_cannot_be_ignored_on_unchanged_current_hash) ... FAIL
+
+======================================================================
+FAIL: test_global_sql_requirements_cannot_be_omitted_from_any_closure (frontend_resend_marketing_scope_test.MarketingScopeTests.test_global_sql_requirements_cannot_be_omitted_from_any_closure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 315, in test_global_sql_requirements_cannot_be_omitted_from_any_closure
+    with self.assertRaisesRegex(ValueError, "CAPABILITY_CLOSURE_REFUSED"): self.observe()
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_absent_disposition_cannot_close_reachable_source (frontend_resend_marketing_scope_test.MarketingScopeTests.test_absent_disposition_cannot_close_reachable_source)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 320, in test_absent_disposition_cannot_close_reachable_source
+    with self.assertRaisesRegex(ValueError, "CAPABILITY_CLOSURE_REFUSED"): self.observe()
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_duplicate_closures_and_noncanonical_requirements_or_evidence_are_refused (frontend_resend_marketing_scope_test.MarketingScopeTests.test_duplicate_closures_and_noncanonical_requirements_or_evidence_are_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 332, in test_duplicate_closures_and_noncanonical_requirements_or_evidence_are_refused
+    with self.assertRaisesRegex(ValueError, "CAPABILITY_CLOSURE"): self.observe()
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_actual_source_context_must_match_reviewed_surface_and_each_closure (frontend_resend_marketing_scope_test.MarketingScopeTests.test_actual_source_context_must_match_reviewed_surface_and_each_closure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 339, in test_actual_source_context_must_match_reviewed_surface_and_each_closure
+    with self.assertRaisesRegex(ValueError, "VERIFIED_(SOURCE|SURFACE)_REQUIRED"): self.observe()
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_partial_broadcast_closure_cannot_erase_actual_sql_and_provider_mismatch (frontend_resend_marketing_scope_test.MarketingScopeTests.test_partial_broadcast_closure_cannot_erase_actual_sql_and_provider_mismatch)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 353, in test_partial_broadcast_closure_cannot_erase_actual_sql_and_provider_mismatch
+    self.assertFalse(result["complete"]); self.assertGreater(observed["unresolvedEffects"], 0)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_partial_broadcast_closure_does_not_hide_unmatched_provider_objects_without_sql (frontend_resend_marketing_scope_test.MarketingScopeTests.test_partial_broadcast_closure_does_not_hide_unmatched_provider_objects_without_sql)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 363, in test_partial_broadcast_closure_does_not_hide_unmatched_provider_objects_without_sql
+    self.assertTrue(any(path.startswith("/broadcasts") for _method, path in self.calls))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_partial_contact_closure_cannot_erase_pending_intent_or_unmatched_provider (frontend_resend_marketing_scope_test.MarketingScopeTests.test_partial_contact_closure_cannot_erase_pending_intent_or_unmatched_provider)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 374, in test_partial_contact_closure_cannot_erase_pending_intent_or_unmatched_provider
+    self.assertFalse(result["complete"]); self.assertGreater(observed["unresolvedEffects"], 0)
+                                          ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 not greater than 0
+
+======================================================================
+FAIL: test_partial_event_closure_cannot_erase_an_attempted_optin (frontend_resend_marketing_scope_test.MarketingScopeTests.test_partial_event_closure_cannot_erase_an_attempted_optin)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 382, in test_partial_event_closure_cannot_erase_an_attempted_optin
+    self.assertFalse(result["complete"]); self.assertGreater(observed["unresolvedEffects"], 0)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_original_snapshot_cannot_be_ignored_on_unchanged_current_hash (frontend_resend_marketing_scope_test.MarketingScopeTests.test_original_snapshot_cannot_be_ignored_on_unchanged_current_hash)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-resend-marketing/ops/platform/host/frontend_resend_marketing_scope_test.py", line 387, in test_original_snapshot_cannot_be_ignored_on_unchanged_current_hash
+    with self.assertRaisesRegex(ValueError, "ORIGINAL_SNAPSHOT_REQUIRED"):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 9 tests in 4.706s
+
+FAILED (failures=9)
+EXPECTED_FROZEN_FAILURES_REPRODUCED=9; no errors; fixture teardown awaited

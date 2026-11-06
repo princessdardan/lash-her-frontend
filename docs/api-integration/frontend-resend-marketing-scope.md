@@ -33,6 +33,8 @@ The outer reviewed object contains the existing Resend retirement binding and `r
 ```text
 {
   environment: "staging",
+  sourceCommit,
+  surfaceSha256,
   databaseSnapshotSha256,
   sourceInventorySha256,
   requirementsSha256,
@@ -43,11 +45,11 @@ The outer reviewed object contains the existing Resend retirement binding and `r
 }
 ```
 
-Those maps contain IDs derived from the exact original configuration, including common marketing IDs merged with each source's IDs. They are not an approval or an arbitrary replacement environment. The shared source owner verifies that derivation. The observer requires matching source inventory and requirement digests and consumes verified per-revision capability closures. It does not generate or authenticate those closures itself.
+Those maps contain IDs derived from the exact original configuration, including common marketing IDs merged with each source's IDs. They are not an approval or an arbitrary replacement environment. The shared source owner verifies that derivation. The observer requires matching source commit, historical surface, immutable original configuration record, source inventory and requirement digests. `configurationSha256` is the original binding's `configurationRecordSha256`, not a hash of the maps. It consumes the exact per-surface source reducer's provenance and closures; it does not generate or authenticate their origin itself. The trusted parent must pass freshly verified source-owned output, never caller-authored closure JSON or a union of same-source peer surfaces.
 
-When all five families have exact verified capability closures and all six actual SQL arrays are empty, the observer returns `source-inapplicable-and-effects-reconciled` without constructing a provider client or obtaining an unrelated replacement credential. It marks provider pagination as unobserved, not complete. A source disposition alone or a partial closure cannot select this path. Any retained SQL row contradicts an all-family closure: the observer requires actual provider reads and retains an explicit unknown; campaign rows also force broadcast reads.
+When all five families have exact verified capability closures and all six actual SQL arrays are empty, the observer returns `source-inapplicable-and-effects-reconciled` without constructing a provider client or obtaining an unrelated replacement credential. It marks provider pagination as unobserved, not complete. A source disposition alone or a partial closure cannot select this path. When an original snapshot is supplied, its reviewed hash is checked even if the current snapshot hash is unchanged. Outside this strict path, both contact and broadcast inventories are read. Each family compares its relevant SQL/provider sets with its closure: a retained intent or provider object contradicts inapplicability and remains missing/unknown, even with a partial closure and even if the observed object is terminal. A closure never forces an actual unresolved count back to zero.
 
-The selected families are `resend.contacts`, `resend.segments`, `resend.topics`, `resend.broadcasts`, and `resend.events`. Requirement IDs come from the source-generated `configurationConditions`, `sqlIntentRequirements`, and `untrackedPotentialRequests` arrays. Capability closures contain their family IDs, requirement IDs, and nonsecret 64-hex evidence IDs. All reachable untracked requirements remain explicitly missing until a verified source/configuration closure covers them. Empty provider lists and successful sync rows do not erase those requirements.
+The selected families are `resend.contacts`, `resend.segments`, `resend.topics`, `resend.broadcasts`, and `resend.events`. Requirement IDs come from the source-generated `configurationConditions`, `sqlIntentRequirements`, and `untrackedPotentialRequests` arrays. There is at most one closure per family. Each closure must contain the exact sorted union of all three family requirement arrays and every source-wide SQL credential requirement; omitting one global SQL key refuses. Its `sourceCommit`, `surfaceSha256`, `configurationRecordSha256`, and `provenanceSha256` must equal the source reducer's bound context. `absent-from-verified-source` is accepted only when the verified family is actually absent; a reachable family requires `no-capability-observed`. Evidence IDs are sorted unique 64-hex values and include the source inventory, requirements, original configuration and provenance references. The no-provider positive receipt includes the global SQL IDs. Normal observations expose per-family closure contradictions and never claim event-history pagination. All reachable untracked requirements remain explicitly missing until a verified source/configuration closure covers them. Empty provider lists and successful sync rows do not erase those requirements.
 
 ## Observation and recovery rules
 
@@ -71,3 +73,10 @@ Any lease, unresolved intent, pending/scheduled effect, unmatched result, absent
 ## Qualification
 
 The [portable baseline](baselines/2026-11-05-resend-marketing-scope/README.md) records the source revisions, official SDK verification, retained failed attempts, and passing owned fixtures. No actual Resend API, original runtime configuration, live credential, or customer record was accessed.
+
+
+## Independent closure review correction
+
+Review reproduced false completion at original helper SHA256 `eda224f438c99a13e714a89e517693c4cc5f51e550cfd196bcd7567964cab893`: missing global SQL obligations or an absence disposition for reachable source could close the whole helper, and a partial closure could erase a contradictory broadcast/contact/event result. The original actual-C07-manifest reproduction and nine failing frozen-helper regressions are retained in [the closure review baseline](baselines/2026-11-05-resend-closure-review/README.md). The preceding passing scope tests remain historical; they did not cover these cases and do not establish live acceptance.
+
+The correction binds exact global/family requirements and per-surface source context, preserves all per-family contradictions, and retains the valid no-provider path only for complete source closures and empty original/current SQL. Owned actual HTTPS/PostgreSQL and actual-source-function positive/tamper checks qualify this boundary. No live configuration, credential, provider or database was accessed.

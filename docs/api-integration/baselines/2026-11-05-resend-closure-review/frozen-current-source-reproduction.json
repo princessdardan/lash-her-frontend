@@ -1,0 +1,15 @@
+{
+  "kind": "frozen-source-reproduction",
+  "frozenHelperSha256": "eda224f438c99a13e714a89e517693c4cc5f51e550cfd196bcd7567964cab893",
+  "actualVerifiedSourceManifestSha256": "36f014a5ea2fa4e4d334abada5ebe6fedc53454295cd00aee53bacdf9b092ac6",
+  "sourceCommit": "b99d4f346696f897fa6a6729dfcc52d6503fe8d6",
+  "sourceInventorySha256": "040c6a5c1f7b2ce590c99b77d1d265a631858f73ac9e77bf396e2d25bc80646b",
+  "requirementsSha256": "14d1c6dbe0e53733ce9eb332f24d077d670aaa359fab2514d992d87a09e59300",
+  "callerClosureContextIsDeliberatelyForged": true,
+  "providerResponses": "owned-memory-only",
+  "liveCalls": 0,
+  "missingGlobalSqlIdsErroneouslyCompletes": true,
+  "reachableSourceWrongAbsenceErroneouslyCompletes": true,
+  "contradictoryBroadcastErroneouslyFamilyComplete": true,
+  "ownedProviderReadCount": 6
+}
