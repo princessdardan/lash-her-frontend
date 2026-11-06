@@ -116,6 +116,30 @@ async function main() {
       const reuse = { ownerOid: prepared.owner.oid, runtimeOid: prepared.runtime.oid, proofSha256: prepared.proofSha256 };
       const reused = fixture("reuse", reuse), reusedProof = await run(reused, operator, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory });
       assert.deepEqual(reusedProof.owner, prepared.owner); assert.deepEqual(reusedProof.runtime, prepared.runtime); record("exact-approved-oid-grant-and-private-credential-reuse");
+      phase = "database-scoped-selected-role-settings";
+      for (const selectedRole of [prepared.owner, prepared.runtime]) {
+        await administrator.query(`ALTER ROLE "${selectedRole.name}" IN DATABASE frontend_role_owned SET search_path=public`);
+        assert.equal((await operator.query("SELECT rolconfig FROM pg_catalog.pg_roles WHERE oid=$1::oid", [selectedRole.oid])).rows[0].rolconfig, null);
+        const settingCount = async () => (await operator.query("SELECT count(*)::int AS count FROM pg_catalog.pg_db_role_setting WHERE setrole=$1::oid", [selectedRole.oid])).rows[0].count;
+        assert.equal(await settingCount(), 1);
+        const fault = fixture(selectedRole.name === names.owner ? "owner-database-setting" : "runtime-database-setting", reuse);
+        let roleMutations = 0;
+        const readOnlyReuse = { connection: operator.connection, connectionParameters: operator.connectionParameters,
+          query: async (sql, values) => { if (/^(CREATE ROLE|ALTER ROLE|GRANT |REVOKE |ALTER DEFAULT)/u.test(sql)) roleMutations++; return originalQuery(sql, values); } };
+        await assert.rejects(run(fault, readOnlyReuse, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory }));
+        assert.equal(roleMutations, 0); assert.equal(await settingCount(), 1);
+        assert.equal(existsSync(join(fault.directory, "roles-preparation-started.json")), false);
+        assert.equal(existsSync(join(fault.privateDirectory, "frontend-role-credentials.json")), false);
+        assert.deepEqual((await existingNewRoles()).map(row => row.oid).sort(), [prepared.owner.oid, prepared.runtime.oid].sort());
+        // Deliberate repair belongs to this disposable fixture, never the
+        // source role-preparation implementation or its refusal path.
+        await administrator.query(`ALTER ROLE "${selectedRole.name}" IN DATABASE frontend_role_owned RESET search_path`);
+        assert.equal(await settingCount(), 0);
+        const repaired = fixture(selectedRole.name === names.owner ? "owner-setting-repaired" : "runtime-setting-repaired", reuse);
+        const repairedProof = await run(repaired, operator, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory });
+        assert.deepEqual(repairedProof.owner, prepared.owner); assert.deepEqual(repairedProof.runtime, prepared.runtime);
+      }
+      record("actual-database-scoped-settings-on-either-selected-role-refuse-reuse-without-mutation-and-pass-after-repair");
       const wrongOid = fixture("wrong-oid", { ...reuse, runtimeOid: "1" }); await assert.rejects(run(wrongOid, operator, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory })); record("wrong-reuse-oid-refused");
       await operator.query(`GRANT TRUNCATE ON public.preserved_data TO "${names.runtime}"`);
       await assert.rejects(run(fixture("wrong-grants", reuse), operator, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory }));
