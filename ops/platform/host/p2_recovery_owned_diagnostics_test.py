@@ -141,11 +141,16 @@ class OwnedRecoveryDiagnosticsTests(unittest.TestCase):
                     self.assertEqual((platform/name).read_bytes(),(ROOT/'ops/platform'/name).read_bytes())
                 before=len(owner.calls)
                 values=NS['run_owned_composed_diagnostic_controls'](node,ROOT,connections,directory,codes)
-                self.assertEqual(len(values),4);self.assertTrue(values[0]['bridgeErrors'])
+                self.assertEqual(len(values),6);self.assertTrue(values[0]['bridgeErrors'])
                 self.assertFalse(values[1]['bridgeErrors']);self.assertFalse(values[3]['bridgeErrors'])
                 self.assertTrue(any(row['guardCode']=='P2_RECOVERY_CURRENT_DATABASE_REFUSED' and row['checkpoint']=='forward-brand' for row in values[2]['nodeErrors']))
                 self.assertTrue(all(row['method']=='GET' for row in owner.calls[before:]))
                 self.assertEqual(list(directory.iterdir()),[])
+                self.assertTrue(any(row['guardCode']=='FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED' for row in values[4]['nodeErrors']))
+                self.assertTrue(any(row['kind']=='AssertionError' for row in values[5]['nodeErrors']))
+                for value in values[4:]:
+                    self.assertFalse(any(row['guardCode']=='P2_RECOVERY_CURRENT_DATABASE_REFUSED' for row in value['nodeErrors']))
+                    self.assertNotIn('PRIVATE_ASSERT_',json.dumps(value))
         finally:
             owner.tearDown();fixture.RecoveryForwardBuildTests.tearDownClass()
 

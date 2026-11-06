@@ -139,7 +139,7 @@ def prepare_owned_forward_graph(root,directory,provider_origin,provider_ca):
 
 
 OWNED_NODE_GUARD_CODES=frozenset(('P2_RECOVERY_CURRENT_DATABASE_REFUSED','P2_RECOVERY_RUNTIME_CREDENTIAL_REFUSED',
-    'P2_RECOVERY_RUNTIME_CREDENTIAL_CLEANUP_UNCERTAIN','P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW','P2_RECOVERY_FRONTEND_RECHECK_REFUSED'))
+    'P2_RECOVERY_RUNTIME_CREDENTIAL_CLEANUP_UNCERTAIN','P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW','P2_RECOVERY_FRONTEND_RECHECK_REFUSED','FRONTEND_PROVIDER_RUNTIME_CONTEXT_REFUSED','FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED','FRONTEND_PROVIDER_ADAPTER_REFUSED'))
 OWNED_NODE_SOURCE_FILES=frozenset(('ops/platform/p2-recovery-current-probe.mjs','ops/platform/p2-recovery-frontend-observation.mjs',
     'ops/platform/frontend-release-adapters.mjs','ops/platform/test-p2-recovery-owned.mjs'))
 
@@ -152,7 +152,7 @@ def owned_node_diagnostics(stderr):
         except (ValueError,TypeError):continue
         if not isinstance(value,dict) or set(value)!={'status','phase','stage','kind','guardCode','checkpoint','frames'} or value.get('status')!='OWNED_P2_RECOVERY_NODE_DIAGNOSTIC':continue
         if any(type(value[key]) is not str for key in ('phase','stage','kind','guardCode','checkpoint')):continue
-        if value['phase'] not in OWNED_CHILD_PHASES or value['stage'] not in ('build-bridge','mutation-checkpoint','composed-source-bridge','composed-checkpoint') or value['kind'] not in ('Error','AssertionError','TypeError','RangeError','SyntaxError','unknown'):continue
+        if value['phase'] not in OWNED_CHILD_PHASES or value['stage'] not in ('build-bridge','mutation-checkpoint','composed-source-bridge','composed-checkpoint','shared-compatible','shared-vercel','shared-frontend','forward-callback') or value['kind'] not in ('Error','AssertionError','TypeError','RangeError','SyntaxError','unknown'):continue
         if value['guardCode'] not in OWNED_NODE_GUARD_CODES|{'unknown'} or value['checkpoint'] not in ('runtime-credential','runtime-physical-session','forward-brand','forward-mode','unknown'):continue
         if not isinstance(value['frames'],list) or len(value['frames'])>12:continue
         if any(not isinstance(row,dict) or set(row)!={'source','file','line','column'} or row['source'] not in ('frontend','frontend-fixture') or type(row['file']) is not str or row['file'] not in OWNED_NODE_SOURCE_FILES or type(row['line']) is not int or not 1<=row['line']<=1000000 or type(row['column']) is not int or not 1<=row['column']<=100000 for row in value['frames']):continue
@@ -216,18 +216,25 @@ def run_owned_composed_diagnostic_controls(node,root,connections,bridge_director
     graph=Path(connections['forwardFixture']['graph'])
     if list(Path(bridge_directory).iterdir()):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_EMPTY_START_REQUIRED')
     receipts=[]
-    for mode in ('python-source-guard','node-pre-spawn','node-checkpoint','node-message-collision'):
-        packet={**connections,'ownedComposedDiagnosticControl':mode}
+    receipt_root=Path(bridge_directory).parent.resolve()/'composed-receipts';receipt_root.mkdir(mode=0o700)
+    for mode in ('python-source-guard','node-pre-spawn','node-checkpoint','node-message-collision','shared-observer-guard','shared-observer-assertion'):
+        receipt_directory=receipt_root/mode;receipt_directory.mkdir(mode=0o700)
+        packet={**connections,'ownedComposedDiagnosticControl':mode,'ownedComposedReceiptDirectory':str(receipt_directory)}
         result=subprocess.run([node,'--import',str(Path(root)/'node_modules/tsx/dist/loader.mjs'),str(Path(root)/'ops/platform/test-p2-recovery-owned.mjs')],
             cwd=root,env=child_environment(P2_RECOVERY_OWNED_TEST='true',P2_RECOVERY_OWNED_CONNECTIONS=json.dumps(packet)),capture_output=True,text=True,timeout=60)
         output=io.StringIO()
         with contextlib.redirect_stderr(output):report_child_failure(result,{'frontend':root,'frontend-fixture':graph.parent.parent},True,bridge_directory,bridge_codes)
         lines=output.getvalue().splitlines();value=json.loads(lines[1])
-        if result.returncode!=1 or result.stdout or value['phase']!='forward-composed-failure-control':raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_CHILD_REFUSAL_REQUIRED')
+        if result.returncode!=1 or result.stdout or value['phase']!=('forward-shared-vercel-observation' if mode.startswith('shared-observer-') else 'forward-composed-failure-control'):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_CHILD_REFUSAL_REQUIRED')
         if mode=='python-source-guard':
             if not any(row['guardCode']=='P2_FORWARD_CONCLUSIVE_FAILED_BUILD_REQUIRED' for error in value['bridgeErrors'] for row in error['chain']):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_PYTHON_SOURCE_REQUIRED')
         elif mode=='node-message-collision':
             if value['bridgeErrors'] or not value['nodeErrors'] or any(error['guardCode']!='unknown' for error in value['nodeErrors']):raise ValueError('OWNED_COMPOSED_DIAGNOSTIC_UNBOUND_COLLISION_REFUSED')
+        elif mode.startswith('shared-observer-'):
+            if value['bridgeErrors'] or any(error['guardCode']=='P2_RECOVERY_CURRENT_DATABASE_REFUSED' for error in value['nodeErrors']):raise ValueError('OWNED_COMPOSED_EXPECTED_NEGATIVE_ATTRIBUTION_REFUSED')
+            if mode=='shared-observer-guard' and not any(error['guardCode']=='FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED' and error['frames'] for error in value['nodeErrors']):raise ValueError('OWNED_COMPOSED_SHARED_OBSERVER_GUARD_REQUIRED')
+            if mode=='shared-observer-assertion' and not any(error['kind']=='AssertionError' and error['stage']=='forward-callback' and error['frames'] for error in value['nodeErrors']):raise ValueError('OWNED_COMPOSED_SHARED_OBSERVER_ASSERTION_REQUIRED')
+            if any(private in output.getvalue() for private in ('PRIVATE_ASSERT_ACTUAL','PRIVATE_ASSERT_EXPECTED')):raise ValueError('OWNED_COMPOSED_ASSERTION_VALUES_LEAKED')
         elif mode=='node-checkpoint':
             # Closing stdin and SIGTERM can race the child's EOF projection.
             # Its optional cleanup metadata never replaces the actual Node guard.

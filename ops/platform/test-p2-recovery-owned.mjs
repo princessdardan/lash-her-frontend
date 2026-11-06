@@ -4,6 +4,7 @@ import { readFileSync,writeFileSync,existsSync,unlinkSync,realpathSync } from 'n
 import { join,relative } from 'node:path';
 import { pathToFileURL,fileURLToPath } from 'node:url';
 import { Client } from 'pg';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { frontendMigrationArtifact } from './frontend-migration.mjs';
 import { readMigrationCatalog } from './frontend-schema.mjs';
 import { withRecoveryFrontendSession, observeRecoveryPhysical,issueP2RecoveryForwardScope,readP2RecoveryForwardScope,verifyP2RecoveryForwardMutation,RECOVERY_HELD_LOCK } from './p2-recovery-current-probe.mjs';
@@ -35,7 +36,7 @@ function ownedBindings(supplied,plan){
 }
 
 const OWNED_NODE_GUARDS=new Set(['P2_RECOVERY_CURRENT_DATABASE_REFUSED','P2_RECOVERY_RUNTIME_CREDENTIAL_REFUSED','P2_RECOVERY_RUNTIME_CREDENTIAL_CLEANUP_UNCERTAIN',
-  'P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW','P2_RECOVERY_FRONTEND_RECHECK_REFUSED']);
+  'P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW','P2_RECOVERY_FRONTEND_RECHECK_REFUSED','FRONTEND_PROVIDER_RUNTIME_CONTEXT_REFUSED','FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED','FRONTEND_PROVIDER_ADAPTER_REFUSED']);
 const OWNED_NODE_FILES=new Set(['ops/platform/p2-recovery-current-probe.mjs','ops/platform/p2-recovery-frontend-observation.mjs','ops/platform/frontend-release-adapters.mjs','ops/platform/test-p2-recovery-owned.mjs']);
 const sourceRoot=realpathSync(fileURLToPath(new URL('../../',import.meta.url)));
 function ownedNodeDiagnostic(error,stage){
@@ -52,33 +53,53 @@ function ownedNodeDiagnostic(error,stage){
   }
   const message=safe('message'),kind=safe('name'),checkpoint=safe('checkpoint');
   const guardCode=OWNED_NODE_GUARDS.has(message)&&frames.some(frame=>{if(frame.file==='ops/platform/test-p2-recovery-owned.mjs')return false;
-    try{return readFileSync(join(roots.find(row=>row[0]===frame.source)[1],frame.file),'utf8').split('\n')[frame.line-1]?.includes("'"+message+"'");}catch{return false;}})?message:'unknown';
+    try{const line=readFileSync(join(roots.find(row=>row[0]===frame.source)[1],frame.file),'utf8').split('\n')[frame.line-1];return line?.includes("'"+message+"'")||line?.includes('"'+message+'"');}catch{return false;}})?message:'unknown';
   return{status:'OWNED_P2_RECOVERY_NODE_DIAGNOSTIC',phase:currentOwnedPhase,stage,
     kind:['Error','AssertionError','TypeError','RangeError','SyntaxError'].includes(kind)?kind:'unknown',guardCode,
     checkpoint:['runtime-credential','runtime-physical-session','forward-brand','forward-mode'].includes(checkpoint)?checkpoint:'unknown',frames};
 }
+const ownedOperations=new AsyncLocalStorage(),ownedFailures=new WeakMap();
 async function ownedCall(stage,task){
+  const parent=ownedOperations.getStore(),operation={errors:[]};
+  return ownedOperations.run(operation,async()=>{try{return await task();}catch(error){
+    const records=[...operation.errors,...(ownedFailures.get(error)??[]),ownedNodeDiagnostic(error,stage)];
+    const unique=records.filter((row,index)=>records.findIndex(other=>JSON.stringify(other)===JSON.stringify(row))===index).slice(-8);
+    if(error&&(typeof error==='object'||typeof error==='function'))ownedFailures.set(error,unique);if(parent)parent.errors.push(...unique);throw error;
+  }});
+}
+async function ownedBoundary(task){
   try{return await task();}catch(error){
-    if(['forward-new-build-probe-promote','forward-post-build-runtime-credential-negative','forward-composed-failure-control'].includes(currentOwnedPhase))
-      process.stderr.write(JSON.stringify(ownedNodeDiagnostic(error,stage))+'\n');
+    // Only the actual uncaught error and its operation-scoped causes escape.
+    // A rejected error consumed by assert.rejects never becomes final evidence.
+    for(const record of ownedFailures.get(error)??[ownedNodeDiagnostic(error,'forward-callback')])
+      process.stderr.write(JSON.stringify(record)+'\n');
     throw error;
   }
 }
 
 if(privateInput.ownedComposedDiagnosticControl!==undefined){
-  const mode=privateInput.ownedComposedDiagnosticControl;assert.ok(['python-source-guard','node-pre-spawn','node-checkpoint','node-message-collision'].includes(mode));
+  const mode=privateInput.ownedComposedDiagnosticControl;assert.ok(['python-source-guard','node-pre-spawn','node-checkpoint','node-message-collision','shared-observer-guard','shared-observer-assertion'].includes(mode));
   const fixture=privateInput.forwardFixture,supplied=fixture.context,plan=structuredClone(supplied.plan),role=supplied.writerTarget.user;
   plan.producers=[{producerSha256:plan.bootstrapCompatibility.runtimeProducerSha256,role:{name:role}}];
   const bindings=ownedBindings(supplied,plan),bridge=await import(pathToFileURL(join(fixture.graph,'p2-recovery-frontend-observation.mjs')));
   let verified=0;
   const context={candidate:supplied.candidate,plan,job:{target:{runtimeRole:role}},action:{...supplied.action,forwardReason:'prior-build-canceled'},
-    originalDirectory:supplied.originalDirectory,directory:supplied.directory,
+    originalDirectory:supplied.originalDirectory,directory:privateInput.ownedComposedReceiptDirectory,bootstrapRuntimeTarget:supplied.writerTarget,
     getProviderContext:async()=>({...supplied,bindings,vercelToken:'owned-token-marker'}),
     verifyLockedSession:()=>ownedCall('composed-checkpoint',async()=>{if(mode==='node-checkpoint'&&++verified===2)await readP2RecoveryForwardScope({},context);})};
   if(mode==='node-pre-spawn')plan.producers=[];
   ownedFixturePhase('forward-composed-failure-control');
-  await ownedCall('composed-source-bridge',()=>{if(mode==='node-message-collision')throw new Error('P2_RECOVERY_FRONTEND_RECHECK_REFUSED');return bridge.reconcileP2RecoveryForward(context);});
-  assert.fail('controlled production bridge refusal was not enforced');
+  await ownedBoundary(async()=>{
+    if(mode.startsWith('shared-observer-')){
+      await assert.rejects(ownedCall('expected-negative',()=>readP2RecoveryForwardScope({},context)));
+      ownedFixturePhase('forward-shared-vercel-observation');
+      const adapters=await import(pathToFileURL(join(fixture.graph,'frontend-release-adapters.mjs')));
+      if(mode==='shared-observer-guard')context.candidate={...context.candidate,sources:{...context.candidate.sources,frontend:{...context.candidate.sources.frontend,commit:'f'.repeat(40)}}};
+      await ownedCall('shared-vercel',()=>adapters.runFrontendVercelWorker('observe-vercel',context));
+      assert.equal('PRIVATE_ASSERT_ACTUAL','PRIVATE_ASSERT_EXPECTED');
+    }else await ownedCall('composed-source-bridge',()=>{if(mode==='node-message-collision')throw new Error('P2_RECOVERY_FRONTEND_RECHECK_REFUSED');return bridge.reconcileP2RecoveryForward(context);});
+    assert.fail('controlled production bridge refusal was not enforced');
+  });
 }
 ownedFixturePhase('frontend-connect');
 const admin=await connect(privateInput.frontend),artifact=frontendMigrationArtifact();
@@ -131,7 +152,7 @@ try{
     let retainedScope,retainedContext,mutationRefusals=0,runtimeCredentialRefusals=0;
     await store.record('p2-recovery-started.json',{...base,status:'P2_POST_SQL_RECOVERY_STARTED'});
     ownedFixturePhase('frontend-recovery-session');
-    await withRecoveryFrontendSession(prepared,forwardAction,deps,async({session,client,verify,receipt,probe})=>{
+    await withRecoveryFrontendSession(prepared,forwardAction,deps,async({session,client,verify,receipt,probe})=>ownedBoundary(async()=>{
       const context={candidate,plan,job,action:forwardAction,checkpoint:'recovery',inventorySha256:forwardAction.inventorySha256,recoveryActionId:forwardAction.recoveryActionId,
         originalDirectory:supplied.originalDirectory,directory:supplied.directory,databaseClient:client,verifyLockedSession:verify,environmentSignal:new AbortController().signal,
         bootstrapRuntimeTarget:{environment:'staging',targetSha256,host:target.host,port:target.port,database:target.database,user:target.runtimeRole,serverMajor},
@@ -228,7 +249,7 @@ try{
       await assert.rejects(adapters.runFrontendVercelWorker('observe-compatible',{...context,recoveryActionId:'wrong-action'}));
       for(const operation of ['deploy-compatible','retire-deployments','suspend-schedules'])await assert.rejects(adapters.runFrontendVercelWorker(operation,context));
       ownedFixturePhase('forward-shared-compatible-observation');
-      const observed=await adapters.observeCompatibleFrontend(context);assert.equal(observed.readyState,'READY');assert.equal(observed.workloadVerified,true);
+      const observed=await ownedCall('shared-compatible',()=>adapters.observeCompatibleFrontend(context));assert.equal(observed.readyState,'READY');assert.equal(observed.workloadVerified,true);
       assert.equal(observed.aliasDeploymentId,observed.deploymentId);assert.equal(observed.aliasJobDeploymentId,observed.deploymentId);assert.equal(observed.aliasJobMatchesIntent,true);assert.equal(observed.nativeSchedulesEnabled,false);
       assert.deepEqual(observed.featureControls,plan.certification.featureControls);
       assert.deepEqual(observed.writerAdmissionBinding,{mode:'enforce',targetSha256,producerSha256,sourceCommit,roleName:target.runtimeRole});
@@ -236,10 +257,10 @@ try{
       const workload=await adapters.readCompatibleFrontendWorkloadReceipt(context,observed);assert.equal(hash(workload),observed.workloadReceiptSha256);
       assert.deepEqual(workload,readFileSync(join(context.directory,'vercel/frontend-workload-outcome.json')));
       ownedFixturePhase('forward-shared-vercel-observation');
-      const inventory=await adapters.runFrontendVercelWorker('observe-vercel',context);assert.equal(inventory.reviewedInventoryMatches,true);assert.equal(inventory.reviewedProjectMatches,true);assert.equal(inventory.aliasJobActive,false);
+      const inventory=await ownedCall('shared-vercel',()=>adapters.runFrontendVercelWorker('observe-vercel',context));assert.equal(inventory.reviewedInventoryMatches,true);assert.equal(inventory.reviewedProjectMatches,true);assert.equal(inventory.aliasJobActive,false);
       assert.equal(inventory.knownTerminalActionBuilds.length,1);assert.notEqual(inventory.knownTerminalActionBuilds[0].deploymentId,observed.deploymentId);
       for(const result of [inventory,observed]){assert.equal(result.forwardRecovery.recoveryActionId,projection.recoveryActionId);assert.deepEqual(result.forwardRecovery.originalReceiptSha256,projection.originalReceiptSha256);}
-      assert.equal((await bridge.observeP2RecoveryFrontend(context)).status,'P2_RECOVERY_FRONTEND_RUNTIME_VERIFIED');
+      assert.equal((await ownedCall('shared-frontend',()=>bridge.observeP2RecoveryFrontend(context))).status,'P2_RECOVERY_FRONTEND_RUNTIME_VERIFIED');
       ownedFixturePhase('forward-open-admission-and-receipt-negatives');
       await admin.query('UPDATE frontend_admission.control SET recovery=true');
       await assert.rejects(context.verifyMutationScope(supplied.frontendRuntimeDatabaseUrl));mutationRefusals++;
@@ -258,7 +279,7 @@ try{
         finally{await current.end();}
       }
       await verify();
-    });
+    }));
     ownedFixturePhase('forward-scope-expired');
     await assert.rejects(readP2RecoveryForwardScope(retainedScope,retainedContext));
     assertOwnedEnvironment();
