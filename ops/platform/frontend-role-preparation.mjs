@@ -117,6 +117,11 @@ async function observeRoles(client, plan) {
   // must also be absent for both selected roles, across the whole cluster.
   demand((await client.query(`SELECT 1 FROM pg_catalog.pg_db_role_setting
     WHERE setrole=ANY($1::oid[]) LIMIT 1`, [[owner.oid, runtime.oid]])).rows.length === 0, "database-role-settings");
+  // Inspect effective access, including PUBLIC grants. A schema owned by
+  // someone else can still shadow unqualified runtime queries via "$user".
+  demand((await client.query(`SELECT 1 FROM pg_catalog.pg_namespace
+    WHERE nspname !~ '^pg_' AND nspname NOT IN ('information_schema','public','frontend_admission')
+      AND pg_catalog.has_schema_privilege($1::oid,oid,'USAGE') LIMIT 1`, [runtime.oid])).rows.length === 0, "runtime-schema-usage");
   const memberships = (await client.query(`SELECT m.roleid::text,m.member::text,m.grantor::text,m.admin_option,m.inherit_option,m.set_option,g.rolsuper AS grantor_super
     FROM pg_auth_members m JOIN pg_roles g ON g.oid=m.grantor
     WHERE m.roleid=ANY($1::oid[]) OR m.member=ANY($1::oid[]) ORDER BY m.roleid,m.member,m.grantor`, [[owner.oid, runtime.oid]])).rows;
@@ -270,7 +275,7 @@ export async function applyPreparedFrontendRoles(plan, client, dependencies) {
   } catch (error) {
     if (transaction && !commitAttempted) { try { await client.query("ROLLBACK"); rollbackAcknowledged = true; } catch { /* No replay. */ } }
     if (started) { try { retain(directory, "roles-preparation-outcome.json", { ...base, status: "FAILED_REQUIRES_REVIEW", phase,
-      ...(["attributes","database-role-settings","memberships","ownership-or-extra-dependency","effective-privileges","table-or-sequence-privileges","defaults","other-database-grants","direct-acl"].includes(error?.checkpoint) ? {checkpoint:error.checkpoint} : {}),
+      ...(["attributes","database-role-settings","runtime-schema-usage","memberships","ownership-or-extra-dependency","effective-privileges","table-or-sequence-privileges","defaults","other-database-grants","direct-acl"].includes(error?.checkpoint) ? {checkpoint:error.checkpoint} : {}),
       ...(typeof error?.code === "string" && /^[A-Z0-9]{5}$/u.test(error.code) ? { sqlState: error.code } : {}),
       sqlOutcome: committed ? "committed" : commitAttempted ? "commit-acknowledgment-unknown" : rollbackAcknowledged ? "rolled-back" : roleSqlAttempted ? "not-committed-or-unknown" : "not-started",
       roleSqlAttempted, automaticReplayAllowed: false }); } catch { /* Exclusive original intent/private evidence remains authoritative. */ } }

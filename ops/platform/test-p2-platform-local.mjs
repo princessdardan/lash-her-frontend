@@ -20,6 +20,7 @@ export const P2_OWNED_FIXTURES = Object.freeze([
     'actual-runtime-persistent-ddl-journal-and-membership-denied',
     'exact-approved-oid-grant-and-private-credential-reuse',
     'actual-database-scoped-settings-on-either-selected-role-refuse-reuse-without-mutation-and-pass-after-repair',
+    'actual-public-schema-usage-shadow-read-refuses-runtime-reuse-without-mutation-and-passes-after-cleanup',
     'actual-commit-then-lost-ack-retains-unknown-and-private-recovery-material',
     'lost-commit-acknowledgment-is-never-replayed',
     'owned-server-logs-and-public-receipts-contain-no-password-or-scram-verifier',

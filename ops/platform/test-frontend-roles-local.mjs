@@ -140,6 +140,34 @@ async function main() {
         assert.deepEqual(repairedProof.owner, prepared.owner); assert.deepEqual(repairedProof.runtime, prepared.runtime);
       }
       record("actual-database-scoped-settings-on-either-selected-role-refuse-reuse-without-mutation-and-pass-after-repair");
+      phase = "runtime-effective-public-schema-usage";
+      const shadowSchema = `"${names.runtime}"`;
+      await administrator.query(`CREATE SCHEMA ${shadowSchema}`);
+      await administrator.query(`GRANT USAGE ON SCHEMA ${shadowSchema} TO PUBLIC`);
+      await administrator.query(`CREATE TABLE ${shadowSchema}.preserved_data(value text NOT NULL)`);
+      await administrator.query(`INSERT INTO ${shadowSchema}.preserved_data(value) VALUES('owned-public-shadow-read')`);
+      await administrator.query(`GRANT SELECT ON ${shadowSchema}.preserved_data TO PUBLIC`);
+      assert.notEqual((await operator.query("SELECT nspowner::text AS oid FROM pg_catalog.pg_namespace WHERE nspname=$1", [names.runtime])).rows[0].oid, prepared.runtime.oid);
+      assert.equal((await operator.query("SELECT rolconfig FROM pg_catalog.pg_roles WHERE oid=$1::oid", [prepared.runtime.oid])).rows[0].rolconfig, null);
+      assert.equal((await operator.query("SELECT count(*)::int AS count FROM pg_catalog.pg_db_role_setting WHERE setrole=$1::oid", [prepared.runtime.oid])).rows[0].count, 0);
+      const publicValues = before.data.map(row => ({ value: row.value }));
+      assert.deepEqual((await runtime.query("SELECT value FROM public.preserved_data")).rows, publicValues);
+      assert.deepEqual((await runtime.query("SELECT value FROM preserved_data")).rows, [{ value: "owned-public-shadow-read" }]);
+      const shadowedReuse = fixture("public-schema-shadow", reuse); let shadowRoleMutations = 0;
+      const observedReuse = { connection: operator.connection, connectionParameters: operator.connectionParameters,
+        query: async (sql, values) => { if (/^(CREATE ROLE|ALTER ROLE|GRANT |REVOKE |ALTER DEFAULT)/u.test(sql)) shadowRoleMutations++; return originalQuery(sql, values); } };
+      await assert.rejects(run(shadowedReuse, observedReuse, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory }));
+      assert.equal(shadowRoleMutations, 0);
+      assert.equal(existsSync(join(shadowedReuse.directory, "roles-preparation-started.json")), false);
+      assert.equal(existsSync(join(shadowedReuse.privateDirectory, "frontend-role-credentials.json")), false);
+      assert.deepEqual((await runtime.query("SELECT value FROM preserved_data")).rows, [{ value: "owned-public-shadow-read" }]);
+      // Only the disposable fixture administrator removes the injected schema.
+      await administrator.query(`DROP SCHEMA ${shadowSchema} CASCADE`);
+      assert.deepEqual((await runtime.query("SELECT value FROM preserved_data")).rows, publicValues);
+      const schemaRepaired = fixture("schema-usage-repaired", reuse);
+      const schemaProof = await run(schemaRepaired, operator, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory });
+      assert.deepEqual(schemaProof.owner, prepared.owner); assert.deepEqual(schemaProof.runtime, prepared.runtime);
+      record("actual-public-schema-usage-shadow-read-refuses-runtime-reuse-without-mutation-and-passes-after-cleanup");
       const wrongOid = fixture("wrong-oid", { ...reuse, runtimeOid: "1" }); await assert.rejects(run(wrongOid, operator, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory })); record("wrong-reuse-oid-refused");
       await operator.query(`GRANT TRUNCATE ON public.preserved_data TO "${names.runtime}"`);
       await assert.rejects(run(fixture("wrong-grants", reuse), operator, { reuseDirectory: positive.directory, reusePrivateDirectory: positive.privateDirectory }));
