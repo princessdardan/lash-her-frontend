@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "driverSha256": "d8f68b5ff50358d4072d63fcfa3822d8c64bda6f3f165fc794bda3ca14b2ca42",
+  "stderrSha256": "be91ff545549b6403ca00bcc2f53e5b09769d7bfeece3bbbf64bd10f99a6b3ea",
+  "failureStage": "owned-cluster",
+  "cause": "UNKNOWN at original failure capture"
+}
