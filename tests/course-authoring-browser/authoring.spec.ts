@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import pg from "pg";
 import {
   test,
   expect,
@@ -47,6 +48,62 @@ test.afterEach(() => {
   } finally {
     externalOrigins.clear();
   }
+});
+test("owner manual access uses real auth/Course SQL audit and explicit lost-ack reconciliation", async ({ browser, baseURL }) => {
+  if (!storagePath || !baseURL) throw new Error("Owned browser setup required");
+  const states = JSON.parse(await readFile(storagePath, "utf8"));
+  const context = await ownedContext(browser, states.owner);
+  const page = await context.newPage();
+  const database = new URL(process.env.COURSE_AUTHORING_GRANT_DATABASE_URL ?? "");
+  if (database.hostname !== "127.0.0.1" || database.pathname !== "/lash_authoring_course_integration") throw new Error("Owned Course DB required");
+  const sql = new pg.Client({ connectionString: database.href });
+  await sql.connect();
+  const headers = { origin: baseURL, "x-lash-csrf": "1" };
+  try {
+    const create = await context.request.post("/api/admin/courses", { headers, data: { title: "Manual support course", slug: "manual-support-course", currency: "CAD", accessMode: "paid", priceCents: 1000, taxClassification: "fixture-reviewed" } });
+    expect(create.status()).toBe(200);
+    const id = (await create.json()).course.id;
+    const createdSupportModule = await context.request.post(`/api/admin/courses/${id}/modules`, { headers, data: { expectedCourseRevision: 1, title: "Support module", slug: "support-module", position: 1 } });
+    const moduleId = (await createdSupportModule.json()).module.id;
+    const lesson = await context.request.post(`/api/admin/modules/${moduleId}/lessons`, { headers, data: { expectedCourseRevision: 2, title: "Text lesson", slug: "text-lesson", position: 1,
+      contentDocument: { version: 1, blocks: [{ _type: "block", _key: "b", children: [{ _type: "span", _key: "s", text: "Owned manual grant content" }] }] } } });
+    expect(lesson.status()).toBe(200);
+    expect((await context.request.patch(`/api/admin/courses/${id}`, { headers, data: { expectedRevision: 3, status: "published" } })).status()).toBe(200);
+    await page.goto(`/admin/courses/${id}/manual-grants`);
+    await expect(page.getByRole("heading", { name: "Manual access: Manual support course" })).toBeVisible();
+    await page.getByLabel("Customer UUID").fill(states.manualGrantCustomerIds[0]);
+    await page.getByLabel("Grant reason").fill("Owned normal owner support");
+    await page.getByRole("button", { name: "Grant manual access", exact: true }).click();
+    await expect(page.getByRole("status")).toContainText("Manual grant and audit confirmed");
+    await expect(page.getByRole("button", { name: "Grant manual access", exact: true })).toBeDisabled();
+    const rows = (await sql.query("select g.id,g.external_order_id,g.external_payment_id,g.provider,g.grant_reason,c.id command_id,c.effect_count,e.effect_type from entitlement_grants g join admin_entitlement_commands c on c.idempotency_key=g.idempotency_key join admin_entitlement_command_effects e on e.command_id=c.id where g.user_id=$1 and g.course_id=$2", [states.manualGrantCustomerIds[0], id])).rows;
+    expect(rows).toHaveLength(1); expect(rows[0]).toMatchObject({ external_order_id: null, external_payment_id: null, provider: null, grant_reason: "manual", effect_count: 1, effect_type: "grant_created" });
+    const events = (await sql.query("select o.canonical_body,o.state,o.attempts_in_cycle from community_enrollment_outbox o join community_enrollment_streams s on s.id=o.stream_id where s.user_id=$1 and s.course_id=$2", [states.manualGrantCustomerIds[0], id])).rows;
+    expect(events).toHaveLength(1); expect(events[0]).toMatchObject({ state: "pending", attempts_in_cycle: 0 });
+    expect(JSON.parse(events[0].canonical_body)).toMatchObject({ userId: states.manualGrantCustomerIds[0], courseId: id });
+    await page.reload(); await page.getByRole("button", { name: "Check recorded outcome" }).click();
+    await expect(page.getByRole("status")).toContainText("Manual grant and audit confirmed");
+    expect((await sql.query("select id from entitlement_grants where user_id=$1 and course_id=$2", [states.manualGrantCustomerIds[0], id])).rows).toHaveLength(1);
+    await page.getByRole("button", { name: "Prepare another grant" }).click();
+    await page.getByLabel("Customer UUID").fill(states.manualGrantCustomerIds[1]); await page.getByLabel("Grant reason").fill("Owned response loss");
+    let posts = 0;
+    await page.route(`**/api/admin/courses/${id}/manual-grants`, async route => {
+      if (route.request().method() === "POST") { posts++; await route.fetch(); await route.abort("failed"); } else await route.continue();
+    });
+    await page.getByRole("button", { name: "Grant manual access", exact: true }).click();
+    await expect(page.getByRole("status")).toContainText(/fetch|unknown|outcome/i);
+    await page.getByRole("button", { name: "Check recorded outcome" }).click(); await expect(page.getByRole("status")).toContainText("Manual grant and audit confirmed");
+    expect(posts).toBe(1); expect((await sql.query("select id from entitlement_grants where user_id=$1 and course_id=$2", [states.manualGrantCustomerIds[1], id])).rows).toHaveLength(1);
+    const staff = await ownedContext(browser, states.admin);
+    try {
+      const denied = await staff.request.post(`/api/admin/courses/${id}/manual-grants`, { headers, data: { userId: states.manualGrantCustomerIds[1], expectedCourseRevision: 4, reason: "Unauthorized", idempotencyKey: crypto.randomUUID() } });
+      expect(denied.status()).toBe(403);
+    } finally { await staff.close(); }
+    expect((await context.request.post(`/api/admin/courses/${id}/manual-grants`, { headers: { origin: baseURL }, data: {} })).status()).toBe(403);
+    const anonymous = await ownedContext(browser, { cookies: [], origins: [] });
+    try { expect((await anonymous.request.get(`/api/admin/courses/${id}/manual-grants?idempotencyKey=${crypto.randomUUID()}`)).status()).toBe(401); }
+    finally { await anonymous.close(); }
+  } finally { await sql.end(); await context.close(); }
 });
 test("owner authors, grades publication readiness and publishes with actual Course persistence", async ({
   browser,

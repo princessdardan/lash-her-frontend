@@ -33,5 +33,5 @@ export default async function CourseAdminPage({
       </section>
     );
   }
-  return <CourseWorkspace initialCourse={loaded.data.course} />;
+  return <><Link href={`/admin/courses/${courseId}/manual-grants`} className="underline">Owner manual access support</Link><CourseWorkspace initialCourse={loaded.data.course} /></>;
 }

@@ -230,6 +230,17 @@ try {
   } finally {
     await client.end();
   }
+  // Source-owned synthetic customers exist only in this disposable local DB.
+  const customerIds = [randomUUID(), randomUUID()];
+  const supportDb = new pg.Client({ connectionString: frontendUrl });
+  await supportDb.connect();
+  try {
+    for (const id of customerIds) await supportDb.query(
+      "insert into customer_users(id,email,status) values($1,$2,'active')",
+      [id, `manual-grant-${id}@example.test`],
+    );
+  } finally { await supportDb.end(); }
+  storage.manualGrantCustomerIds = customerIds;
   const storagePath = join(temporary, "storage.json");
   await writeFile(storagePath, JSON.stringify(storage), { mode: 0o600 });
   const courseEnv = {
@@ -307,6 +318,7 @@ try {
     COURSE_AUTHORING_BROWSER_FIXTURE: "1",
     COURSE_AUTHORING_BROWSER_ORIGIN: origin,
     COURSE_AUTHORING_STORAGE_PATH: storagePath,
+    COURSE_AUTHORING_GRANT_DATABASE_URL: courseUrl,
   };
   process.stdout.write(
     `Authoring browser source frontend=${frontendSha} course=${courseSha}\n`,
