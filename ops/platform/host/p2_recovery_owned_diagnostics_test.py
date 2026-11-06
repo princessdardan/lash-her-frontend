@@ -21,7 +21,7 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[3]
 SOURCE=ROOT/'ops/platform/test-p2-recovery-owned.py'
 NS={'json':json,'os':os,'Path':Path,'re':re,'sys':sys,'signal':signal,'ast':ast,'traceback':traceback,'urllib':urllib,'ssl':ssl,'inspect':inspect,'shutil':shutil,'io':io,'contextlib':contextlib,'subprocess':subprocess}
-NAMES={'OWNED_CHILD_PHASES','OWNED_CHILD_ERROR_CODES','child_environment','child_failure_diagnostic','report_child_failure','OWNED_BRIDGE_SOURCE_FILES','OWNED_BRIDGE_ERROR_KINDS','owned_bridge_guard_codes','owned_bridge_diagnostic','read_owned_bridge_diagnostics','prepare_owned_forward_graph','run_owned_composed_diagnostic_controls','OWNED_NODE_GUARD_CODES','OWNED_NODE_SOURCE_FILES','owned_node_diagnostics'}
+NAMES={'OWNED_CHILD_PHASES','OWNED_CHILD_ERROR_CODES','child_environment','child_failure_diagnostic','report_child_failure','OWNED_BRIDGE_SOURCE_FILES','OWNED_BRIDGE_ERROR_KINDS','owned_bridge_guard_codes','owned_bridge_diagnostic','read_owned_bridge_diagnostics','prepare_owned_forward_graph','run_owned_composed_diagnostic_controls','OWNED_NODE_GUARD_CODES','OWNED_NODE_SOURCE_FILES','owned_node_diagnostics','owned_node_projection'}
 NODES=[node for node in ast.parse(SOURCE.read_text()).body if isinstance(node,(ast.FunctionDef,ast.Assign)) and
     (node.name if isinstance(node,ast.FunctionDef) else node.targets[0].id) in NAMES]
 exec(compile(ast.Module(body=NODES,type_ignores=[]),str(SOURCE),'exec'),NS)
@@ -133,7 +133,7 @@ class OwnedRecoveryDiagnosticsTests(unittest.TestCase):
         try:
             owner.prepare_forward()
             with tempfile.TemporaryDirectory(prefix='owned-composed-forward-') as path:
-                graph,platform,directory,codes=NS['prepare_owned_forward_graph'](ROOT,Path(path),owner.origin,fixture.provider_fixture.vercel_test.VercelControlTests.cert)
+                graph,platform,directory,codes=NS['prepare_owned_forward_graph'](ROOT,Path(path),owner.origin,fixture.provider_fixture.vercel_test.VercelControlTests.cert,flat=True)
                 connections={'serverMajor':18,'frontend':'postgresql://owned:OWNED_PRIVATE@127.0.0.1/never-connect','password':'OWNED_PRIVATE',
                     'forwardFixture':{'context':owner.context,'graph':str(platform)}}
                 node='/Users/dardan/.nvm/versions/node/v24.18.0/bin/node' if Path('/Users/dardan/.nvm/versions/node/v24.18.0/bin/node').exists() else 'node'
@@ -146,6 +146,11 @@ class OwnedRecoveryDiagnosticsTests(unittest.TestCase):
                 self.assertTrue(any(row['guardCode']=='P2_RECOVERY_CURRENT_DATABASE_REFUSED' and row['checkpoint']=='forward-brand' for row in values[2]['nodeErrors']))
                 self.assertTrue(all(row['method']=='GET' for row in owner.calls[before:]))
                 self.assertEqual(list(directory.iterdir()),[])
+                for value in values:
+                    self.assertEqual(value['nodeRecordCounts']['rejected'],0)
+                    self.assertGreater(value['nodeRecordCounts']['accepted'],0)
+                    self.assertEqual(value['nodeEmission']['projectionFailures'],0)
+                    self.assertEqual(value['nodeEmission']['uncaughtMonitor'],1)
                 self.assertTrue(any(row['guardCode']=='FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED' for row in values[4]['nodeErrors']))
                 self.assertTrue(any(row['kind']=='AssertionError' for row in values[5]['nodeErrors']))
                 for value in values[4:]:
@@ -153,6 +158,19 @@ class OwnedRecoveryDiagnosticsTests(unittest.TestCase):
                     self.assertNotIn('PRIVATE_ASSERT_',json.dumps(value))
         finally:
             owner.tearDown();fixture.RecoveryForwardBuildTests.tearDownClass()
+
+    def test_node_rejections_count_closed_reasons_without_retaining_bad_fields(self):
+        row={'status':'OWNED_P2_RECOVERY_NODE_DIAGNOSTIC','phase':'forward-shared-vercel-observation','stage':'forward-callback','kind':'Error','guardCode':'unknown','checkpoint':'unknown','systemCode':'unknown','frames':[]}
+        values=[{**row,'private':'PRIVATE_CANARY'},{**row,'stage':'PRIVATE_STAGE'},{**row,'frames':[{'source':'frontend','file':'PRIVATE_PATH','line':1,'column':1}]}]
+        raw='\n'.join(json.dumps(value) for value in values)+'\n{OWNED_P2_RECOVERY_NODE_DIAGNOSTIC PRIVATE_RAW'
+        value=NS['owned_node_projection'](raw)
+        self.assertEqual(value['counts'],{'seen':4,'accepted':0,'rejected':4})
+        self.assertEqual(value['rejections'],{'schema':1,'stage':1,'frame-binding':1,'json':1});self.assertNotIn('PRIVATE_',json.dumps(value))
+
+    def test_node_emission_summary_keeps_projection_failure_visible(self):
+        raw=json.dumps({'status':'OWNED_P2_NODE_EMISSION_SUMMARY','attempted':1,'emitted':0,'projectionFailures':1,'uncaughtMonitor':1,'origin':'unknown'})
+        value=NS['owned_node_projection'](raw)
+        self.assertEqual(value['emission']['projectionFailures'],1);self.assertEqual(value['counts']['accepted'],0)
 
     def test_actual_inner_source_failure_retains_phase_and_frame_without_canaries(self):
         node='/Users/dardan/.nvm/versions/node/v24.18.0/bin/node' if Path('/Users/dardan/.nvm/versions/node/v24.18.0/bin/node').exists() else 'node'

@@ -36,26 +36,27 @@ function ownedBindings(supplied,plan){
 }
 
 const OWNED_NODE_GUARDS=new Set(['P2_RECOVERY_CURRENT_DATABASE_REFUSED','P2_RECOVERY_RUNTIME_CREDENTIAL_REFUSED','P2_RECOVERY_RUNTIME_CREDENTIAL_CLEANUP_UNCERTAIN',
-  'P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW','P2_RECOVERY_FRONTEND_RECHECK_REFUSED','FRONTEND_PROVIDER_RUNTIME_CONTEXT_REFUSED','FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED','FRONTEND_PROVIDER_ADAPTER_REFUSED']);
+  'P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW','P2_RECOVERY_FRONTEND_RECHECK_REFUSED','P2_RECOVERY_FRONTEND_CLEANUP_UNCERTAIN','FRONTEND_PROVIDER_RUNTIME_CONTEXT_REFUSED','FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED','FRONTEND_PROVIDER_ADAPTER_REFUSED']);
 const OWNED_NODE_FILES=new Set(['ops/platform/p2-recovery-current-probe.mjs','ops/platform/p2-recovery-frontend-observation.mjs','ops/platform/frontend-release-adapters.mjs','ops/platform/test-p2-recovery-owned.mjs']);
 const sourceRoot=realpathSync(fileURLToPath(new URL('../../',import.meta.url)));
 function ownedNodeDiagnostic(error,stage){
   const safe=key=>{try{return error?.[key];}catch{return undefined;}};
-  const stack=safe('stack'),frames=[],roots=[['frontend',sourceRoot]];
-  if(privateInput.forwardFixture?.graph)try{roots.push(['frontend-fixture',realpathSync(join(privateInput.forwardFixture.graph,'../..'))]);}catch{ /* Unknown source paths stay unbound. */ }
+  const stack=safe('stack'),frames=[],roots=[{source:'frontend',root:sourceRoot,prefix:''}];
+  if(privateInput.forwardFixture?.graph)try{roots.push({source:'frontend-fixture',root:realpathSync(privateInput.forwardFixture.graph),prefix:'ops/platform/'});}catch{ /* Unknown source paths stay unbound. */ }
   for(const line of typeof stack==='string'?stack.split('\n'):[]){
     const match=/(?:file:\/\/)?(\/[^()]+):(\d{1,7}):(\d{1,6})\)?$/u.exec(line);if(!match)continue;
     let file;try{file=realpathSync(fileURLToPath('file://'+match[1]));}catch{continue;}
-    for(const[source,root]of roots){const name=relative(root,file);if(!OWNED_NODE_FILES.has(name))continue;
+    for(const{source,root,prefix}of roots){const name=prefix+relative(root,file);if(!OWNED_NODE_FILES.has(name))continue;
       const frame={source,file:name,line:Number(match[2]),column:Number(match[3])};
       if(frames.length<12&&!frames.some(row=>JSON.stringify(row)===JSON.stringify(frame)))frames.push(frame);
     }
   }
-  const message=safe('message'),kind=safe('name'),checkpoint=safe('checkpoint');
+  const message=safe('message'),kind=safe('name'),checkpoint=safe('checkpoint'),system=safe('code');
   const guardCode=OWNED_NODE_GUARDS.has(message)&&frames.some(frame=>{if(frame.file==='ops/platform/test-p2-recovery-owned.mjs')return false;
-    try{const line=readFileSync(join(roots.find(row=>row[0]===frame.source)[1],frame.file),'utf8').split('\n')[frame.line-1];return line?.includes("'"+message+"'")||line?.includes('"'+message+'"');}catch{return false;}})?message:'unknown';
+    try{const line=readFileSync(join(roots.find(row=>row.source===frame.source).root,frame.source==='frontend-fixture'?frame.file.slice('ops/platform/'.length):frame.file),'utf8').split('\n')[frame.line-1];return line?.includes("'"+message+"'")||line?.includes('"'+message+'"');}catch{return false;}})?message:'unknown';
   return{status:'OWNED_P2_RECOVERY_NODE_DIAGNOSTIC',phase:currentOwnedPhase,stage,
     kind:['Error','AssertionError','TypeError','RangeError','SyntaxError'].includes(kind)?kind:'unknown',guardCode,
+    systemCode:['ERR_ASSERTION','ECONNRESET','ECONNREFUSED','EPIPE','ETIMEDOUT','57P01','57P02','57P03','53300'].includes(system)?system:'unknown',
     checkpoint:['runtime-credential','runtime-physical-session','forward-brand','forward-mode'].includes(checkpoint)?checkpoint:'unknown',frames};
 }
 const ownedOperations=new AsyncLocalStorage(),ownedFailures=new WeakMap();
@@ -67,15 +68,20 @@ async function ownedCall(stage,task){
     if(error&&(typeof error==='object'||typeof error==='function'))ownedFailures.set(error,unique);if(parent)parent.errors.push(...unique);throw error;
   }});
 }
+const ownedEmission={attempted:0,emitted:0,projectionFailures:0,uncaughtMonitor:0,origin:'none'};
+function emitOwned(error,stage,records){
+  ownedEmission.attempted++;
+  try{for(const record of records??[ownedNodeDiagnostic(error,stage)]){process.stderr.write(JSON.stringify(record)+'\n');ownedEmission.emitted++;}}
+  catch{ownedEmission.projectionFailures++;}
+}
 async function ownedBoundary(task){
   try{return await task();}catch(error){
-    // Only the actual uncaught error and its operation-scoped causes escape.
-    // A rejected error consumed by assert.rejects never becomes final evidence.
-    for(const record of ownedFailures.get(error)??[ownedNodeDiagnostic(error,'forward-callback')])
-      process.stderr.write(JSON.stringify(record)+'\n');
-    throw error;
+    emitOwned(error,'forward-callback',ownedFailures.get(error));throw error;
   }
 }
+// Monitor default termination; do not consume the exception or change exit.
+process.on('uncaughtExceptionMonitor',(error,origin)=>{ownedEmission.uncaughtMonitor++;ownedEmission.origin=['uncaughtException','unhandledRejection'].includes(origin)?origin:'unknown';emitOwned(error,'uncaught-final');});
+process.once('exit',code=>{if(code!==0)process.stderr.write(JSON.stringify({status:'OWNED_P2_NODE_EMISSION_SUMMARY',...ownedEmission})+'\n');});
 
 if(privateInput.ownedComposedDiagnosticControl!==undefined){
   const mode=privateInput.ownedComposedDiagnosticControl;assert.ok(['python-source-guard','node-pre-spawn','node-checkpoint','node-message-collision','shared-observer-guard','shared-observer-assertion'].includes(mode));
@@ -103,6 +109,25 @@ if(privateInput.ownedComposedDiagnosticControl!==undefined){
 }
 ownedFixturePhase('frontend-connect');
 const admin=await connect(privateInput.frontend),artifact=frontendMigrationArtifact();
+if(privateInput.ownedLateSessionDiagnosticControl!==undefined){
+  const mode=privateInput.ownedLateSessionDiagnosticControl;assert.ok(['post-callback-verifier','session-finally'].includes(mode));
+  const roles=Object.fromEntries((await admin.query("SELECT rolname,oid::text FROM pg_catalog.pg_roles WHERE rolname=ANY($1::text[])",[['recovery_owner','recovery_runtime','recovery_retired']])).rows.map(row=>[row.rolname,row.oid]));
+  assert.equal(Object.keys(roles).length,3);
+  const fixture=privateInput.forwardFixture,url=new URL(privateInput.frontend);url.username='recovery_creator';url.password=privateInput.password;
+  const target={host:url.hostname,port:Number(url.port),database:'postgres',user:'recovery_creator',runtimeRole:'recovery_runtime',serverMajor,approvedPendingTags:artifact.migrations.map(row=>row.tag)};
+  const targetSha256=fixture.context.plan.targetSha256,sourceCommit='a'.repeat(40);
+  const job={environment:'staging',releaseId:'adapter-owned',sourceCommit,target,contractPhase:'p2',phase2ContractManifestSha256:'sha256:'+'9'.repeat(64),sqlArtifactSha256:artifact.sqlArtifactSha256,migrationImageDigest:'sha256:'+'e'.repeat(64),schemaBaselineSha256:'f'.repeat(64),contractManifestSha256:artifact.contractManifestSha256};
+  const plan={environment:'staging',sourceCommit,targetSha256,owner:{name:'recovery_owner',oid:roles.recovery_owner},producers:[{producerSha256:'5'.repeat(64),role:{name:'recovery_runtime',oid:roles.recovery_runtime}}],historicalLogins:{retiredLogins:[{name:'recovery_retired',oid:roles.recovery_retired}]}};
+  const prepared={migration:{job,artifact,baseline:{catalog:await readMigrationCatalog(admin)}},plan};
+  const action={recoveryActionId:'owned-late-'+mode,candidateSha256:'1'.repeat(64),originalReceiptSha256:{'job-outcome.json':null}};
+  try{await ownedBoundary(()=>withRecoveryFrontendSession(prepared,action,{getUrl:()=>url.href,verifyEnvironment:async()=>{}},async({client})=>{
+    ownedFixturePhase('forward-shared-vercel-observation');
+    if(mode==='post-callback-verifier')await client.query('SELECT pg_catalog.pg_advisory_unlock_all()');
+    else{const end=client.end.bind(client);client.end=async()=>{await end();process.stderr.write(JSON.stringify({status:'OWNED_LATE_SESSION_CONTROL',mode,callbackReturned:true,endCompleted:true})+'\n');throw new Error('PRIVATE_END_CANARY');};}
+    process.stderr.write(JSON.stringify({status:'OWNED_LATE_SESSION_CONTROL',mode,callbackReturned:true,endCompleted:false})+'\n');
+    return 'owned callback returned';
+  }));assert.fail('actual late source-session refusal was not enforced');}finally{await admin.end();}
+}
 let checks=0,legacyApiVerifierRefusals=0;
 const privilegeFaults=[];
 try{

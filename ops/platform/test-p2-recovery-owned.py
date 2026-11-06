@@ -115,8 +115,8 @@ def read_owned_bridge_diagnostics(directory, allowed_codes):
     return values
 
 
-def prepare_owned_forward_graph(root,directory,provider_origin,provider_ca):
-    graph=Path(directory)/'forward-app';platform=graph/'ops/platform';host=platform/'host';host.mkdir(parents=True)
+def prepare_owned_forward_graph(root,directory,provider_origin,provider_ca,flat=False):
+    graph=Path(directory)/'forward-app';platform=graph if flat else graph/'ops/platform';host=platform/'host';host.mkdir(parents=True)
     (graph/'package.json').write_text('{"type":"module"}\n');(graph/'node_modules').symlink_to(root/'node_modules',target_is_directory=True)
     for source in (root/'ops/platform').glob('*.mjs'):
         destination=platform/source.name
@@ -139,26 +139,46 @@ def prepare_owned_forward_graph(root,directory,provider_origin,provider_ca):
 
 
 OWNED_NODE_GUARD_CODES=frozenset(('P2_RECOVERY_CURRENT_DATABASE_REFUSED','P2_RECOVERY_RUNTIME_CREDENTIAL_REFUSED',
-    'P2_RECOVERY_RUNTIME_CREDENTIAL_CLEANUP_UNCERTAIN','P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW','P2_RECOVERY_FRONTEND_RECHECK_REFUSED','FRONTEND_PROVIDER_RUNTIME_CONTEXT_REFUSED','FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED','FRONTEND_PROVIDER_ADAPTER_REFUSED'))
+    'P2_RECOVERY_RUNTIME_CREDENTIAL_CLEANUP_UNCERTAIN','P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW','P2_RECOVERY_FRONTEND_RECHECK_REFUSED','P2_RECOVERY_FRONTEND_CLEANUP_UNCERTAIN','FRONTEND_PROVIDER_RUNTIME_CONTEXT_REFUSED','FRONTEND_VERCEL_ADAPTER_FAILED_REVIEW_REQUIRED','FRONTEND_PROVIDER_ADAPTER_REFUSED'))
 OWNED_NODE_SOURCE_FILES=frozenset(('ops/platform/p2-recovery-current-probe.mjs','ops/platform/p2-recovery-frontend-observation.mjs',
     'ops/platform/frontend-release-adapters.mjs','ops/platform/test-p2-recovery-owned.mjs'))
 
 
-def owned_node_diagnostics(stderr):
-    result=[]
+def owned_node_projection(stderr):
+    result=[];counts={'seen':0,'accepted':0,'rejected':0};reasons={};summary=None
+    def reject(reason):
+        counts['rejected']+=1;reasons[reason]=reasons.get(reason,0)+1
     for line in stderr.splitlines():
-        if not 0<len(line)<=8192:continue
+        candidate='OWNED_P2_RECOVERY_NODE_DIAGNOSTIC' in line
+        if candidate:counts['seen']+=1
+        if not 0<len(line)<=8192:
+            if candidate:reject('line-bound')
+            continue
         try:value=json.loads(line)
-        except (ValueError,TypeError):continue
-        if not isinstance(value,dict) or set(value)!={'status','phase','stage','kind','guardCode','checkpoint','frames'} or value.get('status')!='OWNED_P2_RECOVERY_NODE_DIAGNOSTIC':continue
-        if any(type(value[key]) is not str for key in ('phase','stage','kind','guardCode','checkpoint')):continue
-        if value['phase'] not in OWNED_CHILD_PHASES or value['stage'] not in ('build-bridge','mutation-checkpoint','composed-source-bridge','composed-checkpoint','shared-compatible','shared-vercel','shared-frontend','forward-callback') or value['kind'] not in ('Error','AssertionError','TypeError','RangeError','SyntaxError','unknown'):continue
-        if value['guardCode'] not in OWNED_NODE_GUARD_CODES|{'unknown'} or value['checkpoint'] not in ('runtime-credential','runtime-physical-session','forward-brand','forward-mode','unknown'):continue
-        if not isinstance(value['frames'],list) or len(value['frames'])>12:continue
-        if any(not isinstance(row,dict) or set(row)!={'source','file','line','column'} or row['source'] not in ('frontend','frontend-fixture') or type(row['file']) is not str or row['file'] not in OWNED_NODE_SOURCE_FILES or type(row['line']) is not int or not 1<=row['line']<=1000000 or type(row['column']) is not int or not 1<=row['column']<=100000 for row in value['frames']):continue
-        result.append(value)
-        if len(result)>=8:break
-    return result
+        except (ValueError,TypeError):
+            if candidate:reject('json')
+            continue
+        if isinstance(value,dict) and set(value)=={'status','attempted','emitted','projectionFailures','uncaughtMonitor','origin'} and value.get('status')=='OWNED_P2_NODE_EMISSION_SUMMARY':
+            if value['origin'] in ('none','uncaughtException','unhandledRejection','unknown') and all(type(value[key]) is int and 0<=value[key]<=1000 for key in ('attempted','emitted','projectionFailures','uncaughtMonitor')):summary=value
+            continue
+        if not candidate:continue
+        if not isinstance(value,dict) or set(value)!={'status','phase','stage','kind','guardCode','checkpoint','systemCode','frames'} or value.get('status')!='OWNED_P2_RECOVERY_NODE_DIAGNOSTIC':reject('schema');continue
+        if any(type(value[key]) is not str for key in ('phase','stage','kind','guardCode','checkpoint','systemCode')):reject('types');continue
+        if value['phase'] not in OWNED_CHILD_PHASES:reject('phase');continue
+        if value['stage'] not in ('build-bridge','mutation-checkpoint','composed-source-bridge','composed-checkpoint','shared-compatible','shared-vercel','shared-frontend','forward-callback','uncaught-final'):reject('stage');continue
+        if value['kind'] not in ('Error','AssertionError','TypeError','RangeError','SyntaxError','unknown'):reject('kind');continue
+        if value['guardCode'] not in OWNED_NODE_GUARD_CODES|{'unknown'}:reject('guard');continue
+        if value['checkpoint'] not in ('runtime-credential','runtime-physical-session','forward-brand','forward-mode','unknown'):reject('checkpoint');continue
+        if value['systemCode'] not in ('ERR_ASSERTION','ECONNRESET','ECONNREFUSED','EPIPE','ETIMEDOUT','57P01','57P02','57P03','53300','unknown'):reject('system-code');continue
+        if not isinstance(value['frames'],list) or len(value['frames'])>12:reject('frames');continue
+        if any(not isinstance(row,dict) or set(row)!={'source','file','line','column'} or row['source'] not in ('frontend','frontend-fixture') or type(row['file']) is not str or row['file'] not in OWNED_NODE_SOURCE_FILES or type(row['line']) is not int or not 1<=row['line']<=1000000 or type(row['column']) is not int or not 1<=row['column']<=100000 for row in value['frames']):reject('frame-binding');continue
+        counts['accepted']+=1
+        if len(result)<8:result.append(value)
+    return {'records':result,'counts':counts,'rejections':reasons,'emission':summary}
+
+
+def owned_node_diagnostics(stderr):
+    return owned_node_projection(stderr)['records']
 
 
 def child_failure_diagnostic(result, source_roots, forward_mode):
@@ -194,8 +214,9 @@ def child_failure_diagnostic(result, source_roots, forward_mode):
         try:signal_name=signal.Signals(-returncode).name
         except ValueError:pass
         if signal_name not in ('SIGABRT','SIGKILL','SIGTERM','SIGSEGV','SIGBUS','SIGILL','SIGFPE','SIGXCPU','SIGXFSZ'):signal_name=None
+    projection=owned_node_projection(stderr)
     return {'version':1,'status':'OWNED_P2_RECOVERY_CHILD_DIAGNOSTIC','fixture':'forward' if forward_mode else 'current',
-        'phase':phase,'nodeErrors':owned_node_diagnostics(stderr),'exitStatus':returncode,'signal':signal_name,'errorKind':kind,'errorCode':code,'frames':frames,
+        'phase':phase,'nodeErrors':projection['records'],'nodeRecordCounts':projection['counts'],'nodeRecordRejections':projection['rejections'],'nodeEmission':projection['emission'],'exitStatus':returncode,'signal':signal_name,'errorKind':kind,'errorCode':code,'frames':frames,
         'stdoutBytes':len(stdout.encode('utf8')),'stderrBytes':len(stderr.encode('utf8')),'rawChildOutputRetained':False}
 
 
@@ -252,6 +273,27 @@ def run_owned_composed_diagnostic_controls(node,root,connections,bridge_director
     return receipts
 
 
+def run_owned_late_session_controls(node,root,connections,bridge_directory,bridge_codes,environment):
+    results=[]
+    for mode,expected in (('post-callback-verifier','P2_RECOVERY_FRONTEND_SESSION_FAILED_REQUIRES_REVIEW'),('session-finally','P2_RECOVERY_FRONTEND_CLEANUP_UNCERTAIN')):
+        packet={**connections,'ownedLateSessionDiagnosticControl':mode}
+        result=subprocess.run([node,'--import',str(Path(root)/'node_modules/tsx/dist/loader.mjs'),str(Path(root)/'ops/platform/test-p2-recovery-owned.mjs')],
+            cwd=root,env={**environment,'P2_RECOVERY_OWNED_CONNECTIONS':json.dumps(packet)},capture_output=True,text=True,timeout=90)
+        output=io.StringIO()
+        with contextlib.redirect_stderr(output):report_child_failure(result,{'frontend':root},True,bridge_directory,bridge_codes)
+        value=json.loads(output.getvalue().splitlines()[1]);markers=[]
+        for line in result.stderr.splitlines():
+            try:marker=json.loads(line)
+            except ValueError:continue
+            if isinstance(marker,dict) and set(marker)=={'status','mode','callbackReturned','endCompleted'} and marker['status']=='OWNED_LATE_SESSION_CONTROL' and marker['mode']==mode and marker['callbackReturned'] is True and type(marker['endCompleted']) is bool:markers.append(marker)
+        if result.returncode!=1 or result.stdout or not markers or value['nodeRecordCounts']['accepted']==0 or value['nodeRecordCounts']['rejected']!=0:raise ValueError('OWNED_LATE_SESSION_FINAL_ENVELOPE_REQUIRED')
+        if not any(row['guardCode']==expected and row['stage']=='uncaught-final' and row['frames'] for row in value['nodeErrors']):raise ValueError('OWNED_LATE_SESSION_ACTUAL_SOURCE_GUARD_REQUIRED')
+        if mode=='session-finally' and not any(row['endCompleted'] is True for row in markers):raise ValueError('OWNED_LATE_SESSION_REAL_END_REQUIRED')
+        if 'PRIVATE_END_CANARY' in output.getvalue():raise ValueError('OWNED_LATE_SESSION_PRIVATE_VALUE_REFUSED')
+        results.append({'mode':mode,'envelope':value,'markers':markers})
+    return results
+
+
 forward_mode=sys.argv[1:]==['--forward-brand']
 if os.environ.get('P2_RECOVERY_OWNED_TEST') != 'true' or (len(sys.argv) != 1 and not forward_mode):
     raise SystemExit('EXPLICIT_OWNED_P2_RECOVERY_TEST_REQUIRED')
@@ -303,7 +345,7 @@ class Fixture:
             if cls.started:subprocess.run([str(cls.bin/'pg_ctl'),'-D',str(cls.data),'-m','immediate','-w','stop'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
         finally:
             if hasattr(cls,'cluster'):cls.cluster.cleanup()
-provider_fixture=None;foreign_fixture=None;proxy=None;bridge_directory=None;bridge_codes=frozenset()
+provider_fixture=None;foreign_fixture=None;proxy=None;bridge_directory=None;bridge_codes=frozenset();late_control_envelopes=[]
 try:
     Fixture.setUpClass()
     api_roots={name:Path(os.environ.get(name.upper()+'_RECOVERY_SOURCE_ROOT','/Users/dardan/workspace/lash-her-'+name+'-api/.worktrees/phase2-'+name)).resolve() for name in ('course','community')}
@@ -430,7 +472,12 @@ try:
             if not isinstance(value,dict) or value.get('status')!=expected_status or value.get('childEnvironmentAllowlistEnforced') is not True:
                 raise ValueError('OWNED_RECOVERY_SOURCE_RECEIPT_MISSING')
             value.pop('childEnvironmentAllowlistEnforced')
-            if forward_mode:value['runtimeCredentialFaultProviderCalls']=provider_fixture.runtime_fault_calls
+            if forward_mode:
+                before_late=Fixture.sql('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at,id')
+                late_control_envelopes=run_owned_late_session_controls(node,root,connections,bridge_directory,bridge_codes,environment)
+                if Fixture.sql('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at,id')!=before_late:raise ValueError('OWNED_LATE_SESSION_JOURNAL_CHANGED')
+                if Fixture.sql("SELECT count(*) FROM pg_catalog.pg_locks WHERE locktype='advisory' AND granted AND database=(SELECT oid FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database()) AND objsubid=1 AND classid=((pg_catalog.hashtext('lash-her:private-db:migrations')::bigint>>32)&4294967295)::oid AND objid=(pg_catalog.hashtext('lash-her:private-db:migrations')::bigint&4294967295)::oid").strip()!='0':raise ValueError('OWNED_LATE_SESSION_PHYSICAL_LOCK_REMAINS')
+                value['runtimeCredentialFaultProviderCalls']=provider_fixture.runtime_fault_calls
             print(json.dumps({**value,'status':'OWNED_P2_RECOVERY_FORWARD_CHECKS_PASS' if forward_mode else 'OWNED_P2_RECOVERY_DATABASE_CHECKS_PASS','environmentIsolation':{
                 'nodeOptionsPositiveControlExecuted':True,'poisonedParentEnvironment':True,'ambientNodeOptionsExecuted':False,
                 'ambientConfigVariablesAbsent':True,'childEnvironmentAllowlistEnforced':True}}),flush=True)
