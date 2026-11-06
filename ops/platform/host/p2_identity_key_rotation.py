@@ -21,7 +21,10 @@ OPERATOR_ROOT = Path("/opt/lash-her/operators")
 PROGRAM = "ops/platform/p2-identity-key-rotation.mjs"
 IDENTITY = "ops/platform/p2-identity-negative-probe.mjs"
 FILES = (PROGRAM, "ops/platform/p2-identity-key-rotation.test.mjs", "ops/platform/host/p2_identity_key_rotation.py",
-    "ops/platform/host/p2_identity_key_rotation_test.py", "ops/platform/p2-identity-key-rotation.md")
+    "ops/platform/host/p2_identity_key_rotation_test.py", "ops/platform/p2-identity-key-rotation-controller.mjs",
+    "ops/platform/p2-identity-key-rotation-controller.test.mjs", "ops/platform/p2-identity-key-rotation-observer.mjs",
+    "ops/platform/host/p2_identity_key_rotation_adapter.py", "ops/platform/host/p2_identity_key_rotation_adapter_test.py",
+    "ops/platform/p2-identity-key-rotation.md")
 PHASES = ("baseline", "overlap", "currentOnly", "restoration")
 PROFILES = ("course-learner", "course-admin", "community-member", "community-admin")
 PARENT_ADAPTER_READY = False
@@ -82,7 +85,9 @@ def validate_reviewed(value):
     directories = []
     for phase in PHASES:
         item = value["phaseConfigurations"][phase]
-        demand(_closed(item, ("directory", "configurationRecordSha256")) and SHA.fullmatch(item["configurationRecordSha256"]),
+        demand(_closed(item, ("directory", "configurationRecordSha256", "privateConfigurationSha256"))
+            and SHA.fullmatch(item["configurationRecordSha256"]) and SHA.fullmatch(item["privateConfigurationSha256"])
+            and item["configurationRecordSha256"] != item["privateConfigurationSha256"],
             "P2_ROTATION_CONFIGURATION_REFERENCE_REQUIRED")
         directory = Path(item["directory"])
         demand(directory.is_absolute() and directory.is_relative_to(ROOT) and directory.resolve() == directory and ".." not in directory.parts and

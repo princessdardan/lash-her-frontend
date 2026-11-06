@@ -1,6 +1,6 @@
 # P2 identity-key rotation source validation
 
-This baseline covers the plan-only source package for rotating the four
+This baseline covers the live-ineligible source package for rotating the four
 application-user JWT profiles. It contains no signing key, JWT, credential
 value, credential hash, customer identifier, provider response, deployment
 mutation, or live receipt.
@@ -20,20 +20,31 @@ Owned validation covers:
   state, unexpired old-token rejection, new-token acceptance, and module,
   source, image, container, and configuration joins;
 - the 330-second maximum token lifetime plus verifier-skew drain;
+- source retention and reuse of the exact same unexpired old/new token bytes
+  before and after previous-key removal;
+- ordered phase windows that reject evidence outside its phase and require the
+  token capture after the full 330-second overlap drain;
+- a fixed controller with immutable mutation intents, split runtime/frontend
+  state verification, GET-first reconciliation, one API recreation and one
+  frontend build/promotion per phase, and restoration only to the last fully
+  qualified phase;
+- a typed host adapter that compares all non-profile base environment values,
+  keeps private credential-bearing byte hashes out of common evidence, admits
+  only the existing fresh release-probe overlay, and passes child credentials
+  over private stdin rather than process arguments;
 - refusal of incomplete profiles, short drain, grace acceptance, configured
   previous keys, mutable parent claims, arbitrary commands, and malformed
   packets;
 - nonsecret public receipts and `keyRemovalVerified: false` while the required
   config-only certification parent is absent.
 
-Node reported 6 passing tests and Python reported 5 passing tests, with no
-skips. ESLint, JavaScript syntax, and Python compilation checks passed. No
-loopback or external network was required.
+The exact final test counts and source hashes are recorded in `validation.json`.
+The Course observer test uses an owned loopback TLS server. No external network,
+staging, provider, or live database request was made.
 
-Live rotation remains open. The root-owned dispatch must compose a fixed
-config-only action with the actual host and frontend physical locks, exact API
-runtime recreation, one build/promotion per phase, provider reconciliation,
-continuous guards, and qualified containment/restoration. The current native
-certification parent does not authorize configuration rollout. Until that
-integration exists, this package is plan-only and cannot set
+Live rotation remains open. The root-owned dispatch must compose the fixed
+controller and host adapter with the actual host and frontend physical locks.
+The current native certification parent does not authorize configuration
+rollout. Until the dedicated source parent is integrated and independently
+qualified, this package cannot set
 `keyRemovalVerified: true` in a host receipt.

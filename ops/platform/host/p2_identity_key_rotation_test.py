@@ -51,7 +51,8 @@ class IdentityKeyRotationPlanTests(unittest.TestCase):
         for phase in ("baseline", "overlap", "currentOnly"):
             directory = self.root / "configuration" / phase
             directory.mkdir(parents=True)
-            configurations[phase] = {"directory": str(directory), "configurationRecordSha256": rotation._hash(phase)}
+            configurations[phase] = {"directory": str(directory), "configurationRecordSha256": rotation._hash("public-" + phase),
+                "privateConfigurationSha256": rotation._hash("private-" + phase)}
         configurations["restoration"] = {**configurations["baseline"]}
         self.reviewed = {"version": 1, "environment": "staging", "actionId": "p2-key-rotation-owned", "identity": self.identity,
             "phaseConfigurations": configurations, "restorationPhase": "baseline", "operatorFiles": rotation.operator_hashes(self.source),

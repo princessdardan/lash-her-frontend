@@ -8,6 +8,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  captureRotationTokens,
   observeCommunityRotation,
   observeCourseRotation,
   qualifyIdentityKeyRotation,
@@ -20,22 +21,43 @@ const courseId = "22222222-2222-4222-8222-222222222222";
 const sha = value => createHash("sha256").update(value).digest("hex");
 const ca = Buffer.from("owned-ca");
 const uuid = () => "33333333-3333-4333-8333-333333333333";
+const tokenUuid = (() => { let value = 0; return () => `33333333-3333-4333-8333-${String(++value).padStart(12, "0")}`; })();
 
-function input(profile, phase = "overlap") {
+function captureInput(profile) {
+  return { version: 1, mode: "rotation-capture", environment: "staging", bindingSha256: sha("binding"),
+    phase: "pre-removal-overlap", profile, subject, courseId, oldKey, newKey, oldToken: null, newToken: null,
+    tokenIssuedAt: null, tokenExpiresAt: null, gatewayCaSha256: sha(ca), configurationSha256: sha("overlap"),
+    runtimeEnvironment: null };
+}
+
+function captured(profile) {
+  return captureRotationTokens(captureInput(profile), { nowMs: () => 1_799_999_900_000, randomUuid: tokenUuid });
+}
+
+function input(profile, phase = "overlap", tokens = captured(profile)) {
   return { version: 1, mode: profile.startsWith("course-") ? "rotation-course-http" : "rotation-community-verifier",
     environment: "staging", bindingSha256: sha("binding"), phase, profile, subject, courseId, oldKey, newKey,
+    oldToken: tokens.oldToken, newToken: tokens.newToken, tokenIssuedAt: tokens.tokenIssuedAt, tokenExpiresAt: tokens.tokenExpiresAt,
     gatewayCaSha256: sha(ca), configurationSha256: sha(phase), runtimeEnvironment: profile.startsWith("community-")
       ? { DATABASE_TARGET: "staging" } : null };
 }
 
-test("private input is closed, fixed to four profiles, and keeps old/new keys distinct", () => {
+test("private capture retains distinct exact old/new token bytes and observation input rejects substitutions", () => {
+  const capture = captured("course-learner");
+  assert.notEqual(capture.oldToken, capture.newToken);
+  assert.equal(capture.privateCredentialBytes, true);
+  assert.equal(capture.commonTokenBytesOutput, false);
   assert.equal(validateRotationPrivateInput(input("course-learner")).profile, "course-learner");
   for (const mutate of [value => { value.environment = "production"; }, value => { value.profile = "service"; },
     value => { value.newKey = value.oldKey; }, value => { value.url = "https://example.invalid"; },
-    value => { value.mode = "rotation-community-verifier"; }]) {
+    value => { value.mode = "rotation-community-verifier"; }, value => { value.oldToken = value.newToken; },
+    value => { value.tokenExpiresAt = "2027-01-15T07:00:01.000Z"; }]) {
     const value = structuredClone(input("course-learner")); mutate(value);
     assert.throws(() => validateRotationPrivateInput(value));
   }
+  const tampered = structuredClone(input("course-learner"));
+  tampered.oldToken = tampered.oldToken.slice(0, -1) + (tampered.oldToken.endsWith("a") ? "b" : "a");
+  assert.throws(() => validateRotationPrivateInput(tampered));
 });
 
 test("Course learner/admin use actual protected HTTP status semantics and enforce admin capability", async () => {
@@ -47,6 +69,7 @@ test("Course learner/admin use actual protected HTTP status semantics and enforc
     assert.equal(receipt.oldResult, phase === "overlap" ? "accepted" : "rejected");
     assert.equal(receipt.newResult, "accepted");
     assert.equal(receipt.capabilityEnforced, true);
+    assert.equal(receipt.retainedTokenContinuityVerified, true);
     assert.equal(statuses.length, 0);
   }
 });
@@ -116,6 +139,7 @@ test("Community member/admin use deployed private verifier evidence and enforce 
     assert.equal(receipt.oldResult, phase === "overlap" ? "accepted" : "rejected");
     assert.equal(receipt.newResult, "accepted");
     assert.equal(receipt.capabilityEnforced, true);
+    assert.equal(receipt.retainedTokenContinuityVerified, true);
   }
 });
 
@@ -127,9 +151,8 @@ function row(profile, phase, observedAt) {
         { service: "gateway", containerId: "d".repeat(64), image: `ghcr.io/princessdardan/lash-her-platform-gateway@sha256:${"e".repeat(64)}` }]
       : [{ service: "community-api", containerId: "b".repeat(64), image: `ghcr.io/princessdardan/lash-her-platform-community-runtime@sha256:${"c".repeat(64)}` }],
     previousConfigured: phase === "overlap", oldResult: phase === "overlap" ? "accepted" : "rejected", newResult: "accepted",
-    oldTokenIssuedAt: phase === "overlap" ? "2027-01-15T06:55:00.000Z" : "2027-01-15T07:05:00.000Z",
-    oldTokenExpiresAt: phase === "overlap" ? "2027-01-15T07:00:00.000Z" : "2027-01-15T07:10:00.000Z", observedAt,
-    runtimeConfigurationBindingVerified: true, capabilityEnforced: true,
+    oldTokenIssuedAt: "2027-01-15T07:02:30.000Z", oldTokenExpiresAt: "2027-01-15T07:07:30.000Z", observedAt,
+    runtimeConfigurationBindingVerified: true, retainedTokenContinuityVerified: true, capabilityEnforced: true,
     oldHttpStatus: course ? (phase === "overlap" ? 200 : 401) : null, newHttpStatus: course ? 200 : null,
     oldRequestId: course ? uuid() : null, newRequestId: course ? uuid() : null,
     moduleSha256: { "dist/auth.js": sha(profile + phase) } };
@@ -142,9 +165,9 @@ function qualification() {
     restorationTargetSha256: sha("overlap"), parent: { sourceOwnedFixedAction: true, hostLockHeld: true, frontendPhysicalLockHeld: true,
       configOnly: true, sqlExecuted: false, rolesPrepared: false, loginChanged: false, serviceCredentialsUnchanged: true,
       providerStateReconciled: true, restorationQualified: true },
-    overlap: { configurationSha256: sha("overlap"), startedAt: "2027-01-15T06:55:00.000Z", completedAt: "2027-01-15T06:56:00.000Z",
-      frontendIssuanceCutoffAt: "2027-01-15T06:57:00.000Z", profiles: profiles.map(profile => row(profile, "overlap", "2027-01-15T06:56:00.000Z")) },
-    currentOnly: { configurationSha256: sha("current-only"), startedAt: "2027-01-15T07:02:30.000Z", completedAt: "2027-01-15T07:06:00.000Z",
+    overlap: { configurationSha256: sha("overlap"), startedAt: "2027-01-15T06:55:00.000Z", completedAt: "2027-01-15T07:02:30.500Z",
+      frontendIssuanceCutoffAt: "2027-01-15T06:57:00.000Z", profiles: profiles.map(profile => row(profile, "overlap", "2027-01-15T07:02:30.500Z")) },
+    currentOnly: { configurationSha256: sha("current-only"), startedAt: "2027-01-15T07:02:31.000Z", completedAt: "2027-01-15T07:06:00.000Z",
       frontendIssuanceCutoffAt: "2027-01-15T07:03:00.000Z", profiles: profiles.map(profile => row(profile, "current-only", "2027-01-15T07:06:00.000Z")) } };
 }
 
@@ -167,7 +190,12 @@ test("qualification refuses short drain, configured previous key, grace acceptan
     value => { value.currentOnly.profiles[2].oldTokenExpiresAt = value.currentOnly.profiles[2].observedAt; },
     value => { value.currentOnly.profiles[0].configurationSha256 = sha("other"); },
     value => { value.currentOnly.profiles[1].oldTokenIssuedAt = "2027-01-15T07:06:01.000Z"; },
-    value => { value.currentOnly.profiles[2].containers.pop(); }, value => { value.restorationTargetSha256 = sha("other"); }]) {
+    value => { value.currentOnly.profiles[2].containers.pop(); }, value => { value.restorationTargetSha256 = sha("other"); },
+    value => { value.currentOnly.startedAt = "2028-01-15T07:02:30.000Z"; value.currentOnly.completedAt = "2028-01-15T07:06:00.000Z";
+      value.currentOnly.frontendIssuanceCutoffAt = "2028-01-15T07:03:00.000Z"; },
+    value => { value.overlap.startedAt = "2028-01-15T06:55:00.000Z"; value.overlap.completedAt = "2028-01-15T07:02:30.500Z";
+      value.overlap.frontendIssuanceCutoffAt = "2028-01-15T06:57:00.000Z"; },
+    value => { value.currentOnly.startedAt = "2027-01-15T06:54:00.000Z"; }]) {
     const value = qualification(); mutate(value);
     assert.throws(() => qualifyIdentityKeyRotation(value));
   }
