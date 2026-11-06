@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "status": "P2_IDENTITY_KEY_ROTATION_SOURCE_INTEGRATION_REVIEW_REQUIRED",
+  "environment": "staging",
+  "baseCommit": "f1aebc11f9a1cc4c84e8599fa4db1fca14c84d1c",
+  "sourceIntegrationCommit": "1178707de914a528d796c08ebfa7a58d57d42681",
+  "sharedSupervisorCommit": "4be11ab35888467b1d41f395b07d696e56f6dbce",
+  "sourceSha256": {
+    "ops/platform/p2-canonical-browser-origin.mjs": "583684febb2e74d66d9e733c34d50fbc8bcb76b138e2d71ea2f38a72aa49c0f7",
+    "ops/platform/host/p2_canonical_browser_origin.py": "e78c6dea99bf5a43beef91cb4dd15c6f6889ce0dd4e67e366804653e3b09413f",
+    "ops/platform/p2-identity-key-rotation-operator.mjs": "99f601d2a0fa69b198c5641cbbf5468b546234d1b35b4df3336c55ed0bb3a137",
+    "ops/platform/p2-identity-key-rotation-parent.mjs": "26a4f44195c187a4fd91ba0707808ae17aef37ae1132924fb0f6c6789cecd026",
+    "ops/platform/host/p2_identity_key_rotation_parent.py": "b02242122fa4662e0a8b391c88e28a037ba377e329ccf5e583964f380f3ed053",
+    "ops/platform/host/p2_release_supervisor.py": "6f2fad0c6141c372af46ea4852a9ba22dc2354aeb1df20e310ef290d95ec2f01"
+  },
+  "checks": {
+    "nodeFocused": { "passed": 30, "failed": 0, "skipped": 0, "runs": 2 },
+    "pythonAdapterParentDispatch": { "passed": 30, "failed": 0, "skipped": 0 },
+    "canonicalHelperExactReviewedBytes": true,
+    "canonicalHelperLocal": { "passed": 7, "failed": 1, "reason": "local Node 26 does not satisfy the fixed Node 24 child assertion" },
+    "eslintSelected": "passed",
+    "pythonCompile": "passed"
+  },
+  "proved": {
+    "fixedCanonicalBrowserOriginSeparateFromImmutableDeploymentUrl": true,
+    "aliasAndProtectedWorkloadBoundBeforeBrowserWindow": true,
+    "normalCustomerAndAdminCourseReadsUseCanonicalOrigin": true,
+    "exactSourceCiAndSourceInstallRequiredBeforeApply": true,
+    "singleUseSshTransport": true,
+    "fixedRotationSupervisorDispatch": true,
+    "failureFenceUsesActualInitialConfiguration": true,
+    "afterReapingReadonlyContainerCleanupIsNameBound": true,
+    "defaultRecoveryAndCertificationDispatchUnchanged": true,
+    "sqlExecuted": false,
+    "rolesPrepared": false,
+    "loginChanged": false,
+    "trafficAuthorized": false
+  },
+  "sourceUnion": {
+    "files": 486,
+    "bytes": 39925951,
+    "existingFileCap": 480,
+    "existingByteCap": 40000000,
+    "capChangedByThisCommit": false
+  },
+  "open": {
+    "independentIntegrationReview": true,
+    "sourceFileCapDecisionByIntegrationOwner": true,
+    "node24CanonicalHelperRerun": true,
+    "actualSuccessfulLinuxSupervisorProtocol": true,
+    "actualPostgresPhysicalScopeQualification": true,
+    "actualTlsContainerQualification": true,
+    "actualVercelAndStagingRotation": true,
+    "keyRemovalVerified": false,
+    "releaseAccepted": false,
+    "g2Accepted": false
+  }
+}
