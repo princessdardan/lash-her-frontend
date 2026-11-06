@@ -154,9 +154,7 @@ def _requirements(family):
 
 
 def _closed(family_id, ids, family, closures, sql_ids):
-    if family.get("sourceDisposition") == "absent-from-verified-source":
-        return True
-    demand(family.get("sourceDisposition") == "reachable", "RESEND_MARKETING_SOURCE_DISPOSITION_REFUSED")
+    demand(family.get("sourceDisposition") in ("reachable", "absent-from-verified-source"), "RESEND_MARKETING_SOURCE_DISPOSITION_REFUSED")
     covered = set()
     for row in closures:
         if isinstance(row, dict) and row.get("familyId") == family_id:
@@ -308,9 +306,28 @@ def observe_scoped_effects(client, reviewed, actualRows, verifiedSourceRequireme
     sql_ids = {row.get("requirementId") for row in sql_rows if isinstance(row, dict)}
     demand(all(isinstance(item, str) for item in sql_ids), "RESEND_MARKETING_SQL_SOURCE_REQUIREMENTS_REFUSED")
     closed = {key: _closed(key, ids[key], value, closures, sql_ids) for key, value in source.items()}
+    # Original source/config closures plus complete empty SQL can prove that
+    # this historical caller had no capability or effects, without obtaining an
+    # unrelated replacement API key. No flag or caller-completion field selects it.
+    source_closed = all(closed.values())
+    sql_empty = all(not rows for rows in actual.values())
+    if source_closed and sql_empty:
+        covered = sorted(item for values in ids.values() for item in values)
+        return {"provider": "resend", "status": "RESEND_MARKETING_EFFECTS_OBSERVED",
+            "disposition": "source-inapplicable-and-effects-reconciled", "sourceInapplicable": True,
+            "sourceCommit": verifiedSourceRequirements["sourceCommit"], "sourceInventorySha256": selected["sourceInventorySha256"],
+            "requirementsSha256": selected["requirementsSha256"], "configurationSha256": selected["configurationSha256"],
+            "originalDatabaseSnapshotSha256": selected["databaseSnapshotSha256"], "observedDatabaseSnapshotSha256": snapshot_sha256(actual),
+            "databaseTransition": reducer, "families": [{"familyId": family, "sourceClosed": True, "unresolvedEffects": 0,
+                "paginationComplete": False, "coveredRequirementIds": ids[family], "missingRequirementIds": []} for family in FAMILIES],
+            "coveredRequirementIds": covered, "missingRequirementIds": [], "effects": [], "contactCount": 0,
+            "broadcastCount": 0, "marketingOfferCount": 0, "activeExecutions": 0, "unresolvedEffects": 0, "uncertainEffects": 0,
+            "providerRequestsRequired": False, "sourceClosureContradiction": False, "complete": True}
     # Provider GET failures throw a sanitized error: they never produce zero.
-    first = _provider_snapshot(client, not closed["resend.broadcasts"])
-    second = _provider_snapshot(client, not closed["resend.broadcasts"])
+    demand(client is not None and callable(getattr(client, "request", None)), "RESEND_MARKETING_PROVIDER_CLIENT_REQUIRED")
+    read_broadcasts = not closed["resend.broadcasts"] or bool(actual["campaigns"])
+    first = _provider_snapshot(client, read_broadcasts)
+    second = _provider_snapshot(client, read_broadcasts)
     demand(first == second, "RESEND_MARKETING_PROVIDER_CHANGED_DURING_OBSERVATION")
     contacts = {row["email_sha256"]: row for row in actual["contacts"]}
     demand(len(contacts) == len(actual["contacts"]), "RESEND_MARKETING_DATABASE_EMAIL_DUPLICATE")
@@ -416,6 +433,9 @@ def observe_scoped_effects(client, reviewed, actualRows, verifiedSourceRequireme
         count = 0 if closed[family] else unknown[family] + len(untracked)
         if family == "resend.contacts" and not closed[family]:
             count += offer_unknown
+        if family == "resend.contacts" and source_closed and not sql_empty:
+            # A source-wide no-capability closure cannot erase retained intents.
+            count += 1
         families.append({"familyId": family, "sourceClosed": closed[family], "unresolvedEffects": count,
             "paginationComplete": True, "coveredRequirementIds": ids[family] if count == 0 else [],
             "missingRequirementIds": [] if count == 0 else ids[family]})
@@ -428,4 +448,5 @@ def observe_scoped_effects(client, reviewed, actualRows, verifiedSourceRequireme
         "families": families, "coveredRequirementIds": sorted(covered), "missingRequirementIds": sorted(missing),
         "effects": receipts, "contactCount": len(first["contacts"]), "broadcastCount": len(first["broadcasts"]),
         "marketingOfferCount": len(actual["outbox"]), "activeExecutions": leases, "unresolvedEffects": total,
+        "providerRequestsRequired": True, "sourceInapplicable": False, "sourceClosureContradiction": source_closed and not sql_empty,
         "uncertainEffects": total, "complete": total == 0 and leases == 0}

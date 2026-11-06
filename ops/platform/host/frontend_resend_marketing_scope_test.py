@@ -256,6 +256,48 @@ class MarketingScopeTests(unittest.TestCase):
         self.source["sourceInventorySha256"] = "e" * 64
         with self.assertRaisesRegex(ValueError, "VERIFIED_SOURCE_REQUIRED"): self.observe()
 
+    def close_all(self):
+        self.source["capabilityClosures"] = [{"familyId": family["familyId"], "disposition": "no-capability-observed",
+            "requirementIds": [row["requirementId"] for key in ("configurationConditions", "sqlIntentRequirements", "untrackedPotentialRequests")
+                for row in family[key]], "evidenceIds": ["e" * 64]} for family in self.source["providerFamilies"]]
+
+    def test_exact_all_source_closures_and_empty_sql_require_no_provider_credential_or_request(self):
+        self.close_all()
+        self.plan["databaseSnapshotSha256"] = component.snapshot_sha256(self.rows)
+        receipt = component.observe_scoped_effects(None, self.plan, self.rows, self.source)
+        self.assertTrue(receipt["complete"])
+        self.assertFalse(receipt["providerRequestsRequired"])
+        self.assertEqual(receipt["disposition"], "source-inapplicable-and-effects-reconciled")
+        self.assertEqual(receipt["uncertainEffects"], 0)
+        self.assertEqual(len(receipt["coveredRequirementIds"]), 5)
+        self.assertEqual(self.calls, [])
+
+    def test_partial_closure_or_source_disposition_without_closure_cannot_skip_provider_reads(self):
+        self.close_all(); self.source["capabilityClosures"].pop()
+        self.source["providerFamilies"][-1]["sourceDisposition"] = "absent-from-verified-source"
+        receipt = self.observe()
+        self.assertTrue(receipt["providerRequestsRequired"])
+        self.assertTrue(self.calls)
+
+    def test_nonempty_sql_contradicts_all_source_closures_and_remains_unknown(self):
+        self.populated(); self.close_all()
+        receipt = self.observe()
+        self.assertFalse(receipt["complete"])
+        self.assertTrue(receipt["sourceClosureContradiction"])
+        self.assertTrue(self.calls)
+        self.assertTrue(receipt["missingRequirementIds"])
+
+    def test_campaign_rows_contradicting_closure_require_real_broadcast_observation(self):
+        self.close_all()
+        self.rows["campaigns"] = [{"id": CAMPAIGN, "status": "sent", "provider_broadcast_id": BROADCAST,
+            "provider_segment_id": SEGMENT, "scheduled_at": None, "sent_at": TIME, "updated_at": TIME}]
+        self.broadcasts = [{"id": BROADCAST, "name": "campaign:" + CAMPAIGN, "segment_id": SEGMENT, "status": "sent"}]
+        result = self.observe()
+        self.assertFalse(result["complete"])
+        self.assertTrue(any(path.startswith("/broadcasts") for _method, path in self.calls))
+        with self.assertRaisesRegex(ValueError, "PROVIDER_CLIENT_REQUIRED"):
+            component.observe_scoped_effects(None, self.plan, self.rows, self.source)
+
     def test_untracked_event_requirement_cannot_be_settled_by_empty_provider_list(self):
         self.source["providerFamilies"][-1]["untrackedPotentialRequests"] = [{"requirementId": "resend.events.untracked-send"}]
         receipt = self.observe()
