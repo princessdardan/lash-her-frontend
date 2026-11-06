@@ -21,11 +21,13 @@ import frontend_google_fencing
 import frontend_crm_shipping_retirement
 import frontend_gateway_observation
 import migrate
+import p2_certification_profile
 import vercel
 
 demand = migrate.demand
 MAXIMUM = 2_000_000
 STATES = ("QUEUED", "INITIALIZING", "BUILDING", "READY", "ERROR", "CANCELED")
+RELATED_PRODUCTION_PROJECT = "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy"
 BOOTSTRAP_FLAGS = ("INTEGRATION_CUSTOMER_ACCESS_ENABLED", "INTEGRATION_COURSE_READS_ENABLED", "INTEGRATION_CHECKOUT_ENABLED",
     "INTEGRATION_ENTITLEMENT_RECOVERY_ENABLED", "INTEGRATION_COMMUNITY_READS_ENABLED", "INTEGRATION_COMMUNITY_WRITES_ENABLED",
     "INTEGRATION_LEARNING_ROUTES_ENABLED", "CUSTOMER_AUTH_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED", "CUSTOMER_ACCOUNT_LIFECYCLE_RECOVERY_ENABLED")
@@ -59,11 +61,12 @@ class LockedProbe:
     def __init__(self, verify, client=None):
         self.verify, self.client = verify, client or frontend_probe.ProbeClient()
 
-    def request(self, *args):
+    def request(self, *args, **kwargs):
         self.verify()
-        value = self.client.request(*args)
-        self.verify()
-        return value
+        try:
+            return self.client.request(*args, **kwargs)
+        finally:
+            self.verify()
 
 
 def wait_for_supported_retirement(task, denied, verify, seconds):
@@ -180,6 +183,111 @@ def retired_deployments(context, attempt):
     return value["deletedDeploymentIds"]
 
 
+def repository_project_inventory(client):
+    # Official CLI50 fetchPaginated contract: v9/projects returns projects plus
+    # pagination.next; request every team page and inspect only repo metadata.
+    projects, seen, cursor = [], set(), None
+    for _page in range(100):
+        suffix = "" if cursor is None else "&until=" + str(cursor)
+        value = client.request("GET", "/v9/projects?limit=100" + suffix)
+        rows, pagination = value.get("projects"), value.get("pagination")
+        demand(isinstance(rows, list) and len(rows) <= 100 and isinstance(pagination, dict) and
+            type(pagination.get("count")) is int and pagination["count"] == len(rows), "REPOSITORY_PROJECT_PAGINATION_REFUSED")
+        for row in rows:
+            demand(isinstance(row, dict) and isinstance(row.get("id"), str) and re.fullmatch(r"prj_[A-Za-z0-9]+", row["id"]) and
+                row["id"] not in seen and len(seen) < 4096 and row.get("accountId") == vercel.TEAM, "REPOSITORY_PROJECT_METADATA_REFUSED")
+            seen.add(row["id"])
+            link = row.get("link") or {}
+            demand(isinstance(link, dict), "REPOSITORY_PROJECT_METADATA_REFUSED")
+            if link.get("type") == "github" and str(link.get("repoId")) == vercel.REPOSITORY_ID:
+                projects.append(row["id"])
+        following = pagination.get("next")
+        if following is None:
+            return sorted(projects)
+        demand(type(following) is int and following > 0 and rows and (cursor is None or following < cursor), "REPOSITORY_PROJECT_PAGINATION_REFUSED")
+        cursor = following
+    raise ValueError("REPOSITORY_PROJECT_INVENTORY_LIMIT")
+
+
+def related_retirements(context, attempt):
+    if attempt is None or not (attempt / "related-preview-retirements-outcome.json").exists():
+        return []
+    receipt = migrate.read_json(attempt, "related-preview-retirements-outcome.json")
+    selected = identity(context)
+    demand(all(receipt.get(key) == selected[key] for key in ("actionId", "sourceCommit", "targetSha256")) and
+        receipt.get("status") == "STAGING_RELATED_PREVIEW_INGRESS_RETIRED", "RELATED_PREVIEW_RECEIPT_REFUSED")
+    expected = sorted(identifier for project in context["bindings"].get("relatedProjects", []) for identifier in project["retirePreviewDeploymentIds"])
+    demand(receipt.get("deletedDeploymentIds") == expected, "RELATED_PREVIEW_RECEIPT_REFUSED")
+    return expected
+
+
+def observe_related_projects(context, client, attempt=None):
+    retired, observations = related_retirements(context, attempt), []
+    for project in context["bindings"].get("relatedProjects", []):
+        demand(project["projectId"] == RELATED_PRODUCTION_PROJECT, "RELATED_PROJECT_SCOPE_REFUSED")
+        state = vercel.promotion_state(client, project["projectId"])
+        first = deployment_inventory(client, project["projectId"])
+        second = deployment_inventory(client, project["projectId"])
+        after = vercel.promotion_state(client, project["projectId"])
+        demand(first == second and state == after, "RELATED_PROJECT_CHANGED_DURING_OBSERVATION")
+        expected = [row for row in project["deployments"] if row["deploymentId"] not in retired]
+        observations.append({"projectId": project["projectId"], "deployments": first, "projectState": state,
+            "reviewedInventoryMatches": first == expected, "paginationComplete": True,
+            "productionTargetMutationsAuthorized": False, "nativeScheduleMutationsAuthorized": False})
+    return observations
+
+
+def retire_related_previews(context, client, attempt):
+    selected = identity(context)
+    bootstrap = observe_compatible(context, client, attempt.parent / "vercel-bootstrap")
+    demand(bootstrap.get("bootstrapAdmissionVerified") is True and bootstrap.get("workloadVerified") is True and
+        bootstrap.get("nativeSchedulesEnabled") is False, "ADMISSION_BOOTSTRAP_REQUIRED_FOR_RELATED_PREVIEWS")
+    proof = context.get("relatedPreviewBindings")
+    expected = [(project, identifier) for project in context["bindings"].get("relatedProjects", []) for identifier in project["retirePreviewDeploymentIds"]]
+    demand(expected and isinstance(proof, list) and len(proof) == len(expected), "RELATED_PREVIEW_BINDINGS_REQUIRED")
+    expected_projects = sorted([selected["projectId"], *[row["projectId"] for row in context["bindings"].get("relatedProjects", [])]])
+    demand(repository_project_inventory(client) == expected_projects, "REPOSITORY_PROJECT_INVENTORY_DRIFT")
+    observations = observe_related_projects(context, client)
+    demand(all(row["reviewedInventoryMatches"] for row in observations), "RELATED_PREVIEW_INVENTORY_DRIFT")
+    outcome = {**selected, "status": "RELATED_PREVIEW_RETIREMENT_REQUIRES_REVIEW", "deletedDeploymentIds": [],
+        "uncertainDeploymentId": None, "productionTargetMutationsAuthorized": False, "nativeScheduleMutationsAuthorized": False}
+    migrate.write_json(attempt, "related-preview-retirements-started.json", outcome)
+    try:
+        for project, identifier in expected:
+            demand(project["projectId"] == RELATED_PRODUCTION_PROJECT, "RELATED_PROJECT_SCOPE_REFUSED")
+            row = next(row for row in project["deployments"] if row["deploymentId"] == identifier)
+            binding = [entry for entry in proof if entry.get("projectId") == project["projectId"] and entry.get("deploymentId") == identifier]
+            demand(row["target"] == "preview" and len(binding) == 1 and binding[0].get("sourceCommit") == row["sourceCommit"],
+                "RELATED_PRODUCTION_TARGET_RETIREMENT_REFUSED")
+            state = vercel.promotion_state(client, project["projectId"])
+            original = next(value for value in observations if value["projectId"] == project["projectId"])
+            demand(state == original["projectState"] and identifier != state["productionDeploymentId"], "RELATED_PRODUCTION_STATE_CHANGED")
+            inventory = deployment_inventory(client, project["projectId"])
+            demand(inventory == [entry for entry in project["deployments"] if entry["deploymentId"] not in outcome["deletedDeploymentIds"]],
+                "RELATED_PREVIEW_INVENTORY_DRIFT")
+            detail = client.request("GET", f"/v13/deployments/{identifier}?withGitRepoInfo=true")
+            git = detail.get("gitSource") or {}
+            # REST lists historically encode nonproduction targets as null.
+            # Normalize only after proving project/source/repository identity.
+            demand(detail.get("projectId") == project["projectId"] and detail.get("target") in (None, "preview") and
+                detail.get("id") == identifier and git.get("sha") == row["sourceCommit"] and git.get("type") == "github" and
+                str(git.get("repoId")) == vercel.REPOSITORY_ID, "RELATED_PREVIEW_SOURCE_BINDING_REFUSED")
+            outcome["uncertainDeploymentId"] = identifier
+            deleted = client.request("DELETE", "/v13/deployments/" + identifier)
+            demand(deleted.get("state") == "DELETED" and deleted.get("uid") == identifier, "RELATED_PREVIEW_DELETE_ACK_UNVERIFIED")
+            migrate.write_json(attempt, "related-" + identifier + "-deleted.json", {**selected, **binding[0], "state": "DELETED"})
+            outcome["deletedDeploymentIds"].append(identifier); outcome["uncertainDeploymentId"] = None
+            demand(vercel.promotion_state(client, project["projectId"]) == original["projectState"], "RELATED_PRODUCTION_STATE_CHANGED")
+        for project in context["bindings"].get("relatedProjects", []):
+            expected_rows = [row for row in project["deployments"] if row["deploymentId"] not in outcome["deletedDeploymentIds"]]
+            demand(deployment_inventory(client, project["projectId"]) == deployment_inventory(client, project["projectId"]) == expected_rows,
+                "RELATED_PREVIEW_ABSENCE_UNVERIFIED")
+        outcome.update(status="STAGING_RELATED_PREVIEW_INGRESS_RETIRED", deletedDeploymentIds=sorted(outcome["deletedDeploymentIds"]))
+        return outcome
+    finally:
+        migrate.write_json(attempt, "related-preview-retirements-outcome.json", outcome)
+
+
 def observe_vercel(context, client, attempt=None):
     selected = identity(context)
     before = vercel.promotion_state(client, selected["projectId"])
@@ -222,6 +330,16 @@ def observe_vercel(context, client, attempt=None):
               "actionBuild": build,
               "historicalIngressRetiredDeploymentIds": retired,
               "aliasJobActive": alias is not None and alias["jobStatus"] in ("pending", "in-progress")}
+    if "relatedProjects" in context["bindings"] or any(row.get("sourceConfiguration") for row in context["bindings"].get("historicalRuntimeBindings", [])):
+        projects = repository_project_inventory(client)
+        demand(projects == repository_project_inventory(client), "REPOSITORY_PROJECT_INVENTORY_DRIFT")
+        expected_projects = sorted([selected["projectId"], *[row["projectId"] for row in context["bindings"].get("relatedProjects", [])]])
+        result["repositoryProjectIds"] = projects
+        result["reviewedInventoryMatches"] = result["reviewedInventoryMatches"] and projects == expected_projects
+    related = observe_related_projects(context, client, attempt)
+    result["relatedProjects"] = related
+    result["reviewedInventoryMatches"] = result["reviewedInventoryMatches"] and all(row["reviewedInventoryMatches"] for row in related)
+    result["historicalIngressRetiredDeploymentIds"] += related_retirements(context, attempt)
     return result
 
 
@@ -378,6 +496,8 @@ def verify_bootstrap(context, client, attempt, private, probe):
             and admission.get("sourceCommit") == identity_value["sourceCommit"] and admission.get("newWork") is False and admission.get("recovery") is False
             and admission.get("epoch") == context["admissionObservation"]["epoch"], "BOOTSTRAP_ADMISSION_PROBE_UNVERIFIED")
         outcome.update(status="FRONTEND_VERIFIED", bootstrapAdmissionVerified=True, checks=observed["checks"])
+        if migrate.contract_identity(context["candidate"]).get("contractPhase") == "p2":
+            outcome.update(**migrate.contract_identity(context["candidate"]), featureControls=observed["featureControls"])
         return outcome
     finally:
         migrate.write_json(attempt, "frontend-workload-outcome.json", outcome)
@@ -551,6 +671,49 @@ def verify_google_runtime(context, client, attempt, probe):
         "runtimeReplacementBindingVerified": True, "customerIdentityBindingVerified": False}
 
 
+def compatible_feature_controls(context):
+    selected = context["candidate"]
+    profile = context["plan"].get("certification")
+    if profile is not None:
+        demand(migrate.contract_identity(selected).get("contractPhase") == "p2", "P2_CERTIFICATION_CONTRACT_REQUIRED")
+        return p2_certification_profile.require_profile(profile)["featureControls"]
+    return {key: False for key in BOOTSTRAP_FLAGS}
+
+
+def configure_compatible_features(context, client, attempt):
+    # Only the reviewed post-SQL certification profile may enable these flags.
+    # The bootstrap build remains all-false and project native crons stay off.
+    controls = compatible_feature_controls(context)
+    if context["plan"].get("certification") is None:
+        return
+    selected = identity(context)
+    variables = [(key, "true" if value else "false") for key, value in controls.items()] + [("LASH_P2_CERTIFICATION_SCHEDULES", "account-lifecycle")]
+    outcome = {**selected, "status": "P2_FEATURE_CONFIGURATION_REQUIRES_REVIEW", "featureControls": controls,
+        "nativeSchedulesEnabled": False, "trafficAuthorized": False}
+    migrate.write_json(attempt, "certification-features-started.json", outcome)
+    try:
+        demand(vercel.promotion_state(client, selected["projectId"])["cronsEnabled"] is False, "P2_NATIVE_SCHEDULES_MUST_REMAIN_OFF")
+        for key, value in variables:
+            result = client.request("POST", f'/v10/projects/{selected["projectId"]}/env?upsert=true', {
+                "key": key, "value": value, "type": "plain", "target": ["production"], "gitBranch": None,
+                "customEnvironmentIds": [], "comment": "Reviewed P2 staging certification " + selected["actionId"]})
+            row = result.get("created")
+            demand(result.get("failed") == [] and isinstance(row, dict) and row.get("key") == key and row.get("type") == "plain"
+                and row.get("target") == ["production"] and not row.get("gitBranch") and not row.get("customEnvironmentIds"),
+                "P2_FEATURE_CONFIGURATION_UNVERIFIED")
+        rows = client.request("GET", f'/v10/projects/{selected["projectId"]}/env?decrypt=false').get("envs")
+        demand(isinstance(rows, list), "P2_FEATURE_CONFIGURATION_UNVERIFIED")
+        for key, value in variables:
+            found = [row for row in rows if row.get("key") == key and row.get("target") == ["production"] and
+                not row.get("gitBranch") and not row.get("customEnvironmentIds")]
+            demand(len(found) == 1 and found[0].get("type") == "plain" and found[0].get("value") == value,
+                "P2_FEATURE_CONFIGURATION_UNVERIFIED")
+        demand(vercel.promotion_state(client, selected["projectId"])["cronsEnabled"] is False, "P2_NATIVE_SCHEDULES_MUST_REMAIN_OFF")
+        outcome["status"] = "P2_FEATURE_CONFIGURATION_VERIFIED"
+    finally:
+        migrate.write_json(attempt, "certification-features-outcome.json", outcome)
+
+
 def deploy_compatible(context, client, attempt, parent_directory, probe=None):
     selected = identity(context)
     observed = observe_vercel(context, client, attempt)
@@ -562,10 +725,12 @@ def deploy_compatible(context, client, attempt, parent_directory, probe=None):
     # This source-only component does not establish historical fencing. The
     # parent must already hold its complete live-qualified drain before entry.
     configure_pending_source_pins(context, client, attempt, parent_directory)
+    configure_compatible_features(context, client, attempt)
     frontend_probe.prepare(client, context["candidate"], private, attempt, context["gatewayHost"], scheduler_qualification=False)
     vercel.stage_frontend(client, context["candidate"], attempt)
     return vercel.promote_frontend(client, context["candidate"], attempt,
-        lambda release, _deployment: frontend_probe.verify(client, release, attempt, private, probe))
+        lambda release, _deployment: frontend_probe.verify(client, release, attempt, private, probe,
+            expected_feature_controls=compatible_feature_controls(context) if migrate.contract_identity(release).get("contractPhase") == "p2" else None))
 
 
 def observe_compatible(context, client, attempt):
@@ -614,9 +779,26 @@ def observe_compatible(context, client, attempt):
         outcome["workloadVerified"] = workload.get("status") == "FRONTEND_VERIFIED" and all(
             workload.get(key) == staged[key] for key in ("environment", "projectId", "sourceCommit", "releaseId", "deploymentId"))
         outcome["workloadReceiptSha256"] = migrate.file_hash(raw)
+        if workload.get("contractPhase") == "p2":
+            migrate.require_contract_identity(context["candidate"], workload)
+            controls = {key: False for key in BOOTSTRAP_FLAGS} if workload.get("bootstrapAdmissionVerified") is True else compatible_feature_controls(context)
+            outcome["workloadVerified"] = outcome["workloadVerified"] and workload.get("featureControls") == controls
+            outcome["featureControls"] = workload.get("featureControls")
         if workload.get("bootstrapAdmissionVerified") is True:
             outcome.update(bootstrapAdmissionVerified=True, schemaCatalogSha256=workload.get("schemaCatalogSha256"),
                 appliedLineageSha256=workload.get("appliedLineageSha256"))
+    if context["plan"].get("certification") is not None and outcome.get("bootstrapAdmissionVerified") is not True and outcome["workloadVerified"]:
+        p2_certification_profile.require_profile(context["plan"]["certification"])
+        project = vercel._project(client, selected["projectId"])
+        cron = project.get("crons") or {}
+        expected = {"path": "/api/cron/account-lifecycle", "schedule": "* * * * *", "host": state["url"].removeprefix("https://")}
+        definitions = cron.get("definitions")
+        demand((project.get("targets") or {}).get("production", {}).get("id") == staged["deploymentId"] and
+            cron.get("deploymentId") == staged["deploymentId"] and cron.get("disabledAt") is not None and
+            isinstance(definitions, list) and len(definitions) == 1 and
+            all(definitions[0].get(key) == value for key, value in expected.items()), "P2_EXACT_DEPLOYMENT_LIFECYCLE_SCHEDULE_REQUIRED")
+        outcome["certificationSchedule"] = {**expected, "deploymentId": staged["deploymentId"], "nativeEnabled": False,
+            "definitionsSha256": migrate.file_hash(json.dumps(definitions, separators=(",", ":")).encode())}
     # Admission values are supplied only after the parent's actual post-SQL
     # closed-ledger observation; provider metadata cannot observe the ledger.
     controls = context.get("admissionObservation")
@@ -644,6 +826,36 @@ def execute(context, client, verify, probe=None):
         source_attempt = original / attempt.name
         if source_attempt.exists():
             migrate.private_directory(source_attempt)
+    if operation == "observe-provider-effects":
+        import frontend_scoped_provider_client
+        import frontend_square_financial_scope
+        import frontend_resend_marketing_scope
+        import frontend_highlevel_history
+        import frontend_chitchats_transient_effects
+        modules = {"square": frontend_square_financial_scope, "resend": frontend_resend_marketing_scope,
+            "highlevel": frontend_highlevel_history, "chitchats": frontend_chitchats_transient_effects}
+        scope = context["providerEffectScope"]
+        provider, reviewed = scope["provider"], context["scopedReviewed"]
+        demand(provider in modules and any(row == scope for row in context["bindings"].get("providerEffectScopes", [])),
+            "REVIEWED_PROVIDER_EFFECT_SCOPE_REQUIRED")
+        module = modules[provider]
+        requirements = context["scopedSourceRequirements"]
+        demand(all(scope[key] == requirements[key] for key in ("sourceCommit", "surfaceSha256", "sourceInventorySha256", "requirementsSha256")),
+            "PROVIDER_EFFECT_SOURCE_BINDING_REFUSED")
+        class UnavailableReadClient:
+            def request(self, *_args, **_kwargs):
+                raise ValueError("SELECTED_PROVIDER_READ_CREDENTIAL_UNAVAILABLE")
+        token = context.get("scopedReplacementToken")
+        client = LockedClient(frontend_scoped_provider_client.Client(provider, token, reviewed, module.read_only_request), verify) if token else UnavailableReadClient()
+        verify()
+        if provider in ("resend", "chitchats"):
+            result = module.observe_scoped_effects(client, reviewed, context["scopedActual"], requirements, before=context["scopedBefore"])
+        else:
+            result = module.observe_scoped_effects(client, reviewed, context["scopedActual"], requirements)
+        verify()
+        return {**selected, "provider": provider, "surfaceSha256": scope["surfaceSha256"],
+            "sourceCommit": requirements["sourceCommit"], "configurationRecordSha256": requirements["configurationRecordSha256"],
+            "provenanceSha256": requirements["provenanceSha256"], **result}
     if operation == "observe-restoration":
         reviewed = context["bindings"].get("gatewayObservation")
         demand(reviewed is not None, "RESTORATION_GATEWAY_BINDING_REQUIRED")
@@ -660,8 +872,45 @@ def execute(context, client, verify, probe=None):
         return deploy_admission(context, locked, attempt, parent, LockedProbe(verify, probe))
     if operation == "retire-deployments":
         return retire_deployments(context, locked, attempt)
+    if operation == "retire-related-previews":
+        return retire_related_previews(context, locked, attempt)
     if operation == "observe-retired-capabilities":
         providers = {}
+        for provider, module, probe_binding in (("square", frontend_square_retirement, frontend_square_retirement.binding),
+                ("resend", frontend_resend_retirement, frontend_resend_retirement.domain)):
+            reviewed_scope = context["bindings"].get(provider + "Retirement")
+            if reviewed_scope is None:
+                continue
+            replacement_client = LockedClient(module.Client(context[provider + "ReplacementToken"]), verify)
+            retired_client = LockedClient(module.Client(context[provider + "RetiredToken"]), verify)
+            probe_binding(replacement_client, reviewed_scope)
+            denied = False
+            try:
+                probe_binding(retired_client, reviewed_scope)
+            except module.AuthenticationDenied:
+                denied = True
+            ingress_denied = False
+            if provider == "square":
+                ingress_denied = frontend_square_retirement.webhook(replacement_client)["enabled"] is False
+            else:
+                ingress_denied = all(frontend_resend_retirement.webhook(replacement_client, identifier)["status"] == "disabled"
+                    for identifier in reviewed_scope["webhookIds"])
+            providers[provider] = {"provider": provider, "historicalCapabilitiesDenied": denied and ingress_denied,
+                "retiredCredentialDenied": denied, "replacementReadVerified": True, "rawInvocationCount": None}
+        reviewed_highlevel = context["bindings"].get("highlevelRetirement")
+        if reviewed_highlevel is not None:
+            replacement_highlevel = LockedClient(frontend_crm_shipping_retirement.Client("highlevel", context["highlevelReplacementToken"], reviewed_highlevel), verify)
+            retired_highlevel = LockedClient(frontend_crm_shipping_retirement.Client("highlevel", context["highlevelRetiredToken"], reviewed_highlevel), verify)
+            replacement_highlevel.request("GET", "/locations/" + reviewed_highlevel["locationId"])
+            denied = False
+            try:
+                retired_highlevel.request("GET", "/locations/" + reviewed_highlevel["locationId"])
+            except frontend_crm_shipping_retirement.AuthenticationDenied:
+                denied = True
+            # Accepted original refresh denial and ingress drain remain bound
+            # by the immutable strict fence; never replay its refresh grant.
+            providers["highlevel"] = {"provider": "highlevel", "historicalCapabilitiesDenied": denied,
+                "replacementReadVerified": True, "rawInvocationCount": None}
         reviewed = context["bindings"].get("googleRetirement")
         if reviewed is not None:
             replacements = {kind: frontend_google_fencing.Client(kind, context["google" + kind.title() + "ReplacementSecret"], verify) for kind in ("identity", "calendar")}

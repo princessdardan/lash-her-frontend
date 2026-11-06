@@ -11,6 +11,9 @@ import { frontendMigrationArtifact } from "./frontend-migration.mjs";
 import { observeFrontendOperationalProviderInventory } from "./frontend-operational-provider-inventory.mjs";
 import { observeFrontendGoogleDatabase, frontendGoogleSnapshotSha256 } from "./frontend-google-effects.mjs";
 import { observeFrontendCrmShippingDatabase, frontendCrmShippingSnapshotSha256 } from "./frontend-crm-shipping-effects.mjs";
+import { historicalSourceSha256 as sourceHash, verifiedSourceRequirements } from "./frontend-historical-source.mjs";
+import { observeFrontendHistoricalSourceContexts } from "./frontend-historical-source-observer.mjs";
+import { observeFrontendScopedProviderDatabase } from "./frontend-provider-effect-scopes.mjs";
 import { observeHistoricalFrontendCapabilityBindings, observeHistoricalFrontendDatabaseFence } from "./frontend-historical-capabilities.mjs";
 
 assert.equal(process.env.FRONTEND_PROVIDER_INVENTORY_LOCAL_TEST, "true");
@@ -65,6 +68,49 @@ try {
     try { for (const statement of migration.sql) await client.query(statement); await client.query("COMMIT"); }
     catch (error) { await client.query("ROLLBACK"); throw error; }
   }
+  await client.query("GRANT SELECT ON ALL TABLES IN SCHEMA public TO provider_retired");
+  const historicalSource = verifiedSourceRequirements(realpathSync(new URL("../..", import.meta.url).pathname), "b99d4f346696f897fa6a6729dfcc52d6503fe8d6");
+  const sourceKeys = historicalSource.sqlCredentialRequirements.map(row => row.key);
+  const sourceEnvironment = Object.fromEntries(sourceKeys.map(key => [key, privateCapabilities.historicalRuntimeConfigurations["c".repeat(64)].databaseUrl]));
+  const sourceCatalog = Object.keys(sourceEnvironment).sort(), sourceSurface = sourceHash("owned-fixed-source-wrapper");
+  const sourceProvenance = { surfaceSha256: sourceSurface, sourceCommit: historicalSource.sourceCommit,
+    configurationRecordSha256: sourceHash("owned-fixed-original-record"), kind: "deployment", immutableReference: "owned:source-wrapper-original",
+    entrypoint: null, keyCatalogSha256: sourceHash(sourceCatalog) };
+  const sourceBinding = { surfaceSha256: sourceSurface, sourceCommit: historicalSource.sourceCommit, configurationRecordSha256: sourceProvenance.configurationRecordSha256,
+    providerCredentials: [], sourceConfiguration: { ...sourceProvenance, provenanceSha256: sourceHash(sourceProvenance),
+      databaseRoles: sourceKeys.map(key => ({ key, name: "provider_retired", oid: retiredOid })) } };
+  const sourceBindings = { projectId: "owned-stage", surfaces: [{ surfaceSha256: sourceSurface, kind: "deployment", identity: { projectId: "owned-stage", deploymentId: "dpl_owned" } }], historicalRuntimeBindings: [sourceBinding] };
+  const sourcePrivate = { historicalRuntimeConfigurations: { [sourceSurface]: { sourceCommit: historicalSource.sourceCommit,
+    configurationRecordSha256: sourceProvenance.configurationRecordSha256, provenance: sourceProvenance, keyCatalog: sourceCatalog, environment: sourceEnvironment } } };
+  const sourceContext = { plan: { ...capabilityPlan, providerBindingsSha256: sourceHash("owned-bindings"), historicalLogins: {
+    ...capabilityPlan.historicalLogins, retiredLogins: [{ name: "provider_retired", oid: retiredOid }] } },
+    databaseClient: client, verifyLockedSession: verify, getProviderContext: async () => {} };
+  const sourceResult = await observeFrontendHistoricalSourceContexts(sourceContext, sourceBindings, sourcePrivate,
+    { createClient: options => new Client({ ...options, ssl: { ...options.ssl, ca: readFileSync(certificate, "utf8") } }) });
+  assert.equal(sourceResult.bindings[0].sqlPhysicalBindings.length, 4);
+  assert.ok(sourceResult.bindings[0].sqlPhysicalBindings.every(row => row.sameSelectedPhysicalDatabase === true));
+  assert.equal(JSON.stringify(sourceResult).includes("owned-capability-fixture-password"), false);
+  assert.equal((await client.query("SELECT count(*)::int AS count FROM pg_locks WHERE locktype='advisory' AND pid=pg_backend_pid()")).rows[0].count, 0);
+  const safeMaps = Object.fromEntries(["booking", "contact_popup", "course_signup", "general_inquiry", "sanity_backfill", "training_contact"].map(key => [key, []]));
+  const scopedReviewed = { resendMarketing: { environment: "staging", sourceCommit: historicalSource.sourceCommit, surfaceSha256: sourceSurface,
+    configurationSha256: sourceProvenance.configurationRecordSha256, sourceInventorySha256: historicalSource.sourceInventorySha256,
+    requirementsSha256: historicalSource.requirementsSha256, databaseSnapshotSha256: "a".repeat(64), segmentIdsBySource: safeMaps, topicIdsBySource: safeMaps } };
+  const actualScope = await observeFrontendScopedProviderDatabase(client, "resend", scopedReviewed, verify);
+  assert.equal(Object.keys(actualScope.normalizedSnapshot).length, 6);
+  assert.ok(Object.values(actualScope.normalizedSnapshot).every(rows => rows.length === 0));
+  await client.query("CREATE DATABASE owned_alternate_metadata");
+  const alternatePrivate = structuredClone(sourcePrivate), alternateBinding = structuredClone(sourceBinding);
+  const alternateOriginal = alternatePrivate.historicalRuntimeConfigurations[sourceSurface];
+  alternateOriginal.environment.TEST_DATABASE_URL = alternateOriginal.environment.TEST_DATABASE_URL.replace("/postgres?", "/owned_alternate_metadata?");
+  alternateOriginal.configurationRecordSha256 = sourceHash("owned-alternate-original-record");
+  alternateOriginal.provenance.configurationRecordSha256 = alternateOriginal.configurationRecordSha256;
+  alternateBinding.configurationRecordSha256 = alternateOriginal.configurationRecordSha256;
+  alternateBinding.sourceConfiguration.provenanceSha256 = sourceHash(alternateOriginal.provenance);
+  const alternateResult = await observeFrontendHistoricalSourceContexts({ ...sourceContext, getProviderContext: async () => {} },
+    { ...sourceBindings, historicalRuntimeBindings: [alternateBinding] }, alternatePrivate,
+    { createClient: options => new Client({ ...options, ssl: { ...options.ssl, ca: readFileSync(certificate, "utf8") } }) });
+  assert.equal(alternateResult.bindings[0].sqlPhysicalBindings.filter(row => row.sameSelectedPhysicalDatabase === false).length, 1);
+  assert.equal((await client.query("SELECT count(*)::int AS count FROM pg_stat_activity WHERE application_name='lash-her-original-source-metadata'")).rows[0].count, 0);
   await client.query("CREATE ROLE provider_admission_owner NOLOGIN NOINHERIT");
   await client.query("GRANT CREATE ON DATABASE postgres TO provider_admission_owner");
   await client.query("SET ROLE provider_admission_owner");
@@ -135,7 +181,7 @@ try {
     error => error.message === "FRONTEND_OPERATIONAL_PROVIDER_INVENTORY_REFUSED");
   assert.equal((await client.query("SELECT 1 AS value")).rows[0].value, 1);
   console.log(JSON.stringify({ status: "FRONTEND_PROVIDER_INVENTORY_OWNED_POSTGRES_PASS", migrations: artifact.migrations.length,
-    tables: actual.tables.length, googleCredentialAndEventQueries: 5, crmShippingQueries: 8, providerTouched: false, liveQualified: false }));
+    tables: actual.tables.length, originalSourceSqlPeers: 4, alternateMetadataPeers: 1, scopedResendQueries: 6, googleCredentialAndEventQueries: 5, crmShippingQueries: 8, providerTouched: false, liveQualified: false }));
 } finally {
   if (client) await client.end().catch(() => {});
   if (running) { try { run(join(binaries, "pg_ctl"), ["-D", data, "-m", "immediate", "-w", "stop"]); } catch { /* owned cleanup */ } }

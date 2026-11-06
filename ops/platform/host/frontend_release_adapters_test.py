@@ -1,5 +1,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
+import subprocess
 import hashlib
 import hmac
 from pathlib import Path
@@ -46,6 +48,8 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
         self.failed = {"uid": "dpl_error", "state": "ERROR", "target": None, "created": 10,
                        "url": "failed.vercel.app", "meta": {"githubCommitSha": "c" * 40}}
         self.deployments = [self.previous, self.failed]
+        self.related_deployments, self.related_current, self.related_disabled = [], "dpl_production", False
+        self.built_features, self.built_crons, self.probed_deployment = {}, {}, None
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -64,6 +68,9 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                         result = {"version": 1, "status": "FRONTEND_WORKLOAD_PROBE_PASS", "challenge": self.headers.get("x-lash-release-challenge"),
                                   "checks": ["gateway-course-catalog"], "gatewayOrigin": "https://gateway.example.invalid",
                                   "environment": "staging", "projectId": vercel.PROJECTS["staging"], "sourceCommit": "a" * 40}
+                        if self.headers.get("x-lash-release-mode") == "phase2":
+                            result.update(contractPhase="p2", checks=["gateway-course-catalog-p2"],
+                                featureControls=owner.built_features[owner.probed_deployment])
                         if self.headers.get("x-lash-release-mode") in ("admission-bootstrap", "resend-binding", "square-binding", "google-binding"):
                             result.update(checks=["gateway-course-catalog", "frontend-admission-bootstrap"],
                                 schemaCatalogSha256="f" * 64 if owner.bootstrap_probe_wrong else owner.context["preapplicationSchema"]["schemaCatalogSha256"],
@@ -92,17 +99,24 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                         self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Cache-Control", "no-store")
                         self.end_headers(); self.wfile.write(json.dumps(result).encode()); return
                     owner.assertEqual(self.headers.get("Authorization"), "Bearer owned-token-marker")
-                    if path.startswith("/v9/projects/"):
-                        result = {"id": vercel.PROJECTS["staging"], "accountId": vercel.TEAM,
+                    if path == "/v9/projects":
+                        result = {"projects": [{"id": project, "accountId": vercel.TEAM, "link": {"type": "github", "repoId": vercel.REPOSITORY_ID}}
+                            for project in (vercel.PROJECTS["staging"], vercel.PROJECTS["production"])], "pagination": {"count": 2, "next": None}}
+                    elif path.startswith("/v9/projects/"):
+                        related = path == "/v9/projects/" + vercel.PROJECTS["production"]
+                        result = {"id": vercel.PROJECTS["production"] if related else vercel.PROJECTS["staging"], "accountId": vercel.TEAM,
                                   "link": {"type": "github", "repoId": vercel.REPOSITORY_ID},
-                                  "targets": {"production": {"id": owner.current}},
-                                  "crons": {"disabledAt": 10 if owner.disabled else None},
+                                  "targets": {"production": {"id": owner.related_current if related else owner.current}},
+                                  "crons": {"disabledAt": 10 if (owner.related_disabled if related else owner.disabled) else None},
                                   "protectionBypass": {"owned-bypass-marker": {"scope": "automation-bypass"}},
                                   "env": [{"value": "provider-private-marker"}]}
-                        if owner.alias is not None and "rollbackInfo=true" in self.path:
+                        if not related and owner.current in owner.built_crons:
+                            result["crons"].update(deploymentId=owner.current, definitions=owner.built_crons[owner.current])
+                        if not related and owner.alias is not None and "rollbackInfo=true" in self.path:
                             result["lastAliasRequest"] = owner.alias
                     elif path == "/v7/deployments":
-                        result = {"deployments": owner.deployments, "pagination": {"count": len(owner.deployments), "next": None}}
+                        rows = owner.related_deployments if "projectId=" + vercel.PROJECTS["production"] in self.path else owner.deployments
+                        result = {"deployments": rows, "pagination": {"count": len(rows), "next": None}}
                     elif path == "/v13/deployments" and self.command == "POST":
                         owner.assertEqual(body["gitSource"]["sha"], "a" * 40); owner.assertEqual(body["gitSource"]["ref"], "staging")
                         owner.assertFalse(body["autoAssignCustomDomains"])
@@ -110,13 +124,19 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                             if any(row["uid"].startswith("dpl_candidate") for row in owner.deployments) else "")
                         owner.deployments.append({"uid": deployment_id, "state": "READY", "target": "production", "created": 30,
                                                   "url": "owned.vercel.app", "meta": {"githubCommitSha": "a" * 40}})
+                        owner.built_features[deployment_id] = {key: owner.variables.get(key, {}).get("value") == "true" for key in adapter.BOOTSTRAP_FLAGS}
+                        owner.built_crons[deployment_id] = ([{"host": "owned.vercel.app", "path": "/api/cron/account-lifecycle", "schedule": "* * * * *"}]
+                            if owner.variables.get("LASH_P2_CERTIFICATION_SCHEDULES", {}).get("value") == "account-lifecycle" else [])
                         if owner.lost_build:
                             self.connection.shutdown(socket.SHUT_RDWR); self.connection.close(); return
                         result = {"id": deployment_id}
                     elif path.startswith("/v13/deployments/") and self.command == "DELETE":
                         deployment_id = path.rsplit("/", 1)[-1]
-                        owner.assertTrue(any(row["uid"] == deployment_id for row in owner.deployments))
-                        owner.deployments = [row for row in owner.deployments if row["uid"] != deployment_id]
+                        if any(row["uid"] == deployment_id for row in owner.related_deployments):
+                            owner.related_deployments = [row for row in owner.related_deployments if row["uid"] != deployment_id]
+                        else:
+                            owner.assertTrue(any(row["uid"] == deployment_id for row in owner.deployments))
+                            owner.deployments = [row for row in owner.deployments if row["uid"] != deployment_id]
                         if owner.switch_current_after_delete:
                             owner.current = "dpl_previous"
                         if owner.lost_delete:
@@ -127,10 +147,15 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
                         source = "a" * 40 if deployment_id.startswith("dpl_candidate") else "c" * 40 if deployment_id == "dpl_error" else "b" * 40
                         if deployment_id == "dpl_error" and owner.historical_source_wrong:
                             source = "f" * 40
-                        result = {"id": deployment_id, "projectId": vercel.PROJECTS["staging"], "target": "production",
+                        related_row = next((row for row in owner.related_deployments if row["uid"] == deployment_id), None)
+                        if related_row:
+                            source = related_row["meta"]["githubCommitSha"]
+                        result = {"id": deployment_id, "projectId": vercel.PROJECTS["production"] if related_row else vercel.PROJECTS["staging"],
+                                  "target": related_row["target"] if related_row else "production",
                                   "readyState": "ERROR" if deployment_id == "dpl_candidate" and owner.failed_build else "READY",
                                   "url": "owned.vercel.app", "gitSource": {"type": "github", "repoId": vercel.REPOSITORY_ID, "sha": source},
                                   "meta": {"lashReleaseId": "adapter-owned"}}
+                        owner.probed_deployment = deployment_id
                         if owner.fail_lock_after_build and deployment_id == "dpl_candidate":
                             owner.lost_lock = True
                     elif path.endswith("/env") and self.command == "POST":
@@ -200,10 +225,10 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
     def mapped_probe(self):
         owner = self
         class MappedProbe:
-            def request(self, url, *args):
+            def request(self, url, *args, **kwargs):
                 owner.assertEqual(url, "https://owned.vercel.app")
                 with patch.object(frontend_probe, "DEPLOYMENT_URL", re.compile(re.escape(owner.origin))):
-                    return owner.probe_client.request(owner.origin, *args)
+                    return owner.probe_client.request(owner.origin, *args, **kwargs)
         return MappedProbe()
 
     def bootstrap_context(self):
@@ -265,6 +290,53 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
             self.assertTrue(value not in common)
         self.assertTrue(self.disabled)
 
+    def test_reviewed_p2_feature_profile_is_installed_before_build_and_actual_probe_matches(self):
+        pair = {"contractPhase": "p2", "phase2ContractManifestSha256": "sha256:" + "9" * 64}
+        self.context["candidate"].update(pair); self.database.update(pair)
+        self.context["plan"]["certification"] = adapter.p2_certification_profile.PROFILE
+        migrate.write_json(self.parent, "database-receipt.json", self.database)
+        self.assertEqual(self.execute("deploy-compatible")["status"], "FRONTEND_DOMAINS_PROMOTED")
+        observed = self.execute("observe-compatible")
+        self.assertTrue(observed["workloadVerified"])
+        self.assertEqual(observed["featureControls"], adapter.p2_certification_profile.FEATURE_CONTROLS)
+        self.assertTrue(self.disabled)
+        self.assertEqual(self.variables["LASH_P2_CERTIFICATION_SCHEDULES"]["value"], "account-lifecycle")
+        receipt = migrate.read_json(self.parent / "vercel", "frontend-workload-outcome.json")
+        self.assertEqual(receipt["featureControls"], observed["featureControls"])
+        self.assertEqual(receipt["contractPhase"], "p2")
+        self.assertFalse(any(row["method"] == "PATCH" for row in self.calls))
+        self.assertEqual(observed["certificationSchedule"]["path"], "/api/cron/account-lifecycle")
+        self.assertFalse(observed["certificationSchedule"]["nativeEnabled"])
+        self.variables["LASH_P2_CERTIFICATION_SCHEDULES"]["value"] = "off"
+        self.assertEqual(self.execute("observe-compatible")["certificationSchedule"], observed["certificationSchedule"])
+        self.built_crons["dpl_candidate"].append({"host": "owned.vercel.app", "path": "/api/cron/highlevel-sync", "schedule": "* * * * *"})
+        with self.assertRaisesRegex(ValueError, "P2_EXACT_DEPLOYMENT_LIFECYCLE_SCHEDULE_REQUIRED"):
+            self.execute("observe-compatible")
+
+    def test_p2_bootstrap_keeps_all_features_false_before_post_sql_certification(self):
+        self.bootstrap_context()
+        pair = {"contractPhase": "p2", "phase2ContractManifestSha256": "sha256:" + "9" * 64}
+        self.context["candidate"].update(pair); self.database.update(pair)
+        self.context["plan"]["certification"] = adapter.p2_certification_profile.PROFILE
+        self.assertEqual(self.execute("deploy-admission")["status"], "FRONTEND_DOMAINS_PROMOTED")
+        observed = self.execute("observe-admission")
+        self.assertTrue(observed["bootstrapAdmissionVerified"])
+        self.assertTrue(observed["workloadVerified"])
+        self.assertEqual(observed["featureControls"], {key: False for key in adapter.BOOTSTRAP_FLAGS})
+        for key in adapter.BOOTSTRAP_FLAGS:
+            self.assertEqual(self.variables[key]["value"], "false")
+
+    def test_certification_cannot_enable_an_unreviewed_feature_profile_or_p1_release(self):
+        self.context["plan"]["certification"] = adapter.p2_certification_profile.PROFILE
+        with self.assertRaisesRegex(ValueError, "P2_CERTIFICATION_CONTRACT_REQUIRED"):
+            adapter.compatible_feature_controls(self.context)
+        self.context["candidate"].update(contractPhase="p2", phase2ContractManifestSha256="sha256:" + "9" * 64)
+        self.context["plan"]["certification"] = {**adapter.p2_certification_profile.PROFILE,
+            "featureControls": {**adapter.p2_certification_profile.FEATURE_CONTROLS, "INTEGRATION_CHECKOUT_ENABLED": True}}
+        with self.assertRaisesRegex(ValueError, "P2_CERTIFICATION_PROFILE_REFUSED"):
+            adapter.compatible_feature_controls(self.context)
+        self.assertFalse(self.mutations())
+
     def test_preapplication_schema_build_configures_closed_admission_and_uses_actual_protected_probe(self):
         self.bootstrap_context(); result = self.execute("deploy-admission")
         self.assertEqual(result["status"], "FRONTEND_DOMAINS_PROMOTED")
@@ -317,6 +389,89 @@ class ConcreteFrontendAdapterTests(unittest.TestCase):
     def retirement_plan(self):
         self.context["bindings"]["deploymentRetirement"] = {"preserveBootstrapDeployment": True,
             "retireDeploymentIds": ["dpl_error", "dpl_previous"], "preserveDeploymentIds": []}
+
+    def test_actual_c07_source_context_drives_all_fixed_scoped_helpers_without_unrelated_provider_credentials(self):
+        import frontend_square_financial_scope as square
+        import frontend_resend_marketing_scope as resend
+        import frontend_highlevel_history as highlevel
+        import frontend_chitchats_transient_effects as chitchats
+        root = Path(__file__).resolve().parents[3]
+        output = self.parent / "owned-source-context.json"
+        subprocess.run([os.environ.get("NODE_BINARY", "node"),
+            str(root / "docs/api-integration/baselines/2026-11-05-resend-closure-review/create-owned-source-context.mjs"),
+            str(root / "ops/platform/frontend-historical-source.mjs"), str(root), str(output)],
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        source = json.loads(output.read_text())["requirements"]
+        groups = {"square": square.COLUMN_NAMES, "resend": resend.COLUMNS, "highlevel": highlevel.COLUMNS, "chitchats": chitchats.COLUMNS}
+        for provider, columns in groups.items():
+            with self.subTest(provider=provider):
+                rows = {key: [] for key in columns}
+                if provider == "highlevel":
+                    rows["historyGlobalScope"] = [{"contacts": 0, "effects": 0, "connections": 0, "webhooks": 0}]
+                scope = {"provider": provider, **{key: source[key] for key in ("surfaceSha256", "sourceCommit", "sourceInventorySha256", "requirementsSha256")}, "scope": {}}
+                self.context["bindings"]["providerEffectScopes"] = [scope]
+                self.context.update(providerEffectScope=scope, scopedSourceRequirements=source, scopedActual=rows, scopedBefore=rows)
+                digest = square.sha256(rows)
+                common = {"environment": "staging", "sourceBindingSha256": source["configurationRecordSha256"]}
+                if provider == "square":
+                    reviewed = {**common, "environment": "sandbox", "locationId": square.LOCATION, "apiVersion": square.API_VERSION,
+                        "databaseSnapshot": rows, "databaseSnapshotSha256": digest, "operationBeginTime": "2026-11-04T00:00:00Z",
+                        "observationEndTime": "2026-11-05T00:00:00Z", "operationLifetimeEvidenceIds": ["owned-source-lifetime"]}
+                elif provider == "highlevel":
+                    reviewed = {**common, "historicalSourceCommit": source["sourceCommit"], "historyDatabaseSnapshotSha256": digest}
+                elif provider == "resend":
+                    ids = {key: [] for key in ("booking", "course_signup", "contact_popup", "general_inquiry", "sanity_backfill", "training_contact")}
+                    reviewed = {"resendMarketing": {"environment": "staging", "databaseSnapshotSha256": digest,
+                        **{key: source[key] for key in ("sourceCommit", "surfaceSha256", "sourceInventorySha256", "requirementsSha256")},
+                        "configurationSha256": source["configurationRecordSha256"], "segmentIdsBySource": ids, "topicIdsBySource": ids}}
+                else:
+                    reviewed = {**common, **{key: source[key] for key in ("sourceCommit", "sourceInventorySha256", "requirementsSha256")}}
+                self.context["scopedReviewed"] = reviewed
+                observed = self.execute("observe-provider-effects")
+                self.assertEqual((observed["activeExecutions"], observed["uncertainEffects"]), (0, 0))
+                self.assertFalse(observed["missingRequirementIds"])
+        self.assertFalse(self.calls)
+
+    def related_preview_context(self):
+        self.bootstrap_context()
+        self.execute("deploy-admission")
+        self.related_deployments = [{"uid": "dpl_ownedpreview", "state": "READY", "target": None, "created": 40,
+            "url": "owned-preview.vercel.app", "meta": {"githubCommitSha": "c" * 40}},
+            {"uid": "dpl_production", "state": "READY", "target": "production", "created": 30,
+                "url": "owned-production.vercel.app", "meta": {"githubCommitSha": "b" * 40}}]
+        self.context["bindings"]["relatedProjects"] = [{"projectId": vercel.PROJECTS["production"],
+            "deployments": sorted([adapter.deployment_metadata(row) for row in self.related_deployments], key=lambda row: row["deploymentId"]),
+            "retirePreviewDeploymentIds": ["dpl_ownedpreview"]}]
+        self.context["relatedPreviewBindings"] = [{"projectId": vercel.PROJECTS["production"], "deploymentId": "dpl_ownedpreview", "sourceCommit": "c" * 40,
+            "surfaceSha256": "1" * 64, "configurationRecordSha256": "2" * 64, "sourceInventorySha256": "3" * 64, "requirementsSha256": "4" * 64}]
+
+    def test_related_project_null_target_preview_can_retire_without_production_target_or_cron_changes(self):
+        self.related_preview_context()
+        start = len(self.calls)
+        result = self.execute("retire-related-previews")
+        self.assertEqual(result["status"], "STAGING_RELATED_PREVIEW_INGRESS_RETIRED")
+        self.assertEqual(result["deletedDeploymentIds"], ["dpl_ownedpreview"])
+        self.assertEqual([row["uid"] for row in self.related_deployments], ["dpl_production"])
+        self.assertFalse(self.related_disabled); self.assertEqual(self.related_current, "dpl_production")
+        self.assertEqual([(row["method"], row["path"].split("?", 1)[0]) for row in self.calls[start:] if row["method"] != "GET"],
+            [("DELETE", "/v13/deployments/dpl_ownedpreview")])
+        observed = self.execute("observe-vercel")
+        self.assertTrue(observed["reviewedInventoryMatches"])
+        self.assertIn("dpl_ownedpreview", observed["historicalIngressRetiredDeploymentIds"])
+        writes = len(self.mutations()); self.execute("observe-vercel"); self.assertEqual(len(self.mutations()), writes)
+
+    def test_related_production_target_or_missing_capability_binding_refuses_before_delete(self):
+        self.related_preview_context()
+        writes = len(self.mutations())
+        self.context["relatedPreviewBindings"] = []
+        with self.assertRaisesRegex(ValueError, "RELATED_PREVIEW_BINDINGS_REQUIRED"):
+            self.execute("retire-related-previews")
+        self.assertEqual(len(self.mutations()), writes)
+        self.context["relatedPreviewBindings"] = [{"projectId": vercel.PROJECTS["production"], "deploymentId": "dpl_production", "sourceCommit": "b" * 40}]
+        self.context["bindings"]["relatedProjects"][0]["retirePreviewDeploymentIds"] = ["dpl_production"]
+        with self.assertRaisesRegex(ValueError, "RELATED_PRODUCTION_TARGET_RETIREMENT_REFUSED"):
+            self.execute("retire-related-previews")
+        self.assertEqual(len(self.mutations()), writes)
 
     def test_historical_deletes_use_exact_reviewed_staging_ids_and_preserve_actual_bootstrap_recovery(self):
         self.bootstrap_context(); self.execute("deploy-admission"); self.retirement_plan()

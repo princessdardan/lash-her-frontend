@@ -136,7 +136,7 @@ export async function validateFrontendFenceObservation(plan, nonce, observed, re
       bytesRetained += row[key].length;
     }
     bytesRetained += row.evidence.length; demand(bytesRetained <= 32_000_000);
-    const fencedState = expected.kind === "provider" ? evidence.state === "credentials-retired-and-effects-reconciled" :
+    const fencedState = expected.kind === "provider" ? ["credentials-retired-and-effects-reconciled", "source-inapplicable-and-effects-reconciled"].includes(evidence.state) :
       expected.kind === "scheduler" ? evidence.state === "disabled-and-running-executions-reconciled" :
         ["retired-and-effects-reconciled", "admission-bound-and-effects-reconciled"].includes(evidence.state);
     if (evidence.activeExecutions === null || evidence.uncertainEffects === null) demand(evidence.state === "unfenced");

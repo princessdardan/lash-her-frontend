@@ -83,3 +83,69 @@ test("verified prior historical receipts permit current admitted continuation wi
   f.database.admission.uncertain = 0; f.observations.chitchats.historicalCapabilitiesDenied = false;
   assert.equal(join(f).every(row => row.state === "unfenced"), true);
 });
+
+function sourceFixture() {
+  const f = fixture("resend"), surfaceSha256 = "1";
+  f.bindings.historicalRuntimeBindings = f.bindings.historicalRuntimeBindings.filter(row => row.surfaceSha256 === surfaceSha256);
+  f.bindings.surfaces = f.bindings.surfaces.filter(row => row.kind !== "direct-caller");
+  f.plan.historicalLogins = { retiredLogins: [{ name: "retired", oid: "123" }] };
+  const source = { version: 1, status: "FRONTEND_HISTORICAL_SOURCE_VERIFIED", sourceCommit: "b".repeat(40), surfaceSha256,
+    configurationRecordSha256: "d".repeat(64), provenanceSha256: "c".repeat(64),
+    sourceInventorySha256: "e".repeat(64), requirementsSha256: "f".repeat(64),
+    sqlCredentialRequirements: [{ requirementId: "sql-credentials.DATABASE_URL" }],
+    providerFamilies: ["contacts", "events"].map(name => ({ familyId: `resend.${name}`, provider: "resend", sourceDisposition: "reachable",
+      configurationConditions: [{ requirementId: `resend.${name}.original-configuration` }],
+      sqlIntentRequirements: [{ requirementId: `resend.${name}.durable-intents`, tables: ["marketing_contacts"] }],
+      untrackedPotentialRequests: [{ requirementId: `resend.${name}.accepted-request-completeness` }] })) };
+  source.capabilityClosures = source.providerFamilies.map(family => ({ familyId: family.familyId, disposition: "no-capability-observed",
+    ...Object.fromEntries(["sourceCommit", "surfaceSha256", "configurationRecordSha256", "provenanceSha256"].map(key => [key, source[key]])),
+    requirementIds: [...["configurationConditions", "sqlIntentRequirements", "untrackedPotentialRequests"].flatMap(key => family[key].map(row => row.requirementId)), "sql-credentials.DATABASE_URL"].sort(), evidenceIds: ["a".repeat(64)] }));
+  const binding = f.bindings.historicalRuntimeBindings[0]; binding.sourceCommit = source.sourceCommit;
+  binding.sourceConfiguration = { provenanceSha256: source.provenanceSha256 };
+  f.before = { bindings: [{ ...binding, provenanceSha256: source.provenanceSha256,
+    sourceInventorySha256: source.sourceInventorySha256, requirementsSha256: source.requirementsSha256, requirements: source,
+    sqlPhysicalBindings: [{ sameSelectedPhysicalDatabase: true, role: { name: "retired", oid: "123" } }],
+    sqlEvidence: { ...Object.fromEntries(["sourceCommit", "surfaceSha256", "configurationRecordSha256", "provenanceSha256"].map(key => [key, source[key]])), evidenceSha256: "7".repeat(64), facts: source.sqlCredentialRequirements } }] };
+  f.observations.sourceIntentCounts = { marketing_contacts: 0 };
+  f.observations.scopedEffects = [{ provider: "resend", surfaceSha256, historicalSourceCommit: source.sourceCommit,
+    ...Object.fromEntries(["configurationRecordSha256", "provenanceSha256", "sourceInventorySha256", "requirementsSha256"].map(key => [key, source[key]])),
+    databaseRereadVerified: true, observation: { activeExecutions: 0, uncertainEffects: 0, missingRequirementIds: [],
+      coveredRequirementIds: source.capabilityClosures.flatMap(row => row.requirementIds) } }];
+  return f;
+}
+
+test("historical source scope can close a positively excluded provider without unrelated credential retirement", () => {
+  const f = sourceFixture();
+  assert.equal(join(f).every(row => row.activeExecutions === 0), true);
+  assert.equal(join(f).find(row => row.surfaceSha256 === "4").state, "source-inapplicable-and-effects-reconciled");
+  assert.equal(join(f).every(row => row.reconciliation.rawInvocationCount === null), true);
+  assert.notEqual(f.before.bindings[0].sourceCommit, f.plan.sourceCommit);
+});
+
+test("source scope exact requirements, actual SQL contradictions and per-surface context cannot be overridden by counts or flags", () => {
+  for (const change of [
+    f => { f.before.bindings[0].requirements.capabilityClosures[0].surfaceSha256 = "peer"; },
+    f => { f.before.bindings[0].requirements.capabilityClosures[0].requirementIds.pop(); },
+    f => { f.before.bindings[0].sqlEvidence.facts = []; },
+    f => { f.before.bindings[0].sqlPhysicalBindings[0].role.oid = "999"; },
+    f => { f.observations.sourceIntentCounts.marketing_contacts = 1; f.observations.scopedEffects[0].observation.missingRequirementIds = ["resend.events.accepted-request-completeness"]; },
+    f => { f.observations.scopedEffects[0].surfaceSha256 = "peer"; },
+    f => { f.observations.scopedEffects[0].observation.uncertainEffects = 1; },
+    f => { f.observations.scopedEffects[0].databaseRereadVerified = false; },
+    f => { f.database.admission.active = 1; },
+  ]) {
+    const f = sourceFixture(); change(f); f.bindings.complete = true; f.observations.allEffectsSettled = true;
+    assert.equal(join(f).every(row => row.state === "unfenced"), true);
+  }
+});
+
+test("new admitted replacement objects do not mutate a retained strict historical scope, while current uncertainty refuses", () => {
+  const f = sourceFixture();
+  f.database.admission = { newWork: true, recovery: true, active: 3, uncertain: 0 };
+  f.observations.sourceIntentCounts = { marketing_contacts: 100 };
+  delete f.observations.scopedEffects;
+  f.observations.establishedHistoricalFence = { proofSha256: "9".repeat(64), strictEvidenceSha256: f.bindings.surfaces.map(() => "8".repeat(64)), retiredCapabilities: {} };
+  assert.equal(join(f).every(row => row.activeExecutions === 0 && row.reconciliation.currentAdmittedActive === 3), true);
+  f.database.admission.uncertain = 1;
+  assert.equal(join(f).every(row => row.state === "unfenced"), true);
+});

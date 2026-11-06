@@ -1,10 +1,12 @@
 // Concrete nonsecret provider targets. This validates identity/coverage, not
 // credential retirement, live callback completion or exhaustive account scope.
+import { normalizeFrontendScopedProviderSnapshot } from "./frontend-provider-effect-scopes.mjs";
 import { frontendCoordinationHash as hash } from "./frontend-release-inventory.mjs";
 import { normalizeFrontendGoogleSnapshot, frontendGoogleSnapshotSha256 } from "./frontend-google-effects.mjs";
 
 export const FRONTEND_VERCEL_TEAM = "team_2Hrn5eMZyZxfAWdmYvyKi9t3";
 export const FRONTEND_VERCEL_PROJECT = "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM";
+export const FRONTEND_RELATED_PRODUCTION_PROJECT = "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy";
 export const FRONTEND_VERCEL_REPOSITORY = "1114139712";
 const demand = ok => { if (!ok) throw new Error("FRONTEND_PROVIDER_BINDINGS_REFUSED"); };
 const digest = v => typeof v === "string" && /^[a-f0-9]{64}$/u.test(v) && !/^0+$/u.test(v);
@@ -21,13 +23,27 @@ export function frontendProviderBindingsArtifact(input, plan) {
     (input.gatewayHost === undefined || input.gatewayHost === null || typeof input.gatewayHost === "string" && /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/u.test(input.gatewayHost)) &&
     Array.isArray(input.deployments) && input.deployments.length > 0 && input.deployments.length <= 4096 &&
     Array.isArray(input.surfaces) && input.surfaces.length === plan.externalSurfaces.length);
-  const deployments = input.deployments.map(row => {
+  const normalizeDeployment = row => {
     demand(deploymentId(row?.deploymentId) && (row.sourceCommit === null || commit(row.sourceCommit)) &&
-      ["production", "preview"].includes(row.target) && ["QUEUED", "INITIALIZING", "BUILDING", "READY", "ERROR", "CANCELED"].includes(row.state) &&
+      [null, "production", "preview"].includes(row.target) && ["QUEUED", "INITIALIZING", "BUILDING", "READY", "ERROR", "CANCELED"].includes(row.state) &&
       Number.isSafeInteger(row.createdAt) && row.createdAt > 0 &&
       (row.url === null || typeof row.url === "string" && /^[a-z0-9][a-z0-9-]*\.vercel\.app$/u.test(row.url)));
-    return Object.fromEntries(["deploymentId", "sourceCommit", "target", "createdAt", "url", "state"].map(key => [key, row[key]]));
-  }).sort((a, b) => a.deploymentId.localeCompare(b.deploymentId));
+    return Object.fromEntries(["deploymentId", "sourceCommit", "target", "createdAt", "url", "state"].map(key => [key, key === "target" ? row[key] ?? "preview" : row[key]]));
+  };
+  const deployments = input.deployments.map(normalizeDeployment).sort((a, b) => a.deploymentId.localeCompare(b.deploymentId));
+  const relatedProjects = (input.relatedProjects ?? []).map(project => {
+    demand(project?.projectId === FRONTEND_RELATED_PRODUCTION_PROJECT && Array.isArray(project.deployments) && project.deployments.length <= 4096 &&
+      Array.isArray(project.retirePreviewDeploymentIds));
+    const rows = project.deployments.map(normalizeDeployment).sort((a, b) => a.deploymentId.localeCompare(b.deploymentId));
+    const retired = [...project.retirePreviewDeploymentIds].sort();
+    demand(new Set(rows.map(row => row.deploymentId)).size === rows.length && new Set(retired).size === retired.length &&
+      retired.every(id => deploymentId(id) && rows.some(row => row.deploymentId === id && row.target === "preview" && row.sourceCommit !== null)));
+    return { projectId: project.projectId, deployments: rows, retirePreviewDeploymentIds: retired };
+  });
+  demand(relatedProjects.length <= 1);
+  const allDeployments = [...deployments.map(row => ({ ...row, projectId: FRONTEND_VERCEL_PROJECT })),
+    ...relatedProjects.flatMap(project => project.deployments.map(row => ({ ...row, projectId: project.projectId })))];
+  demand(new Set(allDeployments.map(row => row.deploymentId)).size === allDeployments.length);
   demand(new Set(deployments.map(row => row.deploymentId)).size === deployments.length);
   demand(input.projectState.productionDeploymentId === null || deployments.some(row => row.deploymentId === input.projectState.productionDeploymentId));
   const surfaces = input.surfaces.map(surface => {
@@ -35,8 +51,8 @@ export function frontendProviderBindingsArtifact(input, plan) {
     demand(expected && surface.kind === expected.kind && surface.identity && typeof surface.identity === "object");
     const id = surface.identity; let identity;
     if (surface.kind === "deployment") {
-      demand(id.provider === "vercel" && id.teamId === FRONTEND_VERCEL_TEAM && id.projectId === FRONTEND_VERCEL_PROJECT && deploymentId(id.deploymentId) &&
-        deployments.some(row => row.deploymentId === id.deploymentId));
+      demand(id.provider === "vercel" && id.teamId === FRONTEND_VERCEL_TEAM && [FRONTEND_VERCEL_PROJECT, ...relatedProjects.map(project => project.projectId)].includes(id.projectId) && deploymentId(id.deploymentId) &&
+        allDeployments.some(row => row.deploymentId === id.deploymentId && row.projectId === id.projectId));
       identity = { provider: "vercel", teamId: id.teamId, projectId: id.projectId, deploymentId: id.deploymentId };
     } else if (surface.kind === "scheduler") {
       demand(id.provider === "vercel" && id.teamId === FRONTEND_VERCEL_TEAM && id.projectId === FRONTEND_VERCEL_PROJECT && id.scheduler === "native-crons");
@@ -50,12 +66,13 @@ export function frontendProviderBindingsArtifact(input, plan) {
   }).sort((a, b) => a.surfaceSha256.localeCompare(b.surfaceSha256));
   demand(new Set(surfaces.map(row => row.surfaceSha256)).size === surfaces.length &&
     surfaces.filter(row => row.kind === "scheduler").length === 1 &&
-    surfaces.filter(row => row.kind === "deployment").length === deployments.length &&
-    new Set(surfaces.filter(row => row.kind === "deployment").map(row => row.identity.deploymentId)).size === deployments.length);
+    surfaces.filter(row => row.kind === "deployment").length === allDeployments.length &&
+    new Set(surfaces.filter(row => row.kind === "deployment").map(row => row.identity.deploymentId)).size === allDeployments.length);
   const result = { version: 1, environment: "staging", actionId: plan.actionId, sourceCommit: plan.sourceCommit, targetSha256: plan.targetSha256,
     teamId: FRONTEND_VERCEL_TEAM, projectId: FRONTEND_VERCEL_PROJECT, repositoryId: FRONTEND_VERCEL_REPOSITORY,
     gatewayHost: input.gatewayHost ?? null,
     projectState: { productionDeploymentId: input.projectState.productionDeploymentId, nativeSchedulesEnabled: input.projectState.nativeSchedulesEnabled }, deployments, surfaces };
+  if (input.relatedProjects !== undefined) result.relatedProjects = relatedProjects;
   if (input.deploymentRetirement !== undefined) {
     const retirement = input.deploymentRetirement;
     demand(retirement?.preserveBootstrapDeployment === true && Array.isArray(retirement.retireDeploymentIds) && retirement.retireDeploymentIds.length > 0 &&
@@ -198,22 +215,86 @@ export function frontendProviderBindingsArtifact(input, plan) {
       "google-identity": ["googleIdentityRetiredSecret"], "google-calendar": ["googleCalendarRetiredSecret"], sanity: [] };
     result.historicalRuntimeBindings = input.historicalRuntimeBindings.map(row => {
       const surface = surfaces.find(surface => surface.surfaceSha256 === row?.surfaceSha256);
+      const sourceConfiguration = row?.sourceConfiguration;
       demand(surface && ["deployment", "direct-caller"].includes(surface.kind) && commit(row.sourceCommit) && digest(row.configurationRecordSha256) &&
-        plan.historicalLogins?.retiredLogins.some(role => role.name === row.databaseRole?.name && role.oid === row.databaseRole?.oid) &&
-        Array.isArray(row.providerCredentials));
-      if (surface.kind === "deployment") demand(deployments.find(item => item.deploymentId === surface.identity.deploymentId).sourceCommit === row.sourceCommit);
+        (plan.historicalLogins?.retiredLogins.some(role => role.name === row.databaseRole?.name && role.oid === row.databaseRole?.oid) ||
+          sourceConfiguration !== undefined && row.databaseRole === null) &&
+        (Array.isArray(row.providerCredentials) || sourceConfiguration !== undefined && row.providerCredentials === undefined));
+      if (surface.kind === "deployment") demand(allDeployments.find(item => item.deploymentId === surface.identity.deploymentId).sourceCommit === row.sourceCommit);
       const expected = surfaces.filter(surface => surface.kind === "provider").flatMap(surface =>
         (keys[surface.identity.provider] ?? []).map(runtimeKey => ({ providerSurfaceSha256: surface.surfaceSha256, runtimeKey })));
-      const providerCredentials = row.providerCredentials.map(binding => {
+      const providerCredentials = (row.providerCredentials ?? []).map(binding => {
         demand(expected.some(item => item.providerSurfaceSha256 === binding?.providerSurfaceSha256 && item.runtimeKey === binding.runtimeKey));
         return { providerSurfaceSha256: binding.providerSurfaceSha256, runtimeKey: binding.runtimeKey };
       }).sort((a, b) => a.runtimeKey.localeCompare(b.runtimeKey));
       demand(new Set(providerCredentials.map(item => item.runtimeKey)).size === providerCredentials.length &&
-        hash(providerCredentials) === hash(expected.sort((a, b) => a.runtimeKey.localeCompare(b.runtimeKey))));
-      return { surfaceSha256: row.surfaceSha256, sourceCommit: row.sourceCommit, configurationRecordSha256: row.configurationRecordSha256,
-        databaseRole: { name: row.databaseRole.name, oid: row.databaseRole.oid }, providerCredentials };
+        (sourceConfiguration !== undefined || hash(providerCredentials) === hash(expected.sort((a, b) => a.runtimeKey.localeCompare(b.runtimeKey)))));
+      const normalized = { surfaceSha256: row.surfaceSha256, sourceCommit: row.sourceCommit, configurationRecordSha256: row.configurationRecordSha256,
+        databaseRole: row.databaseRole === null ? null : { name: row.databaseRole.name, oid: row.databaseRole.oid }, providerCredentials };
+      if (sourceConfiguration !== undefined) {
+        const text = value => typeof value === "string" && value.length > 0 && value.length <= 2048 && /^[ -~]+$/u.test(value);
+        demand(sourceConfiguration?.kind === surface.kind && text(sourceConfiguration.immutableReference) &&
+          (sourceConfiguration.entrypoint === null || surface.kind === "direct-caller" && text(sourceConfiguration.entrypoint)) &&
+          digest(sourceConfiguration.keyCatalogSha256) && digest(sourceConfiguration.provenanceSha256) &&
+          Array.isArray(sourceConfiguration.databaseRoles) && sourceConfiguration.databaseRoles.length <= 32);
+        const databaseRoles = sourceConfiguration.databaseRoles.map(role => {
+          demand(typeof role?.key === "string" && /^[A-Z][A-Z0-9_]{0,127}$/u.test(role.key) &&
+            typeof role.name === "string" && /^[a-z_][a-z0-9_]{0,62}$/u.test(role.name) &&
+            typeof role.oid === "string" && /^[1-9][0-9]{0,9}$/u.test(role.oid));
+          return { key: role.key, name: role.name, oid: role.oid };
+        }).sort((a, b) => a.key.localeCompare(b.key));
+        demand(new Set(databaseRoles.map(role => role.key)).size === databaseRoles.length);
+        normalized.sourceConfiguration = { kind: sourceConfiguration.kind, immutableReference: sourceConfiguration.immutableReference,
+          entrypoint: sourceConfiguration.entrypoint, keyCatalogSha256: sourceConfiguration.keyCatalogSha256,
+          provenanceSha256: sourceConfiguration.provenanceSha256, databaseRoles };
+        let selectors;
+        if (sourceConfiguration.nonSecretSelectors !== undefined) {
+          demand(Object.keys(sourceConfiguration.nonSecretSelectors).join() === "APP_ENV" &&
+            ["local", "staging", "production"].includes(sourceConfiguration.nonSecretSelectors.APP_ENV));
+          selectors = { APP_ENV: sourceConfiguration.nonSecretSelectors.APP_ENV };
+          normalized.sourceConfiguration.nonSecretSelectors = selectors;
+        }
+        demand(frontendGoogleSnapshotSha256({ surfaceSha256: row.surfaceSha256, sourceCommit: row.sourceCommit,
+          configurationRecordSha256: row.configurationRecordSha256, kind: sourceConfiguration.kind,
+          immutableReference: sourceConfiguration.immutableReference, entrypoint: sourceConfiguration.entrypoint,
+          keyCatalogSha256: sourceConfiguration.keyCatalogSha256, ...(selectors ? { nonSecretSelectors: selectors } : {}) }) === sourceConfiguration.provenanceSha256);
+      }
+      return normalized;
     }).sort((a, b) => a.surfaceSha256.localeCompare(b.surfaceSha256));
     demand(new Set(result.historicalRuntimeBindings.map(row => row.surfaceSha256)).size === result.historicalRuntimeBindings.length);
+  }
+  if (result.historicalRuntimeBindings?.some(row => row.sourceConfiguration)) demand(result.relatedProjects?.length === 1);
+  if (input.providerEffectScopes !== undefined) {
+    demand(Array.isArray(input.providerEffectScopes) && input.providerEffectScopes.length <= 16384);
+    const allowed = {
+      square: ["databaseSnapshotSha256", "databaseSnapshot", "operationBeginTime", "observationEndTime", "operationLifetimeEvidenceIds", "merchantId", "applicationId"],
+      resend: ["environment", "databaseSnapshotSha256", "sourceInventorySha256", "requirementsSha256", "configurationSha256", "sourceCommit", "surfaceSha256", "segmentIdsBySource", "topicIdsBySource"],
+      highlevel: ["historicalSourceCommit", "historyDatabaseSnapshotSha256", "history", "locationId", "companyId", "expectedProviderContactIds", "expectedWorkflowIds"],
+      chitchats: ["sourceCommit", "sourceInventorySha256", "requirementsSha256", "clientId"] };
+    result.providerEffectScopes = input.providerEffectScopes.map(row => {
+      const binding = result.historicalRuntimeBindings?.find(value => value.surfaceSha256 === row?.surfaceSha256);
+      demand(binding?.sourceConfiguration && row.sourceCommit === binding.sourceCommit && allowed[row.provider] &&
+        digest(row.sourceInventorySha256) && digest(row.requirementsSha256) && row.scope && typeof row.scope === "object" && !Array.isArray(row.scope) &&
+        Object.keys(row.scope).every(key => allowed[row.provider].includes(key)));
+      // This is only nonsecret reviewed selection. Fixed source modules still
+      // normalize every snapshot and require actual private observations.
+      const encoded = JSON.stringify(row.scope); demand(encoded.length <= 1_000_000);
+      let normalizedScope = JSON.parse(encoded);
+      if (row.provider === "square") {
+        const normalized = normalizeFrontendScopedProviderSnapshot("square", row.scope.databaseSnapshot);
+        demand(normalized.snapshotSha256 === row.scope.databaseSnapshotSha256);
+        normalizedScope = { ...normalizedScope, databaseSnapshot: normalized.snapshot };
+      }
+      if (row.provider === "resend") {
+        const sources = ["booking", "contact_popup", "course_signup", "general_inquiry", "sanity_backfill", "training_contact"];
+        for (const field of ["segmentIdsBySource", "topicIdsBySource"]) demand(row.scope[field] &&
+          Object.keys(row.scope[field]).sort().join() === sources.join() && Object.values(row.scope[field]).every(ids =>
+            Array.isArray(ids) && ids.length <= 8 && ids.every(uuid) && new Set(ids).size === ids.length));
+      }
+      return { provider: row.provider, surfaceSha256: row.surfaceSha256, sourceCommit: row.sourceCommit,
+        sourceInventorySha256: row.sourceInventorySha256, requirementsSha256: row.requirementsSha256, scope: normalizedScope };
+    }).sort((a, b) => `${a.surfaceSha256}/${a.provider}`.localeCompare(`${b.surfaceSha256}/${b.provider}`));
+    demand(new Set(result.providerEffectScopes.map(row => `${row.surfaceSha256}/${row.provider}`)).size === result.providerEffectScopes.length);
   }
   if (plan.restoration !== undefined) demand(result.gatewayObservation && hash(result.gatewayObservation) === plan.restoration.gatewayBindingSha256);
   return result;
