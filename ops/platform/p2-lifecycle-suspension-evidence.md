@@ -129,6 +129,86 @@ recovery ledger row and both receiver ACKs. It must never be labeled native.
 That worker/receiver-denial artifact and the parent integration are not completed
 by this component's parser/owned database tests.
 
+## Direct worker source recorder
+
+`p2-lifecycle-worker-evidence.mjs` defines the separate
+`direct-known-suspension-v1` stage. Its plan consumes the actual known command in
+a genuine native component plan, the original browser plan, and the exact
+root-private pending record SHA. It does not claim a native invocation. The fixed
+apply parent creates `createP2LifecycleWorkerPrivateResolvers(getProviderContext)`;
+plan preparation reads neither private input. The actual source transport can
+read only `FRONTEND_STAGING_CRON_SECRET` and the existing source-private
+`providerContext.frontendRuntimeDatabaseUrl`. There is no caller-selected key,
+file, URL or body. These values and their digests are never retained or printed.
+
+The parent starts CLOSED with actual global active/uncertain zero. The fixed
+normal cron GET must reject a generated wrong key with 401/no operation UUID;
+the actual key must reach the closed admission gate and return 503 without an
+operation UUID or ledger work. Unexpected success, an issued UUID, redirects,
+provider protection, unknown HTTP state, or a changed profile fails preflight.
+It then opens only reviewed recovery for one direct GET. The returned 200 must
+report exactly two ACKs and no retry/block/export/expiry work. Its authenticated
+`x-request-id` must equal the single actual completed recovery ledger operation
+with the exact source, producer, role and epoch. A header alone proves nothing.
+
+The normal worker can claim twenty deliveries and expire/scrub unrelated
+frontend exports. `P2_DIRECT_WORKER_ELIGIBILITY_SQL` therefore requires exactly
+the two selected pending deliveries, both untouched and ready, and no other
+unacknowledged delivery. It refuses any pending/ready export or residual bytes in
+failed/expired exports. This bounds certification effects without changing
+retention or introducing a selective worker. Run this case before creating the
+S14 ready-export fixture. The profile cannot settle an ACK-loss case with one
+already-ACKed delivery, attempts, or retained uncertainty; that requires a
+separate explicit reconciliation action.
+
+After the parent closes both gates and drains, the source helper reuses
+`p2_lifecycle_persistence_probe.observe_with_scope` under
+`HeldWorkerPersistenceScope`. It delegates every allowlisted child to the actual
+P2 parent and retains its same FD/physical verifier. It never acquires a second
+flock, closes that FD, substitutes the migration operator for the frontend
+runtime role, or reimplements the three-domain SELECTs. The existing reader
+checks actual runtime role/OID, host/database/TLS/schema and brackets both
+receiver snapshots with stable frontend reads. Its durable lifecycle-account
+record proves the same canonical command and both ACKs.
+
+Receiver denial evidence has two explicit classes. Course uses a fresh current
+learner JWT against the real protected HTTPS course GET and requires the exact
+403 account-access error. Community has no member feature route in scope. The
+fixed probe instead runs in its exact configured image: the real member verifier
+accepts a fresh current signed canonical subject, the actual lifecycle repository
+reads its real TLS database in a read-only transaction, and the actual
+`registerCommunityUserAuth` hook refuses that subject with 403. This is labeled
+`deployed-private-community-account-access-guard`, with `httpStatus:null`.
+`receiverDeniedCount` is two; `receiverDeniedHttpCount` is one. No debug/member
+route is added. Invalid credentials, a wrong role/OID, or a mocked caller context
+cannot establish live authority; the private entry loads the pinned modules
+itself.
+
+The source parent uses fixed `readP2CertificationWorkerStage` capabilities for
+preflight, invocation, witness and denial reads. The Node join verifies actual
+ledger rows and issues an opaque JoinedHandle; the source transport accepts only
+`readP2DirectWorkerSourceArtifact` results. The fixed host class
+`P2LifecycleWorkerEvidenceStage` writes root-private
+`/var/lib/lash-her/releases/staging/p2-worker-<actionId>/joined-worker.json` and
+the shared `lifecycle-account.json` with O_NOFOLLOW/O_EXCL and fsync.
+`load_retained_worker` is the fixed private S13 adapter; it binds actual bytes and
+source/context/canonical command to both retained captures. No copied JSON
+record or source SHA string is authority. HTTP/record loss preserves an explicit
+REQUIRES_REVIEW receipt or original intent, never an automatic retry or reopen.
+
+The actual operator-parent case and immutable-image path must still be integrated
+and qualified before this source recorder is live-eligible. The owned command
+below proves the actual default exported cron, SQL admission/store/dispatcher,
+both pinned API routes/repositories, header/ledger join and separately typed
+denials over three disposable TLS databases. It does not run a deployed provider,
+the Linux Docker host class, a real browser, workload OIDC or natural token expiry.
+
+```sh
+node --test ops/platform/p2-lifecycle-worker-evidence.test.mjs
+python3 -I -B -c 'import sys,unittest;sys.path.insert(0,"ops/platform/host");import p2_lifecycle_worker_evidence_test as m;unittest.main(module=m)'
+P2_LIFECYCLE_WORKER_OWNED_TEST=true PG_BIN=/absolute/postgresql16/bin node ops/platform/test-p2-lifecycle-worker-local.mjs
+```
+
 Owned checks:
 
 ```sh
