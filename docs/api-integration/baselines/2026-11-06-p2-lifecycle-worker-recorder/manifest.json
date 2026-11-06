@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "sourceCommit": "fff396ad54fa527c86c100a52a8d499e32c29146",
+  "node": "24.18.0",
+  "postgresMajor": 16,
+  "sourceSha256": {
+    "p2-lifecycle-worker-evidence.mjs": "e1d1db0f1adcdf12521dc6df44fb11c68a11906a19c52bfcf2b3c191c4eea426",
+    "p2-lifecycle-receiver-denial.mjs": "07acaba5b29082fcd09e66ed77255cdc4f5779b09fb86782e508f58742bf6d1c",
+    "p2-lifecycle-worker-evidence.test.mjs": "fad53d77ea79e2ca0ae0000e89d9298d873034ccb952478ee80e399a9b630faf",
+    "host/p2_lifecycle_worker_evidence.py": "9fa60d5f0bb37af3ddf6a283a60f06212eb1ad0c8c6bc4a5267dcfbfadeb0b6f",
+    "host/p2_lifecycle_worker_evidence_test.py": "68ea38cf7f2d132234dfa0a8e26d8e1dfb6bbcf8533102168ad033c076f18996",
+    "test-p2-lifecycle-worker-local.mjs": "6cdf9e754edb5dab4f313db98f97017dcaa09123ad5c3212b5d6f8e15aba9c5e",
+    "harness/owned-p2-lifecycle-worker.mjs": "d2e82d8ff7f0ef3dfcac0d5f5cb5d284a989ded2ebbbd1cb3a1fb56492bd3151",
+    "p2-lifecycle-suspension-evidence.md": "dfa14881df9469d32c5dc50e06c5fb4e6cc3cfee8bc779105805846ae3701e41"
+  },
+  "evidenceSha256": {
+    "host.log": "484819fc6115ded4f95980c301dc1cb3bd42b75d97061c070633332d47142c79",
+    "lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "node.log": "d816abe1050a5a8b5c51eb88c701f026d4d015bece50bc891eb65a6eefe0f5c1",
+    "owned-pg16.json": "6cce80deaa5d0b7c1ca5480748fd7952063ac209a214426e04de23a67b6a3536",
+    "owned-pg16.stderr": "e5e124a3dc281e2c1164459cb5a5a938c92df35ab4857d412aff3130a9a939bc",
+    "prior-failed-1.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "prior-failed-1.stderr": "2fc2b3f9a82eb4a0ad5d8670945fef8a807230041a7e3d822990586d54fd2f0b",
+    "prior-failed-2.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "prior-failed-2.stderr": "c98d97f4eb6ae1db30ca951d2f1fe57f29ace9f89aa8001ec8d0a8b14569c812",
+    "prior-failed-3.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "prior-failed-3.stderr": "acc3caf1cefc996d8da517db3f12e5900a9d58aec52d77fd246551578727aafe",
+    "prior-failed-4.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "prior-failed-4.stderr": "b8e9eb0c2ce0004d070d744cf107c98f25d0f6ea1d42469de563166fe30afcba",
+    "prior-failed-5.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "prior-failed-5.stderr": "c9e9da44188cf9ebf072a69e69e47afcc7b70b87576c44ecb4126bcd5e159b8f",
+    "prior-failed-6.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "prior-failed-6.stderr": "130578c4338819d9b799fa3e7a65b80a6966d395751d032af2614bc9eb756ed8",
+    "prior-failed-7.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "prior-failed-7.stderr": "a762c6e090f73d767a718cb3e63970728ba246bee819fbeaffbd3a19de779960"
+  },
+  "fixtureOnly": true,
+  "sourceHostPathQualified": false,
+  "releaseAccepted": false
+}
