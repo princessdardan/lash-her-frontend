@@ -161,3 +161,22 @@ marker/session/epoch faults. `OWNED_POSTGRES_MAJOR=18` requires an actual PG18
 binary directory. Its receipt explicitly leaves hostDocker/browser/native false.
 The transport fixture uses a real child pipe and POSIX flock, not a live host;
 fixture-injected transports cannot mint authentication or suspension capabilities.
+
+## Canonical-origin parent capability binding
+
+The fixed parent calls the corrected canonical helper after current three-DB/
+ten-runtime checks and before external ARM, continuously in authentication and
+browser windows, and freshly before either authentication or suspension stage
+capability is issued. Provider calls use the existing LockedClient and the
+four-argument protected HTTPS probe uses LockedProbe, both retaining the actual
+source/physical-scope verifier. A missing or drifted alias/source/deployment/
+origin/proxy/profile/writer observation refuses the action before pages open or
+revokes the active stage. Containment remains metadata-only.
+
+Source-owned exclusive files p2-canonical-browser-arm.json,
+p2-canonical-browser-authentication.json, p2-canonical-browser-suspension.json and
+p2-canonical-browser-terminal.json retain the actual observations. The fresh
+capability response carries the observation and its canonical SHA; the fixed
+Node validator checks both before a live-channel WeakMap capability is issued.
+The final contained receipt binds the terminal observation digest. JSON alone
+cannot issue either capability. No private probe value/expiry is regenerated.

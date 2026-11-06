@@ -5,6 +5,8 @@ import {writeFrontendReceipt} from './frontend-migration.mjs';
 import {readFrontendReleaseEvidence} from './frontend-release-receipts.mjs';
 import {sshCommand} from './recreation_ssh.mjs';
 import {isDeepStrictEqual} from 'node:util';
+import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
+import {p2NativeHash} from './p2-lifecycle-native.mjs';
 
 const demand=ok=>{if(!ok)throw new Error('P2_CERTIFICATION_TRANSPORT_REFUSED');};
 const MAXIMUM=4_000_000;
@@ -59,6 +61,8 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           demand(binding.challenge===initial.sourceParentChallenge);await verify();
           const receipt=(await request('authentication-stage','CERTIFICATION_AUTHENTICATION_HELD',{bindingSha256:binding.bindingSha256})).receipt;
           demand(receipt.status==='P2_CERTIFICATION_AUTHENTICATION_STAGE_HELD'&&receipt.bindingSha256===binding.bindingSha256&&receipt.certificationActionId===initial.certificationActionId);
+          validateP2CanonicalBrowserObservation(plan,receipt.canonicalBrowserObservation);
+          demand(p2NativeHash(receipt.canonicalBrowserObservation)===receipt.canonicalBrowserObservationSha256);
           const snapshot=structuredClone(plan),alive=()=>active&&!failed&&armed&&!prepared&&browserOpened&&!controller.signal.aborted&&isDeepStrictEqual(plan,snapshot);
           const handle=Object.freeze({});authenticationStages.set(handle,{plan,snapshot,active:alive,receipt});return handle;
         },
@@ -69,6 +73,8 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           demand(binding.challenge===initial.sourceParentChallenge);
           const ready=await request('suspension-ready','CERTIFICATION_SUSPENSION_READY',{bindingSha256:binding.bindingSha256});
           demand(ready.receipt?.bindingSha256===binding.bindingSha256);
+          validateP2CanonicalBrowserObservation(plan,ready.receipt.canonicalBrowserObservation);
+          demand(p2NativeHash(ready.receipt.canonicalBrowserObservation)===ready.receipt.canonicalBrowserObservationSha256);
           const snapshot=structuredClone(plan),alive=()=>active&&!failed&&armed&&!prepared&&!controller.signal.aborted&&isDeepStrictEqual(plan,snapshot);
           const call=async(operation,data={},timeout=120_000)=>{demand(alive());return(await request(operation,'CERTIFICATION_SUSPENSION_OBSERVED',data,timeout)).receipt;};
           const methods=Object.freeze({
@@ -77,7 +83,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
             async capturePending(handle){const artifact=readers.readP2SuspensionPendingSourceArtifact(plan,handle);demand(Buffer.isBuffer(artifact.bytes)&&artifact.bytes.length>0&&artifact.bytes.length<=2_000_000);return call('suspension-pending',{record:artifact.record});},
             async retain(handle){const artifact=readers.readP2LifecycleBrowserSourceArtifact(plan,handle);demand(Buffer.isBuffer(artifact.bytes)&&artifact.bytes.length>0&&artifact.bytes.length<=2_000_000);return call('suspension-retain-browser',{artifact:artifact.bytes.toString('base64')});},
           });
-          const handle=Object.freeze({});suspensionStages.set(handle,{plan,snapshot,active:alive,methods});return handle;
+          const handle=Object.freeze({});suspensionStages.set(handle,{plan,snapshot,active:alive,methods,canonicalBrowserObservationSha256:ready.receipt.canonicalBrowserObservationSha256});return handle;
         },
         async prepareFault(plan){demand(armed&&!prepared);await request('fault-initialize','CERTIFICATION_FAULT_READY',{plan});
           const call=async(operation,data={})=>(await request(operation,'CERTIFICATION_FAULT_OBSERVED',{plan,...data})).receipt;

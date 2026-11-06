@@ -25,7 +25,7 @@ import staging_admission
 import staging_state
 import vercel
 import frontend_probe
-from frontend_release_adapters import LockedClient
+from frontend_release_adapters import LockedClient,LockedProbe
 import p2_lifecycle_native as native
 from p2_release_broker import Broker,PhysicalObserver,LOCK,MAXIMUM,decode
 from p2_release_scope import P2ReleaseScope
@@ -33,6 +33,7 @@ from p2_source_closure import verify_source_closure
 from p2_certification_fault import P2CertificationFaultStage,GATEWAY_OBSERVER,frontend_target_sha256
 import p2_identity_negative_probe as identity_probe
 from p2_lifecycle_suspension_evidence import P2LifecycleSuspensionEvidenceStage
+import p2_canonical_browser_origin as canonical_browser
 
 require=migrate.demand
 CORE='ops/platform/p2-recovery-current-probe.mjs'
@@ -217,6 +218,7 @@ class P2CertificationBroker(Broker):
         self.native_expected=False
         self.api_mutex=threading.Lock();self.last_api_verified=0;self.prepared_terminal=None
         self.suspension_stage=None;self.authentication_issued=False;self.browser_retained=None;self.pending_retained=None
+        self.browser_origin=None
         super().initialize()
 
     def select_release(self,initial):
@@ -298,8 +300,11 @@ class P2CertificationBroker(Broker):
             self.suspension_stage=P2LifecycleSuspensionEvidenceStage(self.scope,self.selected,self.jobs,self.configuration,self.source,
                 self.initial['browserPlan'],self.initial['persistenceReviewed'],self.initial['browserResources'])
             self.suspension_stage.register_source_parent(self.initial['sourceParentChallenge'])
+        if cert['mode'] in ('auth-preparation','browser-pending'):
+            self.browser_origin=self._retain_browser_observation('arm')['canonicalBrowserObservation']
         self.last_boundary=time.monotonic();self.external_armed=True
-        self.ready={'status':'P2_CERTIFICATION_CURRENT_READY','apiDatabases':api,'containers':self.runtime_current,'sqlReplayed':False,'runtimeReplaced':False}
+        self.ready={'status':'P2_CERTIFICATION_CURRENT_READY','apiDatabases':api,'containers':self.runtime_current,'sqlReplayed':False,'runtimeReplaced':False,
+            **({'browserOrigin':self.browser_origin} if self.browser_origin else {})}
         self.worker_done.set();migrate.write_json(self.directory,'p2-certification-current-ready.json',self.ready)
         self._start_boundary_watch()
         return self.ready
@@ -320,6 +325,8 @@ class P2CertificationBroker(Broker):
             with self.native_mutex:
                 expected=False if self.initial['certificationPlan']['mode'] in ('auth-preparation','browser-pending') else self.native_expected
                 require(self._native_observe()['nativeEnabled'] is expected,'P2_CERTIFICATION_NATIVE_STATE_DRIFT')
+                if self.initial['certificationPlan']['mode'] in ('auth-preparation','browser-pending'):
+                    self.browser_origin=self._observe_browser_origin()
         if time.monotonic()-self.last_api_verified>=10:self._refresh_api()
         self.last_boundary=time.monotonic()
 
@@ -366,6 +373,20 @@ class P2CertificationBroker(Broker):
         frontend_probe._private_input(_private_probe_directory(self.action_id()),{'environment':'staging','projectId':self.selected['workload']['projectId'],
             'sourceCommit':self.selected['sources']['frontend']['commit'],'releaseId':self.selected['releaseId']})
         return result
+
+    def _observe_browser_origin(self):
+        # Both provider and protected alias HTTPS calls retain the source/physical
+        # verifier. No old phase2 fallback or private-probe renewal is allowed.
+        result=canonical_browser.observe(self._native_context(),LockedClient(self.vercel,self.check),
+            probe=LockedProbe(self.check,canonical_browser.CanonicalBrowserProbeClient()))
+        require(result['browserOrigin']==self.initial['browserPlan']['browserOrigin'],'P2_CERTIFICATION_CANONICAL_BROWSER_PLAN_REQUIRED')
+        return result
+
+    def _retain_browser_observation(self,stage):
+        require(stage in ('arm','authentication','suspension','terminal'),'P2_CERTIFICATION_FIXED_CANONICAL_STAGE_REQUIRED')
+        observation=self._observe_browser_origin()
+        migrate.write_json(self.directory,'p2-canonical-browser-'+stage+'.json',observation)
+        return {'canonicalBrowserObservation':observation,'canonicalBrowserObservationSha256':_sha(_canonical(observation))}
 
     def _runtime_processes(self):
         rows=[]
@@ -499,15 +520,17 @@ class P2CertificationBroker(Broker):
             gateway['newWork'] is True and gateway['recovery'] is False and all(gateway['uncertain'][key]==0 for key in ('newWork','recovery')),
             'P2_CERTIFICATION_AUTHENTICATION_STATE_REQUIRED')
         require(native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check))['nativeEnabled'] is False,'P2_CERTIFICATION_AUTHENTICATION_NATIVE_OFF_REQUIRED')
+        canonical=self._retain_browser_observation('authentication');self.browser_origin=canonical['canonicalBrowserObservation']
         self.authentication_issued=True
-        return {'status':'P2_CERTIFICATION_AUTHENTICATION_STAGE_HELD','bindingSha256':_sha(_canonical(plan)),'certificationActionId':self.action_id()}
+        return {'status':'P2_CERTIFICATION_AUTHENTICATION_STAGE_HELD','bindingSha256':_sha(_canonical(plan)),'certificationActionId':self.action_id(),**canonical}
 
     def suspension_operation(self,operation,value):
         self.check();stage=self.suspension_stage
         require(self.external_armed and self.initial['certificationPlan']['mode']=='browser-pending' and stage is not None,'P2_CERTIFICATION_SOURCE_BROWSER_STAGE_REQUIRED')
         if operation=='suspension-ready':
             require(value.get('bindingSha256')==_sha(_canonical(self.initial['browserPlan'])),'P2_CERTIFICATION_BROWSER_BINDING_REQUIRED')
-            stage.verify();return {'bindingSha256':value['bindingSha256']}
+            stage.verify();canonical=self._retain_browser_observation('suspension');self.browser_origin=canonical['canonicalBrowserObservation']
+            return {'bindingSha256':value['bindingSha256'],**canonical}
         if operation=='suspension-controlled':return stage.capture_controlled()
         if operation=='suspension-natural-expiry':return stage.capture_natural_expiry(value.get('event'))
         if operation=='suspension-retain-browser':
@@ -553,12 +576,14 @@ class P2CertificationBroker(Broker):
             row['attempts']>old['attempts'] and old['status']!='acknowledged' for row in witness['deliveries'] for old in initial if row['command_id']==old['command_id'] and row['receiver']==old['receiver'])
         healthy=cert['mode']!='contain-native'
         if healthy:self._native_observe()
+        canonical=self._retain_browser_observation('terminal') if cert['mode'] in ('auth-preparation','browser-pending') else None
         final=native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check));require(final['nativeEnabled'] is False,'P2_CERTIFICATION_FINAL_NATIVE_OFF_REQUIRED')
         qualified=cert['mode']=='native-window' and case.get('status')=='P2_LIFECYCLE_NATIVE_QUALIFIED_FENCED' and evidence['qualified'] and ordered and known is None
         self.prepared_terminal={**{key:cert[key] for key in ('version','environment','certificationActionId','originalReleaseId','sourceCommit','operatorSourceCommit','candidateSha256','candidateObjectSha256',
             'inventorySha256','configurationSha256','targetSha256','contractPhase','phase2ContractManifestSha256','mode','planSha256')},
             'status':'P2_BOUNDED_CERTIFICATION_CONTAINED','nativeDisabled':True,'frontendAdmission':admission,'gatewayAdmission':state,'nativeInvocationQualified':qualified,
             'persistenceAuthorityJoined':False,'deployedCertificationComplete':False,
+            **({'canonicalBrowserObservationSha256':canonical['canonicalBrowserObservationSha256']} if canonical else {}),
             'caseStatus':case.get('status'),'caseOutcomeSha256':_sha(_canonical(case)),'requestEvidence':evidence,'knownAckLoss':known,'witnessSha256':physical['witnessSha256'],
             'sqlReplayed':False,'runtimeReplaced':False,'rolesPrepared':False,'historicalLoginsRestored':False,'frontendBuilt':False,'frontendPromoted':False,
             'providerQueuedInvocations':None,'providerCancellationVerified':False,'trafficAuthorized':False,'wholeReleaseAccepted':False}

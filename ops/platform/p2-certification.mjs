@@ -22,6 +22,8 @@ import {p2CertificationEnvironmentLock} from './p2-certification-transport.mjs';
 import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,
   captureP2SuspensionControlledAuthority,observeP2SuspensionControlledAuthority,captureP2SuspensionPending} from './p2-lifecycle-suspension-evidence.mjs';
 
+import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
+
 const plans=new WeakMap();
 const browserSessions=new WeakMap();
 const demand=ok=>{if(!ok)throw new Error('P2_CERTIFICATION_PARENT_REFUSED');};
@@ -141,6 +143,7 @@ export async function runP2BoundedCertification(plan,dependencies){
         demand(source&&source.active&&source[plan.mode==='auth-preparation'?'authPlan':'browserPlan']===plan);
         const binding=readP2LifecycleBrowserControllerBinding(source.suspensionPlan,source.controller);
         demand(binding.challenge===source.challenge);
+        validateP2CanonicalBrowserObservation(source.suspensionPlan,current.browserOrigin);
         if(plan.mode==='browser-pending')demand(source.authenticationCompleted===true&&plan.startState==='already-closed');
         phase=plan.mode==='auth-preparation'?'bounded-normal-authentication':'bounded-browser-pending';
         const opened=await withOwner(()=>changeFrontendAdmission(client,policy,plan.initialEpoch,{newWork:true,recovery:false}));

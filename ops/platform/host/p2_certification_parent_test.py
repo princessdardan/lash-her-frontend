@@ -56,6 +56,7 @@ class CertificationProtocolTests(unittest.TestCase):
         self.temporary=tempfile.TemporaryDirectory();self.addCleanup(self.temporary.cleanup)
         self.directory=Path(self.temporary.name);self.directory.chmod(0o700)
         self.broker=parent.P2CertificationBroker.__new__(parent.P2CertificationBroker)
+        self.broker.directory=self.directory
         self.broker.check=lambda:None
         self.broker.initial={'certificationActionId':'bounded-auth','certificationPlan':{'mode':'auth-preparation','initialEpoch':'7'},'browserPlan':{'sourceCommit':'a'*40},'sourceParentChallenge':'b'*64}
         self.broker.external_armed=True;self.broker.authentication_issued=False
@@ -63,12 +64,15 @@ class CertificationProtocolTests(unittest.TestCase):
         self.gateway={'admission':{'newWork':True,'recovery':False,'uncertain':{'newWork':0,'recovery':0}}}
         self.broker._gateway_current=lambda:self.gateway
         self.broker._native_context=lambda:{};self.broker.vercel=object()
+        self.broker._observe_browser_origin=lambda:{'browserOrigin':parent.canonical_browser.ORIGIN}
 
     def test_authentication_capability_requires_actual_arm_epoch_both_flags_and_native_off(self):
         value={'bindingSha256':parent._sha(parent._canonical(self.broker.initial['browserPlan']))}
         with patch.object(parent.native,'observe_metadata',return_value={'nativeEnabled':False}):
             actual=self.broker.authentication_stage(value)
-            self.assertEqual(actual,{'status':'P2_CERTIFICATION_AUTHENTICATION_STAGE_HELD','bindingSha256':value['bindingSha256'],'certificationActionId':'bounded-auth'})
+            self.assertEqual({key:actual[key] for key in ('status','bindingSha256','certificationActionId')},{'status':'P2_CERTIFICATION_AUTHENTICATION_STAGE_HELD','bindingSha256':value['bindingSha256'],'certificationActionId':'bounded-auth'})
+            self.assertEqual(actual['canonicalBrowserObservationSha256'],parent._sha(parent._canonical(actual['canonicalBrowserObservation'])))
+            self.assertEqual(json.loads((self.directory/'p2-canonical-browser-authentication.json').read_text()),actual['canonicalBrowserObservation'])
             with self.assertRaises(ValueError):self.broker.authentication_stage(value)
             for bad in ('unarmed','uncertain','wrong-plan','native-on'):
                 self.broker.authentication_issued=False;self.broker.external_armed=bad!='unarmed'
@@ -139,6 +143,29 @@ class CertificationProtocolTests(unittest.TestCase):
         broker.initial['certificationPlan']['mode']='contain-native';broker._native_observe=unittest.mock.Mock(side_effect=AssertionError('expired private probe used'))
         with patch.object(parent.runtime,'check_containers',return_value=[]),patch.object(parent.native,'observe_metadata',return_value={'nativeEnabled':True}) as metadata:
             broker._verify_boundary();metadata.assert_called_once();broker._native_observe.assert_not_called()
+
+
+    def test_canonical_alias_provider_and_four_argument_probe_retain_scope_checks(self):
+        broker=self.broker;events=[]
+        broker.check=lambda:events.append('scope')
+        broker.initial['browserPlan']['browserOrigin']=parent.canonical_browser.ORIGIN
+        broker.vercel=type('Provider',(),{'request':lambda _,method,path,body=None:events.append('provider') or {}})()
+        class Probe:
+            def request(self,origin,secret,bypass,challenge):events.append('probe');return {}
+        def observed(context,client,probe):
+            client.request('GET','/fixed-provider');probe.request(parent.canonical_browser.ORIGIN,'owned-secret','owned-bypass','a'*64)
+            return {'browserOrigin':parent.canonical_browser.ORIGIN}
+        with patch.object(parent.canonical_browser,'observe',side_effect=observed),patch.object(parent.canonical_browser,'CanonicalBrowserProbeClient',return_value=Probe()):
+            actual=parent.P2CertificationBroker._observe_browser_origin(broker)
+        self.assertEqual(actual,{'browserOrigin':parent.canonical_browser.ORIGIN})
+        self.assertEqual(events,['scope','provider','scope','scope','probe','scope'])
+        broker._native_observe=lambda:{'nativeEnabled':False};broker.native_mutex=threading.Lock();broker.native_expected=False
+        broker._observe_browser_origin=lambda:(_ for _ in ()).throw(ValueError('CANONICAL_ALIAS_DRIFT'))
+        broker.scope=type('Scope',(),{'require_frontend':lambda *args:None,'require_configuration':lambda *args:None})()
+        broker.selected={};broker.jobs={'frontend':{}};broker.configuration=self.directory;broker.runtime_current=[];broker.process_snapshot=[];broker._runtime_processes=lambda:[]
+        broker.last_api_verified=time.monotonic()
+        with patch.object(parent.runtime,'check_containers',return_value=[]):
+            with self.assertRaisesRegex(ValueError,'CANONICAL_ALIAS_DRIFT'):broker._verify_boundary()
 
 
 if __name__=='__main__':unittest.main()
