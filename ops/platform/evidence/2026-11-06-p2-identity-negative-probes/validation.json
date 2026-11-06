@@ -1,0 +1,113 @@
+{
+  "apiSources": {
+    "community": "1ce696a7ae6073cb125da19146789693398b6cc4",
+    "course": "3c0a0d6eee64344d97f98387755e9f34195a4c42"
+  },
+  "baseCommit": "39c87f1bdde88ad687ccd3a1dcbd201689b78f97",
+  "codeCommit": "057ca736e1f467394718ea96b53c129ff0b46702",
+  "codeCommits": [
+    "fcc51389b8a9b3e3ca9afbb97944d82d89c85248",
+    "8f27eb1df1afccfdc6d952417203d8979ed13cfc",
+    "057ca736e1f467394718ea96b53c129ff0b46702"
+  ],
+  "failedAttempts": [
+    {
+      "failed": 10,
+      "log": "failed-compiler-settings.log",
+      "passed": 6,
+      "reason": "Owned fixture initially omitted actual Community sourceMap compiler option; exact compiled-byte comparison refused. Fixture now uses each selected API compiler settings.",
+      "tests": 16
+    },
+    {
+      "failed": 9,
+      "log": "failed-sandbox-bind.log",
+      "passed": 7,
+      "reason": "Sandbox denied owned loopback HTTPS listen with EPERM. Explicitly approved owned socket run passed; no network/TLS/probe predicate weakened.",
+      "tests": 16
+    },
+    {
+      "logs": [
+        "failed-source-inventory-edit.log",
+        "failed-source-inventory-node.log"
+      ],
+      "reason": "Uncommitted inventory refactor contained an unmatched parenthesis. Python import and independent Node-to-host protocol checks failed. Corrected before code commit; final26host/19Node passed."
+    }
+  ],
+  "fileSha256": {
+    "README.md": "55e985133e502b2f81da5ecbc481bfd036864713d304ac5a83709d60e49013db",
+    "default-optional-skips.log": "c908269786b40ce224e7822b0ba38356fb58924fb076fb8ab5efd5d87b5fb184",
+    "failed-compiler-settings.log": "4adaca41d2aeabd4ba8a5c10e11bd857619a4dc081b2fdbb9da403bf2b3f6cf8",
+    "failed-compiler-settings.log.raw.gz": "714794e07d21cc68b7eb672bf288710ac5422bc2727ae3e38a7ff586fa5af08c",
+    "failed-sandbox-bind.log": "e980776e10ac6351f9a10a9a34a5c6c918f87ae2f73fae16e455c12fc9bb6e96",
+    "failed-sandbox-bind.log.raw.gz": "d683b40ead706cfc3af15d8967d18900cd537d6423c2ee5d8f6cc393d8a16e49",
+    "failed-source-inventory-edit.log": "c6a4c6c00fdbdf65821b41d4c8ee1e87cce58360d28965ab3e2823b2bda89659",
+    "failed-source-inventory-node.log": "2d99bff70f2b48498674b6445cbe05bd8103a6ac90bfd339068b8d5dbda0091b",
+    "failed-source-inventory-node.log.raw.gz": "23924e1a20f91a033a7bb96c7207ff6fc0f21e9a57d37ad7d72f998798e11a90",
+    "focused-eslint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "owned-host-final.log": "73440909ab88d07df98bbdea6bc113ff968a3a92e298fe5c0f645ed160715c05",
+    "owned-node-final.log": "68c24d8e62b71cee7c3473627e85f65cf2d4aefe1b1bba395e4fecca61d6f86e",
+    "owned-operator-source-closure.json": "84488fda0a523f86b7342b15e3dfdef5358cd595790a8fba80d8fee0cd559d6d",
+    "owned-verifiers-current-only.json": "7c51d9da081d7ff735fd5d2e2bc5c1e063b8aefbb69ca2a812153521444e94a2",
+    "owned-verifiers.json": "e9e7faaae7c87fd276feef17f52cfa36192dd388cc6ffd4adab10c7b2e3abea2"
+  },
+  "logNormalization": {
+    "operation": "trailing horizontal whitespace only; exact original bytes in corresponding .raw.gz",
+    "originalRawSha256": {
+      "failed-compiler-settings.log": "c2be10e1c8e5a9e34a22b8553a2503e4defd12baf608070664b76f3ce37c56f9",
+      "failed-sandbox-bind.log": "453071ada7b7e432ea8e7ce8708800e1158a8c22b0818ce831f8ebf98f415fee",
+      "failed-source-inventory-node.log": "037ed5304cbfb147370f3612fe25d94fc8cf348c0cb0a75ad1b1ee01152d19f2"
+    }
+  },
+  "nodeVersion": "v24.18.0",
+  "observedAt": "2026-11-06T02:52:48+00:00",
+  "operatorSourceFiles": 296,
+  "operatorSourceSha256": "24a75b5cb6f6523186dbe84f0f2fe659ba2804b9b0dca46d15bc8074024204c6",
+  "ownedPlatform": {
+    "machine": "arm64",
+    "python": "3.14.3",
+    "system": "Darwin"
+  },
+  "programSha256": "2d6d83a2053c84bb9dd6c922f424fb570735a8afc1309f688044796c6c9fb3d5",
+  "pythonVersion": "Python 3.14.3",
+  "scope": {
+    "actualApiDatabase": false,
+    "actualApiVerifierModules": true,
+    "actualCourseAuthAndReadRoutesOverOwnedTls": true,
+    "actualOwnedPosixFlockAndProcessCleanup": true,
+    "actualTypedBrokerExecute": false,
+    "finalMergedOperatorInventoryQualified": false,
+    "freshCurrentStageEntryPlanExecuted": true,
+    "freshCurrentStageLinuxDockerExecution": false,
+    "frontendSqlVerified": false,
+    "keyRemovalVerified": false,
+    "linuxContainerExecution": false,
+    "liveCalls": false,
+    "oidcVerified": false,
+    "releaseAccepted": false,
+    "sourceInventoryVerified": true,
+    "syntheticKeysAndInMemoryBusinessRecords": true
+  },
+  "status": "OWNED_IDENTITY_NEGATIVE_PROBES_VERIFIED",
+  "tests": {
+    "defaultWithoutExplicitApiDirectories": {
+      "failed": 0,
+      "passed": 7,
+      "reason": "explicit qualified Course/Community runtime directories required; no deployed evidence inferred",
+      "skipped": 12,
+      "tests": 19
+    },
+    "focusedEslint": "passed",
+    "host": {
+      "failed": 0,
+      "passed": 26,
+      "tests": 26
+    },
+    "node": {
+      "failed": 0,
+      "passed": 19,
+      "skipped": 0,
+      "tests": 19
+    }
+  },
+  "version": 1
+}

@@ -1,0 +1,2446 @@
+✔ private probe rejects unknown fields, production, malformed subjects/resources and missing current keys (0.902541ms)
+✔ fixed HTTP plan starts and ends with real positive baselines and includes completed-attempt isolation (1.446834ms)
+✔ deployed HTTP selection is a fixed source check, not an arbitrary path or proxy (0.736959ms)
+✔ fixed TLS client rejects all unreviewed paths before issuing a request (0.263625ms)
+✔ actual verifier observation rejects foreign runtime targets and mismatched private configuration before importing modules (0.312167ms)
+✔ private CLI payload failures print only bounded JSON and never raw error, token or input bytes (92.612916ms)
+✖ owned actual API module/TLS fixture: verifiers (288.384834ms)
+✖ owned actual API module/TLS fixture: https (277.373ms)
+✖ owned actual API module/TLS fixture: single-check (268.055ms)
+✖ owned actual API module/TLS fixture: all-401 (272.171042ms)
+✖ owned actual API module/TLS fixture: all-404 (265.625209ms)
+✖ owned actual API module/TLS fixture: redirect (268.530584ms)
+✖ owned actual API module/TLS fixture: oversized (274.062334ms)
+✖ owned actual API module/TLS fixture: untrusted-ca (270.6775ms)
+✖ owned actual API module/TLS fixture: missing-attempt (270.074833ms)
+✖ owned actual API module/TLS fixture: leak-attempt (266.634666ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 6
+ℹ fail 10
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2862.068875
+
+✖ failing tests:
+
+test at ops/platform/p2-identity-negative-probe.test.mjs:69:3
+✖ owned actual API module/TLS fixture: verifiers (288.384834ms)
+  AssertionError [ERR_ASSERTION]: node:internal/modules/run_main:107
+      triggerUncaughtException(
+      ^
+
+  AssertionError [ERR_ASSERTION]: Owned compiled module must match the actual selected source
+  + actual - expected
+  ... Skipped lines
+
+    'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+  ...
+      '    return secrets;\n' +
+  +   '}\n' +
+  +   '//# sourceMappingURL=community-user-auth.js.map'
+  -   '}\n'
+
+      at file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/harness/owned-p2-identity-negative-fixture.mjs:31:12
+      at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+      at async node:internal/modules/esm/loader:643:26
+      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n' +
+      '//# sourceMappingURL=community-user-auth.js.map',
+    expected: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+  Node.js v24.18.0
+
+
+  1 !== 0
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/p2-identity-negative-probe.test.mjs:76:44)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ops/platform/p2-identity-negative-probe.test.mjs:69:3
+✖ owned actual API module/TLS fixture: https (277.373ms)
+  AssertionError [ERR_ASSERTION]: node:internal/modules/run_main:107
+      triggerUncaughtException(
+      ^
+
+  AssertionError [ERR_ASSERTION]: Owned compiled module must match the actual selected source
+  + actual - expected
+  ... Skipped lines
+
+    'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+  ...
+      '    return secrets;\n' +
+  +   '}\n' +
+  +   '//# sourceMappingURL=community-user-auth.js.map'
+  -   '}\n'
+
+      at file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/harness/owned-p2-identity-negative-fixture.mjs:31:12
+      at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+      at async node:internal/modules/esm/loader:643:26
+      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n' +
+      '//# sourceMappingURL=community-user-auth.js.map',
+    expected: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+  Node.js v24.18.0
+
+
+  1 !== 0
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/p2-identity-negative-probe.test.mjs:76:44)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ops/platform/p2-identity-negative-probe.test.mjs:69:3
+✖ owned actual API module/TLS fixture: single-check (268.055ms)
+  AssertionError [ERR_ASSERTION]: node:internal/modules/run_main:107
+      triggerUncaughtException(
+      ^
+
+  AssertionError [ERR_ASSERTION]: Owned compiled module must match the actual selected source
+  + actual - expected
+  ... Skipped lines
+
+    'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+  ...
+      '    return secrets;\n' +
+  +   '}\n' +
+  +   '//# sourceMappingURL=community-user-auth.js.map'
+  -   '}\n'
+
+      at file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/harness/owned-p2-identity-negative-fixture.mjs:31:12
+      at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+      at async node:internal/modules/esm/loader:643:26
+      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n' +
+      '//# sourceMappingURL=community-user-auth.js.map',
+    expected: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+  Node.js v24.18.0
+
+
+  1 !== 0
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/p2-identity-negative-probe.test.mjs:76:44)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ops/platform/p2-identity-negative-probe.test.mjs:69:3
+✖ owned actual API module/TLS fixture: all-401 (272.171042ms)
+  AssertionError [ERR_ASSERTION]: node:internal/modules/run_main:107
+      triggerUncaughtException(
+      ^
+
+  AssertionError [ERR_ASSERTION]: Owned compiled module must match the actual selected source
+  + actual - expected
+  ... Skipped lines
+
+    'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+  ...
+      '    return secrets;\n' +
+  +   '}\n' +
+  +   '//# sourceMappingURL=community-user-auth.js.map'
+  -   '}\n'
+
+      at file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/harness/owned-p2-identity-negative-fixture.mjs:31:12
+      at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+      at async node:internal/modules/esm/loader:643:26
+      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n' +
+      '//# sourceMappingURL=community-user-auth.js.map',
+    expected: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+  Node.js v24.18.0
+
+
+  1 !== 0
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/p2-identity-negative-probe.test.mjs:76:44)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ops/platform/p2-identity-negative-probe.test.mjs:69:3
+✖ owned actual API module/TLS fixture: all-404 (265.625209ms)
+  AssertionError [ERR_ASSERTION]: node:internal/modules/run_main:107
+      triggerUncaughtException(
+      ^
+
+  AssertionError [ERR_ASSERTION]: Owned compiled module must match the actual selected source
+  + actual - expected
+  ... Skipped lines
+
+    'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+  ...
+      '    return secrets;\n' +
+  +   '}\n' +
+  +   '//# sourceMappingURL=community-user-auth.js.map'
+  -   '}\n'
+
+      at file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/harness/owned-p2-identity-negative-fixture.mjs:31:12
+      at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+      at async node:internal/modules/esm/loader:643:26
+      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n' +
+      '//# sourceMappingURL=community-user-auth.js.map',
+    expected: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+  Node.js v24.18.0
+
+
+  1 !== 0
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/p2-identity-negative-probe.test.mjs:76:44)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ops/platform/p2-identity-negative-probe.test.mjs:69:3
+✖ owned actual API module/TLS fixture: redirect (268.530584ms)
+  AssertionError [ERR_ASSERTION]: node:internal/modules/run_main:107
+      triggerUncaughtException(
+      ^
+
+  AssertionError [ERR_ASSERTION]: Owned compiled module must match the actual selected source
+  + actual - expected
+  ... Skipped lines
+
+    'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+  ...
+      '    return secrets;\n' +
+  +   '}\n' +
+  +   '//# sourceMappingURL=community-user-auth.js.map'
+  -   '}\n'
+
+      at file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/harness/owned-p2-identity-negative-fixture.mjs:31:12
+      at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+      at async node:internal/modules/esm/loader:643:26
+      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n' +
+      '//# sourceMappingURL=community-user-auth.js.map',
+    expected: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+  Node.js v24.18.0
+
+
+  1 !== 0
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/p2-identity-negative-probe.test.mjs:76:44)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ops/platform/p2-identity-negative-probe.test.mjs:69:3
+✖ owned actual API module/TLS fixture: oversized (274.062334ms)
+  AssertionError [ERR_ASSERTION]: node:internal/modules/run_main:107
+      triggerUncaughtException(
+      ^
+
+  AssertionError [ERR_ASSERTION]: Owned compiled module must match the actual selected source
+  + actual - expected
+  ... Skipped lines
+
+    'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+  ...
+      '    return secrets;\n' +
+  +   '}\n' +
+  +   '//# sourceMappingURL=community-user-auth.js.map'
+  -   '}\n'
+
+      at file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/harness/owned-p2-identity-negative-fixture.mjs:31:12
+      at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+      at async node:internal/modules/esm/loader:643:26
+      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n' +
+      '//# sourceMappingURL=community-user-auth.js.map',
+    expected: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+  Node.js v24.18.0
+
+
+  1 !== 0
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/p2-identity-negative-probe.test.mjs:76:44)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ops/platform/p2-identity-negative-probe.test.mjs:69:3
+✖ owned actual API module/TLS fixture: untrusted-ca (270.6775ms)
+  AssertionError [ERR_ASSERTION]: node:internal/modules/run_main:107
+      triggerUncaughtException(
+      ^
+
+  AssertionError [ERR_ASSERTION]: Owned compiled module must match the actual selected source
+  + actual - expected
+  ... Skipped lines
+
+    'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+  ...
+      '    return secrets;\n' +
+  +   '}\n' +
+  +   '//# sourceMappingURL=community-user-auth.js.map'
+  -   '}\n'
+
+      at file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/harness/owned-p2-identity-negative-fixture.mjs:31:12
+      at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+      at async node:internal/modules/esm/loader:643:26
+      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n' +
+      '//# sourceMappingURL=community-user-auth.js.map',
+    expected: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+  Node.js v24.18.0
+
+
+  1 !== 0
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/p2-identity-negative-probe.test.mjs:76:44)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ops/platform/p2-identity-negative-probe.test.mjs:69:3
+✖ owned actual API module/TLS fixture: missing-attempt (270.074833ms)
+  AssertionError [ERR_ASSERTION]: node:internal/modules/run_main:107
+      triggerUncaughtException(
+      ^
+
+  AssertionError [ERR_ASSERTION]: Owned compiled module must match the actual selected source
+  + actual - expected
+  ... Skipped lines
+
+    'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+  ...
+      '    return secrets;\n' +
+  +   '}\n' +
+  +   '//# sourceMappingURL=community-user-auth.js.map'
+  -   '}\n'
+
+      at file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/harness/owned-p2-identity-negative-fixture.mjs:31:12
+      at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+      at async node:internal/modules/esm/loader:643:26
+      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n' +
+      '//# sourceMappingURL=community-user-auth.js.map',
+    expected: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+  Node.js v24.18.0
+
+
+  1 !== 0
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/p2-identity-negative-probe.test.mjs:76:44)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ops/platform/p2-identity-negative-probe.test.mjs:69:3
+✖ owned actual API module/TLS fixture: leak-attempt (266.634666ms)
+  AssertionError [ERR_ASSERTION]: node:internal/modules/run_main:107
+      triggerUncaughtException(
+      ^
+
+  AssertionError [ERR_ASSERTION]: Owned compiled module must match the actual selected source
+  + actual - expected
+  ... Skipped lines
+
+    'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+  ...
+      '    return secrets;\n' +
+  +   '}\n' +
+  +   '//# sourceMappingURL=community-user-auth.js.map'
+  -   '}\n'
+
+      at file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/harness/owned-p2-identity-negative-fixture.mjs:31:12
+      at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+      at async node:internal/modules/esm/loader:643:26
+      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n' +
+      '//# sourceMappingURL=community-user-auth.js.map',
+    expected: 'import { Buffer } from "node:buffer";\n' +
+      'import jwt from "jsonwebtoken";\n' +
+      'import { z } from "zod";\n' +
+      'export const COMMUNITY_USER_ISSUER = "lash-her-frontend";\n' +
+      'export const COMMUNITY_MEMBER_AUDIENCE = "lash-her-community-api:member";\n' +
+      'export const COMMUNITY_ADMIN_AUDIENCE = "lash-her-community-api:admin";\n' +
+      'export const COMMUNITY_USER_MAX_TTL_SECONDS = 300;\n' +
+      'export const COMMUNITY_USER_CLOCK_SKEW_SECONDS = 30;\n' +
+      'const canonicalSubject = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);\n' +
+      'const timestamp = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);\n' +
+      'const commonClaims = {\n' +
+      '    version: z.literal(1),\n' +
+      '    iss: z.literal(COMMUNITY_USER_ISSUER),\n' +
+      '    sub: canonicalSubject,\n' +
+      '    iat: timestamp,\n' +
+      '    exp: timestamp,\n' +
+      '    // The v1 contract uses UUID format for jti; only subjects require the\n' +
+      '    // narrower lowercase version-1-through-5 pattern above.\n' +
+      '    jti: z.string().regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu)\n' +
+      '};\n' +
+      'const memberClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_MEMBER_AUDIENCE)\n' +
+      '});\n' +
+      'const adminClaims = z.strictObject({\n' +
+      '    ...commonClaims,\n' +
+      '    aud: z.literal(COMMUNITY_ADMIN_AUDIENCE),\n' +
+      '    capabilities: z.tuple([z.literal("community-moderator")])\n' +
+      '});\n' +
+      '/** Profile selection is made by the route, never by unverified token claims. */\n' +
+      'export function createCommunityUserVerifier(config = {}) {\n' +
+      '    const memberSecrets = configuredSecrets(config.member);\n' +
+      '    const adminSecrets = configuredSecrets(config.admin);\n' +
+      '    const allSecrets = [...memberSecrets, ...adminSecrets];\n' +
+      '    if (new Set(allSecrets).size !== allSecrets.length) {\n' +
+      '        throw new Error("Community user JWT profiles and rotation keys must use distinct secrets");\n' +
+      '    }\n' +
+      '    const nowSeconds = config.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));\n' +
+      '    return {\n' +
+      '        verifyMember(authorization) {\n' +
+      '            const claims = verify(authorization, memberSecrets, COMMUNITY_MEMBER_AUDIENCE, memberClaims);\n' +
+      '            return claims === null ? null : { kind: "member", claims };\n' +
+      '        },\n' +
+      '        verifyAdmin(authorization) {\n' +
+      '            const claims = verify(authorization, adminSecrets, COMMUNITY_ADMIN_AUDIENCE, adminClaims);\n' +
+      '            return claims === null ? null : { kind: "admin", claims };\n' +
+      '        }\n' +
+      '    };\n' +
+      '    function verify(authorization, secrets, audience, schema) {\n' +
+      '        const token = authorization === undefined ? undefined : /^Bearer ([^\\s]+)$/iu.exec(authorization)?.[1];\n' +
+      '        if (token === undefined || secrets.length === 0)\n' +
+      '            return null;\n' +
+      '        const now = nowSeconds();\n' +
+      '        if (!Number.isSafeInteger(now) || now < 0)\n' +
+      '            return null;\n' +
+      '        for (const secret of secrets) {\n' +
+      '            try {\n' +
+      '                const verified = jwt.verify(token, secret, {\n' +
+      '                    algorithms: ["HS256"],\n' +
+      '                    issuer: COMMUNITY_USER_ISSUER,\n' +
+      '                    audience,\n' +
+      '                    clockTimestamp: now,\n' +
+      '                    clockTolerance: COMMUNITY_USER_CLOCK_SKEW_SECONDS,\n' +
+      '                    complete: true\n' +
+      '                });\n' +
+      '                if (verified.header.alg !== "HS256" || verified.header.crit !== undefined)\n' +
+      '                    continue;\n' +
+      '                const result = schema.safeParse(verified.payload);\n' +
+      '                if (!result.success)\n' +
+      '                    continue;\n' +
+      '                const { iat, exp } = result.data;\n' +
+      '                if (exp <= iat || exp - iat > COMMUNITY_USER_MAX_TTL_SECONDS)\n' +
+      '                    continue;\n' +
+      '                if (iat > now + COMMUNITY_USER_CLOCK_SKEW_SECONDS)\n' +
+      '                    continue;\n' +
+      '                return result.data;\n' +
+      '            }\n' +
+      '            catch {\n' +
+      '                // Only these explicitly configured keys participate in controlled overlap.\n' +
+      '            }\n' +
+      '        }\n' +
+      '        return null;\n' +
+      '    }\n' +
+      '}\n' +
+      'function configuredSecrets(config) {\n' +
+      '    if (config === undefined)\n' +
+      '        return [];\n' +
+      '    const secrets = [config.currentSecret, config.previousSecret].filter((secret) => secret !== undefined);\n' +
+      '    for (const secret of secrets) {\n' +
+      '        if (Buffer.byteLength(secret, "utf8") < 32) {\n' +
+      '            throw new Error("Community user JWT secrets must contain at least 32 UTF-8 bytes");\n' +
+      '        }\n' +
+      '    }\n' +
+      '    return secrets;\n' +
+      '}\n',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+  Node.js v24.18.0
+
+
+  1 !== 0
+
+      at TestContext.<anonymous> (file:///Users/dardan/workspace/lash-her-frontend/.worktrees/phase2-identity-negative-probes/ops/platform/p2-identity-negative-probe.test.mjs:76:44)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
