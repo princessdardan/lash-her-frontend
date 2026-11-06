@@ -6,6 +6,7 @@ import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
   "src/app/api/internal/release-probe/handler.test.ts",
+  "src/app/api/internal/release-scheduler-probe/handler.test.ts",
   "src/lib/api-integration/phase2-gateway-smoke.test.ts",
   "src/lib/writer-admission/google-binding-probe.test.ts",
   "src/lib/admin/read-operation.test.ts",
@@ -16,6 +17,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/writer-admission/resend-binding-probe.test.ts",
   "src/lib/customer-lifecycle/worker.test.ts",
   "src/lib/customer-lifecycle/cron.test.ts",
+  "src/lib/customer-lifecycle/native-trace.test.ts",
   "src/lib/learning/rollout.test.ts",
   "src/lib/api-integration/course-admin-handler.test.ts",
   "src/lib/writer-admission/shipping-execution.test.ts",
