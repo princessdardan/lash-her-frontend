@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "status": "P2_LIFECYCLE_PERSISTENCE_PG18_CI_SOURCE_VERIFIED",
+  "baselineCommit": "72bd8af0bc1c9f4438a82721170bca5fbd8ec136",
+  "integrationCommit": "ac0ef48f",
+  "apiSources": {
+    "course": "a447bfde20299e12afab68a3331b3792ddd07598",
+    "community": "939de65dd52f0b1a43993a25c7c428dce6e2bb43"
+  },
+  "localChecks": {
+    "nodeTests": 32,
+    "failed": 0,
+    "skipped": 0,
+    "eslint": true,
+    "workflowYamlParsed": true,
+    "sourceFileCounts": {
+      "frontend": 189,
+      "course": 262,
+      "community": 203
+    }
+  },
+  "actualPostgres18Executed": false,
+  "providerTouched": false,
+  "stagingTouched": false,
+  "liveCertification": false
+}
