@@ -1,0 +1,78 @@
+{
+  "communityCompatibility": {
+    "conclusion": "success",
+    "run": 42130005722
+  },
+  "communityNativeFailure": {
+    "expectedUnpatchedAssertionObserved": true,
+    "job": 127603916151,
+    "rawLog": "/private/tmp/phase2-community-main-42130005740-containers.log",
+    "rawLogSha256": "66c0d8a799936058917e9f272c56103c7c8783470888b1e86157b24151ecf555",
+    "step": "Verify installed api backport and enforce HIGH/CRITICAL scan",
+    "unexpectedExitStatusNotLogged": true
+  },
+  "deployed": false,
+  "pushed": false,
+  "repositories": {
+    "community": {
+      "artifacts": [
+        {
+          "digest": "sha256:0a4f01b6a5cc4bfad71d271c28239633029a064af9ed13c95129be17c0c28866",
+          "id": 13462977692,
+          "name": "community-native-runtime-qualification",
+          "qualification": "FAILED_RUN_EVIDENCE_ONLY"
+        },
+        {
+          "digest": "sha256:f5a007c843c6c7830cab4218859bf41699fdd36125c9c804c68f3ebf80dd02a3",
+          "id": 13462632905,
+          "name": "operator-schema-postgres18",
+          "qualification": "PASS"
+        }
+      ],
+      "conclusion": "failure",
+      "contractSha256": {
+        "contracts/course-enrollment/v1/enrollment-event.schema.json": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e",
+        "openapi/community-api.json": "0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1"
+      },
+      "merge": "a454702be10362a4054f60579e92aa3b4641ff51",
+      "repo": "princessdardan/lash-her-community-api",
+      "reviewed": "5709ab0a71bf22b2d2a48044d59dd1f60d8765e7",
+      "run": 42130005740,
+      "tree": "fdf0a6335e77a88fcf360d1ba34c3a64cbc34ec6",
+      "treeIdenticalToReviewed": true,
+      "workingTreeClean": true,
+      "worktree": "/Users/dardan/workspace/lash-her-community-api/.worktrees/phase2-community"
+    },
+    "course": {
+      "artifacts": [
+        {
+          "digest": "sha256:57414485f0ea8133dea2a4e90c97f05ba4ae81cb8b0f31fafa4c0e2059625244",
+          "id": 13463615496,
+          "name": "course-native-runtime-qualification",
+          "qualification": "PASS"
+        },
+        {
+          "digest": "sha256:f50916b83e175514187a2cd26ac64b8f6570a04cbb6d73c2fb4fd7d37cca54a2",
+          "id": 13461814867,
+          "name": "operator-schema-postgres18",
+          "qualification": "PASS"
+        }
+      ],
+      "conclusion": "success",
+      "contractSha256": {
+        "contracts/community/course-enrollment/v1/enrollment-event.schema.json": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e",
+        "openapi/course-api.json": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d"
+      },
+      "merge": "61c7024eb9bdae190c6c3019638eaa28f1413baa",
+      "repo": "princessdardan/lash-her-course-api",
+      "reviewed": "5c23b8c53f7849426cf8a71703cc6a5c84fef3d7",
+      "run": 42129827062,
+      "tree": "84808a831e83f3ef10a2441598ce3410ef1a7eb9",
+      "treeIdenticalToReviewed": true,
+      "workingTreeClean": true,
+      "worktree": "/Users/dardan/workspace/lash-her-course-api/.worktrees/phase2-course"
+    }
+  },
+  "sourceEdited": false,
+  "status": "API_POST_MERGE_SOURCE_IDENTITY_PASS"
+}
