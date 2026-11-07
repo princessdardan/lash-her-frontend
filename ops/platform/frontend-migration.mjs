@@ -392,7 +392,7 @@ export async function runOwnedFrontendReplacementBootstrap(input, dependencies) 
   demand(exact(input, ["version", "qualificationTargetProfile", "candidate", "job", "baseline", "predecessorTarget",
     "administrativeLogins", "producerSha256", "inventorySha256"]) && input.version === 1 &&
     digest(input.producerSha256) && digest(input.inventorySha256) &&
-    exact(dependencies, ["confirmation", "getUrl", "directory", "rolesDirectory", "privateDirectory"]) &&
+    exact(dependencies, ["confirmation", "getUrl", "directory", "rolesDirectory", "privateDirectory", "cluster", "predecessorCluster"]) &&
     typeof dependencies.getUrl === "function", refuse);
   input = structuredClone(input);
   const profile = requireQualificationTargetProfile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, input);
@@ -404,11 +404,15 @@ export async function runOwnedFrontendReplacementBootstrap(input, dependencies) 
     dependencies.confirmation === `owned-frontend-bootstrap/${job.releaseId}`, refuse);
   const [{ verifyEmptyFrontendReplacement }, { withFrontendEnvironmentLock }, { frontendPrivateReceiptDirectory, frontendReleaseReceiptStore },
     { applyPreparedFrontendRoles, prepareFrontendRolesPlan, FRONTEND_PREPARATION_ROLES },
-    { bootstrapFrontendAdmission, frontendAdmissionBootstrapArtifact }] = await Promise.all([
+    { bootstrapFrontendAdmission, frontendAdmissionBootstrapArtifact }, { assertOwnedFrontendReplacementCluster }] = await Promise.all([
     import("./frontend-replacement-boundary.mjs"), import("./frontend-environment-lock.mjs"), import("./frontend-release-receipts.mjs"),
     import("./frontend-role-preparation.mjs"), import("./frontend-admission-bootstrap.mjs"),
+    import("./harness/owned-frontend-replacement-cluster.mjs"),
   ]);
-  const { directory, rolesDirectory, privateDirectory, getUrl } = dependencies;
+  const { directory, rolesDirectory, privateDirectory, getUrl, cluster, predecessorCluster } = dependencies;
+  const ownedCluster = assertOwnedFrontendReplacementCluster(cluster, job.target);
+  const ownedPredecessor = assertOwnedFrontendReplacementCluster(predecessorCluster, input.predecessorTarget);
+  demand(cluster !== predecessorCluster && ownedCluster.systemIdentifier !== ownedPredecessor.systemIdentifier, refuse);
   const directories = [directory, rolesDirectory, privateDirectory].map(path => frontendPrivateReceiptDirectory(path, true));
   demand(new Set(directories).size === directories.length && job.target.runtimeRole === FRONTEND_PREPARATION_ROLES.runtime, refuse);
   const store = frontendReleaseReceiptStore(directory);
@@ -456,8 +460,11 @@ export async function runOwnedFrontendReplacementBootstrap(input, dependencies) 
           record: store.record,
           async beforeDatabasePreflight({ client, verifySession }) {
             phase = "locked-empty-replacement";
-            const local = await client.query("select inet_server_addr()='127.0.0.1'::inet and inet_server_port()=$1 as owned_loopback", [target.port]);
-            demand(local.rows[0]?.owned_loopback === true, refuse);
+            const local = (await client.query(`select inet_server_addr()='127.0.0.1'::inet and inet_server_port()=$1 as owned_loopback,
+              current_setting('data_directory') as data_directory,(pg_catalog.pg_control_system()).system_identifier::text as system_identifier`, [target.port])).rows[0];
+            demand(local?.owned_loopback === true && local.data_directory === ownedCluster.dataDirectory &&
+              local.system_identifier === ownedCluster.systemIdentifier &&
+              isDeepStrictEqual(assertOwnedFrontendReplacementCluster(cluster, target), ownedCluster), refuse);
             const observation = await verifyEmptyFrontendReplacement(client, {
               target, predecessorTarget: input.predecessorTarget, administrativeLogins: input.administrativeLogins,
               verifyEnvironment, verifySession,

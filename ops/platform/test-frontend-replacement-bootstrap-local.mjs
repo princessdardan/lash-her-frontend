@@ -1,24 +1,23 @@
 // The harness owns all three loopback clusters and their short-lived credentials.
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import { fileURLToPath } from "node:url";
-import { Client } from "pg";
 import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
 import { withFrontendEnvironmentLock } from "./frontend-environment-lock.mjs";
 import { FRONTEND_MIGRATION_LOCK, frontendMigrationArtifact, prepareFrontendMigration, runFrontendMigration, runOwnedFrontendReplacementBootstrap } from "./frontend-migration.mjs";
 import { FRONTEND_PREPARATION_ROLES as roles } from "./frontend-role-preparation.mjs";
 import { readMigrationCatalog } from "./frontend-schema.mjs";
+import { openOwnedFrontendReplacementCluster } from "./harness/owned-frontend-replacement-cluster.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
 const source = fileURLToPath(new URL("../..", import.meta.url));
 const self = fileURLToPath(import.meta.url);
 const gate = "FRONTEND_REPLACEMENT_BOOTSTRAP_LOCAL_TEST";
-const ownedUrl = "FRONTEND_REPLACEMENT_BOOTSTRAP_LOCAL_URL";
 const host = "127.0.0.1", migrationUser = "owned_frontend_migration", oldUser = "owned_frontend_previous_migration";
 const predecessorDatabase = "owned_frontend_predecessor", oldRuntime = "owned_frontend_previous_runtime";
 const producerSha256 = "a".repeat(64), inventorySha256 = "b".repeat(64);
@@ -27,35 +26,6 @@ const run = (program, args, options) => execFileSync(program, args, { encoding: 
 const privateDir = directory => { mkdirSync(directory, { mode: 0o700 }); return directory; };
 const readJson = (directory, name) => JSON.parse(readFileSync(join(directory, name), "utf8"));
 let phase = "setup";
-
-async function loopbackPort() {
-  const listener = createServer();
-  await new Promise((done, fail) => listener.once("error", fail).listen(0, host, done));
-  const { port } = listener.address();
-  await new Promise((done, fail) => listener.close(error => error ? fail(error) : done()));
-  return port;
-}
-
-async function openCluster(directory, pgBin, user, key, cert) {
-  const data = join(directory, "data"), port = await loopbackPort();
-  run(join(pgBin, "initdb"), ["-D", data, "-A", "trust", "-U", user, "-E", "UTF8", "--locale=C"]);
-  writeFileSync(join(data, "postgresql.conf"), `listen_addresses='${host}'\nport=${port}\nunix_socket_directories=''\nssl=on\nssl_cert_file='${cert}'\nssl_key_file='${key}'\npassword_encryption='scram-sha-256'\n`);
-  writeFileSync(join(data, "pg_hba.conf"), `hostssl all ${user} ${host}/32 trust\nhostssl all all ${host}/32 scram-sha-256\n`);
-  run(join(pgBin, "pg_ctl"), ["-D", data, "-l", join(directory, "postgres.log"), "-w", "start"]);
-  const ssl = { rejectUnauthorized: true, ca: readFileSync(cert, "utf8") };
-  return {
-    port,
-    async connect(database, login = user, password) {
-      const client = new Client({ host, port, database, user: login, password, ssl });
-      try {
-        await client.connect();
-        assert.equal(client.connection.stream.authorized, true);
-        return client;
-      } catch (error) { await client.end(); throw error; }
-    },
-    stop: () => run(join(pgBin, "pg_ctl"), ["-D", data, "-m", "immediate", "-w", "stop"]),
-  };
-}
 
 async function withDatabase(cluster, database, task) {
   const client = await cluster.connect(database);
@@ -105,29 +75,34 @@ function plan(sourceCommit, artifact, baseline, target, predecessorTarget, relea
     administrativeLogins: [], producerSha256, inventorySha256 };
 }
 
-function invoke(directory, name, input, cert, success, { mode = "--apply", confirmation } = {}) {
+async function invoke(directory, name, input, cluster, predecessorCluster, success, { ordinary = false, confirmation } = {}) {
   phase = name;
   const results = privateDir(join(directory, name));
   const outputs = { directory: privateDir(join(results, "release")), rolesDirectory: privateDir(join(results, "roles")),
     privateDirectory: privateDir(join(results, "credentials")) };
   const { host: selectedHost, port, user, database } = input.job.target;
   const password = randomUUID(), url = `postgresql://${user}:${password}@${selectedHost}:${port}/${database}?sslmode=verify-full`;
-  const child = spawnSync(process.execPath, [self, mode], {
-    cwd: source, encoding: "utf8", timeout: 120_000,
-    env: { PATH: process.env.PATH, TMPDIR: realpathSync(tmpdir()), LANG: "C", LC_ALL: "C", NODE_EXTRA_CA_CERTS: cert, [gate]: "true", [ownedUrl]: url },
-    input: JSON.stringify({ input, dependencies: { ...outputs, confirmation: confirmation ?? `owned-frontend-bootstrap/${input.job.releaseId}` } }),
-  });
-  assert.equal(((child.stdout ?? "") + (child.stderr ?? "")).includes(password), false);
-  assert.equal(child.error, undefined);
+  let credentialRead = false, error;
+  const getUrl = async () => { credentialRead = true; return url; };
+  try {
+    if (ordinary) {
+      const prepared = prepareFrontendMigration(input.candidate, input.job, input.baseline, undefined, profile);
+      await runFrontendMigration(prepared, { confirmation: `staging/${input.job.releaseId}`, getUrl }, profile);
+    } else await runOwnedFrontendReplacementBootstrap(input, {
+      ...outputs, cluster, predecessorCluster, getUrl,
+      confirmation: confirmation ?? `owned-frontend-bootstrap/${input.job.releaseId}`,
+    });
+  } catch (failure) { error = failure; }
+  assert.equal(String(error?.message ?? "").includes(password), false);
   const outcomeFile = join(outputs.directory, "job-outcome.json");
   const outcome = existsSync(outcomeFile) ? readJson(outputs.directory, "job-outcome.json") : undefined;
   const replacementOutcomeFile = join(outputs.directory, "replacement-bootstrap-outcome.json");
   const replacementOutcome = existsSync(replacementOutcomeFile) ? readJson(outputs.directory, "replacement-bootstrap-outcome.json") : undefined;
-  assert.equal(child.status, success ? 0 : 1, `${name}: ${outcome?.phase ?? replacementOutcome?.phase ?? "no outcome"}`);
+  assert.equal(!error, success, `${name}: ${outcome?.phase ?? replacementOutcome?.phase ?? "no outcome"}`);
   for (const evidenceDirectory of [outputs.directory, outputs.rolesDirectory])
     for (const file of readdirSync(evidenceDirectory))
       assert.equal(readFileSync(join(evidenceDirectory, file), "utf8").includes(password), false);
-  return { ...outputs, outcome, replacementOutcome };
+  return { ...outputs, outcome, replacementOutcome, credentialRead };
 }
 
 const journalSql = "select hash,created_at from drizzle.__drizzle_migrations order by created_at,id";
@@ -177,6 +152,7 @@ async function verifyApplied(cluster, input, artifact, outputs) {
 async function fixture() {
   assert.equal(process.env[gate], "true");
   assert.equal(process.versions.node.split(".")[0], "24");
+  assert.equal(process.argv.length, 2);
   const pgBin = process.env.PG_BIN;
   assert.ok(pgBin?.startsWith("/"));
   const serverMajor = Number(/PostgreSQL\) (16|18)\./u.exec(run(join(pgBin, "postgres"), ["--version"]))?.[1]);
@@ -187,13 +163,15 @@ async function fixture() {
   const key = join(directory, "server.key"), cert = join(directory, "server.crt"), clusters = [];
   const artifact = frontendMigrationArtifact(source);
   assert.equal(artifact.migrations.length, 83);
+  const originalCertificates = getCACertificates("default");
   let result;
   try {
     run("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost",
       "-addext", `subjectAltName=DNS:localhost,IP:${host}`, "-keyout", key, "-out", cert]);
     chmodSync(key, 0o600);
+    setDefaultCACertificates([...originalCertificates, readFileSync(cert, "utf8")]);
     const start = async (label, user) => {
-      const cluster = await openCluster(privateDir(join(directory, label)), pgBin, user, key, cert);
+      const cluster = await openOwnedFrontendReplacementCluster(privateDir(join(directory, label)), pgBin, user, key, cert);
       clusters.push(cluster);
       return cluster;
     };
@@ -210,32 +188,40 @@ async function fixture() {
     await createDatabase(replacement, target.database);
     const baseline = await referenceBaseline(replacement, artifact, serverMajor);
     const selected = plan(sourceCommit, artifact, baseline, target, predecessorTarget, "owned-frontend-replacement");
-    invoke(directory, "wrong-confirmation", selected, cert, false, { confirmation: "wrong" });
-    invoke(directory, "same-target", { ...selected, predecessorTarget: target }, cert, false);
-    invoke(directory, "ordinary-write", selected, cert, false, { mode: "--ordinary" });
+    const attempt = (name, success, options) => invoke(directory, name, selected, replacement, predecessor, success, options);
+    assert.equal((await attempt("wrong-confirmation", false, { confirmation: "wrong" })).credentialRead, false);
+    assert.equal((await invoke(directory, "same-target", { ...selected, predecessorTarget: target }, replacement, replacement, false)).credentialRead, false);
+    for (const [label, forged] of [["forged-cluster", { ...replacement }], ["serialized-cluster", JSON.parse(JSON.stringify(replacement))]]) {
+      const refused = await invoke(directory, label, selected, forged, predecessor, false);
+      assert.equal(refused.credentialRead, false);
+      for (const output of [refused.directory, refused.rolesDirectory, refused.privateDirectory])
+        assert.deepEqual(readdirSync(output), []);
+    }
+    assert.equal((await invoke(directory, "wrong-cluster", selected, predecessor, replacement, false)).credentialRead, false);
+    assert.equal((await attempt("ordinary-write", false, { ordinary: true })).credentialRead, false);
     await withFrontendEnvironmentLock(async () => {
-      const blocked = invoke(directory, "environment-lock-contended", selected, cert, false);
+      const blocked = await attempt("environment-lock-contended", false);
       assert.equal(blocked.replacementOutcome?.phase, "environment-lock");
       assert.equal(blocked.replacementOutcome?.intentRetained, false);
     });
     await withDatabase(replacement, target.database, async client => {
       await client.query("select pg_advisory_lock(hashtext($1))", [FRONTEND_MIGRATION_LOCK]);
       try {
-        const blocked = invoke(directory, "database-lock-contended", selected, cert, false);
+        const blocked = await attempt("database-lock-contended", false);
         assert.equal(blocked.outcome?.phase, "database-lock");
         assert.equal(blocked.replacementOutcome?.intentRetained, false);
       } finally { await client.query("select pg_advisory_unlock(hashtext($1))", [FRONTEND_MIGRATION_LOCK]); }
     });
     await assertPristine(replacement, target.database);
     await withDatabase(replacement, target.database, client => client.query("create table public.unreviewed_existing_data(value text)"));
-    invoke(directory, "nonempty", selected, cert, false);
+    await attempt("nonempty", false);
     await assertPristine(replacement, target.database);
     await withDatabase(replacement, target.database, client => client.query("drop table public.unreviewed_existing_data"));
     await withDatabase(replacement, "postgres", client => client.query(`create role ${oldRuntime} nologin`));
-    invoke(directory, "shared-predecessor-role", selected, cert, false);
+    await attempt("shared-predecessor-role", false);
     await assertPristine(replacement, target.database);
     await withDatabase(replacement, "postgres", client => client.query(`drop role ${oldRuntime}`));
-    const applied = invoke(directory, "apply", selected, cert, true);
+    const applied = await attempt("apply", true);
     assert.equal(applied.replacementOutcome?.status, "OWNED_FRONTEND_REPLACEMENT_DATABASE_VERIFIED");
     assert.equal(applied.replacementOutcome?.deploymentAuthorized, false);
     assert.equal(applied.replacementOutcome?.automaticReplayAllowed, false);
@@ -254,7 +240,7 @@ async function fixture() {
     assert.equal(databaseReceipt.trafficAuthorized, false);
     assert.deepEqual(await withDatabase(replacement, target.database, readMigrationCatalog), baseline.catalog);
     const successReceipt = readFileSync(join(applied.directory, "database-receipt.json"));
-    invoke(directory, "fresh-directory-replay", selected, cert, false);
+    await attempt("fresh-directory-replay", false);
     assert.deepEqual(readFileSync(join(applied.directory, "database-receipt.json")), successReceipt);
     assert.deepEqual(await withDatabase(replacement, target.database, async client => (await client.query(journalSql)).rows), appliedRows);
 
@@ -264,7 +250,7 @@ async function fixture() {
     const mismatchedBaseline = structuredClone(baseline);
     mismatchedBaseline.catalog.relations.push({ relname: "owned_frontend_intentionally_missing" });
     const latePlan = plan(sourceCommit, artifact, mismatchedBaseline, lateTarget, predecessorTarget, "owned-frontend-late-failure");
-    const failure = invoke(directory, "late-schema-mismatch", latePlan, cert, false);
+    const failure = await invoke(directory, "late-schema-mismatch", latePlan, late, predecessor, false);
     assert.equal(failure.outcome?.status, "FAILED_REQUIRES_REVIEW");
     assert.equal(failure.outcome?.phase, "postflight");
     assert.equal(failure.replacementOutcome?.intentRetained, true);
@@ -272,7 +258,7 @@ async function fixture() {
     assert.equal(existsSync(join(failure.directory, "database-receipt.json")), false);
     await verifyApplied(late, latePlan, artifact, failure);
     const failureReceipt = readFileSync(join(failure.directory, "job-outcome.json"));
-    invoke(directory, "late-schema-mismatch-replay", latePlan, cert, false);
+    await invoke(directory, "late-schema-mismatch-replay", latePlan, late, predecessor, false);
     assert.deepEqual(readFileSync(join(failure.directory, "job-outcome.json")), failureReceipt);
     assert.deepEqual(await withDatabase(late, lateTarget.database, async client => (await client.query(journalSql)).rows), appliedRows);
     await withDatabase(predecessor, predecessorDatabase, async client => {
@@ -280,36 +266,29 @@ async function fixture() {
       assert.equal(await journalExists(client), false);
       assert.equal((await client.query("select to_regnamespace('frontend_admission') is null as absent")).rows[0].absent, true);
     });
+    await late.stop();
+    assert.equal((await invoke(directory, "stopped-cluster", latePlan, late, predecessor, false)).credentialRead, false);
     result = { status: "OWNED_FRONTEND_REPLACEMENT_BOOTSTRAP_PASSED", sourceCommit, serverMajor,
       sqlArtifactSha256: artifact.sqlArtifactSha256, appliedMigrationCount: appliedRows.length, trafficAuthorized: false,
-      checks: ["explicit-confirmation", "distinct-predecessor", "ordinary-profiled-write-refused", "environment-lock-contention",
+      checks: ["explicit-confirmation", "distinct-predecessor", "forged-and-serialized-clusters-refused-before-effects", "mismatched-cluster-refused",
+        "stopped-cluster-refused", "ordinary-profiled-write-refused", "environment-lock-contention",
         "database-lock-contention", "nonempty-target-refused", "predecessor-role-refused", "full-migration-lineage",
         "exact-schema", "closed-runtime-admission", "predecessor-preserved",
         "fresh-directory-replay-refused", "late-schema-drift-retains-commits-and-refuses-replay"] };
   } finally {
     let allStopped = true;
     for (const cluster of clusters.reverse()) {
-      try { cluster.stop(); } catch { allStopped = false; }
+      try { await cluster.stop(); } catch { allStopped = false; }
     }
+    setDefaultCACertificates(originalCertificates);
     if (allStopped) rmSync(directory, { recursive: true, force: true });
     else throw new Error("OWNED_FRONTEND_REPLACEMENT_CLUSTER_CLEANUP_UNVERIFIED");
   }
   console.log(JSON.stringify(result));
 }
 
-async function child(mode) {
-  assert.equal(process.env[gate], "true");
-  const { input, dependencies } = JSON.parse(readFileSync(0, "utf8"));
-  const getUrl = async () => process.env[ownedUrl];
-  if (mode === "--ordinary") {
-    const prepared = prepareFrontendMigration(input.candidate, input.job, input.baseline, undefined, profile);
-    await runFrontendMigration(prepared, { confirmation: `staging/${input.job.releaseId}`, getUrl }, profile);
-  } else await runOwnedFrontendReplacementBootstrap(input, { ...dependencies, getUrl });
-}
-
 try {
-  if (["--apply", "--ordinary"].includes(process.argv[2])) await child(process.argv[2]);
-  else await fixture();
+  await fixture();
 } catch (error) {
   // Only the trusted fixture's own assertion names and fixed codes are needed.
   console.error(JSON.stringify({ status: "OWNED_FRONTEND_REPLACEMENT_BOOTSTRAP_REFUSED", phase,
