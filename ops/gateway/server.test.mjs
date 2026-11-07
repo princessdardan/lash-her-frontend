@@ -59,6 +59,9 @@ test("interactive Course operations classify exact existing browser route and me
       GET: ["/v1/admin/entitlements/commands", "/v1/admin/entitlements/grants"],
       POST: ["/v1/admin/entitlements/grants"],
     },
+    "paid-revoke": {
+      POST: ["/v1/admin/entitlements/revocations"],
+    },
   };
   for (const [group, verbs] of Object.entries(methods)) {
     for (const [method, paths] of Object.entries(verbs)) {
@@ -72,7 +75,7 @@ test("interactive Course operations classify exact existing browser route and me
     ["POST", "/course/v1/internal/entitlements/reconcile"],
     ["POST", "/course/v1/internal/entitlements/revocations"],
     ["GET", "/course/v1/internal/entitlements"],
-    ["POST", "/course/v1/admin/entitlements/revocations"],
+    ["GET", "/course/v1/admin/entitlements/revocations"],
     ["GET", "/course/v1/admin/entitlements/enrollments"],
     ["POST", "/course/v1/internal/accounts/commands"],
     ["GET", `/course/v1/internal/accounts/exports/${id}`],
@@ -116,6 +119,26 @@ test("learner access stage permits only protected reads with exact query shapes"
     ["GET", `${progress}?%63ourseId=${id}`], ["GET", `${progress}?courseId=${id.replace("-", "%2D")}`],
     ["POST", `${course}/enrollments`], ["POST", `${lesson}/progress`], ["POST", `${lesson}/quiz/attempts`],
   ]) assert.equal(interactiveCourseStagePermits("learner-access", method, target), false, `${method} ${target}`);
+});
+
+test("paid revoke stage permits only the named mutation and exact inspection query shapes", () => {
+  const id = "20000000-0000-4000-8000-000000000001";
+  const course = `/course/v1/admin/courses/${id}`;
+  const commands = "/course/v1/admin/entitlements/commands";
+  const grants = "/course/v1/admin/entitlements/grants";
+  const revoke = "/course/v1/admin/entitlements/revocations";
+  for (const target of [course, `${commands}?idempotencyKey=owner-paid-revoke%3A${id}&limit=2`,
+    `${grants}?grantId=${id}&userId=${id}&courseId=${id}&limit=2`]) {
+    assert.equal(interactiveCourseStagePermits("paid-revoke", "GET", target), true, target);
+  }
+  assert.equal(interactiveCourseStagePermits("paid-revoke", "POST", revoke), true);
+  assert.equal(interactiveCourseStagePermits("paid-grant", "POST", revoke), false);
+  for (const [method, target] of [
+    ["POST", grants], ["POST", `${revoke}?`], ["GET", revoke], ["GET", `${course}?limit=2`],
+    ["GET", `${commands}?idempotencyKey=owner-paid%3A${id}&limit=2`], ["GET", `${commands}?idempotencyKey=owner-paid-revoke%3a${id}&limit=2`],
+    ["GET", `${commands}?limit=2&idempotencyKey=owner-paid-revoke%3A${id}`], ["GET", `${grants}?userId=${id}&courseId=${id}&limit=2`],
+    ["GET", `${grants}?grantId=not-a-uuid&userId=${id}&courseId=${id}&limit=2`], ["GET", `${grants}?grantId=${id}&courseId=${id}&userId=${id}&limit=2`],
+  ]) assert.equal(interactiveCourseStagePermits("paid-revoke", method, target), false, `${method} ${target}`);
 });
 
 async function fixture(t, handler, overrides = {}, options = {}) {
@@ -724,6 +747,118 @@ test("scoped paid grant acknowledges the reviewed owner mutation and exact comma
   assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
   assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
   assert.deepEqual(observed.interactiveEvidence, { admitted: steps.length, acknowledged });
+});
+
+test("scoped paid revoke acknowledges the named grant and exact owner readbacks", async t => {
+  const fixtureId = number => `20000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
+  const [courseId, userId, key, commandId, grantId, enrollmentId, foreignId] = [1, 2, 3, 4, 5, 6, 7].map(fixtureId);
+  const actorUserId = "10000000-0000-4000-8000-000000000001";
+  const idempotencyKey = `owner-paid-revoke:${key}`;
+  const revision = 7;
+  const reason = `[paid-course revision ${revision}] Reviewed named grant revocation`;
+  const courseTarget = `/course/v1/admin/courses/${courseId}`;
+  const commandsTarget = `/course/v1/admin/entitlements/commands?idempotencyKey=owner-paid-revoke%3A${key}&limit=2`;
+  const grantReadback = `/course/v1/admin/entitlements/grants?grantId=${grantId}&userId=${userId}&courseId=${courseId}&limit=2`;
+  const revokeTarget = "/course/v1/admin/entitlements/revocations";
+  const fields = { scope: "grantId", grantId, reason, idempotencyKey };
+  const body = JSON.stringify(fields);
+  const requests = [
+    { method: "GET", target: courseTarget, bodySha256: certificationHash(""), uses: 3 },
+    { method: "GET", target: commandsTarget, bodySha256: certificationHash(""), uses: 2 },
+    { method: "GET", target: grantReadback, bodySha256: certificationHash(""), uses: 2 },
+    { method: "POST", target: revokeTarget, bodySha256: certificationHash(body), uses: 1 },
+  ];
+  const course = { course: { id: courseId, slug: "p2q-revocation-course", title: "P2Q paid course", description: null, introduction: null,
+    status: "published", currency: "CAD", accessMode: "paid", priceCents: 3900, taxClassification: "p2q-reviewed-tax-fixture",
+    cover: null, seo: null, revision, modules: [] } };
+  const grantedAt = "2026-11-07T15:00:00.000Z", revokedAt = "2026-11-07T16:00:00.000Z";
+  const command = { commandId, action: "revoke", scope: "grantId", outcome: "applied", actorUserId, userId, courseId, targetGrantId: grantId,
+    reason, effectiveAt: revokedAt, affectedGrantCount: 1, effects: [{ grantId, effectType: "grant_revoked", previousStatus: "active", resultingStatus: "revoked" }] };
+  const commandsBefore = { commands: [], nextCursor: null };
+  const commandsAfter = { commands: [{ ...command, idempotencyKey, createdAt: revokedAt }], nextCursor: null };
+  const grant = { grantId, enrollmentId, userId, userEmail: null, courseId, courseSlug: course.course.slug, courseTitle: course.course.title,
+    orderId: null, externalPaymentId: null, provider: null, idempotencyKey: `owner-paid:${foreignId}`, grantReason: "manual", revokeReason: null,
+    grantedAt, revokedAt: null, expiresAt: null, status: "active", revokeIdempotencyKey: null, createdAt: grantedAt, updatedAt: grantedAt };
+  const inspection = record => ({ grants: [record], nextCursor: null, emailLookup: { source: "local_users_projection", complete: false } });
+  const grantBefore = inspection(grant);
+  const grantAfter = inspection({ ...grant, status: "revoked", revokeReason: "manual", revokedAt, updatedAt: revokedAt });
+  const forwarded = [];
+  let revoked = false;
+  const f = await interactiveFixture(t, requests, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const payload = Buffer.concat(chunks).toString();
+    forwarded.push({ method: req.method, target: req.url, body: payload, requestId: req.headers["x-request-id"],
+      proof: req.headers[SCOPED_INTERACTIVE_HEADER], authorization: req.headers.authorization, idempotency: req.headers["x-idempotency-key"] });
+    let value = course;
+    if (req.method === "POST") { revoked = true; value = command; }
+    else if (req.url === commandsTarget.slice("/course".length)) value = revoked ? commandsAfter : commandsBefore;
+    else if (req.url === grantReadback.slice("/course".length)) value = revoked ? grantAfter : grantBefore;
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(value));
+  }, "paid-revoke");
+
+  const post = (options = {}) => f.signed({ method: "POST", path: revokeTarget, body, idempotency: idempotencyKey, ...options });
+  const revokeInput = post();
+  assert.equal((await f.send({ ...revokeInput, headers: { ...revokeInput.headers, host: "other.test" } })).status, 421);
+  assert.equal((await f.send({ ...revokeInput, servername: "other.test" })).status, 421);
+  for (const input of [post({ actor: foreignId }), post({ body: JSON.stringify({ ...fields, grantId: foreignId }) }),
+    post({ body: JSON.stringify({ scope: "userCourse", userId, courseId, reason, idempotencyKey }) }),
+    post({ body: JSON.stringify({ ...fields, reason: "Unreviewed reason" }) }), post({ idempotency: `owner-paid-revoke:${foreignId}` }),
+    post({ idempotency: "" }), post({ path: "/course/v1/admin/entitlements/grants" }),
+    f.signed({ path: grantReadback.replace(grantId, foreignId) }), f.signed({ path: commandsTarget.replace("%3A", ":") })]) {
+    assert.equal((await f.send(input)).status, 503);
+  }
+  const steps = [
+    { input: f.signed({ path: courseTarget }), requestIndex: 0, value: course },
+    { input: f.signed({ path: commandsTarget }), requestIndex: 1, value: commandsBefore },
+    { input: f.signed({ path: courseTarget }), requestIndex: 0, value: course },
+    { input: f.signed({ path: grantReadback }), requestIndex: 2, value: grantBefore },
+    { input: revokeInput, requestIndex: 3, value: command },
+    { input: f.signed({ path: commandsTarget }), requestIndex: 1, value: commandsAfter },
+    { input: f.signed({ path: grantReadback }), requestIndex: 2, value: grantAfter },
+    { input: f.signed({ path: courseTarget }), requestIndex: 0, value: course },
+  ];
+  const acknowledged = [];
+  for (const { input, requestIndex, value } of steps) {
+    const output = await f.send(input);
+    assert.equal(output.status, 200);
+    assert.deepEqual(JSON.parse(output.body), value);
+    const requestId = output.headers["x-request-id"], proofRequestId = input.headers["x-request-id"];
+    assert.match(requestId, /^[a-f0-9-]{36}$/u);
+    assert.notEqual(requestId, proofRequestId);
+    acknowledged.push({ requestId, proofRequestId, requestIndex, upstreamStatus: 200 });
+    assert.equal((await f.send(input)).status, 503);
+  }
+  for (const input of [f.signed({ path: courseTarget }), f.signed({ path: commandsTarget }), f.signed({ path: grantReadback }), post()]) {
+    assert.equal((await f.send(input)).status, 503);
+  }
+  assert.equal(new Set(acknowledged.map(row => row.requestId)).size, steps.length);
+  assert.equal(new Set(acknowledged.map(row => row.proofRequestId)).size, steps.length);
+  assert.deepEqual(forwarded, steps.map(({ input }, index) => ({ method: input.method, target: input.path.slice("/course".length),
+    body: input.body ?? "", requestId: acknowledged[index].requestId, proof: undefined,
+    authorization: input.headers.authorization, idempotency: input.headers["x-idempotency-key"] })));
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.interactiveEvidence, { admitted: steps.length, acknowledged });
+});
+
+test("scoped paid revoke refuses a broad revocation even with a reviewed hash and valid proof", async t => {
+  const id = "20000000-0000-4000-8000-000000000001";
+  const idempotencyKey = `owner-paid-revoke:${id}`;
+  const body = JSON.stringify({ scope: "userCourse", userId: id, courseId: id, reason: "Unreviewed broad scope", idempotencyKey });
+  const target = "/course/v1/admin/entitlements/revocations";
+  let reachedUpstream = false;
+  const f = await interactiveFixture(t, [{ method: "POST", target, bodySha256: certificationHash(body), uses: 1 }], (_req, res) => {
+    reachedUpstream = true;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end("{}");
+  }, "paid-revoke");
+  assert.equal(f.admissionState().interactiveActive, true);
+  assert.equal((await f.send(f.signed({ method: "POST", path: target, body, idempotency: idempotencyKey }))).status, 503);
+  assert.equal(reachedUpstream, false);
+  assert.deepEqual(f.admissionState().interactiveEvidence, { admitted: 0, acknowledged: [] });
 });
 
 test("scoped authoring acknowledges the catalog page and draft create under their returned gateway request IDs", async t => {

@@ -48,6 +48,7 @@ const interactiveCourseGroups = {
     "GET /v1/admin/entitlements/grants",
     "POST /v1/admin/entitlements/grants",
   ],
+  "paid-revoke": ["POST /v1/admin/entitlements/revocations"],
 };
 const interactiveCourseOperations = new Map(Object.entries(interactiveCourseGroups)
   .flatMap(([group, operations]) => operations.map(operation => [operation, group])));
@@ -58,6 +59,9 @@ const interactiveCourseParameters = {
 const courseUuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u;
 const learnerAccessPath = /^\/course\/v1\/student\/(?:courses\/[^/]+|lessons\/[^/]+(?:\/(?:playback|quiz(?:\/attempts)?))?)$/u;
 const learnerAccessProgress = /^\/course\/v1\/student\/progress\?(?:courseId|lessonId)=([a-f0-9-]+)$/u;
+const authoringCourseDetail = /^\/course\/v1\/admin\/courses\/[^/]+$/u;
+const paidRevokeCommands = /^\/course\/v1\/admin\/entitlements\/commands\?idempotencyKey=owner-paid-revoke%3A([a-f0-9-]+)&limit=2$/u;
+const paidRevokeGrants = /^\/course\/v1\/admin\/entitlements\/grants\?grantId=([a-f0-9-]+)&userId=([a-f0-9-]+)&courseId=([a-f0-9-]+)&limit=2$/u;
 
 // Pass the raw, query-free gateway pathname. Admission remains a separate step.
 // Paid-grant readback also uses the authoring course-detail GET.
@@ -78,6 +82,13 @@ export function interactiveCourseStagePermits(stage, method, target) {
   const path = target.split("?", 1)[0];
   const group = interactiveCourseOperation(method, path);
   if (group === null) return false;
+  if (stage === "paid-revoke") {
+    if (method === "POST") return group === stage && path === target;
+    if (method !== "GET") return false;
+    if (group === "authoring") return path === target && authoringCourseDetail.test(path);
+    const lookup = group === "paid-grant" && (paidRevokeCommands.exec(target) ?? paidRevokeGrants.exec(target));
+    return !!lookup && lookup.slice(1).every(id => courseUuid.test(id));
+  }
   if (stage === group && stage !== "catalog") return true;
   if (method !== "GET") return false;
   if (stage === "media") return group === "authoring";
@@ -87,7 +98,7 @@ export function interactiveCourseStagePermits(stage, method, target) {
     return path === target && learnerAccessPath.test(path) || progressId !== undefined && courseUuid.test(progressId);
   }
   if (stage === "paid-grant") {
-    return group === "authoring" && /^\/course\/v1\/admin\/courses\/[^/]+$/u.test(path);
+    return group === "authoring" && authoringCourseDetail.test(path);
   }
   return false;
 }

@@ -10,15 +10,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, installP2PaidArchiveObserver, observeP2InteractiveIdentitySession,
+import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, installP2PaidArchiveObserver, installP2PaidRevokeObserver, observeP2InteractiveIdentitySession,
   p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringQuizPath, p2AuthoringReorderPath,
   p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LearningEnrollmentPaths, p2LifecycleMutationTarget, p2PaidGrantPaths,
-  p2PaidLearnerAccessPaths, parseP2OwnerSuspensionResponse,
+  p2PaidLearnerAccessPaths, p2PaidRevokePaths, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
   validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt, validateP2AuthoringReorderResponses,
   validateP2InteractiveIdentityReceipt, validateP2LearningEnrollmentReceipt, validateP2LifecycleBrowserInput,
-  validateP2LifecycleMutationReceipt, validateP2PaidGrantReceipt, validateP2PaidLearnerAccessReceipt, watchP2AuthoringEdits,
-  watchP2AuthoringMutation, watchP2LearningEnrollment, watchP2LifecycleMutation, watchP2PaidGrant, watchP2PaidLearnerAccess } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2LifecycleMutationReceipt, validateP2PaidGrantReceipt, validateP2PaidLearnerAccessReceipt, validateP2PaidRevokeReceipt, watchP2AuthoringEdits,
+  watchP2AuthoringMutation, watchP2LearningEnrollment, watchP2LifecycleMutation, watchP2PaidGrant, watchP2PaidLearnerAccess,
+  watchP2PaidRevoke } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
 import { launchP2InteractiveBrowserRecorder, launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
 import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
@@ -240,6 +241,7 @@ function interactivePermit(input) {
   else if (input.stage === "learning") selector = (input.learning.actorId + input.learning.idempotencyKey).replaceAll("-", "");
   else if (input.stage === "learner-access") selector = (input.learnerAccess.actorId + input.learnerAccess.lessonId).replaceAll("-", "");
   else if (input.stage === "paid-grant") selector = (input.paidGrant.actorId + input.paidGrant.idempotencyKey).replaceAll("-", "");
+  else if (input.stage === "paid-revoke") selector = (input.paidRevoke.actorId + input.paidRevoke.idempotencyKey).replaceAll("-", "");
   else if (input.authoring?.operation === "save-quiz-revision") selector = authoringQuizSelector(input.authoring.actorId);
   else if (input.authoring?.operation === "archive-paid-course") selector = authoringArchiveSelector(input.authoring.actorId);
   else if (input.authoring?.operation === "republish-paid-course") selector = republishSelector(input.authoring.actorId, input.authoring.outcome);
@@ -309,6 +311,39 @@ function ownedPaidGrant() {
     body: { courseId: target.courseId, userId, commandId, grantId, courseRevision: target.revision } };
   return { target, input, pagePath, pathname, submitted, response, receipt };
 }
+
+function ownedPaidRevoke() {
+  const reason = "Private approved revocation reason", grantId = randomUUID(), commandId = randomUUID();
+  const target = { actorId: adminId, operation: "revoke-paid-grant", courseId: ownedCourseId, userId, grantId, revision: 4, idempotencyKey: randomUUID(),
+    reasonSha256: createHash("sha256").update(reason).digest("hex"), remainingAccess: false };
+  const input = interactiveInput({ stage: "paid-revoke", paidRevoke: target }), { pathname, pagePath } = p2PaidRevokePaths(target);
+  const submitted = { userId, grantId, expectedCourseRevision: target.revision, reason: ` ${reason} `, idempotencyKey: target.idempotencyKey };
+  const grant = { grantId, userId, courseId: target.courseId, status: "revoked", orderId: null, externalPaymentId: null, provider: null };
+  const response = { state: "confirmed", idempotencyKey: target.idempotencyKey, command: { commandId }, grant, courseRevision: target.revision,
+    mutationRetried: false, communityDeliveryVerified: false };
+  const receipt = { method: "POST", pathname, status: 200, requestId: randomUUID(), body: { courseId: target.courseId, userId, grantId, commandId,
+    courseRevision: target.revision } };
+  return { target, input, pagePath, pathname, submitted, response, receipt };
+}
+
+test("paid revocation permit and compact receipt bind the exact owner, attempt and selected grant", () => {
+  const { input, target, receipt, pagePath } = ownedPaidRevoke(), permit = interactivePermit(input);
+  assert.equal(validateP2InteractiveBrowserInput(input), input);
+  assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+  assert.equal(p2InteractiveBrowserEntryPath(input, "owner"), pagePath);
+  assert.throws(() => p2InteractiveBrowserEntryPath(input, "learner"));
+  assert.equal(permit.cookie.split(".")[6], (target.actorId + target.idempotencyKey).replaceAll("-", ""));
+  for (const change of [{ actorId: randomUUID() }, { idempotencyKey: randomUUID() }]) {
+    assert.throws(() => validateP2InteractiveBrowserPermit(interactivePermit({ ...input, paidRevoke: { ...target, ...change } }), input));
+  }
+  for (const change of [{ grantId: "other" }, { revision: 2_147_483_648 }, { remainingAccess: "false" }, { reason: "Private" }]) {
+    assert.throws(() => validateP2InteractiveBrowserInput({ ...input, paidRevoke: { ...target, ...change } }));
+  }
+  assert.deepEqual(validateP2PaidRevokeReceipt(receipt, target), receipt);
+  for (const change of [{ grantId: randomUUID() }, { courseRevision: target.revision + 1 }, { remainingAccess: false }, { reason: "Private" }]) {
+    assert.throws(() => validateP2PaidRevokeReceipt({ ...receipt, body: { ...receipt.body, ...change } }, target));
+  }
+});
 
 const ownedAccessOutcomes = {
   allowed: { status: 200, code: null }, archived: { status: 410, code: "course_archived", heading: "This course is archived", message: "This course is archived." },
@@ -1889,6 +1924,93 @@ test("owned Chromium paid-grant capture binds approved request, audit, grant and
           const expires = scenario.unconfirmed ? Math.floor(Date.now() / 1000) + 2 : rejected.expires;
           await assert.rejects(rejected.watch.wait(expires), /PAID_GRANT_RESPONSE_REFUSED/u);
           assert.throws(() => rejected.watch.finish(), /PAID_GRANT_RESPONSE_REFUSED/u);
+        } finally { await rejected.close(); }
+      }
+    } finally { await browser.close(); }
+  });
+
+test("owned Chromium paid revocation requires trusted checkbox confirmation and the exact audited grant",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const { target, input, pagePath, pathname, submitted, response, receipt } = ownedPaidRevoke();
+    const feedback = "Manual revocation and audit confirmed. Community access has not been verified yet.";
+    const open = async (scenario, body = response, status = 200) => {
+      const context = await browser.newContext(), requests = [];
+      const document = `<!doctype html><section aria-label="Revoke manual course access"><p>Selected paid course revision: ${target.revision}.</p>
+        <form><label>Customer UUID<input name="userId"></label><label>Grant UUID<input name="grantId"></label>
+        <label>Revocation reason<textarea name="reason"></textarea></label><label><input type="checkbox">Confirm grant revocation</label>
+        <button>Revoke manual access</button></form><button id="show" hidden>Show confirmation</button><p role="status"></p></section><script>
+        const show = document.querySelector('#show');
+        document.querySelector('form').onsubmit = async event => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          const result = await fetch(${JSON.stringify(scenario === "wrong-path" ? pathname + "/other" : pathname)},
+            {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({userId:form.get('userId'),grantId:form.get('grantId'),
+            expectedCourseRevision:${target.revision},reason:form.get('reason'),idempotencyKey:${JSON.stringify(target.idempotencyKey)}})});
+          await result.json();
+          show.hidden = false;
+        };
+        show.onclick = () => { document.querySelector('[role="status"]').textContent = ${JSON.stringify(feedback)}; };
+        </script>`;
+      await context.route("**/*", route => {
+        const request = route.request(), url = new URL(request.url());
+        if (url.origin !== input.browserOrigin) return route.abort();
+        if (request.isNavigationRequest()) return route.fulfill({ status: 200, contentType: "text/html", body: document });
+        requests.push({ method: request.method(), pathname: url.pathname });
+        return route.fulfill({ status, body: JSON.stringify(body), headers: { "content-type": "application/json",
+          "cache-control": "private, no-store", "x-request-id": receipt.requestId } });
+      });
+      const page = await context.newPage(), watch = watchP2PaidRevoke(context, page, input);
+      await installP2PaidRevokeObserver(page, input);
+      await page.goto(input.browserOrigin + (scenario === "wrong-source" ? pagePath + "/other" : pagePath));
+      return { page, watch, requests, expires: Math.floor(Date.now() / 1000) + 60,
+        checkbox: page.getByRole("checkbox", { name: "Confirm grant revocation", exact: true }),
+        submit: page.getByRole("button", { name: "Revoke manual access", exact: true }),
+        show: page.getByRole("button", { name: "Show confirmation", exact: true }),
+        close: async () => { watch.close(); await context.close(); } };
+    };
+    const submit = async (owned, scenario) => {
+      await owned.page.getByRole("textbox", { name: "Customer UUID", exact: true }).fill(submitted.userId);
+      await owned.page.getByRole("textbox", { name: "Grant UUID", exact: true }).fill(scenario === "wrong-grant" ? randomUUID() : submitted.grantId);
+      await owned.page.getByRole("textbox", { name: "Revocation reason", exact: true }).fill(scenario === "wrong-reason" ? "Different reason" : submitted.reason);
+      if (scenario !== "unchecked") await owned.checkbox.check();
+      if (scenario === "synthetic") await owned.page.evaluate(() => {
+        const form = document.querySelector("form");
+        form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true, submitter: form.querySelector("button") }));
+      });
+      else await owned.submit.click();
+      await owned.show.waitFor({ state: "visible" });
+    };
+    try {
+      const owner = await open("success");
+      try {
+        await submit(owner, "success");
+        assert.throws(() => owner.watch.finish(), /PAID_REVOKE_RESPONSE_REFUSED/u);
+        await owner.show.click();
+        await owner.watch.wait(owner.expires);
+        assert.deepEqual(owner.watch.finish(), receipt);
+        assert.deepEqual(owner.requests, [{ method: "POST", pathname }]);
+        assert.doesNotMatch(JSON.stringify(owner.watch.finish()), /Private approved revocation reason/u);
+        assert.equal(JSON.stringify(owner.watch.finish()).includes(target.idempotencyKey), false);
+        await owner.page.evaluate(async ({ pathname, submitted }) => {
+          await (await fetch(pathname, { method: "POST", body: JSON.stringify(submitted) })).json();
+        }, { pathname, submitted });
+        assert.throws(() => owner.watch.finish(), /PAID_REVOKE_RESPONSE_REFUSED/u);
+      } finally { await owner.close(); }
+
+      for (const [scenario, body, status] of [["unchecked"], ["synthetic"], ["wrong-path"], ["wrong-source"], ["wrong-grant"], ["wrong-reason"],
+        ["wrong-grant-receipt", { ...response, grant: { ...response.grant, grantId: randomUUID() } }],
+        ["wrong-status", { ...response, grant: { ...response.grant, status: "active" } }],
+        ["financial-reference", { ...response, grant: { ...response.grant, externalPaymentId: "private-payment" } }],
+        ["community-claim", { ...response, communityDeliveryVerified: true }],
+        ["unconfirmed", { ...response, state: "accepted-needs-review" }, 202]]) {
+        const rejected = await open(scenario, body, status);
+        try {
+          await submit(rejected, scenario);
+          await rejected.show.click();
+          await assert.rejects(rejected.watch.wait(rejected.expires), /PAID_REVOKE_RESPONSE_REFUSED/u);
+          assert.throws(() => rejected.watch.finish(), /PAID_REVOKE_RESPONSE_REFUSED/u);
         } finally { await rejected.close(); }
       }
     } finally { await browser.close(); }

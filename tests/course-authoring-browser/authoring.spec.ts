@@ -1162,7 +1162,7 @@ test("paid archive preserves a real manual grant and validated republish restore
   }
 });
 
-test("paid learner overview and six protected reads follow the archived and restored Course state", async ({ browser, baseURL }) => {
+test("paid learner reads follow archive, restoration and exact manual revocations", async ({ browser, baseURL }) => {
   const muxPublicKey = process.env.COURSE_AUTHORING_MUX_PUBLIC_KEY;
   if (!storagePath || !baseURL || !muxPublicKey) throw new Error("Owned learner access fixture required");
   const states = JSON.parse(await readFile(storagePath, "utf8"));
@@ -1212,7 +1212,8 @@ test("paid learner overview and six protected reads follow the archived and rest
       data: { userId: states.manualGrantCustomerIds[0], expectedCourseRevision: 5, reason: "Owned protected access", idempotencyKey: crypto.randomUUID() },
     });
     expect(grant.status()).toBe(200);
-    expect(await grant.json()).toMatchObject({ state: "confirmed", grant: { orderId: null, provider: null } });
+    const initialGrant = await grant.json();
+    expect(initialGrant).toMatchObject({ state: "confirmed", grant: { orderId: null, provider: null } });
 
     const coursePath = `/academy/courses/${courseId}`;
     const lessonPath = `/api/academy/lessons/${lessonId}`;
@@ -1225,17 +1226,19 @@ test("paid learner overview and six protected reads follow the archived and rest
         const lessonLink = page.locator(`a[href="${coursePath}/lessons/${lessonId}"]`);
         if (status === 200) await expect(lessonLink).toBeVisible();
         else {
-          await expect(page.getByRole("heading", { name: status === 410 ? "This course is archived" : "This course is unavailable", exact: true })).toBeVisible();
+          const title = status === 410 ? "This course is archived" : status === 403 ? "Course access has ended" : "This course is unavailable";
+          await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
           await expect(lessonLink).toHaveCount(0);
         }
         const responses = [];
-        for (const target of targets) {
+        for (const [index, target] of targets.entries()) {
           const response = await learner.request.get(target, { maxRedirects: 0 });
           expect(response.status()).toBe(status);
           expect(response.headers()["cache-control"]).toBe("private, no-store");
           expect(response.headers()["x-request-id"]).toMatch(/^[a-f0-9-]{36}$/u);
           const value = await response.json();
-          if (code) expect(value).toEqual({ error: { code, message: expect.any(String) }, requestId: response.headers()["x-request-id"] });
+          const expectedCode = code === "access_revoked" && index >= 4 ? "access_required" : code;
+          if (expectedCode) expect(value).toEqual({ error: { code: expectedCode, message: expect.any(String) }, requestId: response.headers()["x-request-id"] });
           responses.push(value);
         }
         if (status === 200) {
@@ -1268,6 +1271,64 @@ test("paid learner overview and six protected reads follow the archived and rest
     expect(await playbackExpiry()).toEqual(firstExpiry);
     await changeStatus(7, "published");
     await observe(200);
+    const second = await owner.request.post(`${detail}/manual-grants`, {
+      headers,
+      data: { userId: states.manualGrantCustomerIds[0], expectedCourseRevision: 8, reason: "Owned independent grant", idempotencyKey: crypto.randomUUID() },
+    });
+    expect(second.status()).toBe(200);
+    const independentGrant = await second.json();
+    const grantIds = [initialGrant.grant.grantId, independentGrant.grant.grantId];
+    expect(new Set(grantIds).size).toBe(2);
+
+    const revokePath = `${detail}/manual-grants/revoke`;
+    const page = await owner.newPage();
+    await page.goto(`/admin/courses/${courseId}/manual-grants`);
+    await page.getByRole("link", { name: "Revoke a manual grant", exact: true }).click();
+    const form = page.getByRole("region", { name: "Revoke manual course access", exact: true });
+    const submit = form.getByRole("button", { name: "Revoke manual access", exact: true });
+    const fill = async (grantId: string) => {
+      await form.getByLabel("Customer UUID").fill(states.manualGrantCustomerIds[0]);
+      await form.getByLabel("Grant UUID").fill(grantId);
+      await form.getByLabel("Revocation reason").fill("Owned exact grant revocation");
+      await expect(submit).toBeDisabled();
+      await form.getByRole("checkbox", { name: "Confirm grant revocation", exact: true }).check();
+    };
+    const confirmed = "Manual revocation and audit confirmed. Community access has not been verified yet.";
+    await fill(grantIds[0]);
+    const firstRevocation = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === revokePath);
+    await submit.click();
+    const firstResponse = await firstRevocation;
+    expect(firstResponse.status()).toBe(200);
+    expect(await firstResponse.headerValue("x-request-id")).toMatch(/^[a-f0-9-]{36}$/u);
+    const firstReceipt = await firstResponse.json();
+    expect(firstReceipt).toMatchObject({ state: "confirmed", courseRevision: 8,
+      grant: { grantId: grantIds[0], status: "revoked", orderId: null, externalPaymentId: null, provider: null } });
+    await expect(form.getByRole("status")).toHaveText(confirmed);
+    await observe(200);
+
+    await form.getByRole("button", { name: "Prepare another revocation", exact: true }).click();
+    await fill(grantIds[1]);
+    let posts = 0;
+    await page.route(`**${revokePath}*`, async route => {
+      if (route.request().method() !== "POST") return route.continue();
+      posts += 1;
+      await route.fetch();
+      await route.abort("failed");
+    });
+    await submit.click();
+    await expect(form.getByRole("status")).toBeVisible();
+    await form.getByRole("button", { name: "Check recorded outcome", exact: true }).click();
+    await expect(form.getByRole("status")).toHaveText(confirmed);
+    expect(posts).toBe(1);
+    await page.close();
+    const revoked = await sql.query(`select id,target_grant_id,outcome from admin_entitlement_commands
+      where target_course_id=$1 and action='revoke' order by effective_at,id`, [courseId]);
+    expect(revoked.rows).toHaveLength(2);
+    expect(revoked.rows).toEqual(expect.arrayContaining([
+      { id: firstReceipt.command.commandId, target_grant_id: grantIds[0], outcome: "applied" },
+      { id: expect.any(String), target_grant_id: grantIds[1], outcome: "applied" },
+    ]));
+    await observe(403, "access_revoked");
     expect((await sql.query("select count(*)::int as count from lesson_progress where lesson_id=$1", [lessonId])).rows[0].count).toBe(0);
     expect((await sql.query("select count(*)::int as count from quiz_attempts where lesson_id=$1", [lessonId])).rows[0].count).toBe(0);
   } finally {

@@ -18,6 +18,7 @@ import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraf
   captureP2InteractivePaidArchiveBaseline, observeP2InteractivePaidArchiveCase, validateP2InteractivePaidArchive,
   captureP2InteractivePaidRepublishBaseline, observeP2InteractivePaidRepublishCase, validateP2InteractivePaidRepublish,
   captureP2InteractivePaidLearnerAccessBaseline, observeP2InteractivePaidLearnerAccessCase, validateP2InteractivePaidLearnerAccess,
+  captureP2InteractivePaidRevokeBaseline, observeP2InteractivePaidRevokeCase, validateP2InteractivePaidRevoke,
   observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase, observeP2InteractiveCourseReorderCase,
   observeP2InteractiveCurriculumCreateCase, observeP2InteractivePublicationCase, observeP2InteractiveQuizSaveCase, p2LifecyclePersistenceTargetSha256,
   validateP2InteractiveCourseDraft, validateP2InteractiveCourseDraftEdits, validateP2InteractiveCourseReorder,
@@ -27,6 +28,7 @@ import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./quali
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const apiPins = { course: "0bb054d5a04db71c481a8b3d182db6df19782cdc", community: "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4" };
+const courseRevokeFixedPin = null;
 const hash = value => createHash("sha256").update(value).digest("hex");
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
 let phase = "preflight";
@@ -64,6 +66,20 @@ async function main() {
     }
   }
   assert.equal(commits.course, apiPins.course); assert.equal(commits.community, apiPins.community); assert.match(commits.frontend, /^[a-f0-9]{40}$/u);
+  let revokeSource;
+  const fixedRevokeRoot = process.env.P2_COURSE_REVOKE_FIXED_SOURCE_ROOT;
+  if (fixedRevokeRoot !== undefined) {
+    assert.ok(!containerMode && courseRevokeFixedPin && fixedRevokeRoot.startsWith("/"), "Fixed Course revoke fixture requires its native exact source pin");
+    const cwd = resolve(fixedRevokeRoot);
+    const git = (...args) => run("git", args, { cwd }).trim();
+    assert.equal(git("rev-parse", "HEAD"), courseRevokeFixedPin);
+    assert.equal(git("remote", "get-url", "origin"), "https://github.com/princessdardan/lash-her-course-api.git");
+    assert.equal(git("status", "--porcelain", "--untracked-files=no"), "", "Fixed Course revoke source must be exact and clean");
+    for (const path of ["drizzle", "src/db/schema.ts", "package.json", "package-lock.json"]) {
+      assert.equal(git("rev-parse", `HEAD:${path}`), run("git", ["rev-parse", `HEAD:${path}`], { cwd: sources.course }).trim());
+    }
+    revokeSource = { root: cwd, revision: courseRevokeFixedPin };
+  }
 
   const directory = mkdtempSync(join(tmpdir(), "p2-lifecycle-persistence-")); chmodSync(directory, 0o700);
   const data = join(directory, "data"), certificate = join(directory, "server.crt"), key = join(directory, "server.key");
@@ -114,10 +130,11 @@ async function main() {
     const result = await runOwnedPersistenceScenario({ admin, runtime, plan });
     phase = "actual-interactive-course-draft";
     const draftChecks = await runOwnedDraftWitness({ control, course: admin.course, frontend: runtime.frontend,
-      target: targets.course, sourceCommit: commits.course, courseSource: sources.course, ca });
+      target: targets.course, sourceCommit: commits.course, courseSource: sources.course, revokeSource, ca });
     const receipt = { version: 1, status: `P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES${postgresMajor}_PASS`, postgresMajor, frontendMigrations: 83,
       courseMigrations: 22, communityMigrations: 11, sourceCommits: commits, checks: [...result.checks, ...draftChecks], skipped: 0, readOnly: true,
       fixtureOnly: true, providerTouched: false, liveCertification: false, sourceMode: containerMode ? "parent-issued-manifest-and-mounted-readback" : "clean-git-checkouts",
+      ...(revokeSource ? { courseRevokeSourceCommit: revokeSource.revision } : {}),
       sourceManifestSha256,
       sourceSha256: Object.fromEntries(["p2-lifecycle-state-witness.mjs", "p2-lifecycle-persistence-probe.mjs", "p2-lifecycle-owned-source-manifest.mjs", "harness/owned-p2-lifecycle-persistence.mjs", "test-p2-lifecycle-persistence-local.mjs"]
         .map(name => [name, hash(readFileSync(join(root, "ops/platform", name)))])) };
@@ -129,7 +146,7 @@ async function main() {
   }
 }
 
-async function runOwnedDraftWitness({ control, course, frontend, target, sourceCommit, courseSource, ca }) {
+async function runOwnedDraftWitness({ control, course, frontend, target, sourceCommit, courseSource, revokeSource, ca }) {
   const user = "owned_course_draft_migration", password = randomBytes(32).toString("hex"), database = target.database;
   await control.query(`CREATE ROLE ${user} LOGIN NOINHERIT PASSWORD '${password}'`);
   await control.query(`GRANT CONNECT ON DATABASE ${database} TO ${user}`);
@@ -219,6 +236,8 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     await runOwnedCurriculumCreateWitness({ course, job, dependencies, input, create });
     await runOwnedPublicationWitness({ course, job, dependencies, input, create });
     await runOwnedQuizSaveWitness({ course, job, dependencies, input, create });
+    await runOwnedPaidRevokeWitness({ course, job: revokeSource ? { ...job, sourceCommit: revokeSource.revision } : job,
+      dependencies, input, create, courseSource: revokeSource?.root ?? courseSource, expiryFixed: revokeSource !== undefined });
     await runOwnedFreeEnrollmentWitness({ course, job, dependencies, input, create });
     await runOwnedPaidGrantWitness({ course, job, dependencies, input, create });
     await runOwnedPaidArchiveWitness({ course, job, dependencies, input, create, courseSource });
@@ -247,7 +266,11 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-paid-republish-pinned-repository-restores-only-effective-access-and-keeps-blocked-draft",
       "course-paid-republish-refuses-inconsistent-access-revision-account-and-learning-history",
       "course-paid-learner-pinned-quiz-and-playback-allow-archive-draft-and-revocation-boundaries",
-      "course-paid-learner-refuses-lesson-receipt-revision-account-and-history-drift"];
+      "course-paid-learner-refuses-lesson-receipt-revision-account-and-history-drift",
+      "course-paid-revoke-pinned-audit-retained-grants-and-last-effective-grant-outbox",
+      "course-paid-revoke-refuses-replay-wrong-command-revision-history-and-nonpristine-outbox",
+      revokeSource ? "course-paid-revoke-corrected-source-ignores-unrelated-future-expiry" :
+        "course-paid-revoke-refuses-missing-outbox-with-pinned-foreign-expiry-predicate-defect"];
   } finally {
     try { await unlock(); }
     finally { setDefaultCACertificates(trust); }
@@ -1268,6 +1291,108 @@ async function runOwnedPaidLearnerAccessWitness({ course, job, dependencies, inp
     if (independent) await repository.updateCourse(independent.selection.courseId, { expectedRevision: 1, status: "archived" });
     await assert.rejects(observe(test, baseline), { check });
     await assert.rejects(observe(test, baseline), { check: "course-paid-learner-receipt" });
+  }
+}
+
+async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, create, courseSource, expiryFixed }) {
+  const { seed, progress, write } = ownedPaidGrantFixtures({ course, input, create });
+  const { db, importSource } = await ownedCourseRepository(course, courseSource);
+  const [{ createDrizzleAdminEntitlementCommandRepository }] =
+    await importOwnedAccountAwareCourseSource(importSource, "src/entitlements/admin-entitlement-command.repository.ts");
+  const admin = createDrizzleAdminEntitlementCommandRepository(db);
+  const independent = ({ selected: { userId, courseId, actorId } }) => admin.grant({ userId, courseId, actorUserId: actorId,
+    idempotencyKey: randomUUID(), reason: "Owned independent manual access" });
+  const datedGrant = async ({ selection: { userId, courseId }, enrollmentId }, expiresInSeconds) => {
+    const key = randomUUID(), digest = hash(`owned-legacy-${key}`);
+    // Current Course grants reject expiry input. Exercise retained historical rows on the disposable database.
+    await course.query("INSERT INTO public.entitlement_idempotency_keys(idempotency_key,command_type,request_hash) VALUES($1,'internal_grant',$2)", [key, digest]);
+    await course.query(`INSERT INTO public.entitlement_grants(user_id,course_id,enrollment_id,idempotency_key,request_hash,grant_reason,
+      external_order_id,external_payment_id,provider,granted_at,expires_at) VALUES($1,$2,$3,$4,$5,'purchase',$6,$7,'square',
+      pg_catalog.clock_timestamp()-interval '2 minutes',pg_catalog.clock_timestamp()+$8::int*interval '1 second')`,
+    [userId, courseId, enrollmentId, key, digest, `owned-order-${randomUUID()}`, `owned-payment-${randomUUID()}`, expiresInSeconds]);
+  };
+  const prepare = async (name, kind = "last") => {
+    const test = await seed(`revoke-${name}`), { courseId, userId, actorId, revision } = test.selection;
+    await write(test);
+    await progress(test, test.enrollmentId);
+    const attemptId = randomUUID(), quizRevisionId = randomUUID();
+    await course.query("INSERT INTO public.quiz_revisions(id,lesson_id,revision,document,created_by) VALUES($1,$2,1,$3::jsonb,$4)",
+      [quizRevisionId, test.lessonId, { version: 1, mode: "graded", questions: [] }, actorId]);
+    await course.query(`INSERT INTO public.quiz_attempts(id,user_id,lesson_id,quiz_revision_id,enrollment_id,request_id,request_hash,answers,
+      correct_count,total_count,passed,completed) VALUES($1,$2,$3,$4,$5,$6,$7,'[]'::jsonb,1,1,true,true)`,
+    [attemptId, userId, test.lessonId, quizRevisionId, test.enrollmentId, randomUUID(), hash("owned-revoke-attempt")]);
+    const selected = { courseId, userId, grantId: test.grantId, actorId, revision, idempotencyKey: randomUUID(),
+      reason: "Reviewed revoke é", remainingAccess: kind === "remaining" };
+    const fixture = { ...test, selected, attemptId };
+    if (kind === "remaining") await independent(fixture);
+    if (kind === "expired") await datedGrant(fixture, -60);
+    return fixture;
+  };
+  const capture = test => captureP2InteractivePaidRevokeBaseline(job, test.selected, dependencies);
+  const command = ({ selected }, changes = {}) => admin.revoke({ scope: "grantId", grantId: selected.grantId, actorUserId: selected.actorId,
+    reason: `[paid-course revision ${selected.revision}] ${selected.reason}`, idempotencyKey: `owner-paid-revoke:${selected.idempotencyKey}`, ...changes });
+  const browser = ({ selected: { courseId, userId, grantId, revision } }, commandId) => ({ courseId, userId, grantId, commandId, courseRevision: revision });
+  const observe = (test, baseline, receipt) => observeP2InteractivePaidRevokeCase(job, test.selected, baseline, receipt, dependencies);
+  const newEvent = async test => (await course.query(`SELECT event_id::text FROM public.community_enrollment_outbox
+    WHERE stream_id=$1::uuid AND stream_version=2`, [test.streamId])).rows[0]?.event_id ?? null;
+
+  for (const kind of ["last", "remaining", "expired"]) {
+    const test = await prepare(kind, kind), { selected } = test;
+    await write(await seed(`revoke-other-${kind}`, {}, selected.userId));
+    assert.equal(validateP2InteractivePaidRevoke(selected, undefined), undefined);
+    assert.throws(() => validateP2InteractivePaidRevoke(selected, {}), { check: "course-paid-revoke-selection" });
+    assert.throws(() => validateP2InteractivePaidRevoke({ ...selected, reason: ` ${selected.reason}` }, undefined), { check: "course-paid-revoke-selection" });
+    await assert.rejects(capture({ ...test, selected: { ...selected, grantId: randomUUID() } }), { check: "course-paid-revoke-grant" });
+    await assert.rejects(capture({ ...test, selected: { ...selected, remainingAccess: !selected.remainingAccess } }), { check: "course-paid-revoke-access" });
+    const baseline = await capture(test);
+    assert.equal(JSON.stringify(baseline), "{}");
+    const result = await command(test), receipt = browser(test, result.command.id), transitionId = await newEvent(test);
+    assert.equal(result.isReplay, false);
+    assert.equal(transitionId === null, selected.remainingAccess);
+    await assert.rejects(observe(test, {}, receipt), { check: "course-paid-revoke-receipt" });
+    await assert.rejects(observe(test, baseline, { ...receipt, courseRevision: 2 }), { check: "course-paid-revoke-receipt" });
+    await assert.rejects(observeP2InteractivePaidRevokeCase(job, selected, baseline, receipt,
+      { ...dependencies, verifySession: async () => {} }), { check: "course-paid-revoke-receipt" });
+    assert.deepEqual(await observe(test, baseline, receipt), { ...receipt, remainingAccess: selected.remainingAccess, transitionId, readOnly: true });
+    await assert.rejects(observe(test, baseline, receipt), { check: "course-paid-revoke-receipt" });
+    await assert.rejects(capture(test), { check: "course-paid-revoke-grant" });
+  }
+
+  const occupied = await prepare("occupied");
+  await course.query("INSERT INTO public.entitlement_idempotency_keys(idempotency_key,command_type,request_hash) VALUES($1,'admin_revoke',$2)",
+    [`owner-paid-revoke:${occupied.selected.idempotencyKey}`, hash("foreign revoke")]);
+  await assert.rejects(capture(occupied), { check: "course-paid-revoke-baseline" });
+
+  for (const [name, check] of [["reason", "course-paid-revoke-command"], ["actor", "course-paid-revoke-command"],
+    ["command-id", "course-paid-revoke-command"], ["revision", "course-publication-state"], ["progress", "course-paid-revoke-history"],
+    ["attempt", "course-paid-revoke-history"], ["independent", "course-paid-revoke-history"], ["leased-outbox", "course-paid-revoke-outbox"]]) {
+    const test = await prepare(name, name === "independent" ? "remaining" : "last"), { courseId } = test.selected;
+    const baseline = await capture(test);
+    const options = name === "reason" ? { reason: "Unreviewed reason" } : name === "actor" ? { actorUserId: randomUUID() } : {};
+    const result = await command(test, options), receipt = browser(test, name === "command-id" ? randomUUID() : result.command.id);
+    if (name === "revision") await course.query("UPDATE public.courses SET revision=revision+1 WHERE id=$1::uuid", [courseId]);
+    if (name === "progress") await course.query("UPDATE public.lesson_progress SET resume_position_seconds=20 WHERE lesson_id=$1::uuid", [test.lessonId]);
+    if (name === "attempt") await course.query(`UPDATE public.quiz_attempts SET user_id=NULL,enrollment_id=NULL,request_id=NULL,request_hash=NULL,
+      answers='[]'::jsonb,deidentified_at=pg_catalog.clock_timestamp() WHERE id=$1::uuid`, [test.attemptId]);
+    if (name === "independent") await independent(test);
+    if (name === "leased-outbox") await course.query(`UPDATE public.community_enrollment_outbox SET lease_owner='owned-worker',
+      lease_expires_at=pg_catalog.clock_timestamp()+interval '1 minute' WHERE event_id=$1::uuid`, [await newEvent(test)]);
+    await assert.rejects(observe(test, baseline, receipt), { check });
+    await assert.rejects(observe(test, baseline, receipt), { check: "course-paid-revoke-receipt" });
+  }
+
+  const test = await prepare("foreign-expiry"), foreign = await seed("revoke-foreign-future-grant");
+  await write(foreign);
+  await datedGrant(foreign, 3600);
+  const baseline = await capture(test), result = await command(test);
+  const receipt = browser(test, result.command.id), transitionId = await newEvent(test);
+  if (expiryFixed) {
+    assert.ok(transitionId);
+    assert.deepEqual(await observe(test, baseline, receipt), { ...receipt, remainingAccess: false, transitionId, readOnly: true });
+  } else {
+    // The original Course pin groups the expiry OR outside the user/course/status filter.
+    assert.equal(transitionId, null);
+    await assert.rejects(observe(test, baseline, receipt), { check: "course-paid-revoke-stream" });
   }
 }
 

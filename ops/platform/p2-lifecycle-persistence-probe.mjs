@@ -89,11 +89,11 @@ const date = value => value instanceof Date ? value.toISOString() : new Date(val
 const count = (rows, name) => Number(rows[0]?.[name] ?? rows[0]?.count ?? 0);
 
 const paidArchiveHistoryLimit = 1000;
+const jsonbSha = fields => `pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to((${fields})::text,'UTF8')),'hex')`;
 const paidArchiveDigest = (from, identity = "r.id", fields = "pg_catalog.to_jsonb(r)") =>
   `SELECT count(*)::int AS row_count, pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(coalesce(
     pg_catalog.string_agg(row_sha256,'' ORDER BY row_id),''),'UTF8')),'hex') AS digest
-  FROM (SELECT ${identity} AS row_id,
-    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to((${fields})::text,'UTF8')),'hex') AS row_sha256
+  FROM (SELECT ${identity} AS row_id, ${jsonbSha(fields)} AS row_sha256
     ${from} ORDER BY ${identity} LIMIT ${paidArchiveHistoryLimit + 1}) bounded`;
 const paidEligibleEnrollment = `FROM public.enrollments e WHERE e.user_id=$2::uuid AND e.status='active'
     AND NOT EXISTS(SELECT 1 FROM public.account_lifecycle_states a WHERE a.user_id=e.user_id AND a.status<>'active')
@@ -199,7 +199,7 @@ const SQL = Object.freeze({
     paidGrantEffect: `SELECT (command_id=$1::uuid AND entitlement_grant_id=$2::uuid
       AND effect_type='grant_created' AND previous_status IS NULL AND resulting_status='active') AS fields_match
       FROM public.admin_entitlement_command_effects WHERE command_id=$1::uuid OR entitlement_grant_id=$2::uuid LIMIT 2`,
-    paidArchiveCourse: `SELECT 1 AS eligible FROM public.courses WHERE id=$1::uuid
+    paidArchiveCourse: `SELECT slug FROM public.courses WHERE id=$1::uuid
       AND access_mode='paid' AND currency='CAD' AND price_cents>0`,
     paidCourseOwnerGrant: `SELECT (g.status='active' AND e.status='active' AND e.revoked_at IS NULL AND e.refunded_at IS NULL) AS active
       FROM public.entitlement_grants g
@@ -255,6 +255,42 @@ const SQL = Object.freeze({
     paidArchiveEvents: paidArchiveDigest(`FROM public.community_enrollment_outbox r JOIN public.community_enrollment_streams s
       ON s.id=r.stream_id WHERE s.course_id=$1::uuid`, "r.event_id",
     "pg_catalog.jsonb_build_array(r.event_id,r.stream_id,r.stream_version,r.canonical_body,r.canonical_digest,r.created_at)"),
+    paidRevokeTarget: `SELECT e.id::text AS enrollment_id,e.status AS enrollment_status,e.revoked_at::text AS enrollment_revoked_at,
+      e.updated_at::text AS enrollment_updated_at,g.status AS grant_status,g.revoke_reason,g.revoked_at::text AS grant_revoked_at,
+      g.updated_at::text AS grant_updated_at,${jsonbSha("pg_catalog.to_jsonb(g)-ARRAY['status','revoke_reason','revoked_at','updated_at']")} AS grant_identity,
+      ${jsonbSha("pg_catalog.to_jsonb(e)-ARRAY['status','revoked_at','updated_at']")} AS enrollment_identity
+      FROM public.entitlement_grants g JOIN public.enrollments e ON e.id=g.enrollment_id AND e.user_id=g.user_id AND e.course_id=g.course_id
+      WHERE g.id=$1::uuid AND g.user_id=$2::uuid AND g.course_id=$3::uuid`,
+    paidRevokeOtherAccess: `SELECT EXISTS(SELECT 1 FROM public.entitlement_grants g WHERE g.course_id=$1::uuid
+      AND g.user_id=$2::uuid AND g.id<>$3::uuid AND g.status='active') AS active,
+      EXISTS(SELECT 1 FROM public.entitlement_grants g WHERE g.course_id=$1::uuid AND g.user_id=$2::uuid AND g.id<>$3::uuid
+        AND g.status='active' AND (g.expires_at IS NULL OR g.expires_at>pg_catalog.transaction_timestamp())) AS eligible`,
+    paidRevokeCommand: `SELECT id::text AS command_id,effective_at::text,
+      (action='revoke' AND scope='grantId' AND actor_user_id=$2::text AND target_user_id=$3::uuid
+        AND target_course_id=$4::uuid AND target_grant_id=$5::uuid AND reason=$6::text AND request_hash=$7::text
+        AND outcome='applied' AND effect_count=1) AS fields_match
+      FROM public.admin_entitlement_commands WHERE idempotency_key=$1::text`,
+    paidRevokeEffect: `SELECT (entitlement_grant_id=$2::uuid AND effect_type='grant_revoked'
+      AND previous_status='active' AND resulting_status='revoked') AS fields_match
+      FROM public.admin_entitlement_command_effects WHERE command_id=$1::uuid LIMIT 2`,
+    paidRevokeOtherGrants: paidArchiveDigest("FROM public.entitlement_grants r WHERE r.course_id=$1::uuid AND r.id<>$2::uuid"),
+    paidRevokeOtherEnrollments: paidArchiveDigest("FROM public.enrollments r WHERE r.course_id=$1::uuid AND r.id<>$2::uuid"),
+    paidRevokeOtherCommands: paidArchiveDigest("FROM public.admin_entitlement_commands r WHERE r.target_course_id=$1::uuid AND r.idempotency_key<>$2::text"),
+    paidRevokeOtherEffects: paidArchiveDigest(`FROM public.admin_entitlement_command_effects r JOIN public.admin_entitlement_commands a
+      ON a.id=r.command_id WHERE a.target_course_id=$1::uuid AND a.idempotency_key<>$2::text`),
+    paidRevokeStream: `SELECT id::text AS stream_id,version,state,effective_at::text,created_at::text,updated_at::text
+      FROM public.community_enrollment_streams WHERE course_id=$1::uuid AND user_id=$2::uuid`,
+    paidRevokeOtherStreams: paidArchiveDigest("FROM public.community_enrollment_streams r WHERE r.course_id=$1::uuid AND r.user_id<>$2::uuid"),
+    paidRevokePriorEvents: paidArchiveDigest(`FROM public.community_enrollment_outbox r JOIN public.community_enrollment_streams s
+      ON s.id=r.stream_id WHERE s.course_id=$1::uuid AND (s.user_id<>$2::uuid OR r.stream_version<=$3::int)`, "r.event_id",
+    "pg_catalog.jsonb_build_array(r.event_id,r.stream_id,r.stream_version,r.canonical_body,r.canonical_digest,r.created_at)"),
+    paidRevokeNewEvents: `SELECT o.event_id::text,o.stream_version,o.canonical_digest,
+      (o.state='pending' AND o.attempts_in_cycle=0 AND o.replay_cycle=0 AND o.lease_owner IS NULL AND o.lease_expires_at IS NULL
+        AND o.last_attempt_at IS NULL AND o.delivered_at IS NULL AND o.dead_lettered_at IS NULL AND o.last_failure_code IS NULL
+        AND o.last_failure_detail IS NULL AND o.available_at=s.effective_at AND o.created_at=s.effective_at AND o.updated_at=s.effective_at
+        AND o.canonical_digest=${jsonbSha("o.canonical_body")}) AS fields_match
+      FROM public.community_enrollment_outbox o JOIN public.community_enrollment_streams s ON s.id=o.stream_id
+      WHERE o.stream_id=$1::uuid AND o.stream_version>$2::int LIMIT 2`,
     draft: `SELECT id::text AS course_id,slug,revision,status,
       (title=$2::text AND description IS NOT DISTINCT FROM $3::text AND introduction IS NOT DISTINCT FROM $4::text
         AND currency=$5::text AND access_mode=$6::text AND price_cents=$7::int
@@ -518,6 +554,7 @@ const paidGrantBaselines = new WeakMap();
 const paidArchiveBaselines = new WeakMap();
 const paidRepublishBaselines = new WeakMap();
 const paidLearnerAccessBaselines = new WeakMap();
+const paidRevokeBaselines = new WeakMap();
 const draftFormFields = ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification"];
 const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
 const draftSlug = value => typeof value === "string" && value.length <= 120 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
@@ -1187,8 +1224,9 @@ export async function observeP2InteractivePaidGrantCase(courseJob, selection, ba
 }
 
 const paidArchiveSelectionFields = ["courseId", "slug", "revision", "userId", "grantId"];
-const paidArchiveHistory = ["paidArchiveModules", "paidArchiveLessons", "paidArchiveQuizRevisions", "paidArchiveAttempts",
-  "paidArchiveProgress", "paidArchiveEnrollments", "paidArchiveGrants", "paidArchiveRevocations", "paidArchiveCommands", "paidArchiveEffects"];
+const paidCourseLearningHistory = ["paidArchiveModules", "paidArchiveLessons", "paidArchiveQuizRevisions", "paidArchiveAttempts", "paidArchiveProgress"];
+const paidArchiveHistory = [...paidCourseLearningHistory, "paidArchiveEnrollments", "paidArchiveGrants", "paidArchiveRevocations",
+  "paidArchiveCommands", "paidArchiveEffects"];
 const paidArchiveProjection = ["paidArchiveStreams", "paidArchiveEvents"];
 
 export function validateP2InteractivePaidArchive(selection, input) {
@@ -1353,6 +1391,117 @@ export async function observeP2InteractivePaidLearnerAccessCase(courseJob, selec
   demand(result.slug === saved.result.slug && result.updatedAt === saved.result.updatedAt && result.accountSha256 === saved.result.accountSha256
     && result.mediaSha256 === saved.result.mediaSha256, "course-paid-learner-state-drift");
   return { courseId, lessonId, outcome, actorId, grantId, revision, effectiveAccess: outcome === "allowed", readOnly: true };
+}
+
+const paidRevokeSelectionFields = ["courseId", "userId", "grantId", "actorId", "revision", "idempotencyKey", "reason", "remainingAccess"];
+
+export function validateP2InteractivePaidRevoke(selection, input) {
+  demand(input === undefined && closed(selection, paidRevokeSelectionFields)
+    && [selection.courseId, selection.userId, selection.grantId, selection.actorId, selection.idempotencyKey].every(courseUuid)
+    && Number.isInteger(selection.revision) && selection.revision >= 1 && selection.revision <= 2_147_483_647
+    && draftText(selection.reason, 1800) && typeof selection.remainingAccess === "boolean", "course-paid-revoke-selection");
+}
+
+async function readPaidRevoke(client, selection, priorVersion) {
+  const { courseId, userId, grantId, actorId, revision, remainingAccess } = selection, initial = priorVersion === undefined;
+  const paidCourses = await read(client, "course", "paidArchiveCourse", [courseId]);
+  demand(paidCourses.length === 1 && draftSlug(paidCourses[0].slug), "course-paid-revoke-eligibility");
+  const { slug } = paidCourses[0];
+  const course = await readCoursePublication(client, { courseId, slug }, revision, "published");
+  const grant = await read(client, "course", "paidCourseOwnerGrant", [courseId, userId, grantId]);
+  const targets = await read(client, "course", "paidRevokeTarget", [grantId, userId, courseId]), target = targets[0];
+  demand(grant.length === 1 && grant[0].active === initial && targets.length === 1 && courseUuid(target.enrollment_id)
+    && SHA.test(target.grant_identity) && SHA.test(target.enrollment_identity), "course-paid-revoke-grant");
+  const account = await read(client, "course", "paidLearnerActiveAccount", [userId]);
+  const access = await read(client, "course", "paidCourseAccess", [courseId, userId]);
+  const others = await read(client, "course", "paidRevokeOtherAccess", [courseId, userId, grantId]);
+  demand(account.length === 1 && account[0].active === true && access.length === 1 && access[0].eligible === (initial || remainingAccess)
+    && others.length === 1 && others[0].eligible === remainingAccess && typeof others[0].active === "boolean", "course-paid-revoke-access");
+  const streams = await read(client, "course", "paidRevokeStream", [courseId, userId]), stream = streams[0];
+  demand(streams.length === 1 && uuidV4(stream.stream_id) && Number.isInteger(stream.version) && stream.version >= 0
+    && (!initial || (stream.state === "active" && stream.version < 2_147_483_647)), "course-paid-revoke-stream");
+  const reviewedVersion = priorVersion ?? stream.version;
+  const idempotencyKey = `owner-paid-revoke:${selection.idempotencyKey}`, reason = `[paid-course revision ${revision}] ${selection.reason}`;
+  const requestHash = sha(canonicalAsciiJson({ action: "revoke", scope: "grantId", actorUserId: actorId, target: { grantId }, reason }));
+  const keys = await read(client, "course", "enrollmentKey", [idempotencyKey, requestHash, "admin_revoke"]);
+  const commands = await read(client, "course", "paidRevokeCommand", [idempotencyKey, actorId, userId, courseId, grantId, reason, requestHash]);
+  const events = await read(client, "course", "paidRevokeNewEvents", [stream.stream_id, reviewedVersion]);
+  const history = [
+    ...await readPaidArchiveDigests(client, [courseId], [...paidCourseLearningHistory, "paidArchiveRevocations"]),
+    ...await readPaidArchiveDigests(client, [courseId, grantId], ["paidRevokeOtherGrants"]),
+    ...await readPaidArchiveDigests(client, [courseId, target.enrollment_id], ["paidRevokeOtherEnrollments"]),
+    ...await readPaidArchiveDigests(client, [courseId, idempotencyKey], ["paidRevokeOtherCommands", "paidRevokeOtherEffects"]),
+    ...await readPaidArchiveDigests(client, [userId], ["paidCourseAccount"]),
+    ...await readPaidArchiveDigests(client, [courseId, userId], ["paidArchiveIndependentAccess", "paidRevokeOtherStreams"]),
+    ...await readPaidArchiveDigests(client, [courseId, userId, reviewedVersion], ["paidRevokePriorEvents"]),
+  ];
+  return { slug, course, target, otherActive: others[0].active, stream, keys, commands, events, history };
+}
+
+function observePaidRevokeTransition(selection, previous, current, effectiveAt) {
+  const { courseId, userId, remainingAccess } = selection, { stream, events } = current;
+  demand(stream.stream_id === previous.stream_id && stream.created_at === previous.created_at, "course-paid-revoke-stream");
+  if (remainingAccess) {
+    demand(stream.state === "active" && stream.version === previous.version && stream.effective_at === previous.effective_at
+      && stream.updated_at === previous.updated_at && events.length === 0, "course-paid-revoke-outbox");
+    return null;
+  }
+  demand(stream.state === "revoked" && stream.version === previous.version + 1 && stream.effective_at === effectiveAt
+    && stream.updated_at === effectiveAt, "course-paid-revoke-stream");
+  const event = events[0];
+  demand(events.length === 1 && event.stream_version === stream.version && event.fields_match === true && uuidV4(event.event_id),
+    "course-paid-revoke-outbox");
+  const at = date(effectiveAt);
+  const expected = { eventId: event.event_id, eventType: "enrollment.revoked", schemaVersion: 1, producer: "lash-her-course-api", occurredAt: at,
+    stream: { id: stream.stream_id, version: stream.version }, data: { userId, courseId, state: "revoked", effectiveAt: at } };
+  demand(event.canonical_digest === sha(canonicalAsciiJson(expected)), "course-paid-revoke-outbox");
+  return event.event_id;
+}
+
+export async function captureP2InteractivePaidRevokeBaseline(courseJob, selection, dependencies) {
+  validateP2InteractivePaidRevoke(selection, undefined);
+  const selected = Object.freeze({ ...selection }), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
+    const before = await readPaidRevoke(client, selected);
+    demand(before.keys.length === 0 && before.commands.length === 0 && before.events.length === 0, "course-paid-revoke-baseline");
+    return before;
+  });
+  const baseline = Object.freeze({});
+  paidRevokeBaselines.set(baseline, { selected, result, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractivePaidRevokeCase(courseJob, selection, baseline, browserBody, dependencies) {
+  validateP2InteractivePaidRevoke(selection, undefined);
+  const { courseId, userId, grantId, remainingAccess, revision: courseRevision } = selection, { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const saved = paidRevokeBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+    && saved.verifySession === dependencies?.verifySession && paidRevokeSelectionFields.every(key => selection[key] === saved.selected[key])
+    && closed(browserBody, ["courseId", "userId", "grantId", "commandId", "courseRevision"]) && browserBody.courseId === courseId
+    && browserBody.userId === userId && browserBody.grantId === grantId && browserBody.courseRevision === courseRevision
+    && courseUuid(browserBody.commandId), "course-paid-revoke-receipt");
+  paidRevokeBaselines.delete(baseline);
+  const { commandId } = browserBody, before = saved.result;
+  const { result: transitionId } = await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
+    const after = await readPaidRevoke(client, saved.selected, before.stream.version), { keys, commands } = after;
+    demand(keys.length === 1 && keys[0].fields_match === true && commands.length === 1 && commands[0].command_id === commandId
+      && commands[0].fields_match === true && typeof commands[0].effective_at === "string", "course-paid-revoke-command");
+    const effects = await read(client, "course", "paidRevokeEffect", [commandId, grantId]);
+    demand(effects.length === 1 && effects[0].fields_match === true, "course-paid-revoke-effect");
+    const { effective_at: effectiveAt } = commands[0], row = after.target, prior = before.target;
+    demand(row.grant_status === "revoked" && row.revoke_reason === "manual" && row.grant_revoked_at === effectiveAt
+      && row.grant_updated_at === effectiveAt && row.grant_identity === prior.grant_identity, "course-paid-revoke-grant");
+    // Course closes the enrollment only when no active grant row remains, even if every remaining row is past expiry.
+    demand(after.otherActive === before.otherActive && row.enrollment_identity === prior.enrollment_identity
+      && (before.otherActive ? row.enrollment_status === "active" && row.enrollment_revoked_at === prior.enrollment_revoked_at
+        && row.enrollment_updated_at === prior.enrollment_updated_at : row.enrollment_status === "revoked"
+        && row.enrollment_revoked_at === effectiveAt && row.enrollment_updated_at === effectiveAt), "course-paid-revoke-enrollment");
+    demand(after.slug === before.slug && after.course.metadataSha256 === before.course.metadataSha256 && after.course.updatedAt === before.course.updatedAt
+      && sameIds(after.history, before.history), "course-paid-revoke-history");
+    return observePaidRevokeTransition(saved.selected, before.stream, after, effectiveAt);
+  });
+  return { courseId, userId, grantId, commandId, courseRevision, remainingAccess, transitionId, readOnly: true };
 }
 
 export async function runPrivatePersistenceProbeFromStdin(expectedProfile = undefined) {

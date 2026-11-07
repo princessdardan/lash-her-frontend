@@ -412,6 +412,57 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
+    def test_paid_revoke_plan_binds_exact_scope_and_uses_normal_owner_preflight(self):
+        owner = "10000000-0000-4000-8000-000000000001"
+        course = "10000000-0000-4000-8000-000000000002"
+        user = "10000000-0000-4000-8000-000000000003"
+        grant = "10000000-0000-4000-8000-000000000004"
+        key = "10000000-0000-4000-8000-000000000005"
+        entitlements = "/course/v1/admin/entitlements"
+        requests = [
+            {"method": "GET", "target": f"/course/v1/admin/courses/{course}", "bodySha256": window._EMPTY, "uses": 3},
+            {"method": "GET", "target": f"{entitlements}/commands?idempotencyKey=owner-paid-revoke%3A{key}&limit=2",
+             "bodySha256": window._EMPTY, "uses": 2},
+            {"method": "GET", "target": f"{entitlements}/grants?grantId={grant}&userId={user}&courseId={course}&limit=2",
+             "bodySha256": window._EMPTY, "uses": 2},
+            {"method": "POST", "target": f"{entitlements}/revocations", "bodySha256": "b" * 64, "uses": 1}]
+        selection = {"operation": "revoke-paid-grant", "courseId": course, "userId": user, "grantId": grant,
+                     "revision": 2_147_483_647, "idempotencyKey": key, "reasonSha256": "d" * 64, "remainingAccess": True}
+        action = {"stage": "paid-revoke", "actorId": owner, "windowSeconds": 60, "requests": requests, "paidRevokeAction": selection}
+        self.assertEqual(window.validate_interactive_action(action), action)
+        selector = window._selection_sha(action)
+        self.assertEqual(selector, (owner + key).replace("-", ""))
+        cookie, gateway_key, _, _ = window._material("fixture" * 8, "https://owned.vercel.app", "a" * 40, "b" * 64,
+                                                       "8", "paid-revoke", 1_794_009_600, 60, "c" * 32, selector)
+        self.assertEqual(cookie.split(".")[:3], ["v2", "8", "paid-revoke"])
+        self.assertEqual(cookie.split(".")[6], selector)
+        self.assertEqual(len(gateway_key), 64)
+        for change in ({"remainingAccess": 1}, {"reasonSha256": window._EMPTY}, {"grantId": "bad"},
+                       {"revision": True}, {"revision": 2_147_483_648}):
+            with self.subTest(selection=change), self.assertRaisesRegex(ValueError, "PAID_REVOKE_SELECTION_REQUIRED"):
+                window.validate_interactive_action({**action, "paidRevokeAction": {**selection, **change}})
+        for index, change in ((0, {"uses": 2}), (1, {"target": requests[1]["target"].replace("%3A", "%3a")}),
+                              (2, {"target": requests[2]["target"].replace(grant, owner)}), (3, {"bodySha256": window._EMPTY})):
+            changed = [*requests]
+            changed[index] = {**changed[index], **change}
+            with self.subTest(request=change), self.assertRaisesRegex(ValueError, "PAID_REVOKE_REQUESTS_REQUIRED"):
+                window.validate_interactive_action({**action, "requests": changed})
+        stage = window.P2InteractiveWindow.__new__(window.P2InteractiveWindow)
+        stage.action, stage.plan, stage._state, stage._check = action, {"initialEpoch": "7"}, "new", lambda: None
+        raw = b"owned ordinary state"
+        stage._read = lambda: (raw, 0o644, 0)
+        stage._gateway = lambda: {"version": 1, "valid": True, "newWork": False, "recovery": False,
+                                  "active": window._ZERO, "uncertain": window._ZERO, "sha256": window._hash(raw),
+                                  "releaseId": "owned-release", "candidateSha256": "a" * 64}
+        stage.broker = SimpleNamespace(
+            observer=SimpleNamespace(probe=lambda _: {"admission": {"epoch": "7", "newWork": False, "recovery": False,
+                                                                        "active": 0, "uncertain": 0}}),
+            _native_context=lambda: {}, vercel=object(), check=lambda: None, profile_arguments=lambda: {},
+            selected={"releaseId": "owned-release"}, initial={"candidateSha256": "a" * 64})
+        with patch.object(ingress, "observe_paid_grant_protection", return_value={"status": "owned-owner-protection"}) as protection:
+            self.assertEqual(stage.prepare()["status"], "owned-owner-protection")
+        self.assertEqual(protection.call_args.kwargs, {"course_id": course})
+
     def test_learner_access_plan_signs_only_the_exact_reviewed_get_scope(self):
         actor = "10000000-0000-4000-8000-000000000001"
         course = "10000000-0000-4000-8000-000000000002"

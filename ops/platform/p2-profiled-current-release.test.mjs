@@ -277,6 +277,52 @@ test('fixed current certification plan joins the original release plan, terminal
       ...paired({ ...selectedInteractive, requests: [paidDetail, paidCommands, { ...paidWrite, bodySha256: '1'.repeat(64) }, paidReadback] }),
       execution: { reason: paidReason },
     }, paidConfirmation), /P2_CERTIFICATION_PARENT_REFUSED/);
+    const revokeGrantId = '10000000-0000-4000-8000-00000000000a';
+    const revokeKey = '10000000-0000-4000-8000-00000000000b';
+    const revokeReason = 'Owned reviewed grant removal';
+    const revokeRequest = { scope: 'grantId', grantId: revokeGrantId, reason: '[paid-course revision 1] ' + revokeReason,
+      idempotencyKey: 'owner-paid-revoke:' + revokeKey };
+    const selectedRevoke = {
+      stage: 'paid-revoke', actorId: selectedInteractive.actorId, windowSeconds: 90,
+      paidRevokeAction: { operation: 'revoke-paid-grant', courseId, userId, grantId: revokeGrantId, revision: 1,
+        idempotencyKey: revokeKey, reasonSha256: rawHash(revokeReason), remainingAccess: false },
+      requests: [
+        paidDetail,
+        { ...paidCommands, target: '/course/v1/admin/entitlements/commands?idempotencyKey=owner-paid-revoke%3A' + revokeKey + '&limit=2' },
+        { method: 'GET', target: `/course/v1/admin/entitlements/grants?grantId=${revokeGrantId}&userId=${userId}&courseId=${courseId}&limit=2`,
+          uses: 2, bodySha256: emptyBodySha256 },
+        { method: 'POST', target: '/course/v1/admin/entitlements/revocations', uses: 1, bodySha256: rawHash(JSON.stringify(revokeRequest)) },
+      ],
+    };
+    for (const remainingAccess of [false, true]) {
+      const scope = { ...selectedRevoke, paidRevokeAction: { ...selectedRevoke.paidRevokeAction, remainingAccess } };
+      const settings = paired(scope), prepared = prepareP2ProfiledCertificationOperator(settings);
+      assert.equal(prepared.status, 'P2_INTERACTIVE_PAID_REVOKE_ACTIONS_PLANNED');
+      assert.deepEqual(prepared['paid-revoke'].scopedAction, scope);
+      assert.deepEqual(prepared.identity.scopedAction.identityActor, { actorKind: 'admin', actorId: selectedRevoke.actorId });
+      assert.equal(JSON.stringify(prepared).includes(revokeReason), false);
+      const checked = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+        { input: JSON.stringify(prepared['paid-revoke']), encoding: 'utf8' });
+      assert.equal(checked.status, 0, checked.stderr);
+      await assert.rejects(p2ProfiledCertificationOperator({ ...settings, execution: { reason: revokeReason } }, paidConfirmation), { code: 'ENOENT' });
+    }
+    const revokeSettings = paired(selectedRevoke);
+    for (const execution of [undefined, { reason: 'unreviewed' }, { reason: ' ' + revokeReason }, { reason: revokeReason + '\n' },
+      { reason: 'x'.repeat(1801) }, { reason: revokeReason, extra: true }])
+      await assert.rejects(p2ProfiledCertificationOperator({ ...revokeSettings, execution }, paidConfirmation), /P2_CERTIFICATION_PARENT_REFUSED/);
+    const [revokeDetail, revokeCommands, revokeGrant, revokeWrite] = selectedRevoke.requests;
+    for (const requests of [[revokeDetail, revokeCommands, revokeWrite, revokeGrant], [revokeDetail, revokeCommands, { ...revokeGrant, uses: 1 }, revokeWrite],
+      [revokeDetail, { ...revokeCommands, target: revokeCommands.target.replace('%3A', ':') }, revokeGrant, revokeWrite],
+      [revokeDetail, revokeCommands, revokeGrant, { ...revokeWrite, bodySha256: emptyBodySha256 }]])
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedRevoke, requests })));
+    for (const changed of [{ remainingAccess: 'true' }, { grantId: 'invalid' }, { revision: 0 }, { reasonSha256: emptyBodySha256 }])
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedRevoke, paidRevokeAction: { ...selectedRevoke.paidRevokeAction, ...changed } })));
+    const { scope: revokeRequestScope, ...reorderedRevokeRequest } = revokeRequest;
+    await assert.rejects(p2ProfiledCertificationOperator({
+      ...paired({ ...selectedRevoke, requests: [revokeDetail, revokeCommands, revokeGrant,
+        { ...revokeWrite, bodySha256: rawHash(JSON.stringify({ ...reorderedRevokeRequest, scope: revokeRequestScope })) }] }),
+      execution: { reason: revokeReason },
+    }, paidConfirmation), /P2_CERTIFICATION_PARENT_REFUSED/);
     const selectedFree = { stage: 'learning', actorId: userId, windowSeconds: 90,
       learningAction: { operation: 'enroll-free-course', courseId, slug: 'owned-free-course',
         idempotencyKey: '10000000-0000-4000-8000-000000000005' } };
@@ -682,6 +728,8 @@ test('fixed current certification plan joins the original release plan, terminal
       ...selectedQuizzes.map(selection => [selection, '7032712d617574682d7175697a2d7631' + selection.actorId.replaceAll('-', '')]),
       [selectedFree, (selectedFree.actorId + selectedFree.learningAction.idempotencyKey).replaceAll('-', '')],
       [selectedInteractive, (selectedInteractive.actorId + paidKey).replaceAll('-', '')],
+      [selectedAccess, (selectedAccess.actorId + accessLessonId).replaceAll('-', '')],
+      [selectedRevoke, (selectedRevoke.actorId + revokeKey).replaceAll('-', '')],
       [prepareP2ProfiledCertificationOperator(paired(selectedLifecycle)).identity.scopedAction, rawHash(JSON.stringify(['identity', 'admin']))],
       [prepareP2ProfiledCertificationOperator(paired(preferenceScope)).identity.scopedAction, '7032712d637573746f6d65722d763100' + userId.replaceAll('-', '')],
       ...firstEnrollments.map(({ identityEnrollment, ...selection }) => [{ ...selection, identityEnrollment },
@@ -696,7 +744,7 @@ test('fixed current certification plan joins the original release plan, terminal
         join(root, 'ops/platform/host')], { input: JSON.stringify({ material: scopedMaterial, action: selection }), encoding: 'utf8' });
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
       const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
-      const selectedGatewayKey = ['authoring', 'learning', 'paid-grant'].includes(selection.stage)
+      const selectedGatewayKey = ['authoring', 'learning', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
         ? sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${selection.stage}\n${scopedNonce}`) : null;
       assert.deepEqual(JSON.parse(frontendFixture.stdout), [
         `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`, selectedGatewayKey, host, expires,

@@ -168,6 +168,9 @@ class IndependentGuardTests(unittest.TestCase):
         for stage, actor_kind, provider in cases:
             with self.subTest(stage=stage, actor_kind=actor_kind, provider=provider):
                 self.check_profiled_interactive_terminal(stage, actor_kind, provider)
+        for remaining in (False, True):
+            with self.subTest(remaining_access=remaining):
+                self.check_profiled_interactive_terminal('paid-revoke', 'admin', None, remaining_access=remaining)
         for progress_first in (False, True):
             with self.subTest(progress_first=progress_first):
                 self.check_profiled_interactive_terminal('learning', 'customer', None, progress_first=progress_first)
@@ -196,7 +199,7 @@ class IndependentGuardTests(unittest.TestCase):
     def check_profiled_interactive_terminal(self, stage_name, actor_kind, provider, *, editing=False, reorder_kind=None,
                                             create_kind=None, publication_outcome=None, quiz_revision=None,
                                             progress_first=False, archiving=False, republish_outcome=None, expected_access=None,
-                                            learner_outcome=None):
+                                            learner_outcome=None, remaining_access=None):
         import p2_interactive_window as window
         from p2_certification_parent import P2ProfiledCertificationBroker
 
@@ -212,6 +215,8 @@ class IndependentGuardTests(unittest.TestCase):
             variant = 'progress-first' if progress_first else 'course-first'
         if learner_outcome is not None:
             variant = learner_outcome
+        if remaining_access is not None:
+            variant = 'remaining' if remaining_access else 'removed'
         initial, directory = self.profiled_certification(f'owned-{stage_name}-{variant}')
         plan = initial['certificationPlan']
         ids = [f'10000000-0000-4000-8000-00000000000{index}' for index in range(1, 8)]
@@ -220,6 +225,7 @@ class IndependentGuardTests(unittest.TestCase):
         authoring = stage_name == 'authoring'
         learning = stage_name == 'learning'
         paid_grant = stage_name == 'paid-grant'
+        paid_revoke = stage_name == 'paid-revoke'
         learner_access = stage_name == 'learner-access'
         gateway_scoped = stage_name in window.SCOPED_GATEWAY_BROWSER_STAGES
         stage_status = stage_name.upper().replace('-', '_')
@@ -264,6 +270,18 @@ class IndependentGuardTests(unittest.TestCase):
                 {'method': 'POST', 'target': f'{entitlements}/grants', 'bodySha256': '9' * 64, 'uses': 1},
                 {'method': 'GET', 'target': f'{entitlements}/grants?userId={user}&courseId={command}&{query}',
                  'bodySha256': window._EMPTY, 'uses': 1}]
+        elif paid_revoke:
+            action['paidRevokeAction'] = {'operation': 'revoke-paid-grant', 'courseId': command, 'userId': user,
+                                           'grantId': ledger_ids[1], 'revision': 4, 'idempotencyKey': ledger_ids[0],
+                                           'reasonSha256': '8' * 64, 'remainingAccess': remaining_access}
+            entitlements = '/course/v1/admin/entitlements'
+            command_query = f'idempotencyKey=owner-paid-revoke%3A{ledger_ids[0]}&limit=2'
+            grant_query = f'grantId={ledger_ids[1]}&userId={user}&courseId={command}&limit=2'
+            action['requests'] = [
+                {'method': 'GET', 'target': f'/course/v1/admin/courses/{command}', 'bodySha256': window._EMPTY, 'uses': 3},
+                {'method': 'GET', 'target': f'{entitlements}/commands?{command_query}', 'bodySha256': window._EMPTY, 'uses': 2},
+                {'method': 'GET', 'target': f'{entitlements}/grants?{grant_query}', 'bodySha256': window._EMPTY, 'uses': 2},
+                {'method': 'POST', 'target': f'{entitlements}/revocations', 'bodySha256': '9' * 64, 'uses': 1}]
         elif authoring:
             if republishing:
                 issue_codes = [] if published else ['MISSING_COVER', 'NO_LESSONS']
@@ -412,6 +430,17 @@ class IndependentGuardTests(unittest.TestCase):
                 {'requestId': identity, 'proofRequestId': proof, 'requestIndex': index, 'upstreamStatus': status}
                 for identity, proof, index, status in zip(
                     [actor, user, command, request, *ledger_ids], proofs, (0, 1, 0, 2, 1, 3, 0), (200, 200, 200, 201, 200, 200, 200))]
+        elif paid_revoke:
+            revoked = {'courseId': command, 'userId': user, 'grantId': ledger_ids[1], 'commandId': ledger_ids[0], 'courseRevision': 4}
+            pathname = f'/api/admin/courses/{command}/manual-grants/revoke'
+            browser = {'method': 'POST', 'pathname': pathname, 'status': 200, 'requestId': request, 'body': revoked}
+            domain = {**revoked, 'remainingAccess': remaining_access, 'transitionId': None if remaining_access else ledger_ids[2],
+                      'readOnly': True}
+            browser_key, domain_key = 'browserResponse', 'courseWitness'
+            acknowledgements = [
+                {'requestId': request if index == 3 else f'80000000-0000-4000-8000-{position:012d}',
+                 'proofRequestId': f'90000000-0000-4000-8000-{position:012d}', 'requestIndex': index, 'upstreamStatus': 200}
+                for position, index in enumerate((0, 1, 0, 2, 3, 1, 2, 0), 1)]
         elif authoring:
             draft = ({'courseId': command, 'parentId': parent, 'kind': reorder_kind, 'revision': 4, 'ids': ordered_ids}
                      if reorder_kind is not None else
@@ -580,6 +609,20 @@ class IndependentGuardTests(unittest.TestCase):
                 with self.subTest(witness=change), self.assertRaisesRegex(ValueError, 'PAID_GRANT_COURSE_WITNESS_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
+        if paid_revoke:
+            for change in ({'requestId': user}, {'pathname': pathname.removesuffix('/revoke')}, {'status': 202}):
+                with self.subTest(browser=change), self.assertRaisesRegex(ValueError, 'PAID_REVOKE_RESPONSE_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain',
+                                    'caseEvidence': {**evidence, browser_key: {**browser, **change}}})
+            for change in ({'courseRevision': 5}, {'userId': actor}, {'grantId': user}):
+                wrong = {**browser, 'body': {**revoked, **change}}
+                with self.subTest(body=change), self.assertRaisesRegex(ValueError, 'PAID_REVOKE_BODY_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+            for change in ({'remainingAccess': not remaining_access}, {'transitionId': user if remaining_access else None},
+                           {'commandId': user}, {'communityDeliveryVerified': True}):
+                with self.subTest(witness=change), self.assertRaisesRegex(ValueError, 'PAID_REVOKE_COURSE_WITNESS_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain',
+                                    'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
         if identity:
             wrong_actor = 'invalid-uuid' if provider is not None else user
             with self.assertRaisesRegex(ValueError, 'IDENTITY_SESSION_REQUIRED'):
@@ -714,6 +757,13 @@ class IndependentGuardTests(unittest.TestCase):
             self.assertEqual({key: case[key] for key in granted}, granted)
             self.assertEqual(case['gatewayPostRequestId'], request)
             self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
+        if paid_revoke:
+            self.assertEqual(case['status'], 'P2_INTERACTIVE_PAID_REVOKE_JOINED')
+            self.assertEqual({key: case[key] for key in revoked}, revoked)
+            self.assertIs(case['remainingAccess'], remaining_access)
+            self.assertEqual(case['transitionId'], domain['transitionId'])
+            self.assertEqual(case['gatewayPostRequestId'], request)
+            self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
         if authoring:
             if republishing:
                 self.assertEqual(case['draftGatewayRequestId'], request)
@@ -778,6 +828,9 @@ class IndependentGuardTests(unittest.TestCase):
             if paid_grant:
                 rows = bad['gatewayAcknowledgements']
                 rows[1], rows[2] = rows[2], rows[1]
+            elif paid_revoke:
+                rows = bad['gatewayAcknowledgements']
+                rows[3], rows[4] = rows[4], rows[3]
             elif learner_access:
                 bad['gatewayAcknowledgements'][0]['upstreamStatus'] = 418
             elif learning:

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { currentWriterAuthoringActorId, currentWriterAuthoringOperation, currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, currentWriterLifecycleSelection, currentWriterOperationIdentity, currentWriterPaidGrantActorId, markWriterOperationUncertain, matchesWriterIdentityEnrollment } from "./context";
+import { currentWriterAuthoringActorId, currentWriterAuthoringOperation, currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, currentWriterLifecycleSelection, currentWriterOperationIdentity, currentWriterPaidAccessActorId, markWriterOperationUncertain, matchesWriterIdentityEnrollment } from "./context";
 import { authorizeCaptureSquarePayment } from "@/lib/payments/square/square-payment-charge";
 import { createHash, createHmac } from "node:crypto";
 import { createWriterAdmissionRunner } from "./runtime";
@@ -426,7 +426,7 @@ test("learner-access v2 admits only read routes and binds the exact lesson", () 
   }
 });
 
-test("paid-grant v2 permits only the fresh mutation and selected owner page, and clears owner scope", async () => {
+test("paid grant and revoke v2 permit only their fresh mutation and owner page, and clear owner scope", async () => {
   const now = 1_794_009_600;
   const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
   const actorId = "8e2280dc-0389-4248-b21c-f87427f9e85c", idempotencyKey = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
@@ -454,23 +454,39 @@ test("paid-grant v2 permits only the fresh mutation and selected owner page, and
   }
   assert.equal(readInteractiveRequest(postProof, issue(selector.slice(32) + selector.slice(0, 32)), env, now), null);
 
-  const f = fixture();
-  f.state.epoch = "12";
-  const run = createWriterAdmissionRunner({
-    getConfiguration: () => resolveWriterAdmissionConfiguration(environment()),
-    createClient: () => f.client,
-    getInteractiveWriter: async () => verified,
-  });
-  let releaseObservation!: () => void;
-  let afterAdmission: Promise<string | undefined> | undefined;
-  await run("new-work", async () => {
-    assert.equal(currentWriterPaidGrantActorId(), actorId);
-    assert.equal(currentWriterAuthoringActorId(), undefined);
-    afterAdmission = new Promise<void>(resolve => { releaseObservation = resolve; }).then(currentWriterPaidGrantActorId);
-  });
-  releaseObservation();
-  assert.equal(await afterAdmission, undefined);
-  assert.equal(JSON.stringify(f.calls).includes(actorId), false);
+  const revokeCookie = issue(selector, "paid-revoke"), revokePage = `${page}/revoke`, revokeApi = `${api}/revoke`;
+  const revokeGetProof = attest("GET", revokePage, revokeCookie), revokePostProof = attest("POST", revokeApi, revokeCookie);
+  assert.ok(revokeGetProof && revokePostProof);
+  const verifiedRevoke = readInteractiveRequest(revokePostProof, revokeCookie, env, now);
+  assert.deepEqual(readInteractiveRequest(revokeGetProof, revokeCookie, env, now)?.paidRevoke, { actorId, idempotencyKey });
+  assert.deepEqual(verifiedRevoke?.paidRevoke, { actorId, idempotencyKey });
+  assert.equal(verifiedRevoke?.paidGrant, undefined);
+  assert.equal(attest("POST", revokeApi, cookie), null);
+  assert.equal(attest("POST", api, revokeCookie), null);
+  assert.equal(attest("GET", revokeApi, revokeCookie), null);
+  assert.equal(attest("GET", page, revokeCookie), null);
+  assert.equal(attest("POST", revokeApi, issue(undefined, "paid-revoke")), null);
+  assert.equal(readInteractiveRequest(revokePostProof, cookie, env, now), null);
+
+  for (const selected of [verified, verifiedRevoke]) {
+    const f = fixture();
+    f.state.epoch = "12";
+    const run = createWriterAdmissionRunner({
+      getConfiguration: () => resolveWriterAdmissionConfiguration(environment()),
+      createClient: () => f.client,
+      getInteractiveWriter: async () => selected,
+    });
+    let releaseObservation!: () => void;
+    let afterAdmission: Promise<string | undefined> | undefined;
+    await run("new-work", async () => {
+      assert.equal(currentWriterPaidAccessActorId(), actorId);
+      assert.equal(currentWriterAuthoringActorId(), undefined);
+      afterAdmission = new Promise<void>(resolve => { releaseObservation = resolve; }).then(currentWriterPaidAccessActorId);
+    });
+    releaseObservation();
+    assert.equal(await afterAdmission, undefined);
+    assert.equal(JSON.stringify(f.calls).includes(actorId), false);
+  }
 });
 
 test("first-time identity permits bind the selected provider, normalized email and operation context", async () => {

@@ -36,6 +36,7 @@ const authoringArchiveOperation='archive-paid-course';
 const learningEnrollmentOperation='enroll-free-course';
 const paidGrantOperation='grant-paid-access';
 const learnerAccessOperation='observe-paid-access';
+const paidRevokeOperation='revoke-paid-grant';
 const learnerAccessOutcomes={
   allowed:{status:200,codes:[null]},archived:{status:410,codes:['course_archived']},
   draft:{status:404,codes:['not_found']},restricted:{status:403,codes:['access_required','access_revoked']},
@@ -196,18 +197,36 @@ function reviewedLearnerAccessAction(action){
   return {selection:{...learnerAccess,actorKind:'customer'},learnerAccess};
 }
 
+function reviewedPaidRevokeAction(action){
+  const selected=action.paidRevokeAction;
+  demand(canonicalUuid(action.actorId)&&exact(selected,['operation','courseId','userId','grantId','revision','idempotencyKey','reasonSha256','remainingAccess'])&&
+    selected.operation===paidRevokeOperation&&[selected.courseId,selected.userId,selected.grantId,selected.idempotencyKey].every(canonicalUuid)&&
+    Number.isInteger(selected.revision)&&selected.revision>=1&&selected.revision<=2_147_483_647&&
+    nonzeroSha256(selected.reasonSha256)&&selected.reasonSha256!==emptyBodySha256&&typeof selected.remainingAccess==='boolean');
+  const {courseId,userId,grantId,idempotencyKey}=selected,write=action.requests[3],base='/course/v1/admin/entitlements';
+  const key='owner-paid-revoke%3A'+idempotencyKey;
+  demand(reviewedWriteRequest(write,'POST',base+'/revocations')&&isDeepStrictEqual(action.requests,[
+    {method:'GET',target:authoringCourseTarget+'/'+courseId,bodySha256:emptyBodySha256,uses:3},
+    {method:'GET',target:base+'/commands?idempotencyKey='+key+'&limit=2',bodySha256:emptyBodySha256,uses:2},
+    {method:'GET',target:base+'/grants?grantId='+grantId+'&userId='+userId+'&courseId='+courseId+'&limit=2',bodySha256:emptyBodySha256,uses:2},
+    write,
+  ]));
+  const paidRevoke={actorId:action.actorId,...selected};
+  return {selection:{...paidRevoke,actorKind:'admin'},paidRevoke};
+}
+
 function reviewedInteractivePlan(plan,initial){
   const action=plan.scopedAction,binding=initial.interactiveController;
   const identity=action?.stage==='identity',authoring=action?.stage==='authoring',learning=action?.stage==='learning';
   const paidGrant=action?.stage==='paid-grant',learnerAccess=action?.stage==='learner-access';
-  const gatewayScoped=authoring||learning||paidGrant||learnerAccess;
+  const paidRevoke=action?.stage==='paid-revoke',gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke;
   const enrollment=identity&&Object.hasOwn(action,'identityEnrollment');
   demand(plan.environment==='staging'&&plan.sourceCommit===initial.sourceCommit&&plan.operatorSourceCommit===initial.sourceCommit&&
     plan.maximumSeconds===300&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
     (BigInt(plan.initialEpoch)+2n).toString().length<=18&&sha256(plan.planSha256)&&
     (identity||gatewayScoped||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',
       enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':learning?'learningAction':
-        paidGrant?'paidGrantAction':learnerAccess?'learnerAccessAction':'frontendAction'])&&
+        paidGrant?'paidGrantAction':learnerAccess?'learnerAccessAction':paidRevoke?'paidRevokeAction':'frontendAction'])&&
     Array.isArray(action.requests)&&(gatewayScoped||action.requests.length===0)&&
     Number.isInteger(action.windowSeconds)&&action.windowSeconds>=30&&action.windowSeconds<=300&&
     exact(binding,['challenge','bindingSha256','browserProgramSha256'])&&sha256(binding.challenge)&&
@@ -216,6 +235,7 @@ function reviewedInteractivePlan(plan,initial){
   if(learning)return reviewedLearningAction(action);
   if(paidGrant)return reviewedPaidGrantAction(action);
   if(learnerAccess)return reviewedLearnerAccessAction(action);
+  if(paidRevoke)return reviewedPaidRevokeAction(action);
   if(enrollment){
     const selected=action.identityEnrollment;
     demand(action.actorId===null&&exact(selected,['provider','emailSha256','nonce'])&&
@@ -294,6 +314,8 @@ function requireInteractiveGatewayObservation(receipt,epoch,{operation,outcome,q
     [[0,200],[1,403],[2,201],[3,200],[1,200]],
   ]:operation===paidGrantOperation?[
     [[0,200],[1,200],[0,200],[2,201],[1,200],[3,200],[0,200]],
+  ]:operation===paidRevokeOperation?[
+    [0,1,0,2,3,1,2,0].map(index=>[index,200]),
   ]:operation===learnerAccessOperation?[
     [0,1,0,2,3,4,5,6],[1,0,0,2,3,4,5,6],
   ].map(order=>order.map(index=>[index,learnerAccessOutcomes[outcome].status])):
@@ -346,6 +368,19 @@ function learnerAccessJoinedEvidence(evidence,selected,observed){
       row.requestId===observed.gatewayAcknowledgements[index+2].requestId)&&
     isDeepStrictEqual(response.body,body)&&isDeepStrictEqual(witness,{...body,actorId,grantId,revision,effectiveAccess,readOnly:true}));
   return {actorId,operation,courseId,lessonId,grantId,revision,outcome,effectiveAccess,browserResponseSha256:p2NativeHash(response),
+    courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256:observed.gatewayEvidenceSha256};
+}
+
+function paidRevokeJoinedEvidence(evidence,selected,observed){
+  demand(exact(evidence,['browserResponse','courseWitness']));
+  const {browserResponse:response,courseWitness:witness}=evidence;
+  const {actorId,operation,courseId,userId,grantId,revision:courseRevision,remainingAccess}=selected;
+  const commandId=response?.body?.commandId,transitionId=witness?.transitionId;
+  const gatewayPostRequestId=observed.gatewayAcknowledgements[4].requestId,body={courseId,userId,grantId,commandId,courseRevision};
+  demand(canonicalUuid(commandId)&&(remainingAccess?transitionId===null:canonicalUuid(transitionId))&&
+    isDeepStrictEqual(response,{method:'POST',pathname:'/api/admin/courses/'+courseId+'/manual-grants/revoke',status:200,requestId:gatewayPostRequestId,body})&&
+    isDeepStrictEqual(witness,{...body,remainingAccess,transitionId,readOnly:true}));
+  return {actorId,operation,...body,remainingAccess,transitionId,gatewayPostRequestId,browserResponseSha256:p2NativeHash(response),
     courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256:observed.gatewayEvidenceSha256};
 }
 
@@ -530,14 +565,15 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           const controllerChallenge=binding.challenge,epoch=(BigInt(snapshot.initialEpoch)+1n).toString();
           const stage=snapshot.scopedAction.stage,identity=stage==='identity',authoring=stage==='authoring',learning=stage==='learning';
           const stageLabel=stage.toUpperCase().replaceAll('-','_');
-          const paidGrant=stage==='paid-grant',learnerAccess=stage==='learner-access',gatewayScoped=authoring||learning||paidGrant||learnerAccess;
+          const paidGrant=stage==='paid-grant',learnerAccess=stage==='learner-access',paidRevoke=stage==='paid-revoke';
+          const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke;
           const {selection,enrollment,authoring:authoringPermit,learning:learningPermit,paidGrant:paidGrantPermit,
-            learnerAccess:learnerAccessPermit}=selectedInteractive;
+            learnerAccess:learnerAccessPermit,paidRevoke:paidRevokePermit}=selectedInteractive;
           const paired=authoringPairedOperation(selection.operation);
           const context=selection.actorKind==='admin'?'owner':'learner';
           const permitInput={stage,epoch,windowSeconds:snapshot.scopedAction.windowSeconds,
             ...(authoring?{authoring:authoringPermit}:learning?{learning:learningPermit}:paidGrant?{paidGrant:paidGrantPermit}:
-              learnerAccess?{learnerAccess:learnerAccessPermit}:
+              learnerAccess?{learnerAccess:learnerAccessPermit}:paidRevoke?{paidRevoke:paidRevokePermit}:
               enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
           let phase='new',expiresAt,installed=false,gatewayObservation;
           const call=async(operation,disposition,extraKeys,data={},timeout=120_000)=>{
@@ -603,6 +639,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               const expected=learning?learningJoinedEvidence(evidence,selection,gatewayObservation):
                 paidGrant?paidGrantJoinedEvidence(evidence,selection,gatewayObservation):
                 learnerAccess?learnerAccessJoinedEvidence(evidence,selection,gatewayObservation):
+                paidRevoke?paidRevokeJoinedEvidence(evidence,selection,gatewayObservation):
                 paired?authoringChangeJoinedEvidence(evidence,selection,gatewayObservation,authoringPermit.winnerBodySha256):
                 selection.operation===authoringQuizOperation?authoringQuizJoinedEvidence(evidence,selection,gatewayObservation):
                 selection.operation===authoringArchiveOperation?authoringArchiveJoinedEvidence(evidence,selection,gatewayObservation):

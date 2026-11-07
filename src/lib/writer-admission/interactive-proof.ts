@@ -12,7 +12,7 @@ export const INTERACTIVE_COOKIE = "__Host-lash-p2q-window";
 export const INTERACTIVE_HEADER = "x-lash-internal-interactive-admission";
 export const INTERACTIVE_GATEWAY_PROOF_HEADER = "x-lash-certification-interactive";
 
-const stages = ["identity", "authoring", "media", "learning", "learner-access", "paid-grant", "lifecycle"] as const;
+const stages = ["identity", "authoring", "media", "learning", "learner-access", "paid-grant", "paid-revoke", "lifecycle"] as const;
 type Stage = (typeof stages)[number];
 const adminIdentitySelector = createHash("sha256").update(JSON.stringify(["identity", "admin"])).digest("hex");
 const customerIdentityPrefix = "7032712d637573746f6d65722d763100";
@@ -30,12 +30,13 @@ type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; id
   authoringOperation?: WriterAuthoringOperation; learnerAccess?: LearnerAccessSelection };
 export type LearningEnrollmentSelection = Readonly<{ actorId: string; idempotencyKey: string }>;
 export type PaidGrantSelection = Readonly<{ actorId: string; idempotencyKey: string }>;
+export type PaidRevokeSelection = Readonly<{ actorId: string; idempotencyKey: string }>;
 export type LearnerAccessSelection = Readonly<{ actorId: string; lessonId: string }>;
 type BrowserPermit = BrowserScope & { epoch: string; nonce: string; lifecycleSelectionSha256?: string; identityCustomerId?: string;
-  authoringActorId?: string; learningEnrollment?: LearningEnrollmentSelection; paidGrant?: PaidGrantSelection };
+  authoringActorId?: string; learningEnrollment?: LearningEnrollmentSelection; paidGrant?: PaidGrantSelection; paidRevoke?: PaidRevokeSelection };
 type Binding = { key: string; deploymentHost: string; source: string; target: string };
 const gatewayOrigin = "https://api-staging.lashher.com";
-const gatewayStages = new Set<Stage>(["authoring", "media", "learning", "learner-access", "paid-grant"]);
+const gatewayStages = new Set<Stage>(["authoring", "media", "learning", "learner-access", "paid-grant", "paid-revoke"]);
 const uuid = "[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}";
 const at = (pattern: string) => new RegExp(`^(?:${pattern})$`, "u");
 const canonicalUuid = at(uuid);
@@ -90,6 +91,10 @@ const paidGrant = {
   GET: at(`/admin/courses/${uuid}/manual-grants`),
   POST: at(`/api/admin/courses/${uuid}/manual-grants`),
 };
+const paidRevoke = {
+  GET: at(`/admin/courses/${uuid}/manual-grants/revoke`),
+  POST: at(`/api/admin/courses/${uuid}/manual-grants/revoke`),
+};
 const lifecycle = {
   GET: at(`/account|/admin/customer-accounts|/api/account(?:/exports/${uuid})?`),
   POST: at(`/api/account/(?:preferences|commands)|/api/admin/customer-accounts/${uuid}/commands`),
@@ -126,6 +131,7 @@ function permits({ stage, identityActorKind, identityEnrollment, authoringOperat
     case "learner-access": return method === "GET" && learnerAccess !== undefined &&
       (learnerAccessReads.test(path) || learnerAccessLessonRead.exec(path)?.[1] === learnerAccess.lessonId);
     case "paid-grant": return matches(paidGrant, method, path);
+    case "paid-revoke": return matches(paidRevoke, method, path);
     case "lifecycle": return matches(lifecycle, method, path) || (method === "GET" && path === "/api/customer-auth/session");
   }
 }
@@ -174,7 +180,7 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
   const fields = cookie.split(".");
   const [version, epoch, stage, started, expires, nonce, selection] = fields;
   const hasSelection = stage === "lifecycle" || stage === "identity" || stage === "authoring" || stage === "learning" ||
-    stage === "learner-access" || stage === "paid-grant";
+    stage === "learner-access" || stage === "paid-grant" || stage === "paid-revoke";
   if ((hasSelection ? version !== "v2" || fields.length !== 8 || !signedDigest.test(selection ?? "")
     : version !== "v1" || fields.length !== 7) ||
     !epochPattern.test(epoch ?? "") || !stages.includes(stage as Stage) ||
@@ -187,12 +193,13 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
     const lessonId = decodeCompactUuid(selection.slice(32));
     return actorId && lessonId ? { ...permit, learnerAccess: { actorId, lessonId } } : null;
   }
-  if (stage === "learning" || stage === "paid-grant") {
+  if (stage === "learning" || stage === "paid-grant" || stage === "paid-revoke") {
     const actorId = decodeCompactUuid(selection.slice(0, 32));
     const idempotencyKey = decodeCompactUuid(selection.slice(32));
     if (!actorId || !idempotencyKey) return null;
     const selected = { actorId, idempotencyKey };
-    return stage === "learning" ? { ...permit, learningEnrollment: selected } : { ...permit, paidGrant: selected };
+    if (stage === "learning") return { ...permit, learningEnrollment: selected };
+    return stage === "paid-grant" ? { ...permit, paidGrant: selected } : { ...permit, paidRevoke: selected };
   }
   if (stage === "identity") {
     if (selection === adminIdentitySelector) return { ...permit, identityActorKind: "admin" };
@@ -270,7 +277,7 @@ export function readInteractiveRequest(proof: string, cookie: string, env: Recor
   now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string;
     lifecycleSelectionSha256?: string; identityCustomerId?: string; identityEnrollment?: WriterIdentityEnrollment;
     authoringActorId?: string; authoringOperation?: WriterAuthoringOperation; learningEnrollment?: LearningEnrollmentSelection;
-    paidGrant?: PaidGrantSelection; learnerAccess?: LearnerAccessSelection } | null {
+    paidGrant?: PaidGrantSelection; paidRevoke?: PaidRevokeSelection; learnerAccess?: LearnerAccessSelection } | null {
   const authority = binding(env);
   const browser = authority && verifiedInteractiveRequest(authority, proof, cookie, now);
   if (!authority || !browser) return null;
@@ -283,6 +290,7 @@ export function readInteractiveRequest(proof: string, cookie: string, env: Recor
     ...(browser.authoringActorId ? { authoringActorId: browser.authoringActorId, authoringOperation: browser.authoringOperation } : {}),
     ...(browser.learningEnrollment ? { learningEnrollment: browser.learningEnrollment } : {}),
     ...(browser.paidGrant ? { paidGrant: browser.paidGrant } : {}),
+    ...(browser.paidRevoke ? { paidRevoke: browser.paidRevoke } : {}),
     ...(browser.learnerAccess ? { learnerAccess: browser.learnerAccess } : {}) };
 }
 

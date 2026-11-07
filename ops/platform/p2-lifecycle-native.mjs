@@ -185,6 +185,22 @@ const reviewedPaidLearnerAccessDependencies = {
   "src/lib/api-integration/course-client.ts": "cbba3d76032de509046d82b3b381a0619f7e8a40cde1c9172caca7bec329dced",
   "src/app/(site)/academy/courses/[courseId]/page.tsx": "e8459a0b396095d2e427b9c207d15992fe142e40e626e76b7c34f8dc06db1f64"
 };
+const reviewedPaidRevokeSource = {
+  ...reviewedPaidRepublishSource,
+  "src/lib/writer-admission/context.ts": "59f283de99fa0c9ddc668d5fae02e2517d0fea0d0e046857e3f671a0c31f6e22",
+  "src/lib/writer-admission/runtime.ts": "d91460975458bce0feee971f4482f8c83a60a3606b87798f8254a81cdf87047b"
+};
+const reviewedPaidRevokeDependencies = {
+  ...reviewedPaidLearnerAccessDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "4e51371d3fb8394ca318fb219de822f606cc076d17d575adc2ef7ae25844fec1",
+  "src/lib/admin/auth-service.ts": "eb9eb154795a2550b4cc8c545d1aeb16834a6eb3ba16c04540c5e02cbfb1255a",
+  "src/lib/course-support/manual-revoke-handler.ts": "84079c89209ca24dab6268dd7c1cb967eb721d4fccbe31b682769b3340f8bfd5",
+  "src/components/admin/course-authoring/manual-grant-form.tsx": "2ad4895345b2c7b1f4932ccddfea0eff5cfa976f8a9a921034fac526e1c9a635",
+  "src/components/admin/course-authoring/manual-access-workspace.tsx": "e9696e18dcf269d80c686c18b9b75f6333c595388d726c3c59a0b4da04178dd1",
+  "src/app/admin/(protected)/courses/[courseId]/manual-grants/page.tsx": "a87b75185b6edf400728db9b326f16b6e1a022417506aeaf4946596a2df36f48",
+  "src/app/admin/(protected)/courses/[courseId]/manual-grants/revoke/page.tsx": "a20086124972d021fb020f5ea0aa13f4e77a9a86502f25501067565922400818",
+  "src/app/api/admin/courses/[courseId]/manual-grants/revoke/route.ts": "0e890cca7ac3b12f3dcfb21134b4ce529dd97c939d031571aeec460ec10f969c"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -214,7 +230,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedQuizAuthoringSource, [reviewedQuizAuthoringDependencies, reviewedFreeEnrollmentDependencies]],
     [reviewedPaidGrantSource, [reviewedPaidGrantDependencies]],
     [reviewedPaidArchiveSource, [reviewedPaidArchiveDependencies]],
-    [reviewedPaidRepublishSource, [reviewedPaidRepublishDependencies, reviewedPaidLearnerAccessDependencies]]]
+    [reviewedPaidRepublishSource, [reviewedPaidRepublishDependencies, reviewedPaidLearnerAccessDependencies]],
+    [reviewedPaidRevokeSource, [reviewedPaidRevokeDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

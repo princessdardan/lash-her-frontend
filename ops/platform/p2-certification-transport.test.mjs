@@ -82,7 +82,8 @@ action=plan['scopedAction'];stage=action['stage'];epoch=str(int(plan['initialEpo
 enrollment=action.get('identityEnrollment')
 authoring=stage=='authoring';learning=stage=='learning';paid_grant=stage=='paid-grant';gateway_observation=None
 learner_access=stage=='learner-access';access_action=action.get('learnerAccessAction',{})
-gateway_scoped=authoring or learning or paid_grant or learner_access
+paid_revoke=stage=='paid-revoke';revoke_action=action.get('paidRevokeAction',{})
+gateway_scoped=authoring or learning or paid_grant or learner_access or paid_revoke
 access_outcome=access_action.get('outcome')
 access_status={'allowed':200,'archived':410,'draft':404,'restricted':403}.get(access_outcome)
 learning_action=action.get('learningAction',{});paid_grant_action=action.get('paidGrantAction',{})
@@ -130,9 +131,9 @@ for raw in sys.stdin:
     learner=fixture_id(2) if behavior=='wrong-learner' else action['actorId']
     key=fixture_id(2) if behavior=='wrong-idempotency-key' else learning_action['idempotencyKey']
     selector=learner.replace('-','')+key.replace('-','')
-   elif paid_grant:
+   elif paid_grant or paid_revoke:
     owner=fixture_id(2) if behavior=='wrong-owner' else action['actorId']
-    key=fixture_id(2) if behavior=='wrong-idempotency-key' else paid_grant_action['idempotencyKey']
+    key=fixture_id(2) if behavior=='wrong-idempotency-key' else (revoke_action if paid_revoke else paid_grant_action)['idempotencyKey']
     selector=owner.replace('-','')+key.replace('-','')
    elif learner_access:
     learner=fixture_id(3) if behavior=='wrong-learner' else action['actorId']
@@ -192,6 +193,8 @@ for raw in sys.stdin:
      if behavior=='wrong-learning-tail':selected[4]=(6,18,1,200)
     if paid_grant:
      selected=[(11,13,0,200),(12,14,1,200),(16,17,0,200),(4,15,2,201),(21,23,1,200),(6,18,3,200),(22,24,0,200)]
+    if paid_revoke:
+     selected=[(11,13,0,200),(12,14,1,200),(16,17,0,200),(21,23,2,200),(4,15,3,200),(6,18,1,200),(22,24,2,200),(25,26,0,200)]
     if learner_access:
      selected=[(11,13,0,access_status),(12,14,1,access_status)]+[
       (30+index,40+index,route,access_status) for index,route in enumerate((0,2,3,4,5,6))]
@@ -199,6 +202,7 @@ for raw in sys.stdin:
     acks=[{'requestId':fixture_id(req),'proofRequestId':fixture_id(proof),'requestIndex':index,'upstreamStatus':http}
      for req,proof,index,http in selected]
     if behavior=='wrong-observe-ack':acks[3 if paid_grant else -1 if changes_existing else 1]['upstreamStatus']=201 if publication or archive else 200
+    if paid_revoke and behavior=='wrong-observe-ack':acks[4]['upstreamStatus']=201
     if learner_access and behavior=='wrong-access-status':acks[-1]['upstreamStatus']=403 if access_status==200 else 200
     if behavior=='wrong-observe-order':
      first=2 if changes_existing else 1
@@ -230,6 +234,19 @@ for raw in sys.stdin:
      'effectiveAccess':allowed,'browserResponseSha256':digest(response),'courseWitnessSha256':digest(witness),
      'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256']}
     if behavior=='wrong-join':joined['effectiveAccess']=not allowed
+   elif paid_revoke:
+    assert gateway_observation and set(evidence)=={'browserResponse','courseWitness'}
+    response=evidence['browserResponse'];body=response['body'];witness=evidence['courseWitness']
+    course_id=revoke_action['courseId'];remaining=revoke_action['remainingAccess'];transition_id=None if remaining else fixture_id(9)
+    assert response=={'method':'POST','pathname':'/api/admin/courses/'+course_id+'/manual-grants/revoke','status':200,
+     'requestId':post_request,'body':body}
+    assert body=={**{key:revoke_action[key] for key in ('courseId','userId','grantId')},'commandId':fixture_id(20),
+     'courseRevision':revoke_action['revision']}
+    assert witness=={**body,'remainingAccess':remaining,'transitionId':transition_id,'readOnly':True}
+    joined={'actorId':action['actorId'],'operation':'revoke-paid-grant',**body,'remainingAccess':remaining,'transitionId':transition_id,
+     'gatewayPostRequestId':post_request,'browserResponseSha256':digest(response),'courseWitnessSha256':digest(witness),
+     'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256']}
+    if behavior=='wrong-join':joined['transitionId']=fixture_id(9) if remaining else None
    elif paid_grant:
     assert gateway_observation and set(evidence)=={'browserResponse','courseWitness'}
     response=evidence['browserResponse'];body=response['body'];witness=evidence['courseWitness']
@@ -391,7 +408,7 @@ const staleRequestId='12345678-1234-4123-8123-000000000006';
 const {certificationStage,actorKind,behavior,variant}=fixture;
 const identity=certificationStage==='identity',authoring=certificationStage==='authoring',learning=certificationStage==='learning';
 const paidGrant=certificationStage==='paid-grant',learnerAccess=certificationStage==='learner-access';
-const gatewayScoped=authoring||learning||paidGrant||learnerAccess;
+const paidRevoke=certificationStage==='paid-revoke',gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke;
 const provider=identity?variant:undefined,editing=authoring&&variant==='edit-and-stale-draft';
 const reorder=authoring&&['reorder-module','reorder-lesson'].includes(variant),changesExisting=editing||reorder;
 const createCurriculum=authoring&&['create-module','create-lesson'].includes(variant);
@@ -434,6 +451,9 @@ const quizDocument={version:1,mode:'graded',passingPercent:80,questions:[{
 const rawHash=body=>createHash('sha256').update(body).digest('hex'),emptyBodySha256=rawHash('');
 const paidGrantAction={operation:'grant-paid-access',courseId:commandId,userId:target,revision:grantRevision,
  idempotencyKey,reasonSha256:rawHash(grantReason)};
+const remainingAccess=variant==='remaining-access',revokeKey='owner-paid-revoke:'+idempotencyKey;
+const paidRevokeAction={operation:'revoke-paid-grant',courseId:commandId,userId:target,grantId:ids[1],revision:grantRevision,
+ idempotencyKey,reasonSha256:rawHash(grantReason),remainingAccess};
 const learnerAccessAction={operation:'observe-paid-access',courseId:commandId,lessonId,grantId:ids[1],revision:2_147_483_647,outcome:variant};
 const studentLesson=student+'/lessons/'+lessonId;
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'
@@ -452,7 +472,14 @@ const publicationRequest={method:'PATCH',target:courseTarget,
  bodySha256:rawHash(JSON.stringify({expectedRevision:authoringAction.revision+Number(republish),status:'published'})),uses:1};
 const draftRequest={method:'PATCH',target:courseTarget,
  bodySha256:rawHash(JSON.stringify({expectedRevision:authoringAction.revision,status:'draft'})),uses:1};
-const requests=learnerAccess?[
+const requests=paidRevoke?[
+  {method:'GET',target:courseTarget,bodySha256:emptyBodySha256,uses:3},
+  {method:'GET',target:'/course/v1/admin/entitlements/commands?idempotencyKey='+encodeURIComponent(revokeKey)+'&limit=2',bodySha256:emptyBodySha256,uses:2},
+  {method:'GET',target:grantPath+'?grantId='+ids[1]+'&userId='+target+'&courseId='+commandId+'&limit=2',bodySha256:emptyBodySha256,uses:2},
+  {method:'POST',target:'/course/v1/admin/entitlements/revocations',bodySha256:rawHash(JSON.stringify({
+    scope:'grantId',grantId:ids[1],reason:'[paid-course revision '+grantRevision+'] '+grantReason,idempotencyKey:revokeKey,
+  })),uses:1},
+]:learnerAccess?[
  studentCourse,student+'/progress?courseId='+commandId,studentLesson,studentLesson+'/playback',
  student+'/progress?lessonId='+lessonId,studentLesson+'/quiz',studentLesson+'/quiz/attempts',
 ].map((target,index)=>({method:'GET',target,bodySha256:emptyBodySha256,uses:index===0?2:1})):archive?[
@@ -493,7 +520,7 @@ const requests=learnerAccess?[
 ]:[];
 const scopedAction={stage:certificationStage,actorId:identity?null:actor,requests,windowSeconds:120,
   ...(identityEnrollment?{identityEnrollment}:identity?{identityActor}:authoring?{authoringAction}:learning?{learningAction}:
-    paidGrant?{paidGrantAction}:learnerAccess?{learnerAccessAction}:{frontendAction:selection})};
+    paidGrant?{paidGrantAction}:learnerAccess?{learnerAccessAction}:paidRevoke?{paidRevokeAction}:{frontendAction:selection})};
 const plan={mode:'interactive-browser',version:2,environment:'staging',qualificationTargetProfile:profile,certificationActionId:actionId,
   initialEpoch:'7',maximumSeconds:300,sourceCommit,operatorSourceCommit:sourceCommit,planSha256,
   nativePlan:{version:2,qualificationTargetProfile:profile,planSha256:'b'.repeat(64)},
@@ -641,6 +668,18 @@ for(const changed of [
    [...requests.slice(0,4),{...requests[4],target:student+'/progress?courseId='+commandId},...requests.slice(5)],
   ].map(requests=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests}}})),
  ]:[]),
+ ...(paidRevoke?[
+  ...[{idempotencyKey:'invalid'},{idempotencyKey:target},{userId:commandId},{courseId:target},{grantId:target},{revision:0},{revision:2_147_483_648},
+   {reasonSha256:emptyBodySha256},{reasonSha256:'0'.repeat(64)},{reason:grantReason},{remainingAccess:1},{operation:'grant-paid-access'}]
+   .map(selected=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,paidRevokeAction:{...paidRevokeAction,...selected}}}})),
+  ...[
+   [...requests].reverse(),[{...requests[0],uses:2},...requests.slice(1)],
+   [requests[0],{...requests[1],target:requests[1].target.replace('%3A',':')},...requests.slice(2)],
+   [...requests.slice(0,2),{...requests[2],uses:1},requests[3]],
+   [...requests.slice(0,2),{...requests[2],target:grantPath+'?userId='+target+'&courseId='+commandId+'&grantId='+ids[1]+'&limit=2'},requests[3]],
+   [...requests.slice(0,3),{...requests[3],bodySha256:emptyBodySha256}],
+  ].map(requests=>({...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests}}})),
+ ]:[]),
 ]) assert.throws(()=>start(changed),{message:'P2_CERTIFICATION_TRANSPORT_REFUSED'});
 assert.equal(starts,0);
 writeFileSync(join(directory,'p2-certification-current-database.json'),JSON.stringify(receipt),{mode:0o600});
@@ -658,6 +697,7 @@ const publicationStep={method:'PATCH',pathname:coursePath,status:200,requestId:s
 const draftStep={method:'PATCH',pathname:coursePath,status:200,requestId};
 const publicationBody={courseId:commandId,slug,revision:authoringAction.revision+Number(published)+Number(republish),status:published?'published':'draft',issueCodes};
 const [transitionId,grantId,enrollmentId]=ids;
+const revokeTransitionId=remainingAccess?null:transitionId;
 const history=republish?{userId:target,grantId,historyPreserved:true,effectiveAccess:published&&expectedAccess}:{};
 const quizBody={courseId:commandId,slug,lessonId,quizId,revision:authoringAction.revision+1,quizRevision:quizRevision+1,documentSha256};
 const freeBody={courseId:commandId,grantId,enrollmentId,source:'free',status:'active',idempotentReplay:false};
@@ -674,6 +714,9 @@ const evidence=learnerAccess?{browserResponse:{
  :archive?{browserResponse:{
  method:'PATCH',pathname:coursePath,status:200,requestId,body:archiveBody,warningObserved:true,cancelObservedWithoutMutation:true,
 },courseWitness:{...archiveBody,userId:target,grantId,historyPreserved:true,readOnly:true}}
+ :paidRevoke?{browserResponse:{
+ method:'POST',pathname:coursePath+'/manual-grants/revoke',status:200,requestId,body:grantBody,
+},courseWitness:{...grantBody,remainingAccess,transitionId:revokeTransitionId,readOnly:true}}
  :paidGrant?{browserResponse:{
  method:'POST',pathname:coursePath+'/manual-grants',status:200,requestId,body:grantBody,
 },courseWitness:{...grantBody,enrollmentId,transitionId,readOnly:true}}
@@ -740,7 +783,8 @@ const result=start()(async(_verify,_signal,host)=>{
   else {
    const observed=await stage.observe();
    assert.equal(observed.status,status('GATEWAY_OBSERVED'));
-   const mutation=learnerAccess?observed.gatewayAcknowledgements[2]:observed.gatewayAcknowledgements.find(row=>row.requestIndex===(learning||paidGrant?2:1));
+   const mutation=learnerAccess?observed.gatewayAcknowledgements[2]:
+    observed.gatewayAcknowledgements.find(row=>row.requestIndex===(paidRevoke?3:learning||paidGrant?2:1));
    if(learnerAccess) assert.deepEqual(observed.gatewayAcknowledgements.slice(2).map(row=>row.requestId),accessReads.map(row=>row.requestId));
    else assert.equal(mutation.requestId,requestId);
    if(changesExisting) assert.equal(observed.gatewayAcknowledgements.at(-1).requestId,staleRequestId);
@@ -793,6 +837,18 @@ const result=start()(async(_verify,_signal,host)=>{
   await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,pathname:coursePath}}));
   await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,status:202}}));
   await assert.rejects(stage.retain({...evidence,gatewayEvidence:{}}));
+ }
+ if(paidRevoke){
+  for(const changed of [{courseId:target},{userId:commandId},{commandId:'invalid'},{grantId:actor},{courseRevision:grantRevision+1},{idempotencyKey}]){
+   const body={...grantBody,...changed};
+   await assert.rejects(stage.retain({browserResponse:{...evidence.browserResponse,body},courseWitness:{...evidence.courseWitness,...changed}}));
+  }
+  for(const changed of [{transitionId:remainingAccess?transitionId:null},{transitionId:'invalid'},{remainingAccess:!remainingAccess},
+   {readOnly:false},{commandId:target}]){
+   await assert.rejects(stage.retain({...evidence,courseWitness:{...evidence.courseWitness,...changed}}));
+  }
+  await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,pathname:coursePath+'/manual-grants'}}));
+  await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,status:202}}));
  }
  if(learning){
   for(const changed of [{source:'paid'},{status:'revoked'},{idempotentReplay:true},{courseId:target},{grantId:'invalid'}]){
@@ -884,6 +940,11 @@ const result=start()(async(_verify,_signal,host)=>{
   [retained.actorId,retained.courseId,retained.userId,retained.commandId,retained.grantId,retained.courseRevision,
    retained.enrollmentId,retained.transitionId,retained.gatewayPostRequestId],
   [actor,commandId,target,grantCommandId,grantId,grantRevision,enrollmentId,transitionId,requestId],
+ );
+ if(paidRevoke) assert.deepEqual(
+  [retained.actorId,retained.operation,retained.courseId,retained.userId,retained.grantId,retained.commandId,retained.courseRevision,
+   retained.remainingAccess,retained.transitionId,retained.gatewayPostRequestId],
+  [actor,'revoke-paid-grant',commandId,target,grantId,grantCommandId,grantRevision,remainingAccess,revokeTransitionId,requestId],
  );
  if(learning) assert.deepEqual(
   [retained.actorId,retained.courseId,retained.slug,retained.grantId,retained.enrollmentId,retained.transitionId,retained.gatewayPostRequestId],
@@ -1042,6 +1103,14 @@ for(const [certificationStage,actorKind,behavior,variant] of [
  ['paid-grant','admin','wrong-observe-order'],
  ['paid-grant','admin','wrong-observe-ack'],
  ['paid-grant','admin','wrong-join'],
+ ['paid-revoke','admin','joined','remaining-access'],
+ ['paid-revoke','admin','joined','last-grant'],
+ ['paid-revoke','admin','wrong-owner','remaining-access'],
+ ['paid-revoke','admin','wrong-idempotency-key','last-grant'],
+ ['paid-revoke','admin','wrong-observe-order','last-grant'],
+ ['paid-revoke','admin','wrong-observe-ack','remaining-access'],
+ ['paid-revoke','admin','wrong-join','remaining-access'],
+ ['paid-revoke','admin','wrong-join','last-grant'],
  ['learner-access','customer','joined','allowed'],
  ['learner-access','customer','joined','archived'],
  ['learner-access','customer','joined','draft'],

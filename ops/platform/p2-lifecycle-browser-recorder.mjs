@@ -24,6 +24,7 @@ const interactivePages = {
   learning: { learner: "/academy" },
   "learner-access": { learner: "/academy/courses" },
   "paid-grant": { owner: "/admin/courses" },
+  "paid-revoke": { owner: "/admin/courses" },
   lifecycle: { owner: "/admin/customer-accounts", learner: "/account" },
 };
 
@@ -119,6 +120,7 @@ export function p2InteractiveBrowserEntryPath(input, context) {
   if (input.stage === "learning") return p2LearningEnrollmentPaths(input.learning).coursePath;
   if (input.stage === "learner-access") return p2PaidLearnerAccessPaths(input.learnerAccess).pagePath;
   if (input.stage === "paid-grant") return p2PaidGrantPaths(input.paidGrant).pagePath;
+  if (input.stage === "paid-revoke") return p2PaidRevokePaths(input.paidRevoke).pagePath;
   return isP2InteractiveAuthoringDetail(input) ? path + "/" + input.authoring.courseId : path;
 }
 
@@ -139,6 +141,11 @@ export function p2PaidGrantPaths({ courseId }) {
   return { pagePath, pathname: "/api" + pagePath };
 }
 
+export function p2PaidRevokePaths(target) {
+  const { pagePath, pathname } = p2PaidGrantPaths(target);
+  return { pagePath: pagePath + "/revoke", pathname: pathname + "/revoke" };
+}
+
 function actorAttemptSelector({ actorId, idempotencyKey }) {
   demand(uuid(actorId) && uuid(idempotencyKey));
   return actorId.replaceAll("-", "") + idempotencyKey.replaceAll("-", "");
@@ -150,7 +157,7 @@ export function validateP2InteractiveBrowserInput(input) {
     "deploymentUrl", "browserOrigin", "stage", "epoch", "windowSeconds",
     ...(["lifecycle", "authoring", "learning"].includes(input?.stage) ? [input.stage]
       : input?.stage === "identity" ? [enrollment ? "identityEnrollment" : "identity"] : input?.stage === "paid-grant" ? ["paidGrant"]
-        : input?.stage === "learner-access" ? ["learnerAccess"] : [])])
+        : input?.stage === "learner-access" ? ["learnerAccess"] : input?.stage === "paid-revoke" ? ["paidRevoke"] : [])])
     && input.version === 2 && input.environment === "staging" && matches(input.actionId, /^[a-z0-9][a-z0-9-]{0,63}$/u)
     && sha(input.challenge) && sha(input.bindingSha256) && matches(input.sourceCommit, /^[a-f0-9]{40}$/u)
     && matches(input.deploymentId, /^dpl_[A-Za-z0-9]+$/u) && matches(input.deploymentUrl, /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/u)
@@ -171,12 +178,13 @@ export function validateP2InteractiveBrowserInput(input) {
       && Number.isSafeInteger(selected.revision) && selected.revision >= 1 && selected.revision <= 2_147_483_647
       && ["allowed", "archived", "draft", "restricted"].includes(selected.outcome));
   }
-  if (input.stage === "paid-grant") {
-    const selected = input.paidGrant;
-    demand(closed(selected, ["actorId", "operation", "courseId", "userId", "revision", "idempotencyKey", "reasonSha256"])
-      && selected.operation === "grant-paid-access" && uuid(selected.actorId) && uuid(selected.courseId) && uuid(selected.userId)
+  if (["paid-grant", "paid-revoke"].includes(input.stage)) {
+    const revoke = input.stage === "paid-revoke", selected = input.paidGrant ?? input.paidRevoke;
+    demand(closed(selected, ["actorId", "operation", "courseId", "userId", "revision", "idempotencyKey", "reasonSha256",
+      ...(revoke ? ["grantId", "remainingAccess"] : [])])
+      && selected.operation === (revoke ? "revoke-paid-grant" : "grant-paid-access") && uuid(selected.actorId) && uuid(selected.courseId) && uuid(selected.userId)
       && uuid(selected.idempotencyKey) && Number.isSafeInteger(selected.revision) && selected.revision >= 1 && selected.revision <= 2_147_483_647
-      && sha(selected.reasonSha256));
+      && sha(selected.reasonSha256) && (!revoke || uuid(selected.grantId) && typeof selected.remainingAccess === "boolean"));
   }
   if (input.stage === "authoring") {
     const target = input.authoring, pair = isP2InteractiveAuthoringPair(input), create = authoringCreateCurriculum(input);
@@ -216,14 +224,14 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
   demand(epoch === permit.epoch && stage === permit.stage && /^\d{10}$/u.test(issued ?? "") && /^\d{10}$/u.test(expires ?? "")
     && Number(issued) <= now && Number(expires) === permit.expires && permit.expires - Number(issued) <= input.windowSeconds
     && /^[a-f0-9]{32}$/u.test(nonce ?? "")
-    && (["lifecycle", "identity", "authoring", "learning", "learner-access", "paid-grant"].includes(stage) ? version === "v2" && parts.length === 8 && sha(parts[6]) && sha(parts[7])
+    && (["lifecycle", "identity", "authoring", "learning", "learner-access", "paid-grant", "paid-revoke"].includes(stage) ? version === "v2" && parts.length === 8 && sha(parts[6]) && sha(parts[7])
       : version === "v1" && parts.length === 7 && sha(parts[6])));
   if (stage === "identity") {
     const enrollment = input.identityEnrollment;
     demand(enrollment ? nonce === enrollment.nonce && parts[6] === enrollmentSelector(enrollment) : parts[6] === identitySelector(input.identity));
   }
   if (stage === "authoring") demand(parts[6] === authoringSelector(input));
-  if (stage === "learning" || stage === "paid-grant") demand(parts[6] === actorAttemptSelector(input.learning ?? input.paidGrant));
+  if (["learning", "paid-grant", "paid-revoke"].includes(stage)) demand(parts[6] === actorAttemptSelector(input.learning ?? input.paidGrant ?? input.paidRevoke));
   if (stage === "learner-access") demand(parts[6] === (input.learnerAccess.actorId + input.learnerAccess.lessonId).replaceAll("-", ""));
   return permit;
 }
@@ -436,6 +444,15 @@ export function validateP2PaidGrantReceipt(receipt, target) {
   return receipt;
 }
 
+export function validateP2PaidRevokeReceipt(receipt, target) {
+  demand(closed(receipt, ["method", "pathname", "status", "requestId", "body"]) && receipt.method === "POST"
+    && receipt.pathname === p2PaidRevokePaths(target).pathname && receipt.status === 200 && uuid(receipt.requestId)
+    && closed(receipt.body, ["courseId", "userId", "grantId", "commandId", "courseRevision"])
+    && receipt.body.courseId === target.courseId && receipt.body.userId === target.userId && receipt.body.grantId === target.grantId
+    && receipt.body.courseRevision === target.revision && uuid(receipt.body.commandId));
+  return receipt;
+}
+
 const matchesAuthoringStep = (step, method, pathname, status = 200) => closed(step, ["method", "pathname", "status", "requestId"])
   && step.method === method && step.pathname === pathname && step.status === status && uuid(step.requestId);
 
@@ -608,11 +625,24 @@ function readPaidGrantResult(body, target) {
   return { courseId: target.courseId, userId: target.userId, commandId: command.commandId, grantId: grant.grantId, courseRevision: body.courseRevision };
 }
 
+function readPaidRevokeResult(body, target) {
+  demand(closed(body, ["state", "idempotencyKey", "command", "grant", "courseRevision", "mutationRetried", "communityDeliveryVerified"])
+    && body.state === "confirmed" && body.idempotencyKey === target.idempotencyKey && body.courseRevision === target.revision
+    && body.mutationRetried === false && body.communityDeliveryVerified === false
+    && closed(body.command, ["commandId"]) && uuid(body.command.commandId)
+    && closed(body.grant, ["grantId", "userId", "courseId", "status", "orderId", "externalPaymentId", "provider"])
+    && body.grant.grantId === target.grantId && body.grant.userId === target.userId && body.grant.courseId === target.courseId
+    && body.grant.status === "revoked" && body.grant.orderId === null && body.grant.externalPaymentId === null && body.grant.provider === null);
+  return { courseId: body.grant.courseId, userId: body.grant.userId, grantId: body.grant.grantId,
+    commandId: body.command.commandId, courseRevision: body.courseRevision };
+}
+
 async function readMutationResponse(response, request, input, pathname, editRole, submittedIds) {
   const authoring = input.stage === "authoring", learning = input.stage === "learning", paidGrant = input.stage === "paid-grant";
-  const maximum = authoring ? maxAuthoringBody : paidGrant ? maxPaidGrantBody : maxLifecycleBody;
+  const paidRevoke = input.stage === "paid-revoke";
+  const maximum = authoring ? maxAuthoringBody : paidGrant || paidRevoke ? maxPaidGrantBody : maxLifecycleBody;
   const reorder = authoringReorder(input), archive = authoringArchive(input), method = archive || editRole && !reorder ? "PATCH" : "POST";
-  const status = editRole === "stale" ? 409 : authoring || learning || paidGrant || preferences(input.lifecycle) ? 200 : 202;
+  const status = editRole === "stale" ? 409 : authoring || learning || paidGrant || paidRevoke || preferences(input.lifecycle) ? 200 : 202;
   const receipt = await readBrowserResponseHead(response, request, input.browserOrigin, pathname, method, status);
   if (reorder) receipt.keyboardActivated = true;
   // The normal editor handles the status and request ID without consuming its
@@ -622,6 +652,7 @@ async function readMutationResponse(response, request, input, pathname, editRole
   const body = await readBrowserResponseJson(response, request, maximum);
   if (learning) return validateP2LearningEnrollmentReceipt({ ...receipt, academyPath: p2LearningEnrollmentPaths(input.learning).academyPath, body }, input.learning);
   if (paidGrant) return validateP2PaidGrantReceipt({ ...receipt, body: readPaidGrantResult(body, input.paidGrant) }, input.paidGrant);
+  if (paidRevoke) return validateP2PaidRevokeReceipt({ ...receipt, body: readPaidRevokeResult(body, input.paidRevoke) }, input.paidRevoke);
   if (!authoring) return validateP2LifecycleMutationReceipt({ ...receipt, body }, input.lifecycle);
   if (reorder) return { ...receipt, body: reorderResult(body, input.authoring, submittedIds) };
   if (authoringCreateCurriculum(input)) {
@@ -639,7 +670,8 @@ function watchMutation(context, page, input, edit) {
   const authoring = input.stage === "authoring", reorder = authoringReorder(input), create = authoringCreateCurriculum(input), target = input.lifecycle;
   const archive = authoringArchive(input);
   const learning = input.stage === "learning" ? p2LearningEnrollmentPaths(input.learning) : undefined;
-  const paidGrant = input.stage === "paid-grant" ? p2PaidGrantPaths(input.paidGrant) : undefined;
+  const paidRevoke = input.stage === "paid-revoke";
+  const paidGrant = input.stage === "paid-grant" ? p2PaidGrantPaths(input.paidGrant) : paidRevoke ? p2PaidRevokePaths(input.paidRevoke) : undefined;
   const academyUrl = learning && input.browserOrigin + learning.academyPath;
   const pathname = reorder ? p2AuthoringReorderPath(input.authoring) : create ? p2AuthoringCurriculumPath(input.authoring)
     : edit || archive ? authoringPath + "/" + input.authoring.courseId : authoring ? authoringPath : (learning ?? paidGrant ?? target).pathname;
@@ -652,7 +684,7 @@ function watchMutation(context, page, input, edit) {
   const onRequest = request => {
     const url = URL.parse(request.url());
     if (!url) return;
-    if (archive && url.origin === input.browserOrigin && !["GET", "HEAD", "OPTIONS"].includes(request.method())
+    if ((archive || paidRevoke) && url.origin === input.browserOrigin && !["GET", "HEAD", "OPTIONS"].includes(request.method())
       && (url.pathname !== pathname || request.method() !== method)) return fail();
     if (url.origin !== input.browserOrigin || url.pathname !== pathname || request.method() !== method) return;
     try {
@@ -689,11 +721,16 @@ function watchMutation(context, page, input, edit) {
       } else if (learning) demand(frame.url() === input.browserOrigin + learning.coursePath && request.resourceType() === "fetch"
         && closed(posted, ["idempotencyKey"]) && posted.idempotencyKey === input.learning.idempotencyKey);
       else if (paidGrant) {
-        const selectedGrant = input.paidGrant;
+        const selectedGrant = input.paidGrant ?? input.paidRevoke;
         demand(frame.url() === input.browserOrigin + paidGrant.pagePath && request.resourceType() === "fetch"
-          && closed(posted, ["userId", "reason", "expectedCourseRevision", "idempotencyKey"]) && posted.userId === selectedGrant.userId
+          && closed(posted, ["userId", "reason", "expectedCourseRevision", "idempotencyKey", ...(paidRevoke ? ["grantId"] : [])])
+          && posted.userId === selectedGrant.userId && (!paidRevoke || posted.grantId === selectedGrant.grantId)
           && posted.expectedCourseRevision === selectedGrant.revision && posted.idempotencyKey === selectedGrant.idempotencyKey
           && approvedGrantReason(posted.reason, selectedGrant.reasonSha256));
+        if (paidRevoke) {
+          activation = frame.evaluate(() => window.__lashP2qConsumePaidRevoke?.() === true).then(demand);
+          activation.catch(fail);
+        }
       }
       else if (preferences(target)) demand(closed(posted, ["learningUpdates"]) && posted.learningUpdates === (target.operation === "preferences-on"));
       else demand(closed(posted, ["action", "idempotencyKey"]) && posted.action === target.operation && uuid(posted.idempotencyKey));
@@ -747,7 +784,8 @@ function watchMutation(context, page, input, edit) {
         if (paidGrant) {
           const timeout = expires * 1000 - Date.now();
           if (failed || timeout <= 0) throw refusal();
-          const feedback = "Manual grant and audit confirmed. Community access has not been verified yet.";
+          const feedback = paidRevoke ? "Manual revocation and audit confirmed. Community access has not been verified yet."
+            : "Manual grant and audit confirmed. Community access has not been verified yet.";
           await page.getByRole("status").and(page.getByText(feedback, { exact: true }))
             .waitFor({ state: "visible", timeout }).catch(() => { throw refusal(); });
           if (page.url() !== input.browserOrigin + paidGrant.pagePath) throw refusal();
@@ -794,6 +832,39 @@ export function watchP2LearningEnrollment(context, page, input) {
 export function watchP2PaidGrant(context, page, input) {
   demand(input.stage === "paid-grant");
   return watchMutation(context, page, input);
+}
+
+export function watchP2PaidRevoke(context, page, input) {
+  demand(input.stage === "paid-revoke");
+  return watchMutation(context, page, input);
+}
+
+export async function installP2PaidRevokeObserver(page, input) {
+  demand(input.stage === "paid-revoke");
+  const path = p2InteractiveBrowserEntryPath(input, "owner");
+  await page.addInitScript(({ origin, path }) => {
+    const atRevoke = () => location.origin === origin && location.pathname === path && !location.search && !location.hash;
+    if (window.top !== window || !atRevoke()) return;
+    const text = element => element?.textContent?.replace(/\s+/gu, " ").trim();
+    let confirmed = false;
+    window.addEventListener("submit", event => {
+      confirmed = false;
+      const form = event.target, button = event.submitter;
+      if (!event.isTrusted || !atRevoke() || !(form instanceof HTMLFormElement) || !(button instanceof HTMLButtonElement)
+        || button.form !== form || button.disabled || text(button) !== "Revoke manual access") return;
+      const region = form.closest('section, [role="region"]');
+      const labelledBy = region?.getAttribute("aria-labelledby"), name = region?.getAttribute("aria-label") ?? text(labelledBy && document.getElementById(labelledBy));
+      if (name !== "Revoke manual course access") return;
+      const confirmation = [...form.elements].filter(element => element instanceof HTMLInputElement && element.type === "checkbox"
+        && [...(element.labels ?? [])].some(label => text(label) === "Confirm grant revocation"));
+      confirmed = confirmation.length === 1 && confirmation[0].checked && !confirmation[0].disabled;
+    }, { capture: true, passive: true });
+    Object.defineProperty(window, "__lashP2qConsumePaidRevoke", { value: () => {
+      const accepted = atRevoke() && confirmed;
+      confirmed = false;
+      return accepted;
+    } });
+  }, { origin: input.browserOrigin, path });
 }
 
 const paidLearnerDenials = {
@@ -1436,8 +1507,8 @@ async function runInteractiveBrowser(first) {
         demand(!selectedInput.identityEnrollment && ["challenge", "sourceCommit", "deploymentId", "deploymentUrl", "browserOrigin"].every(key => selectedInput[key] === input[key])
           && actions.size < 24 && !actions.has(selectedInput.actionId) && selectedInput.bindingSha256 !== input.bindingSha256
           && BigInt(selectedInput.epoch) > BigInt(input.epoch));
-        if (["authoring", "paid-grant"].includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "admin"
-          && verifiedIdentity.actorId === (selectedInput.authoring ?? selectedInput.paidGrant).actorId
+        if (["authoring", "paid-grant", "paid-revoke"].includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "admin"
+          && verifiedIdentity.actorId === (selectedInput.authoring ?? selectedInput.paidGrant ?? selectedInput.paidRevoke).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         if (["learning", "learner-access"].includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "customer"
           && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess).actorId
@@ -1460,7 +1531,7 @@ async function runInteractiveBrowser(first) {
         demand(selection === undefined && (binding.stage !== "lifecycle" || received.context === input.lifecycle.context)
           && (binding.stage !== "identity" || received.context === p2InteractiveIdentityContext(input))
           && (!["learning", "learner-access"].includes(binding.stage) || contexts.has("learner"))
-          && (binding.stage !== "paid-grant" || contexts.has("owner")));
+          && (!["paid-grant", "paid-revoke"].includes(binding.stage) || contexts.has("owner")));
         selection = { context: received.context, expires: received.expires };
         const permit = await readP2InteractiveBrowserPermit(process.stdin, input, selection);
         try {
@@ -1501,6 +1572,10 @@ async function runInteractiveBrowser(first) {
           if (authoringArchive(input)) await installP2PaidArchiveObserver(page, input);
           if (binding.stage === "learning") mutationWatch = watchP2LearningEnrollment(context, page, input);
           if (binding.stage === "paid-grant") mutationWatch = watchP2PaidGrant(context, page, input);
+          if (binding.stage === "paid-revoke") {
+            mutationWatch = watchP2PaidRevoke(context, page, input);
+            await installP2PaidRevokeObserver(page, input);
+          }
           const url = input.browserOrigin + path;
           const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
           httpStatus = response?.status();
@@ -1521,6 +1596,20 @@ async function runInteractiveBrowser(first) {
             demand(await form.getByRole("textbox", { name: "Customer UUID", exact: true }).isEditable()
               && await form.getByRole("textbox", { name: "Grant reason", exact: true }).isEditable());
           }
+          if (binding.stage === "paid-revoke") {
+            const timeout = selection.expires * 1000 - Date.now();
+            demand(timeout > 0 && httpStatus === 200 && response.url() === url && page.url() === url);
+            const region = page.getByRole("region", { name: "Revoke manual course access", exact: true }), form = region.locator("form");
+            const revision = `Selected paid course revision: ${input.paidRevoke.revision}.`;
+            const submit = form.getByRole("button", { name: "Revoke manual access", exact: true });
+            const confirmation = form.getByRole("checkbox", { name: "Confirm grant revocation", exact: true });
+            await Promise.all([submit.waitFor({ state: "visible", timeout }), confirmation.waitFor({ state: "visible", timeout }),
+              region.getByText(revision, { exact: true }).waitFor({ state: "visible", timeout })]);
+            for (const name of ["Customer UUID", "Grant UUID", "Revocation reason"]) {
+              demand(await form.getByRole("textbox", { name, exact: true }).isEditable({ timeout }));
+            }
+            demand(await confirmation.isEnabled({ timeout }) && !await confirmation.isChecked({ timeout }));
+          }
           if (isP2InteractiveAuthoringDetail(input)) {
             const timeout = selection.expires * 1000 - Date.now();
             demand(timeout > 0 && httpStatus === 200 && response.url() === url && page.url() === url);
@@ -1538,7 +1627,7 @@ async function runInteractiveBrowser(first) {
         await send("interactive-page-opened", { ...selection, path, httpStatus });
       } else {
         const edit = isP2InteractiveAuthoringPair(input), stage = edit ? "authoring-edit" : binding.stage;
-        const captureMutation = ["lifecycle", "authoring", "learning", "learner-access", "paid-grant"].includes(binding.stage)
+        const captureMutation = ["lifecycle", "authoring", "learning", "learner-access", "paid-grant", "paid-revoke"].includes(binding.stage)
           && command.type === "interactive-capture-" + stage;
         demand(command.type === "interactive-clear" || captureMutation && opened && mutationWatch
           || captureIdentity && binding.stage === "identity" && opened && page?.context() === context);
