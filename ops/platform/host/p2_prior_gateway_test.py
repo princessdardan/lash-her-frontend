@@ -201,6 +201,84 @@ class PriorGatewayTests(unittest.TestCase):
         finally:
             fixture.tearDown()
 
+    def test_profiled_certification_and_known_ack_stop_roots_require_exact_v2_identity(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        ref = copy.deepcopy(dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE))
+        action = 'profiled-stop-fixture'
+        initial = {'candidateSha256': 'b' * 64, 'recoveryActionId': action}
+        selected = {'releaseId': 'selected-fixture', 'sources': {'frontend': {'commit': 'a' * 40}}}
+        identity = {'version': 2, 'qualificationTargetProfile': ref, 'actionId': action,
+                    'sourceCommit': 'a' * 40, 'candidateSha256': 'b' * 64}
+        before = {**identity, 'protocol': gate.PROTOCOL, 'sourceModuleSha256': 'c' * 64,
+                  'status': 'PRIOR_GATEWAY_PRESTOP_OBSERVED', 'observation': {}}
+        stopped = {**identity, 'protocol': gate.PROTOCOL, 'sourceModuleSha256': 'c' * 64,
+                   'status': 'PRIOR_GATEWAY_ORDERED_STOP_OBSERVED', 'beforeSha256': 'd' * 64,
+                   'stoppedProcess': {}}
+        prefixes = ('p2-profiled-current-certification-', 'p2-profiled-known-ack-',
+                    'p2-profiled-known-ack-restoration-')
+        for prefix in prefixes:
+            with self.subTest(prefix=prefix):
+                root = self.root / (prefix + action)
+                root.mkdir(mode=0o700)
+                gate._require_profiled_stop_identity(root, initial, selected, before, stopped, ref)
+                for label in gate._GUARDED_RECEIPT_LABELS:
+                    nested = root / label
+                    nested.mkdir(mode=0o700)
+                    gate._require_profiled_stop_identity(nested, initial, selected, before, stopped, ref)
+        self.assertFalse(any(name in gate._action_directories(action) for name in
+            (prefix + action for prefix in prefixes)))
+        self.assertTrue(all(prefix + action in gate._action_directories(action, ref) for prefix in prefixes))
+        root = self.root / ('p2-profiled-known-ack-' + action)
+        for field, value in (('sourceCommit', 'c' * 40), ('candidateSha256', 'd' * 64),
+                             ('actionId', 'different-action'), ('qualificationTargetProfile', {**ref, 'id': 'other'})):
+            with self.subTest(field=field):
+                changed = {**before, field: value}
+                with self.assertRaisesRegex(ValueError, 'PROFILED_STOP_IDENTITY|PROFILE'):
+                    gate._require_profiled_stop_identity(root, initial, selected, changed, stopped, ref)
+        with self.assertRaisesRegex(ValueError, 'PROFILED_STOP_IDENTITY'):
+            gate._require_profiled_stop_identity(root, initial, selected, {**before, 'extra': True}, stopped, ref)
+
+    def test_profiled_stop_producer_retains_source_identity_in_both_raw_receipts(self):
+        from migrate_test import MigrationDriverTests
+        fixture = MigrationDriverTests(); fixture.setUp()
+        try:
+            ref = fixture.profiled()
+            selected = copy.deepcopy(fixture.release)
+            selected['releaseId'] = self.selected['releaseId']
+            selected['approval']['releaseId'] = selected['releaseId']
+            selected['artifacts']['gateway'] = {'image': self.image}
+            target = {'version': 2, 'qualificationTargetProfile': ref, 'environment': 'staging',
+                      'releaseId': selected['releaseId'], 'hostMachineId': self.initial['hostMachineId'],
+                      'previousReleaseRef': 'owned/prior', 'maintenanceRef': 'owned/maintenance'}
+            gateway = json.loads((self.configuration/'gateway.json').read_bytes())
+            gateway['projectId'] = selected['workload']['projectId']
+            for name, value in [('runtime.json', target), ('gateway.json', gateway)]:
+                (self.configuration/name).write_text(json.dumps(value))
+                self.initial['configurationSha256'][name] = migrate.file_hash((self.configuration/name).read_bytes())
+            action = 'certification-stop-fixture'
+            self.initial['recoveryActionId'] = action
+            output = self.root / ('p2-profiled-current-certification-' + action)
+            output.mkdir(mode=0o700)
+            before = gate.capture_before_stop(self.initial, selected, output, self.verify, self.command,
+                                              lambda _: None, expected_profile=ref)
+            self.child.terminate(); self.child.wait(5); self.running = False
+            stopped = gate.retain_ordered_stop(before, output, self.verify, self.command, expected_profile=ref)
+            self.assertEqual(before['sourceCommit'], selected['sources']['frontend']['commit'])
+            self.assertEqual(stopped['sourceCommit'], before['sourceCommit'])
+            self.initial['priorGatewayReference'] = {'kind': 'stopped-current-candidate',
+                'stopReceiptDirectory': str(output),
+                'stopReceiptSha256': migrate.file_hash((output/gate.STOPPED).read_bytes())}
+            actual = gate.observe_stopped_prior_gateway(self.initial, selected, self.verify, self.command,
+                                                        expected_profile=ref)
+            self.assertEqual(actual['admission']['uncertain'], {'newWork': 0, 'recovery': 0})
+            raw = json.loads((output/gate.BEFORE_STOP).read_bytes()); raw['sourceCommit'] = 'c' * 40
+            (output/gate.BEFORE_STOP).write_text(json.dumps(raw))
+            with self.assertRaisesRegex(ValueError, 'PROFILED_STOP_IDENTITY|STOP_PROOF'):
+                gate.observe_stopped_prior_gateway(self.initial, selected, self.verify, self.command,
+                                                   expected_profile=ref)
+        finally:
+            fixture.tearDown()
+
     def stop_proof(self):
         before=gate.capture_before_stop(self.initial,self.selected,self.output,self.verify,self.command,lambda _:None)
         self.child.terminate();self.child.wait(5);self.running=False

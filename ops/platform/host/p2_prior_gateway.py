@@ -32,7 +32,42 @@ def _profile_kwargs(expected):
 
 def _action_directories(action, expected=None):
     legacy = ('p2-'+action, 'p2-recovery-'+action, 'p2-certification-'+action)
-    return legacy if expected is None else (*legacy, 'p2-profiled-current-'+action, 'p2-profiled-current-recovery-'+action)
+    return legacy if expected is None else (*legacy, 'p2-profiled-current-'+action,
+        'p2-profiled-current-recovery-'+action, 'p2-profiled-current-certification-'+action,
+        'p2-profiled-known-ack-'+action, 'p2-profiled-known-ack-restoration-'+action)
+
+
+_GUARDED_RECEIPT_LABELS = ('prior-gateway-after-quiescence', 'prior-gateway-broker-fallback',
+                           'prior-gateway-api-suspension')
+_PROFILED_RECEIPT_PREFIXES = ('p2-profiled-current-certification-', 'p2-profiled-known-ack-',
+                              'p2-profiled-known-ack-restoration-')
+
+
+def _profiled_receipt_root(directory, action, expected):
+    if expected is None:
+        return None
+    root = directory.parent if directory.name in _GUARDED_RECEIPT_LABELS else directory
+    return root if root.name in tuple(prefix + action for prefix in _PROFILED_RECEIPT_PREFIXES) else None
+
+
+def _require_profiled_stop_identity(directory, initial, selected, before, stopped, expected):
+    action = initial.get('recoveryActionId', initial.get('certificationActionId', selected['releaseId']))
+    if _profiled_receipt_root(directory, action, expected) is None:
+        return
+    source = selected.get('sources', {}).get('frontend', {}).get('commit')
+    migrate.require_profile(expected, before, stopped)
+    before_fields = {'protocol','sourceModuleSha256','status','candidateSha256','actionId','observation',
+                     'version','qualificationTargetProfile','sourceCommit'}
+    stopped_fields = {'protocol','sourceModuleSha256','status','beforeSha256','candidateSha256','actionId',
+                      'stoppedProcess','version','qualificationTargetProfile','sourceCommit'}
+    require(set(before) == before_fields and set(stopped) == stopped_fields and
+        type(before.get('version')) is int and before['version'] == 2 and
+        type(stopped.get('version')) is int and stopped['version'] == 2 and
+        isinstance(source, str) and re.fullmatch(r'[a-f0-9]{40}', source) and source != '0' * 40 and
+        before.get('actionId') == stopped.get('actionId') == action and
+        before.get('sourceCommit') == stopped.get('sourceCommit') == source and
+        before.get('candidateSha256') == stopped.get('candidateSha256') == initial['candidateSha256'],
+        'PRIOR_GATEWAY_PROFILED_STOP_IDENTITY_REQUIRED')
 
 
 
@@ -304,6 +339,7 @@ def observe_stopped_prior_gateway(initial, selected, verify, command=None, *, ex
     stopped = json.loads(raw)
     before_raw = migrate.read_input(directory, BEFORE_STOP)
     before = json.loads(before_raw)
+    _require_profiled_stop_identity(directory, initial, selected, before, stopped, expected_profile)
     require(stopped.get('protocol') == before.get('protocol') == PROTOCOL and
         stopped.get('sourceModuleSha256') == before.get('sourceModuleSha256') == _source_sha256() and
         stopped.get('beforeSha256') == migrate.file_hash(before_raw) and
@@ -312,7 +348,7 @@ def observe_stopped_prior_gateway(initial, selected, verify, command=None, *, ex
         (ref['kind'] == 'retained-runtime' or before['candidateSha256'] == initial['candidateSha256']) and
         stopped.get('actionId') == before.get('actionId') and isinstance(before.get('actionId'), str) and
         (directory.name in _action_directories(before['actionId'], expected_profile) or
-         directory.name in ('prior-gateway-after-quiescence','prior-gateway-broker-fallback','prior-gateway-api-suspension') and directory.parent.name in _action_directories(before['actionId'], expected_profile)) and
+         directory.name in _GUARDED_RECEIPT_LABELS and directory.parent.name in _action_directories(before['actionId'], expected_profile)) and
         stopped.get('status') == 'PRIOR_GATEWAY_ORDERED_STOP_OBSERVED' and before.get('status') == 'PRIOR_GATEWAY_PRESTOP_OBSERVED' and
         _closed_observed(before.get('observation') or {}), 'PRIOR_GATEWAY_STOP_PROOF_REQUIRED')
     observation = before['observation']
@@ -512,7 +548,10 @@ def capture_before_stop(initial, selected, output, verify, command=None, assert_
     record = {'protocol':PROTOCOL,'sourceModuleSha256':_source_sha256(),'status':'PRIOR_GATEWAY_PRESTOP_UNKNOWN','candidateSha256':initial['candidateSha256'],
         'actionId':initial.get('recoveryActionId',initial.get('certificationActionId',selected['releaseId'])),'observation':None}
     if expected_profile is not None:
-        record.update(version=2, qualificationTargetProfile=migrate.profile_context(expected_profile))
+        source = selected.get('sources', {}).get('frontend', {}).get('commit')
+        require(isinstance(source,str) and re.fullmatch(r'[a-f0-9]{40}',source) and source != '0'*40,
+            'PRIOR_GATEWAY_PROFILED_SOURCE_REQUIRED')
+        record.update(version=2, qualificationTargetProfile=migrate.profile_context(expected_profile), sourceCommit=source)
     try:
         ids = _inventory(command,verify)
         if not ids or not _process(ids[0],command,verify)['running']:
@@ -544,7 +583,12 @@ def retain_ordered_stop(before, output, verify, command=None, *, expected_profil
     record = {'protocol':PROTOCOL,'sourceModuleSha256':_source_sha256(),'status':'PRIOR_GATEWAY_STOP_UNKNOWN','beforeSha256':migrate.file_hash(migrate.read_input(output,BEFORE_STOP)),
         'candidateSha256':before['candidateSha256'],'actionId':before['actionId'],'stoppedProcess':None}
     if expected_profile is not None:
-        record.update(version=2, qualificationTargetProfile=migrate.profile_context(expected_profile))
+        migrate.require_profile(expected_profile, before)
+        require(type(before.get('version')) is int and before['version'] == 2 and
+            isinstance(before.get('sourceCommit'),str) and re.fullmatch(r'[a-f0-9]{40}',before['sourceCommit']) and
+            before['sourceCommit'] != '0'*40, 'PRIOR_GATEWAY_PROFILED_SOURCE_REQUIRED')
+        record.update(version=2, qualificationTargetProfile=migrate.profile_context(expected_profile),
+            sourceCommit=before['sourceCommit'])
     if observed is not None:
         try:
             process = _process(observed['process']['containerId'],command,verify)
