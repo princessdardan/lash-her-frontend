@@ -172,6 +172,7 @@ class P2ProfiledCurrentBroker(Broker):
         self.runtime_released = threading.Event()
         self.armed_probe = self.arm_identity = self.session_closed_proof = None
         self.raw_pins = {}
+        self.api_job_sha256 = None
         self.outcome.update(version=2, qualificationTargetProfile=copy.deepcopy(PROFILE),
                             **{key: False for key in FALSE_FIELDS})
 
@@ -210,7 +211,7 @@ class P2ProfiledCurrentBroker(Broker):
             'sourceClosureSha256', 'hostMachineId', 'candidate', 'candidateSha256', 'bundle', 'configuration', 'results',
             'configurationSha256', 'confirmation', 'credentials', 'vercelToken', 'frontendJob', 'frontendBaseline',
             'targetSha256', 'owner', 'certification', 'expectedWriterAdmissionBinding', 'gatewayObservation',
-            'inventory', 'inventorySha256', 'reviewedPlanSha256'}
+            'inventory', 'inventorySha256', 'reviewedPlanSha256', 'apiJobSha256'}
         # The supervisor adds its fixed private process fields after decoding.
         required |= self.EXTRA_REQUIRED_INITIAL_FIELDS
         guard_keys = {'_guardLayout', '_guardObserverSource', '_guardObserverProgram', '_guardLockDescriptor'}
@@ -233,6 +234,10 @@ class P2ProfiledCurrentBroker(Broker):
             type(p['inventory'].get('expectedEpoch')) is str and re.fullmatch(r'[1-9][0-9]{0,17}', p['inventory']['expectedEpoch']) and
             all(type(p.get(key)) is str and re.fullmatch(r'[a-f0-9]{64}', p[key]) and p[key] != '0' * 64
                 for key in ('candidateSha256', 'targetSha256', 'reviewedPlanSha256')), 'P2_PROFILED_CURRENT_PLAN_BINDING_REQUIRED')
+        api_pins = p['apiJobSha256']
+        require(type(api_pins) is dict and set(api_pins) == {'course', 'community'} and
+                all(type(value) is str and re.fullmatch(r'[a-f0-9]{64}', value) and value != '0' * 64
+                    for value in api_pins.values()), 'P2_PROFILED_CURRENT_API_JOB_PINS_REQUIRED')
         require(self.shared_lock_fd is not None and self.safety_write is not None and self.guard_read is not None,
                 'P2_INDEPENDENT_SUPERVISOR_REQUIRED')
         require(os.geteuid() == 0 and migrate.source_commit(p['sourceCommit']), 'P2_SELECTED_ROOT_HOST_REQUIRED')
@@ -247,6 +252,8 @@ class P2ProfiledCurrentBroker(Broker):
                 str(path).startswith('/var/lib/lash-her/releases/staging/') and ',' not in str(path), 'P2_PRIVATE_HOST_PATH_REFUSED')
             migrate.private_directory(path)
         self.bundle, self.configuration, self.results = (Path(p[key]) for key in ('bundle', 'configuration', 'results'))
+        self.api_job_sha256 = copy.deepcopy(api_pins)
+        self.verify_api_job_inputs()
         self.selected, self.jobs, self.plan, _ = self.select_release(p)
         require(migrate.file_hash(migrate.read_input(self.bundle, 'release.candidate.json')) == p['candidateSha256'] and
             self.jobs['frontend']['job'] == p['frontendJob'] and json.loads(self.jobs['frontend']['schema']) == p['frontendBaseline'] and
@@ -276,7 +283,8 @@ class P2ProfiledCurrentBroker(Broker):
         self.directory.mkdir(mode=0o700)
         self.observer_program = private_observer_program(p, self.directory / 'private-source')
         self.outcome.update(self.record_base('P2_PROFILED_CURRENT_FAILED_REQUIRES_REVIEW'))
-        migrate.write_json(self.directory, 'p2-profiled-current-started.json', self.outcome)
+        migrate.write_json(self.directory, 'p2-profiled-current-started.json',
+                           {**self.outcome, 'apiJobSha256': copy.deepcopy(self.api_job_sha256)})
         self.check()
         self.prior_gateway = None
         self.prior_gateway_preflight = self.preflight_prior_gateway()
@@ -296,6 +304,8 @@ class P2ProfiledCurrentBroker(Broker):
 
     def check(self):
         super().check()
+        if self.api_job_sha256 is not None:
+            self.verify_api_job_inputs()
         if hasattr(self, 'configuration'):
             require(staging_state.configuration_hashes(self.configuration) == self.initial['configurationSha256'],
                     'P2_CONFIGURATION_CHANGED')
@@ -303,6 +313,10 @@ class P2ProfiledCurrentBroker(Broker):
             require(sha(migrate.read_input(self.directory, name)) == expected, 'P2_PROFILED_CURRENT_RETAINED_BYTES_CHANGED')
         if self.closing_at is not None and not self.committed.is_set():
             self.scope.verify_close()
+
+    def verify_api_job_inputs(self):
+        require(self.api_job_sha256 is not None and migrate.profiled_current_job_hashes(self.bundle) == self.api_job_sha256,
+                'P2_PROFILED_CURRENT_API_JOB_BYTES_CHANGED')
 
     def preflight_prior_gateway(self):
         import p2_prior_gateway

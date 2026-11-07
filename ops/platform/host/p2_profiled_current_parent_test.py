@@ -34,6 +34,34 @@ def packet(value):
     return base64.b64encode(parent.encoded(value) + b'\n').decode()
 
 
+class FixedEntryTests(unittest.TestCase):
+    def test_isolated_main_uses_canonical_class_objects_before_platform_refusal(self):
+        # Record the actual first failed demand, without overriding any guard.
+        # The production environment deliberately stops before host/Docker I/O.
+        program = r'''
+import pathlib, runpy, sys
+entry = pathlib.Path(sys.argv[1])
+sys.path.insert(0, str(entry.parent))
+import p2_release_supervisor as supervisor
+original = supervisor.require
+def recorded(condition, code):
+    if not condition:
+        print(code, file=sys.stderr)
+    return original(condition, code)
+supervisor.require = recorded
+runpy.run_path(str(entry), run_name='__main__')
+'''
+        entry = Path(parent.__file__).resolve()
+        initial = {'version': 2, 'qualificationTargetProfile': PROFILE, 'mode': parent.P2ProfiledCurrentBroker.MODE,
+            'environment': 'production', 'candidate': {'releaseId': 'owned-current'}}
+        actual = subprocess.run([sys.executable, '-I', '-c', program, str(entry)],
+            input=parent.encoded(initial) + b'\n', capture_output=True, timeout=5)
+        self.assertEqual(actual.returncode, 1)
+        self.assertEqual(actual.stdout, b'')
+        self.assertEqual(actual.stderr.splitlines(), [b'P2_LINUX_ROOT_GUARD_REQUIRED',
+            b'P2_PROFILED_CURRENT_FAILED_REQUIRES_REVIEW'])
+
+
 class FixedPhysicalObserverTests(unittest.TestCase):
     def test_fixed_close_and_fence_distinguish_backend_locks_epoch_and_unknown_work(self):
         # Only the Docker subprocess is projected. Exercise the real request,
@@ -263,6 +291,23 @@ class ParentProtocolTests(unittest.TestCase):
         os.set_blocking(self.safety_read, False)
         with self.assertRaises(BlockingIOError):
             os.read(self.safety_read, 8192)
+
+    def test_original_raw_api_job_pins_refuse_semantically_equal_byte_drift_before_prior_effect(self):
+        jobs = self.root / 'jobs'
+        jobs.mkdir()
+        original = {name: parent.encoded({'service': name, 'approvedPendingTags': []}) for name in ('course', 'community')}
+        for name, raw in original.items():
+            (jobs / (name + '.json')).write_bytes(raw)
+        self.broker.api_job_sha256 = {name: parent.sha(raw) for name, raw in original.items()}
+        self.broker.verify_api_job_inputs()
+        self.arm()
+        (jobs / 'community.json').write_bytes(original['community'] + b'\n')
+        with self.assertRaisesRegex(ValueError, 'API_JOB_BYTES_CHANGED'):
+            self.broker.command({'id': 2, 'operation': 'profiled-current-prepare-prior-gateway'})
+        self.assertNotIn('prior-mutation', self.events)
+        self.assertIsNone(self.broker.worker)
+        (jobs / 'community.json').write_bytes(original['community'])
+        self.broker.verify_api_job_inputs()
 
     def test_unknown_operations_early_prepare_and_early_terminal_are_not_authority(self):
         for operation in ('start-api', 'roles-prepared', 'prepare-prior-gateway', 'profiled-current-prepare-prior-gateway',
