@@ -3,7 +3,7 @@ import copy
 import json
 import subprocess
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import current_databases as checks
 import migrate
@@ -95,6 +95,38 @@ class CurrentDatabasesTests(unittest.TestCase):
         with patch.object(checks, "_run", side_effect=self.run_child):
             return checks.check_all(**values)
 
+    def certification_scope(self, ref):
+        from p2_certification_parent import P2CertificationScope
+        scope = object.__new__(P2CertificationScope)
+        scope.candidate_sha256 = "c" * 64
+        scope.verify = Mock()
+        scope.require_release = Mock()
+        scope.require_frontend = Mock()
+        raw = {name: (json.dumps(self.jobs[name]["job"], indent=2) + "\n").encode()
+               for name in ("course", "community")}
+        scope.certification_plan = {
+            "certificationActionId": "certification-current-api-fixture",
+            "apiJobSha256": {name: hashlib.sha256(value).hexdigest() for name, value in raw.items()},
+        }
+        scope.run = Mock(side_effect=lambda args, *, env, input=None, capture_output=True, timeout=120:
+                         self.run_child(args, env, input, timeout))
+        return scope, raw
+
+    def execute_certification(self, scope, raw, ref, **changes):
+        values = {
+            "selected": self.selected,
+            "jobs": self.jobs,
+            "output": self.output,
+            "credentials": {name: self.credentials[name] for name in ("course", "community")},
+            "checker": self.checker,
+            "checker_sha256": self.checker_hash,
+            "api_job_bytes": raw,
+            "expected_profile": ref,
+            "_certification_scope": scope,
+        }
+        values.update(changes)
+        return checks.check_certification_apis(**values)
+
     def test_three_real_entrypoint_commands_have_scoped_credentials_and_cannot_run_api_migrations(self):
         result = self.execute()
         self.assertEqual(result["status"], "CURRENT_DATABASES_READ_ONLY_VERIFIED")
@@ -163,6 +195,74 @@ class CurrentDatabasesTests(unittest.TestCase):
         (path / "community/database-receipt.json").write_text('{}')
         with self.assertRaisesRegex(ValueError, "PROFILED_CURRENT_DATABASE_RECEIPT_CHANGED"):
             checks.read_profiled_current_proof(proof, scope, self.selected, self.jobs, expected_profile=ref)
+
+    def test_certification_scope_runs_only_two_pinned_native_api_checks(self):
+        ref = self.profiled()
+        scope, raw = self.certification_scope(ref)
+        proof = self.execute_certification(scope, raw, ref)
+        path, result = checks.read_certification_api_proof(
+            proof, scope, self.selected, self.jobs, expected_profile=ref)
+        self.assertEqual(path, self.output)
+        self.assertEqual(result["status"], "P2_CERTIFICATION_API_DATABASES_READ_ONLY_VERIFIED")
+        self.assertEqual(set(result["databases"]), {"course", "community"})
+        self.assertFalse(result["migrationsExecuted"])
+        runs = [args for args, _, _ in self.calls if args[1] == "run"]
+        self.assertEqual(len(runs), 2)
+        self.assertTrue(all("/check/input/current.mjs" in args and "--profiled-current" in args for args in runs))
+        self.assertTrue(all("ops/platform/frontend-image.mjs" not in args for args in runs))
+        self.assertTrue(all("run-operator-migration" not in " ".join(args) for args in runs))
+        self.assertGreaterEqual(scope.require_frontend.call_count, 4)
+        for name, value in raw.items():
+            self.assertEqual((path / f"{name}-input/job.json").read_bytes(), value)
+
+    def test_certification_job_bytes_and_scope_refuse_before_process_or_output(self):
+        ref = self.profiled()
+        scope, raw = self.certification_scope(ref)
+        changed = dict(raw)
+        changed["course"] = raw["course"] + b" "
+        with self.assertRaisesRegex(ValueError, "API_JOB_BYTES_CHANGED"):
+            self.execute_certification(scope, changed, ref)
+        self.assertEqual(self.calls, [])
+        self.assertFalse(self.output.exists())
+        with self.assertRaisesRegex(ValueError, "API_SCOPE_REQUIRED"):
+            self.execute_certification(object(), raw, ref)
+        self.assertEqual(self.calls, [])
+        self.assertFalse(self.output.exists())
+
+    def test_certification_native_role_policy_is_mandatory(self):
+        ref = self.profiled()
+        scope, raw = self.certification_scope(ref)
+        original = self.run_child
+
+        def missing_role(args, environment, payload=None, timeout=120):
+            result = original(args, environment, payload, timeout)
+            if args[1] == "run":
+                value = json.loads(result.stdout)
+                value["checks"] = []
+                return subprocess.CompletedProcess(args, 0, json.dumps(value).encode(), b"")
+            return result
+
+        scope.run.side_effect = lambda args, *, env, input=None, capture_output=True, timeout=120: missing_role(
+            args, env, input, timeout)
+        with self.assertRaisesRegex(ValueError, "NATIVE_ROLE_POLICY"):
+            self.execute_certification(scope, raw, ref)
+        self.assertEqual(migrate.read_json(self.output, "certification-current-databases-outcome.json")["status"],
+                         "P2_CERTIFICATION_API_DATABASES_REQUIRES_REVIEW")
+
+    def test_certification_proof_is_immutable_and_cleanup_is_mandatory(self):
+        ref = self.profiled()
+        scope, raw = self.certification_scope(ref)
+        proof = self.execute_certification(scope, raw, ref)
+        (self.output / "community/database-receipt.json").write_text("{}")
+        with self.assertRaisesRegex(ValueError, "API_RECEIPT_CHANGED"):
+            checks.read_certification_api_proof(proof, scope, self.selected, self.jobs, expected_profile=ref)
+
+        self.tearDown(); self.setUp()
+        ref = self.profiled(); scope, raw = self.certification_scope(ref)
+        self.bad_cleanup = True
+        with self.assertRaisesRegex(ValueError, "CLEANUP_UNVERIFIED"):
+            self.execute_certification(scope, raw, ref)
+        self.assertEqual(sum(args[1] == "run" for args, _, _ in self.calls), 1)
 
     def test_mixed_and_unknown_profile_inputs_refuse_before_checker_or_child_access(self):
         ref = self.profiled()
