@@ -48,7 +48,7 @@ class PersistenceProbeTests(unittest.TestCase):
             target['qualificationTargetProfile'] = copy.deepcopy(ref)
         for name in probe.identity_probe.SOURCE_ANCHORS:
             reviewed['operatorSourceFiles'].setdefault(name, 'd' * 64)
-        reviewed['plan']['operatorSourceSha256'] = probe._hash(probe._canonical(reviewed['operatorSourceFiles']))
+        reviewed['plan']['operatorSourceSha256'] = probe._source_manifest_digest(reviewed['operatorSourceFiles'], ref)
         reviewed['programSha256'] = probe._hash(probe.private_program(self.source, ref))
         return ref, reviewed
 
@@ -57,6 +57,11 @@ class PersistenceProbeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(probe, 'ROOT', Path(directory).resolve()):
             reviewed['privateDirectory'] = str(Path(directory).resolve() / 'owned')
             self.assertEqual(probe._reviewed(reviewed, ref)['plan']['version'], 2)
+            map_digest = copy.deepcopy(reviewed)
+            map_digest['plan']['operatorSourceSha256'] = probe._hash(probe._canonical(map_digest['operatorSourceFiles']))
+            self.assertNotEqual(map_digest['plan']['operatorSourceSha256'], reviewed['plan']['operatorSourceSha256'])
+            with self.assertRaisesRegex(Exception, 'SOURCE_BINDING_REQUIRED'):
+                probe._reviewed(map_digest, ref)
             for change in [lambda value: value.pop('qualificationTargetProfile'),
                            lambda value: value['plan']['targets']['course'].pop('qualificationTargetProfile'),
                            lambda value: value.update(qualificationTargetProfile={**ref, 'sha256': 'f' * 64})]:
@@ -121,18 +126,18 @@ class PersistenceProbeTests(unittest.TestCase):
         files = reviewed['operatorSourceFiles']
         while len(files) < 544:
             files[f'ops/platform/harness/profiled-bound-{len(files)}.mjs'] = 'a' * 64
-        reviewed['plan']['operatorSourceSha256'] = probe._hash(probe._canonical(files))
+        reviewed['plan']['operatorSourceSha256'] = probe._source_manifest_digest(files, ref)
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(probe, 'ROOT', Path(directory).resolve()):
             reviewed['privateDirectory'] = str(Path(directory).resolve() / 'owned')
             probe._reviewed(reviewed, ref)
             files['ops/platform/harness/profiled-overflow.mjs'] = 'b' * 64
-            reviewed['plan']['operatorSourceSha256'] = probe._hash(probe._canonical(files))
+            reviewed['plan']['operatorSourceSha256'] = probe._source_manifest_digest(files, ref)
             with self.assertRaisesRegex(Exception, 'SOURCE_BINDING_REQUIRED'):
                 probe._reviewed(reviewed, ref)
 
     def test_profiled_source_closure_uses_the_named_current_verifier_not_the_legacy_512_reader(self):
         ref, reviewed = self.profiled_reviewed()
-        expected = probe._hash(json.dumps(sorted(reviewed['operatorSourceFiles'].items()), separators=(',', ':')).encode())
+        expected = probe._source_manifest_digest(reviewed['operatorSourceFiles'], ref)
         with mock.patch.object(probe.identity_probe, 'source_closure', side_effect=AssertionError('legacy closure used')), \
                 mock.patch('p2_source_closure.verify_profiled_current_source_closure', return_value=expected) as verify:
             self.assertEqual(probe._source_closure(self.source, reviewed, ref), reviewed['operatorSourceFiles'])
@@ -155,6 +160,10 @@ class PersistenceProbeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(probe, 'ROOT', Path(directory).resolve()):
             reviewed['privateDirectory'] = str(Path(directory).resolve() / 'owned')
             probe._reviewed(reviewed)
+            entry_digest = copy.deepcopy(reviewed)
+            entry_digest['plan']['operatorSourceSha256'] = probe._hash(json.dumps(sorted(files.items()), separators=(',', ':')).encode())
+            with self.assertRaisesRegex(Exception, 'SOURCE_BINDING_REQUIRED'):
+                probe._reviewed(entry_digest)
             files['ops/platform/owned-overflow.mjs'] = 'b' * 64
             reviewed['plan']['operatorSourceSha256'] = probe._hash(probe._canonical(files))
             with self.assertRaisesRegex(Exception, 'SOURCE_BINDING_REQUIRED'):

@@ -41,6 +41,13 @@ def _canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode()
 
 
+def _source_manifest_digest(manifest, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
+    raw = (_canonical(manifest) if expected is None else
+        json.dumps(sorted(manifest.items()), separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode())
+    return _hash(raw)
+
+
 def _closed(value, fields):
     return isinstance(value, dict) and sorted(value) == sorted(fields)
 
@@ -107,7 +114,8 @@ def _reviewed(value, expected_profile=None):
     demand(isinstance(value["operatorSourceFiles"], dict) and identity_probe.SOURCE_ANCHORS.issubset(value["operatorSourceFiles"])
         and 1 <= len(value["operatorSourceFiles"]) <= (544 if expected is not None else 512)
         and all(identity_probe._source_path(name) and SHA.fullmatch(item) for name, item in value["operatorSourceFiles"].items())
-        and _hash(_canonical(value["operatorSourceFiles"])) == plan["operatorSourceSha256"] and SHA.fullmatch(value["programSha256"]),
+        and _source_manifest_digest(value["operatorSourceFiles"], expected) == plan["operatorSourceSha256"]
+        and SHA.fullmatch(value["programSha256"]),
         "P2_PERSISTENCE_SOURCE_BINDING_REQUIRED")
     directory = Path(value["privateDirectory"])
     demand(directory.is_absolute() and directory.is_relative_to(ROOT) and ".." not in directory.parts and not any(path.is_symlink() for path in directory.parents if path.exists()),
@@ -126,7 +134,7 @@ def _source_closure(source, reviewed, expected_profile=None):
         return identity_probe.source_closure(source)
     from p2_source_closure import verify_profiled_current_source_closure
     manifest = reviewed["operatorSourceFiles"]
-    closure = _hash(json.dumps(sorted(manifest.items()), separators=(",", ":")).encode())
+    closure = _source_manifest_digest(manifest, expected)
     selected = {"mode": "p2-bounded-certification-profiled-current", "qualificationTargetProfile": expected,
         "sourceSha256": manifest, "sourceClosureSha256": closure}
     demand(verify_profiled_current_source_closure(selected, Path(source)) == closure,
