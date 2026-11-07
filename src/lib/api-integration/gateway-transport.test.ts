@@ -177,6 +177,17 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   await inBrowser(curriculum.cookie, curriculum.proxyProof, () => send({
     method: "POST", path: curriculumPath, body: curriculumBody, applicationToken: "owned.admin.jwt",
   }), curriculumRoute);
+  const publish = evidence("authoring", editRoute, issued, "7032712d617574682d7075622d7631008e2280dc03894248b21cf87427f9e85c");
+  const publishBody = '{"expectedRevision":3,"status":"published"}';
+  await inBrowser(publish.cookie, publish.proxyProof, () => send({
+    method: "PATCH", path: editPath, body: publishBody, applicationToken: "owned.admin.jwt",
+  }), editRoute);
+  const readinessPath = editPath + "/publication-readiness";
+  const readinessRoute = "GET /api/admin/courses/12345678-1234-4123-8123-123456789abc/publication-readiness";
+  const readiness = evidence("authoring", readinessRoute, issued, "7032712d617574682d7264792d7631008e2280dc03894248b21cf87427f9e85c");
+  await inBrowser(readiness.cookie, readiness.proxyProof, () => send({
+    method: "GET", path: readinessPath, applicationToken: "owned.admin.jwt",
+  }), readinessRoute);
   const expected = [
     { stage: "learning", method: "GET", target: "/course/v1/student/courses?cursor=caf%C3%A9&kind=%27", bytes: ["", applicationToken, ""] },
     { stage: "paid-grant", method: "POST", target: "/course/v1/admin/entitlements/grants", bytes: [body, "owned.admin.jwt", idempotencyKey] },
@@ -184,6 +195,8 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
     { stage: "authoring", method: "PATCH", target: "/course" + editPath, bytes: [editBody, "owned.admin.jwt", ""] },
     { stage: "authoring", method: "POST", target: "/course" + reorderPath, bytes: [reorderBody, "owned.admin.jwt", ""] },
     { stage: "authoring", method: "POST", target: "/course" + curriculumPath, bytes: [curriculumBody, "owned.admin.jwt", ""] },
+    { stage: "authoring", method: "PATCH", target: "/course" + editPath, bytes: [publishBody, "owned.admin.jwt", ""] },
+    { stage: "authoring", method: "GET", target: "/course" + readinessPath, bytes: ["", "owned.admin.jwt", ""] },
   ];
   for (const [index, { stage, method, target, bytes }] of expected.entries()) {
     const { url, headers } = captured[index];
@@ -221,6 +234,6 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   process.env.VERCEL_URL = deployment;
   process.env.API_GATEWAY_STAGING_ORIGIN = "https://different.example.test";
   await inBrowser(learning.cookie, learning.proxyProof, request);
-  assert.equal(captured.length, 17);
-  assert.ok(captured.slice(6).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
+  assert.equal(captured.length, 19);
+  assert.ok(captured.slice(8).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
 });

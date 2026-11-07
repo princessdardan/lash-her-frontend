@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { currentWriterAuthoringActorId, currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, currentWriterLifecycleSelection, currentWriterOperationIdentity, markWriterOperationUncertain, matchesWriterIdentityEnrollment } from "./context";
+import { currentWriterAuthoringActorId, currentWriterAuthoringOperation, currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, currentWriterLifecycleSelection, currentWriterOperationIdentity, markWriterOperationUncertain, matchesWriterIdentityEnrollment } from "./context";
 import { authorizeCaptureSquarePayment } from "@/lib/payments/square/square-payment-charge";
 import { createHash, createHmac } from "node:crypto";
 import { createWriterAdmissionRunner } from "./runtime";
@@ -185,6 +185,8 @@ test("authoring binds the exact owner UUID and operation routes, then clears its
   const editCookie = issue("authoring", "7032712d617574682d656469742d7631" + authoringActorId.replaceAll("-", ""));
   const reorderCookie = issue("authoring", "7032712d617574682d736f72742d7631" + authoringActorId.replaceAll("-", ""));
   const createCurriculumCookie = issue("authoring", "7032712d617574682d6e65772d763100" + authoringActorId.replaceAll("-", ""));
+  const publishCookie = issue("authoring", "7032712d617574682d7075622d763100" + authoringActorId.replaceAll("-", ""));
+  const reviewCookie = issue("authoring", "7032712d617574682d7264792d763100" + authoringActorId.replaceAll("-", ""));
   assert.equal(attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method: "GET", path: `/admin/courses/${authoringActorId}`,
     cookie: issue("authoring", "7032712d617574682d6e65772d7631" + authoringActorId.replaceAll("-", "")) }, env, now), null);
   const attest = (method: string, path: string, permit = cookie) =>
@@ -200,6 +202,7 @@ test("authoring binds the exact owner UUID and operation routes, then clears its
   }
   const courseDetail = `/admin/courses/${authoringActorId}`;
   const courseApi = "/api" + courseDetail;
+  const readiness = `${courseApi}/publication-readiness`;
   const moduleCreate = `${courseApi}/modules`;
   const lessonCreate = `/api/admin/modules/${authoringActorId}/lessons`;
   const moduleReorder = `${moduleCreate}/reorder`;
@@ -240,6 +243,22 @@ test("authoring binds the exact owner UUID and operation routes, then clears its
     ["POST", moduleReorder], ["POST", lessonReorder], ["GET", moduleCreate], ["POST", lessonCreate + "/"], ["POST", moduleCreate.toUpperCase()]]) {
     assert.equal(attest(method, path, createCurriculumCookie), null);
   }
+  for (const [permit, operation] of [[publishCookie, "publish-course"], [reviewCookie, "review-publication"]] as const) {
+    for (const path of [courseDetail, courseApi, readiness]) {
+      const selectedProof = attest("GET", path, permit);
+      assert.ok(selectedProof);
+      const selected = readInteractiveRequest(selectedProof, permit, env, now);
+      assert.equal(selected?.authoringActorId, authoringActorId);
+      assert.equal(selected?.authoringOperation, operation);
+      assert.equal(readInteractiveRequest(selectedProof, permit === publishCookie ? reviewCookie : publishCookie, env, now), null);
+    }
+    for (const [method, path] of [["GET", "/admin/courses"], ["POST", "/api/admin/courses"], ["POST", moduleCreate],
+      ["POST", moduleReorder], ["PATCH", courseDetail], ["PATCH", readiness], ["GET", `${courseDetail}/publication-readiness`]]) {
+      assert.equal(attest(method, path, permit), null);
+    }
+  }
+  assert.equal(attest("PATCH", courseApi, reviewCookie), null);
+  assert.equal(attest("GET", readiness, editCookie), null);
   assert.ok(attest("GET", courseDetail, issue("media")));
   const wrongRoute = `${now}.${Buffer.from(`GET ${courseDetail}`).toString("base64url")}`;
   const wrongMac = createHmac("sha256", env.CRON_SECRET)
@@ -249,7 +268,10 @@ test("authoring binds the exact owner UUID and operation routes, then clears its
   const editVerified = readInteractiveRequest(attest("PATCH", courseApi, editCookie)!, editCookie, env, now);
   const reorderVerified = readInteractiveRequest(attest("POST", moduleReorder, reorderCookie)!, reorderCookie, env, now);
   const createCurriculumVerified = readInteractiveRequest(attest("POST", moduleCreate, createCurriculumCookie)!, createCurriculumCookie, env, now);
-  for (const accepted of [verified, editVerified, reorderVerified, createCurriculumVerified]) {
+  const publishVerified = readInteractiveRequest(attest("PATCH", courseApi, publishCookie)!, publishCookie, env, now);
+  const reviewVerified = readInteractiveRequest(attest("GET", readiness, reviewCookie)!, reviewCookie, env, now);
+  for (const [accepted, operation] of [[verified, "create-draft"], [editVerified, "edit-draft"], [reorderVerified, "reorder-curriculum"],
+    [createCurriculumVerified, "create-curriculum"], [publishVerified, "publish-course"], [reviewVerified, "review-publication"]] as const) {
     const f = fixture();
     f.state.epoch = "12";
     const run = createWriterAdmissionRunner({
@@ -258,14 +280,17 @@ test("authoring binds the exact owner UUID and operation routes, then clears its
       getInteractiveWriter: async () => accepted,
     });
     let observeAfterCompletion!: () => void;
-    let outsideSelection: Promise<string | undefined> | undefined;
+    let outsideSelection: Promise<readonly (string | undefined)[]> | undefined;
     await run("new-work", async () => {
       assert.equal(currentWriterAuthoringActorId(), authoringActorId);
-      outsideSelection = new Promise<void>(resolve => { observeAfterCompletion = resolve; }).then(currentWriterAuthoringActorId);
+      assert.equal(currentWriterAuthoringOperation(), operation);
+      outsideSelection = new Promise<void>(resolve => { observeAfterCompletion = resolve; })
+        .then(() => [currentWriterAuthoringActorId(), currentWriterAuthoringOperation()]);
     });
     observeAfterCompletion();
-    assert.equal(await outsideSelection, undefined);
+    assert.deepEqual(await outsideSelection, [undefined, undefined]);
     assert.equal(currentWriterAuthoringActorId(), undefined);
+    assert.equal(currentWriterAuthoringOperation(), undefined);
     assert.equal(JSON.stringify(f.calls).includes(authoringActorId), false);
   }
 });

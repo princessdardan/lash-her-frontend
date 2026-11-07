@@ -10,7 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession, p2AuthoringCurriculumPath, p2AuthoringReorderPath,
+import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession,
+  p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringReorderPath,
   p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
   validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt, validateP2AuthoringReorderResponses,
@@ -210,6 +211,8 @@ const authoringSelector = actorId => "7032712d617574686f72696e672d7631" + actorI
 const authoringEditSelector = actorId => "7032712d617574682d656469742d7631" + actorId.replaceAll("-", "");
 const authoringReorderSelector = actorId => "7032712d617574682d736f72742d7631" + actorId.replaceAll("-", "");
 const authoringCurriculumSelector = actorId => "7032712d617574682d6e65772d763100" + actorId.replaceAll("-", "");
+const authoringPublicationSelector = (actorId, outcome) => (outcome === "published" ? "7032712d617574682d7075622d763100"
+  : "7032712d617574682d7264792d763100") + actorId.replaceAll("-", "");
 const ownedCourseId = randomUUID();
 const ownedDraftResponse = { course: { ...ownedDraft, id: ownedCourseId, revision: 1, modules: [] } };
 const { status: ownedDraftStatus, ...ownedEditFields } = ownedDraft;
@@ -233,7 +236,8 @@ function interactivePermit(input) {
   else if (input.stage === "authoring") selector = input.authoring.operation === "edit-and-stale-draft"
     ? authoringEditSelector(input.authoring.actorId) : input.authoring.operation === "reorder-and-stale-curriculum"
       ? authoringReorderSelector(input.authoring.actorId) : input.authoring.operation === "create-curriculum"
-        ? authoringCurriculumSelector(input.authoring.actorId) : authoringSelector(input.authoring.actorId);
+        ? authoringCurriculumSelector(input.authoring.actorId) : input.authoring.operation === "qualify-publication"
+          ? authoringPublicationSelector(input.authoring.actorId, input.authoring.outcome) : authoringSelector(input.authoring.actorId);
   const cookie = [selector ? "v2" : "v1", input.epoch, input.stage, issued, expires, enrollment?.nonce ?? "3".repeat(32),
     ...(selector ? [selector] : []), "5".repeat(64)].join(".");
   return { stage: input.stage, epoch: input.epoch, expires, cookie };
@@ -421,6 +425,44 @@ test("curriculum create permit and compact receipt bind the owner, parent, child
     for (const variant of [{ slug: "other" }, { revision: 4 }, { parentId: randomUUID() }, { title: "Private" }]) {
       assert.throws(() => validateP2AuthoringMutationReceipt({ ...receipt, body: { ...body, ...variant } }, target));
     }
+  }
+});
+
+function ownedPublication(outcome) {
+  const published = outcome === "published", courseId = ownedCourseId, revision = 4;
+  const issueCodes = published ? [] : ["COURSE_MODULES_REQUIRED", "LESSON_CONTENT_REQUIRED"];
+  const target = { actorId: adminId, operation: "qualify-publication", courseId, slug: ownedDraft.slug, revision, outcome, issueCodes };
+  const { detail, readiness } = p2AuthoringPublicationPaths(target);
+  const response = { courseId, courseRevision: revision, ready: published, issues: [...issueCodes, ...issueCodes].reverse()
+    .map(code => ({ code, field: "contentDocument", message: "Private fixture detail", lessonId: randomUUID() })) };
+  const body = { courseId, slug: target.slug, revision: revision + Number(published), status: published ? "published" : "draft", issueCodes };
+  const receipt = { readiness: { method: "GET", pathname: readiness, status: 200, requestId: randomUUID() },
+    ...(published ? { publication: { method: "PATCH", pathname: detail, status: 200, requestId: randomUUID() } } : {}), body };
+  return { input: interactiveInput({ stage: "authoring", authoring: target }), target, detail, readiness, response, receipt };
+}
+
+test("publication permit and receipt distinguish blocked and published outcomes", () => {
+  for (const outcome of ["blocked", "published"]) {
+    const { input, target, receipt } = ownedPublication(outcome), permit = interactivePermit(input);
+    assert.equal(validateP2InteractiveBrowserInput(input), input);
+    assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+    assert.equal(p2InteractiveBrowserEntryPath(input, "owner"), `/admin/courses/${ownedCourseId}`);
+    const parts = permit.cookie.split(".");
+    for (const selector of [authoringPublicationSelector(adminId, outcome === "published" ? "blocked" : "published"),
+      authoringPublicationSelector(randomUUID(), outcome), authoringCurriculumSelector(adminId)]) {
+      parts[6] = selector;
+      assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: parts.join(".") }, input));
+    }
+    for (const issueCodes of [["lowercase"], ["B", "A"], ["DUPLICATE", "DUPLICATE"], outcome === "published" ? ["NOT_EMPTY"] : []]) {
+      assert.throws(() => validateP2InteractiveBrowserInput({ ...input, authoring: { ...target, issueCodes } }));
+    }
+    assert.deepEqual(validateP2AuthoringMutationReceipt(receipt, target), receipt);
+    for (const change of [{ status: "archived" }, { revision: 0 }, { issueCodes: ["EXTRA_ISSUE"] }, { title: "Private" }]) {
+      assert.throws(() => validateP2AuthoringMutationReceipt({ ...receipt, body: { ...receipt.body, ...change } }, target));
+    }
+    const { publication, ...withoutPublication } = receipt;
+    const wrongReceipt = publication ? withoutPublication : { ...receipt, publication: { ...receipt.readiness, method: "PATCH" } };
+    assert.throws(() => validateP2AuthoringMutationReceipt(wrongReceipt, target));
   }
 });
 
@@ -1126,6 +1168,102 @@ test("owned Chromium curriculum capture waits for the normal saved status and re
             assert.throws(() => rejected.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
           } finally { await rejected.close(); }
         }
+      }
+    } finally { await browser.close(); }
+  });
+
+test("owned Chromium publication checks the normal blocked UI or successful publish after readback",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const open = async (outcome, scenario) => {
+      const fixture = ownedPublication(outcome), { input, target, detail, readiness, receipt, response } = fixture;
+      const context = await browser.newContext(), effects = [];
+      const document = `<!doctype html><p id="revision">draft · Revision ${target.revision}</p><div role="status"><p id="feedback"></p></div>
+        <button id="review">Review publication readiness</button><button id="publish" hidden>Publish course</button>
+        <button id="reload" hidden>Complete readback</button><script>
+        const feedback = document.querySelector('#feedback'), publish = document.querySelector('#publish'), reload = document.querySelector('#reload');
+        const read = ${JSON.stringify(readiness)}, detail = ${JSON.stringify(detail)};
+        document.querySelector('#review').onclick = async () => {
+          const result = await (await fetch(read)).json();
+          feedback.textContent = result.ready ? 'Ready to publish' : 'Resolve these items before publishing';
+          publish.hidden = !result.ready && ${JSON.stringify(scenario !== "enabled-blocked")};
+        };
+        publish.onclick = async () => {
+          const body = { expectedRevision:${target.revision}, status:${JSON.stringify(scenario === "bad-patch" ? "draft" : "published")} };
+          await (await fetch(detail, {method:'PATCH', headers:{'content-type':'application/json'}, body:JSON.stringify(body)})).json();
+          reload.hidden = false;
+        };
+        reload.onclick = async () => {
+          const result = await (await fetch(detail)).json();
+          document.querySelector('#revision').textContent = result.course.status + ' · Revision ' + result.course.revision;
+          feedback.textContent = 'Course published.';
+        };
+        </script>`;
+      const send = (route, payload, requestId) => route.fulfill({ status: 200, body: JSON.stringify(payload),
+        headers: { "content-type": "application/json", "cache-control": "private, no-store", "x-request-id": requestId } });
+      await context.route("**/*", route => {
+        const request = route.request(), url = new URL(request.url());
+        if (request.isNavigationRequest()) return route.fulfill({ status: 200, contentType: "text/html", body: document });
+        if (url.origin !== input.browserOrigin) return route.fulfill({ status: 200, headers: { "access-control-allow-origin": "*" }, body: "{}" });
+        effects.push(request.method() + " " + url.pathname);
+        if (url.pathname === readiness) return send(route, scenario === "wrong-issues" ? { ...response, issues: response.issues.slice(0, 1) } : response,
+          receipt.readiness.requestId);
+        const course = { ...ownedDraftResponse.course, id: target.courseId, revision: target.revision + 1, status: "published",
+          ...(scenario === "wrong-result" ? { slug: "other-course" } : {}) };
+        return send(route, { course }, request.method() === "PATCH" ? receipt.publication?.requestId ?? randomUUID() : randomUUID());
+      });
+      const page = await context.newPage(), watch = watchP2AuthoringMutation(context, page, input);
+      await page.goto(input.browserOrigin + p2InteractiveBrowserEntryPath(input, "owner"));
+      const review = page.getByRole("button", { name: "Review publication readiness", exact: true });
+      const publish = page.getByRole("button", { name: "Publish course", exact: true });
+      const expires = Math.floor(Date.now() / 1000) + 60;
+      const close = async () => { watch.close(); await context.close(); };
+      return { ...fixture, page, watch, review, publish, expires, effects, close };
+    };
+    try {
+      const blocked = await open("blocked");
+      try {
+        await blocked.review.click();
+        await blocked.watch.wait(blocked.expires);
+        const receipt = blocked.watch.finish();
+        assert.deepEqual(receipt, blocked.receipt);
+        assert.equal(JSON.stringify(receipt).includes("Private fixture detail"), false);
+        assert.deepEqual(blocked.effects, ["GET " + blocked.readiness]);
+        await Promise.all([blocked.page.waitForResponse(response => response.url().endsWith(blocked.readiness)), blocked.review.click()]);
+        assert.throws(() => blocked.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+      } finally { await blocked.close(); }
+
+      const published = await open("published");
+      try {
+        await published.page.evaluate(async readiness => { await fetch("https://owned-foreign.invalid" + readiness); }, published.readiness);
+        await published.review.click();
+        await published.publish.click();
+        const readback = published.page.getByRole("button", { name: "Complete readback", exact: true });
+        await readback.waitFor({ state: "visible" });
+        assert.throws(() => published.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+        await readback.click();
+        await published.watch.wait(published.expires);
+        assert.deepEqual(published.watch.finish(), published.receipt);
+        assert.deepEqual(published.effects, ["GET " + published.readiness, "PATCH " + published.detail, "GET " + published.detail]);
+      } finally { await published.close(); }
+
+      for (const [outcome, scenario] of [["blocked", "wrong-issues"], ["blocked", "enabled-blocked"], ["published", "bad-patch"],
+        ["published", "wrong-result"], ["published", "early-patch"], ["blocked", "wrong-source"]]) {
+        const rejected = await open(outcome, scenario);
+        try {
+          if (scenario === "early-patch") {
+            await rejected.page.evaluate(async ({ detail, revision }) => {
+              await (await fetch(detail, { method: "PATCH", body: JSON.stringify({ expectedRevision: revision, status: "published" }) })).json();
+            }, { detail: rejected.detail, revision: rejected.target.revision });
+          } else {
+            if (scenario === "wrong-source") await rejected.page.goto(rejected.input.browserOrigin + "/admin/courses/" + randomUUID());
+            await rejected.review.click();
+            if (outcome === "published") await rejected.publish.click();
+          }
+          await assert.rejects(rejected.watch.wait(rejected.expires), /AUTHORING_RESPONSE_REFUSED/u);
+          assert.throws(() => rejected.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+        } finally { await rejected.close(); }
       }
     } finally { await browser.close(); }
   });

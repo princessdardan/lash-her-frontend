@@ -34,7 +34,8 @@ import {captureP2InteractiveIdentityBaseline,observeP2InteractiveIdentityCase,ca
 import {captureP2InteractiveCourseDraftBaseline,observeP2InteractiveCourseDraftCase,validateP2InteractiveCourseDraft,
   captureP2InteractiveCourseDraftEditsBaseline,observeP2InteractiveCourseDraftEditsCase,validateP2InteractiveCourseDraftEdits,
   captureP2InteractiveCourseReorderBaseline,observeP2InteractiveCourseReorderCase,validateP2InteractiveCourseReorder,
-  captureP2InteractiveCurriculumCreateBaseline,observeP2InteractiveCurriculumCreateCase,validateP2InteractiveCurriculumCreate} from './p2-lifecycle-persistence-probe.mjs';
+  captureP2InteractiveCurriculumCreateBaseline,observeP2InteractiveCurriculumCreateCase,validateP2InteractiveCurriculumCreate,
+  captureP2InteractivePublicationBaseline,observeP2InteractivePublicationCase,validateP2InteractivePublication} from './p2-lifecycle-persistence-probe.mjs';
 import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,readP2LifecycleWorkerCronSecret,preflightP2DirectLifecycleWorker,
   invokeP2DirectLifecycleWorker,joinP2DirectLifecycleWorker,readP2DirectWorkerSourceArtifact} from './p2-lifecycle-worker-evidence.mjs';
 
@@ -66,12 +67,33 @@ const authoringCases=new Map([
     baseline:captureP2InteractiveCourseReorderBaseline,observe:observeP2InteractiveCourseReorderCase}],
   ['create-curriculum',{field:'authoringCurriculum',paired:false,validate:validateP2InteractiveCurriculumCreate,
     baseline:captureP2InteractiveCurriculumCreateBaseline,observe:observeP2InteractiveCurriculumCreateCase}],
+  ['qualify-publication',{paired:false,validate:validateP2InteractivePublication,
+    baseline:captureP2InteractivePublicationBaseline,observe:observeP2InteractivePublicationCase}],
 ]);
 const authoringSlug=value=>typeof value==='string'&&value.length<=120&&/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
 function authoringSelection({authoringAction,requests}){
   const {operation,...selection}=authoringAction;
+  if(operation==='qualify-publication')return selection;
   return authoringCases.get(operation).paired?{...selection,winnerBodySha256:requests[1].bodySha256,staleBodySha256:requests[2].bodySha256}:
     {...selection,bodySha256:requests[1].bodySha256};
+}
+function publicationActionValid(selected,requests){
+  if(!exactKeys(selected,['operation','courseId','slug','revision','outcome','issueCodes'])||
+    !uuid(selected.courseId)||!authoringSlug(selected.slug)||!Number.isInteger(selected.revision)||
+    selected.revision<1||selected.revision>=2_147_483_647||!['published','blocked'].includes(selected.outcome)||
+    !Array.isArray(selected.issueCodes)||selected.issueCodes.length>16||
+    ![...selected.issueCodes].every((code,index,list)=>typeof code==='string'&&/^[A-Z][A-Z0-9_]{0,63}$/u.test(code)&&
+      (index===0||list[index-1]<code)))return false;
+  const published=selected.outcome==='published';
+  if(published?selected.issueCodes.length!==0:selected.issueCodes.length===0)return false;
+  const detail=`/course/v1/admin/courses/${selected.courseId}`;
+  const expected=[
+    {method:'GET',target:detail,bodySha256:emptyRequestSha256,uses:published?2:1},
+    {method:'GET',target:detail+'/publication-readiness',bodySha256:emptyRequestSha256,uses:1},
+  ];
+  if(published)expected.push({method:'PATCH',target:detail,uses:1,
+    bodySha256:rawHash(JSON.stringify({expectedRevision:selected.revision,status:'published'}))});
+  return isDeepStrictEqual(requests,expected);
 }
 export const P2_CERTIFICATION_READY_FILES=Object.freeze(['frontend-build-started.json','frontend-build-created.json','frontend-build-outcome.json',
   'frontend-workload-outcome.json','frontend-promotion-started.json','frontend-promotion-outcome.json']);
@@ -106,6 +128,7 @@ function interactiveActionValid(value){
   if(authoring){
     const selected=value.authoringAction,configured=authoringCases.get(selected?.operation),[read,...mutations]=value.requests;
     if(!configured)return false;
+    if(selected.operation==='qualify-publication')return publicationActionValid(selected,value.requests);
     const {paired}=configured,reorder=selected.operation==='reorder-and-stale-curriculum',create=selected.operation==='create-curriculum';
     const detailRead=paired||create,curriculum=reorder||create;
     if(!exactKeys(selected,['operation','slug',...(detailRead?['courseId','revision']:[]),
@@ -415,7 +438,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
   const identity=action.stage==='identity',enrollment=identity&&action.identityEnrollment!==undefined,authoring=action.stage==='authoring';
   const authoringCase=authoring?authoringCases.get(action.authoringAction.operation):undefined;
-  if(authoring)demand(courseDraft?.job&&courseDraft.draft&&typeof courseDraft.readCourseDatabaseUrl==='function');
+  if(authoring)demand(courseDraft?.job&&(!authoringCase.field||courseDraft.draft)&&typeof courseDraft.readCourseDatabaseUrl==='function');
   const statusPrefix=`P2_INTERACTIVE_${action.stage.toUpperCase()}`;
   const expectedOpen=(BigInt(plan.initialEpoch)+1n).toString(),expectedClosed=(BigInt(plan.initialEpoch)+2n).toString();
   const selection=authoring?authoringSelection(action):
@@ -880,8 +903,8 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   }
   if(authoring){
     const {field,validate}=authoringCases.get(plan.scopedAction.authoringAction.operation);
-    demand(exactKeys(execution,[field]));
-    authoringDraft=validate(authoringSelection(plan.scopedAction),execution[field]);
+    demand(field?exactKeys(execution,[field]):execution===undefined);
+    authoringDraft=validate(authoringSelection(plan.scopedAction),field?execution[field]:undefined);
   }
   demand(plan.mode!=='mux-callback-recovery'||original.migration.candidate.sources.course.commit===scopedMuxCourseSource);
   const releaseSettings=selection.releaseSettings;

@@ -8,9 +8,10 @@ export type WriterOperationIdentity = Readonly<{
   kind: "new-work" | "recovery"; targetSha256: string;
 }>;
 export type WriterIdentityEnrollment = Readonly<{ provider: "google" | "resend"; nonce: string; emailDigest: string }>;
+export type WriterAuthoringOperation = "create-draft" | "edit-draft" | "reorder-curriculum" | "create-curriculum" | "publish-course" | "review-publication";
 const operationContext = new AsyncLocalStorage<{
   uncertain: boolean; identity?: WriterOperationIdentity; lifecycleSelectionSha256?: string; identityCustomerId?: string;
-  identityEnrollment?: WriterIdentityEnrollment; authoringActorId?: string;
+  identityEnrollment?: WriterIdentityEnrollment; authoringActorId?: string; authoringOperation?: WriterAuthoringOperation;
 }>();
 
 export function currentWriterOperationIdentity(): WriterOperationIdentity | undefined {
@@ -33,6 +34,10 @@ export function currentWriterAuthoringActorId(): string | undefined {
   return operationContext.getStore()?.authoringActorId;
 }
 
+export function currentWriterAuthoringOperation(): WriterAuthoringOperation | undefined {
+  return operationContext.getStore()?.authoringOperation;
+}
+
 export function matchesWriterIdentityEnrollment(selection: WriterIdentityEnrollment, normalizedEmail: string): boolean {
   if (!/^[a-f0-9]{62}$/u.test(selection.emailDigest)) return false;
   const digest = createHash("sha256")
@@ -53,9 +58,10 @@ export function assertWriterOperationCertain(): void {
 }
 
 export async function withWriterOperationContext<T>(task: () => Promise<T>, identity?: WriterOperationIdentity,
-  lifecycleSelectionSha256?: string, identityCustomerId?: string, identityEnrollment?: WriterIdentityEnrollment, authoringActorId?: string): Promise<T> {
+  lifecycleSelectionSha256?: string, identityCustomerId?: string, identityEnrollment?: WriterIdentityEnrollment,
+  authoringActorId?: string, authoringOperation?: WriterAuthoringOperation): Promise<T> {
   const operation = { uncertain: false, identity: identity ? Object.freeze({ ...identity }) : undefined,
-    lifecycleSelectionSha256, identityCustomerId, authoringActorId,
+    lifecycleSelectionSha256, identityCustomerId, authoringActorId, authoringOperation,
     identityEnrollment: identityEnrollment ? Object.freeze({ ...identityEnrollment }) : undefined };
   return operationContext.run(operation, async () => {
     try {
@@ -67,6 +73,7 @@ export async function withWriterOperationContext<T>(task: () => Promise<T>, iden
       operation.identityCustomerId = undefined;
       operation.identityEnrollment = undefined;
       operation.authoringActorId = undefined;
+      operation.authoringOperation = undefined;
     }
   });
 }

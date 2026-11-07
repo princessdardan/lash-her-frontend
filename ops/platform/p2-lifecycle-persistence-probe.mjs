@@ -122,6 +122,12 @@ const SQL = Object.freeze({
       (title=$3::text AND content IS NULL AND content_document=$4::jsonb AND transcript IS NOT DISTINCT FROM $5::text
         AND is_preview=$6::boolean AND captions='[]'::jsonb AND archived_at IS NULL) AS fields_match
       FROM public.lessons WHERE id=$1::uuid AND module_id=$2::uuid`,
+    publicationState: `SELECT id::text AS course_id,slug,revision,status,updated_at::text,
+      pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_array(
+        title,description,introduction,currency,access_mode,price_cents,cover,seo,tax_classification,created_at
+      )::text,'UTF8')),'hex') AS metadata_sha256
+      FROM public.courses WHERE slug=$1::text`,
+    publicationCatalog: "SELECT id::text AS course_id,slug FROM public.courses WHERE slug=$1::text AND status='published' LIMIT 1",
     draft: `SELECT id::text AS course_id,slug,revision,status,
       (title=$2::text AND description IS NOT DISTINCT FROM $3::text AND introduction IS NOT DISTINCT FROM $4::text
         AND currency=$5::text AND access_mode=$6::text AND price_cents=$7::int
@@ -378,6 +384,7 @@ const draftBaselines = new WeakMap();
 const draftEditBaselines = new WeakMap();
 const courseReorderBaselines = new WeakMap();
 const curriculumCreateBaselines = new WeakMap();
+const publicationBaselines = new WeakMap();
 const draftFormFields = ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification"];
 const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
 const draftSlug = value => typeof value === "string" && value.length <= 120 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
@@ -716,6 +723,65 @@ export async function observeP2InteractiveCurriculumCreateCase(courseJob, select
       && created[0].position === expected.position && created[0].fields_match === true, "course-curriculum-create-persistence");
   });
   return { courseId, parentId, kind, itemId, slug: childSlug, revision, readOnly: true };
+}
+
+const publicationSelectionFields = ["courseId", "slug", "revision", "outcome", "issueCodes"];
+const publicationIssueCode = /^[A-Z][A-Z0-9_]{0,63}$/u;
+
+export function validateP2InteractivePublication(selection, input) {
+  demand(input === undefined && closed(selection, publicationSelectionFields) && courseUuid(selection.courseId)
+    && draftSlug(selection.slug) && Number.isInteger(selection.revision) && selection.revision >= 1 && selection.revision <= 2_147_483_646
+    && ["published", "blocked"].includes(selection.outcome) && Array.isArray(selection.issueCodes), "course-publication-selection");
+  const codes = [...selection.issueCodes];
+  demand(selection.outcome === "published" ? codes.length === 0
+    : codes.length > 0 && codes.length <= 16 && codes.every((code, index) =>
+      typeof code === "string" && publicationIssueCode.test(code) && (index === 0 || codes[index - 1] < code)), "course-publication-issue-codes");
+}
+
+async function readCoursePublication(client, selection, revision, status) {
+  const { courseId, slug } = selection;
+  const states = await read(client, "course", "publicationState", [slug]);
+  const row = states[0];
+  demand(states.length === 1 && row.course_id === courseId && row.slug === slug && row.revision === revision
+    && row.status === status && typeof row.metadata_sha256 === "string" && SHA.test(row.metadata_sha256)
+    && typeof row.updated_at === "string", "course-publication-state");
+  const catalog = await read(client, "course", "publicationCatalog", [slug]);
+  demand(status === "published" ? catalog.length === 1 && catalog[0].course_id === courseId && catalog[0].slug === slug
+    : catalog.length === 0, "course-publication-catalog");
+  return { metadataSha256: row.metadata_sha256, updatedAt: row.updated_at };
+}
+
+export async function captureP2InteractivePublicationBaseline(courseJob, selection, input, dependencies) {
+  validateP2InteractivePublication(selection, input);
+  const selected = Object.freeze({ ...selection, issueCodes: Object.freeze([...selection.issueCodes]) });
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined,
+    client => readCoursePublication(client, selected, selected.revision, "draft"));
+  const baseline = Object.freeze({});
+  publicationBaselines.set(baseline, { selected, result, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractivePublicationCase(courseJob, selection, baseline, browserBody, dependencies) {
+  validateP2InteractivePublication(selection, undefined);
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = publicationBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+    && saved.verifySession === dependencies?.verifySession && ["courseId", "slug", "revision", "outcome"].every(key => selection[key] === saved.selected[key])
+    && sameIds(selection.issueCodes, saved.selected.issueCodes), "course-publication-receipt");
+  const { courseId, slug, issueCodes } = saved.selected;
+  const published = saved.selected.outcome === "published", revision = saved.selected.revision + (published ? 1 : 0);
+  const status = published ? "published" : "draft";
+  // Issue codes are separately observed at the browser/API boundary.
+  demand(closed(browserBody, ["courseId", "slug", "revision", "status", "issueCodes"]) && browserBody.courseId === courseId
+    && browserBody.slug === slug && browserBody.revision === revision && browserBody.status === status
+    && sameIds(browserBody.issueCodes, issueCodes), "course-publication-receipt");
+  publicationBaselines.delete(baseline);
+  const { result } = await readHeldCourseDraft(target, dependencies, saved.roleOid,
+    client => readCoursePublication(client, saved.selected, revision, status));
+  demand(result.metadataSha256 === saved.result.metadataSha256 && (published || result.updatedAt === saved.result.updatedAt),
+    "course-publication-metadata");
+  return { courseId, slug, revision, status, issueCodes: [...issueCodes], readOnly: true };
 }
 
 export async function runPrivatePersistenceProbeFromStdin(expectedProfile = undefined) {

@@ -12,10 +12,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { runOwnedPersistenceScenario } from "./harness/owned-p2-lifecycle-persistence.mjs";
 import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraftEditsBaseline, captureP2InteractiveCourseReorderBaseline,
-  captureP2InteractiveCurriculumCreateBaseline, observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase,
-  observeP2InteractiveCourseReorderCase, observeP2InteractiveCurriculumCreateCase, p2LifecyclePersistenceTargetSha256,
+  captureP2InteractiveCurriculumCreateBaseline, captureP2InteractivePublicationBaseline, observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase,
+  observeP2InteractiveCourseReorderCase, observeP2InteractiveCurriculumCreateCase, observeP2InteractivePublicationCase, p2LifecyclePersistenceTargetSha256,
   validateP2InteractiveCourseDraft, validateP2InteractiveCourseDraftEdits, validateP2InteractiveCourseReorder,
-  validateP2InteractiveCurriculumCreate } from "./p2-lifecycle-persistence-probe.mjs";
+  validateP2InteractiveCurriculumCreate, validateP2InteractivePublication } from "./p2-lifecycle-persistence-probe.mjs";
 import { verifyP2LifecycleOwnedSourceManifest } from "./p2-lifecycle-owned-source-manifest.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
@@ -207,6 +207,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     await runOwnedDraftEditWitness({ course, job, dependencies, input, create });
     await runOwnedCourseReorderWitness({ course, job, dependencies, input, create });
     await runOwnedCurriculumCreateWitness({ course, job, dependencies, input, create });
+    await runOwnedPublicationWitness({ course, job, dependencies, input, create });
     await unlock();
     try { await assert.rejects(capture(input("unheld"))); }
     finally { await lock(); }
@@ -215,7 +216,9 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-module-and-lesson-full-reorder-archived-siblings-and-stale-zero-writes",
       "course-reorder-rejects-foreign-parent-sparse-result-sibling-identity-archive-and-order-drift",
       "course-curriculum-create-normal-module-and-lesson-fields-with-single-revision-and-preserved-siblings",
-      "course-curriculum-create-refuses-occupied-or-foreign-baselines-and-storage-drift"];
+      "course-curriculum-create-refuses-occupied-or-foreign-baselines-and-storage-drift",
+      "course-publication-held-status-revision-metadata-and-public-catalog-predicate",
+      "course-publication-refuses-blocked-writes-state-metadata-and-issue-code-drift"];
   } finally {
     try { await unlock(); }
     finally { setDefaultCACertificates(trust); }
@@ -488,6 +491,68 @@ async function runOwnedCurriculumCreateWitness({ course, job, dependencies, inpu
   await write(module);
   await course.query("UPDATE public.modules SET description='unexpected' WHERE id=$1::uuid", [module.itemId]);
   await assert.rejects(observe(module, before), { check: "course-curriculum-create-persistence" });
+}
+
+async function runOwnedPublicationWitness({ course, job, dependencies, input, create }) {
+  const test = (name, outcome = "published") => {
+    const fixture = input(`publication-${name}`);
+    const selection = { courseId: fixture.courseId, slug: fixture.draft.slug, revision: 1, outcome,
+      issueCodes: outcome === "blocked" ? ["MODULE_REQUIRED"] : [] };
+    return { fixture, selection };
+  };
+  const capture = ({ selection }) => captureP2InteractivePublicationBaseline(job, selection, undefined, dependencies);
+  const browser = ({ selection }) => ({ courseId: selection.courseId, slug: selection.slug,
+    revision: selection.revision + (selection.outcome === "published" ? 1 : 0), status: selection.outcome === "published" ? "published" : "draft",
+    issueCodes: selection.issueCodes });
+  const observe = (selected, baseline, receipt = browser(selected)) =>
+    observeP2InteractivePublicationCase(job, selected.selection, baseline, receipt, dependencies);
+  const publish = ({ selection }) => course.query(`UPDATE public.courses SET status='published',revision=revision+1,
+    updated_at=pg_catalog.clock_timestamp() WHERE id=$1::uuid AND revision=$2::int AND status='draft'`, [selection.courseId, selection.revision]);
+
+  const blocked = test("blocked", "blocked");
+  assert.equal(validateP2InteractivePublication(blocked.selection, undefined), undefined);
+  assert.throws(() => validateP2InteractivePublication(blocked.selection, {}), { check: "course-publication-selection" });
+  for (const issueCodes of [[], ["module_required"], ["MODULE_REQUIRED", "MODULE_REQUIRED"], ["TAX_CLASSIFICATION_REQUIRED", "MODULE_REQUIRED"],
+    Array.from({ length: 17 }, (_, index) => `ISSUE_${String(index).padStart(2, "0")}`)]) {
+    assert.throws(() => validateP2InteractivePublication({ ...blocked.selection, issueCodes }, undefined), { check: "course-publication-issue-codes" });
+  }
+  for (const outcome of ["published", "blocked"]) {
+    const selected = outcome === "blocked" ? blocked : test("published");
+    await assert.rejects(capture(selected), { check: "course-publication-state" });
+    await create(selected.fixture);
+    await assert.rejects(capture({ ...selected, selection: { ...selected.selection, courseId: randomUUID() } }), { check: "course-publication-state" });
+    await assert.rejects(capture({ ...selected, selection: { ...selected.selection, revision: 2 } }), { check: "course-publication-state" });
+    const baseline = await capture(selected);
+    assert.equal(JSON.stringify(baseline), "{}");
+    if (outcome === "published") assert.equal((await publish(selected)).rowCount, 1);
+    await assert.rejects(observe(selected, {}), { check: "course-publication-receipt" });
+    await assert.rejects(observe(selected, baseline, { ...browser(selected), revision: 9 }), { check: "course-publication-receipt" });
+    await assert.rejects(observe(selected, baseline, { ...browser(selected), issueCodes: ["INVALID_METADATA"] }), { check: "course-publication-receipt" });
+    await assert.rejects(observeP2InteractivePublicationCase(job, selected.selection, baseline, browser(selected),
+      { ...dependencies, verifySession: async () => {} }), { check: "course-publication-receipt" });
+    assert.deepEqual(await observe(selected, baseline), { ...browser(selected), readOnly: true });
+    await assert.rejects(observe(selected, baseline), { check: "course-publication-receipt" });
+    if (outcome === "published") await assert.rejects(capture(selected), { check: "course-publication-state" });
+  }
+  for (const [name, outcome, update, check] of [
+    ["unchanged", "published", null, "course-publication-state"],
+    ["revision", "published", "revision=revision+1", "course-publication-state"],
+    ["unexpected-public", "blocked", "status='published'", "course-publication-state"],
+    ["blocked-touch", "blocked", "updated_at=pg_catalog.clock_timestamp()", "course-publication-metadata"],
+    ["blocked-title", "blocked", "title='Unexpected title'", "course-publication-metadata"],
+    ["description", "published", "description=NULL", "course-publication-metadata"],
+    ["cover", "published", "cover=NULL", "course-publication-metadata"],
+    ["tax", "published", "tax_classification=NULL", "course-publication-metadata"],
+    ["created-time", "published", "created_at=created_at-interval '1 day'", "course-publication-metadata"],
+  ]) {
+    const selected = test(name, outcome);
+    await create(selected.fixture);
+    const baseline = await capture(selected);
+    if (outcome === "published" && update) assert.equal((await publish(selected)).rowCount, 1);
+    if (update) await course.query(`UPDATE public.courses SET ${update} WHERE id=$1::uuid`, [selected.selection.courseId]);
+    await assert.rejects(observe(selected, baseline), { check });
+    await assert.rejects(observe(selected, baseline), { check: "course-publication-receipt" });
+  }
 }
 
 try { await main(); }

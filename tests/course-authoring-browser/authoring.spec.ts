@@ -149,12 +149,30 @@ test("owner authors, grades publication readiness and publishes with actual Cour
       .click();
     await expect(page).toHaveURL(/\/admin\/courses\/[a-f0-9-]{36}$/);
     const courseId = page.url().split("/").pop();
-    await page
-      .getByRole("button", { name: "Review publication readiness" })
-      .click();
+    const detail = `/api/admin/courses/${courseId}`;
+    const review = async () => {
+      const pending = page.waitForResponse(response => response.request().method() === "GET" &&
+        new URL(response.url()).pathname === detail + "/publication-readiness");
+      await page.getByRole("button", { name: "Review publication readiness" }).click();
+      const response = await pending;
+      expect(response.status()).toBe(200);
+      expect(await response.headerValue("cache-control")).toBe("private, no-store");
+      expect(await response.headerValue("x-request-id")).toMatch(/^[a-f0-9-]{36}$/u);
+      return response.json();
+    };
+    const publish = async (revision: number) => {
+      const pending = page.waitForResponse(response => response.request().method() === "PATCH" &&
+        new URL(response.url()).pathname === detail);
+      await page.getByRole("button", { name: "Publish course", exact: true }).click();
+      const response = await pending;
+      expect(response.request().postData()).toBe(JSON.stringify({ expectedRevision: revision, status: "published" }));
+      return response;
+    };
+    expect(await review()).toMatchObject({ courseId, courseRevision: 1, ready: false, issues: [{ code: "MODULE_REQUIRED" }] });
     await expect(
       page.getByText("Resolve these items before publishing"),
     ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Publish course", exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Add module", exact: true }).click();
     let editor = page.getByRole("region", { name: "Open course editor" });
     await editor.getByLabel("Title", { exact: true }).fill("Foundations");
@@ -206,15 +224,45 @@ test("owner authors, grades publication readiness and publishes with actual Cour
         "Quiz revision saved. Previous attempts remain in history.",
       ),
     ).toBeVisible();
-    await page
-      .getByRole("button", { name: "Review publication readiness" })
-      .click();
+    const { course: draft } = await (await page.request.get(detail)).json();
+    expect(await review()).toEqual({ courseId, courseRevision: draft.revision, ready: true, issues: [] });
     await expect(
       page.getByText("Ready to publish", { exact: true }),
     ).toBeVisible();
-    await page
-      .getByRole("button", { name: "Publish course", exact: true })
-      .click();
+
+    const database = new URL(process.env.COURSE_AUTHORING_GRANT_DATABASE_URL ?? "");
+    if (database.hostname !== "127.0.0.1" || database.pathname !== "/lash_authoring_course_integration")
+      throw new Error("Owned Course DB required for publication failure injection");
+    const sql = new pg.Client({ connectionString: database.href });
+    const lesson = draft.modules[0].lessons[0];
+    await sql.connect();
+    try {
+      // Preserve the root revision to exercise publication revalidation after a ready snapshot.
+      const injected = await sql.query("UPDATE lessons SET content_document=$2::jsonb WHERE id=$1", [
+        lesson.id, JSON.stringify({ version: 1, blocks: [{ _type: "invalid" }] }),
+      ]);
+      expect(injected.rowCount).toBe(1);
+      const refused = await publish(draft.revision);
+      expect(refused.status()).toBe(409);
+      const requestId = await refused.headerValue("x-request-id");
+      const conflict = `This course changed or is not ready for this operation. Reload before trying again. Reference: ${requestId}`;
+      await expect(page.getByRole("alert").getByText(conflict, { exact: true })).toBeVisible();
+      expect((await sql.query("SELECT revision, status FROM courses WHERE id=$1", [courseId])).rows)
+        .toEqual([{ revision: draft.revision, status: "draft" }]);
+      expect(await review()).toMatchObject({ courseRevision: draft.revision, ready: false,
+        issues: [{ code: "INVALID_CONTENT", lessonId: lesson.id }] });
+      await expect(page.getByRole("button", { name: "Publish course", exact: true })).toHaveCount(0);
+    } finally {
+      try {
+        await sql.query("UPDATE lessons SET content_document=$2::jsonb WHERE id=$1", [lesson.id, JSON.stringify(lesson.contentDocument)]);
+      } finally {
+        await sql.end();
+      }
+    }
+    expect(await review()).toEqual({ courseId, courseRevision: draft.revision, ready: true, issues: [] });
+    const published = await publish(draft.revision);
+    expect(published.status()).toBe(200);
+    expect((await published.json()).course).toMatchObject({ id: courseId, revision: draft.revision + 1, status: "published" });
     await expect(
       page.getByText("Course published.", { exact: true }),
     ).toBeVisible();

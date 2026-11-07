@@ -731,6 +731,86 @@ for (const kind of ["module", "lesson"]) {
   });
 }
 
+for (const ready of [true, false]) {
+  test(`scoped authoring acknowledges ${ready ? "ready publication and readback" : "not-ready publication review without a write"}`, async t => {
+    const courseId = "20000000-0000-4000-8000-000000000001";
+    const moduleId = "20000000-0000-4000-8000-000000000002";
+    const lessonId = "20000000-0000-4000-8000-000000000003";
+    const foreignId = "20000000-0000-4000-8000-000000000004";
+    const detail = `/course/v1/admin/courses/${courseId}`;
+    const readiness = `${detail}/publication-readiness`;
+    const revision = 7;
+    const patchBody = JSON.stringify({ expectedRevision: revision, status: "published" });
+    const requests = [
+      { method: "GET", target: detail, bodySha256: certificationHash(""), uses: ready ? 2 : 1 },
+      { method: "GET", target: readiness, bodySha256: certificationHash(""), uses: 1 },
+      ...(ready ? [{ method: "PATCH", target: detail, bodySha256: certificationHash(patchBody), uses: 1 }] : []),
+    ];
+    const blocks = ready ? [{ _type: "block", _key: "owned-block", style: "normal", markDefs: [],
+      children: [{ _type: "span", _key: "owned-span", text: "Owned publication fixture content", marks: [] }] }] : [];
+    const courseResponse = (status, courseRevision) => ({ course: { id: courseId, title: "P2Q publication draft", slug: "p2q-publication-draft",
+      description: null, introduction: null, currency: "CAD", accessMode: "free", priceCents: 0, cover: null, seo: { noIndex: false },
+      taxClassification: ready ? "p2q-reviewed-tax-fixture" : null, status, revision: courseRevision,
+      modules: [{ id: moduleId, courseId, title: "Publication module", slug: "publication-module", description: null, position: 1,
+        archivedAt: null, courseRevision, lessons: [{ id: lessonId, moduleId, title: "Publication lesson", slug: "publication-lesson", content: null,
+          contentDocument: { version: 1, blocks }, transcript: null, captions: [], isPreview: false, position: 1, archivedAt: null, courseRevision }] }],
+    } });
+    const before = courseResponse("draft", revision), published = courseResponse("published", revision + 1);
+    const readinessResponse = { courseId, courseRevision: revision, ready, issues: ready ? [] : [
+      { code: "TAX_CLASSIFICATION_REQUIRED", field: "taxClassification", message: "Record the reviewed tax classification before publication." },
+      { code: "LESSON_CONTENT_REQUIRED", field: "contentDocument", message: "Provide nonempty lesson content, a valid quiz, or ready video.", lessonId },
+    ] };
+    const forwarded = [];
+    let current = before;
+    const f = await interactiveFixture(t, requests, async (req, res) => {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      forwarded.push({ method: req.method, target: req.url, body: Buffer.concat(chunks).toString(),
+        requestId: req.headers["x-request-id"], proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+      if (req.method === "PATCH") current = published;
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify(req.url === readiness.slice("/course".length) ? readinessResponse : current));
+    }, "authoring");
+
+    const patch = (body = patchBody, path = detail) => f.signed({ method: "PATCH", path, body });
+    const denied = [f.signed({ path: detail, actor: foreignId }), f.signed({ path: readiness, actor: foreignId }),
+      f.signed({ method: "PATCH", path: detail, body: patchBody, actor: foreignId }),
+      f.signed({ path: `/course/v1/admin/courses/${foreignId}/publication-readiness` }),
+      patch(patchBody, `/course/v1/admin/courses/${foreignId}`), patch(JSON.stringify({ expectedRevision: revision, status: "archived" })),
+      patch(JSON.stringify({ expectedRevision: revision + 1, status: "published" }))];
+    if (!ready) denied.push(patch());
+    for (const input of denied) assert.equal((await f.send(input)).status, 503);
+    const steps = [
+      { input: f.signed({ path: detail }), requestIndex: 0, value: before },
+      { input: f.signed({ path: readiness }), requestIndex: 1, value: readinessResponse },
+      ...(ready ? [{ input: patch(), requestIndex: 2, value: published }, { input: f.signed({ path: detail }), requestIndex: 0, value: published }] : []),
+    ];
+    const acknowledged = [];
+    for (const { input, requestIndex, value } of steps) {
+      const output = await f.send(input);
+      assert.equal(output.status, 200);
+      assert.deepEqual(JSON.parse(output.body), value);
+      const requestId = output.headers["x-request-id"], proofRequestId = input.headers["x-request-id"];
+      assert.match(requestId, /^[a-f0-9-]{36}$/u);
+      assert.notEqual(requestId, proofRequestId);
+      acknowledged.push({ requestId, proofRequestId, requestIndex, upstreamStatus: 200 });
+      assert.equal((await f.send(input)).status, 503);
+    }
+    for (const input of [f.signed({ path: detail }), f.signed({ path: readiness }), patch()]) {
+      assert.equal((await f.send(input)).status, 503);
+    }
+    assert.deepEqual(current, ready ? published : before);
+    assert.equal(new Set(acknowledged.map(row => row.requestId)).size, steps.length);
+    assert.equal(new Set(acknowledged.map(row => row.proofRequestId)).size, steps.length);
+    assert.deepEqual(forwarded, steps.map(({ input }, index) => ({ method: input.method, target: input.path.slice("/course".length),
+      body: input.body ?? "", requestId: acknowledged[index].requestId, proof: undefined })));
+    const observed = f.admissionState();
+    assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+    assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+    assert.deepEqual(observed.interactiveEvidence, { admitted: steps.length, acknowledged });
+  });
+}
+
 function mediaRefreshReceipt(lessonId, id) {
   return { id, lessonId, status: "processing", generation: 2, isCurrent: false, lastErrorCode: null,
     captionTracks: [{ id: "owned-track", language: "en", label: "English", status: "ready", closedCaptions: true }] };

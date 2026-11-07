@@ -6,7 +6,7 @@ import { integrationErrorResponse, IntegrationServiceError, safeIntegrationReque
 import { runCourseAdminOperation } from "./course-admin-operation";
 import { isIntegrationFeatureEnabled } from "./rollout-flags";
 import { validateCandidateRequest } from "./candidate-validation";
-import { currentWriterAuthoringActorId } from "@/lib/writer-admission/context";
+import { currentWriterAuthoringActorId, currentWriterAuthoringOperation } from "@/lib/writer-admission/context";
 import type { WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 
 type Client = ReturnType<typeof createCourseClient>;
@@ -62,8 +62,16 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
             }
             case "update-course": {
               const input = body as Parameters<Client["updateCourse"]>[1];
-              if (currentWriterAuthoringActorId() && (!input || !Number.isSafeInteger(input.expectedRevision) ||
-                input.expectedRevision < 1 || Object.hasOwn(input, "status"))) throw new IntegrationServiceError("invalid_request", 400);
+              if (currentWriterAuthoringActorId()) {
+                if (!input || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
+                  throw new IntegrationServiceError("invalid_request", 400);
+                }
+                const scope = currentWriterAuthoringOperation();
+                const validUpdate = scope === "publish-course"
+                  ? input.expectedRevision <= 2_147_483_647 && input.status === "published" && Object.keys(input).length === 2
+                  : scope === "edit-draft" && !Object.hasOwn(input, "status");
+                if (!validUpdate) throw new IntegrationServiceError("invalid_request", 400);
+              }
               result = await course.updateCourse(params.courseId, input);
               break;
             }

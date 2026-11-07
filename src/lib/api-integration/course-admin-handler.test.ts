@@ -3,7 +3,7 @@ import test from "node:test";
 import { createCourseAdminHandler } from "./course-admin-handler";
 import { createCourseClient } from "./course-client";
 import type { AdminActor } from "@/lib/admin/types";
-import { markWriterOperationUncertain, withWriterOperationContext } from "@/lib/writer-admission/context";
+import { markWriterOperationUncertain, withWriterOperationContext, type WriterAuthoringOperation } from "@/lib/writer-admission/context";
 import { IntegrationServiceError } from "./service-errors";
 
 const id = "11111111-1111-4111-8111-111111111111";
@@ -41,7 +41,8 @@ test("scoped draft edits require a positive revision and reject any publication 
   const path = `/api/admin/courses/${id}`, updates: unknown[] = [];
   const makeHandler = (authoringActorId?: string) => createCourseAdminHandler("update-course", {
     enabled: () => true, origin: () => origin,
-    run: (_kind, work) => withWriterOperationContext(work, undefined, undefined, undefined, undefined, authoringActorId),
+    run: (_kind, work) => withWriterOperationContext(work, undefined, undefined, undefined, undefined, authoringActorId,
+      authoringActorId ? "edit-draft" : undefined),
     client: () => ({ async updateCourse(courseId: string, input: unknown) { assert.equal(courseId, id); updates.push(input); return {}; } }) as never,
   });
   const scoped = makeHandler(id);
@@ -55,6 +56,29 @@ test("scoped draft edits require a positive revision and reject any publication 
   const ordinaryStatusChange = { expectedRevision: 4, status: "published" };
   assert.equal((await makeHandler()(req(path, "PATCH", ordinaryStatusChange), { courseId: id })).status, 200);
   assert.deepEqual(updates, [details, ordinaryStatusChange]);
+});
+
+test("scoped publication forwards only a revisioned publish and refuses writes under readiness scope", async () => {
+  const path = `/api/admin/courses/${id}`, updates: unknown[] = [];
+  const handler = (scope: WriterAuthoringOperation) => createCourseAdminHandler("update-course", {
+    enabled: () => true, origin: () => origin,
+    run: (_kind, work) => withWriterOperationContext(work, undefined, undefined, undefined, undefined, id, scope),
+    client: () => ({ async updateCourse(courseId: string, input: unknown) { assert.equal(courseId, id); updates.push(input); return {}; } }) as never,
+  });
+  const publish = { expectedRevision: 3, status: "published" };
+  const scoped = handler("publish-course");
+  for (const body of [null, {}, { expectedRevision: 3 }, { status: "published" }, { ...publish, expectedRevision: 0 },
+    { ...publish, expectedRevision: 2_147_483_648 }, { ...publish, expectedRevision: 1.5 }, { ...publish, expectedRevision: "3" },
+    { ...publish, status: "draft" }, { ...publish, status: "archived" }, { ...publish, title: "Unexpected change" }]) {
+    assert.equal((await scoped(req(path, "PATCH", body), { courseId: id })).status, 400);
+  }
+  const review = handler("review-publication");
+  for (const body of [publish, { expectedRevision: 3, title: "Draft edit" }]) {
+    assert.equal((await review(req(path, "PATCH", body), { courseId: id })).status, 400);
+  }
+  assert.deepEqual(updates, []);
+  assert.equal((await scoped(req(path, "PATCH", publish), { courseId: id })).status, 200);
+  assert.deepEqual(updates, [publish]);
 });
 
 test("scoped curriculum reorders accept only a revision and unique canonical IDs before client calls", async () => {

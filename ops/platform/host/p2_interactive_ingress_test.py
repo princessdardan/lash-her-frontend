@@ -298,6 +298,22 @@ class InteractiveIngressTests(unittest.TestCase):
         self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
         self.assertEqual(self.fixture.responses, [])
 
+    def test_publication_probes_reviewed_detail_and_readiness_on_both_origins(self):
+        course = "10000000-0000-4000-8000-000000000001"
+        detail = f"/api/admin/courses/{course}"
+        paths = (f"/admin/courses/{course}", detail, f"{detail}/publication-readiness")
+        self.enqueue_selected_protection(paths)
+        requester, urls = self.owned_unauthenticated_requester()
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester):
+            with self.assertRaisesRegex(ValueError, "READINESS_COURSE_REQUIRED"):
+                ingress.observe_authoring_protection(self.base.context, self.fixture.client,
+                                                      expected_profile=self.profile, publication_readiness=True)
+            receipt = ingress.observe_authoring_protection(self.base.context, self.fixture.client, course_id=course,
+                                                            expected_profile=self.profile, publication_readiness=True)
+        self.assertEqual([row["path"] for row in receipt["endpointDenials"]], list(paths))
+        self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
+        self.assertEqual(self.fixture.responses, [])
+
     def test_browser_matrix_refuses_alias_drift_after_denials(self):
         self.enqueue_selected_protection(ingress._BROWSER_PATHS,
                                          final_alias={**self.alias(), "deploymentId": "dpl_foreign"})
@@ -328,6 +344,42 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
+    def test_publication_plan_binds_outcome_issue_codes_and_exact_patch_digest(self):
+        owner = "10000000-0000-4000-8000-000000000001"
+        course = "10000000-0000-4000-8000-000000000002"
+        detail = f"/course/v1/admin/courses/{course}"
+        digest = hashlib.sha256(b'{"expectedRevision":4,"status":"published"}').hexdigest()
+        patch = {"method": "PATCH", "target": detail, "bodySha256": digest, "uses": 1}
+        for outcome, codes, prefix in (("published", [], "7032712d617574682d7075622d763100"),
+                                       ("blocked", ["MISSING_COVER", "NO_LESSONS"], "7032712d617574682d7264792d763100")):
+            published = outcome == "published"
+            selection = {"operation": "qualify-publication", "courseId": course, "slug": "owned-draft",
+                         "revision": 4, "outcome": outcome, "issueCodes": codes}
+            requests = [{"method": "GET", "target": detail, "bodySha256": window._EMPTY, "uses": 2 if published else 1},
+                        {"method": "GET", "target": f"{detail}/publication-readiness", "bodySha256": window._EMPTY, "uses": 1}]
+            if published:
+                requests.append(patch)
+            action = {"stage": "authoring", "actorId": owner, "windowSeconds": 60, "requests": requests, "authoringAction": selection}
+            self.assertEqual(window.validate_interactive_action(action), action)
+            selector = window._selection_sha(action)
+            self.assertEqual(selector, prefix + owner.replace("-", ""))
+            cookie, key, _, _ = window._material("fixture" * 8, "https://owned.vercel.app", "a" * 40, "b" * 64,
+                                                 "8", "authoring", 1_794_009_600, 60, "c" * 32, selector)
+            self.assertEqual(cookie.split(".")[6], selector)
+            self.assertEqual(len(key), 64)
+            invalid_codes = (["NO_LESSONS"],) if published else ([], ["NO_LESSONS", "MISSING_COVER"],
+                                                                ["NO_LESSONS"] * 2, ["lowercase"], [f"ISSUE_{n:02d}" for n in range(17)])
+            for invalid in invalid_codes:
+                with self.subTest(outcome=outcome, codes=invalid), self.assertRaisesRegex(ValueError, "PUBLICATION_SELECTION_REQUIRED"):
+                    window.validate_interactive_action({**action, "authoringAction": {**selection, "issueCodes": invalid}})
+            if published:
+                changed = [*requests[:2], {**patch, "bodySha256": "c" * 64}]
+                with self.assertRaisesRegex(ValueError, "PUBLICATION_DIGEST_REQUIRED"):
+                    window.validate_interactive_action({**action, "requests": changed})
+            else:
+                with self.assertRaises(ValueError):
+                    window.validate_interactive_action({**action, "requests": [*requests, patch]})
+
     def test_curriculum_creation_plan_binds_child_slug_parent_and_exact_use_counts(self):
         owner = "10000000-0000-4000-8000-000000000001"
         course = "10000000-0000-4000-8000-000000000002"

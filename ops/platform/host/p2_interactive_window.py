@@ -32,6 +32,7 @@ _NONCE = re.compile(r"[a-f0-9]{32}")
 _DEPLOYMENT = re.compile(r"https://([a-z0-9][a-z0-9-]*\.vercel\.app)")
 _TARGET = re.compile(r"/course/v1/[A-Za-z0-9/_-]+(?:\?[!$%&'()*+,./:;=?@\[\]_~A-Za-z0-9-]+)?")
 _SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+_ISSUE_CODE = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
 _EMPTY = hashlib.sha256(b"").hexdigest()
 _MAX_STATE = 16_384
 _GATEWAY_GID = 65532
@@ -42,6 +43,7 @@ _CREATE_DRAFT = "create-draft"
 _EDIT_DRAFT = "edit-and-stale-draft"
 _CREATE_CURRICULUM = "create-curriculum"
 _REORDER_CURRICULUM = "reorder-and-stale-curriculum"
+_QUALIFY_PUBLICATION = "qualify-publication"
 _CURRICULUM_OPERATIONS = (_CREATE_CURRICULUM, _REORDER_CURRICULUM)
 _BROWSER_SOURCE = "ops/platform/p2-lifecycle-browser-recorder.mjs"
 _BROWSER_LAUNCHER = b"\nawait runP2LifecycleBrowserChild();\n"
@@ -163,6 +165,11 @@ def _authoring_requests(action):
     if operation == _CREATE_DRAFT:
         return (("GET", "/course/v1/admin/courses?limit=100", 1, 200), ("POST", "/course/v1/admin/courses", 1, 201))
     course = f'/course/v1/admin/courses/{action["courseId"]}'
+    if operation == _QUALIFY_PUBLICATION:
+        readiness = ("GET", f"{course}/publication-readiness", 1, 200)
+        if action["outcome"] == "published":
+            return (("GET", course, 2, 200), readiness, ("PATCH", course, 1, 200))
+        return (("GET", course, 1, 200), readiness)
     if operation == _CREATE_CURRICULUM:
         return (("GET", course, 2, 200), ("POST", f"/course/v1{_curriculum_path(action)}", 1, 201))
     method, target = ("POST", f"/course/v1{_curriculum_path(action)}") if operation == _REORDER_CURRICULUM else ("PATCH", course)
@@ -194,6 +201,7 @@ def authoring_gateway_receipt(plan, artifact):
         _CREATE_CURRICULUM: [0, 1, 0],
         _EDIT_DRAFT: [0, 0, 1, 0, 2],
         _REORDER_CURRICULUM: [0, 0, 1, 0, 2],
+        _QUALIFY_PUBLICATION: [0, 1, 2, 0] if selected.get("outcome") == "published" else [0, 1],
     }[selected["operation"]]
     demand(indices == expected_order,
            "P2_INTERACTIVE_AUTHORING_ACKNOWLEDGEMENTS_REQUIRED")
@@ -209,6 +217,8 @@ def _authoring_case_evidence(plan, action, evidence, gateway_artifact):
     gateway = authoring_gateway_receipt(plan, gateway_artifact)
     mutations = [row["requestId"] for row in gateway["gatewayAcknowledgements"] if row["requestIndex"] > 0]
     response, witness = evidence[browser_key], evidence["courseWitness"]
+    if selected["operation"] == _QUALIFY_PUBLICATION:
+        return _publication_case_evidence(action, response, witness, gateway, mutations)
     if reordering:
         return _curriculum_case_evidence(action, response, witness, gateway, mutations)
     if selected["operation"] == _CREATE_CURRICULUM:
@@ -241,6 +251,36 @@ def _authoring_case_evidence(plan, action, evidence, gateway_artifact):
     return {"operation": selected["operation"], "slug": selected["slug"], "actorId": action["actorId"],
             "courseId": body["courseId"], "courseWitnessSha256": _receipt_sha(witness),
             "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"], **observed}
+
+
+def _publication_case_evidence(action, response, witness, gateway, request_ids):
+    selected = action["authoringAction"]
+    published = selected["outcome"] == "published"
+    fields = "readiness body publication" if published else "readiness body"
+    demand(_closed_fields(response, fields), "P2_INTERACTIVE_AUTHORING_PUBLICATION_EVIDENCE_REQUIRED")
+    detail = f'/api/admin/courses/{selected["courseId"]}'
+    observed = (("readiness", "GET", f"{detail}/publication-readiness"),)
+    if published:
+        observed += (("publication", "PATCH", detail),)
+    for (key, method, pathname), request_id in zip(observed, request_ids):
+        item = response[key]
+        demand(_closed_fields(item, "method pathname status requestId") and item["method"] == method and
+               item["pathname"] == pathname and type(item["status"]) is int and item["status"] == 200 and
+               item["requestId"] == request_id, "P2_INTERACTIVE_AUTHORING_PUBLICATION_RESPONSE_REQUIRED")
+    body = response["body"]
+    fields = "courseId slug revision status issueCodes"
+    demand(_closed_fields(body, fields) and body["courseId"] == selected["courseId"] and body["slug"] == selected["slug"] and
+           type(body["revision"]) is int and body["revision"] == selected["revision"] + int(published) and
+           body["status"] == ("published" if published else "draft") and body["issueCodes"] == selected["issueCodes"],
+           "P2_INTERACTIVE_AUTHORING_PUBLICATION_BODY_REQUIRED")
+    demand(_closed_fields(witness, f"{fields} readOnly") and witness["readOnly"] is True and
+           type(witness["revision"]) is int and all(witness[key] == value for key, value in body.items()),
+           "P2_INTERACTIVE_AUTHORING_COURSE_WITNESS_REQUIRED")
+    patch = {"gatewayPatchRequestId": request_ids[1]} if published else {}
+    return {**{key: selected[key] for key in ("operation", "courseId", "slug", "outcome", "issueCodes")},
+            "actorId": action["actorId"], "revision": body["revision"], "readinessGatewayRequestId": request_ids[0], **patch,
+            "browserResponseSha256": _receipt_sha(response), "courseWitnessSha256": _receipt_sha(witness),
+            "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
 
 def _curriculum_create_case_evidence(action, response, witness, gateway, mutation_id):
@@ -419,13 +459,16 @@ def validate_interactive_action(action):
         selected_authoring = action["authoringAction"]
         operation = selected_authoring.get("operation") if type(selected_authoring) is dict else None
         fields = "operation slug"
-        if operation in (_EDIT_DRAFT, *_CURRICULUM_OPERATIONS):
+        if operation in (_EDIT_DRAFT, _QUALIFY_PUBLICATION, *_CURRICULUM_OPERATIONS):
             fields += " courseId revision"
         if operation in _CURRICULUM_OPERATIONS:
             fields += " kind parentId"
         if operation == _CREATE_CURRICULUM:
             fields += " childSlug"
-        demand(_closed_fields(selected_authoring, fields) and operation in (_CREATE_DRAFT, _EDIT_DRAFT, *_CURRICULUM_OPERATIONS) and
+        if operation == _QUALIFY_PUBLICATION:
+            fields += " outcome issueCodes"
+        demand(_closed_fields(selected_authoring, fields) and
+               operation in (_CREATE_DRAFT, _EDIT_DRAFT, _QUALIFY_PUBLICATION, *_CURRICULUM_OPERATIONS) and
                _matches(_SLUG, selected_authoring["slug"]) and len(selected_authoring["slug"]) <= 120,
                "P2_INTERACTIVE_AUTHORING_DRAFT_REQUIRED")
         if operation != _CREATE_DRAFT:
@@ -438,24 +481,36 @@ def validate_interactive_action(action):
         if operation == _CREATE_CURRICULUM:
             child = selected_authoring["childSlug"]
             demand(_matches(_SLUG, child) and len(child) <= 120, "P2_INTERACTIVE_AUTHORING_CHILD_SLUG_REQUIRED")
+        if operation == _QUALIFY_PUBLICATION:
+            outcome, codes = selected_authoring["outcome"], selected_authoring["issueCodes"]
+            demand(type(codes) is list and
+                   (codes == [] if outcome == "published" else outcome == "blocked" and 1 <= len(codes) <= 16 and
+                    all(_matches(_ISSUE_CODE, code) for code in codes) and codes == sorted(set(codes))),
+                   "P2_INTERACTIVE_AUTHORING_PUBLICATION_SELECTION_REQUIRED")
         expected = _authoring_requests(selected_authoring)
-        mutations = [row["bodySha256"] for row in requests[1:]]
+        mutations = [row["bodySha256"] for row in requests if row["method"] != "GET"]
         demand(len(requests) == len(expected) and all(
                    (row["method"], row["target"], row["uses"]) == (method, target, uses)
                    for row, (method, target, uses, _) in zip(requests, expected)) and
                all(_digest(digest) and digest != _EMPTY for digest in mutations) and len(set(mutations)) == len(mutations),
                "P2_INTERACTIVE_AUTHORING_DRAFT_REQUIRED")
+        if operation == _QUALIFY_PUBLICATION and selected_authoring["outcome"] == "published":
+            reviewed_body = {"expectedRevision": selected_authoring["revision"], "status": "published"}
+            demand(requests[2]["bodySha256"] == _receipt_sha(reviewed_body), "P2_INTERACTIVE_AUTHORING_PUBLICATION_DIGEST_REQUIRED")
     return copy.deepcopy(action)
 
 
 def _selection_sha(action):
     if action["stage"] == "authoring":
+        authoring = action["authoringAction"]
         prefix = {
             _CREATE_DRAFT: "7032712d617574686f72696e672d7631",
             _EDIT_DRAFT: "7032712d617574682d656469742d7631",
             _CREATE_CURRICULUM: "7032712d617574682d6e65772d763100",
             _REORDER_CURRICULUM: "7032712d617574682d736f72742d7631",
-        }[action["authoringAction"]["operation"]]
+            _QUALIFY_PUBLICATION: ("7032712d617574682d7075622d763100" if authoring.get("outcome") == "published" else
+                                   "7032712d617574682d7264792d763100"),
+        }[authoring["operation"]]
         return prefix + action["actorId"].replace("-", "")
     if action["stage"] == "identity":
         if "identityEnrollment" in action:
@@ -600,6 +655,8 @@ class P2InteractiveWindow:
         authoring = self.action.get("authoringAction")
         protect = ingress.observe_authoring_protection if authoring else ingress.observe_browser_protection
         paths = {"course_id": authoring["courseId"]} if authoring and authoring["operation"] != _CREATE_DRAFT else {}
+        if authoring and authoring["operation"] == _QUALIFY_PUBLICATION:
+            paths["publication_readiness"] = True
         proof = protect(self.broker._native_context(),
             LockedClient(self.broker.vercel, self.broker.check), **self.broker.profile_arguments(), **paths)
         ordinary = self._gateway()

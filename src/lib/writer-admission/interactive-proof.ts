@@ -5,7 +5,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { isAdminDeveloperModeEnabled } from "@/lib/admin/developer-mode-config";
 import { resolveApplicationEnvironment } from "@/lib/env/application-environment.mjs";
-import type { WriterIdentityEnrollment } from "./context";
+import type { WriterAuthoringOperation, WriterIdentityEnrollment } from "./context";
 
 export const INTERACTIVE_ORIGIN = "https://staging.lashher.com";
 export const INTERACTIVE_COOKIE = "__Host-lash-p2q-window";
@@ -20,8 +20,10 @@ const authoringActorPrefix = "7032712d617574686f72696e672d7631";
 const authoringEditActorPrefix = "7032712d617574682d656469742d7631";
 const authoringReorderActorPrefix = "7032712d617574682d736f72742d7631";
 const authoringCreateCurriculumActorPrefix = "7032712d617574682d6e65772d763100";
+const authoringPublishActorPrefix = "7032712d617574682d7075622d763100";
+const authoringReviewPublicationActorPrefix = "7032712d617574682d7264792d763100";
 type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; identityEnrollment?: WriterIdentityEnrollment;
-  authoringOperation?: "create-draft" | "edit-draft" | "reorder-curriculum" | "create-curriculum" };
+  authoringOperation?: WriterAuthoringOperation };
 type BrowserPermit = BrowserScope & { epoch: string; nonce: string; lifecycleSelectionSha256?: string; identityCustomerId?: string; authoringActorId?: string };
 type Binding = { key: string; deploymentHost: string; source: string; target: string };
 const gatewayOrigin = "https://api-staging.lashher.com";
@@ -57,6 +59,10 @@ const authoringCreateCurriculum = {
   GET: authoringEdit.GET,
   POST: at(`/api/admin/(?:courses/${uuid}/modules|modules/${uuid}/lessons)`),
 };
+const authoringReviewPublication = {
+  GET: at(`/admin/courses/${uuid}|/api/admin/courses/${uuid}(?:/publication-readiness)?`),
+};
+const authoringPublish = { ...authoringReviewPublication, PATCH: authoringEdit.PATCH };
 const media = {
   GET: at(`/api/admin/lessons/${uuid}/video`),
   POST: at(`/api/admin/lessons/${uuid}/(?:video-upload|video/${uuid}/(?:refresh|captions))`),
@@ -92,6 +98,8 @@ function permits({ stage, identityActorKind, identityEnrollment, authoringOperat
       if (identityActorKind === "admin") return matches(staffAuth, method, path);
       return identityActorKind === "customer" && permitsCustomerAuth(method, path, identityEnrollment?.provider);
     case "authoring":
+      if (authoringOperation === "publish-course") return matches(authoringPublish, method, path);
+      if (authoringOperation === "review-publication") return matches(authoringReviewPublication, method, path);
       if (authoringOperation === "create-curriculum") return matches(authoringCreateCurriculum, method, path);
       if (authoringOperation === "reorder-curriculum") return matches(authoringReorder, method, path);
       if (authoringOperation === "edit-draft") return matches(authoringEdit, method, path);
@@ -167,7 +175,11 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
     const reorderActorId = decodeSelectedUuid(selection, authoringReorderActorPrefix);
     if (reorderActorId) return { ...permit, authoringActorId: reorderActorId, authoringOperation: "reorder-curriculum" };
     const createCurriculumActorId = decodeSelectedUuid(selection, authoringCreateCurriculumActorPrefix);
-    return createCurriculumActorId ? { ...permit, authoringActorId: createCurriculumActorId, authoringOperation: "create-curriculum" } : null;
+    if (createCurriculumActorId) return { ...permit, authoringActorId: createCurriculumActorId, authoringOperation: "create-curriculum" };
+    const publishActorId = decodeSelectedUuid(selection, authoringPublishActorPrefix);
+    if (publishActorId) return { ...permit, authoringActorId: publishActorId, authoringOperation: "publish-course" };
+    const reviewActorId = decodeSelectedUuid(selection, authoringReviewPublicationActorPrefix);
+    return reviewActorId ? { ...permit, authoringActorId: reviewActorId, authoringOperation: "review-publication" } : null;
   }
   return { ...permit, lifecycleSelectionSha256: stage === "lifecycle" ? selection : undefined };
 }
@@ -214,7 +226,8 @@ function verifiedInteractiveRequest(authority: Binding, proof: string, cookie: s
 
 export function readInteractiveRequest(proof: string, cookie: string, env: Record<string, string | undefined> = process.env,
   now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string;
-    lifecycleSelectionSha256?: string; identityCustomerId?: string; identityEnrollment?: WriterIdentityEnrollment; authoringActorId?: string } | null {
+    lifecycleSelectionSha256?: string; identityCustomerId?: string; identityEnrollment?: WriterIdentityEnrollment;
+    authoringActorId?: string; authoringOperation?: WriterAuthoringOperation } | null {
   const authority = binding(env);
   const browser = authority && verifiedInteractiveRequest(authority, proof, cookie, now);
   if (!authority || !browser) return null;
@@ -224,7 +237,7 @@ export function readInteractiveRequest(proof: string, cookie: string, env: Recor
     ...(browser.lifecycleSelectionSha256 ? { lifecycleSelectionSha256: browser.lifecycleSelectionSha256 } : {}),
     ...(browser.identityCustomerId ? { identityCustomerId: browser.identityCustomerId } : {}),
     ...(browser.identityEnrollment ? { identityEnrollment: browser.identityEnrollment } : {}),
-    ...(browser.authoringActorId ? { authoringActorId: browser.authoringActorId } : {}) };
+    ...(browser.authoringActorId ? { authoringActorId: browser.authoringActorId, authoringOperation: browser.authoringOperation } : {}) };
 }
 
 export async function readInteractiveBrowserRequest(): Promise<ReturnType<typeof readInteractiveRequest>> {

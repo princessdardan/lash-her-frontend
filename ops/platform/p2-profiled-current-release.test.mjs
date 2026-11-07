@@ -361,6 +361,41 @@ test('fixed current certification plan joins the original release plan, terminal
       assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selected,
         authoringAction: { ...selected.authoringAction, childSlug: 'Other child' } })));
     }
+    const selectedPublications = ['published', 'blocked'].map(outcome => {
+      const published = outcome === 'published';
+      const { courseId, slug, revision } = selectedEdit.authoringAction;
+      const reads = [
+        { ...selectedEdit.requests[0], uses: published ? 2 : 1 },
+        { ...selectedEdit.requests[0], target: editPath + '/publication-readiness', uses: 1 },
+      ];
+      return { ...selectedEdit, authoringAction: { operation: 'qualify-publication', courseId, slug, revision, outcome,
+        issueCodes: published ? [] : ['LESSON_CONTENT_REQUIRED', 'TAX_CLASSIFICATION_REQUIRED'] },
+        requests: published ? [...reads, { method: 'PATCH', target: editPath, uses: 1,
+          bodySha256: rawHash(JSON.stringify({ expectedRevision: revision, status: 'published' })) }] : reads };
+    });
+    for (const selected of selectedPublications) {
+      const settings = paired(selected), planned = prepareP2ProfiledCertificationOperator(settings);
+      assert.equal(planned.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
+      assert.deepEqual(planned.authoring.scopedAction, selected);
+      assert.deepEqual(planned.identity.scopedAction.identityActor, draftPair.identity.scopedAction.identityActor);
+      const hostPlan = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+        { input: JSON.stringify(planned.authoring), encoding: 'utf8' });
+      assert.equal(hostPlan.status, 0, hostPlan.stderr);
+      const confirmation = { confirmation: 'staging/owned-scoped-action' };
+      await assert.rejects(p2ProfiledCertificationOperator(settings, confirmation), { code: 'ENOENT' });
+      await assert.rejects(p2ProfiledCertificationOperator({ ...settings, execution: { authoringDraft: {} } }, confirmation), error => error.code !== 'ENOENT');
+      const [read, readiness] = selected.requests;
+      for (const requests of [[read, { ...readiness, uses: 2 }, ...selected.requests.slice(2)],
+        [readiness, read, ...selected.requests.slice(2)], [...selected.requests, selectedPublications[0].requests[2]]])
+        assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selected, requests })));
+      const issueCodes = selected.authoringAction.outcome === 'published' ? ['MODULE_REQUIRED'] : ['Z_CODE', 'A_CODE'];
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selected,
+        authoringAction: { ...selected.authoringAction, issueCodes } })));
+    }
+    const [positivePublication] = selectedPublications;
+    assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...positivePublication, requests: [
+      ...positivePublication.requests.slice(0, 2), { ...positivePublication.requests[2], bodySha256: rawHash('{"status":"published","expectedRevision":1}') },
+    ] })));
     const enrolledEmail = 'owned-enrollment@example.invalid';
     const firstEnrollments = ['google', 'resend'].map((provider, index) => {
       const nonce = String(index+1).repeat(32);
@@ -464,6 +499,8 @@ test('fixed current certification plan joins the original release plan, terminal
       [selectedEdit, '7032712d617574682d656469742d7631' + selectedEdit.actorId.replaceAll('-', '')],
       ...selectedReorders.map(selection => [selection, '7032712d617574682d736f72742d7631' + selection.actorId.replaceAll('-', '')]),
       ...selectedCurriculum.map(([selection]) => [selection, '7032712d617574682d6e65772d763100' + selection.actorId.replaceAll('-', '')]),
+      ...selectedPublications.map(selection => [selection, (selection.authoringAction.outcome === 'published'
+        ? '7032712d617574682d7075622d763100' : '7032712d617574682d7264792d763100') + selection.actorId.replaceAll('-', '')]),
       [prepareP2ProfiledCertificationOperator(paired(selectedLifecycle)).identity.scopedAction, rawHash(JSON.stringify(['identity', 'admin']))],
       [prepareP2ProfiledCertificationOperator(paired(preferenceScope)).identity.scopedAction, '7032712d637573746f6d65722d763100' + userId.replaceAll('-', '')],
       ...firstEnrollments.map(({ identityEnrollment, ...selection }) => [{ ...selection, identityEnrollment },

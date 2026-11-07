@@ -11,7 +11,8 @@ import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mj
 import { frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { p2SuspensionEvidenceSha256 as hash, observeP2SuspensionPending } from "./p2-lifecycle-pending-probe.mjs";
-import { isP2InteractiveAuthoringPair, p2AuthoringCurriculumPath, p2AuthoringReorderPath, p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath,
+import { isP2InteractiveAuthoringDetail, isP2InteractiveAuthoringPair, p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringReorderPath,
+  p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath,
   p2InteractiveIdentityContext, p2LifecycleMutationTarget, validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt,
   validateP2AuthoringReorderResponses, validateP2InteractiveBrowserInput,
   validateP2InteractiveBrowserPermit, validateP2InteractiveIdentityReceipt, validateP2LifecycleMutationReceipt } from "./p2-lifecycle-browser-recorder.mjs";
@@ -223,6 +224,12 @@ async function reviewedInteractiveInput(plan, challenge) {
       demand(first?.method === "POST" && first.target === "/course/v1" + p2AuthoringCurriculumPath(selected).slice(4));
       authoring = { actorId: action.actorId, operation: selected.operation, courseId: selected.courseId, slug: selected.slug,
         revision: selected.revision, kind: selected.kind, parentId: selected.parentId, childSlug: selected.childSlug, bodySha256: first.bodySha256 };
+    } else if (selected?.operation === "qualify-publication") {
+      const { detail, readiness } = p2AuthoringPublicationPaths(selected), published = selected.outcome === "published";
+      demand(first?.method === "GET" && first.target === "/course/v1" + readiness.slice(4)
+        && (published ? second?.method === "PATCH" && second.target === "/course/v1" + detail.slice(4) : second === undefined));
+      authoring = { actorId: action.actorId, operation: selected.operation, courseId: selected.courseId, slug: selected.slug,
+        revision: selected.revision, outcome: selected.outcome, issueCodes: selected.issueCodes };
     } else {
       demand(selected?.operation === "create-draft" && first?.method === "POST" && first.target === "/course/v1/admin/courses");
       authoring = { actorId: action.actorId, slug: selected.slug, bodySha256: first.bodySha256 };
@@ -285,7 +292,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       if (pending.type === "interactive-page-opened") {
         demand(message.path === p2InteractiveBrowserEntryPath(input, pending.selection.context)
           && Number.isInteger(message.httpStatus) && message.httpStatus >= 100 && message.httpStatus <= 599
-          && (!(isP2InteractiveAuthoringPair(input) || input.authoring?.operation === "create-curriculum") || message.httpStatus === 200));
+          && (!isP2InteractiveAuthoringDetail(input) || message.httpStatus === 200));
       }
       if (lifecycle) validateP2LifecycleMutationReceipt(message.response, input.lifecycle);
       if (authoring) validateP2AuthoringMutationReceipt(message.response, input.authoring);
