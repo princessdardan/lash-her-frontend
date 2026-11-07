@@ -1179,7 +1179,7 @@ test("owned Chromium publication checks the normal blocked UI or successful publ
     const open = async (outcome, scenario) => {
       const fixture = ownedPublication(outcome), { input, target, detail, readiness, receipt, response } = fixture;
       const context = await browser.newContext(), effects = [];
-      const document = `<!doctype html><p id="revision">draft · Revision ${target.revision}</p><div role="status"><p id="feedback"></p></div>
+      const document = `<!doctype html><meta charset="utf-8"><p id="revision">draft · Revision ${target.revision}</p><div role="status"><p id="feedback"></p></div>
         <button id="review">Review publication readiness</button><button id="publish" hidden>Publish course</button>
         <button id="reload" hidden>Complete readback</button><script>
         const feedback = document.querySelector('#feedback'), publish = document.querySelector('#publish'), reload = document.querySelector('#reload');
