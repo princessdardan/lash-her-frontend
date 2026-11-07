@@ -426,5 +426,56 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveGatewayAdmission": {
+    "frontendSourceCommit": "56be898b41f6d4d0b08848434e993686c274680d",
+    "protocolAndPlannerCommit": "14915cf34c5c18c211e339ae73d58e1423a13206",
+    "gatewayOwnedTls": {
+      "passed": 66,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "e0c46508336c9a3e01e0c5bc4f4d4532e21ba0a07c65da3bc84b43d9b709747e",
+      "scopedChecks": ["selected actor", "exact target, body and authorization bytes", "replay and use limits", "expiry and restoration", "bodyless media refresh", "upstream socket and 502 uncertainty", "unresolved media status"]
+    },
+    "frontendSourceUnitsNode24": {
+      "passed": 2521,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "38c6bd0f4461833bdc5444c614f999e38c6e770d6500ab49be781159f623ac38"
+    },
+    "p2ContractCheckPassed": true,
+    "frontendTransportAndAdmissionNode24": {"passed": 20, "failed": 0, "skipped": 0},
+    "certificationPlannerNode24": {"passed": 31, "pythonAndNodePermitVectorMatched": true, "interactiveApplyRefused": true},
+    "host": {
+      "passed": 89,
+      "failed": 0,
+      "interactiveOwnershipAndProviderReadbacksProjected": true,
+      "interactiveStateReplacementActual": true,
+      "muxOrdinaryOperatorStateBytesRestored": true
+    },
+    "browserCookieFixture": {
+      "browser": "Chromium 147.0.7727.15",
+      "hostOnlySecure": true,
+      "contextIsolated": true,
+      "targetedExpiryPreservedUnrelatedCookie": true,
+      "navigations": 0
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42530900,
+      "expandedBytes": 56787403,
+      "wireBytes": 18469543,
+      "wireSha256": "2f4e8af6398d28cc2cbba93b6bc590cafcad87b6c931b6a2d043efba7a3f8078",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "interactivePermitIssuerImplemented": true,
+    "interactiveGatewayEnforcementImplemented": true,
+    "privateRecorderHandoffImplemented": false,
+    "frontendOnlyActorAndResourceEnforced": false,
+    "composedGuardedWindowVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
