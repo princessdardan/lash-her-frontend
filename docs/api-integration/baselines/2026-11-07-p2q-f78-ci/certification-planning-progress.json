@@ -1592,5 +1592,114 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveOwnerManualPaidGrant": {
+    "frontendSourceCommit": "2e5a828591ec286e16cf530c0fe89c6b769218fb",
+    "normalOwnerAuthoringBrowser": {
+      "passed": 8,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "manualGrantResponseAndPersistedAuditCorrelated": true,
+      "lostAcknowledgementRecoveryVerified": true,
+      "gatewayWorkloadVerification": "fixture",
+      "evidenceSha256": "cbea8d7b63272154a374112d01607a9b34e63ad4363d9ed3beac23a31727c0fa",
+      "outcomeSha256": "e3d40d06803c8df370fcb68ad65b8bf787ce49ed364287fe0fc571a2cba0e521",
+      "logSha256": "154537a77f91b58ba81ca81d320fc012e8cb33009e98535889ea2aab1c31dfb4"
+    },
+    "frontendUnitNode24": {
+      "sourcePassed": 2544,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "9a45793d7d7d34429c6124231131aafce83485ab9a3cd365e079d2713b08c796"
+    },
+    "certificationPlatformNode24": {
+      "passed": 151,
+      "failed": 0,
+      "skipped": 0,
+      "pairedOwnerExactIntentAndNormalConfirmationVerified": true,
+      "logSha256": "2929b94b3f29cde23e117cef776afd6805ddb9b6dca4b06f44ea8695bae851ca"
+    },
+    "host": {
+      "passed": 129,
+      "failed": 0,
+      "browserGatewayAndHeldCourseWitnessCorrelationVerified": true,
+      "logSha256": "3a7cbfe5254c519933602bcbbcf4f949beefdbeb3c2a4600be82f68f4ce7a735"
+    },
+    "loopbackGateway": {
+      "passed": 79,
+      "failed": 0,
+      "skipped": 0,
+      "acknowledgementRequestIndexes": [
+        0,
+        1,
+        0,
+        2,
+        1,
+        3,
+        0
+      ],
+      "upstreamStatuses": [
+        200,
+        200,
+        200,
+        201,
+        200,
+        200,
+        200
+      ],
+      "logSha256": "2fc2720b920a22e17306b229c131a0de3a73d22df3d446eb5363d3268b9101ae"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "2e5a828591ec286e16cf530c0fe89c6b769218fb",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 30,
+      "orderlessPaidGrantAdminEnrollmentImmutableAuditAndPendingCanonicalCommunityActivationVerified": true,
+      "noProgressWritesVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "68fa4f1635a72582bca3d2d1657fe2fde978afb9c3b29f2bfa7f99d03913e72d",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "2b5bd2a5ae0781639f5d892fc18470fcc90dada23d681806b25554c7c0de3001"
+      },
+      "logSha256": "39e2da789454d8ac5b29ba22262142ef0664bfc0e03dcf1b7927fc0301f6e341"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43268881,
+      "expandedBytes": 57771367,
+      "wireBytes": 18794567,
+      "wireSha256": "cfd58371799ca9e8ce6fe6d2cfff961f3ff4e0db8c8fa9e96b12169b03fe4b15",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "6342cfb4a7294672e753da536f2419571e8b37719f451483dc3d5c9443db7ee9"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "bf5781b31c1e62abd927823d609c2824805299c799131c629e33437685046a1c",
+    "freshOwnerManualPaidGrantActionImplemented": true,
+    "remainingS10GuardedActionsImplemented": false,
+    "deployedPaidGrantAndLearnerAccessVerified": false,
+    "communityDownstreamDeliveryVerified": false,
+    "exactPublishedCiQualified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
