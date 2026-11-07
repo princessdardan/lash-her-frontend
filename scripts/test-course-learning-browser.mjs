@@ -6,6 +6,7 @@ import {
   generateKeyPairSync,
   randomBytes,
   randomUUID,
+  X509Certificate,
 } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
@@ -18,6 +19,8 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -28,6 +31,19 @@ import { readMigrationFiles } from "drizzle-orm/migrator";
 import pg from "pg";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const mode = process.env.COURSE_LEARNING_BROWSER_MODE ?? "development";
+const production = mode === "production";
+const requestedFrontendSource = process.env.COURSE_LEARNING_FRONTEND_SOURCE;
+const requestedFrontendSha = process.env.COURSE_LEARNING_FRONTEND_REVISION;
+if (
+  (mode !== "development" && !production) ||
+  (production
+    ? !requestedFrontendSource || !/^[a-f0-9]{40}$/u.test(requestedFrontendSha ?? "")
+    : requestedFrontendSource !== undefined || requestedFrontendSha !== undefined)
+)
+  throw new Error(
+    "Production mode requires COURSE_LEARNING_FRONTEND_SOURCE and full COURSE_LEARNING_FRONTEND_REVISION; development uses this checkout",
+  );
 const requestedCourseSource = process.env.COURSE_LEARNING_API_SOURCE;
 const courseSha = process.env.COURSE_LEARNING_API_REVISION;
 if (!requestedCourseSource || !/^[a-f0-9]{40}$/u.test(courseSha ?? ""))
@@ -39,6 +55,8 @@ const pgBin = process.env.PG16_BIN_DIR ?? "/opt/homebrew/opt/postgresql@16/bin";
 const temporary = await mkdtemp(join(tmpdir(), "lash-learning-browser-"));
 const cluster = join(temporary, "postgres"),
   courseExport = join(temporary, "course");
+const frontendApp = production ? join(temporary, "frontend") : root;
+const scenarios = production ? ["flight"] : ["journey", "conflict", "boundaries"];
 const signingKey = randomBytes(32).toString("hex"),
   learnerKey = randomBytes(32).toString("hex"),
   authKey = randomBytes(32).toString("hex");
@@ -62,27 +80,16 @@ const children = [];
 let started = false;
 let resultDirectory;
 let sourceEvidence;
+let frontendTls;
 let outcome = "failed";
 try {
-  if ((await run("git", ["status", "--porcelain"], root)).trim())
-    throw new Error(
-      "Commit the exact frontend source before browser qualification",
-    );
-  const frontendSha = (await run("git", ["rev-parse", "HEAD"], root)).trim();
-  if (
-    (await realpath(
-      (await run("git", ["rev-parse", "--show-toplevel"], courseSource)).trim(),
-    )) !== courseSource ||
-    (await run("git", ["status", "--porcelain"], courseSource)).trim() ||
-    (await run("git", ["rev-parse", "HEAD"], courseSource)).trim() !== courseSha
-  )
-    throw new Error(
-      "Select a clean Course repository at the exact requested commit",
-    );
-  const databasePort = await freePort(),
-    coursePort = await freePort(),
-    frontendPort = await freePort();
-  const origin = `http://localhost:${frontendPort}`,
+  const frontendSource = production ? await realpath(resolve(requestedFrontendSource)) : root;
+  const frontendSha = await checkedRevision(frontendSource, requestedFrontendSha, "frontend");
+  await checkedRevision(courseSource, courseSha, "Course");
+  const databasePort = await freePort(), coursePort = await freePort();
+  if (production) frontendTls = await loopbackTlsProxy();
+  const frontendPort = frontendTls?.server.address().port ?? await freePort();
+  const origin = frontendTls?.origin ?? `http://localhost:${frontendPort}`,
     apiOrigin = `http://127.0.0.1:${coursePort}`;
   const frontendUrl = `postgresql://postgres@127.0.0.1:${databasePort}/lash_learning_frontend_integration?sslmode=disable`;
   const courseUrl = `postgresql://postgres@127.0.0.1:${databasePort}/lash_learning_course_integration?sslmode=disable`;
@@ -91,17 +98,17 @@ try {
   resultDirectory = await mkdtemp(join(resultsRoot, "run-"));
   sourceEvidence = {
     frontendSource: frontendSha,
-    frontendSourceDirectory: root,
+    frontendSourceDirectory: frontendSource,
     courseSource: courseSha,
     courseSourceDirectory: courseSource,
   };
   process.stdout.write(`Owned actual learner evidence: ${resultDirectory}\n`);
-  await mkdir(courseExport);
-  await exportSource();
+  await exportSource(courseSource, courseSha, courseExport);
+  if (production) await exportSource(frontendSource, frontendSha, frontendApp);
   const candidateHash = createHash("sha256")
     .update(
       await readFile(
-        join(root, "contracts/api-integration/p2-candidate/course-api.json"),
+        join(frontendApp, "contracts/api-integration/p2-candidate/course-api.json"),
       ),
     )
     .digest("hex");
@@ -115,15 +122,6 @@ try {
       "Frontend candidate must match the exact exported Course artifact",
     );
   const migrationsApplied = {};
-  if (
-    (await readFile(join(courseExport, "package-lock.json"), "utf8")) !==
-    (await readFile(join(courseSource, "package-lock.json"), "utf8"))
-  )
-    throw new Error("Course dependency tree must match the exported lockfile");
-  await symlink(
-    join(courseSource, "node_modules"),
-    join(courseExport, "node_modules"),
-  );
   const version = await run(join(pgBin, "postgres"), ["--version"]);
   if (!/PostgreSQL\) 16\./u.test(version))
     throw new Error("Owned PostgreSQL16 is required");
@@ -159,7 +157,7 @@ try {
     await admin.end();
   }
   for (const [url, migrationsFolder] of [
-    [frontendUrl, join(root, "drizzle")],
+    [frontendUrl, join(frontendApp, "drizzle")],
     [courseUrl, join(courseExport, "drizzle")],
   ]) {
     const client = new pg.Client({ connectionString: url });
@@ -204,6 +202,7 @@ try {
     frontendDatabaseUrl: frontendUrl,
     courseDatabaseUrl: courseUrl,
     muxPublicKey: muxKeys.publicKey,
+    ...(frontendTls ? { browserCertificateSpki: frontendTls.spki } : {}),
     scenarios: {},
   };
   const client = new pg.Client({ connectionString: frontendUrl });
@@ -211,7 +210,7 @@ try {
   try {
     for (const project of ["chromium", "mobile"]) {
       fixture.scenarios[project] = {};
-      for (const scenario of ["journey", "conflict", "boundaries"]) {
+      for (const scenario of scenarios) {
         const users = {};
         for (const name of ["learner", "other"]) {
           const id = randomUUID(),
@@ -229,13 +228,13 @@ try {
             storage: {
               cookies: [
                 {
-                  name: "lash-customer.session-token",
+                  name: `${production ? "__Host-" : ""}lash-customer.session-token`,
                   value: token,
                   domain: "localhost",
                   path: "/",
                   expires: Math.floor(Date.now() / 1000) + 3600,
                   httpOnly: true,
-                  secure: false,
+                  secure: production,
                   sameSite: "Lax",
                 },
               ],
@@ -317,7 +316,7 @@ try {
   await mediaClient.connect();
   try {
     for (const project of ["chromium", "mobile"])
-      for (const scenario of ["journey", "conflict", "boundaries"]) {
+      for (const scenario of scenarios) {
         const slug = `actual-learning-${project}-${scenario}`;
         const { course } = await courseAdmin("POST", "/v1/admin/courses", {
           slug,
@@ -434,7 +433,33 @@ try {
   await writeFile(storagePath, JSON.stringify(fixture), { mode: 0o600 });
   const frontendEnv = {
     ...common,
-    NODE_ENV: "development",
+    ...(production ? {
+      // Run the real prebuild validator with owned inputs. External bindings
+      // point at test-only placeholders and the preload refuses provider I/O.
+      SANITY_API_READ_TOKEN: randomBytes(32).toString("hex"),
+      SANITY_WRITE_TOKEN: randomBytes(32).toString("hex"),
+      SANITY_WEBHOOK_SECRET: randomBytes(32).toString("hex"),
+      ADMIN_OWNER_EMAILS: "owner@example.invalid",
+      RESEND_API_KEY: "re_owned_learning_fixture",
+      RESEND_WEBHOOK_SECRET: randomBytes(32).toString("hex"),
+      RESEND_SEGMENT_MARKETING_ID: randomUUID(),
+      FROM_EMAIL: "from@example.invalid",
+      ADMIN_EMAIL: "owner@example.invalid",
+      GOOGLE_CLIENT_ID: "owned-learning-calendar-client",
+      GOOGLE_CLIENT_SECRET: randomBytes(32).toString("hex"),
+      GOOGLE_REDIRECT_URI: `${origin}/api/auth/callback/google`,
+      BOOKING_ADMIN_SETUP_SECRET: randomBytes(32).toString("hex"),
+      KV_REST_API_URL: "https://learning-kv.invalid",
+      KV_REST_API_TOKEN: randomBytes(32).toString("hex"),
+      CHECKOUT_SECRET_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+      BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+      SERVICE_BOOKING_MODEL_MODE: "dual",
+      PAYMENT_RECONCILIATION_CRON_SECRET: randomBytes(32).toString("hex"),
+      CRON_SECRET: randomBytes(32).toString("hex"),
+      BACKUP_RETENTION_DAYS: "0",
+      NODE_EXTRA_CA_CERTS: frontendTls.certPath,
+    } : {}),
+    NODE_ENV: mode,
     DATABASE_URL: frontendUrl,
     FRONTEND_WRITER_ADMISSION_MODE: "off",
     AUTH_SECRET: authKey,
@@ -462,40 +487,56 @@ try {
     NEXT_PUBLIC_SANITY_PROJECT_ID: "7o23yrvk",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     NEXT_PUBLIC_SANITY_API_VERSION: "2026-03-24",
-    NEXT_PUBLIC_SITE_URL: origin,
+    NEXT_PUBLIC_SITE_URL: production ? "https://staging.lashher.com" : origin,
     API_GATEWAY_STAGING_ORIGIN: "https://learning-gateway.invalid",
     INTEGRATION_COURSE_READS_ENABLED: "true",
     INTEGRATION_LEARNING_ROUTES_ENABLED: "true",
     COURSE_LEARNING_BROWSER_FIXTURE: "1",
+    COURSE_LEARNING_BROWSER_MODE: mode,
     COURSE_LEARNING_API_ORIGIN: apiOrigin,
     COURSE_LEARNING_GATEWAY_JOURNAL: gatewayJournal,
     NEXT_FONT_GOOGLE_MOCKED_RESPONSES: join(
       root,
       "tests/course-learning-browser/font-fixture.cjs",
     ),
-    NODE_OPTIONS: `--require=${join(root, "tests/course-learning-browser/gateway-fixture.cjs")}`,
+    NODE_OPTIONS: `${production ? "--dns-result-order=ipv6first " : ""}--require=${JSON.stringify(join(root, "tests/course-learning-browser/gateway-fixture.cjs"))}`,
   };
+  if (production) {
+    await run(process.execPath, ["scripts/validate-sanity-env.mjs"], frontendApp, frontendEnv);
+    const build = start(
+      process.execPath,
+      ["node_modules/next/dist/bin/next", "build", "--webpack"],
+      frontendApp,
+      frontendEnv,
+      "frontend-build.log",
+    );
+    children.push(build);
+    await build.closed;
+    if (build.error || build.child.exitCode !== 0)
+      throw new Error("Owned Next production build failed", { cause: build.error });
+    children.pop();
+  }
   children.push(
     start(
       process.execPath,
       [
         "node_modules/next/dist/bin/next",
-        "dev",
-        "--webpack",
+        ...(production ? ["start"] : ["dev", "--webpack"]),
         "--hostname",
-        "127.0.0.1",
+        production ? "localhost" : "127.0.0.1",
         "--port",
         String(frontendPort),
       ],
-      root,
+      frontendApp,
       frontendEnv,
       "frontend.log",
     ),
   );
-  await ready(`${origin}/courses`, 180_000);
+  await ready(`http://${production ? "[::1]" : "localhost"}:${frontendPort}/courses`, 180_000);
   const testEnvironment = {
     ...common,
     COURSE_LEARNING_BROWSER_FIXTURE: "1",
+    COURSE_LEARNING_BROWSER_MODE: mode,
     COURSE_LEARNING_BROWSER_ORIGIN: origin,
     COURSE_LEARNING_STORAGE_PATH: storagePath,
   };
@@ -508,6 +549,8 @@ try {
       "node_modules/@playwright/test/cli.js",
       "test",
       "--config=playwright.course-learning.config.ts",
+      production ? "--grep" : "--grep-invert",
+      "production Academy lesson Flight",
       `--output=${join(resultDirectory, "browser")}`,
     ],
     root,
@@ -556,7 +599,8 @@ try {
         liveProvidersCertified: false,
         stagingCertified: false,
         externalFonts: "bundled-local-fixture",
-        nextBundler: "webpack-development",
+        nextBundler: production ? "webpack-production" : "webpack-development",
+        ...(frontendTls ? { loopbackTlsSpkiSha256: frontendTls.spki } : {}),
         customerSessions:
           "owned synthetic SQL sessions, actual frontend validation and fenced signer",
         courseBackend:
@@ -575,12 +619,17 @@ try {
     "Owned Next/Course/PostgreSQL16 actual learner browser checks passed; gateway workload verification and live providers remain outside this fixture\n",
   );
 } catch (error) {
-  for (const name of ["course.log", "frontend.log"]) {
+  for (const name of ["course.log", "frontend-build.log", "frontend.log"]) {
     const log = await readFile(join(temporary, name), "utf8").catch(() => "");
     if (log) process.stderr.write(`${name}:\n${log.slice(-18000)}\n`);
   }
   throw error;
 } finally {
+  if (frontendTls) {
+    const closed = new Promise(resolveClose => frontendTls.server.close(resolveClose));
+    frontendTls.server.closeAllConnections();
+    await closed;
+  }
   for (const record of children.reverse()) {
     const { child, closed } = record;
     if (!record.done && child.pid) {
@@ -620,7 +669,7 @@ try {
     }
   }
   if (resultDirectory) {
-    for (const name of ["course.log", "frontend.log", "postgres.log"]) {
+    for (const name of ["course.log", "frontend-build.log", "frontend.log", "postgres.log"]) {
       const log = await readFile(join(temporary, name)).catch(() => null);
       if (log)
         await writeFile(join(resultDirectory, name), log, { mode: 0o600 });
@@ -692,14 +741,75 @@ function run(command, args, cwd = root, env = common, forward = false) {
     );
   });
 }
-async function exportSource() {
-  const archive = join(temporary, "course-source.tar");
+async function checkedRevision(source, expected, name) {
+  const revision = (await run("git", ["rev-parse", "HEAD"], source)).trim();
+  if (
+    (await realpath((await run("git", ["rev-parse", "--show-toplevel"], source)).trim())) !== source ||
+    (await run("git", ["status", "--porcelain"], source)).trim() ||
+    (expected !== undefined && revision !== expected)
+  )
+    throw new Error(`Select a clean ${name} repository at the exact requested commit`);
+  return revision;
+}
+async function exportSource(source, revision, destination) {
+  const archive = `${destination}.tar`;
+  await mkdir(destination);
   await run(
     "git",
-    ["archive", "--format=tar", `--output=${archive}`, courseSha],
-    courseSource,
+    ["archive", "--format=tar", `--output=${archive}`, revision],
+    source,
   );
-  await run("tar", ["-xf", archive, "-C", courseExport]);
+  await run("tar", ["-xf", archive, "-C", destination]);
+  if (
+    (await readFile(join(destination, "package-lock.json"), "utf8")) !==
+    (await readFile(join(source, "package-lock.json"), "utf8"))
+  )
+    throw new Error("Owned dependency tree must match the exported lockfile");
+  await symlink(await realpath(join(source, "node_modules")), join(destination, "node_modules"));
+}
+async function loopbackTlsProxy() {
+  // Production customer auth requires HTTPS. Keep Next's real production config
+  // and terminate TLS on IPv4 in front of next start on IPv6. Sharing the port
+  // preserves the exact origin that Next uses to construct Request.url.
+  const keyPath = join(temporary, "frontend-tls.key");
+  const certPath = join(temporary, "frontend-tls.crt");
+  await run("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-sha256", "-nodes", "-days", "1",
+    "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost",
+    "-keyout", keyPath, "-out", certPath]);
+  const [key, cert] = await Promise.all([readFile(keyPath), readFile(certPath)]);
+  const spki = createHash("sha256")
+    .update(new X509Certificate(cert).publicKey.export({ format: "der", type: "spki" }))
+    .digest("base64");
+  const server = createHttpsServer({ key, cert }, (request, response) => {
+    const port = server.address().port;
+    const host = `localhost:${port}`;
+    if (request.headers.host !== host || !request.url?.startsWith("/") || request.url.startsWith("//")) {
+      response.writeHead(400).end();
+      return;
+    }
+    const upstream = httpRequest({
+      hostname: "::1",
+      port,
+      method: request.method,
+      path: request.url,
+      headers: { ...request.headers, "x-forwarded-for": "127.0.0.1", "x-forwarded-host": host, "x-forwarded-proto": "https", "x-forwarded-port": String(port) },
+    }, reply => {
+      response.writeHead(reply.statusCode ?? 502, reply.headers);
+      reply.on("error", () => response.destroy());
+      reply.pipe(response);
+    });
+    upstream.on("error", () => {
+      if (response.headersSent) response.destroy();
+      else response.writeHead(502).end();
+    });
+    response.once("close", () => upstream.destroy());
+    request.pipe(upstream);
+  });
+  await new Promise((resolveListen, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolveListen);
+  });
+  return { server, origin: `https://localhost:${server.address().port}`, certPath, spki };
 }
 async function ready(url, budget = 60_000) {
   const deadline = Date.now() + budget;

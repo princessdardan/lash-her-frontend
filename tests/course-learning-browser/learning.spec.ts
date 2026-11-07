@@ -1,5 +1,6 @@
 import { createHmac, randomUUID, verify as verifySignature } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Pool } from "pg";
 import {
@@ -9,6 +10,7 @@ import {
   type Browser,
   type BrowserContext,
   type Page,
+  type Request,
 } from "@playwright/test";
 import { setRequiredOnlyCookieConsent } from "../support/required-only-cookie-consent";
 
@@ -26,6 +28,7 @@ type Fixture = {
   frontendDatabaseUrl: string;
   courseDatabaseUrl: string;
   muxPublicKey: string;
+  browserCertificateSpki?: string;
   gatewayJournal: string;
   scenarios: Record<string, Record<string, Scenario>>;
 };
@@ -34,8 +37,17 @@ test.skip(!enabled, "Run through the owned actual learner driver.");
 const storagePath = process.env.COURSE_LEARNING_STORAGE_PATH;
 const fixture: Fixture | null =
   enabled && storagePath ? JSON.parse(readFileSync(storagePath, "utf8")) : null;
+const production = process.env.COURSE_LEARNING_BROWSER_MODE === "production";
+if (production && fixture) {
+  if (!/^[A-Za-z0-9+/]{43}=$/u.test(fixture.browserCertificateSpki ?? ""))
+    throw new Error("Owned loopback browser certificate required");
+  test.use({ launchOptions: { args: [
+    `--ignore-certificate-errors-spki-list=${fixture.browserCertificateSpki}`,
+    "--host-resolver-rules=MAP localhost 127.0.0.1, MAP * ~NOTFOUND",
+  ] } });
+}
 function owned(): Fixture {
-  if (!fixture || !/^http:\/\/localhost:\d+$/u.test(fixture.origin))
+  if (!fixture || !(production ? /^https:\/\/localhost:\d+$/u : /^http:\/\/localhost:\d+$/u).test(fixture.origin))
     throw new Error("Owned actual learner fixture required");
   return fixture;
 }
@@ -308,6 +320,90 @@ async function revoke(value: Scenario) {
   );
   expect(response.ok).toBe(true);
 }
+
+test("production Academy lesson Flight and first progress write", async ({ browser }, info) => {
+  test.skip(!production, "Requires the owned Next production build.");
+  const value = scenario(info.project.name, "flight");
+  const lessonId = value.lessonIds.practice;
+  const coursePath = `/academy/courses/${value.courseId}`;
+  const lessonPath = `${coursePath}/lessons/${lessonId}`;
+  const playbackPath = `/api/academy/lessons/${lessonId}/playback`;
+  const progressPath = `/api/academy/lessons/${lessonId}/progress`;
+  const context = await contextFor(browser, value.users.learner.storage);
+  const page = await context.newPage();
+  const lessonDocuments: Request[] = [];
+  const prefetches: Request[] = [];
+  const flightRequests: Request[] = [];
+  const progressWrites: Request[] = [];
+  const requestPath = (request: Request) => {
+    const url = new URL(request.url());
+    return url.origin === owned().origin ? url.pathname : null;
+  };
+  const isFlight = (request: Request) => requestPath(request) === lessonPath &&
+    request.method() === "GET" && request.headers().rsc === "1";
+  const isPrefetch = (request: Request) => {
+    const headers = request.headers();
+    return "next-router-prefetch" in headers || "next-router-segment-prefetch" in headers;
+  };
+  page.on("request", request => {
+    if (requestPath(request) === progressPath && request.method() === "POST") progressWrites.push(request);
+    if (requestPath(request) !== lessonPath) return;
+    if (request.isNavigationRequest() && request.resourceType() === "document") lessonDocuments.push(request);
+    if (isFlight(request)) (isPrefetch(request) ? prefetches : flightRequests).push(request);
+  });
+  const readProgress = async () => (await coursePool!.query(
+    "select revision,resume_position_seconds,max_position_seconds,completed_at from lesson_progress where user_id=$1 and lesson_id=$2",
+    [value.users.learner.id, lessonId],
+  )).rows;
+  try {
+    await page.goto(`/courses/${value.slug}`);
+    const enrollPath = `/api/academy/courses/${value.courseId}/enrollments`;
+    const [enrollment] = await Promise.all([
+      page.waitForResponse(response => requestPath(response.request()) === enrollPath && response.request().method() === "POST"),
+      page.getByRole("button", { name: "Enroll for free", exact: true }).click(),
+    ]);
+    expect(enrollment.status()).toBe(200);
+    await page.waitForURL(new URL(coursePath, owned().origin).href);
+    const link = page.getByRole("link", { name: "Practice lesson Open lesson", exact: true });
+    await expect(link).toHaveAttribute("href", lessonPath);
+    expect(await readProgress()).toEqual([]);
+    expect(progressWrites).toHaveLength(0);
+    expect(flightRequests).toHaveLength(0);
+    const timeOrigin = await page.evaluate(() => performance.timeOrigin);
+    const flightPending = page.waitForResponse(response => isFlight(response.request()) && !isPrefetch(response.request()));
+    const playbackPending = page.waitForResponse(response => requestPath(response.request()) === playbackPath && response.request().method() === "GET");
+    const writePending = page.waitForResponse(response => requestPath(response.request()) === progressPath && response.request().method() === "POST");
+    const [flight, playback, write] = await Promise.all([flightPending, playbackPending, writePending, link.click()]);
+    expect(flight.status()).toBe(200);
+    expect(await flight.headerValue("content-type")).toMatch(/^text\/x-component(?:;|$)/u);
+    expect(playback.status()).toBe(200);
+    expect(await playback.headerValue("cache-control")).toBe("private, no-store");
+    expect(write.status()).toBe(200);
+    expect(await write.headerValue("cache-control")).toBe("private, no-store");
+    expect(write.request().postDataJSON()).toEqual({ event: "lesson_started", expectedProgressRevision: 0 });
+    await expect(page).toHaveURL(new URL(lessonPath, owned().origin).href);
+    await expect(page.getByRole("heading", { name: "Practice lesson", exact: true })).toBeVisible();
+    await expect(page.getByRole("main").getByText("Private actual practice lesson content.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Progress saved to your account.", { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(timeOrigin);
+    expect(lessonDocuments).toHaveLength(0);
+    expect(flightRequests).toEqual([flight.request()]);
+    expect(progressWrites).toEqual([write.request()]);
+    expect(await readProgress()).toEqual([{ revision: 1, resume_position_seconds: 0, max_position_seconds: 0, completed_at: null }]);
+    await writeFile(info.outputPath("lesson-flight.json"), JSON.stringify({
+      activation: { method: "GET", pathname: lessonPath, rsc: true, status: flight.status() },
+      lessonPrefetchRequests: prefetches.length,
+      lessonDocumentRequests: lessonDocuments.length,
+      playback: { status: playback.status(), hlsMetadataReadyAtObservation: await page.evaluate(() => {
+        const player = document.querySelector<HTMLElement & { readyState?: number }>("mux-player");
+        return (player?.readyState ?? 0) > 0;
+      }) },
+      progress: { method: "POST", pathname: progressPath, event: "lesson_started", status: write.status(), persistedRevision: 1 },
+    }, null, 2) + "\n", { mode: 0o600 });
+  } finally {
+    await close(context);
+  }
+});
 
 test("actual free enrollment, locally signed media, resume and both assessment modes persist", async ({
   browser,
