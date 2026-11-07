@@ -323,7 +323,8 @@ test("two owner tabs preserve the stale form after the winning draft edit", asyn
     expect(rejected.request().postDataJSON().expectedRevision).toBe(1);
     const requestId = await rejected.headerValue("x-request-id");
     expect(requestId).toMatch(/^[a-f0-9-]{36}$/u);
-    await expect(stale.getByRole("alert")).toContainText(`This course changed or is not ready for this operation. Reload before trying again. Reference: ${requestId}`);
+    const conflictMessage = `This course changed or is not ready for this operation. Reload before trying again. Reference: ${requestId}`;
+    await expect(stale.getByRole("alert").getByText(conflictMessage, { exact: true })).toBeVisible();
     await expect(staleTitle).toHaveValue("Owned stale title");
 
     await db.connect();
