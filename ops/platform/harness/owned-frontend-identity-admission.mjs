@@ -31,6 +31,7 @@ async function main() {
   const { port, serverMajor: major } = target;
   const url = `postgresql://${target.user}:${password}@127.0.0.1:${port}/${target.database}?sslmode=verify-full`;
   const origin = "https://staging.lashher.com", secret = "owned-customer-auth-fixture-secret-32";
+  const firstEnrollmentEmail = "owned-first-enrollment@example.invalid";
   const { VERCEL_PROJECT_BINDINGS } = await import("../../../src/lib/env/application-environment.mjs");
   Object.assign(process.env, {
     DATABASE_URL: url, FRONTEND_WRITER_ADMISSION_DATABASE_URL: url, FRONTEND_WRITER_ADMISSION_MODE: "enforce",
@@ -48,7 +49,7 @@ async function main() {
     VERCEL_OIDC_TOKEN: `${Buffer.from('{"alg":"HS256"}').toString("base64url")}.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.owned`,
     CUSTOMER_AUTH_URL: origin, CUSTOMER_AUTH_SECRET: secret, CUSTOMER_AUTH_GOOGLE_ID: "owned-google-client",
     CUSTOMER_AUTH_GOOGLE_SECRET: "owned-google-secret", CUSTOMER_AUTH_RESEND_KEY: "owned-resend-key", CUSTOMER_AUTH_EMAIL_FROM: "owned@example.invalid",
-    STAGING_EMAIL_RECIPIENT_ALLOWLIST: "owned@example.invalid", NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project", NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
+    STAGING_EMAIL_RECIPIENT_ALLOWLIST: `owned@example.invalid,${firstEnrollmentEmail}`, NEXT_PUBLIC_SANITY_PROJECT_ID: "test-project", NEXT_PUBLIC_SANITY_DATASET: "test-dataset",
   });
   // Next installs this before loading its request storage. Use its real storage
   // implementation for exported account routes, without claiming native-server
@@ -163,7 +164,8 @@ async function main() {
         return Response.json({ commandId: command.commandId, accountVersion: command.accountVersion, status: previous ? "duplicate" : "accepted" });
       }
       if (stage === "resend") {
-        const body = await req.json(); assert.equal(body.to, "owned@example.invalid");
+        const body = await req.json();
+        assert.equal(body.to, reviewedResendScope ? firstEnrollmentEmail : "owned@example.invalid");
         verificationUrl = body.text.split("\n\n")[1];
         const token = new URL(verificationUrl).searchParams.get("token");
         const authHash = createHash("sha256").update(token + secret).digest("hex");
@@ -459,10 +461,16 @@ async function main() {
     checks.push("scoped-customer-identity-refuses-foreign-proof-unlinked-subject-and-cross-account-session-before-business-writes");
     checks.push("scoped-known-customer-google-and-resend-issue-selected-session-through-actual-route-and-closed-ledger");
 
+    const assertNoEnrollmentMarketing = async () => {
+      for (const table of ["marketing_contacts", "highlevel_consent_events"]) {
+        assert.deepEqual((await operator.query(`SELECT 1 FROM ${table} WHERE email_normalized=$1`, [firstEnrollmentEmail])).rows, []);
+      }
+    };
     for (const provider of ["google", "resend"]) {
       phase = `interactive-first-time-${provider}`;
       await reset();
-      const email = "owned@example.invalid", enrollmentNonce = randomUUID().replaceAll("-", "");
+      await assertNoEnrollmentMarketing();
+      const email = firstEnrollmentEmail, enrollmentNonce = randomUUID().replaceAll("-", "");
       const digest = createHash("sha256").update(JSON.stringify(["p2q-customer-enrollment-v1", provider, enrollmentNonce, email])).digest("hex");
       let reservedGoogleCustomer;
       if (provider === "google") {
@@ -497,7 +505,7 @@ async function main() {
           const priorLink = `/api/customer-auth/callback/resend?${new URLSearchParams({ email, token: priorProof })}`;
           assert.equal(sessionCookie(await request(priorLink, { cookie: cookieJoin(scopedProof.cookie, firstPermit) })), undefined);
           assert.equal((await counts()).customer_users, 0);
-          assert.equal((await emailStart(scopedProof, firstPermit)).status, 303);
+          assert.equal((await emailStart(scopedProof, firstPermit, email)).status, 303);
           assert.deepEqual(providerCalls, [{ stage: "resend", durableTokenBeforeProvider: true, method: "POST", path: "/emails" }]);
           const parallel = await Promise.all([callback(scopedProof, firstPermit), callback(scopedProof, firstPermit)]);
           const sessions = parallel.map(sessionCookie).filter(Boolean); assert.equal(sessions.length, 1);
@@ -516,9 +524,7 @@ async function main() {
           assert.deepEqual((await operator.query("SELECT user_id FROM customer_provider_links WHERE provider_account_id=$1", [otherSubject])).rows, [{ user_id: reservedGoogleCustomer }]);
         }
         assert.deepEqual((await operator.query("SELECT user_id FROM customer_sessions")).rows, [{ user_id: customerId }]);
-        for (const table of ["marketing_contacts", "highlevel_consent_events"]) {
-          assert.deepEqual((await operator.query(`SELECT 1 FROM ${table} WHERE email_normalized=$1`, [email])).rows, []);
-        }
+        await assertNoEnrollmentMarketing();
       } finally {
         reviewedResendScope = undefined; googleSubject = originalSubject; googleEmail = "owned@example.invalid";
         const closed = await closeFrontendInteractiveAdmission(operator, scopedTarget, epoch, scope);
