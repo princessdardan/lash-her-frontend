@@ -1939,5 +1939,128 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactivePaidLearnerAccess": {
+    "frontendSourceCommit": "893b76c7341322a8c35b7877003a3d5834147517",
+    "normalOwnerAndLearnerBrowser": {
+      "passed": 9,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "normalAcademyOverviewAndSixProtectedReads": true,
+      "allowedArchivedDraftAndRestoredAccessVerified": true,
+      "localPlaybackAndThumbnailSignaturesVerified": true,
+      "deniedPlaybackLeavesExpiryAndLearningHistoryUnchanged": true,
+      "gatewayWorkloadVerification": "fixture",
+      "evidenceSha256": "b96844fed3e317ea6096f86d376dc2171fbf424b45a3bae68e475de743c22576",
+      "outcomeSha256": "cfa76a809517d9d55edba5ec77bb908d72b20456af9ed65c344f85ec3e224902",
+      "logSha256": "896c8acf20a8d14214cbce9032fc691c14e6c66e0fb4a4935e266e699aa556dc"
+    },
+    "frontendUnitNode24": {
+      "passed": 2603,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "bee653b596a26caba3e4861a826cc23873971956edd6da3476e008d2cb79a6d0"
+    },
+    "certificationPlatformNode24": {
+      "passed": 184,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "3e847b229175e6d519938615d80e4a293b10067aa948ae4f90ee7f90cce188b2",
+      "paidLearnerAccessRecorderRefusesMismatchesAndOmitsPrivateResponseBytes": true,
+      "nodeAndPythonPlanAndPermitAgree": true,
+      "frontendWriterCountRequired": 0,
+      "acknowledgementIndexes": [
+        [
+          0,
+          1,
+          0,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          0,
+          0,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ]
+    },
+    "initialPlatformRun": {
+      "sourceCommit": "893b76c7341322a8c35b7877003a3d5834147517",
+      "finding": "The existing two-tab draft recorder failed during the concurrent browser run. The paid learner recorder and integrated browser passed.",
+      "logSha256": "6baed665629bf343cfedffd335b7a694014e1b71d3e5a022a3b6003dfb1d0334"
+    },
+    "host": {
+      "passed": 147,
+      "failed": 0,
+      "logSha256": "58deae40f9361b91df476d8f6930ec616d42e6830ed0063dedbb3184dfda445a"
+    },
+    "loopbackGateway": {
+      "passed": 87,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "b30ba50119c26a126385a50b58607074b5e5b4223525f242966e48ed59dbd740",
+      "allowedArchivedDraftRevokedAndExpiredCases": true,
+      "foreignActorWrongResourceWritesAndReplaysRefused": true
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "893b76c7341322a8c35b7877003a3d5834147517",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 36,
+      "actualPinnedQuizAndPlaybackRepositories": true,
+      "effectiveAccessAndUnchangedPaidGrantAndIndependentEligibilityVerified": true,
+      "playbackExpiryMayAdvanceOnlyForAllowed": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "62c78e232dddc26d4251dd36cb8e635843b05cfa38a6678fe4e268bec80501b7",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "894a993bd4d2bb85adce07be45a5b74d38b52b675aaf9e2f4b0c8e381a8b3e0f"
+      },
+      "logSha256": "85c516fdd41ca48e3339527b11585286f4a96eb5615233f2a53c261e064eefdc"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43454947,
+      "expandedBytes": 58019463,
+      "wireBytes": 18865867,
+      "wireSha256": "33c4574c4eafeea8bfee634ced4fbfbafcb8bae62eacfa124468821a8adaac43",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "f8ebeaa2ba69f75313aa2a78d759ec9a8fea4fbf6af13ea29d7304b80c7ad357"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "82fa014d7dd6beb9dfac5dce69b0f2cba2e165afe28eab286fd87edb9b047c57",
+    "guardedPaidLearnerAccessActionImplemented": true,
+    "actualDeployedPaidLearnerAccessVerified": false,
+    "liveMuxPlaybackVerified": false,
+    "communityReceiverVerified": false,
+    "exactPublishedCiQualified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
