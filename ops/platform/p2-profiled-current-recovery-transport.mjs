@@ -72,7 +72,7 @@ export function p2ProfiledCurrentRecoveryEnvironmentLock(settings, initial, dire
   handles.set(handle, async task => {
     demand(typeof task === "function");
     const remote = ["sudo", "-n", "/usr/bin/python3", "-I", "-u",
-      `/opt/lash-her/operators/${initial.sourceCommit}/ops/platform/host/p2_release_supervisor.py`];
+      `/opt/lash-her/operators/${initial.sourceCommit}/ops/platform/host/p2_profiled_current_recovery.py`];
     const child = launch("/usr/bin/ssh", sshCommand({ knownHosts: settings.knownHosts, keyFile: settings.sshKey }, remote), {
       stdio: ["pipe", "pipe", "pipe"], env: Object.fromEntries(["PATH", "HOME", "LANG"]
         .filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]])),
@@ -228,6 +228,6 @@ export async function withP2ProfiledCurrentRecoveryTransport(handle, task) {
 }
 
 export const P2_PROFILED_CURRENT_RECOVERY_TRANSPORT = Object.freeze({
-  fixedHostEntry: "ops/platform/host/p2_release_supervisor.py", mode: "p2-profiled-current-recovery", reusable: false,
+  fixedHostEntry: "ops/platform/host/p2_profiled_current_recovery.py", mode: "p2-profiled-current-recovery", reusable: false,
   outcomeSha256: value => hash(Buffer.from(JSON.stringify(value))),
 });

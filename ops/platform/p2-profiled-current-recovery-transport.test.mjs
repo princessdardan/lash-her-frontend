@@ -107,7 +107,7 @@ test("actual child pipe keeps the host flock and enforces arm-before-mutation pl
     assert.equal(result, "joined");
     assert.deepEqual(JSON.parse(readFileSync(join(f.directory, "p2-profiled-current-recovery-host-outcome.json"))), f.recoveryOutcome);
     assert.equal(JSON.stringify(f.captured()).includes("NEVER_IN_ARGS_OR_ENV"), false);
-    assert.equal(f.captured().executable, "/usr/bin/ssh"); assert.match(f.captured().args.at(-1), /p2_release_supervisor\.py/u);
+    assert.equal(f.captured().executable, "/usr/bin/ssh"); assert.match(f.captured().args.at(-1), /p2_profiled_current_recovery\.py/u);
   } finally { f.cleanup(); }
 });
 
