@@ -974,7 +974,7 @@ async function runOwnedPaidArchiveWitness({ course, job, dependencies, input, cr
   };
 
   const test = await prepared("first");
-  await write(await seed("archive-independent", {}, test.selection.userId));
+  await write(await seed("archive-first-independent", {}, test.selection.userId));
   await progress(test, test.enrollmentId);
   await attempts(test);
   await purchase(test);
