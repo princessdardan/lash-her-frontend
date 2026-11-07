@@ -1152,6 +1152,26 @@ def _require_profiled_certification_terminal(initial, raw, committed):
         type(frontend.get('uncertain')) is int and frontend['uncertain'] == 0 and
         all(_canonical_sha(gateway.get(key)) == _canonical_sha({'newWork': 0, 'recovery': 0}) for key in ('active', 'uncertain')),
         'P2_PROFILED_CERTIFICATION_GUARD_TERMINAL_NOT_CLOSED')
+    scoped_status = {
+        'export-cleanup': 'P2_SCOPED_EXPORT_CLEANUP_JOINED',
+        'mux-callback-recovery': 'P2_SCOPED_MUX_CLOSED',
+        'lifecycle-persistence': {
+            'capture-export-ready': 'P2_LIFECYCLE_EXPORT_READY_CAPTURED',
+            'capture-delete-baseline': 'P2_LIFECYCLE_EXPORT_SCRUBBED_DELETE_BASELINE_CAPTURED',
+            'verify-delete': 'P2_LIFECYCLE_DELETE_PERSISTENCE_VERIFIED',
+        }.get(plan.get('scopedAction', {}).get('stage')),
+    }.get(plan['mode'])
+    if scoped_status is not None:
+        retained = migrate.read_input(_profiled_certification_directory(initial), 'p2-scoped-case-joined.json')
+        case = decode_qualification_target_json(retained, 'carrier')
+        migrate.require_profile(expected, case)
+        epoch = int(plan['initialEpoch']) + (2 if plan['mode'] == 'export-cleanup' else 0)
+        require(type(case.get('version')) is int and case['version'] == 2 and
+                case.get('status') == terminal.get('caseStatus') == scoped_status and
+                terminal.get('caseOutcomeSha256') == _canonical_sha(case) and
+                gateway.get('valid') is True and gateway.get('version') == 1 and
+                frontend['epoch'] == str(epoch),
+                'P2_PROFILED_CERTIFICATION_GUARD_SCOPED_CASE_REFUSED')
     if plan['mode'] == 'known-ack-recovery':
         joined = migrate.read_input(_profiled_certification_directory(initial), 'known-ack-replacement-joined.json')
         retained = migrate.read_input(_profiled_known_ack_runtime_directory(initial), 'known-ack-runtime-outcome.json')

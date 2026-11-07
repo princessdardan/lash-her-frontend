@@ -10,7 +10,7 @@ import { createGateway } from "./server.mjs";
 import { createPrivateTlsProxy } from "./private-tls.mjs";
 import { createHash } from "node:crypto";
 import { createP2CertificationFault, p2GatewayProcessBinding } from "./p2-certification-fault.mjs";
-import { createAdmissionReader, scopedMuxTarget, SCOPED_MUX_HEADER } from "./admission.mjs";
+import { createAdmissionReader, selectScopedMuxCallback, SCOPED_MUX_HEADER } from "./admission.mjs";
 
 let folder, key, cert, keyFile, certFile, wrongCertFile;
 before(() => {
@@ -156,7 +156,10 @@ test("scoped Mux admission forwards only the selected managed callback and mints
   const signature = "owned-provider-signature";
   const input = { method: "POST", path: "/course/v1/webhooks/mux",
     headers: { "mux-signature": signature, [SCOPED_MUX_HEADER]: "foreign:1" }, body: JSON.stringify(event) };
-  assert.equal((await f.send(input)).status, 200);
+  const accepted = await f.send(input);
+  assert.equal(accepted.status, 200);
+  assert.deepEqual(f.admissionState().muxCallbackEvidence, { admitted: 1,
+    managedAcks: [{ requestId: accepted.headers["x-request-id"], eventId: event.id, upstreamStatus: 200 }] });
   assert.deepEqual(forwarded, [{ path: "/v1/webhooks/mux", target: `${attemptId}:2`, signature, body: input.body }]);
   for (const changed of [
     { ...event, environment: { id: "foreign-environment" } },
@@ -195,6 +198,7 @@ test("scoped Mux admission forwards only the selected managed callback and mints
   assert.equal(observation.newWork, null);
   assert.equal(observation.recovery, null);
   assert.equal(Object.hasOwn(observation, "muxCallback"), false);
+  assert.deepEqual(observation.muxCallbackEvidence, { admitted: 0, managedAcks: [] });
   assert.deepEqual(observation.uncertain, { newWork: 0, recovery: 0 });
   save({ version: 1, environment: "staging", releaseId: admission.releaseId, candidateSha256: admission.candidateSha256,
     actionId: observedState.actionId, newWork: false, recovery: false });
@@ -216,6 +220,7 @@ test("scoped Mux admission forwards only the selected managed callback and mints
   assert.equal(forwarded[2].target, `${attemptId}:2`);
   assert.deepEqual(f.admissionState().active, { newWork: 0, recovery: 0 });
   assert.deepEqual(f.admissionState().uncertain, { newWork: 0, recovery: 1 });
+  assert.deepEqual(f.admissionState().muxCallbackEvidence, { admitted: 1, managedAcks: [] });
 });
 
 test("scoped Mux selection binds upload IDs and requires a managed marker for an unknown asset", () => {
@@ -224,12 +229,14 @@ test("scoped Mux selection binds upload IDs and requires a managed marker for an
   const marker = `lash-her-course:${environmentId}:${attemptId}`;
   const scope = { attemptId, environmentId, generation: 2, uploadId: "owned-upload", assetId: null };
   const event = { id: "owned-event", environment: { id: environmentId } };
-  const check = (eventType, data) => scopedMuxTarget({ ...scope, eventType },
+  const check = (eventType, data) => selectScopedMuxCallback({ ...scope, eventType },
     Buffer.from(JSON.stringify({ ...event, type: eventType, data })), signature);
-  assert.equal(check("video.upload.asset_created", { id: scope.uploadId, asset_id: "owned-asset" }), `${attemptId}:2`);
+  assert.deepEqual(check("video.upload.asset_created", { id: scope.uploadId, asset_id: "owned-asset" }),
+    { target: `${attemptId}:2`, eventId: event.id });
   assert.equal(check("video.upload.asset_created", { id: "foreign-upload", asset_id: "owned-asset" }), null);
   assert.equal(check("video.asset.ready", { id: "owned-asset" }), null);
-  assert.equal(check("video.asset.ready", { id: "owned-asset", passthrough: marker }), `${attemptId}:2`);
+  assert.deepEqual(check("video.asset.ready", { id: "owned-asset", passthrough: marker }),
+    { target: `${attemptId}:2`, eventId: event.id });
 });
 
 test("certification503 runs only after actual auth/admission and before any TLS upstream effect", async t => {

@@ -25,7 +25,7 @@ import {p2CertificationEnvironmentLock,readP2CertificationKnownAckStage} from '.
 import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,
   captureP2SuspensionControlledAuthority,observeP2SuspensionControlledAuthority,captureP2SuspensionPending} from './p2-lifecycle-suspension-evidence.mjs';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
-import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,preflightP2DirectLifecycleWorker,
+import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,readP2LifecycleWorkerCronSecret,preflightP2DirectLifecycleWorker,
   invokeP2DirectLifecycleWorker,joinP2DirectLifecycleWorker,readP2DirectWorkerSourceArtifact} from './p2-lifecycle-worker-evidence.mjs';
 
 const plans=new WeakMap();
@@ -34,10 +34,30 @@ const demand=ok=>{if(!ok)throw new Error('P2_CERTIFICATION_PARENT_REFUSED');};
 const commit=value=>typeof value==='string'&&/^[a-f0-9]{40}$/u.test(value)&&!/^0+$/u.test(value);
 const action=value=>typeof value==='string'&&/^[a-z0-9][a-z0-9-]{0,63}$/u.test(value);
 const sha=value=>typeof value==='string'&&/^[a-f0-9]{64}$/u.test(value)&&!/^0+$/u.test(value);
+const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(value);
 const exactKeys=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&isDeepStrictEqual(Object.keys(value).sort(),[...keys].sort());
 const freeze=value=>{if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value);}return value;};
+const scopedModes=new Set(['export-cleanup','mux-callback-recovery','lifecycle-persistence']);
+const persistenceModes=new Set(['export-cleanup','lifecycle-persistence']);
+// This exact Course source enforces managed-only callbacks after signature verification.
+const scopedMuxCourseSource='b21e25cf900458eb6cbbd993582d7e1bbac36c4b';
+const assetEvents=new Set(['video.asset.created','video.asset.ready','video.asset.errored','video.asset.deleted']);
+const trackEvents=new Set(['video.asset.track.ready','video.asset.track.deleted']);
+const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(value);
 export const P2_CERTIFICATION_READY_FILES=Object.freeze(['frontend-build-started.json','frontend-build-created.json','frontend-build-outcome.json',
   'frontend-workload-outcome.json','frontend-promotion-started.json','frontend-promotion-outcome.json']);
+
+function scopedActionValid(mode, value){
+  if(mode==='export-cleanup')return exactKeys(value,['commandId','readyRecordSha256'])&&uuid(value.commandId)&&sha(value.readyRecordSha256);
+  if(mode==='lifecycle-persistence')return exactKeys(value,['stage','subjectBindingSha256'])&&
+    ['capture-export-ready','capture-delete-baseline','verify-delete'].includes(value.stage)&&sha(value.subjectBindingSha256);
+  if(!exactKeys(value,['attemptId','generation','environmentId','assetId','uploadId','eventType'])||
+     !uuid(value.attemptId)||!Number.isSafeInteger(value.generation)||value.generation<1||value.generation>2_147_483_647||
+     !providerId(value.environmentId)||(value.assetId!==null&&!providerId(value.assetId))||
+     (value.uploadId!==null&&!providerId(value.uploadId)))return false;
+  if(value.eventType==='video.upload.asset_created')return value.uploadId!==null;
+  return assetEvents.has(value.eventType)||(trackEvents.has(value.eventType)&&value.assetId!==null);
+}
 
 export function bindP2CertificationReadyReceipts(directory,plan){
   const profiled=plan.version===2, records={};
@@ -71,6 +91,10 @@ export function bindP2CertificationReadyReceipts(directory,plan){
 export function prepareP2BoundedCertification(prepared,input,candidateBytes,{frontendReceipts,configurationSha256,profiledRelease}){
   const candidate=prepared?.migration?.candidate,inventory=prepared?.plan,job=prepared?.migration?.job;
   const profile=profiledRelease?requireQualificationTargetProfile(currentProfile,input,input.native,input.native.target,candidate,inventory,job,job.target):undefined;
+  const scoped=scopedModes.has(input?.mode);
+  if(scoped)demand(profile&&scopedActionValid(input.mode,input.scopedAction));
+  else demand(input?.scopedAction===undefined);
+  demand(persistenceModes.has(input?.mode)?sha(input.persistenceReviewedSha256):input?.persistenceReviewedSha256===undefined);
   if(profile)demand(input.startState==='already-closed'&&input.operatorSourceCommit===job.sourceCommit&&
     sha(profiledRelease.receiptSha256)&&sha(profiledRelease.planSha256)&&
     exactKeys(profiledRelease.apiJobSha256,['course','community'])&&Object.values(profiledRelease.apiJobSha256).every(sha));
@@ -80,7 +104,7 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
   demand(isDeepStrictEqual(document,candidate)&&
     candidate?.contractPhase==='p2'&&candidate.environment==='staging'&&candidate.releaseId===inventory?.actionId&&job?.sourceCommit===candidate.sources.frontend.commit&&
     input?.version===(profile?2:1)&&input.environment==='staging'&&inventory.targetSha256===frontendAdmissionTargetSha256('staging',job.target)&&action(input.certificationActionId)&&input.certificationActionId!==candidate.releaseId&&commit(input.operatorSourceCommit)&&
-    ['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery','contain-native'].includes(input.mode)&&['qualified-ready','already-closed'].includes(input.startState)&&
+    (scoped||['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery','contain-native'].includes(input.mode))&&['qualified-ready','already-closed'].includes(input.startState)&&
     (!['auth-preparation','browser-pending','direct-worker','native-window','known-ack-recovery'].includes(input.mode)||input.operatorSourceCommit===job.sourceCommit)&&
     (input.mode!=='direct-worker'||input.startState==='already-closed')&&
     /^[1-9][0-9]{0,17}$/u.test(input.initialEpoch??'')&&input.candidateSha256===rawHash(candidateBytes)&&input.inventorySha256===rawHash(inventory)&&
@@ -98,11 +122,11 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
   }
   const nativeSettings={...structuredClone(input.native),epoch:input.mode==='contain-native'?input.native.epoch:(BigInt(input.initialEpoch)+closedOffset+1n).toString()};
   let nativePlan;
-  if(['auth-preparation','browser-pending'].includes(input.mode)){
+  if(scoped||['auth-preparation','browser-pending'].includes(input.mode)){
     demand(Array.isArray(input.native.commandWitnesses)&&input.native.commandWitnesses.length===0&&/^dpl_[A-Za-z0-9]+$/u.test(input.native.deploymentId??'')&&
       /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/u.test(input.native.deploymentUrl??'')&&sha(input.native.configurationRecordSha256));
     const control={version:input.version,...(profile?{qualificationTargetProfile:profile,candidateSha256:p2NativeHash(candidate)}:{}),
-      purpose:'browser-authentication-control-only',environment:'staging',actionId:candidate.releaseId,sourceCommit:job.sourceCommit,projectId:candidate.workload.projectId,
+      purpose:scoped?'scoped-certification-control-only':'browser-authentication-control-only',environment:'staging',actionId:candidate.releaseId,sourceCommit:job.sourceCommit,projectId:candidate.workload.projectId,
       phase2ContractManifestSha256:candidate.phase2ContractManifestSha256,deploymentId:input.native.deploymentId,deploymentUrl:input.native.deploymentUrl,
       configurationRecordSha256:input.native.configurationRecordSha256,targetSha256:inventory.targetSha256,
       target:profile?{...Object.fromEntries(['host','port','database','user','serverMajor'].map(key=>[key,input.native.target[key]])),qualificationTargetProfile:profile}
@@ -130,9 +154,11 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     persistenceReaderEligible:input.operatorSourceCommit===job.sourceCommit,
     requestEvidenceDescriptorSha256:input.requestEvidence?p2NativeHash(input.requestEvidence):null,
     faultSelection:input.mode.startsWith('fault-')||input.mode==='known-ack-recovery'?{stageId:input.fault?.stageId,receiver:input.fault?.receiver,commandIndex:input.fault?.commandIndex,commandSha256:input.fault?.commandSha256}:null,
-    readyReceiptSha256:structuredClone(input.readyReceiptSha256),maximumSeconds:input.mode==='auth-preparation'?300:900,finalDisposition:'native-disabled-and-both-admissions-closed',
+    readyReceiptSha256:structuredClone(input.readyReceiptSha256),maximumSeconds:scoped||input.mode==='auth-preparation'?300:900,finalDisposition:'native-disabled-and-both-admissions-closed',
     frontendSqlReplay:false,apiSqlReplay:false,rolePreparationAllowed:false,historicalLoginRestorationAllowed:false,buildAllowed:false,promotionAllowed:false,
     wholeReleaseAccepted:false};
+  if(scoped)base.scopedAction=structuredClone(input.scopedAction);
+  if(persistenceModes.has(input.mode))base.persistenceReviewedSha256=input.persistenceReviewedSha256;
   if(input.mode==='known-ack-recovery'){
     const recovery=input.knownAckRecovery;
     const fields={version:input.version,...(profile?{qualificationTargetProfile:profile}:{})};
@@ -240,6 +266,54 @@ export async function runP2BoundedCertification(plan,dependencies){
   return runBoundedCertification(plan,dependencies);
 }
 
+async function runScopedCertificationCase(plan,{host,withOwner,verify,observe,client,policy}){
+  if(plan.mode==='lifecycle-persistence'){
+    const statuses={'capture-export-ready':'P2_LIFECYCLE_EXPORT_READY_CAPTURED',
+      'capture-delete-baseline':'P2_LIFECYCLE_EXPORT_SCRUBBED_DELETE_BASELINE_CAPTURED','verify-delete':'P2_LIFECYCLE_DELETE_PERSISTENCE_VERIFIED'};
+    const receipt=await host.scopedStage('scoped-persistence-observe');
+    demand(receipt.status===statuses[plan.scopedAction.stage]&&receipt.readOnly===true);
+    return receipt;
+  }
+  if(plan.mode==='export-cleanup'){
+    const preflight=await host.scopedStage('scoped-export-preflight');
+    demand(preflight.status==='P2_SCOPED_EXPORT_CLEANUP_PREFLIGHT_VERIFIED');
+    let opened;
+    try{
+      opened=await withOwner(()=>changeFrontendAdmission(client,policy,plan.initialEpoch,{newWork:false,recovery:true}));
+      demand(opened.epoch===(BigInt(plan.initialEpoch)+1n).toString());
+      const invocation=await host.scopedStage('scoped-export-invoke');
+      demand(invocation.status==='P2_SCOPED_EXPORT_CLEANUP_INVOKED');
+    }finally{
+      if(opened){
+        await verify();const actual=await observe(opened.epoch);
+        demand(actual.epoch===opened.epoch&&actual.newWork===false&&actual.recovery===true);
+        const closed=await withOwner(()=>changeFrontendAdmission(client,policy,opened.epoch,{newWork:false,recovery:false}));
+        demand(closed.epoch===(BigInt(plan.initialEpoch)+2n).toString());
+      }
+    }
+    const receipt=await host.scopedStage('scoped-export-join');
+    demand(receipt.status==='P2_SCOPED_EXPORT_CLEANUP_JOINED');
+    return receipt;
+  }
+  const opened=await host.scopedStage('scoped-mux-open');
+  demand(opened.status==='P2_SCOPED_MUX_OPENED'&&opened.muxCallbackActive===true);
+  let closed;
+  try{
+    const deadline=performance.now()+90_000;
+    while(true){
+      await verify();
+      const observed=await host.scopedStage('scoped-mux-observe');
+      if(observed.status==='P2_SCOPED_MUX_EFFECT_OBSERVED')break;
+      demand(observed.status==='P2_SCOPED_MUX_WAITING'&&performance.now()<deadline);
+      await pause(1_000);
+    }
+  }finally{
+    closed=await host.scopedStage('scoped-mux-close');
+  }
+  demand(closed.status==='P2_SCOPED_MUX_CLOSED'&&closed.gatewayAdmissionClosed===true&&closed.gatewayEffectDrained===true);
+  return closed;
+}
+
 async function runBoundedCertification(plan,dependencies,profile){
   const mode=profile?'p2-bounded-certification-profiled-current':'p2-bounded-certification';
   const terminalStatus=profile?'P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED':'P2_BOUNDED_CERTIFICATION_CONTAINED';
@@ -262,6 +336,15 @@ async function runBoundedCertification(plan,dependencies,profile){
       store.record('p2-certification-current-database.json',receipt);phase='all-three-current-and-existing-runtime';
       const current=await host.arm({receipt,probe});demand(current.status==='P2_CERTIFICATION_CURRENT_READY'&&current.runtimeReplaced===false&&current.sqlReplayed===false&&current.containers?.length===10);
       store.record('p2-certification-host-current.json',current);
+      if(scopedModes.has(plan.mode)){
+        phase='fixed-scoped-stage';
+        const scopedOutcome=await runScopedCertificationCase(plan,{host,withOwner,verify,observe,client,policy});
+        requireQualificationTargetProfile(currentProfile,scopedOutcome);
+        terminal=await host.prepareClose(scopedOutcome);
+        demand(terminal.status===terminalStatus&&terminal.planSha256===plan.planSha256&&terminal.caseStatus===scopedOutcome.status);
+        store.record('p2-certification-close-prepared.json',terminal);
+        return;
+      }
       if(plan.mode==='direct-worker'){
         const workerPlan=context.workerPlan;demand(workerPlan===plan.workerPlan&&dependencies.workerPrivateResolvers);
         const stage=await host.workerEvidenceStage(workerPlan),workerDependencies={withOwner,verifyEnvironment:environment,verifySession:verify};
@@ -561,8 +644,10 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   const {execution,...selection}=settings;
   const checked=prepareProfiledCertification(selection);
   const {plan,authPlan,suspensionPlan,original}=checked;
+  const scoped=scopedModes.has(plan.mode);
   demand(confirmation==='staging/'+plan.certificationActionId&&
-    ['contain-native','native-window','browser-pending','direct-worker','fault-before-upstream'].includes(plan.mode));
+    (scoped||['contain-native','native-window','browser-pending','direct-worker','fault-before-upstream'].includes(plan.mode)));
+  demand(plan.mode!=='mux-callback-recovery'||original.migration.candidate.sources.course.commit===scopedMuxCourseSource);
   const releaseSettings=selection.releaseSettings;
   const directory=releaseSettings.results;
   frontendPrivateReceiptDirectory(directory);
@@ -574,27 +659,42 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit);
   const packet=bindProfiledCertificationHostPlan(selection,checked,source,plan);
   const authPacket=authPlan?bindProfiledCertificationHostPlan(selection,checked,source,authPlan):null;
-  const needsPersistence=['browser-pending','direct-worker'].includes(plan.mode);
+  const needsPersistence=['browser-pending','direct-worker'].includes(plan.mode)||persistenceModes.has(plan.mode);
   let persistenceReviewed;
   if(needsPersistence){
-    demand(exactKeys(execution,['persistenceReviewed']));
+    const privateWitness=plan.mode==='lifecycle-persistence';
+    demand(exactKeys(execution,privateWitness?['persistenceReviewed','persistenceWitness']:['persistenceReviewed']));
     persistenceReviewed=execution.persistenceReviewed;
     requireQualificationTargetProfile(currentProfile,persistenceReviewed,persistenceReviewed?.plan);
-    const reviewed=plan.mode==='browser-pending'?selection.browser.input.persistencePlan:selection.worker.suspensionInput.persistencePlan;
     demand(persistenceReviewed.version===2&&persistenceReviewed.environment==='staging'&&
-      isDeepStrictEqual(persistenceReviewed.plan,reviewed)&&isDeepStrictEqual(persistenceReviewed.operatorSourceFiles,packet.sourceSha256)&&
+      isDeepStrictEqual(persistenceReviewed.operatorSourceFiles,packet.sourceSha256)&&
       p2NativeHash(persistenceReviewed.containers)===plan.runtimeInventorySha256);
+    if(persistenceModes.has(plan.mode)){
+      const reviewed=persistenceReviewed.plan;
+      demand(p2NativeHash(persistenceReviewed)===plan.persistenceReviewedSha256&&reviewed.environment==='staging'&&
+        reviewed.releaseId===plan.originalReleaseId&&reviewed.candidateSha256===plan.candidateSha256&&
+        reviewed.configurationSha256===plan.configurationCanonicalSha256&&reviewed.sources.frontend===plan.sourceCommit&&
+        reviewed.originalReleaseSha256===plan.originalReleaseReceiptSha256&&
+        reviewed.frontendDeploymentSha256===plan.readyReceiptSha256['frontend-promotion-outcome.json']&&
+        reviewed.operatorSourceSha256===plan.operatorSourceClosureSha256);
+      if(privateWitness)demand(execution.persistenceWitness?.stage===plan.scopedAction.stage);
+    }else{
+      const reviewed=plan.mode==='browser-pending'?selection.browser.input.persistencePlan:selection.worker.suspensionInput.persistencePlan;
+      demand(isDeepStrictEqual(persistenceReviewed.plan,reviewed));
+    }
   }else demand(execution===undefined);
   const sourceCi=await verifyOperatorCi({api:githubSourceApi(process.env.PLATFORM_SOURCE_READ_TOKEN),
     sourceCommit:plan.operatorSourceCommit,branch:source.branch,workflowBytes:source.workflowBytes});
   const provider=decodeQualificationTargetJson(privateBytes(releaseSettings.providerContext,24_000_000),'private-packet');
   requireQualificationTargetProfile(currentProfile,provider);
+  const needsRuntimeUrl=['direct-worker','lifecycle-persistence'].includes(plan.mode);
   demand(provider.version===2&&typeof provider.vercelToken==='string'&&provider.vercelToken.length>0&&provider.vercelToken.length<=8192&&
-    (plan.mode!=='direct-worker'||typeof provider.frontendRuntimeDatabaseUrl==='string'&&provider.frontendRuntimeDatabaseUrl.length>0));
+    (!needsRuntimeUrl||typeof provider.frontendRuntimeDatabaseUrl==='string'&&provider.frontendRuntimeDatabaseUrl.length>0&&provider.frontendRuntimeDatabaseUrl.length<=8192));
+  const scopedCronSecret=scoped?readP2LifecycleWorkerCronSecret(createP2LifecycleWorkerPrivateResolvers(()=>provider)):undefined;
   const credentials=Object.fromEntries(['FRONTEND_STAGING_MIGRATION_DATABASE_URL','COURSE_STAGING_DATABASE_URL','COMMUNITY_STAGING_DATABASE_URL'].map(key=>{
     const value=process.env[key];demand(typeof value==='string'&&value.length>0&&value.length<=16384);return[key,value];}));
   let privateProbe;
-  if(plan.mode!=='contain-native'){
+  if(plan.mode!=='contain-native'&&!scoped){
     const path=join(directory,plan.originalReleaseId,'frontend','vercel-private','frontend-probe-private.json');
     privateProbe=decodeQualificationTargetJson(privateBytes(path,8192),'carrier');
     requireQualificationTargetProfile(currentProfile,privateProbe);
@@ -613,8 +713,12 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
     const actionConfirmation='staging/'+action.certificationActionId;
     const initial={...reviewedPacket,confirmation:actionConfirmation,credentials,vercelToken:provider.vercelToken,
       ...(privateProbe?{privateProbe}:{}),...(browserSource?{sourceParentChallenge:browserSource.challenge}:{}),
+      ...(scoped?{scopedCronSecret}:{}),
       ...(action.mode==='browser-pending'?{persistenceReviewed,browserResources:selection.browser.input.resources}:{}),
-      ...(action.mode==='direct-worker'?{persistenceReviewed}:{})};
+      ...(action.mode==='direct-worker'||persistenceModes.has(action.mode)?{persistenceReviewed}:{}),
+      ...(action.mode==='lifecycle-persistence'?{persistencePrivate:{
+        frontendRuntimeDatabaseUrl:provider.frontendRuntimeDatabaseUrl,witness:execution.persistenceWitness,
+      }}:{})};
     return runBoundedCertification(action,{directory:results,confirmation:actionConfirmation,sourceCi,browserSession:browserSource?.handle,
       getUrl:()=>credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
       ...(action.mode==='direct-worker'?{workerPrivateResolvers:createP2LifecycleWorkerPrivateResolvers(()=>provider)}:{}),

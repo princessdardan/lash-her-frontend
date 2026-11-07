@@ -205,6 +205,17 @@ class ScopedMuxTests(unittest.TestCase):
         self.assertEqual(closed["managedAckCount"], 1)
         self.assertEqual((self.admission / "state.json").read_bytes(), mux._canonical(self.original))
 
+    def test_close_refuses_if_managed_effect_changes_after_observation(self):
+        stage = self.manual_stage()
+        acknowledgments = [{"requestId": "request_owned", "eventId": "event_owned", "upstreamStatus": 200}]
+        stage.broker._gateway_observation = lambda: self.marker(stage, acknowledgments=acknowledgments)
+        stage.open()
+        stage.observe()
+        stage._managed_attempt = lambda _phase: {**managed("after"), "rowSha256": "9" * 64}
+        with self.assertRaisesRegex(ValueError, "EFFECT_CHANGED_BEFORE_CLOSE"):
+            stage.close()
+        self.assertEqual((self.admission / "state.json").read_bytes(), mux._canonical(self.original))
+
     def test_close_fences_even_after_expiry_but_refuses_success_without_prior_effect(self):
         stage = self.manual_stage()
         acknowledgments = []

@@ -134,3 +134,31 @@ def observe(context, client, canonical_probe=None, *, expected_profile=None):
             "redirectFollowed": False, "selectedOriginPublicExceptionObserved": False,
             "automationBypassCustodyVerified": False, "singleOperatorBypassHandlingVerified": False,
             "interactiveNewWorkAuthorized": False, "trafficAuthorized": False, "releaseAccepted": False}
+
+
+def observe_selected_protection(context, client, *, expected_profile):
+    """Recheck protected endpoints independently of a retained probe secret."""
+    expected = migrate.profile_context(expected_profile)
+    demand(expected is not None, "QUALIFICATION_TARGET_PROFILE_REQUIRED")
+    plan = native.identity(context, expected_profile=expected)
+    demand(plan["projectId"] == canonical.PROJECT and plan["deploymentUrl"] != canonical.ORIGIN,
+           "P2_INTERACTIVE_INGRESS_TARGET_REFUSED")
+    metadata = native.observe_metadata(context, client, expected_profile=expected)
+    demand(metadata["nativeEnabled"] is False, "P2_INTERACTIVE_NATIVE_MUST_BE_DISABLED")
+    alias = canonical._alias(client, plan)
+    before = vercel._project(client, canonical.PROJECT)
+    protection = _protection(before)
+    requester = UnauthenticatedIngressClient()
+    alias_denial = requester.request(canonical.ORIGIN)
+    deployment_denial = requester.request(plan["deploymentUrl"])
+    after = vercel._project(client, canonical.PROJECT)
+    demand(canonical._alias(client, plan) == alias and
+           native.observe_metadata(context, client, expected_profile=expected) == metadata and
+           _protection(after) == protection and
+           after.get("protectionBypass") == before.get("protectionBypass"),
+           "P2_INTERACTIVE_PROTECTION_CHANGED")
+    return {"version": 2, "qualificationTargetProfile": expected, "status": "P2_SELECTED_PROTECTION_OBSERVED",
+            "projectId": canonical.PROJECT, "deploymentId": plan["deploymentId"], "sourceCommit": plan["sourceCommit"],
+            "releaseId": plan["actionId"], "candidateSha256": plan["candidateSha256"], **protection,
+            "aliasUnauthenticatedStatus": alias_denial["status"], "deploymentUnauthenticatedStatus": deployment_denial["status"],
+            "releaseAccepted": False, "trafficAuthorized": False}

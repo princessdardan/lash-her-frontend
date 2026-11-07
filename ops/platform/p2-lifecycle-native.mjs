@@ -29,6 +29,12 @@ const reviewedSource = {
   "src/lib/customer-lifecycle/native-trace.ts": "3c88d9f7e81e9951b3e0df67f2401bdbe8c973c63823ceb9eea2b58ec3a3bf08",
   "src/app/api/internal/release-probe/handler.ts": "e2ee81c21bc158a19eeb0fb5ca14f4f35b7828919fc02f4272341bbefd3835c9"
 };
+const reviewedScopedSource = {
+  ...reviewedSource,
+  "src/lib/customer-lifecycle/cron.ts": "1b2c99f2627a3e6dc32cb6c0b676cfbce7bfd322b911b35b6fc55a7a2831b289",
+  "src/lib/customer-lifecycle/store.ts": "55af0e8385428f92177a69239aa615f97f611c47aea1077bb8fc49fa7f99d572",
+  "src/app/api/internal/release-probe/handler.ts": "f8ee3d196736f55d74f233e6f15ed232b59bb50695a78f0d97704a72b38198b3"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -42,13 +48,15 @@ const iso = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2
 
 function sourcePolicy(sourceCommit) {
   demand(Object.keys(reviewedSource).length >= 8);
-  for (const [file, sha256] of Object.entries(reviewedSource)) {
+  const selected = {};
+  for (const file of Object.keys(reviewedSource)) {
     const bytes = execFileSync("git", ["--no-pager", "--no-replace-objects", "--no-optional-locks", "-c", `safe.directory=${root}`,
       "show", "--no-ext-diff", "--no-textconv", `${sourceCommit}:${file}`],
       { cwd: root, maxBuffer: 2_000_000, timeout: 10_000, stdio: ["ignore", "pipe", "pipe"], env: { PATH: process.env.PATH ?? "/usr/bin:/bin", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } });
-    demand(p2NativeHash(bytes) === sha256);
+    selected[file] = p2NativeHash(bytes);
   }
-  return reviewedSource;
+  demand(same(selected, reviewedSource) || same(selected, reviewedScopedSource));
+  return selected;
 }
 export function prepareP2LifecycleNativePlan(candidate, input, expectedProfile) {
   try {

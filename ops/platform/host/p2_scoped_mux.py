@@ -443,13 +443,21 @@ class P2ScopedMuxStage:
         self._state = "closed"
         _require(self._read_state() == self._original_raw, "P2_SCOPED_MUX_CLOSED_STATE_READBACK_REQUIRED")
         self._check()
-        frontend = self._frontend_closed()
-        gateway = self._gateway_observation()["admission"]
-        _require(type(gateway) is dict and gateway.get("valid") is True and gateway.get("sha256") == self._original_sha256 and
-                 gateway.get("newWork") is False and gateway.get("recovery") is False and
-                 all(gateway.get(group, {}).get(key) == 0 for group in ("active", "uncertain")
-                     for key in ("newWork", "recovery")), "P2_SCOPED_MUX_CLOSE_DRAIN_REQUIRED")
+        deadline = time.monotonic() + 5
+        while True:
+            gateway = self._gateway_observation()["admission"]
+            _require(type(gateway) is dict and gateway.get("valid") is True and gateway.get("sha256") == self._original_sha256 and
+                     gateway.get("newWork") is False and gateway.get("recovery") is False and
+                     gateway.get("uncertain") == {"newWork": 0, "recovery": 0}, "P2_SCOPED_MUX_CLOSE_DRAIN_REQUIRED")
+            if gateway.get("active") == {"newWork": 0, "recovery": 0}:
+                break
+            _require(time.monotonic() < deadline, "P2_SCOPED_MUX_CLOSE_DRAIN_REQUIRED")
+            time.sleep(0.1)
+            self._check()
         _require(self._observed is not None, "P2_SCOPED_MUX_EFFECT_NOT_OBSERVED")
+        managed = self._managed_attempt("after")
+        _require(managed["rowSha256"] == self._observed["managedRowSha256"], "P2_SCOPED_MUX_EFFECT_CHANGED_BEFORE_CLOSE")
+        frontend = self._frontend_closed()
         return {**self._base_receipt("P2_SCOPED_MUX_CLOSED"), "scopedStateSha256": self._scoped_sha256,
                 "managedRowSha256": self._observed["managedRowSha256"],
                 "managedRowChanged": self._observed["managedRowChanged"],

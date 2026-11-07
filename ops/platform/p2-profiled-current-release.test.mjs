@@ -218,6 +218,40 @@ test('fixed current certification plan joins the original release plan, terminal
     assert.equal(existsSync(join(f.settings.results, 'owned-certification-ssh')), false);
     assert.equal(existsSync(join(f.settings.results, 'owned-certification')), false);
 
+    const scoped = (mode, scopedAction) => ({ ...settings, certification: { ...settings.certification, mode,
+      certificationActionId: 'owned-scoped-action', native: { ...settings.certification.native, commandWitnesses: [] }, scopedAction,
+      ...(['export-cleanup', 'lifecycle-persistence'].includes(mode) ? { persistenceReviewedSha256: 'b'.repeat(64) } : {}) } });
+    const selectedCommand = { commandId: '10000000-0000-4000-8000-000000000001', readyRecordSha256: 'a'.repeat(64) };
+    const selectedMux = { attemptId: '10000000-0000-4000-8000-000000000002', generation: 2,
+      environmentId: 'owned-environment', assetId: null, uploadId: 'owned-upload', eventType: 'video.upload.asset_created' };
+    const selectedPersistence = { stage: 'verify-delete', subjectBindingSha256: 'a'.repeat(64) };
+    const scopedVerifier = 'import json,sys;sys.path.insert(0,sys.argv[1]);import p2_certification_parent as p;' +
+      'packet=json.load(sys.stdin);p._require_profiled_scoped_action(packet["mode"],packet["scopedAction"])';
+    for (const [mode, selected] of [['export-cleanup', selectedCommand], ['mux-callback-recovery', selectedMux],
+      ['lifecycle-persistence', selectedPersistence]]) {
+      const preparedScope = prepareP2ProfiledCertificationOperator(scoped(mode, selected));
+      assert.deepEqual(preparedScope.scopedAction, selected);
+      assert.equal(preparedScope.maximumSeconds, 300);
+      assert.equal(preparedScope.nativePlan.purpose, 'scoped-certification-control-only');
+      assert.equal(preparedScope.nativePlan.initialEpoch, preparedScope.initialEpoch);
+      assert.deepEqual(preparedScope.nativePlan.commandWitnesses, []);
+      assert.equal(preparedScope.wholeReleaseAccepted, false);
+      const checked = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+        { input: JSON.stringify(preparedScope), encoding: 'utf8' });
+      assert.equal(checked.status, 0, checked.stderr);
+      await assert.rejects(p2ProfiledCertificationOperator(scoped(mode, selected), { confirmation: 'staging/unrelated-action' }),
+        /P2_CERTIFICATION_PARENT_REFUSED/);
+    }
+    assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('export-cleanup',
+      { ...selectedCommand, readyRecordSha256: '0'.repeat(64) })));
+    assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('mux-callback-recovery',
+      { ...selectedMux, eventType: 'video.asset.track.ready' })));
+    await assert.rejects(p2ProfiledCertificationOperator(scoped('mux-callback-recovery', selectedMux),
+      { confirmation: 'staging/owned-scoped-action' }), /P2_CERTIFICATION_PARENT_REFUSED/);
+    assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('lifecycle-persistence',
+      { ...selectedPersistence, stage: 'unreviewed-stage' })));
+    assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('contain-native', selectedCommand)));
+
     const faultSettings = { ...settings, certification: { ...settings.certification, mode: 'fault-before-upstream',
       certificationActionId: 'owned-fault', requestEvidence: { kind: 'operator-recorded-request-details', path: join(original, 'owned-request.json') },
       fault: { stageId: 'owned-503', receiver: 'course', commandIndex: 0, commandSha256: '3'.repeat(64) } } };

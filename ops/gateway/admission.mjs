@@ -60,7 +60,7 @@ export function isScopedMuxRoute(route, target) {
 
 // This is a transport selection. The Course receiver still verifies the raw
 // signature and must independently lock the selected managed generation.
-export function scopedMuxTarget(scope, body, signature) {
+export function selectScopedMuxCallback(scope, body, signature) {
   if (!scope || !Buffer.isBuffer(body) || !body.length || body.length > SCOPED_MUX_BODY_LIMIT ||
       !isUtf8(body) || typeof signature !== "string" || !signature || signature.length > 1024) return null;
   try {
@@ -75,7 +75,7 @@ export function scopedMuxTarget(scope, body, signature) {
     } else if (TRACK_TYPES.has(event.type)) {
       if (data.asset_id !== scope.assetId) return null;
     } else if (scope.assetId === null ? !supplied.length : data.id !== scope.assetId) return null;
-    return `${scope.attemptId}:${scope.generation}`;
+    return { target: `${scope.attemptId}:${scope.generation}`, eventId: event.id };
   } catch {
     return null;
   }

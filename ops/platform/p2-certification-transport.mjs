@@ -15,6 +15,11 @@ const suspensionStages=new WeakMap();
 const authenticationStages=new WeakMap();
 const workerStages=new WeakMap();
 const knownAckStages=new WeakMap();
+const scopedOperations={
+  'export-cleanup':['scoped-export-preflight','scoped-export-invoke','scoped-export-join'],
+  'mux-callback-recovery':['scoped-mux-open','scoped-mux-observe','scoped-mux-close'],
+  'lifecycle-persistence':['scoped-persistence-observe'],
+};
 
 export function readP2CertificationKnownAckStage(handle,plan){
   const selected=knownAckStages.get(handle);demand(selected&&selected.plan===plan&&selected.active()&&isDeepStrictEqual(selected.snapshot,plan));
@@ -76,6 +81,13 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
       const host={mode,certificationActionId:initial.certificationActionId,
         async arm({receipt,probe}){demand(!armed);const bytes=readFrontendReleaseEvidence(directory,'p2-certification-current-database.json');demand(JSON.stringify(JSON.parse(bytes))===JSON.stringify(receipt));
           const value=await request('arm-certification','CERTIFICATION_ARMED',{receipt:bytes.toString('base64'),probe},240_000);armed=true;return value.receipt;},
+        async scopedStage(operation){
+          demand(profiled&&armed&&!prepared&&scopedOperations[initial.certificationPlan.mode]?.includes(operation));
+          const {receipt}=await request(operation,'CERTIFICATION_SCOPED_OBSERVED');
+          requireQualificationTargetProfile(currentProfile,receipt);
+          demand(receipt.version===2&&typeof receipt.status==='string');
+          return receipt;
+        },
         nativeControl:{
           async observe(plan){match(plan);demand(armed&&!prepared);return(await request('native-observe','CERTIFICATION_NATIVE_OBSERVED')).receipt;},
           async observeMetadata(plan){match(plan);demand(armed&&!prepared);return(await request('native-metadata','CERTIFICATION_NATIVE_OBSERVED')).receipt;},

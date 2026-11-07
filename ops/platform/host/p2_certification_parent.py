@@ -88,7 +88,11 @@ PROFILED_PLAN_FIELDS = frozenset((
 ))
 BROWSER_MODES = frozenset(('auth-preparation', 'browser-pending'))
 SUSPENSION_MODES = BROWSER_MODES | {'direct-worker'}
-PROFILED_MODES = SUSPENSION_MODES | {'native-window', 'fault-before-upstream', 'fault-drop-after-ack',
+PERSISTENCE_MODES = frozenset(('export-cleanup', 'lifecycle-persistence'))
+SCOPED_MODES = PERSISTENCE_MODES | {'mux-callback-recovery'}
+# Exact Course source with signed, managed-only callback processing.
+SCOPED_MUX_COURSE_SOURCE = 'b21e25cf900458eb6cbbd993582d7e1bbac36c4b'
+PROFILED_MODES = SUSPENSION_MODES | SCOPED_MODES | {'native-window', 'fault-before-upstream', 'fault-drop-after-ack',
                                     'known-ack-recovery', 'contain-native'}
 NATIVE_PLAN_FIELDS = frozenset((
     'version', 'qualificationTargetProfile', 'environment', 'actionId', 'projectId', 'sourceCommit',
@@ -214,7 +218,15 @@ def _profiled_initial(initial, expected):
     require(type(plan) is dict and type(plan.get('mode')) is str and plan['mode'] in PROFILED_MODES,
             'P2_PROFILED_CERTIFICATION_PLAN_REQUIRED')
     mode = plan['mode']
-    extra = {'knownAckRecovery', 'knownAckReceiverTargets', 'knownAckConfigurationInputDirectory'} if mode == 'known-ack-recovery' else set()
+    extra = set()
+    if mode == 'known-ack-recovery':
+        extra = {'knownAckRecovery', 'knownAckReceiverTargets', 'knownAckConfigurationInputDirectory'}
+    if mode in SCOPED_MODES:
+        extra = {'scopedAction'}
+        _require_profiled_scoped_action(mode, plan.get('scopedAction'))
+    if mode in PERSISTENCE_MODES:
+        extra.add('persistenceReviewedSha256')
+        require(_profiled_digest(plan.get('persistenceReviewedSha256')), 'P2_PROFILED_PERSISTENCE_REVIEW_REQUIRED')
     require(set(initial) == PROFILED_INITIAL_FIELDS | ({'sourceSuspensionPlan'} if mode in SUSPENSION_MODES else set()) and
             set(plan) == PROFILED_PLAN_FIELDS | extra and plan['startState'] == 'already-closed' and
             plan['environment'] == 'staging' and plan['certificationActionId'] == initial['certificationActionId'] and
@@ -227,7 +239,7 @@ def _profiled_initial(initial, expected):
             all(_profiled_digest(plan[key]) for key in ('candidateObjectSha256', 'runtimeInventorySha256', 'gatewayProcessSha256',
                 'originalReleasePlanSha256', 'originalReleaseReceiptSha256')) and
             type(plan['initialEpoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', plan['initialEpoch']) and
-            type(plan['maximumSeconds']) is int and plan['maximumSeconds'] == (300 if mode == 'auth-preparation' else 900) and
+            type(plan['maximumSeconds']) is int and plan['maximumSeconds'] == (300 if mode == 'auth-preparation' or mode in SCOPED_MODES else 900) and
             (_profiled_digest(plan['browserPlanSha256']) if mode in BROWSER_MODES else plan['browserPlanSha256'] is None) and
             (type(plan['workerPlan']) is dict and _profiled_digest(plan['workerPlanSha256'])
              if mode == 'direct-worker' else plan['workerPlan'] is None and plan['workerPlanSha256'] is None) and
@@ -238,7 +250,8 @@ def _profiled_initial(initial, expected):
     native_plan = plan['nativePlan']
     vercel.require_record_profile(expected, plan, native_plan)
     migrate.require_profile(expected, native_plan.get('target'))
-    require(set(native_plan) == (BROWSER_CONTROL_FIELDS if mode in BROWSER_MODES else NATIVE_PLAN_FIELDS) and
+    control_only = mode in BROWSER_MODES or mode in SCOPED_MODES
+    require(set(native_plan) == (BROWSER_CONTROL_FIELDS if control_only else NATIVE_PLAN_FIELDS) and
             set(native_plan['target']) == NATIVE_TARGET_FIELDS and
             native_plan['planSha256'] == _profiled_plan_hash(native_plan) and
             native_plan['candidateSha256'] == plan['candidateObjectSha256'] and
@@ -246,8 +259,9 @@ def _profiled_initial(initial, expected):
             native_plan['finalDisposition'] == 'disabled-and-admission-closed' and
             type(native_plan['initialEpoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', native_plan['initialEpoch']),
             'P2_PROFILED_CERTIFICATION_NATIVE_PLAN_REQUIRED')
-    if mode in BROWSER_MODES:
-        require(native_plan['purpose'] == 'browser-authentication-control-only' and native_plan['commandWitnesses'] == [] and
+    if control_only:
+        purpose = 'scoped-certification-control-only' if mode in SCOPED_MODES else 'browser-authentication-control-only'
+        require(native_plan['purpose'] == purpose and native_plan['commandWitnesses'] == [] and
                 native_plan['initialEpoch'] == plan['initialEpoch'], 'P2_PROFILED_CERTIFICATION_BROWSER_CONTROL_REQUIRED')
     else:
         require(native_plan['providerQueuedInventory'] is None and
@@ -269,6 +283,35 @@ def _profiled_initial(initial, expected):
             type(plan['readyReceiptSha256']) is dict and set(plan['readyReceiptSha256']) == set(READY_FILES),
             'P2_PROFILED_CERTIFICATION_READY_RECEIPTS_REQUIRED')
     return plan
+
+
+def _require_profiled_scoped_action(mode, value):
+    uuid_pattern = r'[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'
+    def matches(pattern, text):
+        return type(text) is str and re.fullmatch(pattern, text) is not None
+
+    if mode == 'export-cleanup':
+        require(type(value) is dict and set(value) == {'commandId', 'readyRecordSha256'} and
+                matches(uuid_pattern, value['commandId']) and _profiled_digest(value['readyRecordSha256']),
+                'P2_PROFILED_SCOPED_EXPORT_SELECTION_REQUIRED')
+        return
+    if mode == 'lifecycle-persistence':
+        require(type(value) is dict and set(value) == {'stage', 'subjectBindingSha256'} and
+                type(value['stage']) is str and value['stage'] in ('capture-export-ready', 'capture-delete-baseline', 'verify-delete') and
+                _profiled_digest(value['subjectBindingSha256']), 'P2_PROFILED_SCOPED_PERSISTENCE_SELECTION_REQUIRED')
+        return
+    provider_pattern = r'[A-Za-z0-9_-]{1,255}'
+    asset_events = {'video.asset.created', 'video.asset.ready', 'video.asset.errored', 'video.asset.deleted'}
+    track_events = {'video.asset.track.ready', 'video.asset.track.deleted'}
+    require(mode == 'mux-callback-recovery' and type(value) is dict and
+            set(value) == {'attemptId', 'generation', 'environmentId', 'assetId', 'uploadId', 'eventType'} and
+            matches(uuid_pattern, value['attemptId']) and type(value['generation']) is int and
+            1 <= value['generation'] <= 2_147_483_647 and matches(provider_pattern, value['environmentId']) and
+            all(value[key] is None or matches(provider_pattern, value[key]) for key in ('assetId', 'uploadId')) and
+            type(value['eventType']) is str and (value['eventType'] in asset_events or
+                value['eventType'] in track_events and value['assetId'] is not None or
+                value['eventType'] == 'video.upload.asset_created' and value['uploadId'] is not None),
+            'P2_PROFILED_SCOPED_MUX_SELECTION_REQUIRED')
 
 
 def _profiled_known_ack_selection(plan, mounted, expected):
@@ -1039,6 +1082,10 @@ class P2CertificationBroker(Broker):
         # There is still no native/admission/fault mutation authority.
         self._accept_guard_arm(probe)
         if cert['mode']=='contain-native':native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check),**self.profile_arguments())
+        elif cert['mode'] in SCOPED_MODES:
+            workload = self._native_observe()
+            require(workload['nativeEnabled'] is False, 'P2_CERTIFICATION_NATIVE_OFF_REQUIRED')
+            migrate.write_json(self.directory, 'p2-scoped-current-workload.json', workload)
         else:
             self._store_private_probe()
             require(self._native_observe()['nativeEnabled'] is False,'P2_CERTIFICATION_NATIVE_OFF_REQUIRED')
@@ -1087,9 +1134,11 @@ class P2CertificationBroker(Broker):
         try:require(runtime.check_containers(self.selected,self.configuration,**self.profile_arguments())==self.runtime_current,'P2_CERTIFICATION_RUNTIME_CHANGED')
         finally:runtime._command_scope.reset(token)
         require(self._runtime_processes()==self.process_snapshot,'P2_CERTIFICATION_PROCESS_OR_MOUNT_CHANGED')
-        self._gateway_current()
+        self._verify_gateway_boundary()
         if self.initial['certificationPlan']['mode']=='contain-native':
             native.observe_metadata(self._native_context(),LockedClient(self.vercel,self.check),**self.profile_arguments())
+        elif self.initial['certificationPlan']['mode'] in SCOPED_MODES:
+            self.require_scoped_native_off()
         else:
             # The same source mutex serializes toggles and healthy readbacks.
             # A provider enable or feature/writer drift outside our declared
@@ -1121,6 +1170,7 @@ class P2CertificationBroker(Broker):
         if operation=='native-observe':return self._native_observe()
         if operation=='native-metadata':return native.observe_metadata(context,client,**self.profile_arguments())
         require(operation=='native-toggle' and type(request.get('enabled')) is bool,'P2_CERTIFICATION_FIXED_NATIVE_OPERATION_REQUIRED')
+        require(self.initial['certificationPlan']['mode'] not in SCOPED_MODES, 'P2_CERTIFICATION_SCOPED_NATIVE_TOGGLE_REFUSED')
         with self.native_mutex:
             self.check()
             require(request['enabled'] is False or self.initial['certificationPlan']['mode'] not in ('contain-native','auth-preparation','browser-pending','direct-worker'),'P2_CERTIFICATION_ENABLE_FORBIDDEN')
@@ -1147,6 +1197,9 @@ class P2CertificationBroker(Broker):
         result=native.observe(self._native_context(),LockedClient(self.vercel,self.check),**self.profile_arguments())
         frontend_probe._private_input(_private_probe_directory(self.action_id()),self._probe_identity(),**self.profile_arguments())
         return result
+
+    def _verify_gateway_boundary(self):
+        return self._gateway_current()
 
     def _observe_browser_origin(self):
         # Both provider and protected alias HTTPS calls retain the source/physical
@@ -1182,7 +1235,7 @@ class P2CertificationBroker(Broker):
             rows.append({'service':row['service'],'containerId':row['containerId'],'pid':fields[0],'startedAt':fields[1],'mounts':actual})
         return rows
 
-    def _gateway_current(self):
+    def _gateway_observation(self):
         current=os.stat(self.configuration/'admission',follow_symlinks=False);opened=os.fstat(self.admission_fd)
         require(stat.S_ISDIR(current.st_mode) and current.st_dev==opened.st_dev==self.admission_identity.st_dev and current.st_ino==opened.st_ino==self.admission_identity.st_ino,
             'P2_CERTIFICATION_ADMISSION_MOUNT_CHANGED')
@@ -1191,13 +1244,18 @@ class P2CertificationBroker(Broker):
         require(not result.stderr and 0<len(result.stdout)<=16384,'P2_CERTIFICATION_GATEWAY_READBACK_REQUIRED')
         value=json.loads(result.stdout);plan=self.initial['certificationPlan']
         require(value.get('status')=='P2_FAULT_GATEWAY_CURRENT' and value.get('processSha256')==(self.known_ack_new_gateway_process or plan['gatewayProcessSha256']) and
-            value.get('admission', {}).get('valid') is True and
             value.get('gatewayConfigurationSha256')==plan['gatewayConfigurationSha256'] and value.get('faultModuleSha256')==_sha(migrate.read_input(self.source,'ops/gateway/p2-certification-fault.mjs')) and
             value.get('admissionDirectory')=={'device':str(opened.st_dev),'inode':str(opened.st_ino)},'P2_CERTIFICATION_EXACT_GATEWAY_REQUIRED')
         return value
 
+    def _gateway_current(self):
+        value = self._gateway_observation()
+        require(value.get('admission', {}).get('valid') is True, 'P2_CERTIFICATION_ORDINARY_GATEWAY_STATE_REQUIRED')
+        return value
+
     def gateway_stage(self,stage):
         self.check();require(self.external_armed and stage in ('closed','recovery','browser'),'P2_CERTIFICATION_GATEWAY_STAGE_REQUIRED')
+        require(self.initial['certificationPlan']['mode'] not in SCOPED_MODES, 'P2_CERTIFICATION_SCOPED_GATEWAY_STAGE_REFUSED')
         flags={'closed':(False,False),'recovery':(False,True),'browser':(True,False)}[stage]
         observed=self.observer.probe('observe')['admission']
         require(observed['newWork'] is flags[0] and observed['recovery'] is flags[1],'P2_CERTIFICATION_FE_GATEWAY_ORDER_REQUIRED')
@@ -1456,6 +1514,10 @@ class P2CertificationBroker(Broker):
             self.suspension_stage.scrub_controlled_credentials()
         if cert['mode']=='direct-worker':
             self._require_worker_outcome(case)
+        if cert['mode'] in SCOPED_MODES:
+            expected_epoch = int(cert['initialEpoch']) + (2 if cert['mode'] == 'export-cleanup' else 0)
+            require(case == self.scoped_case and admission['epoch'] == str(expected_epoch) and admission['uncertain'] == 0,
+                    'P2_CERTIFICATION_SCOPED_CASE_OUTCOME_REQUIRED')
         if cert['mode']=='fault-before-upstream' and self.certification_profile() is not None:
             self._require_profiled_before_upstream(case,evidence)
         if cert['mode']=='known-ack-recovery':
@@ -1486,7 +1548,7 @@ class P2CertificationBroker(Broker):
         migrate.write_json(self.directory,'p2-certification-close-prepared.json',self.prepared_terminal)
         self.boundary_stop.set()
         if self.boundary_thread and self.boundary_thread is not threading.current_thread():self.boundary_thread.join(35)
-        self.observer.stop();self.closing_at=time.monotonic();return copy.deepcopy(self.prepared_terminal)
+        self.closing_at=time.monotonic();self.observer.stop();self.check();return copy.deepcopy(self.prepared_terminal)
 
     def _bind_terminal_profile(self):
         return
@@ -1531,6 +1593,9 @@ class P2CertificationBroker(Broker):
         if operation.startswith('known-'):
             result=self.known_ack_operation(operation,value)
             self.send(identity,'CERTIFICATION_KNOWN_ACK_OBSERVED',receipt=result);return
+        if operation.startswith('scoped-'):
+            require(type(self) is P2ProfiledCertificationBroker, 'P2_CERTIFICATION_PROFILED_SCOPED_SOURCE_REQUIRED')
+            self.send(identity, 'CERTIFICATION_SCOPED_OBSERVED', receipt=self.scoped_operation(operation, value));return
         if operation.startswith('native-'):
             self.send(identity,'CERTIFICATION_NATIVE_OBSERVED',receipt=self.native_operation(operation,value));return
         if operation=='certification-gateway-stage':self.send(identity,'CERTIFICATION_GATEWAY_OBSERVED',receipt=self.gateway_stage(value.get('stage')));return
@@ -1580,14 +1645,18 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.guard_arm_verified = False
         self.fallback_complete = False
         self.failure_lock = threading.RLock()
+        self.scoped_gate_lock = threading.RLock()
+        self.scoped_stage = self.scoped_case = self.scoped_mux_sha256 = None
         initial = self.initial
         plan = initial['certificationPlan']
         mode = plan['mode']
-        require(mode in SUSPENSION_MODES | {'native-window', 'contain-native', 'fault-before-upstream'},
+        require(mode in SUSPENSION_MODES | SCOPED_MODES | {'native-window', 'contain-native', 'fault-before-upstream'},
                 'P2_PROFILED_CERTIFICATION_EXECUTION_MODE_UNQUALIFIED')
         review_fields = PROFILED_INITIAL_FIELDS | ({'sourceSuspensionPlan'} if mode in SUSPENSION_MODES else set())
         private_fields = {'confirmation', 'credentials', 'vercelToken'}
-        if mode != 'contain-native':
+        if mode in SCOPED_MODES:
+            private_fields.add('scopedCronSecret')
+        elif mode != 'contain-native':
             private_fields.add('privateProbe')
         if mode in BROWSER_MODES:
             private_fields.add('sourceParentChallenge')
@@ -1595,6 +1664,10 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
             private_fields.update(('persistenceReviewed', 'browserResources'))
         if mode == 'direct-worker':
             private_fields.add('persistenceReviewed')
+        if mode in PERSISTENCE_MODES:
+            private_fields.add('persistenceReviewed')
+        if mode == 'lifecycle-persistence':
+            private_fields.add('persistencePrivate')
         guard_fields = {'_guardLayout', '_guardObserverSource', '_guardObserverProgram', '_guardLockDescriptor'}
         require(set(initial) == review_fields | private_fields | guard_fields and
                 initial['confirmation'] == 'staging/' + self.action_id() and
@@ -1606,9 +1679,18 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         review = {key: initial[key] for key in review_fields}
         verified = prepare_profiled_current_certification_input(review, self.source)
         require(verified['originalReleasePlanHashHostVerified'] is True, 'P2_PROFILED_CERTIFICATION_ORIGINAL_PLAN_PROOF_REQUIRED')
+        if mode in SCOPED_MODES:
+            secret = initial['scopedCronSecret']
+            require(type(secret) is str and 0 < len(secret) <= 8192 and re.fullmatch(r'[!-~]+', secret) is not None,
+                    'P2_CERTIFICATION_SCOPED_CRON_CREDENTIAL_REQUIRED')
+        if mode in PERSISTENCE_MODES:
+            require(_sha(_canonical(initial['persistenceReviewed'])) == plan['persistenceReviewedSha256'],
+                    'P2_PROFILED_PERSISTENCE_REVIEW_CHANGED')
         self.bundle, self.configuration, self.results = (Path(initial[key]) for key in ('bundle', 'configuration', 'results'))
         self.selected, self.jobs, self.plan, _ = runtime.make_plan(self.bundle, self.configuration,
             self.source / 'ops/platform/compose.yaml', **self.profile_arguments())
+        require(mode != 'mux-callback-recovery' or self.selected['sources']['course']['commit'] == SCOPED_MUX_COURSE_SOURCE,
+                'P2_SCOPED_MUX_MANAGED_COURSE_SOURCE_REQUIRED')
         runtime.assert_host(self.plan)
         self.lock_fd = self.shared_lock_fd
         self.lock_info = os.fstat(self.lock_fd)
@@ -1669,7 +1751,43 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
     def _release_evidence(self):
         return {key: self.initial[key] for key in ('originalReleaseReceipt', 'readyReceipts')}
 
+    def require_scoped_native_off(self):
+        self.check()
+        require(self.initial['certificationPlan']['mode'] in SCOPED_MODES, 'P2_CERTIFICATION_SCOPED_NATIVE_READ_REQUIRED')
+        observed = native.observe_metadata(self._native_context(), LockedClient(self.vercel, self.check), **self.profile_arguments())
+        require(observed.get('nativeEnabled') is False, 'P2_CERTIFICATION_NATIVE_OFF_REQUIRED')
+        return observed
+
+    def _native_observe(self):
+        if self.initial['certificationPlan']['mode'] not in SCOPED_MODES:
+            return super()._native_observe()
+        from p2_day_two_workload import observe
+        return observe(self._native_context(), LockedClient(self.vercel, self.check), self.initial['scopedCronSecret'],
+                       **self.profile_arguments())
+
+    def _verify_gateway_boundary(self):
+        if self.initial['certificationPlan']['mode'] != 'mux-callback-recovery':
+            return super()._verify_gateway_boundary()
+        with self.scoped_gate_lock:
+            if self.scoped_mux_sha256 is None:
+                return self._gateway_current()
+            observed = self._gateway_observation()['admission']
+            require(observed.get('version') == 2 and observed.get('muxCallbackActive') is True and
+                    observed.get('sha256') == self.scoped_mux_sha256 and
+                    observed.get('uncertain') == {'newWork': 0, 'recovery': 0},
+                    'P2_CERTIFICATION_SCOPED_MUX_BOUNDARY_CHANGED')
+            return observed
+
     def _prepare_lifecycle_stages(self,mode):
+        if mode == 'export-cleanup':
+            from p2_scoped_export_cleanup import P2ScopedExportCleanupStage
+            self.scoped_stage = P2ScopedExportCleanupStage(self)
+        if mode == 'mux-callback-recovery':
+            from p2_scoped_mux import P2ScopedMuxStage
+            self.scoped_stage = P2ScopedMuxStage(self)
+        if mode == 'lifecycle-persistence':
+            from p2_lifecycle_persistence_probe import P2ScopedLifecyclePersistenceStage
+            self.scoped_stage = P2ScopedLifecyclePersistenceStage(self)
         if mode == 'browser-pending':
             self.suspension_stage = P2LifecycleSuspensionEvidenceStage(self.scope,self.selected,self.jobs,self.configuration,self.source,
                 self.initial['browserPlan'],self.initial['persistenceReviewed'],self.initial['browserResources'],
@@ -1681,6 +1799,49 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                 native_context=self._native_context(),provider_client=LockedClient(self.vercel,self.check),
                 observe_frontend=lambda:self.observer.probe('witness'),bundle=self.bundle,database_proof=self.api_proof,
                 release_evidence=self._release_evidence(),**self.profile_arguments())
+
+    def scoped_operation(self, operation, value):
+        self.check()
+        require(self.external_armed and self.scoped_stage is not None and self.scoped_case is None and
+                self.closing_at is None and set(value) == {'id', 'operation'},
+                'P2_CERTIFICATION_FIXED_SCOPED_OPERATION_REQUIRED')
+        mode = self.initial['certificationPlan']['mode']
+        stage = self.scoped_stage
+        if mode == 'export-cleanup':
+            if operation == 'scoped-export-preflight':
+                self._require_protected_export_ingress('preflight')
+                return stage.preflight(self.initial['scopedCronSecret'])
+            if operation == 'scoped-export-invoke':
+                self._require_protected_export_ingress('invoke')
+                return stage.invoke(self.initial['scopedCronSecret'])
+            require(operation == 'scoped-export-join', 'P2_CERTIFICATION_FIXED_EXPORT_OPERATION_REQUIRED')
+            result = stage.join()
+        elif mode == 'mux-callback-recovery':
+            with self.scoped_gate_lock:
+                if operation == 'scoped-mux-open':
+                    require(self.scoped_mux_sha256 is None, 'P2_CERTIFICATION_SCOPED_MUX_ALREADY_OPEN')
+                    opened = stage.open()
+                    self.scoped_mux_sha256 = opened['scopedStateSha256']
+                    return opened
+                if operation == 'scoped-mux-observe':
+                    return stage.observe()
+                require(operation == 'scoped-mux-close', 'P2_CERTIFICATION_FIXED_MUX_OPERATION_REQUIRED')
+                result = stage.close()
+                self.scoped_mux_sha256 = None
+        else:
+            require(mode == 'lifecycle-persistence' and operation == 'scoped-persistence-observe',
+                    'P2_CERTIFICATION_FIXED_PERSISTENCE_OPERATION_REQUIRED')
+            result = stage.observe()
+        self.scoped_case = copy.deepcopy(result)
+        migrate.write_json(self.directory, 'p2-scoped-case-joined.json', self.scoped_case)
+        return result
+
+    def _require_protected_export_ingress(self, stage):
+        from p2_interactive_ingress import observe_selected_protection
+        receipt = observe_selected_protection(self._native_context(), LockedClient(self.vercel, self.check),
+                                              **self.profile_arguments())
+        require(receipt['automationBypassCount'] == 1, 'P2_CERTIFICATION_SCOPED_EXPORT_SINGLE_BYPASS_REQUIRED')
+        migrate.write_json(self.directory, 'p2-scoped-export-ingress-' + stage + '.json', receipt)
 
     def _require_worker_outcome(self,case):
         from p2_lifecycle_authority_timing import finalize_retained_authority_timing

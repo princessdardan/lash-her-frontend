@@ -6,13 +6,14 @@ import { createWorkloadVerifier } from "./oidc.mjs";
 import { matchRoute, MinuteBudget, validateConfig } from "./policy.mjs";
 import { createOperationsServer } from "./operations.mjs";
 import {
-  admissionClass, createAdmissionReader, isScopedMuxRoute, scopedMuxAcknowledged, scopedMuxTarget,
+  admissionClass, createAdmissionReader, isScopedMuxRoute, scopedMuxAcknowledged, selectScopedMuxCallback,
   SCOPED_MUX_BODY_LIMIT, SCOPED_MUX_HEADER,
 } from "./admission.mjs";
 import { createP2CertificationFault } from "./p2-certification-fault.mjs";
 
 const MAX_BODY = 1024 * 1024;
 const MAX_RESPONSE = 8 * 1024 * 1024;
+const MAX_SCOPED_MUX_REQUESTS = 16;
 const REQUEST_HEADERS = new Set(["accept", "authorization", "content-type", "x-idempotency-key", "mux-signature"]);
 const RESPONSE_HEADERS = new Set(["content-type", "retry-after"]);
 
@@ -21,6 +22,7 @@ export function createGateway(input, options = {}) {
   const verify = options.verify ?? createWorkloadVerifier(config);
   const certification = (options.certificationFault ?? createP2CertificationFault)(config);
   const currentAdmission = createAdmissionReader(config, options.scopedMuxAdmission);
+  const scopedMuxEvidence = new Map();
   const budgets = new MinuteBudget(options.limits ?? {
     preauth: 2400, webhook: 600, workload: 1200, service: 600,
   });
@@ -115,12 +117,19 @@ export function createGateway(input, options = {}) {
       }
       const body = Buffer.concat(chunks);
       if ((req.method === "GET" || req.method === "HEAD") && body.length) return refuse(400, "body_not_allowed");
-      let muxTarget;
+      let muxSelection, muxEvidence;
       if (muxAdmission) {
         const current = currentAdmission();
         if (res.destroyed || current.sha256 !== muxAdmission.sha256) return refuse(503, "release_maintenance", 30);
-        muxTarget = scopedMuxTarget(current.muxCallback, body, req.headers["mux-signature"]);
-        if (!muxTarget) return refuse(503, "release_maintenance", 30);
+        muxSelection = selectScopedMuxCallback(current.muxCallback, body, req.headers["mux-signature"]);
+        if (!muxSelection) return refuse(503, "release_maintenance", 30);
+        muxEvidence = scopedMuxEvidence.get(current.sha256);
+        if (!muxEvidence) {
+          muxEvidence = { admitted: 0, managedAcks: [] };
+          scopedMuxEvidence.set(current.sha256, muxEvidence);
+        }
+        if (muxEvidence.admitted >= MAX_SCOPED_MUX_REQUESTS) return refuse(503, "release_maintenance", 30);
+        muxEvidence.admitted++;
         // Recheck the exact state after the body await. Account only a selected
         // upstream operation, so rejecting a foreign callback cannot dirty drain.
         accountAdmission("recovery");
@@ -133,7 +142,7 @@ export function createGateway(input, options = {}) {
       }
       if (route.auth !== "webhook") delete headers["mux-signature"];
       else delete headers.authorization;
-      if (muxTarget) headers[SCOPED_MUX_HEADER] = muxTarget;
+      if (muxSelection) headers[SCOPED_MUX_HEADER] = muxSelection.target;
       const upstream = new URL(upstreamOrigin);
       await new Promise((resolve) => {
         const call = httpsRequest(upstream, {
@@ -150,7 +159,12 @@ export function createGateway(input, options = {}) {
           reply.once("end", () => {
             if (res.destroyed) return resolve();
             const buffered = Buffer.concat(result);
-            if (muxAdmission && !scopedMuxAcknowledged(muxAdmission.muxCallback, reply.statusCode, buffered)) markUncertain();
+            if (muxSelection) {
+              if (!scopedMuxAcknowledged(muxAdmission.muxCallback, reply.statusCode, buffered)) markUncertain();
+              else if (reply.statusCode === 200) muxEvidence.managedAcks.push({
+                requestId, eventId: muxSelection.eventId, upstreamStatus: 200,
+              });
+            }
             // The complete upstream ACK must be checked before any downstream
             // status, headers or bytes. A deliberate drop retains uncertainty
             // through the existing admitted-request close accounting.
@@ -194,7 +208,9 @@ export function createGateway(input, options = {}) {
       ? { valid: false, newWork: false, recovery: false } : currentAdmission();
     // Older release readers require the ordinary admission flags. A scoped
     // window cannot be used as evidence that ordinary admission is closed.
-    const scoped = muxCallback ? { valid: false, newWork: null, recovery: null, muxCallbackActive: true } : {};
+    const scoped = muxCallback ? { valid: false, newWork: null, recovery: null, muxCallbackActive: true,
+      muxCallbackEvidence: structuredClone(scopedMuxEvidence.get(state.sha256) ?? { admitted: 0, managedAcks: [] }),
+    } : {};
     return { ...state, ...scoped, active: { ...admitted }, uncertain: { ...uncertain } };
   } };
 }

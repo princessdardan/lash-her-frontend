@@ -10,7 +10,7 @@ import {Client} from 'pg';
 import {frontendMigrationArtifact} from './frontend-migration.mjs';
 import {readMigrationCatalog} from './frontend-schema.mjs';
 import {frontendAdmissionTargetSha256} from './frontend-admission-bootstrap.mjs';
-import {reconcileFrontendOperation} from './frontend-admission.mjs';
+import {changeFrontendAdmission,reconcileFrontendOperation} from './frontend-admission.mjs';
 import {withP2CertificationFrontendSession,observeP2CertificationPhysical,readP2CertificationCurrent,containP2ProfiledCertificationAdmission,
   withP2ProfiledInterruptedFrontendSession,observeP2ProfiledInterruptedFrontendPhysical} from './p2-certification-current-probe.mjs';
 import {STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile} from './qualification-target-profile.mjs';
@@ -199,6 +199,41 @@ async function child(){
     assert.equal((await containP2ProfiledCertificationAdmission(guardProbe,deps)).admissionChanged,false);
     assert.deepEqual((await admin.query('SELECT new_work,recovery FROM frontend_admission.control')).rows,[{new_work:false,recovery:false}]);
     checks.push('actual-profiled-guard-fence-with-exclusive-lock-and-idempotent-readback');
+    phase='actual-child-scoped-certification-epochs';
+    const scoped={...profiledPlan,mode:'export-cleanup',startState:'already-closed',initialEpoch:'5',
+      nativePlan:{...profiledPlan.nativePlan,purpose:'scoped-certification-control-only',initialEpoch:'5',commandWitnesses:[]}};
+    await withP2CertificationFrontendSession(profiled,scoped,deps,async({client,verify,probe})=>{
+      const policy={environment:'staging',targetSha256};
+      const witness=()=>observeP2CertificationPhysical({...probe,operation:'witness'},deps,profile);
+      const change=async(epoch,flags)=>{
+        await client.query('SET ROLE cert_owner');
+        try{return await changeFrontendAdmission(client,policy,epoch,flags);}
+        finally{await client.query('RESET ROLE');}
+      };
+      assert.deepEqual((await witness()).admission,{epoch:'5',newWork:false,recovery:false,active:0,uncertain:0});
+      assert.equal((await change('5',{newWork:false,recovery:true})).epoch,'6');
+      assert.deepEqual((await witness()).admission,{epoch:'6',newWork:false,recovery:true,active:0,uncertain:0});
+      const operationId=randomUUID();
+      await admin.query(`INSERT INTO frontend_admission.operations(id,producer_sha256,source_sha,database_role,epoch,kind,state,completed_at)
+        VALUES($1,$2,$3,$4,6,'recovery','completed',pg_catalog.clock_timestamp())`,[operationId,producerSha256,sourceCommit,roles.cert_runtime]);
+      assert.equal((await change('6',{newWork:false,recovery:false})).epoch,'7');
+      const joined=await witness();
+      assert.deepEqual(joined.admission,{epoch:'7',newWork:false,recovery:false,active:0,uncertain:0});
+      assert.deepEqual(joined.witness.operations.map(row=>row.id),[operationId]);
+      assert.match(JSON.parse(JSON.stringify(joined)).witness.operations[0].completed_at,/^\d{4}-\d{2}-\d{2}T/u);
+      await verify();
+    },profile);
+    for(const mode of ['mux-callback-recovery','lifecycle-persistence']){
+      const closed={...scoped,mode,initialEpoch:'7',nativePlan:{...scoped.nativePlan,initialEpoch:'7'}};
+      await withP2CertificationFrontendSession(profiled,closed,deps,async({client,verify})=>{
+        const read=()=>readP2CertificationCurrent(client,profiled,closed,verify,false,profile);
+        assert.deepEqual((await read()).admission,{epoch:'7',newWork:false,recovery:false,active:0,uncertain:0});
+        await admin.query('UPDATE frontend_admission.control SET epoch=8,recovery=true');
+        await assert.rejects(read(),{checkpoint:'current-admission-state'});
+        await admin.query('UPDATE frontend_admission.control SET epoch=7,recovery=false');
+      },profile);
+    }
+    checks.push('actual-profiled-scoped-export-ledger-and-read-only-epoch-fences');
     assert.equal(hash((await admin.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows),journal);
     return{version:1,status:'P2_CERTIFICATION_CURRENT_OWNED_PASS',serverMajor:input.major,frontendMigrations:83,checks,skipped:0,actualTlsPostgres:true,noSqlReplay:true,providerTouched:false,
       actualHostDocker:false,browserQualified:false,nativeInvocationQualified:false,fixtureOnly:true};
