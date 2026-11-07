@@ -10,7 +10,8 @@ import {Client} from 'pg';
 import {frontendMigrationArtifact} from './frontend-migration.mjs';
 import {readMigrationCatalog} from './frontend-schema.mjs';
 import {frontendAdmissionTargetSha256} from './frontend-admission-bootstrap.mjs';
-import {changeFrontendAdmission,reconcileFrontendOperation} from './frontend-admission.mjs';
+import {changeFrontendAdmission,closeFrontendInteractiveAdmission,openFrontendInteractiveAdmission,prepareFrontendInteractiveProducer,reconcileFrontendOperation,
+  restoreFencedFrontendInteractiveProducers,runFrontendWriterOperation} from './frontend-admission.mjs';
 import {withP2CertificationFrontendSession,observeP2CertificationPhysical,readP2CertificationCurrent,containP2ProfiledCertificationAdmission,
   withP2ProfiledInterruptedFrontendSession,observeP2ProfiledInterruptedFrontendPhysical} from './p2-certification-current-probe.mjs';
 import {STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile} from './qualification-target-profile.mjs';
@@ -234,10 +235,119 @@ async function child(){
       },profile);
     }
     checks.push('actual-profiled-scoped-export-ledger-and-read-only-epoch-fences');
+    phase='actual-child-interactive-producer-swap';
+    await proveInteractiveProducerSwap({admin,profiled,scoped,deps,url,targetSha256,sourceCommit,producerSha256,roleOid:roles.cert_runtime});
+    checks.push('actual-interactive-producer-swap-same-role-denial-drain-and-independent-fence-recovery');
     assert.equal(hash((await admin.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows),journal);
     return{version:1,status:'P2_CERTIFICATION_CURRENT_OWNED_PASS',serverMajor:input.major,frontendMigrations:83,checks,skipped:0,actualTlsPostgres:true,noSqlReplay:true,providerTouched:false,
       actualHostDocker:false,browserQualified:false,nativeInvocationQualified:false,fixtureOnly:true};
   }finally{await admin.end();}
+}
+
+async function proveInteractiveProducerSwap({admin,profiled,scoped,deps,url,targetSha256,sourceCommit,producerSha256,roleOid}){
+  const policy={environment:'staging',targetSha256,runtimeRole:'cert_runtime'};
+  const producer=producerSha256=>({producerSha256,role:{name:'cert_runtime',oid:roleOid}});
+  const interactiveSha256=createHash('sha256').update(`lash-her:p2q:interactive-producer:v1\n${sourceCommit}\n${targetSha256}`).digest('hex');
+  const runtimeProducer=producer(producerSha256),secondary=producer('d'.repeat(64)),interactive=producer(interactiveSha256),unexpected='f'.repeat(64);
+  const ordinaryProducers=[runtimeProducer,secondary];
+  const reviewed={sourceCommit,ordinaryProducers,runtimeProducer,interactiveProducer:interactive};
+  await admin.query('INSERT INTO frontend_admission.producers VALUES($1,$3,$4,true),($2,$3,$4,false)',
+    [secondary.producerSha256,unexpected,sourceCommit,roleOid]);
+  const current={...profiled,plan:{...profiled.plan,producers:ordinaryProducers}};
+  const initial={...scoped,mode:'lifecycle-persistence',initialEpoch:'7',nativePlan:{...scoped.nativePlan,initialEpoch:'7'}};
+  const runtimeUrl=new URL(url);runtimeUrl.username='cert_runtime';
+  const runtime=new Client({connectionString:runtimeUrl.href,ssl:{rejectUnauthorized:true}});
+  const peer=new Client({connectionString:runtimeUrl.href,ssl:{rejectUnauthorized:true}});
+  const actual=async()=>({
+    control:(await admin.query('SELECT epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton')).rows[0],
+    enabled:(await admin.query('SELECT producer_sha256 FROM frontend_admission.producers WHERE enabled ORDER BY producer_sha256')).rows.map(row=>row.producer_sha256),
+  });
+  try{
+    await runtime.connect();await peer.connect();
+    await withP2CertificationFrontendSession(current,initial,deps,async({client,verify})=>{
+      const withOwner=async(work)=>{
+        await verify();await client.query('SET ROLE cert_owner');
+        try{return await work();}
+        finally{await client.query('RESET ROLE');await verify();}
+      };
+      const open=epoch=>withOwner(()=>openFrontendInteractiveAdmission(client,policy,epoch,reviewed));
+      const close=epoch=>withOwner(()=>closeFrontendInteractiveAdmission(client,policy,epoch,reviewed));
+      const restore=epoch=>withOwner(()=>restoreFencedFrontendInteractiveProducers(client,policy,epoch,reviewed));
+      const prepare=(epoch,selection=reviewed)=>withOwner(()=>prepareFrontendInteractiveProducer(client,policy,epoch,selection));
+      const run=(connection,selected,kind,epoch,id,work)=>runFrontendWriterOperation(connection,policy,
+        {id,kind,epoch,producerSha256:selected,sourceSha:sourceCommit},work);
+      const denied=(connection,selected,kind,epoch)=>assert.rejects(
+        run(connection,selected,kind,epoch,randomUUID(),()=>assert.fail('denied producer reached an effect')),
+        {message:'FRONTEND_ADMISSION_REFUSED'});
+      const starting=await actual();
+      const registration={epoch:'7',newWork:false,recovery:false,producerSha256:interactiveSha256};
+      const readRegistered=async()=>(await admin.query('SELECT source_sha,database_role::text AS role_oid,enabled FROM frontend_admission.producers WHERE producer_sha256=$1',
+        [interactiveSha256])).rows;
+      assert.deepEqual(await readRegistered(),[]);
+      await assert.rejects(open('7'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
+      await assert.rejects(prepare('7',{...reviewed,interactiveProducer:producer(unexpected)}),{message:'FRONTEND_ADMISSION_REFUSED'});
+      assert.deepEqual(await prepare('7'),{...registration,registered:true});
+      assert.deepEqual(await prepare('7'),{...registration,registered:false});
+      const selectedRow={source_sha:sourceCommit,role_oid:roleOid,enabled:false};
+      assert.deepEqual(await readRegistered(),[selectedRow]);
+      for(const [change,repair] of [
+        ["source_sha=repeat('a',40)",`source_sha='${sourceCommit}'`],
+        ["database_role='cert_owner'::regrole::oid",`database_role=${roleOid}::oid`],
+        ['enabled=true','enabled=false'],
+      ]){
+        const alter=assignment=>admin.query(`UPDATE frontend_admission.producers SET ${assignment} WHERE producer_sha256=$1`,[interactiveSha256]);
+        await alter(change);
+        const changed=await readRegistered();
+        try{
+          await assert.rejects(prepare('7'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
+          assert.deepEqual(await readRegistered(),changed);
+        }finally{await alter(repair);}
+      }
+      assert.deepEqual(await readRegistered(),[selectedRow]);
+      await admin.query('UPDATE frontend_admission.producers SET enabled=true WHERE producer_sha256=$1',[unexpected]);
+      try{await assert.rejects(open('7'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});}
+      finally{await admin.query('UPDATE frontend_admission.producers SET enabled=false WHERE producer_sha256=$1',[unexpected]);}
+      await admin.query('BEGIN');
+      try{
+        await admin.query('LOCK TABLE frontend_admission.producers IN ROW EXCLUSIVE MODE');
+        await assert.rejects(open('7'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
+      }finally{await admin.query('ROLLBACK');}
+      assert.deepEqual(await actual(),starting);
+      assert.deepEqual(await open('7'),{epoch:'8',newWork:true,recovery:true});
+      assert.deepEqual(await actual(),{control:{epoch:'8',new_work:true,recovery:true},enabled:[interactive.producerSha256]});
+      await assert.rejects(prepare('8'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
+      for(const entry of ordinaryProducers)for(const kind of ['new-work','recovery']){
+        await denied(peer,entry.producerSha256,kind,'8');
+      }
+      await denied(peer,interactive.producerSha256,'new-work','7');
+      const activeId=randomUUID(),uncertainId=randomUUID();
+      let entered,finish;
+      const started=new Promise(resolve=>{entered=resolve;});
+      const stop=new Promise(resolve=>{finish=resolve;});
+      const operation=run(runtime,interactive.producerSha256,'new-work','8',activeId,async()=>{entered();await stop;return 'finished';});
+      try{
+        await Promise.race([started,operation]);
+        await assert.rejects(run(peer,interactive.producerSha256,'recovery','8',uncertainId,async()=>{throw Error('owned uncertainty');}),
+          {message:'FRONTEND_OPERATION_OUTCOME_REQUIRES_REVIEW'});
+        assert.deepEqual(await close('8'),{epoch:'9',newWork:false,recovery:false,active:1,uncertain:1,ledgerDrained:false});
+        assert.deepEqual(await actual(),{control:{epoch:'9',new_work:false,recovery:false},enabled:starting.enabled});
+        await denied(peer,interactive.producerSha256,'recovery','9');
+        await denied(peer,producerSha256,'new-work','9');
+        await assert.rejects(open('9'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
+        await assert.rejects(prepare('9'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
+      }finally{finish();await operation;}
+      assert.equal((await admin.query('SELECT state FROM frontend_admission.operations WHERE id=$1',[activeId])).rows[0].state,'completed');
+      const evidence='a'.repeat(64);
+      await withOwner(()=>reconcileFrontendOperation(client,policy,'9',uncertainId,evidence));
+      assert.equal((await open('9')).epoch,'10');
+      await withOwner(()=>changeFrontendAdmission(client,policy,'10',{newWork:false,recovery:false}));
+      assert.deepEqual(await actual(),{control:{epoch:'11',new_work:false,recovery:false},enabled:[interactive.producerSha256]});
+      await assert.rejects(close('10'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
+      assert.deepEqual(await restore('11'),{epoch:'12',newWork:false,recovery:false,active:0,uncertain:0,ledgerDrained:true});
+      assert.deepEqual(await actual(),{control:{epoch:'12',new_work:false,recovery:false},enabled:starting.enabled});
+      await assert.rejects(restore('12'),{message:'FRONTEND_ADMISSION_FAILED_REVIEW_REQUIRED'});
+    },profile);
+  }finally{await Promise.all([runtime.end(),peer.end()]);}
 }
 
 async function proveProfiledInterruptedFrontend({admin,profiled,plan,nativePlan,job,owner,profileTarget,selectedProfile,deps,

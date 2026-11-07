@@ -24,6 +24,16 @@ demand = migrate.demand
 _DIRECT_DEPLOYMENT = re.compile(r"https://[a-z0-9][a-z0-9-]*\.vercel\.app")
 _BYPASS_SECRET = re.compile(r"[!-~]{1,8192}")
 _MAX_DENIAL_BODY = 65_536
+_BROWSER_PATHS = (
+    "/",
+    "/sign-in",
+    "/admin/sign-in",
+    "/api/customer-auth/session",
+    "/api/auth/session",
+    "/api/customer-auth/callback/google",
+    "/api/customer-auth/callback/resend",
+    "/api/auth/callback/google",
+)
 
 
 def _digest(value):
@@ -56,14 +66,15 @@ class UnauthenticatedIngressClient:
             urllib.request.ProxyHandler({}), vercel.NoRedirect(),
             urllib.request.HTTPSHandler(context=ssl.create_default_context()))
 
-    def request(self, origin):
+    def request(self, origin, path="/"):
         demand(type(origin) is str and (origin == canonical.ORIGIN or _DIRECT_DEPLOYMENT.fullmatch(origin)),
                "P2_INTERACTIVE_INGRESS_ORIGIN_REFUSED")
-        url = origin + "/"
+        demand(type(path) is str and path in _BROWSER_PATHS, "P2_INTERACTIVE_INGRESS_PATH_REFUSED")
+        url = origin + path
         request = urllib.request.Request(url, method="GET", headers={
             "accept": "text/html,application/xhtml+xml", "cache-control": "no-cache"})
         try:
-            with self._opener.open(request, timeout=20) as response:
+            with self._opener.open(request, timeout=20 if path == "/" else 5) as response:
                 response.read(_MAX_DENIAL_BODY + 1)
             raise ValueError("P2_INTERACTIVE_UNAUTHENTICATED_INGRESS_NOT_DENIED")
         except urllib.error.HTTPError as error:
@@ -138,6 +149,15 @@ def observe(context, client, canonical_probe=None, *, expected_profile=None):
 
 def observe_selected_protection(context, client, *, expected_profile):
     """Recheck protected endpoints independently of a retained probe secret."""
+    return _observe_selected_protection(context, client, expected_profile, browser=False)
+
+
+def observe_browser_protection(context, client, *, expected_profile):
+    """Check the fixed browser sign-in ingress without replaying a callback."""
+    return _observe_selected_protection(context, client, expected_profile, browser=True)
+
+
+def _observe_selected_protection(context, client, expected_profile, *, browser):
     expected = migrate.profile_context(expected_profile)
     demand(expected is not None, "QUALIFICATION_TARGET_PROFILE_REQUIRED")
     plan = native.identity(context, expected_profile=expected)
@@ -149,16 +169,31 @@ def observe_selected_protection(context, client, *, expected_profile):
     before = vercel._project(client, canonical.PROJECT)
     protection = _protection(before)
     requester = UnauthenticatedIngressClient()
-    alias_denial = requester.request(canonical.ORIGIN)
-    deployment_denial = requester.request(plan["deploymentUrl"])
+    observations = []
+    for path in _BROWSER_PATHS if browser else ("/",):
+        alias_denial = requester.request(canonical.ORIGIN, path)
+        deployment_denial = requester.request(plan["deploymentUrl"], path)
+        demand(all(denial in ({"status": 401, "redirected": False}, {"status": 403, "redirected": False})
+                   for denial in (alias_denial, deployment_denial)),
+               "P2_INTERACTIVE_UNAUTHENTICATED_INGRESS_NOT_DENIED")
+        observations.append({"path": path, "aliasUnauthenticatedStatus": alias_denial["status"],
+                             "deploymentUnauthenticatedStatus": deployment_denial["status"]})
     after = vercel._project(client, canonical.PROJECT)
     demand(canonical._alias(client, plan) == alias and
            native.observe_metadata(context, client, expected_profile=expected) == metadata and
            _protection(after) == protection and
            after.get("protectionBypass") == before.get("protectionBypass"),
            "P2_INTERACTIVE_PROTECTION_CHANGED")
-    return {"version": 2, "qualificationTargetProfile": expected, "status": "P2_SELECTED_PROTECTION_OBSERVED",
+    result = {"version": 2, "qualificationTargetProfile": expected,
             "projectId": canonical.PROJECT, "deploymentId": plan["deploymentId"], "sourceCommit": plan["sourceCommit"],
             "releaseId": plan["actionId"], "candidateSha256": plan["candidateSha256"], **protection,
-            "aliasUnauthenticatedStatus": alias_denial["status"], "deploymentUnauthenticatedStatus": deployment_denial["status"],
             "releaseAccepted": False, "trafficAuthorized": False}
+    if browser:
+        return {**result, "status": "P2_BROWSER_PROTECTION_OBSERVED", "environment": "staging",
+                "browserOrigin": canonical.ORIGIN, "deploymentUrl": plan["deploymentUrl"],
+                "requestMethod": "GET", "endpointDenials": observations, "redirectFollowed": False,
+                "nativeEnabled": False, "automationBypassCustodyVerified": False,
+                "interactiveNewWorkAuthorized": False}
+    return {**result, "status": "P2_SELECTED_PROTECTION_OBSERVED",
+            "aliasUnauthenticatedStatus": observations[0]["aliasUnauthenticatedStatus"],
+            "deploymentUnauthenticatedStatus": observations[0]["deploymentUnauthenticatedStatus"]}

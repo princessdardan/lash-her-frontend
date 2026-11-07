@@ -1,4 +1,75 @@
 import { createServer } from "node:http";
+import { matchRoute } from "./policy.mjs";
+
+// These groups classify only the current browser journeys. The gateway and
+// Course receiver must still enforce workload and application authentication.
+const interactiveCourseGroups = {
+  catalog: [
+    "GET /v1/courses",
+    "GET /v1/courses/{slug}",
+  ],
+  authoring: [
+    "GET /v1/admin/courses",
+    "POST /v1/admin/courses",
+    "GET /v1/admin/courses/{courseId}",
+    "PATCH /v1/admin/courses/{courseId}",
+    "GET /v1/admin/courses/{courseId}/publication-readiness",
+    "POST /v1/admin/courses/{courseId}/modules",
+    "POST /v1/admin/courses/{courseId}/modules/reorder",
+    "PATCH /v1/admin/modules/{moduleId}",
+    "POST /v1/admin/modules/{moduleId}/lessons",
+    "POST /v1/admin/modules/{moduleId}/lessons/reorder",
+    "PATCH /v1/admin/lessons/{lessonId}",
+    "GET /v1/admin/lessons/{lessonId}/quiz",
+    "PUT /v1/admin/lessons/{lessonId}/quiz",
+  ],
+  media: [
+    "GET /v1/admin/lessons/{lessonId}/video",
+    "POST /v1/admin/lessons/{lessonId}/video-upload",
+    "POST /v1/admin/lessons/{lessonId}/video/{videoAssetId}/refresh",
+    "POST /v1/admin/lessons/{lessonId}/video/{videoAssetId}/captions",
+    "DELETE /v1/admin/lessons/{lessonId}/video/{videoAssetId}/captions/{trackId}",
+  ],
+  learning: [
+    "GET /v1/student/courses",
+    "GET /v1/student/courses/{courseId}",
+    "GET /v1/student/courses/{courseId}/lessons",
+    "POST /v1/student/courses/{courseId}/enrollments",
+    "GET /v1/student/lessons/{lessonId}",
+    "GET /v1/student/lessons/{lessonId}/playback",
+    "POST /v1/student/lessons/{lessonId}/progress",
+    "GET /v1/student/lessons/{lessonId}/quiz",
+    "GET /v1/student/lessons/{lessonId}/quiz/attempts",
+    "POST /v1/student/lessons/{lessonId}/quiz/attempts",
+    "GET /v1/student/progress",
+  ],
+  "paid-grant": [
+    "GET /v1/admin/entitlements/commands",
+    "GET /v1/admin/entitlements/grants",
+    "POST /v1/admin/entitlements/grants",
+  ],
+};
+const interactiveCourseOperations = new Map(Object.entries(interactiveCourseGroups)
+  .flatMap(([group, operations]) => operations.map(operation => [operation, group])));
+const interactiveCourseParameters = {
+  "{slug}": /^(?=.{1,120}$)[a-z0-9]+(?:-[a-z0-9]+)*$/u,
+  "{trackId}": /^[A-Za-z0-9_-]{1,255}$/u,
+};
+const courseUuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u;
+
+// Pass the raw, query-free gateway pathname. Admission remains a separate step.
+// Paid-grant readback also uses the authoring course-detail GET.
+export function interactiveCourseOperation(method, pathname) {
+  if (typeof pathname !== "string" || !pathname.startsWith("/course/") || pathname.includes("?")) return null;
+  const route = matchRoute(method, pathname);
+  if (!route) return null;
+  const group = interactiveCourseOperations.get(`${method} ${route.path}`);
+  if (!group || route.auth !== (group === "catalog" ? "workload" : "application") || route.admission === "recovery") return null;
+  const parts = pathname.slice("/course".length).split("/");
+  const valid = route.path.split("/").every((part, index) =>
+    !part.startsWith("{") || (interactiveCourseParameters[part] ?? courseUuid).test(parts[index]));
+  return valid ? group : null;
+}
 
 export function createOperationsServer(counters, gauges = {}, admissionState) {
   return createServer({ maxHeaderSize: 4096, requestTimeout: 2000 }, (req, res) => {

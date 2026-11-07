@@ -3,8 +3,9 @@ import test from "node:test";
 import { EventEmitter } from "node:events";
 import { currentWriterOperationIdentity, markWriterOperationUncertain } from "./context";
 import { authorizeCaptureSquarePayment } from "@/lib/payments/square/square-payment-charge";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { createWriterAdmissionRunner } from "./runtime";
+import { attestInteractiveRequest, interactiveRequestHeaders, readInteractiveRequest, withinInteractiveAdminGoogleAction, INTERACTIVE_COOKIE, INTERACTIVE_HEADER, INTERACTIVE_ORIGIN } from "./interactive-proof";
 import { withWriterAdmission } from "./route";
 import { resolveWriterAdmissionConfiguration, WriterAdmissionError } from "./config";
 import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
@@ -72,6 +73,88 @@ test("closed new-work admission returns retryable 503 before handler or raw body
   assert.equal(response.status, 503); assert.equal(response.headers.get("retry-after"), "30"); assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(request.bodyUsed, false); assert.equal(effects, 0); assert.equal(f.state.ended, true);
   assert.equal(f.calls.some(call => call.sql.startsWith("CALL")), false);
+});
+
+test("interactive browser proof binds its exact stage, request, deployment, epoch and lifetime", async () => {
+  const now = 1_794_009_600;
+  const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
+  const source = env.VERCEL_GIT_COMMIT_SHA, target = "a".repeat(64);
+  const cookieFor = (stage: string) => {
+    const body = `v1.12.${stage}.${now}.${now + 120}.${"a".repeat(32)}`;
+    const mac = createHmac("sha256", env.CRON_SECRET)
+      .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${source}\n${target}\n${body}`).digest("hex");
+    return `${body}.${mac}`;
+  };
+  const cookie = cookieFor("identity");
+  const google = { origin: INTERACTIVE_ORIGIN, method: "GET", path: "/api/customer-auth/callback/google", cookie };
+  const attested = attestInteractiveRequest(google, env, now)!;
+  const producerSha256 = createHash("sha256").update(`lash-her:p2q:interactive-producer:v1\n${source}\n${target}`).digest("hex");
+  assert.deepEqual(readInteractiveRequest(attested, cookie, env, now), { epoch: "12", producerSha256, source, target });
+  assert.equal(readInteractiveRequest(attested, cookie, env, now + 30), null);
+  assert.equal(readInteractiveRequest(attested, cookieFor("authoring"), env, now), null);
+  assert.equal(readInteractiveRequest(attested.replace(/.$/u, x => x === "a" ? "b" : "a"), cookie, env, now), null);
+  for (const [method, path] of [
+    ["HEAD", google.path], ["POST", google.path], ["GET", google.path + "/"],
+    ["GET", "/api/customer-auth/callback/google%2f"], ["POST", "/api/checkout/products"], ["POST", "/api/webhooks/square"],
+    ["GET", "/api/cron/account-lifecycle"], ["POST", "/api/admin/customer-accounts/a/commands"],
+  ]) assert.equal(attestInteractiveRequest({ ...google, method, path }, env, now), null);
+  assert.equal(attestInteractiveRequest({ ...google, origin: "https://owned.vercel.app" }, env, now), null);
+  assert.equal(attestInteractiveRequest(google, { ...env, VERCEL_URL: "different.vercel.app" }, now), null);
+  assert.equal(attestInteractiveRequest(google, { ...env, ADMIN_DEVELOPER_MODE: "true", ADMIN_DEVELOPER_ACCESS_KEY: "x".repeat(32) }, now), null);
+  assert.equal(attestInteractiveRequest(google, env, now + 120), null);
+  const admin = attestInteractiveRequest({ ...google, method: "POST", path: "/admin/sign-in" }, env, now)!;
+  assert.equal(readInteractiveRequest(admin, cookie, env, now), null);
+  assert.deepEqual(await withinInteractiveAdminGoogleAction(async () => readInteractiveRequest(admin, cookie, env, now)),
+    { epoch: "12", producerSha256, source, target });
+  const paidCookie = cookieFor("paid-grant"), course = "10000000-0000-4000-8000-000000000001";
+  const paid = { ...google, cookie: paidCookie, method: "POST", path: `/api/admin/courses/${course}/manual-grants` };
+  assert.ok(attestInteractiveRequest(paid, env, now));
+  assert.equal(attestInteractiveRequest({ ...paid, method: "PATCH", path: `/api/admin/courses/${course}` }, env, now), null);
+  assert.equal(attestInteractiveRequest({ ...paid, cookie: cookieFor("learning") }, env, now), null);
+});
+
+test("interactive writer uses only its certified producer and refuses a changed ledger epoch before effects", async () => {
+  const f = fixture();
+  const selected = { source: "c".repeat(40), target: "a".repeat(64), producerSha256: "d".repeat(64), epoch: "12" };
+  const run = createWriterAdmissionRunner({
+    getConfiguration: () => resolveWriterAdmissionConfiguration(environment()),
+    createClient: () => f.client,
+    getInteractiveWriter: async () => selected,
+  });
+  await assert.rejects(run("recovery", async () => assert.fail("unexpected writer execution")), WriterAdmissionError);
+  assert.equal(f.calls.some(call => call.sql.includes("begin_operation")), false);
+  f.state.epoch = "12";
+  await run("recovery", async () => assert.equal(currentWriterOperationIdentity()?.producerSha256, selected.producerSha256));
+  assert.equal(f.calls.at(-2)?.values?.[5], selected.producerSha256);
+  assert.ok(f.calls.filter(call => call.sql.includes("current_policy")).every(call => call.values?.[2] === selected.producerSha256));
+});
+
+test("Next request handoff overwrites caller headers on selected paths and strips them elsewhere", async () => {
+  const { NextRequest } = await import("next/server");
+  const now = Math.floor(Date.now() / 1000);
+  const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
+  const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  try {
+    const body = `v1.12.identity.${now}.${now + 120}.${"a".repeat(32)}`;
+    const mac = createHmac("sha256", env.CRON_SECRET)
+      .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex");
+    const cookie = `${body}.${mac}`;
+    const headers = { cookie: `${INTERACTIVE_COOKIE}=${cookie}`, [INTERACTIVE_HEADER]: "caller-forgery" };
+    const allowed = new NextRequest(INTERACTIVE_ORIGIN + "/api/customer-auth/callback/google", { headers });
+    const handoff = interactiveRequestHeaders(allowed)?.get(INTERACTIVE_HEADER);
+    assert.ok(handoff);
+    assert.notEqual(handoff, "caller-forgery");
+    assert.equal(readInteractiveRequest(handoff, cookie)?.epoch, "12");
+    const unrelated = new NextRequest(INTERACTIVE_ORIGIN + "/api/webhooks/square", { method: "POST", headers });
+    assert.equal(interactiveRequestHeaders(unrelated)?.get(INTERACTIVE_HEADER), null);
+    assert.equal(interactiveRequestHeaders(new NextRequest(unrelated.url)), undefined);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test("recovery reads the current epoch and commits admission before passing the original request", async () => {

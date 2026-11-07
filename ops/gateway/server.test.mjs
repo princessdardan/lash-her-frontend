@@ -11,6 +11,7 @@ import { createPrivateTlsProxy } from "./private-tls.mjs";
 import { createHash } from "node:crypto";
 import { createP2CertificationFault, p2GatewayProcessBinding } from "./p2-certification-fault.mjs";
 import { createAdmissionReader, selectScopedMuxCallback, SCOPED_MUX_HEADER } from "./admission.mjs";
+import { interactiveCourseOperation } from "./operations.mjs";
 
 let folder, key, cert, keyFile, certFile, wrongCertFile;
 before(() => {
@@ -24,6 +25,79 @@ before(() => {
   key = readFileSync(keyFile); cert = readFileSync(certFile);
 });
 after(() => rmSync(folder, { recursive: true, force: true }));
+
+test("interactive Course operations classify exact existing browser route and method pairs", () => {
+  const id = "10000000-0000-4000-8000-000000000001";
+  const otherId = "20000000-0000-4000-8000-000000000002";
+  const course = `/v1/admin/courses/${id}`;
+  const module = `/v1/admin/modules/${id}`;
+  const lesson = `/v1/admin/lessons/${id}`;
+  const video = `${lesson}/video/${otherId}`;
+  const learnerCourse = `/v1/student/courses/${id}`;
+  const learnerLesson = `/v1/student/lessons/${id}`;
+  const methods = {
+    catalog: {
+      GET: ["/v1/courses", "/v1/courses/first-course-2"],
+    },
+    authoring: {
+      GET: ["/v1/admin/courses", course, `${course}/publication-readiness`, `${lesson}/quiz`],
+      POST: ["/v1/admin/courses", `${course}/modules`, `${course}/modules/reorder`, `${module}/lessons`, `${module}/lessons/reorder`],
+      PATCH: [course, module, lesson],
+      PUT: [`${lesson}/quiz`],
+    },
+    media: {
+      GET: [`${lesson}/video`],
+      POST: [`${lesson}/video-upload`, `${video}/refresh`, `${video}/captions`],
+      DELETE: [`${video}/captions/Mux_Track-1`],
+    },
+    learning: {
+      GET: ["/v1/student/courses", learnerCourse, `${learnerCourse}/lessons`, learnerLesson, `${learnerLesson}/playback`,
+        `${learnerLesson}/quiz`, `${learnerLesson}/quiz/attempts`, "/v1/student/progress"],
+      POST: [`${learnerCourse}/enrollments`, `${learnerLesson}/progress`, `${learnerLesson}/quiz/attempts`],
+    },
+    "paid-grant": {
+      GET: ["/v1/admin/entitlements/commands", "/v1/admin/entitlements/grants"],
+      POST: ["/v1/admin/entitlements/grants"],
+    },
+  };
+  for (const [group, verbs] of Object.entries(methods)) {
+    for (const [method, paths] of Object.entries(verbs)) {
+      for (const path of paths) assert.equal(interactiveCourseOperation(method, `/course${path}`), group, `${method} ${path}`);
+    }
+  }
+
+  for (const [method, path] of [
+    ["POST", "/course/v1/webhooks/mux"],
+    ["POST", "/course/v1/internal/entitlements/grants"],
+    ["POST", "/course/v1/internal/entitlements/reconcile"],
+    ["POST", "/course/v1/internal/entitlements/revocations"],
+    ["GET", "/course/v1/internal/entitlements"],
+    ["POST", "/course/v1/admin/entitlements/revocations"],
+    ["GET", "/course/v1/admin/entitlements/enrollments"],
+    ["POST", "/course/v1/internal/accounts/commands"],
+    ["GET", `/course/v1/internal/accounts/exports/${id}`],
+    ["POST", "/community/v1/internal/accounts/commands"],
+    ["GET", `/community/v1/internal/accounts/exports/${id}`],
+    ["GET", "/community/v1/courses"],
+    ["DELETE", `/course${course}`],
+    ["POST", `/course${course}/publish`],
+    ["HEAD", "/course/v1/courses"],
+    ["get", "/course/v1/courses"],
+    ["GET", "/v1/courses"],
+    ["GET", "/course/v1/courses?limit=1"],
+    ["GET", "/course/v1/courses#fragment"],
+    ["GET", "/course/v1/courses/"],
+    ["GET", "/course/v1//courses"],
+    ["GET", "/course/v1/courses/Upper_Case"],
+    ["GET", `/course/v1/courses/${"a".repeat(121)}`],
+    ["GET", "/course/v1/admin/courses/not-a-uuid"],
+    ["GET", "/course/v1/admin/courses/A0000000-0000-4000-8000-000000000001"],
+    ["GET", "/course/v1/student/lessons/%2e%2e"],
+    ["POST", `/course${lesson}/video/no-asset-id/captions`],
+    ["DELETE", `/course${video}/captions/${"x".repeat(256)}`],
+    ["GET", null],
+  ]) assert.equal(interactiveCourseOperation(method, path), null, `${method} ${path}`);
+});
 
 async function fixture(t, handler, overrides = {}, options = {}) {
   const upstream = createServer({ key, cert }, handler);

@@ -4,6 +4,7 @@ import { withWriterOperationContext } from "@/lib/writer-admission/context";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { runFrontendWriterOperation } from "../../../ops/platform/frontend-admission.mjs";
+import { INTERACTIVE_COOKIE, INTERACTIVE_HEADER, readInteractiveRequest } from "./interactive-proof";
 import {
   resolveWriterAdmissionConfiguration,
   WriterAdmissionError,
@@ -21,12 +22,25 @@ export type WriterAdmissionClient = {
 export type WriterAdmissionRunner = <T>(kind: WriterOperationKind, task: () => Promise<T>,
   options?: { uncertainResult?: (value: T) => boolean }) => Promise<T>;
 
+async function interactiveWriter(configuration: WriterAdmissionConfiguration) {
+  if (configuration.target.environment !== "staging" || process.env.VERCEL_ENV !== "production") return null;
+  try {
+    const { cookies, headers } = await import("next/headers");
+    const proof = (await headers()).get(INTERACTIVE_HEADER);
+    if (!proof) return null;
+    const matches = (await cookies()).getAll(INTERACTIVE_COOKIE);
+    return matches.length === 1 ? readInteractiveRequest(proof, matches[0].value) : null;
+  } catch { return null; }
+}
+
 export function createWriterAdmissionRunner(dependencies: {
   getConfiguration?: () => WriterAdmissionConfiguration | null;
   createClient?: (configuration: WriterAdmissionConfiguration["connection"]) => WriterAdmissionClient;
+  getInteractiveWriter?: typeof interactiveWriter;
 } = {}): WriterAdmissionRunner {
   const getConfiguration = dependencies.getConfiguration ?? (() => resolveWriterAdmissionConfiguration(process.env));
   const createClient = dependencies.createClient ?? (configuration => new Client(configuration) as unknown as WriterAdmissionClient);
+  const getInteractiveWriter = dependencies.getInteractiveWriter ?? interactiveWriter;
   return async <T>(kind: WriterOperationKind, task: () => Promise<T>, options?: { uncertainResult?: (value: T) => boolean }): Promise<T> => {
     const configuration = getConfiguration();
     if (!configuration) return task();
@@ -42,22 +56,26 @@ export function createWriterAdmissionRunner(dependencies: {
       const identity = (await client.query(`SELECT current_user AS username,current_database() AS database,
         current_setting('server_version_num')::int/10000 AS major`)).rows[0];
       if (identity?.username !== target.user || identity.database !== target.database || identity.major !== target.serverMajor) throw new Error();
+      const interactive = await getInteractiveWriter(configuration);
+      if (interactive && (interactive.source !== configuration.sourceSha || interactive.target !== target.targetSha256)) throw new Error();
+      const producerSha256 = interactive?.producerSha256 ?? configuration.producerSha256;
       // Read the current epoch for every request. Closing new work must not
       // strand a recovery-only deployment behind a stale build-time epoch.
       const policies = (await client.query("SELECT * FROM frontend_admission.current_policy($1,$2,$3,$4)",
-        [target.environment, target.targetSha256, configuration.producerSha256, configuration.sourceSha])).rows;
+        [target.environment, target.targetSha256, producerSha256, configuration.sourceSha])).rows;
       const policy = policies[0];
       if (policies.length !== 1 || typeof policy.epoch !== "string" || !/^[1-9][0-9]{0,17}$/u.test(policy.epoch) ||
         typeof policy.new_work !== "boolean" || typeof policy.recovery !== "boolean" ||
+        (interactive && policy.epoch !== interactive.epoch) ||
         (kind === "new-work" ? !policy.new_work : !policy.recovery) || connectionLost) throw new Error();
       phase = "outcome";
       const operationId = randomUUID();
       const epoch = policy.epoch;
       output = await runFrontendWriterOperation(client, target, { id: operationId, kind, epoch,
-        producerSha256: configuration.producerSha256, sourceSha: configuration.sourceSha }, async () => {
+        producerSha256, sourceSha: configuration.sourceSha }, async () => {
         if (connectionLost) throw new Error();
         const result = await withWriterOperationContext(task, { operationId, kind, epoch,
-          producerSha256: configuration.producerSha256, sourceCommit: configuration.sourceSha, targetSha256: target.targetSha256 });
+          producerSha256, sourceCommit: configuration.sourceSha, targetSha256: target.targetSha256 });
         // A 5xx may describe an uncertain provider result. Preserve an unresolved
         // operation even when a domain handler catches its own exception.
         if (connectionLost || options?.uncertainResult?.(result)) throw new Error();

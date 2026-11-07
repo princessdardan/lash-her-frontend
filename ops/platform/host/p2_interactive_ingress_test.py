@@ -4,6 +4,7 @@ import json
 import ssl
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from unittest.mock import patch
 
@@ -66,6 +67,45 @@ class InteractiveIngressTests(unittest.TestCase):
         self.fixture.enqueue(project, self.fixture.deployment(), project, self.alias(), project)
         self.fixture.responses.append((200, response, {"Content-Type": "application/json", "Cache-Control": "private, no-store"}))
         self.fixture.enqueue(self.alias(), self.fixture.deployment(), project, after or project)
+
+    def enqueue_selected_protection(self, paths, *, after=None, final_alias=None, fail_request=None):
+        project = self.project()
+        self.fixture.enqueue(self.fixture.deployment(), project, self.alias(), project)
+        for index in range(2 * len(paths)):
+            if index == fail_request:
+                self.fixture.responses.append((302, b"", {"Location": "https://foreign.invalid/"}))
+                return
+            self.fixture.responses.append((401 if index % 2 == 0 else 403, b"owned-denial",
+                                           {"Content-Type": "text/html"}))
+        self.fixture.enqueue(after or project, final_alias or self.alias(), self.fixture.deployment(), after or project)
+
+    def owned_unauthenticated_requester(self):
+        ca = ssl.create_default_context(cafile=str(self.fixture.cert))
+        with patch.object(ingress.ssl, "create_default_context", return_value=ca):
+            requester = ingress.UnauthenticatedIngressClient()
+        owned = requester._opener
+        urls = []
+
+        class ExactTransport:
+            def open(inner, request, timeout):
+                url = urllib.parse.urlsplit(request.full_url)
+                self.assertIn(url.netloc, (canonical.HOST, "owned-fixture.vercel.app"))
+                self.assertEqual(url.scheme, "https")
+                self.assertEqual(url.query, "")
+                self.assertEqual(url.fragment, "")
+                self.assertEqual(request.method, "GET")
+                self.assertIsNone(request.data)
+                self.assertEqual({name.lower() for name, _ in request.header_items()}, {"accept", "cache-control"})
+                urls.append(request.full_url)
+                mapped = urllib.request.Request(self.fixture.origin + url.path, headers=dict(request.header_items()), method="GET")
+                try:
+                    return owned.open(mapped, timeout=timeout)
+                except urllib.error.HTTPError as error:
+                    error.url = request.full_url
+                    raise
+
+        requester._opener = ExactTransport()
+        return requester, urls
 
     class Denied:
         def __init__(self, alias=401, deployment=403):
@@ -177,6 +217,74 @@ class InteractiveIngressTests(unittest.TestCase):
         self.fixture.responses.append((200, b"public application response", {"Content-Type": "text/html"}))
         with self.assertRaisesRegex(ValueError, "NOT_DENIED"):
             requester.request(canonical.ORIGIN)
+
+    def test_browser_matrix_checks_fixed_routes_over_actual_tls_and_rejoins_provider_identity(self):
+        paths = ("/", "/sign-in", "/admin/sign-in", "/api/customer-auth/session", "/api/auth/session",
+                 "/api/customer-auth/callback/google", "/api/customer-auth/callback/resend", "/api/auth/callback/google")
+        self.enqueue_selected_protection(paths)
+        requester, urls = self.owned_unauthenticated_requester()
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester):
+            receipt = ingress.observe_browser_protection(self.base.context, self.fixture.client, expected_profile=self.profile)
+        self.assertEqual(receipt["status"], "P2_BROWSER_PROTECTION_OBSERVED")
+        self.assertEqual(receipt["qualificationTargetProfile"], self.profile)
+        self.assertEqual(receipt["candidateSha256"], self.base.plan["candidateSha256"])
+        self.assertEqual(receipt["deploymentId"], self.base.plan["deploymentId"])
+        self.assertEqual(receipt["sourceCommit"], self.base.plan["sourceCommit"])
+        self.assertEqual(receipt["requestMethod"], "GET")
+        self.assertEqual(receipt["endpointDenials"], [
+            {"path": path, "aliasUnauthenticatedStatus": 401, "deploymentUnauthenticatedStatus": 403} for path in paths
+        ])
+        self.assertFalse(receipt["nativeEnabled"])
+        self.assertFalse(receipt["automationBypassCustodyVerified"])
+        self.assertFalse(receipt["interactiveNewWorkAuthorized"])
+        self.assertFalse(receipt["redirectFollowed"])
+        self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
+        for request in self.fixture.calls[4:20]:
+            self.assertEqual(request["method"], "GET")
+            self.assertIsNone(request["authorization"])
+            self.assertIsNone(request["body"])
+        self.assertEqual(sum("/v4/aliases/" in request["path"] for request in self.fixture.calls), 2)
+        self.assertEqual(self.fixture.responses, [])
+        for private in ("fixture-private-token", "fixture-private-bypass", "owned-denial"):
+            self.assertNotIn(private, json.dumps(receipt))
+
+    def test_browser_callback_redirect_refuses_without_followup_or_success(self):
+        self.enqueue_selected_protection(ingress._BROWSER_PATHS, fail_request=10)
+        requester, urls = self.owned_unauthenticated_requester()
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester), \
+             self.assertRaisesRegex(ValueError, "UNAUTHENTICATED_INGRESS_NOT_DENIED"):
+            ingress.observe_browser_protection(self.base.context, self.fixture.client, expected_profile=self.profile)
+        self.assertEqual(urls[-1], canonical.ORIGIN + "/api/customer-auth/callback/google")
+        self.assertEqual(len(urls), 11)
+        self.assertEqual(self.fixture.responses, [])
+
+    def test_browser_matrix_refuses_alias_drift_after_denials(self):
+        self.enqueue_selected_protection(ingress._BROWSER_PATHS,
+                                         final_alias={**self.alias(), "deploymentId": "dpl_foreign"})
+        requester, urls = self.owned_unauthenticated_requester()
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester), \
+             self.assertRaisesRegex(ValueError, "ALIAS_BINDING_REFUSED"):
+            ingress.observe_browser_protection(self.base.context, self.fixture.client, expected_profile=self.profile)
+        self.assertEqual(len(urls), 16)
+
+    def test_export_observation_retains_root_only_and_legacy_receipt(self):
+        self.enqueue_selected_protection(("/",))
+        requester, urls = self.owned_unauthenticated_requester()
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester):
+            receipt = ingress.observe_selected_protection(self.base.context, self.fixture.client, expected_profile=self.profile)
+        self.assertEqual(receipt["status"], "P2_SELECTED_PROTECTION_OBSERVED")
+        self.assertEqual(receipt["aliasUnauthenticatedStatus"], 401)
+        self.assertEqual(receipt["deploymentUnauthenticatedStatus"], 403)
+        self.assertNotIn("endpointDenials", receipt)
+        self.assertEqual(urls, [canonical.ORIGIN + "/", self.base.plan["deploymentUrl"] + "/"])
+
+    def test_requester_refuses_query_redirect_target_and_arbitrary_paths_before_transport(self):
+        requester, urls = self.owned_unauthenticated_requester()
+        for path in ("/api/customer-auth/callback/google?code=fixture", "/api/auth/session#fragment",
+                     "/api/cron/account-lifecycle", "//foreign.invalid/"):
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, "INGRESS_PATH_REFUSED"):
+                requester.request(canonical.ORIGIN, path)
+        self.assertEqual(urls, [])
 
 
 if __name__ == "__main__":

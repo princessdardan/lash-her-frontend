@@ -2,6 +2,7 @@
 
 import { completeAdminSignOut } from "@/lib/admin/sign-out";
 import { runAdminIdentityWriter } from "@/lib/admin/user-writer-admission";
+import { withinInteractiveAdminGoogleAction } from "@/lib/writer-admission/interactive-proof";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 
@@ -26,9 +27,9 @@ export async function signInWithGoogleAction(
 ): Promise<void> {
   const returnTo = getSafeAdminReturnTo(formData.get("returnTo"));
 
-  const url = await runAdminIdentityWriter("new-work", () =>
+  const url = await withinInteractiveAdminGoogleAction(() => runAdminIdentityWriter("new-work", () =>
     signIn("google", { redirectTo: returnTo, redirect: false }),
-  );
+  ));
   redirect(url);
 }
 
