@@ -109,6 +109,33 @@ test("private exports bind immutable ownership, expire without replay extension,
   assert.equal(expired.data, null); assert.equal(expired.frontendData, null);
 }));
 
+test("scoped cleanup uses database expiry, scrubs only its ready export and replays the retained tombstone", skipped, async () => admitted(async () => {
+  const first = await createUser(), second = await createUser();
+  const selected = await issue(first.user.id, "export"), untouched = await issue(second.user.id, "export");
+  const databaseNow = new Date();
+  await db!.update(exports).set({ status: "ready", data: { private: "selected" }, frontendData: null,
+    readyAt: databaseNow, expiresAt: sql`pg_catalog.clock_timestamp() + interval '1 hour'` }).where(eq(exports.commandId, selected.commandId));
+  await db!.update(exports).set({ status: "ready", data: { private: "untouched" }, frontendData: null,
+    readyAt: databaseNow, expiresAt: sql`pg_catalog.clock_timestamp() - interval '1 second'` }).where(eq(exports.commandId, untouched.commandId));
+  const deliveryBefore = await db!.select().from(deliveries).where(eq(deliveries.commandId, selected.commandId)).orderBy(deliveries.receiver);
+  const scoped = createAccountLifecycleStore(() => db!, () => new Date("2999-01-01T00:00:00.000Z"));
+  await assert.rejects(() => scoped.expireExport(selected.commandId), error => error instanceof Error && error.message === "export_not_expired");
+  assert.deepEqual((await db!.select().from(exports).where(eq(exports.commandId, selected.commandId)))[0].data, { private: "selected" });
+  await db!.update(exports).set({ expiresAt: sql`pg_catalog.clock_timestamp() - interval '1 second'` }).where(eq(exports.commandId, selected.commandId));
+  const [before] = await db!.select().from(exports).where(eq(exports.commandId, selected.commandId));
+  assert.deepEqual(await scoped.expireExport(selected.commandId), { operation: "expire-export", commandId: selected.commandId,
+    outcome: "scrubbed", status: "expired", dataCleared: true, frontendCleared: true });
+  const [scrubbed] = await db!.select().from(exports).where(eq(exports.commandId, selected.commandId));
+  assert.deepEqual(scrubbed, { ...before, status: "expired", data: null, frontendData: null });
+  assert.deepEqual(await scoped.expireExport(selected.commandId), { operation: "expire-export", commandId: selected.commandId,
+    outcome: "already-scrubbed", status: "expired", dataCleared: true, frontendCleared: true });
+  assert.deepEqual((await db!.select().from(exports).where(eq(exports.commandId, selected.commandId)))[0], scrubbed);
+  const [other] = await db!.select().from(exports).where(eq(exports.commandId, untouched.commandId));
+  assert.equal(other.status, "ready"); assert.deepEqual(other.data, { private: "untouched" });
+  assert.deepEqual(await db!.select().from(deliveries).where(eq(deliveries.commandId, selected.commandId)).orderBy(deliveries.receiver), deliveryBefore);
+  await assert.rejects(() => scoped.expireExport(randomUUID()), error => error instanceof Error && error.message === "export_not_eligible");
+}));
+
 test("deletion removes new account PII, preserves immutable commands/tombstone, and cannot be restored or revived by SQL", skipped, async () => admitted(async () => {
   const { user, session } = await createUser();
   await db!.insert(customerProviderLinks).values({ userId: user.id, provider: "google", providerAccountId: randomUUID(), type: "oidc" });

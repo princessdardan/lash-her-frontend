@@ -5,7 +5,7 @@ import { and, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import { customerProviderLinks, customerSessions, customerUsers, customerVerificationTokens } from "@/lib/customer-auth/schema";
 import { getPrivateDb } from "@/lib/private-db/client";
 import { assertAccountWriter } from "./context";
-import { ACCOUNT_RECEIVERS, AccountLifecycleError, assertFreshCustomerSession, EXPORT_MAX_AGE_MS, parseAccountCommand, type AccountAction, type AccountCommand, type AccountReceiver } from "./policy";
+import { ACCOUNT_RECEIVERS, AccountLifecycleError, assertFreshCustomerSession, canonicalUuid, EXPORT_MAX_AGE_MS, parseAccountCommand, type AccountAction, type AccountCommand, type AccountReceiver } from "./policy";
 import { customerAccountCommands as commands, customerAccountDeliveries as deliveries, customerAccountExports as exports, customerAccountPreferences as preferences } from "./schema";
 import type { AccountCustomerSession } from "./session";
 
@@ -17,6 +17,16 @@ export interface ClaimedAccountDelivery { command: AccountCommand; receiver: Acc
 // export payloads into the worker. Ownership/readiness/expiry remain exact.
 const exportScrubFields = { commandId: exports.commandId, userId: exports.userId, status: exports.status, readyAt: exports.readyAt, expiresAt: exports.expiresAt,
   dataCleared: sql<boolean>`${exports.data} is null`, frontendCleared: sql<boolean>`${exports.frontendData} is null` };
+const scopedExportScrubFields = { ...exportScrubFields, expired: sql<boolean>`${exports.expiresAt} <= pg_catalog.clock_timestamp()` };
+
+export interface ScopedExportCleanupReceipt {
+  operation: "expire-export";
+  commandId: string;
+  outcome: "scrubbed" | "already-scrubbed";
+  status: "expired";
+  dataCleared: true;
+  frontendCleared: true;
+}
 
 export function createAccountLifecycleStore(database: () => Database = getPrivateDb, now: () => Date = () => new Date()) {
   return {
@@ -221,6 +231,28 @@ export function createAccountLifecycleStore(database: () => Database = getPrivat
           .where(and(eq(exports.commandId, commandId), eq(exports.status, existing.status))).returning(exportScrubFields);
         const [persisted] = await tx.select(exportScrubFields).from(exports).where(eq(exports.commandId, commandId));
         if (rows.length !== 1 || !isDeepStrictEqual(rows[0], expected) || !isDeepStrictEqual(persisted, expected)) throw new Error("ACCOUNT_EXPORT_RECEIPT_MISSING");
+      });
+    },
+
+    async expireExport(commandId: string): Promise<ScopedExportCleanupReceipt> {
+      assertAccountWriter();
+      if (!canonicalUuid(commandId)) throw new AccountLifecycleError(400, "invalid_request");
+      return database().transaction(async tx => {
+        const [existing] = await tx.select(scopedExportScrubFields).from(exports).where(eq(exports.commandId, commandId)).for("update");
+        if (!existing) throw new AccountLifecycleError(409, "export_not_eligible");
+        if (existing.status === "expired" && existing.dataCleared === true && existing.frontendCleared === true) {
+          if (existing.expired !== true) throw new AccountLifecycleError(409, "export_not_expired");
+          return { operation: "expire-export", commandId, outcome: "already-scrubbed", status: "expired", dataCleared: true, frontendCleared: true };
+        }
+        if (existing.status !== "ready") throw new AccountLifecycleError(409, "export_not_eligible");
+        if (existing.expired !== true) throw new AccountLifecycleError(409, "export_not_expired");
+        const expected = { ...existing, status: "expired", dataCleared: true, frontendCleared: true };
+        const rows = await tx.update(exports).set({ status: "expired", data: null, frontendData: null })
+          .where(and(eq(exports.commandId, commandId), eq(exports.status, "ready"), sql`${exports.expiresAt} <= pg_catalog.clock_timestamp()`))
+          .returning(scopedExportScrubFields);
+        const [persisted] = await tx.select(scopedExportScrubFields).from(exports).where(eq(exports.commandId, commandId));
+        if (rows.length !== 1 || !isDeepStrictEqual(rows[0], expected) || !isDeepStrictEqual(persisted, expected)) throw new Error("ACCOUNT_EXPORT_EXPIRY_RECEIPT_MISSING");
+        return { operation: "expire-export", commandId, outcome: "scrubbed", status: "expired", dataCleared: true, frontendCleared: true };
       });
     },
 

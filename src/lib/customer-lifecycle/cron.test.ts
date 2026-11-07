@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { currentWriterOperationIdentity, withWriterOperationContext, type WriterOperationIdentity } from "@/lib/writer-admission/context";
 import { createAccountLifecycleCron } from "./cron";
+import { AccountLifecycleError } from "./policy";
 
 const identity = (operationId: string): WriterOperationIdentity => ({ operationId, kind: "recovery", epoch: "7",
   producerSha256: "a".repeat(64), sourceCommit: "b".repeat(40), targetSha256: "c".repeat(64) });
@@ -85,4 +86,76 @@ test("admitted retryable responses retain the actual operation UUID while no-con
   const response = await withoutContext(new Request("https://staging.example.com/api/cron/account-lifecycle",
     { headers: { authorization: "Bearer owned", "x-request-id": "99999999-9999-4999-8999-999999999999" } }));
   assert.equal(response.status, 200); assert.equal(response.headers.get("x-request-id"), null);
+});
+
+test("scoped export cleanup accepts only the canonical selector and staging policy before admission", async () => {
+  const commandId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  let scopedCalls = 0, ordinaryCalls = 0;
+  const handler = createAccountLifecycleCron({ enabled: () => true, secret: () => "owned", environment: () => "staging",
+    run: async () => { ordinaryCalls++; return { acknowledged: 0, retrying: 0, blocked: 0, exportsReady: 0, expired: 0 }; },
+    runScoped: async () => { scopedCalls++; throw new Error("must not run"); },
+  });
+  const paths = [
+    `?commandId=${commandId}&operation=expire-export`,
+    `?operation=expire-export&commandId=${commandId}&extra=true`,
+    `?operation=expire-export&operation=expire-export&commandId=${commandId}`,
+    `?operation=expire-export&commandId=${commandId.toUpperCase()}`,
+    `?operation=other&commandId=${commandId}`,
+    `?operation=expire-export&commandId=not-a-command`,
+    `?%6fperation=expire-export&commandId=${commandId}`,
+  ];
+  for (const search of paths) {
+    const response = await handler(new Request(`https://staging.example.com/api/cron/account-lifecycle${search}`, { headers: { authorization: "Bearer owned" } }));
+    assert.equal(response.status, 404); assert.deepEqual(await response.json(), { error: "unavailable" });
+    assert.equal(response.headers.get("x-request-id"), null);
+  }
+  for (const environment of ["local", "production"] as const) {
+    const unavailable = createAccountLifecycleCron({ enabled: () => true, secret: () => "owned", environment: () => environment,
+      runScoped: async () => { scopedCalls++; throw new Error("must not run"); } });
+    const response = await unavailable(new Request(`https://staging.example.com/api/cron/account-lifecycle?operation=expire-export&commandId=${commandId}`,
+      { headers: { authorization: "Bearer owned" } }));
+    assert.equal(response.status, 404); assert.equal(response.headers.get("x-request-id"), null);
+  }
+  const invalidPolicy = createAccountLifecycleCron({ enabled: () => true, secret: () => "owned", environment: () => { throw new Error("private binding"); },
+    runScoped: async () => { scopedCalls++; throw new Error("must not run"); } });
+  const invalidResponse = await invalidPolicy(new Request(`https://staging.example.com/api/cron/account-lifecycle?operation=expire-export&commandId=${commandId}`,
+    { headers: { authorization: "Bearer owned" } }));
+  assert.equal(invalidResponse.status, 404); assert.equal((await invalidResponse.text()).includes("private binding"), false);
+  assert.equal(scopedCalls, 0); assert.equal(ordinaryCalls, 0);
+});
+
+test("scoped export cleanup binds the exact command, cleanup outcome and admitted request identity without ordinary lifecycle work", async () => {
+  const commandId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const operationId = "22222222-2222-4222-8222-222222222222";
+  let ordinaryCalls = 0, selectedCommand: string | undefined;
+  const handler = createAccountLifecycleCron({ enabled: () => true, secret: () => "owned", environment: () => "staging",
+    run: async () => { ordinaryCalls++; return { acknowledged: 0, retrying: 0, blocked: 0, exportsReady: 0, expired: 0 }; },
+    runScoped: async (selected, onAdmitted) => withWriterOperationContext(async () => {
+      selectedCommand = selected; onAdmitted?.(currentWriterOperationIdentity()!.operationId);
+      return { operation: "expire-export" as const, commandId: selected, outcome: "scrubbed" as const,
+        status: "expired" as const, dataCleared: true as const, frontendCleared: true as const };
+    }, identity(operationId)),
+  });
+  const response = await handler(new Request(`https://staging.example.com/api/cron/account-lifecycle?operation=expire-export&commandId=${commandId}`,
+    { headers: { authorization: "Bearer owned", "x-request-id": "33333333-3333-4333-8333-333333333333" } }));
+  assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.equal(response.headers.get("x-request-id"), operationId); assert.equal(selectedCommand, commandId); assert.equal(ordinaryCalls, 0);
+  assert.deepEqual(await response.json(), { operation: "expire-export", commandId, outcome: "scrubbed", status: "expired",
+    dataCleared: true, frontendCleared: true, requestId: operationId });
+});
+
+test("scoped export cleanup returns settled domain refusals and sanitizes uncertain failures", async () => {
+  const commandId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const operationIds = ["44444444-4444-4444-8444-444444444444", "55555555-5555-4555-8555-555555555555"];
+  for (const [index, failure] of [new AccountLifecycleError(409, "export_not_expired"), new Error("private export bytes")].entries()) {
+    const handler = createAccountLifecycleCron({ enabled: () => true, secret: () => "owned", environment: () => "staging",
+      runScoped: async (_selected, onAdmitted) => withWriterOperationContext(async () => {
+        onAdmitted?.(currentWriterOperationIdentity()!.operationId); throw failure;
+      }, identity(operationIds[index])),
+    });
+    const response = await handler(new Request(`https://staging.example.com/api/cron/account-lifecycle?operation=expire-export&commandId=${commandId}`,
+      { headers: { authorization: "Bearer owned" } }));
+    assert.equal(response.status, index === 0 ? 409 : 503); assert.equal(response.headers.get("x-request-id"), operationIds[index]);
+    assert.deepEqual(await response.json(), index === 0 ? { error: "export_not_expired" } : { error: "temporarily_unavailable" });
+  }
 });
