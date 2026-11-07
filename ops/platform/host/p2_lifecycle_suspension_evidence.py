@@ -7,6 +7,7 @@ it does not turn a schema-valid caller record into browser authority.
 """
 import copy
 import datetime
+import base64
 import hashlib
 import json
 import os
@@ -31,6 +32,8 @@ SHA = re.compile(r"^[a-f0-9]{64}$")
 BROWSER_LAUNCHER = b"\nawait runP2LifecycleBrowserChild();\n"
 UUID = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$")
 demand = migrate.demand
+READY_FILES = ("frontend-build-started.json", "frontend-build-created.json", "frontend-build-outcome.json",
+    "frontend-workload-outcome.json", "frontend-promotion-started.json", "frontend-promotion-outcome.json")
 
 
 def canonical(value):
@@ -39,6 +42,55 @@ def canonical(value):
 
 def digest(raw):
     return hashlib.sha256(raw).hexdigest()
+
+
+def _release_evidence(scope, reviewed, plan, release_evidence, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
+    if expected is None:
+        demand(release_evidence is None, "P2_SUSPENSION_RELEASE_EVIDENCE_REFUSED")
+        return None
+    demand(isinstance(release_evidence, dict) and set(release_evidence) == {"originalReleaseReceipt", "readyReceipts"}
+        and isinstance(release_evidence["readyReceipts"], dict)
+        and set(release_evidence["readyReceipts"]) == set(READY_FILES), "P2_SUSPENSION_RELEASE_EVIDENCE_REQUIRED")
+    certification = scope.certification_plan
+    pins = certification.get("readyReceiptSha256")
+    demand(isinstance(pins, dict) and set(pins) == set(READY_FILES)
+        and certification.get("originalReleaseReceiptSha256") == reviewed["plan"]["originalReleaseSha256"],
+        "P2_SUSPENSION_RELEASE_EVIDENCE_PINS_REQUIRED")
+    raw, values = {}, {}
+    from qualification_target_profile import decode_qualification_target_json
+    for name, encoded in release_evidence["readyReceipts"].items():
+        demand(isinstance(encoded, str), "P2_SUSPENSION_RELEASE_EVIDENCE_REQUIRED")
+        value = base64.b64decode(encoded, validate=True)
+        demand(0 < len(value) <= 262144 and digest(value) == pins[name], "P2_SUSPENSION_RELEASE_EVIDENCE_CHANGED")
+        parsed = decode_qualification_target_json(value, "carrier")
+        migrate.require_profile(expected, parsed)
+        demand(parsed.get("version") == 2 and parsed.get("environment") == "staging"
+            and parsed.get("releaseId") == plan.get("releaseId") and parsed.get("sourceCommit") == plan.get("sourceCommit"),
+            "P2_SUSPENSION_RELEASE_EVIDENCE_CONTEXT_CHANGED")
+        raw[name], values[name] = value, parsed
+    original = release_evidence["originalReleaseReceipt"]
+    demand(isinstance(original, str), "P2_SUSPENSION_RELEASE_EVIDENCE_REQUIRED")
+    original_raw = base64.b64decode(original, validate=True)
+    demand(0 < len(original_raw) <= 262144 and digest(original_raw) == certification["originalReleaseReceiptSha256"],
+        "P2_SUSPENSION_RELEASE_EVIDENCE_CHANGED")
+    persistence._release_evidence(reviewed, {"originalReleaseReceipt": original,
+        "frontendDeploymentRecord": release_evidence["readyReceipts"]["frontend-promotion-outcome.json"]}, expected)
+    workload = values["frontend-workload-outcome.json"]
+    promotion = values["frontend-promotion-outcome.json"]
+    demand(digest(raw["frontend-workload-outcome.json"]) == plan.get("configurationRecordSha256")
+        and digest(raw["frontend-promotion-outcome.json"]) == reviewed["plan"]["frontendDeploymentSha256"]
+        and workload.get("status") == "FRONTEND_VERIFIED" and workload.get("deploymentId") == plan.get("deploymentId")
+        and workload.get("featureControls") == plan.get("featureControls")
+        and workload.get("writerAdmissionBinding") == plan.get("writerAdmissionBinding")
+        and workload.get("trafficAuthorized") is False and workload.get("nativeSchedulerVerified") is False
+        and promotion.get("status") == "FRONTEND_DOMAINS_PROMOTED" and promotion.get("deploymentId") == plan.get("deploymentId")
+        and promotion.get("phase") == "completed" and promotion.get("frontendDomainsPromoted") is True
+        and promotion.get("trafficAuthorized") is False,
+        "P2_SUSPENSION_RELEASE_EVIDENCE_SEMANTICS_REQUIRED")
+    return {"originalReleaseReceiptSha256": digest(original_raw),
+        "frontendWorkloadReceiptSha256": digest(raw["frontend-workload-outcome.json"]),
+        "frontendPromotionReceiptSha256": digest(raw["frontend-promotion-outcome.json"])}
 
 
 def _milliseconds(value):
@@ -75,24 +127,35 @@ def private_record(directory, name, record):
 
 
 class P2LifecycleSuspensionEvidenceStage:
-    def __init__(self, scope, selected, jobs, configuration, source, plan, persistence_reviewed, resources):
+    def __init__(self, scope, selected, jobs, configuration, source, plan, persistence_reviewed, resources, *, expected_profile=None, release_evidence=None):
+        expected = migrate.profile_context(expected_profile)
         demand(isinstance(scope, P2ReleaseScope) and scope.path == LOCK and scope.release is not None and scope.jobs is not None,
             "P2_SUSPENSION_ACTUAL_PHYSICAL_PARENT_SCOPE_REQUIRED")
-        demand(os.geteuid() == 0 and plan.get("version") == 1 and plan.get("environment") == "staging"
+        if expected is not None:
+            from p2_certification_parent import P2CertificationScope
+            demand(type(scope) is P2CertificationScope, "P2_SUSPENSION_CERTIFICATION_SCOPE_REQUIRED")
+            migrate.candidate_profile(selected, expected)
+            for info in jobs.values():
+                migrate.require_job_profile(expected, info["job"], frontend=info.get("frontend", False))
+        migrate.require_profile(expected, plan)
+        demand(os.geteuid() == 0 and plan.get("version") == (2 if expected is not None else 1) and plan.get("environment") == "staging"
             and plan.get("browserOrigin") == BROWSER_ORIGIN and plan.get("profile") == "normal-ui-suspension-pending-v1" and plan.get("windowSeconds") == 840
             and plan.get("initialAdmission") == {"newWork": True, "recovery": False}
             and plan.get("finalDisposition") == "native-off-and-admission-closed"
             and plan.get("workerInvocationAuthorized") is False and plan.get("automaticReplayAllowed") is False,
             "P2_SUSPENSION_FIXED_PLAN_REQUIRED")
         self.scope, self.selected, self.jobs, self.plan = scope, copy.deepcopy(selected), copy.deepcopy(jobs), copy.deepcopy(plan)
+        self.expected_profile = expected
         self.configuration, self.source = Path(configuration), Path(source)
         demand(isinstance(resources, dict) and set(resources) == {"userId", "courseId", "lessonId"}
             and all(UUID.fullmatch(value or "") for value in resources.values())
             and resources["courseId"] != resources["lessonId"] and digest(canonical(resources)) == plan.get("resourceBindingSha256"),
             "P2_SUSPENSION_PRIVATE_RESOURCES_REQUIRED")
         self.resources = copy.deepcopy(resources)
-        self.reviewed = copy.deepcopy(persistence._reviewed(persistence_reviewed))
-        persistence._join_selected(self.reviewed, self.selected, self.jobs, {"hostMachineId": plan.get("hostMachineId")})
+        self.reviewed = copy.deepcopy(persistence._reviewed(persistence_reviewed, expected))
+        runtime_plan = {"hostMachineId": plan.get("hostMachineId"), **({"qualificationTargetProfile": expected} if expected is not None else {})}
+        persistence._join_selected(self.reviewed, self.selected, self.jobs, runtime_plan, expected)
+        self.release_evidence = _release_evidence(scope, self.reviewed, plan, release_evidence, expected)
         demand(self.reviewed["plan"]["candidateSha256"] == plan.get("candidateSha256")
             and self.reviewed["plan"]["configurationSha256"] == plan.get("configurationSha256"), "P2_SUSPENSION_REVIEWED_CONTEXT_CHANGED")
         demand(re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", plan.get("actionId", "")) and selected.get("releaseId") == plan.get("releaseId")
@@ -122,11 +185,17 @@ class P2LifecycleSuspensionEvidenceStage:
         self.credentials_directory = PRIVATE_ROOT / plan["actionId"]
         self.credentials_directory.mkdir(mode=0o700, exist_ok=False)
 
+    def _carrier(self, status, **fields):
+        expected = getattr(self, "expected_profile", None)
+        return {"version": 2 if expected is not None else 1,
+            **({"qualificationTargetProfile": expected} if expected is not None else {}),
+            "status": status, **fields}
+
     def _inventory(self):
         self.scope.verify()
         token = runtime._command_scope.set(self.scope)
         try:
-            observed = runtime.check_containers(self.selected, self.configuration)
+            observed = runtime.check_containers(self.selected, self.configuration, expected_profile=getattr(self, "expected_profile", None))
         finally:
             runtime._command_scope.reset(token)
         demand(observed == self.reviewed["containers"], "P2_SUSPENSION_REVIEWED_RUNTIME_CHANGED")
@@ -155,9 +224,12 @@ class P2LifecycleSuspensionEvidenceStage:
         self.verify()
         demand(self.challenge is None and SHA.fullmatch(challenge or ""), "P2_SUSPENSION_ONE_SOURCE_CHILD_REQUIRED")
         self.challenge = challenge
-        return private_record(self.directory, "browser-parent-intent.json", {"version": 1,
-            "status": "P2_SUSPENSION_SOURCE_PARENT_REGISTERED", "planSha256": digest(canonical(self.plan)), "challenge": challenge,
-            "browserProgramSha256": self.plan["browserProgramSha256"], "sourceChildProcessVerificationRequired": True})
+        record = self._carrier("P2_SUSPENSION_SOURCE_PARENT_REGISTERED", planSha256=digest(canonical(self.plan)), challenge=challenge,
+            browserProgramSha256=self.plan["browserProgramSha256"], sourceChildProcessVerificationRequired=True)
+        retained = private_record(self.directory, "browser-parent-intent.json", record)
+        if self.expected_profile is None:
+            return retained
+        return self._carrier("P2_SUSPENSION_SOURCE_PARENT_REGISTERED", **retained, sourceChildProcessVerificationRequired=True)
 
     def _timing(self, payload):
         self.verify()
@@ -178,7 +250,8 @@ class P2LifecycleSuspensionEvidenceStage:
         info = path.lstat()
         demand(not path.is_symlink() and stat.S_ISREG(info.st_mode) and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o600,
             "P2_SUSPENSION_PRIVATE_COURSE_RUNTIME_REQUIRED")
-        values = runtime.environment_values(migrate.read_input(self.configuration, path.name, 65536), "staging", "course-api", self.jobs)
+        values = runtime.environment_values(migrate.read_input(self.configuration, path.name, 65536), "staging", "course-api", self.jobs,
+            expected_profile=getattr(self, "expected_profile", None))
         program = """import{readFileSync}from'node:fs';try{const raw=readFileSync(0);if(raw.length>65536)throw Error();const input=JSON.parse(raw);
 const excluded=new Set(['NODE_ENV','NODE_OPTIONS','PORT','HTTP_BIND_ADDRESS','INTERNAL_SERVICE_TRUSTED_PROXY_CIDRS','INTERNAL_SERVICE_ALLOWED_IPS','COURSE_COMMUNITY_READ_ALLOWED_IPS','INTERNAL_TRUSTED_PROXY_CIDRS']);
 if(process.env.NODE_ENV!=='production'||process.env.DATABASE_TARGET!=='staging'||!Object.entries(input).every(([k,v])=>excluded.has(k)||process.env[k]===v)||typeof input.COURSE_LEARNER_JWT_CURRENT_SECRET!=='string'||input.COURSE_LEARNER_JWT_CURRENT_SECRET.length<32)throw Error();
@@ -195,8 +268,8 @@ console.log(JSON.stringify({status:'P2_SUSPENSION_COURSE_RUNTIME_BOUND'}))}catch
         self.verify()
         demand(self.challenge is not None and not self.capture_attempted, "P2_SUSPENSION_ONE_CONTROLLED_CAPTURE_REQUIRED")
         self.capture_attempted = True
-        private_record(self.directory, "controlled-capture-intent.json", {"version": 1, "planSha256": digest(canonical(self.plan)),
-            "status": "P2_SUSPENSION_CONTROLLED_CAPTURE_STARTED", "captureAttempted": True})
+        private_record(self.directory, "controlled-capture-intent.json", self._carrier("P2_SUSPENSION_CONTROLLED_CAPTURE_STARTED",
+            planSha256=digest(canonical(self.plan)), captureAttempted=True))
         values = self._course_runtime()
         ca = migrate.read_input(self.configuration, "tls/gateway/ca.pem", 65536)
         payload = {"version": 1, "mode": "s13-capture", "environment": "staging", "bindingSha256": digest(canonical(self.plan)),
@@ -210,10 +283,10 @@ console.log(JSON.stringify({status:'P2_SUSPENSION_COURSE_RUNTIME_BOUND'}))}catch
         private_record(self.credentials_directory, "controlled-capture.json", captured)
         public = {"controlledUser": {key: captured["controlledUser"][key] for key in ("iat", "exp", "baseline")},
             "playback": {key: captured["playback"][key] for key in ("exp", "courseAuthorization", "initialProviderAccess")}, "labels": captured["labels"]}
-        private_record(self.directory, "controlled-capture-public.json", {"version": 1, "bindingSha256": digest(canonical(self.plan)),
-            "capturePublic": public, "controlledCaptureMetadataSha256": digest(canonical(public)), "tokenBytesOutput": False, "credentialHashesOutput": False})
-        return {"version": 1, "status": "P2_SUSPENSION_CONTROLLED_CAPTURED", "bindingSha256": digest(canonical(self.plan)),
-            "capturePublic": public, "controlledCaptureMetadataSha256": digest(canonical(public)), "tokenBytesOutput": False, "credentialHashesOutput": False}
+        record = self._carrier("P2_SUSPENSION_CONTROLLED_CAPTURED", bindingSha256=digest(canonical(self.plan)),
+            capturePublic=public, controlledCaptureMetadataSha256=digest(canonical(public)), tokenBytesOutput=False, credentialHashesOutput=False)
+        private_record(self.directory, "controlled-capture-public.json", record)
+        return record
 
     def _natural_window(self, kind, boundary, payload):
         # Fixed real time only. A provider/service error is not a denial. Polls
@@ -250,7 +323,10 @@ console.log(JSON.stringify({status:'P2_SUSPENSION_COURSE_RUNTIME_BOUND'}))}catch
             and UUID.fullmatch(ui_event.get("requestId", "")) and type(ui_event.get("accountVersion")) is int and ui_event["accountVersion"] >= 1,
             "P2_SUSPENSION_ACTUAL_UI_EVENT_REQUIRED")
         self.expiry_attempted = True
-        private_record(self.directory, "browser-suspension-accepted.json", {"version": 1, "planSha256": digest(canonical(self.plan)), "event": ui_event})
+        accepted = ({"version": 1, "planSha256": digest(canonical(self.plan)), "event": ui_event}
+            if self.expected_profile is None else self._carrier("P2_SUSPENSION_BROWSER_ACCEPTED",
+                planSha256=digest(canonical(self.plan)), event=ui_event))
+        private_record(self.directory, "browser-suspension-accepted.json", accepted)
         user, playback = self.capture["controlledUser"], self.capture["playback"]
         demand(_milliseconds(user["baseline"]["responseEndedAt"]) <= _milliseconds(ui_event["observedAt"])
             < (user["exp"]+30)*1000-2000, "P2_SUSPENSION_CAPTURE_MUST_PRECEDE_UI_AND_NATURAL_BOUNDARY")
@@ -261,9 +337,9 @@ console.log(JSON.stringify({status:'P2_SUSPENSION_COURSE_RUNTIME_BOUND'}))}catch
         mux_window = self._natural_window("mux", playback["exp"]*1000, {"version": 1, "mode": "s13-mux-observe", "environment": "staging",
             "bindingSha256": digest(canonical(self.plan)), "requestUrl": playback["requestUrl"], "playbackId": playback["playbackId"], "exp": playback["exp"]})
         self.natural = {"user": user_window, "mux": mux_window}
-        return {"version": 1, "status": "P2_SUSPENSION_NATURAL_EXPIRY_OBSERVED", "bindingSha256": digest(canonical(self.plan)),
-            "user": user_window, "mux": mux_window, "userWindowSha256": digest(canonical(user_window)), "muxWindowSha256": digest(canonical(mux_window)),
-            "tokenBytesOutput": False, "credentialHashesOutput": False}
+        return self._carrier("P2_SUSPENSION_NATURAL_EXPIRY_OBSERVED", bindingSha256=digest(canonical(self.plan)),
+            user=user_window, mux=mux_window, userWindowSha256=digest(canonical(user_window)), muxWindowSha256=digest(canonical(mux_window)),
+            tokenBytesOutput=False, credentialHashesOutput=False)
 
     def scrub_controlled_credentials(self):
         # Remove only this source instance's exact private capture, outside the
@@ -302,8 +378,8 @@ console.log(JSON.stringify({status:'P2_SUSPENSION_COURSE_RUNTIME_BOUND'}))}catch
         result = private_record(self.directory, "p2-lifecycle-browser-source.json", record)
         self.browser = record
         self.verify()
-        return {"version": 1, "status": "P2_SUSPENSION_BROWSER_RETAINED", **result, "browserProcessAuthority": "fixed-source-parent-child",
-            "sourceChildProcessVerificationRequired": True, "releaseAccepted": False}
+        return self._carrier("P2_SUSPENSION_BROWSER_RETAINED", **result, browserProcessAuthority="fixed-source-parent-child",
+            sourceChildProcessVerificationRequired=True, releaseAccepted=False)
 
     def retain_pending_from_source_parent(self, record):
         self.verify()
@@ -319,29 +395,45 @@ console.log(JSON.stringify({status:'P2_SUSPENSION_COURSE_RUNTIME_BOUND'}))}catch
             and all(row.get("status") == "pending" and type(row.get("attempts")) is int and row["attempts"] == 0
                 and all(row.get(name) is None for name in ("lease_id", "lease_until", "acknowledged_at")) for row in record["deliveries"]),
             "P2_SUSPENSION_PENDING_SOURCE_JOIN_REQUIRED")
-        envelope = {"version": 1, "status": "P2_SUSPENSION_PENDING_SOURCE_RETAINED", "planSha256": digest(canonical(self.plan)),
-            "candidateSha256": self.plan["candidateSha256"], "configurationSha256": self.plan["configurationSha256"],
-            "sourceCommit": self.plan["sourceCommit"], "targetSha256": self.plan["targetSha256"],
-            "pendingProgramSha256": self.plan["pendingProgramSha256"], "pending": record, "workerInvoked": False}
+        envelope = self._carrier("P2_SUSPENSION_PENDING_SOURCE_RETAINED", planSha256=digest(canonical(self.plan)),
+            candidateSha256=self.plan["candidateSha256"], configurationSha256=self.plan["configurationSha256"],
+            sourceCommit=self.plan["sourceCommit"], targetSha256=self.plan["targetSha256"],
+            pendingProgramSha256=self.plan["pendingProgramSha256"], pending=record, workerInvoked=False)
         result = private_record(self.directory, "p2-lifecycle-suspension-pending.json", envelope)
         self.verify()
-        return {"version": 1, "status": "P2_SUSPENSION_PENDING_RETAINED", **result, "pendingDeliveries": 2,
-            "attempts": 0, "workerInvoked": False, "releaseAccepted": False}
+        return self._carrier("P2_SUSPENSION_PENDING_RETAINED", **result, pendingDeliveries=2,
+            attempts=0, workerInvoked=False, releaseAccepted=False)
 
 
-def load_retained_suspension(scope, selected, jobs, configuration, source, plan, persistence_reviewed, expected_pending_sha256):
+def load_retained_suspension(scope, selected, jobs, configuration, source, plan, persistence_reviewed, expected_pending_sha256, *, expected_profile=None, release_evidence=None):
     """Fixed private provenance for a later bounded worker/native action.
 
     Reads source-created files only. No copied JSON, arbitrary path or old SQL
     receipt can substitute for the fresh actual parent scope and source joins.
     """
+    expected = migrate.profile_context(expected_profile)
     demand(isinstance(scope, P2ReleaseScope) and scope.path == LOCK and os.geteuid() == 0,
         "P2_SUSPENSION_ACTUAL_PHYSICAL_PARENT_SCOPE_REQUIRED")
+    if expected is not None:
+        from p2_certification_parent import P2CertificationScope
+        demand(type(scope) is P2CertificationScope, "P2_SUSPENSION_CERTIFICATION_SCOPE_REQUIRED")
+        migrate.candidate_profile(selected, expected)
+        for info in jobs.values():
+            migrate.require_job_profile(expected, info["job"], frontend=info.get("frontend", False))
+    migrate.require_profile(expected, plan)
+    demand(plan.get("version") == (2 if expected is not None else 1) and plan.get("environment") == "staging"
+        and plan.get("browserOrigin") == BROWSER_ORIGIN and plan.get("profile") == "normal-ui-suspension-pending-v1"
+        and plan.get("windowSeconds") == 840 and plan.get("initialAdmission") == {"newWork": True, "recovery": False}
+        and plan.get("finalDisposition") == "native-off-and-admission-closed"
+        and plan.get("workerInvocationAuthorized") is False and plan.get("automaticReplayAllowed") is False,
+        "P2_SUSPENSION_FIXED_PLAN_REQUIRED")
     bind_frontend_scope(scope, selected, jobs, plan)
     scope.require_configuration(configuration)
     source, configuration = Path(source), Path(configuration)
-    reviewed = persistence._reviewed(persistence_reviewed)
-    persistence._join_selected(reviewed, selected, jobs, {"hostMachineId": plan.get("hostMachineId")})
+    reviewed = persistence._reviewed(persistence_reviewed, expected)
+    runtime_plan = {"hostMachineId": plan.get("hostMachineId"), **({"qualificationTargetProfile": expected} if expected is not None else {})}
+    persistence._join_selected(reviewed, selected, jobs, runtime_plan, expected)
+    source_release_evidence = _release_evidence(scope, reviewed, plan, release_evidence, expected)
     demand(SHA.fullmatch(expected_pending_sha256 or "") and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", plan.get("actionId", ""))
         and source == Path("/opt/lash-her/operators") / plan["sourceCommit"]
         and plan.get("operatorSourceCommit") == plan["sourceCommit"] == selected["sources"]["frontend"]["commit"]
@@ -359,7 +451,7 @@ def load_retained_suspension(scope, selected, jobs, configuration, source, plan,
     info = directory.lstat()
     demand(not any(path.is_symlink() for path in (directory, *directory.parents)) and stat.S_ISDIR(info.st_mode)
         and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o700, "P2_SUSPENSION_PRIVATE_RETAINED_DIRECTORY_REQUIRED")
-    def retained(name):
+    def retained(name, carrier=False):
         descriptor = os.open(directory/name, os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
         try:
             info = os.fstat(descriptor)
@@ -367,12 +459,19 @@ def load_retained_suspension(scope, selected, jobs, configuration, source, plan,
                 "P2_SUSPENSION_PRIVATE_RETAINED_RECORD_REQUIRED")
             raw = os.read(descriptor, 262145)
             demand(len(raw) == info.st_size, "P2_SUSPENSION_RETAINED_RECORD_CHANGED")
-            return json.loads(raw), digest(raw)
+            if expected is not None and carrier:
+                from qualification_target_profile import decode_qualification_target_json
+                value = decode_qualification_target_json(raw, "carrier")
+                migrate.require_profile(expected, value)
+                demand(value.get("version") == 2, "P2_SUSPENSION_RETAINED_PROFILE_REQUIRED")
+            else:
+                value = json.loads(raw)
+            return value, digest(raw)
         finally:
             os.close(descriptor)
-    pending, pending_sha = retained("p2-lifecycle-suspension-pending.json")
+    pending, pending_sha = retained("p2-lifecycle-suspension-pending.json", carrier=True)
     browser, browser_sha = retained("p2-lifecycle-browser-source.json")
-    public, _public_sha = retained("controlled-capture-public.json")
+    public, _public_sha = retained("controlled-capture-public.json", carrier=True)
     user, _user_sha = retained("controlled-user-window.json")
     mux, _mux_sha = retained("controlled-mux-window.json")
     demand(pending_sha == expected_pending_sha256 and pending.get("status") == "P2_SUSPENSION_PENDING_SOURCE_RETAINED"
@@ -391,7 +490,9 @@ def load_retained_suspension(scope, selected, jobs, configuration, source, plan,
         and pending["pending"]["workerInvoked"] is False, "P2_SUSPENSION_RETAINED_CANONICAL_JOIN_REQUIRED")
     bind_frontend_scope(scope, selected, jobs, plan)
     scope.require_configuration(configuration)
-    return {"pendingRecord": pending, "pendingRecordSha256": pending_sha, "browserRecord": browser, "browserRecordSha256": browser_sha,
+    return {**({"version": 2, "qualificationTargetProfile": expected,
+            "releaseEvidence": source_release_evidence} if expected is not None else {}),
+        "pendingRecord": pending, "pendingRecordSha256": pending_sha, "browserRecord": browser, "browserRecordSha256": browser_sha,
         "capturePublic": public["capturePublic"], "user": user, "mux": mux}
 
 

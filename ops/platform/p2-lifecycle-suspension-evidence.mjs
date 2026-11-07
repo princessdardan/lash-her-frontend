@@ -100,7 +100,7 @@ export function prepareP2LifecycleSuspensionPlan(candidate, input, expectedProfi
     windowSeconds: 840, drainSeconds: input.drainSeconds, initialAdmission: { newWork: true, recovery: false },
     finalDisposition: "native-off-and-admission-closed", fixtureCreationAuthorized: false,
     workerInvocationAuthorized: false, automaticReplayAllowed: false, releaseAccepted: false });
-  if (!profile) plans.set(value, structuredClone(input)); return value;
+  plans.set(value, structuredClone(input)); return value;
 }
 
 export function validateP2SuspensionBrowserRecord(record, input) {
@@ -226,8 +226,9 @@ async function actualSuspensionStage(plan, handle) {
 
 export async function captureP2SuspensionControlledAuthority(plan, stageHandle) {
   const stage = await actualSuspensionStage(plan, stageHandle), value = await stage.captureControlled();
-  demand(closed(value, ["version", "status", "bindingSha256", "capturePublic", "controlledCaptureMetadataSha256", "tokenBytesOutput", "credentialHashesOutput"])
-    && value.version === 1 && value.status === "P2_SUSPENSION_CONTROLLED_CAPTURED" && value.bindingSha256 === hash(plan)
+  const profile = profileContext(hasProfile(plan) ? plan.qualificationTargetProfile : undefined, plan, value);
+  demand(closed(value, ["version", ...(profile ? ["qualificationTargetProfile"] : []), "status", "bindingSha256", "capturePublic", "controlledCaptureMetadataSha256", "tokenBytesOutput", "credentialHashesOutput"])
+    && value.version === (profile ? 2 : 1) && value.status === "P2_SUSPENSION_CONTROLLED_CAPTURED" && value.bindingSha256 === hash(plan)
     && value.tokenBytesOutput === false && value.credentialHashesOutput === false && hash(value.capturePublic) === value.controlledCaptureMetadataSha256
     && value.capturePublic.controlledUser.exp-value.capturePublic.controlledUser.iat === 300
     && value.capturePublic.controlledUser.baseline.status === 200 && value.capturePublic.playback.courseAuthorization.status === 200
@@ -247,8 +248,9 @@ function naturalWindow(value, boundary, allowed, denied) {
 export async function observeP2SuspensionControlledAuthority(plan, captureHandle) {
   const source = controlledCaptures.get(captureHandle); demand(source?.plan === plan && !source.used); source.used = true;
   const stage = await actualSuspensionStage(plan, source.stageHandle), value = await stage.captureNaturalExpiry();
-  demand(closed(value, ["version", "status", "bindingSha256", "user", "mux", "userWindowSha256", "muxWindowSha256", "tokenBytesOutput", "credentialHashesOutput"])
-    && value.version === 1 && value.status === "P2_SUSPENSION_NATURAL_EXPIRY_OBSERVED" && value.bindingSha256 === hash(plan)
+  const profile = profileContext(hasProfile(plan) ? plan.qualificationTargetProfile : undefined, plan, value);
+  demand(closed(value, ["version", ...(profile ? ["qualificationTargetProfile"] : []), "status", "bindingSha256", "user", "mux", "userWindowSha256", "muxWindowSha256", "tokenBytesOutput", "credentialHashesOutput"])
+    && value.version === (profile ? 2 : 1) && value.status === "P2_SUSPENSION_NATURAL_EXPIRY_OBSERVED" && value.bindingSha256 === hash(plan)
     && value.tokenBytesOutput === false && value.credentialHashesOutput === false
     && hash(value.user) === value.userWindowSha256 && hash(value.mux) === value.muxWindowSha256);
   naturalWindow(value.user, (source.capturePublic.controlledUser.exp+30)*1000, [200], [401]);
