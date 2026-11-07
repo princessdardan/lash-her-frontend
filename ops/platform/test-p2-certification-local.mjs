@@ -11,7 +11,8 @@ import {frontendMigrationArtifact} from './frontend-migration.mjs';
 import {readMigrationCatalog} from './frontend-schema.mjs';
 import {frontendAdmissionTargetSha256} from './frontend-admission-bootstrap.mjs';
 import {reconcileFrontendOperation} from './frontend-admission.mjs';
-import {withP2CertificationFrontendSession,observeP2CertificationPhysical,readP2CertificationCurrent,containP2ProfiledCertificationAdmission} from './p2-certification-current-probe.mjs';
+import {withP2CertificationFrontendSession,observeP2CertificationPhysical,readP2CertificationCurrent,containP2ProfiledCertificationAdmission,
+  withP2ProfiledInterruptedFrontendSession,observeP2ProfiledInterruptedFrontendPhysical} from './p2-certification-current-probe.mjs';
 import {STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile} from './qualification-target-profile.mjs';
 const run=(program,args,options={})=>execFileSync(program,args,{encoding:'utf8',stdio:['ignore','pipe','pipe'],env:{PATH:process.env.PATH,LANG:'C',LC_ALL:'C'},...options});
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -115,8 +116,12 @@ async function child(){
     await admin.query('UPDATE frontend_admission.control SET epoch=1,new_work=false,recovery=false');
     checks.push('actual-fixed-direct-worker-epoch-original-operation-window-and-uncertainty-refusal');
     phase='actual-child-known-ack-specific-settlement';
-    const known={...plan,mode:'known-ack-recovery'},uncertainId=randomUUID(),replayId=randomUUID(),extraId=randomUUID(),evidence='d'.repeat(64);
+    const known={...plan,mode:'known-ack-recovery'},uncertainId=randomUUID(),replayId=randomUUID(),extraId=randomUUID();
+    const settlementBytes=Buffer.from(JSON.stringify({version:2,operationId:uncertainId,epoch:'4'})+'\n');
+    const evidence=createHash('sha256').update(settlementBytes).digest('hex');
+    let originalProbe;
     await withP2CertificationFrontendSession(prepared,known,deps,async({client,verify,probe})=>{
+      originalProbe=probe;
       await admin.query('UPDATE frontend_admission.control SET epoch=2,new_work=false,recovery=true');
       await readP2CertificationCurrent(client,prepared,known,verify);
       await admin.query('UPDATE frontend_admission.control SET epoch=3');
@@ -142,18 +147,22 @@ async function child(){
       assert.equal(actual.witness.operations.find(row=>row.id===uncertainId).reconciliation_sha256,evidence);
       assert.equal((await observeP2CertificationPhysical({...probe,operation:'witness'},deps)).admission.uncertain,0);
     });
+    checks.push('actual-known-ack-epochs-exact-uncertainty-and-specific-operation-settlement');
+    const selectedProfile={qualificationTargetProfile:profile};
+    const profileTarget={...target,...selectedProfile,approvedPendingTags:[],allowEmptyBootstrap:false};
+    const currentJob={...job,version:2,...selectedProfile,target:profileTarget};
+    const profiled={migration:{...prepared.migration,job:currentJob},plan:{...prepared.plan,
+      historicalLogins:{...prepared.plan.historicalLogins,version:2,...selectedProfile,target:profileTarget}}};
+    phase='actual-child-profiled-interrupted-fresh-read-only-session';
+    await proveProfiledInterruptedFrontend({admin,profiled,plan,nativePlan,job,owner,profileTarget,selectedProfile,deps,
+      uncertainId,replayId,evidence,originalProbe,producerSha256,roleOid:roles.cert_runtime,journal});
+    checks.push('actual-profiled-interrupted-fresh-locks-specific-settlement-and-independent-closure');
     await admin.query('DELETE FROM frontend_admission.operations WHERE id=ANY($1::uuid[])',[[uncertainId,replayId]]);
     await admin.query('UPDATE frontend_admission.control SET epoch=1,new_work=false,recovery=false');
-    checks.push('actual-known-ack-epochs-exact-uncertainty-and-specific-operation-settlement');
     await admin.query('UPDATE frontend_admission.control SET new_work=true,recovery=true,epoch=2');
     assert.equal((await observeP2CertificationPhysical({...sourceProbe,operation:'fence'},deps)).frontendAdmissionClosed,true);
     assert.deepEqual((await admin.query('SELECT new_work,recovery FROM frontend_admission.control')).rows,[{new_work:false,recovery:false}]);
     checks.push('independent-fence-after-parent-session-loss-and-without-native-credential');
-    const selectedProfile={qualificationTargetProfile:profile};
-    const profileTarget={...target,...selectedProfile,approvedPendingTags:[]};
-    const currentJob={...job,version:2,...selectedProfile,target:profileTarget};
-    const profiled={migration:{...prepared.migration,job:currentJob},plan:{...prepared.plan,
-      historicalLogins:{...prepared.plan.historicalLogins,version:2,...selectedProfile,target:profileTarget}}};
     const profiledPlan={...plan,version:2,...selectedProfile,originalReleaseId:job.releaseId,initialEpoch:'3',
       nativePlan:{...nativePlan,version:2,...selectedProfile,target:profileTarget,initialEpoch:'4'}};
     const guardProbe=await withP2CertificationFrontendSession(profiled,profiledPlan,deps,async({probe,receipt})=>{
@@ -195,6 +204,97 @@ async function child(){
       actualHostDocker:false,browserQualified:false,nativeInvocationQualified:false,fixtureOnly:true};
   }finally{await admin.end();}
 }
+
+async function proveProfiledInterruptedFrontend({admin,profiled,plan,nativePlan,job,owner,profileTarget,selectedProfile,deps,
+  uncertainId,replayId,evidence,originalProbe,producerSha256,roleOid,journal}){
+  const commandId=randomUUID(),userId=randomUUID(),issuedAt=new Date().toISOString();
+  const command={version:1,commandId,userId,accountVersion:1,action:'suspend',issuedAt};
+  await admin.query("INSERT INTO public.customer_users(id,email,status,account_version) VALUES($1,'owned-profiled-c@example.invalid','suspended',1)",[userId]);
+  await admin.query(`INSERT INTO public.customer_account_commands(command_id,user_id,account_version,idempotency_key,action,issued_at,command)
+    VALUES($1,$2,1,$3,'suspend',$4,$5)`,[commandId,userId,randomUUID(),issuedAt,command]);
+  await admin.query(`INSERT INTO public.customer_account_deliveries(command_id,receiver,status,attempts,acknowledged_at)
+    VALUES($1,'course','acknowledged',2,$2),($1,'community','acknowledged',1,$2)`,[commandId,issuedAt]);
+  const original={...nativePlan,version:2,...selectedProfile,owner,target:profileTarget,targetSha256:plan.targetSha256,
+    sourceCommit:job.sourceCommit,actionId:job.releaseId,phase2ContractManifestSha256:job.phase2ContractManifestSha256,
+    planSha256:'9'.repeat(64),commandWitnesses:[{commandId,accountVersion:'1',action:'suspend'}]};
+  const interrupted={...plan,version:2,...selectedProfile,mode:'p2-profiled-known-ack-interrupted-restoration',environment:'staging',
+    certificationActionId:'owned-fresh-c',originalCertificationActionId:plan.certificationActionId,originalReleaseId:job.releaseId,
+    initialEpoch:'4',contractPhase:'p2',phase2ContractManifestSha256:job.phase2ContractManifestSha256,nativePlan:original,
+    operationId:uncertainId,reconciliationSha256:evidence,configurationCanonicalSha256:'8'.repeat(64),planSha256:'7'.repeat(64)};
+  const forbidden={...deps,getUrl:()=>assert.fail('credential requested for the wrong source context')};
+  const refused=({checkpoint})=>['current-source-context','current-interrupted-plan'].includes(checkpoint);
+  await assert.rejects(withP2CertificationFrontendSession(profiled,interrupted,forbidden,()=>assert.fail(),profile),refused);
+  await assert.rejects(withP2ProfiledInterruptedFrontendSession(profiled,{...interrupted,mode:'native-window'},forbidden,()=>assert.fail()),refused);
+  await assert.rejects(withP2ProfiledInterruptedFrontendSession(profiled,{...interrupted,certificationActionId:plan.certificationActionId},
+    forbidden,()=>assert.fail()),refused);
+  await assert.rejects(withP2ProfiledInterruptedFrontendSession(profiled,{...interrupted,reconciliationSha256:'a'.repeat(64)},deps,()=>assert.fail()),
+    error=>error.checkpoint==='current-interrupted-settlement');
+  let retainedRead;
+  const probe=await withP2ProfiledInterruptedFrontendSession(profiled,interrupted,deps,async context=>{
+    assert.deepEqual(Object.keys(context).sort(),['probe','readCurrent','receipt','verify']);
+    const {probe,receipt,verify,readCurrent}=context;
+    retainedRead=readCurrent;
+    assert.notEqual(probe.marker,originalProbe.marker);
+    assert.notDeepEqual([probe.backendPid,probe.backendStart],[originalProbe.backendPid,originalProbe.backendStart]);
+    assert.equal(receipt.status,'P2_CERTIFICATION_DATABASE_CURRENT');
+    assert.equal(receipt.certificationActionId,interrupted.certificationActionId);
+    assert.deepEqual(receipt.qualificationTargetProfile,profile);
+    assert.equal(receipt.journalSha256,journal);
+    assert.deepEqual(receipt.admission,{epoch:'4',newWork:false,recovery:false,active:0,uncertain:0});
+    assert.equal(receipt.witness.operations.find(row=>row.id===uncertainId).reconciliation_sha256,evidence);
+    assert.equal(receipt.witness.operations.find(row=>row.id===replayId).reconciliation_sha256,null);
+    for(const key of ['lash-her:private-db:migrations',probe.marker])
+      assert.equal((await admin.query('SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS held',[key])).rows[0].held,false);
+    const observe=operation=>observeP2ProfiledInterruptedFrontendPhysical({...probe,operation},deps);
+    assert.equal((await observe('verify-schema')).witnessSha256,receipt.witnessSha256);
+    assert.equal((await observe('witness')).witness.operations.length,2);
+    await assert.rejects(observe('verify-closed'));
+    await assert.rejects(observe('fence'));
+    await assert.rejects(observeP2CertificationPhysical({...probe,operation:'observe'},forbidden,profile),refused);
+    await assert.rejects(containP2ProfiledCertificationAdmission(probe,forbidden),refused);
+
+    await admin.query('UPDATE frontend_admission.operations SET reconciliation_sha256=$1 WHERE id=$2',['a'.repeat(64),uncertainId]);
+    await assert.rejects(readCurrent(),error=>error.checkpoint==='current-interrupted-settlement');
+    await admin.query('UPDATE frontend_admission.operations SET reconciliation_sha256=$1 WHERE id=$2',[evidence,uncertainId]);
+    await admin.query("UPDATE frontend_admission.operations SET completed_at=completed_at+interval '1 second' WHERE id=$1",[replayId]);
+    await assert.rejects(observe('observe'),error=>error.checkpoint==='current-interrupted-witness-changed');
+    await admin.query("UPDATE frontend_admission.operations SET completed_at=completed_at-interval '1 second' WHERE id=$1",[replayId]);
+    const foreign=randomUUID();
+    await admin.query(`INSERT INTO frontend_admission.operations(id,producer_sha256,source_sha,database_role,epoch,kind,state)
+      VALUES($1,$2,$3,$4,1,'recovery','active')`,[foreign,producerSha256,job.sourceCommit,roleOid]);
+    await assert.rejects(observe('observe'),error=>error.checkpoint==='current-interrupted-closed');
+    await admin.query('DELETE FROM frontend_admission.operations WHERE id=$1',[foreign]);
+    await admin.query("UPDATE public.customer_account_deliveries SET lease_id=$1 WHERE command_id=$2 AND receiver='course'",[randomUUID(),commandId]);
+    await assert.rejects(readCurrent(),error=>error.checkpoint==='current-interrupted-deliveries');
+    await admin.query('UPDATE public.customer_account_deliveries SET lease_id=NULL WHERE command_id=$1',[commandId]);
+    await verify();assert.equal((await readCurrent()).witnessSha256,receipt.witnessSha256);
+    return probe;
+  });
+  await assert.rejects(retainedRead(),error=>error.checkpoint==='current-interrupted-session-closed');
+  await assert.rejects(observeP2ProfiledInterruptedFrontendPhysical({...probe,operation:'observe'},deps));
+  const close=()=>observeP2ProfiledInterruptedFrontendPhysical({...probe,operation:'verify-closed'},deps);
+  const held=(await admin.query('SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS held',[probe.marker])).rows[0].held;
+  assert.equal(held,true);
+  try{await assert.rejects(close());}
+  finally{await admin.query('SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1))',[probe.marker]);}
+  await admin.query('UPDATE frontend_admission.operations SET reconciliation_sha256=$1 WHERE id=$2',['a'.repeat(64),uncertainId]);
+  try{await assert.rejects(close(),error=>error.checkpoint==='current-interrupted-settlement');}
+  finally{await admin.query('UPDATE frontend_admission.operations SET reconciliation_sha256=$1 WHERE id=$2',[evidence,uncertainId]);}
+  const late=await close();
+  assert.equal(late.status,'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED');
+  assert.equal(late.backendAbsent&&late.migrationLockReleased&&late.nonceLockReleased,true);
+  assert.equal(late.witnessSha256,probe.receipt.witnessSha256);
+  assert.equal(late.journalSha256,journal);
+  const env=Object.fromEntries(['PATH','HOME','LANG','TMPDIR','NODE_EXTRA_CA_CERTS'].filter(name=>process.env[name]!==undefined).map(name=>[name,process.env[name]]));
+  const fixed=new URL('./p2-certification-current-probe.mjs',import.meta.url).pathname;
+  const child=spawnSync(process.execPath,['--experimental-strip-types',fixed,'--profiled-known-ack-interrupted'],{encoding:'utf8',timeout:20_000,
+    input:JSON.stringify({...probe,operation:'verify-closed'}),env:{...env,FRONTEND_STAGING_MIGRATION_DATABASE_URL:deps.getUrl()}});
+  assert.equal(child.status,0);
+  assert.deepEqual(JSON.parse(child.stdout),late);
+  // The source command has an immutable trigger. The outer fixture disposes
+  // this entire cluster after verification, preserving the command until then.
+}
+
 async function outer(){
   assert.equal(process.env.P2_CERTIFICATION_OWNED_TEST,'true');assert.equal(process.versions.node.split('.')[0],'24');
   const bin=process.env.PG_BIN,major=Number(process.env.OWNED_POSTGRES_MAJOR??'16');assert.ok(bin?.startsWith('/')&&[16,18].includes(major));assert.match(run(join(bin,'postgres'),['--version']),new RegExp(`PostgreSQL\\) ${major}\\.`,'u'));

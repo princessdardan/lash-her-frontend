@@ -15,10 +15,19 @@ const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex
 const targetHash=target=>hash({environment:'staging',...Object.fromEntries(['host','port','database','user','serverMajor'].map(key=>[key,target[key]]))});
 const canonical=value=>JSON.stringify(value,(_key,child)=>child&&typeof child==='object'&&!Array.isArray(child)?Object.fromEntries(Object.entries(child).sort(([a],[b])=>a.localeCompare(b))):child);
 const name=value=>typeof value==='string'&&/^[a-z][a-z0-9_]{0,62}$/u.test(value);
+const digest=value=>typeof value==='string'&&/^[a-f0-9]{64}$/u.test(value)&&!/^0+$/u.test(value);
+const action=value=>typeof value==='string'&&/^[a-z0-9][a-z0-9-]{0,63}$/u.test(value);
+const epoch=value=>typeof value==='string'&&/^[1-9][0-9]{0,17}$/u.test(value);
+const oid=value=>typeof value==='string'&&/^[1-9][0-9]{0,9}$/u.test(value);
+const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(value);
+const interruptedMode='p2-profiled-known-ack-interrupted-restoration';
 const bodies={admit:'e8efe70da1fabe4381d640e73bc42b5e204ec5f1aa28589d09b1e73a0be21504',begin_operation:'c634f0f3f018062fb2b115f923ab8637f02a34c515e8532b41ccd912762917d3',current_policy:'1322b30139dcb101aafcbd461536c1788233da1f0ab6e9084745513a4da1694e',finish_operation:'84257c2f6b8be184397e3d326d9908f11a6e9d75facde5c7abb5bad2e9db4e1d',settle:'a6fb927fbc0df4d7262aba5c6185ebffa737d1adafcf5766080078e0d0f45fbd'};
-const options=(value,target)=>({...frontendConnectionOptions(value,target),options:'-c search_path=pg_catalog,public',application_name:'lash-her-p2-bounded-certification'});
+const options=(value,target,interrupted=false)=>({...frontendConnectionOptions(value,target),
+  options:'-c search_path=pg_catalog,public'+(interrupted?' -c default_transaction_read_only=on':''),
+  application_name:'lash-her-p2-bounded-certification'});
 
-function profileFields(expectedProfile,plan,job,historicalLogins){
+function profileFields(expectedProfile,plan,job,historicalLogins,interrupted=false){
+  demand((plan?.mode===interruptedMode)===interrupted&&(!interrupted||expectedProfile!==undefined),'current-source-context');
   const carriers=[plan,plan?.nativePlan,plan?.nativePlan?.target,job,job?.target,historicalLogins,historicalLogins?.target];
   if(expectedProfile===undefined){
     demand(plan?.version===1&&job?.version===1&&!carriers.some(row=>row&&Object.hasOwn(row,'qualificationTargetProfile')));
@@ -27,10 +36,36 @@ function profileFields(expectedProfile,plan,job,historicalLogins){
   const qualificationTargetProfile=requireQualificationTargetProfile(currentProfile,{qualificationTargetProfile:expectedProfile},...carriers);
   demand(plan.version===2&&plan.nativePlan.version===2&&job.version===2&&historicalLogins.version===2&&
     plan.startState==='already-closed'&&Array.isArray(job.target.approvedPendingTags)&&job.target.approvedPendingTags.length===0);
+  if(interrupted)requireInterruptedPlan(plan,job);
   return {qualificationTargetProfile};
 }
 
-function admissionPolicy(plan,value,initial){
+function requireInterruptedPlan(plan,job){
+  const original=plan.nativePlan;
+  demand(plan.environment==='staging'&&job.environment==='staging'&&plan.originalReleaseId===job.releaseId&&original.actionId===job.releaseId&&
+    [plan.certificationActionId,plan.originalCertificationActionId,job.releaseId].every(action)&&
+    new Set([plan.certificationActionId,plan.originalCertificationActionId,job.releaseId]).size===3&&
+    typeof plan.sourceCommit==='string'&&/^[a-f0-9]{40}$/u.test(plan.sourceCommit)&&!/^0+$/u.test(plan.sourceCommit)&&
+    plan.sourceCommit===job.sourceCommit&&plan.sourceCommit===original.sourceCommit&&plan.targetSha256===original.targetSha256&&
+    plan.targetSha256===targetHash(job.target)&&plan.targetSha256===targetHash(original.target)&&job.target.allowEmptyBootstrap===false&&
+    plan.contractPhase===job.contractPhase&&plan.contractPhase==='p2'&&
+    plan.phase2ContractManifestSha256===job.phase2ContractManifestSha256&&plan.phase2ContractManifestSha256===original.phase2ContractManifestSha256&&
+    typeof plan.phase2ContractManifestSha256==='string'&&plan.phase2ContractManifestSha256.startsWith('sha256:')&&digest(plan.phase2ContractManifestSha256.slice(7))&&
+    [plan.candidateSha256,plan.configurationCanonicalSha256,plan.planSha256,plan.reconciliationSha256,original.planSha256].every(digest)&&
+    epoch(plan.initialEpoch)&&epoch(original.initialEpoch)&&BigInt(plan.initialEpoch)===BigInt(original.initialEpoch)+2n&&
+    name(original.owner?.name)&&oid(original.owner.oid)&&name(original.producer?.role?.name)&&oid(original.producer.role.oid)&&
+    digest(original.producer.producerSha256)&&
+    uuid(plan.operationId)&&Array.isArray(original.commandWitnesses)&&original.commandWitnesses.length===1&&
+    original.commandWitnesses[0].action==='suspend'&&uuid(original.commandWitnesses[0].commandId)&&epoch(original.commandWitnesses[0].accountVersion),
+    'current-interrupted-plan');
+}
+
+function admissionPolicy(plan,value,initial,interrupted){
+  if(interrupted){
+    demand(value.epoch===plan.initialEpoch&&value.newWork===false&&value.recovery===false&&value.active===0&&value.uncertain===0,
+      'current-interrupted-closed');
+    return;
+  }
   demand(['auth-preparation','browser-pending','direct-worker','native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery','contain-native'].includes(plan.mode)&&
     ['qualified-ready','already-closed'].includes(plan.startState)&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&/^[1-9][0-9]{0,17}$/u.test(value.epoch)&&
     typeof value.newWork==='boolean'&&typeof value.recovery==='boolean'&&
@@ -55,9 +90,13 @@ function admissionPolicy(plan,value,initial){
   }
 }
 
-export async function readP2CertificationCurrent(client,prepared,plan,verify,initial=false,expectedProfile){
+export function readP2CertificationCurrent(client,prepared,plan,verify,initial=false,expectedProfile){
+  return readCurrent(client,prepared,plan,verify,initial,expectedProfile,false);
+}
+
+async function readCurrent(client,prepared,plan,verify,initial,expectedProfile,interrupted){
   const {job,artifact,baseline}=prepared.migration,target=job.target,owner=prepared.plan.owner;
-  const selectedProfile=profileFields(expectedProfile,plan,job,prepared.plan.historicalLogins);
+  const selectedProfile=profileFields(expectedProfile,plan,job,prepared.plan.historicalLogins,interrupted);
   demand(name(owner.name)&&plan.sourceCommit===job.sourceCommit&&plan.targetSha256===prepared.plan.targetSha256&&plan.targetSha256===targetHash(target)&&
     artifact.sqlArtifactSha256===job.sqlArtifactSha256&&artifact.contractManifestSha256===job.contractManifestSha256,'current-target');await verify();
   await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -69,6 +108,7 @@ export async function readP2CertificationCurrent(client,prepared,plan,verify,ini
       isDeepStrictEqual(await readMigrationCatalog(client),baseline.catalog));
     checkpoint='current-runtime';const runtime=await verifyRecoveryRuntimeGrants(client,target,owner);
     demand(prepared.plan.producers.some(row=>row.role.name===runtime.name&&row.role.oid===runtime.oid));
+    if(interrupted)demand(isDeepStrictEqual(owner,plan.nativePlan.owner)&&isDeepStrictEqual(runtime,plan.nativePlan.producer.role));
     checkpoint='current-owner';const owners=(await client.query('SELECT oid::text,rolcanlogin,rolsuper,rolinherit,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,rolconfig,rolconnlimit,rolvaliduntil FROM pg_catalog.pg_roles WHERE rolname=$1',[owner.name])).rows;
     demand(owners.length===1&&owners[0].oid===owner.oid&&owners[0].rolconfig===null&&owners[0].rolconnlimit===-1&&owners[0].rolvaliduntil===null&&
       ['rolcanlogin','rolsuper','rolinherit','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls'].every(key=>owners[0][key]===false));
@@ -89,8 +129,9 @@ export async function readP2CertificationCurrent(client,prepared,plan,verify,ini
     const controls=(await client.query('SELECT environment,target_sha256,epoch::text,new_work,recovery FROM frontend_admission.control WHERE singleton')).rows;
     const counts=(await client.query("SELECT count(*) FILTER(WHERE state='active')::int AS active,count(*) FILTER(WHERE state='uncertain')::int AS uncertain FROM frontend_admission.operations")).rows[0];
     demand(controls.length===1&&controls[0].environment==='staging'&&controls[0].target_sha256===plan.targetSha256);
-    checkpoint='current-admission-state';const admission={epoch:controls[0].epoch,newWork:controls[0].new_work,recovery:controls[0].recovery,...counts};admissionPolicy(plan,admission,initial);
+    checkpoint='current-admission-state';const admission={epoch:controls[0].epoch,newWork:controls[0].new_work,recovery:controls[0].recovery,...counts};admissionPolicy(plan,admission,initial,interrupted);
     const unresolved=(await client.query("SELECT id::text,epoch::text,kind,producer_sha256,source_sha,database_role::text AS role_oid FROM frontend_admission.operations WHERE state<>'completed' ORDER BY id LIMIT 4097")).rows;
+    if(interrupted)demand(unresolved.length===0,'current-interrupted-closed');
     const preNative=BigInt(admission.epoch)<=BigInt(plan.initialEpoch)+(plan.startState==='qualified-ready'?1n:0n);
     demand(unresolved.length<=4096&&(plan.mode==='contain-native'||unresolved.every(row=>row.source_sha===plan.sourceCommit&&
       (['auth-preparation','browser-pending'].includes(plan.mode)?prepared.plan.producers.some(producer=>producer.producerSha256===row.producer_sha256&&producer.role.oid===row.role_oid)&&
@@ -103,8 +144,14 @@ export async function readP2CertificationCurrent(client,prepared,plan,verify,ini
     const commandRows=(await client.query('SELECT command_id::text,user_id::text,account_version::text,action,issued_at,command FROM public.customer_account_commands WHERE command_id=ANY($1::uuid[]) ORDER BY command_id',[ids])).rows;
     const commands=commandRows.map(row=>({commandId:row.command_id,accountVersion:row.account_version,action:row.action,issuedAt:new Date(row.issued_at).toISOString(),canonicalSha256:createHash('sha256').update(canonical(row.command)).digest('hex')}));
     demand(commands.length===ids.length&&commands.every(row=>nativePlan.commandWitnesses.some(expected=>expected.commandId===row.commandId&&expected.accountVersion===row.accountVersion&&expected.action===row.action)));
-    const deliveries=(await client.query('SELECT command_id::text,receiver,status,attempts,acknowledged_at,lease_until FROM public.customer_account_deliveries WHERE command_id=ANY($1::uuid[]) ORDER BY command_id,receiver',[ids])).rows;
+    const deliveries=(await client.query(`SELECT command_id::text,receiver,status,attempts,acknowledged_at,lease_until${interrupted?',lease_id::text':''}
+      FROM public.customer_account_deliveries WHERE command_id=ANY($1::uuid[]) ORDER BY command_id,receiver`,[ids])).rows;
     demand(deliveries.length===commands.length*2&&commands.every(command=>['course','community'].every(receiver=>deliveries.filter(row=>row.command_id===command.commandId&&row.receiver===receiver).length===1)));
+    if(interrupted){
+      demand(deliveries.every(row=>row.status==='acknowledged'&&row.acknowledged_at instanceof Date&&Number.isFinite(+row.acknowledged_at)&&
+        Number.isInteger(row.attempts)&&row.attempts>0&&row.lease_until===null&&row.lease_id===null),'current-interrupted-deliveries');
+      for(const row of deliveries)delete row.lease_id;
+    }
     const orderViolations=(await client.query(`SELECT later.command_id::text AS later_command_id,prior.command_id::text AS prior_command_id,d.receiver
       FROM public.customer_account_commands later JOIN public.customer_account_deliveries d ON d.command_id=later.command_id
       JOIN public.customer_account_commands prior ON prior.user_id=later.user_id AND prior.account_version<later.account_version
@@ -114,6 +161,14 @@ export async function readP2CertificationCurrent(client,prepared,plan,verify,ini
     const operations=(await client.query(`SELECT id::text,epoch::text,kind,state,producer_sha256,source_sha,database_role::text AS role_oid,completed_at,reconciliation_sha256
       FROM frontend_admission.operations WHERE epoch >= $1::bigint ORDER BY started_at,id LIMIT 4097`,[(BigInt(nativePlan.initialEpoch)+(plan.mode==='direct-worker'?0n:1n)).toString()])).rows;
     demand(operations.length<=4096);
+    if(interrupted){
+      const selected=operations.find(row=>row.id===plan.operationId), windowEpoch=(BigInt(nativePlan.initialEpoch)+1n).toString();
+      demand(operations.length===2&&selected?.reconciliation_sha256===plan.reconciliationSha256&&orderViolations.length===0&&
+        operations.every(row=>row.state==='completed'&&row.completed_at instanceof Date&&Number.isFinite(+row.completed_at)&&
+          row.kind==='recovery'&&row.epoch===windowEpoch&&row.source_sha===plan.sourceCommit&&
+          row.producer_sha256===nativePlan.producer.producerSha256&&row.role_oid===nativePlan.producer.role.oid&&
+          (row===selected||row.reconciliation_sha256===null)),'current-interrupted-settlement');
+    }
     const witness={commands,deliveries,orderViolations,operations};
     return{version:plan.version,...selectedProfile,status:'P2_CERTIFICATION_DATABASE_CURRENT',service:'frontend',environment:'staging',releaseId:job.releaseId,certificationActionId:plan.certificationActionId,
       sourceCommit:job.sourceCommit,candidateSha256:plan.candidateSha256,targetSha256:plan.targetSha256,planSha256:plan.planSha256,
@@ -123,15 +178,24 @@ export async function readP2CertificationCurrent(client,prepared,plan,verify,ini
   }catch(error){if(!error.checkpoint)error.checkpoint=checkpoint;throw error;}finally{await client.query('ROLLBACK');}
 }
 
-export async function withP2CertificationFrontendSession(prepared,plan,{getUrl,verifyEnvironment},task,expectedProfile){
+export function withP2CertificationFrontendSession(prepared,plan,dependencies,task,expectedProfile){
+  return withCertificationSession(prepared,plan,dependencies,task,expectedProfile,false);
+}
+
+export function withP2ProfiledInterruptedFrontendSession(prepared,frontendPlan,dependencies,task){
+  return withCertificationSession(prepared,frontendPlan,dependencies,task,currentProfile,true);
+}
+
+async function withCertificationSession(prepared,plan,{getUrl,verifyEnvironment},task,expectedProfile,interrupted){
   const job=prepared.migration.job, target=job.target;
-  const selectedProfile=profileFields(expectedProfile,plan,job,prepared.plan.historicalLogins);
-  const client=new Client(options(await getUrl(),target));let lost=false,locked=false,identity,marker;
+  const selectedProfile=profileFields(expectedProfile,plan,job,prepared.plan.historicalLogins,interrupted);
+  const client=new Client(options(await getUrl(),target,interrupted));let lost=false,locked=false,identity,marker;
   client.on('error',()=>{lost=true;});
   const verify=async()=>{
     await verifyEnvironment();demand(!lost&&client.connection?.stream?.encrypted===true&&client.connection.stream.authorized===true);
     const actual=(await client.query("SELECT pg_catalog.pg_backend_pid() AS pid,current_user AS username,session_user AS session_username,pg_catalog.current_database() AS database,pg_catalog.current_setting('server_version_num')::int/10000 AS major")).rows[0];
     demand(actual.username===target.user&&actual.session_username===target.user&&actual.database===target.database&&actual.major===target.serverMajor&&(!identity||identity.pid===actual.pid));identity=actual;
+    if(interrupted)await requireReadOnlySession(client);
     if(locked)demand((await client.query(RECOVERY_HELD_LOCK,[FRONTEND_MIGRATION_LOCK])).rows[0]?.held===true);
     if(marker)demand((await client.query(RECOVERY_HELD_LOCK,[marker])).rows[0]?.held===true);
   };
@@ -139,26 +203,66 @@ export async function withP2CertificationFrontendSession(prepared,plan,{getUrl,v
     await client.connect();await verify();locked=(await client.query('SELECT pg_catalog.pg_try_advisory_lock(pg_catalog.hashtext($1)) AS locked',[FRONTEND_MIGRATION_LOCK])).rows[0]?.locked===true;demand(locked);
     marker=randomBytes(32).toString('hex');await client.query('SELECT pg_catalog.pg_advisory_lock(pg_catalog.hashtext($1))',[marker]);
     const backendStart=(await client.query('SELECT backend_start::text FROM pg_catalog.pg_stat_activity WHERE pid=pg_catalog.pg_backend_pid()')).rows[0]?.backend_start;demand(typeof backendStart==='string');
-    const receipt=await readP2CertificationCurrent(client,prepared,plan,verify,true,expectedProfile);
-    const result=await task({client,verify,receipt,probe:{version:plan.version,...selectedProfile,marker,backendPid:identity.pid,backendStart,job:prepared.migration.job,baseline:prepared.migration.baseline,
-      owner:prepared.plan.owner,producers:prepared.plan.producers,historicalLogins:prepared.plan.historicalLogins,plan,receipt}});await verify();return result;
+    const receipt=await readCurrent(client,prepared,plan,verify,true,expectedProfile,interrupted);
+    const probe={version:plan.version,...selectedProfile,marker,backendPid:identity.pid,backendStart,job:prepared.migration.job,baseline:prepared.migration.baseline,
+      owner:prepared.plan.owner,producers:prepared.plan.producers,historicalLogins:prepared.plan.historicalLogins,plan,receipt};
+    let result;
+    if(interrupted){
+      const {journalSha256,witnessSha256}=receipt;
+      let active=true;
+      const readback=async()=>{
+        demand(active,'current-interrupted-session-closed');
+        const current=await readCurrent(client,prepared,plan,verify,false,currentProfile,true);
+        await verify();
+        demand(current.journalSha256===journalSha256&&current.witnessSha256===witnessSha256,'current-interrupted-witness-changed');
+        return current;
+      };
+      try{result=await task({verify,receipt,probe,readCurrent:readback});}finally{active=false;}
+    }else result=await task({client,verify,receipt,probe});
+    await verify();return result;
   }catch(error){const failure=new Error('P2_CERTIFICATION_PHYSICAL_SESSION_FAILED');if(typeof error?.checkpoint==='string'&&/^[a-z-]{1,80}$/u.test(error.checkpoint))failure.checkpoint=error.checkpoint;throw failure;}
   finally{try{if(locked)await client.query('SELECT pg_catalog.pg_advisory_unlock_all()');}catch{lost=true;}try{await client.end();}catch{lost=true;}if(lost)throw new Error('P2_CERTIFICATION_PHYSICAL_CLEANUP_UNCERTAIN');}
 }
 
-export async function observeP2CertificationPhysical(input,{getUrl},expectedProfile){
-  const selectedProfile=profileFields(expectedProfile,input?.plan,input?.job,input?.historicalLogins);
+async function requireReadOnlySession(client){
+  demand((await client.query('SHOW default_transaction_read_only')).rows[0]?.default_transaction_read_only==='on',
+    'current-interrupted-read-only');
+}
+
+export function observeP2CertificationPhysical(input,dependencies,expectedProfile){
+  return observeCertificationPhysical(input,dependencies,expectedProfile,false);
+}
+
+export function observeP2ProfiledInterruptedFrontendPhysical(input,dependencies){
+  return observeCertificationPhysical(input,dependencies,currentProfile,true);
+}
+
+async function observeCertificationPhysical(input,{getUrl},expectedProfile,interrupted){
+  const selectedProfile=profileFields(expectedProfile,input?.plan,input?.job,input?.historicalLogins,interrupted);
   if(expectedProfile===undefined)demand(!Object.hasOwn(input,'qualificationTargetProfile'));
   else requireQualificationTargetProfile(currentProfile,input);
   const closing=input.operation==='verify-closed';
   demand(input.version===input.plan.version&&['observe','verify-schema','witness','fence','verify-closed'].includes(input.operation)&&
     (expectedProfile===undefined?!closing:input.operation!=='fence')&&/^[a-f0-9]{64}$/u.test(input.marker??'')&&Number.isSafeInteger(input.backendPid)&&typeof input.backendStart==='string');
-  const client=new Client(options(await getUrl(),input.job.target));let lost=false;client.on('error',()=>{lost=true;});
+  if(interrupted){
+    const {receipt,plan,job}=input;
+    requireQualificationTargetProfile(currentProfile,receipt,receipt?.target);
+    demand(receipt.version===2&&receipt.status==='P2_CERTIFICATION_DATABASE_CURRENT'&&receipt.service==='frontend'&&
+      receipt.releaseId===job.releaseId&&receipt.sourceCommit===job.sourceCommit&&receipt.environment==='staging'&&
+      ['certificationActionId','candidateSha256','targetSha256','planSha256'].every(key=>receipt[key]===plan[key])&&
+      receipt.sqlReplayed===false&&receipt.trafficAuthorized===false&&targetHash(receipt.target)===plan.targetSha256&&
+      receipt.admission?.epoch===plan.initialEpoch&&receipt.admission.newWork===false&&receipt.admission.recovery===false&&
+      receipt.admission.active===0&&receipt.admission.uncertain===0&&digest(receipt.journalSha256)&&digest(receipt.witnessSha256)&&
+      digest(input.marker)&&input.backendPid>0&&input.backendStart.length>0&&input.backendStart.length<=80,
+      'current-interrupted-receipt');
+  }
+  const client=new Client(options(await getUrl(),input.job.target,interrupted));let lost=false;client.on('error',()=>{lost=true;});
   try{
     await client.connect();demand(client.connection?.stream?.encrypted===true&&client.connection.stream.authorized===true);
     const verify=async()=>{
       demand(!lost);const actual=(await client.query("SELECT current_user AS role,pg_catalog.current_database() AS database,pg_catalog.current_setting('server_version_num')::int/10000 AS major")).rows[0];
       demand(actual.role===input.job.target.user&&actual.database===input.job.target.database&&actual.major===input.job.target.serverMajor);
+      if(interrupted)await requireReadOnlySession(client);
     };await verify();
     const owner=(await client.query('SELECT oid::text,rolcanlogin,rolsuper,rolinherit,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,rolconfig,rolconnlimit,rolvaliduntil FROM pg_catalog.pg_roles WHERE rolname=$1',[input.owner.name])).rows[0];
     demand(owner?.oid===input.owner.oid&&owner.rolconfig===null&&owner.rolconnlimit===-1&&owner.rolvaliduntil===null&&
@@ -186,8 +290,10 @@ export async function observeP2CertificationPhysical(input,{getUrl},expectedProf
     const verifyCurrent=expectedProfile===undefined?verify:async()=>{await verify();await verifyParent();};
     const artifact=await import('./frontend-migration.mjs');
     const prepared={migration:{job:input.job,artifact:artifact.frontendMigrationArtifact(),baseline:input.baseline},plan:{owner:input.owner,producers:input.producers,historicalLogins:input.historicalLogins,targetSha256:input.plan.targetSha256}};
-    const current=await readP2CertificationCurrent(client,prepared,input.plan,verifyCurrent,false,expectedProfile);
+    const current=await readCurrent(client,prepared,input.plan,verifyCurrent,false,expectedProfile,interrupted);
     if(expectedProfile!==undefined)await verifyCurrent();
+    if(interrupted)demand(current.journalSha256===input.receipt.journalSha256&&current.witnessSha256===input.receipt.witnessSha256,
+      'current-interrupted-witness-changed');
     if(closing)demand(current.admission.newWork===false&&current.admission.recovery===false&&current.admission.active===0&&current.admission.uncertain===0);
     return{version:input.version,...selectedProfile,status:closing?'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED':'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED',marker:input.marker,backendPid:input.backendPid,sourceCommit:input.job.sourceCommit,admission:current.admission,journalSha256:current.journalSha256,
       ...(expectedProfile===undefined?{}:{backendStart:input.backendStart,environment:current.environment,releaseId:current.releaseId,targetSha256:current.targetSha256}),
@@ -255,14 +361,16 @@ export async function containP2ProfiledCertificationAdmission(probe,{getUrl}){
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   try{
-    const flags=process.argv.slice(2);demand(flags.length===0||(flags.length===1&&['--profiled-current','--profiled-current-guard-fence'].includes(flags[0])));
+    const flags=process.argv.slice(2);demand(flags.length===0||(flags.length===1&&['--profiled-current','--profiled-current-guard-fence','--profiled-known-ack-interrupted'].includes(flags[0])));
     const raw=readFileSync(0);demand(raw.length>0&&raw.length<=2_000_000);
     const expectedProfile=flags.length?currentProfile:undefined;
     const input=expectedProfile?decodeQualificationTargetJson(raw,'carrier'):JSON.parse(raw);
     const dependencies={getUrl:()=>process.env.FRONTEND_STAGING_MIGRATION_DATABASE_URL};
     const output=flags[0]==='--profiled-current-guard-fence'
       ?await containP2ProfiledCertificationAdmission(input,dependencies)
-      :await observeP2CertificationPhysical(input,dependencies,expectedProfile);
+      :flags[0]==='--profiled-known-ack-interrupted'
+        ?await observeP2ProfiledInterruptedFrontendPhysical(input,dependencies)
+        :await observeP2CertificationPhysical(input,dependencies,expectedProfile);
     console.log(JSON.stringify(output));
   }
   catch{console.error('P2_CERTIFICATION_PHYSICAL_REFUSED');process.exitCode=1;}
