@@ -28,11 +28,16 @@ function canonicalTime(value) {
   return time;
 }
 
-function muxCallbackScope(value, config, info, processBinding, now) {
+function rootAdmissionStorage(file, directory, info) {
+  return file === "/admission/state.json" && directory.uid === 0n && info.uid === 0n;
+}
+
+function muxCallbackScope(value, config, info, processBinding, storageAuthority, now) {
   const directory = lstatSync(dirname(config.admission.file), { bigint: true });
   if (config.appEnv !== "staging" || config.publicHost !== "api-staging.lashher.com" ||
       config.ownerId !== "team_2Hrn5eMZyZxfAWdmYvyKi9t3" || config.projectId !== "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM" ||
       keys(value) !== CALLBACK_KEYS || !directory.isDirectory() || directory.uid !== info.uid ||
+      !storageAuthority(config.admission.file, directory, info) ||
       (directory.mode & 0o022n) !== 0n || (info.mode & 0o022n) !== 0n ||
       value.mountDevice !== String(directory.dev) || value.mountInode !== String(directory.ino) ||
       !matches(SHA, value.gatewayProcessSha256) || value.gatewayProcessSha256 !== processBinding() ||
@@ -99,7 +104,9 @@ export function scopedMuxAcknowledged(scope, status, body) {
 // This is a host fence for the existing Course transport, including requests
 // from historical frontend deployments. It does not replace application auth,
 // the six feature flags, or the later frontend database writer fence (P2-00).
-export function readAdmission(config, { processBinding = readP2GatewayProcessBinding, now = Date.now } = {}) {
+const closedAdmission = () => ({ valid: false, newWork: false, recovery: false });
+
+function readAdmission(config, processBinding, storageAuthority, wall) {
   let descriptor;
   try {
     descriptor = openSync(config.admission.file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -116,16 +123,47 @@ export function readAdmission(config, { processBinding = readP2GatewayProcessBin
       if (keys(value) !== STATE_KEYS) throw new Error();
     } else {
       if (value.version !== 2 || keys(value) !== SCOPED_KEYS || value.newWork || value.recovery) throw new Error();
-      muxCallbackScope(value.muxCallback, config, info, processBinding, now());
+      muxCallbackScope(value.muxCallback, config, info, processBinding, storageAuthority, wall);
       const canonical = JSON.stringify(ordered({ ...value, muxCallback: ordered(value.muxCallback) })) + "\n";
       if (!raw.equals(Buffer.from(canonical))) throw new Error();
     }
     return { valid: true, sha256: createHash("sha256").update(raw).digest("hex"), ...value };
   } catch {
-    return { valid: false, newWork: false, recovery: false };
+    return closedAdmission();
   } finally {
     if (descriptor !== undefined) closeSync(descriptor);
   }
+}
+
+export function createAdmissionReader(config, {
+  processBinding = readP2GatewayProcessBinding, storageAuthority = rootAdmissionStorage,
+  now = Date.now, monotonic = process.hrtime.bigint,
+} = {}) {
+  const windows = new Map();
+  let currentWindow;
+  return () => {
+    const wall = now();
+    const admission = readAdmission(config, processBinding, storageAuthority, wall);
+    if (currentWindow && (!admission.muxCallback || currentWindow.id !== admission.actionId)) {
+      currentWindow.retired = true;
+      currentWindow = undefined;
+    }
+    if (!admission.muxCallback) return admission;
+    const tick = monotonic();
+    let window = windows.get(admission.actionId);
+    if (!window) {
+      if (windows.size >= 16) return closedAdmission();
+      const remaining = Date.parse(admission.muxCallback.expiresAt) - wall;
+      window = { id: admission.actionId, sha256: admission.sha256, deadline: tick + BigInt(remaining) * 1_000_000n, retired: false };
+      windows.set(window.id, window);
+    }
+    if (window.retired || window.sha256 !== admission.sha256 || tick >= window.deadline) {
+      window.retired = true;
+      return closedAdmission();
+    }
+    currentWindow = window;
+    return admission;
+  };
 }
 
 const RECOVERY_ROUTES = new Set([

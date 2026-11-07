@@ -6,7 +6,7 @@ import { createWorkloadVerifier } from "./oidc.mjs";
 import { matchRoute, MinuteBudget, validateConfig } from "./policy.mjs";
 import { createOperationsServer } from "./operations.mjs";
 import {
-  admissionClass, isScopedMuxRoute, readAdmission, scopedMuxAcknowledged, scopedMuxTarget,
+  admissionClass, createAdmissionReader, isScopedMuxRoute, scopedMuxAcknowledged, scopedMuxTarget,
   SCOPED_MUX_BODY_LIMIT, SCOPED_MUX_HEADER,
 } from "./admission.mjs";
 import { createP2CertificationFault } from "./p2-certification-fault.mjs";
@@ -20,7 +20,7 @@ export function createGateway(input, options = {}) {
   const config = validateConfig(input);
   const verify = options.verify ?? createWorkloadVerifier(config);
   const certification = (options.certificationFault ?? createP2CertificationFault)(config);
-  const currentAdmission = () => readAdmission(config, { processBinding: options.scopedMuxProcessBinding });
+  const currentAdmission = createAdmissionReader(config, options.scopedMuxAdmission);
   const budgets = new MinuteBudget(options.limits ?? {
     preauth: 2400, webhook: 600, workload: 1200, service: 600,
   });
@@ -192,7 +192,10 @@ export function createGateway(input, options = {}) {
   return { server, counters, admissionState: () => {
     const { muxCallback, ...state } = config.admission === undefined
       ? { valid: false, newWork: false, recovery: false } : currentAdmission();
-    return { ...state, ...(muxCallback ? { muxCallbackActive: true } : {}), active: { ...admitted }, uncertain: { ...uncertain } };
+    // Older release readers require the ordinary admission flags. A scoped
+    // window cannot be used as evidence that ordinary admission is closed.
+    const scoped = muxCallback ? { valid: false, newWork: null, recovery: null, muxCallbackActive: true } : {};
+    return { ...state, ...scoped, active: { ...admitted }, uncertain: { ...uncertain } };
   } };
 }
 

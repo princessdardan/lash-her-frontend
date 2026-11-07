@@ -10,7 +10,7 @@ import { createGateway } from "./server.mjs";
 import { createPrivateTlsProxy } from "./private-tls.mjs";
 import { createHash } from "node:crypto";
 import { createP2CertificationFault, p2GatewayProcessBinding } from "./p2-certification-fault.mjs";
-import { scopedMuxTarget, SCOPED_MUX_HEADER } from "./admission.mjs";
+import { createAdmissionReader, scopedMuxTarget, SCOPED_MUX_HEADER } from "./admission.mjs";
 
 let folder, key, cert, keyFile, certFile, wrongCertFile;
 before(() => {
@@ -112,8 +112,12 @@ test("scoped Mux admission forwards only the selected managed callback and mints
     actionId: "owned-mux-window", newWork: false, recovery: false, muxCallback: scope };
   const save = value => writeFileSync(file, certificationCanonical(value) + "\n", { mode: 0o644 });
   save(state);
+  const staging = { admission, appEnv: "staging", publicHost: "api-staging.lashher.com",
+    ownerId: "team_2Hrn5eMZyZxfAWdmYvyKi9t3", projectId: "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM" };
+  assert.equal(createAdmissionReader(staging, { processBinding: () => processSha })().valid, false);
   const forwarded = [];
   let processReads = 0, driftOnRecheck = false, dropCourseResponse = false;
+  let wall = start, tick = 0n;
   const backend = createHttpServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -134,12 +138,16 @@ test("scoped Mux admission forwards only the selected managed callback and mints
     server.close(resolve); server.closeAllConnections();
   }))));
   const f = await fixture(t, (_request, response) => response.end(), {
-    admission, publicHost: "api-staging.lashher.com", ownerId: "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
-    projectId: "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM", courseOrigin: `https://127.0.0.1:${proxy.address().port}`,
+    ...staging, courseOrigin: `https://127.0.0.1:${proxy.address().port}`,
   }, {
-    scopedMuxProcessBinding() {
-      processReads++;
-      return driftOnRecheck && processReads % 2 === 0 ? "c".repeat(64) : processSha;
+    scopedMuxAdmission: {
+      processBinding() {
+        processReads++;
+        return driftOnRecheck && processReads % 2 === 0 ? "c".repeat(64) : processSha;
+      },
+      storageAuthority: candidate => candidate === file,
+      now: () => wall,
+      monotonic: () => tick,
     },
   });
   const data = { id: "owned-track", asset_id: scope.assetId,
@@ -175,21 +183,35 @@ test("scoped Mux admission forwards only the selected managed callback and mints
   const canonical = certificationCanonical(state) + "\n";
   writeFileSync(file, canonical.replace('"version":2', '"version":2,"version":2'));
   assert.equal((await f.send(input)).status, 503);
-  save(state); processReads = 0; driftOnRecheck = true;
+  save({ ...state, actionId: "owned-mux-drift" }); processReads = 0; driftOnRecheck = true;
   assert.equal((await f.send(input)).status, 503);
   driftOnRecheck = false;
-  assert.equal(f.admissionState().muxCallbackActive, true);
-  assert.equal(Object.hasOwn(f.admissionState(), "muxCallback"), false);
-  assert.deepEqual(f.admissionState().uncertain, { newWork: 0, recovery: 0 });
+  const observedState = { ...state, actionId: "owned-mux-observed" };
+  save(observedState);
+  const observation = f.admissionState();
+  assert.equal(observation.version, 2);
+  assert.equal(observation.muxCallbackActive, true);
+  assert.equal(observation.valid, false);
+  assert.equal(observation.newWork, null);
+  assert.equal(observation.recovery, null);
+  assert.equal(Object.hasOwn(observation, "muxCallback"), false);
+  assert.deepEqual(observation.uncertain, { newWork: 0, recovery: 0 });
   save({ version: 1, environment: "staging", releaseId: admission.releaseId, candidateSha256: admission.candidateSha256,
-    actionId: "owned-mux-closed", newWork: false, recovery: false });
+    actionId: observedState.actionId, newWork: false, recovery: false });
+  assert.equal((await f.send(input)).status, 503);
+  save(observedState);
+  assert.equal((await f.send(input)).status, 503);
+  save({ ...state, actionId: "owned-mux-clock" });
+  wall = start + 1000;
+  assert.equal(f.admissionState().muxCallbackActive, true);
+  tick = 30_000_000_000n; wall = start;
   assert.equal((await f.send(input)).status, 503);
   assert.equal(forwarded.length, 1);
   save({ version: 1, environment: "staging", releaseId: admission.releaseId, candidateSha256: admission.candidateSha256,
     actionId: "owned-recovery", newWork: false, recovery: true });
   assert.equal((await f.send(input)).status, 200);
   assert.deepEqual(forwarded[1], { path: "/v1/webhooks/mux", target: undefined, signature, body: input.body });
-  save(state); dropCourseResponse = true;
+  save({ ...state, actionId: "owned-mux-lost-ack" }); dropCourseResponse = true;
   assert.equal((await f.send(input)).status, 502);
   assert.equal(forwarded[2].target, `${attemptId}:2`);
   assert.deepEqual(f.admissionState().active, { newWork: 0, recovery: 0 });

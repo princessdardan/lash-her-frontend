@@ -1191,6 +1191,7 @@ class P2CertificationBroker(Broker):
         require(not result.stderr and 0<len(result.stdout)<=16384,'P2_CERTIFICATION_GATEWAY_READBACK_REQUIRED')
         value=json.loads(result.stdout);plan=self.initial['certificationPlan']
         require(value.get('status')=='P2_FAULT_GATEWAY_CURRENT' and value.get('processSha256')==(self.known_ack_new_gateway_process or plan['gatewayProcessSha256']) and
+            value.get('admission', {}).get('valid') is True and
             value.get('gatewayConfigurationSha256')==plan['gatewayConfigurationSha256'] and value.get('faultModuleSha256')==_sha(migrate.read_input(self.source,'ops/gateway/p2-certification-fault.mjs')) and
             value.get('admissionDirectory')=={'device':str(opened.st_dev),'inode':str(opened.st_ino)},'P2_CERTIFICATION_EXACT_GATEWAY_REQUIRED')
         return value
