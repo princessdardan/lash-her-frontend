@@ -73,6 +73,7 @@ jobs:
             --env FRONTEND_MIGRATION_EXPORT_SCHEMA=true --env FRONTEND_MIGRATION_IMAGE_DIGEST \
             --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly" \
             --mount "type=bind,src=$PWD/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/assessment-attempt.mjs,dst=/source/ops/gateway/assessment-attempt.mjs,readonly" \
             --mount "type=bind,src=$PWD/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
             --mount "type=bind,src=$PWD/src,dst=/source/src,readonly" \
@@ -100,6 +101,7 @@ jobs:
             --mount "type=bind,src=$PWD/.git,dst=/source/.git,readonly" \
             --mount "type=bind,src=$PWD/ops/platform,dst=/source/ops/platform,readonly" \
             --mount "type=bind,src=$PWD/ops/gateway/routes.json,dst=/source/ops/gateway/routes.json,readonly" \
+            --mount "type=bind,src=$PWD/ops/gateway/assessment-attempt.mjs,dst=/source/ops/gateway/assessment-attempt.mjs,readonly" \
             --mount "type=bind,src=$PWD/drizzle,dst=/source/drizzle,readonly" \
             --mount "type=bind,src=$PWD/node_modules,dst=/source/node_modules,readonly" \
             --mount "type=bind,src=$PWD/src,dst=/source/src,readonly" \

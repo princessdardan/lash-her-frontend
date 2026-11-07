@@ -4,6 +4,7 @@ import { isUtf8 } from "node:buffer";
 import { dirname } from "node:path";
 import { readP2GatewayProcessBinding } from "./p2-certification-fault.mjs";
 import { interactiveCourseOperation, interactiveCourseStagePermits } from "./operations.mjs";
+import { parseAssessmentAttempt } from "./assessment-attempt.mjs";
 
 const STATE_KEYS = "actionId,candidateSha256,environment,newWork,recovery,releaseId,version";
 const SCOPED_KEYS = "actionId,candidateSha256,environment,muxCallback,newWork,recovery,releaseId,version";
@@ -15,10 +16,11 @@ const INTERACTIVE_TARGET = /^\/course\/v1\/[A-Za-z0-9/_-]+(?:\?[!$%&'()*+,./:;=?
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
 const PROVIDER_ID = /^[A-Za-z0-9_-]{1,255}$/u;
 const SHA = /^[a-f0-9]{64}$/u;
-const INTERACTIVE_STAGES = new Set(["authoring", "media", "learning", "learner-access", "lesson-entry", "lesson-denial", "paid-grant", "paid-revoke"]);
+const INTERACTIVE_STAGES = new Set(["authoring", "media", "learning", "learner-access", "lesson-entry", "lesson-denial", "lesson-assessment", "paid-grant", "paid-revoke"]);
 const EMPTY_SHA = createHash("sha256").update("").digest("hex");
 const INITIAL_LESSON_PROGRESS = Buffer.from('{"event":"lesson_started","expectedProgressRevision":0}');
 const LESSON_DENIAL_RESPONSE = Buffer.from('{"error":{"code":"ACTIVE_ENROLLMENT_REQUIRED","message":"Active enrollment required"}}');
+const ASSESSMENT_PLAYBACK_RESPONSE = Buffer.from('{"error":{"code":"LESSON_NOT_FOUND","message":"Lesson not found"}}');
 const MAX_ORDINARY_STATE = 4096;
 const MAX_INTERACTIVE_STATE = 16_384;
 const ASSET_TYPES = new Set(["video.asset.created", "video.asset.ready", "video.asset.errored", "video.asset.deleted"]);
@@ -101,25 +103,28 @@ function interactiveScope(value, config, info, processBinding, storageAuthority,
     if (tuples.has(tuple)) throw new Error();
     tuples.add(tuple);
   }
-  if (value.stage === "lesson-denial") requireLessonDenialRequests(value.requests);
+  if (value.stage === "lesson-denial" || value.stage === "lesson-assessment") {
+    requireSelectedLessonRequests(value.stage, value.requests);
+  }
 }
 
-function requireLessonDenialRequests(requests) {
+function requireSelectedLessonRequests(stage, requests) {
   const student = "/course/v1/student", coursePrefix = `${student}/courses/`, lessonPrefix = `${student}/lessons/`;
   const [course, lesson] = requests;
   if (!course?.target.startsWith(coursePrefix) || !matches(UUID, course.target.slice(coursePrefix.length)) ||
       !lesson?.target.startsWith(lessonPrefix) || !matches(UUID, lesson.target.slice(lessonPrefix.length))) throw new Error();
   const lessonId = lesson.target.slice(lessonPrefix.length);
-  const expected = [
-    [course.target, 2],
-    [lesson.target, 3],
-    [`${student}/progress?lessonId=${lessonId}`, 3],
-    [`${lesson.target}/quiz`, 3],
-    [`${lesson.target}/quiz/attempts`, 3],
-    [`${lesson.target}/playback`, 1],
-  ];
-  if (requests.length !== expected.length || expected.some(([target, uses], index) =>
-    requests[index].target !== target || requests[index].uses !== uses)) throw new Error();
+  const reads = [course.target, lesson.target, `${student}/progress?lessonId=${lessonId}`,
+    `${lesson.target}/quiz`, `${lesson.target}/quiz/attempts`, `${lesson.target}/playback`];
+  const assessment = stage === "lesson-assessment";
+  const uses = assessment ? [1, 1, 3, 1, 1, 1] : [2, 3, 3, 3, 3, 1];
+  const expected = reads.map((target, index) => ["GET", target, uses[index]]);
+  if (assessment) expected.push(["POST", `${lesson.target}/progress`, 1],
+    ["POST", reads[4], 1], ["POST", reads[4], 1]);
+  if (requests.length !== expected.length || expected.some(([method, target, count], index) =>
+    requests[index].method !== method || requests[index].target !== target || requests[index].uses !== count)) throw new Error();
+  if (assessment && (requests[6].bodySha256 !== digest(INITIAL_LESSON_PROGRESS) ||
+      requests.slice(7).some(row => row.bodySha256 === EMPTY_SHA))) throw new Error();
 }
 
 function hasInteractiveActor(token, actorId) {
@@ -164,8 +169,17 @@ export function selectScopedInteractiveRequest(scope, { method, target, body, he
   if (idempotency !== "" && !matches(/^[A-Za-z0-9._:-]{1,255}$/u, idempotency)) return null;
   const contentType = headers["content-type"];
   if (method !== "GET" && contentType !== "application/json" && (body.length > 0 || contentType !== undefined)) return null;
+  let attempt;
+  if (scope.stage === "lesson-assessment") {
+    if (idempotency !== "" || method === "POST" && contentType !== "application/json") return null;
+    if (method === "POST" && target.endsWith("/quiz/attempts")) {
+      attempt = isUtf8(body) && parseAssessmentAttempt(body.toString("utf8"));
+      if (!attempt) return null;
+    } else if (method === "POST" && !body.equals(INITIAL_LESSON_PROGRESS)) return null;
+  }
   const bodySha256 = digest(body);
-  const requestIndex = scope.requests.findIndex(row => row.method === method && row.target === target && row.bodySha256 === bodySha256);
+  const selectedBodySha256 = attempt ? digest(attempt.template) : bodySha256;
+  const requestIndex = scope.requests.findIndex(row => row.method === method && row.target === target && row.bodySha256 === selectedBodySha256);
   if (requestIndex < 0) return null;
   if (scope.stage === "paid-revoke" && method === "POST" && !scopedPaidRevocation(body, idempotency)) return null;
   if (scope.stage === "lesson-entry" && (idempotency !== "" || (method === "POST" && !body.equals(INITIAL_LESSON_PROGRESS))) ||
@@ -174,7 +188,52 @@ export function selectScopedInteractiveRequest(scope, { method, target, body, he
     digest(applicationToken), digest(idempotency)].join("\n");
   const expected = createHmac("sha256", Buffer.from(scope.key, "hex")).update(message).digest();
   if (!timingSafeEqual(expected, Buffer.from(mac, "hex"))) return null;
-  return { requestId, requestIndex, uses: scope.requests[requestIndex].uses };
+  return { requestId, requestIndex, uses: scope.requests[requestIndex].uses,
+    ...(attempt ? { attemptRequestId: attempt.requestId, quizRevision: attempt.quizRevision } : {}) };
+}
+
+export function lessonAssessmentPhasePermits(selection, evidence) {
+  const { requestIndex, attemptRequestId } = selection;
+  const { acknowledged, used, attemptIds } = evidence;
+  const completedUses = acknowledged.filter(row => row.requestIndex === requestIndex).length;
+  if ((used.get(requestIndex) ?? 0) !== completedUses || (attemptRequestId && attemptIds.has(attemptRequestId))) return false;
+  const completed = acknowledged.length;
+  if (completed < 5) return requestIndex < 5;
+  if (completed < 7) return requestIndex === 5 || requestIndex === 6;
+  return requestIndex === [7, 2, 8, 2][completed - 7];
+}
+
+export function scopedAssessmentAcknowledged(target, status, contentType, body, selection, evidence, actorId) {
+  if (typeof contentType !== "string" || contentType.split(";", 1)[0] !== "application/json" || !isUtf8(body)) return false;
+  const { requestIndex, quizRevision } = selection;
+  if (requestIndex === 5) return status === 404 && body.equals(ASSESSMENT_PLAYBACK_RESPONSE);
+  if (status !== 200) return false;
+  try {
+    const value = JSON.parse(body.toString("utf8"));
+    if (!body.equals(Buffer.from(JSON.stringify(value)))) return false;
+    if (requestIndex === 2 || requestIndex === 6) {
+      if (keys(value) !== "progress") return false;
+      const lessonId = requestIndex === 6 ? target.split("/").at(-2) : target.split("?lessonId=")[1];
+      const expected = requestIndex === 6 ? 1 : evidence.acknowledged.length < 5 ? 0 : evidence.acknowledged.length === 8 ? 2 : 3;
+      const rows = requestIndex === 6 ? [value.progress] : value.progress;
+      if (!Array.isArray(rows) || rows.length !== (expected === 0 ? 0 : 1)) return false;
+      return expected === 0 || rows[0]?.userId === actorId && rows[0].lessonId === lessonId &&
+        rows[0].revision === expected && rows[0].resumePositionSeconds === 0 && rows[0].maxPositionSeconds === 0 &&
+        (expected === 3 ? typeof rows[0].completedAt === "string" && Number.isSafeInteger(rows[0].completedQuizRevision)
+          : rows[0].completedAt === null && rows[0].completedQuizRevision === null);
+    }
+    if (requestIndex === 7 || requestIndex === 8) {
+      const attempt = value?.attempt, passing = requestIndex === 8;
+      return keys(value) === "attempt" && matches(UUID, attempt?.id) && matches(UUID, attempt.quizRevisionId) &&
+        attempt.lessonId === target.split("/").at(-3) && attempt.quizRevision === quizRevision && attempt.mode === "graded" &&
+        attempt.passed === passing && attempt.completed === passing;
+    }
+    if (requestIndex === 4) return keys(value) === "attempts" && Array.isArray(value.attempts) && value.attempts.length === 0;
+    const key = requestIndex === 0 ? "course" : requestIndex === 1 ? "lesson" : "quiz";
+    return keys(value) === key && value[key] !== null && typeof value[key] === "object" && !Array.isArray(value[key]);
+  } catch {
+    return false;
+  }
 }
 
 function acknowledgedMediaRefresh(target, value) {

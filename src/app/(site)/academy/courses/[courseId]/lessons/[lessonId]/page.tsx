@@ -48,7 +48,8 @@ export default async function LessonPage({
   const path =
     lessonHref(courseId, lessonId) +
     (typeof query.course === "string" ? `?course=${query.course}` : "");
-  const prefetch = (await readInteractiveBrowserRequest())?.lessonEntry ? false : undefined;
+  const scope = await readInteractiveBrowserRequest();
+  const prefetch = scope?.lessonEntry || scope?.lessonAssessment ? false : undefined;
   const result = await readLearningPage(async () => {
     const client = getCourseClient();
     const [

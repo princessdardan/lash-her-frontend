@@ -56,7 +56,7 @@ const temporary = await mkdtemp(join(tmpdir(), "lash-learning-browser-"));
 const cluster = join(temporary, "postgres"),
   courseExport = join(temporary, "course");
 const frontendApp = production ? join(temporary, "frontend") : root;
-const scenarios = production ? ["flight"] : ["journey", "conflict", "boundaries"];
+const scenarios = production ? ["flight", "assessment"] : ["journey", "conflict", "boundaries"];
 const signingKey = randomBytes(32).toString("hex"),
   learnerKey = randomBytes(32).toString("hex"),
   authKey = randomBytes(32).toString("hex");
@@ -280,22 +280,22 @@ try {
     ),
   );
   await ready(`${apiOrigin}/health`);
-  const courseAdmin = async (method, path, body) => {
+  const courseRequest = async (method, path, body, { audience, subject, secret, capabilities }) => {
     const now = Math.floor(Date.now() / 1000),
       header = Buffer.from('{"alg":"HS256","typ":"JWT"}').toString("base64url");
     const payload = Buffer.from(
       JSON.stringify({
         version: 1,
         iss: "lash-her-frontend",
-        aud: "lash-her-course-api:admin",
-        sub: "11111111-1111-4111-8111-111111111111",
+        aud: audience,
+        sub: subject,
         iat: now,
         exp: now + 300,
         jti: randomUUID(),
-        capabilities: ["course-editor", "course-support"],
+        ...(capabilities ? { capabilities } : {}),
       }),
     ).toString("base64url");
-    const signature = createHmac("sha256", signingKey)
+    const signature = createHmac("sha256", secret)
       .update(`${header}.${payload}`)
       .digest("base64url");
     const response = await fetch(new URL(path, apiOrigin), {
@@ -303,6 +303,7 @@ try {
       headers: {
         authorization: `Bearer ${header}.${payload}.${signature}`,
         "content-type": "application/json",
+        ...(body?.idempotencyKey ? { "x-idempotency-key": body.idempotencyKey } : {}),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
@@ -312,6 +313,12 @@ try {
       );
     return response.json();
   };
+  const courseAdmin = (method, path, body) => courseRequest(method, path, body, {
+    audience: "lash-her-course-api:admin",
+    subject: "11111111-1111-4111-8111-111111111111",
+    secret: signingKey,
+    capabilities: ["course-editor", "course-support"],
+  });
   const mediaClient = new pg.Client({ connectionString: courseUrl });
   await mediaClient.connect();
   try {
@@ -412,7 +419,7 @@ try {
               ],
             },
           });
-          await mediaClient.query(
+          if (scenario !== "assessment") await mediaClient.query(
             "insert into video_assets(lesson_id,generation,is_current,managed_by_course,provider_environment_id,status,mux_asset_id,mux_playback_id,caption_tracks) values($1,1,true,true,'learning-owned-fixture','ready',$2,$3,'[]'::jsonb)",
             [
               lesson.id,
@@ -421,12 +428,18 @@ try {
             ],
           );
         }
-        await courseAdmin("PATCH", `/v1/admin/courses/${course.id}`, {
+        const published = await courseAdmin("PATCH", `/v1/admin/courses/${course.id}`, {
           expectedRevision: revision,
           status: "published",
         });
-        Object.assign(fixture.scenarios[project][scenario], {
+        const selected = fixture.scenarios[project][scenario];
+        if (scenario === "assessment") await courseRequest(
+          "POST", `/v1/student/courses/${course.id}/enrollments`, { idempotencyKey: randomUUID() },
+          { audience: "lash-her-course-api:learner", subject: selected.users.learner.id, secret: learnerKey },
+        );
+        Object.assign(selected, {
           courseId: course.id,
+          courseRevision: published.course.revision,
           slug,
           lessonIds,
         });
@@ -558,7 +571,7 @@ try {
       "test",
       "--config=playwright.course-learning.config.ts",
       production ? "--grep" : "--grep-invert",
-      "production Academy lesson Flight",
+      "production Academy",
       `--output=${join(resultDirectory, "browser")}`,
     ],
     root,

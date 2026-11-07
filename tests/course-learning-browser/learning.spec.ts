@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Pool } from "pg";
+import type { QuizAttempt } from "@/lib/learning/types";
 import {
   test,
   expect,
@@ -17,6 +18,7 @@ import { setRequiredOnlyCookieConsent } from "../support/required-only-cookie-co
 type State = Awaited<ReturnType<BrowserContext["storageState"]>>;
 type Scenario = {
   courseId: string;
+  courseRevision: number;
   slug: string;
   lessonIds: { practice: string; graded: string };
   users: Record<"learner" | "other", { id: string; storage: State }>;
@@ -187,7 +189,9 @@ const lessonPath = (
   mode: "practice" | "graded" = "practice",
 ) => `/academy/courses/${value.courseId}/lessons/${value.lessonIds[mode]}`;
 const readOwnedGatewayJournal = () => readFileSync(owned().gatewayJournal, "utf8").trim().split("\n").filter(Boolean)
-  .map(line => JSON.parse(line) as { method: string; target: string; status: number; requestId?: string; canonicalDenial?: boolean });
+  .map(line => JSON.parse(line) as {
+    method: string; target: string; status: number; requestId?: string; canonicalDenial?: boolean; canonicalNoMedia?: boolean;
+  });
 async function enroll(page: Page, value: Scenario) {
   const start = readOwnedGatewayJournal().length;
   const catalog = `/course/v1/courses/${value.slug}`;
@@ -279,7 +283,7 @@ async function answer(page: Page, correct: boolean) {
     .getByRole("button", { name: "Submit answers", exact: true })
     .click();
 }
-async function revoke(value: Scenario) {
+function courseAdminBearer(capability: "course-editor" | "course-support") {
   const now = Math.floor(Date.now() / 1000);
   const header = Buffer.from('{"alg":"HS256","typ":"JWT"}').toString(
     "base64url",
@@ -293,19 +297,22 @@ async function revoke(value: Scenario) {
       iat: now,
       exp: now + 300,
       jti: randomUUID(),
-      capabilities: ["course-support"],
+      capabilities: [capability],
     }),
   ).toString("base64url");
   const signature = createHmac("sha256", owned().adminKey)
     .update(`${header}.${payload}`)
     .digest("base64url");
+  return `Bearer ${header}.${payload}.${signature}`;
+}
+async function revoke(value: Scenario) {
   const idempotencyKey = randomUUID();
   const response = await fetch(
     new URL("/v1/admin/entitlements/revocations", owned().apiOrigin),
     {
       method: "POST",
       headers: {
-        authorization: `Bearer ${header}.${payload}.${signature}`,
+        authorization: courseAdminBearer("course-support"),
         "x-idempotency-key": idempotencyKey,
         "content-type": "application/json",
       },
@@ -320,6 +327,140 @@ async function revoke(value: Scenario) {
   );
   expect(response.ok).toBe(true);
 }
+
+async function advanceOwnedQuizRevision(value: Scenario) {
+  const course = `/v1/admin/courses/${value.courseId}`;
+  const quizPath = `/v1/admin/lessons/${value.lessonIds.graded}/quiz`;
+  const edit = async (method: string, path: string, body?: unknown) => {
+    const response = await fetch(new URL(path, owned().apiOrigin), {
+      method,
+      headers: { authorization: courseAdminBearer("course-editor"), "content-type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  const initial = (await edit("GET", quizPath)).quiz;
+  const draft = (await edit("PATCH", course, { expectedRevision: value.courseRevision, status: "draft" })).course;
+  expect(draft).toMatchObject({ status: "draft", revision: value.courseRevision + 1 });
+  const document = structuredClone(initial.document);
+  document.questions[0].prompt += " Reviewed revision two.";
+  const revised = (await edit("PUT", quizPath, { expectedCourseRevision: draft.revision, document })).quiz;
+  expect(revised).toMatchObject({ revision: initial.revision + 1, courseRevision: draft.revision + 1 });
+  const published = (await edit("PATCH", course, { expectedRevision: revised.courseRevision, status: "published" })).course;
+  expect(published).toMatchObject({ status: "published", revision: revised.courseRevision + 1 });
+  return revised.revision;
+}
+
+test("production Academy graded assessment fail, pass and stale form", async ({ browser }, info) => {
+  test.skip(!production, "Requires the owned Next production build.");
+  const value = scenario(info.project.name, "assessment");
+  const lessonId = value.lessonIds.graded;
+  const pathname = lessonPath(value, "graded");
+  const lessonApi = `/api/academy/lessons/${lessonId}`;
+  const progressApi = `/api/academy/progress?lessonId=${lessonId}`;
+  const attemptApi = `${lessonApi}/quiz/attempts`;
+  const context = await contextFor(browser, value.users.learner.storage);
+  const page = await context.newPage();
+  const gatewayOffset = readOwnedGatewayJournal().length;
+  const upstreamLesson = `/course/v1/student/lessons/${lessonId}`;
+  const upstream = [`/course/v1/student/courses/${value.courseId}`, upstreamLesson,
+    `/course/v1/student/progress?lessonId=${lessonId}`, `${upstreamLesson}/quiz`, `${upstreamLesson}/quiz/attempts`,
+    `${upstreamLesson}/playback`, `${upstreamLesson}/progress`];
+  const waitFor = (target: string, method: string) => page.waitForResponse(response =>
+    response.url() === owned().origin + target && response.request().method() === method);
+  const readState = async () => (await coursePool!.query(
+    `select
+       (select jsonb_agg(to_jsonb(p) order by p.id) from lesson_progress p where p.lesson_id=$1 and p.user_id=$2) as progress,
+       (select jsonb_agg(to_jsonb(a) order by a.id) from quiz_attempts a where a.lesson_id=$1 and a.user_id=$2) as attempts,
+       (select count(*)::int from video_assets v where v.lesson_id=$1) as assets`,
+    [lessonId, value.users.learner.id],
+  )).rows[0];
+  try {
+    expect(await readState()).toEqual({ progress: null, attempts: null, assets: 0 });
+    const [playback, started, document] = await Promise.all([
+      waitFor(`${lessonApi}/playback`, "GET"), waitFor(`${lessonApi}/progress`, "POST"), page.goto(pathname),
+    ]);
+    expect(document?.status()).toBe(200);
+    expect(playback.status()).toBe(404);
+    expect(await playback.json()).toMatchObject({ error: { code: "not_found" } });
+    expect(started.status()).toBe(200);
+    expect(started.request().postDataJSON()).toEqual({ event: "lesson_started", expectedProgressRevision: 0 });
+    const initial = (await started.json()).progress;
+    expect(initial).toMatchObject({ revision: 1, completedAt: null, maxPositionSeconds: 0, resumePositionSeconds: 0 });
+    await expect(page.getByRole("heading", { name: "Check your understanding", exact: true })).toBeVisible();
+
+    const attempts: { attempt: QuizAttempt; payloadRequestId: string; requestId: string; progressRequestId: string }[] = [];
+    for (const passed of [false, true]) {
+      if (passed) await page.getByRole("button", { name: "Try again", exact: true }).click();
+      const [saved, refresh] = await Promise.all([waitFor(attemptApi, "POST"), waitFor(progressApi, "GET"), answer(page, passed)]);
+      expect(saved.status()).toBe(200);
+      expect(refresh.status()).toBe(200);
+      const submitted = saved.request().postDataJSON();
+      const expectedAnswers = [{ questionId: "q1", optionId: passed ? "gentle" : "pull" },
+        { questionId: "q2", optionId: passed ? "anytime" : "never" }];
+      expect(submitted).toEqual({ quizRevision: 1, requestId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u), answers: expectedAnswers });
+      const attempt = (await saved.json()).attempt;
+      expect(attempt).toMatchObject({ quizRevision: 1, mode: "graded", passingPercent: 80, answers: expectedAnswers,
+        correctCount: passed ? 2 : 0, totalCount: 2, passed, completed: passed });
+      expect((await refresh.json()).progress).toEqual([expect.objectContaining({
+        id: initial.id, enrollmentId: initial.enrollmentId, revision: passed ? 3 : 2,
+        completedAt: passed ? attempt.createdAt : null, completedQuizRevision: passed ? 1 : null,
+        maxPositionSeconds: 0, resumePositionSeconds: 0,
+      })]);
+      await expect(page.getByRole("heading", { name: passed ? "Assessment passed" : "Keep practising", exact: true })).toBeVisible();
+      attempts.push({ attempt, payloadRequestId: submitted.requestId, requestId: saved.headers()["x-request-id"],
+        progressRequestId: refresh.headers()["x-request-id"] });
+    }
+    expect(new Set(attempts.map(row => row.payloadRequestId)).size).toBe(2);
+    await expect(page.getByText("Lesson complete. Progress saved.", { exact: true })).toBeVisible();
+    await expect(page.locator("mux-player")).toHaveCount(0);
+    const persisted = await readState();
+    expect(persisted.progress).toEqual([expect.objectContaining({ id: initial.id, revision: 3, completed_quiz_revision: 1 })]);
+    expect(persisted.attempts).toEqual(expect.arrayContaining(attempts.map(({ attempt, payloadRequestId }) =>
+      expect.objectContaining({ id: attempt.id, request_id: payloadRequestId, quiz_revision_id: attempt.quizRevisionId,
+        enrollment_id: initial.enrollmentId, correct_count: attempt.correctCount, passed: attempt.passed, completed: attempt.completed }))));
+    expect(persisted.attempts).toHaveLength(2);
+    const selectedRows = () => readOwnedGatewayJournal().slice(gatewayOffset).filter(row => upstream.includes(row.target));
+    const rows = selectedRows();
+    const indexes = rows.map(row => row.method === "POST" && row.target.endsWith("/attempts") ?
+      (row.requestId === attempts[0].requestId ? 7 : 8) : upstream.indexOf(row.target));
+    expect(rows).toHaveLength(11);
+    expect(indexes.slice(0, 5).sort()).toEqual([0, 1, 2, 3, 4]);
+    expect(indexes.slice(5, 7).sort()).toEqual([5, 6]);
+    expect(indexes.slice(7)).toEqual([7, 2, 8, 2]);
+    expect(rows.every((row, index) => row.status === (indexes[index] === 5 ? 404 : 200))).toBe(true);
+    expect(rows.find(row => row.target.endsWith("/playback"))?.canonicalNoMedia).toBe(true);
+    expect(rows[indexes.indexOf(5)].requestId).toBe(playback.headers()["x-request-id"]);
+    expect(rows[indexes.indexOf(6)].requestId).toBe(started.headers()["x-request-id"]);
+    expect(rows.slice(7).map(row => row.requestId)).toEqual(attempts.flatMap(row => [row.requestId, row.progressRequestId]));
+
+    const currentRevision = await advanceOwnedQuizRevision(value);
+    expect(currentRevision).toBe(2);
+    await page.getByRole("button", { name: "Try again", exact: true }).click();
+    const [stale] = await Promise.all([waitFor(attemptApi, "POST"), answer(page, false)]);
+    expect(stale.status()).toBe(409);
+    expect(await stale.json()).toMatchObject({ error: { code: "conflict" } });
+    const staleBody = stale.request().postDataJSON();
+    expect(staleBody.quizRevision).toBe(1);
+    expect(attempts.map(row => row.payloadRequestId)).not.toContain(staleBody.requestId);
+    await expect(page.getByRole("button", { name: "Load the latest assessment", exact: true })).toBeVisible();
+    expect(await readState()).toEqual(persisted);
+    expect(selectedRows().slice(11)).toEqual([expect.objectContaining({
+      method: "POST", target: `${upstreamLesson}/quiz/attempts`, status: 409,
+    })]);
+    const currentProgress = await progress(page, lessonId);
+    expect(currentProgress).toMatchObject({ id: initial.id, revision: 3, completedAt: null });
+    expect(await readState()).toEqual(persisted);
+    await writeFile(info.outputPath("assessment.json"), JSON.stringify({
+      indexes, noMedia: true, progressRevisions: [1, 2, 3], failedScore: 0, passedScore: 2,
+      stale: { status: stale.status(), priorRevision: staleBody.quizRevision, currentRevision,
+        unchanged: true, currentRevisionCompletion: currentProgress.completedAt },
+    }, null, 2) + "\n", { mode: 0o600 });
+  } finally {
+    await close(context);
+  }
+});
 
 async function verifyProductionLessonDenial(browser: Browser, value: Scenario) {
   const pathname = lessonPath(value);

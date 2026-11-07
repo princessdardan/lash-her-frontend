@@ -7,7 +7,7 @@ const phases = new Set([
   "actual-protected-route", "initial-http-status", "initial-probe-binding", "auth-and-mode-refusal",
   "feature-control-refusal", "open-ledger-and-source-refusal", "read-only-postconditions",
 ]);
-const modules = ["ops/gateway/routes.json", "contracts/api-integration/v1/course-api.json", "contracts/api-integration/v1/community-api.json",
+const modules = ["ops/gateway/routes.json", "ops/gateway/assessment-attempt.mjs", "contracts/api-integration/v1/course-api.json", "contracts/api-integration/v1/community-api.json",
   "contracts/api-integration/p2-candidate/course-api.json", "contracts/api-integration/p2-candidate/community-api.json"];
 const transportCodes = new Set(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "EHOSTUNREACH", "EACCES", "EPERM", "EPROTO",
   "DEPTH_ZERO_SELF_SIGNED_CERT", "SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "CERT_HAS_EXPIRED", "ERR_TLS_CERT_ALTNAME_INVALID"]);

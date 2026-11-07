@@ -815,6 +815,150 @@ test("scoped lesson denial fences every noncanonical upstream response without e
   }
 });
 
+function lessonAssessmentFixtureRequests() {
+  const selected = lessonDenialFixtureRequests();
+  const { targets: reads, lesson } = selected;
+  const quizRevision = 3;
+  const answers = ["try-again", "correct"].map(optionId => [{ questionId: "q.1", optionId }]);
+  const payloadIds = [1, 2].map(number => `40000000-0000-4000-8000-${String(number).padStart(12, "0")}`);
+  const attempts = answers.map((answer, index) => JSON.stringify({ quizRevision, requestId: payloadIds[index], answers: answer }));
+  const start = '{"event":"lesson_started","expectedProgressRevision":0}';
+  const targets = [...reads, `${lesson}/progress`, reads[4], reads[4]];
+  const hashes = [...reads.map(() => certificationHash("")), certificationHash(start),
+    ...answers.map(answer => certificationHash(JSON.stringify({ quizRevision, answers: answer })))];
+  const requests = targets.map((target, index) => ({
+    method: index < 6 ? "GET" : "POST", target, bodySha256: hashes[index], uses: index === 2 ? 3 : 1,
+  }));
+  return { ...selected, requests, targets, quizRevision, answers, payloadIds, attempts, start };
+}
+
+test("scoped lesson assessment enforces the exact phase and allows only new browser IDs on reviewed templates", async t => {
+  const { courseId, lessonId, foreignId, lesson, requests, targets, quizRevision, payloadIds, attempts, start } = lessonAssessmentFixtureRequests();
+  const actorId = "10000000-0000-4000-8000-000000000001";
+  const progress = revision => ({ userId: actorId, lessonId, revision, maxPositionSeconds: 0, resumePositionSeconds: 0,
+    completedAt: revision === 3 ? "2026-11-07T14:00:00.000Z" : null, completedQuizRevision: revision === 3 ? quizRevision : null });
+  const forwarded = [];
+  let progressReads = 0, submitted = 0;
+  const refreshing = Promise.withResolvers(), refresh = Promise.withResolvers();
+  const f = await interactiveFixture(t, requests, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const target = `/course${req.url}`, body = Buffer.concat(chunks).toString();
+    forwarded.push({ target, body, method: req.method, proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+    const index = targets.indexOf(target);
+    let response;
+    if (req.method === "POST" && index === 4) {
+      const passed = ++submitted === 2;
+      response = { attempt: { id: `50000000-0000-4000-8000-00000000000${submitted}`, lessonId,
+        quizRevisionId: "60000000-0000-4000-8000-000000000001", quizRevision, mode: "graded", passed, completed: passed } };
+    } else if (index === 2) {
+      progressReads++;
+      if (progressReads === 2) {
+        refreshing.resolve();
+        await refresh.promise;
+      }
+      response = { progress: progressReads === 1 ? [] : [progress(progressReads)] };
+    } else {
+      response = [{ course: { id: courseId } }, { lesson: { id: lessonId } }, null, { quiz: { lessonId, revision: quizRevision } },
+        { attempts: [] }, { error: { code: "LESSON_NOT_FOUND", message: "Lesson not found" } }, { progress: progress(1) }][index];
+    }
+    res.writeHead(index === 5 ? 404 : 200, { "content-type": "application/json", "cache-control": "public", "retry-after": "11" });
+    res.end(JSON.stringify(response));
+  }, "lesson-assessment");
+  t.after(refresh.resolve);
+  for (const invalid of [
+    requests.slice(0, 8), [requests[1], requests[0], ...requests.slice(2)],
+    requests.map((row, index) => index === 1 ? { ...row, target: row.target.replace(lessonId, foreignId) } : row),
+    requests.map((row, index) => index === 2 ? { ...row, uses: 4 } : row),
+    requests.map((row, index) => index === 6 ? { ...row, bodySha256: certificationHash("malformed") } : row),
+    requests.map((row, index) => index === 7 ? { ...row, bodySha256: certificationHash("") } : row),
+    requests.map((row, index) => index === 8 ? requests[7] : row),
+  ]) {
+    f.save({ ...f.state, interactive: { ...f.state.interactive, requests: invalid } });
+    assert.equal(createAdmissionReader(f.staging, f.options)().valid, false);
+  }
+  f.save(f.state);
+  const read = index => f.signed({ path: targets[index] });
+  const write = (index, body) => f.signed({ method: "POST", path: targets[index], body });
+  const refused = async input => assert.equal((await f.send(input)).status, 503);
+  const acknowledge = async (index, input = read(index)) => {
+    const result = await f.send(input);
+    assert.equal(result.status, index === 5 ? 404 : 200);
+    assert.equal(result.headers["cache-control"], "private, no-store");
+    assert.equal(result.headers["retry-after"], undefined);
+  };
+  await refused(write(7, attempts[0]));
+  await refused(write(6, start));
+  await refused(f.signed({ path: targets[0], actor: foreignId }));
+  await refused(f.signed({ path: targets[0].replace(courseId, foreignId) }));
+  await refused(f.signed({ path: targets[2].replace(lessonId, foreignId) }));
+  await refused(f.signed({ path: `${targets[2]}&limit=1` }));
+  await refused(read(5));
+  await Promise.all([3, 4, 2, 1, 0].map(index => acknowledge(index)));
+  await refused(write(7, attempts[0]));
+  await refused(write(6, start.replace(":0", ":1")));
+  await Promise.all([acknowledge(6, write(6, start)), acknowledge(5)]);
+  await refused(write(8, attempts[1]));
+  await refused(read(2));
+  for (const invalid of [
+    attempts[0].replace('"quizRevision":3', '"quizRevision":4'),
+    attempts[0].replace('"try-again"', '"third"'),
+    attempts[0].replace('"questionId":"q.1"', '"extra":"x","questionId":"q.1"'),
+    attempts[0].replace('"quizRevision":3', '"quizRevision":2,"quizRevision":3'),
+    attempts[0].replace(payloadIds[0], payloadIds[0].replace("-4000-", "-5000-")),
+    attempts[0].replace("}", " }"),
+  ]) await refused(write(7, invalid));
+  const mac = write(7, attempts[0]);
+  await refused({ ...mac, body: attempts[0].replace(payloadIds[0], payloadIds[1]) });
+  await refused(f.signed({ method: "POST", path: `${lesson}/quiz/attempts`, body: attempts[0], idempotency: "owned" }));
+  await acknowledge(7, mac);
+  await refused(mac);
+  await refused(write(8, attempts[1]));
+  const progressResponse = acknowledge(2);
+  await refreshing.promise;
+  try {
+    await refused(read(2));
+    await refused(write(8, attempts[1]));
+  } finally { refresh.resolve(); }
+  await progressResponse;
+  await refused(write(8, attempts[1].replace(payloadIds[1], payloadIds[0])));
+  await acknowledge(8, write(8, attempts[1]));
+  await acknowledge(2);
+  await refused(read(2));
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.equal(observed.interactiveEvidence.admitted, 11);
+  const acknowledged = observed.interactiveEvidence.acknowledged;
+  assert.deepEqual(acknowledged.slice(0, 5).map(row => row.requestIndex).sort(), [0, 1, 2, 3, 4]);
+  assert.deepEqual(acknowledged.slice(5, 7).map(row => row.requestIndex).sort(), [5, 6]);
+  assert.deepEqual(acknowledged.slice(7).map(row => row.requestIndex), [7, 2, 8, 2]);
+  assert.deepEqual(acknowledged.filter(row => row.upstreamStatus !== 200).map(row => [row.requestIndex, row.upstreamStatus]), [[5, 404]]);
+  assert.equal(forwarded.length, 11);
+  assert.ok(forwarded.every(row => row.proof === undefined));
+  assert.deepEqual(forwarded.filter(row => row.method === "POST").map(row => row.body), [start, ...attempts]);
+});
+
+test("scoped lesson assessment fences unexpected playback instead of forwarding upstream private output", async t => {
+  const { requests, targets } = lessonAssessmentFixtureRequests();
+  const f = await interactiveFixture(t, requests, (req, res) => {
+    const index = targets.indexOf(`/course${req.url}`);
+    res.writeHead(200, { "content-type": "application/json", "retry-after": "31" });
+    res.end(JSON.stringify([{ course: {} }, { lesson: {} }, { progress: [] }, { quiz: {} }, { attempts: [] },
+      { playbackToken: "private-unexpected-output" }][index]));
+  }, "lesson-assessment");
+  for (const path of targets.slice(0, 5)) assert.equal((await f.send(f.signed({ path }))).status, 200);
+  const output = await f.send(f.signed({ path: targets[5] }));
+  assert.equal(output.status, 502);
+  assert.equal(output.headers["retry-after"], undefined);
+  assert.deepEqual(JSON.parse(output.body), { error: { code: "upstream_unavailable", message: "upstream unavailable" },
+    requestId: output.headers["x-request-id"] });
+  const observed = f.admissionState();
+  assert.deepEqual(observed.uncertain, { newWork: 1, recovery: 0 });
+  assert.equal(observed.interactiveEvidence.admitted, 6);
+  assert.equal(observed.interactiveEvidence.acknowledged.length, 5);
+});
+
 test("scoped paid grant acknowledges the reviewed owner mutation and exact command and grant readbacks", async t => {
   const fixtureId = number => `20000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
   const [courseId, userId, key, commandId, grantId, enrollmentId, foreignId] = [1, 2, 3, 4, 5, 6, 7].map(fixtureId);

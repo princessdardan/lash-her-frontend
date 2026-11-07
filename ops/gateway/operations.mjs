@@ -59,8 +59,9 @@ const interactiveCourseParameters = {
 const courseUuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u;
 const learnerAccessPath = /^\/course\/v1\/student\/(?:courses\/[^/]+|lessons\/[^/]+(?:\/(?:playback|quiz(?:\/attempts)?))?)$/u;
 const learnerAccessProgress = /^\/course\/v1\/student\/progress\?(?:courseId|lessonId)=([a-f0-9-]+)$/u;
-const lessonDenialProgress = /^\/course\/v1\/student\/progress\?lessonId=([a-f0-9-]+)$/u;
+const selectedLessonProgress = /^\/course\/v1\/student\/progress\?lessonId=([a-f0-9-]+)$/u;
 const lessonEntryProgress = /^\/course\/v1\/student\/lessons\/[^/]+\/progress$/u;
+const lessonAssessmentAttempt = /^\/course\/v1\/student\/lessons\/[^/]+\/quiz\/attempts$/u;
 const authoringCourseDetail = /^\/course\/v1\/admin\/courses\/[^/]+$/u;
 const paidRevokeCommands = /^\/course\/v1\/admin\/entitlements\/commands\?idempotencyKey=owner-paid-revoke%3A([a-f0-9-]+)&limit=2$/u;
 const paidRevokeGrants = /^\/course\/v1\/admin\/entitlements\/grants\?grantId=([a-f0-9-]+)&userId=([a-f0-9-]+)&courseId=([a-f0-9-]+)&limit=2$/u;
@@ -93,11 +94,14 @@ export function interactiveCourseStagePermits(stage, method, target) {
   }
   if (stage === group && stage !== "catalog") return true;
   if (stage === "lesson-entry" && group === "learning" && method === "POST") return path === target && lessonEntryProgress.test(path);
+  if (stage === "lesson-assessment" && group === "learning" && method === "POST") {
+    return path === target && (lessonEntryProgress.test(path) || lessonAssessmentAttempt.test(path));
+  }
   if (method !== "GET") return false;
   if (stage === "media") return group === "authoring";
   if (stage === "learning") return group === "catalog";
-  if (stage === "lesson-denial" && group === "learning") {
-    const lessonId = lessonDenialProgress.exec(target)?.[1];
+  if ((stage === "lesson-denial" || stage === "lesson-assessment") && group === "learning") {
+    const lessonId = selectedLessonProgress.exec(target)?.[1];
     return path === target && learnerAccessPath.test(path) || lessonId !== undefined && courseUuid.test(lessonId);
   }
   if ((stage === "learner-access" || stage === "lesson-entry") && group === "learning") {

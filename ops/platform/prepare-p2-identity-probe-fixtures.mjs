@@ -69,6 +69,7 @@ const DEPENDENCY_ROOTS = Object.freeze(["ops/gateway", "tools/api-contract-toolc
 const RECOVERY_MOUNTS = Object.freeze([
   Object.freeze({ source: "ops/platform", target: "/source/ops/platform", kind: "directory" }),
   Object.freeze({ source: "ops/gateway/routes.json", target: "/source/ops/gateway/routes.json", kind: "file" }),
+  Object.freeze({ source: "ops/gateway/assessment-attempt.mjs", target: "/source/ops/gateway/assessment-attempt.mjs", kind: "file" }),
   Object.freeze({ source: "drizzle", target: "/source/drizzle", kind: "directory" }),
   Object.freeze({ source: "node_modules", target: "/source/node_modules", kind: "directory" }),
   Object.freeze({ source: "src", target: "/source/src", kind: "directory" }),

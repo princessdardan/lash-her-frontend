@@ -215,6 +215,17 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   const lessonDenial = evidence("lesson-denial", denialRoute, issued, lessonSelector);
   await inBrowser(lessonDenial.cookie, lessonDenial.proxyProof,
     () => send({ method: "GET", path: denialProgress, applicationToken }), denialRoute);
+  const attemptTarget = `${selectedLesson}/quiz/attempts`, attemptRoute = `POST /api/academy/lessons/${lessonId}/quiz/attempts`;
+  const assessment = evidence("lesson-assessment", attemptRoute, issued, lessonSelector);
+  const assessmentPage = evidence("lesson-assessment", lessonEntryRoute, issued, lessonSelector);
+  const assessmentRead = evidence("lesson-assessment", denialRoute, issued, lessonSelector);
+  const attemptBody = '{"quizRevision":2,"requestId":"8284af5b-324d-45d9-b460-f97dc59b6d9b","answers":[{"questionId":"q","optionId":"a"}]}';
+  await inBrowser(assessment.cookie, assessment.proxyProof,
+    () => send({ method: "POST", path: attemptTarget, body: attemptBody, applicationToken }), attemptRoute);
+  await inBrowser(assessmentPage.cookie, assessmentPage.proxyProof,
+    () => send({ method: "GET", path: attemptTarget, applicationToken }), lessonEntryRoute);
+  await inBrowser(assessmentRead.cookie, assessmentRead.proxyProof,
+    () => send({ method: "GET", path: denialProgress, applicationToken }), denialRoute);
   const expected = [
     { stage: "learning", method: "GET", target: "/course/v1/student/courses?cursor=caf%C3%A9&kind=%27", bytes: ["", applicationToken, ""] },
     { stage: "learning", method: "POST", target: "/course" + enrollmentPath, bytes: [enrollmentBody, applicationToken, enrollmentKey] },
@@ -228,6 +239,9 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
     { stage: "lesson-entry", method: "GET", target: "/course" + selectedLesson, bytes: ["", applicationToken, ""] },
     { stage: "lesson-entry", method: "POST", target: "/course" + lessonProgress, bytes: [startBody, applicationToken, ""] },
     { stage: "lesson-denial", method: "GET", target: "/course" + denialProgress, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-assessment", method: "POST", target: "/course" + attemptTarget, bytes: [attemptBody, applicationToken, ""] },
+    { stage: "lesson-assessment", method: "GET", target: "/course" + attemptTarget, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-assessment", method: "GET", target: "/course" + denialProgress, bytes: ["", applicationToken, ""] },
   ];
   for (const [index, { stage, method, target, bytes }] of expected.entries()) {
     const { url, headers } = captured[index];
@@ -260,6 +274,14 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   const deniedQuery = evidence("lesson-denial", denialRoute.replace(lessonId, learnerCourse), issued, lessonSelector);
   await inBrowser(deniedQuery.cookie, deniedQuery.proxyProof,
     () => send({ method: "GET", path: denialProgress, applicationToken }), denialRoute.replace(lessonId, learnerCourse));
+  await inBrowser(assessment.cookie, assessment.proxyProof,
+    () => send({ method: "POST", path: attemptTarget, body: attemptBody.replace('"quizRevision":2', '"quizRevision":1,"quizRevision":2'), applicationToken }), attemptRoute);
+  await inBrowser(assessment.cookie, assessment.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: startBody, applicationToken }), attemptRoute);
+  await inBrowser(assessmentPage.cookie, assessmentPage.proxyProof,
+    () => send({ method: "GET", path: `${selectedLesson}/playback`, applicationToken }), lessonEntryRoute);
+  await inBrowser(assessmentRead.cookie, assessmentRead.proxyProof,
+    () => send({ method: "GET", path: attemptTarget, applicationToken }), denialRoute);
   await request();
   await inBrowser(learning.cookie, undefined, request);
   await inBrowser(learning.cookie, `${learning.proxyProof}x`, request);
@@ -279,6 +301,6 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   process.env.VERCEL_URL = deployment;
   process.env.API_GATEWAY_STAGING_ORIGIN = "https://different.example.test";
   await inBrowser(learning.cookie, learning.proxyProof, request);
-  assert.equal(captured.length, expected.length + 18);
+  assert.equal(captured.length, expected.length + 22);
   assert.ok(captured.slice(expected.length).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
 });

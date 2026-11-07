@@ -6,7 +6,8 @@ import { createWorkloadVerifier } from "./oidc.mjs";
 import { matchRoute, MinuteBudget, validateConfig } from "./policy.mjs";
 import { createOperationsServer } from "./operations.mjs";
 import {
-  admissionClass, createAdmissionReader, isScopedMuxRoute, scopedInteractiveAcknowledged, scopedMuxAcknowledged,
+  admissionClass, createAdmissionReader, isScopedMuxRoute, lessonAssessmentPhasePermits, scopedAssessmentAcknowledged,
+  scopedInteractiveAcknowledged, scopedMuxAcknowledged,
   selectScopedInteractiveRequest, selectScopedMuxCallback, SCOPED_INTERACTIVE_HEADER, SCOPED_MUX_BODY_LIMIT, SCOPED_MUX_HEADER,
 } from "./admission.mjs";
 import { createP2CertificationFault } from "./p2-certification-fault.mjs";
@@ -140,16 +141,19 @@ export function createGateway(input, options = {}) {
           method: req.method, target: req.url, body, headers: req.headers, now: admissionNow(),
         });
         if (!interactiveSelection) return refuse(503, "release_maintenance", 30);
+        const assessment = current.interactive.stage === "lesson-assessment";
         interactiveEvidence = scopedInteractiveEvidence.get(current.sha256);
         if (!interactiveEvidence) {
-          interactiveEvidence = { ids: new Set(), used: new Map(), acknowledged: [] };
+          interactiveEvidence = { ids: new Set(), used: new Map(), acknowledged: [], ...(assessment ? { attemptIds: new Set() } : {}) };
           scopedInteractiveEvidence.set(current.sha256, interactiveEvidence);
         }
         const used = interactiveEvidence.used.get(interactiveSelection.requestIndex) ?? 0;
-        if (interactiveEvidence.ids.has(interactiveSelection.requestId) || used >= interactiveSelection.uses) {
+        if (interactiveEvidence.ids.has(interactiveSelection.requestId) || used >= interactiveSelection.uses ||
+            (assessment && !lessonAssessmentPhasePermits(interactiveSelection, interactiveEvidence))) {
           return refuse(503, "release_maintenance", 30);
         }
         interactiveEvidence.ids.add(interactiveSelection.requestId);
+        if (interactiveSelection.attemptRequestId) interactiveEvidence.attemptIds.add(interactiveSelection.attemptRequestId);
         interactiveEvidence.used.set(interactiveSelection.requestIndex, used + 1);
         interactiveRequest = true;
         // Catalog, playback and other scoped GETs are part of the same drain.
@@ -206,17 +210,22 @@ export function createGateway(input, options = {}) {
             }
             if (interactiveSelection) {
               const stage = interactiveAdmission.interactive.stage;
-              if (!scopedInteractiveAcknowledged(route, req.url, reply.statusCode, reply.headers["content-type"], buffered, stage)) {
+              const assessment = stage === "lesson-assessment";
+              const acknowledged = assessment
+                ? scopedAssessmentAcknowledged(req.url, reply.statusCode, reply.headers["content-type"], buffered,
+                  interactiveSelection, interactiveEvidence, interactiveAdmission.interactive.actorId)
+                : scopedInteractiveAcknowledged(route, req.url, reply.statusCode, reply.headers["content-type"], buffered, stage);
+              if (!acknowledged) {
                 markUncertain();
-                if (stage === "lesson-denial") {
+                if (stage === "lesson-denial" || assessment) {
                   refuse(502, "upstream_unavailable");
                   return resolve();
                 }
               } else {
                 interactiveEvidence.acknowledged.push({ requestId, proofRequestId: interactiveSelection.requestId,
                   requestIndex: interactiveSelection.requestIndex, upstreamStatus: reply.statusCode });
-                if (stage === "lesson-denial") {
-                  res.writeHead(403, { "content-type": "application/json; charset=utf-8", "cache-control": "private, no-store" });
+                if (stage === "lesson-denial" || assessment) {
+                  res.writeHead(reply.statusCode, { "content-type": "application/json; charset=utf-8", "cache-control": "private, no-store" });
                   res.end(buffered);
                   return resolve();
                 }

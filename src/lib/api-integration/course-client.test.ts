@@ -169,6 +169,49 @@ test("lesson entry binds the active customer, exact reads and first progress wri
     [...expected.keys()].map(path => path === progressTarget ? ["POST", path, token, startBody] : ["GET", path, token, undefined]));
 });
 
+test("lesson assessment binds the enrolled customer and canonical progress and quiz requests", async () => {
+  const courseId = adminId, token = "scoped.learner.jwt";
+  const scope = { actorId: customerId, courseId, lessonId };
+  const attemptId = "44444444-4444-4444-8444-444444444444";
+  const attempt = { quizRevision: 2, requestId: attemptId, answers: [{ questionId: "q", optionId: "a" }] };
+  const start = { event: "lesson_started", expectedProgressRevision: 0 } as const;
+  let issued = { customerId: adminId, token }, admissions = 0;
+  const calls: GatewayRequest[] = [];
+  const client = createCourseClient({ enabled: allowed, getLessonAssessment: async () => scope,
+    issueCustomerToken: async () => issued,
+    run: async (kind, task) => { assert.equal(kind, "new-work"); admissions++; return task(); },
+    getTransport: () => async request => {
+      calls.push(request);
+      return Response.json({ error: { code: "LESSON_NOT_FOUND", message: "Lesson not found" } }, { status: 404 });
+    },
+  });
+  const forbidden = { code: "forbidden", status: 403 };
+  await assert.rejects(client.authorizePlayback(lessonId), forbidden);
+  issued = { customerId, token };
+  for (const call of [
+    () => client.getMyCourse(customerId), () => client.getLesson(courseId), () => client.listMyCourses(),
+    () => client.listProgress({ courseId }), () => client.listProgress({ lessonId: courseId }),
+    () => client.enrollFree(courseId, { idempotencyKey: attemptId }),
+    () => client.recordProgress(lessonId, { ...start, expectedProgressRevision: 1 }),
+    () => client.submitQuizAttempt(courseId, attempt),
+    () => client.submitQuizAttempt(lessonId, { ...attempt, requestId: attemptId.replace("-4444-8444-", "-5444-8444-") }),
+    () => client.submitQuizAttempt(lessonId, { ...attempt, answers: [...attempt.answers, ...attempt.answers] }),
+    () => client.submitQuizAttempt(lessonId, { requestId: attempt.requestId, quizRevision: attempt.quizRevision, answers: attempt.answers }),
+  ]) await assert.rejects(call(), forbidden);
+  assert.equal(admissions, 0);
+  assert.deepEqual(calls, []);
+  await assert.rejects(client.authorizePlayback(lessonId), { code: "not_found", status: 404 });
+  await assert.rejects(client.recordProgress(lessonId, start));
+  await assert.rejects(client.submitQuizAttempt(lessonId, attempt));
+  assert.equal(admissions, 2);
+  const lesson = `/v1/student/lessons/${lessonId}`;
+  assert.deepEqual(calls.map(({ method, path, body, applicationToken }) => [method, path, body, applicationToken]), [
+    ["GET", `${lesson}/playback`, undefined, token],
+    ["POST", `${lesson}/progress`, JSON.stringify(start), token],
+    ["POST", `${lesson}/quiz/attempts`, JSON.stringify(attempt), token],
+  ]);
+});
+
 test("lesson denial binds the selected customer and returns only safe protected read denials", async () => {
   const courseId = adminId, token = "scoped.denied.jwt", requestId = "44444444-4444-4444-8444-444444444444";
   const selected = { actorId: customerId, courseId, lessonId };

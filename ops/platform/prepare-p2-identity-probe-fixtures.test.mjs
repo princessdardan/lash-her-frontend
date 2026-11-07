@@ -263,6 +263,7 @@ function harness(testOutput = tap(), ignoredFrontendOutputs = [], trackedDepende
   writeFileSync(join(root, "ops/platform/test-p2-recovery-owned.py"), "# owned fixture\n");
   writeFileSync(join(root, "ops/platform/test-p2-recovery-owned.mjs"), "// owned fixture\n");
   writeFileSync(join(root, "ops/gateway/routes.json"), "{}\n");
+  writeFileSync(join(root, "ops/gateway/assessment-attempt.mjs"), "// owned assessment dependency fixture\n");
   writeFileSync(join(root, "ops/gateway/package.json"), JSON.stringify({ name: "lash-her-gateway", dependencies: { jose: "6.2.3" } }));
   writeFileSync(join(root, "ops/gateway/package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: { "node_modules/jose": { version: "6.2.3" } } }));
   mkdirSync(join(root, "ops/gateway/node_modules/jose"), { recursive: true });
@@ -458,7 +459,8 @@ test("recovery mode runs current and forward PostgreSQL 18 fixtures after all id
     assert.equal(docker.args.includes("--forward-brand"), false);assert.equal(forwardDocker.args.at(-1), "--forward-brand");
     assert.deepEqual(forwardDocker.args.slice(0,-1),docker.args);
     const mounts = docker.args.filter((argument, index) => docker.args[index - 1] === "--mount");
-    assert.equal(mounts.length, 12); assert.equal(mounts.every(value => value.endsWith(",readonly")), true);
+    assert.equal(mounts.length, 13); assert.equal(mounts.every(value => value.endsWith(",readonly")), true);
+    assert.equal(mounts.some(value => value.includes("dst=/source/ops/gateway/assessment-attempt.mjs,")), true);
     assert.equal(mounts.some(value => value.includes("dst=/exact-sources/lash-her-course-api")), true);
     assert.equal(mounts.some(value => value.includes("dst=/exact-sources/lash-her-community-api")), true);
     assert.equal(mounts.some(value => value.includes(`src=${value.workspace},`)), false);

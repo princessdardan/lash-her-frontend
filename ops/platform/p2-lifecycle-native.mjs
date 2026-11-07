@@ -223,6 +223,21 @@ const reviewedLessonDenialDependencies = {
   "src/app/api/academy/lessons/[lessonId]/quiz/attempts/route.ts": "a19b5ee06ce7e8ac8f8aaf8944b7efc0875c174956709f9df98a4a574ae6b75b",
   "src/app/api/academy/progress/route.ts": "aedbc6fe8c366c6c9c5dcf466cb9c18022920105a7df13fe7244d95c48e3fc32"
 };
+const reviewedLessonAssessmentSource = {
+  ...reviewedLessonDenialSource,
+  "src/lib/writer-admission/runtime.ts": "6e095948f4c9b5e9927cd61242e966e3cc24de9c90f65dc3ea0e32213df6c3ed"
+};
+const reviewedLessonAssessmentDependencies = {
+  ...reviewedLessonDenialDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "1778fccadc0ea976fa51558a9935bfd958c90653d988c4cdee120266c44391fe",
+  "src/lib/api-integration/course-client.ts": "f762ba765c693821506683358c9e5b21a093ba2464b0b310bf6b34dbb02d622e",
+  "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "ca8a6a42faeb02cff2197d5f611d78b5a679b4cd4bd4ae9aa35f76edcba6b82d",
+  "src/components/learning/lesson-quiz.tsx": "fa9635551916a0fd39f53048e41967ef27e97047636aee0300d96ceb0935f763",
+  "src/components/learning/lesson-experience.tsx": "67c63a0e44bdae2dfd76af81fa3de9501ad53302f6a3d439528d1bc18fc3b854",
+  "src/components/learning/authorized-video.tsx": "099382c7f8f682acb38e8622a75a54f23d8cc3bd4f7757c2945bdabc71962288",
+  "src/lib/learning/progress-sync.ts": "f345af9290fe2cb4ec3e90a9a1e9b5f5f5631a87f4272a041d3d2940a355a58f",
+  "ops/gateway/assessment-attempt.mjs": "bf21612801e40da986dbcd073436ed470227bfff037969dcc7441f6af8853799"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -254,7 +269,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedPaidArchiveSource, [reviewedPaidArchiveDependencies]],
     [reviewedPaidRepublishSource, [reviewedPaidRepublishDependencies, reviewedPaidLearnerAccessDependencies]],
     [reviewedPaidRevokeSource, [reviewedPaidRevokeDependencies, reviewedLessonEntryDependencies]],
-    [reviewedLessonDenialSource, [reviewedLessonDenialDependencies]]]
+    [reviewedLessonDenialSource, [reviewedLessonDenialDependencies]],
+    [reviewedLessonAssessmentSource, [reviewedLessonAssessmentDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

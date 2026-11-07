@@ -88,6 +88,32 @@ class SourceClosureTests(unittest.TestCase):
         program.chmod(0o600); program.write_text('different')
         with self.assertRaises(ValueError): private_observer_program(self.initial, private / 'source')
 
+    def test_profiled_mux_gateway_closure_requires_the_shared_assessment_parser(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        manifest = dict(self.manifest)
+        parser = 'ops/gateway/assessment-attempt.mjs'
+        required = PROFILED_CURRENT_REQUIRED | PROFILED_CERTIFICATION_REQUIRED | {
+            'ops/platform/host/p2_scoped_mux.py', 'ops/platform/host/p2_day_two_workload.py',
+            'ops/gateway/admission.mjs', 'ops/gateway/private-tls.mjs',
+        }
+        for name in required - set(manifest):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'owned scoped gateway source')
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        selected = {
+            'mode': PROFILED_CERTIFICATION_MODE,
+            'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE),
+            'certificationPlan': {'mode': 'mux-callback-recovery'},
+        }
+        with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+            verify_profiled_current_source_closure({**selected, **self.make(manifest)}, self.root)
+        path = self.root / parser
+        path.write_bytes(b'owned shared parser')
+        manifest[parser] = hashlib.sha256(path.read_bytes()).hexdigest()
+        plan = {**selected, **self.make(manifest)}
+        self.assertEqual(verify_profiled_current_source_closure(plan, self.root), plan['sourceClosureSha256'])
+
     def test_profiled_certification_manifest_and_private_observer_bind_fixed_current_source(self):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
         manifest = dict(self.manifest)
