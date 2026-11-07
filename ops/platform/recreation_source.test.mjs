@@ -61,8 +61,22 @@ test("the complete committed operator source fits the profiled expanded envelope
   const root=fileURLToPath(new URL("../..",import.meta.url));
   const sourceCommit=execFileSync("git",["-C",root,"rev-parse","HEAD"],{encoding:"utf8"}).trim();
   const files=readProfiledCurrentOperatorSourceFiles(root);
+  assert.ok(files.some(file=>file.path==="ops/gateway/assessment-attempt.mjs"));
+  assert.ok(files.every(file=>!/(?:\.test\.mjs|_test\.py)$/u.test(file.path)));
   assert.equal(files.filter(file=>file.path.startsWith("ops/platform/profiles/frontend-historical-sources/")).length,33);
   assert.ok(Buffer.byteLength(JSON.stringify({commit:sourceCommit,files}))<=65_000_000);
+});
+test("only the profiled operator bundle excludes conventional test modules",()=> {
+  const directory=mkdtempSync(join(tmpdir(),"p2-source-tests-"));
+  const git=args=>execFileSync("git",["-C",directory,...args],{stdio:["ignore","pipe","pipe"]});
+  try {
+    git(["init","--quiet"]);mkdirSync(join(directory,"ops"));
+    const paths=["ops/owned-runtime.mjs","ops/owned-runtime.test.mjs","ops/owned_runtime_test.py","ops/test-owned-command.mjs"];
+    for(const path of paths)writeFileSync(join(directory,path),"# owned source fixture\n");
+    git(["add","ops"]);
+    assert.deepEqual(readOperatorSourceFiles(directory).map(file=>file.path),[...paths].sort());
+    assert.deepEqual(readProfiledCurrentOperatorSourceFiles(directory).map(file=>file.path),["ops/owned-runtime.mjs","ops/test-owned-command.mjs"]);
+  } finally {rmSync(directory,{recursive:true,force:true});}
 });
 test("actual Git source handoff accepts 512 files and refuses 513 with the per-file byte limit intact",()=> {
   const directory=mkdtempSync(join(tmpdir(),"p2-source-count-"));

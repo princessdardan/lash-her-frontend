@@ -62,10 +62,11 @@ export async function verifyOperatorCi({api,sourceCommit,branch,workflowBytes}) 
     ciUrl:`https://github.com/${repository}/actions/runs/${run.id}`,applicationCandidateRebuilt:false};
 }
 
-function readBoundedOperatorSourceFiles(source, bounds) {
+function readBoundedOperatorSourceFiles(source, bounds, { omitTestFiles = false } = {}) {
   const git=args=>execFileSync("git",["-C",source,...args],{encoding:"utf8",timeout:10000,maxBuffer:16_000_000,
     stdio:["ignore","pipe","pipe"]});
-  const paths=git(["ls-files","-z","--","ops"]).split("\0").filter(path=>path&&/\.(?:py|mjs|json|yaml|yml|service|timer|sh|guard)$/u.test(path));
+  const paths=git(["ls-files","-z","--","ops"]).split("\0").filter(path=>path&&/\.(?:py|mjs|json|yaml|yml|service|timer|sh|guard)$/u.test(path)
+    && (!omitTestFiles || !/(?:\.test\.mjs|_test\.py)$/u.test(path)));
   // Complete integration includes fixed certification and rotation packages.
   // Keep source count finite; aggregate and transport bytes are bounded separately.
   assert.ok(paths.length>0&&paths.length<=bounds.files);
@@ -87,7 +88,8 @@ export function readOperatorSourceFiles(source) {
   return readBoundedOperatorSourceFiles(source, LEGACY_OPERATOR_SOURCE_BOUNDS);
 }
 export function readProfiledCurrentOperatorSourceFiles(source) {
-  return readBoundedOperatorSourceFiles(source, PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS);
+  // CI runs test modules from the full checkout. The installed operator does not import them.
+  return readBoundedOperatorSourceFiles(source, PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS, { omitTestFiles: true });
 }
 function committedBoundedOperatorSource(source, sourceCommit, readFiles) {
   const git=args=>execFileSync("git",["-C",source,...args],{encoding:"utf8",timeout:10000,maxBuffer:16_000_000,
