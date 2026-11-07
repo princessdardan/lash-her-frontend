@@ -1,0 +1,12 @@
+{
+  "commit": "ad1f2abd3cb26462beb7c51885878e23abfc810d",
+  "files": 512,
+  "decodedBytes": 40930237,
+  "publicBytes": 54648443,
+  "contracts": {
+    "reviewSha256": "300057a9cf68c78e3ad9dfc4f5c6e141345abca6e2bc1b850f5204dcc5955e5a",
+    "reviewRevision": "ad1f2abd3cb26462beb7c51885878e23abfc810d",
+    "baselineRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "manifestSha256": "41be13b4727d453ee1fb059ee8071c9483c079d4cdd57971bb38a00885acb431"
+  }
+}

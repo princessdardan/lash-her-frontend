@@ -1,0 +1,18 @@
+{
+  "original": {
+    "path": "/Users/dardan/.local/share/lash-her/phase2-goal-evidence/2026-11-06/p2q-google-project-original-source/manifest.json",
+    "sha256": "940234d2af85b165af27298d3619b2f82b90a26a12a9bea91d990b1769177a4b",
+    "bundleSha256": "a0d4f54f3ffadc6da4d12df7a0bec5a460dc374d10062926c3a3218a4f2c1fe5"
+  },
+  "integrated": {
+    "path": "/Users/dardan/.local/share/lash-her/phase2-goal-evidence/2026-11-06/p2q-google-project-root-ad1/archive-manifest.json",
+    "sha256": "ecee6a2ef827d370997bda29fdac1d4b6a0acde851168f29182d114a5d26f335",
+    "bundleSha256": "e0d6520b43d3f5c39614c33874abb5956062b2738d66c3e159c55fcb36d66dcd"
+  },
+  "tools": {
+    "path": "/Users/dardan/.local/share/lash-her/phase2-goal-evidence/2026-11-06/p2q-google-offline-toolchains/MANIFEST.json",
+    "sha256": "580b70feb5c9aa2c529c7f0ed4f78ad7adb06b3622bf94f854d0eacdf0951950",
+    "files": 154,
+    "bytes": 165678374
+  }
+}
