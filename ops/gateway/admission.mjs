@@ -5,8 +5,8 @@ import { dirname } from "node:path";
 import { readP2GatewayProcessBinding } from "./p2-certification-fault.mjs";
 import { interactiveCourseOperation, interactiveCourseStagePermits } from "./operations.mjs";
 import { parseAssessmentAttempt } from "./assessment-attempt.mjs";
-import { lessonAckLossBodies, lessonRestorePositionBody, parseLessonRestorePosition, parseLessonResumePosition,
-  permitsLessonAckLossBody, RESTORE_LESSON_STARTED } from "./lesson-resume-position.mjs";
+import { EXIT_SAVE_LESSON_STARTED, lessonAckLossBodies, lessonExitSaveBodies, lessonRestorePositionBody, parseLessonExitSavePosition,
+  parseLessonRestorePosition, parseLessonResumePosition, permitsLessonAckLossBody, RESTORE_LESSON_STARTED } from "./lesson-resume-position.mjs";
 
 const STATE_KEYS = "actionId,candidateSha256,environment,newWork,recovery,releaseId,version";
 const SCOPED_KEYS = "actionId,candidateSha256,environment,muxCallback,newWork,recovery,releaseId,version";
@@ -18,10 +18,11 @@ const INTERACTIVE_TARGET = /^\/course\/v1\/[A-Za-z0-9/_-]+(?:\?[!$%&'()*+,./:;=?
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
 const PROVIDER_ID = /^[A-Za-z0-9_-]{1,255}$/u;
 const SHA = /^[a-f0-9]{64}$/u;
-const INTERACTIVE_STAGES = new Set(["authoring", "media", "learning", "learner-access", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "paid-grant", "paid-revoke"]);
+const INTERACTIVE_STAGES = new Set(["authoring", "media", "learning", "learner-access", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "paid-grant", "paid-revoke"]);
 const EMPTY_SHA = createHash("sha256").update("").digest("hex");
 const INITIAL_LESSON_PROGRESS = Buffer.from('{"event":"lesson_started","expectedProgressRevision":0}');
 const RESTORE_LESSON_PROGRESS = Buffer.from(RESTORE_LESSON_STARTED);
+const EXIT_SAVE_LESSON_PROGRESS = Buffer.from(EXIT_SAVE_LESSON_STARTED);
 const LESSON_DENIAL_RESPONSE = Buffer.from('{"error":{"code":"ACTIVE_ENROLLMENT_REQUIRED","message":"Active enrollment required"}}');
 const ASSESSMENT_PLAYBACK_RESPONSE = Buffer.from('{"error":{"code":"LESSON_NOT_FOUND","message":"Lesson not found"}}');
 const MAX_ORDINARY_STATE = 4096;
@@ -43,6 +44,9 @@ const RESTORE_POSITION_HASHES = [3, 4, 5, 6].map(resume => digest(lessonRestoreP
 const RESUME_POSITION_TEMPLATES = [1, 2, 3].map(expectedProgressRevision => digest(JSON.stringify({ expectedProgressRevision })));
 const ACK_LOSS_WRITE_HASHES = [3, 4, 5, 6].map(resume => lessonAckLossBodies(resume).map(digest));
 const ACK_LOSS_PHASES = [[0, 1, 2, 3, 4], [5, 6], [7], [8], [2], [0, 1, 2, 3, 4], [5, 9], [10]];
+const EXIT_SAVE_WRITE_HASHES = [3, 4, 5, 6].map(resume => lessonExitSaveBodies(resume).map(digest));
+const EXIT_SAVE_POSITION_TEMPLATE = EXIT_SAVE_WRITE_HASHES[0][2];
+const EXIT_SAVE_PHASES = [[0, 1, 2, 3, 4], [5, 6], [7], [0, 8, 9]];
 
 function orderedRecursively(value) {
   if (Array.isArray(value)) return value.map(orderedRecursively);
@@ -110,7 +114,7 @@ function interactiveScope(value, config, info, processBinding, storageAuthority,
     if (tuples.has(tuple)) throw new Error();
     tuples.add(tuple);
   }
-  if (["lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss"].includes(value.stage)) {
+  if (["lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save"].includes(value.stage)) {
     requireSelectedLessonRequests(value.stage, value.requests);
   }
 }
@@ -124,14 +128,16 @@ function requireSelectedLessonRequests(stage, requests) {
   const reads = [course.target, lesson.target, `${student}/progress?lessonId=${lessonId}`,
     `${lesson.target}/quiz`, `${lesson.target}/quiz/attempts`, `${lesson.target}/playback`];
   const assessment = stage === "lesson-assessment", resume = stage === "lesson-resume", restore = stage === "lesson-restore";
-  const ackLoss = stage === "lesson-ack-loss";
+  const ackLoss = stage === "lesson-ack-loss", exitSave = stage === "lesson-exit-save";
   const uses = ackLoss ? [2, 2, 3, 2, 2, 2] :
+    exitSave ? [2, 1, 1, 1, 1, 1] :
     resume || restore ? [1, 1, 1, 1, 1, 1] : assessment ? [1, 1, 3, 1, 1, 1] : [2, 3, 3, 3, 3, 1];
   const expected = reads.map((target, index) => ["GET", target, uses[index]]);
   if (assessment) expected.push(["POST", `${lesson.target}/progress`, 1],
     ["POST", reads[4], 1], ["POST", reads[4], 1]);
-  const positionWrites = resume ? 4 : restore ? 2 : ackLoss ? 5 : 0;
+  const positionWrites = resume ? 4 : restore ? 2 : ackLoss ? 5 : exitSave ? 3 : 0;
   for (let index = 0; index < positionWrites; index++) expected.push(["POST", `${lesson.target}/progress`, 1]);
+  if (exitSave) expected.push(["GET", `${student}/progress?courseId=${course.target.slice(coursePrefix.length)}`, 1]);
   if (requests.length !== expected.length || expected.some(([method, target, count], index) =>
     requests[index].method !== method || requests[index].target !== target || requests[index].uses !== count)) throw new Error();
   if (assessment && (requests[6].bodySha256 !== digest(INITIAL_LESSON_PROGRESS) ||
@@ -141,6 +147,8 @@ function requireSelectedLessonRequests(stage, requests) {
   if (restore && (requests[6].bodySha256 !== digest(RESTORE_LESSON_PROGRESS) ||
       !RESTORE_POSITION_HASHES.includes(requests[7].bodySha256))) throw new Error();
   if (ackLoss && !ACK_LOSS_WRITE_HASHES.some(hashes =>
+    hashes.every((hash, index) => requests[index + 6].bodySha256 === hash))) throw new Error();
+  if (exitSave && !EXIT_SAVE_WRITE_HASHES.some(hashes =>
     hashes.every((hash, index) => requests[index + 6].bodySha256 === hash))) throw new Error();
 }
 
@@ -196,6 +204,12 @@ export function selectScopedInteractiveRequest(scope, { method, target, body, he
   } else if (scope.stage === "lesson-ack-loss") {
     if (headers["x-idempotency-key"] !== undefined ||
         method === "POST" && (contentType !== "application/json" || !isUtf8(body) || !permitsLessonAckLossBody(body.toString("utf8")))) return null;
+  } else if (scope.stage === "lesson-exit-save") {
+    if (headers["x-idempotency-key"] !== undefined || method === "POST" && contentType !== "application/json") return null;
+    if (method === "POST" && !body.equals(EXIT_SAVE_LESSON_PROGRESS)) {
+      resumePosition = isUtf8(body) && parseLessonExitSavePosition(body.toString("utf8"));
+      if (!resumePosition) return null;
+    }
   } else if (scope.stage === "lesson-resume" || scope.stage === "lesson-restore") {
     const restore = scope.stage === "lesson-restore";
     if (headers["x-idempotency-key"] !== undefined || method === "POST" && contentType !== "application/json") return null;
@@ -207,7 +221,8 @@ export function selectScopedInteractiveRequest(scope, { method, target, body, he
   }
   const bodySha256 = digest(body);
   const selectedBodySha256 = attempt ? digest(attempt.template) :
-    resumePosition && scope.stage === "lesson-resume" ? RESUME_POSITION_TEMPLATES[resumePosition.expectedProgressRevision - 1] : bodySha256;
+    resumePosition && scope.stage === "lesson-resume" ? RESUME_POSITION_TEMPLATES[resumePosition.expectedProgressRevision - 1] :
+    resumePosition?.expectedProgressRevision === 8 && scope.stage === "lesson-exit-save" ? EXIT_SAVE_POSITION_TEMPLATE : bodySha256;
   const requestIndex = scope.requests.findIndex(row => row.method === method && row.target === target && row.bodySha256 === selectedBodySha256);
   if (requestIndex < 0) return null;
   if (scope.stage === "paid-revoke" && method === "POST" && !scopedPaidRevocation(body, idempotency)) return null;
@@ -237,10 +252,14 @@ export function lessonResumePhasePermits({ requestIndex, resumePosition }, evide
     resumePosition.maxPositionSeconds === prior.maxPositionSeconds;
 }
 
-export function lessonAckLossPhasePermits({ requestIndex }, { acknowledged, used }) {
+export function scopedLessonPositionPhasePermits({ requestIndex, resumePosition }, { acknowledged, used, resumeProgress }, exitSave) {
+  if (exitSave && requestIndex === 8 && (!resumePosition || resumeProgress?.revision !== 8 ||
+    resumePosition.maxPositionSeconds !== resumeProgress.maxPositionSeconds ||
+    resumePosition.resumePositionSeconds < resumeProgress.resumePositionSeconds + 2 ||
+    resumePosition.resumePositionSeconds > resumeProgress.resumePositionSeconds + 5)) return false;
   if ((used.get(requestIndex) ?? 0) !== acknowledged.filter(row => row.requestIndex === requestIndex).length) return false;
   let completed = acknowledged.length;
-  for (const phase of ACK_LOSS_PHASES) {
+  for (const phase of exitSave ? EXIT_SAVE_PHASES : ACK_LOSS_PHASES) {
     if (completed < phase.length) return phase.includes(requestIndex) &&
       !acknowledged.slice(acknowledged.length - completed).some(row => row.requestIndex === requestIndex);
     completed -= phase.length;
@@ -265,11 +284,47 @@ function playbackClaims(token, playbackId, audience, expiresAt, now) {
   return { expiry, key: payload.kid };
 }
 
-function matchesUncompletedProgress(row, actorId, lessonId) {
+function matchesLearnerProgress(row, actorId) {
   return keys(row) ===
     "completedAt,completedQuizRevision,createdAt,enrollmentId,id,lastWatchedAt,lessonId,maxPositionSeconds,resumePositionSeconds,revision,updatedAt,userId" &&
-    matches(UUID, row.id) && matches(UUID, row.enrollmentId) && row.userId === actorId && row.lessonId === lessonId &&
+    matches(UUID, row.id) && (row.enrollmentId === null || matches(UUID, row.enrollmentId)) &&
+    row.userId === actorId && matches(UUID, row.lessonId);
+}
+
+function matchesUncompletedProgress(row, actorId, lessonId) {
+  return matchesLearnerProgress(row, actorId) && matches(UUID, row.enrollmentId) && row.lessonId === lessonId &&
     row.completedAt === null && row.completedQuizRevision === null;
+}
+
+function exitSaveCourseAcknowledged(course, lessonId, evidence) {
+  if (!Array.isArray(course.modules) || course.modules.some(module => !Array.isArray(module.lessons))) return false;
+  const ids = course.modules.flatMap(module => module.lessons.map(lesson => lesson.id));
+  const selected = new Set(ids);
+  if (!selected.has(lessonId) || selected.size !== ids.length || ids.some(id => !matches(UUID, id))) return false;
+  if (evidence.courseLessonIds) {
+    return selected.size === evidence.courseLessonIds.size && ids.every(id => evidence.courseLessonIds.has(id));
+  }
+  evidence.courseLessonIds = selected;
+  return true;
+}
+
+function exitSaveCourseProgressAcknowledged(value, actorId, lessonId, evidence) {
+  const { courseLessonIds, resumeProgress: prior, exitBaselineResume, exitRequestedPosition } = evidence;
+  if (keys(value) !== "progress" || !Array.isArray(value.progress) || !prior || !courseLessonIds) return false;
+  const ids = new Set(), lessons = new Set();
+  let selected = false;
+  for (const row of value.progress) {
+    if (!matchesLearnerProgress(row, actorId) || !courseLessonIds.has(row.lessonId) ||
+        ids.has(row.id) || lessons.has(row.lessonId)) return false;
+    ids.add(row.id);
+    lessons.add(row.lessonId);
+    if (row.lessonId !== lessonId) continue;
+    const resume = row.revision === 8 ? exitBaselineResume : row.revision === 9 ? exitRequestedPosition : undefined;
+    if (!matchesUncompletedProgress(row, actorId, lessonId) || row.id !== prior.id || row.enrollmentId !== prior.enrollmentId ||
+        resume === undefined || row.resumePositionSeconds !== resume || row.maxPositionSeconds !== prior.maxPositionSeconds) return false;
+    selected = true;
+  }
+  return selected;
 }
 
 export function scopedResumeAcknowledged(target, status, contentType, body, selection, evidence, scope, now) {
@@ -277,15 +332,19 @@ export function scopedResumeAcknowledged(target, status, contentType, body, sele
   const { requestIndex, resumePosition } = selection;
   const restore = scope.stage === "lesson-restore";
   const ackLoss = scope.stage === "lesson-ack-loss";
+  const exitSave = scope.stage === "lesson-exit-save";
   const actorId = scope.actorId;
   try {
     const value = JSON.parse(body.toString("utf8"));
     if (!body.equals(Buffer.from(JSON.stringify(value)))) return false;
-    if (requestIndex === 0) return keys(value) === "course" && value.course?.id === target.split("/").at(-1);
+    if (requestIndex === 0) {
+      return keys(value) === "course" && value.course?.id === target.split("/").at(-1) &&
+        (!exitSave || exitSaveCourseAcknowledged(value.course, scope.requests[1].target.split("/").at(-1), evidence));
+    }
     if (requestIndex === 1) return keys(value) === "lesson" && value.lesson?.id === target.split("/").at(-1) && value.lesson.isPreview === false;
     if (requestIndex === 2) {
-      if (keys(value) !== "progress" || !Array.isArray(value.progress) || value.progress.length !== (restore || ackLoss ? 1 : 0)) return false;
-      if (!restore && !ackLoss) return true;
+      if (keys(value) !== "progress" || !Array.isArray(value.progress) || value.progress.length !== (restore || ackLoss || exitSave ? 1 : 0)) return false;
+      if (!restore && !ackLoss && !exitSave) return true;
       const [row] = value.progress;
       const lessonId = target.slice(target.lastIndexOf("=") + 1);
       if (!matchesUncompletedProgress(row, actorId, lessonId)) return false;
@@ -294,9 +353,13 @@ export function scopedResumeAcknowledged(target, status, contentType, body, sele
         return row.revision === 9 && row.revision === prior.revision && row.id === prior.id && row.enrollmentId === prior.enrollmentId &&
           row.resumePositionSeconds === prior.resumePositionSeconds && row.maxPositionSeconds === prior.maxPositionSeconds;
       }
-      if (ackLoss ? row.revision !== 6 || row.maxPositionSeconds !== row.resumePositionSeconds + 10 ||
-        digest(lessonAckLossBodies(row.resumePositionSeconds)[1]) !== scope.requests[7].bodySha256 :
-        row.revision !== 4 || digest(lessonRestorePositionBody(row.resumePositionSeconds, row.maxPositionSeconds)) !== scope.requests[7].bodySha256) return false;
+      if (ackLoss || exitSave) {
+        const bodies = exitSave ? lessonExitSaveBodies : lessonAckLossBodies;
+        if (row.revision !== 6 || row.maxPositionSeconds !== row.resumePositionSeconds + 10 ||
+          digest(bodies(row.resumePositionSeconds)[1]) !== scope.requests[7].bodySha256) return false;
+      } else if (row.revision !== 4 ||
+        digest(lessonRestorePositionBody(row.resumePositionSeconds, row.maxPositionSeconds)) !== scope.requests[7].bodySha256) return false;
+      if (exitSave) evidence.exitBaselineResume = row.resumePositionSeconds;
       evidence.resumeProgress = { id: row.id, enrollmentId: row.enrollmentId, revision: row.revision,
         resumePositionSeconds: row.resumePositionSeconds, maxPositionSeconds: row.maxPositionSeconds };
       return true;
@@ -315,12 +378,17 @@ export function scopedResumeAcknowledged(target, status, contentType, body, sele
       }
       return true;
     }
+    if (exitSave && requestIndex === 9) {
+      return exitSaveCourseProgressAcknowledged(value, actorId, scope.requests[1].target.split("/").at(-1), evidence);
+    }
     const row = value?.progress, prior = evidence.resumeProgress;
-    if (ackLoss) {
+    if (ackLoss || exitSave) {
+      const expectedResume = exitSave ? resumePosition?.resumePositionSeconds ?? prior?.resumePositionSeconds :
+        requestIndex < 8 ? prior?.resumePositionSeconds : prior?.maxPositionSeconds;
       if (!prior || prior.revision !== requestIndex || keys(value) !== "progress" ||
           !matchesUncompletedProgress(row, actorId, target.split("/").at(-2)) ||
           row.id !== prior.id || row.enrollmentId !== prior.enrollmentId || row.revision !== requestIndex + 1 ||
-          row.resumePositionSeconds !== (requestIndex < 8 ? prior.resumePositionSeconds : prior.maxPositionSeconds) ||
+          row.resumePositionSeconds !== expectedResume ||
           row.maxPositionSeconds !== prior.maxPositionSeconds) return false;
       evidence.resumeProgress = { ...prior, revision: row.revision, resumePositionSeconds: row.resumePositionSeconds };
       return true;

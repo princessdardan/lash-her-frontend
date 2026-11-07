@@ -282,6 +282,7 @@ test("production Academy native playback, rewind and separate-session resume", a
   const learner = value.users.learner;
   const lessonId = value.lessonIds.practice;
   const pathname = lessonPath(value);
+  const outlinePath = `/academy/courses/${value.courseId}`;
   const api = `/api/academy/lessons/${lessonId}`;
   const upstream = `/course/v1/student/lessons/${lessonId}`;
   const writeUrl = owned().origin + api + "/progress";
@@ -631,6 +632,134 @@ test("production Academy native playback, rewind and separate-session resume", a
       lostAcknowledgement: { committed: compact(committed), browserFailure: "connectionreset", unknownStateObserved: true,
         authoritativeRequestId: recoveredRequestId, replayed: false,
         reloaded: { sample: recovered.sample, writes: recovered.writes.map(compact), gatewayIndexes: recovered.gatewayIndexes } },
+    }, null, 2) + "\n", { mode: 0o600 });
+
+    const progressRowsSince = (offset: number) =>
+      readOwnedGatewayJournal().slice(offset).filter(row => row.method === "POST" && row.target === upstream + "/progress");
+    const playBeforeExit = async (exitPlayer: Awaited<ReturnType<typeof readyPlayer>>, previous: ResumeProgress) => {
+      await exitPlayer.getByRole("button", { name: "play", exact: true }).filter({ visible: true }).first().click();
+      await expect.poll(async () => {
+        const { currentTime, paused } = await samplePlayer(exitPlayer);
+        return paused ? 0 : currentTime;
+      }, { intervals: [50, 100, 150], timeout: 8_000 }).toBeGreaterThanOrEqual(previous.resumePositionSeconds + 2);
+      return samplePlayer(exitPlayer);
+    };
+    const assertExitPosition = (resume: number, sample: Awaited<ReturnType<typeof samplePlayer>>, previous: ResumeProgress) => {
+      expect(sample.paused).toBe(false);
+      // React unmount may use the last native timeupdate rather than the detached player ref.
+      expect(resume).toBeGreaterThanOrEqual(Math.floor(sample.currentTime) - 1);
+      expect(resume).toBeGreaterThan(previous.resumePositionSeconds);
+      expect(resume).toBeLessThan(previous.resumePositionSeconds + 10);
+    };
+
+    const beforeSpa = recovered.writes[1].progress;
+    const outlineLink = page.getByRole("link", { name: "Actual learning foundations", exact: true });
+    await expect(outlineLink).toHaveAttribute("href", outlinePath);
+    const spaTimeOrigin = await page.evaluate(() => performance.timeOrigin);
+    const spaOffset = readOwnedGatewayJournal().length;
+    const spaRequests = observed.requests.length;
+    const spaSample = await playBeforeExit(recovered.player, beforeSpa);
+    expect(observed.requests).toHaveLength(spaRequests);
+    const [spaResponse] = await Promise.all([
+      observed.write(beforeSpa.revision),
+      outlineLink.click(),
+    ]);
+    const spaWrite = await receipt(spaResponse, beforeSpa.revision);
+    await expect(page.getByRole("heading", { name: "Actual learning foundations", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(owned().origin + outlinePath);
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(spaTimeOrigin);
+    await expect(recovered.player).toHaveCount(0);
+    assertExitPosition(spaWrite.progress.resumePositionSeconds, spaSample, beforeSpa);
+    await assertPersisted(spaWrite.progress);
+    expect(observed.requests).toHaveLength(spaRequests + 1);
+    expect(progressRowsSince(spaOffset)).toEqual([
+      { method: "POST", target: upstream + "/progress", status: 200, requestId: spaWrite.requestId },
+    ]);
+
+    const [exitStart, exitPlayback, exitRestore, exitDocument] = await Promise.all([
+      observed.write(spaWrite.progress.revision), observed.playback(), observed.write(spaWrite.progress.revision + 1),
+      page.goto(pathname),
+    ]);
+    expect(exitDocument?.status()).toBe(200);
+    expect(exitPlayback.status()).toBe(200);
+    const exitStarted = await receipt(exitStart, spaWrite.progress.revision);
+    const exitRestored = await receipt(exitRestore, spaWrite.progress.revision + 1);
+    const beforeExit = exitRestored.progress;
+    for (const write of [exitStarted, exitRestored]) {
+      expect(write.progress).toMatchObject({
+        id: spaWrite.progress.id, enrollmentId: spaWrite.progress.enrollmentId,
+        resumePositionSeconds: spaWrite.progress.resumePositionSeconds, maxPositionSeconds: spaWrite.progress.maxPositionSeconds,
+      });
+    }
+    await assertPersisted(beforeExit);
+    const exitPlayer = await readyPlayer(page);
+    const exitTimeOrigin = await page.evaluate(() => performance.timeOrigin);
+    const exitMarkers = { pagehide: "owned-course-browser-pagehide", visibility: "owned-course-browser-hidden" };
+    expect(await page.evaluate(() => window.document.visibilityState)).toBe("visible");
+    // Observe both native lifecycle signals from this document replacement.
+    await page.evaluate(markers => {
+      window.addEventListener("pagehide", event => {
+        console.info(markers.pagehide, JSON.stringify({ trusted: event.isTrusted, persisted: event.persisted }));
+      }, { once: true });
+      window.document.addEventListener("visibilitychange", event => {
+        if (window.document.visibilityState === "hidden")
+          console.info(markers.visibility, JSON.stringify({ trusted: event.isTrusted, state: window.document.visibilityState }));
+      }, { once: true });
+    }, exitMarkers);
+    const exitOffset = readOwnedGatewayJournal().length;
+    const exitRequests = observed.requests.length;
+    const exitSample = await playBeforeExit(exitPlayer, beforeExit);
+    expect(observed.requests).toHaveLength(exitRequests);
+    const [exitRequest, pagehide, visibilityChange, destination] = await Promise.all([
+      page.waitForRequest(request => request.url() === writeUrl && request.method() === "POST"
+        && request.postDataJSON()?.expectedProgressRevision === beforeExit.revision),
+      page.waitForEvent("console", { predicate: message => message.text().startsWith(exitMarkers.pagehide + " ") }),
+      page.waitForEvent("console", { predicate: message => message.text().startsWith(exitMarkers.visibility + " ") }),
+      page.goto(outlinePath, { waitUntil: "domcontentloaded" }),
+    ]);
+    expect(destination?.status()).toBe(200);
+    expect(destination?.request().isNavigationRequest()).toBe(true);
+    await expect(page.getByRole("heading", { name: "Actual learning foundations", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(owned().origin + outlinePath);
+    expect(await page.evaluate(() => performance.timeOrigin)).not.toBe(exitTimeOrigin);
+    const pagehideEvidence = JSON.parse(pagehide.text().slice(exitMarkers.pagehide.length + 1));
+    const visibilityEvidence = JSON.parse(visibilityChange.text().slice(exitMarkers.visibility.length + 1));
+    expect(pagehideEvidence).toEqual({ trusted: true, persisted: false });
+    expect(visibilityEvidence).toEqual({ trusted: true, state: "hidden" });
+    const exitBody = exitRequest.postDataJSON() as Pick<ResumeProgress, "resumePositionSeconds" | "maxPositionSeconds"> & {
+      expectedProgressRevision: number;
+    };
+    expect(exitBody).toEqual({
+      resumePositionSeconds: expect.any(Number),
+      maxPositionSeconds: beforeExit.maxPositionSeconds,
+      expectedProgressRevision: beforeExit.revision,
+    });
+    expect(exitRequest.postData()).toBe(JSON.stringify({
+      resumePositionSeconds: exitBody.resumePositionSeconds,
+      maxPositionSeconds: exitBody.maxPositionSeconds,
+      expectedProgressRevision: beforeExit.revision,
+    }));
+    assertExitPosition(exitBody.resumePositionSeconds, exitSample, beforeExit);
+    const exitProgress = {
+      ...beforeExit, revision: beforeExit.revision + 1, resumePositionSeconds: exitBody.resumePositionSeconds,
+    };
+    await expect.poll(persisted).toEqual([{
+      id: exitProgress.id, enrollment_id: exitProgress.enrollmentId, revision: exitProgress.revision,
+      resume_position_seconds: exitProgress.resumePositionSeconds, max_position_seconds: exitProgress.maxPositionSeconds,
+      completed_at: null,
+    }]);
+    expect(observed.requests).toHaveLength(exitRequests + 1);
+    const exitRows = progressRowsSince(exitOffset);
+    expect(exitRows).toEqual([
+      { method: "POST", target: upstream + "/progress", status: 200, requestId: expect.stringMatching(/^[0-9a-f-]{36}$/u) },
+    ]);
+    await writeFile(info.outputPath("exit-saves.json"), JSON.stringify({
+      syntheticHls: true, progressRowPreserved: true,
+      spa: { destination: outlinePath, sameDocument: true, sample: spaSample, save: compact(spaWrite) },
+      documentExit: { destination: outlinePath, sameDocument: false, pagehide: pagehideEvidence,
+        visibilityChange: visibilityEvidence, sample: exitSample, body: exitBody,
+        requestId: exitRows[0].requestId, progress: { revision: exitProgress.revision, resumePositionSeconds: exitProgress.resumePositionSeconds,
+          maxPositionSeconds: exitProgress.maxPositionSeconds } },
     }, null, 2) + "\n", { mode: 0o600 });
   } finally {
     await close(first, second);

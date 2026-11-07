@@ -261,6 +261,51 @@ test("a page-exit position queued behind an ordinary write retains its keepalive
   ]);
 });
 
+test("duplicate lifecycle snapshots use the first acknowledged position without another write", async () => {
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const calls: Array<{ resume?: number; revision: number; keepalive: boolean }> = [];
+  const sync = createProgressSync({
+    initial: { ...row, maxPositionSeconds: 16 },
+    latest: async () => row,
+    write: async (body, keepalive) => {
+      calls.push({
+        resume: body.resumePositionSeconds,
+        revision: body.expectedProgressRevision,
+        keepalive,
+      });
+      if (calls.length === 1) await hold;
+      return {
+        ...row,
+        revision: body.expectedProgressRevision + 1,
+        resumePositionSeconds: body.resumePositionSeconds!,
+        maxPositionSeconds: body.maxPositionSeconds!,
+      };
+    },
+  });
+  const hidden = sync.queue(
+    { resumePositionSeconds: 12, maxPositionSeconds: 12 },
+    true,
+  );
+  const exit = sync.queue(
+    { resumePositionSeconds: 12, maxPositionSeconds: 13 },
+    true,
+  );
+  release();
+  await Promise.all([hidden, exit]);
+  assert.deepEqual(calls, [{ resume: 12, revision: 1, keepalive: true }]);
+  assert.equal(sync.snapshot()?.revision, 2);
+  await sync.queue({ resumePositionSeconds: 13, maxPositionSeconds: 13 }, true);
+  await sync.queue({ resumePositionSeconds: 13, maxPositionSeconds: 13 });
+  assert.deepEqual(calls.slice(1), [
+    { resume: 13, revision: 2, keepalive: true },
+    { resume: 13, revision: 3, keepalive: false },
+  ]);
+  assert.equal(sync.snapshot()?.maxPositionSeconds, 16);
+});
+
 test("an explicit keepalive flush upgrades a queued update without replaying an active write", async () => {
   let release!: () => void;
   const hold = new Promise<void>((resolve) => {

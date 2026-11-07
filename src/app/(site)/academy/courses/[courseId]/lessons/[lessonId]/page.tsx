@@ -49,7 +49,8 @@ export default async function LessonPage({
     lessonHref(courseId, lessonId) +
     (typeof query.course === "string" ? `?course=${query.course}` : "");
   const scope = await readInteractiveBrowserRequest();
-  const prefetch = scope?.lessonEntry || scope?.lessonAssessment || scope?.lessonResume || scope?.lessonRestore || scope?.lessonAckLoss ? false : undefined;
+  const prefetch = scope?.lessonEntry || scope?.lessonAssessment || scope?.lessonResume || scope?.lessonRestore ||
+    scope?.lessonAckLoss || scope?.lessonExitSave ? false : undefined;
   const result = await readLearningPage(async () => {
     const client = getCourseClient();
     const [

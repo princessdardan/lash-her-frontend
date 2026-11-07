@@ -1335,6 +1335,134 @@ for (const failure of ["committed-position", "authority-revision", "reload-playb
   });
 }
 
+async function lessonExitSaveGateway(t, failure, holdOutlineProgress = false) {
+  const { courseId, lessonId, write, targets, reads, requests, prior } = lessonRestoreFixture();
+  const started = '{"event":"lesson_started","expectedProgressRevision":6}';
+  const restored = '{"resumePositionSeconds":4,"maxPositionSeconds":14,"expectedProgressRevision":7}';
+  const exited = '{"resumePositionSeconds":7,"maxPositionSeconds":14,"expectedProgressRevision":8}';
+  const outlineProgress = `/course/v1/student/progress?courseId=${courseId}`;
+  const scoped = [...requests.slice(0, 6).map((row, index) => ({ ...row, uses: index === 0 ? 2 : 1 })),
+    ...[started, restored, '{"expectedProgressRevision":8}'].map(body => (
+      { method: "POST", target: write, bodySha256: certificationHash(body), uses: 1 })),
+    { method: "GET", target: outlineProgress, bodySha256: certificationHash(""), uses: 1 }];
+  const outlineRead = Promise.withResolvers(), releaseOutline = Promise.withResolvers();
+  let current = { ...prior, revision: 6 }, courseReads = 0;
+  const forwarded = [];
+  const f = await interactiveFixture(t, scoped, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = Buffer.concat(chunks).toString(), target = `/course${req.url}`;
+    forwarded.push({ target, body, proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+    let response;
+    if (target === write && req.method === "POST") {
+      const position = JSON.parse(body);
+      current = { ...current, revision: position.expectedProgressRevision + 1, resumePositionSeconds: position.resumePositionSeconds ?? 4 };
+      response = { progress: failure === "exit-position" && current.revision === 9 ? { ...current, resumePositionSeconds: 6 } : current };
+    } else if (target === outlineProgress) {
+      const row = current;
+      if (holdOutlineProgress) {
+        outlineRead.resolve();
+        await releaseOutline.promise;
+      }
+      response = { progress: [
+        failure === "outline-actor" ? { ...row, userId: courseId } :
+          failure === "outline-lesson" ? { ...row, lessonId: courseId } :
+          failure === "outline-future-position" ? { ...row, revision: 9, resumePositionSeconds: 7 } : row,
+      ] };
+    } else {
+      const index = targets.indexOf(target);
+      if (index === 0) {
+        courseReads++;
+        const id = failure === "outline-course" && courseReads === 2 ? courseId : lessonId;
+        response = { course: { id: courseId, modules: [{ lessons: [{ id }] }] } };
+      } else response = index === 2 ? { progress: [current] } : index === 5 ? resumeFixturePlayback(f.start) : reads[index];
+    }
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "public", "x-private-upstream-value": "sensitive" });
+    res.end(JSON.stringify(response));
+  }, "lesson-exit-save");
+  t.after(releaseOutline.resolve);
+  const read = index => f.send(f.signed({ path: index === 9 ? outlineProgress : targets[index] }));
+  const sendWrite = (body, options = {}) => f.send(f.signed({ method: "POST", path: write, body, ...options }));
+  const accepted = async promise => {
+    const response = await promise;
+    assert.equal(response.status, 200);
+    assert.equal(response.headers["cache-control"], "private, no-store");
+    assert.equal(response.headers["x-private-upstream-value"], undefined);
+    return JSON.parse(response.body);
+  };
+  const hydrate = async () => {
+    await Promise.all([4, 2, 0, 3, 1].map(index => accepted(read(index))));
+    await Promise.all([accepted(read(5)), accepted(sendWrite(started))]);
+    await accepted(sendWrite(restored));
+  };
+  return { f, scoped, courseId, prior, started, restored, exited, outlineProgress, read, sendWrite, accepted, hydrate,
+    forwarded, outlineRead, releaseOutline };
+}
+
+for (const outlineRevision of [8, 9]) {
+  test(`scoped lesson exit save joins a course outline at revision ${outlineRevision} to one bounded exit write`, async t => {
+    const { f, scoped, courseId, started, restored, exited, read, sendWrite, accepted, hydrate, forwarded, outlineRead, releaseOutline } =
+      await lessonExitSaveGateway(t, undefined, outlineRevision === 8);
+    for (const changed of [
+      scoped.slice(0, -1), scoped.map((row, index) => index === 0 ? { ...row, uses: 1 } : row),
+      scoped.map((row, index) => index === 8 ? { ...row, bodySha256: certificationHash(exited) } : row),
+      scoped.map((row, index) => index === 9 ? { ...row, target: row.target.replace(courseId, "10000000-0000-4000-8000-000000000001") } : row),
+    ]) {
+      f.save({ ...f.state, interactive: { ...f.state.interactive, requests: changed } });
+      assert.equal(createAdmissionReader(f.staging, f.options)().valid, false);
+    }
+    f.save(f.state);
+    const refused = async promise => assert.equal((await promise).status, 503);
+    await refused(read(9));
+    await refused(sendWrite(exited));
+    await hydrate();
+    await refused(sendWrite(exited.replace('"resumePositionSeconds":7', '"resumePositionSeconds":10')));
+    await refused(sendWrite(exited.replace('"maxPositionSeconds":14', '"maxPositionSeconds":15')));
+    await refused(sendWrite(exited, { actor: courseId }));
+    const outlineCourse = accepted(read(0));
+    let destination;
+    if (outlineRevision === 8) {
+      const reading = accepted(read(9));
+      await outlineRead.promise;
+      try { await accepted(sendWrite(exited)); }
+      finally { releaseOutline.resolve(); }
+      destination = await reading;
+    } else {
+      await accepted(sendWrite(exited));
+      destination = await accepted(read(9));
+    }
+    await outlineCourse;
+    assert.deepEqual(destination.progress.map(row => [row.revision, row.resumePositionSeconds, row.maxPositionSeconds]),
+      [[outlineRevision, outlineRevision === 8 ? 4 : 7, 14]]);
+    await refused(sendWrite(exited));
+    await refused(read(0));
+    await refused(read(9));
+    const observed = f.admissionState();
+    assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+    assert.equal(observed.interactiveEvidence.admitted, 11);
+    const indices = observed.interactiveEvidence.acknowledged.map(row => row.requestIndex);
+    assert.deepEqual(indices.slice(0, 5).sort(), [0, 1, 2, 3, 4]);
+    assert.deepEqual(indices.slice(5, 7).sort(), [5, 6]);
+    assert.equal(indices[7], 7);
+    assert.deepEqual(indices.slice(8).sort(), [0, 8, 9]);
+    assert.deepEqual(forwarded.filter(row => row.body !== "").map(row => row.body), [started, restored, exited]);
+    assert.ok(forwarded.every(row => row.proof === undefined));
+  });
+}
+
+for (const failure of ["outline-course", "outline-actor", "outline-lesson", "outline-future-position", "exit-position"]) {
+  test(`scoped lesson exit save refuses a mismatched ${failure} response`, async t => {
+    const { f, prior, exited, read, sendWrite, hydrate } = await lessonExitSaveGateway(t, failure);
+    await hydrate();
+    const response = await (failure === "outline-course" ? read(0) : failure === "exit-position" ? sendWrite(exited) : read(9));
+    assert.equal(response.status, 502);
+    assert.equal(response.headers["x-private-upstream-value"], undefined);
+    assert.ok(!response.body.includes(prior.id));
+    assert.equal((await read(0)).status, 503);
+    assert.deepEqual(f.admissionState().uncertain, { newWork: 1, recovery: 0 });
+  });
+}
+
 test("scoped lesson resume withholds playback data when the thumbnail names another asset", async t => {
   const { targets, requests, reads } = lessonResumeFixtureRequests();
   const f = await interactiveFixture(t, requests, (req, res) => {

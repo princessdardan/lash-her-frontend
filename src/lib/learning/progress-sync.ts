@@ -67,6 +67,7 @@ export function createProgressSync(dependencies: {
     blocked = "conflict";
   }
   async function drain() {
+    let acknowledgedKeepaliveRevision: number | undefined;
     while ((pending || pendingRead) && !blocked) {
       if (pendingRead && (!pending || readBeforeWrites)) {
         try {
@@ -95,23 +96,37 @@ export function createProgressSync(dependencies: {
       const current = pending;
       const expectedProgressRevision = progress?.revision ?? 0;
       pending = null;
+      const maxPositionSeconds =
+        current.maxPositionSeconds === undefined
+          ? undefined
+          : Math.max(progress?.maxPositionSeconds ?? 0, current.maxPositionSeconds);
+      // Visibility, pagehide and unmount can report the same final position.
+      // Skip only a queued duplicate of a keepalive this drain confirmed.
+      if (
+        keepalive &&
+        progress &&
+        progress.revision === acknowledgedKeepaliveRevision &&
+        current.event === undefined &&
+        (current.resumePositionSeconds === undefined ||
+          current.resumePositionSeconds === progress.resumePositionSeconds) &&
+        (maxPositionSeconds === undefined ||
+          maxPositionSeconds === progress.maxPositionSeconds)
+      ) {
+        changed("saved");
+        continue;
+      }
       changed("saving");
       try {
         progress = await dependencies.write(
           {
             ...current,
-            ...(current.maxPositionSeconds === undefined
-              ? {}
-              : {
-                  maxPositionSeconds: Math.max(
-                    progress?.maxPositionSeconds ?? 0,
-                    current.maxPositionSeconds,
-                  ),
-                }),
+            ...(maxPositionSeconds === undefined ? {} : { maxPositionSeconds }),
             expectedProgressRevision,
           },
           keepalive,
         );
+        acknowledgedKeepaliveRevision =
+          keepalive && current.event === undefined ? progress.revision : undefined;
         changed("saved");
       } catch (error) {
         if (error instanceof LearningRequestError && error.status === 409) {

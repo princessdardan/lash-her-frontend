@@ -6,7 +6,7 @@ import type { AdminPermissionAction } from "@/lib/admin/permissions";
 import { getCustomerActor, issueCustomerApplicationToken } from "@/lib/customer-auth/session";
 import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { permitsLessonAckLossCourseRequest, permitsLessonAssessmentCourseRequest, permitsLessonDenialCourseRequest,
-  permitsLessonEntryCourseRequest, permitsLessonRestoreCourseRequest, permitsLessonResumeCourseRequest,
+  permitsLessonEntryCourseRequest, permitsLessonExitSaveCourseRequest, permitsLessonRestoreCourseRequest, permitsLessonResumeCourseRequest,
   readInteractiveBrowserRequest, type LearnerAccessSelection, type LessonSelection } from "@/lib/writer-admission/interactive-proof";
 import { runWriterAdmission, type WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 import { mintApplicationToken, type ApplicationPrincipal } from "./application-jwt";
@@ -37,6 +37,7 @@ export function createCourseClient(dependencies: {
   getLessonResume?: () => Promise<LessonSelection | undefined>;
   getLessonRestore?: () => Promise<LessonSelection | undefined>;
   getLessonAckLoss?: () => Promise<LessonSelection | undefined>;
+  getLessonExitSave?: () => Promise<LessonSelection | undefined>;
   getAdmin?: typeof requirePermission;
   mintToken?: (principal: ApplicationPrincipal) => string;
   enabled?: (feature: IntegrationFeature) => boolean;
@@ -68,6 +69,7 @@ export function createCourseClient(dependencies: {
     const lessonResume = access === "learner" && dependencies.getLessonResume ? await dependencies.getLessonResume() : signedScope?.lessonResume;
     const lessonRestore = access === "learner" && dependencies.getLessonRestore ? await dependencies.getLessonRestore() : signedScope?.lessonRestore;
     const lessonAckLoss = access === "learner" && dependencies.getLessonAckLoss ? await dependencies.getLessonAckLoss() : signedScope?.lessonAckLoss;
+    const lessonExitSave = access === "learner" && dependencies.getLessonExitSave ? await dependencies.getLessonExitSave() : signedScope?.lessonExitSave;
     if (selectedLearner && (method !== "get" || input.params?.lessonId !== undefined && input.params.lessonId !== selectedLearner.lessonId)) {
       throw new IntegrationServiceError("forbidden", 403);
     }
@@ -76,7 +78,7 @@ export function createCourseClient(dependencies: {
     const pathname = path.replace(/\{([^}]+)\}/gu, (_match, name: string) => input.params![name]);
     const target = `${pathname}${query.size ? `?${query}` : ""}`;
     const requestMethod = method.toUpperCase() as GatewayRequest["method"];
-    const scopedBody = (lessonEntry || lessonDenial || lessonAssessment || lessonResume || lessonRestore || lessonAckLoss) &&
+    const scopedBody = (lessonEntry || lessonDenial || lessonAssessment || lessonResume || lessonRestore || lessonAckLoss || lessonExitSave) &&
       input.body !== undefined ? JSON.stringify(input.body) : undefined;
     const scopedRequest = {
       method: requestMethod, target: `/course${target}`, body: scopedBody, idempotencyKey: input.idempotencyKey,
@@ -86,7 +88,8 @@ export function createCourseClient(dependencies: {
       (lessonAssessment && !permitsLessonAssessmentCourseRequest(lessonAssessment, scopedRequest)) ||
       (lessonResume && !permitsLessonResumeCourseRequest(lessonResume, scopedRequest)) ||
       (lessonRestore && !permitsLessonRestoreCourseRequest(lessonRestore, scopedRequest)) ||
-      (lessonAckLoss && !permitsLessonAckLossCourseRequest(lessonAckLoss, scopedRequest))) {
+      (lessonAckLoss && !permitsLessonAckLossCourseRequest(lessonAckLoss, scopedRequest)) ||
+      (lessonExitSave && !permitsLessonExitSaveCourseRequest(lessonExitSave, scopedRequest))) {
       throw new IntegrationServiceError("forbidden", 403);
     }
     const execute = async (): Promise<{ value: Success<P, M> } | { failure: IntegrationServiceError }> => {
@@ -101,7 +104,7 @@ export function createCourseClient(dependencies: {
         if (access === "learner") {
           const issued = await issueCustomerToken();
           if (!issued) throw new IntegrationServiceError("sign_in_required", 401);
-          const selectedActor = lessonAckLoss?.actorId ?? lessonRestore?.actorId ?? lessonResume?.actorId ?? lessonAssessment?.actorId ??
+          const selectedActor = lessonExitSave?.actorId ?? lessonAckLoss?.actorId ?? lessonRestore?.actorId ?? lessonResume?.actorId ?? lessonAssessment?.actorId ??
             lessonDenial?.actorId ?? lessonEntry?.actorId ?? selectedLearner?.actorId;
           if (selectedActor !== undefined && issued.customerId !== selectedActor) throw new IntegrationServiceError("forbidden", 403);
           customerId = issued.customerId;

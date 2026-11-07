@@ -299,6 +299,46 @@ test("lesson acknowledgement loss scopes the authority read and all five writes 
   ]);
 });
 
+test("lesson exit save bounds both reads and all three writes to the selected learner and course", async () => {
+  const courseId = adminId, token = "scoped.learner.jwt";
+  const scope = { actorId: customerId, courseId, lessonId };
+  const bodies = [
+    { event: "lesson_started", expectedProgressRevision: 6 },
+    { resumePositionSeconds: 4, maxPositionSeconds: 14, expectedProgressRevision: 7 },
+    { resumePositionSeconds: 7, maxPositionSeconds: 14, expectedProgressRevision: 8 },
+  ] as const;
+  let issued = { customerId: adminId, token }, admissions = 0;
+  const calls: GatewayRequest[] = [];
+  const client = createCourseClient({ enabled: allowed, getLessonExitSave: async () => scope,
+    issueCustomerToken: async () => issued,
+    run: async (kind, task) => { assert.equal(kind, "new-work"); admissions++; return task(); },
+    getTransport: () => async request => {
+      calls.push(request);
+      return request.method === "GET" ? Response.json({ progress: [progress] }) : Response.json({ progress });
+    },
+  });
+  const forbidden = { code: "forbidden", status: 403 };
+  await assert.rejects(client.listProgress({ courseId }), forbidden);
+  issued = { customerId, token };
+  for (const attempt of [
+    () => client.getMyCourse(customerId), () => client.listProgress({ courseId: customerId }),
+    () => client.listProgress({ courseId, lessonId }), () => client.recordProgress(courseId, bodies[0]),
+    () => client.recordProgress(lessonId, { event: "lesson_started", expectedProgressRevision: 8 }),
+    () => client.recordProgress(lessonId, { ...bodies[2], resumePositionSeconds: 5 }),
+    () => client.recordProgress(lessonId, { ...bodies[2], resumePositionSeconds: 10 }),
+    () => client.recordProgress(lessonId, { ...bodies[2], expectedProgressRevision: 9 }),
+  ]) await assert.rejects(attempt(), forbidden);
+  assert.equal(admissions, 0);
+  assert.deepEqual(calls, []);
+  await client.listProgress({ courseId });
+  for (const body of bodies) await client.recordProgress(lessonId, body);
+  assert.equal(admissions, 3);
+  assert.deepEqual(calls.map(({ method, path, body, applicationToken }) => [method, path, body, applicationToken]), [
+    ["GET", `/v1/student/progress?courseId=${courseId}`, undefined, token],
+    ...bodies.map(body => ["POST", `/v1/student/lessons/${lessonId}/progress`, JSON.stringify(body), token]),
+  ]);
+});
+
 test("lesson denial binds the selected customer and returns only safe protected read denials", async () => {
   const courseId = adminId, token = "scoped.denied.jwt", requestId = "44444444-4444-4444-8444-444444444444";
   const selected = { actorId: customerId, courseId, lessonId };

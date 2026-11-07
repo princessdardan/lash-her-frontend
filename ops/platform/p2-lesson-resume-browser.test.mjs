@@ -8,15 +8,17 @@ import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { p2InteractiveBrowserEntryPath, p2LessonResumePaths, validateP2InteractiveBrowserInput,
-  validateP2InteractiveBrowserPermit, validateP2LessonAckLossReceipt, validateP2LessonRestoreReceipt, validateP2LessonResumeReceipt,
-  watchP2LessonAckLoss, watchP2LessonRestore, watchP2LessonResume } from "./p2-lifecycle-browser-recorder.mjs";
+import { p2InteractiveBrowserEntryPath, p2LessonEntryPaths, p2LessonResumePaths, validateP2InteractiveBrowserInput,
+  validateP2InteractiveBrowserPermit, validateP2LessonAckLossReceipt, validateP2LessonExitSaveReceipt, validateP2LessonRestoreReceipt,
+  validateP2LessonResumeReceipt, watchP2LessonAckLoss, watchP2LessonExitSave, watchP2LessonRestore,
+  watchP2LessonResume } from "./p2-lifecycle-browser-recorder.mjs";
 
 const origin = "https://staging.lashher.com", mediaHost = "stream.mux.com";
 const cache = { "cache-control": "private, no-store" };
 const refused = /P2_INTERACTIVE_LESSON_RESUME_RESPONSE_REFUSED/u;
 const restoreRefused = /P2_INTERACTIVE_LESSON_RESTORE_RESPONSE_REFUSED/u;
 const ackLossRefused = /P2_INTERACTIVE_LESSON_ACK_LOSS_RESPONSE_REFUSED/u;
+const exitSaveRefused = /P2_INTERACTIVE_LESSON_EXIT_SAVE_RESPONSE_REFUSED/u;
 
 function selection(restoring = false) {
   const target = { actorId: randomUUID(), operation: "play-and-rewind", courseId: randomUUID(), lessonId: randomUUID(), grantId: randomUUID() };
@@ -67,6 +69,17 @@ function ackLossSelection() {
   return { ...fixture, target, input: { ...input, actionId: "owned-lesson-ack-loss", stage: "lesson-ack-loss", ackLoss: target },
     receipt: { page: fixture.receipt.page, playback, writes, recovery, media: { beforeSeconds: resumePositionSeconds,
       afterSeconds: maxPositionSeconds, paused: true, manifestObserved: true, segmentObserved: true } } };
+}
+
+function exitSaveSelection(documentExit = false) {
+  const fixture = ackLossSelection(), { ackLoss, ...input } = fixture.input;
+  const target = { ...ackLoss, operation: documentExit ? "document-exit" : "spa-navigation" };
+  const paths = p2LessonEntryPaths(target), playedSeconds = target.resumePositionSeconds + 3;
+  return { ...fixture, paths, target, input: { ...input, actionId: "owned-lesson-exit-save", stage: "lesson-exit-save", exitSave: target },
+    receipt: { page: fixture.receipt.page, playback: fixture.receipt.playback[0], writes: fixture.receipt.writes.slice(0, 2),
+      exit: { pathname: paths.academyPath, status: 200, sameDocument: !documentExit, trustedPagehide: documentExit,
+        trustedHidden: documentExit, resumePositionSeconds: playedSeconds, maxPositionSeconds: target.maxPositionSeconds, expectedProgressRevision: 8 },
+      media: { playedSeconds, playing: true, manifestObserved: true, segmentObserved: true } } };
 }
 
 test("resume permit and receipt bind the learner, media identity and monotonic CAS sequence", () => {
@@ -156,15 +169,38 @@ test("lost acknowledgement requires a fixed permit, committed row, authoritative
   ]) assert.throws(() => validateP2LessonAckLossReceipt(invalid, target));
 });
 
+test("exit-save permit and receipt bind the selected row and genuine navigation mode", () => {
+  for (const documentExit of [false, true]) {
+    const { input, target, paths, receipt } = exitSaveSelection(documentExit), issued = Math.floor(Date.now() / 1000), expires = issued + 60;
+    const selector = (target.actorId + target.courseId + target.lessonId).replaceAll("-", "");
+    const cookie = ["v2", input.epoch, input.stage, issued, expires, "a".repeat(32), selector, "b".repeat(64)].join(".");
+    const permit = { stage: input.stage, epoch: input.epoch, expires, cookie };
+    assert.equal(validateP2InteractiveBrowserInput(input), input);
+    assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+    assert.equal(p2InteractiveBrowserEntryPath(input, "learner"), paths.lessonPath);
+    assert.equal(validateP2LessonExitSaveReceipt(receipt, target), receipt);
+    for (const change of [
+      { sameDocument: documentExit }, { trustedPagehide: !documentExit }, { trustedHidden: !documentExit },
+      { pathname: paths.lessonPath }, { expectedProgressRevision: 9 }, { maxPositionSeconds: target.maxPositionSeconds + 1 },
+      { resumePositionSeconds: target.resumePositionSeconds + 1 },
+    ]) assert.throws(() => validateP2LessonExitSaveReceipt({ ...receipt, exit: { ...receipt.exit, ...change } }, target));
+    assert.throws(() => validateP2LessonExitSaveReceipt({ ...receipt, writes: [receipt.writes[0],
+      { ...receipt.writes[1], progressId: randomUUID() }] }, target));
+    assert.throws(() => validateP2LessonExitSaveReceipt({ ...receipt, media: { ...receipt.media, playing: false } }, target));
+  }
+});
+
 function ownedLesson(paths, scenario, prior) {
-  return `<!doctype html><main><h1>Owned lesson</h1><p id="progress">Saving progress…</p></main>
+  const exitSave = scenario.startsWith("exit-");
+  return `<!doctype html><main><h1>Owned lesson</h1><p id="progress">Saving progress…</p>
+  ${exitSave ? `<a id="course" href="${paths.academyPath}">Owned course</a>` : ""}</main>
   <script src="/owned-mux-player.js"></script><script>
-    const { paths, scenario, prior } = ${JSON.stringify({ paths, scenario, prior: prior && {
+    const { paths, scenario, prior, exitSave } = ${JSON.stringify({ paths, scenario, exitSave, prior: prior && {
       resumePositionSeconds: prior.resumePositionSeconds, maxPositionSeconds: prior.maxPositionSeconds,
     } })};
-    const post = body => fetch(paths.progressPath, {method:'POST',headers:{'content-type':'application/json','x-lash-csrf':'1'},body:JSON.stringify(body)});
+    const post = (body,keepalive=false) => fetch(paths.progressPath, {method:'POST',headers:{'content-type':'application/json','x-lash-csrf':'1'},body:JSON.stringify(body),keepalive});
     const status = document.querySelector('#progress');
-    let revision = prior ? 4 : 0, lastSent = 0, watched = 0, acknowledgedMax = 0, seeking = false;
+    let revision = exitSave ? 6 : prior ? 4 : 0, lastSent = 0, watched = 0, acknowledgedMax = 0, seeking = false;
     const initial = {event:'lesson_started',expectedProgressRevision:revision};
     const start = post(initial).then(response => response.json()).then(({progress}) => {
       revision = progress.revision;
@@ -189,9 +225,34 @@ function ownedLesson(paths, scenario, prior) {
           await start;
           const resumePositionSeconds = scenario === 'restore-native-drift' ? prior.resumePositionSeconds : Math.floor(player.currentTime);
           const update = {resumePositionSeconds,maxPositionSeconds:prior.maxPositionSeconds,expectedProgressRevision:revision};
-          await post(update).then(response => response.json());
+          const {progress} = await post(update).then(response => response.json());
+          revision = progress.revision;
           if (scenario === 'restore-extra') setTimeout(() => void post({...update,expectedProgressRevision:6}), 1000);
         }, {once:true});
+        if (exitSave) {
+          const save = () => {
+            const resumePositionSeconds = Math.floor(player.currentTime);
+            void post({resumePositionSeconds,maxPositionSeconds:prior.maxPositionSeconds+(scenario==='exit-document-wrong-max'?1:0),
+              expectedProgressRevision:revision},true);
+          };
+          if (scenario === 'exit-document-early-save') {
+            const earlySave = () => {
+              if (player.paused || player.currentTime < prior.resumePositionSeconds + 4) return;
+              player.removeEventListener('timeupdate',earlySave);
+              save();
+            };
+            player.addEventListener('timeupdate',earlySave);
+          } else if (scenario.startsWith('exit-document')) addEventListener('pagehide',save);
+          else document.querySelector('#course').addEventListener('click', async event => {
+            event.preventDefault();
+            const response = await fetch(paths.academyPath+'?_rsc=owned',{headers:{RSC:'1'}});
+            if (!response.ok) return;
+            history.pushState({},'',paths.academyPath);
+            save();
+            if (scenario === 'exit-spa-replay') save();
+            document.querySelector('main').replaceChildren(Object.assign(document.createElement('h1'),{textContent:'Owned course'}));
+          });
+        }
         document.querySelector('main').append(player);
         return;
       }
@@ -271,7 +332,7 @@ function ownedAckLossLesson(paths, target, revision, replay) {
   </script>`;
 }
 
-test("owned Chromium plays and restores Mux media and recovers after a committed save loses its response", {
+test("owned Chromium plays, restores and saves Mux progress through native exit and acknowledgement loss", {
   skip: process.env.P2_INTERACTIVE_BROWSER_OWNED_TEST !== "true",
 }, async () => {
   const { chromium } = await import("playwright"), root = mkdtempSync(join(tmpdir(), "owned-p2-resume-"));
@@ -311,14 +372,17 @@ test("owned Chromium plays and restores Mux media and recovers after a committed
     const proxyPort = await bind(proxy);
     browser = await chromium.launch();
     for (const scenario of ["normal", "duplicate", "restore", "restore-row-drift", "restore-native-drift", "restore-extra",
-      "ack-loss", "ack-loss-forward-drift", "ack-loss-read-drift", "ack-loss-replay"]) {
+      "ack-loss", "ack-loss-forward-drift", "ack-loss-read-drift", "ack-loss-replay",
+      "exit-spa", "exit-document", "exit-spa-replay", "exit-document-wrong-max", "exit-document-early-save"]) {
       const restoring = scenario.startsWith("restore");
       const ackLoss = scenario.startsWith("ack-loss");
-      const { input, target, paths, receipt, authorization, date } = ackLoss ? ackLossSelection() : selection(restoring), bodies = [];
+      const exitSave = scenario.startsWith("exit-");
+      const { input, target, paths, receipt, authorization, date } = exitSave ? exitSaveSelection(scenario.startsWith("exit-document"))
+        : ackLoss ? ackLossSelection() : selection(restoring), bodies = [];
       const context = await browser.newContext({ proxy: { server: `http://127.0.0.1:${proxyPort}` }, ignoreHTTPSErrors: true });
       if (ackLoss) await context.addCookies([{ name: "__Host-owned-ack-loss", value: "verified", url: origin, secure: true, httpOnly: true }]);
-      let revision = ackLoss ? 6 : restoring ? 4 : 0, maxPositionSeconds = target.prior?.maxPositionSeconds ?? 0;
-      let playbackCount = 0, documentCount = 0, authoritativeReads = 0;
+      let revision = ackLoss || exitSave ? 6 : restoring ? 4 : 0, maxPositionSeconds = target.prior?.maxPositionSeconds ?? 0;
+      let playbackCount = 0, documentCount = 0, authoritativeReads = 0, exitResponse = false;
       const ackRow = (position, revision) => ({ id: target.progressId, userId: target.actorId, lessonId: target.lessonId,
         enrollmentId: target.enrollmentId, resumePositionSeconds: position, maxPositionSeconds: target.maxPositionSeconds, revision,
         completedQuizRevision: null, completedAt: null, lastWatchedAt: date.toISOString(), createdAt: date.toISOString(), updatedAt: date.toISOString() });
@@ -341,7 +405,13 @@ test("owned Chromium plays and restores Mux media and recovers after a committed
         if (request.url === paths.lessonPath) {
           documentCount++;
           return send(200, "text/html", ackLoss ? ownedAckLossLesson(paths, target, revision, scenario === "ack-loss-replay")
-            : ownedLesson(paths, scenario, target.prior), cache);
+            : ownedLesson(paths, scenario, exitSave ? target : target.prior), cache);
+        }
+        if (exitSave && request.url === paths.academyPath + "?_rsc=owned" && request.headers.rsc === "1")
+          return send(200, "text/x-component", "Owned outline", cache);
+        if (exitSave && request.url === paths.academyPath) {
+          if (scenario === "exit-document-early-save") await new Promise(resolve => setTimeout(resolve, 2_000));
+          return send(200, "text/html", "<!doctype html><main><h1>Owned course</h1></main>", cache);
         }
         if (request.url === "/owned-mux-player.js") return send(200, "application/javascript", bundle);
         if (request.url === paths.playbackPath) return send(200, "application/json", authorization,
@@ -365,6 +435,18 @@ test("owned Chromium plays and restores Mux media and recovers after a committed
             return send(200, "application/json", { progress: ackRow(observed.resumePositionSeconds, drift ? 8 : revision) },
               { ...cache, "x-request-id": observed.requestId });
           }
+          if (exitSave) {
+            if (request.headers.origin !== origin || request.headers["x-lash-csrf"] !== "1"
+              || body.expectedProgressRevision !== revision || revision >= 9 || (revision === 8 && body.maxPositionSeconds !== target.maxPositionSeconds))
+              return send(409, "application/json", {}, cache);
+            const requestId = receipt.writes[revision - 6]?.requestId ?? randomUUID();
+            const row = ackRow(body.resumePositionSeconds ?? target.resumePositionSeconds, ++revision);
+            if (revision === 9) {
+              await new Promise(resolve => setTimeout(resolve, 300));
+              exitResponse = true;
+            }
+            return send(200, "application/json", { progress: row }, { ...cache, "x-request-id": requestId });
+          }
           if (body.expectedProgressRevision !== revision || revision >= (restoring ? 6 : 4)) return send(409, "application/json", {}, cache);
           const { resumePositionSeconds = target.prior?.resumePositionSeconds ?? 0, maxPositionSeconds: submitted = 0 } = body;
           maxPositionSeconds = Math.max(maxPositionSeconds, submitted, resumePositionSeconds);
@@ -378,12 +460,41 @@ test("owned Chromium plays and restores Mux media and recovers after a committed
         }
         return send(404, "text/plain", "");
       };
-      const page = await context.newPage(), recorder = (ackLoss ? watchP2LessonAckLoss : restoring ? watchP2LessonRestore : watchP2LessonResume)(context, page, input);
+      const page = await context.newPage(), recorder = (exitSave ? watchP2LessonExitSave : ackLoss ? watchP2LessonAckLoss
+        : restoring ? watchP2LessonRestore : watchP2LessonResume)(context, page, input);
       const expires = Math.floor(Date.now() / 1000) + 35;
       try {
         if (scenario === "duplicate") await assert.rejects(recorder.open(expires), refused);
         else if (scenario === "restore-row-drift") await assert.rejects(recorder.open(expires), restoreRefused);
-        else if (ackLoss) {
+        else if (exitSave) {
+          await recorder.open(expires);
+          if (scenario === "exit-spa" || scenario === "exit-document") {
+            await recorder.wait(expires).catch(error => {
+              throw new Error(`Owned ${scenario} failed after ${bodies.length} progress requests`, { cause: error });
+            });
+            const observed = recorder.finish();
+            assert.equal(validateP2LessonExitSaveReceipt(observed, target), observed);
+            assert.deepEqual(observed.writes, receipt.writes);
+            assert.deepEqual(observed.playback, receipt.playback);
+            const exitDeadline = Date.now() + 2_000;
+            while (!exitResponse && Date.now() < exitDeadline) await new Promise(resolve => setTimeout(resolve, 20));
+            assert.ok(exitResponse);
+            assert.equal(revision, 9);
+            assert.deepEqual(bodies.map(body => body.expectedProgressRevision), [6, 7, 8]);
+            assert.equal(observed.exit.resumePositionSeconds, bodies.at(-1).resumePositionSeconds);
+            assert.equal(observed.exit.maxPositionSeconds, bodies.at(-1).maxPositionSeconds);
+          } else {
+            if (scenario === "exit-document-early-save") {
+              const delivered = page.waitForEvent("requestfinished", { timeout: 8_000, predicate: request =>
+                request.url() === origin + paths.progressPath && request.method() === "POST"
+                && request.postDataJSON()?.expectedProgressRevision === 8 });
+              await Promise.all([delivered, assert.rejects(recorder.wait(expires), exitSaveRefused)]);
+              assert.ok(exitResponse);
+              assert.equal(revision, 9);
+            } else await assert.rejects(recorder.wait(expires), exitSaveRefused);
+            assert.throws(() => recorder.finish(), exitSaveRefused);
+          }
+        } else if (ackLoss) {
           await recorder.open(expires);
           if (scenario === "ack-loss") {
             await recorder.wait(expires).catch(error => {

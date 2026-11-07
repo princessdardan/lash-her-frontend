@@ -568,6 +568,7 @@ for (const [stage, selectionKey, writeKey] of [
   ["lesson-resume", "lessonResume", "lessonResumeWrite"],
   ["lesson-restore", "lessonRestore", "lessonRestoreWrite"],
   ["lesson-ack-loss", "lessonAckLoss", "lessonAckLossWrite"],
+  ["lesson-exit-save", "lessonExitSave", "lessonExitSaveWrite"],
 ] as const) {
   test(`${stage} v2 grants write admission only on the exact selected progress POST`, async () => {
     const now = 1_794_009_600;
@@ -583,8 +584,10 @@ for (const [stage, selectionKey, writeKey] of [
     const attest = (method: string, path: string, search = "") =>
       attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, search, cookie }, env, now);
     const recovery = ["GET", "/api/academy/progress", `?lessonId=${lessonId}`];
+    const outline = ["GET", `/academy/courses/${courseId}`];
     const allowed = [["GET", page], ["GET", `${api}/playback`], ["POST", `${api}/progress`]];
     if (stage === "lesson-ack-loss") allowed.push(recovery);
+    if (stage === "lesson-exit-save") allowed.push(outline);
     for (const [method, path, query] of allowed) {
       const proof = attest(method, path, query);
       assert.ok(proof);
@@ -598,8 +601,11 @@ for (const [stage, selectionKey, writeKey] of [
       ["POST", `${api}/quiz/attempts`], ["POST", `${api}/progress`, "?retry=1"],
       ["POST", `${api.replace(lessonId, actorId)}/progress`]];
     if (stage !== "lesson-ack-loss") forbidden.push(recovery);
+    if (stage !== "lesson-exit-save") forbidden.push(outline);
+    else forbidden.push(["GET", outline[1], "?unexpected=1"], ["GET", outline[1].replace(courseId, actorId)],
+      ["POST", outline[1]], ["GET", "/api/academy/progress", `?courseId=${courseId}`]);
     for (const [method, path, query] of forbidden) assert.equal(attest(method, path, query), null);
-    const getProof = attest("GET", page), postProof = attest("POST", `${api}/progress`);
+    const getProof = attest("GET", stage === "lesson-exit-save" ? outline[1] : page), postProof = attest("POST", `${api}/progress`);
     assert.ok(getProof && postProof);
     const f = fixture();
     f.state.epoch = "9".repeat(18);

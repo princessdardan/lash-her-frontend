@@ -23,6 +23,7 @@ import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraf
   captureP2InteractiveResumeBaseline, observeP2InteractiveResumeCase,
   captureP2InteractiveRestoreBaseline, observeP2InteractiveRestoreCase,
   captureP2InteractiveAckLossBaseline, observeP2InteractiveAckLossCase,
+  captureP2InteractiveExitSaveBaseline, observeP2InteractiveExitSaveCase,
   captureP2InteractiveLessonDenialBaseline, observeP2InteractiveLessonDenialCase,
   captureP2InteractiveAssessmentBaseline, observeP2InteractiveAssessmentCase,
   captureP2InteractivePaidRevokeBaseline, observeP2InteractivePaidRevokeCase, validateP2InteractivePaidRevoke,
@@ -300,6 +301,8 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-lesson-restore-refuses-ineligible-prior-receipts-and-persistence-drift",
       "course-lesson-ack-loss-pinned-revision-six-to-eleven-without-replay-and-managed-playback",
       "course-lesson-ack-loss-refuses-ineligible-receipts-and-persistence-drift",
+      "course-lesson-exit-save-pinned-spa-and-document-exits-to-revision-nine-with-unchanged-maximum",
+      "course-lesson-exit-save-refuses-ineligible-receipts-and-persistence-drift",
       "course-lesson-denial-pinned-repositories-preserve-foreign-learning-and-media-without-access-or-writes",
       "course-lesson-denial-refuses-ineligible-fixtures-foreign-receipts-and-history-drift",
       "course-assessment-pinned-fail-then-pass-attempts-and-progress-revisions",
@@ -1732,13 +1735,16 @@ async function runOwnedLessonRestoreWitness({ course, job, dependencies, seed, r
   }
 
   const prepareRestored = async (name, options) => {
-    const test = await prepare(`ack-loss-${name}`, options), baseline = await capture(test.selection);
+    const test = await prepare(name, options), baseline = await capture(test.selection);
     const { actorId, courseId, lessonId, grantId, progressId, enrollmentId, resumePositionSeconds, maxPositionSeconds, playbackIdSha256 } =
       await observe(test.selection, baseline, await restore(test));
     return { ...test, selection: { actorId, courseId, lessonId, grantId, progressId, enrollmentId,
       resumePositionSeconds, maxPositionSeconds, playbackIdSha256 } };
   };
-  await runOwnedLessonAckLossWitness({ course, job, dependencies, prepareRestored, authorize, progress, write });
+  await runOwnedLessonAckLossWitness({ course, job, dependencies,
+    prepareRestored: (name, options) => prepareRestored(`ack-loss-${name}`, options), authorize, progress, write });
+  await runOwnedLessonExitSaveWitness({ course, job, dependencies,
+    prepareRestored: (name, options) => prepareRestored(`exit-save-${name}`, options), authorize, progress, write });
 }
 
 async function runOwnedLessonAckLossWitness({ course, job, dependencies, prepareRestored, authorize, progress, write }) {
@@ -1832,6 +1838,102 @@ async function runOwnedLessonAckLossWitness({ course, job, dependencies, prepare
     if (name === "metadata") await course.query("UPDATE public.courses SET description='different' WHERE id=$1::uuid", [selection.courseId]);
     await assert.rejects(observe(selection, baseline, receipt), { check });
     await assert.rejects(observe(selection, baseline, receipt), { check: "course-lesson-ack-loss-receipt" });
+  }
+}
+
+async function runOwnedLessonExitSaveWitness({ course, job, dependencies, prepareRestored, authorize, progress, write }) {
+  const capture = selection => captureP2InteractiveExitSaveBaseline(job, selection, dependencies);
+  const observe = (selection, baseline, receipt) => observeP2InteractiveExitSaveCase(job, selection, baseline, receipt, dependencies);
+  const prepare = async (name, operation, options) => {
+    const test = await prepareRestored(name, options);
+    return { ...test, selection: { ...test.selection, operation } };
+  };
+  const runExit = async test => {
+    const { actorId: userId, courseId, lessonId, progressId, enrollmentId, resumePositionSeconds, maxPositionSeconds,
+      playbackIdSha256, operation } = test.selection;
+    const sameDocument = operation === "spa-navigation";
+    const exitPosition = resumePositionSeconds + (sameDocument ? 3 : 4);
+    const playback = { ...await authorize(test), playbackIdSha256 };
+    const started = await progress.recordProgress({ userId, courseId, lessonId, enrollmentId, expectedProgressRevision: 6, markStarted: true });
+    const restored = await write(test, 7, resumePositionSeconds, maxPositionSeconds);
+    const writes = [started, restored].map((result, index) => {
+      const stored = { progressId: result.id, enrollmentId: result.enrollmentId, revision: result.revision,
+        resumePositionSeconds: result.resumePositionSeconds, maxPositionSeconds: result.maxPositionSeconds };
+      assert.deepEqual(stored, { progressId, enrollmentId, revision: index + 7, resumePositionSeconds, maxPositionSeconds });
+      return { requestId: randomUUID(), ...stored };
+    });
+    if (sameDocument) assert.deepEqual(await progress.listProgress({ userId, courseId }), [restored]);
+    const exited = await write(test, 8, exitPosition, maxPositionSeconds);
+    assert.deepEqual(await progress.listProgress({ userId, courseId }), [exited]);
+    assert.equal(exited.revision, 9);
+    assert.equal(exited.resumePositionSeconds, exitPosition);
+    assert.equal(exited.maxPositionSeconds, maxPositionSeconds);
+    const outline = `/academy/courses/${courseId}`;
+    return {
+      page: { pathname: `${outline}/lessons/${lessonId}`, status: 200 },
+      playback,
+      writes,
+      exit: { pathname: outline, status: 200, sameDocument, trustedPagehide: !sameDocument, trustedHidden: !sameDocument,
+        resumePositionSeconds: exitPosition, maxPositionSeconds, expectedProgressRevision: 8 },
+      media: { playedSeconds: exitPosition - 1, playing: true, manifestObserved: true, segmentObserved: true },
+    };
+  };
+
+  for (const operation of ["spa-navigation", "document-exit"]) {
+    const priorExpiry = operation === "document-exit" ? new Date(Date.now() + 900_000).toISOString() : null;
+    const test = await prepare(operation, operation, { priorExpiry }), { selection } = test;
+    await assert.rejects(capture({ ...selection, progressId: randomUUID() }), { check: "course-lesson-exit-save-progress" });
+    await assert.rejects(capture({ ...selection, grantId: randomUUID() }), { check: "course-lesson-exit-save-grant" });
+    await assert.rejects(capture({ ...selection, playbackIdSha256: hash("foreign-playback") }), { check: "course-lesson-exit-save-media" });
+    for (const patch of [{ operation: "visibility" }, { resumePositionSeconds: 7 }, { maxPositionSeconds: 13 }, { expectedRevision: 6 }]) {
+      await assert.rejects(capture({ ...selection, ...patch }), { check: "course-lesson-exit-save-selection" });
+    }
+    const baseline = await capture(selection);
+    assert.equal(JSON.stringify(baseline), "{}");
+    const receipt = await runExit(test);
+    await assert.rejects(observe(selection, {}, receipt), { check: "course-lesson-exit-save-receipt" });
+    await assert.rejects(observe({ ...selection, progressId: randomUUID() }, baseline, receipt), { check: "course-lesson-exit-save-receipt" });
+    await assert.rejects(observeP2InteractiveExitSaveCase(job, selection, baseline, receipt, { ...dependencies, verifySession: async () => {} }),
+      { check: "course-lesson-exit-save-receipt" });
+    for (const mutate of [
+      ({ page }) => { page.status = 204; },
+      ({ playback }) => { playback.playbackIdSha256 = hash("foreign-playback"); },
+      ({ playback }) => { playback.token = "owned-private-value"; },
+      ({ playback, writes }) => { writes[0].requestId = playback.requestId; },
+      ({ writes }) => { writes[1].revision = 9; },
+      ({ exit }) => { exit.pathname = "/academy"; },
+      ({ exit }) => { exit.sameDocument = !exit.sameDocument; },
+      ({ exit }) => { exit.trustedPagehide = !exit.trustedPagehide; },
+      ({ exit }) => { exit.trustedHidden = !exit.trustedHidden; },
+      ({ exit }) => { exit.resumePositionSeconds = selection.resumePositionSeconds + 6; },
+      ({ exit }) => { exit.expectedProgressRevision = 7; },
+      ({ exit }) => { exit.maxPositionSeconds += 1; },
+      ({ media }) => { media.playing = false; },
+      ({ media }) => { media.segmentObserved = false; },
+      ({ exit, media }) => { exit.resumePositionSeconds = selection.resumePositionSeconds + 5; media.playedSeconds = selection.resumePositionSeconds + 2; },
+    ]) {
+      const malformed = structuredClone(receipt);
+      mutate(malformed);
+      await assert.rejects(observe(selection, baseline, malformed), { check: "course-lesson-exit-save-receipt" });
+    }
+    const { actorId, courseId, lessonId, grantId, progressId, enrollmentId, maxPositionSeconds, playbackIdSha256 } = selection;
+    assert.deepEqual(await observe(selection, baseline, receipt), { actorId, courseId, lessonId, grantId, progressId, enrollmentId, revision: 9,
+      resumePositionSeconds: receipt.exit.resumePositionSeconds, maxPositionSeconds, playbackIdSha256,
+      playbackExpiresAt: receipt.playback.thumbnailExpiresAt, readOnly: true });
+    await assert.rejects(write(test, 8, receipt.exit.resumePositionSeconds, maxPositionSeconds), { name: "ProgressRevisionConflictError" });
+    await assert.rejects(observe(selection, baseline, receipt), { check: "course-lesson-exit-save-receipt" });
+    await assert.rejects(capture(selection), { check: "course-lesson-exit-save-progress" });
+  }
+
+  for (const [name, check] of [["position", "course-lesson-exit-save-progress"], ["duration", "course-lesson-exit-save-media"],
+    ["expiry", "course-lesson-exit-save-media"], ["metadata", "course-lesson-exit-save-history"]]) {
+    const test = await prepare(name, "document-exit"), { selection } = test, baseline = await capture(selection), receipt = await runExit(test);
+    if (name === "position") await write(test, 9, selection.resumePositionSeconds + 5, selection.maxPositionSeconds);
+    if (name === "duration") await course.query("UPDATE public.video_assets SET duration_seconds=31 WHERE id=$1::uuid", [test.assetId]);
+    if (name === "expiry") receipt.playback.thumbnailExpiresAt = new Date(Date.parse(receipt.playback.thumbnailExpiresAt) + 500).toISOString();
+    if (name === "metadata") await course.query("UPDATE public.courses SET description='different' WHERE id=$1::uuid", [selection.courseId]);
+    await assert.rejects(observe(selection, baseline, receipt), { check });
+    await assert.rejects(observe(selection, baseline, receipt), { check: "course-lesson-exit-save-receipt" });
   }
 }
 

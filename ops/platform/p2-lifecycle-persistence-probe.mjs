@@ -664,6 +664,7 @@ const lessonEntryBaselines = new WeakMap();
 const lessonResumeBaselines = new WeakMap();
 const lessonRestoreBaselines = new WeakMap();
 const lessonAckLossBaselines = new WeakMap();
+const lessonExitSaveBaselines = new WeakMap();
 const lessonDenialBaselines = new WeakMap();
 const assessmentBaselines = new WeakMap();
 const paidRevokeBaselines = new WeakMap();
@@ -1907,33 +1908,41 @@ export async function observeP2InteractiveRestoreCase(courseJob, selection, base
     playbackIdSha256: prior.playbackIdSha256, readOnly: true };
 }
 
-const lessonAckLossIdentityFields = [...lessonEntrySelectionFields, "progressId", "enrollmentId"];
-const lessonAckLossSelectionFields = [...lessonAckLossIdentityFields, "resumePositionSeconds", "maxPositionSeconds", "playbackIdSha256"];
-const lessonAckLossProgressFields = ["requestId", "progressId", "enrollmentId", "revision", "resumePositionSeconds", "maxPositionSeconds"];
+const pinnedLessonIdentityFields = [...lessonEntrySelectionFields, "progressId", "enrollmentId"];
+const pinnedLessonSelectionFields = [...pinnedLessonIdentityFields, "resumePositionSeconds", "maxPositionSeconds", "playbackIdSha256"];
+const pinnedLessonProgressFields = ["requestId", "progressId", "enrollmentId", "revision", "resumePositionSeconds", "maxPositionSeconds"];
+const lessonExitSaveSelectionFields = [...pinnedLessonSelectionFields, "operation"];
 
-function validateLessonAckLossSelection(selection) {
-  demand(closed(selection, lessonAckLossSelectionFields) && lessonAckLossIdentityFields.every(key => courseUuid(selection[key]))
+function validatePinnedLessonSelection(selection, fields, check) {
+  demand(closed(selection, fields) && pinnedLessonIdentityFields.every(key => courseUuid(selection[key]))
     && Number.isInteger(selection.resumePositionSeconds) && selection.resumePositionSeconds >= 3 && selection.resumePositionSeconds <= 6
     && selection.maxPositionSeconds === selection.resumePositionSeconds + 10
-    && typeof selection.playbackIdSha256 === "string" && SHA.test(selection.playbackIdSha256) && !/^0{64}$/u.test(selection.playbackIdSha256),
-  "course-lesson-ack-loss-selection");
+    && typeof selection.playbackIdSha256 === "string" && SHA.test(selection.playbackIdSha256) && !/^0{64}$/u.test(selection.playbackIdSha256), check);
+}
+
+function matchesPinnedLessonWrite(row, selection, revision, resumePositionSeconds) {
+  return courseUuid(row.requestId) && row.progressId === selection.progressId && row.enrollmentId === selection.enrollmentId
+    && row.revision === revision && row.resumePositionSeconds === resumePositionSeconds
+    && row.maxPositionSeconds === selection.maxPositionSeconds;
+}
+
+function validateLessonAckLossSelection(selection) {
+  validatePinnedLessonSelection(selection, pinnedLessonSelectionFields, "course-lesson-ack-loss-selection");
 }
 
 function validateLessonAckLossReceipt(receipt, selection, before) {
   const check = "course-lesson-ack-loss-receipt";
   demand(closed(receipt, ["page", "playback", "writes", "recovery", "media"]), check);
   const { page, playback, writes, recovery, media } = receipt;
-  const { courseId, lessonId, progressId, enrollmentId, resumePositionSeconds, maxPositionSeconds, playbackIdSha256 } = selection;
+  const { courseId, lessonId, resumePositionSeconds, maxPositionSeconds, playbackIdSha256 } = selection;
   demand(closed(page, ["pathname", "status"]) && page.pathname === `/academy/courses/${courseId}/lessons/${lessonId}` && page.status === 200
     && Array.isArray(playback) && playback.length === 2 && Array.isArray(writes) && writes.length === 5, check);
   const expiries = [...playback].map(item => reviewedPlaybackExpiry(item, check, true));
-  const hasPosition = (row, revision, resume) => courseUuid(row.requestId) && row.progressId === progressId && row.enrollmentId === enrollmentId
-    && row.revision === revision && row.resumePositionSeconds === resume && row.maxPositionSeconds === maxPositionSeconds;
   demand([...playback].every((item, index) => item.playbackIdSha256 === playbackIdSha256 && expiries[index] > Date.parse(before.lesson.observed_at))
-    && [...writes].every((row, index) => closed(row, lessonAckLossProgressFields)
-      && hasPosition(row, index + 7, index < 2 ? resumePositionSeconds : maxPositionSeconds))
-    && closed(recovery, [...lessonAckLossProgressFields, "browserFailure", "unconfirmedObserved", "noReplay"])
-    && hasPosition(recovery, 9, maxPositionSeconds) && recovery.browserFailure === "connectionreset"
+    && [...writes].every((row, index) => closed(row, pinnedLessonProgressFields)
+      && matchesPinnedLessonWrite(row, selection, index + 7, index < 2 ? resumePositionSeconds : maxPositionSeconds))
+    && closed(recovery, [...pinnedLessonProgressFields, "browserFailure", "unconfirmedObserved", "noReplay"])
+    && matchesPinnedLessonWrite(recovery, selection, 9, maxPositionSeconds) && recovery.browserFailure === "connectionreset"
     && recovery.unconfirmedObserved === true && recovery.noReplay === true
     && new Set([...playback, ...writes, recovery].map(row => row.requestId)).size === 8, check);
   demand(closed(media, ["beforeSeconds", "afterSeconds", "paused", "manifestObserved", "segmentObserved"])
@@ -1957,7 +1966,7 @@ export async function observeP2InteractiveAckLossCase(courseJob, selection, base
   validateLessonAckLossSelection(selection);
   const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = lessonAckLossBaselines.get(baseline);
   demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
-    && saved.verifySession === dependencies?.verifySession && lessonAckLossSelectionFields.every(key => selection[key] === saved.selected[key]),
+    && saved.verifySession === dependencies?.verifySession && pinnedLessonSelectionFields.every(key => selection[key] === saved.selected[key]),
   "course-lesson-ack-loss-receipt");
   const before = saved.result, playbackExpiry = validateLessonAckLossReceipt(browserReceipt, saved.selected, before);
   lessonAckLossBaselines.delete(baseline);
@@ -1971,6 +1980,71 @@ export async function observeP2InteractiveAckLossCase(courseJob, selection, base
   demand(after.lesson.asset_id === before.lesson.asset_id && after.mediaSha256 === before.mediaSha256
     && Date.parse(after.lesson.last_token_expires_at) === Math.max(baselineExpiry, playbackExpiry), "course-lesson-ack-loss-media");
   return { ...position, revision: 11, playbackExpiresAt: date(playbackExpiry), readOnly: true };
+}
+
+function validateLessonExitSaveSelection(selection) {
+  const check = "course-lesson-exit-save-selection";
+  validatePinnedLessonSelection(selection, lessonExitSaveSelectionFields, check);
+  demand(["spa-navigation", "document-exit"].includes(selection.operation), check);
+}
+
+function validateLessonExitSaveReceipt(receipt, selection, before) {
+  const check = "course-lesson-exit-save-receipt";
+  demand(closed(receipt, ["page", "playback", "writes", "exit", "media"]), check);
+  const { page, playback, writes, exit, media } = receipt;
+  const { courseId, lessonId, operation, resumePositionSeconds, maxPositionSeconds, playbackIdSha256 } = selection;
+  const outline = `/academy/courses/${courseId}`;
+  const sameDocument = operation === "spa-navigation";
+  const playedRange = value => Number.isSafeInteger(value) && value >= resumePositionSeconds + 2 && value <= resumePositionSeconds + 5;
+  const expiry = reviewedPlaybackExpiry(playback, check, true);
+  demand(closed(page, ["pathname", "status"]) && page.pathname === `${outline}/lessons/${lessonId}` && page.status === 200
+    && playback.playbackIdSha256 === playbackIdSha256 && expiry > Date.parse(before.lesson.observed_at)
+    && Array.isArray(writes) && writes.length === 2 && [...writes].every((write, index) => closed(write, pinnedLessonProgressFields)
+      && matchesPinnedLessonWrite(write, selection, 7 + index, resumePositionSeconds))
+    && new Set([playback.requestId, ...writes.map(write => write.requestId)]).size === 3, check);
+  demand(closed(exit, ["pathname", "status", "sameDocument", "trustedPagehide", "trustedHidden",
+    "resumePositionSeconds", "maxPositionSeconds", "expectedProgressRevision"])
+    && exit.pathname === outline && exit.status === 200 && exit.sameDocument === sameDocument
+    && exit.trustedPagehide === !sameDocument && exit.trustedHidden === !sameDocument
+    && exit.expectedProgressRevision === 8 && playedRange(exit.resumePositionSeconds) && exit.maxPositionSeconds === maxPositionSeconds
+    && closed(media, ["playedSeconds", "playing", "manifestObserved", "segmentObserved"])
+    && playedRange(media.playedSeconds) && Math.abs(media.playedSeconds - exit.resumePositionSeconds) <= 2
+    && media.playing === true && media.manifestObserved === true && media.segmentObserved === true, check);
+  return expiry;
+}
+
+export async function captureP2InteractiveExitSaveBaseline(courseJob, selection, dependencies) {
+  validateLessonExitSaveSelection(selection);
+  const selected = Object.freeze({ ...selection }), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined,
+    client => readPinnedLessonPosition(client, selected, selected, 6, "course-lesson-exit-save"));
+  const baseline = Object.freeze({});
+  lessonExitSaveBaselines.set(baseline, { selected, result, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractiveExitSaveCase(courseJob, selection, baseline, browserReceipt, dependencies) {
+  validateLessonExitSaveSelection(selection);
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = lessonExitSaveBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+    && saved.verifySession === dependencies?.verifySession && lessonExitSaveSelectionFields.every(key => selection[key] === saved.selected[key]),
+  "course-lesson-exit-save-receipt");
+  const before = saved.result, playbackExpiry = validateLessonExitSaveReceipt(browserReceipt, saved.selected, before);
+  lessonExitSaveBaselines.delete(baseline);
+  const { resumePositionSeconds } = browserReceipt.exit;
+  const position = { ...saved.selected, resumePositionSeconds };
+  const { result: after } = await readHeldCourseDraft(target, dependencies, saved.roleOid,
+    client => readPinnedLessonPosition(client, saved.selected, position, 9, "course-lesson-exit-save"));
+  demand(after.progress[0].created_at === before.progress[0].created_at
+    && Date.parse(after.progress[0].updated_at) >= Date.parse(before.lesson.observed_at), "course-lesson-exit-save-progress");
+  demand(sameIds(after.history, before.history), "course-lesson-exit-save-history");
+  const baselineExpiry = before.lesson.last_token_expires_at === null ? 0 : Date.parse(before.lesson.last_token_expires_at);
+  demand(after.lesson.asset_id === before.lesson.asset_id && after.mediaSha256 === before.mediaSha256
+    && Date.parse(after.lesson.last_token_expires_at) === Math.max(baselineExpiry, playbackExpiry), "course-lesson-exit-save-media");
+  const { actorId, courseId, lessonId, grantId, progressId, enrollmentId, maxPositionSeconds, playbackIdSha256 } = saved.selected;
+  return { actorId, courseId, lessonId, grantId, progressId, enrollmentId, revision: 9, resumePositionSeconds,
+    maxPositionSeconds, playbackIdSha256, playbackExpiresAt: date(playbackExpiry), readOnly: true };
 }
 
 const lessonDenialSelectionFields = [...lessonEntrySelectionFields, "enrolledActorId"];

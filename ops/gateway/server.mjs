@@ -6,7 +6,7 @@ import { createWorkloadVerifier } from "./oidc.mjs";
 import { matchRoute, MinuteBudget, validateConfig } from "./policy.mjs";
 import { createOperationsServer } from "./operations.mjs";
 import {
-  admissionClass, createAdmissionReader, isScopedMuxRoute, lessonAckLossPhasePermits, lessonAssessmentPhasePermits, lessonResumePhasePermits,
+  admissionClass, createAdmissionReader, isScopedMuxRoute, lessonAssessmentPhasePermits, lessonResumePhasePermits, scopedLessonPositionPhasePermits,
   scopedAssessmentAcknowledged, scopedResumeAcknowledged,
   scopedInteractiveAcknowledged, scopedMuxAcknowledged,
   selectScopedInteractiveRequest, selectScopedMuxCallback, SCOPED_INTERACTIVE_HEADER, SCOPED_MUX_BODY_LIMIT, SCOPED_MUX_HEADER,
@@ -145,6 +145,7 @@ export function createGateway(input, options = {}) {
         const assessment = current.interactive.stage === "lesson-assessment";
         const restore = current.interactive.stage === "lesson-restore";
         const ackLoss = current.interactive.stage === "lesson-ack-loss";
+        const exitSave = current.interactive.stage === "lesson-exit-save";
         interactiveEvidence = scopedInteractiveEvidence.get(current.sha256);
         if (!interactiveEvidence) {
           interactiveEvidence = { ids: new Set(), used: new Map(), acknowledged: [], ...(assessment ? { attemptIds: new Set() } : {}) };
@@ -153,13 +154,16 @@ export function createGateway(input, options = {}) {
         const used = interactiveEvidence.used.get(interactiveSelection.requestIndex) ?? 0;
         if (interactiveEvidence.ids.has(interactiveSelection.requestId) || used >= interactiveSelection.uses ||
             (assessment && !lessonAssessmentPhasePermits(interactiveSelection, interactiveEvidence)) ||
-            (ackLoss && !lessonAckLossPhasePermits(interactiveSelection, interactiveEvidence)) ||
+            ((ackLoss || exitSave) && !scopedLessonPositionPhasePermits(interactiveSelection, interactiveEvidence, exitSave)) ||
             ((restore || current.interactive.stage === "lesson-resume") && !lessonResumePhasePermits(interactiveSelection, interactiveEvidence, restore))) {
           return refuse(503, "release_maintenance", 30);
         }
         interactiveEvidence.ids.add(interactiveSelection.requestId);
         if (interactiveSelection.attemptRequestId) interactiveEvidence.attemptIds.add(interactiveSelection.attemptRequestId);
         interactiveEvidence.used.set(interactiveSelection.requestIndex, used + 1);
+        if (exitSave && interactiveSelection.requestIndex === 8) {
+          interactiveEvidence.exitRequestedPosition = interactiveSelection.resumePosition.resumePositionSeconds;
+        }
         interactiveRequest = true;
         // Catalog, playback and other scoped GETs are part of the same drain.
         accountAdmission("newWork");
@@ -215,7 +219,7 @@ export function createGateway(input, options = {}) {
             }
             if (interactiveSelection) {
               const stage = interactiveAdmission.interactive.stage;
-              const scopedPosition = ["lesson-resume", "lesson-restore", "lesson-ack-loss"].includes(stage);
+              const scopedPosition = ["lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save"].includes(stage);
               const strictInteractive = scopedPosition || stage === "lesson-denial" || stage === "lesson-assessment";
               const acknowledged = scopedPosition
                 ? scopedResumeAcknowledged(req.url, reply.statusCode, reply.headers["content-type"], buffered,

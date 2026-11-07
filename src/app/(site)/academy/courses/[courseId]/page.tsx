@@ -14,7 +14,8 @@ export default async function AcademyCoursePage({ params }: { params: Promise<{ 
   const { courseId } = await params;
   if (!validLearningId(courseId)) notFound();
   const path = `/academy/courses/${courseId}`;
-  const prefetch = (await readInteractiveBrowserRequest())?.lessonEntry ? false : undefined;
+  const scope = await readInteractiveBrowserRequest();
+  const prefetch = scope?.lessonEntry || scope?.lessonExitSave ? false : undefined;
   const result = await readLearningPage(async () => {
     const client = getCourseClient();
     const [{ course }, { progress }] = await Promise.all([client.getMyCourse(courseId), client.listProgress({ courseId })]);

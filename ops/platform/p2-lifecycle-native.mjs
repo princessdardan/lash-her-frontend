@@ -276,6 +276,19 @@ const reviewedLessonAckLossDependencies = {
   "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "bbb2ef6498541ad7499d5ec3b8c173d87f30c73ff1bef455a7587fbe1f2cc906",
   "ops/gateway/lesson-resume-position.mjs": "0e9a391326d0d9bf432a676ec3e0d00db6659693bc192b54039306db9238873e"
 };
+const reviewedLessonExitSaveSource = {
+  ...reviewedLessonAckLossSource,
+  "src/lib/writer-admission/runtime.ts": "b6c6285963a0c13cbea36b44752c53dcb2f55db48eb20cc2feb42f54141e7556"
+};
+const reviewedLessonExitSaveDependencies = {
+  ...reviewedLessonAckLossDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "00be9def997832bd169b7bc41d89332dde87d9463025e8ca5b4e222aeb523228",
+  "src/lib/api-integration/course-client.ts": "85d604f6facb7c9e52153c04cff32ba90f20b7d083120c5dc1002fc4f41087c6",
+  "src/app/(site)/academy/courses/[courseId]/page.tsx": "91945745dd2bd6ce0b523c1e1e3c5b96d767637d8cc6268992bfc2afac6afce3",
+  "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "97c1b52486d72fc685dd536ffbc37488e81886bab533b33552ce6da432e877cb",
+  "src/lib/learning/progress-sync.ts": "8e5dccb07f2b3f408fa577abf222e0a6dcbff48a144ca38c0a867ed253d9929b",
+  "ops/gateway/lesson-resume-position.mjs": "3ed69e07ac54f961e71c7acbca26f2b49b6932b3dd30f37914ebda3471208b8f"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -311,7 +324,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedLessonAssessmentSource, [reviewedLessonAssessmentDependencies]],
     [reviewedLessonResumeSource, [reviewedLessonResumeDependencies]],
     [reviewedLessonRestoreSource, [reviewedLessonRestoreDependencies, reviewedProgressRecoveryDependencies]],
-    [reviewedLessonAckLossSource, [reviewedLessonAckLossDependencies]]]
+    [reviewedLessonAckLossSource, [reviewedLessonAckLossDependencies]],
+    [reviewedLessonExitSaveSource, [reviewedLessonExitSaveDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;
