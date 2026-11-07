@@ -55,16 +55,19 @@ test('certification fixture requires every current and physical case and cannot 
   }
 });
 
-test('strict certification consumer accepts the retained profiled PG18 receipt and requires its new lock check', () => {
+test('strict certification consumer requires the fresh interrupted-restoration proof', () => {
   const fixture=P2_OWNED_FIXTURES.find(value=>value.id==='certification');
-  const actual=JSON.parse(readFileSync(new URL('../../docs/api-integration/baselines/2026-11-07-p2q-certification-planning/owned-postgres18-guard.json',import.meta.url)));
-  assert.equal(validateP2FixtureReceipt(fixture,actual,18).executedChecks,12);
+  const actual=JSON.parse(readFileSync(new URL('../../docs/api-integration/baselines/2026-11-07-p2q-certification-planning/owned-postgres18-interrupted.json',import.meta.url)));
+  assert.equal(validateP2FixtureReceipt(fixture,actual,18).executedChecks,13);
   for(const missing of ['actual-fixed-direct-worker-epoch-original-operation-window-and-uncertainty-refusal',
     'actual-known-ack-epochs-exact-uncertainty-and-specific-operation-settlement',
     'actual-profiled-current-certification-lock-readback-and-fence-refusal',
-    'actual-profiled-guard-fence-with-exclusive-lock-and-idempotent-readback']){
+    'actual-profiled-guard-fence-with-exclusive-lock-and-idempotent-readback',
+    'actual-profiled-interrupted-fresh-locks-specific-settlement-and-independent-closure']){
     assert.throws(()=>validateP2FixtureReceipt(fixture,{...actual,checks:actual.checks.filter(value=>value!==missing)},18));
   }
+  const originalGuard=JSON.parse(readFileSync(new URL('../../docs/api-integration/baselines/2026-11-07-p2q-certification-planning/owned-postgres18-guard.json',import.meta.url)));
+  assert.equal(originalGuard.checks.length,12);assert.throws(()=>validateP2FixtureReceipt(fixture,originalGuard,18));
   const originalTen=JSON.parse(readFileSync(new URL('../../docs/api-integration/baselines/2026-11-06-p2-known-ack-control/owned-current-postgres18.json',import.meta.url)));
   assert.equal(originalTen.checks.length,10);assert.throws(()=>validateP2FixtureReceipt(fixture,originalTen,18));
 });

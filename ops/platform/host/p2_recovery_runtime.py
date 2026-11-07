@@ -67,8 +67,11 @@ class P2RecoveryRuntime:
         options = {} if expected is None else {'expected_profile': expected}
         if expected is not None:
             from p2_known_ack_loss import ProfiledKnownAckRecoveryRuntime, ProfiledKnownAckRecoveryScope
-            migrate.demand(type(self) is ProfiledKnownAckRecoveryRuntime and type(self.scope) is ProfiledKnownAckRecoveryScope
-                           and self.scope.boundary.expected_profile == expected,
+            from p2_profiled_known_ack_runtime import ProfiledInterruptedKnownAckRuntime, ProfiledInterruptedKnownAckScope
+            migrate.demand((type(self), type(self.scope)) in (
+                               (ProfiledKnownAckRecoveryRuntime, ProfiledKnownAckRecoveryScope),
+                               (ProfiledInterruptedKnownAckRuntime, ProfiledInterruptedKnownAckScope),
+                           ) and self.scope.boundary.expected_profile == expected,
                            'P2_PROFILED_KNOWN_ACK_RUNTIME_SCOPE_REQUIRED')
         self.scope.require_release(self.selected, self.jobs)
         self.scope.require_configuration(self.configuration)

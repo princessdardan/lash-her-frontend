@@ -282,7 +282,9 @@ def configuration_container(arguments, *, expected_profile=None):
             prefix = "lash-p2-profiled-current-image-check-"
         else:
             from p2_known_ack_loss import ProfiledKnownAckRecoveryScope
-            demand(type(scope) is ProfiledKnownAckRecoveryScope, "PROFILED_CURRENT_PROCESS_LOCAL_SCOPE_REQUIRED")
+            from p2_profiled_known_ack_runtime import ProfiledInterruptedKnownAckScope
+            demand(type(scope) in (ProfiledKnownAckRecoveryScope, ProfiledInterruptedKnownAckScope),
+                   "PROFILED_CURRENT_PROCESS_LOCAL_SCOPE_REQUIRED")
             scope.verify()
             prefix = "lash-p2-profiled-certification-image-check-"
     name = prefix + uuid4().hex

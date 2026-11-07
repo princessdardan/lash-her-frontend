@@ -64,6 +64,7 @@ export const P2_OWNED_FIXTURES = Object.freeze([
     'actual-fixed-browser-pending-open-close-epochs-only',
     'actual-fixed-direct-worker-epoch-original-operation-window-and-uncertainty-refusal',
     'actual-known-ack-epochs-exact-uncertainty-and-specific-operation-settlement',
+    'actual-profiled-interrupted-fresh-locks-specific-settlement-and-independent-closure',
     'independent-fence-after-parent-session-loss-and-without-native-credential',
     'actual-profiled-current-certification-lock-readback-and-fence-refusal',
     'actual-profiled-guard-fence-with-exclusive-lock-and-idempotent-readback',

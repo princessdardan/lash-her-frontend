@@ -124,7 +124,8 @@ def validate_profiled_interrupted_packet(initial):
     require(set(plan) == PLAN_FIELDS and plan['mode'] == MODE and plan['environment'] == 'staging' and
             all(_canonical(plan[key]) == _canonical(initial[key]) for key in IDENTITY_FIELDS) and
             plan['originalReleaseId'] == candidate['releaseId'] and plan['sourceCommit'] == candidate['sources']['frontend']['commit'] and
-            plan['operatorSourceCommit'] == initial['sourceCommit'] and plan['runtimeStages'] == 5 and plan['runtimeReplacements'] == 1 and
+            plan['operatorSourceCommit'] == initial['sourceCommit'] and plan['runtimeStages'] == 5 and
+            type(plan['runtimeReplacements']) is int and plan['runtimeReplacements'] == 1 and
             plan['maximumSeconds'] == 900 and all(plan[key] is False for key in FALSE_FIELDS) and
             plan['requestedFrontier'] == _requested_frontier(selection, initial['results']), 'P2_PROFILED_INTERRUPTED_REVIEWED_PLAN_REQUIRED')
     original = _raw_original(initial, expected)
@@ -195,18 +196,52 @@ def prepare_profiled_interrupted_input(initial, source):
     return plan, original, selected, jobs
 
 
+def verify_profiled_interrupted_retained(initial, plan, selected, jobs, verify):
+    """Read actual stopped-lineage and retained B bytes under the caller's held host lock."""
+    from p2_known_ack_interrupted_restoration import load_profiled_retained
+    expected = certification._profiled_context()
+    verify()
+    retained = load_profiled_retained(initial, selected, jobs, verify, expected_profile=expected)
+    require(retained['frontier'] == plan['requestedFrontier'], 'P2_PROFILED_INTERRUPTED_ACTUAL_FRONTIER_CHANGED')
+    verify()
+    return retained
+
+
+def plan_retained(initial, source, plan, selected, jobs):
+    import fcntl
+    import os
+    import stat
+    from p2_release_broker import LOCK
+    fd = os.open(LOCK, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        identity = os.fstat(fd)
+        def verify():
+            actual = LOCK.lstat()
+            require(stat.S_ISREG(actual.st_mode) and actual.st_uid == 0 and not actual.st_mode & 0o077 and
+                    (actual.st_dev,actual.st_ino) == (identity.st_dev,identity.st_ino), 'P2_PROFILED_INTERRUPTED_PLAN_LOCK_CHANGED')
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            verify_profiled_current_source_closure(initial, source)
+        retained = verify_profiled_interrupted_retained(initial, plan, selected, jobs, verify)
+        return {'actualFrontier':retained['frontier'],'retainedGatewayObserved':True}
+    finally:
+        os.close(fd)
+
+
 def main():
     import os
-    require(sys.argv[1:] == ['--plan-profiled-current'] and sys.platform == 'linux' and os.geteuid() == 0,
+    require(sys.argv[1:] in (['--plan-profiled-current'],['--plan-retained-profiled-current']) and
+            sys.platform == 'linux' and os.geteuid() == 0,
             'P2_PROFILED_INTERRUPTED_FIXED_LINUX_PLAN_REQUIRED')
     raw = sys.stdin.buffer.read(4_000_001)
     require(0 < len(raw) <= 4_000_000, 'P2_PROFILED_INTERRUPTED_PACKET_REQUIRED')
     initial = decode_qualification_target_json(raw, 'private-packet')
-    plan, _, _, _ = prepare_profiled_interrupted_input(initial, Path(__file__).resolve().parents[3])
+    source = Path(__file__).resolve().parents[3]
+    plan, _, selected, jobs = prepare_profiled_interrupted_input(initial, source)
+    retained = plan_retained(initial,source,plan,selected,jobs) if sys.argv[1] == '--plan-retained-profiled-current' else {}
     print(json.dumps({'version':2,'qualificationTargetProfile':certification._profiled_context(),
         'status':'P2_PROFILED_INTERRUPTED_INPUT_VERIFIED','restorationActionId':plan['restorationActionId'],
         'candidateSha256':plan['candidateSha256'],'frontendPlanSha256':plan['frontendPlan']['planSha256'],
-        'requestedFrontier':plan['requestedFrontier'],'executionEligible':False,'trafficAuthorized':False}, separators=(',', ':')))
+        'requestedFrontier':plan['requestedFrontier'],**retained,'executionEligible':False,'trafficAuthorized':False}, separators=(',', ':')))
 
 
 if __name__ == '__main__':

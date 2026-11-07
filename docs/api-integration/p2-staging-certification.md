@@ -84,6 +84,8 @@ The operator entry supports native containment, a native recovery window, paired
 
 The profiled lost-acknowledgment plan binds a separate replacement action ID, the exact receiver database and runtime-role identities, and a private configuration input directory whose bytes match the mounted configuration. The frontend operation settlement requires a separate readback while the original gateway still reports one uncertain recovery operation. The current apply gate holds this mode until the source can also prove the ordered gateway stop and fresh closed-zero replacement.
 
+The profiled interrupted-restoration preview uses `p2-known-ack-interrupted-restoration.mjs plan-profiled-current` and `host-plan-profiled-current` with the same private review settings. The installed host's fixed `--plan-retained-profiled-current` reads the retained chain and actual stopped gateway lineage under the existing environment lock. It accepts the original gateway stopped at uncertainty one or a distinct replacement stopped at zero after all five replacement stages have verified readbacks. The fresh frontend session rechecks the exact original settlement under read-only TLS and verifies both advisory locks after closure. These previews have no runtime authority.
+
 ## Reviewed capability and interface profile
 
 Flags are server configuration, separately reviewed and deployed; they do not replace frontend admission, gateway authorization, provider readiness, or receiver policy. Evidence records their nonsecret disposition and the exact deployed source/configuration. [Rollout controls](../../src/lib/api-integration/rollout-flags.ts) remain independent.

@@ -34,6 +34,7 @@ PROFILED_CERTIFICATION_REQUIRED = {'ops/platform/host/p2_certification_parent.py
                                    'ops/platform/qualification-target-profiles.json',
                                    'ops/platform/host/qualification_target_profile.py'}
 PROFILED_INTERRUPTED_REQUIRED = {'ops/platform/host/p2_profiled_known_ack_restoration_parent.py',
+                                 'ops/platform/host/p2_profiled_known_ack_runtime.py',
                                  'ops/platform/host/p2_known_ack_interrupted_restoration.py',
                                  'ops/platform/p2-known-ack-interrupted-restoration.mjs'}
 
@@ -92,12 +93,12 @@ def private_observer_program(initial, directory):
     if source_name not in {'ops/platform/p2-frontend-live-probe.mjs', 'ops/platform/p2-recovery-current-probe.mjs',
                            CERTIFICATION_OBSERVER, 'ops/platform/p2-profiled-current-probe.mjs'}:
         raise ValueError('P2_FIXED_OBSERVER_SOURCE_REQUIRED')
-    if initial.get('mode') == PROFILED_CERTIFICATION_MODE and source_name != CERTIFICATION_OBSERVER:
+    if initial.get('mode') in (PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE) and source_name != CERTIFICATION_OBSERVER:
         raise ValueError('P2_FIXED_CERTIFICATION_OBSERVER_REQUIRED')
     if source_name == CERTIFICATION_OBSERVER:
-        if initial.get('mode') not in ('p2-bounded-certification', PROFILED_CERTIFICATION_MODE):
+        if initial.get('mode') not in ('p2-bounded-certification', PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE):
             raise ValueError('P2_FIXED_CERTIFICATION_OBSERVER_REQUIRED')
-        if initial['mode'] == PROFILED_CERTIFICATION_MODE:
+        if initial['mode'] in (PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE):
             import migrate
             from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
             if type(initial.get('version')) is not int or initial['version'] != 2:
