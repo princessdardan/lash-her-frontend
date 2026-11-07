@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import migrate
 import release as runtime
 import current_databases
+import vercel
 from p2_profiled_current_parent import (
     COMMON, FALSE_FIELDS, LOCK, MAXIMUM, PROFILE, PROGRAM,
     P2ProfiledCurrentBroker, P2ProfiledCurrentPhysicalObserver,
@@ -419,6 +420,7 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         self.runtime_current = True
         if (len(self.initial['originalReceiptSha256']) < len(ORIGINAL_NAMES) and
                 self.initial['disposition'] == 'restore-current-runtime'):
+            self._require_native_schedules_off()
             self.runtime_released.set()
         return {**self.record_base('P2_PROFILED_CURRENT_RUNTIME_RESTORED'),
                 'runtimeReceiptSha256': sha(self.api_runtime_raw),
@@ -436,6 +438,15 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
             require(migrate.read_input(self.current_database_output, 'current-databases-outcome.json') == self.current_database_raw,
                     'P2_PROFILED_CURRENT_RUNTIME_RECEIPT_CHANGED')
 
+    def _require_native_schedules_off(self):
+        self.check()
+        state = vercel.project_state(self.vercel, self.selected['workload']['projectId'])
+        self.check()
+        require(state == {'projectId': self.selected['workload']['projectId'],
+                          'productionDeploymentId': state.get('productionDeploymentId'),
+                          'cronsEnabled': False},
+                'P2_PROFILED_CURRENT_NATIVE_SCHEDULES_NOT_CLOSED')
+
     def prepare_close(self):
         if self.promoted is not None:
             return super().prepare_close()
@@ -445,6 +456,7 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                  self.initial['disposition'] == 'restore-current-runtime') and getattr(self, 'runtime_current', False) and
                 self.closing_at is None and self.session_closed_proof is None,
                 'P2_PROFILED_CURRENT_FRONTEND_ACTION_PENDING_REQUIRED')
+        self._require_native_schedules_off()
         self._runtime_readback()
         self.runtime_released.set()
         require(self.worker_done.wait(10) and not self.failed.is_set(), 'P2_PROFILED_CURRENT_RUNTIME_TAIL_UNVERIFIED')
@@ -487,6 +499,8 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                 'P2_PROFILED_CURRENT_RECOVERY_OUTCOME_REQUIRED')
         if self.promoted is not None:
             self._frontend_readback(self.promoted)
+        else:
+            self._require_native_schedules_off()
         self._runtime_readback()
         for name, raw in (('frontend-job-outcome.json', terminal_raw),
                           ('frontend-continuation-completed.json', completed_raw),
@@ -556,6 +570,8 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                 self.verify_api_receipts()
                 if self.promoted is not None:
                     self._frontend_readback(self.promoted)
+                else:
+                    self._require_native_schedules_off()
                 self._runtime_readback()
                 self.scope.verify_close()
                 migrate.write_json(self.directory, self.terminal_filename(), self.outcome)

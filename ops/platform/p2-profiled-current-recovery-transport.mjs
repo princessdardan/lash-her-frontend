@@ -79,6 +79,7 @@ function environmentLock(settings, initial, directory, launch) {
   const handle = Object.freeze({});
   handles.set(handle, async task => {
     demand(typeof task === "function");
+    const rawInitial = JSON.stringify(initial); demand(Buffer.byteLength(rawInitial) <= MAXIMUM);
     const remote = ["sudo", "-n", "/usr/bin/python3", "-I", "-u",
       `/opt/lash-her/operators/${initial.sourceCommit}/ops/platform/host/p2_profiled_current_recovery.py`];
     const child = launch("/usr/bin/ssh", sshCommand({ knownHosts: settings.knownHosts, keyFile: settings.sshKey }, remote), {
@@ -132,7 +133,7 @@ function environmentLock(settings, initial, directory, launch) {
       const timer = setTimeout(() => { fail(); reject(new Error("P2_PROFILED_CURRENT_RECOVERY_REMOTE_UNCERTAIN")); }, 60_000);
       pending.set(0, { statuses: ["LOCKED"], index: 0, resolves: [value => { clearTimeout(timer); resolve(value); }], rejects: [reject], timer });
     });
-    const rawInitial = JSON.stringify(initial); demand(Buffer.byteLength(rawInitial) <= MAXIMUM); child.stdin.write(rawInitial + "\n");
+    child.stdin.write(rawInitial + "\n");
     let error;
     try {
       await locked;
@@ -262,7 +263,7 @@ function environmentLock(settings, initial, directory, launch) {
       if (!closed || exited !== 0) error ??= new Error("P2_PROFILED_CURRENT_RECOVERY_HOST_CLEANUP_UNCERTAIN");
       if (error && diagnostics.length) writeFileSync(join(directory, "p2-profiled-current-recovery-private-stderr.bin"), diagnostics, { mode: 0o600, flag: "wx" });
     }
-    if (error || !committed || !same(committed, joined)) throw error ?? new Error("P2_PROFILED_CURRENT_RECOVERY_FAILED_REQUIRES_REVIEW");
+    if (error || failed || !committed || !same(committed, joined)) throw error ?? new Error("P2_PROFILED_CURRENT_RECOVERY_FAILED_REQUIRES_REVIEW");
     writeFrontendReceipt(directory, "p2-profiled-current-recovery-host-outcome.json", committed);
     return committed;
   });

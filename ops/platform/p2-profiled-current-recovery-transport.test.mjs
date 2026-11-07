@@ -45,6 +45,7 @@ for raw in sys.stdin:
  elif op=='commit':
   value.update(status='COMMITTED',receipt=terminal);print(json.dumps(value),flush=True)
   if sys.argv[2]=='ack-exit':os._exit(34)
+  if sys.argv[2]=='ack-invalid':print(json.dumps({'id':999999,'status':'HELD'}),flush=True)
   if sys.argv[2]=='wait-eof':sys.stdin.read()
   break
  else:os._exit(38)
@@ -141,6 +142,32 @@ test("a committed acknowledgement followed by a nonzero child exit publishes no 
       await host.finish({ terminal: f.terminal, continuationCompleted: f.continuationCompleted, recoveryOutcome: f.recoveryOutcome });
     }));
     assert.equal(existsSync(join(f.directory, "p2-profiled-current-recovery-host-outcome.json")), false);
+  } finally { f.cleanup(); }
+});
+
+test("a protocol failure after COMMITTED remains sticky through a zero child exit", async () => {
+  const f = fixture("ack-invalid");
+  try {
+    await assert.rejects(withP2ProfiledCurrentRecoveryTransport(f.handle, async (_check, _signal, host) => {
+      const { apiReady } = await host.armRecovery({ receipt: f.receipt, continuationStarted: f.continuationStarted, probe: f.probe });
+      await host.verifyCurrentApis(); await host.preparePriorGateway(); await apiReady;
+      await host.reconcileFrontend(f.observation, f.proof, f.workload); await host.runtimeRestored();
+      await host.prepareClose(); await host.frontendSessionClosed();
+      await host.finish({ terminal: f.terminal, continuationCompleted: f.continuationCompleted, recoveryOutcome: f.recoveryOutcome });
+    }));
+    assert.equal(existsSync(join(f.directory, "p2-profiled-current-recovery-host-outcome.json")), false);
+  } finally { f.cleanup(); }
+});
+
+test("an oversized initial packet refuses before the fixed SSH process is launched", async () => {
+  const f = fixture(); let launches = 0;
+  try {
+    const initial = structuredClone(f.initial); initial.untrustedPadding = "x".repeat(4_000_000);
+    const handle = P2_PROFILED_CURRENT_RECOVERY_OWNED_FIXTURE.environmentLock(
+      { knownHosts: "/owned/known-hosts", sshKey: "/owned/key" }, initial, f.directory,
+      () => { launches += 1; assert.fail("process launched"); });
+    await assert.rejects(withP2ProfiledCurrentRecoveryTransport(handle, async () => {}));
+    assert.equal(launches, 0);
   } finally { f.cleanup(); }
 });
 

@@ -176,14 +176,18 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
         broker._require_current_api = lambda: ({'status': 'API_RUNTIME_READY'},
                                                {'status': 'CURRENT_DATABASES_READ_ONLY_VERIFIED'})
         broker._runtime_readback = lambda: None
+        broker.check = lambda: None
+        broker.vercel = object(); broker.selected = {**selected(), 'workload': {'projectId': 'owned-project'}}
         broker.record_base = lambda status: {'status': status}
         broker.api_runtime_raw, broker.current_database_raw = b'runtime\n', b'current\n'
         broker.runtime_released, broker.worker_done, broker.failed = threading.Event(), threading.Event(), threading.Event()
-        result = broker.runtime_restored()
+        with patch.object(recovery.vercel, 'project_state', return_value={
+                'projectId': 'owned-project', 'productionDeploymentId': 'dpl_owned', 'cronsEnabled': False}):
+            result = broker.runtime_restored()
         self.assertTrue(broker.runtime_current); self.assertTrue(broker.runtime_released.is_set())
         self.assertEqual(result['status'], 'P2_PROFILED_CURRENT_RUNTIME_RESTORED')
         broker.promoted, broker.closing_at, broker.session_closed_proof = None, None, None
-        broker.worker_done.set(); broker.check = lambda: None; broker.verify_api_receipts = lambda: None
+        broker.worker_done.set(); broker.verify_api_receipts = lambda: None
         class Observer:
             def __init__(self): self.operations = []
             def probe(self, operation): self.operations.append(operation)
@@ -192,9 +196,15 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
             def __init__(self): self.closed = False
             def begin_close(self): self.closed = True
         broker.observer, broker.scope = Observer(), Scope()
-        broker.prepare_close()
+        with patch.object(recovery.vercel, 'project_state', return_value={
+                'projectId': 'owned-project', 'productionDeploymentId': 'dpl_owned', 'cronsEnabled': False}):
+            broker.prepare_close()
         self.assertEqual(broker.observer.operations, ['verify-schema', 'stop'])
         self.assertTrue(broker.scope.closed); self.assertIsNotNone(broker.closing_at)
+        with patch.object(recovery.vercel, 'project_state', return_value={
+                'projectId': 'owned-project', 'productionDeploymentId': 'dpl_owned', 'cronsEnabled': True}):
+            with self.assertRaises(Exception):
+                broker._require_native_schedules_off()
 
     def test_restore_proves_api_current_before_prior_gateway_without_a_migration_entrypoint(self):
         with tempfile.TemporaryDirectory() as temporary:
