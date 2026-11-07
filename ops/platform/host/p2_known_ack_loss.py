@@ -18,6 +18,7 @@ from datetime import datetime,timedelta,timezone
 
 import migrate
 import release as runtime
+import vercel
 from p2_certification_fault import P2CertificationFaultStage
 from p2_release_scope import P2ReleaseScope
 
@@ -42,6 +43,13 @@ def digest(value):return hashlib.sha256(value).hexdigest()
 
 def _zero(value):return value=={'newWork':0,'recovery':0}
 def _same_process(first,second):return first['process']==second['process'] and first['binding']==second['binding']
+
+def _profile_record(expected_profile):
+    return {} if expected_profile is None else {'version':2,'qualificationTargetProfile':expected_profile}
+
+def _delivery_receipts(frontend):
+    # Readiness is a clock-derived observation. The ACK identity is not.
+    return [{key:value for key,value in row.items() if key!='ready'} for row in frontend['deliveries']]
 
 def _source_command(scope):
     def run(args,env,timeout):
@@ -100,30 +108,50 @@ def consume_known_ack_loss_authorization(value,scope,recovery_action_id):
 
 
 class P2KnownAckLossRecorder:
-    def __init__(self,broker,recovery_action_id,receiver_targets):
+    expected_profile=None
+
+    def __init__(self,broker,recovery_action_id,receiver_targets,*,expected_profile=None):
         # Lazy fixed source imports avoid making ordinary/recovery dispatch load
         # this module, and do not let JSON select a broker implementation.
-        from p2_certification_parent import P2CertificationBroker
+        from p2_certification_parent import P2CertificationBroker, P2CertificationScope, P2ProfiledCertificationBroker
         from p2_prior_gateway import observe_prior_gateway
-        selection=broker.initial['certificationPlan'].get('knownAckRecovery') if type(broker) is P2CertificationBroker else None
-        require(type(broker) is P2CertificationBroker and broker.external_armed and isinstance(broker.scope,P2ReleaseScope) and
+        self.expected_profile=migrate.profile_context(expected_profile)
+        profiled=self.expected_profile is not None
+        broker_type=P2ProfiledCertificationBroker if profiled else P2CertificationBroker
+        require(type(broker) is broker_type and broker.certification_profile()==self.expected_profile,
+            'P2_KNOWN_ACK_BEFORE_FAULT_SOURCE_PARENT_REQUIRED')
+        cert=broker.initial['certificationPlan'];selection=cert.get('knownAckRecovery')
+        profile=_profile_record(self.expected_profile)
+        require(broker.external_armed and isinstance(broker.scope,P2ReleaseScope) and
+            (not profiled or type(broker.scope) is P2CertificationScope and broker.scope._expected_profile==self.expected_profile) and
             type(broker.fault_stage) is P2CertificationFaultStage and broker.fault_stage.scope is broker.scope and
-            broker.initial['certificationPlan']['mode']=='known-ack-recovery' and broker.native_enable_attempted is False and
+            cert['mode']=='known-ack-recovery' and broker.native_enable_attempted is False and
             broker.fault_stage.arm_called is False and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}',recovery_action_id or '') and
             recovery_action_id not in (broker.action_id(),broker.selected['releaseId']) and isinstance(selection,dict) and
-            set(selection)=={'version','recoveryActionId','intent','intentSha256'} and selection['version']==1 and selection['recoveryActionId']==recovery_action_id and
+            set(selection)=={'version','recoveryActionId','intent','intentSha256'}|set(profile) and
+            type(selection['version']) is int and selection['version']==(2 if profiled else 1) and selection['recoveryActionId']==recovery_action_id and
             digest(canonical(selection['intent']))==selection['intentSha256'],'P2_KNOWN_ACK_BEFORE_FAULT_SOURCE_PARENT_REQUIRED')
         fault_plan=broker.fault_stage.plan
         plan={**copy.deepcopy(fault_plan),'nativePlan':copy.deepcopy(broker.initial['nativePlan'])}
+        vercel.require_record_profile(self.expected_profile,cert,selection,selection['intent'],fault_plan,plan['nativePlan'])
+        if profiled:
+            require(broker.fault_stage.expected_profile==self.expected_profile and cert['nativePlan']==plan['nativePlan'] and
+                all(fault_plan[key]==cert[key] for key in ('candidateSha256','candidateObjectSha256','sourceCommit','operatorSourceCommit',
+                    'targetSha256','gatewayProcessSha256','gatewayConfigurationSha256','operatorSourceClosureSha256')) and
+                fault_plan['configurationSha256']==cert['configurationCanonicalSha256'] and
+                all(fault_plan[key]==cert['faultSelection'][key] for key in ('stageId','receiver','commandSha256')) and
+                cert['faultSelection']['commandIndex']==0,'P2_KNOWN_ACK_PROFILED_FAULT_CONTEXT_REQUIRED')
         require(plan['mode']=='drop-after-ack' and plan['sourceCommit']==plan['operatorSourceCommit'] and plan['nativePlanSha256']==plan['nativePlan']['planSha256'] and
             len(plan['nativePlan']['commandWitnesses'])==1 and plan['nativePlan']['commandWitnesses'][0]['action']=='suspend','P2_KNOWN_ACK_ONE_SAME_SOURCE_SUSPENSION_REQUIRED')
         self.broker,self.scope,self.plan=broker,broker.scope,copy.deepcopy(plan)
+        self.fault_stage=broker.fault_stage
         self.fault_plan=copy.deepcopy(fault_plan)
         self.recovery_action_id=recovery_action_id
         self.selection=copy.deepcopy(selection)
-        require(selection['intent']==replacement_intent(broker.initial['certificationPlan'],recovery_action_id),'P2_KNOWN_ACK_REVIEWED_IMMUTABLE_REPLACEMENT_INTENT_REQUIRED')
-        self.configuration_input=validate_known_configuration_input(broker.initial['certificationPlan']['knownAckConfigurationInputDirectory'],
-            broker.configuration,broker.selected,broker.jobs,broker.initial['configurationSha256'])
+        require(selection['intent']==replacement_intent(cert,recovery_action_id,expected_profile=self.expected_profile),
+            'P2_KNOWN_ACK_REVIEWED_IMMUTABLE_REPLACEMENT_INTENT_REQUIRED')
+        self.configuration_input=validate_known_configuration_input(cert['knownAckConfigurationInputDirectory'],
+            broker.configuration,broker.selected,broker.jobs,broker.initial['configurationSha256'],expected_profile=self.expected_profile)
         self.scope.require_configuration(self.configuration_input)
         self.observe_gateway=observe_prior_gateway
         self.command=copy.deepcopy(plan['nativePlan']['commandWitnesses'][0])
@@ -135,18 +163,23 @@ class P2KnownAckLossRecorder:
             job=broker.jobs[service]['job']
             require(all(target[key]==job['target'][key] for key in ('host','port','database','serverMajor')) and target['user']==job['runtimeRole'],
                 'P2_KNOWN_ACK_REVIEWED_RECEIVER_TARGET_REQUIRED')
+        if profiled:
+            require(receiver_targets==cert['knownAckReceiverTargets'] and all(set(target)=={'host','port','database','serverMajor','user','roleOid'}
+                for target in receiver_targets.values()),'P2_KNOWN_ACK_REVIEWED_RECEIVER_TARGET_REQUIRED')
         self.source_sha256=digest(migrate.read_input(broker.source,MODULE))
         require(self.source_sha256==broker.initial['sourceSha256'][MODULE],'P2_KNOWN_ACK_EXACT_READER_SOURCE_REQUIRED')
+        if profiled:self._verify()
         self.window_started=None;self.deadline=None;self.domain=None;self.settlement=None
         remaining=broker.initial['certificationPlan']['maximumSeconds']-(time.monotonic()-broker.certification_started)
         require(0<remaining<=900,'P2_KNOWN_ACK_BOUNDED_PARENT_REQUIRED')
         self.backend_deadline=(datetime.now(timezone.utc)+timedelta(seconds=remaining)).isoformat(timespec='milliseconds').replace('+00:00','Z')
         self.request_evidence=None
+        self.reconciliation_attempted=False
         self.directory=ROOT/('p2-known-ack-loss-'+broker.action_id())
         require(os.geteuid()==0 and self.directory.resolve()==self.directory and not any(path.is_symlink() for path in (self.directory,*self.directory.parents)),
             'P2_KNOWN_ACK_PRIVATE_ROOT_REQUIRED')
         migrate.private_directory(ROOT);self.directory.mkdir(mode=0o700)
-        self._retain('recovery-intent.json',self.selection)
+        self.intent_receipt_sha256=self._retain('recovery-intent.json',self.selection)
         self.baseline_gateway=self._gateway()
         require(self.baseline_gateway['admission']['newWork'] is False and self.baseline_gateway['admission']['recovery'] is True and
             _zero(self.baseline_gateway['admission']['active']) and _zero(self.baseline_gateway['admission']['uncertain']),'P2_KNOWN_ACK_BASELINE_ZERO_REQUIRED')
@@ -161,12 +194,38 @@ class P2KnownAckLossRecorder:
         self.scope.require_frontend(self.broker.selected,self.broker.jobs['frontend']);self.scope.require_configuration(self.broker.configuration)
         self.scope.require_configuration(self.configuration_input)
         require(digest(migrate.read_input(self.broker.source,MODULE))==self.source_sha256,'P2_KNOWN_ACK_READER_CHANGED')
+        if self.expected_profile is not None:self._verify_profiled_context()
 
-    def _gateway(self):
+    def _verify_profiled_context(self):
+        from current_databases import read_certification_api_proof
+        from qualification_target_profile import decode_qualification_target_json
+        broker=self.broker;cert=broker.initial['certificationPlan']
+        require(broker.fault_stage is self.fault_stage and cert==self.scope.certification_plan and
+            broker.initial['sourceClosureSha256']==cert['operatorSourceClosureSha256'] and
+            broker.initial['configurationSha256']==self.scope.configuration_sha256,
+            'P2_KNOWN_ACK_PROFILED_SOURCE_CONTEXT_CHANGED')
+        raw=migrate.read_input(broker.bundle,'release.candidate.json')
+        selected=decode_qualification_target_json(raw,'carrier')
+        migrate.candidate_profile(selected,self.expected_profile)
+        require(digest(raw)==broker.initial['candidateSha256']==cert['candidateSha256']==self.scope.candidate_sha256 and
+            selected==broker.selected and digest(canonical(selected))==cert['candidateObjectSha256'],
+            'P2_KNOWN_ACK_EXACT_ORIGINAL_CANDIDATE_REQUIRED')
+        read_certification_api_proof(broker.api_proof,self.scope,broker.selected,broker.jobs,expected_profile=self.expected_profile)
+
+    def _gateway(self,*,require_disarmed=False):
         self._verify()
-        value=self.observe_gateway(self.broker.initial,self.broker.selected,self.scope.verify,command=_source_command(self.scope))
+        options={} if self.expected_profile is None else {'expected_profile':self.expected_profile}
+        value=self.observe_gateway(self.broker.initial,self.broker.selected,self.scope.verify,command=_source_command(self.scope),**options)
         require(value['binding']['candidateSha256']==self.broker.initial['candidateSha256'] and value['binding']['configurationDirectory']==str(self.broker.configuration),
             'P2_KNOWN_ACK_CURRENT_CANDIDATE_REQUIRED')
+        if self.expected_profile is not None:
+            actual=self.broker._gateway_current()
+            require(value['process']['containerId']==self.fault_stage.gateway['containerId'] and
+                value['binding']['gatewayConfigurationSha256']==actual['gatewayConfigurationSha256']==self.fault_plan['gatewayConfigurationSha256'] and
+                actual['processSha256']==self.fault_plan['gatewayProcessSha256'] and
+                (not require_disarmed or actual['faultLeasePresent'] is False and
+                    all(actual['admission'].get(key)==value['admission'][key] for key in ('newWork','recovery','active','uncertain'))),
+                'P2_KNOWN_ACK_PROFILED_OLD_GATEWAY_REQUIRED')
         return value
 
     def _sql(self,service,selected_user_binding=None):
@@ -176,6 +235,8 @@ class P2KnownAckLossRecorder:
         if service=='frontend':
             payload.update(target=broker.jobs['frontend']['job']['target'],owner=broker.initial['owner'],marker=broker.armed_probe['marker'],
                 backendPid=broker.armed_probe['backendPid'],backendStart=broker.armed_probe['backendStart'],targetSha256=self.plan['targetSha256'])
+            if self.expected_profile is not None:
+                payload['target']={key:payload['target'][key] for key in ('host','port','database','user','serverMajor')}
             identifier='lash-p2-certification-observer-'+uuid.uuid4().hex
             args=['docker','run','--rm','--name',identifier,'--interactive','--network','host','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges',
                 '--memory','128m','--pids-limit','64','--env','FRONTEND_STAGING_MIGRATION_DATABASE_URL','--mount',f'type=bind,src={broker.source/MODULE},dst=/app/p2-known-ack-loss-probe.mjs,readonly',
@@ -185,18 +246,24 @@ class P2KnownAckLossRecorder:
             payload['target']=self.receiver_targets[service]
             payload['selectedUserBindingSha256']=selected_user_binding or self.baseline['frontend']['userBindingSha256']
             require(re.fullmatch(r'[a-f0-9]{64}',payload['selectedUserBindingSha256'] or ''),'P2_KNOWN_ACK_FRONTEND_USER_BINDING_REQUIRED')
-            values=runtime.environment_values(migrate.read_input(self.configuration_input,service+'-api.env'),'staging',service+'-api',broker.jobs)
+            options={} if self.expected_profile is None else {'expected_profile':self.expected_profile}
+            values=runtime.environment_values(migrate.read_input(self.configuration_input,service+'-api.env'),'staging',service+'-api',broker.jobs,**options)
             identifier='lash-p2-certification-observer-'+uuid.uuid4().hex
             args=['docker','run','--rm','--name',identifier,'--interactive','--network','host','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges',
                 '--memory','128m','--pids-limit','64','--env','NODE_ENV=production','--env','DATABASE_TARGET=staging','--env','STAGING_DATABASE_URL',
                 '--mount',f'type=bind,src={broker.source/MODULE},dst=/app/p2-known-ack-loss-probe.mjs,readonly',
                 '--entrypoint','node',broker.selected['artifacts'][service+'Runtime']['image'],'/app/p2-known-ack-loss-probe.mjs']
             environment={**runtime.SAFE_ENV,'STAGING_DATABASE_URL':values['STAGING_DATABASE_URL']}
+        if self.expected_profile is not None:args[2:2]=['--pull','never']
         try:
             result=self.scope.run(args,env=environment,input=canonical(payload),capture_output=True,timeout=20,check=True)
             require(not result.stderr and 0<len(result.stdout)<=65536,'P2_KNOWN_ACK_PRIVATE_SQL_OUTPUT_REQUIRED')
             value=json.loads(result.stdout)
             require(value.get('status')=='P2_KNOWN_ACK_SQL_CURRENT' and value.get('service')==service and value.get('readOnly') is True,'P2_KNOWN_ACK_PRIVATE_SQL_READBACK_REQUIRED')
+            if self.expected_profile is not None:
+                require(type(value.get('version')) is int and value['version']==1 and value.get('commandId')==self.command['commandId'] and
+                    (service=='frontend' or value.get('roleOid')==self.receiver_targets[service]['roleOid']),
+                    'P2_KNOWN_ACK_PROFILED_SQL_READBACK_REQUIRED')
             self._verify();return value
         finally:
             self.scope.run(['docker','rm','--force',identifier],env=runtime.SAFE_ENV,timeout=15,capture_output=True,check=False)
@@ -218,11 +285,15 @@ class P2KnownAckLossRecorder:
         return value
 
     def _retain(self,name,record):
-        migrate.private_directory(self.directory);migrate.write_json(self.directory,name,record)
+        migrate.private_directory(self.directory)
+        migrate.write_json(self.directory,name,{**record,**_profile_record(self.expected_profile)})
         return digest(migrate.read_input(self.directory,name))
 
     def start_native_window(self):
         self._verify();require(self.deadline is None and self.broker.native_expected is True,'P2_KNOWN_ACK_SOURCE_NATIVE_START_REQUIRED')
+        if self.expected_profile is not None:
+            require(self.fault_stage.arm_called is True and re.fullmatch(r'[a-f0-9]{64}',self.fault_stage.lease_sha256 or ''),
+                'P2_KNOWN_ACK_PROFILED_FAULT_ARM_REQUIRED')
         self.window_started=time.monotonic();self.deadline=self.window_started+self.plan['nativePlan']['windowSeconds']
 
     def observe_domain(self):
@@ -230,19 +301,30 @@ class P2KnownAckLossRecorder:
         gateway=self._gateway();require(_same_process(self.baseline_gateway,gateway),'P2_KNOWN_ACK_OLD_PROCESS_CHANGED')
         effects=self.broker.fault_stage.effects();snapshot=self._snapshot(allow_pending=True)
         after=self._gateway();require(_same_process(gateway,after) and time.monotonic()<=self.deadline,'P2_KNOWN_ACK_WINDOW_OR_PROCESS_CHANGED')
-        if snapshot is None:return {'status':'P2_KNOWN_ACK_DOMAIN_PENDING'}
+        profile=_profile_record(self.expected_profile)
+        if self.expected_profile is not None:
+            require(all(type(effect.get('version')) is int and effect['version']==1 and 'qualificationTargetProfile' not in effect and
+                effect.get('environment')=='staging' and effect.get('status')=='P2_TRANSPORT_FAULT_INJECTED' and
+                effect.get('leaseSha256')==self.fault_stage.lease_sha256 and
+                all(effect.get(key)==self.fault_plan[key] for key in ('profile','stageId','candidateSha256','configurationSha256',
+                    'gatewayProcessSha256','gatewayImageSha256','mode','receiver')) for effect in effects),
+                'P2_KNOWN_ACK_PROFILED_RAW_EFFECT_REQUIRED')
+        if snapshot is None:return {**profile,'status':'P2_KNOWN_ACK_DOMAIN_PENDING'}
         value=validate_domain(self.plan,self.baseline,snapshot,gateway,effects)
-        if value is None:return {'status':'P2_KNOWN_ACK_DOMAIN_PENDING'}
+        if value is None:return {**profile,'status':'P2_KNOWN_ACK_DOMAIN_PENDING'}
         if self.domain is None:
             self.domain={'status':'P2_KNOWN_ACK_DOMAIN_SETTLED_IN_WINDOW','gateway':gateway,'databases':snapshot,'effect':effects[0],**value}
             self.domain_sha256=self._retain('domain.json',self.domain)
-        return {'status':'P2_KNOWN_ACK_DOMAIN_SETTLED_IN_WINDOW','domainSha256':self.domain_sha256}
+        return {**profile,'status':'P2_KNOWN_ACK_DOMAIN_SETTLED_IN_WINDOW','domainSha256':self.domain_sha256}
 
     def retain_request_details(self,encoded):
         self._verify();require(self.domain is not None and self.request_evidence is None and self.deadline is not None and time.monotonic()<=self.deadline and
             self.broker.native_expected is True,'P2_KNOWN_ACK_IN_WINDOW_REQUEST_DETAILS_REQUIRED')
         from p2_release_broker import decode
         raw,artifact=decode(encoded)
+        if self.expected_profile is not None:
+            from qualification_target_profile import decode_qualification_target_json
+            artifact=decode_qualification_target_json(raw,'carrier')
         # Reuse the existing exact finite schema, source/project/producer/epoch
         # and explicit reviewer checks. Its ordinary all-completed qualification
         # remains false for the deliberately uncertain first request.
@@ -250,26 +332,68 @@ class P2KnownAckLossRecorder:
         require(observed['authority']=='operator-recorded-request-details' and observed['artifactSha256']==digest(raw),
             'P2_KNOWN_ACK_ACTUAL_REQUEST_DETAILS_REQUIRED')
         validate_request_operations(self.plan,artifact,self.domain['databases']['frontend']['operations'])
+        if self.expected_profile is not None:
+            versions=[artifact['version'],*(row['version'] for row in artifact['observations']),
+                *(decode_qualification_target_json(row['admittedLogLine'],'carrier')['version'] for row in artifact['observations'])]
+            require(all(type(version) is int and version==1 for version in versions),'P2_KNOWN_ACK_ORIGINAL_REQUEST_WIRE_REQUIRED')
         self.request_evidence={'status':'P2_KNOWN_ACK_REQUEST_DETAILS_JOINED','artifactSha256':digest(raw),'domainSha256':self.domain_sha256,
             'provenance':observed,'originalArtifact':artifact}
         self.request_sha256=self._retain('request-details.json',self.request_evidence)
-        return {'status':'P2_KNOWN_ACK_REQUEST_DETAILS_JOINED','requestDetailsSha256':self.request_sha256}
+        return {**_profile_record(self.expected_profile),'status':'P2_KNOWN_ACK_REQUEST_DETAILS_JOINED','requestDetailsSha256':self.request_sha256}
 
     def prepare_reconciliation(self):
         self._verify();require(self.domain is not None and self.request_evidence is not None and self.broker.native_expected is False and self.broker._native_observe()['nativeEnabled'] is False,'P2_KNOWN_ACK_TIMELY_DOMAIN_PROOF_REQUIRED')
-        gateway=self._gateway();actual=self._snapshot()
+        if self.expected_profile is not None:
+            require(self.settlement is None,'P2_KNOWN_ACK_SPECIFIC_SETTLEMENT_ALREADY_PREPARED')
+            self._verify_profiled_prefix()
+        options={} if self.expected_profile is None else {'require_disarmed':True}
+        gateway=self._gateway(**options);actual=self._snapshot()
         require(_same_process(self.baseline_gateway,gateway) and gateway['admission']['newWork'] is False and gateway['admission']['recovery'] is False and
             actual['frontend']['admission']['newWork'] is False and actual['frontend']['admission']['recovery'] is False,'P2_KNOWN_ACK_CLOSED_SETTLEMENT_REQUIRED')
         proof=validate_domain(self.plan,self.baseline,actual,gateway,[self.domain['effect']],closed=True)
         require(proof is not None and proof['operationId']==self.domain['operationId'],'P2_KNOWN_ACK_EXACT_SETTLEMENT_OPERATION_REQUIRED')
         validate_request_operations(self.plan,self.request_evidence['originalArtifact'],actual['frontend']['operations'])
+        if self.expected_profile is not None:
+            observed=self.domain['databases'];frontend=actual['frontend']
+            require(frontend['admission']['epoch']==str(int(self.window_epoch)+1) and
+                frontend['operations']==observed['frontend']['operations'] and
+                _delivery_receipts(frontend)==_delivery_receipts(observed['frontend']) and
+                all(actual[service]==observed[service] for service in ('course','community')),
+                'P2_KNOWN_ACK_PROFILED_IN_WINDOW_RECEIPTS_CHANGED')
+            require(self._gateway(**options)==gateway,'P2_KNOWN_ACK_PROFILED_OLD_GATEWAY_CHANGED')
         self.settlement={'status':'P2_KNOWN_ACK_SPECIFIC_OPERATION_SETTLEMENT','recoveryActionId':self.recovery_action_id,'domainSha256':self.domain_sha256,
             'baselineSha256':self.baseline_sha256,'requestDetailsSha256':self.request_sha256,
             'operationId':self.domain['operationId'],'epoch':actual['frontend']['admission']['epoch'],'gateway':gateway,'databases':actual}
         self.settlement_sha256=self._retain('settlement.json',self.settlement)
-        return {'operationId':self.domain['operationId'],'epoch':actual['frontend']['admission']['epoch'],'evidenceSha256':self.settlement_sha256}
+        return {**_profile_record(self.expected_profile),'operationId':self.domain['operationId'],'epoch':actual['frontend']['admission']['epoch'],
+            'evidenceSha256':self.settlement_sha256}
+
+    def _verify_profiled_prefix(self):
+        require(digest(migrate.read_input(self.directory,'recovery-intent.json'))==self.intent_receipt_sha256 and
+            digest(migrate.read_input(self.broker.directory,'p2-certification-operator-request-details.json'))==self.request_evidence['artifactSha256'],
+            'P2_KNOWN_ACK_ORIGINAL_RECEIPT_CHANGED')
+        for name,pin in (('baseline.json',self.baseline_sha256),('domain.json',self.domain_sha256),('request-details.json',self.request_sha256)):
+            require(digest(migrate.read_input(self.directory,name))==pin,'P2_KNOWN_ACK_ORIGINAL_RECEIPT_CHANGED')
+
+    def confirm_reconciliation(self):
+        """Observe the one settled frontend operation under the original held scope."""
+        require(self.expected_profile is not None and self.settlement is not None and not self.reconciliation_attempted,
+            'P2_KNOWN_ACK_PROFILED_CONFIRMATION_REQUIRED')
+        self.reconciliation_attempted=True
+        record={**_profile_record(self.expected_profile),'status':'P2_KNOWN_ACK_RECONCILIATION_OBSERVED_FENCED',
+            'operationId':self.domain['operationId'],'baselineSha256':self.baseline_sha256,'domainSha256':self.domain_sha256,
+            'requestDetailsSha256':self.request_sha256,'settlementSha256':self.settlement_sha256,
+            'frontendGlobalClosedZero':True,'oldGatewayUncertain':{'newWork':0,'recovery':1},
+            'runtimeReplaced':False,'ordinaryClosedZeroGate':False}
+        observation=self._verify_settlement(record)
+        observed_sha=self._retain('reconciliation-observed.json',{**record,**observation,'recoveryActionId':self.recovery_action_id,
+            'candidateSha256':self.broker.initial['candidateSha256'],'certificationActionId':self.broker.action_id(),
+            'recoveryIntentReceiptSha256':self.intent_receipt_sha256,'sourceModuleSha256':self.source_sha256,
+            'operatorSourceClosureSha256':self.broker.initial['sourceClosureSha256']})
+        return {**record,'reconciliationObservedSha256':observed_sha}
 
     def authorize_replacement(self):
+        require(self.expected_profile is None,'P2_KNOWN_ACK_PROFILED_REPLACEMENT_UNAVAILABLE')
         self._verify();require(self.settlement is not None,'P2_KNOWN_ACK_SOURCE_SETTLEMENT_REQUIRED')
         record={'version':1,'status':'P2_KNOWN_ACK_REPLACEMENT_AUTHORIZED','recoveryActionId':self.recovery_action_id,'candidateSha256':self.broker.initial['candidateSha256'],
             'originalGateway':self.baseline_gateway,'domainSha256':self.domain_sha256,'settlementSha256':self.settlement_sha256,
@@ -281,29 +405,44 @@ class P2KnownAckLossRecorder:
         return KnownAckLossRecoveryAuthorization(_ISSUER,self,record)
 
     def _verify_authorization(self,record):
+        require(self.expected_profile is None,'P2_KNOWN_ACK_PROFILED_REPLACEMENT_UNAVAILABLE')
+        self._verify_settlement(record)
+
+    def _verify_settlement(self,record):
         self._verify();require(self.broker._native_observe()['nativeEnabled'] is False,'P2_KNOWN_ACK_NATIVE_OFF_REQUIRED')
+        if self.expected_profile is not None:
+            require(self.broker.native_expected is False,'P2_KNOWN_ACK_NATIVE_OFF_REQUIRED')
+            self._verify_profiled_prefix()
         require(json.loads(migrate.read_input(self.directory,'recovery-intent.json'))==self.selection,'P2_KNOWN_ACK_RECOVERY_INTENT_CHANGED')
         for name,key in (('baseline.json','baselineSha256'),('domain.json','domainSha256'),('request-details.json','requestDetailsSha256'),('settlement.json','settlementSha256')):
             require(digest(migrate.read_input(self.directory,name))==record[key],'P2_KNOWN_ACK_ORIGINAL_RECEIPT_CHANGED')
-        gateway=self._gateway();actual=self._snapshot();front=actual['frontend'];admission=front['admission']
+        options={} if self.expected_profile is None else {'require_disarmed':True}
+        gateway=self._gateway(**options);actual=self._snapshot();front=actual['frontend'];admission=front['admission']
         require(_same_process(self.baseline_gateway,gateway) and gateway['admission']['newWork'] is False and gateway['admission']['recovery'] is False and
             _zero(gateway['admission']['active']) and gateway['admission']['uncertain']=={'newWork':0,'recovery':1} and
             admission['newWork'] is False and admission['recovery'] is False and admission['active']==admission['uncertain']==0,'P2_KNOWN_ACK_GLOBAL_ZERO_AND_OLD_ONE_REQUIRED')
         selected=[row for row in front['operations'] if row['id']==record['operationId']]
         require(len(selected)==1 and selected[0]['state']=='completed' and selected[0]['reconciliation_sha256']==record['settlementSha256'],'P2_KNOWN_ACK_SPECIFIC_SETTLED_OPERATION_REQUIRED')
         validate_settled(self.plan,self.settlement['databases'],actual,record['operationId'],record['settlementSha256'])
+        if self.expected_profile is not None:
+            require(_delivery_receipts(front)==_delivery_receipts(self.settlement['databases']['frontend']),
+                'P2_KNOWN_ACK_PROFILED_IN_WINDOW_RECEIPTS_CHANGED')
+            require(self._gateway(**options)==gateway,'P2_KNOWN_ACK_PROFILED_OLD_GATEWAY_CHANGED')
+        return {'gateway':gateway,'databases':actual}
 
 
-def replacement_intent(cert,recovery_action_id):
+def replacement_intent(cert,recovery_action_id,*,expected_profile=None):
     """Fixed source projection displayed before apply, never a policy override."""
-    return {'version':1,'recoveryActionId':recovery_action_id,'certificationActionId':cert['certificationActionId'],
+    expected=migrate.profile_context(expected_profile)
+    vercel.require_record_profile(expected,cert,cert['nativePlan'])
+    return {'version':1,**_profile_record(expected),'recoveryActionId':recovery_action_id,'certificationActionId':cert['certificationActionId'],
         **{key:cert[key] for key in ('candidateSha256','sourceCommit','operatorSourceCommit','targetSha256','configurationSha256','gatewayProcessSha256','runtimeInventorySha256','operatorSourceClosureSha256')},
         'configurationInputDirectory':cert['knownAckConfigurationInputDirectory'],'nativePlanSha256':cert['nativePlan']['planSha256'],'receiverTargetsSha256':digest(canonical(cert['knownAckReceiverTargets'])),
         'profile':'known-ack-same-session-ordered-replacement-v1','runtimeReplacements':1,'nativeWindowSeconds':cert['nativePlan']['windowSeconds'],
         'sqlReplayAllowed':False,'roleChangeAllowed':False,'ordinaryClosedZeroGate':False,'automaticFailureRecoveryAllowed':False}
 
 
-def validate_known_configuration_input(directory,mounted,selected,jobs,expected):
+def validate_known_configuration_input(directory,mounted,selected,jobs,expected,*,expected_profile=None):
     """Current P2 snapshot_configuration copies every selected byte unchanged.
 
     Earlier restoration transforms, if any, must already have their retained
@@ -314,7 +453,8 @@ def validate_known_configuration_input(directory,mounted,selected,jobs,expected)
     directory=Path(directory)
     require(directory.is_absolute() and ROOT in directory.parents and directory==directory.resolve() and
         not any(path.is_symlink() for path in (directory,*directory.parents)),'P2_KNOWN_ACK_REVIEWED_ROOT_CONFIGURATION_INPUT_REQUIRED')
-    runtime.validate_snapshot_source(directory,selected,jobs)
+    options={} if expected_profile is None else {'expected_profile':expected_profile}
+    runtime.validate_snapshot_source(directory,selected,jobs,**options)
     require(staging_state.configuration_hashes(directory)==expected==staging_state.configuration_hashes(mounted),
         'P2_KNOWN_ACK_RENDERED_CONFIGURATION_BYTES_DIFFER')
     return directory

@@ -1,5 +1,7 @@
 """Source state/opaque-authority regressions; actual three-DB fixture is separate."""
+import base64
 import copy
+import fcntl
 import json
 import threading
 import os
@@ -10,6 +12,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 import migrate
+import current_databases
 import staging_state
 import p2_certification_parent as parent
 import p2_certification_parent_test as cert_fixture
@@ -215,6 +218,239 @@ class KnownAckSourceTests(unittest.TestCase):
             elif kind=='new-epoch':actual['frontend']['admission']['epoch']='5'
             elif kind=='receiver':actual['community']['command']['acceptedAt']='2026-11-06T01:00:09.000Z'
             with self.subTest(kind=kind),self.assertRaises(ValueError):source.validate_settled(plan,before,actual,operation_id,'e'*64)
+
+
+class ProfiledKnownAckSourceTests(unittest.TestCase):
+    """Actual source types, flock, configuration, and bytes with projected I/O."""
+
+    def setUp(self):
+        runtime=release_test.RuntimeReleaseTests();runtime.setUp();self.addCleanup(runtime.tearDown)
+        root=runtime.root.resolve();bundle=runtime.bundle.resolve();configuration=runtime.configuration.resolve()
+        runtime.fixture.add_frontend()
+        pair={'contractPhase':'p2','phase2ContractManifestSha256':'sha256:'+'e'*64}
+        for carrier in (runtime.fixture.release,runtime.fixture.release['frontendMigration'],*runtime.fixture.jobs.values()):
+            carrier.update(pair)
+        for name in ('course','community'):
+            runtime.fixture.jobs[name]['target']['serverMajor']=18
+        runtime.fixture.jobs['frontend']['target'].update(approvedPendingTags=[],allowEmptyBootstrap=False)
+        self.profile=runtime.fixture.profiled();self.fields={'version':2,'qualificationTargetProfile':self.profile}
+        runtime.target.update(self.fields)
+        runtime.gateway.update(ownerId=parent.vercel.TEAM,projectId=parent.vercel.PROJECTS['staging'],publicHost='api-staging.lashher.com')
+        self.candidate_file=bundle/'release.candidate.json';self.candidate_raw=(json.dumps(runtime.fixture.release,indent=2)+'\n').encode()
+        self.candidate_file.write_bytes(self.candidate_raw);candidate_sha=source.digest(self.candidate_raw)
+        runtime.gateway['admission']={'file':'/admission/state.json','releaseId':'test-release','candidateSha256':candidate_sha}
+        runtime.save('runtime.json',runtime.target);runtime.save('gateway.json',runtime.gateway)
+        selected,jobs,_,_=source.runtime.make_plan(bundle,configuration,runtime.compose,expected_profile=self.profile)
+        configuration_hashes=staging_state.configuration_hashes(configuration)
+        test_plan,self.baseline,self.domain,domain_gateway,effects=fixture()
+        job=jobs['frontend']['job'];target={key:job['target'][key] for key in ('host','port','database','user','serverMajor')}
+        target_sha=parent.frontend_target_sha256(target);owner={'name':'owned_owner','oid':'321'}
+        canonical_candidate_sha=source.digest(source.canonical(selected));action='owned-certification';self.recovery='owned-replacement'
+        self.receiver_targets={name:{**{key:jobs[name]['job']['target'][key] for key in ('host','port','database','serverMajor')},
+            'user':jobs[name]['job']['runtimeRole'],'roleOid':'456'} for name in ('course','community')}
+        source_root=Path(source.__file__).resolve().parents[3]
+        source_files={source.MODULE:source.digest(migrate.read_input(source_root,source.MODULE))}
+        closure=source.digest(source.canonical(sorted(source_files.items())))
+        native={**test_plan['nativePlan'],**self.fields,'candidateSha256':canonical_candidate_sha,'targetSha256':target_sha,
+            'sourceCommit':job['sourceCommit'],'owner':owner,'windowSeconds':60,'projectId':selected['workload']['projectId'],
+            'deploymentId':'dpl_owned','producer':{**test_plan['nativePlan']['producer'],'role':{'oid':'123','name':'runtime_role'}}}
+        native['planSha256']=source.digest(source.canonical(native))
+        for row in self.domain['frontend']['operations']:row['source_sha']=job['sourceCommit']
+        gateway_config=source.digest(migrate.read_input(configuration,'gateway.json'))
+        job_hashes={name:source.digest(migrate.read_input(bundle,'jobs/'+name+'.json')) for name in self.receiver_targets}
+        cert={**self.fields,**pair,'environment':'staging','mode':'known-ack-recovery','maximumSeconds':900,
+            'certificationActionId':action,'sourceCommit':job['sourceCommit'],'operatorSourceCommit':job['sourceCommit'],
+            'candidateSha256':candidate_sha,'candidateObjectSha256':canonical_candidate_sha,'targetSha256':target_sha,
+            'gatewayProcessSha256':'b'*64,'gatewayConfigurationSha256':gateway_config,'runtimeInventorySha256':'c'*64,
+            'configurationSha256':'d'*64,'configurationCanonicalSha256':source.digest(source.canonical(configuration_hashes)),
+            'operatorSourceClosureSha256':closure,'knownAckConfigurationInputDirectory':str(configuration),
+            'knownAckReceiverTargets':self.receiver_targets,'nativePlan':native,'apiJobSha256':job_hashes,
+            'faultSelection':{'stageId':'owned-fault','receiver':'course','commandIndex':0,'commandSha256':test_plan['commandSha256']}}
+        intent=source.replacement_intent(cert,self.recovery,expected_profile=self.profile)
+        cert['knownAckRecovery']={**self.fields,'recoveryActionId':self.recovery,'intent':intent,'intentSha256':source.digest(source.canonical(intent))}
+        cert['planSha256']=parent._profiled_plan_hash(cert)
+        observer=parent.P2CertificationPhysicalObserver.__new__(parent.P2CertificationPhysicalObserver)
+        witness={};after=['owned-current-journal']
+        receipt={**self.fields,**pair,**{key:job[key] for key in ('environment','releaseId','sourceCommit','migrationImageDigest',
+            'sqlArtifactSha256','schemaBaselineSha256','contractManifestSha256')},'service':'frontend',
+            'status':'P2_CERTIFICATION_DATABASE_CURRENT','certificationActionId':action,'candidateSha256':candidate_sha,'planSha256':cert['planSha256'],
+            'targetSha256':target_sha,'target':{**target,'qualificationTargetProfile':self.profile},'schemaVerified':True,'runtimeRoleVerified':True,
+            'oldLoginsDenied':True,'oldRoleSessions':0,'sqlReplayed':False,'trafficAuthorized':False,'owner':owner,'runtime':native['producer']['role'],
+            'retiredLogins':[],'after':after,'witness':witness,'journalSha256':source.digest(parent._profiled_compact(after)),
+            'witnessSha256':source.digest(parent._profiled_compact(witness))}
+        observer._expected_profile=self.profile;observer.selected=selected
+        observer.request={'job':job,'plan':cert,'receipt':receipt,'baseline':json.loads(jobs['frontend']['schema']),
+            'owner':owner,'historicalLogins':{'retiredLogins':[]}}
+        observer.verify=Mock()
+        lock=root/'owned-flock';fd=os.open(lock,os.O_CREAT|os.O_RDWR,0o600);self.addCleanup(os.close,fd);fcntl.flock(fd,fcntl.LOCK_EX)
+        self.scope=parent.P2CertificationScope(fd,lock,observer.verify,receipt,candidate_sha,release=selected,jobs=jobs,
+            configuration_sha256=configuration_hashes,certification_plan=cert,expected_profile=self.profile,physical_observer=observer)
+        stage=source.P2CertificationFaultStage.__new__(source.P2CertificationFaultStage)
+        stage.expected_profile=self.profile;stage.scope=self.scope;stage.arm_called=False;stage.lease_sha256='2'*64
+        stage.gateway={'containerId':'1'*64}
+        stage.plan={**self.fields,**{key:cert[key] for key in ('candidateSha256','candidateObjectSha256','sourceCommit','operatorSourceCommit',
+            'targetSha256','gatewayProcessSha256','gatewayConfigurationSha256','operatorSourceClosureSha256')},
+            **{key:cert['faultSelection'][key] for key in ('stageId','receiver','commandSha256')},
+            'profile':'lifecycle-known-command-v1','nativePlanSha256':native['planSha256'],'mode':'drop-after-ack',
+            'configurationSha256':cert['configurationCanonicalSha256'],'gatewayImageSha256':'f'*64}
+        stage.effects=Mock(return_value=[{**effects[0],'version':1,'environment':'staging','status':'P2_TRANSPORT_FAULT_INJECTED',
+            'leaseSha256':stage.lease_sha256,
+            **{key:stage.plan[key] for key in ('profile','stageId','candidateSha256','configurationSha256','gatewayProcessSha256','gatewayImageSha256')}}])
+        broker=parent.P2ProfiledCertificationBroker.__new__(parent.P2ProfiledCertificationBroker);self.broker=broker
+        broker.initial={**self.fields,'certificationPlan':cert,'certificationActionId':action,'nativePlan':native,'configurationSha256':configuration_hashes,
+            'candidateSha256':candidate_sha,'sourceSha256':source_files,'sourceClosureSha256':closure}
+        broker.scope=self.scope;broker.fault_stage=stage;broker.external_armed=True;broker.native_enable_attempted=False;broker.native_expected=False
+        broker.configuration=configuration;broker.selected=selected;broker.jobs=jobs;broker.bundle=bundle;broker.source=source_root
+        broker.certification_started=time.monotonic();broker.directory=root/'certification';broker.directory.mkdir(mode=0o700)
+        broker._native_observe=Mock(return_value={'nativeEnabled':False})
+        self.gateway={'status':'PRIOR_GATEWAY_OBSERVED','process':{'containerId':stage.gateway['containerId'],'pid':123},
+            'binding':{'candidateSha256':candidate_sha,'configurationDirectory':str(configuration),'gatewayConfigurationSha256':gateway_config},
+            'admission':{**domain_gateway['admission'],'uncertain':{'newWork':0,'recovery':0}}}
+        broker._gateway_current=Mock(return_value={'processSha256':cert['gatewayProcessSha256'],'gatewayConfigurationSha256':gateway_config,
+            'faultLeasePresent':False,'admission':self.gateway['admission']})
+        api=broker.directory/'api';api.mkdir();databases={}
+        for name,pin in job_hashes.items():
+            (api/(name+'-input')).mkdir();(api/name).mkdir()
+            (api/(name+'-input')/'job.json').write_bytes(migrate.read_input(bundle,'jobs/'+name+'.json'))
+            migrate.write_json(api/name,'database-receipt.json',{'manifestSha256':pin})
+            databases[name]={'image':jobs[name]['image'],'jobSha256':pin,'receiptSha256':source.digest(migrate.read_input(api/name,'database-receipt.json'))}
+        outcome={**self.fields,'status':'P2_CERTIFICATION_API_DATABASES_READ_ONLY_VERIFIED','phase':'completed','candidateSha256':candidate_sha,
+            'releaseId':selected['releaseId'],'certificationActionId':action,'databases':databases,'migrationsExecuted':False,
+            'frontendSqlApplied':False,'trafficAuthorized':False}
+        migrate.write_json(api,'certification-current-databases-outcome.json',outcome)
+        broker.api_proof=current_databases.CertificationCurrentDatabaseProof(current_databases._CERTIFICATION_PROOF_AUTHORITY,
+            self.scope,selected,jobs,api,outcome)
+        self.current=self.baseline
+        self.gateway_read=Mock(side_effect=lambda *_args,**_kwargs:copy.deepcopy(self.gateway))
+        for projection in (patch.object(source,'ROOT',root),patch.object(source.os,'geteuid',return_value=0),
+                           patch.object(prior,'observe_prior_gateway',self.gateway_read),
+                           patch.object(source.P2KnownAckLossRecorder,'_snapshot',side_effect=lambda **_:copy.deepcopy(self.current))):
+            projection.start();self.addCleanup(projection.stop)
+
+    def recorder(self):
+        return source.P2KnownAckLossRecorder(self.broker,self.recovery,self.receiver_targets,expected_profile=self.profile)
+
+    def request_artifact(self):
+        native=self.broker.initial['nativePlan'];action=self.broker.action_id();observations=[]
+        for i,row in enumerate(self.domain['frontend']['operations']):
+            event={'version':1,'status':'P2_LIFECYCLE_CRON_ADMITTED','environment':'staging','projectId':native['projectId'],
+                'operationId':row['id'],'producerSha256':native['producer']['producerSha256'],'sourceCommit':native['sourceCommit'],
+                'epoch':'3','kind':'recovery','targetSha256':native['targetSha256']}
+            observations.append({'version':1,'kind':'vercel-native-request-details','reviewerGithubUserId':'8996309','projectId':native['projectId'],
+                'deploymentId':native['deploymentId'],'path':parent.native.PATH,'method':'GET','providerRequestTypeFilter':'cron',
+                'providerRequestId':'owned-'+str(i),'startedAt':'2026-11-06T01:00:00.000Z','completedAt':'2026-11-06T01:00:05.000Z',
+                'httpStatus':503 if row['state']=='uncertain' else 200,'logScope':'this-provider-request-details','admittedLogLine':json.dumps(event)})
+        return source.canonical({'version':1,'kind':'operator-recorded-request-details','reviewerGithubUserId':'8996309',
+            'certificationActionId':action,'nativePlanSha256':native['planSha256'],'windowEpoch':'3','recordedAt':'2026-11-06T01:00:05.000Z',
+            'observations':observations})+b'\n'
+
+    def begin_window(self):
+        recorder=self.recorder();self.broker.native_expected=True
+        with self.assertRaisesRegex(ValueError,'PROFILED_FAULT_ARM_REQUIRED'):recorder.start_native_window()
+        self.broker.fault_stage.arm_called=True;recorder.start_native_window()
+        self.current=copy.deepcopy(self.domain);self.gateway['admission']['uncertain']['recovery']=1
+        return recorder
+
+    def prepare(self):
+        recorder=self.begin_window()
+        self.assertEqual(recorder.observe_domain()['status'],'P2_KNOWN_ACK_DOMAIN_SETTLED_IN_WINDOW')
+        raw=self.request_artifact();recorder.retain_request_details(base64.b64encode(raw).decode())
+        self.broker.native_expected=False;self.current['frontend']['admission'].update(epoch='4',recovery=False)
+        self.gateway['admission']['recovery']=False
+        return recorder
+
+    def settle(self,recorder):
+        proof=recorder.prepare_reconciliation();self.current['frontend']['admission']['uncertain']=0
+        self.current['frontend']['operations'][0].update(state='completed',completed_at='2026-11-06T01:00:06.000Z',
+            reconciliation_sha256=proof['evidenceSha256'])
+        return proof
+
+    def test_same_held_source_confirms_specific_frontend_settlement_and_keeps_gateway_one(self):
+        recorder=self.prepare();proof=self.settle(recorder);result=recorder.confirm_reconciliation()
+        self.assertEqual(result['qualificationTargetProfile'],self.profile);self.assertEqual(result['version'],2)
+        self.assertEqual(result['operationId'],proof['operationId']);self.assertEqual(result['settlementSha256'],proof['evidenceSha256'])
+        self.assertEqual(result['oldGatewayUncertain'],{'newWork':0,'recovery':1});self.assertTrue(result['frontendGlobalClosedZero'])
+        self.assertFalse(result['ordinaryClosedZeroGate']);self.assertFalse(result['runtimeReplaced'])
+        raw=migrate.read_input(recorder.directory,'reconciliation-observed.json')
+        self.assertEqual(source.digest(raw),result['reconciliationObservedSha256'])
+        self.assertEqual(json.loads(raw)['candidateSha256'],source.digest(self.candidate_raw))
+        self.assertEqual(json.loads(raw)['databases'],self.current)
+        for name in ('recovery-intent.json','baseline.json','domain.json','request-details.json','settlement.json'):
+            self.assertEqual(json.loads(migrate.read_input(recorder.directory,name))['qualificationTargetProfile'],self.profile)
+        self.assertEqual(json.loads(migrate.read_input(recorder.directory,'domain.json'))['effect']['version'],1)
+        self.assertEqual(self.gateway_read.call_args.kwargs['expected_profile'],self.profile)
+        with self.assertRaisesRegex(ValueError,'PROFILED_CONFIRMATION_REQUIRED'):recorder.confirm_reconciliation()
+        with self.assertRaisesRegex(ValueError,'PROFILED_REPLACEMENT_UNAVAILABLE'):recorder.authorize_replacement()
+        with self.assertRaisesRegex(ValueError,'FIXED_SOURCE_CONSUMER_REQUIRED'):source.issue_known_ack_loss_boundary(self.broker,result)
+        self.assertFalse((recorder.directory/'replacement-authorization.json').exists())
+
+    def test_raw_candidate_drift_and_missing_opaque_api_proof_refuse_before_gateway_or_output(self):
+        self.candidate_file.write_bytes(self.candidate_raw+b'\n')
+        with self.assertRaisesRegex(ValueError,'EXACT_ORIGINAL_CANDIDATE_REQUIRED'):self.recorder()
+        self.candidate_file.write_bytes(self.candidate_raw);self.broker.api_proof={'version':2,'qualificationTargetProfile':self.profile}
+        with self.assertRaisesRegex(ValueError,'CERTIFICATION_API_PROOF_REQUIRED'):self.recorder()
+        with self.assertRaisesRegex(ValueError,'BEFORE_FAULT_SOURCE_PARENT_REQUIRED'):
+            source.P2KnownAckLossRecorder(self.broker,self.recovery,self.receiver_targets)
+        self.gateway_read.assert_not_called();self.assertFalse((source.ROOT/('p2-known-ack-loss-'+self.broker.action_id())).exists())
+
+    def test_profiled_sql_transport_uses_actual_private_configuration_and_original_wire(self):
+        recorder=self.recorder();broker=self.broker
+        broker.armed_probe={'marker':'owned','backendPid':123,'backendStart':'owned-start'}
+        broker.initial.update(owner=recorder.plan['nativePlan']['owner'],
+            credentials={'FRONTEND_STAGING_MIGRATION_DATABASE_URL':'owned-private-frontend-fixture'})
+        expected_role='456';calls=[]
+        def run(args,**kwargs):
+            if args[1]=='rm':return subprocess.CompletedProcess(args,0,stdout=b'',stderr=b'')
+            payload=json.loads(kwargs['input']);calls.append((args,payload,kwargs['env']))
+            value={'version':1,'status':'P2_KNOWN_ACK_SQL_CURRENT','service':payload['service'],'readOnly':True,
+                'commandId':recorder.command['commandId'],'roleOid':expected_role}
+            return subprocess.CompletedProcess(args,0,stdout=source.canonical(value),stderr=b'')
+        with patch.object(self.scope,'run',side_effect=run):
+            recorder._sql('frontend');recorder._sql('course','d'*64)
+            expected_role='999'
+            with self.assertRaisesRegex(ValueError,'PROFILED_SQL_READBACK_REQUIRED'):recorder._sql('course','d'*64)
+        args,payload,env=calls[0]
+        self.assertEqual(payload['version'],1);self.assertNotIn('qualificationTargetProfile',payload)
+        self.assertEqual(set(payload['target']),{'host','port','database','user','serverMajor'})
+        self.assertEqual(args[2:4],['--pull','never']);self.assertNotIn(env['FRONTEND_STAGING_MIGRATION_DATABASE_URL'],args)
+        args,payload,env=calls[1]
+        self.assertEqual(payload['target'],self.receiver_targets['course']);self.assertIn('STAGING_DATABASE_URL',env)
+        self.assertNotIn(env['STAGING_DATABASE_URL'],args)
+
+    def test_domain_refuses_other_lease_and_retained_candidate_bytes_drift(self):
+        recorder=self.begin_window();effect=self.broker.fault_stage.effects.return_value[0]
+        effect['leaseSha256']='9'*64
+        with self.assertRaisesRegex(ValueError,'PROFILED_RAW_EFFECT_REQUIRED'):recorder.observe_domain()
+        self.assertFalse((recorder.directory/'domain.json').exists())
+        self.candidate_file.write_bytes(self.candidate_raw+b'\n')
+        with self.assertRaisesRegex(ValueError,'EXACT_ORIGINAL_CANDIDATE_REQUIRED'):recorder.observe_domain()
+
+    def test_preparation_refuses_live_lease_and_changed_in_window_receiver_receipt(self):
+        recorder=self.prepare();current=self.broker._gateway_current.return_value
+        current['faultLeasePresent']=True
+        with self.assertRaisesRegex(ValueError,'PROFILED_OLD_GATEWAY_REQUIRED'):recorder.prepare_reconciliation()
+        current['faultLeasePresent']=False
+        self.current['frontend']['deliveries'][0]['acknowledged_at']='2026-11-06T01:00:09.000Z'
+        with self.assertRaisesRegex(ValueError,'PROFILED_IN_WINDOW_RECEIPTS_CHANGED'):recorder.prepare_reconciliation()
+        self.assertFalse((recorder.directory/'settlement.json').exists())
+
+    def test_confirmation_refuses_causal_byte_drift_wrong_settlement_old_counter_and_scope_loss(self):
+        recorder=self.prepare();proof=self.settle(recorder)
+        retained=self.broker.directory/'p2-certification-operator-request-details.json';raw=retained.read_bytes()
+        retained.write_bytes(raw+b'\n')
+        with self.assertRaisesRegex(ValueError,'ORIGINAL_RECEIPT_CHANGED'):recorder.confirm_reconciliation()
+        retained.write_bytes(raw);recorder.reconciliation_attempted=False
+        row=self.current['frontend']['operations'][0];row['reconciliation_sha256']='9'*64
+        with self.assertRaisesRegex(ValueError,'SPECIFIC_SETTLED_OPERATION_REQUIRED'):recorder.confirm_reconciliation()
+        row['reconciliation_sha256']=proof['evidenceSha256'];recorder.reconciliation_attempted=False
+        self.gateway['admission']['uncertain']['recovery']=0
+        with self.assertRaisesRegex(ValueError,'GLOBAL_ZERO_AND_OLD_ONE_REQUIRED'):recorder.confirm_reconciliation()
+        recorder.reconciliation_attempted=False;self.gateway['admission']['uncertain']['recovery']=1
+        self.broker._gateway_current.return_value['processSha256']='9'*64
+        with self.assertRaisesRegex(ValueError,'PROFILED_OLD_GATEWAY_REQUIRED'):recorder.confirm_reconciliation()
+        recorder.reconciliation_attempted=False;self.scope.revoked.set()
+        with self.assertRaisesRegex(ValueError,'RELEASE_SCOPE_CLOSED'):recorder.confirm_reconciliation()
+        self.assertFalse((recorder.directory/'reconciliation-observed.json').exists())
 
 
 class KnownTransitionTests(unittest.TestCase):
