@@ -10,6 +10,7 @@ import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { prepareP2LifecyclePersistencePlan, p2LifecyclePersistenceTargetSha256 } from "./p2-lifecycle-persistence-probe.mjs";
 import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as current } from "./qualification-target-profile.mjs";
 
 const at = "2026-11-06T12:00:00.000Z", userId = randomUUID(), commandId = randomUUID(), adminId = randomUUID();
 const headers = { "cache-control": "private, no-store", "x-request-id": randomUUID(), date: at };
@@ -57,6 +58,26 @@ function documents() {
     target, owner: { name: "admission_owner", oid: "1235" }, producer, resources: { userId, courseId: randomUUID(), lessonId: randomUUID() },
     windowSeconds: 840, drainSeconds: 10, operatorSourceCommit: raw.sources.frontend } };
 }
+function profiledDocuments() {
+  const selected = structuredClone(documents()), persisted = selected.input.persistencePlan;
+  const fields = ["environment", "releaseId", "hostMachineId", "candidateSha256", "configurationSha256", "sources", "targets", "containerImages",
+    "operatorSourceSha256", "frontendDeploymentSha256", "originalReleaseSha256", "expectedMigrations"];
+  const raw = Object.fromEntries(fields.map(name => [name, persisted[name]])); raw.version = 2; raw.qualificationTargetProfile = current;
+  for (const [service, target] of Object.entries(raw.targets)) {
+    target.qualificationTargetProfile = current;
+    target.targetSha256 = p2LifecyclePersistenceTargetSha256(service, target, current);
+  }
+  selected.input.persistencePlan = prepareP2LifecyclePersistencePlan(raw, current);
+  selected.input.version = 2; selected.input.qualificationTargetProfile = current; selected.input.target.qualificationTargetProfile = current;
+  selected.candidate.version = 3;
+  selected.candidate.approval = {};
+  selected.candidate.frontendMigration = {};
+  for (const carrier of [selected.candidate, selected.candidate.integration, selected.candidate.sourceApproval,
+    ...Object.values(selected.candidate.sources), selected.candidate.workload, selected.candidate.approval, selected.candidate.frontendMigration]) {
+    carrier.qualificationTargetProfile = current;
+  }
+  return selected;
+}
 
 test("browser plan has no invented command witnesses and requires same-source exact profile and three-source context", () => {
   const selected = documents(), plan = prepareP2LifecycleSuspensionPlan(selected.candidate, selected.input);
@@ -69,6 +90,23 @@ test("browser plan has no invented command witnesses and requires same-source ex
     row => { row.input.deployment.writerAdmissionBinding.targetSha256 = "f".repeat(64); }]) {
     const fixture = structuredClone(documents()); change(fixture); assert.throws(() => prepareP2LifecycleSuspensionPlan(fixture.candidate, fixture.input));
   }
+});
+
+test("profiled browser source plan binds candidate3, current persistence targets and raw workload hash without enabling apply", () => {
+  const selected = profiledDocuments(), plan = prepareP2LifecycleSuspensionPlan(selected.candidate, selected.input, current);
+  assert.equal(plan.version, 2); assert.deepEqual(plan.qualificationTargetProfile, current);
+  assert.equal(plan.profile, "normal-ui-suspension-pending-v1");
+  assert.equal(plan.configurationRecordSha256, selected.input.deployment.configurationRecordSha256);
+  assert.equal(plan.candidateSha256, selected.input.candidateSha256);
+  assert.throws(() => launchP2LifecycleBrowserRecorder(plan, "/private/tmp/foreign"));
+  for (const change of [row => { delete row.input.target.qualificationTargetProfile; },
+    row => { delete row.input.persistencePlan.targets.course.qualificationTargetProfile; },
+    row => { delete row.candidate.sources.frontend.qualificationTargetProfile; },
+    row => { row.candidate.version = 2; }]) {
+    const fixture = profiledDocuments(); change(fixture);
+    assert.throws(() => prepareP2LifecycleSuspensionPlan(fixture.candidate, fixture.input, current));
+  }
+  assert.throws(() => prepareP2LifecycleSuspensionPlan(selected.candidate, selected.input));
 });
 
 test("fixed browser input has no injection, storage, clock, credential, URL or command hook", () => {

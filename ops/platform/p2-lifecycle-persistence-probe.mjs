@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { rootCertificates } from "node:tls";
 import { lifecycleWitnessPublicReceipt, p2LifecycleStateWitnessSha256, validateP2LifecycleStateWitness } from "./p2-lifecycle-state-witness.mjs";
+import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
+  resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
 const SHA = /^[a-f0-9]{64}$/u;
@@ -15,29 +17,42 @@ const canonical = value => JSON.stringify(value, (_key, child) => child && typeo
 const closed = (value, fields) => Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join() === [...fields].sort().join());
 export class P2LifecyclePersistenceError extends Error { constructor(check) { super("P2_LIFECYCLE_PERSISTENCE_REFUSED"); this.check = check; } }
 const demand = (condition, check) => { if (!condition) throw new P2LifecyclePersistenceError(check); };
-export function p2LifecyclePersistenceTargetSha256(service, value) {
+const hasProfile = value => value && typeof value === "object" && Object.hasOwn(value, "qualificationTargetProfile");
+function profileContext(expected, ...carriers) {
+  if (expected === undefined) {
+    if (carriers.some(hasProfile)) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_REFUSED");
+    return undefined;
+  }
+  const profile = parseQualificationTargetProfileRef(expected), definition = resolveQualificationTargetProfile(profile);
+  demand(definition.id === "staging-current" && definition.environment === "staging" && definition.kind === "existing-staging", "profile-policy");
+  return requireQualificationTargetProfile(profile, ...carriers);
+}
+export function p2LifecyclePersistenceTargetSha256(service, value, expectedProfile = undefined) {
   demand(["frontend", "course", "community"].includes(service), "target-service");
+  profileContext(expectedProfile, value);
   return sha({ version: 1, environment: "staging", service, host: value.host, port: value.port, database: value.database,
     runtimeRole: value.runtimeRole, runtimeRoleOid: value.runtimeRoleOid, serverMajor: value.serverMajor });
 }
 
-function validateTarget(service, value) {
-  demand(closed(value, ["targetSha256", "host", "port", "database", "runtimeRole", "runtimeRoleOid", "serverMajor"])
+function validateTarget(service, value, profile) {
+  demand(closed(value, ["targetSha256", "host", "port", "database", "runtimeRole", "runtimeRoleOid", "serverMajor", ...(profile ? ["qualificationTargetProfile"] : [])])
     && SHA.test(value.targetSha256) && typeof value.host === "string" && /^[a-z0-9.-]+$/u.test(value.host) && !value.host.includes("..")
     && Number.isSafeInteger(value.port) && value.port > 0 && value.port < 65536 && ROLE.test(value.database) && ROLE.test(value.runtimeRole)
     && /^[1-9][0-9]*$/u.test(value.runtimeRoleOid) && [16, 18].includes(value.serverMajor)
-    && value.targetSha256 === p2LifecyclePersistenceTargetSha256(service, value), "target-binding");
+    && value.targetSha256 === p2LifecyclePersistenceTargetSha256(service, value, profile), "target-binding");
   return value;
 }
 
-export function prepareP2LifecyclePersistencePlan(input) {
-  demand(closed(input, ["version", "environment", "releaseId", "hostMachineId", "candidateSha256", "configurationSha256", "sources", "targets", "containerImages", "operatorSourceSha256", "frontendDeploymentSha256", "originalReleaseSha256", "expectedMigrations"])
-    && input.version === 1 && input.environment === "staging" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.releaseId)
+export function prepareP2LifecyclePersistencePlan(input, expectedProfile = undefined) {
+  const targets = input?.targets && typeof input.targets === "object" ? Object.values(input.targets) : [];
+  const profile = profileContext(expectedProfile, input, ...targets);
+  demand(closed(input, ["version", ...(profile ? ["qualificationTargetProfile"] : []), "environment", "releaseId", "hostMachineId", "candidateSha256", "configurationSha256", "sources", "targets", "containerImages", "operatorSourceSha256", "frontendDeploymentSha256", "originalReleaseSha256", "expectedMigrations"])
+    && input.version === (profile ? 2 : 1) && input.environment === "staging" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.releaseId)
     && /^[a-f0-9]{32}$/u.test(input.hostMachineId) && input.hostMachineId !== "0".repeat(32)
     && [input.candidateSha256, input.configurationSha256, input.operatorSourceSha256, input.frontendDeploymentSha256, input.originalReleaseSha256].every(value => SHA.test(value)), "plan-binding");
   demand(closed(input.sources, ["frontend", "course", "community"]) && Object.values(input.sources).every(value => COMMIT.test(value)), "plan-sources");
   demand(closed(input.targets, ["frontend", "course", "community"]), "plan-target-set");
-  for (const [service, target] of Object.entries(input.targets)) validateTarget(service, target);
+  for (const [service, target] of Object.entries(input.targets)) validateTarget(service, target, profile);
   demand(closed(input.containerImages, ["course", "community"])
     && typeof input.containerImages.course === "string" && /^ghcr\.io\/princessdardan\/lash-her-platform-course-runtime@sha256:[a-f0-9]{64}$/u.test(input.containerImages.course)
     && typeof input.containerImages.community === "string" && /^ghcr\.io\/princessdardan\/lash-her-platform-community-runtime@sha256:[a-f0-9]{64}$/u.test(input.containerImages.community), "plan-images");

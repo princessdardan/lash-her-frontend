@@ -7,6 +7,8 @@ import { Client } from "pg";
 import { isDeepStrictEqual } from "node:util";
 import { observeP2LifecycleNativeLedger } from "./p2-lifecycle-native.mjs";
 import { frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
+import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
+  resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
 const plans = new WeakMap(), resolvers = new WeakMap(), credentials = new WeakMap(), invocations = new WeakMap(), artifacts = new WeakMap();
 const demand = condition => { if (!condition) throw new Error("P2_LIFECYCLE_WORKER_EVIDENCE_REFUSED"); };
@@ -30,18 +32,32 @@ function committedSha256(sourceCommit, file) {
     stdio: ["ignore", "pipe", "pipe"], env: { PATH: process.env.PATH ?? "/usr/bin:/bin", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } });
   demand(bytes.equals(readFileSync(new URL(`../../${file}`, import.meta.url)))); return hash(bytes);
 }
+const hasProfile = value => value && typeof value === "object" && Object.hasOwn(value, "qualificationTargetProfile");
+function profileContext(expected, ...carriers) {
+  if (expected === undefined) {
+    if (carriers.some(hasProfile)) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_REFUSED");
+    return undefined;
+  }
+  const profile = parseQualificationTargetProfileRef(expected), definition = resolveQualificationTargetProfile(profile);
+  demand(definition.id === "staging-current" && definition.environment === "staging" && definition.kind === "existing-staging");
+  return requireQualificationTargetProfile(profile, ...carriers);
+}
 
-export function prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan, input) {
-  demand(nativePlan?.version === 1 && nativePlan.environment === "staging" && sha(nativePlan.planSha256)
+export function prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan, input, expectedProfile = undefined) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+  const profile = profileContext(expectedProfile, nativePlan, nativePlan?.target, suspensionPlan, input);
+  demand(nativePlan?.version === (profile ? 2 : 1) && nativePlan.environment === "staging" && sha(nativePlan.planSha256)
     && suspensionPlan?.profile === "normal-ui-suspension-pending-v1" && suspensionPlan.environment === "staging"
+    && (!profile || suspensionPlan.version === 2)
     && nativePlan.sourceCommit === suspensionPlan.sourceCommit && nativePlan.candidateSha256 === suspensionPlan.candidateObjectSha256
     && nativePlan.targetSha256 === suspensionPlan.targetSha256 && nativePlan.configurationRecordSha256 === suspensionPlan.configurationRecordSha256
-    && closed(input, ["version", "actionId", "commandIndex", "pendingRecordSha256", "canonicalCommandSha256", "gatewayProcessSha256", "gatewayConfigurationSha256", "denialProgramSha256"])
-    && input.version === 1 && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.actionId) && Number.isInteger(input.commandIndex)
+    && (!profile || nativePlan.actionId === suspensionPlan.releaseId)
+    && closed(input, ["version", ...(profile ? ["qualificationTargetProfile"] : []), "actionId", "commandIndex", "pendingRecordSha256", "canonicalCommandSha256", "gatewayProcessSha256", "gatewayConfigurationSha256", "denialProgramSha256"])
+    && input.version === (profile ? 2 : 1) && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.actionId) && Number.isInteger(input.commandIndex)
     && input.commandIndex >= 0 && input.commandIndex < nativePlan.commandWitnesses.length
     && [input.pendingRecordSha256, input.canonicalCommandSha256, input.gatewayProcessSha256, input.gatewayConfigurationSha256, input.denialProgramSha256].every(sha));
   const selected = nativePlan.commandWitnesses[input.commandIndex]; demand(selected.action === "suspend" && uuid(selected.commandId));
-  const plan = freeze({ version: 1, environment: "staging", profile: "direct-known-suspension-v1", actionId: input.actionId,
+  const plan = freeze({ version: profile ? 2 : 1, ...(profile ? { qualificationTargetProfile: profile } : {}), environment: "staging", profile: "direct-known-suspension-v1", actionId: input.actionId,
     candidateSha256: suspensionPlan.candidateSha256, candidateObjectSha256: suspensionPlan.candidateObjectSha256,
     sourceCommit: suspensionPlan.sourceCommit, configurationSha256: suspensionPlan.configurationSha256,
     nativePlanSha256: nativePlan.planSha256, suspensionPlanSha256: hash(suspensionPlan), targetSha256: nativePlan.targetSha256,
@@ -53,7 +69,7 @@ export function prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan,
     workerInvocations: 1, requiredPrivateInputs: ["FRONTEND_STAGING_CRON_SECRET", "providerContext.frontendRuntimeDatabaseUrl"],
     invocationClass: "direct-source-authenticated-cron", nativeInvocationQualified: false, automaticRetryAllowed: false,
     finalDisposition: "native-off-and-admission-closed", releaseAccepted: false });
-  plans.set(plan, { nativePlan, suspensionPlan, selected: structuredClone(selected) }); return plan;
+  if (!profile) plans.set(plan, { nativePlan, suspensionPlan, selected: structuredClone(selected) }); return plan;
 }
 
 // Constructed only by the fixed apply parent. Plan code never calls either

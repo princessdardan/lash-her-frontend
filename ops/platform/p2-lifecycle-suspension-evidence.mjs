@@ -11,6 +11,8 @@ import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mj
 import { frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { P2_CERTIFICATION_PROFILE } from "./p2-certification-profile.mjs";
 import { p2SuspensionEvidenceSha256 as hash, observeP2SuspensionPending } from "./p2-lifecycle-pending-probe.mjs";
+import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
+  resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
 const plans = new WeakMap(), controllers = new WeakMap(), artifacts = new WeakMap();
 const controlledCaptures = new WeakMap(), naturalArtifacts = new WeakMap(), pendingArtifacts = new WeakMap();
@@ -33,18 +35,34 @@ function committedProgramBytes(sourceCommit, file) {
   demand(bytes.equals(readFileSync(new URL(`../../${file}`, import.meta.url)))); return bytes;
 }
 const freeze = value => { if (value && typeof value === "object") { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
+const hasProfile = value => value && typeof value === "object" && Object.hasOwn(value, "qualificationTargetProfile");
+function profileContext(expected, ...carriers) {
+  if (expected === undefined) {
+    if (carriers.some(hasProfile)) throw new QualificationTargetProfileError("QUALIFICATION_TARGET_PROFILE_REFUSED");
+    return undefined;
+  }
+  const profile = parseQualificationTargetProfileRef(expected), definition = resolveQualificationTargetProfile(profile);
+  demand(definition.id === "staging-current" && definition.environment === "staging" && definition.kind === "existing-staging");
+  return requireQualificationTargetProfile(profile, ...carriers);
+}
+const candidateProfileCarriers = candidate => [candidate, candidate?.sourceApproval, candidate?.integration,
+  ...Object.values(candidate?.sources ?? {}), candidate?.workload, candidate?.approval,
+  ...(candidate?.frontendMigration === undefined ? [] : [candidate.frontendMigration])];
 
-export function prepareP2LifecycleSuspensionPlan(candidate, input) {
-  demand(closed(input, ["version", "actionId", "candidateSha256", "persistencePlan", "deployment", "target", "owner", "producer", "resources", "windowSeconds", "drainSeconds", "operatorSourceCommit"])
-    && input.version === 1 && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.actionId) && sha(input.candidateSha256)
+export function prepareP2LifecycleSuspensionPlan(candidate, input, expectedProfile = undefined) {
+  if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
+  const persistenceTargets = input?.persistencePlan?.targets && typeof input.persistencePlan.targets === "object" ? Object.values(input.persistencePlan.targets) : [];
+  const profile = profileContext(expectedProfile, input, input?.persistencePlan, ...persistenceTargets, input?.target, ...candidateProfileCarriers(candidate));
+  demand(closed(input, ["version", ...(profile ? ["qualificationTargetProfile"] : []), "actionId", "candidateSha256", "persistencePlan", "deployment", "target", "owner", "producer", "resources", "windowSeconds", "drainSeconds", "operatorSourceCommit"])
+    && input.version === (profile ? 2 : 1) && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(input.actionId) && sha(input.candidateSha256)
     && input.windowSeconds === 840 && Number.isInteger(input.drainSeconds) && input.drainSeconds >= 1 && input.drainSeconds <= 180
     && closed(input.resources, ["userId", "courseId", "lessonId"]) && Object.values(input.resources).every(uuid)
     && input.operatorSourceCommit === commit());
-  const fields = ["version", "environment", "releaseId", "hostMachineId", "candidateSha256", "configurationSha256", "sources", "targets", "containerImages",
+  const fields = ["version", ...(profile ? ["qualificationTargetProfile"] : []), "environment", "releaseId", "hostMachineId", "candidateSha256", "configurationSha256", "sources", "targets", "containerImages",
     "operatorSourceSha256", "frontendDeploymentSha256", "originalReleaseSha256", "expectedMigrations"];
-  const persistencePlan = prepareP2LifecyclePersistencePlan(Object.fromEntries(fields.map(name => [name, input.persistencePlan?.[name]]))), sourceCommit = persistencePlan.sources.frontend;
+  const persistencePlan = prepareP2LifecyclePersistencePlan(Object.fromEntries(fields.map(name => [name, input.persistencePlan?.[name]])), profile), sourceCommit = persistencePlan.sources.frontend;
   demand(isDeepStrictEqual(input.persistencePlan, persistencePlan));
-  demand(candidate?.version === 2 && candidate.environment === "staging" && candidate.contractPhase === "p2"
+  demand(candidate?.version === (profile ? 3 : 2) && candidate.environment === "staging" && candidate.contractPhase === "p2"
     && candidate.integration?.state === "passed" && candidate.sourceApproval?.mode === "single-operator-dispatch"
     && candidate.sourceApproval.operatorGithubUserId === "8996309" && candidate.releaseId === persistencePlan.releaseId
     && candidate.sources?.frontend?.repository === "https://github.com/princessdardan/lash-her-frontend.git"
@@ -61,14 +79,14 @@ export function prepareP2LifecycleSuspensionPlan(candidate, input) {
     && closed(input.producer.role, ["name", "oid"]) && sha(input.producer.producerSha256)
     && [input.owner, input.producer.role].every(role => /^[a-z][a-z0-9_]{0,62}$/u.test(role.name) && /^[1-9][0-9]{0,9}$/u.test(role.oid))
     && input.owner.oid !== input.producer.role.oid && input.owner.name !== input.producer.role.name
-    && closed(input.target, ["host", "port", "database", "user", "serverMajor"])
+    && closed(input.target, ["host", "port", "database", "user", "serverMajor", ...(profile ? ["qualificationTargetProfile"] : [])])
     && input.target.host === persistencePlan.targets.frontend.host && input.target.port === persistencePlan.targets.frontend.port
     && input.target.database === persistencePlan.targets.frontend.database && input.target.serverMajor === persistencePlan.targets.frontend.serverMajor
     && input.target.user !== input.producer.role.name);
   const expectedBinding = { mode: "enforce", targetSha256: frontendAdmissionTargetSha256("staging", input.target),
     producerSha256: input.producer.producerSha256, sourceCommit, roleName: input.producer.role.name };
   demand(isDeepStrictEqual(expectedBinding, deployment.writerAdmissionBinding));
-  const value = freeze({ version: 1, status: "P2_LIFECYCLE_SUSPENSION_SOURCE_PLAN", environment: "staging", profile: "normal-ui-suspension-pending-v1",
+  const value = freeze({ version: profile ? 2 : 1, ...(profile ? { qualificationTargetProfile: profile } : {}), status: "P2_LIFECYCLE_SUSPENSION_SOURCE_PLAN", environment: "staging", profile: "normal-ui-suspension-pending-v1",
     actionId: input.actionId, releaseId: persistencePlan.releaseId, candidateSha256: input.candidateSha256, candidateObjectSha256: hash(candidate),
     sourceCommit, operatorSourceCommit: input.operatorSourceCommit, operatorSourceEligibility: "same-as-immutable-frontend-candidate",
     configurationSha256: persistencePlan.configurationSha256, configurationRecordSha256: deployment.configurationRecordSha256,
@@ -82,7 +100,7 @@ export function prepareP2LifecycleSuspensionPlan(candidate, input) {
     windowSeconds: 840, drainSeconds: input.drainSeconds, initialAdmission: { newWork: true, recovery: false },
     finalDisposition: "native-off-and-admission-closed", fixtureCreationAuthorized: false,
     workerInvocationAuthorized: false, automaticReplayAllowed: false, releaseAccepted: false });
-  plans.set(value, structuredClone(input)); return value;
+  if (!profile) plans.set(value, structuredClone(input)); return value;
 }
 
 export function validateP2SuspensionBrowserRecord(record, input) {

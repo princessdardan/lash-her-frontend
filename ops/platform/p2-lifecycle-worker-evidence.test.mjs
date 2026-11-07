@@ -3,7 +3,10 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 import { validateP2ReceiverDenialInput, observeCourseSuspensionDenial, observeCommunitySuspensionDenial } from "./p2-lifecycle-receiver-denial.mjs";
-import { createP2LifecycleWorkerPrivateResolvers, readP2LifecycleWorkerCronSecret, readP2LifecycleWorkerRuntimeUrl, readP2DirectWorkerSourceArtifact } from "./p2-lifecycle-worker-evidence.mjs";
+import { createP2LifecycleWorkerPrivateResolvers, prepareP2LifecycleWorkerEvidencePlan, preflightP2DirectLifecycleWorker,
+  readP2LifecycleWorkerCronSecret, readP2LifecycleWorkerRuntimeUrl, readP2DirectWorkerSourceArtifact } from "./p2-lifecycle-worker-evidence.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as current } from "./qualification-target-profile.mjs";
+import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
 
 function input() { return { version: 1, mode: "course-http", environment: "staging", bindingSha256: "a".repeat(64), subject: randomUUID(), courseId: randomUUID(),
   currentKey: "OWNED-SYNTHETIC-CURRENT-KEY-NEVER-LIVE".repeat(2), gatewayCaSha256: "b".repeat(64), runtimeEnvironment: null, target: null }; }
@@ -25,6 +28,30 @@ test("source private resolvers read only approved runtime inputs and foreign han
     assert.equal(JSON.stringify(handle).includes(process.env.FRONTEND_STAGING_CRON_SECRET), false);
     assert.throws(() => readP2DirectWorkerSourceArtifact({}, { recordSha256: "a".repeat(64) }));
   } finally { if (original === undefined) delete process.env.FRONTEND_STAGING_CRON_SECRET; else process.env.FRONTEND_STAGING_CRON_SECRET = original; }
+});
+test("profiled direct-worker plan joins the original current native and suspension plans but has no apply authority", async () => {
+  const sourceCommit = nativeSourceCommit(), candidateObjectSha256 = "a".repeat(64), targetSha256 = "b".repeat(64), configurationRecordSha256 = "c".repeat(64);
+  const command = { commandId: randomUUID(), accountVersion: "1", action: "suspend" };
+  const nativePlan = { version: 2, qualificationTargetProfile: current, environment: "staging", actionId: "owned-release", planSha256: "d".repeat(64),
+    sourceCommit, candidateSha256: candidateObjectSha256, targetSha256, configurationRecordSha256,
+    target: { qualificationTargetProfile: current }, commandWitnesses: [command] };
+  const suspensionPlan = { version: 2, qualificationTargetProfile: current, environment: "staging", profile: "normal-ui-suspension-pending-v1",
+    releaseId: nativePlan.actionId, sourceCommit, candidateSha256: "e".repeat(64), candidateObjectSha256, targetSha256,
+    configurationRecordSha256, configurationSha256: "f".repeat(64) };
+  const selected = { version: 2, qualificationTargetProfile: current, actionId: "owned-certification", commandIndex: 0,
+    pendingRecordSha256: "1".repeat(64), canonicalCommandSha256: "2".repeat(64), gatewayProcessSha256: "3".repeat(64),
+    gatewayConfigurationSha256: "4".repeat(64), denialProgramSha256: "5".repeat(64) };
+  const plan = prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan, selected, current);
+  assert.equal(plan.version, 2); assert.deepEqual(plan.qualificationTargetProfile, current);
+  assert.equal(plan.profile, "direct-known-suspension-v1"); assert.equal(plan.candidateObjectSha256, candidateObjectSha256);
+  await assert.rejects(preflightP2DirectLifecycleWorker(plan, {}, {}, {}, {}));
+  for (const mutate of [value => { delete value.nativePlan.target.qualificationTargetProfile; },
+    value => { value.nativePlan.actionId = "different-release"; }, value => { delete value.suspensionPlan.qualificationTargetProfile; },
+    value => { value.input.version = 1; }]) {
+    const value = structuredClone({ nativePlan, suspensionPlan, input: selected }); mutate(value);
+    assert.throws(() => prepareP2LifecycleWorkerEvidencePlan(value.nativePlan, value.suspensionPlan, value.input, current));
+  }
+  assert.throws(() => prepareP2LifecycleWorkerEvidencePlan(nativePlan, suspensionPlan, selected));
 });
 test("Course403 must be the exact account restriction, never generic403/401/429/503", async () => {
   const { createHash } = await import("node:crypto"), ca = Buffer.from("OWNED-UNIT-CA");
