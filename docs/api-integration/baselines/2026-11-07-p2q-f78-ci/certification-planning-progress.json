@@ -206,5 +206,49 @@
     "liveApplyExecuted": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "profiledInterruptedRestorationComponents": {
+    "sourceCommit": "e4e47d8d526155f79748cbc414327d19de73b9f6",
+    "planAndObserverDispatchCommit": "7d1abb9d",
+    "retainedChainCommit": "819f8e67",
+    "frontendPhysicalSessionCommit": "719c393b",
+    "runtimeTransitionCommit": "bc5c3209",
+    "retainedHostPreviewAndFixtureGateCommit": "00abf02c",
+    "node": {
+      "passed": 53,
+      "logSha256": "2612e1e6b7af0471e80a4d2b7c619bd6fd77308218760e64fc85ab5ba21bc0bd"
+    },
+    "host": {
+      "passed": 247,
+      "logSha256": "ffd07b734515520127129d24cba31cb1e0d94b90c591e3dbdc93db27fea5e11b"
+    },
+    "crossLanguage": {
+      "frontiers": ["original-stopped-one", "replacement-stopped-zero"],
+      "rawOriginalPlanBound": true,
+      "frontendOperationBound": true,
+      "logSha256": "8d2e5993b5eea36464309511a9f81d55a0bfdbac311b295799223af2985de1d4"
+    },
+    "disposablePostgres18": {
+      "passed": 13,
+      "frontendMigrations": 83,
+      "skipped": 0,
+      "exactRetainedReceiptBytesVerified": true,
+      "receiptSha256": "d7bfc872399e34c97ea35e14cafbc6329086854640c504cfd0b4ffe88effd4d4"
+    },
+    "fullLocalInstaller": {
+      "sourceFiles": 535,
+      "historyFiles": 33,
+      "decodedBytes": 42138516,
+      "expandedBytes": 56262947,
+      "wireBytes": 18286063,
+      "wireSha256": "cf7c38eed65b35865b5fa5ae45fe848126c0aad57eaa03975ea6eeceb133f852",
+      "logSha256": "d13bf38181d8d5b46d35ec1d79811e7cf8ce64c5059414ec846bd8f344f5d667"
+    },
+    "runtimeTransportProjected": true,
+    "applyBrokerAndSupervisorJoined": false,
+    "operatorApplyEligible": false,
+    "interruptedRestorationQualified": false,
+    "liveApplyExecuted": false,
+    "releaseAccepted": false
   }
 }
