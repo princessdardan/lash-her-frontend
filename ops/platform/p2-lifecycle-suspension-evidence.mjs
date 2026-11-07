@@ -213,7 +213,7 @@ async function reviewedInteractiveInput(plan, challenge) {
   const action = plan.scopedAction;
   let authoring, learning, paidGrant;
   if (action.stage === "authoring") {
-    const selected = action.authoringAction, [, first, second] = action.requests;
+    const selected = action.authoringAction, [, first, second, third] = action.requests;
     if (["edit-and-stale-draft", "reorder-and-stale-curriculum"].includes(selected?.operation)) {
       const reorder = selected.operation === "reorder-and-stale-curriculum";
       const path = "/course/v1" + (reorder ? p2AuthoringReorderPath(selected).slice(4) : "/admin/courses/" + selected.courseId);
@@ -241,6 +241,12 @@ async function reviewedInteractiveInput(plan, challenge) {
       const target = "/course/v1/admin/courses/" + selected.courseId;
       demand(first?.method === "PATCH" && first.target === target && second === undefined);
       authoring = { actorId: action.actorId, ...selected, bodySha256: first.bodySha256 };
+    } else if (selected?.operation === "republish-paid-course") {
+      const target = "/course/v1/admin/courses/" + selected.courseId;
+      demand(first?.method === "PATCH" && first.target === target
+        && second?.method === "GET" && second.target === target + "/publication-readiness"
+        && (selected.outcome === "published" ? third?.method === "PATCH" && third.target === target : third === undefined));
+      authoring = { actorId: action.actorId, ...selected };
     } else {
       demand(selected?.operation === "create-draft" && first?.method === "POST" && first.target === "/course/v1/admin/courses");
       authoring = { actorId: action.actorId, slug: selected.slug, bodySha256: first.bodySha256 };

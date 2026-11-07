@@ -47,6 +47,7 @@ _REORDER_CURRICULUM = "reorder-and-stale-curriculum"
 _QUALIFY_PUBLICATION = "qualify-publication"
 _SAVE_QUIZ_REVISION = "save-quiz-revision"
 _ARCHIVE_PAID_COURSE = "archive-paid-course"
+_REPUBLISH_PAID_COURSE = "republish-paid-course"
 _CURRICULUM_OPERATIONS = (_CREATE_CURRICULUM, _REORDER_CURRICULUM)
 _BROWSER_SOURCE = "ops/platform/p2-lifecycle-browser-recorder.mjs"
 _BROWSER_LAUNCHER = b"\nawait runP2LifecycleBrowserChild();\n"
@@ -175,6 +176,11 @@ def _authoring_requests(action):
     course = f'/course/v1/admin/courses/{action["courseId"]}'
     if operation == _ARCHIVE_PAID_COURSE:
         return (("GET", course, 2, 200), ("PATCH", course, 1, 200))
+    if operation == _REPUBLISH_PAID_COURSE:
+        published = action["outcome"] == "published"
+        rows = (("GET", course, 3 if published else 2, 200), ("PATCH", course, 1, 200),
+                ("GET", f"{course}/publication-readiness", 1, 200))
+        return rows + (("PATCH", course, 1, 200),) if published else rows
     if operation == _SAVE_QUIZ_REVISION:
         quiz = f'/course/v1/admin/lessons/{action["lessonId"]}/quiz'
         prior = 404 if action["quizRevision"] == 0 else 200
@@ -207,6 +213,7 @@ def _gateway_sequences(plan):
         _QUALIFY_PUBLICATION: [0, 1, 2, 0] if selected.get("outcome") == "published" else [0, 1],
         _SAVE_QUIZ_REVISION: [0, 1, 2, 0],
         _ARCHIVE_PAID_COURSE: [0, 1, 0],
+        _REPUBLISH_PAID_COURSE: [0, 1, 0, 2, 3, 0] if selected.get("outcome") == "published" else [0, 1, 0, 2],
     }[selected["operation"]]
     return (tuple((index, requests[index][3]) for index in order),)
 
@@ -298,6 +305,8 @@ def _authoring_case_evidence(plan, action, evidence, gateway_artifact):
         return _quiz_case_evidence(action, response, witness, gateway, mutations)
     if selected["operation"] == _ARCHIVE_PAID_COURSE:
         return _archive_case_evidence(action, response, witness, gateway, mutations[0])
+    if selected["operation"] == _REPUBLISH_PAID_COURSE:
+        return _republish_case_evidence(action, response, witness, gateway, mutations)
     if reordering:
         return _curriculum_case_evidence(action, response, witness, gateway, mutations)
     if selected["operation"] == _CREATE_CURRICULUM:
@@ -358,6 +367,37 @@ def _archive_case_evidence(action, response, witness, gateway, patch_id):
     return {**{key: selected[key] for key in ("operation", "courseId", "slug", "userId", "grantId")}, "actorId": action["actorId"],
             "revision": body["revision"], "gatewayPatchRequestId": patch_id, "browserResponseSha256": _receipt_sha(response),
             "courseWitnessSha256": _receipt_sha(witness), "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
+
+
+def _republish_case_evidence(action, response, witness, gateway, request_ids):
+    selected = action["authoringAction"]
+    published = selected["outcome"] == "published"
+    fields = "draft readiness body publication" if published else "draft readiness body"
+    demand(_closed_fields(response, fields), "P2_INTERACTIVE_AUTHORING_REPUBLISH_EVIDENCE_REQUIRED")
+    detail = f'/api/admin/courses/{selected["courseId"]}'
+    observed = (("draft", "PATCH", detail), ("readiness", "GET", f"{detail}/publication-readiness"))
+    if published:
+        observed += (("publication", "PATCH", detail),)
+    for (key, method, pathname), request_id in zip(observed, request_ids):
+        demand(_correlated_browser_response(response[key], method, pathname, 200, request_id),
+               "P2_INTERACTIVE_AUTHORING_REPUBLISH_RESPONSE_REQUIRED")
+    body = response["body"]
+    fields = "courseId slug revision status issueCodes"
+    demand(_closed_fields(body, fields) and body["courseId"] == selected["courseId"] and body["slug"] == selected["slug"] and
+           type(body["revision"]) is int and body["revision"] == selected["revision"] + (2 if published else 1) and
+           body["status"] == ("published" if published else "draft") and body["issueCodes"] == selected["issueCodes"],
+           "P2_INTERACTIVE_AUTHORING_REPUBLISH_BODY_REQUIRED")
+    effective_access = published and selected["expectedAccess"]
+    demand(_closed_fields(witness, f"{fields} userId grantId historyPreserved effectiveAccess readOnly") and
+           witness["readOnly"] is True and witness["historyPreserved"] is True and witness["effectiveAccess"] is effective_access and
+           type(witness["revision"]) is int and all(witness[key] == value for key, value in body.items()) and
+           all(witness[key] == selected[key] for key in ("userId", "grantId")), "P2_INTERACTIVE_AUTHORING_COURSE_WITNESS_REQUIRED")
+    patch = {"gatewayPatchRequestId": request_ids[2]} if published else {}
+    return {**{key: selected[key] for key in ("operation", "courseId", "slug", "userId", "grantId", "outcome", "issueCodes")},
+            "actorId": action["actorId"], "revision": body["revision"], "effectiveAccess": effective_access,
+            "draftGatewayRequestId": request_ids[0], "readinessGatewayRequestId": request_ids[1], **patch,
+            "browserResponseSha256": _receipt_sha(response), "courseWitnessSha256": _receipt_sha(witness),
+            "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
 
 def _quiz_case_evidence(action, response, witness, gateway, request_ids):
@@ -594,21 +634,24 @@ def validate_interactive_action(action):
         selected_authoring = action["authoringAction"]
         operation = selected_authoring.get("operation") if type(selected_authoring) is dict else None
         fields = "operation slug"
-        if operation in (_EDIT_DRAFT, _QUALIFY_PUBLICATION, _SAVE_QUIZ_REVISION, _ARCHIVE_PAID_COURSE, *_CURRICULUM_OPERATIONS):
+        if operation in (_EDIT_DRAFT, _QUALIFY_PUBLICATION, _SAVE_QUIZ_REVISION, _ARCHIVE_PAID_COURSE,
+                         _REPUBLISH_PAID_COURSE, *_CURRICULUM_OPERATIONS):
             fields += " courseId revision"
         if operation in _CURRICULUM_OPERATIONS:
             fields += " kind parentId"
         if operation == _CREATE_CURRICULUM:
             fields += " childSlug"
-        if operation == _QUALIFY_PUBLICATION:
+        if operation in (_QUALIFY_PUBLICATION, _REPUBLISH_PAID_COURSE):
             fields += " outcome issueCodes"
         if operation == _SAVE_QUIZ_REVISION:
             fields += " lessonId quizRevision documentSha256"
-        if operation == _ARCHIVE_PAID_COURSE:
+        if operation in (_ARCHIVE_PAID_COURSE, _REPUBLISH_PAID_COURSE):
             fields += " userId grantId"
+        if operation == _REPUBLISH_PAID_COURSE:
+            fields += " expectedAccess"
         demand(_closed_fields(selected_authoring, fields) and
                operation in (_CREATE_DRAFT, _EDIT_DRAFT, _QUALIFY_PUBLICATION, _SAVE_QUIZ_REVISION,
-                             _ARCHIVE_PAID_COURSE, *_CURRICULUM_OPERATIONS) and
+                             _ARCHIVE_PAID_COURSE, _REPUBLISH_PAID_COURSE, *_CURRICULUM_OPERATIONS) and
                _matches(_SLUG, selected_authoring["slug"]) and len(selected_authoring["slug"]) <= 120,
                "P2_INTERACTIVE_AUTHORING_DRAFT_REQUIRED")
         if operation != _CREATE_DRAFT:
@@ -621,7 +664,7 @@ def validate_interactive_action(action):
         if operation == _CREATE_CURRICULUM:
             child = selected_authoring["childSlug"]
             demand(_matches(_SLUG, child) and len(child) <= 120, "P2_INTERACTIVE_AUTHORING_CHILD_SLUG_REQUIRED")
-        if operation == _QUALIFY_PUBLICATION:
+        if operation in (_QUALIFY_PUBLICATION, _REPUBLISH_PAID_COURSE):
             outcome, codes = selected_authoring["outcome"], selected_authoring["issueCodes"]
             demand(type(codes) is list and
                    (codes == [] if outcome == "published" else outcome == "blocked" and 1 <= len(codes) <= 16 and
@@ -632,9 +675,12 @@ def validate_interactive_action(action):
                    0 <= selected_authoring["quizRevision"] <= 2_147_483_646 and _digest(selected_authoring["documentSha256"]) and
                    selected_authoring["documentSha256"] != _EMPTY,
                    "P2_INTERACTIVE_AUTHORING_QUIZ_SELECTION_REQUIRED")
-        if operation == _ARCHIVE_PAID_COURSE:
+        if operation in (_ARCHIVE_PAID_COURSE, _REPUBLISH_PAID_COURSE):
             demand(all(_matches(_UUID, selected_authoring[key]) for key in ("userId", "grantId")),
                    "P2_INTERACTIVE_AUTHORING_ARCHIVE_SELECTION_REQUIRED")
+        if operation == _REPUBLISH_PAID_COURSE:
+            demand(selected_authoring["revision"] <= 2_147_483_645 and type(selected_authoring["expectedAccess"]) is bool,
+                   "P2_INTERACTIVE_AUTHORING_REPUBLISH_SELECTION_REQUIRED")
         expected = _authoring_requests(selected_authoring)
         mutations = [row["bodySha256"] for row in requests if row["method"] != "GET"]
         demand(len(requests) == len(expected) and all(
@@ -648,6 +694,12 @@ def validate_interactive_action(action):
         if operation == _ARCHIVE_PAID_COURSE:
             reviewed_body = {"expectedRevision": selected_authoring["revision"], "status": "archived"}
             demand(requests[1]["bodySha256"] == _receipt_sha(reviewed_body), "P2_INTERACTIVE_AUTHORING_ARCHIVE_DIGEST_REQUIRED")
+        if operation == _REPUBLISH_PAID_COURSE:
+            revision = selected_authoring["revision"]
+            demand(requests[1]["bodySha256"] == _receipt_sha({"expectedRevision": revision, "status": "draft"}) and
+                   (selected_authoring["outcome"] != "published" or
+                    requests[3]["bodySha256"] == _receipt_sha({"expectedRevision": revision + 1, "status": "published"})),
+                   "P2_INTERACTIVE_AUTHORING_REPUBLISH_DIGEST_REQUIRED")
     if learning:
         selection = action["learningAction"]
         demand(_closed_fields(selection, "operation courseId slug idempotencyKey") and
@@ -702,6 +754,8 @@ def _selection_sha(action):
                                    "7032712d617574682d7264792d763100"),
             _SAVE_QUIZ_REVISION: "7032712d617574682d7175697a2d7631",
             _ARCHIVE_PAID_COURSE: "7032712d617574682d6172632d763100",
+            _REPUBLISH_PAID_COURSE: ("7032712d617574682d7265702d763100" if authoring.get("outcome") == "published" else
+                                     "7032712d617574682d72626c2d763100"),
         }[authoring["operation"]]
         return prefix + action["actorId"].replace("-", "")
     if action["stage"] == "identity":
@@ -855,7 +909,7 @@ class P2InteractiveWindow:
         if paid_grant:
             protect = ingress.observe_paid_grant_protection
             paths = {"course_id": paid_grant["courseId"]}
-        if authoring and authoring["operation"] == _QUALIFY_PUBLICATION:
+        if authoring and authoring["operation"] in (_QUALIFY_PUBLICATION, _REPUBLISH_PAID_COURSE):
             paths["publication_readiness"] = True
         if authoring and authoring["operation"] == _SAVE_QUIZ_REVISION:
             paths["quiz_lesson_id"] = authoring["lessonId"]

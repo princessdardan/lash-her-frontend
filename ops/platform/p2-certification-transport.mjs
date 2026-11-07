@@ -30,11 +30,13 @@ const authoringCourseTarget='/course/v1/admin/courses';
 const authoringReorderOperation='reorder-and-stale-curriculum';
 const authoringCreateCurriculumOperation='create-curriculum';
 const authoringPublicationOperation='qualify-publication';
+const authoringRepublishOperation='republish-paid-course';
 const authoringQuizOperation='save-quiz-revision';
 const authoringArchiveOperation='archive-paid-course';
 const learningEnrollmentOperation='enroll-free-course';
 const paidGrantOperation='grant-paid-access';
 const authoringPairedOperation=operation=>operation==='edit-and-stale-draft'||operation===authoringReorderOperation;
+const authoringPublicationCase=operation=>operation===authoringPublicationOperation||operation===authoringRepublishOperation;
 const emptyBodySha256=p2NativeHash(Buffer.alloc(0));
 const interactiveGatewayKeys=['epoch','gatewayStateSha256','gatewayAcknowledgements','gatewayActive','gatewayUncertain','gatewayEvidenceSha256'];
 const scopedOperations={
@@ -69,7 +71,8 @@ function reviewedAuthoringAction(action){
   const selected=action.authoringAction,[read,second,third]=action.requests;
   const reorder=selected?.operation===authoringReorderOperation;
   const createCurriculum=selected?.operation===authoringCreateCurriculumOperation;
-  const publication=selected?.operation===authoringPublicationOperation,published=publication&&selected.outcome==='published';
+  const publication=authoringPublicationCase(selected?.operation),published=publication&&selected.outcome==='published';
+  const republish=selected?.operation===authoringRepublishOperation;
   const quiz=selected?.operation===authoringQuizOperation;
   const archive=selected?.operation===authoringArchiveOperation;
   const paired=authoringPairedOperation(selected?.operation);
@@ -77,10 +80,12 @@ function reviewedAuthoringAction(action){
   const hasCourse=paired||createCurriculum||publication||quiz||archive;
   demand(canonicalUuid(action.actorId)&&exact(selected,['operation','slug',...(hasCourse?['courseId','revision']:[]),
     ...(curriculum?['kind','parentId']:[]),...(createCurriculum?['childSlug']:[]),...(publication?['outcome','issueCodes']:[]),
-    ...(quiz?['lessonId','quizRevision','documentSha256']:[]),...(archive?['userId','grantId']:[])])&&
-    courseSlug(selected.slug)&&action.requests.length===(paired||published||quiz?3:2));
+    ...(quiz?['lessonId','quizRevision','documentSha256']:[]),...(archive||republish?['userId','grantId']:[]),
+    ...(republish?['expectedAccess']:[])])&&
+    courseSlug(selected.slug)&&action.requests.length===(republish?published?4:3:paired||published||quiz?3:2));
   const selection={...selected,actorKind:'admin',actorId:action.actorId};
-  if(hasCourse)demand(canonicalUuid(selected.courseId)&&Number.isInteger(selected.revision)&&selected.revision>=1&&selected.revision<=2_147_483_646);
+  if(hasCourse)demand(canonicalUuid(selected.courseId)&&Number.isInteger(selected.revision)&&selected.revision>=1&&
+    selected.revision<=(republish?2_147_483_645:2_147_483_646));
   if(archive){
     const target=authoringCourseTarget+'/'+selected.courseId;
     demand([selected.userId,selected.grantId].every(canonicalUuid)&&
@@ -100,14 +105,19 @@ function reviewedAuthoringAction(action){
   }
   if(publication){
     const {outcome,issueCodes,courseId,revision}=selected,target=authoringCourseTarget+'/'+courseId;
+    const expected=[
+      {method:'GET',target,bodySha256:emptyBodySha256,uses:(published?2:1)+Number(republish)},
+      ...(republish?[{method:'PATCH',target,uses:1,bodySha256:p2NativeHash(JSON.stringify({expectedRevision:revision,status:'draft'}))}]:[]),
+      {method:'GET',target:target+'/publication-readiness',bodySha256:emptyBodySha256,uses:1},
+    ];
+    if(published)expected.push({method:'PATCH',target,uses:1,
+      bodySha256:p2NativeHash(JSON.stringify({expectedRevision:revision+Number(republish),status:'published'}))});
     demand(['published','blocked'].includes(outcome)&&Array.isArray(issueCodes)&&
       (published?issueCodes.length===0:issueCodes.length>=1&&issueCodes.length<=16)&&
       Array.from(issueCodes).every((code,index)=>typeof code==='string'&&/^[A-Z][A-Z0-9_]{0,63}$/u.test(code)&&
         (index===0||issueCodes[index-1]<code))&&
-      isDeepStrictEqual(read,{method:'GET',target,bodySha256:emptyBodySha256,uses:published?2:1})&&
-      isDeepStrictEqual(second,{method:'GET',target:target+'/publication-readiness',bodySha256:emptyBodySha256,uses:1})&&
-      (!published||reviewedWriteRequest(third,'PATCH',target)&&third.bodySha256===
-        p2NativeHash(JSON.stringify({expectedRevision:revision,status:'published'}))));
+      (!republish||[selected.userId,selected.grantId].every(canonicalUuid)&&typeof selected.expectedAccess==='boolean')&&
+      isDeepStrictEqual(action.requests,expected));
     const reviewedCodes=[...issueCodes];
     return {selection:{...selection,issueCodes:reviewedCodes},authoring:{actorId:action.actorId,...selected,issueCodes:reviewedCodes}};
   }
@@ -251,10 +261,11 @@ function requireInteractiveGatewayObservation(receipt,epoch,{operation,outcome,q
   const acks=receipt.gatewayAcknowledgements;
   const createCurriculum=operation===authoringCreateCurriculumOperation;
   const archive=operation===authoringArchiveOperation;
-  const publication=operation===authoringPublicationOperation,paired=authoringPairedOperation(operation);
+  const publication=authoringPublicationCase(operation),paired=authoringPairedOperation(operation),republish=operation===authoringRepublishOperation;
   const quiz=operation===authoringQuizOperation,learning=operation===learningEnrollmentOperation;
-  const statuses=quiz?[200,quizRevision===0?404:200,200]:publication?[200,200,200]:paired?[200,200,409]:archive?[200,200]:[200,201];
-  const indices=quiz||publication&&outcome==='published'?[0,1,2,0]:paired?[0,0,1,0,2]:createCurriculum||archive?[0,1,0]:[0,1];
+  const statuses=quiz?[200,quizRevision===0?404:200,200]:publication?[200,200,200,200]:paired?[200,200,409]:archive?[200,200]:[200,201];
+  const indices=republish?(outcome==='published'?[0,1,0,2,3,0]:[0,1,0,2]):
+    quiz||publication&&outcome==='published'?[0,1,2,0]:paired?[0,0,1,0,2]:createCurriculum||archive?[0,1,0]:[0,1];
   const sequences=learning?[
     [[0,200],[1,403],[2,201],[1,200],[3,200]],
     [[0,200],[1,403],[2,201],[3,200],[1,200]],
@@ -325,17 +336,23 @@ function authoringJoinedEvidence(evidence,selected,observed){
 function authoringPublicationJoinedEvidence(evidence,selected,observed){
   demand(exact(evidence,['browserResponse','courseWitness']));
   const {browserResponse:response,courseWitness:witness}=evidence;
-  const {actorId,operation,courseId,slug,outcome,issueCodes}=selected,published=outcome==='published';
-  const revision=selected.revision+(published?1:0),pathname='/api/admin/courses/'+courseId;
+  const {actorId,operation,courseId,slug,outcome,issueCodes,userId,grantId,expectedAccess}=selected;
+  const published=outcome==='published',republish=operation===authoringRepublishOperation;
+  const revision=selected.revision+Number(published)+Number(republish),pathname='/api/admin/courses/'+courseId;
   const {gatewayAcknowledgements:acks,gatewayEvidenceSha256}=observed;
-  const readinessGatewayRequestId=acks[1].requestId,gatewayPatchRequestId=published?acks[2].requestId:undefined;
+  const readinessIndex=republish?3:1;
+  const readinessGatewayRequestId=acks[readinessIndex].requestId,gatewayPatchRequestId=published?acks[readinessIndex+1].requestId:undefined;
+  const draftGatewayRequestId=republish?acks[1].requestId:undefined,effectiveAccess=published&&expectedAccess;
   const body={courseId,slug,revision,status:published?'published':'draft',issueCodes};
-  demand(exact(response,['readiness','body',...(published?['publication']:[])])&&
+  const history=republish?{userId,grantId,historyPreserved:true,effectiveAccess}:{};
+  demand(exact(response,['readiness','body',...(republish?['draft']:[]),...(published?['publication']:[])])&&
+    (!republish||isDeepStrictEqual(response.draft,{method:'PATCH',pathname,status:200,requestId:draftGatewayRequestId}))&&
     isDeepStrictEqual(response.readiness,{method:'GET',pathname:pathname+'/publication-readiness',status:200,requestId:readinessGatewayRequestId})&&
     (!published||isDeepStrictEqual(response.publication,{method:'PATCH',pathname,status:200,requestId:gatewayPatchRequestId}))&&
-    isDeepStrictEqual(response.body,body)&&isDeepStrictEqual(witness,{...body,readOnly:true}));
+    isDeepStrictEqual(response.body,body)&&isDeepStrictEqual(witness,{...body,...history,readOnly:true}));
   return {actorId,operation,courseId,slug,outcome,revision,issueCodes,browserResponseSha256:p2NativeHash(response),
-    courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256,readinessGatewayRequestId,...(published?{gatewayPatchRequestId}:{})};
+    courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256,readinessGatewayRequestId,
+    ...(republish?{userId,grantId,effectiveAccess,draftGatewayRequestId}:{}),...(published?{gatewayPatchRequestId}:{})};
 }
 
 function authoringQuizJoinedEvidence(evidence,selected,observed){
@@ -544,7 +561,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                 paired?authoringChangeJoinedEvidence(evidence,selection,gatewayObservation,authoringPermit.winnerBodySha256):
                 selection.operation===authoringQuizOperation?authoringQuizJoinedEvidence(evidence,selection,gatewayObservation):
                 selection.operation===authoringArchiveOperation?authoringArchiveJoinedEvidence(evidence,selection,gatewayObservation):
-                selection.operation===authoringPublicationOperation?authoringPublicationJoinedEvidence(evidence,selection,gatewayObservation):
+                authoringPublicationCase(selection.operation)?authoringPublicationJoinedEvidence(evidence,selection,gatewayObservation):
                 authoring?authoringJoinedEvidence(evidence,selection,gatewayObservation):
                 identity?identityJoinedEvidence(evidence,selection,context,enrollment):lifecycleJoinedEvidence(evidence,selection);
               phase='retaining';

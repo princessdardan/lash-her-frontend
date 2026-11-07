@@ -6,7 +6,7 @@ import { integrationErrorResponse, IntegrationServiceError, safeIntegrationReque
 import { runCourseAdminOperation } from "./course-admin-operation";
 import { isIntegrationFeatureEnabled } from "./rollout-flags";
 import { validateCandidateRequest } from "./candidate-validation";
-import { currentWriterAuthoringActorId, currentWriterAuthoringOperation } from "@/lib/writer-admission/context";
+import { currentWriterAuthoringActorId, currentWriterAuthoringOperation, type WriterAuthoringOperation } from "@/lib/writer-admission/context";
 import type { WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 
 type Client = ReturnType<typeof createCourseClient>;
@@ -21,6 +21,13 @@ const parameter: Record<CourseAdminOperation, string[]> = { "list-courses": [], 
   "update-module": ["moduleId"], "reorder-modules": ["courseId"], "create-lesson": ["moduleId"], "update-lesson": ["lessonId"], "reorder-lessons": ["moduleId"], "create-video-upload": ["lessonId"],
   "get-quiz": ["lessonId"], "update-quiz": ["lessonId"], "video-status": ["lessonId"], "refresh-video": ["lessonId", "videoAssetId"], "add-caption": ["lessonId", "videoAssetId"], "delete-caption": ["lessonId", "videoAssetId", "trackId"], "publication-readiness": ["courseId"] };
 const canonicalReorderId = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
+const maxCourseRevision = 2_147_483_647;
+const scopedStatusRevisionLimits: Partial<Record<WriterAuthoringOperation, Partial<Record<string, number>>>> = {
+  "publish-course": { published: maxCourseRevision },
+  "archive-paid-course": { archived: maxCourseRevision },
+  "republish-paid-course": { draft: maxCourseRevision - 2, published: maxCourseRevision - 1 },
+  "review-paid-restoration": { draft: maxCourseRevision - 2 },
+};
 
 function validateScopedReorder(path: "/v1/admin/courses/{courseId}/modules/reorder" | "/v1/admin/modules/{moduleId}/lessons/reorder",
   params: Record<string, string>, body: ReorderInput): void {
@@ -67,10 +74,10 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
                   throw new IntegrationServiceError("invalid_request", 400);
                 }
                 const scope = currentWriterAuthoringOperation();
-                const selectedStatus = scope === "publish-course" ? "published" : scope === "archive-paid-course" ? "archived" : undefined;
-                const validUpdate = selectedStatus
-                  ? input.expectedRevision <= 2_147_483_647 && input.status === selectedStatus && Object.keys(input).length === 2
-                  : scope === "edit-draft" && !Object.hasOwn(input, "status");
+                const limit = scope && typeof input.status === "string" ? scopedStatusRevisionLimits[scope]?.[input.status] : undefined;
+                const validUpdate = scope === "edit-draft" ? !Object.hasOwn(input, "status")
+                  : typeof limit === "number" && input.expectedRevision <= limit && Object.keys(input).length === 2 &&
+                    Object.hasOwn(input, "expectedRevision") && Object.hasOwn(input, "status");
                 if (!validUpdate) throw new IntegrationServiceError("invalid_request", 400);
               }
               result = await course.updateCourse(params.courseId, input);

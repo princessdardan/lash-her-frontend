@@ -392,6 +392,49 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
+    def test_paid_republish_plan_binds_two_reviewed_transition_digests_and_dispositions(self):
+        owner = "10000000-0000-4000-8000-000000000001"
+        course = "10000000-0000-4000-8000-000000000002"
+        user = "10000000-0000-4000-8000-000000000003"
+        grant = "10000000-0000-4000-8000-000000000004"
+        detail = f"/course/v1/admin/courses/{course}"
+        draft = {"method": "PATCH", "target": detail, "uses": 1,
+                 "bodySha256": hashlib.sha256(b'{"expectedRevision":2147483645,"status":"draft"}').hexdigest()}
+        publish = {"method": "PATCH", "target": detail, "uses": 1,
+                   "bodySha256": hashlib.sha256(b'{"expectedRevision":2147483646,"status":"published"}').hexdigest()}
+        for outcome, codes, prefix in (("published", [], "7032712d617574682d7265702d763100"),
+                                       ("blocked", ["MISSING_COVER", "NO_LESSONS"], "7032712d617574682d72626c2d763100")):
+            published = outcome == "published"
+            requests = [{"method": "GET", "target": detail, "bodySha256": window._EMPTY, "uses": 3 if published else 2},
+                        draft, {"method": "GET", "target": f"{detail}/publication-readiness", "bodySha256": window._EMPTY, "uses": 1}]
+            if published:
+                requests.append(publish)
+            selection = {"operation": "republish-paid-course", "courseId": course, "slug": "owned-course",
+                         "revision": 2_147_483_645, "userId": user, "grantId": grant, "outcome": outcome,
+                         "issueCodes": codes, "expectedAccess": True}
+            action = {"stage": "authoring", "actorId": owner, "windowSeconds": 60, "requests": requests, "authoringAction": selection}
+            self.assertEqual(window.validate_interactive_action(action), action)
+            selector = window._selection_sha(action)
+            self.assertEqual(selector, prefix + owner.replace("-", ""))
+            cookie, gateway_key, _, _ = window._material("fixture" * 8, "https://owned.vercel.app", "a" * 40, "b" * 64,
+                                                         "8", "authoring", 1_794_009_600, 60, "c" * 32, selector)
+            self.assertEqual(cookie.split(".")[6], selector)
+            self.assertEqual(len(gateway_key), 64)
+            for change in ({"expectedAccess": 1}, {"revision": 2_147_483_646}, {"userId": "bad"},
+                           {"grantId": "bad"}, {"issueCodes": ["bad"]}):
+                with self.subTest(outcome=outcome, selection=change), self.assertRaises(ValueError):
+                    window.validate_interactive_action({**action, "authoringAction": {**selection, **change}})
+            bad_draft = [requests[0], {**draft, "bodySha256": "c" * 64}, *requests[2:]]
+            with self.assertRaisesRegex(ValueError, "REPUBLISH_DIGEST_REQUIRED"):
+                window.validate_interactive_action({**action, "requests": bad_draft})
+            if published:
+                bad_publish = [*requests[:3], {**publish, "bodySha256": "c" * 64}]
+                with self.assertRaisesRegex(ValueError, "REPUBLISH_DIGEST_REQUIRED"):
+                    window.validate_interactive_action({**action, "requests": bad_publish})
+            else:
+                with self.assertRaises(ValueError):
+                    window.validate_interactive_action({**action, "requests": [*requests, publish]})
+
     def test_paid_archive_plan_binds_selected_grant_and_exact_archive_patch(self):
         owner = "10000000-0000-4000-8000-000000000001"
         course = "10000000-0000-4000-8000-000000000002"

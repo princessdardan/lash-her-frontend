@@ -82,10 +82,11 @@ test("scoped publication forwards only a revisioned publish and refuses writes u
   assert.deepEqual(updates, [publish]);
 });
 
-test("scoped paid archive accepts only the revisioned status change from the reviewed owner", async () => {
+test("scoped paid course transitions enforce reviewed owner, exact status and revision bounds", async () => {
   const path = `/api/admin/courses/${id}`;
   const archive = { expectedRevision: 3, status: "archived" };
-  let sessionOwner = { ...actor.user, id: "8e2280dc-0389-4248-b21c-f87427f9e85c" };
+  const wrongOwner = { ...actor.user, id: "8e2280dc-0389-4248-b21c-f87427f9e85c" };
+  let sessionOwner = wrongOwner;
   let identityRefreshes = 0;
   const writes: string[] = [];
   const auth = createAdminAuth({
@@ -106,23 +107,35 @@ test("scoped paid archive accepts only the revisioned status change from the rev
       assert.equal(request.method, "PATCH");
       assert.equal(request.path, `/v1/admin/courses/${id}`);
       writes.push(request.body!);
-      return Response.json({ course: { id, title: "Paid course", slug: "paid-course", description: null, status: "archived", accessMode: "paid",
-        priceCents: 100, currency: "CAD", revision: 4, modules: [], introduction: null, cover: null, seo: null, taxClassification: "reviewed" } });
+      const { status, expectedRevision } = JSON.parse(request.body!);
+      return Response.json({ course: { id, title: "Paid course", slug: "paid-course", description: null, status, accessMode: "paid",
+        priceCents: 100, currency: "CAD", revision: expectedRevision + 1, modules: [], introduction: null, cover: null, seo: null, taxClassification: "reviewed" } });
     } });
-  const handler = createCourseAdminHandler("update-course", { enabled: () => true, origin: () => origin, client: () => client,
-    run: (_kind, work) => withWriterOperationContext(work, undefined, undefined, undefined, undefined, id, "archive-paid-course") });
-  for (const body of [null, {}, { expectedRevision: 3 }, { status: "archived" }, { ...archive, expectedRevision: 0 },
-    { ...archive, expectedRevision: 1.5 }, { ...archive, expectedRevision: 2_147_483_648 }, { ...archive, expectedRevision: "3" },
-    { ...archive, status: "draft" }, { ...archive, status: "published" }, { ...archive, title: "Unreviewed change" }]) {
-    assert.equal((await handler(req(path, "PATCH", body), { courseId: id })).status, 400);
+  const draft = { expectedRevision: 2_147_483_645, status: "draft" };
+  const republish = { expectedRevision: 2_147_483_646, status: "published" };
+  const cases = [
+    ["archive-paid-course", [archive], [draft, republish, { ...archive, expectedRevision: 2_147_483_648 }]],
+    ["republish-paid-course", [draft, republish], [archive, { ...draft, expectedRevision: 2_147_483_646 }, { ...republish, expectedRevision: 2_147_483_647 }]],
+    ["review-paid-restoration", [draft], [archive, republish, { ...draft, expectedRevision: 2_147_483_646 }]],
+  ] as const;
+  for (const [scope, valid, invalid] of cases) {
+    const handler = createCourseAdminHandler("update-course", { enabled: () => true, origin: () => origin, client: () => client,
+      run: (_kind, work) => withWriterOperationContext(work, undefined, undefined, undefined, undefined, id, scope) });
+    const attempt = (body: unknown) => handler(req(path, "PATCH", body), { courseId: id });
+    sessionOwner = wrongOwner;
+    const before = writes.length;
+    const transition = valid[0];
+    for (const body of [null, {}, { expectedRevision: 3 }, { status: transition.status }, { ...transition, expectedRevision: 0 },
+      { ...transition, expectedRevision: 1.5 }, { ...transition, expectedRevision: "3" }, { ...transition, status: [transition.status] },
+      { ...transition, title: "Unreviewed change" }, ...invalid]) assert.equal((await attempt(body)).status, 400);
+    for (const body of valid) assert.equal((await attempt(body)).status, 403);
+    assert.equal(identityRefreshes, before);
+    assert.equal(writes.length, before);
+    sessionOwner = actor.user;
+    for (const body of valid) assert.equal((await attempt(body)).status, 200);
+    assert.equal(identityRefreshes, before + valid.length);
+    assert.deepEqual(writes.slice(before), valid.map(body => JSON.stringify(body)));
   }
-  assert.equal((await handler(req(path, "PATCH", archive), { courseId: id })).status, 403);
-  assert.equal(identityRefreshes, 0);
-  assert.deepEqual(writes, []);
-  sessionOwner = actor.user;
-  assert.equal((await handler(req(path, "PATCH", archive), { courseId: id })).status, 200);
-  assert.equal(identityRefreshes, 1);
-  assert.deepEqual(writes, [JSON.stringify(archive)]);
 });
 
 test("scoped curriculum reorders accept only a revision and unique canonical IDs before client calls", async () => {

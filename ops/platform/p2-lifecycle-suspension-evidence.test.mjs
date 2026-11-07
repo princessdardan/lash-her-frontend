@@ -240,6 +240,7 @@ function interactivePermit(input) {
   else if (input.stage === "paid-grant") selector = (input.paidGrant.actorId + input.paidGrant.idempotencyKey).replaceAll("-", "");
   else if (input.authoring?.operation === "save-quiz-revision") selector = authoringQuizSelector(input.authoring.actorId);
   else if (input.authoring?.operation === "archive-paid-course") selector = authoringArchiveSelector(input.authoring.actorId);
+  else if (input.authoring?.operation === "republish-paid-course") selector = republishSelector(input.authoring.actorId, input.authoring.outcome);
   else if (input.stage === "authoring") selector = input.authoring.operation === "edit-and-stale-draft"
     ? authoringEditSelector(input.authoring.actorId) : input.authoring.operation === "reorder-and-stale-curriculum"
       ? authoringReorderSelector(input.authoring.actorId) : input.authoring.operation === "create-curriculum"
@@ -524,6 +525,43 @@ function ownedPublication(outcome) {
     ...(published ? { publication: { method: "PATCH", pathname: detail, status: 200, requestId: randomUUID() } } : {}), body };
   return { input: interactiveInput({ stage: "authoring", authoring: target }), target, detail, readiness, response, receipt };
 }
+
+const republishSelector = (actorId, outcome) => (outcome === "published" ? "7032712d617574682d7265702d763100" : "7032712d617574682d72626c2d763100")
+  + actorId.replaceAll("-", "");
+
+function ownedRepublish(outcome) {
+  const fixture = ownedPublication(outcome);
+  const target = { ...fixture.target, operation: "republish-paid-course", userId, grantId: randomUUID(), expectedAccess: outcome === "published" };
+  const draft = { method: "PATCH", pathname: fixture.detail, status: 200, requestId: randomUUID() };
+  const receipt = { draft, ...fixture.receipt, body: { ...fixture.receipt.body, revision: fixture.receipt.body.revision + 1 } };
+  return { ...fixture, input: interactiveInput({ stage: "authoring", authoring: target }), target, receipt,
+    response: { ...fixture.response, courseRevision: target.revision + 1 } };
+}
+
+test("paid republish permit and compact receipt bind both revisions and the reviewed outcome", () => {
+  for (const outcome of ["blocked", "published"]) {
+    const { input, target, receipt } = ownedRepublish(outcome), permit = interactivePermit(input);
+    assert.equal(validateP2InteractiveBrowserInput(input), input);
+    assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+    assert.equal(p2InteractiveBrowserEntryPath(input, "owner"), `/admin/courses/${ownedCourseId}`);
+    const parts = permit.cookie.split(".");
+    assert.equal(parts[6], republishSelector(adminId, outcome));
+    for (const selector of [republishSelector(randomUUID(), outcome), republishSelector(adminId, outcome === "published" ? "blocked" : "published"),
+      authoringPublicationSelector(adminId, outcome)]) {
+      parts[6] = selector;
+      assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: parts.join(".") }, input));
+    }
+    for (const change of [{ revision: 2_147_483_646 }, { userId: "wrong" }, { grantId: "wrong" }, { expectedAccess: "true" },
+      { issueCodes: ["B", "A"] }, { issueCodes: ["REPEATED", "REPEATED"] }]) {
+      assert.throws(() => validateP2InteractiveBrowserInput({ ...input, authoring: { ...target, ...change } }));
+    }
+    assert.deepEqual(validateP2AuthoringMutationReceipt(receipt, target), receipt);
+    for (const change of [{ draft: { ...receipt.draft, requestId: receipt.readiness.requestId } },
+      { body: { ...receipt.body, revision: target.revision } }, { body: { ...receipt.body, expectedAccess: target.expectedAccess } }]) {
+      assert.throws(() => validateP2AuthoringMutationReceipt({ ...receipt, ...change }, target));
+    }
+  }
+});
 
 function ownedQuiz(quizRevision) {
   const revision = 4, lessonId = randomUUID(), quizId = randomUUID();
@@ -1474,6 +1512,106 @@ test("owned Chromium publication checks the normal blocked UI or successful publ
             await rejected.review.click();
             if (outcome === "published") await rejected.publish.click();
           }
+          await assert.rejects(rejected.watch.wait(rejected.expires), /AUTHORING_RESPONSE_REFUSED/u);
+          assert.throws(() => rejected.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+        } finally { await rejected.close(); }
+      }
+    } finally { await browser.close(); }
+  });
+
+test("owned Chromium paid republish requires draft readback, reviewed readiness and any published readback",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const open = async (outcome, scenario) => {
+      const fixture = ownedRepublish(outcome), { input, target, detail, readiness, receipt, response } = fixture;
+      const context = await browser.newContext(), effects = [];
+      const document = `<!doctype html><meta charset="utf-8"><p id="revision">archived · Revision ${target.revision}</p>
+        <div role="status"><p id="feedback"></p></div><button id="draft">Move to draft</button>
+        <button id="review">Review publication readiness</button><button id="publish" hidden>Publish course</button><script>
+        const feedback = document.querySelector('#feedback'), publish = document.querySelector('#publish'), draft = document.querySelector('#draft');
+        const detail = ${JSON.stringify(detail)}, readiness = ${JSON.stringify(readiness)};
+        const update = async (expectedRevision, status) => {
+          const response = await fetch(detail, {method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({expectedRevision,status})});
+          const saved = await response.json();
+          const { course } = ${scenario === "missing-draft-readback" ? "status === 'draft' ? saved : " : ""}await (await fetch(detail)).json();
+          document.querySelector('#revision').textContent = course.status + ' · Revision ' + course.revision;
+          draft.hidden = true;
+          publish.hidden = true;
+          feedback.textContent = status === 'draft' ? 'Course moved to draft.' : 'Course published.';
+        };
+        draft.onclick = () => update(${target.revision}, 'draft');
+        document.querySelector('#review').onclick = async () => {
+          const result = await (await fetch(readiness)).json();
+          feedback.textContent = result.ready ? 'Ready to publish' : 'Resolve these items before publishing';
+          publish.hidden = !result.ready && ${JSON.stringify(scenario !== "enabled-blocked")};
+        };
+        publish.onclick = () => update(${target.revision + Number(scenario !== "wrong-publish-revision")}, 'published');
+        </script>`;
+      let allowReadback;
+      const readbackAllowed = new Promise(resolve => { allowReadback = resolve; });
+      if (scenario !== "success" || outcome !== "published") allowReadback();
+      const send = (route, payload, requestId) => route.fulfill({ status: 200, body: JSON.stringify(payload),
+        headers: { "content-type": "application/json", "cache-control": "private, no-store", "x-request-id": requestId } });
+      let course = { ...ownedDraftResponse.course, id: target.courseId, status: "archived", revision: target.revision };
+      await context.route("**/*", async route => {
+        const request = route.request(), url = new URL(request.url()), method = request.method();
+        if (url.origin !== input.browserOrigin) return route.abort();
+        if (request.isNavigationRequest()) return route.fulfill({ status: 200, contentType: "text/html", body: document });
+        effects.push(method + " " + url.pathname);
+        if (url.pathname === readiness) return send(route, scenario === "stale-readiness" ? { ...response, courseRevision: target.revision }
+          : scenario === "wrong-issues" ? { ...response, issues: response.issues.slice(0, 1) } : response, receipt.readiness.requestId);
+        if (method === "PATCH") {
+          const status = request.postDataJSON().status;
+          course = { ...course, status, revision: target.revision + (status === "draft" ? 1 : 2) };
+          return send(route, { course }, status === "draft" ? receipt.draft.requestId : receipt.publication?.requestId ?? randomUUID());
+        }
+        if (method === "GET" && course.status === "published") await readbackAllowed;
+        const stale = scenario === "stale-draft-readback" && course.status === "draft" || scenario === "stale-published-readback" && course.status === "published";
+        return send(route, { course: stale ? { ...course, revision: course.revision - 1 } : course }, randomUUID());
+      });
+      const page = await context.newPage(), watch = watchP2AuthoringMutation(context, page, input);
+      await page.goto(input.browserOrigin + p2InteractiveBrowserEntryPath(input, "owner"));
+      return { ...fixture, page, watch, effects, allowReadback, expires: Math.floor(Date.now() / 1000) + 60,
+        draft: page.getByRole("button", { name: "Move to draft", exact: true }),
+        review: page.getByRole("button", { name: "Review publication readiness", exact: true }),
+        publish: page.getByRole("button", { name: "Publish course", exact: true }),
+        close: async () => { allowReadback(); watch.close(); await context.close(); } };
+    };
+    const draftAndReview = async (owned, scenario) => {
+      if (scenario !== "early-review") {
+        await owned.draft.click();
+        await owned.page.getByRole("status").getByText("Course moved to draft.", { exact: true }).waitFor();
+        if (scenario === "alternate-write") await owned.page.evaluate(async () => { await fetch("/api/admin/other", { method: "POST" }); });
+      }
+      await owned.review.click();
+    };
+    try {
+      for (const outcome of ["blocked", "published"]) {
+        const owned = await open(outcome, "success");
+        try {
+          await draftAndReview(owned);
+          const expected = ["PATCH " + owned.detail, "GET " + owned.detail, "GET " + owned.readiness];
+          if (outcome === "published") {
+            await Promise.all([owned.page.waitForRequest(request => request.url().endsWith(owned.detail) && request.method() === "GET"), owned.publish.click()]);
+            assert.throws(() => owned.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+            owned.allowReadback();
+            expected.push("PATCH " + owned.detail, "GET " + owned.detail);
+          }
+          await owned.watch.wait(owned.expires);
+          assert.deepEqual(owned.watch.finish(), owned.receipt);
+          assert.deepEqual(owned.effects, expected);
+          await Promise.all([owned.page.waitForResponse(response => response.url().endsWith(owned.readiness)), owned.review.click()]);
+          assert.throws(() => owned.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+        } finally { await owned.close(); }
+      }
+      for (const [outcome, scenario] of [["blocked", "early-review"], ["blocked", "missing-draft-readback"], ["blocked", "stale-draft-readback"],
+        ["blocked", "stale-readiness"], ["blocked", "wrong-issues"], ["blocked", "enabled-blocked"], ["published", "wrong-publish-revision"],
+        ["published", "stale-published-readback"], ["blocked", "alternate-write"]]) {
+        const rejected = await open(outcome, scenario);
+        try {
+          await draftAndReview(rejected, scenario);
+          if (outcome === "published") await rejected.publish.click();
           await assert.rejects(rejected.watch.wait(rejected.expires), /AUTHORING_RESPONSE_REFUSED/u);
           assert.throws(() => rejected.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
         } finally { await rejected.close(); }

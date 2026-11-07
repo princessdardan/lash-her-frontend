@@ -173,6 +173,10 @@ class IndependentGuardTests(unittest.TestCase):
                 self.check_profiled_interactive_terminal('learning', 'customer', None, progress_first=progress_first)
         self.check_profiled_interactive_terminal('authoring', 'admin', None, editing=True)
         self.check_profiled_interactive_terminal('authoring', 'admin', None, archiving=True)
+        for outcome, access in (('published', True), ('published', False), ('blocked', True)):
+            with self.subTest(republish_outcome=outcome, expected_access=access):
+                self.check_profiled_interactive_terminal('authoring', 'admin', None,
+                                                        republish_outcome=outcome, expected_access=access)
         for outcome in ('published', 'blocked'):
             with self.subTest(publication_outcome=outcome):
                 self.check_profiled_interactive_terminal('authoring', 'admin', None, publication_outcome=outcome)
@@ -187,7 +191,7 @@ class IndependentGuardTests(unittest.TestCase):
 
     def check_profiled_interactive_terminal(self, stage_name, actor_kind, provider, *, editing=False, reorder_kind=None,
                                             create_kind=None, publication_outcome=None, quiz_revision=None,
-                                            progress_first=False, archiving=False):
+                                            progress_first=False, archiving=False, republish_outcome=None, expected_access=None):
         import p2_interactive_window as window
         from p2_certification_parent import P2ProfiledCertificationBroker
 
@@ -197,6 +201,8 @@ class IndependentGuardTests(unittest.TestCase):
             variant = f'quiz-{quiz_revision}'
         if archiving:
             variant = 'archive'
+        if republish_outcome is not None:
+            variant = f'republish-{republish_outcome}-{str(expected_access).lower()}'
         if stage_name == 'learning':
             variant = 'progress-first' if progress_first else 'course-first'
         initial, directory = self.profiled_certification(f'owned-{stage_name}-{variant}')
@@ -210,7 +216,8 @@ class IndependentGuardTests(unittest.TestCase):
         gateway_scoped = stage_name in window.SCOPED_GATEWAY_BROWSER_STAGES
         stage_status = stage_name.upper().replace('-', '_')
         paired = editing or reorder_kind is not None
-        published = publication_outcome == 'published'
+        republishing = republish_outcome is not None
+        published = (publication_outcome or republish_outcome) == 'published'
         reviewed = {'actorKind': actor_kind, 'actorId': actor}
         selection = {'actorKind': actor_kind, 'userId': user, 'operation': 'delete'}
         action = {'stage': stage_name, 'actorId': None if identity else actor, 'requests': [], 'windowSeconds': 60}
@@ -240,7 +247,21 @@ class IndependentGuardTests(unittest.TestCase):
                 {'method': 'GET', 'target': f'{entitlements}/grants?userId={user}&courseId={command}&{query}',
                  'bodySha256': window._EMPTY, 'uses': 1}]
         elif authoring:
-            if archiving:
+            if republishing:
+                issue_codes = [] if published else ['MISSING_COVER', 'NO_LESSONS']
+                action['authoringAction'] = {'operation': 'republish-paid-course', 'courseId': command, 'slug': 'owned-course',
+                                             'revision': 3, 'userId': user, 'grantId': ledger_ids[0], 'outcome': republish_outcome,
+                                             'issueCodes': issue_codes, 'expectedAccess': expected_access}
+                path = f'/course/v1/admin/courses/{command}'
+                action['requests'] = [
+                    {'method': 'GET', 'target': path, 'bodySha256': window._EMPTY, 'uses': 3 if published else 2},
+                    {'method': 'PATCH', 'target': path, 'uses': 1,
+                     'bodySha256': supervisor._canonical_sha({'expectedRevision': 3, 'status': 'draft'})},
+                    {'method': 'GET', 'target': f'{path}/publication-readiness', 'bodySha256': window._EMPTY, 'uses': 1}]
+                if published:
+                    action['requests'].append({'method': 'PATCH', 'target': path, 'uses': 1,
+                                               'bodySha256': supervisor._canonical_sha({'expectedRevision': 4, 'status': 'published'})})
+            elif archiving:
                 action['authoringAction'] = {'operation': 'archive-paid-course', 'courseId': command, 'slug': 'owned-course',
                                              'revision': 3, 'userId': user, 'grantId': ledger_ids[0]}
                 path = f'/course/v1/admin/courses/{command}'
@@ -369,9 +390,29 @@ class IndependentGuardTests(unittest.TestCase):
                          'revision': 4, 'quizRevision': quiz_revision + 1, 'documentSha256': document_sha}
             if archiving:
                 draft = {'courseId': command, 'slug': 'owned-course', 'revision': 4, 'status': 'archived'}
+            if republishing:
+                draft = {'courseId': command, 'slug': 'owned-course', 'revision': 5 if published else 4,
+                         'status': 'published' if published else 'draft', 'issueCodes': issue_codes}
             domain = {**draft, 'readOnly': True}
             domain_key = 'courseWitness'
-            if archiving:
+            if republishing:
+                browser_key = 'browserResponse'
+                detail = f'/api/admin/courses/{command}'
+                browser = {'draft': {'method': 'PATCH', 'pathname': detail, 'status': 200, 'requestId': request},
+                           'readiness': {'method': 'GET', 'pathname': f'{detail}/publication-readiness',
+                                         'status': 200, 'requestId': user}, 'body': draft}
+                domain.update(userId=user, grantId=ledger_ids[0], historyPreserved=True, effectiveAccess=published and expected_access)
+                indices = [0, 1, 0, 2]
+                requests = [ledger_ids[0], request, ledger_ids[1], user]
+                if published:
+                    browser['publication'] = {'method': 'PATCH', 'pathname': detail, 'status': 200, 'requestId': ledger_ids[2]}
+                    indices += [3, 0]
+                    requests += [ledger_ids[2], actor]
+                acknowledgements = [
+                    {'requestId': identity, 'proofRequestId': f'60000000-0000-4000-8000-{position:012d}',
+                     'requestIndex': index, 'upstreamStatus': 200}
+                    for position, (identity, index) in enumerate(zip(requests, indices), 1)]
+            elif archiving:
                 browser_key = 'browserResponse'
                 browser = {'method': 'PATCH', 'pathname': f'/api/admin/courses/{command}', 'status': 200, 'requestId': request,
                            'body': draft, 'warningObserved': True, 'cancelObservedWithoutMutation': True}
@@ -506,7 +547,7 @@ class IndependentGuardTests(unittest.TestCase):
                 with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'IDENTITY_ENROLLMENT_WITNESS_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
-        if authoring and not archiving and publication_outcome is None and quiz_revision is None:
+        if authoring and not archiving and not republishing and publication_outcome is None and quiz_revision is None:
             wrong = {**browser, 'winner': {**browser['winner'], 'requestId': user}} if paired else {**browser, 'requestId': user}
             response_error = ('AUTHORING_CURRICULUM_RESPONSE_REQUIRED' if create_kind is not None else
                               'AUTHORING_REORDER_RESPONSES_REQUIRED' if reorder_kind is not None else 'AUTHORING_BROWSER_RESPONSE_REQUIRED')
@@ -523,6 +564,22 @@ class IndependentGuardTests(unittest.TestCase):
                 with self.subTest(body=change), self.assertRaisesRegex(ValueError, 'AUTHORING_ARCHIVE_BODY_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
             for change in ({'historyPreserved': False}, {'readOnly': False}, {'userId': actor}, {'grantId': ledger_ids[1]}):
+                with self.subTest(witness=change), self.assertRaisesRegex(ValueError, 'AUTHORING_COURSE_WITNESS_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain',
+                                    'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
+        if republishing:
+            for key, change in (('draft', {'requestId': user}), ('readiness', {'method': 'PATCH'})):
+                wrong = {**browser, key: {**browser[key], **change}}
+                with self.subTest(receipt=key, change=change), self.assertRaisesRegex(ValueError, 'AUTHORING_REPUBLISH_RESPONSE_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+            wrong = {key: value for key, value in browser.items() if key != 'publication'} if published else {**browser, 'publication': {}}
+            with self.assertRaisesRegex(ValueError, 'AUTHORING_REPUBLISH_EVIDENCE_REQUIRED'):
+                broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+            for change in ({'issueCodes': ['OTHER_CODE']}, {'revision': 3}, {'status': 'archived'}):
+                wrong = {**browser, 'body': {**draft, **change}}
+                with self.subTest(body=change), self.assertRaisesRegex(ValueError, 'AUTHORING_REPUBLISH_BODY_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+            for change in ({'effectiveAccess': not domain['effectiveAccess']}, {'historyPreserved': False}, {'grantId': user}):
                 with self.subTest(witness=change), self.assertRaisesRegex(ValueError, 'AUTHORING_COURSE_WITNESS_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
@@ -602,7 +659,12 @@ class IndependentGuardTests(unittest.TestCase):
             self.assertEqual(case['gatewayPostRequestId'], request)
             self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
         if authoring:
-            if archiving:
+            if republishing:
+                self.assertEqual(case['draftGatewayRequestId'], request)
+                self.assertEqual(case['readinessGatewayRequestId'], user)
+                self.assertEqual(case['effectiveAccess'], published and expected_access)
+                self.assertEqual(case.get('gatewayPatchRequestId'), ledger_ids[2] if published else None)
+            elif archiving:
                 self.assertEqual(case['gatewayPatchRequestId'], request)
                 self.assertEqual({key: case[key] for key in ('userId', 'grantId', 'revision')},
                                  {'userId': user, 'grantId': ledger_ids[0], 'revision': 4})
@@ -665,6 +727,9 @@ class IndependentGuardTests(unittest.TestCase):
             elif archiving:
                 rows = bad['gatewayAcknowledgements']
                 rows[1], rows[2] = rows[2], rows[1]
+            elif republishing:
+                rows = bad['gatewayAcknowledgements']
+                rows[2], rows[3] = rows[3], rows[2]
             elif quiz_revision is not None:
                 bad['gatewayAcknowledgements'][1]['upstreamStatus'] = 200 if prior_status == 404 else 404
             elif publication_outcome is not None:

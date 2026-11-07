@@ -520,6 +520,33 @@ test('fixed current certification plan joins the original release plan, terminal
       assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedArchive, requests })));
     for (const changed of [{ revision: 2_147_483_647 }, { userId: 'invalid' }, { grantId: 'invalid' }, { outcome: 'archived' }])
       assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedArchive, authoringAction: { ...selectedArchive.authoringAction, ...changed } })));
+    for (const [outcome, expectedAccess] of [['published', true], ['published', false], ['blocked', true]]) {
+      const published = outcome === 'published', revision = 2;
+      const issueCodes = published ? [] : ['LESSON_CONTENT_REQUIRED', 'TAX_CLASSIFICATION_REQUIRED'];
+      const authoringAction = { ...selectedArchive.authoringAction, operation: 'republish-paid-course', revision, outcome, issueCodes, expectedAccess };
+      const draft = { method: 'PATCH', target: editPath, uses: 1, bodySha256: rawHash(JSON.stringify({ expectedRevision: revision, status: 'draft' })) };
+      const readiness = { ...archiveRead, target: editPath + '/publication-readiness', uses: 1 };
+      const publish = { ...draft, bodySha256: rawHash(JSON.stringify({ expectedRevision: revision + 1, status: 'published' })) };
+      const requests = [{ ...archiveRead, uses: published ? 3 : 2 }, draft, readiness, ...(published ? [publish] : [])];
+      const selected = { ...selectedArchive, authoringAction, requests };
+      const settings = paired(selected), planned = prepareP2ProfiledCertificationOperator(settings);
+      assert.equal(planned.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
+      assert.deepEqual(planned.authoring.scopedAction, selected);
+      assert.deepEqual(planned.identity.scopedAction.identityActor, draftPair.identity.scopedAction.identityActor);
+      const checked = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+        { input: JSON.stringify(planned.authoring), encoding: 'utf8' });
+      assert.equal(checked.status, 0, checked.stderr);
+      await assert.rejects(p2ProfiledCertificationOperator(settings, archiveConfirmation), { code: 'ENOENT' });
+      await assert.rejects(p2ProfiledCertificationOperator({ ...settings, execution: {} }, archiveConfirmation), error => error.code !== 'ENOENT');
+      const invalidRequests = [[requests[0], readiness, draft, ...requests.slice(3)], [{ ...requests[0], uses: 1 }, ...requests.slice(1)]];
+      invalidRequests.push(published ? [...requests.slice(0, 3), { ...publish,
+        bodySha256: rawHash(JSON.stringify({ expectedRevision: revision, status: 'published' })) }] : [...requests, publish]);
+      for (const invalid of invalidRequests)
+        assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selected, requests: invalid })));
+      for (const changed of [{ revision: 2_147_483_646 }, { expectedAccess: 'yes' }, { grantId: 'invalid' },
+        { issueCodes: published ? ['UNEXPECTED'] : [...issueCodes].reverse() }])
+        assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selected, authoringAction: { ...authoringAction, ...changed } })));
+    }
     const enrolledEmail = 'owned-enrollment@example.invalid';
     const firstEnrollments = ['google', 'resend'].map((provider, index) => {
       const nonce = String(index+1).repeat(32);

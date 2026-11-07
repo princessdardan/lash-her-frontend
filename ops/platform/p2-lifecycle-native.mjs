@@ -170,6 +170,15 @@ const reviewedPaidArchiveDependencies = {
   "src/components/admin/course-authoring/course-workspace.tsx": "2f53287bc00b5159eaa971b50366b8e5c13b3c57ab29eb6de6749a475a4dca11",
   "src/app/admin/(protected)/courses/[courseId]/page.tsx": "0857b31b2dffdf6bb7ac8460d1736dcd2a3738ba5273194ae799bbe7e48360fd"
 };
+const reviewedPaidRepublishSource = {
+  ...reviewedPaidArchiveSource,
+  "src/lib/writer-admission/context.ts": "443498852b80c1eb9787a86a2bfd1a84e659fd40ea3a7aeb350dd91cc41057e1"
+};
+const reviewedPaidRepublishDependencies = {
+  ...reviewedPaidArchiveDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "596bbc4c7af8605357dd874b86d906543f7dd43d8b2e1bf9e0559781616274dc",
+  "src/lib/api-integration/course-admin-handler.ts": "e413f9dc9950e5113e8f38301b6717f08c29908aa73f85d7e938536702247b0b"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -198,7 +207,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedPublicationSource, [reviewedPublicationDependencies, reviewedPortableTextDependencies]],
     [reviewedQuizAuthoringSource, [reviewedQuizAuthoringDependencies, reviewedFreeEnrollmentDependencies]],
     [reviewedPaidGrantSource, [reviewedPaidGrantDependencies]],
-    [reviewedPaidArchiveSource, [reviewedPaidArchiveDependencies]]]
+    [reviewedPaidArchiveSource, [reviewedPaidArchiveDependencies]],
+    [reviewedPaidRepublishSource, [reviewedPaidRepublishDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

@@ -1053,35 +1053,23 @@ test("paid archive preserves a real manual grant and validated republish restore
         )
       ).status(),
     ).toBe(404);
+    const detailPath = `/api/admin/courses/${courseId}`;
+    const readinessPath = `${detailPath}/publication-readiness`;
+    const restorationCalls: string[] = [];
+    page.on("request", (request) => {
+      const pathname = new URL(request.url()).pathname;
+      if (pathname === detailPath || pathname === readinessPath) {
+        restorationCalls.push(`${request.method()} ${pathname}`);
+      }
+    });
     await page
       .getByRole("button", { name: "Move to draft", exact: true })
       .click();
     await expect(
       page.getByText("Course moved to draft.", { exact: true }),
     ).toBeVisible();
-    const removed = await context.request.patch(
-      `/api/admin/lessons/${lessonId}`,
-      { headers, data: { expectedCourseRevision: 6, contentDocument: null } },
-    );
-    expect(removed.status()).toBe(200);
-    await page.reload();
-    await page
-      .getByRole("button", { name: "Review publication readiness" })
-      .click();
-    await expect(
-      page.getByText("Resolve these items before publishing"),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Publish course", exact: true }),
-    ).toHaveCount(0);
-    await learnerPage.reload();
-    await expect(privateContent).toHaveCount(0);
-    const repaired = await context.request.patch(
-      `/api/admin/lessons/${lessonId}`,
-      { headers, data: { expectedCourseRevision: 7, contentDocument } },
-    );
-    expect(repaired.status()).toBe(200);
-    await page.reload();
+    await expect(page.getByText("draft · Revision 6", { exact: true })).toBeVisible();
+    expect((await learner.request.get(protectedLessonPath)).status()).toBe(404);
     await page
       .getByRole("button", { name: "Review publication readiness" })
       .click();
@@ -1094,6 +1082,14 @@ test("paid archive preserves a real manual grant and validated republish restore
     await expect(
       page.getByText("Course published.", { exact: true }),
     ).toBeVisible();
+    expect(mutations.slice(-2)).toEqual([
+      { expectedRevision: 5, status: "draft" },
+      { expectedRevision: 6, status: "published" },
+    ]);
+    expect(restorationCalls).toEqual([
+      `PATCH ${detailPath}`, `GET ${detailPath}`, `GET ${readinessPath}`,
+      `PATCH ${detailPath}`, `GET ${detailPath}`,
+    ]);
     expect(
       (
         await context.request.get(
@@ -1118,6 +1114,46 @@ test("paid archive preserves a real manual grant and validated republish restore
     expect(await publicPage.content()).not.toContain(
       "PRIVATE_PAID_LESSON_FIXTURE",
     );
+    await publicPage.close();
+
+    // Remove the private content from a second archived revision so the same
+    // restoration flow must stop after readiness. The grant stays in place.
+    await page.reload();
+    await expect(page.getByText("published · Revision 7", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Archive course", exact: true }).click();
+    await warning.getByRole("button", { name: "Archive paid course", exact: true }).click();
+    await expect(page.getByText("archived · Revision 8", { exact: true })).toBeVisible();
+    const removed = await context.request.patch(`/api/admin/lessons/${lessonId}`, {
+      headers,
+      data: { expectedCourseRevision: 8, contentDocument: null },
+    });
+    expect(removed.status()).toBe(200);
+    await page.reload();
+    await expect(page.getByText("archived · Revision 9", { exact: true })).toBeVisible();
+    const beforeBlockedRestoration = restorationCalls.length;
+    await page.getByRole("button", { name: "Move to draft", exact: true }).click();
+    await expect(page.getByText("draft · Revision 10", { exact: true })).toBeVisible();
+    const blockedReadiness = page.waitForResponse(response =>
+      response.request().method() === "GET" && new URL(response.url()).pathname === readinessPath,
+    );
+    await page.getByRole("button", { name: "Review publication readiness" }).click();
+    const observedReadiness = await blockedReadiness;
+    expect(observedReadiness.status()).toBe(200);
+    expect(await observedReadiness.json()).toMatchObject({
+      courseId, courseRevision: 10, ready: false, issues: [{ code: "LESSON_CONTENT_REQUIRED" }],
+    });
+    await expect(page.getByText("Resolve these items before publishing", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Publish course", exact: true })).toHaveCount(0);
+    expect(restorationCalls.slice(beforeBlockedRestoration)).toEqual([
+      `PATCH ${detailPath}`, `GET ${detailPath}`, `GET ${readinessPath}`,
+    ]);
+    const invalidPublish = await context.request.patch(detailPath, {
+      headers,
+      data: { expectedRevision: 10, status: "published" },
+    });
+    expect(invalidPublish.status()).toBe(409);
+    expect(await course()).toMatchObject({ revision: 10, status: "draft" });
+    expect((await learner.request.get(protectedLessonPath)).status()).toBe(404);
   } finally {
     await learner.close().catch(() => {});
     await context.close().catch(() => {});

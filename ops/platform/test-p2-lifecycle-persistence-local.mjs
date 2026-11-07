@@ -16,6 +16,7 @@ import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraf
   captureP2InteractiveFreeEnrollmentBaseline, observeP2InteractiveFreeEnrollmentCase,
   captureP2InteractivePaidGrantBaseline, observeP2InteractivePaidGrantCase,
   captureP2InteractivePaidArchiveBaseline, observeP2InteractivePaidArchiveCase, validateP2InteractivePaidArchive,
+  captureP2InteractivePaidRepublishBaseline, observeP2InteractivePaidRepublishCase, validateP2InteractivePaidRepublish,
   observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase, observeP2InteractiveCourseReorderCase,
   observeP2InteractiveCurriculumCreateCase, observeP2InteractivePublicationCase, observeP2InteractiveQuizSaveCase, p2LifecyclePersistenceTargetSha256,
   validateP2InteractiveCourseDraft, validateP2InteractiveCourseDraftEdits, validateP2InteractiveCourseReorder,
@@ -220,6 +221,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     await runOwnedFreeEnrollmentWitness({ course, job, dependencies, input, create });
     await runOwnedPaidGrantWitness({ course, job, dependencies, input, create });
     await runOwnedPaidArchiveWitness({ course, job, dependencies, input, create, courseSource });
+    await runOwnedPaidRepublishWitness({ course, job, dependencies, input, create, courseSource });
     await unlock();
     try { await assert.rejects(capture(input("unheld"))); }
     finally { await lock(); }
@@ -239,7 +241,9 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-paid-grant-orderless-manual-grant-audited-effect-and-canonical-pending-outbox",
       "course-paid-grant-refuses-ineligible-occupied-and-persisted-outcome-drift",
       "course-paid-archive-pinned-repository-preserves-history-without-community-outbox-mutation",
-      "course-paid-archive-refuses-identity-history-projection-and-independent-eligibility-drift"];
+      "course-paid-archive-refuses-identity-history-projection-and-independent-eligibility-drift",
+      "course-paid-republish-pinned-repository-restores-only-effective-access-and-keeps-blocked-draft",
+      "course-paid-republish-refuses-inconsistent-access-revision-account-and-learning-history"];
   } finally {
     try { await unlock(); }
     finally { setDefaultCACertificates(trust); }
@@ -923,12 +927,18 @@ async function runOwnedPaidGrantWitness({ course, job, dependencies, input, crea
   }
 }
 
+async function ownedCourseRepository(course, courseSource) {
+  const { tsImport } = createRequire(import.meta.url)("tsx/esm/api");
+  const importSource = relative => tsImport(pathToFileURL(join(courseSource, relative)).href, import.meta.url);
+  const { createDrizzleCourseRepository } = await importSource("src/courses/course.repository.ts");
+  const { drizzle } = createRequire(join(courseSource, "package.json"))("drizzle-orm/node-postgres");
+  const db = drizzle(course);
+  return { repository: createDrizzleCourseRepository(db), db, importSource };
+}
+
 async function runOwnedPaidArchiveWitness({ course, job, dependencies, input, create, courseSource }) {
   const { seed, progress, write } = ownedPaidGrantFixtures({ course, input, create });
-  const { tsImport } = createRequire(import.meta.url)("tsx/esm/api");
-  const { createDrizzleCourseRepository } = await tsImport(pathToFileURL(join(courseSource, "src/courses/course.repository.ts")).href, import.meta.url);
-  const { drizzle } = createRequire(join(courseSource, "package.json"))("drizzle-orm/node-postgres");
-  const repository = createDrizzleCourseRepository(drizzle(course));
+  const { repository } = await ownedCourseRepository(course, courseSource);
   const selection = test => ({ courseId: test.selection.courseId, slug: test.slug, revision: 1, userId: test.selection.userId, grantId: test.grantId });
   const browser = test => ({ courseId: test.selection.courseId, slug: test.slug, revision: 2, status: "archived" });
   const capture = test => captureP2InteractivePaidArchiveBaseline(job, selection(test), undefined, dependencies);
@@ -1033,6 +1043,109 @@ async function runOwnedPaidArchiveWitness({ course, job, dependencies, input, cr
     if (independent) await archive(independent);
     await assert.rejects(observe(changed, baseline), { check });
     await assert.rejects(observe(changed, baseline), { check: "course-paid-archive-receipt" });
+  }
+}
+
+async function runOwnedPaidRepublishWitness({ course, job, dependencies, input, create, courseSource }) {
+  const { seed, progress, write } = ownedPaidGrantFixtures({ course, input, create });
+  const { repository, db, importSource } = await ownedCourseRepository(course, courseSource);
+  const { plainTextDocument } = await importSource("src/courses/content.ts");
+  const priorDotenv = process.env.DOTENV_CONFIG_PATH, priorAdmission = process.env.COURSE_ACCOUNT_LIFECYCLE_ENABLED;
+  let entitlementCommands;
+  try {
+    process.env.DOTENV_CONFIG_PATH = "/dev/null";
+    process.env.COURSE_ACCOUNT_LIFECYCLE_ENABLED = "true";
+    const { createDrizzleAdminEntitlementCommandRepository } = await importSource("src/entitlements/admin-entitlement-command.repository.ts");
+    entitlementCommands = createDrizzleAdminEntitlementCommandRepository(db);
+  } finally {
+    if (priorDotenv === undefined) delete process.env.DOTENV_CONFIG_PATH;
+    else process.env.DOTENV_CONFIG_PATH = priorDotenv;
+    if (priorAdmission === undefined) delete process.env.COURSE_ACCOUNT_LIFECYCLE_ENABLED;
+    else process.env.COURSE_ACCOUNT_LIFECYCLE_ENABLED = priorAdmission;
+  }
+  const state = async (test, expectedRevision, status) => {
+    const row = await repository.updateCourse(test.selection.courseId, { expectedRevision, status });
+    assert.equal(row.revision, expectedRevision + 1);
+    assert.equal(row.status, status);
+  };
+  const restricted = test => course.query(`INSERT INTO public.account_lifecycle_states(user_id,account_version,status,updated_at)
+    VALUES($1,1,'suspended',pg_catalog.clock_timestamp())`, [test.selection.userId]);
+  const revoked = async test => {
+    const result = await entitlementCommands.revoke({ scope: "grantId", grantId: test.grantId, actorUserId: test.selection.actorId,
+      reason: "Owned fixture withdrawal", idempotencyKey: randomUUID() });
+    assert.equal(result.command.outcome, "applied");
+  };
+  const prepared = async (name, outcome = "published", restriction) => {
+    const test = await seed(`republish-${name}`), { courseId, userId } = test.selection;
+    if (outcome === "published") await course.query("UPDATE public.lessons SET content_document=$2::jsonb WHERE id=$1::uuid",
+      [test.lessonId, plainTextDocument("Reviewed paid lesson", "owned-republish")]);
+    await write(test);
+    await progress(test, test.enrollmentId);
+    await state(test, 1, "archived");
+    if (restriction) await restriction(test);
+    const issueCodes = outcome === "published" ? [] : ["LESSON_CONTENT_REQUIRED"];
+    return { ...test, selected: { courseId, slug: test.slug, revision: 2, userId, grantId: test.grantId, outcome, issueCodes,
+      expectedAccess: restriction === undefined } };
+  };
+  const browser = ({ selected: { courseId, slug, outcome, issueCodes } }) => ({ courseId, slug,
+    revision: outcome === "published" ? 4 : 3, status: outcome === "published" ? "published" : "draft", issueCodes });
+  const capture = test => captureP2InteractivePaidRepublishBaseline(job, test.selected, undefined, dependencies);
+  const observe = (test, baseline, receipt = browser(test)) =>
+    observeP2InteractivePaidRepublishCase(job, test.selected, baseline, receipt, dependencies);
+  const republish = async test => {
+    const { courseId, outcome, issueCodes } = test.selected;
+    await state(test, 2, "draft");
+    const readiness = await repository.publicationReadiness(courseId);
+    assert.equal(readiness.courseRevision, 3);
+    assert.deepEqual([...new Set(readiness.issues.map(issue => issue.code))].sort(), issueCodes);
+    assert.equal(readiness.ready, outcome === "published");
+    if (readiness.ready) await state(test, 3, "published");
+    else await assert.rejects(state(test, 3, "published"), { name: "CourseRepositoryConflictError" });
+    assert.equal((await repository.findPublishedCourseBySlug(test.slug))?.id, readiness.ready ? courseId : undefined);
+  };
+
+  for (const [name, outcome, restriction] of [["allowed", "published"], ["blocked", "blocked"],
+    ["suspended", "published", restricted], ["revoked", "published", revoked]]) {
+    const test = await prepared(name, outcome, restriction), { selected } = test;
+    if (name === "allowed") await write(await seed("republish-independent", {}, selected.userId));
+    assert.equal(validateP2InteractivePaidRepublish(selected, undefined), undefined);
+    for (const [selection, input] of [[selected, {}], [{ ...selected, revision: 2_147_483_646 }, undefined],
+      [{ ...selected, expectedAccess: null }, undefined]]) {
+      assert.throws(() => validateP2InteractivePaidRepublish(selection, input), { check: "course-paid-republish-selection" });
+    }
+    assert.throws(() => validateP2InteractivePaidRepublish({ ...selected, outcome: "blocked", issueCodes: ["Z", "A"] }, undefined),
+      { check: "course-paid-republish-issue-codes" });
+    await assert.rejects(capture({ ...test, selected: { ...selected, grantId: randomUUID() } }), { check: "course-paid-republish-grant" });
+    await assert.rejects(capture({ ...test, selected: { ...selected, expectedAccess: !selected.expectedAccess } }), { check: "course-paid-republish-access" });
+    const before = await capture(test);
+    assert.equal(JSON.stringify(before), "{}");
+    await republish(test);
+    await assert.rejects(observe(test, {}, browser(test)), { check: "course-paid-republish-receipt" });
+    await assert.rejects(observe(test, before, { ...browser(test), issueCodes: ["UNREVIEWED"] }), { check: "course-paid-republish-receipt" });
+    await assert.rejects(observeP2InteractivePaidRepublishCase(job, selected, before, browser(test),
+      { ...dependencies, verifySession: async () => {} }), { check: "course-paid-republish-receipt" });
+    assert.deepEqual(await observe(test, before), { ...browser(test), userId: selected.userId, grantId: selected.grantId,
+      historyPreserved: true, effectiveAccess: outcome === "published" && selected.expectedAccess, readOnly: true });
+    await assert.rejects(observe(test, before), { check: "course-paid-republish-receipt" });
+    await assert.rejects(capture(test), { check: "course-publication-state" });
+  }
+
+  for (const [name, check] of [["revision", "course-publication-state"], ["progress", "course-paid-republish-history"],
+    ["restored-account", "course-paid-republish-access"], ["changed-restriction", "course-paid-republish-account-history"],
+    ["lost-independent", "course-paid-republish-community-authority"]]) {
+    const test = await prepared(name, "published", ["restored-account", "changed-restriction"].includes(name) ? restricted : undefined);
+    const independent = name === "lost-independent" ? await seed("republish-lost-other-course", {}, test.selected.userId) : undefined;
+    if (independent) await write(independent);
+    const baseline = await capture(test);
+    await republish(test);
+    if (name === "revision") await course.query("UPDATE public.courses SET revision=revision+1 WHERE id=$1::uuid", [test.selected.courseId]);
+    if (name === "progress") await course.query("UPDATE public.lesson_progress SET max_position_seconds=17 WHERE lesson_id=$1::uuid", [test.lessonId]);
+    if (name === "restored-account" || name === "changed-restriction") await course.query(`UPDATE public.account_lifecycle_states
+      SET status=$2,account_version=account_version+1,updated_at=pg_catalog.clock_timestamp() WHERE user_id=$1::uuid`,
+    [test.selected.userId, name === "restored-account" ? "active" : "deleted"]);
+    if (independent) await state(independent, 1, "archived");
+    await assert.rejects(observe(test, baseline), { check });
+    await assert.rejects(observe(test, baseline), { check: "course-paid-republish-receipt" });
   }
 }
 

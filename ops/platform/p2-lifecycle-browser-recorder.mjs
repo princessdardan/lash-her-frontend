@@ -72,9 +72,10 @@ const authoringCreateCurriculum = input => input.stage === "authoring" && input.
 const authoringPublication = input => input.stage === "authoring" && input.authoring?.operation === "qualify-publication";
 const authoringQuiz = input => input.stage === "authoring" && input.authoring?.operation === "save-quiz-revision";
 const authoringArchive = input => input.stage === "authoring" && input.authoring?.operation === "archive-paid-course";
+const authoringRepublish = input => input.stage === "authoring" && input.authoring?.operation === "republish-paid-course";
 export const isP2InteractiveAuthoringPair = input => authoringEdit(input) || authoringReorder(input);
 export const isP2InteractiveAuthoringDetail = input => isP2InteractiveAuthoringPair(input) || authoringCreateCurriculum(input)
-  || authoringPublication(input) || authoringQuiz(input) || authoringArchive(input);
+  || authoringPublication(input) || authoringQuiz(input) || authoringArchive(input) || authoringRepublish(input);
 const publicationIssueCode = code => matches(code, /^[A-Z][A-Z0-9_]{0,63}$/u);
 const publishedOutcome = target => target.outcome === "published";
 
@@ -99,6 +100,9 @@ function authoringSelector(input) {
   demand(uuid(input.authoring.actorId));
   const actor = input.authoring.actorId.replaceAll("-", "");
   if (authoringArchive(input)) return "7032712d617574682d6172632d763100" + actor;
+  if (authoringRepublish(input)) {
+    return (publishedOutcome(input.authoring) ? "7032712d617574682d7265702d763100" : "7032712d617574682d72626c2d763100") + actor;
+  }
   if (authoringQuiz(input)) return "7032712d617574682d7175697a2d7631" + actor;
   if (authoringPublication(input)) {
     return (publishedOutcome(input.authoring) ? "7032712d617574682d7075622d763100" : "7032712d617574682d7264792d763100") + actor;
@@ -159,12 +163,12 @@ export function validateP2InteractiveBrowserInput(input) {
   }
   if (input.stage === "authoring") {
     const target = input.authoring, pair = isP2InteractiveAuthoringPair(input), create = authoringCreateCurriculum(input);
-    const curriculum = authoringReorder(input) || create, publication = authoringPublication(input), quiz = authoringQuiz(input);
-    const archive = authoringArchive(input);
+    const curriculum = authoringReorder(input) || create, quiz = authoringQuiz(input);
+    const archive = authoringArchive(input), republish = authoringRepublish(input), publication = authoringPublication(input) || republish;
     demand(closed(target, ["actorId", "slug", ...(isP2InteractiveAuthoringDetail(input) ? ["operation", "courseId", "revision"] : []),
       ...(pair ? ["winnerBodySha256", "staleBodySha256"] : publication ? ["outcome", "issueCodes"] : ["bodySha256"]),
       ...(curriculum ? ["kind", "parentId"] : []), ...(quiz ? ["lessonId", "quizRevision", "documentSha256"] : []),
-      ...(create ? ["childSlug"] : []), ...(archive ? ["userId", "grantId"] : [])])
+      ...(create ? ["childSlug"] : []), ...(archive || republish ? ["userId", "grantId"] : []), ...(republish ? ["expectedAccess"] : [])])
       && uuid(target.actorId) && matches(target.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u) && target.slug.length <= 120);
     if (isP2InteractiveAuthoringDetail(input)) demand(uuid(target.courseId) && Number.isSafeInteger(target.revision)
       && target.revision >= 1 && target.revision < (publication || quiz || archive ? 2_147_483_647 : Number.MAX_SAFE_INTEGER));
@@ -180,6 +184,7 @@ export function validateP2InteractiveBrowserInput(input) {
       && target.quizRevision >= 0 && target.quizRevision < 2_147_483_647 && sha(target.documentSha256));
     if (archive) demand(uuid(target.userId) && uuid(target.grantId) && target.bodySha256 === createHash("sha256")
       .update(JSON.stringify({ expectedRevision: target.revision, status: "archived" })).digest("hex"));
+    if (republish) demand(uuid(target.userId) && uuid(target.grantId) && target.revision <= 2_147_483_645 && typeof target.expectedAccess === "boolean");
   }
   if (enrollment) enrollmentSelector(input.identityEnrollment);
   else if (input.stage === "identity") identitySelector(input.identity);
@@ -416,14 +421,17 @@ export function validateP2AuthoringMutationReceipt(receipt, target) {
       && receipt.body.documentSha256 === target.documentSha256);
     return receipt;
   }
-  if (target.operation === "qualify-publication") {
+  if (["qualify-publication", "republish-paid-course"].includes(target.operation)) {
     const { detail, readiness } = p2AuthoringPublicationPaths(target), published = publishedOutcome(target);
-    demand(closed(receipt, ["readiness", "body", ...(published ? ["publication"] : [])])
+    const republish = target.operation === "republish-paid-course";
+    demand(closed(receipt, ["readiness", "body", ...(published ? ["publication"] : []), ...(republish ? ["draft"] : [])])
       && matchesAuthoringStep(receipt.readiness, "GET", readiness)
+      && (!republish || matchesAuthoringStep(receipt.draft, "PATCH", detail)
+        && receipt.draft.requestId !== receipt.readiness.requestId && receipt.draft.requestId !== receipt.publication?.requestId)
       && (!published || matchesAuthoringStep(receipt.publication, "PATCH", detail) && receipt.publication.requestId !== receipt.readiness.requestId)
       && closed(receipt.body, ["courseId", "slug", "revision", "status", "issueCodes"])
       && receipt.body.courseId === target.courseId && receipt.body.slug === target.slug
-      && receipt.body.revision === target.revision + Number(published) && receipt.body.status === (published ? "published" : "draft")
+      && receipt.body.revision === target.revision + Number(republish) + Number(published) && receipt.body.status === (published ? "published" : "draft")
       && Array.isArray(receipt.body.issueCodes) && receipt.body.issueCodes.length === target.issueCodes.length
       && target.issueCodes.every((code, index) => receipt.body.issueCodes[index] === code));
     return receipt;
@@ -774,30 +782,42 @@ function readQuizResult(body, target, saved) {
 function watchAuthoringReadWrite(context, page, input) {
   validateP2InteractiveBrowserInput(input);
   const target = input.authoring, published = publishedOutcome(target), origin = input.browserOrigin;
-  const quiz = authoringQuiz(input), requiresWrite = quiz || published;
+  const quiz = authoringQuiz(input), republish = authoringRepublish(input), requiresWrite = quiz || published;
   const { detail, readiness } = p2AuthoringPublicationPaths(target);
   const source = origin + p2InteractiveBrowserEntryPath(input, "owner");
-  const expectedPatch = Buffer.from(JSON.stringify({ expectedRevision: target.revision, status: "published" }));
+  const reviewRevision = target.revision + Number(republish);
+  const expectedPatch = Buffer.from(JSON.stringify({ expectedRevision: reviewRevision, status: "published" }));
+  const expectedDraft = republish && Buffer.from(JSON.stringify({ expectedRevision: target.revision, status: "draft" }));
   const quizPath = quiz ? p2AuthoringQuizPath(target) : undefined;
   const prior = { method: "GET", pathname: quiz ? quizPath : readiness, status: quiz && target.quizRevision === 0 ? 404 : 200 };
   const write = { method: quiz ? "PUT" : "PATCH", pathname: quiz ? quizPath : detail, status: 200 };
+  const draft = { method: "PATCH", pathname: detail, status: 200 };
+  const draftRead = { method: "GET", pathname: detail, status: 200 };
+  const publishedRead = { method: "GET", pathname: detail, status: 200 };
+  const steps = republish ? [draft, draftRead, prior, ...(published ? [write, publishedRead] : [])] : [prior, write];
   const refusal = () => new Error("P2_INTERACTIVE_AUTHORING_RESPONSE_REFUSED");
-  let failed = false, qualified = false, receipt, accept, reject;
+  let failed = false, qualified = false, receipt, accept, reject, stepIndex = 0;
   const observed = new Promise((resolve, refuse) => { accept = resolve; reject = refuse; });
   observed.catch(() => {});
   const fail = () => { failed = true; reject(refusal()); };
   const onRequest = request => {
     const url = URL.parse(request.url());
     if (url?.origin !== origin) return;
-    const step = url.pathname === prior.pathname && (!quiz || request.method() === "GET") ? prior
-      : url.pathname === write.pathname && request.method() !== "GET" ? write : undefined;
+    const method = request.method();
+    const observedRepublishRequest = url.pathname === detail || url.pathname === readiness || !["GET", "HEAD", "OPTIONS"].includes(method);
+    if (republish && observedRepublishRequest && !steps[stepIndex]) return fail();
+    const step = republish ? (observedRepublishRequest ? steps[stepIndex] : undefined)
+      : url.pathname === prior.pathname && (!quiz || method === "GET") ? prior
+        : url.pathname === write.pathname && method !== "GET" ? write : undefined;
     if (!step) return;
     try {
       const frame = request.frame();
       demand(!failed && !step.request && frame === page.mainFrame() && frame.url() === source && !url.search && !url.hash
-        && request.method() === step.method && request.resourceType() === "fetch" && request.redirectedFrom() === null);
+        && url.pathname === step.pathname && method === step.method && request.resourceType() === "fetch" && request.redirectedFrom() === null);
+      if (republish && stepIndex > 0) demand(steps[stepIndex - 1].response);
       const bytes = request.postDataBuffer();
-      if (step === prior) demand(bytes === null);
+      if (method === "GET") demand(bytes === null);
+      else if (republish) demand(Buffer.isBuffer(bytes) && bytes.equals(step === draft ? expectedDraft : expectedPatch));
       else {
         demand(requiresWrite && prior.response && Buffer.isBuffer(bytes));
         if (quiz) {
@@ -808,13 +828,16 @@ function watchAuthoringReadWrite(context, page, input) {
         } else demand(bytes.equals(expectedPatch));
       }
       step.request = request;
+      if (republish) stepIndex++;
     } catch { fail(); }
   };
   const onResponse = response => {
-    const request = response.request(), step = request === prior.request ? prior : request === write.request ? write : undefined;
+    const request = response.request(), step = steps.find(candidate => request === candidate.request);
     if (!step) return;
     if (failed || step.response) return fail();
     step.response = (async () => {
+      const predecessor = republish && steps[steps.indexOf(step) - 1];
+      if (predecessor) await predecessor.response;
       const head = await readBrowserResponseHead(response, request, origin, step.pathname, step.method, step.status);
       // The normal quiz editor handles the first GET's 404 without reading its body.
       if (step.status === 404) return { head };
@@ -822,32 +845,36 @@ function watchAuthoringReadWrite(context, page, input) {
       if (quiz) return { head, result: readQuizResult(body, target, step === write) };
       if (step === prior) {
         demand(closed(body, ["courseId", "courseRevision", "ready", "issues"]) && body.courseId === target.courseId
-          && body.courseRevision === target.revision && body.ready === published && Array.isArray(body.issues)
+          && body.courseRevision === reviewRevision && body.ready === published && Array.isArray(body.issues)
           && body.issues.every(issue => publicationIssueCode(issue?.code)));
         const codes = [...new Set(body.issues.map(issue => issue.code))].sort();
         demand(codes.length === target.issueCodes.length && target.issueCodes.every((code, index) => code === codes[index]));
         return { head, codes };
       }
       const result = readCourseResult(body);
-      demand(result.courseId === target.courseId && result.slug === target.slug && result.revision === target.revision + 1 && result.status === "published");
+      const draftState = republish && (step === draft || step === draftRead);
+      demand(result.courseId === target.courseId && result.slug === target.slug
+        && result.revision === reviewRevision + Number(!draftState) && result.status === (draftState ? "draft" : "published"));
       return { head, result };
     })();
     void step.response.then(async value => {
-      if (failed || requiresWrite && step === prior) return;
+      if (failed || (republish ? step !== steps.at(-1) : requiresWrite && step === prior)) return;
       const reviewed = step === prior ? value : await prior.response;
       if (failed) return;
       if (quiz) {
         demand(reviewed.result?.quizId !== value.result.quizId);
         receipt = validateP2AuthoringMutationReceipt({ prior: reviewed.head, save: value.head, body: value.result }, target);
       } else {
-        receipt = validateP2AuthoringMutationReceipt({ readiness: reviewed.head,
-          ...(published ? { publication: value.head } : {}), body: { ...(published ? value.result
-            : { courseId: target.courseId, slug: target.slug, revision: target.revision, status: "draft" }), issueCodes: reviewed.codes } }, target);
+        const draftReceipt = republish && await draft.response;
+        const publication = published && (republish ? (await write.response).head : value.head);
+        receipt = validateP2AuthoringMutationReceipt({ ...(republish ? { draft: draftReceipt.head } : {}), readiness: reviewed.head,
+          ...(published ? { publication } : {}), body: { ...(published ? value.result
+            : { courseId: target.courseId, slug: target.slug, revision: reviewRevision, status: "draft" }), issueCodes: reviewed.codes } }, target);
       }
       accept(receipt);
     }).catch(fail);
   };
-  const onFailure = request => { if (request === prior.request || request === write.request) fail(); };
+  const onFailure = request => { if (steps.some(step => request === step.request)) fail(); };
   context.on("request", onRequest);
   context.on("response", onResponse);
   context.on("requestfailed", onFailure);
@@ -867,7 +894,7 @@ function watchAuthoringReadWrite(context, page, input) {
           page.getByRole("status").getByText(feedback, { exact: true }).waitFor({ state: "visible", timeout }),
           page.getByText(status + " · Revision " + receipt.body.revision, { exact: true }).waitFor({ state: "visible", timeout }),
         ]).catch(() => { throw refusal(); });
-        if (failed || !requiresWrite && await page.getByRole("button", { name: "Publish course", exact: true })
+        if (failed || republish && page.url() !== source || !requiresWrite && await page.getByRole("button", { name: "Publish course", exact: true })
           .and(page.locator("button:enabled")).count() !== 0) throw refusal();
         qualified = true;
       } finally { clearTimeout(timer); }
@@ -887,7 +914,7 @@ function watchAuthoringReadWrite(context, page, input) {
 
 export function watchP2AuthoringMutation(context, page, input) {
   demand(input.stage === "authoring" && !isP2InteractiveAuthoringPair(input));
-  if (authoringPublication(input) || authoringQuiz(input)) return watchAuthoringReadWrite(context, page, input);
+  if (authoringPublication(input) || authoringQuiz(input) || authoringRepublish(input)) return watchAuthoringReadWrite(context, page, input);
   return watchMutation(context, page, input);
 }
 
@@ -1280,10 +1307,10 @@ async function runInteractiveBrowser(first) {
           if (isP2InteractiveAuthoringDetail(input)) {
             const timeout = selection.expires * 1000 - Date.now();
             demand(timeout > 0 && httpStatus === 200 && response.url() === url && page.url() === url);
-            const archive = authoringArchive(input);
-            const name = archive ? "Archive course" : authoringQuiz(input) ? "Assessment" : authoringPublication(input) ? "Review publication readiness"
+            const archive = authoringArchive(input), republish = authoringRepublish(input);
+            const name = republish ? "Move to draft" : archive ? "Archive course" : authoringQuiz(input) ? "Assessment" : authoringPublication(input) ? "Review publication readiness"
               : input.authoring.kind === "module" ? "Add module" : "Add lesson";
-            const state = archive ? "published" : "draft";
+            const state = republish ? "archived" : archive ? "published" : "draft";
             await Promise.all([
               page.getByRole("button", { name, exact: true }).and(page.locator("button:enabled")).first().waitFor({ state: "visible", timeout }),
               page.getByText(state + " · Revision " + input.authoring.revision, { exact: true }).waitFor({ state: "visible", timeout }),

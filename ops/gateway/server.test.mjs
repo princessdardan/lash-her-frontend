@@ -943,8 +943,13 @@ for (const variant of ["module", "lesson", "rich lesson"]) {
   });
 }
 
-for (const ready of [true, false]) {
-  test(`scoped authoring acknowledges ${ready ? "ready publication and readback" : "not-ready publication review without a write"}`, async t => {
+for (const [ready, republish, name] of [
+  [true, false, "ready publication and readback"],
+  [false, false, "not-ready publication review without a write"],
+  [true, true, "paid republish with separately scoped draft and publish writes"],
+  [false, true, "blocked paid republish that retains the draft"],
+]) {
+  test(`scoped authoring acknowledges ${name}`, async t => {
     const courseId = "20000000-0000-4000-8000-000000000001";
     const moduleId = "20000000-0000-4000-8000-000000000002";
     const lessonId = "20000000-0000-4000-8000-000000000003";
@@ -952,24 +957,29 @@ for (const ready of [true, false]) {
     const detail = `/course/v1/admin/courses/${courseId}`;
     const readiness = `${detail}/publication-readiness`;
     const revision = 7;
-    const patchBody = JSON.stringify({ expectedRevision: revision, status: "published" });
+    const draftRevision = revision + Number(republish);
+    const draftBody = JSON.stringify({ expectedRevision: revision, status: "draft" });
+    const patchBody = JSON.stringify({ expectedRevision: draftRevision, status: "published" });
+    const readinessIndex = republish ? 2 : 1;
     const requests = [
-      { method: "GET", target: detail, bodySha256: certificationHash(""), uses: ready ? 2 : 1 },
+      { method: "GET", target: detail, bodySha256: certificationHash(""), uses: (ready ? 2 : 1) + Number(republish) },
+      ...(republish ? [{ method: "PATCH", target: detail, bodySha256: certificationHash(draftBody), uses: 1 }] : []),
       { method: "GET", target: readiness, bodySha256: certificationHash(""), uses: 1 },
       ...(ready ? [{ method: "PATCH", target: detail, bodySha256: certificationHash(patchBody), uses: 1 }] : []),
     ];
     const blocks = ready ? [{ _type: "block", _key: "owned-block", style: "normal", markDefs: [],
       children: [{ _type: "span", _key: "owned-span", text: "Owned publication fixture content", marks: [] }] }] : [];
     const courseResponse = (status, courseRevision) => ({ course: { id: courseId, title: "P2Q publication draft", slug: "p2q-publication-draft",
-      description: null, introduction: null, currency: "CAD", accessMode: "free", priceCents: 0, cover: null, seo: { noIndex: false },
-      taxClassification: ready ? "p2q-reviewed-tax-fixture" : null, status, revision: courseRevision,
+      description: null, introduction: null, currency: "CAD", accessMode: republish ? "paid" : "free", priceCents: republish ? 3900 : 0,
+      cover: null, seo: { noIndex: false }, taxClassification: ready || republish ? "p2q-reviewed-tax-fixture" : null, status, revision: courseRevision,
       modules: [{ id: moduleId, courseId, title: "Publication module", slug: "publication-module", description: null, position: 1,
         archivedAt: null, courseRevision, lessons: [{ id: lessonId, moduleId, title: "Publication lesson", slug: "publication-lesson", content: null,
           contentDocument: { version: 1, blocks }, transcript: null, captions: [], isPreview: false, position: 1, archivedAt: null, courseRevision }] }],
     } });
-    const before = courseResponse("draft", revision), published = courseResponse("published", revision + 1);
-    const readinessResponse = { courseId, courseRevision: revision, ready, issues: ready ? [] : [
-      { code: "TAX_CLASSIFICATION_REQUIRED", field: "taxClassification", message: "Record the reviewed tax classification before publication." },
+    const before = courseResponse(republish ? "archived" : "draft", revision);
+    const draft = courseResponse("draft", draftRevision), published = courseResponse("published", draftRevision + 1);
+    const readinessResponse = { courseId, courseRevision: draftRevision, ready, issues: ready ? [] : [
+      ...(!republish ? [{ code: "TAX_CLASSIFICATION_REQUIRED", field: "taxClassification", message: "Record the reviewed tax classification before publication." }] : []),
       { code: "LESSON_CONTENT_REQUIRED", field: "contentDocument", message: "Provide nonempty lesson content, a valid quiz, or ready video.", lessonId },
     ] };
     const forwarded = [];
@@ -977,9 +987,13 @@ for (const ready of [true, false]) {
     const f = await interactiveFixture(t, requests, async (req, res) => {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
-      forwarded.push({ method: req.method, target: req.url, body: Buffer.concat(chunks).toString(),
+      const body = Buffer.concat(chunks).toString();
+      forwarded.push({ method: req.method, target: req.url, body,
         requestId: req.headers["x-request-id"], proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
-      if (req.method === "PATCH") current = published;
+      if (req.method === "PATCH") {
+        const { expectedRevision, status } = JSON.parse(body);
+        current = courseResponse(status, expectedRevision + 1);
+      }
       res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       res.end(JSON.stringify(req.url === readiness.slice("/course".length) ? readinessResponse : current));
     }, "authoring");
@@ -989,13 +1003,15 @@ for (const ready of [true, false]) {
       f.signed({ method: "PATCH", path: detail, body: patchBody, actor: foreignId }),
       f.signed({ path: `/course/v1/admin/courses/${foreignId}/publication-readiness` }),
       patch(patchBody, `/course/v1/admin/courses/${foreignId}`), patch(JSON.stringify({ expectedRevision: revision, status: "archived" })),
-      patch(JSON.stringify({ expectedRevision: revision + 1, status: "published" }))];
+      patch(JSON.stringify({ expectedRevision: republish ? revision : revision + 1, status: "published" }))];
+    if (republish) denied.push(patch(JSON.stringify({ expectedRevision: draftRevision, status: "draft" })));
     if (!ready) denied.push(patch());
     for (const input of denied) assert.equal((await f.send(input)).status, 503);
     const steps = [
       { input: f.signed({ path: detail }), requestIndex: 0, value: before },
-      { input: f.signed({ path: readiness }), requestIndex: 1, value: readinessResponse },
-      ...(ready ? [{ input: patch(), requestIndex: 2, value: published }, { input: f.signed({ path: detail }), requestIndex: 0, value: published }] : []),
+      ...(republish ? [{ input: patch(draftBody), requestIndex: 1, value: draft }, { input: f.signed({ path: detail }), requestIndex: 0, value: draft }] : []),
+      { input: f.signed({ path: readiness }), requestIndex: readinessIndex, value: readinessResponse },
+      ...(ready ? [{ input: patch(), requestIndex: readinessIndex + 1, value: published }, { input: f.signed({ path: detail }), requestIndex: 0, value: published }] : []),
     ];
     const acknowledged = [];
     for (const { input, requestIndex, value } of steps) {
@@ -1007,11 +1023,12 @@ for (const ready of [true, false]) {
       assert.notEqual(requestId, proofRequestId);
       acknowledged.push({ requestId, proofRequestId, requestIndex, upstreamStatus: 200 });
       assert.equal((await f.send(input)).status, 503);
+      if (republish && requestIndex === 1) assert.equal((await f.send(patch(draftBody))).status, 503);
     }
     for (const input of [f.signed({ path: detail }), f.signed({ path: readiness }), patch()]) {
       assert.equal((await f.send(input)).status, 503);
     }
-    assert.deepEqual(current, ready ? published : before);
+    assert.deepEqual(current, ready ? published : draft);
     assert.equal(new Set(acknowledged.map(row => row.requestId)).size, steps.length);
     assert.equal(new Set(acknowledged.map(row => row.proofRequestId)).size, steps.length);
     assert.deepEqual(forwarded, steps.map(({ input }, index) => ({ method: input.method, target: input.path.slice("/course".length),
