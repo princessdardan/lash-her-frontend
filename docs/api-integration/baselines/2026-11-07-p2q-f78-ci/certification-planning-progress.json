@@ -650,5 +650,67 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveKnownCustomerIdentityBootstrap": {
+    "frontendSourceCommit": "48dfe0c28c0b0b5ec78c8843082862f392dadf74",
+    "frontendUnitNode24": {
+      "sourcePassed": 2528,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "4f387e2632cccb77f39afddbaf8ba530adeaf4d5f45b6f450692399d6902a68b"
+    },
+    "certificationPlatformNode24": {
+      "passed": 62,
+      "failed": 0,
+      "skipped": 0,
+      "ownedChromiumCases": 5,
+      "sameBrowserContextSignInAndLifecyclePermitRotation": true,
+      "pythonAndNodePermitVectorsMatched": true,
+      "logSha256": "c5f7dc657cb3ab8b06ac731f10d419d449cb3761172656628e856bb1268a734b"
+    },
+    "host": {
+      "passed": 116,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "b7ab76a84723ff8d7409be1688a82e07936b5fd540811fa814b22d16bed98af1"
+    },
+    "disposablePostgresIdentity": {
+      "serverMajor": 16,
+      "migrations": 83,
+      "actualTls": true,
+      "admissionChecks": 14,
+      "identityAndLifecycleChecks": 45,
+      "databaseRegressions": 37,
+      "actualAuthJsAndNextRouteExports": true,
+      "syntheticProviderResponses": true,
+      "foreignSessionAndProofRowsPreserved": true,
+      "selectedGoogleAndResendSessionsVerified": true,
+      "closedDrainedLedgerVerified": true,
+      "applicationSourceManifestSha256": "b9e734f08ccc85646b4e7b0bb3d0c80a4f70c4b40097b7e64450f8e60a3bfc0b",
+      "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+      "logSha256": "3f06b962928bbf96f63e25ee87abd58f09debce0f6495e1744ade1aabc9242a2"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42743168,
+      "expandedBytes": 57070443,
+      "wireBytes": 18573075,
+      "wireSha256": "e8eef7e2be4cdea50828d48345384c0046374ae62a6ac06e97bc365807f7b943",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "knownCustomerIdentityAndLifecycleOperatorPairImplemented": true,
+    "nativePlanSourcePolicyPinsVerified": 22,
+    "customerPreWriteIdentityBindingImplemented": true,
+    "firstTimeCustomerIdentityCertificationPathImplemented": false,
+    "actualGoogleOrResendSignInVerified": false,
+    "installedStagingHostVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
