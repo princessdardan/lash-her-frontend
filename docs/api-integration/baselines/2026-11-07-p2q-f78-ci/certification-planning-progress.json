@@ -2062,5 +2062,131 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveOwnerPaidRevocation": {
+    "frontendSourceCommit": "588c91fd4fe22921e9d4450fcdbc5af31a5ea6ca",
+    "frontendImplementationCommit": "42dcf844f051f83ebaf55aa2afb8c543086d2620",
+    "initialBrowserFinding": {
+      "finding": "Development reload cleared the visible first receipt before the fixture started the next form action.",
+      "logSha256": "3436c42ef79db4eab0f98304fd85ec74d098c831e6fdee48709993ae89b7eeef"
+    },
+    "courseExpiryPredicateCorrection": {
+      "sourceCommit": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+      "baselineCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "verifiedPaths": [
+        "owner-grant-revoke",
+        "internal-entitlement",
+        "community-stream-projection"
+      ],
+      "node24VerifyTests": 716,
+      "verifyLogSha256": "44c182474983f670747ed2f116518bc3be4b76d2333c9ca7e5889f84b533428a",
+      "postgres16RegressionsPassed": 3,
+      "originalSourceExpectedFailures": 3,
+      "postgresRedGreenLogSha256": "18aba677dc5b448fab7e163cb794010614a85286bc709a9207aa8ab48bb81c59",
+      "exactSourceRequiredBeforeRevocation": true
+    },
+    "normalOwnerAndLearnerBrowser": {
+      "passed": 9,
+      "failed": 0,
+      "courseSourceCommit": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "normalOwnerExactGrantForm": true,
+      "independentGrantPreservedAndLastEffectiveGrantDenied": true,
+      "lostAcknowledgementReconciledWithoutRetry": true,
+      "revocationCorrelatedToImmutableCourseCommand": true,
+      "gatewayWorkloadVerification": "fixture",
+      "evidenceSha256": "5faa733d752bb6820cbe31bee823c14c49a1714c4955317279dc4cea3ea27078",
+      "outcomeSha256": "36fa7683929a02e46610ca4629f18a8f3e3ee5d0bac19c8b6f976459d35cb728",
+      "logSha256": "2097dd4d1c8bc574ec05ac0ea08b83b62819fa142411427aa47675847df48ed7"
+    },
+    "frontendUnitNode24": {
+      "passed": 2607,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "0a07bacfc420d070c4993746b47f3def6d9553419762536bc40e04f16a80be52"
+    },
+    "certificationPlatformNode24": {
+      "passed": 194,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "4291ec1a212015de3030f5ad58bbf57d79ea2963a0cb83e74bb59eb94ba2241b",
+      "ownerConfirmationAndExactGrantReceiptVerified": true,
+      "nodeAndPythonPlanAndPermitAgree": true,
+      "acknowledgementIndexes": [
+        0,
+        1,
+        0,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    "host": {
+      "passed": 148,
+      "failed": 0,
+      "logSha256": "17bda6f0e3366e8f9d3f40b4710c4f661dcf0f170a0c1dc8579595408fed5629"
+    },
+    "loopbackGateway": {
+      "passed": 90,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "022370b5259632682fa2a0d9e2a8ca90f7779a027f27fc5a8e81e8b59eb99e03",
+      "exactGrantIdScopeVerified": true,
+      "broadRevocationAndForeignActorRefused": true
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "588c91fd4fe22921e9d4450fcdbc5af31a5ea6ca",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "courseRevokeSourceCommit": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+      "originalBaselineRefusalEvidenceSha256": "6bcf204b42ec05ae3635ff23e554331334db374ea37cb116e673bd6a330a1216",
+      "heldLifecycleAndAuthoringWitnessChecks": 39,
+      "actualPinnedCourseRevocationRepository": true,
+      "independentGrantAccessAndHistoricalRowsPreserved": true,
+      "pendingCanonicalTransitionOnlyAfterLastEffectiveGrant": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "71ca4f581bf0f5acb4b466dd50668a1325e115159fd179a3c40ed9e4bd2e9d94",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "eab906e0d55f38bdd9800b98f9f1934e27ada57a5b9c9de8d77efb98b1730655"
+      },
+      "logSha256": "93140e637f3bb02b4c5fbdb553df55b4f94e0cd608f9e9ca0c8cc1482a855704"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43537552,
+      "expandedBytes": 58129603,
+      "wireBytes": 18893579,
+      "wireSha256": "589f01a89fe6e6463ef26060491f9f1ec574fe1ed2edf715d8a9423402382dd8",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "c040ddab7a0dcef6ffcecf7699fa60e49d0680c032258157350c40c891c0027a"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "3c76ff497cdbe477dbda858435019e0cf151997b0c76344d4861d6f13444eaef",
+    "guardedOwnerPaidRevocationActionImplemented": true,
+    "actualDeployedPaidRevocationVerified": false,
+    "communityReceiverVerified": false,
+    "exactPublishedCiQualified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
