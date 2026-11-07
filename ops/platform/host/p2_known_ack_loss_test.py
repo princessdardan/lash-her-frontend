@@ -503,20 +503,6 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
             return value
         self.gateway_read.side_effect=gateway
 
-        def stop_observed(initial,_selected,output,*_args,expected_profile):
-            self.assertEqual(expected_profile,self.profile)
-            value={**self.fields,'protocol':prior.PROTOCOL,'sourceModuleSha256':prior._source_sha256(),
-                'status':'PRIOR_GATEWAY_PRESTOP_OBSERVED','actionId':initial['recoveryActionId'],
-                'candidateSha256':initial['candidateSha256'],'observation':gateway(expected_profile=expected_profile)}
-            migrate.write_json(output,prior.BEFORE_STOP,value);return value
-
-        def stopped_observed(initial,_selected,*_args,expected_profile):
-            self.assertEqual(expected_profile,self.profile)
-            ref=initial['priorGatewayReference'];pointer=prior._read_lineage()
-            self.assertFalse(self.model['gateway'][0]['State']['Running'])
-            self.assertEqual((pointer['state'],pointer['stopReceiptSha256']),('stopped-observed',ref['stopReceiptSha256']))
-            return gateway(expected_profile=expected_profile)
-
         def run(args,**kwargs):
             self.scope.verify();self.calls.append(args)
             if args[1:3]==['rm','--force'] or args[1:3]==['container','ls'] and any('name=^/' in arg for arg in args):
@@ -541,8 +527,10 @@ class ProfiledKnownAckSourceTests(unittest.TestCase):
             return subprocess.CompletedProcess(args,0,stdout=raw if kwargs.get('text') else raw.encode(),stderr='' if kwargs.get('text') else b'')
 
         for projection in (patch.object(self.scope,'run',side_effect=run),patch.object(prior,'ROOT',source.ROOT),
-                patch.object(prior,'capture_before_stop',side_effect=stop_observed),
-                patch.object(prior,'observe_stopped_prior_gateway',side_effect=stopped_observed),
+                patch.object(prior,'_inventory',side_effect=lambda *_:[self.model['gateway'][0]['Id']]),
+                patch.object(prior,'_mounted_configuration',return_value=self.configuration),
+                patch.object(prior,'_reference',return_value=self.gateway['binding']),
+                patch.object(prior,'_close',side_effect=lambda *args,**options:gateway(expected_profile=options['expected_profile'])),
                 patch.object(prior,'_process',side_effect=lambda *_:source.KnownAckLossBoundary._public_process(self.model['gateway'][0])),
                 patch.object(source.runtime,'preflight')):
             projection.start();self.addCleanup(projection.stop)
