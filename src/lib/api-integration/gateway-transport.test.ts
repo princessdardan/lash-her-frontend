@@ -163,11 +163,19 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   await inBrowser(edit.cookie, edit.proxyProof, () => send({
     method: "PATCH", path: editPath, body: editBody, applicationToken: "owned.admin.jwt",
   }), editRoute);
+  const reorderPath = editPath + "/modules/reorder";
+  const reorderRoute = `POST /api/admin/courses/12345678-1234-4123-8123-123456789abc/modules/reorder`;
+  const reorder = evidence("authoring", reorderRoute, issued, "7032712d617574682d736f72742d76318e2280dc03894248b21cf87427f9e85c");
+  const reorderBody = '{"expectedCourseRevision":2,"ids":["8e2280dc-0389-4248-b21c-f87427f9e85c","12345678-1234-4123-8123-123456789abc"]}';
+  await inBrowser(reorder.cookie, reorder.proxyProof, () => send({
+    method: "POST", path: reorderPath, body: reorderBody, applicationToken: "owned.admin.jwt",
+  }), reorderRoute);
   const expected = [
     { stage: "learning", method: "GET", target: "/course/v1/student/courses?cursor=caf%C3%A9&kind=%27", bytes: ["", applicationToken, ""] },
     { stage: "paid-grant", method: "POST", target: "/course/v1/admin/entitlements/grants", bytes: [body, "owned.admin.jwt", idempotencyKey] },
     { stage: "authoring", method: "POST", target: "/course/v1/admin/courses", bytes: [draftBody, "owned.admin.jwt", ""] },
     { stage: "authoring", method: "PATCH", target: "/course" + editPath, bytes: [editBody, "owned.admin.jwt", ""] },
+    { stage: "authoring", method: "POST", target: "/course" + reorderPath, bytes: [reorderBody, "owned.admin.jwt", ""] },
   ];
   for (const [index, { stage, method, target, bytes }] of expected.entries()) {
     const { url, headers } = captured[index];
@@ -205,6 +213,6 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   process.env.VERCEL_URL = deployment;
   process.env.API_GATEWAY_STAGING_ORIGIN = "https://different.example.test";
   await inBrowser(learning.cookie, learning.proxyProof, request);
-  assert.equal(captured.length, 15);
-  assert.ok(captured.slice(4).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
+  assert.equal(captured.length, 16);
+  assert.ok(captured.slice(5).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
 });

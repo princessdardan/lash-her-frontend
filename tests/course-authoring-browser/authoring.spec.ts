@@ -357,6 +357,100 @@ test("customer-facing authoring routes isolate unauthenticated and non-editor st
   }
 });
 
+test("two owner tabs submit complete module and lesson orders by keyboard and reject stale revisions", async ({
+  browser,
+  baseURL,
+}) => {
+  if (!storagePath || !baseURL) throw new Error("Owned browser fixture required");
+  const states = JSON.parse(await readFile(storagePath, "utf8"));
+  const context = await ownedContext(browser, states.owner);
+  const headers = { origin: baseURL, "x-lash-csrf": "1" };
+  try {
+    const created = await context.request.post("/api/admin/courses", {
+      headers,
+      data: { title: "Two-tab curriculum", slug: "owned-two-tab-curriculum", status: "draft" },
+    });
+    expect(created.status()).toBe(200);
+    const courseId: string = (await created.json()).course.id;
+    const detail = `/api/admin/courses/${courseId}`;
+    let revision = 1;
+    const moduleIds: string[] = [];
+    const lessonIds: string[] = [];
+    for (const [index, name] of ["Alpha", "Beta", "Gamma"].entries()) {
+      const response = await context.request.post(`${detail}/modules`, {
+        headers,
+        data: { title: `Module ${name}`, slug: `module-${name.toLowerCase()}`,
+          expectedCourseRevision: revision, position: index + 1 },
+      });
+      expect(response.status()).toBe(200);
+      moduleIds.push((await response.json()).module.id);
+      revision++;
+    }
+    for (const [index, name] of ["Alpha", "Beta", "Gamma"].entries()) {
+      const response = await context.request.post(`/api/admin/modules/${moduleIds[0]}/lessons`, {
+        headers,
+        data: { title: `Lesson ${name}`, slug: `lesson-${name.toLowerCase()}`,
+          expectedCourseRevision: revision, position: index + 1,
+          contentDocument: { version: 1, blocks: [{ _type: "block", _key: "b",
+            children: [{ _type: "span", _key: "s", text: "Owned curriculum fixture" }] }] } },
+      });
+      expect(response.status()).toBe(200);
+      lessonIds.push((await response.json()).lesson.id);
+      revision++;
+    }
+    for (const path of [`/api/admin/modules/${moduleIds[2]}`, `/api/admin/lessons/${lessonIds[2]}`]) {
+      const response = await context.request.patch(path, {
+        headers,
+        data: { expectedCourseRevision: revision, archived: true },
+      });
+      expect(response.status()).toBe(200);
+      revision++;
+    }
+
+    const winner = await context.newPage();
+    const stale = await context.newPage();
+    for (const kind of ["module", "lesson"] as const) {
+      const path = kind === "module" ? `${detail}/modules/reorder` : `/api/admin/modules/${moduleIds[0]}/lessons/reorder`;
+      const label = kind === "module" ? "Module" : "Lesson";
+      const [first, second, archived] = kind === "module" ? moduleIds : lessonIds;
+      await Promise.all([winner.goto(`/admin/courses/${courseId}`), stale.goto(`/admin/courses/${courseId}`)]);
+      const press = async (tab: typeof winner, name: string, key: "Enter" | "Space") => {
+        const button = tab.getByRole("button", { name, exact: true });
+        await expect(button).toBeEnabled();
+        const pending = tab.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === path);
+        await button.focus();
+        await tab.keyboard.press(key);
+        return pending;
+      };
+      const saved = await press(winner, `Move ${kind} ${label} Beta up`, "Enter");
+      expect(saved.status()).toBe(200);
+      expect(saved.request().postDataJSON()).toEqual({ expectedCourseRevision: revision, ids: [second, first, archived] });
+      await expect(winner.getByText("Curriculum order saved.", { exact: true })).toBeVisible();
+      const reply = await saved.json();
+      expect(Object.keys(reply)).toEqual([kind === "module" ? "course" : "module"]);
+      expect(kind === "module" ? reply.course.revision : reply.module.courseRevision).toBe(revision + 1);
+      const rejected = await press(stale, `Move ${kind} ${label} Beta down`, "Space");
+      expect(rejected.status()).toBe(409);
+      expect(rejected.request().postDataJSON()).toEqual({ expectedCourseRevision: revision, ids: [first, archived, second] });
+      const requestId = await rejected.headerValue("x-request-id");
+      expect(requestId).toMatch(/^[a-f0-9-]{36}$/u);
+      const conflict = `This course changed or is not ready for this operation. Reload before trying again. Reference: ${requestId}`;
+      await expect(stale.getByRole("alert").getByText(conflict, { exact: true })).toBeVisible();
+
+      const { course } = await (await context.request.get(detail)).json();
+      revision++;
+      expect(course.revision).toBe(revision);
+      const siblings = kind === "module" ? course.modules : course.modules.find((module: { id: string }) => module.id === moduleIds[0]).lessons;
+      expect(siblings.map(({ id, position }: { id: string; position: number }) => [id, position])).toEqual([
+        [second, 1], [first, 2], [archived, 3],
+      ]);
+      expect(siblings[2].archivedAt).toBeTruthy();
+    }
+  } finally {
+    await context.close().catch(() => {});
+  }
+});
+
 test("keyboard ordering, archival identity and dirty-editor cancellation remain consistent", async ({
   browser,
   baseURL,

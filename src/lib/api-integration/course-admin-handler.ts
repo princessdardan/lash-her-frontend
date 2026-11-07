@@ -5,10 +5,12 @@ import { readSameOriginJson } from "./same-origin-json";
 import { integrationErrorResponse, IntegrationServiceError, safeIntegrationRequestId } from "./service-errors";
 import { runCourseAdminOperation } from "./course-admin-operation";
 import { isIntegrationFeatureEnabled } from "./rollout-flags";
+import { validateCandidateRequest } from "./candidate-validation";
 import { currentWriterAuthoringActorId } from "@/lib/writer-admission/context";
 import type { WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 
 type Client = ReturnType<typeof createCourseClient>;
+type ReorderInput = Parameters<Client["reorderModules"]>[1];
 export type CourseAdminOperation = "list-courses" | "get-course" | "create-course" | "update-course" | "create-module" | "update-module" | "reorder-modules" | "create-lesson" | "update-lesson" | "reorder-lessons" | "create-video-upload" | "get-quiz" | "update-quiz" | "video-status" | "refresh-video" | "add-caption" | "delete-caption" | "publication-readiness";
 const methods: Record<CourseAdminOperation, string> = {
   "list-courses": "GET", "get-course": "GET", "create-course": "POST", "update-course": "PATCH", "create-module": "POST", "update-module": "PATCH",
@@ -18,6 +20,14 @@ const methods: Record<CourseAdminOperation, string> = {
 const parameter: Record<CourseAdminOperation, string[]> = { "list-courses": [], "get-course": ["courseId"], "create-course": [], "update-course": ["courseId"], "create-module": ["courseId"],
   "update-module": ["moduleId"], "reorder-modules": ["courseId"], "create-lesson": ["moduleId"], "update-lesson": ["lessonId"], "reorder-lessons": ["moduleId"], "create-video-upload": ["lessonId"],
   "get-quiz": ["lessonId"], "update-quiz": ["lessonId"], "video-status": ["lessonId"], "refresh-video": ["lessonId", "videoAssetId"], "add-caption": ["lessonId", "videoAssetId"], "delete-caption": ["lessonId", "videoAssetId", "trackId"], "publication-readiness": ["courseId"] };
+const canonicalReorderId = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
+
+function validateScopedReorder(path: "/v1/admin/courses/{courseId}/modules/reorder" | "/v1/admin/modules/{moduleId}/lessons/reorder",
+  params: Record<string, string>, body: ReorderInput): void {
+  if (!currentWriterAuthoringActorId()) return;
+  validateCandidateRequest("course", path, "post", { params, body });
+  if (body.ids.length < 2 || body.ids.some(id => !canonicalReorderId.test(id))) throw new IntegrationServiceError("invalid_request", 400);
+}
 
 export function createCourseAdminHandler(operation: CourseAdminOperation, dependencies: { client?: () => Client; origin?: () => string | undefined; run?: WriterAdmissionRunner; enabled?: () => boolean } = {}) {
   return async (request: Request, params: Record<string, string> = {}): Promise<Response> => {
@@ -59,10 +69,20 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
             }
             case "create-module": result = await course.createModule(params.courseId, body as Parameters<Client["createModule"]>[1]); break;
             case "update-module": result = await course.updateModule(params.moduleId, body as Parameters<Client["updateModule"]>[1]); break;
-            case "reorder-modules": result = await course.reorderModules(params.courseId, body as Parameters<Client["reorderModules"]>[1]); break;
+            case "reorder-modules": {
+              const input = body as ReorderInput;
+              validateScopedReorder("/v1/admin/courses/{courseId}/modules/reorder", params, input);
+              result = await course.reorderModules(params.courseId, input);
+              break;
+            }
             case "create-lesson": result = await course.createLesson(params.moduleId, body as Parameters<Client["createLesson"]>[1]); break;
             case "update-lesson": result = await course.updateLesson(params.lessonId, body as Parameters<Client["updateLesson"]>[1]); break;
-            case "reorder-lessons": result = await course.reorderLessons(params.moduleId, body as Parameters<Client["reorderLessons"]>[1]); break;
+            case "reorder-lessons": {
+              const input = body as ReorderInput;
+              validateScopedReorder("/v1/admin/modules/{moduleId}/lessons/reorder", params, input);
+              result = await course.reorderLessons(params.moduleId, input);
+              break;
+            }
             case "create-video-upload": result = await course.createVideoUpload(params.lessonId, body as Parameters<Client["createVideoUpload"]>[1]); break;
             case "get-quiz": result = await course.getAdminQuiz(params.lessonId); break;
             case "update-quiz": result = await course.updateQuiz(params.lessonId, body as Parameters<Client["updateQuiz"]>[1]); break;

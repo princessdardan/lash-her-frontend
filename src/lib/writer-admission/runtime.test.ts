@@ -170,7 +170,7 @@ test("interactive browser proof binds its exact stage, request, deployment, epoc
   assert.equal(JSON.stringify(f.calls).includes(selectedCustomerId), false);
 });
 
-test("authoring binds the exact owner UUID and disjoint draft routes, then clears its actor after admission", async () => {
+test("authoring binds the exact owner UUID and operation routes, then clears its actor after admission", async () => {
   const now = 1_794_009_600;
   const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
   const authoringActorId = "8e2280dc-0389-4248-b21c-f87427f9e85c";
@@ -183,6 +183,7 @@ test("authoring binds the exact owner UUID and disjoint draft routes, then clear
   };
   const cookie = issue("authoring", prefix + authoringActorId.replaceAll("-", ""));
   const editCookie = issue("authoring", "7032712d617574682d656469742d7631" + authoringActorId.replaceAll("-", ""));
+  const reorderCookie = issue("authoring", "7032712d617574682d736f72742d7631" + authoringActorId.replaceAll("-", ""));
   const attest = (method: string, path: string, permit = cookie) =>
     attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, cookie: permit }, env, now);
   const proof = attest("POST", "/api/admin/courses")!;
@@ -196,6 +197,8 @@ test("authoring binds the exact owner UUID and disjoint draft routes, then clear
   }
   const courseDetail = `/admin/courses/${authoringActorId}`;
   const courseApi = "/api" + courseDetail;
+  const moduleReorder = `${courseApi}/modules/reorder`;
+  const lessonReorder = `/api/admin/modules/${authoringActorId}/lessons/reorder`;
   for (const [method, path] of [["GET", courseDetail], ["GET", "/api/admin/courses"], ["POST", "/admin/courses"], ["PATCH", "/api" + courseDetail]]) {
     assert.equal(attest(method, path), null);
   }
@@ -208,6 +211,18 @@ test("authoring binds the exact owner UUID and disjoint draft routes, then clear
     ["PATCH", courseDetail], ["POST", courseApi + "/modules"], ["GET", "/admin/courses/noncanonical-id"], ["PATCH", courseApi.toUpperCase()]]) {
     assert.equal(attest(method, path, editCookie), null);
   }
+  for (const [method, path] of [["GET", courseDetail], ["GET", courseApi], ["POST", moduleReorder], ["POST", lessonReorder]]) {
+    const reorderProof = attest(method, path, reorderCookie)!;
+    assert.equal(readInteractiveRequest(reorderProof, reorderCookie, env, now)?.authoringActorId, authoringActorId);
+    assert.equal(readInteractiveRequest(reorderProof, editCookie, env, now), null);
+    assert.equal(readInteractiveRequest(reorderProof, cookie, env, now), null);
+  }
+  for (const [method, path] of [["GET", "/admin/courses"], ["POST", "/api/admin/courses"], ["PATCH", courseApi],
+    ["POST", courseApi + "/modules"], ["GET", moduleReorder], ["POST", lessonReorder + "/"], ["POST", moduleReorder.toUpperCase()]]) {
+    assert.equal(attest(method, path, reorderCookie), null);
+  }
+  assert.equal(attest("POST", moduleReorder, cookie), null);
+  assert.equal(attest("POST", moduleReorder, editCookie), null);
   assert.ok(attest("GET", courseDetail, issue("media")));
   const wrongRoute = `${now}.${Buffer.from(`GET ${courseDetail}`).toString("base64url")}`;
   const wrongMac = createHmac("sha256", env.CRON_SECRET)
@@ -215,7 +230,8 @@ test("authoring binds the exact owner UUID and disjoint draft routes, then clear
   assert.equal(readInteractiveRequest(`${wrongRoute}.${wrongMac}`, cookie, env, now), null);
 
   const editVerified = readInteractiveRequest(attest("PATCH", courseApi, editCookie)!, editCookie, env, now);
-  for (const accepted of [verified, editVerified]) {
+  const reorderVerified = readInteractiveRequest(attest("POST", moduleReorder, reorderCookie)!, reorderCookie, env, now);
+  for (const accepted of [verified, editVerified, reorderVerified]) {
     const f = fixture();
     f.state.epoch = "12";
     const run = createWriterAdmissionRunner({

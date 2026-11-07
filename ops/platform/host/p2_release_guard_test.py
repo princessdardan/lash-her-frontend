@@ -168,17 +168,22 @@ class IndependentGuardTests(unittest.TestCase):
             with self.subTest(stage=stage, actor_kind=actor_kind, provider=provider):
                 self.check_profiled_interactive_terminal(stage, actor_kind, provider)
         self.check_profiled_interactive_terminal('authoring', 'admin', None, editing=True)
+        for kind in ('module', 'lesson'):
+            with self.subTest(reorder_kind=kind):
+                self.check_profiled_interactive_terminal('authoring', 'admin', None, reorder_kind=kind)
 
-    def check_profiled_interactive_terminal(self, stage_name, actor_kind, provider, *, editing=False):
+    def check_profiled_interactive_terminal(self, stage_name, actor_kind, provider, *, editing=False, reorder_kind=None):
         import p2_interactive_window as window
         from p2_certification_parent import P2ProfiledCertificationBroker
 
-        initial, directory = self.profiled_certification(f'owned-{stage_name}-{"edit" if editing else provider or actor_kind}')
+        initial, directory = self.profiled_certification(
+            f'owned-{stage_name}-{"edit" if editing else reorder_kind or provider or actor_kind}')
         plan = initial['certificationPlan']
         ids = [f'10000000-0000-4000-8000-00000000000{index}' for index in range(1, 8)]
         actor, user, request, command, *ledger_ids = ids
         identity = stage_name == 'identity'
         authoring = stage_name == 'authoring'
+        paired = editing or reorder_kind is not None
         reviewed = {'actorKind': actor_kind, 'actorId': actor}
         selection = {'actorKind': actor_kind, 'userId': user, 'operation': 'delete'}
         action = {'stage': stage_name, 'actorId': None if identity else actor, 'requests': [], 'windowSeconds': 60}
@@ -187,7 +192,18 @@ class IndependentGuardTests(unittest.TestCase):
         elif identity:
             action['identityActor'] = reviewed
         elif authoring:
-            if editing:
+            if reorder_kind is not None:
+                parent = command if reorder_kind == 'module' else ledger_ids[0]
+                ordered_ids = [f'30000000-0000-4000-8000-{index:012d}'
+                               for index in range(1, (1001 if reorder_kind == 'lesson' else 4))]
+                action['authoringAction'] = {'operation': 'reorder-and-stale-curriculum', 'slug': 'owned-draft',
+                                             'courseId': command, 'revision': 3, 'kind': reorder_kind, 'parentId': parent}
+                resource = f'/admin/courses/{command}/modules/reorder' if reorder_kind == 'module' else f'/admin/modules/{parent}/lessons/reorder'
+                action['requests'] = [{'method': 'GET', 'target': f'/course/v1/admin/courses/{command}', 'bodySha256': window._EMPTY, 'uses': 3},
+                                      *[{'method': 'POST', 'target': f'/course/v1{resource}', 'uses': 1,
+                                         'bodySha256': supervisor._canonical_sha({'expectedCourseRevision': 3, 'ids': ids})}
+                                        for ids in (ordered_ids, list(reversed(ordered_ids)))]]
+            elif editing:
                 action['authoringAction'] = {'operation': 'edit-and-stale-draft', 'slug': 'owned-draft', 'courseId': command, 'revision': 3}
                 action['requests'] = [{'method': method, 'target': f'/course/v1/admin/courses/{command}',
                                        'bodySha256': digest, 'uses': uses}
@@ -226,15 +242,18 @@ class IndependentGuardTests(unittest.TestCase):
                 domain.update(provider=provider, providerLinkCount=1 if provider == 'google' else 0)
             browser_key, domain_key = 'browserIdentity', 'identityWitness'
         elif authoring:
-            draft = {'courseId': command, 'slug': 'owned-draft', 'revision': 4 if editing else 1, 'status': 'draft'}
+            draft = ({'courseId': command, 'parentId': parent, 'kind': reorder_kind, 'revision': 4, 'ids': ordered_ids}
+                     if reorder_kind is not None else
+                     {'courseId': command, 'slug': 'owned-draft', 'revision': 4 if editing else 1, 'status': 'draft'})
             domain = {**draft, 'readOnly': True}
             domain_key = 'courseWitness'
-            if editing:
-                detail = f'/api/admin/courses/{command}'
+            if paired:
+                detail, method = (f'/api{resource}', 'POST') if reorder_kind is not None else (f'/api/admin/courses/{command}', 'PATCH')
+                winner_extra = {'keyboardActivated': True} if reorder_kind is not None else {}
+                stale_extra = winner_extra or {'dirtyInputPreserved': True}
                 browser = {
-                    'winner': {'method': 'PATCH', 'pathname': detail, 'status': 200, 'requestId': request, 'body': draft},
-                    'stale': {'method': 'PATCH', 'pathname': detail, 'status': 409, 'requestId': user,
-                              'outcome': 'conflict', 'dirtyInputPreserved': True}}
+                    'winner': {'method': method, 'pathname': detail, 'status': 200, 'requestId': request, 'body': draft, **winner_extra},
+                    'stale': {'method': method, 'pathname': detail, 'status': 409, 'requestId': user, 'outcome': 'conflict', **stale_extra}}
                 browser_key = 'browserResponses'
                 acknowledgement_ids = [f'20000000-0000-4000-8000-{index:012d}' for index in range(1, 9)]
                 acknowledgements = [
@@ -300,8 +319,9 @@ class IndependentGuardTests(unittest.TestCase):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
         if authoring:
-            wrong = {**browser, 'winner': {**browser['winner'], 'requestId': user}} if editing else {**browser, 'requestId': user}
-            with self.assertRaisesRegex(ValueError, 'AUTHORING_BROWSER_RESPONSE_REQUIRED'):
+            wrong = {**browser, 'winner': {**browser['winner'], 'requestId': user}} if paired else {**browser, 'requestId': user}
+            response_error = 'AUTHORING_REORDER_RESPONSES_REQUIRED' if reorder_kind is not None else 'AUTHORING_BROWSER_RESPONSE_REQUIRED'
+            with self.assertRaisesRegex(ValueError, response_error):
                 broker.command({**envelope, 'operation': 'interactive-retain',
                                 'caseEvidence': {**evidence, browser_key: wrong}})
         if editing:
@@ -309,6 +329,17 @@ class IndependentGuardTests(unittest.TestCase):
                 with self.subTest(stale=change), self.assertRaisesRegex(ValueError, 'AUTHORING_STALE_RESPONSE_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, browser_key: {**browser, 'stale': {**browser['stale'], **change}}}})
+        if reorder_kind is not None:
+            for change in ({'requestId': request}, {'keyboardActivated': False}, {'outcome': 'other'}):
+                with self.subTest(stale=change), self.assertRaisesRegex(ValueError, 'AUTHORING_REORDER_RESPONSES_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain',
+                                    'caseEvidence': {**evidence, browser_key: {**browser, 'stale': {**browser['stale'], **change}}}})
+            for change, error in (({'ids': list(reversed(ordered_ids))}, 'ORDER_REFUSED'),
+                                  ({'ids': [ordered_ids[0]] * 3}, 'BODY_REQUIRED'),
+                                  ({'revision': 3}, 'BODY_REQUIRED'), ({'parentId': user}, 'BODY_REQUIRED')):
+                wrong = {**browser, 'winner': {**browser['winner'], 'body': {**draft, **change}}}
+                with self.subTest(winner=tuple(change)), self.assertRaisesRegex(ValueError, f'AUTHORING_REORDER_{error}'):
+                    broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
         with patch.object(stage, 'verify_gateway_fenced', side_effect=ValueError('P2_INTERACTIVE_FENCE_REQUIRED')):
             with self.assertRaisesRegex(ValueError, 'FENCE_REQUIRED'):
                 broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
@@ -327,8 +358,8 @@ class IndependentGuardTests(unittest.TestCase):
             self.assertEqual(case['browserIdentitySha256'], supervisor._canonical_sha(browser))
             self.assertEqual(case['identityWitnessSha256'], supervisor._canonical_sha(domain))
         if authoring:
-            if editing:
-                self.assertEqual(case['gatewayPatchRequestIds'], [request, user])
+            if paired:
+                self.assertEqual(case['gatewayPostRequestIds' if reorder_kind is not None else 'gatewayPatchRequestIds'], [request, user])
                 self.assertEqual(case['browserResponsesSha256'], supervisor._canonical_sha(browser))
             else:
                 self.assertEqual(case['gatewayPostRequestId'], request)
@@ -363,7 +394,7 @@ class IndependentGuardTests(unittest.TestCase):
             guard({**terminal, 'witnessSha256': '0' * 64})
         if authoring:
             bad = copy.deepcopy(gateway_artifact)
-            if editing:
+            if paired:
                 rows = bad['gatewayAcknowledgements']
                 rows[2], rows[4] = rows[4], rows[2]
             else:

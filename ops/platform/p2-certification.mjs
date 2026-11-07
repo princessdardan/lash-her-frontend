@@ -32,7 +32,8 @@ import {captureP2InteractiveIdentityBaseline,observeP2InteractiveIdentityCase,ca
   observeP2InteractiveEnrollmentCase,validateP2InteractiveEnrollmentEmail,
   captureP2InteractiveLifecycleBaseline,observeP2InteractiveLifecycleCase} from './p2-lifecycle-pending-probe.mjs';
 import {captureP2InteractiveCourseDraftBaseline,observeP2InteractiveCourseDraftCase,validateP2InteractiveCourseDraft,
-  captureP2InteractiveCourseDraftEditsBaseline,observeP2InteractiveCourseDraftEditsCase,validateP2InteractiveCourseDraftEdits} from './p2-lifecycle-persistence-probe.mjs';
+  captureP2InteractiveCourseDraftEditsBaseline,observeP2InteractiveCourseDraftEditsCase,validateP2InteractiveCourseDraftEdits,
+  captureP2InteractiveCourseReorderBaseline,observeP2InteractiveCourseReorderCase,validateP2InteractiveCourseReorder} from './p2-lifecycle-persistence-probe.mjs';
 import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,readP2LifecycleWorkerCronSecret,preflightP2DirectLifecycleWorker,
   invokeP2DirectLifecycleWorker,joinP2DirectLifecycleWorker,readP2DirectWorkerSourceArtifact} from './p2-lifecycle-worker-evidence.mjs';
 
@@ -55,11 +56,19 @@ const trackEvents=new Set(['video.asset.track.ready','video.asset.track.deleted'
 const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(value);
 const pairedBrowserStages=new Set(['lifecycle','authoring']);
 const emptyRequestSha256=rawHash(Buffer.alloc(0));
-const isDraftEdit=action=>action?.authoringAction?.operation==='edit-and-stale-draft';
-const courseDraftSelection=({authoringAction,requests})=>authoringAction.operation==='create-draft'
-  ?{slug:authoringAction.slug,bodySha256:requests[1].bodySha256}
-  :{courseId:authoringAction.courseId,slug:authoringAction.slug,revision:authoringAction.revision,
-    winnerBodySha256:requests[1].bodySha256,staleBodySha256:requests[2].bodySha256};
+const authoringCases=new Map([
+  ['create-draft',{field:'authoringDraft',paired:false,validate:validateP2InteractiveCourseDraft,
+    baseline:captureP2InteractiveCourseDraftBaseline,observe:observeP2InteractiveCourseDraftCase}],
+  ['edit-and-stale-draft',{field:'authoringDraftEdits',paired:true,validate:validateP2InteractiveCourseDraftEdits,
+    baseline:captureP2InteractiveCourseDraftEditsBaseline,observe:observeP2InteractiveCourseDraftEditsCase}],
+  ['reorder-and-stale-curriculum',{field:'authoringReorder',paired:true,validate:validateP2InteractiveCourseReorder,
+    baseline:captureP2InteractiveCourseReorderBaseline,observe:observeP2InteractiveCourseReorderCase}],
+]);
+function courseDraftSelection({authoringAction,requests}){
+  const {operation,...selection}=authoringAction;
+  return operation==='create-draft'?{...selection,bodySha256:requests[1].bodySha256}:
+    {...selection,winnerBodySha256:requests[1].bodySha256,staleBodySha256:requests[2].bodySha256};
+}
 export const P2_CERTIFICATION_READY_FILES=Object.freeze(['frontend-build-started.json','frontend-build-created.json','frontend-build-outcome.json',
   'frontend-workload-outcome.json','frontend-promotion-started.json','frontend-promotion-outcome.json']);
 
@@ -91,17 +100,20 @@ function interactiveActionValid(value){
       ['admin','customer'].includes(selected.actorKind)&&uuid(selected.actorId);
   }
   if(authoring){
-    const selected=value.authoringAction,edit=isDraftEdit(value),[read,...mutations]=value.requests;
-    if(!exactKeys(selected,edit?['operation','courseId','slug','revision']:['operation','slug'])||
+    const selected=value.authoringAction,configured=authoringCases.get(selected?.operation),[read,...mutations]=value.requests;
+    if(!configured)return false;
+    const {paired}=configured,reorder=selected.operation==='reorder-and-stale-curriculum';
+    if(!exactKeys(selected,['operation','slug',...(paired?['courseId','revision']:[]),...(reorder?['kind','parentId']:[])])||
        typeof selected.slug!=='string'||selected.slug.length>120||!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(selected.slug))return false;
-    if(edit){
-      if(!uuid(selected.courseId)||!Number.isInteger(selected.revision)||selected.revision<1||selected.revision>=2_147_483_647)return false;
-    }else if(selected.operation!=='create-draft')return false;
-    const base='/course/v1/admin/courses',target=edit?`${base}/${selected.courseId}`:base;
-    return isDeepStrictEqual(read,{method:'GET',target:edit?target:base+'?limit=100',bodySha256:emptyRequestSha256,uses:edit?3:1})&&
-      mutations.length===(edit?2:1)&&mutations.every(row=>exactKeys(row,['method','target','bodySha256','uses'])&&
-        row.method===(edit?'PATCH':'POST')&&row.target===target&&row.uses===1&&sha(row.bodySha256)&&row.bodySha256!==emptyRequestSha256)&&
-      (!edit||mutations[0].bodySha256!==mutations[1].bodySha256);
+    if(paired&&(!uuid(selected.courseId)||!Number.isInteger(selected.revision)||selected.revision<1||selected.revision>=2_147_483_647))return false;
+    if(reorder&&(!uuid(selected.parentId)||!['module','lesson'].includes(selected.kind)||
+      selected.kind==='module'&&selected.parentId!==selected.courseId))return false;
+    const base='/course/v1/admin/courses',detail=`${base}/${selected.courseId}`;
+    const target=reorder?(selected.kind==='module'?detail+'/modules/reorder':`/course/v1/admin/modules/${selected.parentId}/lessons/reorder`):paired?detail:base;
+    return isDeepStrictEqual(read,{method:'GET',target:paired?detail:base+'?limit=100',bodySha256:emptyRequestSha256,uses:paired?3:1})&&
+      mutations.length===(paired?2:1)&&mutations.every(row=>exactKeys(row,['method','target','bodySha256','uses'])&&
+        row.method===(paired&&!reorder?'PATCH':'POST')&&row.target===target&&row.uses===1&&sha(row.bodySha256)&&row.bodySha256!==emptyRequestSha256)&&
+      (!paired||mutations[0].bodySha256!==mutations[1].bodySha256);
   }
   if(!value.requests.length||value.requests.length>16)return false;
   const selected=new Set();
@@ -395,7 +407,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     plan.startState==='already-closed'&&plan.maximumSeconds===300&&plan.sourceCommit===plan.operatorSourceCommit&&
     /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
   const identity=action.stage==='identity',enrollment=identity&&action.identityEnrollment!==undefined,authoring=action.stage==='authoring';
-  const edit=authoring&&isDraftEdit(action);
+  const authoringCase=authoring?authoringCases.get(action.authoringAction.operation):undefined;
   if(authoring)demand(courseDraft?.job&&courseDraft.draft&&typeof courseDraft.readCourseDatabaseUrl==='function');
   const statusPrefix=`P2_INTERACTIVE_${action.stage.toUpperCase()}`;
   const expectedOpen=(BigInt(plan.initialEpoch)+1n).toString(),expectedClosed=(BigInt(plan.initialEpoch)+2n).toString();
@@ -415,8 +427,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     signal?.throwIfAborted();
     const prepared=await stage.prepare();
     demand(prepared.status===statusPrefix+'_PREPARED');
-    const baseline=edit?await captureP2InteractiveCourseDraftEditsBaseline(courseDraft.job,selection,courseDraft.draft,courseObservations):
-      authoring?await captureP2InteractiveCourseDraftBaseline(courseDraft.job,selection,courseDraft.draft,courseObservations):
+    const baseline=authoringCase?await authoringCase.baseline(courseDraft.job,selection,courseDraft.draft,courseObservations):
       enrollment?await captureP2InteractiveEnrollmentBaseline(client,target,selection,identityEnrollmentEmail,observations):
       identity?await captureP2InteractiveIdentityBaseline(client,target,selection,controllerChallenge,observations):
         await captureP2InteractiveLifecycleBaseline(client,target,selection,observations);
@@ -435,7 +446,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       const installed=await stage.installPermit();
       demand(installed.context===context&&installed.epoch===expectedOpen&&installed.stage===action.stage);
       await controller.open(context);
-      browserEvidence=edit?await controller.captureAuthoringResponses(context):authoring?await controller.captureAuthoringResponse(context):
+      browserEvidence=authoringCase?.paired?await controller.captureAuthoringResponses(context):authoring?await controller.captureAuthoringResponse(context):
         identity?await controller.captureIdentity(context,baseline.ownerSubjectSha256):
         await controller.captureLifecycleResponse(context);
       record(`p2-interactive-${action.stage}-browser.json`,browserEvidence);
@@ -465,13 +476,13 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       if(closureFailed)throw new Error(statusPrefix+'_CLOSURE_REQUIRES_REVIEW');
     }
     signal?.throwIfAborted();
-    const witness=edit?await observeP2InteractiveCourseDraftEditsCase(courseDraft.job,selection,baseline,browserEvidence.winner.body,courseObservations):
-      authoring?await observeP2InteractiveCourseDraftCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
+    const witness=authoringCase?await authoringCase.observe(courseDraft.job,selection,baseline,
+      authoringCase.paired?browserEvidence.winner.body:browserEvidence.body,courseObservations):
       enrollment?await observeP2InteractiveEnrollmentCase(client,target,selection,baseline,browserEvidence,observations):
       identity?await observeP2InteractiveIdentityCase(client,target,selection,baseline,browserEvidence,observations):
         await observeP2InteractiveLifecycleCase(client,target,selection,baseline,browserEvidence,observations);
     record(`p2-interactive-${action.stage}-witness.json`,witness);
-    const joined=await stage.retain(edit?{browserResponses:browserEvidence,courseWitness:witness}:
+    const joined=await stage.retain(authoringCase?.paired?{browserResponses:browserEvidence,courseWitness:witness}:
       authoring?{browserResponse:browserEvidence,courseWitness:witness}:
       identity?{browserIdentity:browserEvidence,identityWitness:witness}:{browserResponse:browserEvidence,lifecycleWitness:witness});
     demand(joined.status===statusPrefix+'_JOINED');
@@ -861,9 +872,8 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
     identityEnrollmentEmail=validateP2InteractiveEnrollmentEmail(enrollment,execution.identityEnrollmentEmail);
   }
   if(authoring){
-    const edit=isDraftEdit(plan.scopedAction),field=edit?'authoringDraftEdits':'authoringDraft';
+    const {field,validate}=authoringCases.get(plan.scopedAction.authoringAction.operation);
     demand(exactKeys(execution,[field]));
-    const validate=edit?validateP2InteractiveCourseDraftEdits:validateP2InteractiveCourseDraft;
     authoringDraft=validate(courseDraftSelection(plan.scopedAction),execution[field]);
   }
   demand(plan.mode!=='mux-callback-recovery'||original.migration.candidate.sources.course.commit===scopedMuxCourseSource);

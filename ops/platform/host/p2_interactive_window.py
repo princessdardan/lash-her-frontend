@@ -40,6 +40,7 @@ CLOSED_BROWSER_STAGES = frozenset(("identity", "lifecycle"))
 EXECUTABLE_BROWSER_STAGES = CLOSED_BROWSER_STAGES | {"authoring"}
 _CREATE_DRAFT = "create-draft"
 _EDIT_DRAFT = "edit-and-stale-draft"
+_REORDER_CURRICULUM = "reorder-and-stale-curriculum"
 _BROWSER_SOURCE = "ops/platform/p2-lifecycle-browser-recorder.mjs"
 _BROWSER_LAUNCHER = b"\nawait runP2LifecycleBrowserChild();\n"
 demand = migrate.demand
@@ -85,6 +86,11 @@ def _browser_stage(plan):
 
 def browser_artifact(plan, artifact):
     return f"p2-interactive-{_browser_stage(plan)}-{artifact}.json"
+
+
+def browser_evidence_limit(plan):
+    authoring = plan["scopedAction"].get("authoringAction", {})
+    return 96 * 1024 if authoring.get("operation") == _REORDER_CURRICULUM else 8192
 
 
 def browser_status(plan, disposition):
@@ -144,11 +150,17 @@ def browser_case_evidence(plan, evidence, *, gateway_artifact=None):
             "identityWitnessSha256": _receipt_sha(witness)}
 
 
+def _curriculum_reorder_path(action):
+    return (f'/admin/courses/{action["courseId"]}/modules/reorder' if action["kind"] == "module" else
+            f'/admin/modules/{action["parentId"]}/lessons/reorder')
+
+
 def _authoring_requests(action):
-    if action["operation"] == _EDIT_DRAFT:
-        path = f'/course/v1/admin/courses/{action["courseId"]}'
-        return (("GET", path, 3, 200), ("PATCH", path, 1, 200), ("PATCH", path, 1, 409))
-    return (("GET", "/course/v1/admin/courses?limit=100", 1, 200), ("POST", "/course/v1/admin/courses", 1, 201))
+    if action["operation"] == _CREATE_DRAFT:
+        return (("GET", "/course/v1/admin/courses?limit=100", 1, 200), ("POST", "/course/v1/admin/courses", 1, 201))
+    course = f'/course/v1/admin/courses/{action["courseId"]}'
+    method, target = ("POST", f"/course/v1{_curriculum_reorder_path(action)}") if action["operation"] == _REORDER_CURRICULUM else ("PATCH", course)
+    return (("GET", course, 3, 200), (method, target, 1, 200), (method, target, 1, 409))
 
 
 def authoring_gateway_receipt(plan, artifact):
@@ -178,12 +190,15 @@ def authoring_gateway_receipt(plan, artifact):
 
 def _authoring_case_evidence(plan, action, evidence, gateway_artifact):
     selected = action["authoringAction"]
+    reordering = selected["operation"] == _REORDER_CURRICULUM
     editing = selected["operation"] == _EDIT_DRAFT
-    browser_key = "browserResponses" if editing else "browserResponse"
+    browser_key = "browserResponses" if editing or reordering else "browserResponse"
     demand(_closed_fields(evidence, f"{browser_key} courseWitness"), "P2_INTERACTIVE_AUTHORING_EVIDENCE_REQUIRED")
     gateway = authoring_gateway_receipt(plan, gateway_artifact)
     mutations = [row["requestId"] for row in gateway["gatewayAcknowledgements"] if row["requestIndex"] > 0]
     response, witness = evidence[browser_key], evidence["courseWitness"]
+    if reordering:
+        return _curriculum_case_evidence(action, response, witness, gateway, mutations)
     browser = response
     pathname = "/api/admin/courses"
     method, revision = "POST", 1
@@ -212,6 +227,33 @@ def _authoring_case_evidence(plan, action, evidence, gateway_artifact):
     return {"operation": selected["operation"], "slug": selected["slug"], "actorId": action["actorId"],
             "courseId": body["courseId"], "courseWitnessSha256": _receipt_sha(witness),
             "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"], **observed}
+
+
+def _curriculum_case_evidence(action, response, witness, gateway, mutations):
+    selected = action["authoringAction"]
+    demand(_closed_fields(response, "winner stale"), "P2_INTERACTIVE_AUTHORING_EVIDENCE_REQUIRED")
+    winner, stale = response["winner"], response["stale"]
+    pathname = f"/api{_curriculum_reorder_path(selected)}"
+    common = "method pathname status requestId keyboardActivated"
+    demand(_closed_fields(winner, f"{common} body") and _closed_fields(stale, f"{common} outcome") and
+           all(item["method"] == "POST" and item["pathname"] == pathname and type(item["status"]) is int and
+               item["status"] == status and item["requestId"] == request_id and item["keyboardActivated"] is True
+               for item, status, request_id in zip((winner, stale), (200, 409), mutations)) and stale["outcome"] == "conflict",
+           "P2_INTERACTIVE_AUTHORING_REORDER_RESPONSES_REQUIRED")
+    body = winner["body"]
+    fields = "courseId parentId kind revision ids"
+    demand(_closed_fields(body, fields) and all(body[key] == selected[key] for key in ("courseId", "parentId", "kind")) and
+           type(body["revision"]) is int and body["revision"] == selected["revision"] + 1 and
+           type(body["ids"]) is list and 3 <= len(body["ids"]) <= 1000 and all(_matches(_UUID, value) for value in body["ids"]) and
+           len(set(body["ids"])) == len(body["ids"]), "P2_INTERACTIVE_AUTHORING_REORDER_BODY_REQUIRED")
+    winner_body = {"expectedCourseRevision": selected["revision"], "ids": body["ids"]}
+    demand(_receipt_sha(winner_body) == action["requests"][1]["bodySha256"], "P2_INTERACTIVE_AUTHORING_REORDER_ORDER_REFUSED")
+    demand(_closed_fields(witness, f"{fields} readOnly") and witness["readOnly"] is True and
+           type(witness["revision"]) is int and all(witness[key] == value for key, value in body.items()),
+           "P2_INTERACTIVE_AUTHORING_COURSE_WITNESS_REQUIRED")
+    return {**{key: selected[key] for key in ("operation", "courseId", "slug", "kind", "parentId")}, "actorId": action["actorId"],
+            "gatewayPostRequestIds": mutations, "browserResponsesSha256": _receipt_sha(response),
+            "courseWitnessSha256": _receipt_sha(witness), "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
 
 def _lifecycle_case_evidence(action, evidence):
@@ -340,14 +382,22 @@ def validate_interactive_action(action):
         selected.add(identity)
     if authoring:
         selected_authoring = action["authoringAction"]
-        editing = type(selected_authoring) is dict and selected_authoring.get("operation") == _EDIT_DRAFT
-        fields = "operation slug courseId revision" if editing else "operation slug"
-        demand(_closed_fields(selected_authoring, fields) and selected_authoring["operation"] in (_CREATE_DRAFT, _EDIT_DRAFT) and
+        operation = selected_authoring.get("operation") if type(selected_authoring) is dict else None
+        fields = "operation slug"
+        if operation in (_EDIT_DRAFT, _REORDER_CURRICULUM):
+            fields += " courseId revision"
+        if operation == _REORDER_CURRICULUM:
+            fields += " kind parentId"
+        demand(_closed_fields(selected_authoring, fields) and operation in (_CREATE_DRAFT, _EDIT_DRAFT, _REORDER_CURRICULUM) and
                _matches(_SLUG, selected_authoring["slug"]) and len(selected_authoring["slug"]) <= 120,
                "P2_INTERACTIVE_AUTHORING_DRAFT_REQUIRED")
-        if editing:
+        if operation != _CREATE_DRAFT:
             demand(_matches(_UUID, selected_authoring["courseId"]) and type(selected_authoring["revision"]) is int and
                    1 <= selected_authoring["revision"] <= 2_147_483_646, "P2_INTERACTIVE_AUTHORING_DRAFT_REQUIRED")
+        if operation == _REORDER_CURRICULUM:
+            kind, parent = selected_authoring["kind"], selected_authoring["parentId"]
+            demand(kind in ("module", "lesson") and _matches(_UUID, parent) and
+                   (kind == "lesson" or parent == selected_authoring["courseId"]), "P2_INTERACTIVE_AUTHORING_REORDER_SELECTION_REQUIRED")
         expected = _authoring_requests(selected_authoring)
         mutations = [row["bodySha256"] for row in requests[1:]]
         demand(len(requests) == len(expected) and all(
@@ -360,9 +410,11 @@ def validate_interactive_action(action):
 
 def _selection_sha(action):
     if action["stage"] == "authoring":
-        # Hex domains "p2q-authoring-v1" and "p2q-auth-edit-v1" precede the reviewed UUID.
-        prefix = ("7032712d617574682d656469742d7631" if action["authoringAction"]["operation"] == _EDIT_DRAFT else
-                  "7032712d617574686f72696e672d7631")
+        prefix = {
+            _CREATE_DRAFT: "7032712d617574686f72696e672d7631",
+            _EDIT_DRAFT: "7032712d617574682d656469742d7631",
+            _REORDER_CURRICULUM: "7032712d617574682d736f72742d7631",
+        }[action["authoringAction"]["operation"]]
         return prefix + action["actorId"].replace("-", "")
     if action["stage"] == "identity":
         if "identityEnrollment" in action:
@@ -506,7 +558,7 @@ class P2InteractiveWindow:
                             "active": 0, "uncertain": 0}, "P2_INTERACTIVE_FRONTEND_START_REQUIRED")
         authoring = self.action.get("authoringAction")
         protect = ingress.observe_authoring_protection if authoring else ingress.observe_browser_protection
-        paths = {"course_id": authoring["courseId"]} if authoring and authoring["operation"] == _EDIT_DRAFT else {}
+        paths = {"course_id": authoring["courseId"]} if authoring and authoring["operation"] != _CREATE_DRAFT else {}
         proof = protect(self.broker._native_context(),
             LockedClient(self.broker.vercel, self.broker.check), **self.broker.profile_arguments(), **paths)
         ordinary = self._gateway()

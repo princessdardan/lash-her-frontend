@@ -107,6 +107,13 @@ const SQL = Object.freeze({
       pg_catalog.current_setting('transaction_read_only') AS read_only`,
     draftAbsent: "SELECT NOT EXISTS(SELECT 1 FROM public.courses WHERE slug=$1::text) AS absent",
     draftCurrent: "SELECT id::text AS course_id,slug,revision,status,(title<>$2::text AND title<>$3::text) AS both_titles_change FROM public.courses WHERE slug=$1::text",
+    reorderCourse: "SELECT id::text AS course_id,slug,revision,status FROM public.courses WHERE slug=$1::text",
+    reorderLessonParent: `SELECT id::text,slug,created_at::text,archived_at::text FROM public.modules
+      WHERE id=$1::uuid AND course_id=$2::uuid`,
+    reorderModules: `SELECT id::text,slug,position,created_at::text,archived_at::text FROM public.modules
+      WHERE course_id=$1::uuid ORDER BY position LIMIT 1001`,
+    reorderLessons: `SELECT id::text,slug,position,created_at::text,archived_at::text FROM public.lessons
+      WHERE module_id=$1::uuid ORDER BY position LIMIT 1001`,
     draft: `SELECT id::text AS course_id,slug,revision,status,
       (title=$2::text AND description IS NOT DISTINCT FROM $3::text AND introduction IS NOT DISTINCT FROM $4::text
         AND currency=$5::text AND access_mode=$6::text AND price_cents=$7::int
@@ -361,6 +368,7 @@ async function clientFromInput(input) {
 
 const draftBaselines = new WeakMap();
 const draftEditBaselines = new WeakMap();
+const courseReorderBaselines = new WeakMap();
 const draftFormFields = ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification"];
 const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
 const draftSlug = value => typeof value === "string" && value.length <= 120 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
@@ -531,6 +539,96 @@ export async function observeP2InteractiveCourseDraftEditsCase(courseJob, select
   const { result } = await readHeldCourseDraft(target, dependencies, saved.roleOid,
     client => readMatchingDraft(client, saved.winner, saved.selected.courseId, saved.selected.revision + 1));
   return result;
+}
+
+const courseReorderSelectionFields = ["courseId", "slug", "revision", "kind", "parentId", "winnerBodySha256", "staleBodySha256"];
+const courseReorderBodyFields = ["expectedCourseRevision", "ids"];
+const courseUuid = value => typeof value === "string" && UUID.test(value);
+const siblingIds = value => Array.isArray(value) && value.length >= 3 && value.length <= 1000
+  && [...value].every(courseUuid) && new Set(value).size === value.length;
+const sameIds = (left, right) => Array.isArray(left) && left.length === right.length && right.every((id, index) => left[index] === id);
+
+function isAdjacentSwap(before, ids) {
+  if (ids.length !== before.length) return false;
+  const index = before.findIndex((id, position) => id !== ids[position]);
+  return index >= 0 && index < before.length - 1 && before[index] === ids[index + 1] && before[index + 1] === ids[index]
+    && before.slice(index + 2).every((id, offset) => id === ids[index + 2 + offset]);
+}
+
+function reviewedReorderBody(value, bodySha256, revision, before) {
+  demand(orderedDraftFields(value, courseReorderBodyFields) && value.expectedCourseRevision === revision && siblingIds(value.ids),
+    "course-reorder-body");
+  const ids = [...value.ids];
+  demand(isAdjacentSwap(before, ids), "course-reorder-adjacent");
+  const body = { expectedCourseRevision: revision, ids };
+  const bytes = JSON.stringify(body);
+  demand(JSON.stringify(value) === bytes && sha(bytes) === bodySha256, "course-reorder-body-hash");
+  return body;
+}
+
+export function validateP2InteractiveCourseReorder(selection, reorder) {
+  demand(closed(selection, courseReorderSelectionFields) && courseUuid(selection.courseId) && courseUuid(selection.parentId)
+    && draftSlug(selection.slug) && Number.isInteger(selection.revision) && selection.revision >= 1 && selection.revision <= 2_147_483_646
+    && ["module", "lesson"].includes(selection.kind) && (selection.kind !== "module" || selection.parentId === selection.courseId)
+    && [selection.winnerBodySha256, selection.staleBodySha256].every(value => typeof value === "string" && SHA.test(value))
+    && selection.winnerBodySha256 !== selection.staleBodySha256, "course-reorder-selection");
+  demand(closed(reorder, ["before", "winner", "stale"]) && siblingIds(reorder.before), "course-reorder-list");
+  const before = [...reorder.before];
+  const winner = reviewedReorderBody(reorder.winner, selection.winnerBodySha256, selection.revision, before);
+  const stale = reviewedReorderBody(reorder.stale, selection.staleBodySha256, selection.revision, before);
+  demand(!sameIds(winner.ids, stale.ids), "course-reorder-distinct");
+  return { before, winner, stale };
+}
+
+function siblingIdentity(row) {
+  demand(courseUuid(row?.id) && typeof row.slug === "string" && typeof row.created_at === "string"
+    && (row.archived_at === null || typeof row.archived_at === "string"), "course-reorder-sibling-identity");
+  return JSON.stringify([row.id, row.slug, row.created_at, row.archived_at]);
+}
+
+async function readCourseReorder(client, selection, revision, ids, contiguous) {
+  const { courseId, slug, kind, parentId } = selection;
+  const courses = await read(client, "course", "reorderCourse", [slug]);
+  demand(courses.length === 1 && matchesDraftRow(courses[0], courseId, slug, revision), "course-reorder-draft");
+  let parent = null;
+  if (kind === "lesson") {
+    const parents = await read(client, "course", "reorderLessonParent", [parentId, courseId]);
+    demand(parents.length === 1 && parents[0].id === parentId, "course-reorder-parent");
+    parent = siblingIdentity(parents[0]);
+  }
+  const rows = await read(client, "course", kind === "module" ? "reorderModules" : "reorderLessons", [parentId]);
+  demand(sameIds(rows.map(row => row.id), ids) && rows.every((row, index) =>
+    Number.isInteger(row.position) && row.position > (index === 0 ? 0 : rows[index - 1].position)
+      && (!contiguous || row.position === index + 1)), "course-reorder-siblings");
+  return { parent, siblings: new Map(rows.map(row => [row.id, siblingIdentity(row)])) };
+}
+
+export async function captureP2InteractiveCourseReorderBaseline(courseJob, selection, reorder, dependencies) {
+  const selected = Object.freeze({ ...selection }), { before, winner } = validateP2InteractiveCourseReorder(selected, reorder);
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined,
+    client => readCourseReorder(client, selected, selected.revision, before, false));
+  const baseline = Object.freeze({});
+  courseReorderBaselines.set(baseline, { selected, ids: winner.ids, result, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractiveCourseReorderCase(courseJob, selection, baseline, browserReorder, dependencies) {
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = courseReorderBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && closed(selection, courseReorderSelectionFields)
+    && saved.verifyEnvironment === dependencies?.verifyEnvironment && saved.verifySession === dependencies?.verifySession
+    && courseReorderSelectionFields.every(key => selection[key] === saved.selected[key])
+    && closed(browserReorder, ["courseId", "parentId", "kind", "revision", "ids"])
+    && ["courseId", "parentId", "kind"].every(key => browserReorder[key] === saved.selected[key])
+    && browserReorder.revision === saved.selected.revision + 1 && sameIds(browserReorder.ids, saved.ids), "course-reorder-receipt");
+  courseReorderBaselines.delete(baseline);
+  const { courseId, parentId, kind } = saved.selected, revision = saved.selected.revision + 1;
+  const { result } = await readHeldCourseDraft(target, dependencies, saved.roleOid,
+    client => readCourseReorder(client, saved.selected, revision, saved.ids, true));
+  demand(result.parent === saved.result.parent && saved.ids.every(id => result.siblings.get(id) === saved.result.siblings.get(id)),
+    "course-reorder-identity-changed");
+  return { courseId, parentId, kind, revision, ids: [...saved.ids], readOnly: true };
 }
 
 export async function runPrivatePersistenceProbeFromStdin(expectedProfile = undefined) {

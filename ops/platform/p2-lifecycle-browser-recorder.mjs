@@ -67,16 +67,23 @@ function enrollmentSelector(enrollment) {
 }
 
 const authoringEdit = input => input.stage === "authoring" && input.authoring?.operation === "edit-and-stale-draft";
+const authoringReorder = input => input.stage === "authoring" && input.authoring?.operation === "reorder-and-stale-curriculum";
+export const isP2InteractiveAuthoringPair = input => authoringEdit(input) || authoringReorder(input);
+
+export function p2AuthoringReorderPath({ kind, parentId }) {
+  return kind === "module" ? authoringPath + "/" + parentId + "/modules/reorder" : "/api/admin/modules/" + parentId + "/lessons/reorder";
+}
 
 function authoringSelector(input) {
   demand(uuid(input.authoring.actorId));
-  const prefix = authoringEdit(input) ? "7032712d617574682d656469742d7631" : "7032712d617574686f72696e672d7631";
+  const prefix = authoringReorder(input) ? "7032712d617574682d736f72742d7631"
+    : authoringEdit(input) ? "7032712d617574682d656469742d7631" : "7032712d617574686f72696e672d7631";
   return prefix + input.authoring.actorId.replaceAll("-", "");
 }
 
 export function p2InteractiveBrowserEntryPath(input, context) {
   const path = p2InteractiveBrowserPath(input.stage, context);
-  return authoringEdit(input) ? path + "/" + input.authoring.courseId : path;
+  return isP2InteractiveAuthoringPair(input) ? path + "/" + input.authoring.courseId : path;
 }
 
 export function validateP2InteractiveBrowserInput(input) {
@@ -93,12 +100,15 @@ export function validateP2InteractiveBrowserInput(input) {
     && Number.isSafeInteger(input.windowSeconds) && input.windowSeconds >= 30 && input.windowSeconds <= 300);
   if (input.stage === "lifecycle") validateLifecycleTarget(input.lifecycle);
   if (input.stage === "authoring") {
-    const target = input.authoring, edit = authoringEdit(input);
-    demand(closed(target, ["actorId", "slug", ...(edit ? ["operation", "courseId", "revision", "winnerBodySha256", "staleBodySha256"] : ["bodySha256"])])
+    const target = input.authoring, pair = isP2InteractiveAuthoringPair(input), reorder = authoringReorder(input);
+    demand(closed(target, ["actorId", "slug", ...(pair ? ["operation", "courseId", "revision", "winnerBodySha256", "staleBodySha256"] : ["bodySha256"]),
+      ...(reorder ? ["kind", "parentId"] : [])])
       && uuid(target.actorId) && matches(target.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u) && target.slug.length <= 120);
-    if (edit) demand(uuid(target.courseId) && Number.isSafeInteger(target.revision) && target.revision >= 1 && target.revision < Number.MAX_SAFE_INTEGER
+    if (pair) demand(uuid(target.courseId) && Number.isSafeInteger(target.revision) && target.revision >= 1 && target.revision < Number.MAX_SAFE_INTEGER
       && sha(target.winnerBodySha256) && sha(target.staleBodySha256) && target.winnerBodySha256 !== target.staleBodySha256);
     else demand(sha(target.bodySha256));
+    if (reorder) demand(["module", "lesson"].includes(target.kind) && uuid(target.parentId)
+      && (target.kind !== "module" || target.parentId === target.courseId));
   }
   if (enrollment) enrollmentSelector(input.identityEnrollment);
   else if (input.stage === "identity") identitySelector(input.identity);
@@ -306,8 +316,39 @@ export function validateP2AuthoringEditResponses(responses, target) {
   return responses;
 }
 
-async function readMutationResponse(response, request, input, pathname, editRole) {
+const orderedIds = ids => Array.isArray(ids) && ids.length >= 2 && ids.length <= 1000 && ids.every(uuid) && new Set(ids).size === ids.length;
+
+export function validateP2AuthoringReorderResponses(responses, target) {
+  demand(closed(responses, ["winner", "stale"]));
+  const { winner, stale } = responses, pathname = p2AuthoringReorderPath(target);
+  demand(closed(winner, ["method", "pathname", "status", "requestId", "keyboardActivated", "body"])
+    && winner.method === "POST" && winner.pathname === pathname && winner.status === 200 && uuid(winner.requestId)
+    && winner.keyboardActivated === true && closed(winner.body, ["courseId", "parentId", "kind", "revision", "ids"])
+    && winner.body.courseId === target.courseId && winner.body.parentId === target.parentId && winner.body.kind === target.kind
+    && winner.body.revision === target.revision + 1 && orderedIds(winner.body.ids));
+  demand(closed(stale, ["method", "pathname", "status", "requestId", "keyboardActivated", "outcome"])
+    && stale.method === "POST" && stale.pathname === pathname && stale.status === 409 && uuid(stale.requestId)
+    && stale.requestId !== winner.requestId && stale.keyboardActivated === true && stale.outcome === "conflict");
+  return responses;
+}
+
+function reorderResult(body, target, submittedIds) {
+  const modules = target.kind === "module", field = modules ? "course" : "module";
+  demand(closed(body, [field]));
+  const result = body[field];
+  demand(result && typeof result === "object" && !Array.isArray(result) && result.id === target.parentId);
+  if (modules) demand(result.slug === target.slug && result.status === "draft");
+  else demand(result.courseId === target.courseId);
+  const revision = modules ? result.revision : result.courseRevision, items = modules ? result.modules : result.lessons;
+  demand(Array.isArray(items) && revision === target.revision + 1 && items.length === submittedIds.length);
+  const ids = items.map(item => item?.id);
+  demand(orderedIds(ids) && ids.every((id, index) => id === submittedIds[index]));
+  return { courseId: target.courseId, parentId: target.parentId, kind: target.kind, revision, ids };
+}
+
+async function readMutationResponse(response, request, input, pathname, editRole, submittedIds) {
   const authoring = input.stage === "authoring", maximum = authoring ? maxAuthoringBody : maxLifecycleBody;
+  const reorder = authoringReorder(input);
   const status = editRole === "stale" ? 409 : authoring || preferences(input.lifecycle) ? 200 : 202;
   demand(response.url() === input.browserOrigin + pathname && response.status() === status
     && !response.fromServiceWorker() && request.redirectedTo() === null);
@@ -316,7 +357,8 @@ async function readMutationResponse(response, request, input, pathname, editRole
   ]);
   demand(ids.length === 1 && uuid(ids[0]) && contentTypes.length === 1 && /^application\/json(?:;\s*charset=utf-8)?$/iu.test(contentTypes[0])
     && cache.length === 1 && privateNoStore({ "cache-control": cache[0] }));
-  const receipt = { method: editRole ? "PATCH" : "POST", pathname, status, requestId: ids[0] };
+  const receipt = { method: editRole && !reorder ? "PATCH" : "POST", pathname, status, requestId: ids[0],
+    ...(reorder ? { keyboardActivated: true } : {}) };
   // The normal editor handles the status and request ID without consuming its
   // error body. Chromium may discard those bytes. The conflict alert and
   // retained dirty input are verified separately before the paired receipt.
@@ -334,6 +376,7 @@ async function readMutationResponse(response, request, input, pathname, editRole
     demand(declared === undefined || bytes.length === declared);
     const body = exactBrowserJson(bytes, maximum);
     if (!authoring) return validateP2LifecycleMutationReceipt({ ...receipt, body }, input.lifecycle);
+    if (reorder) return { ...receipt, body: reorderResult(body, input.authoring, submittedIds) };
     demand(closed(body, ["course"]) && body.course && typeof body.course === "object" && !Array.isArray(body.course));
     const { id: courseId, slug, revision, status: courseStatus } = body.course;
     return validateAuthoringCourseReceipt({ ...receipt, body: { courseId, slug, revision, status: courseStatus } }, input.authoring, editRole === "winner");
@@ -344,11 +387,11 @@ async function readMutationResponse(response, request, input, pathname, editRole
 // is lost while closing the page, invalidates the first accepted response.
 function watchMutation(context, page, input, edit) {
   validateP2InteractiveBrowserInput(input);
-  const authoring = input.stage === "authoring", target = input.lifecycle;
-  const pathname = edit ? authoringPath + "/" + input.authoring.courseId : authoring ? authoringPath : target.pathname;
-  const method = edit ? "PATCH" : "POST";
+  const authoring = input.stage === "authoring", reorder = authoringReorder(input), target = input.lifecycle;
+  const pathname = reorder ? p2AuthoringReorderPath(input.authoring) : edit ? authoringPath + "/" + input.authoring.courseId : authoring ? authoringPath : target.pathname;
+  const method = edit && !reorder ? "PATCH" : "POST";
   const refusal = () => new Error(authoring ? "P2_INTERACTIVE_AUTHORING_RESPONSE_REFUSED" : "P2_INTERACTIVE_LIFECYCLE_RESPONSE_REFUSED");
-  let selected, receipt, accept, reject, failed = false, responseStarted = false;
+  let selected, receipt, accept, reject, submittedIds, activation, failed = false, responseStarted = false;
   const observed = new Promise((resolve, fail) => { accept = resolve; reject = fail; });
   observed.catch(() => {});
   const fail = () => { failed = true; reject(refusal()); };
@@ -366,12 +409,20 @@ function watchMutation(context, page, input, edit) {
         const source = URL.parse(frame.url());
         const digest = edit ? input.authoring[edit.role + "BodySha256"] : input.authoring.bodySha256;
         demand(source?.origin === input.browserOrigin && source.pathname === p2InteractiveBrowserEntryPath(input, "owner")
-          && createHash("sha256").update(bytes).digest("hex") === digest && posted?.slug === input.authoring.slug);
-        if (edit) {
-          demand(posted.expectedRevision === input.authoring.revision && !Object.hasOwn(posted, "status")
-            && typeof posted.title === "string" && posted.title.length > 0 && posted.title.length <= 300);
-          edit.acceptTitle(posted.title);
-        } else demand(posted.status === "draft");
+          && createHash("sha256").update(bytes).digest("hex") === digest);
+        if (reorder) {
+          demand(closed(posted, ["expectedCourseRevision", "ids"]) && posted.expectedCourseRevision === input.authoring.revision && orderedIds(posted.ids));
+          submittedIds = posted.ids;
+          activation = edit.acceptReorder(frame);
+          activation.catch(fail);
+        } else {
+          demand(posted?.slug === input.authoring.slug);
+          if (edit) {
+            demand(posted.expectedRevision === input.authoring.revision && !Object.hasOwn(posted, "status")
+              && typeof posted.title === "string" && posted.title.length > 0 && posted.title.length <= 300);
+            edit.acceptTitle(posted.title);
+          } else demand(posted.status === "draft");
+        }
       } else if (preferences(target)) demand(closed(posted, ["learningUpdates"]) && posted.learningUpdates === (target.operation === "preferences-on"));
       else demand(closed(posted, ["action", "idempotencyKey"]) && posted.action === target.operation && uuid(posted.idempotencyKey));
     } catch { fail(); }
@@ -380,7 +431,7 @@ function watchMutation(context, page, input, edit) {
     if (response.request() !== selected) return;
     if (failed || responseStarted) return fail();
     responseStarted = true;
-    void readMutationResponse(response, selected, input, pathname, edit?.role).then(value => {
+    void Promise.resolve(activation).then(() => readMutationResponse(response, selected, input, pathname, edit?.role, submittedIds)).then(value => {
       if (!failed) { receipt = value; edit?.observeReceipt(); accept(value); }
     }, fail);
   };
@@ -417,25 +468,63 @@ export function watchP2LifecycleMutation(context, page, input) {
 }
 
 export function watchP2AuthoringMutation(context, page, input) {
-  demand(input.stage === "authoring" && !authoringEdit(input));
+  demand(input.stage === "authoring" && !isP2InteractiveAuthoringPair(input));
   return watchMutation(context, page, input);
 }
 
 const titleField = page => page.getByRole("textbox", { name: "Course title", exact: true });
 const titleHash = value => createHash("sha256").update(value).digest("hex");
 
+async function installReorderKeyboardObserver(page, origin, path, kind) {
+  await page.addInitScript(({ origin, path, kind }) => {
+    if (window.top !== window || location.origin !== origin || location.pathname !== path) return;
+    const labelPattern = new RegExp("^Move " + kind + " .+ (?:up|down)$", "u");
+    const button = target => {
+      const element = target instanceof Element ? target.closest("button") : null;
+      const label = element?.getAttribute("aria-label");
+      return element && !element.disabled && label && label.length <= 512 && labelPattern.test(label) ? element : null;
+    };
+    let pending, activated;
+    const options = { capture: true, passive: true };
+    window.addEventListener("keydown", event => {
+      pending = activated = undefined;
+      const selected = button(event.target);
+      if (selected && event.isTrusted && !event.repeat && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+        && (event.key === "Enter" || event.key === " ")) pending = { selected, at: performance.now() };
+    }, options);
+    window.addEventListener("pointerdown", () => { pending = activated = undefined; }, options);
+    window.addEventListener("click", event => {
+      const key = pending;
+      pending = activated = undefined;
+      if (key && event.isTrusted && event.detail === 0 && button(event.target) === key.selected
+        && performance.now() - key.at <= 2000) activated = performance.now();
+    }, options);
+    Object.defineProperty(window, "__lashP2qConsumeReorderKey", { value: () => {
+      const at = activated;
+      activated = undefined;
+      return location.origin === origin && location.pathname === path && at !== undefined && performance.now() - at <= 1000;
+    } });
+  }, { origin, path, kind });
+}
+
 export function watchP2AuthoringEdits(context, winnerPage, stalePage, input) {
-  demand(authoringEdit(input) && winnerPage !== stalePage && winnerPage.context() === context && stalePage.context() === context);
-  let ready = false, winnerAccepted = false, startingTitle, submittedTitle, dirtyInputPreserved = false;
+  demand(isP2InteractiveAuthoringPair(input) && winnerPage !== stalePage && winnerPage.context() === context && stalePage.context() === context);
+  const reorder = authoringReorder(input);
+  let ready = false, winnerAccepted = false, conflictVisible = false, startingTitle, submittedTitle, dirtyInputPreserved = false;
+  const acceptReorder = async (frame, stale) => {
+    demand(ready && (!stale || winnerAccepted));
+    demand(await frame.evaluate(() => window.__lashP2qConsumeReorderKey?.() === true));
+  };
   const winner = watchMutation(context, winnerPage, input, {
     role: "winner", peer: stalePage, acceptTitle: () => demand(ready), observeReceipt: () => { winnerAccepted = true; },
+    acceptReorder: frame => acceptReorder(frame, false),
   });
   const stale = watchMutation(context, stalePage, input, {
     role: "stale", peer: winnerPage, acceptTitle: title => {
       demand(ready && winnerAccepted);
       submittedTitle = titleHash(title);
       demand(submittedTitle !== startingTitle);
-    }, observeReceipt: () => {},
+    }, observeReceipt: () => {}, acceptReorder: frame => acceptReorder(frame, true),
   });
   const remaining = deadline => {
     const timeout = deadline - Date.now();
@@ -445,16 +534,25 @@ export function watchP2AuthoringEdits(context, winnerPage, stalePage, input) {
   return {
     async open(expires) {
       demand(!ready);
-      const deadline = Math.min(Date.now() + 30_000, expires * 1000), url = input.browserOrigin + p2InteractiveBrowserEntryPath(input, "owner");
+      const path = p2InteractiveBrowserEntryPath(input, "owner");
+      const deadline = Math.min(Date.now() + 30_000, expires * 1000), url = input.browserOrigin + path;
       for (const page of [winnerPage, stalePage]) {
+        if (reorder) await installReorderKeyboardObserver(page, input.browserOrigin, path, input.authoring.kind);
         const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: remaining(deadline) });
         demand(response?.status() === 200 && response.url() === url && page.url() === url);
-        const title = titleField(page), save = page.getByRole("button", { name: "Save course details", exact: true });
-        await Promise.all([title.waitFor({ state: "visible", timeout: remaining(deadline) }), save.waitFor({ state: "visible", timeout: remaining(deadline) })]);
-        demand(await title.isEditable({ timeout: remaining(deadline) }) && await save.isEnabled({ timeout: remaining(deadline) }));
-        const value = await title.inputValue({ timeout: remaining(deadline) });
-        demand(value.trim().length > 0 && (!startingTitle || startingTitle === titleHash(value)));
-        startingTitle = titleHash(value);
+        if (reorder) {
+          const control = page.getByRole("button", { name: new RegExp("^Move " + input.authoring.kind + " .+ (?:up|down)$", "u") })
+            .and(page.locator("button:enabled")).first();
+          await Promise.all([control.waitFor({ state: "visible", timeout: remaining(deadline) }),
+            page.getByText("draft · Revision " + input.authoring.revision, { exact: true }).waitFor({ state: "visible", timeout: remaining(deadline) })]);
+        } else {
+          const title = titleField(page), save = page.getByRole("button", { name: "Save course details", exact: true });
+          await Promise.all([title.waitFor({ state: "visible", timeout: remaining(deadline) }), save.waitFor({ state: "visible", timeout: remaining(deadline) })]);
+          demand(await title.isEditable({ timeout: remaining(deadline) }) && await save.isEnabled({ timeout: remaining(deadline) }));
+          const value = await title.inputValue({ timeout: remaining(deadline) });
+          demand(value.trim().length > 0 && (!startingTitle || startingTitle === titleHash(value)));
+          startingTitle = titleHash(value);
+        }
       }
       ready = true;
       await winnerPage.bringToFront();
@@ -465,11 +563,16 @@ export function watchP2AuthoringEdits(context, winnerPage, stalePage, input) {
       const { requestId } = stale.finish(), deadline = expires * 1000;
       const text = "This course changed or is not ready for this operation. Reload before trying again. Reference: " + requestId;
       await stalePage.getByRole("alert").getByText(text, { exact: true }).waitFor({ state: "visible", timeout: remaining(deadline) });
-      const title = await titleField(stalePage).inputValue({ timeout: remaining(deadline) });
-      demand(titleHash(title) === submittedTitle);
-      dirtyInputPreserved = true;
+      conflictVisible = true;
+      if (!reorder) {
+        const title = await titleField(stalePage).inputValue({ timeout: remaining(deadline) });
+        demand(titleHash(title) === submittedTitle);
+        dirtyInputPreserved = true;
+      }
     },
     finish() {
+      demand(conflictVisible);
+      if (reorder) return validateP2AuthoringReorderResponses({ winner: winner.finish(), stale: { ...stale.finish(), outcome: "conflict" } }, input.authoring);
       return validateP2AuthoringEditResponses({ winner: winner.finish(),
         stale: { ...stale.finish(), outcome: "conflict", dirtyInputPreserved } }, input.authoring);
     },
@@ -667,7 +770,7 @@ async function runInteractiveBrowser(first) {
         if (binding.stage === "identity") identityOpenedAt = Date.now();
         page = await context.newPage();
         let httpStatus;
-        if (authoringEdit(input)) {
+        if (isP2InteractiveAuthoringPair(input)) {
           const stale = await context.newPage();
           mutationWatch = watchP2AuthoringEdits(context, page, stale, input);
           await mutationWatch.open(selection.expires);
@@ -682,7 +785,7 @@ async function runInteractiveBrowser(first) {
         pending = next();
         await send("interactive-page-opened", { ...selection, path, httpStatus });
       } else {
-        const edit = authoringEdit(input), stage = edit ? "authoring-edit" : binding.stage;
+        const edit = isP2InteractiveAuthoringPair(input), stage = edit ? "authoring-edit" : binding.stage;
         const captureMutation = ["lifecycle", "authoring"].includes(binding.stage) && command.type === "interactive-capture-" + stage;
         demand(command.type === "interactive-clear" || captureMutation && opened && mutationWatch
           || captureIdentity && binding.stage === "identity" && opened && page?.context() === context);

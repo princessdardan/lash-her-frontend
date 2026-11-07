@@ -295,6 +295,41 @@ test('fixed current certification plan joins the original release plan, terminal
       [{ ...selectedEdit.requests[0], uses: 2 }, ...selectedEdit.requests.slice(1)],
       [selectedEdit.requests[0], selectedEdit.requests[1], { ...selectedEdit.requests[1] }]])
       assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedEdit, requests })));
+    const before = [1, 2, 3].map(number => `90000000-0000-4000-8000-00000000000${number}`);
+    const authoringReorder = {
+      before,
+      winner: { expectedCourseRevision: 1, ids: [before[1], before[0], before[2]] },
+      stale: { expectedCourseRevision: 1, ids: [before[0], before[2], before[1]] },
+    };
+    const lessonParent = '80000000-0000-4000-8000-000000000001';
+    const selectedReorders = ['module', 'lesson'].map(kind => {
+      const parentId = kind === 'module' ? courseId : lessonParent;
+      const target = kind === 'module' ? editPath + '/modules/reorder' : `/course/v1/admin/modules/${parentId}/lessons/reorder`;
+      return { ...selectedEdit, authoringAction: { ...selectedEdit.authoringAction, operation: 'reorder-and-stale-curriculum', kind, parentId },
+        requests: [selectedEdit.requests[0], ...[authoringReorder.winner, authoringReorder.stale].map(body => ({
+          method: 'POST', target, bodySha256: rawHash(JSON.stringify(body)), uses: 1,
+        }))] };
+    });
+    for (const selectedReorder of selectedReorders) {
+      const reorderSettings = paired(selectedReorder), reorderPair = prepareP2ProfiledCertificationOperator(reorderSettings);
+      assert.equal(reorderPair.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
+      assert.deepEqual(reorderPair.authoring.scopedAction, selectedReorder);
+      assert.deepEqual(reorderPair.identity.scopedAction.identityActor, draftPair.identity.scopedAction.identityActor);
+      assert.equal(JSON.stringify(reorderPair).includes(before[0]), false);
+      const hostPlan = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+        { input: JSON.stringify(reorderPair.authoring), encoding: 'utf8' });
+      assert.equal(hostPlan.status, 0, hostPlan.stderr);
+      const confirmation = { confirmation: 'staging/owned-scoped-action' };
+      await assert.rejects(p2ProfiledCertificationOperator({ ...reorderSettings, execution: { authoringReorder } }, confirmation), { code: 'ENOENT' });
+      await assert.rejects(p2ProfiledCertificationOperator({ ...reorderSettings,
+        execution: { authoringReorder: { ...authoringReorder, before: before.toReversed() } } }, confirmation), error => error.code !== 'ENOENT');
+      const [read, winner, stale] = selectedReorder.requests;
+      for (const requests of [[read, winner, winner], [read, winner, { ...stale, method: 'PATCH' }],
+        [read, winner, { ...stale, uses: 2 }], [{ ...read, uses: 2 }, winner, stale], [read, winner, { ...stale, target: editPath }]])
+        assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedReorder, requests })));
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedReorder,
+        authoringAction: { ...selectedReorder.authoringAction, parentId: before[0] } })));
+    }
     const enrolledEmail = 'owned-enrollment@example.invalid';
     const firstEnrollments = ['google', 'resend'].map((provider, index) => {
       const nonce = String(index+1).repeat(32);
@@ -396,6 +431,7 @@ test('fixed current certification plan joins the original release plan, terminal
       [selectedLifecycle, rawHash(JSON.stringify(['admin', selectedLifecycle.actorId, userId, 'suspend']))],
       [selectedAuthoring, '7032712d617574686f72696e672d7631' + selectedAuthoring.actorId.replaceAll('-', '')],
       [selectedEdit, '7032712d617574682d656469742d7631' + selectedEdit.actorId.replaceAll('-', '')],
+      ...selectedReorders.map(selection => [selection, '7032712d617574682d736f72742d7631' + selection.actorId.replaceAll('-', '')]),
       [prepareP2ProfiledCertificationOperator(paired(selectedLifecycle)).identity.scopedAction, rawHash(JSON.stringify(['identity', 'admin']))],
       [prepareP2ProfiledCertificationOperator(paired(preferenceScope)).identity.scopedAction, '7032712d637573746f6d65722d763100' + userId.replaceAll('-', '')],
       ...firstEnrollments.map(({ identityEnrollment, ...selection }) => [{ ...selection, identityEnrollment },

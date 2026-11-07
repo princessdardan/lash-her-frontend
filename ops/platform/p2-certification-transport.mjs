@@ -27,6 +27,7 @@ const interactiveReceiptKeys=['version','qualificationTargetProfile','status','c
 const gatewayFenceKeys=['gatewayAdmissionClosed','gatewayActive','gatewayUncertain'];
 const closedGateway=value=>value.gatewayAdmissionClosed===true&&value.gatewayActive===0&&value.gatewayUncertain===0;
 const authoringCourseTarget='/course/v1/admin/courses';
+const authoringReorderOperation='reorder-and-stale-curriculum';
 const emptyBodySha256=p2NativeHash(Buffer.alloc(0));
 const authoringGatewayKeys=['epoch','gatewayStateSha256','gatewayAcknowledgements','gatewayActive','gatewayUncertain','gatewayEvidenceSha256'];
 const scopedOperations={
@@ -50,22 +51,32 @@ function authoringWriteRequest(row,method,target){
     nonzeroSha256(row.bodySha256)&&row.bodySha256!==emptyBodySha256&&row.uses===1;
 }
 
+function authoringReorderPath(kind,parentId){
+  return kind==='module'?'/courses/'+parentId+'/modules/reorder':'/modules/'+parentId+'/lessons/reorder';
+}
+
 function reviewedAuthoringAction(action){
-  const selected=action.authoringAction,[list,write,stale]=action.requests;
-  const editing=selected?.operation==='edit-and-stale-draft';
-  demand(canonicalUuid(action.actorId)&&exact(selected,editing?['operation','courseId','slug','revision']:['operation','slug'])&&
+  const selected=action.authoringAction,[read,write,stale]=action.requests;
+  const reorder=selected?.operation===authoringReorderOperation;
+  const changesExisting=reorder||selected?.operation==='edit-and-stale-draft';
+  demand(canonicalUuid(action.actorId)&&exact(selected,['operation','slug',...(changesExisting?['courseId','revision']:[]),
+    ...(reorder?['kind','parentId']:[])])&&
     typeof selected.slug==='string'&&selected.slug.length<=120&&/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(selected.slug)&&
-    action.requests.length===(editing?3:2));
+    action.requests.length===(changesExisting?3:2));
   const selection={...selected,actorKind:'admin',actorId:action.actorId};
-  if(editing){
+  if(changesExisting){
     demand(canonicalUuid(selected.courseId)&&Number.isInteger(selected.revision)&&selected.revision>=1&&selected.revision<=2_147_483_646);
-    const target=authoringCourseTarget+'/'+selected.courseId;
-    demand(isDeepStrictEqual(list,{method:'GET',target,bodySha256:emptyBodySha256,uses:3})&&
-      authoringWriteRequest(write,'PATCH',target)&&authoringWriteRequest(stale,'PATCH',target)&&write.bodySha256!==stale.bodySha256);
+    if(reorder)demand(['module','lesson'].includes(selected.kind)&&canonicalUuid(selected.parentId)&&
+      (selected.kind!=='module'||selected.parentId===selected.courseId));
+    const readTarget=authoringCourseTarget+'/'+selected.courseId;
+    const writeTarget=reorder?'/course/v1/admin'+authoringReorderPath(selected.kind,selected.parentId):readTarget;
+    const method=reorder?'POST':'PATCH';
+    demand(isDeepStrictEqual(read,{method:'GET',target:readTarget,bodySha256:emptyBodySha256,uses:3})&&
+      authoringWriteRequest(write,method,writeTarget)&&authoringWriteRequest(stale,method,writeTarget)&&write.bodySha256!==stale.bodySha256);
     return {selection,authoring:{actorId:action.actorId,...selected,winnerBodySha256:write.bodySha256,staleBodySha256:stale.bodySha256}};
   }
   demand(selected.operation==='create-draft'&&
-    isDeepStrictEqual(list,{method:'GET',target:authoringCourseTarget+'?limit=100',bodySha256:emptyBodySha256,uses:1})&&
+    isDeepStrictEqual(read,{method:'GET',target:authoringCourseTarget+'?limit=100',bodySha256:emptyBodySha256,uses:1})&&
     authoringWriteRequest(write,'POST',authoringCourseTarget));
   return {selection,authoring:{actorId:action.actorId,slug:selected.slug,bodySha256:write.bodySha256}};
 }
@@ -147,10 +158,10 @@ function identityJoinedEvidence(evidence,selected,context,enrollment){
   return {...actor,context,browserIdentitySha256:p2NativeHash(identity),identityWitnessSha256:p2NativeHash(witness)};
 }
 
-function requireAuthoringGatewayObservation(receipt,epoch,editing){
+function requireAuthoringGatewayObservation(receipt,epoch,changesExisting){
   const {gatewayEvidenceSha256,...observed}=receipt;
   const acks=receipt.gatewayAcknowledgements;
-  const statuses=editing?[200,200,409]:[200,201],indices=editing?[0,0,1,0,2]:[0,1];
+  const statuses=changesExisting?[200,200,409]:[200,201],indices=changesExisting?[0,0,1,0,2]:[0,1];
   demand(receipt.epoch===epoch&&nonzeroSha256(receipt.gatewayStateSha256)&&receipt.gatewayActive===0&&receipt.gatewayUncertain===0&&
     Array.isArray(acks)&&acks.length===indices.length&&acks.every((row,index)=>exact(row,['requestId','proofRequestId','requestIndex','upstreamStatus'])&&
       canonicalUuid(row.requestId)&&canonicalUuid(row.proofRequestId)&&row.requestIndex===indices[index]&&
@@ -173,21 +184,28 @@ function authoringJoinedEvidence(evidence,selected,observed){
     gatewayEvidenceSha256:observed.gatewayEvidenceSha256,gatewayPostRequestId};
 }
 
-function authoringEditJoinedEvidence(evidence,selected,observed){
+function authoringChangeJoinedEvidence(evidence,selected,observed,winnerBodySha256){
   demand(exact(evidence,['browserResponses','courseWitness'])&&exact(evidence.browserResponses,['winner','stale']));
   const {browserResponses:responses,courseWitness:witness}=evidence;
   const {winner,stale}=responses;
-  const gatewayPatchRequestIds=[1,2].map(index=>observed.gatewayAcknowledgements.find(row=>row.requestIndex===index).requestId);
-  const {actorId,operation,courseId,slug,revision}=selected;
-  const pathname='/api/admin/courses/'+courseId;
-  const body={courseId,slug,revision:revision+1,status:'draft'};
-  demand(exact(winner,['method','pathname','status','requestId','body'])&&winner.method==='PATCH'&&winner.pathname===pathname&&
-    winner.status===200&&winner.requestId===gatewayPatchRequestIds[0]&&isDeepStrictEqual(winner.body,body)&&
-    exact(stale,['method','pathname','status','requestId','outcome','dirtyInputPreserved'])&&stale.method==='PATCH'&&stale.pathname===pathname&&
-    stale.status===409&&stale.requestId===gatewayPatchRequestIds[1]&&stale.outcome==='conflict'&&stale.dirtyInputPreserved===true&&
+  const gatewayMutationRequestIds=[1,2].map(index=>observed.gatewayAcknowledgements.find(row=>row.requestIndex===index).requestId);
+  const {actorId,operation,courseId,slug,revision,kind,parentId}=selected;
+  const reorder=operation===authoringReorderOperation;
+  const pathname='/api/admin'+(reorder?authoringReorderPath(kind,parentId):'/courses/'+courseId);
+  const method=reorder?'POST':'PATCH',receiptKeys=['method','pathname','status','requestId'];
+  const staleProof=reorder?'keyboardActivated':'dirtyInputPreserved';
+  const ids=winner?.body?.ids;
+  if(reorder)demand(Array.isArray(ids)&&ids.length>=3&&ids.length<=1_000&&Array.from(ids).every(canonicalUuid)&&
+    new Set(ids).size===ids.length&&p2NativeHash(JSON.stringify({expectedCourseRevision:revision,ids}))===winnerBodySha256);
+  const body={courseId,revision:revision+1,...(reorder?{parentId,kind,ids}:{slug,status:'draft'})};
+  demand(exact(winner,[...receiptKeys,'body',...(reorder?['keyboardActivated']:[])])&&winner.method===method&&winner.pathname===pathname&&
+    winner.status===200&&winner.requestId===gatewayMutationRequestIds[0]&&isDeepStrictEqual(winner.body,body)&&(!reorder||winner.keyboardActivated===true)&&
+    exact(stale,[...receiptKeys,'outcome',staleProof])&&stale.method===method&&stale.pathname===pathname&&
+    stale.status===409&&stale.requestId===gatewayMutationRequestIds[1]&&stale.outcome==='conflict'&&stale[staleProof]===true&&
     isDeepStrictEqual(witness,{...body,readOnly:true}));
+  const mutation=reorder?{kind,parentId,gatewayPostRequestIds:gatewayMutationRequestIds}:{gatewayPatchRequestIds:gatewayMutationRequestIds};
   return {actorId,operation,courseId,slug,browserResponsesSha256:p2NativeHash(responses),courseWitnessSha256:p2NativeHash(witness),
-    gatewayEvidenceSha256:observed.gatewayEvidenceSha256,gatewayPatchRequestIds};
+    gatewayEvidenceSha256:observed.gatewayEvidenceSha256,...mutation};
 }
 
 export function readP2CertificationWorkerStage(handle,plan){
@@ -269,7 +287,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           const controllerChallenge=binding.challenge,epoch=(BigInt(snapshot.initialEpoch)+1n).toString();
           const stage=snapshot.scopedAction.stage,identity=stage==='identity',authoring=stage==='authoring';
           const {selection,enrollment,authoring:authoringPermit}=selectedInteractive;
-          const editing=authoringPermit?.operation==='edit-and-stale-draft';
+          const changesExisting=authoring&&selection.operation!=='create-draft';
           const context=selection.actorKind==='admin'?'owner':'learner';
           const permitInput={stage,epoch,windowSeconds:snapshot.scopedAction.windowSeconds,
             ...(authoring?{authoring:authoringPermit}:
@@ -320,7 +338,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                 demand(phase==='installed');requireRecorder();phase='observing';
                 try{
                   const receipt=await call('interactive-observe','GATEWAY_OBSERVED',authoringGatewayKeys);
-                  requireAuthoringGatewayObservation(receipt,epoch,editing);
+                  requireAuthoringGatewayObservation(receipt,epoch,changesExisting);
                   gatewayObservation=structuredClone(receipt);phase='observed';return receipt;
                 }catch{phase='observe-failed';throw new Error('P2_CERTIFICATION_INTERACTIVE_AUTHORING_OBSERVE_FAILED');}
               },
@@ -335,7 +353,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
             async retain(caseEvidence){
               demand(phase==='fenced'&&installed&&(!authoring||gatewayObservation));requireRecorder();
               const evidence=structuredClone(caseEvidence);
-              const expected=editing?authoringEditJoinedEvidence(evidence,selection,gatewayObservation):
+              const expected=changesExisting?authoringChangeJoinedEvidence(evidence,selection,gatewayObservation,authoringPermit.winnerBodySha256):
                 authoring?authoringJoinedEvidence(evidence,selection,gatewayObservation):
                 identity?identityJoinedEvidence(evidence,selection,context,enrollment):lifecycleJoinedEvidence(evidence,selection);
               phase='retaining';

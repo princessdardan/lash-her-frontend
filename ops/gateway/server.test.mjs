@@ -558,6 +558,101 @@ test("scoped authoring acknowledges the winning edit and stale conflict with exa
   assert.deepEqual(observed.interactiveEvidence, { admitted: 5, acknowledged });
 });
 
+for (const kind of ["modules", "lessons"]) {
+  test(`scoped authoring acknowledges ${kind} reorder and stale conflict with exactly three draft reads`, async t => {
+    const fixtureId = number => `20000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
+    const courseId = fixtureId(1), foreignCourseId = fixtureId(2);
+    const moduleIds = [3, 4, 5].map(fixtureId), lessonIds = [6, 7, 8].map(fixtureId);
+    const [moduleId, foreignModuleId] = moduleIds;
+    const modules = kind === "modules";
+    const read = `/course/v1/admin/courses/${courseId}`;
+    const reorderPath = parent => modules ? `/course/v1/admin/courses/${parent}/modules/reorder` : `/course/v1/admin/modules/${parent}/lessons/reorder`;
+    const write = reorderPath(modules ? courseId : moduleId);
+    const foreignWrite = reorderPath(modules ? foreignCourseId : foreignModuleId);
+    const original = modules ? moduleIds : lessonIds;
+    const winner = [original[1], original[0], original[2]];
+    const stale = [original[0], original[2], original[1]];
+    const revision = 7;
+    const reorderBody = (ids, expectedCourseRevision = revision) => JSON.stringify({ expectedCourseRevision, ids });
+    const winnerBody = reorderBody(winner), staleBody = reorderBody(stale);
+    const conflict = { error: { code: "CONFLICT", message: "Course revision is stale; reload before editing" } };
+    const requests = [
+      { method: "GET", target: read, bodySha256: certificationHash(""), uses: 3 },
+      { method: "POST", target: write, bodySha256: certificationHash(winnerBody), uses: 1 },
+      { method: "POST", target: write, bodySha256: certificationHash(staleBody), uses: 1 },
+    ];
+    const courseResponse = (ids, courseRevision) => ({ course: { id: courseId, title: "P2Q reorder fixture", slug: "p2q-reorder-fixture",
+      description: null, introduction: null, status: "draft", currency: "CAD", accessMode: "free", priceCents: 0,
+      cover: null, seo: { noIndex: false }, taxClassification: null, revision: courseRevision,
+      modules: (modules ? ids : moduleIds).map((id, index) => ({ id, courseId, title: `Module ${id.slice(-1)}`, slug: `module-${id.slice(-1)}`,
+        description: null, position: index + 1, archivedAt: null, courseRevision,
+        lessons: !modules && id === moduleId ? ids.map((lesson, position) => ({ id: lesson, moduleId, title: `Lesson ${lesson.slice(-1)}`,
+          slug: `lesson-${lesson.slice(-1)}`, content: null, contentDocument: null, transcript: null, captions: [], isPreview: false,
+          position: position + 1, archivedAt: null, courseRevision })) : [] })),
+    } });
+    const baseline = courseResponse(original, revision), expected = courseResponse(winner, revision + 1);
+    const responseForWrite = value => modules ? value : { module: value.course.modules[0] };
+    let order = original, currentRevision = revision;
+    const forwarded = [];
+    const f = await interactiveFixture(t, requests, async (req, res) => {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const body = Buffer.concat(chunks).toString();
+      forwarded.push({ method: req.method, target: req.url, body,
+        requestId: req.headers["x-request-id"], proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+      const mutating = req.method === "POST";
+      if (mutating) {
+        const { expectedCourseRevision, ids } = JSON.parse(body);
+        if (expectedCourseRevision !== currentRevision) {
+          res.writeHead(409, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify(conflict));
+          return;
+        }
+        order = ids;
+        currentRevision++;
+      }
+      const value = courseResponse(order, currentRevision);
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify(mutating ? responseForWrite(value) : value));
+    }, "authoring");
+    const post = (body, path = write) => f.signed({ method: "POST", path, body });
+    for (const denied of [post(winnerBody, foreignWrite), post(reorderBody(original)), post(reorderBody(winner, revision + 1))]) {
+      assert.equal((await f.send(denied)).status, 503);
+    }
+
+    const steps = [
+      { input: f.signed({ path: read }), requestIndex: 0, status: 200, value: baseline },
+      { input: f.signed({ path: read }), requestIndex: 0, status: 200, value: baseline },
+      { input: post(winnerBody), requestIndex: 1, status: 200, value: responseForWrite(expected) },
+      { input: f.signed({ path: read }), requestIndex: 0, status: 200, value: expected },
+      { input: post(staleBody), requestIndex: 2, status: 409, value: conflict },
+    ];
+    const acknowledged = [];
+    for (const { input, requestIndex, status, value } of steps) {
+      const output = await f.send(input);
+      assert.equal(output.status, status);
+      assert.deepEqual(JSON.parse(output.body), value);
+      const requestId = output.headers["x-request-id"], proofRequestId = input.headers["x-request-id"];
+      assert.match(requestId, /^[a-f0-9-]{36}$/u);
+      assert.notEqual(requestId, proofRequestId);
+      acknowledged.push({ requestId, proofRequestId, requestIndex, upstreamStatus: status });
+    }
+    for (const denied of [f.signed({ path: read }), post(winnerBody), post(staleBody), ...steps.map(({ input }) => input)]) {
+      assert.equal((await f.send(denied)).status, 503);
+    }
+    assert.deepEqual(order, winner);
+    assert.equal(currentRevision, revision + 1);
+    assert.equal(new Set(acknowledged.map(row => row.requestId)).size, 5);
+    assert.equal(new Set(acknowledged.map(row => row.proofRequestId)).size, 5);
+    assert.deepEqual(forwarded, steps.map(({ input }, index) => ({ method: input.method, target: input.path.slice("/course".length),
+      body: input.body ?? "", requestId: acknowledged[index].requestId, proof: undefined })));
+    const observed = f.admissionState();
+    assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+    assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+    assert.deepEqual(observed.interactiveEvidence, { admitted: 5, acknowledged });
+  });
+}
+
 function mediaRefreshReceipt(lessonId, id) {
   return { id, lessonId, status: "processing", generation: 2, isCurrent: false, lastErrorCode: null,
     captionTracks: [{ id: "owned-track", language: "en", label: "English", status: "ready", closedCaptions: true }] };

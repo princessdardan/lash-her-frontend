@@ -81,7 +81,10 @@ plan=initial['certificationPlan'];binding=initial['interactiveController'];profi
 action=plan['scopedAction'];stage=action['stage'];epoch=str(int(plan['initialEpoch'])+1);behavior=sys.argv[1]
 enrollment=action.get('identityEnrollment')
 authoring=stage=='authoring';gateway_observation=None
-editing=authoring and action['authoringAction']['operation']=='edit-and-stale-draft'
+authoring_action=action.get('authoringAction',{})
+editing=authoring_action.get('operation')=='edit-and-stale-draft'
+reorder=authoring_action.get('operation')=='reorder-and-stale-curriculum'
+changes_existing=editing or reorder
 def fixture_id(suffix):return f'12345678-1234-4123-8123-{suffix:012d}'
 post_request=fixture_id(4);stale_request=fixture_id(6)
 initial_time=int(time.time());expires=initial_time+120
@@ -113,7 +116,10 @@ for raw in sys.stdin:
    if authoring:
     owner_id=action['actorId']
     if behavior=='wrong-owner':owner_id=fixture_id(2)
-    prefix='7032712d617574682d656469742d7631' if editing and behavior!='wrong-operation-permit' else '7032712d617574686f72696e672d7631'
+    prefix='7032712d617574686f72696e672d7631'
+    if behavior!='wrong-operation-permit':
+     if reorder:prefix='7032712d617574682d736f72742d7631'
+     elif editing:prefix='7032712d617574682d656469742d7631'
     selector=prefix+owner_id.replace('-','')
    elif enrollment:
     provider=enrollment['provider'];nonce=enrollment['nonce'];email_digest=enrollment['emailSha256']
@@ -137,7 +143,7 @@ for raw in sys.stdin:
    if behavior=='observe-refused':
     value['receipt']={**base,'status':status('GATEWAY_OBSERVATION_REFUSED')}
    else:
-    selected=[(11,13,0,200),(12,14,0,200),(4,15,1,200),(16,17,0,200),(6,18,2,409)] if editing else [(11,13,0,200),(4,12,1,201)]
+    selected=[(11,13,0,200),(12,14,0,200),(4,15,1,200),(16,17,0,200),(6,18,2,409)] if changes_existing else [(11,13,0,200),(4,12,1,201)]
     acks=[{'requestId':fixture_id(req),'proofRequestId':fixture_id(proof),'requestIndex':index,'upstreamStatus':http}
      for req,proof,index,http in selected]
     if behavior=='wrong-observe-ack':acks[-1]['upstreamStatus']=200
@@ -152,17 +158,22 @@ for raw in sys.stdin:
   elif op=='interactive-retain':
    assert phase=='fenced';phase='retained'
    evidence=p['caseEvidence']
-   if editing:
+   if changes_existing:
     assert gateway_observation and set(evidence)=={'browserResponses','courseWitness'}
     responses=evidence['browserResponses'];body=responses['winner']['body'];witness=evidence['courseWitness']
     assert responses['winner']['requestId']==post_request and responses['stale']['requestId']==stale_request
-    assert set(responses['stale'])=={'method','pathname','status','requestId','outcome','dirtyInputPreserved'}
-    assert responses['stale']['outcome']=='conflict' and responses['stale']['dirtyInputPreserved'] is True and witness=={**body,'readOnly':True}
-    patch_ids=[post_request,stale_request]
-    if behavior=='wrong-join':patch_ids.reverse()
-    joined={'actorId':action['actorId'],'operation':'edit-and-stale-draft','courseId':body['courseId'],'slug':body['slug'],
+    proof='keyboardActivated' if reorder else 'dirtyInputPreserved'
+    assert set(responses['stale'])=={'method','pathname','status','requestId','outcome',proof}
+    assert responses['stale']['outcome']=='conflict' and responses['stale'][proof] is True and witness=={**body,'readOnly':True}
+    request_ids=[post_request,stale_request]
+    if behavior=='wrong-join':request_ids.reverse()
+    joined={'actorId':action['actorId'],'operation':authoring_action['operation'],'courseId':body['courseId'],'slug':authoring_action['slug'],
      'browserResponsesSha256':digest(responses),'courseWitnessSha256':digest(witness),
-     'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256'],'gatewayPatchRequestIds':patch_ids}
+     'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256']}
+    if reorder:
+     assert responses['winner']['keyboardActivated'] is True
+     joined.update(kind=authoring_action['kind'],parentId=authoring_action['parentId'],gatewayPostRequestIds=request_ids)
+    else:joined['gatewayPatchRequestIds']=request_ids
    elif authoring:
     assert gateway_observation and set(evidence)=={'browserResponse','courseWitness'}
     response=evidence['browserResponse'];body=response['body'];witness=evidence['courseWitness']
@@ -222,6 +233,7 @@ const staleRequestId='12345678-1234-4123-8123-000000000006';
 const {certificationStage,actorKind,behavior,variant}=fixture;
 const identity=certificationStage==='identity',authoring=certificationStage==='authoring';
 const provider=identity?variant:undefined,editing=authoring&&variant==='edit-and-stale-draft';
+const reorder=authoring&&['reorder-module','reorder-lesson'].includes(variant),changesExisting=editing||reorder;
 const context=actorKind==='admin'?'owner':'learner';
 const status=disposition=>'P2_INTERACTIVE_'+certificationStage.toUpperCase()+'_'+disposition;
 const refusedPermit=['wrong-selector','wrong-kind','wrong-nonce','wrong-provider','wrong-email','wrong-owner','legacy-permit','wrong-operation-permit'].includes(behavior);
@@ -233,12 +245,18 @@ const identityActor={actorKind,actorId:actor};
 const identityEnrollment=provider?{provider,emailSha256:'6'.repeat(64),nonce:'9'.repeat(32)}:null;
 const observedActor=identityEnrollment?{actorKind:'customer',actorId:'12345678-1234-4123-8123-000000000005'}:identityActor;
 const slug='p2q-course-draft',coursePath='/api/admin/courses/'+commandId,courseTarget='/course/v1/admin/courses/'+commandId;
-const authoringAction=editing?{operation:'edit-and-stale-draft',courseId:commandId,slug,revision:7}:{operation:'create-draft',slug};
-const emptyBodySha256=createHash('sha256').digest('hex');
-const requests=editing?[
+const kind=variant==='reorder-module'?'module':'lesson',parentId=kind==='module'?commandId:target;
+const reorderPath=kind==='module'?'/courses/'+parentId+'/modules/reorder':'/modules/'+parentId+'/lessons/reorder';
+const ids=['12345678-1234-4123-8123-000000000009','12345678-1234-4123-8123-000000000007','12345678-1234-4123-8123-000000000008'];
+const authoringAction=reorder?{operation:'reorder-and-stale-curriculum',courseId:commandId,slug,revision:7,kind,parentId}:
+ editing?{operation:'edit-and-stale-draft',courseId:commandId,slug,revision:7}:{operation:'create-draft',slug};
+const rawHash=body=>createHash('sha256').update(body).digest('hex'),emptyBodySha256=rawHash('');
+const reorderHash=ids=>rawHash(JSON.stringify({expectedCourseRevision:authoringAction.revision,ids}));
+const writeMethod=reorder?'POST':'PATCH',writeTarget=reorder?'/course/v1/admin'+reorderPath:courseTarget;
+const requests=changesExisting?[
   {method:'GET',target:courseTarget,bodySha256:emptyBodySha256,uses:3},
-  {method:'PATCH',target:courseTarget,bodySha256:'8'.repeat(64),uses:1},
-  {method:'PATCH',target:courseTarget,bodySha256:'7'.repeat(64),uses:1},
+  {method:writeMethod,target:writeTarget,bodySha256:reorder?reorderHash(ids):'8'.repeat(64),uses:1},
+  {method:writeMethod,target:writeTarget,bodySha256:reorder?reorderHash([...ids].reverse()):'7'.repeat(64),uses:1},
 ]:authoring?[
   {method:'GET',target:'/course/v1/admin/courses?limit=100',bodySha256:emptyBodySha256,uses:1},
   {method:'POST',target:'/course/v1/admin/courses',bodySha256:'8'.repeat(64),uses:1},
@@ -303,10 +321,15 @@ for(const changed of [
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[requests[0],{...requests[1],bodySha256:requests[0].bodySha256}]}}},
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,authoringAction:{...authoringAction,slug:'invalid/slug'}}}},
  ]:[]),
- ...(editing?[
+ ...(changesExisting?[
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[requests[0],requests[1],{...requests[2],bodySha256:requests[1].bodySha256}]}}},
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[requests[0],requests[1],{...requests[2],target:courseTarget+'/publish'}]}}},
   {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,authoringAction:{...authoringAction,revision:2_147_483_647}}}},
+ ]:[]),
+ ...(reorder?[
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,authoringAction:{...authoringAction,kind:'course'}}}},
+  {...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,requests:[requests[0],{...requests[1],method:'PATCH'},requests[2]]}}},
+  ...(kind==='module'?[{...initial,certificationPlan:{...plan,scopedAction:{...scopedAction,authoringAction:{...authoringAction,parentId:target}}}}]:[]),
  ]:[]),
 ]) assert.throws(()=>start(changed),{message:'P2_CERTIFICATION_TRANSPORT_REFUSED'});
 assert.equal(starts,0);
@@ -318,10 +341,12 @@ const witness={version:1,status:'P2_INTERACTIVE_LIFECYCLE_CASE_OBSERVED',actorId
  baselineSha256:'3'.repeat(64),frontendStatus:'suspended',accountVersion:2,sessionsBefore:1,sessionsAfter:0,learningUpdates:false,commandId,
  deliveries:['course','community'].map(receiver=>({receiver,status:'pending',attempts:0})),pendingOrDeliveringCount:2,
  observedAt:new Date().toISOString(),readOnly:true};
-const draft={courseId:commandId,slug,revision:editing?authoringAction.revision+1:1,status:'draft'};
-const evidence=editing?{browserResponses:{
- winner:{method:'PATCH',pathname:coursePath,status:200,requestId,body:draft},
- stale:{method:'PATCH',pathname:coursePath,status:409,requestId:staleRequestId,outcome:'conflict',dirtyInputPreserved:true},
+const draft={courseId:commandId,revision:changesExisting?authoringAction.revision+1:1,
+ ...(reorder?{parentId,kind,ids}:{slug,status:'draft'})};
+const changePath=reorder?'/api/admin'+reorderPath:coursePath,staleProof=reorder?'keyboardActivated':'dirtyInputPreserved';
+const evidence=changesExisting?{browserResponses:{
+ winner:{method:writeMethod,pathname:changePath,status:200,requestId,body:draft,...(reorder?{keyboardActivated:true}:{})},
+ stale:{method:writeMethod,pathname:changePath,status:409,requestId:staleRequestId,outcome:'conflict',[staleProof]:true},
 },courseWitness:{...draft,readOnly:true}}
  :authoring?{browserResponse:{method:'POST',pathname:'/api/admin/courses',status:200,requestId,body:draft},
  courseWitness:{...draft,readOnly:true}}
@@ -329,7 +354,7 @@ const evidence=editing?{browserResponses:{
  identityWitness:{...observedActor,actorActive:true,...(context==='owner'?{ownerMappingVerified:true}:{liveSessionCount:1}),
   ...(identityEnrollment?{provider,providerLinkCount:provider==='google'?1:0}:{})}}
  :{browserResponse:response,lifecycleWitness:witness};
-const invalidEvidence=editing?{...evidence,browserResponses:{...evidence.browserResponses,winner:{...evidence.browserResponses.winner,requestId:target}}}
+const invalidEvidence=changesExisting?{...evidence,browserResponses:{...evidence.browserResponses,winner:{...evidence.browserResponses.winner,requestId:target}}}
  :authoring?{...evidence,browserResponse:{...evidence.browserResponse,requestId:target}}
  :identity?{...evidence,identityWitness:{...evidence.identityWitness,actorId:target}}
  :{...evidence,browserResponse:{...response,unexpected:'fixture-forbidden'}};
@@ -370,7 +395,7 @@ const result=start()(async(_verify,_signal,host)=>{
    assert.equal(observed.status,status('GATEWAY_OBSERVED'));
    const mutation=observed.gatewayAcknowledgements.find(row=>row.requestIndex===1);
    assert.equal(mutation.requestId,requestId);
-   if(editing) assert.equal(observed.gatewayAcknowledgements.at(-1).requestId,staleRequestId);
+   if(changesExisting) assert.equal(observed.gatewayAcknowledgements.at(-1).requestId,staleRequestId);
    mutation.requestId=target;
   }
   await assert.rejects(stage.observe());
@@ -386,10 +411,21 @@ const result=start()(async(_verify,_signal,host)=>{
   await assert.rejects(stage.retain({...evidence,courseWitness:{...evidence.courseWitness,revision:draft.revision+1}}));
   await assert.rejects(stage.retain({...evidence,gatewayEvidence:{}}));
  }
- if(editing){
-  for(const changed of [{dirtyInputPreserved:false},{requestId},{outcome:'invalid_request'},{status:400},{body:{code:'conflict'}}]){
+ if(changesExisting){
+  for(const changed of [{[staleProof]:false},{requestId},{outcome:'invalid_request'},{status:400},{body:{code:'conflict'}}]){
    await assert.rejects(stage.retain({...evidence,browserResponses:{...evidence.browserResponses,
     stale:{...evidence.browserResponses.stale,...changed}}}));
+  }
+ }
+ if(reorder){
+  const {winner}=evidence.browserResponses;
+  await assert.rejects(stage.retain({...evidence,courseWitness:{...evidence.courseWitness,ids:[...ids].reverse()}}));
+  for(const changed of [{keyboardActivated:false},{pathname:coursePath},{body:{...draft,parentId:'12345678-1234-4123-8123-000000000010'}}]){
+   await assert.rejects(stage.retain({...evidence,browserResponses:{...evidence.browserResponses,winner:{...winner,...changed}}}));
+  }
+  for(const invalidIds of [[...ids].reverse(),ids.slice(0,2),[ids[0],ids[1],ids[1]],['invalid',...ids.slice(1)]]){
+   const body={...draft,ids:invalidIds};
+   await assert.rejects(stage.retain({browserResponses:{...evidence.browserResponses,winner:{...winner,body}},courseWitness:{...body,readOnly:true}}));
   }
  }
  if(identityEnrollment){
@@ -407,7 +443,11 @@ const result=start()(async(_verify,_signal,host)=>{
  const retained=await stage.retain(evidence);
  assert.equal(retained.status,status('JOINED'));
  if(authoring){
-  if(editing) assert.deepEqual(retained.gatewayPatchRequestIds,[requestId,staleRequestId]);
+  if(reorder){
+   assert.deepEqual(retained.gatewayPostRequestIds,[requestId,staleRequestId]);
+   assert.equal(retained.parentId,parentId);
+   assert.equal(retained.kind,kind);
+  }else if(editing) assert.deepEqual(retained.gatewayPatchRequestIds,[requestId,staleRequestId]);
   else assert.equal(retained.gatewayPostRequestId,requestId);
   assert.equal(retained.courseId,draft.courseId);
  }
@@ -464,6 +504,12 @@ for(const [certificationStage,actorKind,behavior,variant] of [
  ['authoring','admin','wrong-observe-order','edit-and-stale-draft'],
  ['authoring','admin','wrong-observe-ack','edit-and-stale-draft'],
  ['authoring','admin','wrong-join','edit-and-stale-draft'],
+ ['authoring','admin','joined','reorder-module'],
+ ['authoring','admin','joined','reorder-lesson'],
+ ['authoring','admin','wrong-owner','reorder-module'],
+ ['authoring','admin','wrong-operation-permit','reorder-lesson'],
+ ['authoring','admin','wrong-observe-order','reorder-module'],
+ ['authoring','admin','wrong-join','reorder-lesson'],
 ]){
  test(`fixed interactive transport handles ${certificationStage} ${variant??actorKind} ${behavior} over the guarded pipe`,()=>{
   const directory=realpathSync(mkdtempSync(join(tmpdir(),'p2-interactive-wire-')));chmodSync(directory,0o700);

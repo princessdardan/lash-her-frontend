@@ -105,6 +105,11 @@ const reviewedDraftEditDependencies = {
   "src/lib/writer-admission/interactive-proof.ts": "525003a288a7b7f8f78de56936931d79d47967bac0e71a28dd519ebae50a510b",
   "src/lib/api-integration/course-admin-handler.ts": "f00f2791a4e13b0964a8d3ccec314cf1004162204e10e9359800b7194c8dcb78"
 };
+const reviewedCurriculumReorderDependencies = {
+  ...reviewedDraftEditDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "ff5ba423233db4e1bcc04148454c423d885d4d0e30bd08dda08dfd53250e2922",
+  "src/lib/api-integration/course-admin-handler.ts": "374e312063b81af0938e60ce9da4edcbcef86a83763e74ea6f9e9c0a2cf0a1f1"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -128,7 +133,8 @@ function sourcePolicy(sourceCommit) {
   if (same(selected, reviewedSource) || same(selected, reviewedScopedSource)) return selected;
   const browserPolicy = [[reviewedCustomerIdentitySource, [reviewedCustomerIdentityDependencies]],
     [reviewedFirstIdentitySource, [reviewedFirstIdentityDependencies]],
-    [reviewedAuthoringSource, [reviewedAuthoringDependencies, reviewedDraftEditDependencies]]].find(([source]) => same(selected, source));
+    [reviewedAuthoringSource, [reviewedAuthoringDependencies, reviewedDraftEditDependencies, reviewedCurriculumReorderDependencies]]]
+    .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;
     const dependencies = Object.fromEntries(Object.keys(expected[0]).map(file => [file, readSourceHash(file)]));

@@ -10,10 +10,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession, p2InteractiveBrowserEntryPath,
-  p2InteractiveBrowserPath, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
+import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession, p2AuthoringReorderPath,
+  p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
-  validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt, validateP2InteractiveIdentityReceipt, validateP2LifecycleBrowserInput,
+  validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt, validateP2AuthoringReorderResponses,
+  validateP2InteractiveIdentityReceipt, validateP2LifecycleBrowserInput,
   validateP2LifecycleMutationReceipt, watchP2AuthoringEdits, watchP2AuthoringMutation, watchP2LifecycleMutation } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
 import { launchP2InteractiveBrowserRecorder, launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
@@ -207,6 +208,7 @@ const ownedDraft = { title: "Owned draft title", slug: "owned-draft", descriptio
 const ownedAuthoring = { actorId: adminId, slug: ownedDraft.slug, bodySha256: identityHash(ownedDraft) };
 const authoringSelector = actorId => "7032712d617574686f72696e672d7631" + actorId.replaceAll("-", "");
 const authoringEditSelector = actorId => "7032712d617574682d656469742d7631" + actorId.replaceAll("-", "");
+const authoringReorderSelector = actorId => "7032712d617574682d736f72742d7631" + actorId.replaceAll("-", "");
 const ownedCourseId = randomUUID();
 const ownedDraftResponse = { course: { ...ownedDraft, id: ownedCourseId, revision: 1, modules: [] } };
 const { status: ownedDraftStatus, ...ownedEditFields } = ownedDraft;
@@ -228,7 +230,8 @@ function interactivePermit(input) {
   else if (input.stage === "identity") selector = input.identity.actorKind === "admin" ? identityHash(["identity", "admin"])
     : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "");
   else if (input.stage === "authoring") selector = input.authoring.operation === "edit-and-stale-draft"
-    ? authoringEditSelector(input.authoring.actorId) : authoringSelector(input.authoring.actorId);
+    ? authoringEditSelector(input.authoring.actorId) : input.authoring.operation === "reorder-and-stale-curriculum"
+      ? authoringReorderSelector(input.authoring.actorId) : authoringSelector(input.authoring.actorId);
   const cookie = [selector ? "v2" : "v1", input.epoch, input.stage, issued, expires, enrollment?.nonce ?? "3".repeat(32),
     ...(selector ? [selector] : []), "5".repeat(64)].join(".");
   return { stage: input.stage, epoch: input.epoch, expires, cookie };
@@ -347,6 +350,39 @@ test("edit authoring permit and paired receipt bind owner, course, revision and 
     assert.throws(() => validateP2AuthoringEditResponses({ winner, stale: { ...stale, ...change } }, ownedAuthoringEdit));
   }
   assert.throws(() => validateP2AuthoringEditResponses({ winner: { ...winner, body: { ...winner.body, revision: 4 } }, stale }, ownedAuthoringEdit));
+});
+
+function ownedReorder(kind) {
+  const parentId = kind === "module" ? ownedCourseId : randomUUID(), ids = Array.from({ length: 3 }, () => randomUUID());
+  const [first, second, third] = ids;
+  const winnerBody = { expectedCourseRevision: 4, ids: [second, first, third] }, staleBody = { expectedCourseRevision: 4, ids: [first, third, second] };
+  const target = { actorId: adminId, operation: "reorder-and-stale-curriculum", courseId: ownedCourseId, slug: ownedDraft.slug, revision: 4,
+    kind, parentId, winnerBodySha256: identityHash(winnerBody), staleBodySha256: identityHash(staleBody) };
+  return { input: interactiveInput({ stage: "authoring", authoring: target }), target, winnerBody, staleBody };
+}
+
+test("reorder permit and paired browser receipt bind the selected parent, owner and keyboard evidence", () => {
+  for (const kind of ["module", "lesson"]) {
+    const { input, target, winnerBody } = ownedReorder(kind), permit = interactivePermit(input), pathname = p2AuthoringReorderPath(target);
+    assert.equal(validateP2InteractiveBrowserInput(input), input);
+    assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+    assert.equal(permit.cookie.split(".")[6], authoringReorderSelector(adminId));
+    assert.equal(p2InteractiveBrowserEntryPath(input, "owner"), "/admin/courses/" + ownedCourseId);
+    assert.throws(() => validateP2InteractiveBrowserInput({ ...input, authoring: { ...target, kind: "other" } }));
+    assert.throws(() => validateP2InteractiveBrowserInput({ ...input, authoring: { ...target, parentId: "invalid" } }));
+    const parts = permit.cookie.split(".");
+    for (const selector of [authoringSelector(adminId), authoringEditSelector(adminId), authoringReorderSelector(randomUUID())]) {
+      parts[6] = selector;
+      assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: parts.join(".") }, input));
+    }
+    const winner = { method: "POST", pathname, status: 200, requestId: randomUUID(), keyboardActivated: true,
+      body: { courseId: target.courseId, parentId: target.parentId, kind, revision: 5, ids: winnerBody.ids } };
+    const stale = { method: "POST", pathname, status: 409, requestId: randomUUID(), keyboardActivated: true, outcome: "conflict" };
+    assert.deepEqual(validateP2AuthoringReorderResponses({ winner, stale }, target), { winner, stale });
+    assert.throws(() => validateP2AuthoringReorderResponses({ winner, stale: { ...stale, keyboardActivated: false } }, target));
+    assert.throws(() => validateP2AuthoringReorderResponses({ winner, stale: { ...stale, controlLabel: "private" } }, target));
+    assert.throws(() => validateP2AuthoringReorderResponses({ winner: { ...winner, body: { ...winner.body, ids: [winnerBody.ids[0], winnerBody.ids[0]] } }, stale }, target));
+  }
 });
 
 test("actual interactive child refuses secret-bearing IPC before browser launch and emits only a generic failure", async () => {
@@ -767,6 +803,90 @@ function ownedLifecyclePage(browser, lifecycle, response, document) {
   return ownedMutationPage(browser, interactiveInput({ stage: "lifecycle", lifecycle }), lifecycle.pathname, lifecycle.context,
     response, watchP2LifecycleMutation, document);
 }
+
+test("owned Chromium reorder accepts trusted keyboard activations and rejects mouse, synthetic and wrong-kind controls",
+  { skip: !ownedInteractiveBrowser, timeout: 18_000 }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const run = async (kind, variant) => {
+      const context = await browser.newContext(), { input, target, winnerBody, staleBody } = ownedReorder(kind);
+      const detail = p2InteractiveBrowserEntryPath(input, "owner"), pathname = p2AuthoringReorderPath(target);
+      const winnerId = randomUUID(), staleId = randomUUID(), wrongKind = kind === "module" ? "lesson" : "module";
+      const receiptIds = variant === "wrong-order" ? [...winnerBody.ids].reverse() : winnerBody.ids;
+      const result = kind === "module" ? { course: { id: target.courseId, slug: target.slug, status: "draft", revision: 5, modules: receiptIds.map(id => ({ id })) } }
+        : { module: { id: target.parentId, courseId: target.courseId, courseRevision: 5, lessons: receiptIds.map(id => ({ id })) } };
+      const conflict = { error: { code: "conflict", message: "Owned fixture conflict." }, requestId: staleId };
+      const effects = [];
+      await context.route("**/*", async route => {
+        const request = route.request(), url = new URL(request.url());
+        if (url.origin !== input.browserOrigin) return route.abort();
+        if (url.pathname === detail && request.method() === "GET") return route.fulfill({ status: 200, contentType: "text/html; charset=utf-8",
+          body: `<!doctype html><p>draft · Revision 4</p>
+            <button id="winner" aria-label="Move ${kind} Owned first down">Down</button>
+            <button id="stale" aria-label="Move ${kind} Owned third up">Up</button>
+            <button id="wrong" aria-label="Move ${wrongKind} Owned unrelated down">Down</button>
+            <div id="feedback"></div><script>
+            async function submit(body) {
+              const result = await fetch(${JSON.stringify(pathname)}, { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(body) });
+              const feedback = document.querySelector("#feedback");
+              if (result.ok) {
+                await result.json();
+                await (await fetch(${JSON.stringify(pathname)})).json();
+                feedback.setAttribute("role", "status");
+                feedback.textContent = "Curriculum order saved.";
+              } else {
+                feedback.setAttribute("role", "alert");
+                feedback.textContent = "This course changed or is not ready for this operation. Reload before trying again. Reference: " + result.headers.get("x-request-id");
+              }
+            }
+            document.querySelector("#winner").onclick = document.querySelector("#wrong").onclick = () => submit(${JSON.stringify(winnerBody)});
+            document.querySelector("#stale").onclick = () => submit(${JSON.stringify(staleBody)});
+            </script>` });
+        if (url.pathname !== pathname) return route.abort();
+        if (request.method() === "GET") return route.fulfill({ status: 200, json: result });
+        if (request.method() !== "POST") return route.abort();
+        const digest = identityHash(request.postDataJSON());
+        assert.ok([target.winnerBodySha256, target.staleBodySha256].includes(digest));
+        const won = digest === target.winnerBodySha256;
+        effects.push(won ? "winner" : "stale");
+        return route.fulfill({ status: won ? 200 : 409, headers: { "content-type": "application/json",
+          "cache-control": "private, no-store", "x-request-id": won ? winnerId : staleId }, body: JSON.stringify(won ? result : conflict) });
+      });
+      const winner = await context.newPage(), stale = await context.newPage(), watch = watchP2AuthoringEdits(context, winner, stale, input);
+      try {
+        const expires = Math.floor(Date.now() / 1000) + 7;
+        await watch.open(expires);
+        if (variant === "mouse") await winner.locator("#winner").click();
+        else if (variant === "synthetic") await winner.locator("#winner").evaluate(button => {
+          button.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+          button.click();
+        });
+        else await winner.locator(variant === "wrong-kind" ? "#wrong" : "#winner").press("Enter");
+        await winner.getByRole("status").waitFor({ timeout: 3000 });
+        if (variant !== "success") {
+          await assert.rejects(watch.wait(expires), /AUTHORING_RESPONSE_REFUSED/u);
+          assert.throws(() => watch.finish());
+          assert.deepEqual(effects, ["winner"]);
+          return;
+        }
+        await stale.locator("#stale").press("Space");
+        await watch.wait(expires);
+        await Promise.all([winner.close(), stale.close()]);
+        const receipt = watch.finish();
+        assert.deepEqual(receipt, {
+          winner: { method: "POST", pathname, status: 200, requestId: winnerId, keyboardActivated: true,
+            body: { courseId: target.courseId, parentId: target.parentId, kind, revision: 5, ids: winnerBody.ids } },
+          stale: { method: "POST", pathname, status: 409, requestId: staleId, keyboardActivated: true, outcome: "conflict" },
+        });
+        assert.equal(JSON.stringify(receipt).includes("Owned"), false);
+        assert.deepEqual(effects, ["winner", "stale"]);
+      } finally { watch.close(); await context.close(); }
+    };
+    try {
+      for (const kind of ["module", "lesson"]) await run(kind, "success");
+      for (const variant of ["mouse", "synthetic", "wrong-kind", "wrong-order"]) await run("module", variant);
+    } finally { await browser.close(); }
+  });
 
 test("owned Chromium two-tab editing captures the winner and proves the stale title survives the conflict",
   { skip: !ownedInteractiveBrowser, timeout: 15_000 }, async () => {

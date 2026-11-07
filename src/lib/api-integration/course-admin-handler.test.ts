@@ -57,6 +57,30 @@ test("scoped draft edits require a positive revision and reject any publication 
   assert.deepEqual(updates, [details, ordinaryStatusChange]);
 });
 
+test("scoped curriculum reorders accept only a revision and unique canonical IDs before client calls", async () => {
+  const other = "8e2280dc-0389-4248-b21c-f87427f9e85c";
+  const valid = { expectedCourseRevision: 3, ids: [other, id] };
+  for (const [operation, method, path, params] of [
+    ["reorder-modules", "reorderModules", `/api/admin/courses/${id}/modules/reorder`, { courseId: id }],
+    ["reorder-lessons", "reorderLessons", `/api/admin/modules/${id}/lessons/reorder`, { moduleId: id }],
+  ] as const) {
+    const calls: unknown[] = [];
+    const handler = createCourseAdminHandler(operation, {
+      enabled: () => true, origin: () => origin,
+      run: (_kind, work) => withWriterOperationContext(work, undefined, undefined, undefined, undefined, id),
+      client: () => ({ async [method](parent: string, input: unknown) { assert.equal(parent, id); calls.push(input); return {}; } }) as never,
+    });
+    for (const body of [null, { ids: valid.ids }, { ...valid, expectedCourseRevision: 0 }, { ...valid, expectedCourseRevision: 2_147_483_648 },
+      { ...valid, ids: [] }, { ...valid, ids: [id] }, { ...valid, ids: [id, id] }, { ...valid, ids: [id, "not-a-uuid"] },
+      { ...valid, ids: [id, other.toUpperCase()] }, { ...valid, status: "draft" }]) {
+      assert.equal((await handler(req(path, "POST", body), params)).status, 400);
+    }
+    assert.deepEqual(calls, []);
+    assert.equal((await handler(req(path, "POST", valid), params)).status, 200);
+    assert.deepEqual(calls, [valid]);
+  }
+});
+
 test("admin paginated reads are private, validated and authorized through the real named client", async () => {
   let calls = 0;
   const client = createCourseClient({ enabled: () => true, getAdmin: async permission => { assert.equal(permission, "courses:edit"); return actor; }, mintToken: () => "server.admin.jwt", getTransport: () => async input => {

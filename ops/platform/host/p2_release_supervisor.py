@@ -1175,7 +1175,7 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
         }.get(plan.get('scopedAction', {}).get('stage')),
     }.get(plan['mode'])
     if plan['mode'] == 'interactive-browser':
-        from p2_interactive_window import (browser_artifact, browser_case_evidence, browser_receipt, browser_status,
+        from p2_interactive_window import (browser_artifact, browser_case_evidence, browser_evidence_limit, browser_receipt, browser_status,
                                             require_browser_ledger, verify_browser_controller)
         scoped_status = browser_status(plan, 'JOINED')
     if scoped_status is not None:
@@ -1192,7 +1192,8 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
                 'P2_PROFILED_CERTIFICATION_GUARD_SCOPED_CASE_REFUSED')
         if plan['mode'] == 'interactive-browser':
             program_sha = verify_browser_controller(initial, source or Path(__file__).resolve().parents[3])
-            evidence = decode_qualification_target_json(migrate.read_input(directory, browser_artifact(plan, 'evidence'), 8192), 'carrier')
+            evidence = decode_qualification_target_json(
+                migrate.read_input(directory, browser_artifact(plan, 'evidence'), browser_evidence_limit(plan)), 'carrier')
             witness = decode_qualification_target_json(migrate.read_input(directory, browser_artifact(plan, 'ledger')), 'carrier')
             operation_count = require_browser_ledger(plan, witness)
             gateway_artifact = None

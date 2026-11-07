@@ -328,6 +328,28 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
+    def test_curriculum_reorder_plan_binds_exact_parent_targets_and_separate_selector(self):
+        owner = "10000000-0000-4000-8000-000000000001"
+        course = "10000000-0000-4000-8000-000000000002"
+        module = "10000000-0000-4000-8000-000000000003"
+        for kind, parent, route in (("module", course, f"courses/{course}/modules/reorder"),
+                                    ("lesson", module, f"modules/{module}/lessons/reorder")):
+            selection = {"operation": "reorder-and-stale-curriculum", "slug": "owned-draft", "courseId": course,
+                         "revision": 4, "kind": kind, "parentId": parent}
+            requests = [{"method": "GET", "target": f"/course/v1/admin/courses/{course}", "bodySha256": window._EMPTY, "uses": 3},
+                        *[{"method": "POST", "target": f"/course/v1/admin/{route}", "bodySha256": digest * 64, "uses": 1}
+                          for digest in ("b", "c")]]
+            action = {"stage": "authoring", "actorId": owner, "windowSeconds": 60, "requests": requests, "authoringAction": selection}
+            self.assertEqual(window.validate_interactive_action(action), action)
+            self.assertEqual(window._selection_sha(action), "7032712d617574682d736f72742d7631" + owner.replace("-", ""))
+            for change in ({"kind": "quiz"}, {"parentId": owner}, {"revision": 0}, {"courseId": owner}):
+                with self.subTest(kind=kind, change=change), self.assertRaises(ValueError):
+                    window.validate_interactive_action({**action, "authoringAction": {**selection, **change}})
+            for change in ({"method": "PATCH"}, {"target": f"/course/v1/admin/courses/{course}"},
+                           {"bodySha256": requests[2]["bodySha256"]}, {"uses": 2}):
+                with self.subTest(kind=kind, request=change), self.assertRaises(ValueError):
+                    window.validate_interactive_action({**action, "requests": [requests[0], {**requests[1], **change}, requests[2]]})
+
     def test_authoring_edit_admits_only_reviewed_revision_routes_and_owner_selector(self):
         owner = "10000000-0000-4000-8000-000000000001"
         course = "10000000-0000-4000-8000-000000000002"
