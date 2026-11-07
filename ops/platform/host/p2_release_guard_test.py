@@ -47,6 +47,213 @@ class IndependentGuardTests(unittest.TestCase):
             time.sleep(0.01)
         return path
 
+    def profiled_certification(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        profile = {'version': 2, 'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)}
+        phase = {'contractPhase': 'p2', 'phase2ContractManifestSha256': 'sha256:' + 'a' * 64}
+        candidate = {**profile, **phase, 'version': 3, 'releaseId': 'original', 'environment': 'staging'}
+        plan = {**profile, **phase, 'certificationActionId': 'owned-case', 'environment': 'staging', 'originalReleaseId': 'original',
+                'sourceCommit': 'b' * 40, 'candidateSha256': 'c' * 64, 'configurationSha256': 'd' * 64, 'targetSha256': 'e' * 64,
+                'planSha256': 'f' * 64, 'mode': 'native-window', 'initialEpoch': '1'}
+        initial = {**profile, 'mode': supervisor.PROFILED_CERTIFICATION_MODE, 'candidate': candidate,
+                   'results': str(self.root), 'configuration': str(self.root / 'configuration'),
+                   'configurationSha256': dict.fromkeys(supervisor.staging_state.CONFIGURATION_FILES, 'd' * 64),
+                   '_guardLayout': supervisor.PROFILED_CERTIFICATION_LAYOUT, 'certificationPlan': plan,
+                   '_guardLockDescriptor': self.fd, **{key: plan[key] for key in ('certificationActionId', 'sourceCommit',
+                       'candidateSha256', 'targetSha256')}}
+        directory = self.root / ('p2-profiled-current-certification-' + initial['certificationActionId'])
+        directory.mkdir(mode=0o700)
+        return initial, directory
+
+    def test_profiled_guard_arm_is_bound_to_the_original_physical_request(self):
+        initial, directory = self.profiled_certification()
+        profile = {'version': 2, 'qualificationTargetProfile': initial['qualificationTargetProfile']}
+        plan = initial['certificationPlan']
+        target = {'host': 'fixture.invalid', 'port': 5432, 'database': 'fixture', 'user': 'operator', 'serverMajor': 18,
+                  'qualificationTargetProfile': initial['qualificationTargetProfile']}
+        role = {'name': 'runtime_role', 'oid': '22222'}
+        plan['nativePlan'] = {'target': target, 'producer': {'role': role}}
+        job = {**profile, 'releaseId': 'original', 'target': target}
+        owner = {'name': 'owner_role', 'oid': '11111'}
+        history = {**profile, 'target': target, 'retiredLogins': []}
+        initial.update(owner=owner, inventory={'producers': [plan['nativePlan']['producer']], 'historicalLogins': history})
+        receipt = {**profile, **migrate.contract_identity(initial['candidate']), 'target': target, 'owner': owner, 'runtime': role,
+                   'status': 'P2_CERTIFICATION_DATABASE_CURRENT', 'service': 'frontend', 'releaseId': 'original',
+                   **{key: plan[key] for key in ('certificationActionId', 'sourceCommit', 'candidateSha256', 'targetSha256', 'planSha256')},
+                   'sqlReplayed': False, 'trafficAuthorized': False, 'schemaVerified': True, 'runtimeRoleVerified': True,
+                   'admission': {'epoch': '1', 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0}}
+        probe = {**profile, 'marker': '1' * 64, 'backendPid': 123, 'backendStart': 'owned-backend-start',
+                 'job': job, 'baseline': {}, 'owner': owner, 'producers': initial['inventory']['producers'], 'historicalLogins': history,
+                 'plan': plan, 'receipt': receipt}
+        info = {'job': job, 'schema': b'{}'}
+        with self.assertRaises(FileNotFoundError):
+            supervisor.require_profiled_certification_guard_arm(initial, probe)
+        supervisor._validate_profiled_certification_arm(initial, probe, info)
+        for changes in ({'baseline': {'other': True}}, {'owner': role}, {'backendPid': True},
+                        {'receipt': {**receipt, 'admission': {**receipt['admission'], 'active': 1}}}):
+            with self.subTest(changes=tuple(changes)), self.assertRaisesRegex(ValueError, 'GUARD_PROBE_REQUIRED'):
+                supervisor._validate_profiled_certification_arm(initial, {**probe, **changes}, info)
+        armed = supervisor._profiled_certification_arm_record(initial, probe)
+        migrate.write_json(directory, supervisor.PROFILED_CERTIFICATION_ARM, armed)
+        with self.assertRaises(FileNotFoundError):
+            supervisor.require_profiled_certification_guard_arm(initial, probe)
+        (directory / supervisor.PROFILED_CERTIFICATION_ARM).unlink()
+        supervisor._retain_profiled_certification_arm(initial, probe)
+        self.assertEqual(supervisor.require_profiled_certification_guard_arm(initial, probe), armed)
+        with self.assertRaisesRegex(ValueError, 'GUARD_ARM_REQUIRED'):
+            supervisor.require_profiled_certification_guard_arm(initial, {**probe, 'backendStart': 'changed'})
+
+    def test_profiled_terminal_joins_raw_commit_and_rejects_unknown_as_closed(self):
+        initial, _ = self.profiled_certification()
+        terminal = {**initial['certificationPlan'], 'status': supervisor.PROFILED_CERTIFICATION_LAYOUT['terminalStatus'],
+                    'releaseId': 'original', 'configurationSha256': initial['configurationSha256'],
+                    'frontendSqlApplied': False, 'trafficAuthorized': False, 'releaseAccepted': False, 'sqlReplayed': False,
+                    'nativeDisabled': True, 'frontendAdmission': {'epoch': '4', 'newWork': False, 'recovery': False, 'active': 0,
+                    'uncertain': 0}, 'gatewayAdmission': {'newWork': False, 'recovery': False,
+                    'active': {'newWork': 0, 'recovery': 0}, 'uncertain': {'newWork': 0, 'recovery': 0}}}
+        raw = json.dumps(terminal).encode()
+        digest = migrate.file_hash(raw)
+        self.assertEqual(supervisor._require_profiled_certification_terminal(initial, raw, digest), terminal)
+        with self.assertRaisesRegex(ValueError, 'TERMINAL_REFUSED'):
+            supervisor._require_profiled_certification_terminal(initial, raw + b'\n', digest)
+        for changes, code in (({'nativeDisabled': None}, 'TERMINAL_REFUSED'), ({'releaseAccepted': True}, 'TERMINAL_REFUSED'),
+                ({'planSha256': '0' * 64}, 'TERMINAL_REFUSED'),
+                ({'frontendAdmission': {**terminal['frontendAdmission'], 'uncertain': 1}}, 'TERMINAL_NOT_CLOSED'),
+                ({'gatewayAdmission': {**terminal['gatewayAdmission'], 'active': {'newWork': False, 'recovery': 0}}}, 'TERMINAL_NOT_CLOSED')):
+            with self.subTest(changes=tuple(changes)), self.assertRaisesRegex(ValueError, code):
+                changed = json.dumps({**terminal, **changes}).encode()
+                supervisor._require_profiled_certification_terminal(initial, changed, migrate.file_hash(changed))
+
+    def test_profiled_cleanup_waits_for_actual_reap_and_keeps_failed_frontend_proof_unknown(self):
+        initial, directory = self.profiled_certification()
+        ready_r, ready_w = os.pipe()
+        child = os.fork()
+        if child == 0:
+            os.close(ready_r); os.setsid(); os.write(ready_w, b'R'); os.close(ready_w)
+            while True:
+                time.sleep(1)
+        self.children.append(child); os.close(ready_w)
+        self.assertEqual(os.read(ready_r, 1), b'R'); os.close(ready_r)
+        events = []
+        def check(*_):
+            self.assertEqual(supervisor.members(child), [])
+            contender = os.open(self.lock, os.O_RDWR)
+            try:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                os.close(contender)
+        def native(*_):
+            check(); events.append('native')
+            return {'nativeDisabled': None, 'nativeDisableAttempted': True}
+        def frontend(*_):
+            check(); events.append('frontend')
+            raise RuntimeError('private fixture exception')
+        with patch.object(supervisor, 'verify_guard_boundary', side_effect=check), \
+             patch.object(supervisor, 'cleanup_profiled_certification_containers', side_effect=lambda: events.append('containers')), \
+             patch.object(supervisor, 'capture_gateway_before_stop', side_effect=ValueError('unavailable owned gateway')), \
+             patch.object(supervisor.staging_state, 'configuration_hashes', return_value=initial['configurationSha256']), \
+             patch.object(supervisor, 'close_gateway', return_value={'gatewayAdmissionFileClosed': True, 'gatewayAdmissionAcknowledged': None}), \
+             patch.object(migrate, 'suspend_runtime', side_effect=lambda *_: events.append('stop')):
+            result = finish_failure_cleanup(initial, {'source': 'owned physical probe'}, self.root, child,
+                                            native_containment=native, frontend_containment=frontend)
+        self.children.remove(child)
+        self.assertEqual(events, ['native', 'frontend', 'containers', 'stop'])
+        self.assertIs(result['workerProcessesQuiesced'], True)
+        self.assertIs(result['runtimeStopped'], True)
+        self.assertIs(result['nativeDisabled'], None)
+        self.assertIs(result['frontendAdmissionClosed'], None)
+        self.assertIs(result['frontendCloseAttempted'], None)
+        self.assertIs(result['trafficAuthorized'], None)
+        initial_path = directory / 'p2-independent-guard-outcome.json'
+        reaped_path = directory / 'p2-independent-guard-after-quiescence.json'
+        if reaped_path.exists():
+            first = json.loads(initial_path.read_bytes())
+            self.assertIs(first['workerProcessesQuiesced'], False)
+            self.assertIs(first['runtimeStopAttempted'], False)
+        retained = (reaped_path if reaped_path.exists() else initial_path).read_text()
+        self.assertEqual(json.loads(retained), result)
+        self.assertNotIn('private fixture exception', retained)
+
+    def test_profiled_preamble_never_contains_or_stops_the_adopted_runtime(self):
+        initial, _ = self.profiled_certification()
+        with patch.object(supervisor, 'stop_group', return_value=True), \
+             patch.object(supervisor, 'verify_guard_boundary'), \
+             patch.object(supervisor, 'cleanup_profiled_certification_containers') as cleanup, \
+             patch.object(migrate, 'suspend_runtime', side_effect=AssertionError('unexpected stop')) as stop:
+            result = fail_closed(initial, None, self.root, group=123,
+                native_containment=lambda *_: self.fail('unexpected native action'),
+                frontend_containment=lambda *_: self.fail('unexpected frontend action'))
+        cleanup.assert_called_once_with()
+        stop.assert_not_called()
+        self.assertEqual(result['status'], 'P2_GUARD_REFUSED_BEFORE_CERTIFICATION_STAGE')
+        self.assertIs(result['runtimeStopAttempted'], False)
+        self.assertIsNone(result['frontendAdmissionClosed'])
+
+    def test_profiled_cleanup_reaps_its_direct_child_even_before_setsid(self):
+        child = os.fork()
+        if child == 0:
+            while True:
+                time.sleep(1)
+        self.children.append(child)
+        deadline = time.monotonic() + 5
+        while not supervisor._stop_profiled_certification_group(child):
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(0.02)
+        self.children.remove(child)
+        with self.assertRaises(ChildProcessError):
+            os.waitpid(child, os.WNOHANG)
+
+    def test_profiled_cleanup_retries_container_absence_without_replaying_containment(self):
+        initial, directory = self.profiled_certification()
+        with patch.object(supervisor, 'stop_group', return_value=True), \
+             patch.object(supervisor, 'verify_guard_boundary'), \
+             patch.object(supervisor, 'cleanup_profiled_certification_containers', side_effect=[ValueError('unknown'), None]) as cleanup, \
+             patch.object(supervisor, '_stop_profiled_certification_runtime') as stop:
+            native = unittest.mock.Mock(return_value={'nativeDisabled': True, 'nativeDisableAttempted': False})
+            frontend = unittest.mock.Mock(return_value={'frontendAdmissionClosed': None, 'frontendCloseAttempted': True})
+            result = finish_failure_cleanup(initial, {'source': 'owned probe'}, self.root, 123,
+                                            native_containment=native, frontend_containment=frontend)
+        self.assertEqual(cleanup.call_count, 2)
+        native.assert_called_once()
+        frontend.assert_called_once()
+        stop.assert_called_once()
+        first = json.loads((directory / 'p2-independent-guard-outcome.json').read_bytes())
+        final = json.loads((directory / 'p2-independent-guard-after-container-cleanup.json').read_bytes())
+        self.assertIs(first['profiledCertificationContainerCleanupUncertain'], True)
+        self.assertEqual(final, result)
+        self.assertIs(final['profiledCertificationContainerCleanupVerified'], True)
+        self.assertIsNone(final['frontendAdmissionClosed'])
+
+    def test_profiled_safety_pipe_requires_one_arm_before_one_raw_commit_and_reap(self):
+        digest = 'c' * 64
+        arm = {'operation': 'armed', 'probe': {'owned': True}}
+        commit = {'operation': 'committed', 'sha256': digest}
+        for frames, suffix, code in (([arm, commit], b'', None), ([commit], b'', 'SAFETY_COMMIT_REFUSED'),
+                                    ([arm, commit, commit], b'', 'SAFETY_COMMIT_REFUSED'),
+                                    ([arm, commit], b'partial', 'SAFETY_TERMINAL_REFUSED')):
+            safety_r, safety_w = os.pipe(); health_r, health_w = os.pipe()
+            child = os.fork()
+            if child == 0:
+                os.close(safety_r); os.close(health_w)
+                raw = b''.join(json.dumps(frame).encode() + b'\n' for frame in frames) + suffix
+                os.write(safety_w, raw); os.close(safety_w); os.close(health_r); os._exit(0)
+            self.children.append(child); os.close(safety_w); os.close(health_r)
+            observed = []
+            try:
+                if code is None:
+                    self.assertEqual(watch_broker(child, safety_r, health_w, observed.append, profiled_certification=True), digest)
+                    self.assertEqual(observed, [arm['probe']])
+                    with self.assertRaises(ChildProcessError):
+                        os.waitpid(child, os.WNOHANG)
+                else:
+                    with self.assertRaisesRegex(ValueError, code):
+                        watch_broker(child, safety_r, health_w, observed.append, profiled_certification=True)
+                    try: os.waitpid(child, 0)
+                    except ChildProcessError: pass
+            finally:
+                os.close(safety_r); os.close(health_w); self.children.remove(child)
+
     def test_killed_broker_group_cannot_start_after_independent_guard_final_stop(self):
         report_r, report_w = os.pipe()
         supervisor = os.fork()

@@ -6,9 +6,65 @@ import unittest
 from p2_release_broker import Broker, PhysicalObserver
 from p2_release_supervisor import supervise, DEFAULT_LAYOUT, RECOVERY_LAYOUT, CERTIFICATION_LAYOUT, ROTATION_LAYOUT, cleanup_recovery_current_containers, cleanup_rotation_readonly_containers
 from p2_identity_key_rotation_parent import P2IdentityRotationBroker, P2IdentityRotationPhysicalObserver
+import p2_certification_parent as certification
+import p2_release_supervisor as supervisor
 
 
 class FixedDispatchTests(unittest.TestCase):
+    def test_profiled_certification_requires_all_exact_source_types_and_both_callbacks(self):
+        class OwnedBroker(Broker):
+            pass
+        def native(*_):
+            raise AssertionError('native action')
+        def frontend(*_):
+            raise AssertionError('frontend action')
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        initial = {'version': 2, 'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE),
+                   'mode': supervisor.PROFILED_CERTIFICATION_MODE, 'candidate': {'releaseId': 'original'},
+                   'certificationActionId': 'certification-2', '_guardLayout': supervisor.CERTIFICATION_LAYOUT}
+        options = {'broker_type': OwnedBroker, 'observer_type': certification.P2CertificationPhysicalObserver,
+                   'observer_source': supervisor.CERTIFICATION_OBSERVER, 'layout': supervisor.PROFILED_CERTIFICATION_LAYOUT,
+                   'native_containment': native, 'frontend_containment': frontend}
+        with patch.object(certification, 'P2ProfiledCertificationBroker', OwnedBroker, create=True), \
+             patch.object(certification, 'contain_profiled_certification_native', native, create=True), \
+             patch.object(certification, 'contain_profiled_certification_frontend', frontend, create=True), \
+             patch.object(supervisor.os, 'geteuid', return_value=1), \
+             patch.object(supervisor.migrate, 'make_plan', side_effect=AssertionError('unexpected plan I/O')):
+            with self.assertRaisesRegex(ValueError, 'LINUX_ROOT_GUARD_REQUIRED'):
+                supervise(dict(initial), **options)
+            for mismatch in ({'broker_type': Broker}, {'observer_type': PhysicalObserver},
+                             {'observer_source': 'ops/platform/p2-profiled-current-probe.mjs'},
+                             {'layout': CERTIFICATION_LAYOUT}, {'native_containment': frontend},
+                             {'frontend_containment': None}, {'frontend_containment': lambda *_: None}):
+                with self.subTest(mismatch=tuple(mismatch)), self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
+                    supervise(dict(initial), **{**options, **mismatch})
+            with self.assertRaisesRegex(ValueError, 'FIXED_SOURCE_DISPATCH_REQUIRED'):
+                supervise(dict(initial))
+            with self.assertRaisesRegex(ValueError, 'PROFILE_REQUIRED'):
+                supervise({key: value for key, value in initial.items() if key != 'qualificationTargetProfile'}, **options)
+
+    def test_profiled_certification_cleanup_only_touches_the_three_fixed_namespaces(self):
+        inventory = {'a' * 12: '/lash-p2-certification-observer-' + '1' * 32,
+                     'b' * 12: '/lash-p2-certification-api-check-course-' + '2' * 32,
+                     'c' * 12: '/lash-p2-profiled-certification-guard-close-' + '3' * 32,
+                     'd' * 12: '/lash-p2-profiled-certification-guard-close-' + '3' * 32 + '-foreign',
+                     'e' * 12: '/lash-p2-profiled-current-observer-' + '4' * 32}
+        calls = []
+        def command(args, *_):
+            calls.append(args)
+            if args[1:3] == ['rm', '--force']:
+                del inventory[args[-1]]
+                return ''
+            pattern = next(value.removeprefix('name=') for value in args if value.startswith('name='))
+            return '\n'.join(identity for identity, name in inventory.items() if re.fullmatch(pattern, name))
+        with patch.object(supervisor.runtime, 'command', side_effect=command):
+            with self.assertRaisesRegex(ValueError, 'CONTAINER_REMAINS'):
+                supervisor._profiled_certification_containers(remove=False)
+            self.assertTrue(all(args[1:3] == ['container', 'ls'] for args in calls))
+            supervisor.cleanup_profiled_certification_containers()
+        self.assertEqual(set(inventory), {'d' * 12, 'e' * 12})
+        self.assertEqual(sum(args[1:3] == ['rm', '--force'] for args in calls), 3)
+
     def test_private_json_cannot_select_recovery_program_or_layout(self):
         initial = {'candidate': {'releaseId': 'original'}, '_guardLayout': RECOVERY_LAYOUT,
                    '_guardObserverSource': 'ops/platform/unreviewed.mjs'}

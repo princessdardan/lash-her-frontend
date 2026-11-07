@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from p2_source_closure import REQUIRED, PROFILED_CURRENT_REQUIRED, verify_source_closure, verify_profiled_current_source_closure, private_observer_program
+from p2_source_closure import CERTIFICATION_OBSERVER, PROFILED_CERTIFICATION_MODE, PROFILED_CERTIFICATION_REQUIRED
 
 
 class SourceClosureTests(unittest.TestCase):
@@ -86,6 +87,31 @@ class SourceClosureTests(unittest.TestCase):
         self.assertEqual(program.stat().st_mode & 0o777, 0o444)
         program.chmod(0o600); program.write_text('different')
         with self.assertRaises(ValueError): private_observer_program(self.initial, private / 'source')
+
+    def test_profiled_certification_manifest_and_private_observer_bind_fixed_current_source(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        manifest = dict(self.manifest)
+        for name in (PROFILED_CURRENT_REQUIRED | PROFILED_CERTIFICATION_REQUIRED) - set(manifest):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(('owned ' + name).encode())
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        selected = {**self.make(manifest), 'version': 2, 'mode': PROFILED_CERTIFICATION_MODE,
+                    'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE),
+                    '_guardObserverSource': CERTIFICATION_OBSERVER,
+                    '_guardObserverProgram': (self.root / CERTIFICATION_OBSERVER).read_bytes()}
+        self.assertEqual(verify_profiled_current_source_closure(selected, self.root), selected['sourceClosureSha256'])
+        private = self.root / 'private'; private.mkdir(mode=0o700)
+        program = private_observer_program(selected, private / 'source')
+        self.assertEqual(program.read_bytes(), selected['_guardObserverProgram'])
+        for mismatch in ({'version': 1}, {'mode': 'p2-profiled-current-release'}, {'qualificationTargetProfile': None},
+                         {'_guardObserverSource': 'ops/platform/p2-profiled-current-probe.mjs'},
+                         {'_guardObserverProgram': b'different source'}):
+            with self.subTest(mismatch=tuple(mismatch)), self.assertRaises(ValueError):
+                private_observer_program({**selected, **mismatch}, private / 'source')
+        omitted = dict(manifest); omitted.pop('ops/platform/qualification-target-profiles.json')
+        with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+            verify_profiled_current_source_closure({**selected, **self.make(omitted)}, self.root)
 
     def test_complete_installed_closure_accepts_41mb_and_refuses_one_extra_byte(self):
         manifest = dict(self.manifest)

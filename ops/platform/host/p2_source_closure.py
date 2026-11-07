@@ -25,6 +25,13 @@ PROFILED_CURRENT_REQUIRED = {
     'ops/platform/p2-profiled-current-frontend-adapters.mjs',
     'ops/platform/host/current_databases.py', 'ops/platform/host/database_current.mjs',
 }
+PROFILED_CERTIFICATION_MODE = 'p2-bounded-certification-profiled-current'
+CERTIFICATION_OBSERVER = 'ops/platform/p2-certification-current-probe.mjs'
+PROFILED_CERTIFICATION_REQUIRED = {'ops/platform/host/p2_certification_parent.py', 'ops/platform/p2-certification.mjs',
+                                   CERTIFICATION_OBSERVER, 'ops/platform/p2-lifecycle-native.mjs',
+                                   'ops/platform/qualification-target-profile.mjs',
+                                   'ops/platform/qualification-target-profiles.json',
+                                   'ops/platform/host/qualification_target_profile.py'}
 
 
 def verify_source_closure(initial, root):
@@ -35,13 +42,12 @@ def verify_profiled_current_source_closure(initial, root):
     import migrate
     from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
     if initial.get('mode') not in ('p2-profiled-current-release', 'p2-profiled-current-recovery',
-                                  'p2-bounded-certification-profiled-current'):
+                                  PROFILED_CERTIFICATION_MODE):
         raise ValueError('PROFILED_CURRENT_FIXED_SOURCE_DISPATCH_REQUIRED')
     migrate.require_profile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, initial)
     required = REQUIRED | PROFILED_CURRENT_REQUIRED
-    if initial['mode'] == 'p2-bounded-certification-profiled-current':
-        required |= {'ops/platform/host/p2_certification_parent.py', 'ops/platform/p2-certification.mjs',
-                     'ops/platform/p2-certification-current-probe.mjs', 'ops/platform/p2-lifecycle-native.mjs'}
+    if initial['mode'] == PROFILED_CERTIFICATION_MODE:
+        required |= PROFILED_CERTIFICATION_REQUIRED
     return _verify_source_closure(initial, root, required, 544, 41_850_000)
 
 
@@ -78,15 +84,23 @@ def private_observer_program(initial, directory):
     # never selected from the private operator input packet.
     source_name = initial.get('_guardObserverSource', 'ops/platform/p2-frontend-live-probe.mjs')
     if source_name not in {'ops/platform/p2-frontend-live-probe.mjs', 'ops/platform/p2-recovery-current-probe.mjs',
-                           'ops/platform/p2-certification-current-probe.mjs', 'ops/platform/p2-profiled-current-probe.mjs'}:
+                           CERTIFICATION_OBSERVER, 'ops/platform/p2-profiled-current-probe.mjs'}:
         raise ValueError('P2_FIXED_OBSERVER_SOURCE_REQUIRED')
-    if source_name == 'ops/platform/p2-certification-current-probe.mjs' and initial.get('mode') != 'p2-bounded-certification':
+    if initial.get('mode') == PROFILED_CERTIFICATION_MODE and source_name != CERTIFICATION_OBSERVER:
         raise ValueError('P2_FIXED_CERTIFICATION_OBSERVER_REQUIRED')
+    if source_name == CERTIFICATION_OBSERVER:
+        if initial.get('mode') not in ('p2-bounded-certification', PROFILED_CERTIFICATION_MODE):
+            raise ValueError('P2_FIXED_CERTIFICATION_OBSERVER_REQUIRED')
+        if initial['mode'] == PROFILED_CERTIFICATION_MODE:
+            import migrate
+            from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+            if type(initial.get('version')) is not int or initial['version'] != 2:
+                raise ValueError('P2_FIXED_CERTIFICATION_OBSERVER_REQUIRED')
+            migrate.require_profile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, initial)
     if source_name == 'ops/platform/p2-profiled-current-probe.mjs':
         import migrate
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
-        if initial.get('mode') not in ('p2-profiled-current-release', 'p2-profiled-current-recovery',
-                                  'p2-bounded-certification-profiled-current'):
+        if initial.get('mode') not in ('p2-profiled-current-release', 'p2-profiled-current-recovery'):
             raise ValueError('PROFILED_CURRENT_FIXED_OBSERVER_REQUIRED')
         migrate.require_profile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, initial)
     expected = initial['sourceSha256'][source_name]
