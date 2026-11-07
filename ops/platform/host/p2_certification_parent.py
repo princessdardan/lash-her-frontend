@@ -6,6 +6,7 @@ No SQL executor, role preparation, deployment or runtime replacement is exposed.
 import base64
 import fcntl
 import copy
+from contextlib import nullcontext
 import datetime
 import hashlib
 import json
@@ -1469,6 +1470,9 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
     def initialize(self):
         self._initialize_certification_state()
         self.api_proof = None
+        self.guard_arm_verified = False
+        self.fallback_complete = False
+        self.failure_lock = threading.RLock()
         initial = self.initial
         plan = initial['certificationPlan']
         mode = plan['mode']
@@ -1535,6 +1539,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
             self.check()
             try:
                 require_profiled_certification_guard_arm(self.initial, probe)
+                self.guard_arm_verified = True
                 return
             except FileNotFoundError:
                 require(time.monotonic() < expires, 'P2_PROFILED_CERTIFICATION_GUARD_ARM_TIMEOUT')
@@ -1579,27 +1584,74 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         # The independent guard owns provider and FE containment after reap.
         Broker.abort(self)
 
-    def contain_failure_without_guard(self):
-        # Revoke all registered operations before the surviving broker uses
-        # the same closed guard action. Uncertain reap keeps the flock held.
-        try:
-            if self.scope:
-                self.scope.revoke()
-                with self.scope.mutations:
-                    require(not any(process.poll() is None for process in self.scope.processes),
-                            'P2_PROFILED_CERTIFICATION_SCOPE_REAP_REQUIRED')
-            if self.observer:
-                self.observer.stop()
-        except Exception:
-            self.outcome['workerProcessCleanupUncertain'] = True
-            return False
-        if not self.armed_probe:
-            return True
+    def contain_frontend_without_guard(self):
         result = {**contain_profiled_certification_native(self.initial,self.armed_probe,self.source),
                   **contain_profiled_certification_frontend(self.initial,self.armed_probe,self.source)}
-        contained = super().contain_failure_without_guard()
         self.outcome.update(result)
-        return contained
+        require(result['frontendAdmissionClosed'] is True, 'P2_PROFILED_CERTIFICATION_FALLBACK_FRONTEND_UNKNOWN')
+
+    def _children_quiesced(self):
+        if self.operation_active.locked():
+            return False
+        if not self.scope:
+            return True
+        with self.scope.mutations:
+            return all(process.poll() is not None for process in self.scope.processes)
+
+    def contain_failure_without_guard(self):
+        from p2_release_supervisor import cleanup_profiled_certification_containers
+        with self.failure_lock:
+            thread = self.observer.thread if self.observer else None
+            if thread is not None and thread is not threading.current_thread() and thread.is_alive():
+                return False
+            if self.scope:
+                try:
+                    self.scope.revoke()
+                except Exception:
+                    self.outcome['workerProcessCleanupUncertain'] = True
+            if not self._children_quiesced():
+                self.outcome['workerProcessCleanupUncertain'] = True
+                return False
+            # An observer can start before durable ARM. Pre-ARM failure has
+            # no authority to mutate provider, frontend or gateway state.
+            if self.guard_arm_verified and not self.fallback_complete:
+                token = runtime._command_scope.set(None)
+                try:
+                    if super().contain_failure_without_guard() is False:
+                        return False
+                finally:
+                    runtime._command_scope.reset(token)
+                self.fallback_complete = True
+            try:
+                cleanup_profiled_certification_containers()
+            except Exception:
+                self.outcome['profiledCertificationContainerCleanupUncertain'] = True
+                return False
+            return True
+
+    def close(self,committed=False):
+        from p2_release_supervisor import sticky_cleanup_signals
+        signals = sticky_cleanup_signals() if threading.current_thread() is threading.main_thread() else nullcontext()
+        with signals:
+            if not committed:
+                self.abort()
+            self.boundary_stop.set()
+            if self.observer:
+                self.observer.stop_event.set()
+            while not self._children_quiesced():
+                if self.scope:
+                    try:
+                        self.scope.revoke()
+                    except Exception:
+                        self.outcome['workerProcessCleanupUncertain'] = True
+                time.sleep(0.1)
+            if self.observer:
+                self.observer.stop()
+            if not committed and not self.guard_alive:
+                while not self.contain_failure_without_guard():
+                    time.sleep(0.1)
+            super().close(committed)
+
 
 def main():
     if sys.argv[1:] == ['--plan-profiled-current']:

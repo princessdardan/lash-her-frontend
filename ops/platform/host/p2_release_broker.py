@@ -399,6 +399,9 @@ class Broker:
                 self.guard_alive = False
         self.contain_failure_without_guard()
 
+    def contain_frontend_without_guard(self):
+        self.observer.probe('fence')
+
     def contain_failure_without_guard(self):
         """Fixed survivor path; a profiled broker serializes one actual pass."""
         expected = migrate.profile_context(self.failure_profile())
@@ -425,7 +428,7 @@ class Broker:
         # recovery are never attempted. Failures remain explicit uncertainty.
         if self.observer:
             try:
-                self.observer.probe('fence')
+                self.contain_frontend_without_guard()
                 self.outcome['frontendAdmissionClosedOnFailure'] = True
                 self.outcome.update(trafficAuthorized=False, newWorkAuthorized=False, recoveryAuthorized=False)
             except BaseException:
