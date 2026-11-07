@@ -109,7 +109,11 @@ class ScopedMuxTests(unittest.TestCase):
         stage._gateway_process_sha256 = "a" * 64
         stage._mount = {"device": str(os.fstat(self.fd).st_dev), "inode": str(os.fstat(self.fd).st_ino)}
         stage._admission_fd = os.dup(self.fd)
-        self.addCleanup(lambda: os.close(stage._admission_fd) if stage._admission_fd is not None else None)
+        def close_stage():
+            descriptor, stage._admission_fd = stage._admission_fd, None
+            if descriptor is not None:
+                os.close(descriptor)
+        self.addCleanup(close_stage)
         stage._check = lambda: None
         stage._frontend_closed = lambda: stage._initial_frontend
         stage._storage_identity = lambda: os.fstat(stage._admission_fd)

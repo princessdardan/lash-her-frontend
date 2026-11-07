@@ -133,7 +133,9 @@ export function createGateway(input, options = {}) {
       let interactiveSelection, interactiveEvidence;
       if (interactiveAdmission) {
         const current = currentAdmission();
-        if (res.destroyed || current.sha256 !== interactiveAdmission.sha256) return refuse(503, "release_maintenance", 30);
+        if (res.destroyed || uncertain.newWork !== 0 || uncertain.recovery !== 0 || current.sha256 !== interactiveAdmission.sha256) {
+          return refuse(503, "release_maintenance", 30);
+        }
         interactiveSelection = selectScopedInteractiveRequest(current.interactive, {
           method: req.method, target: req.url, body, headers: req.headers, now: admissionNow(),
         });
@@ -203,7 +205,7 @@ export function createGateway(input, options = {}) {
               });
             }
             if (interactiveSelection) {
-              if (!scopedInteractiveAcknowledged(reply.statusCode, reply.headers["content-type"], buffered)) markUncertain();
+              if (!scopedInteractiveAcknowledged(route, req.url, reply.statusCode, reply.headers["content-type"], buffered)) markUncertain();
               else interactiveEvidence.acknowledged.push({ requestId, proofRequestId: interactiveSelection.requestId,
                 requestIndex: interactiveSelection.requestIndex, upstreamStatus: reply.statusCode });
             }

@@ -432,6 +432,11 @@ test("scoped interactive v3 joins exact signed requests, including GETs, to boun
     proofRequestId: input.headers["x-request-id"], requestIndex, upstreamStatus: response.status })) });
 });
 
+function mediaRefreshReceipt(lessonId, id) {
+  return { id, lessonId, status: "processing", generation: 2, isCurrent: false, lastErrorCode: null,
+    captionTracks: [{ id: "owned-track", language: "en", label: "English", status: "ready", closedCaptions: true }] };
+}
+
 test("scoped media refresh accepts the normal bodyless POST without a content type", async t => {
   const lesson = "20000000-0000-4000-8000-000000000002";
   const asset = "30000000-0000-4000-8000-000000000003";
@@ -444,7 +449,7 @@ test("scoped media refresh accepts the normal bodyless POST without a content ty
     for await (const chunk of req) chunks.push(chunk);
     forwarded.push({ method: req.method, path: req.url, contentType: req.headers["content-type"], body: Buffer.concat(chunks).toString() });
     res.writeHead(200, { "content-type": "application/json" });
-    res.end('{"videoAsset":{"status":"processing"}}');
+    res.end(JSON.stringify(mediaRefreshReceipt(lesson, asset)));
   }, "media");
   const bodyless = f.signed({ method, path: target });
   assert.equal((await f.send({ ...bodyless, headers: { ...bodyless.headers, "content-type": "text/plain" } })).status, 503);
@@ -455,6 +460,40 @@ test("scoped media refresh accepts the normal bodyless POST without a content ty
     method, path: target.slice("/course".length), contentType, body: "",
   })));
   assert.equal(f.admissionState().interactiveEvidence.acknowledged.length, 2);
+});
+
+test("scoped media retains ambiguous Course 409 and unresolved or mismatched refresh 200", async t => {
+  const lesson = "20000000-0000-4000-8000-000000000002";
+  const asset = "30000000-0000-4000-8000-000000000003";
+  const target = `/course/v1/admin/lessons/${lesson}/video/${asset}`;
+  const receipt = mediaRefreshReceipt(lesson, asset);
+  const error = code => ({ error: { code, message: "Media requires refresh or reconciliation" } });
+  const captionBody = '{"expectedCourseRevision":3,"url":"https://captions.example.test/owned.vtt","language":"en","label":"English"}';
+  for (const [suffix, body, status, response] of [
+    ["captions", captionBody, 409, error("CAPTION_OUTCOME_UNKNOWN")],
+    ["refresh", undefined, 409, error("MEDIA_LEASE_LOST")],
+    ["refresh", undefined, 200, { ...receipt, lastErrorCode: "UPLOAD_SCAN_INCOMPLETE" }],
+    ["refresh", undefined, 200, { ...receipt, id: lesson }],
+    ["refresh", undefined, 200, { ...receipt, captionTracks: [null] }],
+  ]) {
+    const path = `${target}/${suffix}`, method = "POST";
+    const requests = [{ method, target: path, bodySha256: certificationHash(body ?? ""), uses: 3 }];
+    let forwarded = 0;
+    const f = await interactiveFixture(t, requests, (_req, res) => {
+      forwarded++;
+      res.writeHead(forwarded === 1 ? 409 : status, { "content-type": "application/json" });
+      res.end(JSON.stringify(forwarded === 1 ? error("MEDIA_BUSY") : response));
+    }, "media");
+    const send = () => f.send(f.signed({ method, path, body }));
+    assert.equal((await send()).status, 409);
+    assert.equal((await send()).status, status);
+    assert.equal((await send()).status, 503);
+    const observed = f.admissionState();
+    assert.equal(forwarded, 2);
+    assert.equal(observed.interactiveEvidence.admitted, 2);
+    assert.deepEqual(observed.interactiveEvidence.acknowledged.map(row => row.upstreamStatus), [409]);
+    assert.deepEqual(observed.uncertain, { newWork: 1, recovery: 0 });
+  }
 });
 
 test("invalid and retired interactive v3 states deny private GETs while ordinary state remains compatible", async t => {
@@ -518,24 +557,26 @@ test("invalid and retired interactive v3 states deny private GETs while ordinary
 test("scoped interactive lost and errored upstream acknowledgements retain uncertainty after closure", async t => {
   const path = "/course/v1/student/courses";
   const requests = [{ method: "GET", target: path, bodySha256: certificationHash(""), uses: 2 }];
-  let forwarded = 0;
-  const f = await interactiveFixture(t, requests, (req, res) => {
-    if (++forwarded === 2) {
-      req.socket.destroy();
-      return;
-    }
-    res.writeHead(502, { "content-type": "application/json" });
-    res.end('{"error":{"code":"BAD_GATEWAY","message":"Owned receiver response lost"}}');
-  });
-  assert.equal((await f.send(f.signed({ path }))).status, 502);
-  assert.equal((await f.send(f.signed({ path }))).status, 502);
-  assert.equal((await f.send(f.signed({ path }))).status, 503);
-  assert.equal(forwarded, 2);
-  assert.deepEqual(f.admissionState().interactiveEvidence, { admitted: 2, acknowledged: [] });
-  assert.deepEqual(f.admissionState().active, { newWork: 0, recovery: 0 });
-  assert.deepEqual(f.admissionState().uncertain, { newWork: 2, recovery: 0 });
-  f.save(f.ordinary);
-  assert.deepEqual(f.admissionState().uncertain, { newWork: 2, recovery: 0 });
+  for (const lost of [false, true]) {
+    let forwarded = 0;
+    const f = await interactiveFixture(t, requests, (req, res) => {
+      forwarded++;
+      if (lost) {
+        req.socket.destroy();
+        return;
+      }
+      res.writeHead(502, { "content-type": "application/json" });
+      res.end('{"error":{"code":"BAD_GATEWAY","message":"Owned receiver response lost"}}');
+    });
+    assert.equal((await f.send(f.signed({ path }))).status, 502);
+    assert.equal((await f.send(f.signed({ path }))).status, 503);
+    assert.equal(forwarded, 1);
+    assert.deepEqual(f.admissionState().interactiveEvidence, { admitted: 1, acknowledged: [] });
+    assert.deepEqual(f.admissionState().active, { newWork: 0, recovery: 0 });
+    assert.deepEqual(f.admissionState().uncertain, { newWork: 1, recovery: 0 });
+    f.save(f.ordinary);
+    assert.deepEqual(f.admissionState().uncertain, { newWork: 1, recovery: 0 });
+  }
 });
 
 test("scoped Mux selection binds upload IDs and requires a managed marker for an unknown asset", () => {

@@ -22,6 +22,7 @@ const MAX_INTERACTIVE_STATE = 16_384;
 const ASSET_TYPES = new Set(["video.asset.created", "video.asset.ready", "video.asset.errored", "video.asset.deleted"]);
 const TRACK_TYPES = new Set(["video.asset.track.ready", "video.asset.track.deleted"]);
 const ASSET_STATUSES = new Set(["pending", "uploading", "processing", "ready", "errored"]);
+const UNCERTAIN_MEDIA_ERRORS = new Set(["CAPTION_OUTCOME_UNKNOWN", "MEDIA_LEASE_LOST"]);
 export const SCOPED_MUX_BODY_LIMIT = 65_536;
 export const SCOPED_MUX_HEADER = "x-lash-certification-mux-target";
 export const SCOPED_INTERACTIVE_HEADER = "x-lash-certification-interactive";
@@ -141,16 +142,29 @@ export function selectScopedInteractiveRequest(scope, { method, target, body, he
   return { requestId, requestIndex, uses: scope.requests[requestIndex].uses };
 }
 
-export function scopedInteractiveAcknowledged(status, contentType, body) {
-  if (status === 204) return body.length === 0;
+function acknowledgedMediaRefresh(target, value) {
+  const path = target.split("?", 1)[0].split("/");
+  return keys(value) === "captionTracks,generation,id,isCurrent,lastErrorCode,lessonId,status" &&
+    matches(UUID, path[5]) && matches(UUID, path[7]) && value.lessonId === path[5] && value.id === path[7] &&
+    ASSET_STATUSES.has(value.status) && Number.isSafeInteger(value.generation) && value.generation >= 1 &&
+    typeof value.isCurrent === "boolean" && value.lastErrorCode === null && Array.isArray(value.captionTracks) &&
+    value.captionTracks.every(track => keys(track) === "closedCaptions,id,label,language,status" &&
+      typeof track.closedCaptions === "boolean" && [track.id, track.label, track.language, track.status].every(field => typeof field === "string"));
+}
+
+export function scopedInteractiveAcknowledged(route, target, status, contentType, body) {
+  const refresh = route.method === "POST" && route.path === "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/refresh";
+  if (status === 204) return !refresh && body.length === 0;
   if (!((status >= 200 && status < 300) || (status >= 400 && status < 500)) ||
       typeof contentType !== "string" || contentType.split(";", 1)[0] !== "application/json" || !isUtf8(body)) return false;
   try {
     const value = JSON.parse(body.toString("utf8"));
     if (status >= 400) {
       return keys(value) === "error" && keys(value.error) === "code,message" &&
-        matches(/^[A-Z][A-Z0-9_]{0,127}$/u, value.error.code) && typeof value.error.message === "string";
+        matches(/^[A-Z][A-Z0-9_]{0,127}$/u, value.error.code) && typeof value.error.message === "string" &&
+        !UNCERTAIN_MEDIA_ERRORS.has(value.error.code);
     }
+    if (refresh) return status === 200 && acknowledgedMediaRefresh(target, value);
     return value !== null && typeof value === "object" && !Array.isArray(value);
   } catch {
     return false;
