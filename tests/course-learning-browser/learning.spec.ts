@@ -379,7 +379,7 @@ async function verifyProductionLessonDenial(browser: Browser, value: Scenario) {
     await expect(page.getByRole("heading", { name: "Enrollment required", exact: true })).toBeVisible();
     await expect(page.locator("mux-player")).toHaveCount(0);
     const referencePattern = /^Reference: ([a-f0-9-]{36})$/u;
-    const documentRequestId = referencePattern.exec(await page.getByText(referencePattern).innerText())?.[1];
+    const documentRequestId = referencePattern.exec(await page.getByRole("main").getByText(referencePattern).innerText())?.[1];
     const documentBody = await document!.text();
     expect(documentBody).toContain(documentRequestId);
 
