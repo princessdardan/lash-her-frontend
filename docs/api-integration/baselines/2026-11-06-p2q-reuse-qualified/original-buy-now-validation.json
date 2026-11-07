@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "status": "SOURCE_CHECKS_AND_OWNED_FIREFOX_ORDERING_PASS",
+  "sourceCommit": "5533e25eb13a62a621d26f78fa09d3aa70aebce2",
+  "baseCommit": "7d53e55603233f1c205e2dfae3168ddd3ae4702d",
+  "file": "tests/product-detail.spec.ts",
+  "sourceSha256": "d4d6f24b510ffa3ff2671f8dec8c96cce9d5a9d786815ed2c98147e20b6d3dcf",
+  "originalSourceSha256": "5b0bcfb513f8a8c794f618f15ce4a822261629b1bba669fd2f3501e49d6d3f17",
+  "checks": [
+    {
+      "command": "eslint tests/product-detail.spec.ts",
+      "exitCode": 0
+    },
+    {
+      "command": "tsc --noEmit --skipLibCheck --strict --target ES2017 --lib dom,dom.iterable,esnext --module esnext --moduleResolution bundler --esModuleInterop tests/product-detail.spec.ts",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0
+    },
+    {
+      "command": "node /private/tmp/p2q-buy-now-response-20261106/firefox-ordering.mjs",
+      "exitCode": 0,
+      "execution": "owned loopback server and actual Firefox; exact source response waiter; controlled handler barrier"
+    }
+  ],
+  "limitations": {
+    "fullApplicationCaseRun": false,
+    "historicalFailureTimingProved": false,
+    "providerTouched": false,
+    "credentialsRead": false,
+    "pushed": false,
+    "independentReview": "pending",
+    "localFullCaseBoundary": "Default Next webServer fetches Sanity layout metadata/menu beyond existing catalog fixture; no provider reads performed."
+  },
+  "files": {
+    "firefox-ordering.json": "0fb0416f49f5815be33cd8183c159c68d71930a68a852a28bc43871cde0e1ff7",
+    "firefox-ordering.mjs": "a3afa95d58321776b8630c1352d85a23ea1a85a1b1f89499ed27d9ac7826a4d7"
+  }
+}
