@@ -2090,8 +2090,12 @@ test("owned Chromium paid learner access checks the normal page and exact creden
         const id = receipt.reads[index].requestId;
         const body = outcome === "allowed" ? bodies[index] : { error: { code: expected.code,
           message: scenario === "unsafe-error" ? "Private upstream detail" : expected.message }, requestId: scenario === "wrong-error-id" ? randomUUID() : id };
-        return send(expected.status, { "content-type": "application/json", date, "x-request-id": id,
-          "cache-control": scenario === "public-cache" ? "public" : "private, no-store" }, JSON.stringify(body));
+        const bytes = JSON.stringify(body), headers = { "content-type": "application/json", date, "x-request-id": id,
+          "cache-control": scenario === "public-cache" ? "public" : "private, no-store" };
+        if (scenario === "truncated" && index === 0) {
+          return response.writeHead(expected.status, { ...headers, "content-length": Buffer.byteLength(bytes) + 1, connection: "close" }).end(bytes);
+        }
+        return send(expected.status, headers, bytes);
       };
       const page = await context.newPage(), watch = watchP2PaidLearnerAccess(context, page, input);
       return { ...fixture, page, watch, effects, expires: Math.floor(Date.now() / 1000) + 60,
@@ -2136,7 +2140,7 @@ test("owned Chromium paid learner access checks the normal page and exact creden
       }
 
       for (const [outcome, scenario] of [["allowed", "preview"], ["allowed", "long-thumbnail"], ["allowed", "foreign-progress"],
-        ["allowed", "answer-key"], ["allowed", "public-cache"], ["allowed", "redirect"], ["allowed", "stream-forgery"], ["archived", "unsafe-error"],
+        ["allowed", "answer-key"], ["allowed", "public-cache"], ["allowed", "redirect"], ["allowed", "stream-forgery"], ["allowed", "truncated"], ["archived", "unsafe-error"],
         ["draft", "wrong-error-id"], ["archived", "leaked-link"], ["restricted", "wrong-heading"], ["allowed", "write"], ["allowed", "navigate"]]) {
         const rejected = await open(outcome, scenario);
         try {
@@ -2155,6 +2159,7 @@ test("owned Chromium paid learner access checks the normal page and exact creden
             }
             await assert.rejects(rejected.watch.wait(rejected.expires), /LEARNER_ACCESS_RESPONSE_REFUSED/u);
             if (scenario === "stream-forgery") assert.deepEqual(rejected.effects.map(effect => effect.target), rejected.targets.slice(0, 2));
+            if (scenario === "truncated") assert.deepEqual(rejected.effects.map(effect => effect.target), rejected.targets.slice(0, 1));
           }
           assert.throws(() => rejected.watch.finish(), /LEARNER_ACCESS_RESPONSE_REFUSED/u);
         } finally { await rejected.close(); }

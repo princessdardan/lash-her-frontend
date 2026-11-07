@@ -968,7 +968,11 @@ export function watchP2PaidLearnerAccess(context, page, input) {
       }
     } catch { fail(); }
   };
-  const onFailure = request => { if (request === navigation || request === activeRead?.request) fail(); };
+  const onFailure = request => {
+    // Chromium can abort bookkeeping for a selected GET after native Fetch has
+    // read EOF. Only that GET can still qualify, and only after full validation.
+    if (request === navigation || request === activeRead?.request && request.failure()?.errorText !== "net::ERR_ABORTED") fail();
+  };
   const onNavigation = frame => { if (frame === page.mainFrame() && navigation && frame.url() !== source) fail(); };
   context.on("request", onRequest);
   context.on("requestfailed", onFailure);
@@ -1040,6 +1044,8 @@ export function watchP2PaidLearnerAccess(context, page, input) {
       else if (index === 4) validatePaidLearnerQuiz(body, target.lessonId);
       else demand(closed(body, ["attempts"]) && Array.isArray(body.attempts) && body.attempts.length <= 50
         && body.attempts.every(row => uuid(row?.id) && row.lessonId === target.lessonId && uuid(row.quizRevisionId)));
+      const failure = slot.request.failure();
+      demand(!failure || failure.errorText === "net::ERR_ABORTED");
       remaining(expires);
       return { target: path, status: head.status, requestId: head.requestId, code };
     } finally {
