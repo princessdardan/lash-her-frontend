@@ -1243,5 +1243,123 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveOwnerPortableText": {
+    "frontendSourceCommit": "5350c9d19d157d1378a1df5faaea38e8327afa7f",
+    "implementationCommit": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+    "finalCommitChangesOnlyNormalBrowserFixtureLocator": true,
+    "normalAuthoringBrowser": {
+      "passed": 8,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "initialScaffoldAndRichLessonExactBytesAndReadbackVerified": true,
+      "nestedStableKeysThroughBlockReorderVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "b467bacb4f4a3caee7c0f80e5775dd3bcd617b8e870f994817669b5f4e57c8a7",
+      "logSha256": "6c71c6b19762dd211d5843b6dd4c7a88bb156f656140d27d5fe53b5fdfc4a5b1"
+    },
+    "priorNormalBrowserRuns": [
+      {
+        "sourceCommit": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+        "finding": "Exact Style label locator timed out on the native select.",
+        "logSha256": "4cd10411362c13662b6c2c7e9dd54b912a98d1ee99c8723a373290fbe48c655a"
+      },
+      {
+        "sourceCommit": "5350c9d19d157d1378a1df5faaea38e8327afa7f",
+        "finding": "Overlapping local run collided with the initial run’s Next.js lock.",
+        "logSha256": "e393976b07638e99b91f6ab003e0e90eba6b97a1eadaa8587901040dd2bee39b"
+      }
+    ],
+    "frontendUnitNode24": {
+      "testedCommit": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+      "sourcePassed": 2539,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "9206cf84da98bc3766f223dc3d897ac878b381e7009f6a353e639d9554179976"
+    },
+    "certificationPlatformNode24": {
+      "testedCommit": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+      "passed": 122,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "8ccd893435f8645b2e63eec381363fae2e6aa5e2fea83e137e35746bdead1985",
+      "ownedChromiumCases": 13,
+      "richBodyAcceptedAndTextMarkAndLinkDriftRefused": true
+    },
+    "host": {
+      "testedCommit": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+      "passed": 124,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "96961cc34924764ad2ee01c2b354ca0f5c5d459553780abb4282e72671a0e21c"
+    },
+    "loopbackGateway": {
+      "testedCommit": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+      "passed": 75,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "930db7a929b75ba2ec38a814db0f578b2bde9cf498e4a03223d6f318fcbb237b",
+      "acknowledgementRequestIndexes": [
+        0,
+        1,
+        0
+      ],
+      "upstreamStatuses": [
+        200,
+        201,
+        200
+      ],
+      "richNestedReadbackAndTamperRefusalVerified": true
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "e3697a008fda4c547b61ac8c68e802f88c1d8573",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 24,
+      "exactStoredPortableTextAndContractPinRefusalVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "192868d258c59cf958caa391db5188cadd2b3dda4736179f2efad26d5db868db",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "245c9d0baa2bd89ba7955e98c5c32d9413564d7acca3fe2223256726bdf87b16"
+      },
+      "logSha256": "226c196c3cc3297bffd241ea4f3f56d1641e31270e2259ff0f6fb996c40179d1"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43076910,
+      "expandedBytes": 57515415,
+      "wireBytes": 18720687,
+      "wireSha256": "8f2ddd6a16c361fc8ca2549d37a18d52bc4d7f2ff985445ccc86775fc8dbbb0a",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "f0b1fca43886b4d6d713a17f64404b45819196656e3fef1d47c64221c4294cba"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "35be989ecea34b9de2056c27b465dd4f2755d39f5547ea9e2254bcfd97e5cce6",
+    "populatedPortableTextOperatorActionImplemented": true,
+    "remainingS04GuardedActionsImplemented": false,
+    "exactPublishedCiQualified": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
