@@ -494,6 +494,58 @@ class InteractiveWindowTests(unittest.TestCase):
             with self.subTest(request=change), self.assertRaises(ValueError):
                 window.validate_interactive_action({**action, "requests": changed})
 
+    def test_lesson_entry_binds_course_lesson_and_exact_progress_write(self):
+        actor, course, lesson, grant = (f"10000000-0000-4000-8000-{index:012d}" for index in range(1, 5))
+        student = "/course/v1/student"
+        lesson_path = f"{student}/lessons/{lesson}"
+        targets = (f"{student}/courses/{course}", f"{student}/progress?courseId={course}", lesson_path,
+                   f"{student}/progress?lessonId={lesson}", f"{lesson_path}/quiz", f"{lesson_path}/quiz/attempts",
+                   f"{lesson_path}/playback")
+        requests = [{"method": "GET", "target": target, "bodySha256": window._EMPTY, "uses": 2 if index == 0 else 1}
+                    for index, target in enumerate(targets)]
+        requests.append({"method": "POST", "target": f"{lesson_path}/progress",
+                         "bodySha256": window._hash(b'{"event":"lesson_started","expectedProgressRevision":0}'), "uses": 1})
+        selection = {"operation": "open-lesson", "courseId": course, "lessonId": lesson, "grantId": grant}
+        action = {"stage": "lesson-entry", "actorId": actor, "windowSeconds": 60, "requests": requests,
+                  "lessonEntryAction": selection}
+        self.assertEqual(window.validate_interactive_action(action), action)
+        selector = window._selection_sha(action)
+        self.assertEqual(selector, (actor + course + lesson).replace("-", ""))
+        material = ("fixture" * 8, "https://owned.vercel.app", "a" * 40, "b" * 64,
+                    "8", "lesson-entry", 1_794_009_600, 60, "c" * 32)
+        cookie, gateway_key, _, _ = window._material(*material, selector)
+        self.assertEqual(cookie.split(".")[:3], ["v2", "8", "lesson-entry"])
+        self.assertEqual(cookie.split(".")[6], selector)
+        self.assertEqual(len(gateway_key), 64)
+        with self.assertRaisesRegex(ValueError, "FRONTEND_BINDING_REQUIRED"):
+            window._material(*material, selector[:64])
+        for index, change in ((0, {"uses": 1}), (3, {"target": f"{student}/progress?courseId={lesson}"}),
+                              (6, {"target": f"{lesson_path}/playback/renew"}), (7, {"bodySha256": "f" * 64})):
+            changed = [*requests]
+            changed[index] = {**changed[index], **change}
+            with self.subTest(request=change), self.assertRaisesRegex(ValueError, "LESSON_ENTRY_REQUESTS_REQUIRED"):
+                window.validate_interactive_action({**action, "requests": changed})
+        for change in ({"operation": "record-progress"}, {"lessonId": actor}, {"grantId": "bad"}):
+            with self.subTest(selection=change), self.assertRaises(ValueError):
+                window.validate_interactive_action({**action, "lessonEntryAction": {**selection, **change}})
+
+    def test_lesson_entry_ingress_checks_only_reviewed_paths(self):
+        course, lesson = (f"10000000-0000-4000-8000-{index:012d}" for index in range(1, 3))
+        context, client, profile = object(), object(), object()
+        with patch.object(ingress, "_observe_selected_protection", return_value={"status": "guarded"}) as protect:
+            self.assertEqual(ingress.observe_lesson_entry_protection(context, client, expected_profile=profile,
+                                                                     course_id=course, lesson_id=lesson), {"status": "guarded"})
+        academy = f"/academy/courses/{course}"
+        api_lesson = f"/api/academy/lessons/{lesson}"
+        protect.assert_called_once_with(context, client, profile, browser=True, paths=(
+            academy, f"{academy}/lessons/{lesson}", f"/api{academy}", f"/api/academy/progress?courseId={course}",
+            api_lesson, f"/api/academy/progress?lessonId={lesson}", f"{api_lesson}/quiz", f"{api_lesson}/quiz/attempts",
+            f"{api_lesson}/playback", f"{api_lesson}/progress",
+        ))
+        with self.assertRaisesRegex(ValueError, "LESSON_ENTRY_TARGET_REQUIRED"):
+            ingress.observe_lesson_entry_protection(context, client, expected_profile=profile, course_id=course,
+                                                    lesson_id=f"{lesson}/quiz")
+
     def test_paid_republish_plan_binds_two_reviewed_transition_digests_and_dispositions(self):
         owner = "10000000-0000-4000-8000-000000000001"
         course = "10000000-0000-4000-8000-000000000002"
