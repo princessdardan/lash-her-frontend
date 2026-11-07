@@ -959,8 +959,15 @@ test("paid archive preserves a real manual grant and validated republish restore
     await grantPage.getByRole("button", { name: "Grant manual access", exact: true }).click();
     const grantStatus = grantPage.getByRole("region", { name: "Manual course access" }).getByRole("status");
     await expect(grantStatus).toContainText("Manual grant and audit confirmed");
+    await grantPage.close();
     await learnerPage.reload();
     await expect(privateContent).toBeVisible();
+    const protectedLessonPath = `/api/academy/lessons/${lessonId}`;
+    expect((await learner.request.get(protectedLessonPath)).status()).toBe(200);
+    // Give the development server's newly compiled learner routes a stable
+    // owner document before exercising transient warning state.
+    await page.reload();
+    await expect(page.getByText("published · Revision 4", { exact: true })).toBeVisible();
     await page
       .getByRole("button", { name: "Archive course", exact: true })
       .click();
@@ -992,12 +999,12 @@ test("paid archive preserves a real manual grant and validated republish restore
     await expect(warning).toHaveCount(0);
     expect((await course()).status).toBe("published");
     expect(mutations).toHaveLength(1);
-    await learnerPage.reload();
-    await expect(privateContent).toBeVisible();
+    expect((await learner.request.get(protectedLessonPath)).status()).toBe(200);
+    await page.setViewportSize({ width: 390, height: 844 });
     await page
       .getByRole("button", { name: "Archive course", exact: true })
       .click();
-    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(warning).toBeVisible();
     await page.screenshot({
       path: test.info().outputPath("paid-archive-warning.png"),
       fullPage: true,
@@ -1025,7 +1032,7 @@ test("paid archive preserves a real manual grant and validated republish restore
     await learnerPage.reload();
     await expect(learnerPage.getByRole("heading", { name: "This course is archived", exact: true })).toBeVisible();
     await expect(privateContent).toHaveCount(0);
-    const protectedLesson = await learner.request.get(`/api/academy/lessons/${lessonId}`);
+    const protectedLesson = await learner.request.get(protectedLessonPath);
     expect(protectedLesson.status()).toBe(410);
     expect(protectedLesson.headers()["cache-control"]).toBe("private, no-store");
     expect(await protectedLesson.json()).toMatchObject({ error: { code: "course_archived" } });
