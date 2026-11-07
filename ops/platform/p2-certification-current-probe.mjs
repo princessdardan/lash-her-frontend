@@ -171,12 +171,19 @@ export async function observeP2CertificationPhysical(input,{getUrl},expectedProf
       }catch{await client.query('ROLLBACK');throw new Error('P2_CERTIFICATION_CONTAINMENT_UNKNOWN');}
       return{version:1,status:'P2_FRONTEND_ADMISSION_CLOSED',frontendAdmissionClosed:true};
     }
-    const parent=(await client.query('SELECT backend_start::text FROM pg_catalog.pg_stat_activity WHERE pid=$1',[input.backendPid])).rows[0];demand(parent?.backend_start===input.backendStart);
-    for(const key of [FRONTEND_MIGRATION_LOCK,input.marker])demand((await client.query(RECOVERY_HELD_LOCK.replace('pid=pg_backend_pid()','pid=$2'),[key,input.backendPid])).rows[0]?.held===true);
+    const verifyParent=async()=>{
+      const parent=(await client.query('SELECT backend_start::text FROM pg_catalog.pg_stat_activity WHERE pid=$1',[input.backendPid])).rows[0];
+      demand(parent?.backend_start===input.backendStart);
+      for(const key of [FRONTEND_MIGRATION_LOCK,input.marker])demand((await client.query(RECOVERY_HELD_LOCK.replace('pid=pg_backend_pid()','pid=$2'),[key,input.backendPid])).rows[0]?.held===true);
+    };
+    await verifyParent();
+    const verifyCurrent=expectedProfile===undefined?verify:async()=>{await verify();await verifyParent();};
     const artifact=await import('./frontend-migration.mjs');
     const prepared={migration:{job:input.job,artifact:artifact.frontendMigrationArtifact(),baseline:input.baseline},plan:{owner:input.owner,producers:input.producers,historicalLogins:input.historicalLogins,targetSha256:input.plan.targetSha256}};
-    const current=await readP2CertificationCurrent(client,prepared,input.plan,verify,false,expectedProfile);
+    const current=await readP2CertificationCurrent(client,prepared,input.plan,verifyCurrent,false,expectedProfile);
+    if(expectedProfile!==undefined)await verifyCurrent();
     return{version:input.version,...selectedProfile,status:'P2_FRONTEND_PHYSICAL_LOCK_VERIFIED',marker:input.marker,backendPid:input.backendPid,sourceCommit:input.job.sourceCommit,admission:current.admission,journalSha256:current.journalSha256,
+      ...(expectedProfile===undefined?{}:{backendStart:input.backendStart,environment:current.environment,releaseId:current.releaseId,targetSha256:current.targetSha256}),
       witnessSha256:current.witnessSha256,...(input.operation==='witness'?{witness:current.witness}:{})};
   }finally{try{await client.end();demand(!lost);}catch{throw new Error('P2_CERTIFICATION_OBSERVER_CLEANUP_UNCERTAIN');}}
 }

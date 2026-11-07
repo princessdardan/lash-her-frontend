@@ -162,10 +162,17 @@ async function child(){
       const observed=await observeP2CertificationPhysical({...probe,operation:'witness'},deps,profile);
       assert.equal(observed.version,2);assert.deepEqual(observed.qualificationTargetProfile,profile);
       assert.equal(observed.journalSha256,receipt.journalSha256);
+      assert.equal(observed.backendStart,probe.backendStart);assert.equal(observed.environment,'staging');
+      assert.equal(observed.releaseId,receipt.releaseId);assert.equal(observed.targetSha256,receipt.targetSha256);
       await assert.rejects(observeP2CertificationPhysical({...probe,operation:'observe'},deps));
       await assert.rejects(observeP2CertificationPhysical({...probe,operation:'fence'},deps,profile));
       await assert.rejects(observeP2CertificationPhysical({...probe,marker:'f'.repeat(64),operation:'observe'},deps,profile));
     },profile);
+    await assert.rejects(withP2CertificationFrontendSession(profiled,profiledPlan,deps,async({client,probe,verify})=>{
+      assert.equal((await client.query('SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1)) AS unlocked',[probe.marker])).rows[0].unlocked,true);
+      await assert.rejects(verify);
+      await assert.rejects(observeP2CertificationPhysical({...probe,operation:'observe'},deps,profile));
+    },profile));
     checks.push('actual-profiled-current-certification-lock-readback-and-fence-refusal');
     assert.equal(hash((await admin.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows),journal);
     return{version:1,status:'P2_CERTIFICATION_CURRENT_OWNED_PASS',serverMajor:input.major,frontendMigrations:83,checks,skipped:0,actualTlsPostgres:true,noSqlReplay:true,providerTouched:false,
