@@ -712,5 +712,69 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveFirstCustomerIdentityEnrollment": {
+    "frontendSourceCommit": "fd3221f3261cc57d4a91262f7a608ec13a2a0614",
+    "frontendUnitNode24": {
+      "sourcePassed": 2532,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "5f50bf355136009bdf6cbc6a044f312757fba2c0936d1da3b81fbd16bea11f53"
+    },
+    "certificationPlatformNode24": {
+      "passed": 70,
+      "failed": 0,
+      "skipped": 0,
+      "ownedChromiumCases": 6,
+      "standaloneEnrollmentReceiptAndRotationRefusal": true,
+      "pythonAndNodePermitVectorsMatched": true,
+      "logSha256": "c62988a9f6c7351bab020b8821ef6216684c00bd7595ce33a3d442f572bb0257"
+    },
+    "host": {
+      "passed": 116,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "d3c955d2c6aca6c27a4a35d9aff53ba59e52910c313da45a2c4ba8bd0ef78518"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "migrations": 83,
+      "actualTls": true,
+      "admissionChecks": 14,
+      "identityAndLifecycleChecks": 47,
+      "databaseRegressions": 37,
+      "heldIdentityAndLifecycleWitnessChecks": 16,
+      "actualAuthJsAndNextRouteExports": true,
+      "syntheticProviderResponses": true,
+      "exactFirstTimeGoogleAndResendAccountSessionAndLinkCountVerified": true,
+      "foreignGoogleLinkAndPriorResendProofPreserved": true,
+      "oneSessionOnConcurrentResendProofUse": true,
+      "marketingRecordsAbsent": true,
+      "applicationSourceManifestSha256": "1f2afd33ac6351d89879ba912eb6c7ee7b11300572ea3f54ffc8ac697f96eb27",
+      "sqlArtifactSha256": "28c060a68f5651ceddf3bc8d16c70778d11c613657e93f5cfc9f43fa6d1ad9ef",
+      "witnessSourceSha256": "82477d536f1c21d3f88ca8cb5d338240318e4c90568d37c237c1cadeecb06449",
+      "identityLogSha256": "868c9d0815bce56a3d8a56d0962b3824946e2d00bb54b2f904120778a0697f8d",
+      "witnessLogSha256": "32313d8d54a50746226f787b209cbdc8d03cbe4c6dcf85c6a00ebac3d74b6218"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42782307,
+      "expandedBytes": 57122607,
+      "wireBytes": 18591123,
+      "wireSha256": "b9bdfeb1e312aa603514967abbb59d6da42366cdfe307130bff02942a203e936",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "nativePlanSourcePolicyPinsVerified": 22,
+    "firstTimeCustomerIdentityCertificationPathImplemented": true,
+    "actualGoogleOrResendSignInVerified": false,
+    "installedStagingHostVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
