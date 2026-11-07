@@ -12,7 +12,8 @@ const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 const identitySql = `SELECT current_database() AS database, current_user AS role,
   current_setting('server_version_num') AS version,
-  current_setting('transaction_read_only') AS read_only`;
+  current_setting('transaction_read_only') AS read_only,
+  current_setting('search_path') AS search_path`;
 const rolesSql = `SELECT rolname,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,rolinherit,rolcanlogin,
   has_database_privilege(oid,current_database(),'CREATE') AS database_create,
   has_database_privilege(oid,current_database(),'CONNECT') AS database_connect,
@@ -76,6 +77,7 @@ export async function checkCurrentDatabase({ client, prepared, assertAppliedLine
     demand(typeof identity.version === "string" && /^\d+$/u.test(identity.version)
       && Math.floor(Number(identity.version) / 10_000) === target.serverMajor, "CURRENT_CHECK_DATABASE_MAJOR_MISMATCH");
     demand(identity.read_only === "on", "CURRENT_CHECK_SERVER_READ_ONLY_REQUIRED");
+    if (expected !== undefined) demand(identity.search_path === "pg_catalog,public", "CURRENT_CHECK_SAFE_SEARCH_PATH_REQUIRED");
     const journal = (await read.query("SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at ASC NULLS FIRST, id ASC")).rows;
     demand(journal.length > 0 && assertAppliedLineage(artifact, journal).length === 0, "CURRENT_CHECK_COMPLETE_LINEAGE_REQUIRED");
     const catalog = await readMigrationCatalog(read);
@@ -164,7 +166,8 @@ export async function main(args = process.argv.slice(2)) {
   const url = new URL(credential.connectionUrl);
   demand(url.search === "?sslmode=verify-full", "CURRENT_CHECK_VERIFIED_TLS_REQUIRED");
   const config = { ...directMigrationConnection(credential.connectionUrl, prepared.target), enableChannelBinding: true,
-    options: "-c default_transaction_read_only=on -c statement_timeout=10000" };
+    options: "-c default_transaction_read_only=on -c statement_timeout=10000" +
+      (profiled ? " -c search_path=pg_catalog,public" : "") };
   delete credential.connectionUrl;
   const client = new Client(config);
   let connectionFailed = false, result;

@@ -365,11 +365,18 @@ def _runtime_scope(expected, apply, legacy_scope, profiled_scope, before, after)
     return profiled_scope
 
 
-def _execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None, *, expected_profile=None, _profiled_current_scope=None):
+def _execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None, *, expected_profile=None, _profiled_current_scope=None, _current_database_proof=None):
     expected = migrate.profile_context(expected_profile)
     active_scope = _runtime_scope(expected, apply, _p2_scope, _profiled_current_scope,
                                   before_frontend_migration, after_runtime_ready)
     release, jobs, plan, compose = make_plan(bundle, configuration, compose_file, expected_profile=expected)
+    verified_current = None
+    if _current_database_proof is not None:
+        demand(apply and _profiled_current_scope is not None and _profiled_current_scope.recovery_action_id is not None,
+               "PROFILED_CURRENT_RUNTIME_RESTORE_SCOPE_REQUIRED")
+        import current_databases
+        verified_current = current_databases.read_profiled_current_proof(
+            _current_database_proof, _profiled_current_scope, release, jobs, expected_profile=expected)
     if active_scope is not None:
         active_scope.require_release(release, jobs)
         active_scope.require_configuration(configuration)
@@ -407,7 +414,9 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
         # Invoked only after durable database success, while migrate.execute
         # holds the release/watchdog lock. No second approval step is needed.
         try:
-            expected_database_status = ("API_DATABASES_VERIFIED_FRONTEND_CONTINUATION_OPEN" if active_scope is not None else "DATABASES_VERIFIED")
+            expected_database_status = ("CURRENT_DATABASES_READ_ONLY_VERIFIED" if verified_current is not None else
+                                        "API_DATABASES_VERIFIED_FRONTEND_CONTINUATION_OPEN" if active_scope is not None else
+                                        "DATABASES_VERIFIED")
             if active_scope is not None:
                 active_scope.require_frontend(release, jobs["frontend"])
             demand(verified_release == release and database_outcome.get("status") == expected_database_status, "DATABASE_STAGE_BINDING_REFUSED")
@@ -415,9 +424,15 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
             migrate.require_profile(expected, database_outcome)
             if _profiled_current_scope is not None:
                 demand(database_outcome.get("candidateSha256") == outcome["candidateSha256"]
-                       and database_outcome.get("frontendReadOnlyVerified") is True
                        and database_outcome.get("frontendSqlApplied") is False,
                        "PROFILED_CURRENT_DURABLE_DATABASE_STAGE_REQUIRED")
+                if verified_current is not None:
+                    demand(database_outcome.get("frontendProofHeld") is True
+                           and database_outcome.get("migrationsExecuted") is False,
+                           "PROFILED_CURRENT_READ_ONLY_DATABASE_STAGE_REQUIRED")
+                else:
+                    demand(database_outcome.get("frontendReadOnlyVerified") is True,
+                           "PROFILED_CURRENT_DURABLE_DATABASE_STAGE_REQUIRED")
             outcome["phase"] = "runtime-startup"
             prefix, env = compose_command(snapshot, release["environment"]), runtime_environment(release, snapshot, expected_profile=expected)
             for stage in STAGES:
@@ -435,7 +450,12 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
             if active_scope is not None:
                 active_scope.verify()
             outcome["boundaryChecks"] = probe["checks"]
-            outcome["migrationOutcomeSha256"] = migrate.file_hash(migrate.read_input(migration_attempt, "migration-outcome.json"))
+            if verified_current is not None:
+                outcome["currentDatabasesOutcomeSha256"] = migrate.file_hash(migrate.read_input(
+                    migration_attempt, "current-databases-outcome.json"))
+                outcome["migrationsExecuted"] = False
+            else:
+                outcome["migrationOutcomeSha256"] = migrate.file_hash(migrate.read_input(migration_attempt, "migration-outcome.json"))
             outcome["candidateSha256"] = database_outcome["candidateSha256"]
             outcome["phase"], outcome["status"] = "completed", "API_RUNTIME_READY"
             migrate.write_json(attempt, "runtime-outcome.json", outcome)
@@ -474,7 +494,17 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
             active_scope.initialize_runtime(snapshot, release)
         checked_release, checked_jobs, checked_plan, _ = make_plan(immutable_bundle, snapshot, snapshot / "compose.yaml", expected_profile=expected)
         demand(checked_release == release and checked_jobs == jobs and checked_plan == plan, "RUNTIME_CONFIGURATION_CHANGED")
-        preflight(release, snapshot, jobs, expected_profile=expected)
+        preflight(release, snapshot, jobs, pull=verified_current is None, expected_profile=expected)
+        if verified_current is not None:
+            # Rejoin the immutable producer receipts under the still-held FE
+            # and host locks. This path never calls the migration executor.
+            current_directory, current_outcome = current_databases.read_profiled_current_proof(
+                _current_database_proof, _profiled_current_scope, release, jobs, expected_profile=expected)
+            outcome["phase"] = "suspend-runtime-for-current-restore"
+            active_scope.before_api_suspension()
+            migrate.suspend_runtime(release["environment"], SAFE_ENV)
+            active_scope.after_api_suspension()
+            return start_runtime(current_directory, release, current_outcome)
         outcome["phase"] = "migrations"
         continuation_token = _profiled_current_migration.set((_profiled_current_scope, start_runtime)) if _profiled_current_scope is not None else None
         try:
@@ -501,6 +531,27 @@ def execute(bundle, configuration, results, compose_file, apply=False, confirmat
         return _execute(bundle, configuration, results, compose_file, apply, confirmation, lock_path,
                         before_frontend_migration, after_runtime_ready, _p2_scope, expected_profile=expected,
                         _profiled_current_scope=_profiled_current_scope)
+    finally:
+        _command_scope.reset(token)
+
+
+def restore_profiled_current_runtime(bundle, configuration, results, compose_file, proof, *,
+                                     expected_profile, _profiled_current_scope):
+    """Fixed recovery-only runtime restoration from the actual read-only proof."""
+    expected = migrate.profile_context(expected_profile)
+    import current_databases
+    demand(type(proof) is current_databases.ProfiledCurrentDatabaseProof,
+           "PROFILED_CURRENT_DATABASE_PROOF_REQUIRED")
+    scope = _runtime_scope(expected, True, None, _profiled_current_scope, None, None)
+    demand(expected is not None and scope is not None and scope.recovery_action_id is not None,
+           "PROFILED_CURRENT_RUNTIME_RESTORE_SCOPE_REQUIRED")
+    selected = scope.release
+    scope.require_release(selected, scope.jobs)
+    token = _command_scope.set(scope)
+    try:
+        return _execute(bundle, configuration, results, compose_file, True, 'staging/' + selected['releaseId'],
+                        scope.path, expected_profile=expected, _profiled_current_scope=scope,
+                        _current_database_proof=proof)
     finally:
         _command_scope.reset(token)
 

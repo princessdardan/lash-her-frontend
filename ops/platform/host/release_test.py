@@ -132,6 +132,16 @@ class RuntimeReleaseTests(unittest.TestCase):
                 release.make_plan(self.bundle, self.configuration, self.compose, expected_profile={**ref, "id": "p2q-20261106"})
         self.assertEqual(list(self.results.iterdir()), [])
 
+    def test_profiled_current_restore_rejects_missing_or_serialized_proof_before_io(self):
+        ref = self.fixture.profiled()
+        with patch.object(migrate, "read_input", side_effect=AssertionError("read input")), \
+             patch.object(migrate, "execute", side_effect=AssertionError("migration executor")):
+            for forged in (None, {"status": "CURRENT_DATABASES_READ_ONLY_VERIFIED", "migrationsExecuted": False}):
+                with self.assertRaisesRegex(ValueError, "PROFILED_CURRENT_DATABASE_PROOF_REQUIRED"):
+                    release.restore_profiled_current_runtime(self.bundle, self.configuration, self.results, self.compose,
+                        forged, expected_profile=ref, _profiled_current_scope=object())
+        self.assertEqual(list(self.results.iterdir()), [])
+
     def test_profiled_runtime_requires_the_registered_project_and_gateway_origin(self):
         ref = self.fixture.profiled()
         self.target.update(version=2, qualificationTargetProfile=ref); self.save("runtime.json", self.target)

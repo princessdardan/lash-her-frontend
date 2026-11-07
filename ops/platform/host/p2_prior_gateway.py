@@ -202,7 +202,14 @@ def _reference(initial, selected, configuration, identity, *, expected_profile=N
         require(migrate.file_hash(raw) == ref['candidateSha256'] == admission.get('candidateSha256') and prior['releaseId'] == admission.get('releaseId') and
             retained == configuration and prior['environment'] == 'staging', 'PRIOR_GATEWAY_RETAINED_CANDIDATE_REQUIRED')
         raw = migrate.read_input(receipt_directory, 'runtime-outcome.json')
-        receipt = json.loads(raw)
+        if prior_profile is None:
+            receipt = json.loads(raw)
+        else:
+            from qualification_target_profile import decode_qualification_target_json
+            receipt = decode_qualification_target_json(raw, "carrier")
+            migrate.require_profile(prior_profile, receipt)
+            require(type(receipt.get('version')) is int and receipt['version'] == 2,
+                    'PRIOR_GATEWAY_RETAINED_RUNTIME_PROFILE_REQUIRED')
         migrate.require_contract_identity(prior,receipt)
         require(migrate.file_hash(raw) == ref['runtimeReceiptSha256'] and receipt.get('status') in ('API_RUNTIME_READY','API_RUNTIME_RESTORED_FOR_QUALIFICATION') and
             receipt.get('phase') == 'completed' and receipt.get('environment') == 'staging' and

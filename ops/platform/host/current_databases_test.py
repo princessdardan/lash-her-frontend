@@ -115,6 +115,40 @@ class CurrentDatabasesTests(unittest.TestCase):
         self.assertTrue(all("--profiled-current" in args for args in runs[1:]))
         self.assertFalse(result["migrationsExecuted"])
 
+    def test_profiled_held_frontend_proof_never_reopens_a_frontend_runner(self):
+        from p2_profiled_current_scope import P2ProfiledCurrentScope
+        from unittest.mock import Mock
+        ref = self.profiled()
+        # Own the process/Docker boundary in this fixture; the actual TLS/FE
+        # backend and child-reap behavior have separate real-process tests.
+        scope = object.__new__(P2ProfiledCurrentScope)
+        scope.candidate_sha256 = "b" * 64
+        scope.verify = Mock()
+        scope.require_release = Mock()
+        scope.require_frontend = Mock()
+        frontend_raw = b'{ "owned": "original held database proof" }\n'
+        started_raw = b'{ "owned": "original continuation-started" }\n'
+        scope.frontend_current_receipt_bytes = Mock(return_value=(frontend_raw, started_raw))
+        original_jobs = {name: (json.dumps(self.jobs[name]["job"], indent=2) + "\n").encode()
+                         for name in ("course", "community")}
+        scope.api_job_bytes = Mock(side_effect=lambda name: original_jobs[name])
+        scope.run = Mock(side_effect=lambda args, *, env, input=None, capture_output=True, timeout=120:
+                         self.run_child(args, env, input, timeout))
+        proof = self.execute(credentials={name: self.credentials[name] for name in original_jobs},
+                             expected_profile=ref, _profiled_current_scope=scope)
+        path, result = checks.read_profiled_current_proof(proof, scope, self.selected, self.jobs, expected_profile=ref)
+        self.assertEqual(path, self.output)
+        self.assertFalse(result["migrationsExecuted"])
+        self.assertEqual((path / "frontend/database-receipt.json").read_bytes(), frontend_raw)
+        self.assertEqual((path / "frontend/frontend-continuation-started.json").read_bytes(), started_raw)
+        self.assertFalse((path / "frontend/job-outcome.json").exists())
+        self.assertEqual(len([args for args, _, _ in self.calls if args[1] == "run"]), 2)
+        for name, original in original_jobs.items():
+            self.assertEqual((path / f"{name}-input/job.json").read_bytes(), original)
+        (path / "community/database-receipt.json").write_text('{}')
+        with self.assertRaisesRegex(ValueError, "PROFILED_CURRENT_DATABASE_RECEIPT_CHANGED"):
+            checks.read_profiled_current_proof(proof, scope, self.selected, self.jobs, expected_profile=ref)
+
     def test_mixed_and_unknown_profile_inputs_refuse_before_checker_or_child_access(self):
         ref = self.profiled()
         with patch.object(migrate, "read_input", side_effect=AssertionError("checker read")):

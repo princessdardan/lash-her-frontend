@@ -71,25 +71,27 @@ def _profile_kwargs(initial):
 
 
 def cleanup_profiled_current_readonly_containers():
-    pattern = '^/lash-p2-profiled-current-observer-[a-f0-9]{32}$'
-    query = ['docker', 'container', 'ls', '--all', '--filter', 'name=' + pattern, '--format', '{{.ID}}']
+    patterns = ('^/lash-p2-profiled-current-observer-[a-f0-9]{32}$',
+                '^/lash-p2-profiled-current-api-check-(course|community)-[a-f0-9]{32}$')
     failed = None
-    try:
-        for identity in runtime.command(query, runtime.SAFE_ENV, 15).splitlines():
-            if not re.fullmatch(r'[a-f0-9]{12,64}', identity):
-                failed = 'P2_GUARD_PROFILED_CURRENT_CONTAINER_ID_REFUSED'
-                continue
-            try:
-                runtime.command(['docker', 'rm', '--force', identity], runtime.SAFE_ENV, 30)
-            except BaseException:
-                failed = 'P2_GUARD_PROFILED_CURRENT_CLEANUP_UNKNOWN'
-    except BaseException:
-        failed = 'P2_GUARD_PROFILED_CURRENT_CLEANUP_UNKNOWN'
-    try:
-        if runtime.command(query, runtime.SAFE_ENV, 15):
-            failed = 'P2_GUARD_PROFILED_CURRENT_CONTAINER_REMAINS'
-    except BaseException:
-        failed = 'P2_GUARD_PROFILED_CURRENT_CLEANUP_UNKNOWN'
+    for pattern in patterns:
+        query = ['docker', 'container', 'ls', '--all', '--filter', 'name=' + pattern, '--format', '{{.ID}}']
+        try:
+            for identity in runtime.command(query, runtime.SAFE_ENV, 15).splitlines():
+                if not re.fullmatch(r'[a-f0-9]{12,64}', identity):
+                    failed = 'P2_GUARD_PROFILED_CURRENT_CONTAINER_ID_REFUSED'
+                    continue
+                try:
+                    runtime.command(['docker', 'rm', '--force', identity], runtime.SAFE_ENV, 30)
+                except BaseException:
+                    failed = 'P2_GUARD_PROFILED_CURRENT_CLEANUP_UNKNOWN'
+        except BaseException:
+            failed = 'P2_GUARD_PROFILED_CURRENT_CLEANUP_UNKNOWN'
+        try:
+            if runtime.command(query, runtime.SAFE_ENV, 15):
+                failed = 'P2_GUARD_PROFILED_CURRENT_CONTAINER_REMAINS'
+        except BaseException:
+            failed = 'P2_GUARD_PROFILED_CURRENT_CLEANUP_UNKNOWN'
     if failed:
         raise ValueError(failed)
 
@@ -509,7 +511,12 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                 if value.get('operation') == 'check':
                     broker.command(value)
                 else:
-                    require(broker.operation_active.acquire(blocking=False), 'P2_CONCURRENT_STAGE_REFUSED')
+                    # The profiled worker flushes its ACK before returning.
+                    # Its next ordered stage may arrive during that tiny tail;
+                    # wait on the actual mutex, never overlap or replay stages.
+                    acquired = (broker.operation_active.acquire(timeout=2) if profiled else
+                                broker.operation_active.acquire(blocking=False))
+                    require(acquired, 'P2_CONCURRENT_STAGE_REFUSED')
                     import threading
                     def operation(value=value):
                         try:

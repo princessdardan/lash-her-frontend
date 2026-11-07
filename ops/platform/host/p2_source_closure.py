@@ -23,6 +23,7 @@ PROFILED_CURRENT_REQUIRED = {
     'ops/platform/p2-profiled-current-release.mjs', 'ops/platform/p2-profiled-current-transport.mjs',
     'ops/platform/p2-profiled-current-recovery.mjs', 'ops/platform/p2-profiled-current-recovery-transport.mjs',
     'ops/platform/p2-profiled-current-frontend-adapters.mjs',
+    'ops/platform/host/current_databases.py', 'ops/platform/host/database_current.mjs',
 }
 
 

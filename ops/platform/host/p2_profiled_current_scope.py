@@ -80,10 +80,30 @@ class P2ProfiledCurrentScope(P2ReleaseScope):
         from p2_profiled_current_parent import P2ProfiledCurrentBroker
         self.verify()
         parent = self.runtime_parent
-        migrate.demand(isinstance(parent, P2ProfiledCurrentBroker) and parent.scope is self,
+        migrate.demand(parent is not None and parent.scope is self,
                        'P2_PROFILED_CURRENT_SOURCE_PARENT_REQUIRED')
         # Source class method, never a callback or callable decoded from input.
-        return P2ProfiledCurrentBroker.runtime_ready(parent, attempt, migration_attempt, snapshot, selected, outcome)
+        if type(parent) is P2ProfiledCurrentBroker:
+            migrate.demand(self.recovery_action_id is None, 'P2_PROFILED_CURRENT_SOURCE_PARENT_REQUIRED')
+            return P2ProfiledCurrentBroker.runtime_ready(parent, attempt, migration_attempt, snapshot, selected, outcome)
+        from p2_profiled_current_recovery import P2ProfiledCurrentRecoveryBroker
+        migrate.demand(type(parent) is P2ProfiledCurrentRecoveryBroker and self.recovery_action_id == parent.action_id(),
+                       'P2_PROFILED_CURRENT_SOURCE_PARENT_REQUIRED')
+        return P2ProfiledCurrentRecoveryBroker.runtime_ready(parent, attempt, migration_attempt, snapshot, selected, outcome)
+
+    def api_job_bytes(self, name):
+        from p2_profiled_current_parent import P2ProfiledCurrentBroker
+        from qualification_target_profile import decode_qualification_target_json
+        self.verify()
+        parent = self.runtime_parent
+        migrate.demand(name in ('course', 'community') and isinstance(parent, P2ProfiledCurrentBroker)
+                       and parent.scope is self, 'P2_PROFILED_CURRENT_SOURCE_PARENT_REQUIRED')
+        raw = migrate.read_input(parent.bundle, f'jobs/{name}.json')
+        migrate.demand(migrate.file_hash(raw) == parent.initial['apiJobSha256'][name]
+                       and decode_qualification_target_json(raw, 'carrier') == self.jobs[name]['job'],
+                       'P2_PROFILED_CURRENT_API_JOB_BYTES_CHANGED')
+        self.verify()
+        return raw
 
     def frontend_current_receipt_bytes(self):
         from p2_profiled_current_parent import P2ProfiledCurrentBroker

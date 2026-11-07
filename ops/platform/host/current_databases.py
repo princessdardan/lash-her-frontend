@@ -1,4 +1,5 @@
 """Run selected images' current-state checks. No API migration entrypoint exists here."""
+import copy
 import json
 import os
 from pathlib import Path
@@ -35,7 +36,55 @@ def safe_diagnostics(result):
     return {"exitCode": result.returncode, "markers": sorted(set(markers))}
 
 
-def check_all(selected, jobs, output, credentials, checker, checker_sha256, environment=None, *, expected_profile=None):
+
+_PROFILED_PROOF_AUTHORITY = object()
+
+
+class ProfiledCurrentDatabaseProof:
+    """Process-local result from the actual current-only checker, not JSON authority."""
+    def __init__(self, authority, scope, selected, jobs, output, outcome):
+        demand(authority is _PROFILED_PROOF_AUTHORITY, "PROFILED_CURRENT_DATABASE_PRODUCER_REQUIRED")
+        self._scope, self._output = scope, output
+        self._selected, self._jobs = copy.deepcopy(selected), copy.deepcopy(jobs)
+        self._outcome = copy.deepcopy(outcome)
+        self._sha256 = migrate.file_hash(migrate.read_input(output, "current-databases-outcome.json"))
+
+
+def read_profiled_current_proof(proof, scope, selected, jobs, *, expected_profile):
+    expected = migrate.profile_context(expected_profile)
+    demand(expected is not None and type(proof) is ProfiledCurrentDatabaseProof and proof._scope is scope
+           and proof._selected == selected and proof._jobs == jobs, "PROFILED_CURRENT_DATABASE_PROOF_REQUIRED")
+    scope.require_release(selected, jobs)
+    scope.require_frontend(selected, jobs["frontend"])
+    outcome = migrate.read_json(proof._output, "current-databases-outcome.json", expected_profile=expected)
+    migrate.require_profile(expected, outcome)
+    raw = migrate.read_input(proof._output, "current-databases-outcome.json")
+    demand(migrate.file_hash(raw) == proof._sha256 and outcome == proof._outcome
+           and outcome.get("status") == "CURRENT_DATABASES_READ_ONLY_VERIFIED"
+           and outcome.get("phase") == "completed" and outcome.get("migrationsExecuted") is False
+           and outcome.get("frontendSqlApplied") is False and outcome.get("trafficAuthorized") is False
+           and outcome.get("candidateSha256") == scope.candidate_sha256
+           and outcome.get("releaseId") == selected["releaseId"]
+           and set(outcome.get("databases", {})) == set(jobs), "PROFILED_CURRENT_DATABASE_PROOF_CHANGED")
+    for name, identity in outcome["databases"].items():
+        record = migrate.read_input(proof._output / name, "database-receipt.json")
+        demand(identity.get("image") == jobs[name]["image"] and identity.get("receiptSha256") == migrate.file_hash(record),
+               "PROFILED_CURRENT_DATABASE_RECEIPT_CHANGED")
+        if name == "frontend":
+            frontend_raw, started_raw = scope.frontend_current_receipt_bytes()
+            demand(record == frontend_raw and migrate.read_input(proof._output / name, "frontend-continuation-started.json") == started_raw,
+                   "PROFILED_CURRENT_FRONTEND_PROOF_CHANGED")
+        else:
+            job_raw = scope.api_job_bytes(name)
+            receipt = migrate.read_json(proof._output / name, "database-receipt.json", expected_profile=expected)
+            demand(receipt.get("manifestSha256") == migrate.file_hash(job_raw),
+                   "PROFILED_CURRENT_DATABASE_JOB_BYTES_CHANGED")
+    scope.verify()
+    return proof._output, outcome
+
+
+def check_all(selected, jobs, output, credentials, checker, checker_sha256, environment=None, *, expected_profile=None,
+              _profiled_current_scope=None):
     """Read-only DB inspection; credentials go only to their individual one-shot.
 
     Frontend reuses its qualified verify-current-only entrypoint. API images run
@@ -43,13 +92,21 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
     Images must already be cached by the reviewed parent.
     """
     expected = migrate.profile_context(expected_profile)
+    if _profiled_current_scope is not None:
+        from p2_profiled_current_scope import P2ProfiledCurrentScope
+        demand(expected is not None and type(_profiled_current_scope) is P2ProfiledCurrentScope,
+               "PROFILED_CURRENT_DATABASE_SCOPE_REQUIRED")
+        _profiled_current_scope.require_release(selected, jobs)
+        demand("frontend" in jobs, "PROFILED_CURRENT_FRONTEND_PROOF_REQUIRED")
+        _profiled_current_scope.require_frontend(selected, jobs["frontend"])
     migrate.candidate_profile(selected, expected)
     demand(selected.get("environment") == "staging" and set(jobs) == {"frontend", "course", "community"},
            "CURRENT_DATABASES_THREE_STAGING_TARGETS_REQUIRED")
     for info in jobs.values():
         migrate.require_contract_identity(selected, info["job"])
         migrate.require_job_profile(expected, info["job"], frontend=info.get("frontend", False))
-    demand(set(credentials) == set(jobs) and all(isinstance(value, str) and value for value in credentials.values()),
+    credential_names = set(jobs) if _profiled_current_scope is None else {"course", "community"}
+    demand(set(credentials) == credential_names and all(isinstance(value, str) and value for value in credentials.values()),
            "CURRENT_DATABASES_NAMED_PRIVATE_CREDENTIALS_REQUIRED")
     demand(jobs["frontend"]["job"]["target"].get("approvedPendingTags") == [],
            "CURRENT_DATABASES_FRONTEND_CURRENT_ONLY_REQUIRED")
@@ -68,12 +125,36 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
     outcome.update(migrate.contract_identity(selected))
     if expected is not None:
         outcome.update(version=2, qualificationTargetProfile=expected)
+    if _profiled_current_scope is not None:
+        outcome.update(candidateSha256=_profiled_current_scope.candidate_sha256,
+                       frontendSqlApplied=False, frontendProofHeld=True)
+
+    def run(args, environment, payload=None, timeout=120):
+        if _profiled_current_scope is None:
+            return _run(args, environment, payload, timeout)
+        return _profiled_current_scope.run(args, env=environment, input=payload, capture_output=True, timeout=timeout)
+
     try:
         for name in ("frontend", "course", "community"):
             info = jobs[name]
+            if name == "frontend" and _profiled_current_scope is not None:
+                # The original FE session already holds the migration/nonce
+                # locks. Never launch a second runner or synthesize its terminal.
+                outcome["phase"] = "frontend-held-current-proof"
+                _profiled_current_scope.require_frontend(selected, info)
+                raw, started = _profiled_current_scope.frontend_current_receipt_bytes()
+                receipts = output / name
+                receipts.mkdir(mode=0o700)
+                migrate.write_exact_bytes(receipts, "database-receipt.json", raw)
+                migrate.write_exact_bytes(receipts, "frontend-continuation-started.json", started)
+                records[name] = {"image": info["image"], "receiptSha256": migrate.file_hash(raw)}
+                continue
             inputs, receipts = output / (name + "-input"), output / name
             inputs.mkdir(mode=0o700); receipts.mkdir(mode=0o700)
-            migrate.write_json(inputs, "job.json", info["job"])
+            if _profiled_current_scope is None:
+                migrate.write_json(inputs, "job.json", info["job"])
+            else:
+                migrate.write_exact_bytes(inputs, "job.json", _profiled_current_scope.api_job_bytes(name))
             (inputs / "schema.json").write_bytes(info["schema"])
             if name == "frontend":
                 migrate.write_json(inputs, "candidate.json", selected)
@@ -85,7 +166,8 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
                     os.chown(file, uid, gid)
             if os.getuid() == 0:
                 os.chown(inputs, uid, gid); os.chown(receipts, uid, gid)
-            container = "lash-current-" + name + "-" + uuid4().hex
+            prefix = "lash-current-" if _profiled_current_scope is None else "lash-p2-profiled-current-api-check-"
+            container = prefix + name + "-" + uuid4().hex
             environment = dict(base)
             payload = None
             if name == "frontend":
@@ -103,7 +185,7 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
                 payload = json.dumps({"connectionUrl": credentials[name]}).encode()
             outcome["phase"] = name + "-read-only-current"
             try:
-                result = _run(args, environment, payload)
+                result = run(args, environment, payload)
                 if result.returncode:
                     for name_of_stream, raw in (("stdout", result.stdout), ("stderr", result.stderr)):
                         file = receipts / ("private-" + name_of_stream + ".bin")
@@ -149,17 +231,24 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
                            and record.get("artifactSha256") == info["job"]["target"]["artifactSha256"]
                            and record.get("target") == {key: info["job"]["target"][key] for key in ("host", "port", "database", "user", "serverMajor")},
                            "CURRENT_DATABASES_API_READ_ONLY_PROOF_REQUIRED")
-                    migrate.write_json(receipts, "database-receipt.json", record)
+                    if _profiled_current_scope is None:
+                        migrate.write_json(receipts, "database-receipt.json", record)
+                    else:
+                        migrate.write_exact_bytes(receipts, "database-receipt.json", result.stdout)
                 records[name] = {"image": info["image"], "receiptSha256": migrate.file_hash(migrate.read_input(receipts, "database-receipt.json"))}
             finally:
-                _run(["docker", "rm", "--force", container], base, timeout=20)
-                remaining = _run(["docker", "container", "ls", "--all", "--filter", f"name=^/{container}$", "--format", "{{.ID}}"], base, timeout=20)
+                run(["docker", "rm", "--force", container], base, timeout=20)
+                remaining = run(["docker", "container", "ls", "--all", "--filter", f"name=^/{container}$", "--format", "{{.ID}}"], base, timeout=20)
                 demand(remaining.returncode == 0 and not remaining.stdout.strip(), "CURRENT_DATABASES_CONTAINER_CLEANUP_UNVERIFIED")
+        if _profiled_current_scope is not None:
+            _profiled_current_scope.verify()
         outcome.update(status="CURRENT_DATABASES_READ_ONLY_VERIFIED", phase="completed", databases=records)
-        return outcome
     except BaseException as error:
         code = str(error)
         outcome["failureCode"] = code if isinstance(error, ValueError) and re.fullmatch(r"[A-Z_]{1,100}", code) else "CURRENT_DATABASES_READ_ONLY_CHECK_FAILED"
         raise ValueError(outcome["failureCode"]) from None
     finally:
         migrate.write_json(output, "current-databases-outcome.json", outcome)
+    if _profiled_current_scope is not None:
+        return ProfiledCurrentDatabaseProof(_PROFILED_PROOF_AUTHORITY, _profiled_current_scope, selected, jobs, output, outcome)
+    return outcome

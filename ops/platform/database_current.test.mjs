@@ -8,7 +8,7 @@ function fixture() {
   const prepared = { manifest: { environment: "staging", runtimeRole: "lash_her_course_staging_runtime", schemaBaselineSha256: "a".repeat(64) },
     target: { environment: "staging", user: "lash_her_course_staging_migration", host: "fixture.test", port: 5432, database: "fixture", serverMajor: 18 },
     artifact: { service: "course-api", artifactSha256: "b".repeat(64) }, baseline: { catalog: { relations: [{ relname: "courses" }] } } };
-  const identity = { database: "fixture", role: prepared.target.user, version: "180000", read_only: "on" };
+  const identity = { database: "fixture", role: prepared.target.user, version: "180000", read_only: "on", search_path: "pg_catalog,public" };
   const roles = [prepared.target.user, prepared.manifest.runtimeRole].map((rolname, index) => ({ rolname, rolsuper: false, rolcreatedb: false,
     rolcreaterole: false, rolreplication: false, rolbypassrls: false, rolinherit: false, rolcanlogin: true, memberships: 0,
     database_connect: true, schema_usage: true, database_create: index === 0, schema_create: index === 0 }));
