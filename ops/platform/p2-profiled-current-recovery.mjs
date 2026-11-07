@@ -1,12 +1,14 @@
 // Profiled current-only recovery orchestration. This component never applies
 // frontend SQL, prepares roles, restores historical logins, or opens traffic.
 import { createHash } from "node:crypto";
+import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { runFrontendMigration, writeFrontendReceipt } from "./frontend-migration.mjs";
 import { frontendPrivateReceiptDirectory, frontendReleaseReceiptStore, readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { requireQualificationTargetProfile, resolveQualificationTargetProfile,
-  STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as current } from "./qualification-target-profile.mjs";
+  decodeQualificationTargetJson, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as current } from "./qualification-target-profile.mjs";
 import { withP2ProfiledCurrentRecoveryTransport } from "./p2-profiled-current-recovery-transport.mjs";
 
 const preparedValues = new WeakMap();
@@ -46,6 +48,18 @@ function requireOriginalReceipts(results, releaseId, expected) {
 const freeze = value => { if (value && typeof value === "object" && !Object.isFrozen(value)) { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
 const clone = value => structuredClone(value);
 const hash = value => createHash("sha256").update(Buffer.isBuffer(value) || typeof value === "string" ? value : JSON.stringify(value)).digest("hex");
+
+function readSettings(path) {
+  const absolute = resolve(path); demand(realpathSync(absolute) === absolute); frontendPrivateReceiptDirectory(dirname(absolute));
+  const fd = openSync(absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const before = fstatSync(fd); demand(before.isFile() && before.nlink === 1 && before.uid === process.getuid() && (before.mode & 0o077) === 0
+      && before.size > 0 && before.size <= 2_000_000);
+    const bytes = readFileSync(fd), after = fstatSync(fd);
+    demand(bytes.length === before.size && ["dev", "ino", "size", "mtimeMs", "ctimeMs"].every(key => before[key] === after[key]));
+    return decodeQualificationTargetJson(bytes, "private-packet");
+  } finally { closeSync(fd); }
+}
 
 function validateSettings(settings) {
   resolveQualificationTargetProfile(current);
@@ -207,4 +221,16 @@ export async function p2ProfiledCurrentRecoveryOperator(settings, { apply = fals
     getUrl: () => custody.credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
     getProviderContext: async () => Object.freeze({ ...custody.context, originalDirectory: original.frontendDirectory }),
     assertSource: custody.assertSource });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  try {
+    const args = process.argv.slice(2), apply = args[0] === "--apply";
+    demand(args.length === (apply ? 5 : 3) && ["--apply", "--plan"].includes(args[0]) && args[1] === "--settings"
+      && (!apply || args[3] === "--confirm"));
+    const settings = readSettings(args[2]);
+    console.log(JSON.stringify(await p2ProfiledCurrentRecoveryOperator(settings, { apply, confirmation: args[4] })));
+  } catch {
+    console.error("P2_PROFILED_CURRENT_RECOVERY_REFUSED"); process.exitCode = 1;
+  }
 }

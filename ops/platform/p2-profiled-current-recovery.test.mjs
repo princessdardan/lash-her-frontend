@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { prepareP2ProfiledCurrentRecovery, p2ProfiledCurrentRecoveryOperator } from "./p2-profiled-current-recovery.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
@@ -52,4 +54,10 @@ test("a materialized leaf plan cannot be submitted as the source operator settin
   const settings = fixture("reconcile-frontend-get-first");
   await assert.rejects(p2ProfiledCurrentRecoveryOperator(settings));
   await assert.rejects(p2ProfiledCurrentRecoveryOperator(settings, { apply: true, confirmation: "staging/owned-recovery" }));
+});
+
+test("the source CLI rejects unknown operations before settings or provider access", () => {
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL("./p2-profiled-current-recovery.mjs", import.meta.url)), "--retry", "--settings", "/not/read"],
+    { encoding: "utf8", env: { PATH: process.env.PATH ?? "/usr/bin:/bin", NODE_NO_WARNINGS: "1" } });
+  assert.equal(result.status, 1); assert.equal(result.stdout, ""); assert.equal(result.stderr, "P2_PROFILED_CURRENT_RECOVERY_REFUSED\n");
 });
