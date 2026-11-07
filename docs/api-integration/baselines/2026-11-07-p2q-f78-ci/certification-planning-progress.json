@@ -250,5 +250,27 @@
     "interruptedRestorationQualified": false,
     "liveApplyExecuted": false,
     "releaseAccepted": false
+  },
+  "profiledInterruptedRestorationOperatorAndBroker": {
+    "sourceCommit": "72be35dc16e1857ef2c2eee64e82f71b1c9ea326",
+    "operatorCommit": "64c31ca4daa78146f3dfbe9cfa8de0713c7c2a34",
+    "node24": {
+      "passed": 13,
+      "skipped": 0,
+      "logSha256": "480f57118dc93def87346d82bd76d22dc3fb5fb2d0f811b86c8ab212dba8a684"
+    },
+    "host": {
+      "passed": 116,
+      "skipped": 0,
+      "logSha256": "b92fcd828d2901fb37d8f80f3609f2d75fe96d93d65ec6eadc766c46ae7ccc8d"
+    },
+    "operatorTransportFixturesProjectedHostReceipts": true,
+    "brokerClosureFixtureProjectedPostgresObserver": true,
+    "independentSupervisorJoined": false,
+    "composedRestorationVerified": false,
+    "interruptedRestorationQualified": false,
+    "liveApplyExecuted": false,
+    "stagingChanged": false,
+    "releaseAccepted": false
   }
 }
