@@ -302,8 +302,10 @@ test('fixed current certification plan joins the original release plan, terminal
     ]) assert.throws(() => prepareP2ProfiledCertificationOperator(paired(selectedLifecycle, invalid)));
     await assert.rejects(p2ProfiledCertificationOperator(paired(selectedLifecycle), { confirmation: 'staging/owned-identity-action' }),
       /P2_CERTIFICATION_PARENT_REFUSED/);
-    await assert.rejects(p2ProfiledCertificationOperator(paired(preferenceScope), { confirmation: 'staging/owned-scoped-action' }),
+    await assert.rejects(p2ProfiledCertificationOperator(paired(preferenceScope), { confirmation: 'staging/owned-identity-action' }),
       /P2_CERTIFICATION_PARENT_REFUSED/);
+    await assert.rejects(p2ProfiledCertificationOperator(paired(preferenceScope), { confirmation: 'staging/owned-scoped-action' }),
+      { code: 'ENOENT' });
     const material = ['owned-interoperability-fixture-key', 'https://owned.vercel.app', 'a'.repeat(40), 'b'.repeat(64),
       '14', 'paid-grant', 1794009600, 90, 'c'.repeat(32)];
     const privateFixture = spawnSync('python3', ['-B', '-c',
@@ -319,9 +321,9 @@ test('fixed current certification plan joins the original release plan, terminal
       sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${stage}\n${nonce}`), host, expires,
     ]);
     for (const [selection, selector] of [
-      [selectedLifecycle, ['admin', selectedLifecycle.actorId, userId, 'suspend']],
-      ...[selectedLifecycle, preferenceScope].map(scope => [prepareP2ProfiledCertificationOperator(paired(scope)).identity.scopedAction,
-        ['identity', scope.frontendAction.actorKind]]),
+      [selectedLifecycle, rawHash(JSON.stringify(['admin', selectedLifecycle.actorId, userId, 'suspend']))],
+      [prepareP2ProfiledCertificationOperator(paired(selectedLifecycle)).identity.scopedAction, rawHash(JSON.stringify(['identity', 'admin']))],
+      [prepareP2ProfiledCertificationOperator(paired(preferenceScope)).identity.scopedAction, '7032712d637573746f6d65722d763100' + userId.replaceAll('-', '')],
     ]) {
       const scopedMaterial = [...material];
       scopedMaterial[5] = selection.stage;
@@ -329,8 +331,7 @@ test('fixed current certification plan joins the original release plan, terminal
         'import json,sys;sys.path.insert(0,sys.argv[1]);from p2_interactive_window import _selection_sha as digest,_material,validate_interactive_action as check;data=json.load(sys.stdin);print(json.dumps(_material(*data["material"],digest(check(data["action"])))))',
         join(root, 'ops/platform/host')], { input: JSON.stringify({ material: scopedMaterial, action: selection }), encoding: 'utf8' });
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
-      const selectorSha = rawHash(JSON.stringify(selector));
-      const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${nonce}.${selectorSha}`;
+      const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${nonce}.${selector}`;
       assert.deepEqual(JSON.parse(frontendFixture.stdout), [
         `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`, null, host, expires,
       ]);

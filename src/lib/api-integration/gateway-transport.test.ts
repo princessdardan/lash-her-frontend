@@ -97,7 +97,7 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   });
 
   function evidence(stage: string, route: string, timestamp = issued) {
-    const selector = stage === "identity" ? createHash("sha256").update(JSON.stringify(["identity", "customer"])).digest("hex") : undefined;
+    const selector = stage === "identity" ? "7032712d637573746f6d65722d7631008d680a9280714fd09da2c4d350aa729d" : undefined;
     const body = [selector ? "v2" : "v1", epoch, stage, issued - 90, issued + 90, nonce, ...(selector ? [selector] : [])].join(".");
     const browserMac = createHmac("sha256", secret)
       .update(["lash-her:p2q:interactive:browser:v1", deployment, source, frontendTarget, body].join("\n")).digest("hex");

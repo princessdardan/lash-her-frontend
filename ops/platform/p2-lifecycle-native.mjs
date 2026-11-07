@@ -65,6 +65,18 @@ const reviewedIdentityPermitDependencies = {
   ...reviewedLifecyclePermitDependencies,
   "src/lib/writer-admission/interactive-proof.ts": "f66a93e2e154704d84e4527f9f7909609531bceab1a4830cc72697ab9d351721"
 };
+const reviewedCustomerIdentitySource = {
+  ...reviewedLifecyclePermitSource,
+  "src/lib/writer-admission/runtime.ts": "7686aa5ec15b490a70416b418bfc8c7978f6baa296065cac9994e58192a76538",
+  "src/lib/writer-admission/context.ts": "c98e8c7aeaf496c8b530de186f820729f9376825391b49873cf03ab9f13c0efb"
+};
+const reviewedCustomerIdentityDependencies = {
+  ...reviewedIdentityPermitDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "50895e6b669315f9e53ea1cc12d055a10a8dd3c67de9c01edd7392342168b73e",
+  "src/lib/customer-auth/config.ts": "0f265ff401c6f591fd293d013bbe708ca24768ab664ec26180b52478ac1d94d8",
+  "src/lib/customer-auth/handler.ts": "a680e9f00b040693a1bec437c5fd3d414a70a01ba063e71b609797025d65b224",
+  "src/lib/customer-auth/store.ts": "5e1e765f11bf283f48ae52a64b823d9db6710c4fc419d17b881f38faa6b8b2ff"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -86,6 +98,11 @@ function sourcePolicy(sourceCommit) {
   };
   const selected = Object.fromEntries(Object.keys(reviewedSource).map(file => [file, readSourceHash(file)]));
   if (same(selected, reviewedSource) || same(selected, reviewedScopedSource)) return selected;
+  if (same(selected, reviewedCustomerIdentitySource)) {
+    const dependencies = Object.fromEntries(Object.keys(reviewedCustomerIdentityDependencies).map(file => [file, readSourceHash(file)]));
+    demand(same(dependencies, reviewedCustomerIdentityDependencies));
+    return { ...selected, ...dependencies };
+  }
   if (same(selected, reviewedLifecyclePermitSource)) {
     const dependencies = Object.fromEntries(Object.keys(reviewedLifecyclePermitDependencies).map(file => [file, readSourceHash(file)]));
     demand(same(dependencies, reviewedLifecyclePermitDependencies) || same(dependencies, reviewedIdentityPermitDependencies));

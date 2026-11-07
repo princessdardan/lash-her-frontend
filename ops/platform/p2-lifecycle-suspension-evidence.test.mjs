@@ -198,9 +198,11 @@ function interactiveInput(overrides = {}) {
   return value;
 }
 const identityHash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const customerIdentitySelector = "7032712d637573746f6d65722d763100" + userId.replaceAll("-", "");
 function interactivePermit(input) {
   const issued = Math.floor(Date.now() / 1000), expires = issued + 60;
-  const selector = input.stage === "identity" ? identityHash(["identity", input.identity.actorKind])
+  const selector = input.stage === "identity" ? input.identity.actorKind === "admin" ? identityHash(["identity", "admin"])
+    : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "")
     : input.stage === "lifecycle" ? "4".repeat(64) : undefined;
   const cookie = [selector ? "v2" : "v1", input.epoch, input.stage, issued, expires, "3".repeat(32),
     ...(selector ? [selector] : []), "5".repeat(64)].join(".");
@@ -286,6 +288,13 @@ test("actual interactive child refuses secret-bearing IPC before browser launch 
 test("identity permit requires the reviewed actor family and the actual child refuses the other context", async () => {
   const input = interactiveInput(), permit = interactivePermit(input), runner = interactiveChild();
   const learner = interactiveInput({ identity: { actorKind: "customer", actorId: userId } });
+  const customerPermit = interactivePermit(learner), parts = customerPermit.cookie.split(".");
+  assert.equal(parts[6], customerIdentitySelector);
+  assert.equal(validateP2InteractiveBrowserPermit(customerPermit, learner), customerPermit);
+  const anotherCustomer = interactiveInput({ identity: { actorKind: "customer", actorId: randomUUID() } });
+  assert.throws(() => validateP2InteractiveBrowserPermit(interactivePermit(anotherCustomer), learner));
+  parts[6] = identityHash(["identity", "customer"]);
+  assert.throws(() => validateP2InteractiveBrowserPermit({ ...customerPermit, cookie: parts.join(".") }, learner));
   assert.throws(() => validateP2InteractiveBrowserPermit(permit, learner));
   assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: permit.cookie.replace(/^v2/u, "v1") }, input));
   assert.throws(() => validateP2InteractiveBrowserInput(interactiveInput({ identity: { actorKind: "owner", actorId: adminId } })));
@@ -339,10 +348,11 @@ test("identity session refuses wrong or expired identity and waits for a newly a
 });
 
 const ownedInteractiveBrowser = process.env.P2_INTERACTIVE_BROWSER_OWNED_TEST === "true";
-test("owned Chromium identity reads the fixed normal session endpoint with only its own browser context cookies",
-  { skip: !ownedInteractiveBrowser }, async () => {
+test("owned Chromium keeps the customer session from a loopback sign-in through lifecycle permit rotation",
+  { skip: !ownedInteractiveBrowser, timeout: 15_000 }, async () => {
     const root = mkdtempSync(join(tmpdir(), "owned-p2-identity-tls-"));
-    const sockets = new Set(), hits = [];
+    const sockets = new Set(), hits = [], lifecycleRequestId = randomUUID();
+    const lifecycle = p2LifecycleMutationTarget({ actorKind: "customer", userId, operation: "preferences-on" });
     const bind = async server => {
       server.on("connection", socket => {
         sockets.add(socket);
@@ -358,16 +368,43 @@ test("owned Chromium identity reads the fixed normal session endpoint with only 
       assert.equal(spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
         "-subj", "/CN=staging.lashher.com", "-keyout", key, "-out", cert], { stdio: "ignore" }).status, 0);
       https = createHttpsServer({ key: readFileSync(key), cert: readFileSync(cert) }, (request, response) => {
+        const cookies = request.headers.cookie ?? "";
+        const ownerCookie = cookies.includes("owned-owner=fixture"), customerCookie = cookies.includes("owned-customer=fixture");
+        const customerPermit = cookies.includes("__Host-lash-p2q-window=v2.9.identity.") && cookies.includes("." + customerIdentitySelector + ".");
+        const lifecyclePermit = cookies.includes("__Host-lash-p2q-window=v2.11.lifecycle.");
         if (request.method === "GET" && ["/sign-in", "/admin/sign-in"].includes(request.url)) {
-          response.writeHead(200, { "content-type": "text/html" }).end("<!doctype html><main>Owned identity</main>");
+          response.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><main>Owned identity</main>
+            <form method="POST" action="/api/customer-auth/signin/resend"><button>Sign in</button></form>`);
+          return;
+        }
+        if (request.method === "POST" && request.url === "/api/customer-auth/signin/resend" && customerPermit && !ownerCookie) {
+          request.resume();
+          response.writeHead(303, { location: "/api/customer-auth/callback/resend" }).end();
+          return;
+        }
+        if (request.method === "GET" && request.url === "/api/customer-auth/callback/resend" && customerPermit && !ownerCookie) {
+          response.writeHead(303, { location: "/sign-in",
+            "set-cookie": "owned-customer=fixture; Path=/; Secure; HttpOnly; SameSite=Lax" }).end();
+          return;
+        }
+        if (request.method === "GET" && request.url === "/account" && customerCookie && !ownerCookie && lifecyclePermit) {
+          response.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><button id="save">Save</button><script>
+            document.querySelector("#save").onclick = () => fetch("/api/account/preferences", {
+              method: "POST", headers: { "content-type": "application/json" }, body: '{"learningUpdates":true}'
+            }).then(response => response.json());</script>`);
+          return;
+        }
+        if (request.method === "POST" && request.url === lifecycle.pathname && customerCookie && !ownerCookie && lifecyclePermit) {
+          request.resume();
+          const body = '{"saved":true}';
+          response.writeHead(200, { "content-type": "application/json", "cache-control": "private, no-store",
+            "content-length": Buffer.byteLength(body), "x-request-id": lifecycleRequestId }).end(body);
           return;
         }
         const owner = request.url === "/api/auth/session", customer = request.url === "/api/customer-auth/session";
         if (request.method !== "GET" || (!owner && !customer)) return response.writeHead(404).end();
-        const cookies = request.headers.cookie ?? "";
-        const ownerCookie = cookies.includes("owned-owner=fixture"), customerCookie = cookies.includes("owned-customer=fixture");
         hits.push({ path: request.url, ownerCookie, customerCookie, permitCookie: cookies.includes("__Host-lash-p2q-window=") });
-        const value = owner ? ownerCookie && !customerCookie ? ownerSession() : null : customerCookie && !ownerCookie ? customerSession() : null;
+        const value = owner ? ownerCookie && !customerCookie ? ownerSession() : null : customerCookie && !ownerCookie && customerPermit ? customerSession() : null;
         const body = JSON.stringify(value);
         response.writeHead(200, { "content-type": "application/json", "cache-control": "private, no-cache, no-store",
           "content-length": Buffer.byteLength(body) }).end(body);
@@ -395,17 +432,45 @@ test("owned Chromium identity reads the fixed normal session endpoint with only 
       ]) {
         const owned = await browser.newContext({ proxy: { server: `http://127.0.0.1:${proxyPort}` }, ignoreHTTPSErrors: true });
         try {
+          owned.setDefaultTimeout(5000);
           const permit = interactivePermit(input);
-          await owned.addCookies([{ name: context === "owner" ? "owned-owner" : "owned-customer", value: "fixture", url: input.browserOrigin + "/" }]);
+          if (context === "owner") await owned.addCookies([{ name: "owned-owner", value: "fixture", url: input.browserOrigin + "/" }]);
           await installP2InteractiveBrowserCookie(owned, permit, input);
           const openedAt = Date.now(), page = await owned.newPage();
           await page.goto(input.browserOrigin + p2InteractiveBrowserPath("identity", context));
+          if (context === "learner") {
+            assert.equal(await observeP2InteractiveIdentitySession(page, input, { context, openedAt, expires: permit.expires }), null);
+            const callback = page.waitForResponse(response => response.url() === input.browserOrigin + "/api/customer-auth/callback/resend");
+            await page.getByRole("button", { name: "Sign in" }).click();
+            assert.equal((await callback).status(), 303);
+            await page.waitForLoadState();
+          }
           assert.deepEqual(await observeP2InteractiveIdentitySession(page, input, { context, openedAt, expires: permit.expires, ...options }),
             { ...input.identity, sessionVerified: true });
+          await expireP2InteractiveBrowserCookie(owned);
+          await page.close();
+          if (context === "learner") {
+            assert.deepEqual((await owned.cookies([input.browserOrigin])).map(cookie => cookie.name), ["owned-customer"]);
+            const next = interactiveInput({ stage: "lifecycle", lifecycle, epoch: "11", actionId: "owned-lifecycle", bindingSha256: "d".repeat(64) });
+            const nextPermit = interactivePermit(next);
+            await installP2InteractiveBrowserCookie(owned, nextPermit, next);
+            const account = await owned.newPage(), watch = watchP2LifecycleMutation(owned, account, next);
+            try {
+              await account.goto(input.browserOrigin + "/account");
+              const saved = account.waitForResponse(response => response.url() === input.browserOrigin + lifecycle.pathname);
+              await account.getByRole("button", { name: "Save" }).click();
+              assert.equal((await saved).status(), 200);
+              await watch.wait(Math.min(nextPermit.expires, Math.floor(Date.now() / 1000) + 5));
+              await expireP2InteractiveBrowserCookie(owned);
+              await account.close();
+              assert.deepEqual(watch.finish(), { method: "POST", pathname: lifecycle.pathname, status: 200, requestId: lifecycleRequestId, body: { saved: true } });
+            } finally { watch.close(); }
+          }
         } finally { await owned.close(); }
       }
       assert.deepEqual(hits, [
         { path: "/api/auth/session", ownerCookie: true, customerCookie: false, permitCookie: true },
+        { path: "/api/customer-auth/session", ownerCookie: false, customerCookie: false, permitCookie: true },
         { path: "/api/customer-auth/session", ownerCookie: false, customerCookie: true, permitCookie: true },
       ]);
     } finally {

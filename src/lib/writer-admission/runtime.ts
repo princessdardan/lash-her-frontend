@@ -68,7 +68,8 @@ export function createWriterAdmissionRunner(dependencies: {
         producerSha256, sourceSha: configuration.sourceSha }, async () => {
         if (connectionLost) throw new Error();
         const result = await withWriterOperationContext(task, { operationId, kind, epoch,
-          producerSha256, sourceCommit: configuration.sourceSha, targetSha256: target.targetSha256 }, interactive?.lifecycleSelectionSha256);
+          producerSha256, sourceCommit: configuration.sourceSha, targetSha256: target.targetSha256 },
+        interactive?.lifecycleSelectionSha256, interactive?.identityCustomerId);
         // A 5xx may describe an uncertain provider result. Preserve an unresolved
         // operation even when a domain handler catches its own exception.
         if (connectionLost || options?.uncertainResult?.(result)) throw new Error();

@@ -4,6 +4,7 @@ import { hasConfiguredRequestOrigin } from "@/lib/api-integration/request-origin
 import NextAuth from "next-auth";
 import { NextRequest } from "next/server";
 import { getTrustedClientIp } from "@/lib/security/trusted-client-ip";
+import { currentWriterIdentityCustomerId } from "@/lib/writer-admission/context";
 import { withWriterAdmission } from "@/lib/writer-admission/route";
 import { runWriterAdmission, type WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 import { createCustomerAuthConfig } from "./config";
@@ -75,6 +76,7 @@ export function createCustomerAuthHandler(dependencies: {
           const input = contentType === "application/json" ? JSON.parse(body) : Object.fromEntries(new URLSearchParams(body));
           email = normalizeCustomerEmail(input.email);
         } catch { return genericEmailResponse(configuration.origin); }
+        if (currentWriterIdentityCustomerId() !== undefined && !await store.isActive(email)) return genericEmailResponse(configuration.origin);
         const emailAllowed = await store.consumeThrottle(customerThrottleKey(configuration.secret, "email", email), 5, 900);
         if (!emailAllowed) return genericEmailResponse(configuration.origin);
       } else if (!allowed || !clientIp && process.env.VERCEL === "1") {

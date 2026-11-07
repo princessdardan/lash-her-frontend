@@ -3,7 +3,7 @@ import "server-only";
 import { and, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import type { Adapter, AdapterAccount, AdapterUser } from "next-auth/adapters";
 import { getPrivateDb } from "@/lib/private-db/client";
-import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { currentWriterIdentityCustomerId, markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { assertCustomerWriterContext, customerVerificationWrites } from "./context";
 import { CUSTOMER_EMAIL_MAX_AGE, hashCustomerSession, normalizeCustomerEmail } from "./policy";
 import { customerAuthThrottle, customerProviderLinks, customerSessions, customerUsers, customerVerificationTokens } from "./schema";
@@ -16,11 +16,21 @@ function requireReceipt(condition: unknown): asserts condition {
   if (!condition) throw new Error("CUSTOMER_AUTH_PERSISTENCE_RECEIPT");
 }
 
+class CustomerIdentitySelectionDenied extends Error {
+  constructor() { super("CUSTOMER_IDENTITY_SELECTION_DENIED"); }
+}
+
+function selectedCustomer(predicate: ReturnType<typeof and>, selectedId: string | undefined) {
+  return selectedId === undefined ? predicate : and(predicate, eq(customerUsers.id, selectedId), eq(customerUsers.status, "active"));
+}
+
 export function createCustomerAuthStore(database: () => Database = getPrivateDb, now: () => Date = () => new Date()) {
-  const findUser = async (predicate: ReturnType<typeof eq>) => (await database().select().from(customerUsers).where(predicate).limit(1))[0] ?? null;
+  const findUser = async (predicate: ReturnType<typeof eq>, selectedId = currentWriterIdentityCustomerId()) =>
+    (await database().select().from(customerUsers).where(selectedCustomer(predicate, selectedId)).limit(1))[0] ?? null;
   const adapter: Adapter = {
     async createUser(input) {
       assertCustomerWriterContext();
+      if (currentWriterIdentityCustomerId() !== undefined) throw new CustomerIdentitySelectionDenied();
       return database().transaction(async tx => {
         const expected = { email: normalizeCustomerEmail(input.email), name: input.name?.slice(0, 200) ?? null, emailVerified: input.emailVerified ?? null };
         const [inserted] = await tx.insert(customerUsers).values(expected).returning();
@@ -39,16 +49,22 @@ export function createCustomerAuthStore(database: () => Database = getPrivateDb,
       return user ? asUser(user) : null;
     },
     async getUserByAccount({ provider, providerAccountId }) {
+      const selectedId = currentWriterIdentityCustomerId();
       const [row] = await database().select({ user: customerUsers }).from(customerProviderLinks)
         .innerJoin(customerUsers, eq(customerUsers.id, customerProviderLinks.userId))
-        .where(and(eq(customerProviderLinks.provider, provider), eq(customerProviderLinks.providerAccountId, providerAccountId))).limit(1);
+        .where(selectedCustomer(and(eq(customerProviderLinks.provider, provider), eq(customerProviderLinks.providerAccountId, providerAccountId)), selectedId)).limit(1);
       return row ? asUser(row.user) : null;
     },
     async updateUser(input) {
       assertCustomerWriterContext();
+      const selectedId = currentWriterIdentityCustomerId();
+      if (selectedId !== undefined && input.id !== selectedId) throw new CustomerIdentitySelectionDenied();
       return database().transaction(async tx => {
         const [existing] = await tx.select().from(customerUsers).where(eq(customerUsers.id, input.id)).for("update");
-        if (!existing || existing.status !== "active" || input.email && normalizeCustomerEmail(input.email) !== existing.email) throw new Error("CUSTOMER_UPDATE_DENIED");
+        if (!existing || existing.status !== "active" || input.email && normalizeCustomerEmail(input.email) !== existing.email) {
+          if (selectedId !== undefined) throw new CustomerIdentitySelectionDenied();
+          throw new Error("CUSTOMER_UPDATE_DENIED");
+        }
         const changes = {
           ...(input.name !== undefined ? { name: input.name?.slice(0, 200) ?? null } : {}),
           ...(input.emailVerified !== undefined ? { emailVerified: input.emailVerified } : {}),
@@ -64,6 +80,7 @@ export function createCustomerAuthStore(database: () => Database = getPrivateDb,
     },
     async linkAccount(account) {
       assertCustomerWriterContext();
+      if (currentWriterIdentityCustomerId() !== undefined) throw new CustomerIdentitySelectionDenied();
       if (account.provider !== "google" || account.type !== "oidc" || !account.providerAccountId || account.providerAccountId.length > 255) throw new Error("CUSTOMER_PROVIDER_DENIED");
       await database().transaction(async tx => {
         const [user] = await tx.select().from(customerUsers).where(eq(customerUsers.id, account.userId)).for("update");
@@ -80,9 +97,14 @@ export function createCustomerAuthStore(database: () => Database = getPrivateDb,
     },
     async createSession(session) {
       assertCustomerWriterContext();
+      const selectedId = currentWriterIdentityCustomerId();
+      if (selectedId !== undefined && session.userId !== selectedId) throw new CustomerIdentitySelectionDenied();
       await database().transaction(async tx => {
         const [user] = await tx.select().from(customerUsers).where(eq(customerUsers.id, session.userId)).for("update");
-        if (!user || user.status !== "active") throw new Error("CUSTOMER_SESSION_DENIED");
+        if (!user || user.status !== "active") {
+          if (selectedId !== undefined) throw new CustomerIdentitySelectionDenied();
+          throw new Error("CUSTOMER_SESSION_DENIED");
+        }
         const tokenHash = hashCustomerSession(session.sessionToken);
         await tx.insert(customerSessions).values({ userId: session.userId, tokenHash, expires: session.expires });
         const [persisted] = await tx.select().from(customerSessions).where(eq(customerSessions.tokenHash, tokenHash));
@@ -93,7 +115,8 @@ export function createCustomerAuthStore(database: () => Database = getPrivateDb,
     async getSessionAndUser(sessionToken) {
       const [row] = await database().select({ session: customerSessions, user: customerUsers }).from(customerSessions)
         .innerJoin(customerUsers, eq(customerUsers.id, customerSessions.userId))
-        .where(and(eq(customerSessions.tokenHash, hashCustomerSession(sessionToken)), gt(customerSessions.expires, now()), eq(customerUsers.status, "active"))).limit(1);
+        .where(selectedCustomer(and(eq(customerSessions.tokenHash, hashCustomerSession(sessionToken)), gt(customerSessions.expires, now()),
+          eq(customerUsers.status, "active")), currentWriterIdentityCustomerId())).limit(1);
       return row ? { session: { sessionToken, userId: row.user.id, expires: row.session.expires }, user: asUser(row.user) } : null;
     },
     // Absolute sessions: no silent rolling extension and no writes during reads.
@@ -104,15 +127,25 @@ export function createCustomerAuthStore(database: () => Database = getPrivateDb,
     },
     async deleteSession(sessionToken) {
       assertCustomerWriterContext();
+      const selectedId = currentWriterIdentityCustomerId();
       await database().transaction(async tx => {
         const tokenHash = hashCustomerSession(sessionToken);
-        await tx.delete(customerSessions).where(eq(customerSessions.tokenHash, tokenHash));
+        const byToken = eq(customerSessions.tokenHash, tokenHash);
+        const predicate = selectedId === undefined ? byToken : and(byToken, eq(customerSessions.userId, selectedId));
+        if (selectedId !== undefined) {
+          const [owner] = await tx.select({ id: customerUsers.id }).from(customerUsers).where(selectedCustomer(undefined, selectedId)).for("share");
+          if (!owner) return;
+          const [session] = await tx.select({ userId: customerSessions.userId }).from(customerSessions).where(predicate).for("update");
+          if (!session) return;
+        }
+        await tx.delete(customerSessions).where(predicate);
         const [remaining] = await tx.select().from(customerSessions).where(eq(customerSessions.tokenHash, tokenHash));
         requireReceipt(!remaining);
       });
     },
     async createVerificationToken(input) {
       assertCustomerWriterContext();
+      const selectedId = currentWriterIdentityCustomerId();
       const identifier = normalizeCustomerEmail(input.identifier), scope = customerVerificationWrites();
       // Auth.js calls the provider and adapter concurrently. Both must share the
       // original durable write, never reinsert a proof consumed during delivery.
@@ -123,6 +156,11 @@ export function createCustomerAuthStore(database: () => Database = getPrivateDb,
       }
       const instant = now(), expires = new Date(Math.min(input.expires.getTime(), instant.getTime() + CUSTOMER_EMAIL_MAX_AGE * 1000));
       const result = database().transaction(async tx => {
+        if (selectedId !== undefined) {
+          const [owner] = await tx.select({ id: customerUsers.id }).from(customerUsers)
+            .where(selectedCustomer(eq(customerUsers.email, identifier), selectedId)).for("share");
+          if (!owner) throw new CustomerIdentitySelectionDenied();
+        }
         await tx.insert(customerVerificationTokens).values({ identifier, token: input.token, expires }).onConflictDoNothing();
         const [persisted] = await tx.select().from(customerVerificationTokens).where(eq(customerVerificationTokens.token, input.token)).for("share");
         requireReceipt(persisted && persisted.identifier === identifier && persisted.expires <= expires && (expires <= instant || persisted.expires > instant));
@@ -133,8 +171,17 @@ export function createCustomerAuthStore(database: () => Database = getPrivateDb,
     },
     async useVerificationToken({ identifier, token }) {
       assertCustomerWriterContext();
+      const selectedId = currentWriterIdentityCustomerId();
+      let normalized: string;
+      try { normalized = normalizeCustomerEmail(identifier); }
+      catch (error) { if (selectedId !== undefined) return null; throw error; }
       return database().transaction(async tx => {
-        const predicate = and(eq(customerVerificationTokens.identifier, normalizeCustomerEmail(identifier)), eq(customerVerificationTokens.token, token));
+        if (selectedId !== undefined) {
+          const [owner] = await tx.select({ id: customerUsers.id }).from(customerUsers)
+            .where(selectedCustomer(eq(customerUsers.email, normalized), selectedId)).for("share");
+          if (!owner) return null;
+        }
+        const predicate = and(eq(customerVerificationTokens.identifier, normalized), eq(customerVerificationTokens.token, token));
         const [existing] = await tx.select().from(customerVerificationTokens).where(predicate).for("update");
         if (!existing) return null;
         const [row] = await tx.delete(customerVerificationTokens).where(predicate).returning();
@@ -154,15 +201,19 @@ export function createCustomerAuthStore(database: () => Database = getPrivateDb,
     return [name, async (...args: unknown[]) => {
       assertCustomerWriterContext();
       try { return await operation(...args); }
-      catch (error) { markWriterOperationUncertain(); throw error; }
+      catch (error) {
+        if (!(error instanceof CustomerIdentitySelectionDenied)) markWriterOperationUncertain();
+        throw error;
+      }
     }];
   })) as Adapter;
 
   return {
     adapter: guardedAdapter,
     async isActive(email: string): Promise<boolean> {
-      const user = await findUser(eq(customerUsers.email, normalizeCustomerEmail(email)));
-      return !user || user.status === "active";
+      const selectedId = currentWriterIdentityCustomerId();
+      const user = await findUser(eq(customerUsers.email, normalizeCustomerEmail(email)), selectedId);
+      return selectedId === undefined ? !user || user.status === "active" : user !== null;
     },
     async consumeThrottle(key: string, limit: number, windowSeconds: number): Promise<boolean> {
       assertCustomerWriterContext();
@@ -171,12 +222,14 @@ export function createCustomerAuthStore(database: () => Database = getPrivateDb,
           const instant = now();
           // Each indexed cleanup is bounded; one login cannot inherit an arbitrary
           // maintenance backlog. No request allocates more than its fixed buckets.
-          await tx.delete(customerAuthThrottle).where(and(lt(customerAuthThrottle.resetsAt, instant), inArray(customerAuthThrottle.key,
-            tx.select({ key: customerAuthThrottle.key }).from(customerAuthThrottle).where(lt(customerAuthThrottle.resetsAt, instant)).orderBy(customerAuthThrottle.resetsAt).limit(100))));
-          await tx.delete(customerVerificationTokens).where(and(lt(customerVerificationTokens.expires, instant), inArray(customerVerificationTokens.token,
-            tx.select({ token: customerVerificationTokens.token }).from(customerVerificationTokens).where(lt(customerVerificationTokens.expires, instant)).orderBy(customerVerificationTokens.expires).limit(100))));
-          await tx.delete(customerSessions).where(and(lt(customerSessions.expires, instant), inArray(customerSessions.tokenHash,
-            tx.select({ tokenHash: customerSessions.tokenHash }).from(customerSessions).where(lt(customerSessions.expires, instant)).orderBy(customerSessions.expires).limit(100))));
+          if (currentWriterIdentityCustomerId() === undefined) {
+            await tx.delete(customerAuthThrottle).where(and(lt(customerAuthThrottle.resetsAt, instant), inArray(customerAuthThrottle.key,
+              tx.select({ key: customerAuthThrottle.key }).from(customerAuthThrottle).where(lt(customerAuthThrottle.resetsAt, instant)).orderBy(customerAuthThrottle.resetsAt).limit(100))));
+            await tx.delete(customerVerificationTokens).where(and(lt(customerVerificationTokens.expires, instant), inArray(customerVerificationTokens.token,
+              tx.select({ token: customerVerificationTokens.token }).from(customerVerificationTokens).where(lt(customerVerificationTokens.expires, instant)).orderBy(customerVerificationTokens.expires).limit(100))));
+            await tx.delete(customerSessions).where(and(lt(customerSessions.expires, instant), inArray(customerSessions.tokenHash,
+              tx.select({ tokenHash: customerSessions.tokenHash }).from(customerSessions).where(lt(customerSessions.expires, instant)).orderBy(customerSessions.expires).limit(100))));
+          }
           const [before] = await tx.select().from(customerAuthThrottle).where(eq(customerAuthThrottle.key, key)).for("update");
           const resetsAt = new Date(instant.getTime() + windowSeconds * 1000);
           const [row] = await tx.insert(customerAuthThrottle).values({ key, attempts: 1, resetsAt })

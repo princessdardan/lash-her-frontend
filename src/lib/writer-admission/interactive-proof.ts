@@ -13,17 +13,16 @@ export const INTERACTIVE_GATEWAY_PROOF_HEADER = "x-lash-certification-interactiv
 
 const stages = ["identity", "authoring", "media", "learning", "paid-grant", "lifecycle"] as const;
 type Stage = (typeof stages)[number];
-const identityActorKinds = ["admin", "customer"] as const;
-type IdentityActorKind = (typeof identityActorKinds)[number];
-const identitySelectors = new Map(identityActorKinds.map(kind =>
-  [createHash("sha256").update(JSON.stringify(["identity", kind])).digest("hex"), kind] as const));
-type BrowserScope = { stage: Stage; identityActorKind?: IdentityActorKind };
+const adminIdentitySelector = createHash("sha256").update(JSON.stringify(["identity", "admin"])).digest("hex");
+const customerIdentityPrefix = "7032712d637573746f6d65722d763100";
+type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer" };
+type BrowserPermit = BrowserScope & { epoch: string; nonce: string; lifecycleSelectionSha256?: string; identityCustomerId?: string };
 type Binding = { key: string; deploymentHost: string; source: string; target: string };
 const gatewayOrigin = "https://api-staging.lashher.com";
 const gatewayStages = new Set<Stage>(["authoring", "media", "learning", "paid-grant"]);
 const uuid = "[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}";
 const at = (pattern: string) => new RegExp(`^(?:${pattern})$`, "u");
-const gatewayRequestId = at(uuid);
+const canonicalUuid = at(uuid);
 const signedDigest = /^[a-f0-9]{64}$/u;
 const epochPattern = /^[1-9][0-9]{0,17}$/u;
 const maxLeaseSeconds = 600;
@@ -35,8 +34,8 @@ export function withinInteractiveAdminGoogleAction<T>(task: () => Promise<T>): P
 }
 
 const customerAuth = {
-  GET: at("/sign-in|/account/sign-in-methods|/api/customer-auth/(?:csrf|providers|session|callback/(?:google|resend))"),
-  POST: at("/api/customer-auth/(?:signin/(?:google|resend)|signout)"),
+  GET: at("/sign-in|/api/customer-auth/(?:csrf|providers|session|callback/(?:google|resend))"),
+  POST: at("/api/customer-auth/signin/(?:google|resend)"),
 };
 const staffAuth = {
   GET: at("/admin/(?:sign-in|not-authorized)|/api/auth/(?:csrf|providers|session|callback/google)"),
@@ -106,7 +105,14 @@ function authentic(actual: string | undefined, expected: string): boolean {
   return !!actual && signedDigest.test(actual) && timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
 }
 
-function browserProof(authority: Binding, cookie: string, now: number) {
+function decodeIdentityCustomerId(selection: string): string | undefined {
+  if (!selection.startsWith(customerIdentityPrefix)) return undefined;
+  const hex = selection.slice(customerIdentityPrefix.length);
+  const id = [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
+  return canonicalUuid.test(id) ? id : undefined;
+}
+
+function browserProof(authority: Binding, cookie: string, now: number): BrowserPermit | null {
   if (cookie.length > 256) return null;
   const fields = cookie.split(".");
   const [version, epoch, stage, started, expires, nonce, selection] = fields;
@@ -117,12 +123,13 @@ function browserProof(authority: Binding, cookie: string, now: number) {
     !/^\d{10}$/u.test(started ?? "") || !/^\d{10}$/u.test(expires ?? "") || !/^[a-f0-9]{32}$/u.test(nonce ?? "") ||
     Number(started) > now || Number(expires) <= now || Number(expires) - Number(started) > maxLeaseSeconds ||
     !authentic(fields.at(-1), signature(authority, "browser", fields.slice(0, -1).join(".")))) return null;
-  // Identity permits select the pre-authentication route family. The held
-  // browser certification separately verifies the exact authenticated actor.
-  const identityActorKind = stage === "identity" ? identitySelectors.get(selection) : undefined;
-  if (stage === "identity" && identityActorKind === undefined) return null;
-  return { epoch, stage: stage as Stage, nonce, identityActorKind,
-    lifecycleSelectionSha256: stage === "lifecycle" ? selection : undefined };
+  const permit = { epoch, stage: stage as Stage, nonce };
+  if (stage === "identity") {
+    if (selection === adminIdentitySelector) return { ...permit, identityActorKind: "admin" };
+    const identityCustomerId = decodeIdentityCustomerId(selection);
+    return identityCustomerId ? { ...permit, identityActorKind: "customer", identityCustomerId } : null;
+  }
+  return { ...permit, lifecycleSelectionSha256: stage === "lifecycle" ? selection : undefined };
 }
 
 // A browser cookie is accepted only on selected paths. Proxy issues a short
@@ -166,14 +173,16 @@ function verifiedInteractiveRequest(authority: Binding, proof: string, cookie: s
 }
 
 export function readInteractiveRequest(proof: string, cookie: string, env: Record<string, string | undefined> = process.env,
-  now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string; lifecycleSelectionSha256?: string } | null {
+  now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string;
+    lifecycleSelectionSha256?: string; identityCustomerId?: string } | null {
   const authority = binding(env);
   const browser = authority && verifiedInteractiveRequest(authority, proof, cookie, now);
   if (!authority || !browser) return null;
   const { source, target } = authority;
   const producerSha256 = createHash("sha256").update(`lash-her:p2q:interactive-producer:v1\n${source}\n${target}`).digest("hex");
   return { epoch: browser.epoch, producerSha256, source, target,
-    ...(browser.lifecycleSelectionSha256 ? { lifecycleSelectionSha256: browser.lifecycleSelectionSha256 } : {}) };
+    ...(browser.lifecycleSelectionSha256 ? { lifecycleSelectionSha256: browser.lifecycleSelectionSha256 } : {}),
+    ...(browser.identityCustomerId ? { identityCustomerId: browser.identityCustomerId } : {}) };
 }
 
 export async function readInteractiveBrowserRequest(): Promise<ReturnType<typeof readInteractiveRequest>> {
@@ -195,7 +204,7 @@ export async function interactiveCourseGatewayProof(request: {
   const configuredOrigin = process.env.API_GATEWAY_STAGING_ORIGIN;
   if ((configuredOrigin !== gatewayOrigin && configuredOrigin !== gatewayOrigin + "/") ||
     url.origin !== gatewayOrigin || url.href !== gatewayOrigin + target || !url.pathname.startsWith("/course/v1/") ||
-    !gatewayRequestId.test(requestId)) return null;
+    !canonicalUuid.test(requestId)) return null;
   const authority = binding(process.env);
   if (!authority) return null;
 

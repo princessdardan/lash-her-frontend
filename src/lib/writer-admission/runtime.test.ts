@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { currentWriterLifecycleSelection, currentWriterOperationIdentity, markWriterOperationUncertain } from "./context";
+import { currentWriterIdentityCustomerId, currentWriterLifecycleSelection, currentWriterOperationIdentity, markWriterOperationUncertain } from "./context";
 import { authorizeCaptureSquarePayment } from "@/lib/payments/square/square-payment-charge";
 import { createHash, createHmac } from "node:crypto";
 import { createWriterAdmissionRunner } from "./runtime";
@@ -11,6 +11,10 @@ import { resolveWriterAdmissionConfiguration, WriterAdmissionError } from "./con
 import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
 import { createSquareWebhookPostHandler } from "@/app/api/webhooks/square/handler";
 import { createServicePaymentAlertLogger } from "@/lib/booking/payments/service-payment-alerts";
+
+const selectedCustomerId = "8d680a92-8071-4fd0-9da2-c4d350aa729d";
+const customerIdentityPrefix = "7032712d637573746f6d65722d763100";
+const customerIdentitySelector = customerIdentityPrefix + selectedCustomerId.replaceAll("-", "");
 
 function environment() {
   return { FRONTEND_WRITER_ADMISSION_MODE: "enforce", VERCEL: "1", APP_ENV: "staging", VERCEL_ENV: "production", VERCEL_TARGET_ENV: "production",
@@ -86,12 +90,17 @@ test("interactive browser proof binds its exact stage, request, deployment, epoc
     return `${body}.${mac}`;
   };
   const selector = (kind: string) => createHash("sha256").update(JSON.stringify(["identity", kind])).digest("hex");
-  const cookie = cookieFor("identity", selector("customer"));
+  const cookie = cookieFor("identity", customerIdentitySelector);
   const staffCookie = cookieFor("identity", selector("admin"));
   const google = { origin: INTERACTIVE_ORIGIN, method: "GET", path: "/api/customer-auth/callback/google", cookie };
   const attested = attestInteractiveRequest(google, env, now)!;
   const producerSha256 = createHash("sha256").update(`lash-her:p2q:interactive-producer:v1\n${source}\n${target}`).digest("hex");
-  assert.deepEqual(readInteractiveRequest(attested, cookie, env, now), { epoch: "12", producerSha256, source, target });
+  assert.deepEqual(readInteractiveRequest(attested, cookie, env, now), { epoch: "12", producerSha256, source, target, identityCustomerId: selectedCustomerId });
+  const otherCustomerId = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
+  const otherCustomerCookie = cookieFor("identity", customerIdentityPrefix + otherCustomerId.replaceAll("-", ""));
+  const otherProof = attestInteractiveRequest({ ...google, cookie: otherCustomerCookie }, env, now)!;
+  assert.equal(readInteractiveRequest(otherProof, otherCustomerCookie, env, now)?.identityCustomerId, otherCustomerId);
+  assert.equal(readInteractiveRequest(attested, otherCustomerCookie, env, now), null);
   assert.equal(readInteractiveRequest(attested, cookie, env, now + 30), null);
   assert.equal(readInteractiveRequest(attested, cookieFor("authoring"), env, now), null);
   assert.equal(readInteractiveRequest(attested.replace(/.$/u, x => x === "a" ? "b" : "a"), cookie, env, now), null);
@@ -99,6 +108,7 @@ test("interactive browser proof binds its exact stage, request, deployment, epoc
     ["HEAD", google.path], ["POST", google.path], ["GET", google.path + "/"],
     ["GET", "/api/customer-auth/callback/google%2f"], ["POST", "/api/checkout/products"], ["POST", "/api/webhooks/square"],
     ["GET", "/api/cron/account-lifecycle"], ["POST", "/api/admin/customer-accounts/a/commands"],
+    ["GET", "/account/sign-in-methods"], ["POST", "/api/customer-auth/signout"],
   ]) assert.equal(attestInteractiveRequest({ ...google, method, path }, env, now), null);
   assert.equal(attestInteractiveRequest({ ...google, origin: "https://owned.vercel.app" }, env, now), null);
   assert.equal(attestInteractiveRequest(google, { ...env, VERCEL_URL: "different.vercel.app" }, now), null);
@@ -127,8 +137,11 @@ test("interactive browser proof binds its exact stage, request, deployment, epoc
       .update(`lash-her:p2q:interactive:request:v1\n${env.VERCEL_URL}\n${source}\n${target}\n${wrongCookie}\n${route}`).digest("hex");
     assert.equal(readInteractiveRequest(`${route}.${wrongMac}`, wrongCookie, env, now), null);
   }
-  for (const invalid of [cookieFor("identity"), cookieFor("identity", selector("unknown")),
-    cookie.replace(selector("customer"), selector("admin"))]) {
+  for (const invalid of [cookieFor("identity"), cookieFor("identity", selector("unknown")), cookieFor("identity", selector("customer")),
+    cookieFor("identity", customerIdentityPrefix + "0".repeat(32)),
+    cookieFor("identity", customerIdentityPrefix + "8d680a9280714fd07da2c4d350aa729d"),
+    cookieFor("identity", customerIdentitySelector.toUpperCase()),
+    cookie.replace(customerIdentitySelector, selector("admin"))]) {
     assert.equal(attestInteractiveRequest({ ...google, cookie: invalid }, env, now), null);
   }
   const authoring = { ...google, path: "/api/admin/courses" };
@@ -139,6 +152,25 @@ test("interactive browser proof binds its exact stage, request, deployment, epoc
   assert.ok(attestInteractiveRequest(paid, env, now));
   assert.equal(attestInteractiveRequest({ ...paid, method: "PATCH", path: `/api/admin/courses/${course}` }, env, now), null);
   assert.equal(attestInteractiveRequest({ ...paid, cookie: cookieFor("learning") }, env, now), null);
+
+  const f = fixture();
+  f.state.epoch = "12";
+  const run = createWriterAdmissionRunner({
+    getConfiguration: () => resolveWriterAdmissionConfiguration(environment()),
+    createClient: () => f.client,
+    getInteractiveWriter: async () => readInteractiveRequest(attested, cookie, env, now),
+  });
+  let observeAfterCompletion!: () => void;
+  let outsideSelection: Promise<string | undefined> | undefined;
+  await run("new-work", async () => {
+    assert.equal(currentWriterIdentityCustomerId(), selectedCustomerId);
+    assert.equal(currentWriterLifecycleSelection(), undefined);
+    outsideSelection = new Promise<void>(resolve => { observeAfterCompletion = resolve; }).then(currentWriterIdentityCustomerId);
+  });
+  observeAfterCompletion();
+  assert.equal(await outsideSelection, undefined);
+  assert.equal(currentWriterIdentityCustomerId(), undefined);
+  assert.equal(JSON.stringify(f.calls).includes(selectedCustomerId), false);
 });
 
 test("interactive writer uses only its certified producer and refuses a changed ledger epoch before effects", async () => {
@@ -203,8 +235,7 @@ test("Next request handoff overwrites caller headers on selected paths and strip
   const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
   Object.assign(process.env, env);
   try {
-    const selector = createHash("sha256").update(JSON.stringify(["identity", "customer"])).digest("hex");
-    const body = `v2.12.identity.${now}.${now + 120}.${"a".repeat(32)}.${selector}`;
+    const body = `v2.12.identity.${now}.${now + 120}.${"a".repeat(32)}.${customerIdentitySelector}`;
     const mac = createHmac("sha256", env.CRON_SECRET)
       .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex");
     const cookie = `${body}.${mac}`;
@@ -214,6 +245,7 @@ test("Next request handoff overwrites caller headers on selected paths and strip
     assert.ok(handoff);
     assert.notEqual(handoff, "caller-forgery");
     assert.equal(readInteractiveRequest(handoff, cookie)?.epoch, "12");
+    assert.equal(readInteractiveRequest(handoff, cookie)?.identityCustomerId, selectedCustomerId);
     const unrelated = new NextRequest(INTERACTIVE_ORIGIN + "/api/webhooks/square", { method: "POST", headers });
     assert.equal(interactiveRequestHeaders(unrelated)?.get(INTERACTIVE_HEADER), null);
     assert.equal(interactiveRequestHeaders(new NextRequest(unrelated.url)), undefined);

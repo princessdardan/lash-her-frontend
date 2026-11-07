@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { Client } from "pg";
 import { frontendWriterInventory } from "../frontend-writer-inventory.mjs";
-import { changeFrontendAdmission, observeFrontendDrain, reconcileFrontendOperation } from "../frontend-admission.mjs";
+import { changeFrontendAdmission, closeFrontendInteractiveAdmission, observeFrontendDrain, openFrontendInteractiveAdmission,
+  prepareFrontendInteractiveProducer, reconcileFrontendOperation } from "../frontend-admission.mjs";
 
 let phase = "configuration";
 const completedChecks = [];
@@ -29,11 +30,12 @@ async function main() {
   const target = ownedIdentityTarget(process.env), password = process.env.OWNED_RECONCILIATION_PASSWORD;
   const { port, serverMajor: major } = target;
   const url = `postgresql://${target.user}:${password}@127.0.0.1:${port}/${target.database}?sslmode=verify-full`;
-  const origin = "https://customer.example.invalid", secret = "owned-customer-auth-fixture-secret-32";
+  const origin = "https://staging.lashher.com", secret = "owned-customer-auth-fixture-secret-32";
   const { VERCEL_PROJECT_BINDINGS } = await import("../../../src/lib/env/application-environment.mjs");
   Object.assign(process.env, {
     DATABASE_URL: url, FRONTEND_WRITER_ADMISSION_DATABASE_URL: url, FRONTEND_WRITER_ADMISSION_MODE: "enforce",
     FRONTEND_WRITER_ADMISSION_TARGET_JSON: JSON.stringify(target), FRONTEND_WRITER_PRODUCER_SHA256: "b".repeat(64), VERCEL_GIT_COMMIT_SHA: "c".repeat(40),
+    VERCEL_URL: "owned-identity.vercel.app",
     APP_ENV: "staging", VERCEL: "1", VERCEL_ENV: "production", VERCEL_TARGET_ENV: "production",
     VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.stagingProjectId, APP_VERCEL_TEAM_ID: VERCEL_PROJECT_BINDINGS.teamId,
     CUSTOMER_AUTH_ENABLED: "true", INTEGRATION_CUSTOMER_ACCESS_ENABLED: "true", CUSTOMER_ACCOUNT_LIFECYCLE_ENABLED: "true",
@@ -177,6 +179,7 @@ async function main() {
     };
     phase = "import-actual-exports";
     const auth = await import("../../../src/app/api/customer-auth/[...nextauth]/route.ts");
+    const { INTERACTIVE_COOKIE, interactiveRequestHeaders } = await import("../../../src/lib/writer-admission/interactive-proof.ts");
     const { POST: accountCommand } = await import("../../../src/app/api/account/commands/route.ts");
     const { POST: accountPreferences } = await import("../../../src/app/api/account/preferences/route.ts");
     const { POST: adminAccountCommand } = await import("../../../src/app/api/admin/customer-accounts/[userId]/commands/route.ts");
@@ -190,9 +193,17 @@ async function main() {
         for (const [name, value] of Object.entries(incoming.headers)) if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(",") : value);
         // This bridge maps loopback transport onto one fixed synthetic HTTPS origin.
         headers.set("host", new URL(origin).host);
-        const req = new NextRequest(`${origin}${incoming.url}`, { method: incoming.method, headers, ...(body.length ? { body } : {}) });
+        const nextRequest = (requestHeaders) => new NextRequest(`${origin}${incoming.url}`,
+          { method: incoming.method, headers: requestHeaders, ...(body.length ? { body } : {}) });
+        let req = nextRequest(headers);
         let result;
-        if (incoming.url.startsWith("/api/customer-auth/")) result = await auth[incoming.method](req);
+        if (incoming.url.startsWith("/api/customer-auth/")) {
+          const forwarded = interactiveRequestHeaders(req);
+          if (forwarded) req = nextRequest(forwarded);
+          const store = createRequestStoreForAPI(req, new URL(req.url));
+          result = await workAsyncStorage.run({ route: incoming.url, isStaticGeneration: false },
+            () => workUnitAsyncStorage.run(store, () => auth[incoming.method](req)));
+        }
         else if (incoming.url === "/api/cron/account-lifecycle") result = await lifecycleCron(req);
         else {
           const adminMatch = /^\/api\/admin\/customer-accounts\/([a-f0-9-]+)\/commands$/u.exec(incoming.url);
@@ -226,8 +237,8 @@ async function main() {
     };
     const request = (path, options) => { const pending = perform(path, options); requests.push(pending); pending.catch(() => {}); return pending; };
     const cookieJoin = (...sets) => Array.from(new Map(sets.flat().filter(Boolean).map(value => { const pair = value.split(";", 1)[0]; return [pair.split("=", 1)[0], pair]; })).values()).join("; ");
-    const csrf = async () => { const result = await request("/api/customer-auth/csrf"); assert.equal(result.status, 200); return { token: JSON.parse(result.text).csrfToken, cookie: cookieJoin(result.headers.getSetCookie()) }; };
-    const emailStart = (proof, cookie = "") => request("/api/customer-auth/signin/resend", { method: "POST", cookie: cookieJoin(proof.cookie, cookie), body: new URLSearchParams({ email: "owned@example.invalid", csrfToken: proof.token, callbackUrl: "/academy" }) });
+    const csrf = async (cookie = "") => { const result = await request("/api/customer-auth/csrf", { cookie }); assert.equal(result.status, 200); return { token: JSON.parse(result.text).csrfToken, cookie: cookieJoin(result.headers.getSetCookie()) }; };
+    const emailStart = (proof, cookie = "", email = "owned@example.invalid") => request("/api/customer-auth/signin/resend", { method: "POST", cookie: cookieJoin(proof.cookie, cookie), body: new URLSearchParams({ email, csrfToken: proof.token, callbackUrl: "/academy" }) });
     const callback = (proof, cookie = "") => request(new URL(verificationUrl).pathname + new URL(verificationUrl).search, { cookie: cookieJoin(proof.cookie, cookie) });
     const sessionCookie = result => result.headers.getSetCookie().find(value => value.startsWith("__Host-lash-customer.session-token=") && !value.includes("Max-Age=0"))?.split(";", 1)[0];
     const issueEmail = async () => { const proof = await csrf(); assert.equal((await emailStart(proof)).status, 303); assert.ok(verificationUrl); return proof; };
@@ -352,6 +363,97 @@ async function main() {
     rows = await counts(); assert.equal(rows.customer_users, 1); assert.equal(rows.customer_provider_links, 1); assert.equal(rows.customer_sessions, 1);
     assert.equal(providerCalls.filter(row => row.stage === "google-token").length, 1); await reconcile();
     checks.push("actual-google-export-closed-before-token-exchange-and-positive-oidc-callback-owns-profile-link-and-session-through-ledger-settlement");
+
+    phase = "interactive-customer-identity-exact-actor";
+    const selectedCustomer = (await operator.query("SELECT id FROM customer_users WHERE email='owned@example.invalid'")).rows[0].id;
+    const otherEmail = "owned-foreign@example.invalid", otherSubject = "owned-foreign-google-subject";
+    const foreignCustomer = (await operator.query("INSERT INTO customer_users(email) VALUES($1) RETURNING id", [otherEmail])).rows[0].id;
+    await operator.query("INSERT INTO customer_provider_links(user_id,provider,provider_account_id,type) VALUES($1,'google',$2,'oidc')",
+      [foreignCustomer, otherSubject]);
+    const foreignToken = randomUUID(), foreignSessionHash = createHash("sha256").update(foreignToken).digest("hex");
+    const foreignSession = `__Host-lash-customer.session-token=${foreignToken}`;
+    const expiredForeignSession = randomUUID();
+    await operator.query(`INSERT INTO customer_sessions(token_hash,user_id,expires)
+      VALUES($1,$2,now()+interval '1 hour'),($3,$2,now()-interval '1 hour')`,
+      [foreignSessionHash, foreignCustomer, expiredForeignSession]);
+    const foreignProof = randomUUID(), foreignProofHash = createHash("sha256").update(foreignProof + secret).digest("hex");
+    const expiredForeignProof = randomUUID();
+    await operator.query(`INSERT INTO customer_verification_tokens(identifier,token,expires)
+      VALUES($1,$2,now()+interval '10 minutes'),($1,$3,now()-interval '10 minutes')`,
+      [otherEmail, foreignProofHash, expiredForeignProof]);
+    const scopedTarget = { ...target, runtimeRole: target.user }, scopedSource = process.env.VERCEL_GIT_COMMIT_SHA;
+    const role = { name: target.user, oid: (await operator.query("SELECT $1::regrole::oid::text AS oid", [target.user])).rows[0].oid };
+    const ordinary = { producerSha256: process.env.FRONTEND_WRITER_PRODUCER_SHA256, role };
+    const scopedProducer = createHash("sha256").update(`lash-her:p2q:interactive-producer:v1\n${scopedSource}\n${target.targetSha256}`).digest("hex");
+    const scope = { sourceCommit: scopedSource, ordinaryProducers: [ordinary], runtimeProducer: ordinary,
+      interactiveProducer: { producerSha256: scopedProducer, role } };
+    await prepareFrontendInteractiveProducer(operator, scopedTarget, epoch, scope);
+    epoch = (await openFrontendInteractiveAdmission(operator, scopedTarget, epoch, scope)).epoch;
+    const permit = (selector) => {
+      const issued = Math.floor(Date.now() / 1000);
+      const unsigned = `v2.${epoch}.identity.${issued}.${issued + 120}.${randomUUID().replaceAll("-", "")}.${selector}`;
+      const signature = createHmac("sha256", process.env.CRON_SECRET).update(
+        `lash-her:p2q:interactive:browser:v1\n${process.env.VERCEL_URL}\n${scopedSource}\n${target.targetSha256}\n${unsigned}`).digest("hex");
+      return `${INTERACTIVE_COOKIE}=${unsigned}.${signature}`;
+    };
+    const customerPermit = permit("7032712d637573746f6d65722d763100" + selectedCustomer.replaceAll("-", ""));
+    const legacyPermit = permit(createHash("sha256").update(JSON.stringify(["identity", "customer"])).digest("hex"));
+    const originalSubject = googleSubject;
+    try {
+      before = await operations();
+      for (const cookie of ["", legacyPermit]) assert.equal((await request("/api/customer-auth/csrf", { cookie })).status, 503);
+      await entries(before, []);
+      const verifyUnchanged = async (sessions, tokens) => {
+        const state = await counts();
+        assert.equal(state.customer_users, 2); assert.equal(state.customer_provider_links, 2);
+        assert.equal(state.customer_sessions, sessions); assert.equal(state.customer_verification_tokens, tokens);
+        assert.equal((await operator.query("SELECT user_id FROM customer_sessions WHERE token_hash=$1", [foreignSessionHash])).rows[0]?.user_id, foreignCustomer);
+        assert.equal((await operator.query("SELECT identifier FROM customer_verification_tokens WHERE token=$1", [foreignProofHash])).rows[0]?.identifier, otherEmail);
+        assert.equal((await operator.query("SELECT user_id FROM customer_sessions WHERE token_hash=$1", [expiredForeignSession])).rows[0]?.user_id, foreignCustomer);
+        assert.equal((await operator.query("SELECT identifier FROM customer_verification_tokens WHERE token=$1", [expiredForeignProof])).rows[0]?.identifier, otherEmail);
+      };
+      const scopedProof = await csrf(customerPermit), initialProviderCalls = providerCalls.length;
+      before = await operations();
+      assert.equal((await emailStart(scopedProof, customerPermit, otherEmail)).headers.get("location"), `${origin}/sign-in?check-email=1`);
+      const wrongLink = `/api/customer-auth/callback/resend?${new URLSearchParams({ email: otherEmail, token: foreignProof })}`;
+      assert.equal(sessionCookie(await request(wrongLink, { cookie: cookieJoin(scopedProof.cookie, customerPermit, foreignSession) })), undefined);
+      assert.equal(JSON.parse((await request("/api/customer-auth/session", { cookie: cookieJoin(customerPermit, foreignSession) })).text), null);
+      await entries(before, ["completed", "completed", "completed"]);
+      assert.equal(providerCalls.length, initialProviderCalls);
+      await verifyUnchanged(3, 2);
+      const scopedGoogle = async (subject, email) => {
+        googleSubject = subject; googleEmail = email;
+        const proof = await csrf(customerPermit);
+        const start = await request("/api/customer-auth/signin/google", { method: "POST", cookie: cookieJoin(proof.cookie, customerPermit),
+          body: new URLSearchParams({ csrfToken: proof.token, callbackUrl: "/academy" }) });
+        const url = new URL(start.headers.get("location")); assert.equal(url.origin, "https://accounts.google.com");
+        nonce = url.searchParams.get("nonce"); assert.ok(nonce);
+        const path = `/api/customer-auth/callback/google?${new URLSearchParams({ code: "owned-synthetic-code", state: url.searchParams.get("state") })}`;
+        return request(path, { cookie: cookieJoin(proof.cookie, start.headers.getSetCookie(), customerPermit, foreignSession) });
+      };
+      before = await operations();
+      assert.equal(sessionCookie(await scopedGoogle(otherSubject, otherEmail)), undefined);
+      assert.equal(sessionCookie(await scopedGoogle("owned-unlinked-google-subject", "owned@example.invalid")), undefined);
+      await entries(before, Array(6).fill("completed")); await verifyUnchanged(3, 2);
+      const scopedGoogleSession = sessionCookie(await scopedGoogle(originalSubject, "owned@example.invalid"));
+      assert.ok(scopedGoogleSession);
+      assert.equal(JSON.parse((await request("/api/customer-auth/session", { cookie: cookieJoin(customerPermit, scopedGoogleSession) })).text).user.id, selectedCustomer);
+      assert.equal((await emailStart(scopedProof, customerPermit)).status, 303);
+      const selectedEmail = await callback(scopedProof, cookieJoin(customerPermit, foreignSession));
+      assert.ok(sessionCookie(selectedEmail));
+      assert.equal(JSON.parse((await request("/api/customer-auth/session", { cookie: cookieJoin(customerPermit, sessionCookie(selectedEmail)) })).text).user.id, selectedCustomer);
+      assert.equal(sessionCookie(await callback(scopedProof, customerPermit)), undefined);
+      await verifyUnchanged(5, 2);
+      const admitted = (await operator.query("SELECT state,producer_sha256 FROM frontend_admission.operations WHERE epoch=$1", [epoch])).rows;
+      assert.ok(admitted.length > 0 && admitted.every(row => row.state === "completed" && row.producer_sha256 === scopedProducer));
+    } finally {
+      googleSubject = originalSubject; googleEmail = "owned@example.invalid";
+      const closed = await closeFrontendInteractiveAdmission(operator, scopedTarget, epoch, scope);
+      epoch = closed.epoch;
+      assert.equal(closed.ledgerDrained, true);
+    }
+    checks.push("scoped-customer-identity-refuses-foreign-proof-unlinked-subject-and-cross-account-session-before-business-writes");
+    checks.push("scoped-known-customer-google-and-resend-issue-selected-session-through-actual-route-and-closed-ledger");
 
     for (const fault of ["close", "ledger-death"]) {
       phase = `auth-blocked-session-insert-${fault}`; await reset(); await change(true); const proof = await issueEmail(); before = await operations();

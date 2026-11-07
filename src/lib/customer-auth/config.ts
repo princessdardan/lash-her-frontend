@@ -5,7 +5,7 @@ import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
 import Resend from "next-auth/providers/resend";
 import { assertStagingEmailRecipients } from "@/lib/env/staging-email-policy.mjs";
-import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { currentWriterIdentityCustomerId, markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { CUSTOMER_AUTH_BASE_PATH, CUSTOMER_EMAIL_MAX_AGE, CUSTOMER_SESSION_MAX_AGE, customerSessionCookieName, normalizeCustomerEmail, safeCustomerReturn, type CustomerAuthConfiguration } from "./policy";
 import type { CustomerAuthStore } from "./store";
 
@@ -65,11 +65,16 @@ export function createCustomerAuthConfig(configuration: CustomerAuthConfiguratio
     callbacks: {
       async signIn({ user, account, profile, email }) {
         // Neither existence nor lifecycle state changes the request response.
-        if (email?.verificationRequest) return true;
+        const selectedId = currentWriterIdentityCustomerId();
+        if (email?.verificationRequest && selectedId === undefined) return true;
+        if (selectedId !== undefined && user.id !== selectedId) return false;
         if (!user.email || !await store.isActive(user.email)) return false;
         if (account?.provider === "resend") return account.type === "email";
-        return account?.provider === "google" && account.type === "oidc" && profile?.email_verified === true &&
-          typeof profile.sub === "string" && profile.sub === account.providerAccountId;
+        if (account?.provider !== "google" || account.type !== "oidc" || profile?.email_verified !== true ||
+          typeof profile.sub !== "string" || profile.sub !== account.providerAccountId) return false;
+        return selectedId === undefined || (await store.adapter.getUserByAccount!({
+          provider: "google", providerAccountId: profile.sub,
+        }))?.id === selectedId;
       },
       async redirect({ url }) { return new URL(safeCustomerReturn(url, configuration.origin), configuration.origin).href; },
       async session({ session, user }) {

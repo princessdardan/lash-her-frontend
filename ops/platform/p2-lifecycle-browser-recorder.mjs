@@ -52,7 +52,12 @@ function identityContext(identity) {
   return identity.actorKind === "admin" ? "owner" : "learner";
 }
 
-const identitySelector = identity => createHash("sha256").update(JSON.stringify(["identity", identity.actorKind])).digest("hex");
+function identitySelector(identity) {
+  demand(closed(identity, ["actorKind", "actorId"]) && uuid(identity.actorId));
+  if (identity.actorKind === "customer") return "7032712d637573746f6d65722d763100" + identity.actorId.replaceAll("-", "");
+  demand(identity.actorKind === "admin");
+  return createHash("sha256").update(JSON.stringify(["identity", "admin"])).digest("hex");
+}
 
 export function validateP2InteractiveBrowserInput(input) {
   demand(closed(input, ["version", "environment", "actionId", "challenge", "bindingSha256", "sourceCommit", "deploymentId",

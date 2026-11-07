@@ -1,13 +1,13 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
-// This context carries the runner's opaque identity and any verified lifecycle
-// selection digest. It does not carry request data or credentials.
+// This context carries the runner's opaque identity and verified scope
+// selectors. It does not carry request bodies or credentials.
 export type WriterOperationIdentity = Readonly<{
   operationId: string; producerSha256: string; sourceCommit: string; epoch: string;
   kind: "new-work" | "recovery"; targetSha256: string;
 }>;
 const operationContext = new AsyncLocalStorage<{
-  uncertain: boolean; identity?: WriterOperationIdentity; lifecycleSelectionSha256?: string;
+  uncertain: boolean; identity?: WriterOperationIdentity; lifecycleSelectionSha256?: string; identityCustomerId?: string;
 }>();
 
 export function currentWriterOperationIdentity(): WriterOperationIdentity | undefined {
@@ -16,6 +16,10 @@ export function currentWriterOperationIdentity(): WriterOperationIdentity | unde
 
 export function currentWriterLifecycleSelection(): string | undefined {
   return operationContext.getStore()?.lifecycleSelectionSha256;
+}
+
+export function currentWriterIdentityCustomerId(): string | undefined {
+  return operationContext.getStore()?.identityCustomerId;
 }
 
 export function markWriterOperationUncertain(): void {
@@ -30,8 +34,9 @@ export function assertWriterOperationCertain(): void {
 }
 
 export async function withWriterOperationContext<T>(task: () => Promise<T>, identity?: WriterOperationIdentity,
-  lifecycleSelectionSha256?: string): Promise<T> {
-  const operation = { uncertain: false, identity: identity ? Object.freeze({ ...identity }) : undefined, lifecycleSelectionSha256 };
+  lifecycleSelectionSha256?: string, identityCustomerId?: string): Promise<T> {
+  const operation = { uncertain: false, identity: identity ? Object.freeze({ ...identity }) : undefined,
+    lifecycleSelectionSha256, identityCustomerId };
   return operationContext.run(operation, async () => {
     try {
       const result = await task();
@@ -39,6 +44,7 @@ export async function withWriterOperationContext<T>(task: () => Promise<T>, iden
       return result;
     } finally {
       operation.lifecycleSelectionSha256 = undefined;
+      operation.identityCustomerId = undefined;
     }
   });
 }

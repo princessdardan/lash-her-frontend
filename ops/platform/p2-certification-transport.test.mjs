@@ -106,9 +106,13 @@ for raw in sys.stdin:
    assert phase=='opened';phase='issued'
    selector='f'*64
    if stage=='identity':
-    kind=action['identityActor']['actorKind']
-    if behavior=='wrong-selector':kind='customer' if kind=='admin' else 'admin'
-    selector=digest(['identity',kind])
+    identity=action['identityActor']
+    if identity['actorKind']=='customer':
+     customer_id=identity['actorId']
+     if behavior=='wrong-selector':customer_id='12345678-1234-4123-8123-000000000002'
+     selector='7032712d637573746f6d65722d763100'+customer_id.replace('-','')
+     if behavior=='wrong-kind':selector=digest(['identity','admin'])
+    else:selector=digest(['identity','admin'])
    cookie='.'.join(('v2',epoch,stage,str(initial_time),str(expires),'e'*32,selector,'a'*64))
    value.update(status='CERTIFICATION_INTERACTIVE_PRIVATE',permit={'stage':stage,'epoch':epoch,'expires':expires,'cookie':cookie})
   elif op=='interactive-fence':
@@ -160,7 +164,8 @@ const commandId='12345678-1234-4123-8123-000000000003',requestId='12345678-1234-
 const {certificationStage,actorKind,behavior}=fixture;
 const identity=certificationStage==='identity',context=actorKind==='admin'?'owner':'learner';
 const status=disposition=>'P2_INTERACTIVE_'+certificationStage.toUpperCase()+'_'+disposition;
-const installFailure=['install-failure','wrong-selector'].includes(behavior);
+const refusedSelector=['wrong-selector','wrong-kind'].includes(behavior);
+const installFailure=behavior==='install-failure'||refusedSelector;
 const selection={actorKind,userId:actorKind==='admin'?target:actor,operation:actorKind==='admin'?'suspend':'delete'};
 const identityActor={actorKind,actorId:actor};
 const scopedAction={stage:certificationStage,actorId:identity?null:actor,requests:[],windowSeconds:120,
@@ -276,7 +281,7 @@ if(behavior!=='joined'){
  assert.equal(await result,'fixture-joined');
  assert.deepEqual(JSON.parse(readFileSync(join(directory,'p2-host-certification-outcome.json'))),outcome);
 }
-assert.equal(starts,1);assert.equal(installCount,behavior==='wrong-selector'?0:1);
+assert.equal(starts,1);assert.equal(installCount,refusedSelector?0:1);
 if(privatePacket) assert.ok(!Object.hasOwn(privatePacket,'cookie'));
 assert.throws(()=>readP2CertificationInteractiveStage(handle,plan));
 assert.deepEqual(writes.filter(row=>row.operation?.startsWith('interactive-')).map(row=>row.operation),
@@ -289,6 +294,7 @@ for(const [certificationStage,actorKind,behavior] of [
  ['lifecycle','customer','install-failure'],
  ['identity','admin','joined'],
  ['identity','customer','joined'],
+ ['identity','customer','wrong-kind'],
  ['identity','customer','wrong-selector'],
  ['identity','admin','wrong-join'],
 ]){

@@ -1,6 +1,7 @@
 """Owned provider/TLS fixtures; no staging or credential access."""
 import copy
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -296,13 +297,16 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
-    def test_identity_permit_selects_authentication_family_with_no_gateway_write(self):
-        actor_id = "10000000-0000-4000-8000-000000000001"
+    def test_identity_permit_selects_admin_family_or_exact_customer_with_no_gateway_write(self):
+        first = "10000000-0000-4000-8000-000000000001"
+        second = "10000000-0000-4000-8000-000000000002"
+        secret = "fixture" * 8
+        selectors = {}
         raw = b'closed gateway fixture'
         gateway = {"version": 1, "valid": True, "newWork": False, "recovery": False, "active": window._ZERO,
                    "uncertain": window._ZERO, "releaseId": "owned", "candidateSha256": "a" * 64, "sha256": window._hash(raw)}
-        for actor_kind in ("admin", "customer"):
-            with self.subTest(actor_kind=actor_kind):
+        for actor_kind, actor_id in (("admin", first), ("customer", first), ("customer", second)):
+            with self.subTest(actor_kind=actor_kind, actor_id=actor_id):
                 action = {"stage": "identity", "actorId": None, "identityActor": {"actorKind": actor_kind, "actorId": actor_id},
                           "windowSeconds": 60, "requests": []}
                 for changed in ({**action, "actorId": actor_id}, {**action, "identityActor": {"actorKind": "owner", "actorId": actor_id}},
@@ -314,7 +318,7 @@ class InteractiveWindowTests(unittest.TestCase):
                 stage.plan = {"initialEpoch": "7", "maximumSeconds": 300, "sourceCommit": "b" * 40, "targetSha256": "c" * 64,
                               "nativePlan": {"deploymentUrl": "https://owned.vercel.app"}}
                 frontend = {"epoch": "7", "newWork": False, "recovery": False, "active": 0, "uncertain": 0}
-                stage.broker = SimpleNamespace(initial={"candidateSha256": "a" * 64, "scopedCronSecret": "fixture" * 8},
+                stage.broker = SimpleNamespace(initial={"candidateSha256": "a" * 64, "scopedCronSecret": secret},
                     selected={"releaseId": "owned"}, certification_started=time.monotonic(), vercel=object(),
                     check=lambda: None, _native_context=lambda: {}, profile_arguments=lambda: {},
                     observer=SimpleNamespace(probe=lambda _: {"admission": frontend}))
@@ -332,12 +336,18 @@ class InteractiveWindowTests(unittest.TestCase):
                     frontend.update(epoch="8", newWork=True, recovery=True)
                     cookie = stage.take_private_browser_permit()["cookie"].split(".")
                     self.assertEqual(cookie[:5], ["v2", "8", "identity", "1794009600", "1794009660"])
-                    selector = hashlib.sha256(f'["identity","{actor_kind}"]'.encode()).hexdigest()
+                    selector = (hashlib.sha256(b'["identity","admin"]').hexdigest() if actor_kind == "admin" else
+                                "7032712d637573746f6d65722d763100" + actor_id.replace("-", ""))
                     self.assertEqual(cookie[6], selector)
                     self.assertEqual(len(cookie), 8)
+                    signed = "\n".join(("lash-her:p2q:interactive:browser:v1", "owned.vercel.app", "b" * 40, "c" * 64,
+                                         ".".join(cookie[:-1])))
+                    self.assertEqual(cookie[7], hmac.digest(secret.encode(), signed.encode(), "sha256").hex())
+                    selectors[actor_kind, actor_id] = cookie[6]
                     stage.fence_gateway()
                     self.assertTrue(stage.verify_gateway_fenced()["gatewayAdmissionClosed"])
                     replace.assert_not_called()
+        self.assertNotEqual(selectors["customer", first], selectors["customer", second])
 
     def test_guarded_private_permit_and_exact_gateway_fence(self):
         from p2_certification_parent import P2CertificationScope, P2ProfiledCertificationBroker

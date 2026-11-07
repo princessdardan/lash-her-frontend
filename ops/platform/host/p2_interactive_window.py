@@ -243,7 +243,11 @@ def validate_interactive_action(action):
 
 def _selection_sha(action):
     if action["stage"] == "identity":
-        return _receipt_sha(["identity", action["identityActor"]["actorKind"]])
+        actor = action["identityActor"]
+        if actor["actorKind"] == "customer":
+            # Hex for "p2q-customer-v1" and a null byte, then the reviewed UUID.
+            return "7032712d637573746f6d65722d763100" + actor["actorId"].replace("-", "")
+        return _receipt_sha(["identity", actor["actorKind"]])
     if action["stage"] == "lifecycle":
         selected = action["frontendAction"]
         return _receipt_sha([selected["actorKind"], action["actorId"], selected["userId"], selected["operation"]])

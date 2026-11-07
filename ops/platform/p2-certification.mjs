@@ -795,8 +795,6 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   const checked=prepareProfiledCertification(selection);
   const {plan,authPlan,identityPlan,suspensionPlan,original}=checked;
   const interactive=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='lifecycle'&&identityPlan!==undefined;
-  // Customer callbacks can create accounts before the browser can verify the selected UUID.
-  if(interactive)demand(identityPlan.scopedAction.identityActor.actorKind==='admin');
   const scoped=scopedModes.has(plan.mode)||interactive;
   demand(confirmation==='staging/'+plan.certificationActionId&&
     (scoped||['contain-native','native-window','browser-pending','direct-worker','fault-before-upstream'].includes(plan.mode)));

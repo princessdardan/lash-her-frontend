@@ -303,8 +303,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
         validateP2InteractiveBrowserPermit(permit, input);
         if (binding.stage === "identity") {
           const { actorKind } = input.identity;
-          demand(context === (actorKind === "admin" ? "owner" : "learner")
-            && permit.cookie.split(".")[6] === hash(JSON.stringify(["identity", actorKind])));
+          demand(context === (actorKind === "admin" ? "owner" : "learner"));
         }
         if (binding.stage === "lifecycle") {
           const { actorId, frontendAction: { actorKind, userId, operation } } = activePlan.scopedAction;
