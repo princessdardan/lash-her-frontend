@@ -26,12 +26,12 @@ function selectApiSources(){
     realpathSync(process.env[`P2_KNOWN_ACK_${service.toUpperCase()}_SOURCE_ROOT`]??`/Users/dardan/workspace/lash-her-${service}-api/.worktrees/phase2-role-qualification`)]));
   const overrides=Object.fromEntries(services.map(service=>[service,process.env[`P2_KNOWN_ACK_${service.toUpperCase()}_SOURCE_COMMIT`]]));
   const hasOverride=Object.values(overrides).some(commit=>commit!==undefined);
-  const mounted=Object.values(repositories).some(repository=>repository.startsWith('/exact-sources/'));
+  const frontend=realpathSync(fileURLToPath(new URL('../..',import.meta.url)));
+  const mounted=frontend==='/source'||Object.values(repositories).some(repository=>repository.startsWith('/exact-sources/'));
   if(mounted){
     assert.deepEqual(repositories,mountedRoots);
     assert.equal(hasOverride,false);
   }
-  const frontend=realpathSync(fileURLToPath(new URL('../..',import.meta.url)));
   const selection=hasOverride?undefined:readP2LifecycleOwnedContractSelection(frontend);
   const commits=Object.fromEntries(services.map(service=>[service,overrides[service]??
     (selection?.pair??P2_LIFECYCLE_OWNED_API_REVISIONS)[service]]));
