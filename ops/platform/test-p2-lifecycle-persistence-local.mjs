@@ -25,6 +25,7 @@ import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraf
   captureP2InteractiveAckLossBaseline, observeP2InteractiveAckLossCase,
   captureP2InteractiveExitSaveBaseline, observeP2InteractiveExitSaveCase,
   captureP2InteractiveVisibilityBaseline, observeP2InteractiveVisibilityCase,
+  captureP2InteractiveStaleRevisionBaseline, observeP2InteractiveStaleRevisionCase,
   captureP2InteractiveLessonDenialBaseline, observeP2InteractiveLessonDenialCase,
   captureP2InteractiveAssessmentBaseline, observeP2InteractiveAssessmentCase,
   captureP2InteractivePaidRevokeBaseline, observeP2InteractivePaidRevokeCase, validateP2InteractivePaidRevoke,
@@ -306,6 +307,8 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-lesson-exit-save-refuses-ineligible-receipts-and-persistence-drift",
       "course-lesson-visibility-save-pinned-hidden-document-to-revision-nine-with-unchanged-maximum",
       "course-lesson-visibility-save-refuses-ineligible-receipts-and-persistence-drift",
+      "course-lesson-stale-revision-pinned-two-device-conflict-and-reload-to-revision-thirteen",
+      "course-lesson-stale-revision-refuses-ineligible-receipts-and-persistence-drift",
       "course-lesson-denial-pinned-repositories-preserve-foreign-learning-and-media-without-access-or-writes",
       "course-lesson-denial-refuses-ineligible-fixtures-foreign-receipts-and-history-drift",
       "course-assessment-pinned-fail-then-pass-attempts-and-progress-revisions",
@@ -1750,6 +1753,8 @@ async function runOwnedLessonRestoreWitness({ course, job, dependencies, seed, r
     prepareRestored: (name, options) => prepareRestored(`exit-save-${name}`, options), authorize, progress, write });
   await runOwnedLessonVisibilityWitness({ course, job, dependencies,
     prepareRestored: (name, options) => prepareRestored(`visibility-save-${name}`, options), authorize, progress, write });
+  await runOwnedLessonStaleRevisionWitness({ course, job, dependencies,
+    prepareRestored: (name, options) => prepareRestored(`stale-revision-${name}`, options), authorize, progress, write });
 }
 
 async function runOwnedLessonAckLossWitness({ course, job, dependencies, prepareRestored, authorize, progress, write }) {
@@ -2040,6 +2045,101 @@ async function runOwnedLessonVisibilityWitness({ course, job, dependencies, prep
     if (name === "revision") await write(test, 9, receipt.visibility.resumePositionSeconds, selection.maxPositionSeconds);
     if (name === "duration") await course.query("UPDATE public.video_assets SET duration_seconds=31 WHERE id=$1::uuid", [test.assetId]);
     if (name === "expiry") receipt.playback.thumbnailExpiresAt = new Date(Date.parse(receipt.playback.thumbnailExpiresAt) + 500).toISOString();
+    if (name === "metadata") await course.query("UPDATE public.courses SET description='different' WHERE id=$1::uuid", [selection.courseId]);
+    await assert.rejects(observe(selection, baseline, receipt), { check: `${check}-${failure}` });
+    await assert.rejects(observe(selection, baseline, receipt), { check: `${check}-receipt` });
+  }
+}
+
+async function runOwnedLessonStaleRevisionWitness({ course, job, dependencies, prepareRestored, authorize, progress, write }) {
+  const check = "course-lesson-stale-revision";
+  const capture = selection => captureP2InteractiveStaleRevisionBaseline(job, selection, dependencies);
+  const observe = (selection, baseline, receipt) => observeP2InteractiveStaleRevisionCase(job, selection, baseline, receipt, dependencies);
+  const prepare = async (name, options) => {
+    const test = await prepareRestored(name, options);
+    return { ...test, selection: { ...test.selection, operation: "conflict-reload" } };
+  };
+  const runConflict = async test => {
+    const { actorId: userId, courseId, lessonId, enrollmentId, resumePositionSeconds: initial, maxPositionSeconds: maximum,
+      playbackIdSha256 } = test.selection;
+    const first = await startOwnedLessonSave(test, { authorize, progress, write });
+    const playback = [first.playback], writes = [...first.writes];
+    const load = async (expectedProgressRevision, resumePositionSeconds) => {
+      playback.push({ ...await authorize(test), playbackIdSha256 });
+      const started = await progress.recordProgress({ userId, courseId, lessonId, enrollmentId, expectedProgressRevision, markStarted: true });
+      const restored = await write(test, expectedProgressRevision + 1, resumePositionSeconds, maximum);
+      writes.push(ownedLessonSaveWrite(started, test.selection, expectedProgressRevision + 1, resumePositionSeconds),
+        ownedLessonSaveWrite(restored, test.selection, expectedProgressRevision + 2, resumePositionSeconds));
+      return restored;
+    };
+    await load(8, initial);
+    const winner = await write(test, 10, maximum, maximum);
+    writes.push(ownedLessonSaveWrite(winner, test.selection, 11, maximum));
+    const conflict = { requestId: randomUUID(), expectedProgressRevision: 8, resumePositionSeconds: 0, maxPositionSeconds: maximum, status: 409 };
+    await assert.rejects(write(test, conflict.expectedProgressRevision, conflict.resumePositionSeconds, maximum), { name: "ProgressRevisionConflictError" });
+    const winningRows = await progress.listProgress({ userId, courseId, lessonId });
+    assert.deepEqual(winningRows, [winner]);
+    const authoritative = ownedLessonSaveWrite(winningRows[0], test.selection, 11, maximum);
+    const reloaded = await load(11, maximum);
+    assert.deepEqual(await progress.listProgress({ userId, courseId, lessonId }), [reloaded]);
+    return { page: { pathname: `/academy/courses/${courseId}/lessons/${lessonId}`, status: 200 },
+      playback, writes, conflict, authoritative, reload: { documentReplaced: true, noReplay: true },
+      media: { beforeSeconds: initial, afterSeconds: maximum, paused: true, manifestObserved: true, segmentObserved: true } };
+  };
+
+  for (const [name, priorExpiry] of [["fresh-expiry", null], ["prior-longer-expiry", new Date(Date.now() + 900_000).toISOString()]]) {
+    const test = await prepare(name, { priorExpiry }), { selection } = test;
+    await assert.rejects(capture({ ...selection, operation: "hide-active-document" }), { check: `${check}-selection` });
+    await assert.rejects(capture({ ...selection, progressId: randomUUID() }), { check: `${check}-progress` });
+    await assert.rejects(capture({ ...selection, playbackIdSha256: hash("foreign-playback") }), { check: `${check}-media` });
+    const baseline = await capture(selection), receipt = await runConflict(test);
+    assert.equal(JSON.stringify(baseline), "{}");
+    await assert.rejects(observe(selection, {}, receipt), { check: `${check}-receipt` });
+    await assert.rejects(observe({ ...selection, enrollmentId: randomUUID() }, baseline, receipt), { check: `${check}-receipt` });
+    await assert.rejects(observeP2InteractiveStaleRevisionCase(job, selection, baseline, receipt, { ...dependencies, verifySession: async () => {} }),
+      { check: `${check}-receipt` });
+    for (const mutate of [
+      ({ page }) => { page.pathname += "?different"; },
+      ({ playback }) => { playback.pop(); },
+      ({ playback }) => { playback[1].playbackIdSha256 = hash("foreign-playback"); },
+      ({ playback }) => { playback[2].token = "owned-private-value"; },
+      ({ writes }) => { writes[3].revision += 1; },
+      ({ writes }) => { writes[4].resumePositionSeconds -= 1; },
+      ({ writes }) => { writes[5].progressId = randomUUID(); },
+      ({ writes }) => { writes[6].maxPositionSeconds += 1; },
+      ({ conflict }) => { conflict.expectedProgressRevision = 10; },
+      ({ conflict }) => { conflict.status = 200; },
+      ({ conflict }) => { conflict.resumePositionSeconds = 1; },
+      ({ authoritative }) => { authoritative.revision = 10; },
+      ({ authoritative }) => { authoritative.resumePositionSeconds -= 1; },
+      ({ authoritative, conflict }) => { authoritative.requestId = conflict.requestId; },
+      ({ reload }) => { reload.documentReplaced = false; },
+      ({ reload }) => { reload.noReplay = false; },
+      ({ media }) => { media.afterSeconds -= 1; },
+      ({ media }) => { media.segmentObserved = false; },
+    ]) {
+      const malformed = structuredClone(receipt);
+      mutate(malformed);
+      await assert.rejects(observe(selection, baseline, malformed), { check: `${check}-receipt` });
+    }
+    const { actorId, courseId, lessonId, grantId, progressId, enrollmentId, maxPositionSeconds, playbackIdSha256 } = selection;
+    assert.deepEqual(await observe(selection, baseline, receipt), { actorId, courseId, lessonId, grantId, progressId, enrollmentId, revision: 13,
+      resumePositionSeconds: maxPositionSeconds, maxPositionSeconds, playbackIdSha256,
+      playbackExpiresAt: receipt.playback[2].thumbnailExpiresAt, readOnly: true });
+    await assert.rejects(observe(selection, baseline, receipt), { check: `${check}-receipt` });
+    await assert.rejects(capture(selection), { check: `${check}-progress` });
+  }
+
+  for (const [name, failure] of [["position", "progress"], ["maximum", "progress"], ["revision", "progress"],
+    ["duration", "media"], ["expiry", "media"], ["metadata", "history"]]) {
+    const test = await prepare(name), { selection } = test, baseline = await capture(selection), receipt = await runConflict(test);
+    if (name === "position") await course.query("UPDATE public.lesson_progress SET resume_position_seconds=$1 WHERE id=$2::uuid",
+      [selection.maxPositionSeconds - 1, selection.progressId]);
+    if (name === "maximum") await course.query("UPDATE public.lesson_progress SET max_position_seconds=$1 WHERE id=$2::uuid",
+      [selection.maxPositionSeconds + 1, selection.progressId]);
+    if (name === "revision") await write(test, 13, selection.maxPositionSeconds, selection.maxPositionSeconds);
+    if (name === "duration") await course.query("UPDATE public.video_assets SET duration_seconds=31 WHERE id=$1::uuid", [test.assetId]);
+    if (name === "expiry") receipt.playback[2].thumbnailExpiresAt = new Date(Date.parse(receipt.playback[2].thumbnailExpiresAt) + 500).toISOString();
     if (name === "metadata") await course.query("UPDATE public.courses SET description='different' WHERE id=$1::uuid", [selection.courseId]);
     await assert.rejects(observe(selection, baseline, receipt), { check: `${check}-${failure}` });
     await assert.rejects(observe(selection, baseline, receipt), { check: `${check}-receipt` });

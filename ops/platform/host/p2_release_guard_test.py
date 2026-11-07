@@ -224,6 +224,15 @@ class IndependentGuardTests(unittest.TestCase):
                 self.check_profiled_interactive_terminal('lesson-visibility-save', 'customer', None,
                                                          progress_first=progress_first)
 
+    def test_profiled_stale_revision_joins_the_conflict_to_authoritative_reload(self):
+        for progress_first in (False, True):
+            with self.subTest(progress_first=progress_first):
+                self.check_profiled_interactive_terminal('lesson-stale-revision', 'customer', None,
+                                                         progress_first=progress_first)
+
+    def test_profiled_paired_identity_requires_distinct_verified_customer_sessions(self):
+        self.check_profiled_interactive_terminal('identity', 'customer', None, identity_pair=True)
+
     def test_exit_save_gateway_waits_for_a_pending_acknowledgement_within_the_permit(self):
         import p2_interactive_window as window
 
@@ -263,7 +272,7 @@ class IndependentGuardTests(unittest.TestCase):
                                             create_kind=None, publication_outcome=None, quiz_revision=None,
                                             progress_first=False, archiving=False, republish_outcome=None, expected_access=None,
                                             learner_outcome=None, remaining_access=None, second_paid=False, replay=False,
-                                            exit_operation=None):
+                                            exit_operation=None, identity_pair=False):
         import p2_interactive_window as window
         from p2_certification_parent import P2ProfiledCertificationBroker
 
@@ -280,8 +289,10 @@ class IndependentGuardTests(unittest.TestCase):
             if replay:
                 variant = 'replay-' + variant
         if stage_name in ('lesson-entry', 'lesson-denial', 'lesson-assessment', 'lesson-resume', 'lesson-restore',
-                          'lesson-ack-loss', 'lesson-visibility-save'):
+                          'lesson-ack-loss', 'lesson-visibility-save', 'lesson-stale-revision'):
             variant = 'progress-first' if progress_first else 'playback-first'
+        if identity_pair:
+            variant = 'customer-pair'
         if learner_outcome is not None:
             variant = learner_outcome
         if remaining_access is not None:
@@ -308,6 +319,7 @@ class IndependentGuardTests(unittest.TestCase):
         ack_loss = stage_name == 'lesson-ack-loss'
         exit_save = stage_name == 'lesson-exit-save'
         visibility = stage_name == 'lesson-visibility-save'
+        stale_revision = stage_name == 'lesson-stale-revision'
         if restore:
             plan['initialEpoch'] = '7'
         active_epoch = str(int(plan['initialEpoch']) + 1)
@@ -324,7 +336,13 @@ class IndependentGuardTests(unittest.TestCase):
         if provider is not None:
             action['identityEnrollment'] = {'provider': provider, 'emailSha256': '7' * 64, 'nonce': '8' * 32}
         elif identity:
-            action['identityActor'] = reviewed
+            action['identityActor'] = {**reviewed, 'sessionCount': 2} if identity_pair else reviewed
+            if identity_pair:
+                self.assertEqual(window.validate_interactive_action(action), action)
+                for change in ({'actorKind': 'admin'}, {'sessionCount': True}, {'sessionCount': 2.0}, {'sessionCount': 3}):
+                    wrong = {**action, 'identityActor': {**action['identityActor'], **change}}
+                    with self.subTest(identity=change), self.assertRaisesRegex(ValueError, 'IDENTITY_ACTOR_REQUIRED'):
+                        window.validate_interactive_action(wrong)
         elif lesson_entry:
             lesson = ledger_ids[0]
             action['lessonEntryAction'] = {'operation': 'open-lesson', 'courseId': command, 'lessonId': lesson,
@@ -388,23 +406,34 @@ class IndependentGuardTests(unittest.TestCase):
             action['requests'].extend({'method': 'POST', 'target': f'{lesson_path}/progress', 'uses': 1,
                                        'bodySha256': window._hash(json.dumps(body, separators=(',', ':')).encode())}
                                       for body in progress_bodies)
-        elif ack_loss:
+        elif ack_loss or stale_revision:
             lesson = ledger_ids[0]
-            ack_selection = {'operation': 'commit-drop-recover', 'courseId': command, 'lessonId': lesson, 'grantId': ledger_ids[1],
+            recovery_selection = {'operation': 'conflict-reload' if stale_revision else 'commit-drop-recover',
+                             'courseId': command, 'lessonId': lesson, 'grantId': ledger_ids[1],
                              'progressId': ledger_ids[2], 'enrollmentId': user, 'resumePositionSeconds': 4, 'maxPositionSeconds': 14,
                              'playbackIdSha256': window._hash(b'owned-resume-playback')}
-            action['ackLossAction'] = ack_selection
+            selection_key = 'staleRevisionAction' if stale_revision else 'ackLossAction'
+            action[selection_key] = recovery_selection
             student = '/course/v1/student'
             lesson_path = f'{student}/lessons/{lesson}'
             targets = (f'{student}/courses/{command}', lesson_path, f'{student}/progress?lessonId={lesson}',
                        f'{lesson_path}/quiz', f'{lesson_path}/quiz/attempts', f'{lesson_path}/playback')
-            action['requests'] = [{'method': 'GET', 'target': target, 'bodySha256': window._EMPTY, 'uses': 3 if index == 2 else 2}
-                                  for index, target in enumerate(targets)]
+            budgets = (3, 3, 4, 3, 3, 3) if stale_revision else (2, 2, 3, 2, 2, 2)
+            action['requests'] = [{'method': 'GET', 'target': target, 'bodySha256': window._EMPTY, 'uses': uses}
+                                  for target, uses in zip(targets, budgets)]
             bodies = (b'{"event":"lesson_started","expectedProgressRevision":6}',
-                      b'{"resumePositionSeconds":4,"maxPositionSeconds":14,"expectedProgressRevision":7}',
-                      b'{"resumePositionSeconds":14,"maxPositionSeconds":14,"expectedProgressRevision":8}',
-                      b'{"event":"lesson_started","expectedProgressRevision":9}',
-                      b'{"resumePositionSeconds":14,"maxPositionSeconds":14,"expectedProgressRevision":10}')
+                      b'{"resumePositionSeconds":4,"maxPositionSeconds":14,"expectedProgressRevision":7}')
+            if stale_revision:
+                bodies += (b'{"event":"lesson_started","expectedProgressRevision":8}',
+                           b'{"resumePositionSeconds":4,"maxPositionSeconds":14,"expectedProgressRevision":9}',
+                           b'{"resumePositionSeconds":14,"maxPositionSeconds":14,"expectedProgressRevision":10}',
+                           b'{"resumePositionSeconds":0,"maxPositionSeconds":14,"expectedProgressRevision":8}',
+                           b'{"event":"lesson_started","expectedProgressRevision":11}',
+                           b'{"resumePositionSeconds":14,"maxPositionSeconds":14,"expectedProgressRevision":12}')
+            else:
+                bodies += (b'{"resumePositionSeconds":14,"maxPositionSeconds":14,"expectedProgressRevision":8}',
+                           b'{"event":"lesson_started","expectedProgressRevision":9}',
+                           b'{"resumePositionSeconds":14,"maxPositionSeconds":14,"expectedProgressRevision":10}')
             action['requests'].extend({'method': 'POST', 'target': f'{lesson_path}/progress', 'uses': 1, 'bodySha256': window._hash(body)}
                                       for body in bodies)
             self.assertEqual(window.validate_interactive_action(action), action)
@@ -416,16 +445,22 @@ class IndependentGuardTests(unittest.TestCase):
             self.assertTrue(cookie.startswith(f'v2.{active_epoch}.{stage_name}.'))
             self.assertEqual(cookie.split('.')[-2], selector)
             self.assertRegex(key, r'^[0-9a-f]{64}$')
+            if stale_revision:
+                max_epoch_material = (*material[:4], "9" * 18, *material[5:])
+                self.assertEqual(len(window._material(*max_epoch_material, selector)[0]), 260)
             with self.assertRaisesRegex(ValueError, 'FRONTEND_BINDING_REQUIRED'):
                 window._material(*material, selector[:64])
-            for index, changes in ((2, {'uses': 2}), (8, {'bodySha256': 'a' * 64}), (9, {'uses': 2})):
+            mutations = [(2, {'uses': 2}), (8, {'bodySha256': 'a' * 64}), (9, {'uses': 2})]
+            if stale_revision:
+                mutations.append((11, {'bodySha256': 'b' * 64}))
+            for index, changes in mutations:
                 wrong = copy.deepcopy(action)
                 wrong['requests'][index].update(changes)
-                with self.subTest(request=index), self.assertRaisesRegex(ValueError, 'LESSON_ACK_LOSS_REQUESTS_REQUIRED'):
+                with self.subTest(request=index), self.assertRaisesRegex(ValueError, f'{stage_status}_REQUESTS_REQUIRED'):
                     window.validate_interactive_action(wrong)
             for changes in ({'resumePositionSeconds': 7}, {'maxPositionSeconds': 14.0}, {'playbackIdSha256': '0' * 64}):
-                wrong = {**action, 'ackLossAction': {**ack_selection, **changes}}
-                with self.subTest(selection=changes), self.assertRaisesRegex(ValueError, 'LESSON_ACK_LOSS_SELECTION_REQUIRED'):
+                wrong = {**action, selection_key: {**recovery_selection, **changes}}
+                with self.subTest(selection=changes), self.assertRaisesRegex(ValueError, f'{stage_status}_SELECTION_REQUIRED'):
                     window.validate_interactive_action(wrong)
         elif exit_save or visibility:
             lesson = ledger_ids[0]
@@ -619,8 +654,11 @@ class IndependentGuardTests(unittest.TestCase):
         operation_ids = [*ledger_ids, '10000000-0000-4000-8000-000000000008'] if resume else ledger_ids[:2] if restore else ledger_ids
         if ack_loss:
             operation_ids = [*ledger_ids, '10000000-0000-4000-8000-000000000008', '10000000-0000-4000-8000-000000000009']
-        operation_kinds = ('new-work',) * len(operation_ids) if assessment or resume or restore or ack_loss or exit_save or visibility else (
-            'new-work', 'new-work', 'recovery')
+        if stale_revision:
+            operation_ids = [f'10000000-0000-4000-8000-{index:012d}' for index in range(5, 13)]
+        operation_kinds = (('new-work',) * len(operation_ids)
+                           if assessment or resume or restore or ack_loss or exit_save or visibility or stale_revision
+                           else ('new-work', 'new-work', 'recovery'))
         ledger = {'commands': [], 'deliveries': [], 'orderViolations': [], 'operations': [
             {'id': identity, 'epoch': active_epoch, 'kind': kind, 'state': 'completed', 'producer_sha256': producer,
              'source_sha': plan['sourceCommit'], 'role_oid': '22222', 'completed_at': '2026-11-07T00:00:02.000Z',
@@ -645,6 +683,9 @@ class IndependentGuardTests(unittest.TestCase):
                       else {'liveSessionCount': 1})}
             if provider is not None:
                 domain.update(provider=provider, providerLinkCount=1 if provider == 'google' else 0)
+            if identity_pair:
+                browser['sessionProofs'] = ['4' * 64, '5' * 64]
+                domain.update(sessionCount=2, liveSessionCount=3, verifiedFreshSessionCount=2)
             browser_key, domain_key = 'browserIdentity', 'identityWitness'
         elif lesson_entry:
             indices = (1, 0, 5, 4, 3, 2, 0, 7, 6) if progress_first else (0, 1, 0, 2, 3, 4, 5, 6, 7)
@@ -740,6 +781,38 @@ class IndependentGuardTests(unittest.TestCase):
                                     'manifestObserved': True, 'segmentObserved': True}
                 domain['revision'] = 6
             browser_key, domain_key = 'browserResponse', 'courseWitness'
+        elif stale_revision:
+            opening = (4, 3, 2, 1, 0) if progress_first else (0, 1, 2, 3, 4)
+            def hydration(start, restore):
+                startup = (start, 5) if progress_first else (5, start)
+                return opening + startup + (restore,)
+            indices = hydration(6, 7) + hydration(8, 9) + (10, 11, 2) + hydration(12, 13)
+            acknowledgements = [
+                {'requestId': f'70000000-0000-4000-8000-{position:012d}', 'proofRequestId': f'80000000-0000-4000-8000-{position:012d}',
+                 'requestIndex': index, 'upstreamStatus': 409 if index == 11 else 200}
+                for position, index in enumerate(indices, 1)]
+            playback_ids = [row['requestId'] for row in acknowledgements if row['requestIndex'] == 5]
+            progress_gateway_ids = [row['requestId'] for row in acknowledgements if row['requestIndex'] in (6, 7, 8, 9, 10, 12, 13)]
+            conflict_gateway_id, authoritative_gateway_id = (row['requestId'] for row in acknowledgements[17:19])
+            writes = [{'requestId': request_id, 'progressId': ledger_ids[2], 'enrollmentId': user, 'revision': revision,
+                       'resumePositionSeconds': 4 if revision < 11 else 14, 'maxPositionSeconds': 14}
+                      for revision, request_id in enumerate(progress_gateway_ids, 7)]
+            playback = [{'requestId': identity, 'expiresAt': f'2026-11-07T00:10:{index * 7:02d}.000Z',
+                         'thumbnailExpiresAt': f'2026-11-07T00:10:{index * 7:02d}.250Z', 'lifetimeMs': 600_000,
+                         'playbackIdSha256': recovery_selection['playbackIdSha256']}
+                        for index, identity in enumerate(playback_ids)]
+            browser = {'page': {'pathname': f'/academy/courses/{command}/lessons/{lesson}', 'status': 200},
+                       'playback': playback, 'writes': writes,
+                       'conflict': {'requestId': conflict_gateway_id, 'expectedProgressRevision': 8,
+                                    'resumePositionSeconds': 0, 'maxPositionSeconds': 14, 'status': 409},
+                       'authoritative': {**writes[4], 'requestId': authoritative_gateway_id},
+                       'reload': {'documentReplaced': True, 'noReplay': True},
+                       'media': {'beforeSeconds': 4, 'afterSeconds': 14, 'paused': True, 'manifestObserved': True,
+                                 'segmentObserved': True}}
+            domain = {**{key: value for key, value in recovery_selection.items() if key != 'operation'}, 'actorId': actor,
+                      'revision': 13, 'resumePositionSeconds': 14, 'playbackExpiresAt': playback[-1]['thumbnailExpiresAt'],
+                      'readOnly': True}
+            browser_key, domain_key = 'browserResponse', 'courseWitness'
         elif ack_loss:
             opening = (4, 3, 2, 1, 0, 6, 5) if progress_first else tuple(range(7))
             reloading = (3, 2, 4, 1, 0, 9, 5) if progress_first else (0, 1, 2, 3, 4, 5, 9)
@@ -758,14 +831,14 @@ class IndependentGuardTests(unittest.TestCase):
             browser = {'page': {'pathname': f'/academy/courses/{command}/lessons/{lesson}', 'status': 200},
                        'playback': [{'requestId': identity, 'expiresAt': f'2026-11-07T00:10:0{index * 7}.000Z',
                                      'thumbnailExpiresAt': f'2026-11-07T00:10:0{index * 7 + 1}.000Z', 'lifetimeMs': 600_000,
-                                     'playbackIdSha256': ack_selection['playbackIdSha256']}
+                                     'playbackIdSha256': recovery_selection['playbackIdSha256']}
                                     for index, identity in enumerate(playback_ids)],
                        'writes': writes,
                        'recovery': {**writes[2], 'requestId': recovery_gateway_id, 'browserFailure': 'connectionreset',
                                     'unconfirmedObserved': True, 'noReplay': True},
                        'media': {'beforeSeconds': 4, 'afterSeconds': 14, 'paused': True, 'manifestObserved': True,
                                  'segmentObserved': True}}
-            domain = {**{key: value for key, value in ack_selection.items() if key != 'operation'}, 'actorId': actor,
+            domain = {**{key: value for key, value in recovery_selection.items() if key != 'operation'}, 'actorId': actor,
                       'revision': 11, 'resumePositionSeconds': 14, 'playbackExpiresAt': expiry, 'readOnly': True}
             browser_key, domain_key = 'browserResponse', 'courseWitness'
         elif exit_save or visibility:
@@ -1002,6 +1075,16 @@ class IndependentGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, witness_error):
             broker.command({**envelope, 'operation': 'interactive-retain',
                             'caseEvidence': {**evidence, domain_key: {**domain, 'actorId': user}}})
+        if identity_pair:
+            for proofs in (['4' * 64] * 2, ['0' * 64, '5' * 64], ['4' * 64], '4' * 64):
+                wrong = {**browser, 'sessionProofs': proofs}
+                with self.subTest(proofs=proofs), self.assertRaisesRegex(ValueError, 'IDENTITY_DISTINCT_SESSIONS_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain',
+                                    'caseEvidence': {**evidence, browser_key: wrong}})
+            for changes in ({'verifiedFreshSessionCount': 1}, {'liveSessionCount': 1}, {'sessionCount': 2.0}):
+                with self.subTest(witness=changes), self.assertRaisesRegex(ValueError, 'IDENTITY_PAIR_WITNESS_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain',
+                                    'caseEvidence': {**evidence, domain_key: {**domain, **changes}}})
         if lesson_entry:
             invalid = (('page', {'flight': 1}, 'PAGE'),
                        ('playback', {'requestId': requests_by_index[7]}, 'PLAYBACK'),
@@ -1083,6 +1166,31 @@ class IndependentGuardTests(unittest.TestCase):
                 with self.subTest(witness=changes), self.assertRaisesRegex(ValueError, 'LESSON_ACK_LOSS_COURSE_WITNESS_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, domain_key: {**domain, **changes}}})
+        if stale_revision:
+            for part, changes, error in (
+                ('conflict', {'status': 200}, 'CONFLICT'),
+                ('conflict', {'expectedProgressRevision': 10}, 'CONFLICT'),
+                ('conflict', {'requestId': authoritative_gateway_id}, 'CONFLICT'),
+                ('authoritative', {'revision': 8}, 'AUTHORITATIVE'),
+                ('authoritative', {'requestId': writes[4]['requestId']}, 'AUTHORITATIVE'),
+                ('reload', {'documentReplaced': False}, 'RELOAD'),
+                ('reload', {'noReplay': 1}, 'RELOAD'),
+                ('media', {'afterSeconds': 4}, 'MEDIA'),
+            ):
+                wrong = {**browser, part: {**browser[part], **changes}}
+                with self.subTest(part=part, changes=changes), self.assertRaisesRegex(ValueError, f'{stage_status}_{error}_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+            wrong = {**browser, 'writes': [*writes[:4], {**writes[4], 'resumePositionSeconds': 4}, *writes[5:]]}
+            with self.assertRaisesRegex(ValueError, f'{stage_status}_PROGRESS_REQUIRED'):
+                broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+            for changes in ({'revision': 12}, {'maxPositionSeconds': 15}, {'progressId': request}, {'playbackExpiresAt': playback[0]['expiresAt']}):
+                with self.subTest(witness=changes), self.assertRaisesRegex(ValueError, f'{stage_status}_COURSE_WITNESS_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain',
+                                    'caseEvidence': {**evidence, domain_key: {**domain, **changes}}})
+            wrong_ack = copy.deepcopy(gateway_artifact)
+            wrong_ack['gatewayAcknowledgements'][17]['upstreamStatus'] = 200
+            with self.assertRaisesRegex(ValueError, f'{stage_status}_ACKNOWLEDGEMENTS_REQUIRED'):
+                window.browser_gateway_receipt(plan, wrong_ack)
         if exit_save or visibility:
             wrong_playback_id = requests_by_index[0] if exit_save else requests_by_index[6]
             for part, changes, error in (
@@ -1368,15 +1476,23 @@ class IndependentGuardTests(unittest.TestCase):
                 with patch.object(broker.observer, 'probe', return_value={'admission': closed, 'witness': {**ledger, 'operations': operations}}):
                     with self.assertRaisesRegex(ValueError, 'LESSON_ACK_LOSS_FIVE_NEW_WORK_REQUIRED'):
                         broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
+        if stale_revision:
+            rows = ledger['operations']
+            for operations in (rows[:-1], [*rows[:-1], {**rows[-1], 'kind': 'recovery'}]):
+                with patch.object(broker.observer, 'probe', return_value={'admission': closed, 'witness': {**ledger, 'operations': operations}}):
+                    with self.assertRaisesRegex(ValueError, f'{stage_status}_EIGHT_NEW_WORK_REQUIRED'):
+                        broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
         broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
         case = broker.scoped_case
         self.assertEqual(calls.pop(), {'id': 1, 'status': 'CERTIFICATION_INTERACTIVE_OBSERVED', 'receipt': case})
-        self.assertEqual(case['frontendOperationCount'], 0 if read_only else 1 if lesson_entry else 5 if ack_loss else
-                         4 if resume else 2 if restore else 3)
+        self.assertEqual(case['frontendOperationCount'], 0 if read_only else 1 if lesson_entry else 8 if stale_revision else
+                         5 if ack_loss else 4 if resume else 2 if restore else 3)
         if identity:
             self.assertEqual(case['context'], 'owner' if actor_kind == 'admin' else 'learner')
             self.assertEqual(case['browserIdentitySha256'], supervisor._canonical_sha(browser))
             self.assertEqual(case['identityWitnessSha256'], supervisor._canonical_sha(domain))
+            if identity_pair:
+                self.assertEqual(case['sessionCount'], 2)
         if learning:
             self.assertEqual({key: case[key] for key in ('grantId', 'enrollmentId', 'transitionId', 'gatewayPostRequestId')},
                              {'grantId': ledger_ids[0], 'enrollmentId': ledger_ids[1], 'transitionId': ledger_ids[2],
@@ -1422,6 +1538,15 @@ class IndependentGuardTests(unittest.TestCase):
             self.assertEqual(case['playbackGatewayRequestIds'], playback_ids)
             self.assertEqual(case['progressGatewayRequestIds'], progress_gateway_ids)
             self.assertEqual(case['recoveryGatewayRequestId'], recovery_gateway_id)
+            self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
+        if stale_revision:
+            self.assertEqual({key: case[key] for key in domain if key != 'readOnly'},
+                             {key: value for key, value in domain.items() if key != 'readOnly'})
+            self.assertEqual(case['operation'], 'conflict-reload')
+            self.assertEqual(case['playbackGatewayRequestIds'], playback_ids)
+            self.assertEqual(case['progressGatewayRequestIds'], progress_gateway_ids)
+            self.assertEqual(case['conflictGatewayRequestId'], conflict_gateway_id)
+            self.assertEqual(case['authoritativeGatewayRequestId'], authoritative_gateway_id)
             self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
         if exit_save or visibility:
             self.assertEqual({key: case[key] for key in domain if key != 'readOnly'},
@@ -1584,6 +1709,9 @@ class IndependentGuardTests(unittest.TestCase):
             elif ack_loss:
                 rows = bad['gatewayAcknowledgements']
                 rows[8], rows[9] = rows[9], rows[8]
+            elif stale_revision:
+                rows = bad['gatewayAcknowledgements']
+                rows[17], rows[18] = rows[18], rows[17]
             elif exit_save or visibility:
                 rows = bad['gatewayAcknowledgements']
                 rows[7], rows[8] = rows[8], rows[7]
@@ -1623,6 +1751,7 @@ class IndependentGuardTests(unittest.TestCase):
         changed = {**domain, **change}
         (directory / window.browser_artifact(plan, 'evidence')).write_text(json.dumps({**evidence, domain_key: changed}))
         error = ('IDENTITY_ENROLLMENT_WITNESS_REQUIRED' if provider is not None else
+                 'IDENTITY_PAIR_WITNESS_REQUIRED' if identity_pair else
                  'IDENTITY_WITNESS_REQUIRED' if identity else
                  f'{stage_status}_COURSE_WITNESS_REQUIRED' if gateway_scoped else 'INTERACTIVE_CASE_REFUSED')
         with self.assertRaisesRegex(ValueError, error):

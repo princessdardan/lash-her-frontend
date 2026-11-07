@@ -1519,6 +1519,169 @@ test("scoped lesson visibility save marks a mismatched final Course response unc
   assert.equal(f.admissionState().interactiveEvidence.acknowledged.length, 8);
 });
 
+async function lessonStaleRevisionGateway(t, failure) {
+  const { courseId, write, targets, reads, requests, prior } = lessonRestoreFixture();
+  const bodies = [
+    '{"event":"lesson_started","expectedProgressRevision":6}',
+    '{"resumePositionSeconds":4,"maxPositionSeconds":14,"expectedProgressRevision":7}',
+    '{"event":"lesson_started","expectedProgressRevision":8}',
+    '{"resumePositionSeconds":4,"maxPositionSeconds":14,"expectedProgressRevision":9}',
+    '{"resumePositionSeconds":14,"maxPositionSeconds":14,"expectedProgressRevision":10}',
+    '{"resumePositionSeconds":0,"maxPositionSeconds":14,"expectedProgressRevision":8}',
+    '{"event":"lesson_started","expectedProgressRevision":11}',
+    '{"resumePositionSeconds":14,"maxPositionSeconds":14,"expectedProgressRevision":12}',
+  ];
+  const conflict = { error: { code: "CONFLICT", message: "Progress revision is stale; reload before updating" } };
+  const scoped = [...requests.slice(0, 6).map((row, index) => ({ ...row, uses: index === 2 ? 4 : 3 })),
+    ...bodies.map(body => ({ method: "POST", target: write, bodySha256: certificationHash(body), uses: 1 }))];
+  const readEntered = Promise.withResolvers(), releaseRead = Promise.withResolvers();
+  const forwarded = [];
+  let current = { ...prior, revision: 6 }, progressReads = 0, playbacks = 0;
+  const f = await interactiveFixture(t, scoped, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = Buffer.concat(chunks).toString(), target = `/course${req.url}`, readIndex = targets.indexOf(target);
+    forwarded.push({ target, body, proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+    let response = reads[readIndex], status = 200;
+    if (req.method === "POST") {
+      const { expectedProgressRevision, resumePositionSeconds = current.resumePositionSeconds } = JSON.parse(body);
+      if (expectedProgressRevision !== current.revision) {
+        status = failure === "conflict-status" ? 200 : 409;
+        response = failure === "conflict-body" ? { ...conflict, progress: current } : conflict;
+      } else {
+        current = { ...current, revision: current.revision + 1, resumePositionSeconds };
+        response = { progress: failure === "winner-row" && current.revision === 11 ? { ...current, id: courseId } : current };
+      }
+    } else if (readIndex === 2) {
+      progressReads++;
+      if (progressReads === 3 && !failure) {
+        readEntered.resolve();
+        await releaseRead.promise;
+      }
+      response = { progress: [failure === "authority-position" && progressReads === 3 ? { ...current, resumePositionSeconds: 4 } : current] };
+    } else if (readIndex === 5) {
+      playbacks++;
+      response = resumeFixturePlayback(f.start, { playbackId: failure === "reload-playback" && playbacks === 3 ? "foreign-playback" : "owned-playback" });
+    }
+    res.writeHead(status, { "content-type": "application/json", "cache-control": "public", "x-private-upstream-value": "sensitive" });
+    res.end(JSON.stringify(response));
+  }, "lesson-stale-revision");
+  t.after(releaseRead.resolve);
+  const read = index => f.send(f.signed({ path: targets[index] }));
+  const writeRequest = (index, overrides = {}) => f.signed({ method: "POST", path: write, body: bodies[index - 6], ...overrides });
+  const sendWrite = (index, overrides) => f.send(writeRequest(index, overrides));
+  const accepted = async (promise, status = 200) => {
+    const response = await promise;
+    assert.equal(response.status, status);
+    assert.equal(response.headers["cache-control"], "private, no-store");
+    assert.equal(response.headers["x-private-upstream-value"], undefined);
+    return JSON.parse(response.body);
+  };
+  const hydrationReads = () => Promise.all([4, 2, 0, 3, 1].map(index => accepted(read(index))));
+  const hydrate = async (start, restore) => {
+    await hydrationReads();
+    await Promise.all([accepted(read(5)), accepted(sendWrite(start))]);
+    return accepted(sendWrite(restore));
+  };
+  return { f, scoped, courseId, bodies, conflict, read, sendWrite, writeRequest, accepted, hydrate, hydrationReads, forwarded,
+    readEntered, releaseRead };
+}
+
+test("scoped stale progress orders two devices, canonical conflict, authoritative read and explicit reload", async t => {
+  const { f, scoped, courseId, bodies, conflict, read, sendWrite, writeRequest, accepted, hydrate, forwarded,
+    readEntered, releaseRead } = await lessonStaleRevisionGateway(t);
+  for (const changed of [
+    scoped.slice(0, -1), scoped.map((row, index) => index === 2 ? { ...row, uses: 3 } : row),
+    scoped.map((row, index) => index === 11 ? { ...row, bodySha256: certificationHash(bodies[5].replace(":0", ":1")) } : row),
+    scoped.map((row, index) => index === 13 ? { ...row, bodySha256: certificationHash(bodies[7].replaceAll("14", "15")) } : row),
+  ]) {
+    f.save({ ...f.state, interactive: { ...f.state.interactive, requests: changed } });
+    assert.equal(createAdmissionReader(f.staging, f.options)().valid, false);
+  }
+  f.save(f.state);
+  const refused = async promise => assert.equal((await promise).status, 503);
+  await refused(sendWrite(6));
+  await refused(sendWrite(11));
+  const old = (await hydrate(6, 7)).progress;
+  assert.equal(old.revision, 8);
+  await refused(sendWrite(10));
+  assert.equal((await hydrate(8, 9)).progress.revision, 10);
+  await refused(read(2));
+  await refused(sendWrite(11));
+  await refused(sendWrite(10, { actor: courseId }));
+  await refused(sendWrite(10, { body: bodies[4].replace(":14", ":13") }));
+  const winner = (await accepted(sendWrite(10))).progress;
+  assert.deepEqual(winner, { ...old, revision: 11, resumePositionSeconds: 14 });
+  await refused(read(2));
+  await refused(read(0));
+  await refused(sendWrite(12));
+  await refused(sendWrite(11, { idempotency: "owned" }));
+  const stale = writeRequest(11);
+  assert.deepEqual(await accepted(f.send(stale), 409), conflict);
+  await refused(f.send(stale));
+  await refused(sendWrite(11));
+  await refused(read(0));
+  const authority = accepted(read(2));
+  await readEntered.promise;
+  try {
+    await refused(read(2));
+    await refused(sendWrite(12));
+  } finally {
+    releaseRead.resolve();
+  }
+  assert.deepEqual(await authority, { progress: [winner] });
+  const final = (await hydrate(12, 13)).progress;
+  assert.deepEqual(final, { ...winner, revision: 13 });
+  await refused(read(2));
+  await refused(sendWrite(13));
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.equal(observed.interactiveEvidence.admitted, 27);
+  const rows = observed.interactiveEvidence.acknowledged;
+  const groups = [[0, 1, 2, 3, 4], [5, 6], [7], [0, 1, 2, 3, 4], [5, 8], [9], [10, 11, 2], [0, 1, 2, 3, 4], [5, 12], [13]];
+  let offset = 0;
+  for (const group of groups) {
+    const indices = rows.slice(offset, offset + group.length).map(row => row.requestIndex);
+    assert.deepEqual(group[0] === 10 ? indices : indices.sort((a, b) => a - b), group);
+    offset += group.length;
+  }
+  assert.deepEqual(rows.filter(row => row.upstreamStatus !== 200).map(row => [row.requestIndex, row.upstreamStatus]), [[11, 409]]);
+  assert.deepEqual(forwarded.filter(row => row.body !== "").map(row => row.body), bodies);
+  assert.ok(forwarded.every(row => row.proof === undefined));
+});
+
+for (const failure of ["winner-row", "conflict-status", "conflict-body", "authority-position", "reload-playback"]) {
+  test(`scoped stale progress withholds a mismatched ${failure} response`, async t => {
+    const { f, read, sendWrite, accepted, hydrate, hydrationReads } = await lessonStaleRevisionGateway(t, failure);
+    await hydrate(6, 7);
+    await hydrate(8, 9);
+    const sanitized = async promise => {
+      const response = await promise;
+      assert.equal(response.status, 502);
+      assert.equal(response.headers["x-private-upstream-value"], undefined);
+      assert.ok(!response.body.includes("Progress revision is stale"));
+    };
+    if (failure === "winner-row") await sanitized(sendWrite(10));
+    else {
+      await accepted(sendWrite(10));
+      if (failure.startsWith("conflict-")) await sanitized(sendWrite(11));
+      else {
+        await accepted(sendWrite(11), 409);
+        if (failure === "authority-position") await sanitized(read(2));
+        else {
+          await accepted(read(2));
+          await hydrationReads();
+          await sanitized(read(5));
+        }
+      }
+    }
+    assert.equal((await sendWrite(12)).status, 503);
+    assert.deepEqual(f.admissionState().uncertain, { newWork: 1, recovery: 0 });
+  });
+}
+
+
 test("scoped lesson resume withholds playback data when the thumbnail names another asset", async t => {
   const { targets, requests, reads } = lessonResumeFixtureRequests();
   const f = await interactiveFixture(t, requests, (req, res) => {

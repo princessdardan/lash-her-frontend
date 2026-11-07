@@ -146,7 +146,7 @@ export function createGateway(input, options = {}) {
         const assessment = stage === "lesson-assessment";
         const restore = stage === "lesson-restore";
         const exitSave = stage === "lesson-exit-save";
-        const phasedPositionSave = ["lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save"].includes(stage);
+        const phasedPositionSave = ["lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision"].includes(stage);
         interactiveEvidence = scopedInteractiveEvidence.get(current.sha256);
         if (!interactiveEvidence) {
           interactiveEvidence = { ids: new Set(), used: new Map(), acknowledged: [], ...(assessment ? { attemptIds: new Set() } : {}) };
@@ -220,7 +220,7 @@ export function createGateway(input, options = {}) {
             }
             if (interactiveSelection) {
               const stage = interactiveAdmission.interactive.stage;
-              const scopedPosition = ["lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save"].includes(stage);
+              const scopedPosition = ["lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision"].includes(stage);
               const strictInteractive = scopedPosition || stage === "lesson-denial" || stage === "lesson-assessment";
               const acknowledged = scopedPosition
                 ? scopedResumeAcknowledged(req.url, reply.statusCode, reply.headers["content-type"], buffered,

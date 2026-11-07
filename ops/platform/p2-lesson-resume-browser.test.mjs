@@ -10,8 +10,9 @@ import { join } from "node:path";
 import test from "node:test";
 import { hideP2LessonDocument, p2InteractiveBrowserEntryPath, p2LessonEntryPaths, p2LessonResumePaths, validateP2InteractiveBrowserInput,
   validateP2InteractiveBrowserPermit, validateP2LessonAckLossReceipt, validateP2LessonExitSaveReceipt, validateP2LessonRestoreReceipt,
-  validateP2LessonResumeReceipt, validateP2LessonVisibilityReceipt, watchP2LessonAckLoss, watchP2LessonExitSave, watchP2LessonRestore,
-  watchP2LessonResume, watchP2LessonVisibility } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2LessonResumeReceipt, validateP2LessonStaleRevisionReceipt, validateP2LessonVisibilityReceipt, watchP2LessonAckLoss,
+  watchP2LessonExitSave, watchP2LessonRestore, watchP2LessonResume, watchP2LessonStaleRevision, watchP2LessonVisibility
+} from "./p2-lifecycle-browser-recorder.mjs";
 
 const origin = "https://staging.lashher.com", mediaHost = "stream.mux.com";
 const cache = { "cache-control": "private, no-store" };
@@ -20,6 +21,7 @@ const restoreRefused = /P2_INTERACTIVE_LESSON_RESTORE_RESPONSE_REFUSED/u;
 const ackLossRefused = /P2_INTERACTIVE_LESSON_ACK_LOSS_RESPONSE_REFUSED/u;
 const exitSaveRefused = /P2_INTERACTIVE_LESSON_EXIT_SAVE_RESPONSE_REFUSED/u;
 const visibilityRefused = /P2_INTERACTIVE_LESSON_VISIBILITY_RESPONSE_REFUSED/u;
+const staleRefused = /P2_INTERACTIVE_LESSON_STALE_REVISION_RESPONSE_REFUSED/u;
 
 function selection(restoring = false) {
   const target = { actorId: randomUUID(), operation: "play-and-rewind", courseId: randomUUID(), lessonId: randomUUID(), grantId: randomUUID() };
@@ -94,6 +96,50 @@ function visibilitySelection() {
       visibility: { sameDocument: true, trustedHidden: true, trustedPagehide: false, resumePositionSeconds,
         maxPositionSeconds, expectedProgressRevision: 8 }, media } };
 }
+
+function staleSelection() {
+  const fixture = ackLossSelection(), { ackLoss, ...input } = fixture.input;
+  const target = { ...ackLoss, operation: "conflict-reload" };
+  const { resumePositionSeconds: resume, maxPositionSeconds: maximum, progressId, enrollmentId } = target;
+  const row = (revision, position) => ({ requestId: randomUUID(), progressId, enrollmentId, revision, resumePositionSeconds: position,
+    maxPositionSeconds: maximum });
+  const playback = [fixture.receipt.playback[0], fixture.receipt.playback[1], { ...fixture.receipt.playback[0], requestId: randomUUID() }];
+  const writes = [resume, resume, resume, resume, maximum, maximum, maximum].map((position, index) => row(index + 7, position));
+  return { ...fixture, target, input: { ...input, actionId: "owned-lesson-stale-revision", stage: "lesson-stale-revision", staleRevision: target },
+    receipt: { page: fixture.receipt.page, playback, writes, conflict: { requestId: randomUUID(), expectedProgressRevision: 8,
+      resumePositionSeconds: 0, maxPositionSeconds: maximum, status: 409 }, authoritative: row(11, maximum),
+      reload: { documentReplaced: true, noReplay: true },
+      media: { beforeSeconds: resume, afterSeconds: maximum, paused: true, manifestObserved: true, segmentObserved: true } } };
+}
+
+test("stale revision receipt pins both devices, exact conflict and latest read, and explicit reload", () => {
+  const { input, target, paths, receipt } = staleSelection();
+  assert.equal(validateP2InteractiveBrowserInput(input), input);
+  assert.equal(p2InteractiveBrowserEntryPath(input, "learner"), paths.lessonPath);
+  assert.throws(() => p2InteractiveBrowserEntryPath(input, "owner"));
+  assert.throws(() => validateP2InteractiveBrowserInput({ ...input, staleRevision: { ...target, operation: "restore" } }));
+  const issued = Math.floor(Date.now() / 1000), expires = issued + 60;
+  const selector = (target.actorId + target.courseId + target.lessonId).replaceAll("-", "");
+  const permit = { stage: input.stage, epoch: input.epoch, expires,
+    cookie: ["v2", input.epoch, input.stage, issued, expires, "a".repeat(32), selector, "b".repeat(64)].join(".") };
+  assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+  for (const field of ["actorId", "courseId", "lessonId"]) {
+    assert.throws(() => validateP2InteractiveBrowserPermit(permit, { ...input, staleRevision: { ...target, [field]: randomUUID() } }));
+  }
+  assert.equal(validateP2LessonStaleRevisionReceipt(receipt, target), receipt);
+  for (const change of [
+    { conflict: { ...receipt.conflict, status: 200 } },
+    { conflict: { ...receipt.conflict, expectedProgressRevision: 10 } },
+    { conflict: { ...receipt.conflict, requestId: receipt.writes[4].requestId } },
+    { authoritative: { ...receipt.authoritative, revision: 12 } },
+    { authoritative: { ...receipt.authoritative, progressId: randomUUID() } },
+    { playback: receipt.playback.slice(0, 2) },
+    { writes: receipt.writes.slice(1) },
+    { reload: { documentReplaced: false, noReplay: true } },
+    { reload: { documentReplaced: true, noReplay: false } },
+    { media: { ...receipt.media, afterSeconds: target.resumePositionSeconds } },
+  ]) assert.throws(() => validateP2LessonStaleRevisionReceipt({ ...receipt, ...change }, target));
+});
 
 test("resume permit and receipt bind the learner, media identity and monotonic CAS sequence", () => {
   const { input, target, paths, receipt } = selection(), issued = Math.floor(Date.now() / 1000), expires = issued + 60;
@@ -381,7 +427,56 @@ function ownedAckLossLesson(paths, target, revision, replay) {
   </script>`;
 }
 
-test("owned Chromium plays, restores and saves Mux progress through native visibility, exit and acknowledgement loss", {
+function ownedStaleRevisionLesson(paths, target, revision, replay) {
+  const lesson = { playbackPath: paths.playbackPath, progressPath: paths.progressPath, latestPath: "/api/academy/progress?lessonId=" + target.lessonId,
+    initialPosition: revision < 11 ? target.resumePositionSeconds : target.maxPositionSeconds, revision, maximum: target.maxPositionSeconds, replay };
+  return `<!doctype html><main><h1>Owned lesson</h1><p id="progress">Saving progress…</p><div role="alert" hidden></div></main>
+  <script src="/owned-mux-player.js"></script><script>
+    const lesson = ${JSON.stringify(lesson)};
+    const post = body => fetch(lesson.progressPath, {method:'POST',headers:{'content-type':'application/json','x-lash-csrf':'1'},body:JSON.stringify(body)});
+    const status = document.querySelector('#progress'), alert = document.querySelector('[role=alert]');
+    let revision = lesson.revision, conflicted = false;
+    const start = post({event:'lesson_started',expectedProgressRevision:revision}).then(response => response.json()).then(({progress}) => {
+      revision = progress.revision;
+    });
+    void fetch(lesson.playbackPath).then(response => response.json()).then(authorization => {
+      const player = document.createElement('mux-player');
+      player.style.cssText = 'display:block;width:640px;height:360px';
+      player.playbackId = authorization.playbackId;
+      player.tokens = {playback:authorization.playbackToken,thumbnail:authorization.thumbnailToken};
+      player.preload = 'metadata';
+      player.streamType = 'on-demand';
+      player.disableTracking = true;
+      player.disableCookies = true;
+      player.storyboardSrc = '';
+      player.addEventListener('loadedmetadata', () => { player.currentTime = lesson.initialPosition; }, {once:true});
+      player.addEventListener('seeked', async () => {
+        if (conflicted && !lesson.replay) return;
+        await start;
+        const body = {resumePositionSeconds:Math.floor(player.currentTime),maxPositionSeconds:lesson.maximum,expectedProgressRevision:revision};
+        const response = await post(body);
+        if (response.status === 409) {
+          await response.json();
+          conflicted = true;
+          const {progress} = await fetch(lesson.latestPath).then(response => response.json());
+          if (progress.length !== 1) return;
+          const reload = document.createElement('button');
+          reload.textContent = 'Load latest progress';
+          reload.onclick = () => location.reload();
+          alert.hidden = false;
+          alert.replaceChildren(reload);
+          return;
+        }
+        const {progress} = await response.json();
+        revision = progress.revision;
+        status.textContent = 'Progress saved to your account.';
+      });
+      document.querySelector('main').append(player);
+    });
+  </script>`;
+}
+
+test("owned Chromium saves and restores Mux progress through conflicts, visibility, exit and acknowledgement loss", {
   skip: process.env.P2_INTERACTIVE_BROWSER_OWNED_TEST !== "true",
 }, async () => {
   const { chromium } = await import("playwright"), root = mkdtempSync(join(tmpdir(), "owned-p2-resume-"));
@@ -423,19 +518,26 @@ test("owned Chromium plays, restores and saves Mux progress through native visib
     for (const scenario of ["normal", "duplicate", "restore", "restore-row-drift", "restore-native-drift", "restore-extra",
       "ack-loss", "ack-loss-forward-drift", "ack-loss-read-drift", "ack-loss-replay",
       "exit-spa", "exit-document", "exit-spa-replay", "exit-document-wrong-max", "exit-document-early-save",
-      "visibility-native", "visibility-replay", "visibility-pagehide", "visibility-thawed"]) {
+      "visibility-native", "visibility-replay", "visibility-pagehide", "visibility-thawed",
+      "stale-revision", "stale-sanitizer-drift", "stale-read-drift", "stale-replay"]) {
       const restoring = scenario.startsWith("restore");
       const ackLoss = scenario.startsWith("ack-loss");
+      const stale = scenario.startsWith("stale-");
       const exitSave = scenario.startsWith("exit-");
       const visibility = scenario.startsWith("visibility-"), lifecycleSave = exitSave || visibility;
       const { input, target, paths, receipt, authorization, date } = visibility ? visibilitySelection() : exitSave ? exitSaveSelection(scenario.startsWith("exit-document"))
-        : ackLoss ? ackLossSelection() : selection(restoring), bodies = [];
+        : stale ? staleSelection() : ackLoss ? ackLossSelection() : selection(restoring), bodies = [];
       if (visibility && !visibilityBrowser) visibilityBrowser = await chromium.launch({ channel: "chromium" });
-      const context = await (visibility ? visibilityBrowser : browser).newContext({
-        proxy: { server: `http://127.0.0.1:${proxyPort}` }, ignoreHTTPSErrors: true,
-      });
+      const contextOptions = { proxy: { server: `http://127.0.0.1:${proxyPort}` }, ignoreHTTPSErrors: true };
+      const context = await (visibility ? visibilityBrowser : browser).newContext(contextOptions);
+      const peerContext = stale ? await browser.newContext(contextOptions) : undefined;
+      if (stale) {
+        for (const [device, value] of [[context, "first"], [peerContext, "peer"]]) {
+          await device.addCookies([{ name: "__Host-owned-stale-device", value, url: origin, secure: true, httpOnly: true }]);
+        }
+      }
       if (ackLoss) await context.addCookies([{ name: "__Host-owned-ack-loss", value: "verified", url: origin, secure: true, httpOnly: true }]);
-      let revision = ackLoss || lifecycleSave ? 6 : restoring ? 4 : 0, maxPositionSeconds = target.prior?.maxPositionSeconds ?? 0;
+      let revision = ackLoss || lifecycleSave || stale ? 6 : restoring ? 4 : 0, maxPositionSeconds = target.prior?.maxPositionSeconds ?? 0;
       let playbackCount = 0, documentCount = 0, authoritativeReads = 0, exitResponse = false;
       const ackRow = (position, revision) => ({ id: target.progressId, userId: target.actorId, lessonId: target.lessonId,
         enrollmentId: target.enrollmentId, resumePositionSeconds: position, maxPositionSeconds: target.maxPositionSeconds, revision,
@@ -456,9 +558,13 @@ test("owned Chromium plays, restores and saves Mux progress through native visib
           return send(404, "text/plain", "", cors);
         }
         if (request.headers.host !== host) return send(404, "text/plain", "");
+        const staleDevice = stale ? /^__Host-owned-stale-device=(first|peer)$/u.exec(request.headers.cookie ?? "")?.[1] : undefined;
         if (request.url === paths.lessonPath) {
+          if (stale && (staleDevice !== ["first", "peer", "first"][documentCount] || revision !== [6, 8, 11][documentCount]))
+            return send(403, "text/plain", "");
           documentCount++;
-          return send(200, "text/html", ackLoss ? ownedAckLossLesson(paths, target, revision, scenario === "ack-loss-replay")
+          return send(200, "text/html", stale ? ownedStaleRevisionLesson(paths, target, revision, scenario === "stale-replay")
+            : ackLoss ? ownedAckLossLesson(paths, target, revision, scenario === "ack-loss-replay")
             : ownedLesson(paths, scenario, lifecycleSave ? target : target.prior), cache);
         }
         if (exitSave && request.url === paths.academyPath + "?_rsc=owned" && request.headers.rsc === "1")
@@ -469,7 +575,13 @@ test("owned Chromium plays, restores and saves Mux progress through native visib
         }
         if (request.url === "/owned-mux-player.js") return send(200, "application/javascript", bundle);
         if (request.url === paths.playbackPath) return send(200, "application/json", authorization,
-          { ...cache, date: date.toUTCString(), "x-request-id": ackLoss ? receipt.playback[playbackCount++].requestId : receipt.playback.requestId });
+          { ...cache, date: date.toUTCString(), "x-request-id": ackLoss || stale ? receipt.playback[playbackCount++].requestId : receipt.playback.requestId });
+        if (stale && request.url === "/api/academy/progress?lessonId=" + target.lessonId) {
+          if (staleDevice !== "first" || revision !== 11) return send(403, "application/json", {}, cache);
+          authoritativeReads++;
+          return send(200, "application/json", { progress: [ackRow(target.maxPositionSeconds, scenario === "stale-read-drift" ? 10 : revision)] },
+            { ...cache, "x-request-id": receipt.authoritative.requestId });
+        }
         if (ackLoss && request.url === "/api/academy/progress?lessonId=" + target.lessonId) {
           authoritativeReads++;
           return send(200, "application/json", { progress: [ackRow(target.maxPositionSeconds, scenario === "ack-loss-read-drift" ? 8 : revision)] },
@@ -480,6 +592,21 @@ test("owned Chromium plays, restores and saves Mux progress through native visib
           for await (const chunk of request) chunks.push(chunk);
           const body = JSON.parse(Buffer.concat(chunks).toString());
           bodies.push(body);
+          if (stale) {
+            if (!staleDevice || request.headers.origin !== origin || request.headers["x-lash-csrf"] !== "1")
+              return send(403, "application/json", {}, cache);
+            if (staleDevice === "first" && body.expectedProgressRevision === 8 && revision === 11) {
+              const requestId = receipt.conflict.requestId;
+              return send(409, "application/json", { requestId, error: { code: "conflict", message: scenario === "stale-sanitizer-drift"
+                ? "The database rejected the stale progress revision."
+                : "This operation conflicts with the current state. Refresh and try again." } }, { ...cache, "x-request-id": requestId });
+            }
+            if (staleDevice !== ["first", "first", "peer", "peer", "peer", "first", "first"][revision - 6]
+              || body.expectedProgressRevision !== revision) return send(403, "application/json", {}, cache);
+            const written = receipt.writes[revision++ - 6];
+            return send(200, "application/json", { progress: ackRow(written.resumePositionSeconds, revision) },
+              { ...cache, "x-request-id": written.requestId });
+          }
           if (ackLoss) {
             if (request.headers.origin !== origin || request.headers.cookie !== "__Host-owned-ack-loss=verified"
               || request.headers["x-lash-csrf"] !== "1") return send(403, "application/json", {}, cache);
@@ -515,7 +642,8 @@ test("owned Chromium plays, restores and saves Mux progress through native visib
         return send(404, "text/plain", "");
       };
       const page = await context.newPage();
-      const recorder = visibility ? watchP2LessonVisibility(context, page, input,
+      const recorder = stale ? watchP2LessonStaleRevision(context, page, peerContext, await peerContext.newPage(), input)
+        : visibility ? watchP2LessonVisibility(context, page, input,
         scenario === "visibility-pagehide" ? () => page.goto("about:blank") : hideP2LessonDocument)
         : (exitSave ? watchP2LessonExitSave : ackLoss ? watchP2LessonAckLoss : restoring ? watchP2LessonRestore
           : watchP2LessonResume)(context, page, input);
@@ -523,6 +651,27 @@ test("owned Chromium plays, restores and saves Mux progress through native visib
       try {
         if (scenario === "duplicate") await assert.rejects(recorder.open(expires), refused);
         else if (scenario === "restore-row-drift") await assert.rejects(recorder.open(expires), restoreRefused);
+        else if (stale) {
+          await recorder.open(expires);
+          if (scenario === "stale-revision") {
+            await recorder.wait(expires).catch(error => {
+              throw new Error(`Owned stale revision failed after ${bodies.length} progress requests and ${authoritativeReads} reads`, { cause: error });
+            });
+            assert.deepEqual(recorder.finish(), receipt);
+            assert.deepEqual(bodies.map(body => body.expectedProgressRevision), [6, 7, 8, 9, 10, 8, 11, 12]);
+            assert.equal(authoritativeReads, 1);
+            assert.equal(documentCount, 3);
+            assert.equal(revision, 13);
+            assert.equal(await recorder.confirmFenced(), true);
+            await assert.rejects(recorder.confirmFenced(), staleRefused);
+          } else {
+            await assert.rejects(recorder.wait(expires), staleRefused);
+            assert.throws(() => recorder.finish(), staleRefused);
+            assert.equal(documentCount, 2);
+            assert.equal(revision, 11);
+            assert.ok(authoritativeReads >= 1);
+          }
+        }
         else if (visibility) {
           await recorder.open(expires);
           if (scenario === "visibility-native" || scenario === "visibility-thawed") {
@@ -644,7 +793,7 @@ test("owned Chromium plays, restores and saves Mux progress through native visib
         }
       } finally {
         await recorder.close();
-        await context.close();
+        await Promise.all([context.close(), peerContext?.close()]);
       }
     }
   } finally {

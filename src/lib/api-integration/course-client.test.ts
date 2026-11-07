@@ -377,6 +377,65 @@ test("lesson visibility save bounds all three writes and excludes outline progre
   ]);
 });
 
+test("scoped stale lesson progress settles the conflict before reporting the sanitized browser denial", async () => {
+  const courseId = adminId, token = "scoped.stale-revision.jwt";
+  const requestId = "44444444-4444-4444-8444-444444444444";
+  const origin = "https://staging.lashher.com";
+  const staleBody = { resumePositionSeconds: 0, maxPositionSeconds: 14, expectedProgressRevision: 8 };
+  const winner = { ...progress, revision: 11, enrollmentId: courseId, resumePositionSeconds: 14, maxPositionSeconds: 14 };
+  const scope = { actorId: customerId, courseId, lessonId };
+  const calls: GatewayRequest[] = [];
+  let issued = { customerId: adminId, token }, admissions = 0, completed = 0;
+  const client = createCourseClient({ enabled: allowed, getLessonStaleRevision: async () => scope,
+    issueCustomerToken: async () => issued,
+    run: async (kind, task) => {
+      assert.equal(kind, "new-work");
+      admissions++;
+      const result = await task();
+      completed++;
+      return result;
+    },
+    getTransport: () => async request => {
+      calls.push(request);
+      return request.method === "GET" ? Response.json({ progress: [winner] }, { headers: { "x-request-id": requestId } }) :
+        Response.json({ error: { code: "CONFLICT", message: "Progress revision is stale; reload before updating" } },
+          { status: 409, headers: { "x-request-id": requestId } });
+    },
+  });
+  const forbidden = { code: "forbidden", status: 403 };
+  await assert.rejects(client.listProgress({ lessonId }), forbidden);
+  issued = { customerId, token };
+  for (const call of [
+    () => client.listProgress({ courseId }),
+    () => client.recordProgress(courseId, staleBody),
+    () => client.recordProgress(lessonId, { ...staleBody, resumePositionSeconds: 1 }),
+    () => client.recordProgress(lessonId, { ...staleBody, expectedProgressRevision: 11 }),
+    () => client.recordProgress(lessonId, { ...staleBody, event: "lesson_completed" }),
+  ]) await assert.rejects(call(), forbidden);
+  assert.equal(admissions, 0);
+  assert.deepEqual(calls, []);
+  const handler = createAcademyHandler("record-progress", { client: () => client, origin: () => origin });
+  const post = await handler(new Request(`${origin}/api/academy/lessons/${lessonId}/progress`, {
+    method: "POST", headers: { "content-type": "application/json", "x-lash-csrf": "1", origin }, body: JSON.stringify(staleBody),
+  }), { lessonId });
+  assert.equal(post.status, 409);
+  assert.equal(post.headers.get("cache-control"), "private, no-store");
+  assert.equal(post.headers.get("x-request-id"), requestId);
+  assert.deepEqual(await post.json(), { error: { code: "conflict", message: "This operation conflicts with the current state. Refresh and try again." }, requestId });
+  assert.equal(admissions, 1);
+  assert.equal(completed, 1);
+  const current = await createAcademyHandler("progress", { client: () => client })(
+    new Request(`${origin}/api/academy/progress?lessonId=${lessonId}`));
+  assert.equal(current.status, 200);
+  assert.equal(current.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(await current.json(), { progress: [winner] });
+  assert.equal(admissions, 1);
+  assert.deepEqual(calls.map(({ method, path, body, applicationToken }) => [method, path, body, applicationToken]), [
+    ["POST", `/v1/student/lessons/${lessonId}/progress`, JSON.stringify(staleBody), token],
+    ["GET", `/v1/student/progress?lessonId=${lessonId}`, undefined, token],
+  ]);
+});
+
 test("lesson denial binds the selected customer and returns only safe protected read denials", async () => {
   const courseId = adminId, token = "scoped.denied.jwt", requestId = "44444444-4444-4444-8444-444444444444";
   const selected = { actorId: customerId, courseId, lessonId };

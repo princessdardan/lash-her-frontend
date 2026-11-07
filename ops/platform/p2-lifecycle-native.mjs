@@ -303,6 +303,16 @@ const reviewedVisibilityCoalescingDependencies = {
   ...reviewedLessonVisibilityDependencies,
   "src/lib/learning/progress-sync.ts": "b968202ff25d4652cb014f691c3f1c6aac4bb558d8a7ee358a686af110afe330"
 };
+const reviewedLessonStaleRevisionSource = {
+  ...reviewedLessonVisibilitySource,
+  "src/lib/writer-admission/runtime.ts": "c13e21f2a549f91a886d40d5051bd8c7a62185b4c8aba033a5461f863b16d6f5"
+};
+const reviewedLessonStaleRevisionDependencies = {
+  ...reviewedVisibilityCoalescingDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "dc50c9f72e284ba31f3aa5c67b2669e1dbc3b9b180a8347652bc7c87438738a7",
+  "src/lib/api-integration/course-client.ts": "ae02305d91efaa2a6530d85f0c52b54e7a0ff7b82fc2ed6cad57a1b9bd928ce3",
+  "ops/gateway/lesson-resume-position.mjs": "5ce29468095799896411c8048ceb1d727ad7a03f5a070a2aa68f325203259341"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -340,7 +350,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedLessonRestoreSource, [reviewedLessonRestoreDependencies, reviewedProgressRecoveryDependencies]],
     [reviewedLessonAckLossSource, [reviewedLessonAckLossDependencies]],
     [reviewedLessonExitSaveSource, [reviewedLessonExitSaveDependencies]],
-    [reviewedLessonVisibilitySource, [reviewedLessonVisibilityDependencies, reviewedVisibilityCoalescingDependencies]]]
+    [reviewedLessonVisibilitySource, [reviewedLessonVisibilityDependencies, reviewedVisibilityCoalescingDependencies]],
+    [reviewedLessonStaleRevisionSource, [reviewedLessonStaleRevisionDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

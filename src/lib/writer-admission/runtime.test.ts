@@ -570,6 +570,7 @@ for (const [stage, selectionKey, writeKey] of [
   ["lesson-ack-loss", "lessonAckLoss", "lessonAckLossWrite"],
   ["lesson-exit-save", "lessonExitSave", "lessonExitSaveWrite"],
   ["lesson-visibility-save", "lessonVisibilitySave", "lessonVisibilitySaveWrite"],
+  ["lesson-stale-revision", "lessonStaleRevision", "lessonStaleRevisionWrite"],
 ] as const) {
   test(`${stage} v2 grants write admission only on the exact selected progress POST`, async () => {
     const now = 1_794_009_600;
@@ -587,7 +588,9 @@ for (const [stage, selectionKey, writeKey] of [
     const recovery = ["GET", "/api/academy/progress", `?lessonId=${lessonId}`];
     const outline = ["GET", `/academy/courses/${courseId}`];
     const allowed = [["GET", page], ["GET", `${api}/playback`], ["POST", `${api}/progress`]];
-    if (stage === "lesson-ack-loss") allowed.push(recovery);
+    const recoveryReadAllowed = stage === "lesson-ack-loss" || stage === "lesson-stale-revision";
+    if (stage === "lesson-stale-revision") assert.equal(cookie.length, 260);
+    if (recoveryReadAllowed) allowed.push(recovery);
     if (stage === "lesson-exit-save") allowed.push(outline);
     for (const [method, path, query] of allowed) {
       const proof = attest(method, path, query);
@@ -601,7 +604,7 @@ for (const [stage, selectionKey, writeKey] of [
       ["GET", recovery[1], `${recovery[2]}&limit=1`], ["GET", recovery[1], `?lessonId=${actorId}`],
       ["POST", `${api}/quiz/attempts`], ["POST", `${api}/progress`, "?retry=1"],
       ["POST", `${api.replace(lessonId, actorId)}/progress`]];
-    if (stage !== "lesson-ack-loss") forbidden.push(recovery);
+    if (!recoveryReadAllowed) forbidden.push(recovery);
     if (stage !== "lesson-exit-save") forbidden.push(outline);
     else forbidden.push(["GET", outline[1], "?unexpected=1"], ["GET", outline[1].replace(courseId, actorId)],
       ["POST", outline[1]], ["GET", "/api/academy/progress", `?courseId=${courseId}`]);

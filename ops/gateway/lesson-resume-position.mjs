@@ -83,3 +83,28 @@ export function parseLessonExitSavePosition(body) {
   return (expectedProgressRevision === 7 && resume === baseline) ||
     (expectedProgressRevision === 8 && resume >= baseline + 2 && resume <= baseline + 5) ? position : null;
 }
+
+/** @param {number} resumePositionSeconds */
+export function lessonStaleRevisionBodies(resumePositionSeconds) {
+  const maxPositionSeconds = resumePositionSeconds + 10;
+  const start = expectedProgressRevision => JSON.stringify({ event: "lesson_started", expectedProgressRevision });
+  const position = (resumePositionSeconds, expectedProgressRevision) =>
+    JSON.stringify({ resumePositionSeconds, maxPositionSeconds, expectedProgressRevision });
+  return [
+    start(6),
+    position(resumePositionSeconds, 7),
+    start(8),
+    position(resumePositionSeconds, 9),
+    position(maxPositionSeconds, 10),
+    position(0, 8),
+    start(11),
+    position(maxPositionSeconds, 12),
+  ];
+}
+
+const staleRevisionBodies = new Set([3, 4, 5, 6].flatMap(lessonStaleRevisionBodies));
+
+/** @param {string} body */
+export function permitsLessonStaleRevisionBody(body) {
+  return staleRevisionBodies.has(body);
+}

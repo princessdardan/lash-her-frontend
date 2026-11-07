@@ -273,12 +273,24 @@ const INTERACTIVE_IDENTITY_SQL = Object.freeze({
     CROSS JOIN LATERAL (SELECT count(*)::text AS total,count(*) FILTER (WHERE s.created_at>$2::timestamptz)::text AS fresh
       FROM public.customer_sessions s WHERE s.user_id=u.id AND s.expires>observed.at AND s.created_at<=observed.at) live
     WHERE u.id=$1::uuid`,
+  customerPair: `WITH observed AS MATERIALIZED (SELECT pg_catalog.clock_timestamp() AS at)
+    SELECT u.id::text,u.status,observed.at::text AS observed_at,live.total,live.fresh
+    FROM public.customer_users u CROSS JOIN observed
+    CROSS JOIN LATERAL (SELECT count(*)::text AS total,count(*) FILTER (
+      WHERE s.created_at>$2::timestamptz AND pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(
+        '["p2q-customer-session-v1",'||pg_catalog.to_json($3::text)::text||','||
+        pg_catalog.to_json(s.token_hash)::text||']','UTF8')),'hex')=ANY($4::text[]))::text AS fresh
+      FROM public.customer_sessions s WHERE s.user_id=u.id AND s.expires>observed.at AND s.created_at<=observed.at) live
+    WHERE u.id=$1::uuid`,
 });
 const identityBaselines = new WeakMap();
 const identityDigest = value => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 
 function identitySelection(value) {
-  demand(closed(value, ["actorKind", "actorId"]) && ["admin", "customer"].includes(value.actorKind) && uuid(value.actorId));
+  const paired = value && Object.hasOwn(value, "sessionCount");
+  demand(closed(value, ["actorKind", "actorId", ...(paired ? ["sessionCount"] : [])])
+    && ["admin", "customer"].includes(value.actorKind) && uuid(value.actorId)
+    && (!paired || value.actorKind === "customer" && value.sessionCount === 2));
   return Object.freeze({ ...value });
 }
 
@@ -287,11 +299,11 @@ function identitySessionCount(value) {
   return Number(value);
 }
 
-function readInteractiveIdentity(client, target, selection, challenge, cutoff, dependencies, backend) {
+function readInteractiveIdentity(client, target, selection, challenge, cutoff, dependencies, backend, sessionProofs) {
   return readHeldInteractiveSnapshot(client, target, dependencies, backend, async read => {
     const admin = selection.actorKind === "admin";
-    const rows = await read(admin ? INTERACTIVE_IDENTITY_SQL.owner : INTERACTIVE_IDENTITY_SQL.customer,
-      [selection.actorId, admin ? challenge : cutoff]);
+    const rows = await read(admin ? INTERACTIVE_IDENTITY_SQL.owner : sessionProofs ? INTERACTIVE_IDENTITY_SQL.customerPair : INTERACTIVE_IDENTITY_SQL.customer,
+      [selection.actorId, admin ? challenge : cutoff, ...(sessionProofs ? [challenge, sessionProofs] : [])]);
     const row = rows[0];
     demand(rows.length === 1 && row.id === selection.actorId && row.status === "active");
     if (admin) {
@@ -318,18 +330,23 @@ export async function captureP2InteractiveIdentityBaseline(client, target, selec
 
 export async function observeP2InteractiveIdentityCase(client, target, selection, baseline, browserIdentity, dependencies) {
   const selected = identitySelection(selection), saved = identityBaselines.get(baseline);
+  const paired = selected.sessionCount === 2;
   demand(saved?.client === client && isDeepStrictEqual(saved.binding, interactiveTarget(target)) && isDeepStrictEqual(saved.selected, selected)
-    && closed(browserIdentity, ["actorKind", "actorId", "sessionVerified"]) && browserIdentity.actorKind === selected.actorKind
+    && closed(browserIdentity, ["actorKind", "actorId", "sessionVerified", ...(paired ? ["sessionProofs"] : [])]) && browserIdentity.actorKind === selected.actorKind
     && browserIdentity.actorId === selected.actorId && browserIdentity.sessionVerified === true);
+  const sessionProofs = paired ? browserIdentity.sessionProofs : undefined;
+  if (paired) demand(Array.isArray(sessionProofs) && sessionProofs.length === 2 && sessionProofs.every(identityDigest)
+    && sessionProofs[0] !== sessionProofs[1]);
   identityBaselines.delete(baseline);
   const observed = await readInteractiveIdentity(client, saved.binding, selected, saved.challenge,
-    saved.state.cutoff ?? null, dependencies, saved.state.backend);
+    saved.state.cutoff ?? null, dependencies, saved.state.backend, sessionProofs);
   if (selected.actorKind === "admin") {
     demand(observed.ownerSubjectSha256 === saved.state.ownerSubjectSha256);
     return { ...selected, actorActive: true, ownerMappingVerified: true };
   }
-  demand(observed.freshSessionCount > 0);
-  return { ...selected, actorActive: true, liveSessionCount: observed.liveSessionCount };
+  demand(paired ? observed.freshSessionCount === 2 : observed.freshSessionCount > 0);
+  return { ...selected, actorActive: true, liveSessionCount: observed.liveSessionCount,
+    ...(paired ? { verifiedFreshSessionCount: observed.freshSessionCount } : {}) };
 }
 
 const INTERACTIVE_ENROLLMENT_SQL = Object.freeze({

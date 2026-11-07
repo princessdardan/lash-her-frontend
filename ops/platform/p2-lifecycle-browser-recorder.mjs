@@ -2,6 +2,7 @@
 // exact progress request succeeds. All other stages passively observe requests.
 import { performance } from "node:perf_hooks";
 import { createHash } from "node:crypto";
+import { Socket } from "node:net";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
@@ -16,9 +17,10 @@ const privateNoStore = headers => /(?:^|,)\s*private\s*(?:,|$)/iu.test(headers["
   && /(?:^|,)\s*no-store\s*(?:,|$)/iu.test(headers["cache-control"] ?? "");
 const interactiveOrigin = "https://staging.lashher.com";
 const permitName = "__Host-lash-p2q-window";
+const customerSessionName = "__Host-lash-customer.session-token";
 const authoringPath = "/api/admin/courses";
 const heldLessonStages = ["lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save",
-  "lesson-visibility-save"];
+  "lesson-visibility-save", "lesson-stale-revision"];
 const learnerScopedStages = ["learning", "learner-access", ...heldLessonStages];
 const interactivePages = {
   identity: { owner: "/admin/sign-in", learner: "/sign-in" },
@@ -34,6 +36,7 @@ const interactivePages = {
   "lesson-ack-loss": { learner: "/academy/courses" },
   "lesson-exit-save": { learner: "/academy/courses" },
   "lesson-visibility-save": { learner: "/academy/courses" },
+  "lesson-stale-revision": { learner: "/academy/courses" },
   "paid-grant": { owner: "/admin/courses" },
   "paid-revoke": { owner: "/admin/courses" },
   lifecycle: { owner: "/admin/customer-accounts", learner: "/account" },
@@ -67,7 +70,9 @@ export function p2InteractiveIdentityContext(input) {
 }
 
 function identitySelector(identity) {
-  demand(closed(identity, ["actorKind", "actorId"]) && uuid(identity.actorId));
+  const paired = identity && Object.hasOwn(identity, "sessionCount");
+  demand(closed(identity, ["actorKind", "actorId", ...(paired ? ["sessionCount"] : [])]) && uuid(identity.actorId)
+    && (!paired || identity.actorKind === "customer" && identity.sessionCount === 2));
   if (identity.actorKind === "customer") return "7032712d637573746f6d65722d763100" + identity.actorId.replaceAll("-", "");
   demand(identity.actorKind === "admin");
   return createHash("sha256").update(JSON.stringify(["identity", "admin"])).digest("hex");
@@ -141,6 +146,7 @@ export function p2InteractiveBrowserEntryPath(input, context) {
   if (input.stage === "lesson-ack-loss") return p2LessonResumePaths(input.ackLoss).lessonPath;
   if (input.stage === "lesson-exit-save") return p2LessonResumePaths(input.exitSave).lessonPath;
   if (input.stage === "lesson-visibility-save") return p2LessonResumePaths(input.visibility).lessonPath;
+  if (input.stage === "lesson-stale-revision") return p2LessonResumePaths(input.staleRevision).lessonPath;
   if (input.stage === "paid-grant") return p2PaidGrantPaths(input.paidGrant).pagePath;
   if (input.stage === "paid-revoke") return p2PaidRevokePaths(input.paidRevoke).pagePath;
   return isP2InteractiveAuthoringDetail(input) ? path + "/" + input.authoring.courseId : path;
@@ -217,6 +223,7 @@ export function validateP2InteractiveBrowserInput(input) {
           : input?.stage === "lesson-resume" ? ["resume"] : input?.stage === "lesson-restore" ? ["restore"] : input?.stage === "lesson-ack-loss" ? ["ackLoss"]
           : input?.stage === "lesson-exit-save" ? ["exitSave"]
           : input?.stage === "lesson-visibility-save" ? ["visibility"]
+          : input?.stage === "lesson-stale-revision" ? ["staleRevision"]
           : input?.stage === "paid-revoke" ? ["paidRevoke"] : [])])
     && input.version === 2 && input.environment === "staging" && matches(input.actionId, /^[a-z0-9][a-z0-9-]{0,63}$/u)
     && sha(input.challenge) && sha(input.bindingSha256) && matches(input.sourceCommit, /^[a-f0-9]{40}$/u)
@@ -273,6 +280,7 @@ export function validateP2InteractiveBrowserInput(input) {
   if (input.stage === "lesson-ack-loss") validateLessonAckLossTarget(input.ackLoss);
   if (input.stage === "lesson-exit-save") validateLessonExitSaveTarget(input.exitSave);
   if (input.stage === "lesson-visibility-save") validateLessonVisibilityTarget(input.visibility);
+  if (input.stage === "lesson-stale-revision") validateLessonStaleRevisionTarget(input.staleRevision);
   if (["paid-grant", "paid-revoke"].includes(input.stage)) {
     const revoke = input.stage === "paid-revoke", selected = input.paidGrant ?? input.paidRevoke;
     demand(closed(selected, ["actorId", "operation", "courseId", "userId", "revision", "idempotencyKey", "reasonSha256",
@@ -314,7 +322,7 @@ export function validateP2InteractiveBrowserInput(input) {
 export function validateP2InteractiveBrowserPermit(permit, input, now = Math.floor(Date.now() / 1000)) {
   demand(closed(permit, ["stage", "epoch", "expires", "cookie"]) && permit.stage === input.stage && permit.epoch === input.epoch
     && Number.isSafeInteger(permit.expires) && permit.expires > now && typeof permit.cookie === "string"
-    && permit.cookie.length <= (input.stage === "lesson-visibility-save" ? 261 : 256));
+    && permit.cookie.length <= (input.stage === "lesson-visibility-save" ? 261 : input.stage === "lesson-stale-revision" ? 260 : 256));
   const parts = permit.cookie.split(".");
   const [version, epoch, stage, issued, expires, nonce] = parts;
   demand(epoch === permit.epoch && stage === permit.stage && /^\d{10}$/u.test(issued ?? "") && /^\d{10}$/u.test(expires ?? "")
@@ -332,7 +340,7 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
   if (stage === "learner-access") demand(parts[6] === (input.learnerAccess.actorId + input.learnerAccess.lessonId).replaceAll("-", ""));
   if (heldLessonStages.includes(stage)) {
     const { actorId, courseId, lessonId } = input.lessonEntry ?? input.lessonDenial ?? input.assessment ?? input.resume ?? input.restore
-      ?? input.ackLoss ?? input.exitSave ?? input.visibility;
+      ?? input.ackLoss ?? input.exitSave ?? input.visibility ?? input.staleRevision;
     demand(parts[6] === (actorId + courseId + lessonId).replaceAll("-", ""));
   }
   return permit;
@@ -406,8 +414,11 @@ function exactBrowserJson(bytes, maximum = maxLifecycleBody) {
 const identityRefused = () => new Error("P2_INTERACTIVE_IDENTITY_SESSION_REFUSED");
 
 export function validateP2InteractiveIdentityReceipt(receipt, input) {
-  demand(input.stage === "identity" && closed(receipt, ["actorKind", "actorId", "sessionVerified"])
+  const paired = input.identity?.sessionCount === 2;
+  demand(input.stage === "identity" && closed(receipt, ["actorKind", "actorId", "sessionVerified", ...(paired ? ["sessionProofs"] : [])])
     && receipt.sessionVerified === true && uuid(receipt.actorId));
+  if (paired) demand(Array.isArray(receipt.sessionProofs) && receipt.sessionProofs.length === 2
+    && receipt.sessionProofs.every(sha) && receipt.sessionProofs[0] !== receipt.sessionProofs[1]);
   if (input.identityEnrollment) demand(receipt.actorKind === "customer");
   else demand(receipt.actorKind === input.identity.actorKind && receipt.actorId === input.identity.actorId);
   return receipt;
@@ -427,7 +438,7 @@ function readIdentitySession(body, input, ownerSubjectSha256, openedAt, now) {
       const email = createHash("sha256").update(JSON.stringify(["p2q-customer-enrollment-v1", enrollment.provider, enrollment.nonce, user.email])).digest("hex");
       demand(email === enrollment.emailSha256);
     } else demand(user.id === input.identity.actorId);
-    return validateP2InteractiveIdentityReceipt({ actorKind, actorId: user.id, sessionVerified: true }, input);
+    return { actorKind, actorId: user.id, sessionVerified: true };
   }
   const actorId = input.identity.actorId;
   demand(user && typeof user === "object" && !Array.isArray(user)
@@ -485,6 +496,14 @@ async function waitForInteractiveIdentity(page, input, selection) {
     await pause(Math.min(2000, Math.max(1, selection.expires * 1000 - Date.now())));
   }
   throw identityRefused();
+}
+
+async function customerSessionProof(context, input) {
+  const cookies = (await context.cookies(input.browserOrigin)).filter(cookie => cookie.name === customerSessionName);
+  demand(cookies.length === 1 && cookies[0].secure && cookies[0].httpOnly
+    && cookies[0].path === "/" && cookies[0].value.length > 0 && cookies[0].value.length <= 256);
+  const tokenHash = createHash("sha256").update(cookies[0].value).digest("hex");
+  return createHash("sha256").update(JSON.stringify(["p2q-customer-session-v1", input.challenge, tokenHash])).digest("hex");
 }
 
 export function validateP2LifecycleMutationReceipt(receipt, target) {
@@ -633,6 +652,7 @@ const pinnedProgressFields = ["requestId", "progressId", "enrollmentId", "revisi
 const validateLessonAckLossTarget = target => validatePinnedLessonPositionTarget(target, ["commit-drop-recover"]);
 const validateLessonExitSaveTarget = target => validatePinnedLessonPositionTarget(target, ["spa-navigation", "document-exit"]);
 const validateLessonVisibilityTarget = target => validatePinnedLessonPositionTarget(target, ["hide-active-document"]);
+const validateLessonStaleRevisionTarget = target => validatePinnedLessonPositionTarget(target, ["conflict-reload"]);
 
 export function validateP2LessonAckLossReceipt(receipt, target) {
   validateLessonAckLossTarget(target);
@@ -701,6 +721,31 @@ export function validateP2LessonVisibilityReceipt(receipt, target) {
     && closed(media, ["playedSeconds", "playing", "manifestObserved", "segmentObserved"])
     && integerBetween(media.playedSeconds, resume + 2, resume + 5) && Math.abs(media.playedSeconds - visibility.resumePositionSeconds) <= 2
     && media.playing === true && media.manifestObserved === true && media.segmentObserved === true);
+  return receipt;
+}
+
+export function validateP2LessonStaleRevisionReceipt(receipt, target) {
+  validateLessonStaleRevisionTarget(target);
+  const { page, playback, writes, conflict, authoritative, reload, media } = receipt ?? {};
+  const { lessonPath } = p2LessonResumePaths(target);
+  const { resumePositionSeconds: resume, maxPositionSeconds: maximum } = target;
+  const matchesProgress = (row, revision, position) => closed(row, pinnedProgressFields) && uuid(row.requestId)
+    && row.progressId === target.progressId && row.enrollmentId === target.enrollmentId && row.revision === revision
+    && row.resumePositionSeconds === position && row.maxPositionSeconds === maximum;
+  demand(closed(receipt, ["page", "playback", "writes", "conflict", "authoritative", "reload", "media"])
+    && closed(page, ["pathname", "status"]) && page.pathname === lessonPath && page.status === 200
+    && Array.isArray(playback) && playback.length === 3
+    && playback.every(row => validResumePlayback(row) && row.playbackIdSha256 === target.playbackIdSha256)
+    && Array.isArray(writes) && writes.length === 7
+    && writes.every((row, index) => matchesProgress(row, index + 7, index < 4 ? resume : maximum))
+    && closed(conflict, ["requestId", "expectedProgressRevision", "resumePositionSeconds", "maxPositionSeconds", "status"])
+    && uuid(conflict.requestId) && conflict.expectedProgressRevision === 8 && conflict.resumePositionSeconds === 0
+    && conflict.maxPositionSeconds === maximum && conflict.status === 409 && matchesProgress(authoritative, 11, maximum)
+    && new Set([...playback, ...writes, conflict, authoritative].map(row => row.requestId)).size === 12
+    && closed(reload, ["documentReplaced", "noReplay"]) && reload.documentReplaced === true && reload.noReplay === true
+    && closed(media, ["beforeSeconds", "afterSeconds", "paused", "manifestObserved", "segmentObserved"])
+    && media.beforeSeconds === resume && media.afterSeconds === maximum && media.paused === true
+    && media.manifestObserved === true && media.segmentObserved === true);
   return receipt;
 }
 
@@ -2616,6 +2661,268 @@ export function watchP2LessonAckLoss(context, page, input) {
   };
 }
 
+export function watchP2LessonStaleRevision(context, page, peerContext, peerPage, input) {
+  validateP2InteractiveBrowserInput(input);
+  demand(input.stage === "lesson-stale-revision" && page.context() === context && peerPage.context() === peerContext
+    && context !== peerContext && context.browser() && context.browser() === peerContext.browser());
+  const target = input.staleRevision, origin = input.browserOrigin;
+  const { lessonPath, playbackPath, progressPath, latestPath } = p2LessonAssessmentPaths(target);
+  const source = origin + lessonPath, { resumePositionSeconds: resume, maxPositionSeconds: maximum } = target;
+  const get = path => ({ path, method: "GET" });
+  const post = (body, status = 200) => ({ path: progressPath, method: "POST", body: JSON.stringify(body), status });
+  const started = revision => post({ event: "lesson_started", expectedProgressRevision: revision });
+  const positioned = (revision, seconds, status) => post({ resumePositionSeconds: seconds, maxPositionSeconds: maximum,
+    expectedProgressRevision: revision }, status);
+  const firstPlayback = get(playbackPath), peerPlayback = get(playbackPath), reloadPlayback = get(playbackPath);
+  const [firstStart, firstPosition, peerStart, peerPosition, winner, reloadStart, reloadPosition] = [
+    started(6), positioned(7, resume), started(8), positioned(9, resume), positioned(10, maximum),
+    started(11), positioned(12, maximum),
+  ];
+  const conflict = positioned(8, 0, 409), latest = get(latestPath);
+  const refusal = () => new Error("P2_INTERACTIVE_LESSON_STALE_REVISION_RESPONSE_REFUSED");
+  let initial, completed, fenced = false, failed = false, rejectFailure;
+  const failure = new Promise((_, reject) => { rejectFailure = reject; });
+  failure.catch(() => {});
+  const fail = () => { if (!failed) { failed = true; rejectFailure(refusal()); } };
+  const remaining = expires => {
+    const timeout = expires * 1000 - Date.now();
+    if (failed || timeout <= 0 || timeout > input.windowSeconds * 1000) throw refusal();
+    return timeout;
+  };
+  const bounded = async (operation, expires) => {
+    let timer;
+    try {
+      return await Promise.race([operation, failure, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(refusal()), remaining(expires));
+      })]);
+    } finally { clearTimeout(timer); }
+  };
+
+  function watchDevice(deviceContext, devicePage, entries) {
+    const slots = new Map(entries);
+    const allSlots = [...slots.values()].flat();
+    const player = devicePage.getByRole("main").locator("mux-player");
+    let active, navigationAllowed = false, navigation, session, stopNetwork, executionContextId, heldFrame, currentPermit;
+    let media = watchResumeMedia(deviceContext, devicePage, fail);
+    const onRequest = request => {
+      const url = URL.parse(request.url()), method = request.method(), headers = request.headers();
+      try {
+        if (request.isNavigationRequest()) {
+          demand(navigationAllowed && !navigation && request.url() === source && method === "GET" && headers.rsc === undefined
+            && request.frame() === devicePage.mainFrame() && request.redirectedFrom() === null);
+          navigation = request;
+          navigationAllowed = false;
+          return;
+        }
+        if (request.resourceType() === "media") demand(muxHttps(url) || url?.protocol === "blob:" && url.origin === origin);
+        if (url?.origin === origin && url.pathname.startsWith("/api/")) {
+          const slot = active?.find(candidate => url.pathname + url.search === candidate.path && method === candidate.method && !candidate.request);
+          demand(slot && !url.hash && request.frame() === devicePage.mainFrame() && request.frame().url() === source
+            && request.resourceType() === "fetch" && request.redirectedFrom() === null && headers.rsc === undefined);
+          const predecessor = slot === firstPosition ? [firstPlayback, firstStart] : slot === peerPosition ? [peerPlayback, peerStart]
+            : slot === reloadPosition ? [reloadPlayback, reloadStart] : slot === latest ? [conflict] : [];
+          demand(predecessor.every(row => row.gatewayId));
+          const bytes = request.postDataBuffer();
+          demand(method === "GET" ? bytes === null : bytes?.toString("utf8") === slot.body);
+          slot.request = request;
+          return;
+        }
+        demand(["GET", "HEAD", "OPTIONS"].includes(method));
+        if (url?.origin === origin && headers.rsc !== undefined) {
+          demand(!url.pathname.startsWith("/academy/courses/") && (headers["next-router-prefetch"] !== undefined
+            || headers["next-router-segment-prefetch"] !== undefined) && request.frame() === devicePage.mainFrame() && request.redirectedFrom() === null);
+        }
+      } catch { fail(); }
+    };
+    const onFailure = request => { if (request === navigation || allSlots.some(slot => slot.request === request)) fail(); };
+    const onNavigation = frame => { if (frame === devicePage.mainFrame() && frame.url() !== source) fail(); };
+    deviceContext.on("request", onRequest);
+    deviceContext.on("requestfailed", onFailure);
+    devicePage.on("framenavigated", onNavigation);
+    devicePage.on("close", fail);
+
+    const observe = async (slot, expires) => {
+      const response = await devicePage.waitForResponse(candidate => candidate.request() === slot.request, { timeout: remaining(expires) });
+      const [head, bounds, native] = await Promise.all([
+        readBrowserResponseHead(response, slot.request, origin, slot.path, slot.method, slot.status ?? 200),
+        readBrowserResponseBounds(response, slot.request, maxLifecycleBody, true), slot.native,
+      ]);
+      demand(slot.gatewayId === head.requestId && (!bounds.identity || bounds.declared === undefined || native.size === bounds.declared)
+        && !slot.request.failure());
+      if (slot.method === "POST") {
+        const [csrf, requestOrigin, fetchSite, contentType, idempotency] = await Promise.all([
+          "x-lash-csrf", "origin", "sec-fetch-site", "content-type", "x-idempotency-key",
+        ].map(name => slot.request.headerValue(name)));
+        demand(csrf === "1" && requestOrigin === origin && (fetchSite === null || fetchSite === "same-origin")
+          && contentType === "application/json" && idempotency === null);
+      }
+      return { requestId: head.requestId, body: native.body, response };
+    };
+    const sample = (seconds, expires) => bounded(until(async () => {
+      const { result, exceptionDetails } = await session.send("Runtime.callFunctionOn", { executionContextId,
+        functionDeclaration: sampleNativeResumeMedia.toString(), arguments: [{ value: { source, playbackIdSha256: target.playbackIdSha256 } }],
+        awaitPromise: true, returnByValue: true, silent: true });
+      demand(!exceptionDetails);
+      const value = result.value;
+      return value && value.paused && !value.seeking && !value.ended && value.ready >= 2 && Math.floor(value.position) === seconds
+        && integerBetween(Math.floor(value.duration), 22, Number.MAX_SAFE_INTEGER) && integerBetween(value.width, 1, Number.MAX_SAFE_INTEGER);
+    }, performance.now() + remaining(expires)), expires);
+    const seek = (key, expires) => player.getByRole("button", { name: "play", exact: true }).filter({ visible: true }).first()
+      .press(key, { timeout: remaining(expires) });
+    const frame = async () => (await session.send("Page.getFrameTree")).frameTree.frame;
+
+    return {
+      async initialize(expires) {
+        demand(deviceContext.pages().length === 1 && !deviceContext.serviceWorkers().length && devicePage.url() === "about:blank");
+        session = await bounded(deviceContext.newCDPSession(devicePage), expires);
+        const initialFrame = await frame();
+        demand(!initialFrame.parentId);
+        const buffers = { maxTotalBufferSize: 256 * 1024, maxResourceBufferSize: 8192 };
+        await session.send("Network.configureDurableMessages", buffers);
+        await session.send("Network.enable", { ...buffers, maxPostDataSize: 0 });
+        stopNetwork = watchLessonNetworkBodies(session, initialFrame.id, slots, origin, fail);
+      },
+      async hydrate(mediaSlot, start, restored, revision, seconds, expires, reloadButton) {
+        demand(!active && !navigationAllowed && Boolean(heldFrame) === Boolean(reloadButton));
+        if (reloadButton) {
+          media.close();
+          media = watchResumeMedia(deviceContext, devicePage, fail);
+        }
+        active = [mediaSlot, start, restored];
+        navigation = undefined;
+        navigationAllowed = true;
+        const options = { waitUntil: "domcontentloaded", timeout: Math.min(30_000, remaining(expires)) };
+        const [mediaResult, startedResult, restoredResult, document] = await bounded(Promise.all([
+          observe(mediaSlot, expires), observe(start, expires), observe(restored, expires),
+          reloadButton ? Promise.all([devicePage.waitForNavigation(options), reloadButton.click({ timeout: remaining(expires) })])
+            .then(([response]) => response) : devicePage.goto(source, options),
+        ]), expires);
+        demand(navigation && document?.request() === navigation && document.status() === 200 && document.url() === source
+          && !document.fromServiceWorker() && navigation.redirectedTo() === null && devicePage.url() === source);
+        const [types, cache, dates] = await Promise.all([document.headerValues("content-type"), document.headerValues("cache-control"),
+          mediaResult.response.headerValues("date")]);
+        demand(types.length === 1 && /^text\/html(?:;.*)?$/iu.test(types[0]) && cache.length === 1
+          && privateNoStore({ "cache-control": cache[0] }) && dates.length === 1);
+        const authorization = mediaResult.body;
+        let playback;
+        try {
+          const { expiresAt, thumbnailExpiresAt, lifetimeMs } = parseP2PlaybackObservation(200,
+            { "cache-control": "private, no-store", date: dates[0] }, authorization, true);
+          demand(matches(authorization.playbackId, /^[A-Za-z0-9_-]{1,255}$/u) && authorization.thumbnailToken.length > 20
+            && resumeDigest(authorization.playbackId) === target.playbackIdSha256);
+          currentPermit = { playbackIdSha256: target.playbackIdSha256, tokenSha256: resumeDigest(authorization.playbackToken) };
+          playback = { requestId: mediaResult.requestId, expiresAt, thumbnailExpiresAt, lifetimeMs, playbackIdSha256: target.playbackIdSha256 };
+        } finally { authorization.playbackId = authorization.playbackToken = authorization.thumbnailToken = ""; }
+        const writes = [progressReceipt(startedResult, revision, seconds), progressReceipt(restoredResult, revision + 1, seconds)];
+        active = undefined;
+        await bounded(Promise.all([player.waitFor({ state: "visible", timeout: remaining(expires) }),
+          devicePage.getByText("Progress saved to your account.", { exact: true }).waitFor({ state: "visible", timeout: remaining(expires) })]), expires);
+        demand(await player.count() === 1);
+        const currentFrame = await frame();
+        demand(currentFrame.loaderId && (!heldFrame || currentFrame.id === heldFrame.id && currentFrame.loaderId !== heldFrame.loaderId));
+        heldFrame = currentFrame;
+        executionContextId = await isolatedMainFrame(session, source);
+        await Promise.all([sample(seconds, expires),
+          bounded(until(() => media.verified(currentPermit), performance.now() + remaining(expires)), expires)]);
+        return { playback, writes };
+      },
+      async seekAndObserve(key, seconds, expected, expires) {
+        demand(!active && heldFrame);
+        active = expected;
+        const results = await bounded(Promise.all([
+          ...expected.map(slot => observe(slot, expires)), sample(seconds, expires), seek(key, expires),
+        ]), expires);
+        active = undefined;
+        return results.slice(0, expected.length);
+      },
+      get reloadButton() { return devicePage.getByRole("alert").getByRole("button", { name: "Load latest progress", exact: true }); },
+      async blockedSeek(expires) {
+        demand(!active && heldFrame);
+        await this.reloadButton.waitFor({ state: "visible", timeout: remaining(expires) });
+        await bounded(Promise.all([seek("ArrowRight", expires), sample(10, expires)]), expires);
+        await bounded(pause(250), expires);
+        demand(await this.reloadButton.isVisible() && !failed);
+      },
+      ready() {
+        return !active && !navigationAllowed && !devicePage.isClosed() && devicePage.url() === source
+          && deviceContext.pages().length === 1 && !deviceContext.serviceWorkers().length && media.verified(currentPermit);
+      },
+      async confirmHeld() {
+        const current = await frame();
+        return this.ready() && current.id === heldFrame.id && current.loaderId === heldFrame.loaderId && current.url === source;
+      },
+      async close() {
+        deviceContext.off("request", onRequest);
+        deviceContext.off("requestfailed", onFailure);
+        devicePage.off("framenavigated", onNavigation);
+        devicePage.off("close", fail);
+        media.close();
+        stopNetwork?.();
+        await session?.detach().catch(() => {});
+      },
+    };
+  }
+
+  const progressReceipt = (result, revision, position) => {
+    const row = resumeProgress(result.body, target, revision, position, maximum);
+    demand(row.id === target.progressId && row.enrollmentId === target.enrollmentId);
+    return { requestId: result.requestId, progressId: row.id, enrollmentId: row.enrollmentId, revision: row.revision,
+      resumePositionSeconds: row.resumePositionSeconds, maxPositionSeconds: row.maxPositionSeconds };
+  };
+  const first = watchDevice(context, page, [[playbackPath, [firstPlayback, reloadPlayback]],
+    [progressPath, [firstStart, firstPosition, conflict, reloadStart, reloadPosition]], [latestPath, latest]]);
+  const peer = watchDevice(peerContext, peerPage, [[playbackPath, peerPlayback], [progressPath, [peerStart, peerPosition, winner]]]);
+  return {
+    async open(expires) {
+      try {
+        demand(!initial);
+        await Promise.all([first.initialize(expires), peer.initialize(expires)]);
+        const a = await first.hydrate(firstPlayback, firstStart, firstPosition, 7, resume, expires);
+        const b = await peer.hydrate(peerPlayback, peerStart, peerPosition, 9, resume, expires);
+        initial = { a, b };
+      } catch { fail(); throw refusal(); }
+    },
+    async wait(expires) {
+      try {
+        demand(initial && !completed && first.ready() && peer.ready());
+        const [won] = await peer.seekAndObserve("ArrowRight", maximum, [winner], expires);
+        const winningWrite = progressReceipt(won, 11, maximum);
+        const [lost, read] = await first.seekAndObserve("ArrowLeft", 0, [conflict, latest], expires);
+        demand(closed(lost.body, ["error", "requestId"]) && closed(lost.body.error, ["code", "message"])
+          && lost.body.requestId === lost.requestId && lost.body.error.code === "conflict"
+          && lost.body.error.message === "This operation conflicts with the current state. Refresh and try again.");
+        demand(closed(read.body, ["progress"]) && Array.isArray(read.body.progress) && read.body.progress.length === 1);
+        const authoritative = progressReceipt({ requestId: read.requestId, body: { progress: read.body.progress[0] } }, 11, maximum);
+        await first.blockedSeek(expires);
+        const reloaded = await first.hydrate(reloadPlayback, reloadStart, reloadPosition, 12, maximum, expires, first.reloadButton);
+        remaining(expires);
+        completed = validateP2LessonStaleRevisionReceipt({ page: { pathname: lessonPath, status: 200 },
+          playback: [initial.a.playback, initial.b.playback, reloaded.playback],
+          writes: [...initial.a.writes, ...initial.b.writes, winningWrite, ...reloaded.writes],
+          conflict: { requestId: lost.requestId, expectedProgressRevision: 8, resumePositionSeconds: 0, maxPositionSeconds: maximum, status: 409 },
+          authoritative, reload: { documentReplaced: true, noReplay: true },
+          media: { beforeSeconds: resume, afterSeconds: maximum, paused: true, manifestObserved: true, segmentObserved: true },
+        }, target);
+      } catch { fail(); throw refusal(); }
+    },
+    finish() {
+      if (failed || !completed || !first.ready() || !peer.ready()) throw refusal();
+      return completed;
+    },
+    async confirmFenced() {
+      try {
+        demand(!fenced && this.finish() && (await Promise.all([first.confirmHeld(), peer.confirmHeld()])).every(Boolean) && !failed);
+        fenced = true;
+        return true;
+      } catch { fail(); throw refusal(); }
+    },
+    async close() {
+      fail();
+      await Promise.all([first.close(), peer.close()]);
+    },
+  };
+}
+
 function watchLessonPosition(context, page, input, stage, hideDocument) {
   validateP2InteractiveBrowserInput(input);
   demand(input.stage === stage && page.context() === context);
@@ -3509,7 +3816,10 @@ async function runInteractiveBrowser(first) {
     pending.catch(() => {}); // An IPC send can fail before the caller awaits this receive.
     return pending;
   };
-  let browser, context, page, selection, mutationWatch, identityOpenedAt, verifiedIdentity, opened = false, cleared = false, visibilityFenced = false;
+  let browser, context, page, peer, peerPage, selection, mutationWatch, identityOpenedAt, verifiedIdentity, staleSessionProofs;
+  let opened = false, cleared = false, browserFenced = false;
+  const permitPipe = new Socket({ fd: 4, readable: true, writable: false });
+  permitPipe.pause();
   const contexts = new Map(), actions = new Set([input.actionId]);
   const lost = () => { if (browser) void browser.close().catch(() => {}); };
   const terminate = () => { if (process.connected) process.disconnect(); else lost(); };
@@ -3539,12 +3849,19 @@ async function runInteractiveBrowser(first) {
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         if (learnerScopedStages.includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "customer"
           && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial
-            ?? selectedInput.assessment ?? selectedInput.resume ?? selectedInput.restore ?? selectedInput.ackLoss ?? selectedInput.exitSave ?? selectedInput.visibility).actorId
+            ?? selectedInput.assessment ?? selectedInput.resume ?? selectedInput.restore ?? selectedInput.ackLoss ?? selectedInput.exitSave
+            ?? selectedInput.visibility ?? selectedInput.staleRevision).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
+        const staleRevision = selectedInput.stage === "lesson-stale-revision";
+        demand(staleRevision === (input.identity?.sessionCount === 2));
+        if (staleRevision) {
+          demand(verifiedIdentity?.sessionProofs?.length === 2 && contexts.has("learner-peer"));
+          staleSessionProofs = verifiedIdentity.sessionProofs;
+        }
         actions.add(selectedInput.actionId);
         input = selectedInput;
         binding = interactiveBinding(input);
-        selection = context = page = identityOpenedAt = verifiedIdentity = undefined;
+        selection = context = page = peer = peerPage = identityOpenedAt = verifiedIdentity = undefined;
         opened = cleared = false;
         pending = next();
         await send("interactive-selected");
@@ -3555,36 +3872,51 @@ async function runInteractiveBrowser(first) {
       demand(closed(received, [...Object.keys(binding), "context", "expires", ...(ownerIdentity ? ["ownerSubjectSha256"] : [])])
         && Number.isSafeInteger(received.expires));
       const path = p2InteractiveBrowserEntryPath(input, received.context);
+      const pairedIdentity = input.identity?.sessionCount === 2;
+      const staleRevision = binding.stage === "lesson-stale-revision";
       if (command.type === "interactive-install") {
         demand(selection === undefined && (binding.stage !== "lifecycle" || received.context === input.lifecycle.context)
           && (binding.stage !== "identity" || received.context === p2InteractiveIdentityContext(input))
           && (!learnerScopedStages.includes(binding.stage) || contexts.has("learner"))
           && (!["paid-grant", "paid-revoke"].includes(binding.stage) || contexts.has("owner")));
         selection = { context: received.context, expires: received.expires };
-        const permit = await readP2InteractiveBrowserPermit(process.stdin, input, selection);
+        const permit = await readP2InteractiveBrowserPermit(permitPipe, input, selection);
         try {
           if (!browser) {
             const { chromium } = await import("playwright");
             browser = await chromium.launch({ headless: false });
           }
           context = contexts.get(received.context);
+          if (pairedIdentity) demand(!context && !contexts.has("learner-peer"));
           if (!context) {
             context = await browser.newContext();
             contexts.set(received.context, context);
           }
+          if (pairedIdentity) {
+            peer = await browser.newContext();
+            contexts.set("learner-peer", peer);
+          } else if (staleRevision) {
+            peer = contexts.get("learner-peer");
+            demand(peer && peer !== context && staleSessionProofs);
+            const proofs = await Promise.all([context, peer].map(device => customerSessionProof(device, input)));
+            demand(proofs.every((proof, index) => proof === staleSessionProofs[index]));
+          }
           await installP2InteractiveBrowserCookie(context, permit, input);
+          if (peer) await installP2InteractiveBrowserCookie(peer, permit, input);
         } finally { permit.cookie = ""; }
         pending = next();
         await send("interactive-permit-installed", selection);
         continue;
       }
       demand(selection && received.context === selection.context && received.expires === selection.expires && context);
-      if (command.type === "interactive-confirm-visibility-fenced") {
-        demand(binding.stage === "lesson-visibility-save" && cleared && mutationWatch && !visibilityFenced);
+      if (command.type === "interactive-confirm-visibility-fenced" || command.type === "interactive-confirm-stale-revision-fenced") {
+        const stage = staleRevision ? "stale-revision" : "visibility";
+        demand(binding.stage === "lesson-" + stage && command.type === "interactive-confirm-" + stage + "-fenced"
+          && cleared && mutationWatch && !browserFenced);
         await mutationWatch.confirmFenced();
-        visibilityFenced = true;
+        browserFenced = true;
         pending = next();
-        await send("interactive-visibility-fenced", selection);
+        await send("interactive-" + stage + "-fenced", selection);
         continue;
       }
       demand(!cleared);
@@ -3594,7 +3926,20 @@ async function runInteractiveBrowser(first) {
         if (binding.stage === "identity") identityOpenedAt = Date.now();
         page = await context.newPage();
         let httpStatus;
-        if (isP2InteractiveAuthoringPair(input)) {
+        if (pairedIdentity) {
+          demand(peer && peer !== context);
+          peerPage = await peer.newPage();
+          const url = input.browserOrigin + path;
+          const responses = await Promise.all([page, peerPage].map(device => device.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 })));
+          demand(responses.every(response => response?.status() === 200 && response.url() === url));
+          httpStatus = 200;
+        } else if (staleRevision) {
+          demand(peer && peer !== context);
+          peerPage = await peer.newPage();
+          mutationWatch = watchP2LessonStaleRevision(context, page, peer, peerPage, input);
+          await mutationWatch.open(selection.expires);
+          httpStatus = 200;
+        } else if (isP2InteractiveAuthoringPair(input)) {
           const stale = await context.newPage();
           mutationWatch = watchP2AuthoringEdits(context, page, stale, input);
           await mutationWatch.open(selection.expires);
@@ -3705,19 +4050,32 @@ async function runInteractiveBrowser(first) {
         demand(command.type === "interactive-clear" || captureMutation && opened && mutationWatch
           || captureIdentity && binding.stage === "identity" && opened && page?.context() === context);
         if (captureMutation) await mutationWatch.wait(selection.expires);
-        if (captureIdentity) verifiedIdentity = await waitForInteractiveIdentity(page, input,
-          { ...selection, openedAt: identityOpenedAt, ownerSubjectSha256: received.ownerSubjectSha256 });
-        await expireP2InteractiveBrowserCookie(context);
+        if (captureIdentity) {
+          const observation = { ...selection, openedAt: identityOpenedAt, ownerSubjectSha256: received.ownerSubjectSha256 };
+          if (pairedIdentity) {
+            demand(peerPage?.context() === peer && peer !== context);
+            const [first, second] = await Promise.all([page, peerPage].map(device => waitForInteractiveIdentity(device, input, observation)));
+            demand(first.actorId === second.actorId && first.actorKind === second.actorKind);
+            const sessionProofs = await Promise.all([context, peer].map(device => customerSessionProof(device, input)));
+            verifiedIdentity = validateP2InteractiveIdentityReceipt({ ...first, sessionProofs }, input);
+          } else verifiedIdentity = await waitForInteractiveIdentity(page, input, observation);
+        }
+        if (captureMutation && staleRevision) {
+          const proofs = await Promise.all([context, peer].map(device => customerSessionProof(device, input)));
+          demand(proofs.every((proof, index) => proof === staleSessionProofs[index]));
+        }
+        const selectedContexts = peer ? [context, peer] : [context];
+        await Promise.all(selectedContexts.map(expireP2InteractiveBrowserCookie));
         // Teardown can queue progress or telemetry. Hold the selected page until
         // the parent closes the browser after fencing, with the permit expired.
         if (!captureMutation || !heldLessonStages.includes(binding.stage)) {
-          await Promise.all(context.pages().map(page => page.close()));
+          await Promise.all(selectedContexts.flatMap(device => device.pages()).map(page => page.close()));
         }
         cleared = true;
         if (input.identityEnrollment) await context.close();
         if (captureMutation || captureIdentity) demand(Date.now() < selection.expires * 1000);
         const response = captureMutation ? mutationWatch.finish() : undefined;
-        if (binding.stage !== "lesson-visibility-save" || !captureMutation) {
+        if (!(binding.stage === "lesson-visibility-save" || staleRevision) || !captureMutation) {
           await mutationWatch?.close();
           mutationWatch = undefined;
         }
@@ -3730,9 +4088,11 @@ async function runInteractiveBrowser(first) {
   } finally {
     process.off("disconnect", lost);
     process.off("SIGTERM", terminate);
-    process.stdin.destroy();
+    permitPipe.destroy();
     await mutationWatch?.close();
-    try { if (context && !cleared) await expireP2InteractiveBrowserCookie(context); }
+    try {
+      if (context && !cleared) await Promise.all((peer ? [context, peer] : [context]).map(expireP2InteractiveBrowserCookie));
+    }
     finally { await browser?.close(); }
   }
   await send("interactive-closed");

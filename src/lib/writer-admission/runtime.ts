@@ -57,7 +57,8 @@ export function createWriterAdmissionRunner(dependencies: {
         (interactive?.lessonRestore && (kind !== "new-work" || !interactive.lessonRestoreWrite)) ||
         (interactive?.lessonAckLoss && (kind !== "new-work" || !interactive.lessonAckLossWrite)) ||
         (interactive?.lessonExitSave && (kind !== "new-work" || !interactive.lessonExitSaveWrite)) ||
-        (interactive?.lessonVisibilitySave && (kind !== "new-work" || !interactive.lessonVisibilitySaveWrite))) throw new Error();
+        (interactive?.lessonVisibilitySave && (kind !== "new-work" || !interactive.lessonVisibilitySaveWrite)) ||
+        (interactive?.lessonStaleRevision && (kind !== "new-work" || !interactive.lessonStaleRevisionWrite))) throw new Error();
       if (interactive && (interactive.source !== configuration.sourceSha || interactive.target !== target.targetSha256)) throw new Error();
       const producerSha256 = interactive?.producerSha256 ?? configuration.producerSha256;
       // Read the current epoch for every request. Closing new work must not

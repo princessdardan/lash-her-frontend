@@ -24,7 +24,7 @@ import {githubSourceApi} from './release-inputs.mjs';
 import {recreationSsh} from './recreation_ssh.mjs';
 import {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,readP2CertificationKnownAckStage,validateP2InteractiveAssessmentAction,
   validateP2InteractiveResumeAction,validateP2InteractiveRestoreAction,validateP2InteractiveAckLossAction,validateP2InteractiveExitSaveAction,
-  validateP2InteractiveVisibilityAction} from './p2-certification-transport.mjs';
+  validateP2InteractiveVisibilityAction,validateP2InteractiveStaleRevisionAction} from './p2-certification-transport.mjs';
 import {readP2LessonRestorePrior} from './p2-lesson-restore-prior.mjs';
 import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,launchP2InteractiveBrowserRecorder,readP2InteractiveBrowserControllerBinding,
   readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,
@@ -50,6 +50,7 @@ import {captureP2InteractiveCourseDraftBaseline,observeP2InteractiveCourseDraftC
   captureP2InteractiveAckLossBaseline,observeP2InteractiveAckLossCase,
   captureP2InteractiveExitSaveBaseline,observeP2InteractiveExitSaveCase,
   captureP2InteractiveVisibilityBaseline,observeP2InteractiveVisibilityCase,
+  captureP2InteractiveStaleRevisionBaseline,observeP2InteractiveStaleRevisionCase,
   captureP2InteractivePaidLearnerAccessBaseline,observeP2InteractivePaidLearnerAccessCase,validateP2InteractivePaidLearnerAccess,
   captureP2InteractivePaidRevokeBaseline,observeP2InteractivePaidRevokeCase,validateP2InteractivePaidRevoke,
   captureP2InteractivePaidGrantBaseline,observeP2InteractivePaidGrantCase} from './p2-lifecycle-persistence-probe.mjs';
@@ -75,7 +76,7 @@ const assetEvents=new Set(['video.asset.created','video.asset.ready','video.asse
 const trackEvents=new Set(['video.asset.track.ready','video.asset.track.deleted']);
 const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(value);
 const customerCourseBrowserStages=['learning','lesson-entry','lesson-denial','lesson-assessment','lesson-resume','lesson-restore','lesson-ack-loss',
-  'lesson-exit-save','lesson-visibility-save','learner-access'];
+  'lesson-exit-save','lesson-visibility-save','lesson-stale-revision','learner-access'];
 const courseBackedBrowserStages=new Set(['authoring','paid-grant','paid-revoke',...customerCourseBrowserStages]);
 const communityBackedBrowserStages=new Set(['learning','paid-grant','paid-revoke']);
 const pairedBrowserStages=new Set(['lifecycle',...courseBackedBrowserStages]);
@@ -291,10 +292,11 @@ function interactiveActionValid(value){
   const ackLoss=value?.stage==='lesson-ack-loss';
   const exitSave=value?.stage==='lesson-exit-save';
   const visibility=value?.stage==='lesson-visibility-save';
+  const staleRevision=value?.stage==='lesson-stale-revision';
   const selectionKey=lifecycle?'frontendAction':authoring?'authoringAction':learning?'learningAction':paidGrant?'paidGrantAction':
     learnerAccess?'learnerAccessAction':lessonEntry?'lessonEntryAction':lessonDenial?'lessonDenialAction':assessment?'assessmentAction':
     resume?'resumeAction':restore?'restoreAction':ackLoss?'ackLossAction':exitSave?'exitSaveAction':visibility?'visibilityAction':
-      paidRevoke?'paidRevokeAction':identity?(enrollment?'identityEnrollment':'identityActor'):null;
+      staleRevision?'staleRevisionAction':paidRevoke?'paidRevokeAction':identity?(enrollment?'identityEnrollment':'identityActor'):null;
   if(!exactKeys(value,['stage','actorId','requests','windowSeconds',...(selectionKey?[selectionKey]:[])])||
      !['identity','media','lifecycle',...courseBackedBrowserStages].includes(value.stage)||
      !(value.stage==='identity'?value.actorId===null:uuid(value.actorId))||
@@ -309,6 +311,7 @@ function interactiveActionValid(value){
   if(ackLoss)return validateP2InteractiveAckLossAction(value.ackLossAction,value.requests);
   if(exitSave)return validateP2InteractiveExitSaveAction(value.exitSaveAction,value.requests);
   if(visibility)return validateP2InteractiveVisibilityAction(value.visibilityAction,value.requests);
+  if(staleRevision)return validateP2InteractiveStaleRevisionAction(value.staleRevisionAction,value.requests);
   if(learnerAccess)return learnerAccessActionValid(value.learnerAccessAction,value.requests);
   if(paidGrant)return paidGrantActionValid(value.paidGrantAction,value.requests);
   if(paidRevoke)return paidRevokeActionValid(value.paidRevokeAction,value.requests);
@@ -327,8 +330,10 @@ function interactiveActionValid(value){
         /^[a-f0-9]{32}$/u.test(selected.nonce)&&!/^0+$/u.test(selected.nonce);
     }
     const selected=value.identityActor;
-    return value.requests.length===0&&exactKeys(selected,['actorKind','actorId'])&&
-      ['admin','customer'].includes(selected.actorKind)&&uuid(selected.actorId);
+    const paired=selected&&Object.hasOwn(selected,'sessionCount');
+    return value.requests.length===0&&exactKeys(selected,['actorKind','actorId',...(paired?['sessionCount']:[])])&&
+      ['admin','customer'].includes(selected.actorKind)&&uuid(selected.actorId)&&
+      (!paired||selected.actorKind==='customer'&&selected.sessionCount===2);
   }
   if(authoring){
     const selected=value.authoringAction,configured=authoringCases.get(selected?.operation),[read,...mutations]=value.requests;
@@ -650,6 +655,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
   const ackLoss=action.stage==='lesson-ack-loss';
   const exitSave=action.stage==='lesson-exit-save';
   const visibility=action.stage==='lesson-visibility-save';
+  const staleRevision=action.stage==='lesson-stale-revision';
   const paidRevoke=action.stage==='paid-revoke';
   const communityBacked=communityBackedBrowserStages.has(action.stage);
   const authoringCase=authoring?authoringCases.get(action.authoringAction.operation):undefined;
@@ -665,6 +671,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     learnerAccess?learnerAccessSelection(action):lessonEntry?lessonEntrySelection(action):lessonDenial?lessonDenialSelection(action):assessment?assessmentSelection(action):
     resume?resumeSelection(action):restore?restoreSelection(action):ackLoss?ackLossSelection(action):exitSave?{actorId:action.actorId,...action.exitSaveAction}:
     visibility?{actorId:action.actorId,...action.visibilityAction}:
+    staleRevision?{actorId:action.actorId,...action.staleRevisionAction}:
     paidRevoke?paidRevokeSelection(action,courseDraft.paidRevokeReason):
     paidGrant?{...paidGrantSelection,actorId:action.actorId,reason:courseDraft.paidGrantReason}:
     enrollment?action.identityEnrollment:identity?action.identityActor:{...action.frontendAction,actorId:action.actorId};
@@ -693,6 +700,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       ackLoss?await captureP2InteractiveAckLossBaseline(courseDraft.job,selection,courseObservations):
       exitSave?await captureP2InteractiveExitSaveBaseline(courseDraft.job,selection,courseObservations):
       visibility?await captureP2InteractiveVisibilityBaseline(courseDraft.job,selection,courseObservations):
+      staleRevision?await captureP2InteractiveStaleRevisionBaseline(courseDraft.job,selection,courseObservations):
       learnerAccess?await captureP2InteractivePaidLearnerAccessBaseline(courseDraft.job,selection,undefined,courseObservations):
       paidRevoke?await captureP2InteractivePaidRevokeBaseline(courseDraft.job,selection,courseObservations):
       paidGrant?await captureP2InteractivePaidGrantBaseline(courseDraft.job,selection,courseObservations):
@@ -724,6 +732,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
         ackLoss?await controller.captureAckLossResponse(context):
         exitSave?await controller.captureExitSaveResponse(context):
         visibility?await controller.captureVisibilityResponse(context):
+        staleRevision?await controller.captureStaleRevisionResponse(context):
         learnerAccess?await controller.captureLearnerAccessResponse(context):
         paidRevoke?await controller.capturePaidRevokeResponse(context):
         paidGrant?await controller.capturePaidGrantResponse(context):
@@ -760,6 +769,10 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       const browserFence=await controller.confirmVisibilityFenced(context);
       record('p2-interactive-lesson-visibility-save-browser-fenced.json',browserFence);
     }
+    if(staleRevision){
+      const browserFence=await controller.confirmStaleRevisionFenced(context);
+      record('p2-interactive-lesson-stale-revision-browser-fenced.json',browserFence);
+    }
     const witness=authoringCase?await authoringCase.observe(courseDraft.job,selection,baseline,
       authoringCase.paired?browserEvidence.winner.body:browserEvidence.body,courseObservations):
       learning?await observeP2InteractiveFreeEnrollmentCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
@@ -771,6 +784,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       ackLoss?await observeP2InteractiveAckLossCase(courseDraft.job,selection,baseline,browserEvidence,courseObservations):
       exitSave?await observeP2InteractiveExitSaveCase(courseDraft.job,selection,baseline,browserEvidence,courseObservations):
       visibility?await observeP2InteractiveVisibilityCase(courseDraft.job,selection,baseline,browserEvidence,courseObservations):
+      staleRevision?await observeP2InteractiveStaleRevisionCase(courseDraft.job,selection,baseline,browserEvidence,courseObservations):
       learnerAccess?await observeP2InteractivePaidLearnerAccessCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
       paidRevoke?await observeP2InteractivePaidRevokeCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
       paidGrant?await observeP2InteractivePaidGrantCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
@@ -782,7 +796,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       courseBacked?{browserResponse:browserEvidence,courseWitness:witness}:
       identity?{browserIdentity:browserEvidence,identityWitness:witness}:{browserResponse:browserEvidence,lifecycleWitness:witness});
     demand(joined.status===statusPrefix+'_JOINED');
-    if(resume||restore||ackLoss||exitSave||visibility)record(`p2-interactive-${action.stage}-joined.json`,joined);
+    if(resume||restore||ackLoss||exitSave||visibility||staleRevision)record(`p2-interactive-${action.stage}-joined.json`,joined);
     return joined;
   }catch(error){
     // Keep the original domain/fence failure. A dying child may separately
@@ -1144,7 +1158,8 @@ function prepareCertificationStages(prepared,input,candidateBytes,settings,optio
     const actorKind=['authoring','paid-grant','paid-revoke'].includes(input.scopedAction.stage)?'admin':
       customerCourseBrowserStages.includes(input.scopedAction.stage)?'customer':input.scopedAction.frontendAction.actorKind;
     identityPlan=prepareP2BoundedCertification(prepared,{...input,certificationActionId:identity.certificationActionId,initialEpoch:identity.initialEpoch,
-      scopedAction:{stage:'identity',actorId:null,requests:[],windowSeconds:identity.windowSeconds,identityActor:{actorKind,actorId}}},candidateBytes,options);
+      scopedAction:{stage:'identity',actorId:null,requests:[],windowSeconds:identity.windowSeconds,
+        identityActor:{actorKind,actorId,...(input.scopedAction.stage==='lesson-stale-revision'?{sessionCount:2}:{})}}},candidateBytes,options);
   }else demand(settings.interactiveIdentity===undefined);
   if(plan.scopedAction?.stage==='lesson-restore')readP2LessonRestorePrior({results:settings.releaseSettings.results,plan,identityPlan});
   return {plan,authPlan,identityPlan,suspensionPlan};

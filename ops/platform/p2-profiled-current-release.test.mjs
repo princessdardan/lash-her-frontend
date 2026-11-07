@@ -646,6 +646,38 @@ test('fixed current certification plan joins the original release plan, terminal
       assert.throws(() => prepareP2ProfiledCertificationOperator(paired(badScope)));
       assert.notEqual(restoreHost({ ...visibilityPlan, scopedAction: badScope }).status, 0);
     }
+    const staleRevisionAction = { ...ackLossAction, operation: 'conflict-reload' };
+    const position = (resumePositionSeconds, expectedProgressRevision) => ({ resumePositionSeconds, maxPositionSeconds, expectedProgressRevision });
+    const staleRequests = [
+      ...resumeRows.slice(0, 6).map((row, index) => ({ ...row, uses: index === 2 ? 4 : 3 })),
+      ...[
+        { event: 'lesson_started', expectedProgressRevision: 6 }, position(resumePositionSeconds, 7),
+        { event: 'lesson_started', expectedProgressRevision: 8 }, position(resumePositionSeconds, 9),
+        position(maxPositionSeconds, 10), position(0, 8),
+        { event: 'lesson_started', expectedProgressRevision: 11 }, position(maxPositionSeconds, 12),
+      ].map(body => ({ method: 'POST', target: lesson + '/progress', bodySha256: rawHash(JSON.stringify(body)), uses: 1 })),
+    ];
+    const staleScope = { stage: 'lesson-stale-revision', actorId: userId, windowSeconds: 90,
+      staleRevisionAction, requests: staleRequests };
+    const staleSettings = paired(staleScope), stalePair = prepareP2ProfiledCertificationOperator(staleSettings);
+    const stalePlan = stalePair['lesson-stale-revision'];
+    assert.equal(stalePair.status, 'P2_INTERACTIVE_LESSON_STALE_REVISION_ACTIONS_PLANNED');
+    assert.deepEqual(stalePlan.scopedAction, staleScope);
+    assert.deepEqual(stalePair.identity.scopedAction.identityActor, { actorKind: 'customer', actorId: userId, sessionCount: 2 });
+    assert.equal(BigInt(stalePlan.initialEpoch) - BigInt(stalePair.identity.initialEpoch), 2n);
+    for (const plan of [stalePlan, stalePair.identity]) {
+      const checked = restoreHost(plan);
+      assert.equal(checked.status, 0, checked.stderr);
+    }
+    assert.throws(() => prepareP2ProfiledCertificationOperator({ ...staleSettings, interactiveIdentity: undefined }));
+    for (const badScope of [
+      { ...staleScope, staleRevisionAction: { ...staleRevisionAction, operation: 'hide-active-document' } },
+      { ...staleScope, requests: staleRequests.map((row, index) => index === 2 ? { ...row, uses: 3 } : row) },
+      { ...staleScope, requests: staleRequests.map((row, index) => index === 11 ? { ...row, bodySha256: staleRequests[10].bodySha256 } : row) },
+    ]) {
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired(badScope)));
+      assert.notEqual(restoreHost({ ...stalePlan, scopedAction: badScope }).status, 0);
+    }
     const draftPair = prepareP2ProfiledCertificationOperator(paired(selectedAuthoring));
     assert.equal(draftPair.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
     assert.deepEqual(draftPair.authoring.scopedAction, selectedAuthoring);
@@ -995,6 +1027,8 @@ test('fixed current certification plan joins the original release plan, terminal
       [ackLossScope, (userId + courseId + accessLessonId).replaceAll('-', '')],
       ...exitSaveScopes.map(selection => [selection, (userId + courseId + accessLessonId).replaceAll('-', '')]),
       [visibilityScope, (userId + courseId + accessLessonId).replaceAll('-', '')],
+      [staleScope, (userId + courseId + accessLessonId).replaceAll('-', '')],
+      [stalePair.identity.scopedAction, '7032712d637573746f6d65722d763100' + userId.replaceAll('-', '')],
       [selectedInteractive, (selectedInteractive.actorId + paidKey).replaceAll('-', '')],
       [selectedAccess, (selectedAccess.actorId + accessLessonId).replaceAll('-', '')],
       [selectedRevoke, (selectedRevoke.actorId + revokeKey).replaceAll('-', '')],
@@ -1005,7 +1039,7 @@ test('fixed current certification plan joins the original release plan, terminal
     ]) {
       const scopedMaterial = [...material];
       scopedMaterial[5] = selection.stage;
-      const scopedEpoch = selection.stage === 'lesson-visibility-save' ? '999999999999999999' : epoch;
+      const scopedEpoch = ['lesson-visibility-save', 'lesson-stale-revision'].includes(selection.stage) ? '999999999999999999' : epoch;
       scopedMaterial[4] = scopedEpoch;
       const scopedNonce = selection.identityEnrollment?.nonce ?? nonce;
       scopedMaterial[8] = scopedNonce;
@@ -1015,10 +1049,11 @@ test('fixed current certification plan joins the original release plan, terminal
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
       const frontendCookieBody = `v2.${scopedEpoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
       const selectedGatewayKey = ['authoring', 'learning', 'lesson-entry', 'lesson-denial', 'lesson-assessment', 'lesson-resume', 'lesson-restore',
-        'lesson-ack-loss', 'lesson-exit-save', 'lesson-visibility-save', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
+        'lesson-ack-loss', 'lesson-exit-save', 'lesson-visibility-save', 'lesson-stale-revision', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
         ? sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${scopedEpoch}\n${selection.stage}\n${scopedNonce}`) : null;
       const frontendCookie = `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`;
       if (selection.stage === 'lesson-visibility-save') assert.equal(frontendCookie.length, 261);
+      if (selection.stage === 'lesson-stale-revision') assert.equal(frontendCookie.length, 260);
       assert.deepEqual(JSON.parse(frontendFixture.stdout), [
         frontendCookie, selectedGatewayKey, host, expires,
       ]);

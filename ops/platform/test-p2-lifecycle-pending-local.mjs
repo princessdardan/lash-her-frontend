@@ -209,8 +209,12 @@ async function checkInteractiveIdentity(client, runtime, target, dependencies) {
   for (const { actorId } of [customer, otherCustomer]) {
     await runtime.query("INSERT INTO public.customer_users(id,email) VALUES($1,$2)", [actorId, `${actorId}@example.invalid`]);
   }
-  const addSession = (actorId, expiresIn) => runtime.query(`INSERT INTO public.customer_sessions(token_hash,user_id,expires)
-    VALUES($1,$2,pg_catalog.clock_timestamp()+$3::interval)`, [randomUUID(), actorId, expiresIn]);
+  const addSession = async (actorId, expiresIn) => {
+    const tokenHash = createHash("sha256").update(randomUUID()).digest("hex");
+    await runtime.query(`INSERT INTO public.customer_sessions(token_hash,user_id,expires)
+      VALUES($1,$2,pg_catalog.clock_timestamp()+$3::interval)`, [tokenHash, actorId, expiresIn]);
+    return createHash("sha256").update(JSON.stringify(["p2q-customer-session-v1", challenge, tokenHash])).digest("hex");
+  };
   await addSession(customer.actorId, "1 hour");
 
   await assert.rejects(captureP2InteractiveIdentityBaseline(client, target, admin, "foreign-challenge", dependencies), refused);
@@ -247,12 +251,27 @@ async function checkInteractiveIdentity(client, runtime, target, dependencies) {
   await assert.rejects(observe(customer, beforeCustomer, { ...browser(customer), sessionVerified: false }), refused);
   await assert.rejects(observe(customer, beforeCustomer, browser(otherCustomer)), refused);
   assert.deepEqual(await observe(customer, beforeCustomer), { ...customer, actorActive: true, liveSessionCount: 2 });
+  const pair = { ...customer, sessionCount: 2 };
+  const oldProof = await addSession(customer.actorId, "1 hour");
+  const pairBaseline = await baseline(pair);
+  const first = await addSession(customer.actorId, "1 hour");
+  const second = await addSession(customer.actorId, "1 hour");
+  const wrongAccount = await addSession(otherCustomer.actorId, "1 hour");
+  const expired = await addSession(customer.actorId, "-1 hour");
+  const pairReceipt = sessionProofs => ({ ...browser(customer), sessionProofs });
+  await assert.rejects(observe(pair, pairBaseline, pairReceipt([first, first])), refused);
+  for (const invalid of [oldProof, wrongAccount, expired, "f".repeat(64)]) {
+    await assert.rejects(observe(pair, await baseline(pair), pairReceipt([first, invalid])), refused);
+  }
+  assert.deepEqual(await observe(pair, pairBaseline, pairReceipt([first, second])),
+    { ...pair, actorActive: true, liveSessionCount: 5, verifiedFreshSessionCount: 2 });
   const beforeSuspension = await baseline(customer);
   await addSession(customer.actorId, "1 hour");
   await runtime.query("UPDATE public.customer_users SET status='suspended' WHERE id=$1", [customer.actorId]);
   await assert.rejects(observe(customer, beforeSuspension), refused);
   assert.equal((await client.query("SHOW transaction_read_only")).rows[0].transaction_read_only, "off");
-  return ["interactive-identity-owner-private-challenge-binding-role-and-drift", "interactive-identity-customer-fresh-live-session-selected-uuid"];
+  return ["interactive-identity-owner-private-challenge-binding-role-and-drift", "interactive-identity-customer-fresh-live-session-selected-uuid",
+    "interactive-identity-two-distinct-fresh-browser-sessions-selected-customer"];
 }
 
 async function checkInteractiveLifecycle(client, runtime, target, dependencies, adminId) {

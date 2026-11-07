@@ -17,7 +17,7 @@ import { isP2InteractiveAuthoringDetail, isP2InteractiveAuthoringPair, p2Authori
   validateP2AuthoringReorderResponses, validateP2InteractiveBrowserInput,
   validateP2InteractiveBrowserPermit, validateP2InteractiveIdentityReceipt, validateP2LearningEnrollmentReceipt,
   validateP2LessonEntryReceipt, validateP2LessonDenialReceipt, validateP2LessonAssessmentReceipt, validateP2LessonResumeReceipt, validateP2LessonRestoreReceipt,
-  validateP2LessonAckLossReceipt, validateP2LessonExitSaveReceipt, validateP2LessonVisibilityReceipt,
+  validateP2LessonAckLossReceipt, validateP2LessonExitSaveReceipt, validateP2LessonVisibilityReceipt, validateP2LessonStaleRevisionReceipt,
   validateP2LifecycleMutationReceipt, validateP2PaidGrantReceipt, validateP2PaidLearnerAccessReceipt, validateP2PaidRevokeReceipt } from "./p2-lifecycle-browser-recorder.mjs";
 import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
   resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
@@ -139,11 +139,13 @@ export function launchP2LifecycleBrowserRecorder(plan, directory) {
   const store = frontendReleaseReceiptStore(directory), challenge = randomBytes(32).toString("hex");
   const input = { version: 1, environment: "staging", actionId: plan.actionId, challenge, bindingSha256: hash(plan),
     sourceCommit: plan.sourceCommit, deploymentId: plan.deploymentId, deploymentUrl: plan.deploymentUrl, browserOrigin: plan.browserOrigin, ...reviewed.resources, windowSeconds: 840 };
-  const child = spawn(process.execPath, ["--input-type=module", "--eval", program.toString("utf8")], { cwd: sourceRoot, stdio: ["ignore", "ignore", "ignore", "ipc"],
+  const child = spawn(process.execPath, ["--input-type=module"], { cwd: sourceRoot, stdio: ["pipe", "ignore", "ignore", "ipc"],
     env: Object.fromEntries(["PATH", "HOME", "LANG", "TMPDIR"].filter(name => process.env[name] !== undefined).map(name => [name, process.env[name]])) });
   const waiting = new Map(), values = new Map(); let failed = false, ended = false, armed = false, suspended = false, authenticationStarted = false, closePromise, authenticationWaiter;
   const fail = () => { if (failed) return; failed = true; for (const { reject } of waiting.values()) reject(new Error("P2_BROWSER_SOURCE_CHILD_FAILED")); waiting.clear(); authenticationWaiter?.reject(new Error("P2_BROWSER_SOURCE_CHILD_FAILED")); };
   child.on("error", fail);
+  child.stdin.on("error", fail);
+  child.stdin.end(program);
   child.on("message", message => {
     try {
       if (message?.type === "authentication-current") {
@@ -213,7 +215,7 @@ async function reviewedInteractiveInput(plan, challenge) {
     && process.versions.node.split(".")[0] === "24" && plan.sourceCommit === plan.operatorSourceCommit
     && commit() === plan.sourceCommit && /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
   const action = plan.scopedAction;
-  let authoring, learning, lessonEntry, lessonDenial, assessment, resume, restore, ackLoss, exitSave, visibility, paidGrant, learnerAccess, paidRevoke;
+  let authoring, learning, lessonEntry, lessonDenial, assessment, resume, restore, ackLoss, exitSave, visibility, staleRevision, paidGrant, learnerAccess, paidRevoke;
   if (action.stage === "authoring") {
     const selected = action.authoringAction, [, first, second, third] = action.requests;
     if (["edit-and-stale-draft", "reorder-and-stale-curriculum"].includes(selected?.operation)) {
@@ -330,6 +332,11 @@ async function reviewedInteractiveInput(plan, challenge) {
     demand(selected?.operation === "hide-active-document");
     visibility = { actorId: action.actorId, ...selected };
   }
+  if (action.stage === "lesson-stale-revision") {
+    const selected = action.staleRevisionAction;
+    demand(selected?.operation === "conflict-reload");
+    staleRevision = { actorId: action.actorId, ...selected };
+  }
   if (action.stage === "paid-revoke") {
     const selected = action.paidRevokeAction;
     demand(selected?.operation === "revoke-paid-grant");
@@ -346,21 +353,23 @@ async function reviewedInteractiveInput(plan, challenge) {
     ...(learnerAccess ? { learnerAccess } : {}), ...(lessonEntry ? { lessonEntry } : {}), ...(lessonDenial ? { lessonDenial } : {}),
     ...(assessment ? { assessment } : {}), ...(resume ? { resume } : {}), ...(restore ? { restore } : {}),
     ...(ackLoss ? { ackLoss } : {}), ...(exitSave ? { exitSave } : {}), ...(visibility ? { visibility } : {}),
+    ...(staleRevision ? { staleRevision } : {}),
     ...(paidRevoke ? { paidRevoke } : {}) });
 }
 
-// A dedicated stdin pipe carries one permit per reviewed phase. All IPC data
-// is challenge-bound control or sanitized evidence, including on failure.
+// Send the hash-checked program over stdin to stay within OS argument limits.
+// A separate private pipe carries the permit; IPC carries only control and evidence.
 export async function launchP2InteractiveBrowserRecorder(plan) {
   let input = await reviewedInteractiveInput(plan, randomBytes(32).toString("hex")), binding = interactiveBinding(input);
   committedProgramBytes(plan.sourceCommit, "ops/platform/p2-lifecycle-suspension-evidence.mjs");
   const program = Buffer.concat([committedProgramBytes(plan.sourceCommit, "ops/platform/p2-lifecycle-browser-recorder.mjs"),
     Buffer.from(P2_LIFECYCLE_BROWSER_LAUNCHER)]);
   const programSha256 = hash(program), actions = new Set([input.actionId]);
-  const child = spawn(process.execPath, ["--input-type=module", "--eval", program.toString("utf8")], { cwd: sourceRoot,
-    stdio: ["pipe", "ignore", "ignore", "ipc"],
+  const child = spawn(process.execPath, ["--input-type=module"], { cwd: sourceRoot,
+    stdio: ["pipe", "ignore", "ignore", "ipc", "pipe"],
     env: Object.fromEntries(["PATH", "HOME", "LANG", "TMPDIR"].filter(name => process.env[name] !== undefined).map(name => [name, process.env[name]])) });
   let activePlan = plan, pending, selected, phaseTimer, force, closePromise, verifiedIdentity;
+  const permitPipe = child.stdio[4];
   let ended = false, failed = false, closing = false, phase = "initializing";
   const failure = () => new Error("P2_INTERACTIVE_BROWSER_CHILD_FAILED");
   const fail = () => {
@@ -374,6 +383,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       pending = undefined;
     }
     child.stdin.destroy();
+    permitPipe.destroy();
     if (!ended) {
       child.kill("SIGTERM");
       force = setTimeout(() => { if (!ended) child.kill("SIGKILL"); }, 5000);
@@ -382,6 +392,8 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
   const overall = setTimeout(fail, 1_800_000);
   child.on("error", fail);
   child.stdin.on("error", fail);
+  permitPipe.on("error", fail);
+  child.stdin.end(program);
   child.on("message", message => {
     try {
       const lifecycle = pending?.type === "interactive-lifecycle-captured";
@@ -395,6 +407,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       const ackLoss = pending?.type === "interactive-lesson-ack-loss-captured";
       const exitSave = pending?.type === "interactive-lesson-exit-save-captured";
       const visibility = pending?.type === "interactive-lesson-visibility-save-captured";
+      const staleRevision = pending?.type === "interactive-lesson-stale-revision-captured";
       const paidGrant = pending?.type === "interactive-paid-grant-captured";
       const learnerAccess = pending?.type === "interactive-learner-access-captured";
       const paidRevoke = pending?.type === "interactive-paid-revoke-captured";
@@ -402,13 +415,13 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       const identity = pending?.type === "interactive-identity-captured";
       demand(pending && !failed && closed(message, ["type", ...Object.keys(pending.binding), ...Object.keys(pending.selection),
         ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : []),
-        ...(lifecycle || authoring || learning || lessonEntry || lessonDenial || assessment || resume || restore || ackLoss || exitSave || visibility || paidGrant || learnerAccess || paidRevoke ? ["response"] : edit ? ["responses"] : identity ? ["identity"] : [])])
+        ...(lifecycle || authoring || learning || lessonEntry || lessonDenial || assessment || resume || restore || ackLoss || exitSave || visibility || staleRevision || paidGrant || learnerAccess || paidRevoke ? ["response"] : edit ? ["responses"] : identity ? ["identity"] : [])])
         && message.type === pending.type
         && Object.entries({ ...pending.binding, ...pending.selection }).every(([key, value]) => message[key] === value));
       if (pending.type === "interactive-page-opened") {
         demand(message.path === p2InteractiveBrowserEntryPath(input, pending.selection.context)
           && Number.isInteger(message.httpStatus) && message.httpStatus >= 100 && message.httpStatus <= 599
-          && (!(isP2InteractiveAuthoringDetail(input) || ["learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "paid-grant", "learner-access", "paid-revoke"].includes(input.stage)) || message.httpStatus === 200));
+          && (!(isP2InteractiveAuthoringDetail(input) || ["learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "paid-grant", "learner-access", "paid-revoke"].includes(input.stage)) || message.httpStatus === 200));
       }
       if (lifecycle) validateP2LifecycleMutationReceipt(message.response, input.lifecycle);
       if (authoring) validateP2AuthoringMutationReceipt(message.response, input.authoring);
@@ -421,6 +434,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       if (ackLoss) validateP2LessonAckLossReceipt(message.response, input.ackLoss);
       if (exitSave) validateP2LessonExitSaveReceipt(message.response, input.exitSave);
       if (visibility) validateP2LessonVisibilityReceipt(message.response, input.visibility);
+      if (staleRevision) validateP2LessonStaleRevisionReceipt(message.response, input.staleRevision);
       if (paidGrant) validateP2PaidGrantReceipt(message.response, input.paidGrant);
       if (learnerAccess) validateP2PaidLearnerAccessReceipt(message.response, input.learnerAccess);
       if (paidRevoke) validateP2PaidRevokeReceipt(message.response, input.paidRevoke);
@@ -495,7 +509,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
         const privatePermit = { stage: permit.stage, epoch: permit.epoch, expires: permit.expires, cookie: permit.cookie };
         const frame = Buffer.from(JSON.stringify({ challenge: binding.challenge, bindingSha256: binding.bindingSha256, context, permit: privatePermit }) + "\n");
         privatePermit.cookie = "";
-        try { child.stdin.write(frame, () => frame.fill(0)); }
+        try { permitPipe.write(frame, () => frame.fill(0)); }
         catch { frame.fill(0); throw failure(); }
         const receipt = await installed;
         phase = "installed";
@@ -524,6 +538,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
     captureAckLossResponse: context => captureMutation(context, "lesson-ack-loss", "learner"),
     captureExitSaveResponse: context => captureMutation(context, "lesson-exit-save", "learner"),
     captureVisibilityResponse: context => captureMutation(context, "lesson-visibility-save", "learner"),
+    captureStaleRevisionResponse: context => captureMutation(context, "lesson-stale-revision", "learner"),
     async confirmVisibilityFenced(context) {
       const selection = requireSelection(context);
       demand(phase === "cleared" && !closing && binding.stage === "lesson-visibility-save" && context === "learner");
@@ -531,6 +546,15 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       const receipt = await command("interactive-confirm-visibility-fenced", { ...binding, ...selection },
         "interactive-visibility-fenced", selection, 5000);
       phase = "visibility-fenced";
+      return receipt;
+    },
+    async confirmStaleRevisionFenced(context) {
+      const selection = requireSelection(context);
+      demand(phase === "cleared" && !closing && binding.stage === "lesson-stale-revision" && context === "learner");
+      phase = "confirming-stale-revision-fence";
+      const receipt = await command("interactive-confirm-stale-revision-fenced", { ...binding, ...selection },
+        "interactive-stale-revision-fenced", selection, 5000);
+      phase = "stale-revision-fenced";
       return receipt;
     },
     capturePaidRevokeResponse: context => captureMutation(context, "paid-revoke", "owner"),
@@ -567,13 +591,14 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
         demand(["candidateSha256", "originalReleaseId", "targetSha256", "sourceCommit"].every(key => nextPlan[key] === plan[key])
           && ["deploymentId", "deploymentUrl", "configurationRecordSha256"].every(key => nextPlan.nativePlan[key] === plan.nativePlan[key])
           && !actions.has(next.actionId) && next.bindingSha256 !== input.bindingSha256 && BigInt(next.epoch) > BigInt(input.epoch));
-        if (input.stage === "identity" || ["authoring", "learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "paid-grant", "learner-access", "paid-revoke"].includes(next.stage)) {
+        if (input.stage === "identity" || ["authoring", "learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "paid-grant", "learner-access", "paid-revoke"].includes(next.stage)) {
           demand(input.stage === "identity" && verifiedIdentity?.sessionVerified === true
             && nextPlan.scopedAction.actorId === verifiedIdentity.actorId && BigInt(next.epoch) === BigInt(input.epoch) + 2n
             && (next.stage === "lifecycle" && nextPlan.scopedAction.frontendAction.actorKind === verifiedIdentity.actorKind
               || ["authoring", "paid-grant", "paid-revoke"].includes(next.stage) && verifiedIdentity.actorKind === "admin"
-              || ["learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "learner-access"].includes(next.stage) && verifiedIdentity.actorKind === "customer"));
+              || ["learning", "lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss", "lesson-exit-save", "lesson-visibility-save", "lesson-stale-revision", "learner-access"].includes(next.stage) && verifiedIdentity.actorKind === "customer"));
         }
+        demand((next.stage === "lesson-stale-revision") === (input.identity?.sessionCount === 2));
         const receipt = await command("interactive-select", { ...binding, next }, "interactive-selected", {}, 30_000, nextBinding);
         actions.add(next.actionId);
         activePlan = nextPlan;
@@ -595,7 +620,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
         try { await command("interactive-close", binding, "interactive-closed", {}, 5000); acknowledged = true; }
         catch { fail(); }
       } else if (!ended) fail();
-      child.stdin.destroy();
+      permitPipe.destroy();
       const reap = setTimeout(() => { if (!ended) child.kill("SIGKILL"); }, 5000);
       try {
         const result = await exit;

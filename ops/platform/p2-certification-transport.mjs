@@ -8,8 +8,9 @@ import {isDeepStrictEqual} from 'node:util';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
 import {validateP2LessonRestorePriorSelection} from './p2-lesson-restore-prior.mjs';
-import {validateP2LessonAckLossReceipt,validateP2LessonExitSaveReceipt,validateP2LessonVisibilityReceipt} from './p2-lifecycle-browser-recorder.mjs';
-import {lessonAckLossBodies,lessonExitSaveBodies} from '../gateway/lesson-resume-position.mjs';
+import {validateP2LessonAckLossReceipt,validateP2LessonExitSaveReceipt,validateP2LessonVisibilityReceipt,
+  validateP2LessonStaleRevisionReceipt} from './p2-lifecycle-browser-recorder.mjs';
+import {lessonAckLossBodies,lessonExitSaveBodies,lessonStaleRevisionBodies} from '../gateway/lesson-resume-position.mjs';
 import {decodeQualificationTargetJson,requireQualificationTargetProfile,STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile} from './qualification-target-profile.mjs';
 
 const demand=ok=>{if(!ok)throw new Error('P2_CERTIFICATION_TRANSPORT_REFUSED');};
@@ -48,6 +49,7 @@ const restoreOperation='restore-resume';
 const ackLossOperation='commit-drop-recover';
 const exitSaveOperations=new Set(['spa-navigation','document-exit']);
 const visibilityOperation='hide-active-document';
+const staleRevisionOperation='conflict-reload';
 const assessmentAnswerKey=value=>typeof value==='string'&&/^[A-Za-z0-9_-][A-Za-z0-9_.:-]{0,127}$/u.test(value);
 const uuid4=value=>canonicalUuid(value)&&value[14]==='4';
 const paidRevokeOperation='revoke-paid-grant';
@@ -395,6 +397,28 @@ function reviewedVisibilityAction(action){
   return {selection:{...visibility,actorKind:'customer'},visibility};
 }
 
+export function validateP2InteractiveStaleRevisionAction(selected,requests){
+  if(!exact(selected,['operation','courseId','lessonId','grantId','progressId','enrollmentId',
+    'resumePositionSeconds','maxPositionSeconds','playbackIdSha256'])||selected.operation!==staleRevisionOperation||
+    ![selected.courseId,selected.lessonId,selected.grantId,selected.progressId,selected.enrollmentId].every(canonicalUuid)||
+    !nonzeroSha256(selected.playbackIdSha256))return false;
+  const {courseId,lessonId,resumePositionSeconds,maxPositionSeconds}=selected;
+  if(!Number.isInteger(resumePositionSeconds)||resumePositionSeconds<3||resumePositionSeconds>6||
+    maxPositionSeconds!==resumePositionSeconds+10)return false;
+  const student='/course/v1/student',lesson=student+'/lessons/'+lessonId;
+  return isDeepStrictEqual(requests,[
+    ...[student+'/courses/'+courseId,lesson,student+'/progress?lessonId='+lessonId,lesson+'/quiz',
+      lesson+'/quiz/attempts',lesson+'/playback'].map((target,index)=>({method:'GET',target,bodySha256:emptyBodySha256,uses:index===2?4:3})),
+    ...lessonStaleRevisionBodies(resumePositionSeconds).map(body=>({method:'POST',target:lesson+'/progress',uses:1,bodySha256:p2NativeHash(body)})),
+  ]);
+}
+
+function reviewedStaleRevisionAction(action){
+  demand(canonicalUuid(action.actorId)&&validateP2InteractiveStaleRevisionAction(action.staleRevisionAction,action.requests));
+  const staleRevision={actorId:action.actorId,...action.staleRevisionAction};
+  return {selection:{...staleRevision,actorKind:'customer'},staleRevision};
+}
+
 function reviewedInteractivePlan(plan,initial){
   const action=plan.scopedAction,binding=initial.interactiveController;
   const identity=action?.stage==='identity',authoring=action?.stage==='authoring',learning=action?.stage==='learning';
@@ -404,7 +428,8 @@ function reviewedInteractivePlan(plan,initial){
   const ackLoss=action?.stage==='lesson-ack-loss';
   const exitSave=action?.stage==='lesson-exit-save';
   const visibility=action?.stage==='lesson-visibility-save';
-  const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility;
+  const staleRevision=action?.stage==='lesson-stale-revision';
+  const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
   const enrollment=identity&&Object.hasOwn(action,'identityEnrollment');
   demand(plan.environment==='staging'&&plan.sourceCommit===initial.sourceCommit&&plan.operatorSourceCommit===initial.sourceCommit&&
     plan.maximumSeconds===300&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
@@ -413,7 +438,7 @@ function reviewedInteractivePlan(plan,initial){
       enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':learning?'learningAction':
         paidGrant?'paidGrantAction':learnerAccess?'learnerAccessAction':paidRevoke?'paidRevokeAction':
           lessonEntry?'lessonEntryAction':lessonDenial?'lessonDenialAction':assessment?'assessmentAction':resume?'resumeAction':restore?'restoreAction':
-            ackLoss?'ackLossAction':exitSave?'exitSaveAction':visibility?'visibilityAction':'frontendAction'])&&
+            ackLoss?'ackLossAction':exitSave?'exitSaveAction':visibility?'visibilityAction':staleRevision?'staleRevisionAction':'frontendAction'])&&
     Array.isArray(action.requests)&&(gatewayScoped||action.requests.length===0)&&
     Number.isInteger(action.windowSeconds)&&action.windowSeconds>=30&&action.windowSeconds<=300&&
     exact(binding,['challenge','bindingSha256','browserProgramSha256'])&&sha256(binding.challenge)&&
@@ -430,6 +455,7 @@ function reviewedInteractivePlan(plan,initial){
   if(ackLoss)return reviewedAckLossAction(action);
   if(exitSave)return reviewedExitSaveAction(action);
   if(visibility)return reviewedVisibilityAction(action);
+  if(staleRevision)return reviewedStaleRevisionAction(action);
   if(paidRevoke)return reviewedPaidRevokeAction(action);
   if(enrollment){
     const selected=action.identityEnrollment;
@@ -440,7 +466,9 @@ function reviewedInteractivePlan(plan,initial){
   }
   if(identity){
     const actor=action.identityActor;
-    demand(action.actorId===null&&exact(actor,['actorKind','actorId'])&&['admin','customer'].includes(actor.actorKind)&&
+    demand(action.actorId===null&&(exact(actor,['actorKind','actorId'])||
+      exact(actor,['actorKind','actorId','sessionCount'])&&actor.actorKind==='customer'&&actor.sessionCount===2)&&
+      ['admin','customer'].includes(actor.actorKind)&&
       canonicalUuid(actor.actorId));
     return {selection:{...actor}};
   }
@@ -481,17 +509,25 @@ function identityJoinedEvidence(evidence,selected,context,enrollment){
   demand(exact(evidence,['browserIdentity','identityWitness']));
   const {browserIdentity:identity,identityWitness:witness}=evidence;
   const owner=context==='owner';
-  const actor={...selected,actorId:enrollment?identity?.actorId:selected.actorId};
-  const witnessFields=enrollment?['liveSessionCount','provider','providerLinkCount']:[owner?'ownerMappingVerified':'liveSessionCount'];
-  demand(exact(identity,['actorKind','actorId','sessionVerified'])&&identity.sessionVerified===true&&
+  const {sessionCount,...actorSelection}=selected;
+  const paired=sessionCount===2;
+  const actor={...actorSelection,actorId:enrollment?identity?.actorId:actorSelection.actorId};
+  const witnessFields=enrollment?['liveSessionCount','provider','providerLinkCount']:
+    paired?['sessionCount','liveSessionCount','verifiedFreshSessionCount']:[owner?'ownerMappingVerified':'liveSessionCount'];
+  demand(exact(identity,['actorKind','actorId','sessionVerified',...(paired?['sessionProofs']:[])])&&identity.sessionVerified===true&&
     exact(witness,['actorKind','actorId','actorActive',...witnessFields])&&witness.actorActive===true&&
     canonicalUuid(actor.actorId)&&Object.entries(actor).every(([key,value])=>identity[key]===value&&witness[key]===value));
   if(enrollment){
     demand(witness.liveSessionCount===1&&witness.provider===enrollment.provider&&witness.providerLinkCount===(enrollment.provider==='google'?1:0));
+  }else if(paired){
+    const {sessionProofs}=identity;
+    demand(!owner&&Array.isArray(sessionProofs)&&sessionProofs.length===2&&sessionProofs.every(nonzeroSha256)&&
+      sessionProofs[0]!==sessionProofs[1]&&witness.sessionCount===2&&witness.verifiedFreshSessionCount===2&&
+      Number.isSafeInteger(witness.liveSessionCount)&&witness.liveSessionCount>=2);
   }else{
     demand(owner?witness.ownerMappingVerified===true:Number.isSafeInteger(witness.liveSessionCount)&&witness.liveSessionCount>0);
   }
-  return {...actor,context,browserIdentitySha256:p2NativeHash(identity),identityWitnessSha256:p2NativeHash(witness)};
+  return {...actor,...(paired?{sessionCount}:{}),context,browserIdentitySha256:p2NativeHash(identity),identityWitnessSha256:p2NativeHash(witness)};
 }
 
 function requireInteractiveGatewayObservation(receipt,epoch,{operation,outcome,quizRevision}){
@@ -521,10 +557,11 @@ function requireInteractiveGatewayObservation(receipt,epoch,{operation,outcome,q
   const resume=operation===resumeOperation,restore=operation===restoreOperation,ackLoss=operation===ackLossOperation;
   const exitSave=exitSaveOperations.has(operation);
   const visibility=operation===visibilityOperation;
+  const staleRevision=operation===staleRevisionOperation;
   const phaseMatches=(start,end,expected)=>isDeepStrictEqual(
     acks.slice(start,end).map(row=>row.requestIndex).sort((left,right)=>left-right),expected);
   demand(receipt.epoch===epoch&&nonzeroSha256(receipt.gatewayStateSha256)&&receipt.gatewayActive===0&&receipt.gatewayUncertain===0&&
-    Array.isArray(acks)&&acks.length===(lessonEntry||visibility?9:lessonDenial?15:assessment||exitSave?11:resume?10:restore?8:ackLoss?18:sequences[0].length)&&acks.every(row=>exact(row,['requestId','proofRequestId','requestIndex','upstreamStatus'])&&
+    Array.isArray(acks)&&acks.length===(lessonEntry||visibility?9:lessonDenial?15:assessment||exitSave?11:resume?10:restore?8:ackLoss?18:staleRevision?27:sequences[0].length)&&acks.every(row=>exact(row,['requestId','proofRequestId','requestIndex','upstreamStatus'])&&
       canonicalUuid(row.requestId)&&canonicalUuid(row.proofRequestId))&&
     (lessonEntry?acks.every(row=>row.upstreamStatus===200)&&
       phaseMatches(0,2,[0,1])&&phaseMatches(2,7,[0,2,3,4,5])&&phaseMatches(7,9,[6,7]):
@@ -541,6 +578,11 @@ function requireInteractiveGatewayObservation(receipt,epoch,{operation,outcome,q
         acks[7].requestIndex===7&&phaseMatches(8,11,[0,8,9]):
       visibility?acks.every(row=>row.upstreamStatus===200)&&phaseMatches(0,5,[0,1,2,3,4])&&phaseMatches(5,7,[5,6])&&
         acks[7].requestIndex===7&&acks[8].requestIndex===8:
+      staleRevision?acks.every(row=>row.upstreamStatus===(row.requestIndex===11?409:200))&&
+        phaseMatches(0,5,[0,1,2,3,4])&&phaseMatches(5,7,[5,6])&&acks[7].requestIndex===7&&
+        phaseMatches(8,13,[0,1,2,3,4])&&phaseMatches(13,15,[5,8])&&acks[15].requestIndex===9&&
+        isDeepStrictEqual(acks.slice(16,19).map(row=>row.requestIndex),[10,11,2])&&
+        phaseMatches(19,24,[0,1,2,3,4])&&phaseMatches(24,26,[5,12])&&acks[26].requestIndex===13:
       sequences.some(sequence=>acks.every((row,index)=>row.requestIndex===sequence[index][0]&&row.upstreamStatus===sequence[index][1])))&&
     new Set(acks.map(row=>row.requestId)).size===acks.length&&new Set(acks.map(row=>row.proofRequestId)).size===acks.length&&
     gatewayEvidenceSha256===p2NativeHash(observed));
@@ -824,6 +866,27 @@ function visibilityJoinedEvidence(evidence,selected,observed){
     browserResponseSha256:p2NativeHash(response),courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256:observed.gatewayEvidenceSha256};
 }
 
+function staleRevisionJoinedEvidence(evidence,selected,observed){
+  demand(exact(evidence,['browserResponse','courseWitness']));
+  const {browserResponse:response,courseWitness:witness}=evidence;
+  const {actorId,operation,courseId,lessonId,grantId,progressId,enrollmentId,resumePositionSeconds,maxPositionSeconds,playbackIdSha256}=selected;
+  validateP2LessonStaleRevisionReceipt(response,{actorId,operation,courseId,lessonId,grantId,progressId,enrollmentId,
+    resumePositionSeconds,maxPositionSeconds,playbackIdSha256});
+  const acks=observed.gatewayAcknowledgements;
+  const playbackGatewayRequestIds=acks.filter(row=>row.requestIndex===5).map(row=>row.requestId);
+  const progressGatewayRequestIds=acks.filter(row=>[6,7,8,9,10,12,13].includes(row.requestIndex)).map(row=>row.requestId);
+  const conflictGatewayRequestId=acks[17].requestId,authoritativeGatewayRequestId=acks[18].requestId;
+  demand(isDeepStrictEqual(response.playback.map(row=>row.requestId),playbackGatewayRequestIds)&&
+    isDeepStrictEqual(response.writes.map(row=>row.requestId),progressGatewayRequestIds)&&
+    response.conflict.requestId===conflictGatewayRequestId&&response.authoritative.requestId===authoritativeGatewayRequestId);
+  const playbackExpiresAt=response.playback.flatMap(row=>[row.expiresAt,row.thumbnailExpiresAt]).sort().at(-1);
+  const joined={actorId,courseId,lessonId,grantId,progressId,enrollmentId,revision:13,resumePositionSeconds:maxPositionSeconds,
+    maxPositionSeconds,playbackIdSha256,playbackExpiresAt};
+  demand(isDeepStrictEqual(witness,{...joined,readOnly:true}));
+  return {...joined,operation,playbackGatewayRequestIds,progressGatewayRequestIds,conflictGatewayRequestId,authoritativeGatewayRequestId,
+    browserResponseSha256:p2NativeHash(response),courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256:observed.gatewayEvidenceSha256};
+}
+
 function paidRevokeJoinedEvidence(evidence,selected,observed){
   demand(exact(evidence,['browserResponse','courseWitness']));
   const {browserResponse:response,courseWitness:witness}=evidence;
@@ -1029,11 +1092,12 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           const ackLoss=stage==='lesson-ack-loss';
           const exitSave=stage==='lesson-exit-save';
           const visibility=stage==='lesson-visibility-save';
-          const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility;
+          const staleRevision=stage==='lesson-stale-revision';
+          const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry||lessonDenial||assessment||resume||restore||ackLoss||exitSave||visibility||staleRevision;
           const {selection,enrollment,authoring:authoringPermit,learning:learningPermit,paidGrant:paidGrantPermit,
             learnerAccess:learnerAccessPermit,paidRevoke:paidRevokePermit,lessonEntry:lessonEntryPermit,
             lessonDenial:lessonDenialPermit,assessment:assessmentPermit,resume:resumePermit,restore:restorePermit,ackLoss:ackLossPermit,
-            exitSave:exitSavePermit,visibility:visibilityPermit}=selectedInteractive;
+            exitSave:exitSavePermit,visibility:visibilityPermit,staleRevision:staleRevisionPermit}=selectedInteractive;
           const paired=authoringPairedOperation(selection.operation);
           const context=selection.actorKind==='admin'?'owner':'learner';
           const permitInput={stage,epoch,windowSeconds:snapshot.scopedAction.windowSeconds,
@@ -1041,6 +1105,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               learnerAccess?{learnerAccess:learnerAccessPermit}:paidRevoke?{paidRevoke:paidRevokePermit}:
               lessonEntry?{lessonEntry:lessonEntryPermit}:lessonDenial?{lessonDenial:lessonDenialPermit}:assessment?{assessment:assessmentPermit}:resume?{resume:resumePermit}:restore?{restore:restorePermit}:
               ackLoss?{ackLoss:ackLossPermit}:exitSave?{exitSave:exitSavePermit}:visibility?{visibility:visibilityPermit}:
+              staleRevision?{staleRevision:staleRevisionPermit}:
               enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
           let phase='new',expiresAt,installed=false,gatewayObservation;
           const call=async(operation,disposition,extraKeys,data={},timeout=120_000)=>{
@@ -1115,6 +1180,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                 ackLoss?ackLossJoinedEvidence(evidence,selection,gatewayObservation):
                 exitSave?exitSaveJoinedEvidence(evidence,selection,gatewayObservation):
                 visibility?visibilityJoinedEvidence(evidence,selection,gatewayObservation):
+                staleRevision?staleRevisionJoinedEvidence(evidence,selection,gatewayObservation):
                 paired?authoringChangeJoinedEvidence(evidence,selection,gatewayObservation,authoringPermit.winnerBodySha256):
                 selection.operation===authoringQuizOperation?authoringQuizJoinedEvidence(evidence,selection,gatewayObservation):
                 selection.operation===authoringArchiveOperation?authoringArchiveJoinedEvidence(evidence,selection,gatewayObservation):
@@ -1133,6 +1199,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                   restore?receipt.frontendOperationCount===2:
                   ackLoss?receipt.frontendOperationCount===5:
                   exitSave||visibility?receipt.frontendOperationCount===3:
+                  staleRevision?receipt.frontendOperationCount===8:
                   Number.isSafeInteger(receipt.frontendOperationCount)&&receipt.frontendOperationCount>0)&&closedGateway(receipt));
               interactiveRetained=structuredClone(receipt);phase='retained';return receipt;
             },

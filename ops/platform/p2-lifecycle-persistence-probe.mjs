@@ -2055,7 +2055,7 @@ async function captureLessonSaveBaseline(courseJob, selection, dependencies, che
   return baseline;
 }
 
-async function observeLessonSaveCase(courseJob, selection, baseline, browserReceipt, dependencies, check, validateReceipt) {
+async function observeLessonSaveCase(courseJob, selection, baseline, browserReceipt, dependencies, check, revision, validateReceipt) {
   const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = lessonSaveBaselines.get(baseline);
   demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
     && saved.verifySession === dependencies?.verifySession && lessonSaveSelectionFields.every(key => selection[key] === saved.selected[key]),
@@ -2065,7 +2065,7 @@ async function observeLessonSaveCase(courseJob, selection, baseline, browserRece
   lessonSaveBaselines.delete(baseline);
   const position = { ...saved.selected, resumePositionSeconds };
   const { result: after } = await readHeldCourseDraft(target, dependencies, saved.roleOid,
-    client => readPinnedLessonPosition(client, saved.selected, position, 9, check));
+    client => readPinnedLessonPosition(client, saved.selected, position, revision, check));
   demand(after.progress[0].created_at === before.progress[0].created_at
     && Date.parse(after.progress[0].updated_at) >= Date.parse(before.lesson.observed_at), `${check}-progress`);
   demand(sameIds(after.history, before.history), `${check}-history`);
@@ -2073,7 +2073,7 @@ async function observeLessonSaveCase(courseJob, selection, baseline, browserRece
   demand(after.lesson.asset_id === before.lesson.asset_id && after.mediaSha256 === before.mediaSha256
     && Date.parse(after.lesson.last_token_expires_at) === Math.max(baselineExpiry, playbackExpiry), `${check}-media`);
   const { actorId, courseId, lessonId, grantId, progressId, enrollmentId, maxPositionSeconds, playbackIdSha256 } = saved.selected;
-  return { actorId, courseId, lessonId, grantId, progressId, enrollmentId, revision: 9, resumePositionSeconds,
+  return { actorId, courseId, lessonId, grantId, progressId, enrollmentId, revision, resumePositionSeconds,
     maxPositionSeconds, playbackIdSha256, playbackExpiresAt: date(playbackExpiry), readOnly: true };
 }
 
@@ -2084,7 +2084,7 @@ export async function captureP2InteractiveExitSaveBaseline(courseJob, selection,
 
 export async function observeP2InteractiveExitSaveCase(courseJob, selection, baseline, browserReceipt, dependencies) {
   validateLessonExitSaveSelection(selection);
-  return observeLessonSaveCase(courseJob, selection, baseline, browserReceipt, dependencies, "course-lesson-exit-save", validateLessonExitSaveReceipt);
+  return observeLessonSaveCase(courseJob, selection, baseline, browserReceipt, dependencies, "course-lesson-exit-save", 9, validateLessonExitSaveReceipt);
 }
 
 export async function captureP2InteractiveVisibilityBaseline(courseJob, selection, dependencies) {
@@ -2094,7 +2094,54 @@ export async function captureP2InteractiveVisibilityBaseline(courseJob, selectio
 
 export async function observeP2InteractiveVisibilityCase(courseJob, selection, baseline, browserReceipt, dependencies) {
   validateLessonVisibilitySelection(selection);
-  return observeLessonSaveCase(courseJob, selection, baseline, browserReceipt, dependencies, "course-lesson-visibility-save", validateLessonVisibilityReceipt);
+  return observeLessonSaveCase(courseJob, selection, baseline, browserReceipt, dependencies, "course-lesson-visibility-save", 9, validateLessonVisibilityReceipt);
+}
+
+const lessonStaleRevisionCheck = "course-lesson-stale-revision";
+
+function validateLessonStaleRevisionSelection(selection) {
+  const check = `${lessonStaleRevisionCheck}-selection`;
+  validatePinnedLessonSelection(selection, lessonSaveSelectionFields, check);
+  demand(selection.operation === "conflict-reload", check);
+}
+
+function validateLessonStaleRevisionReceipt(receipt, selection, before) {
+  const check = `${lessonStaleRevisionCheck}-receipt`;
+  demand(closed(receipt, ["page", "playback", "writes", "conflict", "authoritative", "reload", "media"]), check);
+  const { page, playback, writes, conflict, authoritative, reload, media } = receipt;
+  const { courseId, lessonId, resumePositionSeconds, maxPositionSeconds, playbackIdSha256 } = selection;
+  demand(closed(page, ["pathname", "status"]) && page.pathname === `/academy/courses/${courseId}/lessons/${lessonId}` && page.status === 200
+    && Array.isArray(playback) && playback.length === 3 && Array.isArray(writes) && writes.length === 7, check);
+  const observedAt = Date.parse(before.lesson.observed_at);
+  const expiries = [...playback].map(item => {
+    const expiry = reviewedPlaybackExpiry(item, check, true);
+    demand(item.playbackIdSha256 === playbackIdSha256 && expiry > observedAt, check);
+    return expiry;
+  });
+  demand([...writes].every((write, index) => closed(write, pinnedLessonProgressFields)
+    && matchesPinnedLessonWrite(write, selection, index + 7, index < 4 ? resumePositionSeconds : maxPositionSeconds))
+    && closed(conflict, ["requestId", "expectedProgressRevision", "resumePositionSeconds", "maxPositionSeconds", "status"])
+    && courseUuid(conflict.requestId) && conflict.expectedProgressRevision === 8 && conflict.resumePositionSeconds === 0
+    && conflict.maxPositionSeconds === maxPositionSeconds && conflict.status === 409
+    && closed(authoritative, pinnedLessonProgressFields)
+    && matchesPinnedLessonWrite(authoritative, selection, 11, maxPositionSeconds)
+    && new Set([...playback, ...writes, conflict, authoritative].map(row => row.requestId)).size === 12
+    && closed(reload, ["documentReplaced", "noReplay"]) && reload.documentReplaced === true && reload.noReplay === true
+    && closed(media, ["beforeSeconds", "afterSeconds", "paused", "manifestObserved", "segmentObserved"])
+    && media.beforeSeconds === resumePositionSeconds && media.afterSeconds === maxPositionSeconds
+    && media.paused === true && media.manifestObserved === true && media.segmentObserved === true, check);
+  return { playbackExpiry: Math.max(...expiries), resumePositionSeconds: maxPositionSeconds };
+}
+
+export async function captureP2InteractiveStaleRevisionBaseline(courseJob, selection, dependencies) {
+  validateLessonStaleRevisionSelection(selection);
+  return captureLessonSaveBaseline(courseJob, selection, dependencies, lessonStaleRevisionCheck);
+}
+
+export async function observeP2InteractiveStaleRevisionCase(courseJob, selection, baseline, browserReceipt, dependencies) {
+  validateLessonStaleRevisionSelection(selection);
+  return observeLessonSaveCase(courseJob, selection, baseline, browserReceipt, dependencies,
+    lessonStaleRevisionCheck, 13, validateLessonStaleRevisionReceipt);
 }
 
 const lessonDenialSelectionFields = [...lessonEntrySelectionFields, "enrolledActorId"];

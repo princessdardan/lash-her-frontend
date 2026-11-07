@@ -183,9 +183,10 @@ test("standalone source child without parentIPC refuses before browser or networ
 
 test("actual immutable-bytes NodeIPC launcher refuses malformed input without browser, token or artifact", async () => {
   const bytes = readFileSync(new URL("./p2-lifecycle-browser-recorder.mjs", import.meta.url), "utf8") + P2_LIFECYCLE_BROWSER_LAUNCHER;
-  const child = spawn(process.execPath, ["--input-type=module", "--eval", bytes], { stdio: ["ignore", "pipe", "pipe", "ipc"], env: { PATH: process.env.PATH } });
+  const child = spawn(process.execPath, ["--input-type=module"], { stdio: ["pipe", "pipe", "pipe", "ipc"], env: { PATH: process.env.PATH } });
   const messages = []; let output = "";
   child.stdout.on("data", value => { output += value; }); child.stderr.on("data", value => { output += value; }); child.on("message", value => messages.push(value));
+  child.stdin.end(bytes);
   const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
   try {
     const exited = new Promise((done, fail) => { child.once("error", fail); child.once("exit", code => done(code)); });
@@ -478,17 +479,18 @@ test("private stdin accepts one bounded matching frame per phase and refuses rep
 
 function interactiveChild() {
   const bytes = readFileSync(new URL("./p2-lifecycle-browser-recorder.mjs", import.meta.url), "utf8") + P2_LIFECYCLE_BROWSER_LAUNCHER;
-  const child = spawn(process.execPath, ["--input-type=module", "--eval", bytes], { stdio: ["pipe", "pipe", "pipe", "ipc"],
+  const child = spawn(process.execPath, ["--input-type=module"], { stdio: ["pipe", "pipe", "pipe", "ipc", "pipe"],
     env: Object.fromEntries(["PATH", "HOME", "LANG", "TMPDIR"].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]])) });
   const records = [], output = [];
   child.on("message", value => records.push(value));
   child.stdout.on("data", value => output.push(value));
   child.stderr.on("data", value => output.push(value));
+  child.stdin.end(bytes);
   const exited = once(child, "close");
   const command = (type, input, frame) => {
     const response = once(child, "message");
     child.send({ type, input });
-    if (frame) child.stdin.write(frame);
+    if (frame) child.stdio[4].write(frame);
     return Promise.race([response.then(([receipt]) => receipt), exited.then(() => { throw new Error("OWNED_INTERACTIVE_CHILD_EXITED"); })]);
   };
   const timer = setTimeout(() => child.kill("SIGKILL"), 30_000);
