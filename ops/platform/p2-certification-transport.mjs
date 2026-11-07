@@ -7,6 +7,7 @@ import {sshCommand} from './recreation_ssh.mjs';
 import {isDeepStrictEqual} from 'node:util';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
 import {p2NativeHash} from './p2-lifecycle-native.mjs';
+import {decodeQualificationTargetJson,requireQualificationTargetProfile,STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as currentProfile} from './qualification-target-profile.mjs';
 
 const demand=ok=>{if(!ok)throw new Error('P2_CERTIFICATION_TRANSPORT_REFUSED');};
 const MAXIMUM=4_000_000;
@@ -36,16 +37,25 @@ export function readP2CertificationSuspensionStage(handle,plan){
   return selected.methods;
 }
 
-export function p2CertificationEnvironmentLock(settings,initial,directory,{launch=spawn}={}){
-  demand(initial?.environment==='staging'&&initial.mode==='p2-bounded-certification'&&/^[a-f0-9]{40}$/u.test(initial.sourceCommit??''));
-  const command=['sudo','-n','/usr/bin/python3','-I','-u',`/opt/lash-her/operators/${initial.sourceCommit}/ops/platform/host/p2_certification_parent.py`,'--supervisor'];
+export function p2CertificationEnvironmentLock(settings,initial,directory,{launch=spawn,expectedProfile}={}){
+  const profiled=expectedProfile!==undefined;
+  const mode=profiled?'p2-bounded-certification-profiled-current':'p2-bounded-certification';
+  demand(initial?.environment==='staging'&&initial.mode===mode&&/^[a-f0-9]{40}$/u.test(initial.sourceCommit??''));
+  if(profiled){
+    requireQualificationTargetProfile(currentProfile,{qualificationTargetProfile:expectedProfile},initial,initial.certificationPlan,initial.certificationPlan?.nativePlan);
+    demand(initial.version===2&&initial.certificationPlan.version===2&&initial.certificationPlan.nativePlan.version===2&&
+      initial.certificationPlan.certificationActionId===initial.certificationActionId);
+  }else demand(!Object.hasOwn(initial,'qualificationTargetProfile'));
+  const command=['sudo','-n','/usr/bin/python3','-I','-u',`/opt/lash-her/operators/${initial.sourceCommit}/ops/platform/host/p2_certification_parent.py`,
+    profiled?'--supervisor-profiled-current':'--supervisor'];
   return async task=>{
     const child=launch('/usr/bin/ssh',sshCommand({knownHosts:settings.knownHosts,keyFile:settings.sshKey},command),
       {stdio:['pipe','pipe','pipe'],env:Object.fromEntries(['PATH','HOME','LANG'].filter(key=>process.env[key]!==undefined).map(key=>[key,process.env[key]]))});
-    const controller=new AbortController(),pending=new Map();let sequence=0,failed=false,active=true,exited,heartbeat,joined,armed=false,prepared=false,browserOpened=false;
+    const reaped=new Promise(resolve=>child.once('close',resolve));
+    const controller=new AbortController(),pending=new Map();let sequence=0,failed=false,active=true,exited,heartbeat,joined,armed=false,prepared=false,browserOpened=false,committedReceipt;
     const fail=()=>{if(failed)return;failed=true;controller.abort();for(const waiter of pending.values()){clearTimeout(waiter.timer);waiter.reject(new Error('P2_CERTIFICATION_REMOTE_LOST'));}pending.clear();child.stdin.end();};
     const lines=createInterface({input:child.stdout});
-    lines.on('line',raw=>{try{demand(Buffer.byteLength(raw)<=MAXIMUM);const value=JSON.parse(raw),waiter=pending.get(value.id);demand(waiter&&value.status===waiter.status);pending.delete(value.id);clearTimeout(waiter.timer);waiter.resolve(value);}catch{fail();}});
+    lines.on('line',raw=>{try{demand(Buffer.byteLength(raw)<=MAXIMUM);const value=profiled?decodeQualificationTargetJson(raw,'private-packet'):JSON.parse(raw),waiter=pending.get(value.id);demand(waiter&&value.status===waiter.status);pending.delete(value.id);clearTimeout(waiter.timer);waiter.resolve(value);}catch{fail();}});
     // Remote errors may contain credentials. Retain neither raw stderr nor
     // exception text; the independent host guard retains sanitized outcomes.
     child.stderr.resume();child.on('error',fail);child.stdin.on('error',fail);child.on('exit',code=>{exited=code;if(active||code!==0)fail();});
@@ -55,9 +65,15 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
     let result,error;
     try{
       await ready;const verify=async()=>{await request('check','HELD');};heartbeat=setInterval(()=>{if(!failed)void verify().catch(fail);},1000);
-      const nativePlan=initial.nativePlan;
+      const nativePlan=profiled?initial.certificationPlan.nativePlan:initial.nativePlan;
+      const browserPlan=profiled?initial.sourceSuspensionPlan:initial.browserPlan;
+      const workerPlan=profiled?initial.certificationPlan.workerPlan:initial.workerPlan;
+      const validateBrowser=(plan,observation)=>{
+        validateP2CanonicalBrowserObservation(plan,observation,expectedProfile);
+        if(profiled)demand(observation.phase2ContractManifestSha256===initial.certificationPlan.phase2ContractManifestSha256);
+      };
       const match=plan=>demand(plan?.planSha256===nativePlan.planSha256);
-      const host={mode:'p2-bounded-certification',certificationActionId:initial.certificationActionId,
+      const host={mode,certificationActionId:initial.certificationActionId,
         async arm({receipt,probe}){demand(!armed);const bytes=readFrontendReleaseEvidence(directory,'p2-certification-current-database.json');demand(JSON.stringify(JSON.parse(bytes))===JSON.stringify(receipt));
           const value=await request('arm-certification','CERTIFICATION_ARMED',{receipt:bytes.toString('base64'),probe},240_000);armed=true;return value.receipt;},
         nativeControl:{
@@ -69,24 +85,24 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           browserOpened=stage==='browser'&&receipt?.gateway?.newWork===true&&receipt?.gateway?.recovery===false;return receipt;},
         async observeGateway(){demand(armed&&!prepared);return(await request('certification-gateway-observe','CERTIFICATION_GATEWAY_OBSERVED')).receipt;},
         async authenticationStage(plan,browserController){
-          demand(launch===spawn&&armed&&!prepared&&browserOpened&&initial.certificationPlan.mode==='auth-preparation'&&isDeepStrictEqual(plan,initial.browserPlan));
+          demand(launch===spawn&&armed&&!prepared&&browserOpened&&initial.certificationPlan.mode==='auth-preparation'&&isDeepStrictEqual(plan,browserPlan));
           const readers=await import('./p2-lifecycle-suspension-evidence.mjs'),binding=readers.readP2LifecycleBrowserControllerBinding(plan,browserController);
           demand(binding.challenge===initial.sourceParentChallenge);await verify();
           const receipt=(await request('authentication-stage','CERTIFICATION_AUTHENTICATION_HELD',{bindingSha256:binding.bindingSha256})).receipt;
           demand(receipt.status==='P2_CERTIFICATION_AUTHENTICATION_STAGE_HELD'&&receipt.bindingSha256===binding.bindingSha256&&receipt.certificationActionId===initial.certificationActionId);
-          validateP2CanonicalBrowserObservation(plan,receipt.canonicalBrowserObservation);
+          validateBrowser(plan,receipt.canonicalBrowserObservation);
           demand(p2NativeHash(receipt.canonicalBrowserObservation)===receipt.canonicalBrowserObservationSha256);
           const snapshot=structuredClone(plan),alive=()=>active&&!failed&&armed&&!prepared&&browserOpened&&!controller.signal.aborted&&isDeepStrictEqual(plan,snapshot);
           const handle=Object.freeze({});authenticationStages.set(handle,{plan,snapshot,active:alive,receipt});return handle;
         },
         async suspensionEvidenceStage(plan,browserController){
-          demand(launch===spawn&&armed&&!prepared&&initial.certificationPlan.mode==='browser-pending'&&isDeepStrictEqual(plan,initial.browserPlan));
+          demand(launch===spawn&&armed&&!prepared&&initial.certificationPlan.mode==='browser-pending'&&isDeepStrictEqual(plan,browserPlan));
           const readers=await import('./p2-lifecycle-suspension-evidence.mjs');
           const binding=readers.readP2LifecycleBrowserControllerBinding(plan,browserController);
           demand(binding.challenge===initial.sourceParentChallenge);
           const ready=await request('suspension-ready','CERTIFICATION_SUSPENSION_READY',{bindingSha256:binding.bindingSha256});
           demand(ready.receipt?.bindingSha256===binding.bindingSha256);
-          validateP2CanonicalBrowserObservation(plan,ready.receipt.canonicalBrowserObservation);
+          validateBrowser(plan,ready.receipt.canonicalBrowserObservation);
           demand(p2NativeHash(ready.receipt.canonicalBrowserObservation)===ready.receipt.canonicalBrowserObservationSha256);
           const snapshot=structuredClone(plan),alive=()=>active&&!failed&&armed&&!prepared&&!controller.signal.aborted&&isDeepStrictEqual(plan,snapshot);
           const call=async(operation,data={},timeout=120_000)=>{demand(alive());return(await request(operation,'CERTIFICATION_SUSPENSION_OBSERVED',data,timeout)).receipt;};
@@ -99,7 +115,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           const handle=Object.freeze({});suspensionStages.set(handle,{plan,snapshot,active:alive,methods,canonicalBrowserObservationSha256:ready.receipt.canonicalBrowserObservationSha256});return handle;
         },
         async workerEvidenceStage(plan){
-          demand(launch===spawn&&armed&&!prepared&&initial.certificationPlan.mode==='direct-worker'&&isDeepStrictEqual(plan,initial.workerPlan));
+          demand(launch===spawn&&armed&&!prepared&&initial.certificationPlan.mode==='direct-worker'&&isDeepStrictEqual(plan,workerPlan));
           const readers=await import('./p2-lifecycle-worker-evidence.mjs');
           const ready=(await request('worker-ready','CERTIFICATION_WORKER_READY')).receipt;demand(ready.bindingSha256===initial.certificationPlan.workerPlanSha256);
           const snapshot=structuredClone(plan),alive=()=>active&&!failed&&armed&&!prepared&&!controller.signal.aborted&&isDeepStrictEqual(plan,snapshot);
@@ -139,14 +155,26 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
       };
       await verify();result=await task(verify,controller.signal,host);await verify();demand(joined&&!failed);
       const committed=await request('commit','COMMITTED');demand(JSON.stringify(committed.receipt)===JSON.stringify(joined.receipt));
-      writeFrontendReceipt(directory,'p2-host-certification-outcome.json',committed.receipt);active=false;
+      if(profiled){
+        requireQualificationTargetProfile(currentProfile,committed.receipt);
+        demand(committed.receipt.version===2&&committed.receipt.status==='P2_PROFILED_CURRENT_CERTIFICATION_CONTAINED'&&
+          committed.receipt.planSha256===initial.certificationPlan.planSha256);
+        committedReceipt=committed.receipt;
+      }else writeFrontendReceipt(directory,'p2-host-certification-outcome.json',committed.receipt);
+      active=false;
     }catch{error=new Error('P2_BOUNDED_CERTIFICATION_FAILED_REQUIRES_REVIEW');fail();}
     finally{
       clearInterval(heartbeat);child.stdin.end();
-      if(exited===undefined)await new Promise(resolve=>{const timer=setTimeout(()=>{child.kill('SIGTERM');error??=new Error('P2_CERTIFICATION_HOST_CLEANUP_UNCERTAIN');resolve();},60_000);child.once('close',()=>{clearTimeout(timer);resolve();});});
+      if(profiled){
+        const stop=setTimeout(()=>{error??=new Error('P2_CERTIFICATION_HOST_CLEANUP_UNCERTAIN');child.kill('SIGTERM');},60_000);
+        const kill=setTimeout(()=>child.kill('SIGKILL'),65_000);
+        await reaped;clearTimeout(stop);clearTimeout(kill);
+      }else if(exited===undefined)await new Promise(resolve=>{const timer=setTimeout(()=>{child.kill('SIGTERM');error??=new Error('P2_CERTIFICATION_HOST_CLEANUP_UNCERTAIN');resolve();},60_000);child.once('close',()=>{clearTimeout(timer);resolve();});});
       active=false;lines.close();for(const waiter of pending.values())clearTimeout(waiter.timer);
       if(exited!==0)error??=new Error('P2_CERTIFICATION_HOST_CLEANUP_UNCERTAIN');
     }
-    if(error)throw error;return result;
+    if(error)throw error;
+    if(profiled){demand(committedReceipt);writeFrontendReceipt(directory,'p2-host-certification-outcome.json',committedReceipt);}
+    return result;
   };
 }
