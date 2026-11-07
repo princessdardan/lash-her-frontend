@@ -17,6 +17,7 @@ import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraf
   captureP2InteractivePaidGrantBaseline, observeP2InteractivePaidGrantCase,
   captureP2InteractivePaidArchiveBaseline, observeP2InteractivePaidArchiveCase, validateP2InteractivePaidArchive,
   captureP2InteractivePaidRepublishBaseline, observeP2InteractivePaidRepublishCase, validateP2InteractivePaidRepublish,
+  captureP2InteractivePaidLearnerAccessBaseline, observeP2InteractivePaidLearnerAccessCase, validateP2InteractivePaidLearnerAccess,
   observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase, observeP2InteractiveCourseReorderCase,
   observeP2InteractiveCurriculumCreateCase, observeP2InteractivePublicationCase, observeP2InteractiveQuizSaveCase, p2LifecyclePersistenceTargetSha256,
   validateP2InteractiveCourseDraft, validateP2InteractiveCourseDraftEdits, validateP2InteractiveCourseReorder,
@@ -136,7 +137,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
   await course.query(`GRANT SELECT ON public.courses, public.modules, public.lessons, public.quiz_revisions, public.quiz_attempts,
     public.entitlement_grants, public.enrollments, public.entitlement_idempotency_keys, public.community_enrollment_streams,
     public.community_enrollment_outbox, public.lesson_progress, public.admin_entitlement_commands,
-    public.admin_entitlement_command_effects, public.entitlement_revocations, public.account_lifecycle_states TO ${user}`);
+    public.admin_entitlement_command_effects, public.entitlement_revocations, public.account_lifecycle_states, public.video_assets TO ${user}`);
   const job = { schemaVersion: 2, qualificationTargetProfile: profile, kind: "operator-migration", operator: "Dardan",
     environment: "staging", contractPhase: "p2", releaseId: "owned-draft-read", sourceCommit, runtimeRole: target.runtimeRole,
     phase2ContractManifestSha256: `sha256:${hash(readFileSync(join(root, "contracts/api-integration/p2-candidate/manifest.json")))}`,
@@ -222,6 +223,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     await runOwnedPaidGrantWitness({ course, job, dependencies, input, create });
     await runOwnedPaidArchiveWitness({ course, job, dependencies, input, create, courseSource });
     await runOwnedPaidRepublishWitness({ course, job, dependencies, input, create, courseSource });
+    await runOwnedPaidLearnerAccessWitness({ course, job, dependencies, input, create, courseSource });
     await unlock();
     try { await assert.rejects(capture(input("unheld"))); }
     finally { await lock(); }
@@ -243,7 +245,9 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-paid-archive-pinned-repository-preserves-history-without-community-outbox-mutation",
       "course-paid-archive-refuses-identity-history-projection-and-independent-eligibility-drift",
       "course-paid-republish-pinned-repository-restores-only-effective-access-and-keeps-blocked-draft",
-      "course-paid-republish-refuses-inconsistent-access-revision-account-and-learning-history"];
+      "course-paid-republish-refuses-inconsistent-access-revision-account-and-learning-history",
+      "course-paid-learner-pinned-quiz-and-playback-allow-archive-draft-and-revocation-boundaries",
+      "course-paid-learner-refuses-lesson-receipt-revision-account-and-history-drift"];
   } finally {
     try { await unlock(); }
     finally { setDefaultCACertificates(trust); }
@@ -936,6 +940,20 @@ async function ownedCourseRepository(course, courseSource) {
   return { repository: createDrizzleCourseRepository(db), db, importSource };
 }
 
+async function importOwnedAccountAwareCourseSource(importSource, ...paths) {
+  const priorDotenv = process.env.DOTENV_CONFIG_PATH, priorAdmission = process.env.COURSE_ACCOUNT_LIFECYCLE_ENABLED;
+  try {
+    process.env.DOTENV_CONFIG_PATH = "/dev/null";
+    process.env.COURSE_ACCOUNT_LIFECYCLE_ENABLED = "true";
+    return await Promise.all(paths.map(importSource));
+  } finally {
+    if (priorDotenv === undefined) delete process.env.DOTENV_CONFIG_PATH;
+    else process.env.DOTENV_CONFIG_PATH = priorDotenv;
+    if (priorAdmission === undefined) delete process.env.COURSE_ACCOUNT_LIFECYCLE_ENABLED;
+    else process.env.COURSE_ACCOUNT_LIFECYCLE_ENABLED = priorAdmission;
+  }
+}
+
 async function runOwnedPaidArchiveWitness({ course, job, dependencies, input, create, courseSource }) {
   const { seed, progress, write } = ownedPaidGrantFixtures({ course, input, create });
   const { repository } = await ownedCourseRepository(course, courseSource);
@@ -1050,19 +1068,9 @@ async function runOwnedPaidRepublishWitness({ course, job, dependencies, input, 
   const { seed, progress, write } = ownedPaidGrantFixtures({ course, input, create });
   const { repository, db, importSource } = await ownedCourseRepository(course, courseSource);
   const { plainTextDocument } = await importSource("src/courses/content.ts");
-  const priorDotenv = process.env.DOTENV_CONFIG_PATH, priorAdmission = process.env.COURSE_ACCOUNT_LIFECYCLE_ENABLED;
-  let entitlementCommands;
-  try {
-    process.env.DOTENV_CONFIG_PATH = "/dev/null";
-    process.env.COURSE_ACCOUNT_LIFECYCLE_ENABLED = "true";
-    const { createDrizzleAdminEntitlementCommandRepository } = await importSource("src/entitlements/admin-entitlement-command.repository.ts");
-    entitlementCommands = createDrizzleAdminEntitlementCommandRepository(db);
-  } finally {
-    if (priorDotenv === undefined) delete process.env.DOTENV_CONFIG_PATH;
-    else process.env.DOTENV_CONFIG_PATH = priorDotenv;
-    if (priorAdmission === undefined) delete process.env.COURSE_ACCOUNT_LIFECYCLE_ENABLED;
-    else process.env.COURSE_ACCOUNT_LIFECYCLE_ENABLED = priorAdmission;
-  }
+  const [{ createDrizzleAdminEntitlementCommandRepository }] = await importOwnedAccountAwareCourseSource(importSource,
+    "src/entitlements/admin-entitlement-command.repository.ts");
+  const entitlementCommands = createDrizzleAdminEntitlementCommandRepository(db);
   const state = async (test, expectedRevision, status) => {
     const row = await repository.updateCourse(test.selection.courseId, { expectedRevision, status });
     assert.equal(row.revision, expectedRevision + 1);
@@ -1146,6 +1154,120 @@ async function runOwnedPaidRepublishWitness({ course, job, dependencies, input, 
     if (independent) await state(independent, 1, "archived");
     await assert.rejects(observe(test, baseline), { check });
     await assert.rejects(observe(test, baseline), { check: "course-paid-republish-receipt" });
+  }
+}
+
+async function runOwnedPaidLearnerAccessWitness({ course, job, dependencies, input, create, courseSource }) {
+  const { seed, write } = ownedPaidGrantFixtures({ course, input, create });
+  const { repository, db, importSource } = await ownedCourseRepository(course, courseSource);
+  const [{ createDrizzleAdminEntitlementCommandRepository }, { createDrizzleQuizRepository }, { createDrizzleVideoRepository }] =
+    await importOwnedAccountAwareCourseSource(importSource, "src/entitlements/admin-entitlement-command.repository.ts",
+      "src/quizzes/drizzle-quiz.repository.ts", "src/video/video.repository.ts");
+  const entitlement = createDrizzleAdminEntitlementCommandRepository(db), quiz = createDrizzleQuizRepository(db), video = createDrizzleVideoRepository(db);
+  const quizDocument = { version: 1, mode: "graded", passingPercent: 80, questions: [{ id: "question", prompt: "Which answer matches?",
+    options: [{ id: "a", text: "First" }, { id: "b", text: "Second" }], correctOptionId: "b", feedback: "Review the material." }] };
+  const prepared = async (name, outcome = "allowed", courseChanges = {}) => {
+    const test = await seed(`learner-${name}`, courseChanges), { lessonId, grantId } = test, { courseId, userId, actorId } = test.selection;
+    await write(test);
+    await course.query("INSERT INTO public.quiz_revisions(lesson_id,revision,document,created_by) VALUES($1,1,$2::jsonb,$3)",
+      [lessonId, quizDocument, actorId]);
+    const assetId = randomUUID();
+    await course.query(`INSERT INTO public.video_assets(id,lesson_id,mux_asset_id,mux_playback_id,status,duration_seconds,
+      managed_by_course,provider_environment_id,is_current) VALUES($1,$2,$3,$4,'ready',180,true,'owned-mux',true)`,
+    [assetId, lessonId, `owned-asset-${assetId}`, `owned-playback-${assetId}`]);
+    const attempt = await quiz.submitAttempt({ userId, lessonId, quizRevision: 1, requestId: randomUUID(), answers: [{ questionId: "question", optionId: "b" }] });
+    assert.equal(attempt.passed, true);
+    let revision = 1;
+    if (outcome === "archived" || outcome === "draft") {
+      const row = await repository.updateCourse(courseId, { expectedRevision: 1, status: outcome });
+      revision = row.revision;
+    }
+    if (outcome === "restricted") {
+      const result = await entitlement.revoke({ scope: "grantId", grantId, actorUserId: actorId,
+        reason: "Owned fixture withdrawal", idempotencyKey: randomUUID() });
+      assert.equal(result.command.outcome, "applied");
+    }
+    return { ...test, assetId, attemptId: attempt.id, selected: { actorId: userId, courseId, lessonId, grantId, revision, outcome } };
+  };
+  const capture = test => captureP2InteractivePaidLearnerAccessBaseline(job, test.selected, undefined, dependencies);
+  const browser = ({ selected: { courseId, lessonId, outcome } }) => ({ courseId, lessonId, outcome });
+  const observe = (test, baseline, receipt = browser(test)) => observeP2InteractivePaidLearnerAccessCase(job, test.selected, baseline, receipt, dependencies);
+  const access = async ({ selected: { actorId, lessonId, outcome }, assetId }) => {
+    const args = { userId: actorId, lessonId }, expiry = new Date(Date.now() + 600_000).toISOString();
+    let signed = false;
+    const playback = () => video.withPlaybackAuthorization(args, async media => {
+      signed = true;
+      assert.equal(media.id, assetId);
+      return { playbackId: media.muxPlaybackId, token: "owned-fixture-token", expiresAt: expiry };
+    });
+    if (outcome === "allowed") {
+      assert.equal((await quiz.readStudentQuiz(args)).document.mode, "graded");
+      assert.equal((await playback()).expiresAt, expiry);
+      assert.equal((await course.query("SELECT last_token_expires_at FROM public.video_assets WHERE id=$1::uuid", [assetId])).rows[0]
+        .last_token_expires_at.toISOString(), expiry);
+    } else {
+      const [name, code] = { archived: ["QuizArchivedError", "COURSE_ARCHIVED"], draft: ["QuizNotFoundError", "LESSON_NOT_FOUND"],
+        restricted: ["QuizAccessDeniedError", "ACTIVE_ENROLLMENT_REQUIRED"] }[outcome];
+      await assert.rejects(quiz.readStudentQuiz(args), { name });
+      await assert.rejects(playback(), { code });
+    }
+    assert.equal(signed, outcome === "allowed");
+  };
+
+  for (const outcome of ["allowed", "archived", "draft", "restricted"]) {
+    const test = await prepared(outcome, outcome), { selected } = test;
+    if (outcome === "allowed") {
+      await write(await seed("learner-other-eligible", {}, selected.actorId));
+      await course.query(`INSERT INTO public.account_lifecycle_states(user_id,account_version,status,updated_at)
+        VALUES($1,1,'active',pg_catalog.clock_timestamp())`, [selected.actorId]);
+    }
+    assert.equal(validateP2InteractivePaidLearnerAccess(selected, undefined), undefined);
+    assert.throws(() => validateP2InteractivePaidLearnerAccess(selected, {}), { check: "course-paid-learner-selection" });
+    assert.throws(() => validateP2InteractivePaidLearnerAccess({ ...selected, outcome: "toString" }, undefined), { check: "course-paid-learner-selection" });
+    await assert.rejects(capture({ ...test, selected: { ...selected, lessonId: randomUUID() } }), { check: "course-paid-learner-lesson" });
+    await assert.rejects(capture({ ...test, selected: { ...selected, grantId: randomUUID() } }), { check: "course-paid-learner-grant" });
+    const baseline = await capture(test);
+    assert.equal(JSON.stringify(baseline), "{}");
+    await access(test);
+    await assert.rejects(observe(test, {}, browser(test)), { check: "course-paid-learner-receipt" });
+    await assert.rejects(observe(test, baseline, { ...browser(test), outcome: "unreviewed" }), { check: "course-paid-learner-receipt" });
+    await assert.rejects(observeP2InteractivePaidLearnerAccessCase(job, selected, baseline, browser(test),
+      { ...dependencies, verifySession: async () => {} }), { check: "course-paid-learner-receipt" });
+    assert.deepEqual(await observe(test, baseline), { ...browser(test), actorId: selected.actorId, grantId: selected.grantId,
+      revision: selected.revision, effectiveAccess: outcome === "allowed", readOnly: true });
+    await assert.rejects(observe(test, baseline), { check: "course-paid-learner-receipt" });
+  }
+
+  const incompatible = await prepared("incompatible");
+  await assert.rejects(capture({ ...incompatible, selected: { ...incompatible.selected, outcome: "restricted" } }), { check: "course-paid-learner-access" });
+  const free = await prepared("free", "allowed", { accessMode: "free", priceCents: 0 });
+  await assert.rejects(capture(free), { check: "course-paid-learner-eligibility" });
+  const quizDrift = await prepared("practice");
+  await course.query("INSERT INTO public.quiz_revisions(lesson_id,revision,document,created_by) VALUES($1,2,$2::jsonb,$3)",
+    [quizDrift.lessonId, { ...quizDocument, mode: "practice" }, quizDrift.selection.actorId]);
+  await assert.rejects(capture(quizDrift), { check: "course-paid-learner-lesson" });
+
+  for (const [name, check] of [["revision", "course-publication-state"], ["preview", "course-paid-learner-lesson"],
+    ["asset", "course-paid-learner-state-drift"], ["progress", "course-paid-learner-history"], ["attempt", "course-paid-learner-history"],
+    ["unauthorized-token", "course-paid-learner-state-drift"], ["suspension", "course-paid-learner-account"],
+    ["independent", "course-paid-learner-community-authority"]]) {
+    const test = await prepared(name, name === "unauthorized-token" ? "archived" : "allowed"), { courseId, actorId } = test.selected;
+    const independent = name === "independent" ? await seed("learner-drift-other-course", {}, actorId) : undefined;
+    if (independent) await write(independent);
+    const baseline = await capture(test);
+    if (name === "revision") await course.query("UPDATE public.courses SET revision=revision+1 WHERE id=$1::uuid", [courseId]);
+    if (name === "preview") await course.query("UPDATE public.lessons SET is_preview=true WHERE id=$1::uuid", [test.lessonId]);
+    if (name === "asset") await course.query("UPDATE public.video_assets SET mux_playback_id=$2 WHERE id=$1::uuid", [test.assetId, randomUUID()]);
+    if (name === "progress") await course.query("UPDATE public.lesson_progress SET resume_position_seconds=10 WHERE lesson_id=$1::uuid", [test.lessonId]);
+    if (name === "attempt") await course.query(`UPDATE public.quiz_attempts SET user_id=NULL,enrollment_id=NULL,request_id=NULL,request_hash=NULL,
+      answers='[]'::jsonb,deidentified_at=pg_catalog.clock_timestamp() WHERE id=$1::uuid`, [test.attemptId]);
+    if (name === "unauthorized-token") await course.query(`UPDATE public.video_assets
+      SET last_token_expires_at=pg_catalog.clock_timestamp()+interval '10 minutes' WHERE id=$1::uuid`, [test.assetId]);
+    if (name === "suspension") await course.query(`INSERT INTO public.account_lifecycle_states(user_id,account_version,status,updated_at)
+      VALUES($1,1,'suspended',pg_catalog.clock_timestamp())`, [actorId]);
+    if (independent) await repository.updateCourse(independent.selection.courseId, { expectedRevision: 1, status: "archived" });
+    await assert.rejects(observe(test, baseline), { check });
+    await assert.rejects(observe(test, baseline), { check: "course-paid-learner-receipt" });
   }
 }
 

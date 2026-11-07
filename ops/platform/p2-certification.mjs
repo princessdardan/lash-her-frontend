@@ -40,6 +40,7 @@ import {captureP2InteractiveCourseDraftBaseline,observeP2InteractiveCourseDraftC
   captureP2InteractivePaidArchiveBaseline,observeP2InteractivePaidArchiveCase,validateP2InteractivePaidArchive,
   captureP2InteractivePaidRepublishBaseline,observeP2InteractivePaidRepublishCase,validateP2InteractivePaidRepublish,
   captureP2InteractiveFreeEnrollmentBaseline,observeP2InteractiveFreeEnrollmentCase,
+  captureP2InteractivePaidLearnerAccessBaseline,observeP2InteractivePaidLearnerAccessCase,validateP2InteractivePaidLearnerAccess,
   captureP2InteractivePaidGrantBaseline,observeP2InteractivePaidGrantCase} from './p2-lifecycle-persistence-probe.mjs';
 import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,readP2LifecycleWorkerCronSecret,preflightP2DirectLifecycleWorker,
   invokeP2DirectLifecycleWorker,joinP2DirectLifecycleWorker,readP2DirectWorkerSourceArtifact} from './p2-lifecycle-worker-evidence.mjs';
@@ -61,7 +62,7 @@ const scopedMuxCourseSource='b21e25cf900458eb6cbbd993582d7e1bbac36c4b';
 const assetEvents=new Set(['video.asset.created','video.asset.ready','video.asset.errored','video.asset.deleted']);
 const trackEvents=new Set(['video.asset.track.ready','video.asset.track.deleted']);
 const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(value);
-const courseBackedBrowserStages=new Set(['authoring','learning','paid-grant']);
+const courseBackedBrowserStages=new Set(['authoring','learning','paid-grant','learner-access']);
 const pairedBrowserStages=new Set(['lifecycle',...courseBackedBrowserStages]);
 const emptyRequestSha256=rawHash(Buffer.alloc(0));
 const authoringCases=new Map([
@@ -150,6 +151,20 @@ function learningEnrollmentActionValid(selected,requests){
     {method:'GET',target:`/course/v1/student/progress?courseId=${selected.courseId}`,uses:1,bodySha256:emptyRequestSha256},
   ]);
 }
+function learnerAccessActionValid(selected,requests){
+  if(!exactKeys(selected,['operation','courseId','lessonId','grantId','revision','outcome'])||
+    selected.operation!=='observe-paid-access'||![selected.courseId,selected.lessonId,selected.grantId].every(uuid)||
+    !Number.isInteger(selected.revision)||selected.revision<1||selected.revision>2_147_483_647||
+    !['allowed','archived','draft','restricted'].includes(selected.outcome))return false;
+  const {courseId,lessonId}=selected,student='/course/v1/student',lesson=student+'/lessons/'+lessonId;
+  return isDeepStrictEqual(requests,[
+    student+'/courses/'+courseId,student+'/progress?courseId='+courseId,lesson,lesson+'/playback',
+    student+'/progress?lessonId='+lessonId,lesson+'/quiz',lesson+'/quiz/attempts',
+  ].map((target,index)=>({method:'GET',target,bodySha256:emptyRequestSha256,uses:index===0?2:1})));
+}
+function learnerAccessSelection({actorId,learnerAccessAction:{operation:_operation,...selected}}){
+  return {...selected,actorId};
+}
 function paidGrantActionValid(selected,requests){
   if(!exactKeys(selected,['operation','courseId','userId','revision','idempotencyKey','reasonSha256'])||
     selected.operation!=='grant-paid-access'||![selected.courseId,selected.userId,selected.idempotencyKey].every(uuid)||
@@ -181,14 +196,16 @@ function interactiveActionValid(value){
   const lifecycle=value?.stage==='lifecycle',identity=value?.stage==='identity',authoring=value?.stage==='authoring';
   const enrollment=identity&&Object.hasOwn(value,'identityEnrollment');
   const learning=value?.stage==='learning',paidGrant=value?.stage==='paid-grant';
+  const learnerAccess=value?.stage==='learner-access';
   const selectionKey=lifecycle?'frontendAction':authoring?'authoringAction':learning?'learningAction':paidGrant?'paidGrantAction':
-    identity?(enrollment?'identityEnrollment':'identityActor'):null;
+    learnerAccess?'learnerAccessAction':identity?(enrollment?'identityEnrollment':'identityActor'):null;
   if(!exactKeys(value,['stage','actorId','requests','windowSeconds',...(selectionKey?[selectionKey]:[])])||
-     !['identity','authoring','media','learning','paid-grant','lifecycle'].includes(value.stage)||
+     !['identity','authoring','media','learning','paid-grant','learner-access','lifecycle'].includes(value.stage)||
      !(value.stage==='identity'?value.actorId===null:uuid(value.actorId))||
      !Number.isInteger(value.windowSeconds)||value.windowSeconds<30||value.windowSeconds>300||
      !Array.isArray(value.requests))return false;
   if(learning)return learningEnrollmentActionValid(value.learningAction,value.requests);
+  if(learnerAccess)return learnerAccessActionValid(value.learnerAccessAction,value.requests);
   if(paidGrant)return paidGrantActionValid(value.paidGrantAction,value.requests);
   if(lifecycle){
     const selected=value.frontendAction;
@@ -523,6 +540,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
   const identity=action.stage==='identity',enrollment=identity&&action.identityEnrollment!==undefined,authoring=action.stage==='authoring';
   const learning=action.stage==='learning',paidGrant=action.stage==='paid-grant',courseBacked=courseBackedBrowserStages.has(action.stage);
+  const learnerAccess=action.stage==='learner-access';
   const authoringCase=authoring?authoringCases.get(action.authoringAction.operation):undefined;
   if(courseBacked)demand(courseDraft?.job&&(!authoringCase?.field||courseDraft.draft)&&typeof courseDraft.readCourseDatabaseUrl==='function');
   if(paidGrant)demand(typeof courseDraft.paidGrantReason==='string');
@@ -531,6 +549,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
   const {operation:_learningOperation,...learningSelection}=action.learningAction??{};
   const {operation:_grantOperation,reasonSha256:_grantReasonSha256,...paidGrantSelection}=action.paidGrantAction??{};
   const selection=authoring?authoringSelection(action):learning?{...learningSelection,actorId:action.actorId}:
+    learnerAccess?learnerAccessSelection(action):
     paidGrant?{...paidGrantSelection,actorId:action.actorId,reason:courseDraft.paidGrantReason}:
     enrollment?action.identityEnrollment:identity?action.identityActor:{...action.frontendAction,actorId:action.actorId};
   const context=authoring||paidGrant||!enrollment&&selection.actorKind==='admin'?'owner':'learner';
@@ -549,6 +568,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     demand(prepared.status===statusPrefix+'_PREPARED');
     const baseline=authoringCase?await authoringCase.baseline(courseDraft.job,selection,courseDraft.draft,courseObservations):
       learning?await captureP2InteractiveFreeEnrollmentBaseline(courseDraft.job,selection,courseObservations):
+      learnerAccess?await captureP2InteractivePaidLearnerAccessBaseline(courseDraft.job,selection,undefined,courseObservations):
       paidGrant?await captureP2InteractivePaidGrantBaseline(courseDraft.job,selection,courseObservations):
       enrollment?await captureP2InteractiveEnrollmentBaseline(client,target,selection,identityEnrollmentEmail,observations):
       identity?await captureP2InteractiveIdentityBaseline(client,target,selection,controllerChallenge,observations):
@@ -570,6 +590,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
       await controller.open(context);
       browserEvidence=authoringCase?.paired?await controller.captureAuthoringResponses(context):authoring?await controller.captureAuthoringResponse(context):
         learning?await controller.captureLearningResponse(context):
+        learnerAccess?await controller.captureLearnerAccessResponse(context):
         paidGrant?await controller.capturePaidGrantResponse(context):
         identity?await controller.captureIdentity(context,baseline.ownerSubjectSha256):
         await controller.captureLifecycleResponse(context);
@@ -603,6 +624,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     const witness=authoringCase?await authoringCase.observe(courseDraft.job,selection,baseline,
       authoringCase.paired?browserEvidence.winner.body:browserEvidence.body,courseObservations):
       learning?await observeP2InteractiveFreeEnrollmentCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
+      learnerAccess?await observeP2InteractivePaidLearnerAccessCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
       paidGrant?await observeP2InteractivePaidGrantCase(courseDraft.job,selection,baseline,browserEvidence.body,courseObservations):
       enrollment?await observeP2InteractiveEnrollmentCase(client,target,selection,baseline,browserEvidence,observations):
       identity?await observeP2InteractiveIdentityCase(client,target,selection,baseline,browserEvidence,observations):
@@ -962,7 +984,7 @@ function prepareCertificationStages(prepared,input,candidateBytes,settings,optio
       settings.authPreparation===undefined&&settings.browser===undefined&&settings.worker===undefined);
     const {actorId}=input.scopedAction;
     const actorKind=['authoring','paid-grant'].includes(input.scopedAction.stage)?'admin':
-      input.scopedAction.stage==='learning'?'customer':input.scopedAction.frontendAction.actorKind;
+      ['learning','learner-access'].includes(input.scopedAction.stage)?'customer':input.scopedAction.frontendAction.actorKind;
     identityPlan=prepareP2BoundedCertification(prepared,{...input,certificationActionId:identity.certificationActionId,initialEpoch:identity.initialEpoch,
       scopedAction:{stage:'identity',actorId:null,requests:[],windowSeconds:identity.windowSeconds,identityActor:{actorKind,actorId}}},candidateBytes,options);
   }else demand(settings.interactiveIdentity===undefined);
@@ -990,7 +1012,8 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   const interactive=plan.mode==='interactive-browser'&&pairedBrowserStages.has(plan.scopedAction.stage)&&identityPlan!==undefined;
   const authoring=interactive&&plan.scopedAction.stage==='authoring';
   const paidGrant=interactive&&plan.scopedAction.stage==='paid-grant';
-  if(interactive&&plan.scopedAction.stage==='learning')demand(execution===undefined);
+  if(interactive&&['learning','learner-access'].includes(plan.scopedAction.stage))demand(execution===undefined);
+  if(interactive&&plan.scopedAction.stage==='learner-access')validateP2InteractivePaidLearnerAccess(learnerAccessSelection(plan.scopedAction),undefined);
   const paidGrantReason=paidGrant?reviewedPaidGrantReason(plan.scopedAction,execution):undefined;
   const enrollment=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='identity'&&plan.scopedAction.identityEnrollment;
   const scoped=scopedModes.has(plan.mode)||interactive||!!enrollment;

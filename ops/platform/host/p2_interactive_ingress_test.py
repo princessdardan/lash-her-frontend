@@ -89,7 +89,7 @@ class InteractiveIngressTests(unittest.TestCase):
                                            {"Content-Type": "text/html"}))
         self.fixture.enqueue(after or project, final_alias or self.alias(), self.fixture.deployment(), after or project)
 
-    def owned_unauthenticated_requester(self):
+    def owned_unauthenticated_requester(self, *, progress_lesson_id=None):
         ca = ssl.create_default_context(cafile=str(self.fixture.cert))
         with patch.object(ingress.ssl, "create_default_context", return_value=ca):
             requester = ingress.UnauthenticatedIngressClient()
@@ -101,13 +101,15 @@ class InteractiveIngressTests(unittest.TestCase):
                 url = urllib.parse.urlsplit(request.full_url)
                 self.assertIn(url.netloc, (canonical.HOST, "owned-fixture.vercel.app"))
                 self.assertEqual(url.scheme, "https")
-                self.assertEqual(url.query, "")
+                expected_query = f"lessonId={progress_lesson_id}" if progress_lesson_id and url.path == "/api/academy/progress" else ""
+                self.assertEqual(url.query, expected_query)
                 self.assertEqual(url.fragment, "")
                 self.assertEqual(request.method, "GET")
                 self.assertIsNone(request.data)
                 self.assertEqual({name.lower() for name, _ in request.header_items()}, {"accept", "cache-control"})
                 urls.append(request.full_url)
-                mapped = urllib.request.Request(self.fixture.origin + url.path, headers=dict(request.header_items()), method="GET")
+                target = url.path + (f"?{url.query}" if url.query else "")
+                mapped = urllib.request.Request(self.fixture.origin + target, headers=dict(request.header_items()), method="GET")
                 try:
                     return owned.open(mapped, timeout=timeout)
                 except urllib.error.HTTPError as error:
@@ -362,6 +364,24 @@ class InteractiveIngressTests(unittest.TestCase):
         self.assertEqual(urls, [origin + path for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
         self.assertEqual(self.fixture.responses, [])
 
+    def test_learner_access_probes_exact_course_and_lesson_paths_on_both_origins(self):
+        course = "10000000-0000-4000-8000-000000000001"
+        lesson = "10000000-0000-4000-8000-000000000002"
+        path = f"/api/academy/lessons/{lesson}"
+        paths = (f"/academy/courses/{course}", f"/api/academy/courses/{course}", path, f"{path}/playback",
+                 f"/api/academy/progress?lessonId={lesson}", f"{path}/quiz", f"{path}/quiz/attempts")
+        self.enqueue_selected_protection(paths)
+        requester, urls = self.owned_unauthenticated_requester(progress_lesson_id=lesson)
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester):
+            with self.assertRaisesRegex(ValueError, "LEARNER_ACCESS_TARGET_REQUIRED"):
+                ingress.observe_learner_access_protection(self.base.context, self.fixture.client, course_id=course,
+                    lesson_id=f"{lesson}?unreviewed=yes", expected_profile=self.profile)
+            receipt = ingress.observe_learner_access_protection(self.base.context, self.fixture.client, course_id=course,
+                                                                lesson_id=lesson, expected_profile=self.profile)
+        self.assertEqual([row["path"] for row in receipt["endpointDenials"]], list(paths))
+        self.assertEqual(urls, [origin + target for target in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
+        self.assertEqual(self.fixture.responses, [])
+
     def test_browser_matrix_refuses_alias_drift_after_denials(self):
         self.enqueue_selected_protection(ingress._BROWSER_PATHS,
                                          final_alias={**self.alias(), "deploymentId": "dpl_foreign"})
@@ -392,6 +412,37 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
+    def test_learner_access_plan_signs_only_the_exact_reviewed_get_scope(self):
+        actor = "10000000-0000-4000-8000-000000000001"
+        course = "10000000-0000-4000-8000-000000000002"
+        lesson = "10000000-0000-4000-8000-000000000003"
+        grant = "10000000-0000-4000-8000-000000000004"
+        path = f"/course/v1/student/lessons/{lesson}"
+        targets = (f"/course/v1/student/courses/{course}", f"/course/v1/student/progress?courseId={course}",
+                   path, f"{path}/playback", f"/course/v1/student/progress?lessonId={lesson}", f"{path}/quiz", f"{path}/quiz/attempts")
+        requests = [{"method": "GET", "target": target, "bodySha256": window._EMPTY, "uses": 2 if index == 0 else 1}
+                    for index, target in enumerate(targets)]
+        selection = {"operation": "observe-paid-access", "courseId": course, "lessonId": lesson, "grantId": grant,
+                     "revision": 2_147_483_647, "outcome": "restricted"}
+        action = {"stage": "learner-access", "actorId": actor, "windowSeconds": 60, "requests": requests, "learnerAccessAction": selection}
+        self.assertEqual(window.validate_interactive_action(action), action)
+        selector = window._selection_sha(action)
+        self.assertEqual(selector, (actor + lesson).replace("-", ""))
+        cookie, gateway_key, _, _ = window._material("fixture" * 8, "https://owned.vercel.app", "a" * 40, "b" * 64,
+                                                       "8", "learner-access", 1_794_009_600, 60, "c" * 32, selector)
+        self.assertEqual(cookie.split(".")[:3], ["v2", "8", "learner-access"])
+        self.assertEqual(cookie.split(".")[6], selector)
+        self.assertEqual(len(gateway_key), 64)
+        for change in ({"outcome": "published"}, {"outcome": []}, {"grantId": "bad"}, {"revision": True}, {"revision": 2_147_483_648}):
+            with self.subTest(selection=change), self.assertRaisesRegex(ValueError, "LEARNER_ACCESS_SELECTION_REQUIRED"):
+                window.validate_interactive_action({**action, "learnerAccessAction": {**selection, **change}})
+        for index, change in ((0, {"uses": 1}), (4, {"target": targets[4] + "&limit=2"}),
+                              (6, {"method": "POST"}), (3, {"bodySha256": "b" * 64})):
+            changed = [*requests]
+            changed[index] = {**changed[index], **change}
+            with self.subTest(request=change), self.assertRaises(ValueError):
+                window.validate_interactive_action({**action, "requests": changed})
+
     def test_paid_republish_plan_binds_two_reviewed_transition_digests_and_dispositions(self):
         owner = "10000000-0000-4000-8000-000000000001"
         course = "10000000-0000-4000-8000-000000000002"

@@ -56,6 +56,8 @@ const interactiveCourseParameters = {
   "{trackId}": /^[A-Za-z0-9_-]{1,255}$/u,
 };
 const courseUuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u;
+const learnerAccessPath = /^\/course\/v1\/student\/(?:courses\/[^/]+|lessons\/[^/]+(?:\/(?:playback|quiz(?:\/attempts)?))?)$/u;
+const learnerAccessProgress = /^\/course\/v1\/student\/progress\?(?:courseId|lessonId)=([a-f0-9-]+)$/u;
 
 // Pass the raw, query-free gateway pathname. Admission remains a separate step.
 // Paid-grant readback also uses the authoring course-detail GET.
@@ -80,6 +82,10 @@ export function interactiveCourseStagePermits(stage, method, target) {
   if (method !== "GET") return false;
   if (stage === "media") return group === "authoring";
   if (stage === "learning") return group === "catalog";
+  if (stage === "learner-access" && group === "learning") {
+    const progressId = learnerAccessProgress.exec(target)?.[1];
+    return path === target && learnerAccessPath.test(path) || progressId !== undefined && courseUuid.test(progressId);
+  }
   if (stage === "paid-grant") {
     return group === "authoring" && /^\/course\/v1\/admin\/courses\/[^/]+$/u.test(path);
   }

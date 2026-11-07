@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { verify as verifySignature } from "node:crypto";
 import pg from "pg";
 import {
   test,
@@ -11,6 +12,13 @@ const enabled = process.env.COURSE_AUTHORING_BROWSER_FIXTURE === "1";
 test.skip(!enabled, "Run only through the owned authoring browser launcher.");
 const storagePath = process.env.COURSE_AUTHORING_STORAGE_PATH;
 const externalOrigins = new Set<string>();
+function ownedCourseDatabase() {
+  const database = new URL(process.env.COURSE_AUTHORING_GRANT_DATABASE_URL ?? "");
+  if (database.protocol !== "postgresql:" || database.hostname !== "127.0.0.1" ||
+    database.pathname !== "/lash_authoring_course_integration" || database.username !== "postgres" ||
+    database.password || database.search !== "?sslmode=disable") throw new Error("Owned Course DB required");
+  return new pg.Client({ connectionString: database.href });
+}
 async function ownedContext(
   browser: Browser,
   storageState: Awaited<ReturnType<BrowserContext["storageState"]>>,
@@ -55,9 +63,7 @@ test("owner manual access uses real auth/Course SQL audit and explicit lost-ack 
   const states = JSON.parse(await readFile(storagePath, "utf8"));
   const context = await ownedContext(browser, states.owner);
   const page = await context.newPage();
-  const database = new URL(process.env.COURSE_AUTHORING_GRANT_DATABASE_URL ?? "");
-  if (database.hostname !== "127.0.0.1" || database.pathname !== "/lash_authoring_course_integration") throw new Error("Owned Course DB required");
-  const sql = new pg.Client({ connectionString: database.href });
+  const sql = ownedCourseDatabase();
   await sql.connect();
   const headers = { origin: baseURL, "x-lash-csrf": "1" };
   try {
@@ -803,6 +809,7 @@ test("keyboard ordering, archival identity and dirty-editor cancellation remain 
         .lessons.map((lesson: { id: string }) => lesson.id)
         .sort(),
     );
+    await page.route("**/api/admin/lessons/*/video", route => route.fulfill({ status: 503 }));
     await page
       .getByRole("heading", { name: "Lesson A", exact: true })
       .locator("..")
@@ -1152,5 +1159,120 @@ test("paid archive preserves a real manual grant and validated republish restore
   } finally {
     await learner.close().catch(() => {});
     await context.close().catch(() => {});
+  }
+});
+
+test("paid learner overview and six protected reads follow the archived and restored Course state", async ({ browser, baseURL }) => {
+  const muxPublicKey = process.env.COURSE_AUTHORING_MUX_PUBLIC_KEY;
+  if (!storagePath || !baseURL || !muxPublicKey) throw new Error("Owned learner access fixture required");
+  const states = JSON.parse(await readFile(storagePath, "utf8"));
+  const owner = await ownedContext(browser, states.owner);
+  const learner = await ownedContext(browser, states.manualGrantLearner);
+  const sql = ownedCourseDatabase();
+  const headers = { origin: baseURL, "x-lash-csrf": "1" };
+  await sql.connect();
+  try {
+    const created = await owner.request.post("/api/admin/courses", {
+      headers,
+      data: { title: "Paid access qualification", slug: "paid-access-qualification", currency: "CAD", accessMode: "paid", priceCents: 1400, taxClassification: "fixture-reviewed" },
+    });
+    expect(created.status()).toBe(200);
+    const courseId = (await created.json()).course.id;
+    const detail = `/api/admin/courses/${courseId}`;
+    const createdModule = await owner.request.post(`${detail}/modules`, {
+      headers,
+      data: { expectedCourseRevision: 1, title: "Scope", slug: "scope", position: 1 },
+    });
+    expect(createdModule.status()).toBe(200);
+    const moduleId = (await createdModule.json()).module.id;
+    const createdLesson = await owner.request.post(`/api/admin/modules/${moduleId}/lessons`, {
+      headers,
+      data: { expectedCourseRevision: 2, title: "Scoped paid lesson", slug: "scoped-paid-lesson", position: 1,
+        transcript: "Owned paid playback transcript.",
+        contentDocument: { version: 1, blocks: [{ _type: "block", _key: "paid", children: [{ _type: "span", _key: "scope", text: "Owned protected paid lesson." }] }] } },
+    });
+    expect(createdLesson.status()).toBe(200);
+    const lessonId = (await createdLesson.json()).lesson.id;
+    const quiz = await owner.request.put(`/api/admin/lessons/${lessonId}/quiz`, {
+      headers,
+      data: { expectedCourseRevision: 3, document: { version: 1, mode: "graded", passingPercent: 80,
+        questions: [{ id: "q1", prompt: "Which choice is correct?", options: [{ id: "a", text: "First" }, { id: "b", text: "Second" }],
+          correctOptionId: "a", feedback: "The first choice is correct." }] } },
+    });
+    expect(quiz.status()).toBe(200);
+    await sql.query(`insert into video_assets(lesson_id,generation,is_current,managed_by_course,provider_environment_id,status,mux_asset_id,mux_playback_id,caption_tracks)
+      values($1,1,true,true,'authoring-owned-fixture','ready','owned-asset-paid-access','ownedPlaybackPaidAccess','[]'::jsonb)`, [lessonId]);
+    const changeStatus = async (expectedRevision: number, status: string) => {
+      const response = await owner.request.patch(detail, { headers, data: { expectedRevision, status } });
+      expect(response.status()).toBe(200);
+    };
+    await changeStatus(4, "published");
+    const grant = await owner.request.post(`${detail}/manual-grants`, {
+      headers,
+      data: { userId: states.manualGrantCustomerIds[0], expectedCourseRevision: 5, reason: "Owned protected access", idempotencyKey: crypto.randomUUID() },
+    });
+    expect(grant.status()).toBe(200);
+    expect(await grant.json()).toMatchObject({ state: "confirmed", grant: { orderId: null, provider: null } });
+
+    const coursePath = `/academy/courses/${courseId}`;
+    const lessonPath = `/api/academy/lessons/${lessonId}`;
+    const targets = [`/api${coursePath}`, lessonPath, `${lessonPath}/playback`,
+      `/api/academy/progress?lessonId=${lessonId}`, `${lessonPath}/quiz`, `${lessonPath}/quiz/attempts`];
+    const observe = async (status: number, code?: string) => {
+      const page = await learner.newPage();
+      try {
+        await page.goto(coursePath);
+        const lessonLink = page.locator(`a[href="${coursePath}/lessons/${lessonId}"]`);
+        if (status === 200) await expect(lessonLink).toBeVisible();
+        else {
+          await expect(page.getByRole("heading", { name: status === 410 ? "This course is archived" : "This course is unavailable", exact: true })).toBeVisible();
+          await expect(lessonLink).toHaveCount(0);
+        }
+        const responses = [];
+        for (const target of targets) {
+          const response = await learner.request.get(target, { maxRedirects: 0 });
+          expect(response.status()).toBe(status);
+          expect(response.headers()["cache-control"]).toBe("private, no-store");
+          expect(response.headers()["x-request-id"]).toMatch(/^[a-f0-9-]{36}$/u);
+          const value = await response.json();
+          if (code) expect(value).toEqual({ error: { code, message: expect.any(String) }, requestId: response.headers()["x-request-id"] });
+          responses.push(value);
+        }
+        if (status === 200) {
+          const [course, lesson, playback, progress, assessment, attempts] = responses;
+          expect(course).toMatchObject({ course: { id: courseId, accessMode: "paid" } });
+          expect(lesson).toMatchObject({ lesson: { id: lessonId, isPreview: false } });
+          expect(progress).toEqual({ progress: [] });
+          expect(assessment).toMatchObject({ quiz: { lessonId, document: { mode: "graded" } } });
+          expect(attempts).toEqual({ attempts: [] });
+          for (const [token, audience] of [[playback.playbackToken, "v"], [playback.thumbnailToken, "t"]]) {
+            const [header, claims, signature] = token.split(".");
+            expect(verifySignature("RSA-SHA256", Buffer.from(`${header}.${claims}`), muxPublicKey, Buffer.from(signature, "base64url"))).toBe(true);
+            const { aud, exp } = JSON.parse(Buffer.from(claims, "base64url").toString("utf8"));
+            expect(aud).toBe(audience);
+            const lifetime = exp - Math.floor(Date.now() / 1000);
+            expect(lifetime).toBeGreaterThanOrEqual(590);
+            expect(lifetime).toBeLessThanOrEqual(600);
+          }
+        }
+      } finally { await page.close(); }
+    };
+    await observe(200);
+    const playbackExpiry = async () => (await sql.query("select last_token_expires_at from video_assets where lesson_id=$1", [lessonId])).rows[0].last_token_expires_at;
+    const firstExpiry = await playbackExpiry();
+    expect(firstExpiry).toBeInstanceOf(Date);
+    await changeStatus(5, "archived");
+    await observe(410, "course_archived");
+    await changeStatus(6, "draft");
+    await observe(404, "not_found");
+    expect(await playbackExpiry()).toEqual(firstExpiry);
+    await changeStatus(7, "published");
+    await observe(200);
+    expect((await sql.query("select count(*)::int as count from lesson_progress where lesson_id=$1", [lessonId])).rows[0].count).toBe(0);
+    expect((await sql.query("select count(*)::int as count from quiz_attempts where lesson_id=$1", [lessonId])).rows[0].count).toBe(0);
+  } finally {
+    await sql.end();
+    await learner.close();
+    await owner.close();
   }
 });

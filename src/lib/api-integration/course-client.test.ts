@@ -60,6 +60,48 @@ test("learner identity is server-derived and public calls use no application cre
   await assert.rejects(anonymous.listMyCourses(), { code: "sign_in_required" });
 });
 
+test("learner access requires the issued customer in direct page reads and same-origin lesson reads", async () => {
+  const courseId = adminId, site = "https://site.example.com", token = "scoped.learner.jwt";
+  const course = { id: courseId, slug: "owned-paid", title: "Owned paid course", description: null, priceCents: 100, currency: "CAD",
+    introduction: null, cover: null, seo: null, accessMode: "paid", modules: [] };
+  const lesson = { id: lessonId, moduleId: courseId, slug: "lesson", title: "Lesson", content: null, contentDocument: null,
+    transcript: null, captions: [], isPreview: false, position: 1 };
+  let scope: { actorId: string; lessonId: string } | undefined = { actorId: customerId, lessonId };
+  let issued: { customerId: string; token: string } | null = { customerId: adminId, token };
+  let issuances = 0;
+  const requests: GatewayRequest[] = [];
+  const client = createCourseClient({ enabled: allowed, getLearnerAccess: async () => scope, issueCustomerToken: async () => { issuances++; return issued; },
+    run: async () => assert.fail("read-only scope entered write admission"), getTransport: () => async request => {
+      requests.push(request);
+      return Response.json(request.path.startsWith("/v1/student/courses/") ? { course } : { lesson });
+    } });
+  const lessonHandler = createAcademyHandler("lesson", { client: () => client });
+  const getLesson = (selectedLesson: string) => lessonHandler(new Request(`${site}/api/academy/lessons/${selectedLesson}`), { lessonId: selectedLesson });
+  await assert.rejects(client.getMyCourse(courseId), { code: "forbidden", status: 403 });
+  const refused = await getLesson(lessonId);
+  assert.equal(refused.status, 403);
+  assert.equal(refused.headers.get("cache-control"), "private, no-store");
+  assert.equal(requests.length, 0);
+  issued = { customerId, token };
+  const before = issuances;
+  assert.equal((await getLesson(courseId)).status, 403);
+  await assert.rejects(client.recordProgress(lessonId, { expectedProgressRevision: 0, event: "lesson_started" }), { code: "forbidden", status: 403 });
+  assert.equal(issuances, before);
+  assert.deepEqual(await client.getMyCourse(courseId), { course });
+  const admitted = await getLesson(lessonId);
+  assert.equal(admitted.status, 200);
+  assert.equal(admitted.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(await admitted.json(), { lesson });
+  assert.deepEqual(requests.map(request => [request.method, request.path, request.applicationToken]), [
+    ["GET", `/v1/student/courses/${courseId}`, token], ["GET", `/v1/student/lessons/${lessonId}`, token],
+  ]);
+  issued = null;
+  await assert.rejects(client.getMyCourse(courseId), { code: "sign_in_required", status: 401 });
+  scope = undefined;
+  issued = { customerId: adminId, token };
+  assert.deepEqual(await client.getMyCourse(courseId), { course });
+});
+
 test("request/response validation rejects unknown fields and accepts composed learner curriculum objects", () => {
   assert.throws(() => validateCandidateRequest("course", "/v1/student/lessons/{lessonId}/progress", "post", { params: { lessonId }, body: { event: "lesson_started", userId: adminId } }));
   assert.throws(() => validateCandidateResponse("course", "/v1/courses", "get", 200, { courses: [], nextCursor: null, privateToken: "must-not-leak" }));

@@ -306,6 +306,37 @@ test('fixed current certification plan joins the original release plan, terminal
       assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedFree, requests })));
     assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedFree,
       learningAction: { ...selectedFree.learningAction, idempotencyKey: userId } })));
+    const accessLessonId = '10000000-0000-4000-8000-000000000007';
+    const accessGrantId = '10000000-0000-4000-8000-000000000008';
+    const student = '/course/v1/student', lesson = student + '/lessons/' + accessLessonId;
+    const selectedAccess = {
+      stage: 'learner-access', actorId: userId, windowSeconds: 90,
+      learnerAccessAction: { operation: 'observe-paid-access', courseId, lessonId: accessLessonId, grantId: accessGrantId, revision: 2_147_483_647, outcome: 'allowed' },
+      requests: [student + '/courses/' + courseId, student + '/progress?courseId=' + courseId, lesson, lesson + '/playback',
+        student + '/progress?lessonId=' + accessLessonId, lesson + '/quiz', lesson + '/quiz/attempts']
+        .map((target, index) => ({ method: 'GET', target, bodySha256: emptyBodySha256, uses: index === 0 ? 2 : 1 })),
+    };
+    for (const outcome of ['allowed', 'archived', 'draft', 'restricted']) {
+      const scope = { ...selectedAccess, learnerAccessAction: { ...selectedAccess.learnerAccessAction, outcome } };
+      const prepared = prepareP2ProfiledCertificationOperator(paired(scope));
+      assert.equal(prepared.status, 'P2_INTERACTIVE_LEARNER_ACCESS_ACTIONS_PLANNED');
+      assert.deepEqual(prepared['learner-access'].scopedAction, scope);
+      assert.deepEqual(prepared.identity.scopedAction.identityActor, { actorKind: 'customer', actorId: userId });
+      assert.equal(BigInt(prepared['learner-access'].initialEpoch) - BigInt(prepared.identity.initialEpoch), 2n);
+      const checked = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+        { input: JSON.stringify(prepared['learner-access']), encoding: 'utf8' });
+      assert.equal(checked.status, 0, checked.stderr);
+    }
+    const accessSettings = paired(selectedAccess), accessConfirmation = { confirmation: 'staging/owned-scoped-action' };
+    await assert.rejects(p2ProfiledCertificationOperator(accessSettings, accessConfirmation), { code: 'ENOENT' });
+    await assert.rejects(p2ProfiledCertificationOperator({ ...accessSettings, execution: {} }, accessConfirmation), error => error.code !== 'ENOENT');
+    const [accessRead, ...accessRemaining] = selectedAccess.requests;
+    for (const requests of [selectedAccess.requests.toReversed(), [accessRead, ...accessRemaining.slice(0, -1)],
+      [{ ...accessRead, uses: 1 }, ...accessRemaining], [{ ...accessRead, method: 'POST' }, ...accessRemaining],
+      [{ ...accessRead, bodySha256: 'f'.repeat(64) }, ...accessRemaining]])
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedAccess, requests })));
+    for (const changed of [{ outcome: 'unknown' }, { lessonId: 'invalid' }, { grantId: 'invalid' }, { revision: 0 }, { revision: 2_147_483_648 }])
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedAccess, learnerAccessAction: { ...selectedAccess.learnerAccessAction, ...changed } })));
     const draftPair = prepareP2ProfiledCertificationOperator(paired(selectedAuthoring));
     assert.equal(draftPair.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
     assert.deepEqual(draftPair.authoring.scopedAction, selectedAuthoring);

@@ -42,6 +42,9 @@ _QUIZ_PATH = re.compile(rf"/api/admin/lessons/{_COURSE_ID}/quiz")
 _COURSE_SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 _PUBLIC_COURSE_PATH = re.compile(rf"/courses/{_COURSE_SLUG}")
 _LEARNER_COURSE_PATH = re.compile(rf"/academy/courses/{_COURSE_ID}")
+_LEARNER_COURSE_API_PATH = re.compile(rf"/api/academy/courses/{_COURSE_ID}")
+_LEARNER_LESSON_API_PATH = re.compile(rf"/api/academy/lessons/{_COURSE_ID}(?:/playback|/quiz(?:/attempts)?)?")
+_LEARNER_PROGRESS_API_PATH = re.compile(rf"/api/academy/progress\?lessonId={_COURSE_ID}")
 _PAID_GRANT_PATH = re.compile(rf"/admin/courses/{_COURSE_ID}/manual-grants")
 
 
@@ -81,6 +84,8 @@ class UnauthenticatedIngressClient:
         demand(type(path) is str and (path in _BROWSER_PATHS + _AUTHORING_PATHS or _AUTHORING_DETAIL_PATH.fullmatch(path) or
                                      _PUBLICATION_READINESS_PATH.fullmatch(path) or _QUIZ_PATH.fullmatch(path) or
                                      len(path) <= 129 and _PUBLIC_COURSE_PATH.fullmatch(path) or _LEARNER_COURSE_PATH.fullmatch(path) or
+                                     _LEARNER_COURSE_API_PATH.fullmatch(path) or _LEARNER_LESSON_API_PATH.fullmatch(path) or
+                                     _LEARNER_PROGRESS_API_PATH.fullmatch(path) or
                                      _PAID_GRANT_PATH.fullmatch(path)),
                "P2_INTERACTIVE_INGRESS_PATH_REFUSED")
         url = origin + path
@@ -198,6 +203,15 @@ def observe_paid_grant_protection(context, client, *, expected_profile, course_i
     demand(type(course_id) is str and re.fullmatch(_COURSE_ID, course_id), "P2_INTERACTIVE_PAID_GRANT_COURSE_REQUIRED")
     return _observe_selected_protection(context, client, expected_profile, browser=True,
                                         paths=(f"/admin/courses/{course_id}/manual-grants",))
+
+
+def observe_learner_access_protection(context, client, *, expected_profile, course_id, lesson_id):
+    demand(all(type(value) is str and re.fullmatch(_COURSE_ID, value) for value in (course_id, lesson_id)),
+           "P2_INTERACTIVE_LEARNER_ACCESS_TARGET_REQUIRED")
+    lesson = f"/api/academy/lessons/{lesson_id}"
+    paths = (f"/academy/courses/{course_id}", f"/api/academy/courses/{course_id}", lesson, f"{lesson}/playback",
+             f"/api/academy/progress?lessonId={lesson_id}", f"{lesson}/quiz", f"{lesson}/quiz/attempts")
+    return _observe_selected_protection(context, client, expected_profile, browser=True, paths=paths)
 
 
 def _observe_selected_protection(context, client, expected_profile, *, browser, paths=None):

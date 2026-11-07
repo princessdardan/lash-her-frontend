@@ -179,6 +179,12 @@ const reviewedPaidRepublishDependencies = {
   "src/lib/writer-admission/interactive-proof.ts": "596bbc4c7af8605357dd874b86d906543f7dd43d8b2e1bf9e0559781616274dc",
   "src/lib/api-integration/course-admin-handler.ts": "e413f9dc9950e5113e8f38301b6717f08c29908aa73f85d7e938536702247b0b"
 };
+const reviewedPaidLearnerAccessDependencies = {
+  ...reviewedPaidRepublishDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "e4276aacc52ece8eb2b4be8bb3a8b7b3e14ce9b189e8c3065aafca7f098a6cb7",
+  "src/lib/api-integration/course-client.ts": "cbba3d76032de509046d82b3b381a0619f7e8a40cde1c9172caca7bec329dced",
+  "src/app/(site)/academy/courses/[courseId]/page.tsx": "e8459a0b396095d2e427b9c207d15992fe142e40e626e76b7c34f8dc06db1f64"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -208,7 +214,7 @@ function sourcePolicy(sourceCommit) {
     [reviewedQuizAuthoringSource, [reviewedQuizAuthoringDependencies, reviewedFreeEnrollmentDependencies]],
     [reviewedPaidGrantSource, [reviewedPaidGrantDependencies]],
     [reviewedPaidArchiveSource, [reviewedPaidArchiveDependencies]],
-    [reviewedPaidRepublishSource, [reviewedPaidRepublishDependencies]]]
+    [reviewedPaidRepublishSource, [reviewedPaidRepublishDependencies, reviewedPaidLearnerAccessDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

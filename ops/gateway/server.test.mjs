@@ -11,7 +11,7 @@ import { createPrivateTlsProxy } from "./private-tls.mjs";
 import { createHash, createHmac } from "node:crypto";
 import { createP2CertificationFault, p2GatewayProcessBinding } from "./p2-certification-fault.mjs";
 import { createAdmissionReader, selectScopedMuxCallback, SCOPED_INTERACTIVE_HEADER, SCOPED_MUX_HEADER } from "./admission.mjs";
-import { interactiveCourseOperation } from "./operations.mjs";
+import { interactiveCourseOperation, interactiveCourseStagePermits } from "./operations.mjs";
 
 let folder, key, cert, keyFile, certFile, wrongCertFile;
 before(() => {
@@ -97,6 +97,25 @@ test("interactive Course operations classify exact existing browser route and me
     ["DELETE", `/course${video}/captions/${"x".repeat(256)}`],
     ["GET", null],
   ]) assert.equal(interactiveCourseOperation(method, path), null, `${method} ${path}`);
+});
+
+test("learner access stage permits only protected reads with exact query shapes", () => {
+  const id = "20000000-0000-4000-8000-000000000001";
+  const course = `/course/v1/student/courses/${id}`;
+  const lesson = `/course/v1/student/lessons/${id}`;
+  const progress = "/course/v1/student/progress";
+  for (const target of [course, lesson, `${lesson}/playback`, `${lesson}/quiz`, `${lesson}/quiz/attempts`,
+    `${progress}?courseId=${id}`, `${progress}?lessonId=${id}`]) {
+    assert.equal(interactiveCourseOperation("GET", target.split("?", 1)[0]), "learning");
+    assert.equal(interactiveCourseStagePermits("learner-access", "GET", target), true, target);
+  }
+  for (const [method, target] of [
+    ["GET", "/course/v1/courses/example"], ["GET", "/course/v1/student/courses"], ["GET", `${course}/lessons`],
+    ["GET", `${lesson}?`], ["GET", `${course}?limit=1`], ["GET", progress], ["GET", `${progress}?courseId=not-a-uuid`],
+    ["GET", `${progress}?lessonId=${id}&courseId=${id}`], ["GET", `${progress}?courseId=${id}&courseId=${id}`],
+    ["GET", `${progress}?%63ourseId=${id}`], ["GET", `${progress}?courseId=${id.replace("-", "%2D")}`],
+    ["POST", `${course}/enrollments`], ["POST", `${lesson}/progress`], ["POST", `${lesson}/quiz/attempts`],
+  ]) assert.equal(interactiveCourseStagePermits("learner-access", method, target), false, `${method} ${target}`);
 });
 
 async function fixture(t, handler, overrides = {}, options = {}) {
@@ -525,6 +544,86 @@ test("scoped learning acknowledges free enrollment after access denial and confi
   assert.deepEqual(observed.interactiveEvidence.acknowledged.slice(0, 3), acknowledged.slice(0, 3));
   assert.deepEqual(observed.interactiveEvidence.acknowledged.slice(3).sort((a, b) => a.requestIndex - b.requestIndex), acknowledged.slice(3));
 });
+
+for (const [scenario, status] of [["allowed", 200], ["archived", 410], ["draft", 404], ["revoked", 403], ["expired", 403]]) {
+  test(`scoped learner access acknowledges only the reviewed reads for ${scenario} access`, async t => {
+    const fixtureId = number => `20000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
+    const [courseId, lessonId, moduleId, quizId, foreignId] = [1, 2, 3, 4, 5].map(fixtureId);
+    const courseTarget = `/course/v1/student/courses/${courseId}`;
+    const lessonTarget = `/course/v1/student/lessons/${lessonId}`;
+    const progress = "/course/v1/student/progress";
+    const targets = [courseTarget, `${progress}?courseId=${courseId}`, lessonTarget, `${lessonTarget}/playback`,
+      `${progress}?lessonId=${lessonId}`, `${lessonTarget}/quiz`, `${lessonTarget}/quiz/attempts`];
+    const requests = targets.map((target, index) => ({ method: "GET", target, bodySha256: certificationHash(""), uses: index === 0 ? 2 : 1 }));
+    const lesson = { id: lessonId, moduleId, slug: "first-lesson", title: "First lesson", content: null,
+      contentDocument: { version: 1, blocks: [] }, transcript: "Owned learner-access transcript", captions: [], isPreview: false, position: 1 };
+    const course = { id: courseId, slug: "p2q-learner-access", title: "P2Q paid course", description: null, introduction: null, currency: "CAD",
+      accessMode: "paid", priceCents: 3900, cover: null, seo: null, modules: [{ id: moduleId, slug: "first-module", title: "First module",
+        description: null, position: 1, lessons: [lesson] }] };
+    const expiresAt = "2026-11-07T16:10:00.000Z";
+    const positive = [{ course }, { progress: [] }, { lesson }, { playbackId: "owned-playback", playbackToken: "synthetic-playback-proof",
+      expiresAt, thumbnailToken: "synthetic-thumbnail-proof", thumbnailExpiresAt: expiresAt }, { progress: [] },
+    { quiz: { id: quizId, lessonId, revision: 1, document: { version: 1, mode: "graded", passingPercent: 80,
+      questions: [{ id: "owned-question", prompt: "What comes first?", options: [{ id: "first", text: "Preparation" }, { id: "second", text: "Review" }] }] } } },
+    { attempts: [] }];
+    const error = (code, message) => ({ error: { code, message } });
+    const values = targets.map((_target, index) => {
+      if (scenario === "allowed") return positive[index];
+      if (scenario === "archived") return error("COURSE_ARCHIVED", "Course is archived");
+      if (scenario === "draft") {
+        if (index < 2) return error("COURSE_NOT_FOUND", "Course not found");
+        return index < 5 ? error("LESSON_NOT_FOUND", "Lesson not found") : error("NOT_FOUND", "Quiz not found");
+      }
+      if (scenario === "revoked" && index < 5) return error("ENTITLEMENT_REVOKED", "Course entitlement was revoked");
+      return error("ACTIVE_ENROLLMENT_REQUIRED", "Active enrollment required");
+    });
+    const forwarded = [];
+    const f = await interactiveFixture(t, requests, (req, res) => {
+      forwarded.push({ method: req.method, path: req.url, requestId: req.headers["x-request-id"],
+        proof: req.headers[SCOPED_INTERACTIVE_HEADER], authorization: req.headers.authorization });
+      const index = targets.indexOf(`/course${req.url}`);
+      res.writeHead(index === -1 ? 400 : status, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify(values[index] ?? error("BAD_REQUEST", "Unexpected fixture request")));
+    }, "learner-access");
+    for (const input of [f.signed({ path: courseTarget, actor: foreignId }), f.signed({ path: targets[3], actor: foreignId }),
+      f.signed({ path: `/course/v1/student/courses/${foreignId}` }), f.signed({ path: `${progress}?lessonId=${foreignId}` }),
+      f.signed({ path: `${progress}?courseId=${courseId}&lessonId=${lessonId}` }), f.signed({ path: `${courseTarget}/lessons` }),
+      f.signed({ path: "/course/v1/student/courses" }), f.signed({ path: "/course/v1/courses/p2q-learner-access", catalog: true }),
+      f.signed({ method: "POST", path: `${courseTarget}/enrollments`, body: "{}" }),
+      f.signed({ method: "POST", path: `${lessonTarget}/progress`, body: "{}" }),
+      f.signed({ method: "POST", path: `${lessonTarget}/quiz/attempts`, body: "{}" })]) {
+      assert.equal((await f.send(input)).status, 503);
+    }
+    const steps = [0, 1, 0, 2, 3, 4, 5, 6].map(requestIndex => ({ input: f.signed({ path: targets[requestIndex] }), requestIndex }));
+    async function complete({ input, requestIndex }) {
+      const output = await f.send(input);
+      assert.equal(output.status, status);
+      assert.deepEqual(JSON.parse(output.body), values[requestIndex]);
+      const requestId = output.headers["x-request-id"], proofRequestId = input.headers["x-request-id"];
+      assert.match(requestId, /^[a-f0-9-]{36}$/u);
+      assert.notEqual(requestId, proofRequestId);
+      return { requestId, proofRequestId, requestIndex, upstreamStatus: status };
+    }
+    const acknowledged = await Promise.all(steps.slice(0, 2).map(complete));
+    assert.equal((await f.send(steps[0].input)).status, 503);
+    for (const step of steps.slice(2)) acknowledged.push(await complete(step));
+    for (const input of [...targets.map(path => f.signed({ path })), ...steps.slice(2).map(step => step.input)]) {
+      assert.equal((await f.send(input)).status, 503);
+    }
+    assert.equal(new Set(acknowledged.map(row => row.requestId)).size, steps.length);
+    assert.equal(new Set(acknowledged.map(row => row.proofRequestId)).size, steps.length);
+    const expectedForwarded = steps.map(({ input }, index) => ({ method: "GET", path: input.path.slice("/course".length),
+      requestId: acknowledged[index].requestId, proof: undefined, authorization: input.headers.authorization }));
+    assert.deepEqual(forwarded.slice(0, 2).sort((a, b) => a.path.localeCompare(b.path)), expectedForwarded.slice(0, 2));
+    assert.deepEqual(forwarded.slice(2), expectedForwarded.slice(2));
+    const observed = f.admissionState();
+    assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+    assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+    assert.equal(observed.interactiveEvidence.admitted, steps.length);
+    assert.deepEqual(observed.interactiveEvidence.acknowledged.slice(0, 2).sort((a, b) => a.requestIndex - b.requestIndex), acknowledged.slice(0, 2));
+    assert.deepEqual(observed.interactiveEvidence.acknowledged.slice(2), acknowledged.slice(2));
+  });
+}
 
 test("scoped paid grant acknowledges the reviewed owner mutation and exact command and grant readbacks", async t => {
   const fixtureId = number => `20000000-0000-4000-8000-${String(number).padStart(12, "0")}`;

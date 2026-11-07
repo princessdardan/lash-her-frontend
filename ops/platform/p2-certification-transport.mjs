@@ -35,6 +35,11 @@ const authoringQuizOperation='save-quiz-revision';
 const authoringArchiveOperation='archive-paid-course';
 const learningEnrollmentOperation='enroll-free-course';
 const paidGrantOperation='grant-paid-access';
+const learnerAccessOperation='observe-paid-access';
+const learnerAccessOutcomes={
+  allowed:{status:200,codes:[null]},archived:{status:410,codes:['course_archived']},
+  draft:{status:404,codes:['not_found']},restricted:{status:403,codes:['access_required','access_revoked']},
+};
 const authoringPairedOperation=operation=>operation==='edit-and-stale-draft'||operation===authoringReorderOperation;
 const authoringPublicationCase=operation=>operation===authoringPublicationOperation||operation===authoringRepublishOperation;
 const emptyBodySha256=p2NativeHash(Buffer.alloc(0));
@@ -176,16 +181,33 @@ function reviewedPaidGrantAction(action){
   return {selection:{...paidGrant,actorKind:'admin'},paidGrant};
 }
 
+function reviewedLearnerAccessAction(action){
+  const selected=action.learnerAccessAction;
+  demand(canonicalUuid(action.actorId)&&exact(selected,['operation','courseId','lessonId','grantId','revision','outcome'])&&
+    selected.operation===learnerAccessOperation&&[selected.courseId,selected.lessonId,selected.grantId].every(canonicalUuid)&&
+    Number.isInteger(selected.revision)&&selected.revision>=1&&selected.revision<=2_147_483_647&&
+    typeof selected.outcome==='string'&&Object.hasOwn(learnerAccessOutcomes,selected.outcome));
+  const {courseId,lessonId}=selected,student='/course/v1/student',lesson=student+'/lessons/'+lessonId;
+  demand(isDeepStrictEqual(action.requests,[
+    student+'/courses/'+courseId,student+'/progress?courseId='+courseId,lesson,lesson+'/playback',
+    student+'/progress?lessonId='+lessonId,lesson+'/quiz',lesson+'/quiz/attempts',
+  ].map((target,index)=>({method:'GET',target,bodySha256:emptyBodySha256,uses:index===0?2:1}))));
+  const learnerAccess={actorId:action.actorId,...selected};
+  return {selection:{...learnerAccess,actorKind:'customer'},learnerAccess};
+}
+
 function reviewedInteractivePlan(plan,initial){
   const action=plan.scopedAction,binding=initial.interactiveController;
   const identity=action?.stage==='identity',authoring=action?.stage==='authoring',learning=action?.stage==='learning';
-  const paidGrant=action?.stage==='paid-grant',gatewayScoped=authoring||learning||paidGrant;
+  const paidGrant=action?.stage==='paid-grant',learnerAccess=action?.stage==='learner-access';
+  const gatewayScoped=authoring||learning||paidGrant||learnerAccess;
   const enrollment=identity&&Object.hasOwn(action,'identityEnrollment');
   demand(plan.environment==='staging'&&plan.sourceCommit===initial.sourceCommit&&plan.operatorSourceCommit===initial.sourceCommit&&
     plan.maximumSeconds===300&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
     (BigInt(plan.initialEpoch)+2n).toString().length<=18&&sha256(plan.planSha256)&&
     (identity||gatewayScoped||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',
-      enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':learning?'learningAction':paidGrant?'paidGrantAction':'frontendAction'])&&
+      enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':learning?'learningAction':
+        paidGrant?'paidGrantAction':learnerAccess?'learnerAccessAction':'frontendAction'])&&
     Array.isArray(action.requests)&&(gatewayScoped||action.requests.length===0)&&
     Number.isInteger(action.windowSeconds)&&action.windowSeconds>=30&&action.windowSeconds<=300&&
     exact(binding,['challenge','bindingSha256','browserProgramSha256'])&&sha256(binding.challenge)&&
@@ -193,6 +215,7 @@ function reviewedInteractivePlan(plan,initial){
   if(authoring)return reviewedAuthoringAction(action);
   if(learning)return reviewedLearningAction(action);
   if(paidGrant)return reviewedPaidGrantAction(action);
+  if(learnerAccess)return reviewedLearnerAccessAction(action);
   if(enrollment){
     const selected=action.identityEnrollment;
     demand(action.actorId===null&&exact(selected,['provider','emailSha256','nonce'])&&
@@ -271,7 +294,10 @@ function requireInteractiveGatewayObservation(receipt,epoch,{operation,outcome,q
     [[0,200],[1,403],[2,201],[3,200],[1,200]],
   ]:operation===paidGrantOperation?[
     [[0,200],[1,200],[0,200],[2,201],[1,200],[3,200],[0,200]],
-  ]:[indices.map(index=>[index,statuses[index]])];
+  ]:operation===learnerAccessOperation?[
+    [0,1,0,2,3,4,5,6],[1,0,0,2,3,4,5,6],
+  ].map(order=>order.map(index=>[index,learnerAccessOutcomes[outcome].status])):
+    [indices.map(index=>[index,statuses[index]])];
   demand(receipt.epoch===epoch&&nonzeroSha256(receipt.gatewayStateSha256)&&receipt.gatewayActive===0&&receipt.gatewayUncertain===0&&
     Array.isArray(acks)&&acks.length===sequences[0].length&&acks.every(row=>exact(row,['requestId','proofRequestId','requestIndex','upstreamStatus'])&&
       canonicalUuid(row.requestId)&&canonicalUuid(row.proofRequestId))&&
@@ -305,6 +331,22 @@ function paidGrantJoinedEvidence(evidence,selected,observed){
     isDeepStrictEqual(witness,{...body,enrollmentId,transitionId,readOnly:true}));
   return {actorId,...body,enrollmentId,transitionId,browserResponseSha256:p2NativeHash(response),
     courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256:observed.gatewayEvidenceSha256,gatewayPostRequestId};
+}
+
+function learnerAccessJoinedEvidence(evidence,selected,observed){
+  demand(exact(evidence,['browserResponse','courseWitness']));
+  const {browserResponse:response,courseWitness:witness}=evidence;
+  const {actorId,operation,courseId,lessonId,grantId,revision,outcome}=selected;
+  const effectiveAccess=outcome==='allowed',{status,codes}=learnerAccessOutcomes[outcome];
+  const body={courseId,lessonId,outcome},coursePath='/academy/courses/'+courseId,lessonPath='/api/academy/lessons/'+lessonId;
+  const targets=['/api'+coursePath,lessonPath,lessonPath+'/playback','/api/academy/progress?lessonId='+lessonId,lessonPath+'/quiz',lessonPath+'/quiz/attempts'];
+  demand(exact(response,['page','reads','body'])&&isDeepStrictEqual(response.page,{pathname:coursePath,status:200,lessonLink:effectiveAccess})&&
+    Array.isArray(response.reads)&&response.reads.length===targets.length&&Array.from(response.reads).every((row,index)=>
+      exact(row,['target','status','requestId','code'])&&row.target===targets[index]&&row.status===status&&codes.includes(row.code)&&
+      row.requestId===observed.gatewayAcknowledgements[index+2].requestId)&&
+    isDeepStrictEqual(response.body,body)&&isDeepStrictEqual(witness,{...body,actorId,grantId,revision,effectiveAccess,readOnly:true}));
+  return {actorId,operation,courseId,lessonId,grantId,revision,outcome,effectiveAccess,browserResponseSha256:p2NativeHash(response),
+    courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256:observed.gatewayEvidenceSha256};
 }
 
 function authoringJoinedEvidence(evidence,selected,observed){
@@ -488,12 +530,14 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           const controllerChallenge=binding.challenge,epoch=(BigInt(snapshot.initialEpoch)+1n).toString();
           const stage=snapshot.scopedAction.stage,identity=stage==='identity',authoring=stage==='authoring',learning=stage==='learning';
           const stageLabel=stage.toUpperCase().replaceAll('-','_');
-          const paidGrant=stage==='paid-grant',gatewayScoped=authoring||learning||paidGrant;
-          const {selection,enrollment,authoring:authoringPermit,learning:learningPermit,paidGrant:paidGrantPermit}=selectedInteractive;
+          const paidGrant=stage==='paid-grant',learnerAccess=stage==='learner-access',gatewayScoped=authoring||learning||paidGrant||learnerAccess;
+          const {selection,enrollment,authoring:authoringPermit,learning:learningPermit,paidGrant:paidGrantPermit,
+            learnerAccess:learnerAccessPermit}=selectedInteractive;
           const paired=authoringPairedOperation(selection.operation);
           const context=selection.actorKind==='admin'?'owner':'learner';
           const permitInput={stage,epoch,windowSeconds:snapshot.scopedAction.windowSeconds,
             ...(authoring?{authoring:authoringPermit}:learning?{learning:learningPermit}:paidGrant?{paidGrant:paidGrantPermit}:
+              learnerAccess?{learnerAccess:learnerAccessPermit}:
               enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
           let phase='new',expiresAt,installed=false,gatewayObservation;
           const call=async(operation,disposition,extraKeys,data={},timeout=120_000)=>{
@@ -558,6 +602,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               const evidence=structuredClone(caseEvidence);
               const expected=learning?learningJoinedEvidence(evidence,selection,gatewayObservation):
                 paidGrant?paidGrantJoinedEvidence(evidence,selection,gatewayObservation):
+                learnerAccess?learnerAccessJoinedEvidence(evidence,selection,gatewayObservation):
                 paired?authoringChangeJoinedEvidence(evidence,selection,gatewayObservation,authoringPermit.winnerBodySha256):
                 selection.operation===authoringQuizOperation?authoringQuizJoinedEvidence(evidence,selection,gatewayObservation):
                 selection.operation===authoringArchiveOperation?authoringArchiveJoinedEvidence(evidence,selection,gatewayObservation):
@@ -570,7 +615,8 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                   'frontendAdmission','frontendOperationCount',...gatewayFenceKeys],{caseEvidence:evidence});
               demand(receipt.browserProgramSha256===binding.browserProgramSha256&&Object.entries(expected).every(([key,value])=>isDeepStrictEqual(receipt[key],value))&&
                 isDeepStrictEqual(receipt.frontendAdmission,{epoch:(BigInt(epoch)+1n).toString(),newWork:false,recovery:false,active:0,uncertain:0})&&
-                Number.isSafeInteger(receipt.frontendOperationCount)&&receipt.frontendOperationCount>0&&closedGateway(receipt));
+                (learnerAccess?receipt.frontendOperationCount===0:
+                  Number.isSafeInteger(receipt.frontendOperationCount)&&receipt.frontendOperationCount>0)&&closedGateway(receipt));
               interactiveRetained=structuredClone(receipt);phase='retained';return receipt;
             },
           });

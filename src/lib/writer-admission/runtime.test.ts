@@ -392,6 +392,40 @@ test("learning enrollment permits bind canonical customer and idempotency UUIDs 
     issue(selected.toUpperCase()), issue(selected.slice(1))]) assert.equal(attest("POST", enroll, invalid), null);
 });
 
+test("learner-access v2 admits only read routes and binds the exact lesson", () => {
+  const now = 1_794_009_600;
+  const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
+  const actorId = selectedCustomerId, lessonId = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
+  const selector = actorId.replaceAll("-", "") + lessonId.replaceAll("-", "");
+  const courseId = "10000000-0000-4000-8000-000000000001";
+  const issue = (selection?: string, stage = "learner-access") => {
+    const body = [selection ? "v2" : "v1", "12", stage, now, now + 120, "ab".repeat(16), ...(selection ? [selection] : [])].join(".");
+    const mac = createHmac("sha256", env.CRON_SECRET)
+      .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex");
+    return `${body}.${mac}`;
+  };
+  const cookie = issue(selector), page = `/academy/courses/${courseId}`, lesson = `/api/academy/lessons/${lessonId}`;
+  const attest = (method: string, path: string, permit = cookie) =>
+    attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, cookie: permit }, env, now);
+  for (const path of [page, "/api" + page, lesson, `${lesson}/playback`, `${lesson}/quiz`, `${lesson}/quiz/attempts`, "/api/academy/progress"]) {
+    const proof = attest("GET", path);
+    assert.ok(proof);
+    const verified = readInteractiveRequest(proof, cookie, env, now);
+    assert.deepEqual(verified?.learnerAccess, { actorId, lessonId });
+    assert.equal(verified?.learningEnrollment, undefined);
+    assert.equal(readInteractiveRequest(proof, issue(selector.slice(32) + selector.slice(0, 32)), env, now), null);
+  }
+  for (const [method, path] of [["GET", `${page}/lessons/${lessonId}`], ["GET", `/api/academy/lessons/${courseId}`],
+    ["GET", `/api/academy/lessons/${courseId}/quiz/attempts`], ["GET", `${lesson}/progress`], ["GET", `${lesson}/playback/`],
+    ["GET", "/api/academy/courses"], ["GET", "/api/customer-auth/session"], ["GET", "/courses/owned-course"],
+    ["POST", `${lesson}/progress`], ["POST", `${lesson}/quiz/attempts`], ["PUT", `${lesson}/quiz`], ["HEAD", page]]) {
+    assert.equal(attest(method, path), null);
+  }
+  for (const invalid of [issue(), issue(selector.slice(32)), issue(selector.slice(0, 32) + "0".repeat(32)), issue(selector, "learning")]) {
+    assert.equal(attest("GET", lesson, invalid), null);
+  }
+});
+
 test("paid-grant v2 permits only the fresh mutation and selected owner page, and clears owner scope", async () => {
   const now = 1_794_009_600;
   const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };

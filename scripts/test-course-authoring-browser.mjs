@@ -1,6 +1,6 @@
 // Owns both disposable PostgreSQL16 databases, an exact Course source export and
 // loopback Next/Course servers. Accepts no database URL or live provider config.
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
@@ -37,6 +37,11 @@ const cluster = join(temporary, "postgres"),
 const signingKey = randomBytes(32).toString("hex"),
   authKey = randomBytes(32).toString("hex"),
   learnerKey = randomBytes(32).toString("hex");
+const muxKeys = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: "spki", format: "pem" },
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
+});
 const workload = `${Buffer.from('{"alg":"HS256"}').toString("base64url")}.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 7200 })).toString("base64url")}.fixture`;
 const common = {
   PATH: process.env.PATH,
@@ -271,6 +276,13 @@ try {
     HTTP_BIND_ADDRESS: "127.0.0.1",
     COURSE_ADMIN_JWT_CURRENT_SECRET: signingKey,
     COURSE_LEARNER_JWT_CURRENT_SECRET: learnerKey,
+    MUX_ENVIRONMENT_ID: "authoring-owned-fixture",
+    MUX_TOKEN_ID: "authoring-owned-token-id",
+    MUX_TOKEN_SECRET: "authoring-owned-token-secret",
+    MUX_WEBHOOK_SECRET: "authoring-owned-webhook-secret",
+    MUX_SIGNING_KEY_ID: "authoring-owned-signing-key",
+    MUX_SIGNING_PRIVATE_KEY: Buffer.from(muxKeys.privateKey).toString("base64"),
+    MUX_CORS_ORIGIN: origin,
   };
   children.push(
     start(
@@ -348,6 +360,7 @@ try {
     COURSE_AUTHORING_BROWSER_ORIGIN: origin,
     COURSE_AUTHORING_STORAGE_PATH: storagePath,
     COURSE_AUTHORING_GRANT_DATABASE_URL: courseUrl,
+    COURSE_AUTHORING_MUX_PUBLIC_KEY: muxKeys.publicKey,
   };
   process.stdout.write(
     `Authoring browser source frontend=${frontendSha} course=${courseSha}\n`,

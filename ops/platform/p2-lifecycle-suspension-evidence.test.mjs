@@ -12,12 +12,13 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, installP2PaidArchiveObserver, observeP2InteractiveIdentitySession,
   p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringQuizPath, p2AuthoringReorderPath,
-  p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LearningEnrollmentPaths, p2LifecycleMutationTarget, p2PaidGrantPaths, parseP2OwnerSuspensionResponse,
+  p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LearningEnrollmentPaths, p2LifecycleMutationTarget, p2PaidGrantPaths,
+  p2PaidLearnerAccessPaths, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
   validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt, validateP2AuthoringReorderResponses,
   validateP2InteractiveIdentityReceipt, validateP2LearningEnrollmentReceipt, validateP2LifecycleBrowserInput,
-  validateP2LifecycleMutationReceipt, validateP2PaidGrantReceipt, watchP2AuthoringEdits, watchP2AuthoringMutation, watchP2LearningEnrollment,
-  watchP2LifecycleMutation, watchP2PaidGrant } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2LifecycleMutationReceipt, validateP2PaidGrantReceipt, validateP2PaidLearnerAccessReceipt, watchP2AuthoringEdits,
+  watchP2AuthoringMutation, watchP2LearningEnrollment, watchP2LifecycleMutation, watchP2PaidGrant, watchP2PaidLearnerAccess } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
 import { launchP2InteractiveBrowserRecorder, launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
 import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
@@ -237,6 +238,7 @@ function interactivePermit(input) {
   else if (input.stage === "identity") selector = input.identity.actorKind === "admin" ? identityHash(["identity", "admin"])
     : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "");
   else if (input.stage === "learning") selector = (input.learning.actorId + input.learning.idempotencyKey).replaceAll("-", "");
+  else if (input.stage === "learner-access") selector = (input.learnerAccess.actorId + input.learnerAccess.lessonId).replaceAll("-", "");
   else if (input.stage === "paid-grant") selector = (input.paidGrant.actorId + input.paidGrant.idempotencyKey).replaceAll("-", "");
   else if (input.authoring?.operation === "save-quiz-revision") selector = authoringQuizSelector(input.authoring.actorId);
   else if (input.authoring?.operation === "archive-paid-course") selector = authoringArchiveSelector(input.authoring.actorId);
@@ -307,6 +309,43 @@ function ownedPaidGrant() {
     body: { courseId: target.courseId, userId, commandId, grantId, courseRevision: target.revision } };
   return { target, input, pagePath, pathname, submitted, response, receipt };
 }
+
+const ownedAccessOutcomes = {
+  allowed: { status: 200, code: null }, archived: { status: 410, code: "course_archived", heading: "This course is archived", message: "This course is archived." },
+  draft: { status: 404, code: "not_found", heading: "This course is unavailable", message: "This resource is unavailable." },
+  restricted: { status: 403, code: "access_revoked", heading: "Course access has ended", message: "Course access has been revoked." },
+};
+
+function ownedPaidLearnerAccess(outcome) {
+  const target = { actorId: userId, operation: "observe-paid-access", courseId: ownedCourseId, lessonId: randomUUID(), grantId: randomUUID(), revision: 4, outcome };
+  const input = interactiveInput({ stage: "learner-access", learnerAccess: target });
+  const paths = p2PaidLearnerAccessPaths(target), { status, code } = ownedAccessOutcomes[outcome];
+  const receipt = { page: { pathname: paths.pagePath, status: 200, lessonLink: outcome === "allowed" },
+    reads: paths.targets.map(target => ({ target, status, requestId: randomUUID(), code })),
+    body: { courseId: target.courseId, lessonId: target.lessonId, outcome } };
+  return { target, input, receipt, ...paths };
+}
+
+test("paid learner access permit and compact receipt bind the customer, lesson and six exact outcomes", () => {
+  for (const outcome of Object.keys(ownedAccessOutcomes)) {
+    const { input, target, receipt, pagePath, targets } = ownedPaidLearnerAccess(outcome), permit = interactivePermit(input);
+    assert.equal(validateP2InteractiveBrowserInput(input), input);
+    assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+    assert.equal(permit.cookie.split(".")[6], (target.actorId + target.lessonId).replaceAll("-", ""));
+    assert.equal(p2InteractiveBrowserEntryPath(input, "learner"), pagePath);
+    assert.throws(() => p2InteractiveBrowserEntryPath(input, "owner"));
+    const lesson = `/api/academy/lessons/${target.lessonId}`;
+    assert.deepEqual(targets, [`/api/academy/courses/${target.courseId}`, lesson, `${lesson}/playback`,
+      `/api/academy/progress?lessonId=${target.lessonId}`, `${lesson}/quiz`, `${lesson}/quiz/attempts`]);
+    for (const change of [{ actorId: randomUUID() }, { lessonId: randomUUID() }])
+      assert.throws(() => validateP2InteractiveBrowserPermit(interactivePermit({ ...input, learnerAccess: { ...target, ...change } }), input));
+    for (const change of [{ grantId: "other" }, { revision: 0 }, { revision: 2_147_483_648 }, { outcome: "other" }])
+      assert.throws(() => validateP2InteractiveBrowserInput({ ...input, learnerAccess: { ...target, ...change } }));
+    assert.deepEqual(validateP2PaidLearnerAccessReceipt(receipt, target), receipt);
+    for (const change of [{ target: pagePath }, { status: 401 }, { code: "forbidden" }, { requestId: receipt.reads[1].requestId }, { token: "private" }])
+      assert.throws(() => validateP2PaidLearnerAccessReceipt({ ...receipt, reads: [{ ...receipt.reads[0], ...change }, ...receipt.reads.slice(1)] }, target));
+  }
+});
 
 test("paid-grant v2 permit and compact receipt bind exact owner, key, course and customer", () => {
   const { target, input, pagePath, receipt } = ownedPaidGrant(), permit = interactivePermit(input);
@@ -1850,6 +1889,85 @@ test("owned Chromium paid-grant capture binds approved request, audit, grant and
           const expires = scenario.unconfirmed ? Math.floor(Date.now() / 1000) + 2 : rejected.expires;
           await assert.rejects(rejected.watch.wait(expires), /PAID_GRANT_RESPONSE_REFUSED/u);
           assert.throws(() => rejected.watch.finish(), /PAID_GRANT_RESPONSE_REFUSED/u);
+        } finally { await rejected.close(); }
+      }
+    } finally { await browser.close(); }
+  });
+
+test("owned Chromium paid learner access checks the normal page and exact credentialed read-only endpoints",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const open = async (outcome, scenario) => {
+      const fixture = ownedPaidLearnerAccess(outcome), { input, target, targets, receipt, pagePath, lessonPath } = fixture;
+      const expected = ownedAccessOutcomes[outcome], context = await browser.newContext(), effects = [];
+      const now = Math.floor(Date.now() / 1000) * 1000, date = new Date(now).toUTCString(), expiresAt = new Date(now + 600_000).toISOString();
+      const moduleId = randomUUID(), lesson = { id: target.lessonId, moduleId, isPreview: false, title: "Private lesson text" };
+      const question = { id: "question", prompt: "Private question", options: [{ id: "first", text: "First" }, { id: "second", text: "Second" }] };
+      const bodies = [
+        { course: { id: target.courseId, accessMode: "paid", currency: "CAD", priceCents: 100, modules: [{ id: moduleId, lessons: [lesson] }] } },
+        { lesson: scenario === "preview" ? { ...lesson, isPreview: true } : lesson },
+        { playbackId: "private-playback-id", playbackToken: "private-playback-token".repeat(3), thumbnailToken: "private-thumbnail-token".repeat(3),
+          expiresAt, thumbnailExpiresAt: scenario === "long-thumbnail" ? new Date(now + 700_000).toISOString() : expiresAt },
+        { progress: [{ id: randomUUID(), userId: scenario === "foreign-progress" ? randomUUID() : target.actorId, lessonId: target.lessonId,
+          enrollmentId: randomUUID(), resumePositionSeconds: 45 }] },
+        { quiz: { id: randomUUID(), lessonId: target.lessonId, revision: 2, document: { version: 1, mode: "graded", passingPercent: 80,
+          questions: [scenario === "answer-key" ? { ...question, correctOptionId: "first" } : question] } } },
+        { attempts: [{ id: randomUUID(), lessonId: target.lessonId, quizRevisionId: randomUUID(), results: [{ feedback: "Private feedback" }] }] },
+      ];
+      const document = `<!doctype html><script src="/_next/static/owned-asset.js"></script>
+        <script>fetch('/courses/owned-link-prefetch?_rsc=fixture');</script>
+        <h1>${outcome === "allowed" ? "Owned paid course" : scenario === "wrong-heading" ? "Sign in to continue" : expected.heading}</h1>
+        ${outcome === "allowed" || scenario === "leaked-link" ? `<a href="${lessonPath}">Open lesson</a>` : ""}`;
+      await context.addCookies([{ name: "owned-customer", value: "fixture-session", url: input.browserOrigin + "/" }]);
+      await context.route("**/*", async route => {
+        const request = route.request(), url = new URL(request.url());
+        if (url.origin !== input.browserOrigin) return route.abort();
+        if (request.isNavigationRequest()) return route.fulfill({ status: 200, contentType: "text/html", body: document });
+        const index = targets.indexOf(url.pathname + url.search);
+        if (index < 0) return route.fulfill({ status: 200, contentType: "text/javascript", body: "" });
+        effects.push({ target: targets[index], method: request.method(), session: (await request.headerValue("cookie"))?.includes("owned-customer=fixture-session") });
+        if (scenario === "redirect" && index === 0) return route.fulfill({ status: 302, headers: { location: "/api/academy/other" } });
+        const id = receipt.reads[index].requestId;
+        const body = outcome === "allowed" ? bodies[index] : { error: { code: expected.code,
+          message: scenario === "unsafe-error" ? "Private upstream detail" : expected.message }, requestId: scenario === "wrong-error-id" ? randomUUID() : id };
+        return route.fulfill({ status: expected.status, body: JSON.stringify(body), headers: { "content-type": "application/json", date,
+          "x-request-id": id, "cache-control": scenario === "public-cache" ? "public" : "private, no-store" } });
+      });
+      const page = await context.newPage(), watch = watchP2PaidLearnerAccess(context, page, input);
+      return { ...fixture, page, watch, effects, expires: Math.floor(Date.now() / 1000) + 60,
+        close: async () => { watch.close(); await context.close(); } };
+    };
+    try {
+      for (const outcome of Object.keys(ownedAccessOutcomes)) {
+        const owned = await open(outcome);
+        try {
+          await owned.watch.open(owned.expires);
+          assert.throws(() => owned.watch.finish(), /LEARNER_ACCESS_RESPONSE_REFUSED/u);
+          await owned.watch.wait(owned.expires);
+          const receipt = owned.watch.finish();
+          assert.deepEqual(receipt, owned.receipt);
+          assert.deepEqual(owned.effects, owned.targets.map(target => ({ target, method: "GET", session: true })));
+          assert.doesNotMatch(JSON.stringify(receipt), /Private|private-playback|private-thumbnail|fixture-session/u);
+          await owned.page.evaluate(() => fetch("/api/academy/alternate"));
+          assert.throws(() => owned.watch.finish(), /LEARNER_ACCESS_RESPONSE_REFUSED/u);
+        } finally { await owned.close(); }
+      }
+
+      for (const [outcome, scenario] of [["allowed", "preview"], ["allowed", "long-thumbnail"], ["allowed", "foreign-progress"],
+        ["allowed", "answer-key"], ["allowed", "public-cache"], ["allowed", "redirect"], ["archived", "unsafe-error"],
+        ["draft", "wrong-error-id"], ["archived", "leaked-link"], ["restricted", "wrong-heading"], ["allowed", "write"], ["allowed", "navigate"]]) {
+        const rejected = await open(outcome, scenario);
+        try {
+          if (["leaked-link", "wrong-heading"].includes(scenario)) {
+            await assert.rejects(rejected.watch.open(Math.floor(Date.now() / 1000) + 2), /LEARNER_ACCESS_RESPONSE_REFUSED/u);
+          } else {
+            await rejected.watch.open(rejected.expires);
+            if (scenario === "write") await rejected.page.evaluate(() => fetch("/api/academy/progress", { method: "POST" }));
+            if (scenario === "navigate") await rejected.page.evaluate(path => history.pushState(null, "", path), rejected.lessonPath);
+            await assert.rejects(rejected.watch.wait(rejected.expires), /LEARNER_ACCESS_RESPONSE_REFUSED/u);
+          }
+          assert.throws(() => rejected.watch.finish(), /LEARNER_ACCESS_RESPONSE_REFUSED/u);
         } finally { await rejected.close(); }
       }
     } finally { await browser.close(); }

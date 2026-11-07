@@ -221,7 +221,20 @@ const SQL = Object.freeze({
     paidArchiveIndependentAccess: paidArchiveDigest(`${paidEligibleEnrollment} AND e.course_id<>$1::uuid
       AND EXISTS(SELECT 1 FROM public.courses c WHERE c.id=e.course_id AND c.status='published')`,
       "e.course_id", "pg_catalog.to_jsonb(e.course_id)"),
-    paidRepublishAccount: paidArchiveDigest("FROM public.account_lifecycle_states r WHERE r.user_id=$1::uuid", "r.user_id"),
+    paidCourseAccount: paidArchiveDigest("FROM public.account_lifecycle_states r WHERE r.user_id=$1::uuid", "r.user_id"),
+    paidLearnerActiveAccount: `SELECT NOT EXISTS(SELECT 1 FROM public.account_lifecycle_states
+      WHERE user_id=$1::uuid AND status<>'active') AS active`,
+    paidLearnerLesson: `SELECT c.slug,pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_array(
+      v.id,v.generation,v.mux_asset_id,v.mux_playback_id,v.provider_environment_id,v.managed_by_course,v.duration_seconds,
+      v.status,v.is_current,v.superseded_at,v.deleted_at,v.caption_tracks,v.last_error_code,
+      CASE WHEN $3::boolean THEN NULL ELSE v.last_token_expires_at END
+      )::text,'UTF8')),'hex') AS media_sha256
+      FROM public.lessons l JOIN public.modules m ON m.id=l.module_id JOIN public.courses c ON c.id=m.course_id
+      JOIN LATERAL (SELECT q.document FROM public.quiz_revisions q WHERE q.lesson_id=l.id ORDER BY q.revision DESC LIMIT 1) quiz
+        ON quiz.document->>'mode'='graded' AND pg_catalog.jsonb_array_length(quiz.document->'questions')>0
+      JOIN public.video_assets v ON v.lesson_id=l.id AND v.is_current AND v.deleted_at IS NULL AND v.status='ready'
+        AND v.mux_asset_id<>'' AND v.mux_playback_id<>''
+      WHERE c.id=$1::uuid AND l.id=$2::uuid AND l.archived_at IS NULL AND m.archived_at IS NULL AND NOT l.is_preview`,
     paidArchiveModules: paidArchiveDigest("FROM public.modules r WHERE r.course_id=$1::uuid"),
     paidArchiveLessons: paidArchiveDigest(`FROM public.lessons r JOIN public.modules m ON m.id=r.module_id
       WHERE m.course_id=$1::uuid`),
@@ -504,6 +517,7 @@ const freeEnrollmentBaselines = new WeakMap();
 const paidGrantBaselines = new WeakMap();
 const paidArchiveBaselines = new WeakMap();
 const paidRepublishBaselines = new WeakMap();
+const paidLearnerAccessBaselines = new WeakMap();
 const draftFormFields = ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification"];
 const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
 const draftSlug = value => typeof value === "string" && value.length <= 120 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
@@ -1196,14 +1210,14 @@ async function readPaidArchiveDigests(client, values, queries) {
 
 async function readPaidCourseTransition(client, selection, revision, status, { check, activeGrant = true, expectedAccess = true }) {
   const { courseId, userId, grantId } = selection;
-  const { metadataSha256 } = await readCoursePublication(client, selection, revision, status);
+  const publication = await readCoursePublication(client, selection, revision, status);
   demand((await read(client, "course", "paidArchiveCourse", [courseId])).length === 1, `${check}-eligibility`);
   const grants = await read(client, "course", "paidCourseOwnerGrant", [courseId, userId, grantId]);
   demand(grants.length === 1 && (!activeGrant || grants[0].active === true), `${check}-grant`);
   const access = await read(client, "course", "paidCourseAccess", [courseId, userId]);
   demand(access.length === 1 && access[0].eligible_if_published === expectedAccess
     && access[0].eligible === (status === "published" && expectedAccess), `${check}-access`);
-  return { metadataSha256,
+  return { ...publication,
     history: await readPaidArchiveDigests(client, [courseId], paidArchiveHistory),
     projection: await readPaidArchiveDigests(client, [courseId], paidArchiveProjection),
     independentEligibility: await readPaidArchiveDigests(client, [courseId, userId], ["paidArchiveIndependentAccess"]) };
@@ -1254,7 +1268,7 @@ export function validateP2InteractivePaidRepublish(selection, input) {
 async function readPaidRepublish(client, selection, revision, status) {
   const snapshot = await readPaidCourseTransition(client, selection, revision, status,
     { check: "course-paid-republish", activeGrant: false, expectedAccess: selection.expectedAccess });
-  const [accountSha256] = await readPaidArchiveDigests(client, [selection.userId], ["paidRepublishAccount"]);
+  const [accountSha256] = await readPaidArchiveDigests(client, [selection.userId], ["paidCourseAccount"]);
   return { ...snapshot, accountSha256 };
 }
 
@@ -1291,6 +1305,54 @@ export async function observeP2InteractivePaidRepublishCase(courseJob, selection
   demand(result.accountSha256 === saved.result.accountSha256, "course-paid-republish-account-history");
   return { courseId, slug, revision, status, issueCodes: [...issueCodes], userId, grantId, historyPreserved: true,
     effectiveAccess: published && expectedAccess, readOnly: true };
+}
+
+const paidLearnerAccessFields = ["actorId", "courseId", "lessonId", "grantId", "revision", "outcome"];
+const paidLearnerCourseStatus = Object.freeze({ allowed: "published", archived: "archived", draft: "draft", restricted: "published" });
+
+export function validateP2InteractivePaidLearnerAccess(selection, input) {
+  demand(input === undefined && closed(selection, paidLearnerAccessFields)
+    && [selection.actorId, selection.courseId, selection.lessonId, selection.grantId].every(courseUuid)
+    && Number.isInteger(selection.revision) && selection.revision >= 1 && selection.revision <= 2_147_483_647
+    && typeof selection.outcome === "string" && Object.hasOwn(paidLearnerCourseStatus, selection.outcome), "course-paid-learner-selection");
+}
+
+async function readPaidLearnerAccess(client, { actorId, courseId, lessonId, grantId, revision, outcome }) {
+  const account = await read(client, "course", "paidLearnerActiveAccount", [actorId]);
+  demand(account.length === 1 && account[0].active === true, "course-paid-learner-account");
+  // Successful playback legitimately records expiry. Denied access must leave that receipt unchanged.
+  const lessons = await read(client, "course", "paidLearnerLesson", [courseId, lessonId, outcome === "allowed"]), lesson = lessons[0];
+  demand(lessons.length === 1 && draftSlug(lesson.slug) && SHA.test(lesson.media_sha256), "course-paid-learner-lesson");
+  const snapshot = await readPaidCourseTransition(client, { courseId, slug: lesson.slug, userId: actorId, grantId },
+    revision, paidLearnerCourseStatus[outcome], { check: "course-paid-learner", activeGrant: false, expectedAccess: outcome !== "restricted" });
+  const [accountSha256] = await readPaidArchiveDigests(client, [actorId], ["paidCourseAccount"]);
+  return { ...snapshot, slug: lesson.slug, accountSha256, mediaSha256: lesson.media_sha256 };
+}
+
+export async function captureP2InteractivePaidLearnerAccessBaseline(courseJob, selection, input, dependencies) {
+  validateP2InteractivePaidLearnerAccess(selection, input);
+  const selected = Object.freeze({ ...selection }), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined, client => readPaidLearnerAccess(client, selected));
+  const baseline = Object.freeze({});
+  paidLearnerAccessBaselines.set(baseline, { selected, result, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractivePaidLearnerAccessCase(courseJob, selection, baseline, browserBody, dependencies) {
+  validateP2InteractivePaidLearnerAccess(selection, undefined);
+  const { courseId, lessonId, outcome, actorId, grantId, revision } = selection;
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = paidLearnerAccessBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+    && saved.verifySession === dependencies?.verifySession && paidLearnerAccessFields.every(key => selection[key] === saved.selected[key])
+    && closed(browserBody, ["courseId", "lessonId", "outcome"]) && browserBody.courseId === courseId
+    && browserBody.lessonId === lessonId && browserBody.outcome === outcome, "course-paid-learner-receipt");
+  paidLearnerAccessBaselines.delete(baseline);
+  const { result } = await readHeldCourseDraft(target, dependencies, saved.roleOid, client => readPaidLearnerAccess(client, saved.selected));
+  requireUnchangedPaidCourseHistory(result, saved.result, "course-paid-learner");
+  demand(result.slug === saved.result.slug && result.updatedAt === saved.result.updatedAt && result.accountSha256 === saved.result.accountSha256
+    && result.mediaSha256 === saved.result.mediaSha256, "course-paid-learner-state-drift");
+  return { courseId, lessonId, outcome, actorId, grantId, revision, effectiveAccess: outcome === "allowed", readOnly: true };
 }
 
 export async function runPrivatePersistenceProbeFromStdin(expectedProfile = undefined) {

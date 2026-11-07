@@ -15,7 +15,7 @@ const INTERACTIVE_TARGET = /^\/course\/v1\/[A-Za-z0-9/_-]+(?:\?[!$%&'()*+,./:;=?
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
 const PROVIDER_ID = /^[A-Za-z0-9_-]{1,255}$/u;
 const SHA = /^[a-f0-9]{64}$/u;
-const INTERACTIVE_STAGES = new Set(["authoring", "media", "learning", "paid-grant"]);
+const INTERACTIVE_STAGES = new Set(["authoring", "media", "learning", "learner-access", "paid-grant"]);
 const EMPTY_SHA = createHash("sha256").update("").digest("hex");
 const MAX_ORDINARY_STATE = 4096;
 const MAX_INTERACTIVE_STATE = 16_384;
