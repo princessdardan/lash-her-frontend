@@ -167,6 +167,18 @@ async function contextFor(browser: Browser, state: State, longerMedia = false) {
       return;
     }
     if (
+      url.href === "https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1" &&
+      route.request().method() === "GET" &&
+      route.request().resourceType() === "script"
+    ) {
+      // Chromium's Mux player loads Cast support; the owned fixture does not cast.
+      await route.fulfill({
+        contentType: "application/javascript",
+        body: "/* Owned Cast SDK fixture: no external script execution. */",
+      });
+      return;
+    }
+    if (
       url.origin === "https://va.vercel-scripts.com" &&
       [
         "/v1/speed-insights/script.debug.js",

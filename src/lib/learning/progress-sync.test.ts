@@ -306,6 +306,44 @@ test("duplicate lifecycle snapshots use the first acknowledged position without 
   assert.equal(sync.snapshot()?.maxPositionSeconds, 16);
 });
 
+test("an ordinary pause queued behind the same hidden position is coalesced only within that drain", async () => {
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const calls: Array<
+    ProgressUpdate & { expectedProgressRevision: number; keepalive: boolean }
+  > = [];
+  const position = { resumePositionSeconds: 12, maxPositionSeconds: 14 };
+  const sync = createProgressSync({
+    initial: row,
+    latest: async () => row,
+    write: async (body, keepalive) => {
+      calls.push({ ...body, keepalive });
+      if (calls.length === 1) await hold;
+      return {
+        ...row,
+        revision: body.expectedProgressRevision + 1,
+        resumePositionSeconds: body.resumePositionSeconds!,
+        maxPositionSeconds: body.maxPositionSeconds!,
+      };
+    },
+  });
+  const hidden = sync.queue(position, true);
+  const pause = sync.queue(position);
+  const hiddenWrite = { ...position, expectedProgressRevision: 1, keepalive: true };
+  assert.deepEqual(calls, [hiddenWrite]);
+  release();
+  await Promise.all([hidden, pause]);
+  assert.deepEqual(calls, [hiddenWrite]);
+  assert.equal(sync.snapshot()?.revision, 2);
+  await sync.queue(position);
+  assert.deepEqual(calls, [
+    hiddenWrite,
+    { ...position, expectedProgressRevision: 2, keepalive: false },
+  ]);
+});
+
 test("an explicit keepalive flush upgrades a queued update without replaying an active write", async () => {
   let release!: () => void;
   const hold = new Promise<void>((resolve) => {

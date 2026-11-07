@@ -100,10 +100,9 @@ export function createProgressSync(dependencies: {
         current.maxPositionSeconds === undefined
           ? undefined
           : Math.max(progress?.maxPositionSeconds ?? 0, current.maxPositionSeconds);
-      // Visibility, pagehide and unmount can report the same final position.
-      // Skip only a queued duplicate of a keepalive this drain confirmed.
+      // Visibility, pause and page exit can report the same final position.
+      // Skip a queued duplicate once this drain confirms the keepalive.
       if (
-        keepalive &&
         progress &&
         progress.revision === acknowledgedKeepaliveRevision &&
         current.event === undefined &&
