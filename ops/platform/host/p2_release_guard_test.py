@@ -234,7 +234,7 @@ class IndependentGuardTests(unittest.TestCase):
                 browser = {
                     'winner': {'method': 'PATCH', 'pathname': detail, 'status': 200, 'requestId': request, 'body': draft},
                     'stale': {'method': 'PATCH', 'pathname': detail, 'status': 409, 'requestId': user,
-                              'body': {'code': 'conflict'}, 'dirtyInputPreserved': True}}
+                              'outcome': 'conflict', 'dirtyInputPreserved': True}}
                 browser_key = 'browserResponses'
                 acknowledgement_ids = [f'20000000-0000-4000-8000-{index:012d}' for index in range(1, 9)]
                 acknowledgements = [
@@ -305,7 +305,7 @@ class IndependentGuardTests(unittest.TestCase):
                 broker.command({**envelope, 'operation': 'interactive-retain',
                                 'caseEvidence': {**evidence, browser_key: wrong}})
         if editing:
-            for change in ({'requestId': request}, {'dirtyInputPreserved': False}, {'body': {'code': 'other'}}):
+            for change in ({'requestId': request}, {'dirtyInputPreserved': False}, {'outcome': 'other'}, {'body': {'code': 'conflict'}}):
                 with self.subTest(stale=change), self.assertRaisesRegex(ValueError, 'AUTHORING_STALE_RESPONSE_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, browser_key: {**browser, 'stale': {**browser['stale'], **change}}}})

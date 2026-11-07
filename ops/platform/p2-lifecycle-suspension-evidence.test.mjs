@@ -341,9 +341,9 @@ test("edit authoring permit and paired receipt bind owner, course, revision and 
   const pathname = "/api/admin/courses/" + ownedCourseId;
   const winner = { method: "PATCH", pathname, status: 200, requestId: randomUUID(),
     body: { courseId: ownedCourseId, slug: ownedDraft.slug, revision: 5, status: ownedDraftStatus } };
-  const stale = { method: "PATCH", pathname, status: 409, requestId: randomUUID(), body: { code: "conflict" }, dirtyInputPreserved: true };
+  const stale = { method: "PATCH", pathname, status: 409, requestId: randomUUID(), outcome: "conflict", dirtyInputPreserved: true };
   assert.deepEqual(validateP2AuthoringEditResponses({ winner, stale }, ownedAuthoringEdit), { winner, stale });
-  for (const change of [{ requestId: winner.requestId }, { dirtyInputPreserved: false }, { body: { code: "conflict", title: "private" } }]) {
+  for (const change of [{ requestId: winner.requestId }, { dirtyInputPreserved: false }, { outcome: "other" }, { body: { code: "conflict" } }]) {
     assert.throws(() => validateP2AuthoringEditResponses({ winner, stale: { ...stale, ...change } }, ownedAuthoringEdit));
   }
   assert.throws(() => validateP2AuthoringEditResponses({ winner: { ...winner, body: { ...winner.body, revision: 4 } }, stale }, ownedAuthoringEdit));
@@ -779,7 +779,7 @@ test("owned Chromium two-tab editing captures the winner and proves the stale ti
     const conflict = { error: { code: "conflict", message: "Owned fixture conflict." }, requestId: staleId };
     const expected = { winner: { method: "PATCH", pathname, status: 200, requestId: winnerId,
       body: { courseId: ownedCourseId, slug: ownedDraft.slug, revision: 5, status: "draft" } },
-    stale: { method: "PATCH", pathname, status: 409, requestId: staleId, body: { code: "conflict" }, dirtyInputPreserved: true } };
+    stale: { method: "PATCH", pathname, status: 409, requestId: staleId, outcome: "conflict", dirtyInputPreserved: true } };
     const run = async (scenario) => {
       const context = await browser.newContext(), effects = [];
       await context.route("**/*", async route => {
@@ -793,9 +793,9 @@ test("owned Chromium two-tab editing captures the winner and proves the stale ti
               const title = new FormData(event.currentTarget).get("title"), fields = ${JSON.stringify(ownedEditFields)};
               const response = await fetch(${JSON.stringify(pathname)}, { method: "PATCH", headers: { "content-type": "application/json" },
                 body: JSON.stringify({ ...fields, title, expectedRevision: 4 }) });
-              await response.json();
               const feedback = document.querySelector("#feedback");
               if (response.ok) {
+                await response.json();
                 await (await fetch(${JSON.stringify(pathname)})).json();
                 feedback.setAttribute("role", "status");
                 feedback.textContent = "Course details saved.";

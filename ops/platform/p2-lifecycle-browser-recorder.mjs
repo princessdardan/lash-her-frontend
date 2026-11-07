@@ -299,10 +299,10 @@ export function validateP2AuthoringEditResponses(responses, target) {
   demand(closed(responses, ["winner", "stale"]));
   validateAuthoringCourseReceipt(responses.winner, target, true);
   const stale = responses.stale;
-  demand(closed(stale, ["method", "pathname", "status", "requestId", "body", "dirtyInputPreserved"])
+  demand(closed(stale, ["method", "pathname", "status", "requestId", "outcome", "dirtyInputPreserved"])
     && stale.method === "PATCH" && stale.pathname === authoringPath + "/" + target.courseId && stale.status === 409
     && uuid(stale.requestId) && stale.requestId !== responses.winner.requestId
-    && closed(stale.body, ["code"]) && stale.body.code === "conflict" && stale.dirtyInputPreserved === true);
+    && stale.outcome === "conflict" && stale.dirtyInputPreserved === true);
   return responses;
 }
 
@@ -311,13 +311,20 @@ async function readMutationResponse(response, request, input, pathname, editRole
   const status = editRole === "stale" ? 409 : authoring || preferences(input.lifecycle) ? 200 : 202;
   demand(response.url() === input.browserOrigin + pathname && response.status() === status
     && !response.fromServiceWorker() && request.redirectedTo() === null);
-  const [ids, contentTypes, cache, encodings, lengths, size] = await Promise.all([
+  const [ids, contentTypes, cache] = await Promise.all([
     response.headerValues("x-request-id"), response.headerValues("content-type"), response.headerValues("cache-control"),
-    response.headerValues("content-encoding"), response.headerValues("content-length"), request.sizes(),
   ]);
   demand(ids.length === 1 && uuid(ids[0]) && contentTypes.length === 1 && /^application\/json(?:;\s*charset=utf-8)?$/iu.test(contentTypes[0])
-    && cache.length === 1 && privateNoStore({ "cache-control": cache[0] })
-    && (encodings.length === 0 || encodings.length === 1 && encodings[0].toLowerCase() === "identity")
+    && cache.length === 1 && privateNoStore({ "cache-control": cache[0] }));
+  const receipt = { method: editRole ? "PATCH" : "POST", pathname, status, requestId: ids[0] };
+  // The normal editor handles the status and request ID without consuming its
+  // error body. Chromium may discard those bytes. The conflict alert and
+  // retained dirty input are verified separately before the paired receipt.
+  if (editRole === "stale") return receipt;
+  const [encodings, lengths, size] = await Promise.all([
+    response.headerValues("content-encoding"), response.headerValues("content-length"), request.sizes(),
+  ]);
+  demand((encodings.length === 0 || encodings.length === 1 && encodings[0].toLowerCase() === "identity")
     && lengths.length <= 1 && (lengths.length === 0 || /^[1-9][0-9]{0,6}$/u.test(lengths[0]))
     && Number.isSafeInteger(size.responseBodySize) && size.responseBodySize <= maximum);
   const declared = lengths.length === 1 ? Number(lengths[0]) : undefined;
@@ -325,14 +332,8 @@ async function readMutationResponse(response, request, input, pathname, editRole
   const bytes = await response.body();
   try {
     demand(declared === undefined || bytes.length === declared);
-    const body = exactBrowserJson(bytes, maximum), receipt = { method: editRole ? "PATCH" : "POST", pathname, status, requestId: ids[0] };
+    const body = exactBrowserJson(bytes, maximum);
     if (!authoring) return validateP2LifecycleMutationReceipt({ ...receipt, body }, input.lifecycle);
-    if (editRole === "stale") {
-      demand(closed(body, ["error", "requestId"]) && body.requestId === receipt.requestId
-        && closed(body.error, ["code", "message"]) && body.error.code === "conflict"
-        && typeof body.error.message === "string" && body.error.message.length > 0);
-      return { ...receipt, body: { code: "conflict" } };
-    }
     demand(closed(body, ["course"]) && body.course && typeof body.course === "object" && !Array.isArray(body.course));
     const { id: courseId, slug, revision, status: courseStatus } = body.course;
     return validateAuthoringCourseReceipt({ ...receipt, body: { courseId, slug, revision, status: courseStatus } }, input.authoring, editRole === "winner");
@@ -469,7 +470,8 @@ export function watchP2AuthoringEdits(context, winnerPage, stalePage, input) {
       dirtyInputPreserved = true;
     },
     finish() {
-      return validateP2AuthoringEditResponses({ winner: winner.finish(), stale: { ...stale.finish(), dirtyInputPreserved } }, input.authoring);
+      return validateP2AuthoringEditResponses({ winner: winner.finish(),
+        stale: { ...stale.finish(), outcome: "conflict", dirtyInputPreserved } }, input.authoring);
     },
     close() { winner.close(); stale.close(); },
   };

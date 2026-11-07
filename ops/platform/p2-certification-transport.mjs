@@ -183,8 +183,8 @@ function authoringEditJoinedEvidence(evidence,selected,observed){
   const body={courseId,slug,revision:revision+1,status:'draft'};
   demand(exact(winner,['method','pathname','status','requestId','body'])&&winner.method==='PATCH'&&winner.pathname===pathname&&
     winner.status===200&&winner.requestId===gatewayPatchRequestIds[0]&&isDeepStrictEqual(winner.body,body)&&
-    exact(stale,['method','pathname','status','requestId','body','dirtyInputPreserved'])&&stale.method==='PATCH'&&stale.pathname===pathname&&
-    stale.status===409&&stale.requestId===gatewayPatchRequestIds[1]&&isDeepStrictEqual(stale.body,{code:'conflict'})&&stale.dirtyInputPreserved===true&&
+    exact(stale,['method','pathname','status','requestId','outcome','dirtyInputPreserved'])&&stale.method==='PATCH'&&stale.pathname===pathname&&
+    stale.status===409&&stale.requestId===gatewayPatchRequestIds[1]&&stale.outcome==='conflict'&&stale.dirtyInputPreserved===true&&
     isDeepStrictEqual(witness,{...body,readOnly:true}));
   return {actorId,operation,courseId,slug,browserResponsesSha256:p2NativeHash(responses),courseWitnessSha256:p2NativeHash(witness),
     gatewayEvidenceSha256:observed.gatewayEvidenceSha256,gatewayPatchRequestIds};

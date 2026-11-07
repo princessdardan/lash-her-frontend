@@ -156,7 +156,8 @@ for raw in sys.stdin:
     assert gateway_observation and set(evidence)=={'browserResponses','courseWitness'}
     responses=evidence['browserResponses'];body=responses['winner']['body'];witness=evidence['courseWitness']
     assert responses['winner']['requestId']==post_request and responses['stale']['requestId']==stale_request
-    assert responses['stale']['dirtyInputPreserved'] is True and witness=={**body,'readOnly':True}
+    assert set(responses['stale'])=={'method','pathname','status','requestId','outcome','dirtyInputPreserved'}
+    assert responses['stale']['outcome']=='conflict' and responses['stale']['dirtyInputPreserved'] is True and witness=={**body,'readOnly':True}
     patch_ids=[post_request,stale_request]
     if behavior=='wrong-join':patch_ids.reverse()
     joined={'actorId':action['actorId'],'operation':'edit-and-stale-draft','courseId':body['courseId'],'slug':body['slug'],
@@ -320,7 +321,7 @@ const witness={version:1,status:'P2_INTERACTIVE_LIFECYCLE_CASE_OBSERVED',actorId
 const draft={courseId:commandId,slug,revision:editing?authoringAction.revision+1:1,status:'draft'};
 const evidence=editing?{browserResponses:{
  winner:{method:'PATCH',pathname:coursePath,status:200,requestId,body:draft},
- stale:{method:'PATCH',pathname:coursePath,status:409,requestId:staleRequestId,body:{code:'conflict'},dirtyInputPreserved:true},
+ stale:{method:'PATCH',pathname:coursePath,status:409,requestId:staleRequestId,outcome:'conflict',dirtyInputPreserved:true},
 },courseWitness:{...draft,readOnly:true}}
  :authoring?{browserResponse:{method:'POST',pathname:'/api/admin/courses',status:200,requestId,body:draft},
  courseWitness:{...draft,readOnly:true}}
@@ -386,7 +387,7 @@ const result=start()(async(_verify,_signal,host)=>{
   await assert.rejects(stage.retain({...evidence,gatewayEvidence:{}}));
  }
  if(editing){
-  for(const changed of [{dirtyInputPreserved:false},{requestId},{body:{code:'invalid_request'}}]){
+  for(const changed of [{dirtyInputPreserved:false},{requestId},{outcome:'invalid_request'},{status:400},{body:{code:'conflict'}}]){
    await assert.rejects(stage.retain({...evidence,browserResponses:{...evidence.browserResponses,
     stale:{...evidence.browserResponses.stale,...changed}}}));
   }

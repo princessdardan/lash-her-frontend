@@ -192,9 +192,9 @@ def _authoring_case_evidence(plan, action, evidence, gateway_artifact):
         browser, stale = response["winner"], response["stale"]
         pathname += f'/{selected["courseId"]}'
         method, revision = "PATCH", selected["revision"] + 1
-        demand(_closed_fields(stale, "method pathname status requestId body dirtyInputPreserved") and
+        demand(_closed_fields(stale, "method pathname status requestId outcome dirtyInputPreserved") and
                stale["method"] == method and stale["pathname"] == pathname and type(stale["status"]) is int and
-               stale["status"] == 409 and stale["requestId"] == mutations[1] and stale["body"] == {"code": "conflict"} and
+               stale["status"] == 409 and stale["requestId"] == mutations[1] and stale["outcome"] == "conflict" and
                stale["dirtyInputPreserved"] is True, "P2_INTERACTIVE_AUTHORING_STALE_RESPONSE_REQUIRED")
     demand(_closed_fields(browser, "method pathname status requestId body") and browser["method"] == method and
            browser["pathname"] == pathname and type(browser["status"]) is int and browser["status"] == 200 and
