@@ -391,11 +391,11 @@ test("reorder permit and paired browser receipt bind the selected parent, owner 
   }
 });
 
-function ownedCurriculum(kind) {
+function ownedCurriculum(kind, contentDocument = { version: 1, blocks: [] }) {
   const parentId = kind === "module" ? ownedCourseId : randomUUID(), childSlug = `owned-new-${kind}`;
   const fields = { expectedCourseRevision: 4, title: `Private ${kind} title`, slug: childSlug };
   const posted = kind === "module" ? { ...fields, description: "Private description", position: 2 }
-    : { ...fields, position: 2, contentDocument: { version: 1, blocks: [] }, transcript: null, isPreview: false, captions: [] };
+    : { ...fields, position: 2, contentDocument, transcript: null, isPreview: false, captions: [] };
   const target = { actorId: adminId, operation: "create-curriculum", courseId: ownedCourseId, slug: ownedDraft.slug, revision: 4,
     kind, parentId, childSlug, bodySha256: identityHash(posted) };
   const itemId = randomUUID(), parentField = kind === "module" ? "courseId" : "moduleId";
@@ -1168,6 +1168,66 @@ test("owned Chromium curriculum capture waits for the normal saved status and re
             assert.throws(() => rejected.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
           } finally { await rejected.close(); }
         }
+      }
+    } finally { await browser.close(); }
+  });
+
+test("owned Chromium lesson capture accepts the exact rich v1 POST and refuses text, mark and link drift",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const contentDocument = { version: 1, blocks: [{ _type: "block", _key: "block-4-1", style: "h2",
+      markDefs: [{ _type: "link", _key: "link-4-1", href: "https://owned-link.invalid/details" }],
+      children: [{ _type: "span", _key: "span-4-1", text: "Private rich lesson text", marks: ["strong", "link-4-1"] }] }] };
+    const { input, target, posted, item, body } = ownedCurriculum("lesson", contentDocument);
+    const pathname = p2AuthoringCurriculumPath(target), detail = p2InteractiveBrowserEntryPath(input, "owner"), requestId = randomUUID();
+    const response = { status: 200, headers: { "content-type": "application/json", "cache-control": "private, no-store", "x-request-id": requestId },
+      body: JSON.stringify({ lesson: { ...item, contentDocument } }) };
+    const fixture = `<!doctype html><form><label>Lesson content<textarea name="content"></textarea></label><button>Save lesson</button></form>
+      <div role="status"><p></p></div><script>
+      document.querySelector('form').onsubmit = async event => {
+        event.preventDefault();
+        const contentDocument = JSON.parse(new FormData(event.currentTarget).get('content'));
+        const result = await fetch(${JSON.stringify(pathname)}, {method:'POST',headers:{'content-type':'application/json'},
+          body:JSON.stringify({...${JSON.stringify(posted)},contentDocument})});
+        await result.json();
+        await (await fetch(${JSON.stringify("/api" + detail)})).text();
+        document.querySelector('[role="status"] p').textContent = 'Lesson saved.';
+      };
+      </script>`;
+    const open = (selected, document) => ownedMutationPage(browser, selected, pathname, "owner", response, watchP2AuthoringMutation, document);
+    try {
+      const owner = await open(input, fixture);
+      try {
+        await owner.page.getByRole("textbox", { name: "Lesson content", exact: true }).fill(JSON.stringify(contentDocument));
+        await owner.page.getByRole("button", { name: "Save lesson", exact: true }).click();
+        await owner.watch.wait(owner.expires);
+        assert.deepEqual(owner.watch.finish(), { method: "POST", pathname, status: 200, requestId, body });
+      } finally { await owner.close(); }
+
+      for (const change of [
+        document => { document.blocks[0].children[0].text = "Different text"; },
+        document => { document.blocks[0].children[0].marks[0] = "em"; },
+        document => { document.blocks[0].markDefs[0].href = "https://changed-link.invalid/"; },
+      ]) {
+        const drift = structuredClone(contentDocument);
+        change(drift);
+        const rejected = await open(input);
+        try {
+          await rejected.post(pathname, { ...posted, contentDocument: drift });
+          await assert.rejects(rejected.watch.wait(rejected.expires), /AUTHORING_RESPONSE_REFUSED/u);
+        } finally { await rejected.close(); }
+      }
+
+      for (const invalid of [{ ...posted, contentDocument: { ...contentDocument, version: 2 } },
+        { ...posted, contentDocument: { ...contentDocument, blocks: Array.from({ length: 501 }, () => contentDocument.blocks[0]) } },
+        { ...posted, captions: [{ language: "en", label: "English", url: "https://owned-caption.invalid/" }] }]) {
+        const selected = { ...input, authoring: { ...target, bodySha256: identityHash(invalid) } };
+        const rejected = await open(selected);
+        try {
+          await rejected.post(pathname, invalid);
+          await assert.rejects(rejected.watch.wait(rejected.expires), /AUTHORING_RESPONSE_REFUSED/u);
+        } finally { await rejected.close(); }
       }
     } finally { await browser.close(); }
   });

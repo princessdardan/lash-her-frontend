@@ -209,7 +209,11 @@ export function LessonForm({
           />
           Public preview text (assessments still require enrollment)
         </label>
-        <ContentEditor value={document} onChange={setDocument} />
+        <ContentEditor
+          value={document}
+          revision={revision}
+          onChange={setDocument}
+        />
         <label className="block text-sm">
           Transcript
           <textarea

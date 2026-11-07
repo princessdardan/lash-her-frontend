@@ -405,7 +405,7 @@ test("customer-facing authoring routes isolate unauthenticated and non-editor st
   }
 });
 
-test("owner curriculum forms create the reviewed module and lesson scaffold with exact request bytes", async ({ browser }) => {
+test("owner curriculum forms create a scaffold and populated Portable Text with exact request bytes", async ({ browser }) => {
   if (!storagePath) throw new Error("Owned storage fixture required");
   const states = JSON.parse(await readFile(storagePath, "utf8"));
   const context = await ownedContext(browser, states.owner);
@@ -460,6 +460,48 @@ test("owner curriculum forms create the reviewed module and lesson scaffold with
     expect(course).toMatchObject({ revision: 3, status: "draft", modules: [
       { id: savedModule.id, description: moduleInput.description, lessons: [{ id: lesson.id, transcript: lessonInput.transcript }] },
     ] });
+
+    await page.getByRole("button", { name: "Add lesson", exact: true }).click();
+    await editor.getByLabel("Title", { exact: true }).fill("Rich text lesson");
+    await editor.getByRole("textbox", { name: /^URL name/ }).fill("reviewed-rich-text");
+    await editor.getByLabel("Position", { exact: true }).fill("2");
+    await editor.getByLabel("Transcript", { exact: true }).fill("Reviewed transcript for rich text.");
+    await editor.getByRole("checkbox", { name: "Public preview text (assessments still require enrollment)" }).uncheck();
+    const addBlock = editor.getByRole("button", { name: "Add content block", exact: true });
+    await addBlock.click();
+    const first = editor.getByRole("group", { name: "Content block 1", exact: true });
+    await first.getByLabel("Style", { exact: true }).selectOption("h2");
+    await first.getByLabel("Text 1", { exact: true }).fill("Reviewed first section");
+    await first.getByRole("checkbox", { name: "Bold", exact: true }).check();
+    await first.getByRole("button", { name: "Add text section", exact: true }).click();
+    await first.getByLabel("Text 2", { exact: true }).fill("Reviewed second section");
+    await first.getByRole("button", { name: "Link first text section", exact: true }).click();
+    await first.getByLabel("Link address", { exact: true }).fill("/courses");
+    await addBlock.click();
+    const second = editor.getByRole("group", { name: "Content block 2", exact: true });
+    await second.getByLabel("Text 1", { exact: true }).fill("Another reviewed block");
+    await second.getByRole("button", { name: "Move content block 2 up", exact: true }).click();
+    const richInput = {
+      expectedCourseRevision: 3, title: "Rich text lesson", slug: "reviewed-rich-text", position: 2,
+      contentDocument: { version: 1, blocks: [
+        { _type: "block", _key: "block-3-2", style: "normal", children: [
+          { _type: "span", _key: "span-3-1", text: "Another reviewed block", marks: [] },
+        ], markDefs: [] },
+        { _type: "block", _key: "block-3-1", style: "h2", children: [
+          { _type: "span", _key: "span-3-1", text: "Reviewed first section", marks: ["strong", "link-3-1"] },
+          { _type: "span", _key: "span-3-2", text: "Reviewed second section", marks: [] },
+        ], markDefs: [{ _type: "link", _key: "link-3-1", href: "/courses" }] },
+      ] },
+      transcript: "Reviewed transcript for rich text.", isPreview: false, captions: [],
+    };
+    const { lesson: richLesson } = await save("lesson", `/api/admin/modules/${savedModule.id}/lessons`, richInput);
+    expect(richLesson).toMatchObject({ moduleId: savedModule.id, courseRevision: 4, slug: richInput.slug,
+      contentDocument: richInput.contentDocument, transcript: richInput.transcript, isPreview: false });
+    const { course: reloaded } = await (await page.request.get(`/api/admin/courses/${courseId}`)).json();
+    expect(reloaded).toMatchObject({ revision: 4, modules: [{ id: savedModule.id, lessons: [
+      { id: lesson.id, contentDocument: lessonInput.contentDocument },
+      { id: richLesson.id, contentDocument: richInput.contentDocument },
+    ] }] });
   } finally {
     await context.close().catch(() => {});
   }

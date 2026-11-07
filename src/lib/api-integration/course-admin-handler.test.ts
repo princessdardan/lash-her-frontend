@@ -105,18 +105,24 @@ test("scoped curriculum reorders accept only a revision and unique canonical IDs
   }
 });
 
-test("scoped curriculum creation accepts only the normal module and empty lesson scaffold forms", async () => {
+test("scoped curriculum creation accepts normal forms with empty or validated v1 lesson content", async () => {
   const fields = { expectedCourseRevision: 3, title: "Scaffold", slug: "scaffold", position: 1 };
   const moduleBody = { ...fields, description: null };
   const lessonBody = { ...fields, contentDocument: { version: 1, blocks: [] }, transcript: null, isPreview: false, captions: [] };
-  const documentWithBlock = { version: 1, blocks: [{ _type: "block", _key: "block", children: [{ _type: "span", _key: "span", text: "Lesson" }] }] };
+  const block = { _type: "block", _key: "block", style: "normal", listItem: "bullet", level: 1,
+    children: [{ _type: "span", _key: "span", text: "Lesson", marks: ["strong", "reference"] }],
+    markDefs: [{ _type: "link", _key: "reference", href: "https://owned.invalid/lesson" }] };
+  const populatedLesson = { ...lessonBody, contentDocument: { version: 1, blocks: [block] }, transcript: "Lesson transcript", isPreview: true };
   for (const [operation, method, path, params, valid, invalid] of [
-    ["create-module", "createModule", `/api/admin/courses/${id}/modules`, { courseId: id }, moduleBody,
+    ["create-module", "createModule", `/api/admin/courses/${id}/modules`, { courseId: id }, [moduleBody],
       [null, fields, { ...moduleBody, position: 0 }, { ...moduleBody, archived: false }]],
-    ["create-lesson", "createLesson", `/api/admin/modules/${id}/lessons`, { moduleId: id }, lessonBody,
+    ["create-lesson", "createLesson", `/api/admin/modules/${id}/lessons`, { moduleId: id }, [lessonBody, populatedLesson],
       [null, fields, { ...lessonBody, transcript: undefined }, { ...lessonBody, isPreview: undefined },
-        { ...lessonBody, content: null }, { ...lessonBody, contentDocument: null },
-        { ...lessonBody, contentDocument: documentWithBlock }, { ...lessonBody, captions: [{ language: "en", label: "English", url: "https://owned.invalid/en.vtt" }] }]],
+        { ...lessonBody, content: null }, { ...lessonBody, contentDocument: null }, { ...lessonBody, captions: undefined },
+        { ...lessonBody, contentDocument: { version: 2, blocks: [block] } },
+        { ...lessonBody, contentDocument: { version: 1, blocks: [{ ...block, children: [] }] } },
+        { ...lessonBody, contentDocument: { version: 1, blocks: [{ ...block, markDefs: [{ ...block.markDefs[0], unexpected: true }] }] } },
+        { ...lessonBody, captions: [{ language: "en", label: "English", url: "https://owned.invalid/en.vtt" }] }]],
   ] as const) {
     const calls: unknown[] = [];
     const makeHandler = (ownerId?: string) => createCourseAdminHandler(operation, {
@@ -127,9 +133,9 @@ test("scoped curriculum creation accepts only the normal module and empty lesson
     const handler = makeHandler(id);
     for (const body of invalid) assert.equal((await handler(req(path, "POST", body), params)).status, 400);
     assert.deepEqual(calls, []);
-    assert.equal((await handler(req(path, "POST", valid), params)).status, 200);
+    for (const body of valid) assert.equal((await handler(req(path, "POST", body), params)).status, 200);
     assert.equal((await makeHandler()(req(path, "POST", fields), params)).status, 200);
-    assert.deepEqual(calls, [valid, fields]);
+    assert.deepEqual(calls, [...valid, fields]);
   }
 });
 

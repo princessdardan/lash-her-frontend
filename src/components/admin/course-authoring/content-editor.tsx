@@ -2,21 +2,30 @@
 import type { ContentDocument } from "@/lib/course-authoring/types";
 import { fieldClass, secondaryClass } from "./course-fields";
 type Block = ContentDocument["blocks"][number];
-const key = () => crypto.randomUUID();
-export function newTextBlock(): Block {
+
+function nextKey(prefix: string, siblings: readonly { _key: string }[]): string {
+  const occupied = new Set(siblings.map((item) => item._key));
+  let index = 1;
+  while (occupied.has(`${prefix}-${index}`)) index++;
+  return `${prefix}-${index}`;
+}
+
+function newTextBlock(revision: number, blocks: readonly Block[]): Block {
   return {
     _type: "block",
-    _key: key(),
+    _key: nextKey(`block-${revision}`, blocks),
     style: "normal",
-    children: [{ _type: "span", _key: key(), text: "", marks: [] }],
+    children: [{ _type: "span", _key: `span-${revision}-1`, text: "", marks: [] }],
     markDefs: [],
   };
 }
 export function ContentEditor({
   value,
+  revision,
   onChange,
 }: {
   value: ContentDocument;
+  revision: number;
   onChange: (value: ContentDocument) => void;
 }) {
   function update(index: number, block: Block) {
@@ -173,7 +182,12 @@ export function ContentEditor({
                   ...block,
                   children: [
                     ...block.children,
-                    { _type: "span", _key: key(), text: "", marks: [] },
+                    {
+                      _type: "span",
+                      _key: nextKey(`span-${revision}`, block.children),
+                      text: "",
+                      marks: [],
+                    },
                   ],
                 })
               }
@@ -235,7 +249,7 @@ export function ContentEditor({
             type="button"
             className={secondaryClass}
             onClick={() => {
-              const id = key();
+              const id = nextKey(`link-${revision}`, block.markDefs ?? []);
               update(index, {
                 ...block,
                 markDefs: [
@@ -258,7 +272,10 @@ export function ContentEditor({
         type="button"
         className={secondaryClass}
         onClick={() =>
-          onChange({ ...value, blocks: [...value.blocks, newTextBlock()] })
+          onChange({
+            ...value,
+            blocks: [...value.blocks, newTextBlock(revision, value.blocks)],
+          })
         }
       >
         Add content block

@@ -125,6 +125,10 @@ const reviewedPublicationDependencies = {
   "src/lib/writer-admission/interactive-proof.ts": "faa10d635e7305bd294204f2f9fb7f332aa3efbf1f69bc4a05ef73dc8de47872",
   "src/lib/api-integration/course-admin-handler.ts": "7b0db29139238f0d081f7d382e7d066411a944fb77fc3598d80f2a33b1c86c52"
 };
+const reviewedPortableTextDependencies = {
+  ...reviewedPublicationDependencies,
+  "src/lib/api-integration/course-admin-handler.ts": "337837f0808362304c8f7ce6f81e3a3d1761f8be233c135efcf2f15bfc00e9bb"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -150,7 +154,7 @@ function sourcePolicy(sourceCommit) {
     [reviewedFirstIdentitySource, [reviewedFirstIdentityDependencies]],
     [reviewedAuthoringSource, [reviewedAuthoringDependencies, reviewedDraftEditDependencies,
       reviewedCurriculumReorderDependencies, reviewedCurriculumCreateDependencies]],
-    [reviewedPublicationSource, [reviewedPublicationDependencies]]]
+    [reviewedPublicationSource, [reviewedPublicationDependencies, reviewedPortableTextDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

@@ -401,7 +401,7 @@ function validateCurriculumPost(body, target) {
   if (module) demand(body.description === null || typeof body.description === "string");
   else demand((body.transcript === null || typeof body.transcript === "string") && typeof body.isPreview === "boolean"
     && closed(body.contentDocument, ["version", "blocks"]) && body.contentDocument.version === 1
-    && Array.isArray(body.contentDocument.blocks) && body.contentDocument.blocks.length === 0
+    && Array.isArray(body.contentDocument.blocks) && body.contentDocument.blocks.length <= 500
     && Array.isArray(body.captions) && body.captions.length === 0);
 }
 

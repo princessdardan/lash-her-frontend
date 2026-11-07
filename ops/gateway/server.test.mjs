@@ -653,21 +653,26 @@ for (const kind of ["modules", "lessons"]) {
   });
 }
 
-for (const kind of ["module", "lesson"]) {
-  test(`scoped authoring acknowledges ${kind} creation between two exact draft reads`, async t => {
+for (const variant of ["module", "lesson", "rich lesson"]) {
+  test(`scoped authoring acknowledges ${variant} creation between two exact draft reads`, async t => {
     const courseId = "20000000-0000-4000-8000-000000000001";
     const parentModuleId = "20000000-0000-4000-8000-000000000002";
     const createdId = "20000000-0000-4000-8000-000000000003";
     const foreignParentId = "20000000-0000-4000-8000-000000000004";
-    const creatingModule = kind === "module";
+    const creatingModule = variant === "module";
+    const richLesson = variant === "rich lesson";
     const read = `/course/v1/admin/courses/${courseId}`;
     const createPath = parentId => creatingModule ? `/course/v1/admin/courses/${parentId}/modules` : `/course/v1/admin/modules/${parentId}/lessons`;
     const write = createPath(creatingModule ? courseId : parentModuleId);
     const expectedCourseRevision = 7;
+    const contentDocument = { version: 1, blocks: richLesson ? [{ _type: "block", _key: "block-7-1", style: "h2",
+      children: [{ _type: "span", _key: "span-7-1", text: "Prepare the workspace", marks: ["strong", "link-7-1"] }],
+      markDefs: [{ _type: "link", _key: "link-7-1", href: "https://example.com/workspace-guide" }],
+    }] : [] };
     const form = creatingModule
       ? { expectedCourseRevision, title: "P2Q second module", slug: "p2q-second-module", description: "Reviewed module description", position: 2 }
       : { expectedCourseRevision, title: "P2Q first lesson", slug: "p2q-first-lesson", position: 1,
-        contentDocument: { version: 1, blocks: [] }, transcript: "Reviewed lesson transcript", isPreview: true, captions: [] };
+        contentDocument, transcript: "Reviewed lesson transcript", isPreview: true, captions: [] };
     const body = JSON.stringify(form);
     const requests = [
       { method: "GET", target: read, bodySha256: certificationHash(""), uses: 2 },
@@ -681,7 +686,7 @@ for (const kind of ["module", "lesson"]) {
     const { expectedCourseRevision: revision, ...fields } = form;
     const saved = { id: createdId, ...fields, archivedAt: null, courseRevision: revision + 1,
       ...(creatingModule ? { courseId, lessons: [] } : { moduleId: parentModuleId, content: null }) };
-    const created = { [kind]: saved };
+    const created = creatingModule ? { module: saved } : { lesson: saved };
     const after = { course: { ...baseline.course, revision: revision + 1, modules: creatingModule
       ? [{ ...parent, courseRevision: revision + 1 }, saved]
       : [{ ...parent, courseRevision: revision + 1, lessons: [saved] }] } };
@@ -698,8 +703,20 @@ for (const kind of ["module", "lesson"]) {
     }, "authoring");
 
     const post = (payload = body, path = write) => f.signed({ method: "POST", path, body: payload });
-    for (const denied of [post(body, createPath(foreignParentId)), post(body, `${write}/reorder`),
-      post(JSON.stringify({ ...form, title: "Unreviewed title" })), post(JSON.stringify(form, null, 2))]) {
+    const deniedRequests = [post(body, createPath(foreignParentId)), post(body, `${write}/reorder`),
+      post(JSON.stringify({ ...form, title: "Unreviewed title" })), post(JSON.stringify(form, null, 2))];
+    if (richLesson) {
+      for (const alter of [
+        block => { block.children[0].text = "Unreviewed lesson text"; },
+        block => { block.children[0].marks[0] = "em"; },
+        block => { block.markDefs[0].href = "https://example.com/unreviewed-guide"; },
+      ]) {
+        const unreviewed = structuredClone(form);
+        alter(unreviewed.contentDocument.blocks[0]);
+        deniedRequests.push(post(JSON.stringify(unreviewed)));
+      }
+    }
+    for (const denied of deniedRequests) {
       assert.equal((await f.send(denied)).status, 503);
     }
     const steps = [

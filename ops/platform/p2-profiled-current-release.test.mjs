@@ -334,7 +334,11 @@ test('fixed current certification plan joins the original release plan, terminal
       const base = { expectedCourseRevision: 1, title: 'Owned private scaffold', slug: 'owned-child', position: 1 };
       const authoringCurriculum = authoringAction.kind === 'module'
         ? { expectedCourseRevision: base.expectedCourseRevision, title: base.title, slug: base.slug, description: null, position: base.position }
-        : { ...base, contentDocument: { version: 1, blocks: [] }, transcript: 'Private transcript', isPreview: false, captions: [] };
+        : { ...base, contentDocument: { version: 1, blocks: [
+          { _type: 'block', _key: 'block-1-1', style: 'h2',
+            children: [{ _type: 'span', _key: 'span-1-1', text: 'Reviewed lesson text', marks: ['strong', 'link-1-1'] }],
+            markDefs: [{ _type: 'link', _key: 'link-1-1', href: '/courses' }] },
+        ] }, transcript: 'Private transcript', isPreview: false, captions: [] };
       return [{ ...selectedReorders[index],
         authoringAction: { ...authoringAction, operation: 'create-curriculum', childSlug: base.slug },
         requests: [{ ...requests[0], uses: 2 }, { ...requests[1], target: requests[1].target.replace(/\/reorder$/u, ''),

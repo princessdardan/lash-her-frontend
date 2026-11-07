@@ -131,6 +131,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
   await course.query(`GRANT SELECT ON public.courses, public.modules, public.lessons TO ${user}`);
   const job = { schemaVersion: 2, qualificationTargetProfile: profile, kind: "operator-migration", operator: "Dardan",
     environment: "staging", contractPhase: "p2", releaseId: "owned-draft-read", sourceCommit, runtimeRole: target.runtimeRole,
+    phase2ContractManifestSha256: `sha256:${hash(readFileSync(join(root, "contracts/api-integration/p2-candidate/manifest.json")))}`,
     target: { schemaVersion: 2, qualificationTargetProfile: profile, environment: "staging", service: "lash-her-course-api",
       host: target.host, port: target.port, database, user, serverMajor: target.serverMajor } };
   const dependencies = {
@@ -217,6 +218,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-reorder-rejects-foreign-parent-sparse-result-sibling-identity-archive-and-order-drift",
       "course-curriculum-create-normal-module-and-lesson-fields-with-single-revision-and-preserved-siblings",
       "course-curriculum-create-refuses-occupied-or-foreign-baselines-and-storage-drift",
+      "course-rich-lesson-pinned-post-structure-safe-links-and-exact-stored-portable-text",
       "course-publication-held-status-revision-metadata-and-public-catalog-predicate",
       "course-publication-refuses-blocked-writes-state-metadata-and-issue-code-drift"];
   } finally {
@@ -491,6 +493,47 @@ async function runOwnedCurriculumCreateWitness({ course, job, dependencies, inpu
   await write(module);
   await course.query("UPDATE public.modules SET description='unexpected' WHERE id=$1::uuid", [module.itemId]);
   await assert.rejects(observe(module, before), { check: "course-curriculum-create-persistence" });
+
+  const contentDocument = { version: 1, blocks: [
+    { _type: "block", _key: "block-1-1", style: "h2", markDefs: [],
+      children: [{ _type: "span", _key: "span-1-1", text: "Lash mapping é", marks: ["strong"] }] },
+    { _type: "block", _key: "block-1-2", style: "normal", listItem: "bullet", level: 1,
+      markDefs: [{ _type: "link", _key: "link-1-1", href: "https://example.invalid/guide" },
+        { _type: "link", _key: "link-1-2", href: "/academy" }],
+      children: [{ _type: "span", _key: "span-1-2", text: "Read the guide", marks: ["em", "link-1-1"] },
+        { _type: "span", _key: "span-1-3", text: " and continue learning", marks: ["link-1-2"] }] },
+  ] };
+  const rich = async name => {
+    const test = await seed("lesson", name);
+    return withBody(test, { ...test.body, contentDocument });
+  };
+  const lesson = await rich("rich-lesson");
+  assert.deepEqual(validateP2InteractiveCurriculumCreate(lesson.selection, lesson.body), lesson.body);
+  const invalidEdits = [
+    document => { document.blocks[0].style = "foreign"; },
+    document => { document.blocks[0].children[0].marks = ["strong", "strong"]; },
+    document => { document.blocks[0].children[0].value = "unreviewed field"; },
+    document => { document.blocks[1].markDefs[0].href = "javascript:alert(1)"; },
+    document => { document.blocks[1].markDefs[0].href = "//example.invalid/guide"; },
+  ];
+  for (const mutate of invalidEdits) {
+    const modified = structuredClone(contentDocument);
+    mutate(modified);
+    const invalid = withBody(lesson, { ...lesson.body, contentDocument: modified });
+    assert.throws(() => validateP2InteractiveCurriculumCreate(invalid.selection, invalid.body), { check: "course-curriculum-create-lesson" });
+  }
+  for (const wrong of [{ ...job, sourceCommit: "c".repeat(40) }, { ...job, phase2ContractManifestSha256: `sha256:${"d".repeat(64)}` }]) {
+    await assert.rejects(captureP2InteractiveCurriculumCreateBaseline(wrong, lesson.selection, lesson.body, dependencies),
+      { check: "course-curriculum-create-contract-target" });
+  }
+  const richBaseline = await capture(lesson);
+  await write(lesson);
+  assert.deepEqual(await observe(lesson, richBaseline), { ...browser(lesson), readOnly: true });
+  const richDrift = await rich("rich-lesson-drift"), richDriftBaseline = await capture(richDrift);
+  await write(richDrift);
+  await course.query(`UPDATE public.lessons SET content_document=pg_catalog.jsonb_set(content_document,
+    '{blocks,1,markDefs,0,href}',pg_catalog.to_jsonb('https://example.invalid/changed'::text)) WHERE id=$1::uuid`, [richDrift.itemId]);
+  await assert.rejects(observe(richDrift, richDriftBaseline), { check: "course-curriculum-create-persistence" });
 }
 
 async function runOwnedPublicationWitness({ course, job, dependencies, input, create }) {

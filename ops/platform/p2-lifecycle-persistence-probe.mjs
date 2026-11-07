@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { rootCertificates } from "node:tls";
 import { lifecycleWitnessPublicReceipt, p2LifecycleStateWitnessSha256, validateP2LifecycleStateWitness } from "./p2-lifecycle-state-witness.mjs";
@@ -656,6 +658,39 @@ const curriculumCreateSelectionFields = ["courseId", "slug", "revision", "kind",
 const curriculumCreateModuleFields = ["expectedCourseRevision", "title", "slug", "description", "position"];
 const curriculumCreateLessonFields = ["expectedCourseRevision", "title", "slug", "position", "contentDocument", "transcript", "isPreview", "captions"];
 
+let pinnedLessonContract;
+function curriculumLessonContract() {
+  if (pinnedLessonContract) return pinnedLessonContract;
+  try {
+    // The interactive operator has the reviewed frontend source and Ajv. The
+    // private persistence child never invokes this path in its migration image.
+    const directory = new URL("../../contracts/api-integration/p2-candidate/", import.meta.url);
+    const manifestBytes = readFileSync(new URL("manifest.json", directory)), manifest = JSON.parse(manifestBytes);
+    const contractBytes = readFileSync(new URL("course-api.json", directory)), course = manifest.artifacts?.course;
+    demand(manifest.version === 1 && ["candidate", "released"].includes(manifest.status) && course?.repository === "lash-her-course-api"
+      && course.file === "course-api.json" && course.sourcePath === "openapi/course-api.json" && COMMIT.test(course.revision)
+      && sha(contractBytes) === course.sha256, "course-curriculum-create-contract");
+    const contract = JSON.parse(contractBytes);
+    const schema = contract.paths?.["/v1/admin/modules/{moduleId}/lessons"]?.post?.requestBody?.content?.["application/json"]?.schema;
+    demand(schema?.type === "object" && schema.additionalProperties === false && schema.properties?.contentDocument,
+      "course-curriculum-create-contract");
+    const { default: Ajv2020 } = createRequire(import.meta.url)("ajv/dist/2020");
+    const ajv = new Ajv2020({ strict: false, coerceTypes: false, removeAdditional: false, useDefaults: false });
+    pinnedLessonContract = { validate: ajv.compile({ ...schema, components: contract.components }),
+      courseRevision: course.revision, manifestSha256: `sha256:${sha(manifestBytes)}` };
+    return pinnedLessonContract;
+  } catch {
+    throw new P2LifecyclePersistenceError("course-curriculum-create-contract");
+  }
+}
+
+function safeCurriculumLink(href) {
+  if (/[\u0000-\u0020\\]/u.test(href)) return false;
+  if (href.startsWith("/") && !href.startsWith("//")) return true;
+  try { const url = new URL(href); return url.protocol === "https:" && !url.username && !url.password; }
+  catch { return false; }
+}
+
 export function validateP2InteractiveCurriculumCreate(selection, input) {
   demand(closed(selection, curriculumCreateSelectionFields) && courseUuid(selection.courseId) && courseUuid(selection.parentId)
     && draftSlug(selection.slug) && draftSlug(selection.childSlug)
@@ -670,8 +705,9 @@ export function validateP2InteractiveCurriculumCreate(selection, input) {
     && body.expectedCourseRevision === selection.revision && body.slug === selection.childSlug && draftText(body.title, 300)
     && Number.isInteger(body.position) && body.position >= 1 && body.position <= 2_147_483_647, "course-curriculum-create-body");
   if (module) demand(body.description === null || draftText(body.description, 100_000), "course-curriculum-create-module");
-  else demand(orderedDraftFields(body.contentDocument, ["version", "blocks"]) && body.contentDocument.version === 1
-    && Array.isArray(body.contentDocument.blocks) && body.contentDocument.blocks.length === 0
+  else demand(orderedDraftFields(body.contentDocument, ["version", "blocks"]) && curriculumLessonContract().validate(body)
+    && Buffer.byteLength(JSON.stringify(body.contentDocument)) <= 1_000_000
+    && body.contentDocument.blocks.every(block => (block.markDefs ?? []).every(link => safeCurriculumLink(link.href)))
     && (body.transcript === null || draftText(body.transcript, 500_000)) && typeof body.isPreview === "boolean"
     && Array.isArray(body.captions) && body.captions.length === 0, "course-curriculum-create-lesson");
   return body;
@@ -684,6 +720,11 @@ function retainedCurriculumSibling(row) {
 export async function captureP2InteractiveCurriculumCreateBaseline(courseJob, selection, input, dependencies) {
   const selected = Object.freeze({ ...selection }), expected = validateP2InteractiveCurriculumCreate(selected, input);
   const { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  if (selected.kind === "lesson") {
+    const { courseRevision, manifestSha256 } = curriculumLessonContract();
+    demand(courseJob.sourceCommit === courseRevision && courseJob.phase2ContractManifestSha256 === manifestSha256,
+      "course-curriculum-create-contract-target");
+  }
   const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
     const { parent, rows } = await readCourseCurriculum(client, selected, selected.revision, "course-curriculum-create");
     demand(parent === null || parent.archived_at === null, "course-curriculum-create-parent");

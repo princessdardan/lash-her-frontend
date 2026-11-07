@@ -96,7 +96,7 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
               if (currentWriterAuthoringActorId()) {
                 validateCandidateRequest("course", "/v1/admin/modules/{moduleId}/lessons", "post", { params, body: input });
                 if (Object.hasOwn(input, "content") || !Object.hasOwn(input, "transcript") || !Object.hasOwn(input, "isPreview") ||
-                  input.contentDocument?.version !== 1 || input.contentDocument.blocks.length !== 0 || input.captions?.length !== 0) {
+                  input.contentDocument?.version !== 1 || input.captions?.length !== 0) {
                   throw new IntegrationServiceError("invalid_request", 400);
                 }
               }
