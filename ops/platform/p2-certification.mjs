@@ -71,7 +71,6 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
   const candidate=prepared?.migration?.candidate,inventory=prepared?.plan,job=prepared?.migration?.job;
   const profile=profiledRelease?requireQualificationTargetProfile(currentProfile,input,input.native,input.native.target,candidate,inventory,job,job.target):undefined;
   if(profile)demand(input.startState==='already-closed'&&input.operatorSourceCommit===job.sourceCommit&&
-    !['auth-preparation','browser-pending','direct-worker'].includes(input.mode)&&
     sha(profiledRelease.receiptSha256)&&sha(profiledRelease.planSha256)&&
     exactKeys(profiledRelease.apiJobSha256,['course','community'])&&Object.values(profiledRelease.apiJobSha256).every(sha));
   else demand(!Object.hasOwn(input??{},'qualificationTargetProfile')&&!Object.hasOwn(candidate??{},'qualificationTargetProfile'));
@@ -101,16 +100,19 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
   if(['auth-preparation','browser-pending'].includes(input.mode)){
     demand(Array.isArray(input.native.commandWitnesses)&&input.native.commandWitnesses.length===0&&/^dpl_[A-Za-z0-9]+$/u.test(input.native.deploymentId??'')&&
       /^https:\/\/[a-z0-9][a-z0-9-]*\.vercel\.app$/u.test(input.native.deploymentUrl??'')&&sha(input.native.configurationRecordSha256));
-    const control={version:1,purpose:'browser-authentication-control-only',environment:'staging',actionId:candidate.releaseId,sourceCommit:job.sourceCommit,projectId:candidate.workload.projectId,
+    const control={version:input.version,...(profile?{qualificationTargetProfile:profile,candidateSha256:p2NativeHash(candidate)}:{}),
+      purpose:'browser-authentication-control-only',environment:'staging',actionId:candidate.releaseId,sourceCommit:job.sourceCommit,projectId:candidate.workload.projectId,
       phase2ContractManifestSha256:candidate.phase2ContractManifestSha256,deploymentId:input.native.deploymentId,deploymentUrl:input.native.deploymentUrl,
-      configurationRecordSha256:input.native.configurationRecordSha256,targetSha256:inventory.targetSha256,target:structuredClone(input.native.target),owner:inventory.owner,
+      configurationRecordSha256:input.native.configurationRecordSha256,targetSha256:inventory.targetSha256,
+      target:profile?{...Object.fromEntries(['host','port','database','user','serverMajor'].map(key=>[key,input.native.target[key]])),qualificationTargetProfile:profile}
+        :structuredClone(input.native.target),owner:inventory.owner,
       producer:{producerSha256:selected.producerSha256,role:{name:selected.role.name,oid:selected.role.oid}},featureControls:structuredClone(inventory.certification.featureControls),
       writerAdmissionBinding:{mode:'enforce',targetSha256:inventory.targetSha256,producerSha256:selected.producerSha256,sourceCommit:job.sourceCommit,roleName:job.target.runtimeRole},
       schedule:P2_LIFECYCLE_NATIVE_SCHEDULE,initialEpoch:input.initialEpoch,commandWitnesses:[],finalDisposition:'disabled-and-admission-closed'};
     nativePlan=freeze({...control,planSha256:p2NativeHash(control)});
   }else nativePlan=prepareP2LifecycleNativePlan(candidate,nativeSettings,profile);
   if(input.mode==='direct-worker')demand(nativePlan.commandWitnesses.length===1&&input.worker?.input?.commandIndex===0);
-  const workerPlan=input.mode==='direct-worker'?prepareP2LifecycleWorkerEvidencePlan(nativePlan,input.worker?.suspensionPlan,input.worker?.input):null;
+  const workerPlan=input.mode==='direct-worker'?prepareP2LifecycleWorkerEvidencePlan(nativePlan,input.worker?.suspensionPlan,input.worker?.input,profile):null;
   demand(workerPlan===null||workerPlan.actionId===input.certificationActionId&&workerPlan.candidateSha256===input.candidateSha256&&workerPlan.configurationSha256===p2NativeHash(configurationSha256)&&
     workerPlan.gatewayProcessSha256===input.gatewayProcessSha256&&workerPlan.gatewayConfigurationSha256===input.gatewayConfigurationSha256);
   const base={version:input.version,...(profile?{qualificationTargetProfile:profile,
@@ -392,7 +394,9 @@ function privateBytes(path,maximum=2_000_000){
 function privateObject(path,maximum){const value=JSON.parse(privateBytes(path,maximum));demand(value&&typeof value==='object'&&!Array.isArray(value));return value;}
 
 function prepareProfiledCertification(settings){
-  demand(exactKeys(settings,['version','environment','qualificationTargetProfile','operatorSourceCommit','releaseSettings','certification'])&&
+  const extra=settings?.certification?.mode==='browser-pending'?['browser','authPreparation']
+    :settings?.certification?.mode==='direct-worker'?['worker']:[];
+  demand(exactKeys(settings,['version','environment','qualificationTargetProfile','operatorSourceCommit','releaseSettings','certification',...extra])&&
     settings.version===2&&settings.environment==='staging');
   requireQualificationTargetProfile(currentProfile,settings);
   const original=prepareP2ProfiledCurrentRelease(settings.releaseSettings), release=original.plan;
@@ -417,18 +421,22 @@ function prepareProfiledCertification(settings){
     input.readyReceiptSha256?.['frontend-workload-outcome.json']===receipt.frontendWorkloadReceiptSha256);
   const candidateBytes=readFrontendReleaseEvidence(directory,'release.candidate.json');
   demand(rawHash(candidateBytes)===release.candidateSha256);
-  const plan=prepareP2BoundedCertification({migration:original.migration,plan:original.inventory},input,candidateBytes,
-    {frontendReceipts,configurationSha256:release.configurationSha256,profiledRelease:{
-      receiptSha256:rawHash(raw),planSha256:rawHash(release),apiJobSha256:release.apiJobSha256}});
-  return {plan,original,frontendReceipts,originalReleaseReceipt:raw};
+  const profiledRelease={receiptSha256:rawHash(raw),planSha256:rawHash(release),apiJobSha256:release.apiJobSha256,apiJobs:original.apiJobs};
+  const stages=prepareCertificationStages({migration:original.migration,plan:original.inventory},input,candidateBytes,settings,
+    {frontendReceipts,configurationSha256:release.configurationSha256,profiledRelease},currentProfile);
+  return {...stages,original,frontendReceipts,originalReleaseReceipt:raw};
 }
 
 export function prepareP2ProfiledCertificationOperator(settings){
-  return prepareProfiledCertification(settings).plan;
+  const {plan,authPlan}=prepareProfiledCertification(settings);
+  return authPlan?{version:2,qualificationTargetProfile:currentProfile,status:'P2_BROWSER_CERTIFICATION_ACTIONS_PLANNED',
+    authentication:authPlan,browser:plan}:plan;
 }
 
-function profiledCertificationHostPlan(settings){
-  const {plan,original,frontendReceipts,originalReleaseReceipt}=prepareProfiledCertification(settings);
+function profiledCertificationHostPlan(settings,authentication=false){
+  const {plan:primary,authPlan,suspensionPlan,original,frontendReceipts,originalReleaseReceipt}=prepareProfiledCertification(settings);
+  const plan=authentication?authPlan:primary;
+  demand(plan);
   const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
   const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit);
   const sourceSha256=Object.fromEntries(source.files.map(file=>[file.path,file.sha256]));
@@ -447,7 +455,54 @@ function profiledCertificationHostPlan(settings){
     apiJobSha256:release.apiJobSha256,frontendJob:migration.job,frontendBaseline:migration.baseline,targetSha256:release.targetSha256,
     owner:inventory.owner,inventory,inventorySha256:release.inventorySha256,certification:release.certification,
     expectedWriterAdmissionBinding:release.writerAdmissionBinding,certificationActionId:plan.certificationActionId,certificationPlan:plan,
-    originalReleaseReceipt:originalReleaseReceipt.toString('base64'),readyReceipts};
+    originalReleaseReceipt:originalReleaseReceipt.toString('base64'),readyReceipts,
+    ...(suspensionPlan?{sourceSuspensionPlan:suspensionPlan}:{})};
+}
+
+function prepareCertificationStages(prepared,input,candidateBytes,settings,options,profile){
+  const {candidate,job}=prepared.migration;
+  let suspensionPlan,authPlan;
+  const prepareSuspension=source=>{
+    const selected=prepareP2LifecycleSuspensionPlan(candidate,source,profile);
+    if(profile){
+      const retained=source.persistencePlan;
+      const jobs={frontend:job,...options.profiledRelease.apiJobs};
+      demand(retained.hostMachineId===settings.releaseSettings.host.machineId&&
+        isDeepStrictEqual(source.owner,input.native.owner)&&isDeepStrictEqual(source.producer,input.native.producer)&&
+        selected.deploymentId===input.native.deploymentId&&selected.deploymentUrl===input.native.deploymentUrl&&
+        selected.configurationRecordSha256===input.native.configurationRecordSha256&&
+        selected.candidateSha256===rawHash(candidateBytes)&&selected.configurationSha256===p2NativeHash(options.configurationSha256)&&
+        retained.operatorSourceSha256===input.operatorSourceClosureSha256&&retained.originalReleaseSha256===options.profiledRelease.receiptSha256&&
+        retained.frontendDeploymentSha256===input.readyReceiptSha256['frontend-promotion-outcome.json']&&
+        retained.targets.frontend.runtimeRoleOid===input.native.producer.role.oid&&
+        Object.entries(jobs).every(([service,job])=>['host','port','database','serverMajor'].every(key=>retained.targets[service][key]===job.target[key])&&
+          retained.targets[service].runtimeRole===(service==='frontend'?job.target.runtimeRole:job.runtimeRole))&&
+        ['course','community'].every(service=>retained.containerImages[service]===candidate.artifacts[service+'Runtime'].image));
+    }
+    return selected;
+  };
+  if(input.mode==='direct-worker'){
+    demand(settings.worker&&input.worker&&(!profile||exactKeys(settings.worker,['suspensionInput'])));
+    const selected=prepareSuspension(settings.worker.suspensionInput);
+    demand((!profile||selected.actionId!==input.certificationActionId)&&
+      (input.worker.suspensionPlan===undefined||isDeepStrictEqual(input.worker.suspensionPlan,selected)));
+    suspensionPlan=selected;
+    input.worker={...input.worker,suspensionPlan:selected};
+  }
+  if(input.mode==='browser-pending'){
+    demand(settings.browser&&settings.authPreparation&&input.startState==='already-closed'&&(!profile||exactKeys(settings.browser,['input'])));
+    suspensionPlan=prepareSuspension(settings.browser.input);
+    demand(suspensionPlan.actionId===input.certificationActionId&&suspensionPlan.candidateSha256===rawHash(candidateBytes)&&
+      suspensionPlan.targetSha256===prepared.plan.targetSha256&&suspensionPlan.deploymentId===input.native.deploymentId&&
+      suspensionPlan.configurationRecordSha256===input.native.configurationRecordSha256&&suspensionPlan.configurationSha256===p2NativeHash(options.configurationSha256));
+    input.browserPlanSha256=p2NativeHash(suspensionPlan);
+    const auth=settings.authPreparation;
+    demand(isDeepStrictEqual(Object.keys(auth).sort(),['certificationActionId','initialEpoch','startState'])&&
+      input.initialEpoch===(BigInt(auth.initialEpoch)+2n).toString()&&auth.certificationActionId!==input.certificationActionId);
+    authPlan=prepareP2BoundedCertification(prepared,{...input,...auth,mode:'auth-preparation'},candidateBytes,options);
+  }else demand(input.mode!=='auth-preparation');
+  const plan=prepareP2BoundedCertification(prepared,input,candidateBytes,options);
+  return {plan,authPlan,suspensionPlan};
 }
 
 export function prepareP2CertificationOperator(settings){
@@ -455,27 +510,8 @@ export function prepareP2CertificationOperator(settings){
   const candidateBytes=privateBytes(join(settings.bundle,'release.candidate.json')),candidate=JSON.parse(candidateBytes);
   const original=prepareP2OperatorRelease({...settings,sourceCommit:candidate.sources.frontend.commit});demand(original.prepared&&original.roles===undefined);
   const input={...settings.certification,operatorSourceCommit:settings.operatorSourceCommit};
-  let suspensionPlan,authPlan;
-  if(input.mode==='direct-worker'){
-    demand(settings.worker&&input.worker);
-    const original=prepareP2LifecycleSuspensionPlan(candidate,settings.worker.suspensionInput);
-    demand(input.worker.suspensionPlan===undefined||isDeepStrictEqual(input.worker.suspensionPlan,original));
-    input.worker={...input.worker,suspensionPlan:original};
-  }
-  if(input.mode==='browser-pending'){
-    demand(settings.browser&&settings.authPreparation&&input.startState==='already-closed');
-    suspensionPlan=prepareP2LifecycleSuspensionPlan(candidate,settings.browser.input);
-    demand(suspensionPlan.actionId===input.certificationActionId&&suspensionPlan.candidateSha256===rawHash(candidateBytes)&&
-      suspensionPlan.targetSha256===original.prepared.plan.targetSha256&&suspensionPlan.deploymentId===input.native.deploymentId&&
-      suspensionPlan.configurationRecordSha256===input.native.configurationRecordSha256&&suspensionPlan.configurationSha256===p2NativeHash(original.configurationSha256));
-    input.browserPlanSha256=p2NativeHash(suspensionPlan);
-    const auth=settings.authPreparation;
-    demand(isDeepStrictEqual(Object.keys(auth).sort(),['certificationActionId','initialEpoch','startState'])&&
-      input.initialEpoch===(BigInt(auth.initialEpoch)+2n).toString()&&auth.certificationActionId!==input.certificationActionId);
-    authPlan=prepareP2BoundedCertification(original.prepared,{...input,...auth,mode:'auth-preparation'},candidateBytes,
-      {frontendReceipts:settings.frontendReceipts,configurationSha256:original.configurationSha256});
-  }else demand(input.mode!=='auth-preparation');
-  const plan=prepareP2BoundedCertification(original.prepared,input,candidateBytes,{frontendReceipts:settings.frontendReceipts,configurationSha256:original.configurationSha256});
+  const {plan,authPlan,suspensionPlan}=prepareCertificationStages(original.prepared,input,candidateBytes,settings,
+    {frontendReceipts:settings.frontendReceipts,configurationSha256:original.configurationSha256});
   frontendPrivateReceiptDirectory(settings.results);
   demand(lstatSync(join(settings.results,plan.certificationActionId),{throwIfNoEntry:false})===undefined);
   if(authPlan)demand(lstatSync(join(settings.results,authPlan.certificationActionId),{throwIfNoEntry:false})===undefined);
@@ -538,10 +574,11 @@ export async function p2CertificationOperator(settings,{apply=false,confirmation
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   try{const[operation,path,flag,confirmation]=process.argv.slice(2);demand(['plan','plan-profiled-current','host-plan-profiled-current','apply'].includes(operation)&&typeof path==='string'&&
-    (operation==='apply'?flag==='--confirm'&&typeof confirmation==='string':flag===undefined&&confirmation===undefined));
+    (operation==='apply'?flag==='--confirm'&&typeof confirmation==='string':confirmation===undefined&&
+      (flag===undefined||operation==='host-plan-profiled-current'&&flag==='--authentication')));
     if(operation==='plan-profiled-current'||operation==='host-plan-profiled-current'){
       const settings=decodeQualificationTargetJson(privateBytes(resolve(path),24_000_000),'private-packet');
-      const plan=operation==='plan-profiled-current'?prepareP2ProfiledCertificationOperator(settings):profiledCertificationHostPlan(settings);
+      const plan=operation==='plan-profiled-current'?prepareP2ProfiledCertificationOperator(settings):profiledCertificationHostPlan(settings,flag==='--authentication');
       console.log(JSON.stringify(plan));
     }else console.log(JSON.stringify(await p2CertificationOperator(privateObject(resolve(path)),{apply:operation==='apply',confirmation})));
   }catch{console.error('P2_BOUNDED_CERTIFICATION_FAILED_REQUIRES_REVIEW');process.exitCode=1;}

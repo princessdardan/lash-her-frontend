@@ -652,8 +652,72 @@ class ProfiledCertificationInputTests(unittest.TestCase):
                     parent.prepare_profiled_current_certification_input({**self.initial, **changeset}, self.source)
             self.plan['mode'] = 'browser-pending'
             self.rehash()
-            with self.assertRaisesRegex(ValueError, 'PLAN_REQUIRED'):
+            with self.assertRaisesRegex(ValueError, 'PLAN_BINDING_REQUIRED'):
                 self.prepare()
+
+    def test_browser_and_worker_packets_join_the_same_source_suspension(self):
+        profiled = {'version': 2, 'qualificationTargetProfile': self.profile}
+        baseline = copy.deepcopy(self.plan['nativePlan'])
+        action = 'owned-browser'
+        suspension = {
+            **profiled, 'status': 'P2_LIFECYCLE_SUSPENSION_SOURCE_PLAN', 'environment': 'staging',
+            'profile': 'normal-ui-suspension-pending-v1', 'actionId': action, 'releaseId': self.release_id,
+            'operatorSourceCommit': self.commit, 'operatorSourceEligibility': 'same-as-immutable-frontend-candidate',
+            'configurationSha256': self.plan['configurationCanonicalSha256'], 'resourceBindingSha256': '2' * 64,
+            'hostMachineId': self.initial['hostMachineId'], 'browserOrigin': parent.canonical_browser.ORIGIN,
+            'browserProgramSha256': '3' * 64, 'windowSeconds': 840, 'drainSeconds': 15,
+            'initialAdmission': {'newWork': True, 'recovery': False},
+            'finalDisposition': 'native-off-and-admission-closed',
+            **{key: self.plan[key] for key in ('candidateSha256', 'candidateObjectSha256', 'sourceCommit', 'targetSha256')},
+            **{key: baseline[key] for key in ('deploymentId', 'deploymentUrl', 'configurationRecordSha256', 'featureControls', 'writerAdmissionBinding')},
+            **{key: self.files[path] for key, path in (
+                ('pendingProgramSha256', 'ops/platform/p2-lifecycle-pending-probe.mjs'),
+                ('parentProgramSha256', 'ops/platform/p2-lifecycle-suspension-evidence.mjs'),
+                ('hostProgramSha256', 'ops/platform/host/p2_lifecycle_suspension_evidence.py'))},
+            **dict.fromkeys(('fixtureCreationAuthorized', 'workerInvocationAuthorized', 'automaticReplayAllowed', 'releaseAccepted'), False),
+        }
+        self.initial['sourceSuspensionPlan'] = suspension
+        suspension_hash = self.hash(suspension, canonical=True)
+        for mode, certification_id, epoch, seconds in (
+            ('auth-preparation', 'owned-auth', '1', 300), ('browser-pending', action, '3', 900)
+        ):
+            control = {key: baseline[key] for key in parent.BROWSER_CONTROL_FIELDS if key not in ('purpose', 'planSha256')}
+            control.update(purpose='browser-authentication-control-only', initialEpoch=epoch, commandWitnesses=[])
+            control['planSha256'] = self.hash(control, canonical=True)
+            self.initial['certificationActionId'] = certification_id
+            self.plan.update(mode=mode, certificationActionId=certification_id, initialEpoch=epoch,
+                             maximumSeconds=seconds, browserPlanSha256=suspension_hash, nativePlan=control)
+            self.rehash()
+            self.assertIs(self.prepare()['executionEligible'], False)
+
+        baseline.pop('planSha256')
+        baseline['initialEpoch'] = '6'
+        baseline['planSha256'] = self.hash(baseline, canonical=True)
+        worker = {
+            **profiled, 'environment': 'staging', 'profile': 'direct-known-suspension-v1', 'actionId': 'owned-worker',
+            'configurationSha256': self.plan['configurationCanonicalSha256'], 'nativePlanSha256': baseline['planSha256'],
+            'suspensionPlanSha256': suspension_hash, 'commandIndex': 0, 'workerInvocations': 1,
+            'requiredPrivateInputs': ['FRONTEND_STAGING_CRON_SECRET', 'providerContext.frontendRuntimeDatabaseUrl'],
+            'invocationClass': 'direct-source-authenticated-cron', 'finalDisposition': 'native-off-and-admission-closed',
+            **{key: self.plan[key] for key in ('candidateSha256', 'candidateObjectSha256', 'sourceCommit', 'targetSha256',
+                'gatewayProcessSha256', 'gatewayConfigurationSha256')},
+            **dict.fromkeys(('pendingRecordSha256', 'canonicalCommandSha256', 'denialProgramSha256'), '4' * 64),
+            **dict.fromkeys(('nativeInvocationQualified', 'automaticRetryAllowed', 'releaseAccepted'), False),
+            **{key: self.files[path] for key, path in (
+                ('sourceProgramSha256', 'ops/platform/p2-lifecycle-worker-evidence.mjs'),
+                ('hostProgramSha256', 'ops/platform/host/p2_lifecycle_worker_evidence.py'),
+                ('denialSourceSha256', 'ops/platform/p2-lifecycle-receiver-denial.mjs'))},
+        }
+        self.initial['certificationActionId'] = 'owned-worker'
+        self.plan.update(mode='direct-worker', certificationActionId='owned-worker', initialEpoch='5',
+                         browserPlanSha256=None, nativePlan=baseline, workerPlan=worker,
+                         workerPlanSha256=self.hash(worker, canonical=True))
+        self.rehash()
+        self.assertIs(self.prepare()['executionEligible'], False)
+        worker['pendingRecordSha256'] = '5' * 64
+        self.rehash()
+        with self.assertRaisesRegex(ValueError, 'SOURCE_WORKER_REQUIRED'):
+            self.prepare()
 
     def test_profile_and_hash_are_required_on_the_nested_native_plan(self):
         native_plan = self.plan['nativePlan']

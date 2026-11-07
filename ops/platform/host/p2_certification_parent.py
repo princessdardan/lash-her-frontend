@@ -83,8 +83,10 @@ PROFILED_PLAN_FIELDS = frozenset((
     'faultSelection', 'readyReceiptSha256', 'maximumSeconds', 'finalDisposition', 'planSha256',
     'apiJobSha256', 'originalReleaseReceiptSha256', 'originalReleasePlanSha256', *PROFILED_PLAN_FALSE,
 ))
-PROFILED_MODES = frozenset(('native-window', 'fault-before-upstream', 'fault-drop-after-ack',
-                           'known-ack-recovery', 'contain-native'))
+BROWSER_MODES = frozenset(('auth-preparation', 'browser-pending'))
+SUSPENSION_MODES = BROWSER_MODES | {'direct-worker'}
+PROFILED_MODES = SUSPENSION_MODES | {'native-window', 'fault-before-upstream', 'fault-drop-after-ack',
+                                    'known-ack-recovery', 'contain-native'}
 NATIVE_PLAN_FIELDS = frozenset((
     'version', 'qualificationTargetProfile', 'environment', 'actionId', 'projectId', 'sourceCommit',
     'candidateSha256', 'phase2ContractManifestSha256', 'sourcePolicy', 'deploymentId', 'deploymentUrl',
@@ -92,6 +94,27 @@ NATIVE_PLAN_FIELDS = frozenset((
     'initialEpoch', 'schedule', 'windowSeconds', 'drainSeconds', 'commandWitnesses', 'writerAdmissionBinding',
     'finalDisposition', 'providerQueuedInventory', 'automaticReplayAllowed', 'migrationAuthorized',
     'wholeReleaseAccepted', 'planSha256',
+))
+BROWSER_CONTROL_FIELDS = (NATIVE_PLAN_FIELDS - {
+    'sourcePolicy', 'windowSeconds', 'drainSeconds', 'providerQueuedInventory',
+    'automaticReplayAllowed', 'migrationAuthorized', 'wholeReleaseAccepted',
+}) | {'purpose'}
+SUSPENSION_PLAN_FIELDS = frozenset((
+    'version', 'qualificationTargetProfile', 'status', 'environment', 'profile', 'actionId', 'releaseId',
+    'candidateSha256', 'candidateObjectSha256', 'sourceCommit', 'operatorSourceCommit', 'operatorSourceEligibility',
+    'configurationSha256', 'configurationRecordSha256', 'resourceBindingSha256', 'targetSha256', 'hostMachineId',
+    'deploymentId', 'deploymentUrl', 'browserOrigin', 'featureControls', 'writerAdmissionBinding',
+    'browserProgramSha256', 'pendingProgramSha256', 'parentProgramSha256', 'hostProgramSha256',
+    'windowSeconds', 'drainSeconds', 'initialAdmission', 'finalDisposition', 'fixtureCreationAuthorized',
+    'workerInvocationAuthorized', 'automaticReplayAllowed', 'releaseAccepted',
+))
+WORKER_PLAN_FIELDS = frozenset((
+    'version', 'qualificationTargetProfile', 'environment', 'profile', 'actionId', 'candidateSha256',
+    'candidateObjectSha256', 'sourceCommit', 'configurationSha256', 'nativePlanSha256', 'suspensionPlanSha256',
+    'targetSha256', 'commandIndex', 'pendingRecordSha256', 'canonicalCommandSha256', 'gatewayProcessSha256',
+    'gatewayConfigurationSha256', 'denialProgramSha256', 'sourceProgramSha256', 'hostProgramSha256',
+    'denialSourceSha256', 'workerInvocations', 'requiredPrivateInputs', 'invocationClass', 'nativeInvocationQualified',
+    'automaticRetryAllowed', 'finalDisposition', 'releaseAccepted',
 ))
 NATIVE_TARGET_FIELDS = frozenset(('host', 'port', 'database', 'user', 'serverMajor', 'qualificationTargetProfile'))
 RECEIPT_IDENTITY_FIELDS = frozenset(('version', 'qualificationTargetProfile', 'environment', 'releaseId',
@@ -169,7 +192,7 @@ def _profiled_host_receipt(directory, name, expected):
 
 
 def _profiled_initial(initial, expected):
-    require(type(initial) is dict and set(initial) == PROFILED_INITIAL_FIELDS and
+    require(type(initial) is dict and
             type(initial.get('version')) is int and initial['version'] == 2 and initial['environment'] == 'staging' and
             initial['mode'] == PROFILED_CERTIFICATION_MODE and migrate.source_commit(initial['sourceCommit']) and
             type(initial['certificationActionId']) is str and
@@ -187,8 +210,10 @@ def _profiled_initial(initial, expected):
     plan = initial['certificationPlan']
     require(type(plan) is dict and type(plan.get('mode')) is str and plan['mode'] in PROFILED_MODES,
             'P2_PROFILED_CERTIFICATION_PLAN_REQUIRED')
-    extra = {'knownAckRecovery', 'knownAckReceiverTargets', 'knownAckConfigurationInputDirectory'} if plan['mode'] == 'known-ack-recovery' else set()
-    require(set(plan) == PROFILED_PLAN_FIELDS | extra and plan['startState'] == 'already-closed' and
+    mode = plan['mode']
+    extra = {'knownAckRecovery', 'knownAckReceiverTargets', 'knownAckConfigurationInputDirectory'} if mode == 'known-ack-recovery' else set()
+    require(set(initial) == PROFILED_INITIAL_FIELDS | ({'sourceSuspensionPlan'} if mode in SUSPENSION_MODES else set()) and
+            set(plan) == PROFILED_PLAN_FIELDS | extra and plan['startState'] == 'already-closed' and
             plan['environment'] == 'staging' and plan['certificationActionId'] == initial['certificationActionId'] and
             plan['sourceCommit'] == plan['operatorSourceCommit'] == initial['sourceCommit'] and
             all(plan[key] == initial[key] for key in ('candidateSha256', 'inventorySha256', 'targetSha256', 'apiJobSha256')) and
@@ -199,8 +224,10 @@ def _profiled_initial(initial, expected):
             all(_profiled_digest(plan[key]) for key in ('candidateObjectSha256', 'runtimeInventorySha256', 'gatewayProcessSha256',
                 'originalReleasePlanSha256', 'originalReleaseReceiptSha256')) and
             type(plan['initialEpoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', plan['initialEpoch']) and
-            type(plan['maximumSeconds']) is int and plan['maximumSeconds'] == 900 and
-            all(plan[key] is None for key in ('browserPlanSha256', 'workerPlan', 'workerPlanSha256')) and
+            type(plan['maximumSeconds']) is int and plan['maximumSeconds'] == (300 if mode == 'auth-preparation' else 900) and
+            (_profiled_digest(plan['browserPlanSha256']) if mode in BROWSER_MODES else plan['browserPlanSha256'] is None) and
+            (type(plan['workerPlan']) is dict and _profiled_digest(plan['workerPlanSha256'])
+             if mode == 'direct-worker' else plan['workerPlan'] is None and plan['workerPlanSha256'] is None) and
             plan['finalDisposition'] == 'native-disabled-and-both-admissions-closed' and
             plan['persistenceReaderEligible'] is True and all(plan[key] is False for key in PROFILED_PLAN_FALSE) and
             plan['planSha256'] == _profiled_plan_hash(plan),
@@ -208,22 +235,84 @@ def _profiled_initial(initial, expected):
     native_plan = plan['nativePlan']
     vercel.require_record_profile(expected, plan, native_plan)
     migrate.require_profile(expected, native_plan.get('target'))
-    require(set(native_plan) == NATIVE_PLAN_FIELDS and set(native_plan['target']) == NATIVE_TARGET_FIELDS and
+    require(set(native_plan) == (BROWSER_CONTROL_FIELDS if mode in BROWSER_MODES else NATIVE_PLAN_FIELDS) and
+            set(native_plan['target']) == NATIVE_TARGET_FIELDS and
             native_plan['planSha256'] == _profiled_plan_hash(native_plan) and
             native_plan['candidateSha256'] == plan['candidateObjectSha256'] and
             native_plan['schedule'] == {'path': native.PATH, 'schedule': native.SCHEDULE} and
             native_plan['finalDisposition'] == 'disabled-and-admission-closed' and
-            native_plan['providerQueuedInventory'] is None and
-            all(native_plan[key] is False for key in ('automaticReplayAllowed', 'migrationAuthorized', 'wholeReleaseAccepted')) and
-            type(native_plan['initialEpoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', native_plan['initialEpoch']) and
-            (plan['mode'] == 'contain-native' or native_plan['initialEpoch'] == str(int(plan['initialEpoch']) + 1)) and
-            type(native_plan['windowSeconds']) is int and 60 <= native_plan['windowSeconds'] <= 180 and
-            type(native_plan['drainSeconds']) is int and 1 <= native_plan['drainSeconds'] <= 180,
+            type(native_plan['initialEpoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', native_plan['initialEpoch']),
             'P2_PROFILED_CERTIFICATION_NATIVE_PLAN_REQUIRED')
+    if mode in BROWSER_MODES:
+        require(native_plan['purpose'] == 'browser-authentication-control-only' and native_plan['commandWitnesses'] == [] and
+                native_plan['initialEpoch'] == plan['initialEpoch'], 'P2_PROFILED_CERTIFICATION_BROWSER_CONTROL_REQUIRED')
+    else:
+        require(native_plan['providerQueuedInventory'] is None and
+                all(native_plan[key] is False for key in ('automaticReplayAllowed', 'migrationAuthorized', 'wholeReleaseAccepted')) and
+                (mode == 'contain-native' or native_plan['initialEpoch'] == str(int(plan['initialEpoch']) + 1)) and
+                type(native_plan['windowSeconds']) is int and 60 <= native_plan['windowSeconds'] <= 180 and
+                type(native_plan['drainSeconds']) is int and 1 <= native_plan['drainSeconds'] <= 180,
+                'P2_PROFILED_CERTIFICATION_NATIVE_CONTROL_REQUIRED')
     require(type(initial['readyReceipts']) is dict and set(initial['readyReceipts']) == set(READY_FILES) and
             type(plan['readyReceiptSha256']) is dict and set(plan['readyReceiptSha256']) == set(READY_FILES),
             'P2_PROFILED_CERTIFICATION_READY_RECEIPTS_REQUIRED')
     return plan
+
+
+def _profiled_suspension_plan(initial, plan, expected):
+    mode = plan['mode']
+    if mode not in SUSPENSION_MODES:
+        return
+    suspension = initial['sourceSuspensionPlan']
+    native_plan = plan['nativePlan']
+    vercel.require_record_profile(expected, suspension)
+    require(set(suspension) == SUSPENSION_PLAN_FIELDS and
+            suspension.get('environment') == 'staging' and suspension.get('status') == 'P2_LIFECYCLE_SUSPENSION_SOURCE_PLAN' and
+            suspension.get('profile') == 'normal-ui-suspension-pending-v1' and
+            suspension.get('releaseId') == plan['originalReleaseId'] and
+            suspension.get('operatorSourceCommit') == plan['operatorSourceCommit'] and
+            suspension.get('configurationSha256') == plan['configurationCanonicalSha256'] and
+            suspension.get('hostMachineId') == initial['hostMachineId'] and suspension['browserOrigin'] == canonical_browser.ORIGIN and
+            suspension['windowSeconds'] == 840 and type(suspension['drainSeconds']) is int and 1 <= suspension['drainSeconds'] <= 180 and
+            all(_profiled_digest(suspension[key]) for key in ('resourceBindingSha256', 'browserProgramSha256')) and
+            all(suspension[key] == initial['sourceSha256'].get(path) for key, path in (
+                ('pendingProgramSha256', 'ops/platform/p2-lifecycle-pending-probe.mjs'),
+                ('parentProgramSha256', 'ops/platform/p2-lifecycle-suspension-evidence.mjs'),
+                ('hostProgramSha256', 'ops/platform/host/p2_lifecycle_suspension_evidence.py'))) and
+            type(suspension.get('actionId')) is str and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', suspension['actionId']) and
+            all(suspension.get(key) == plan[key] for key in ('candidateSha256', 'candidateObjectSha256', 'sourceCommit', 'targetSha256')) and
+            all(suspension.get(key) == native_plan[key] for key in ('deploymentId', 'deploymentUrl', 'configurationRecordSha256', 'writerAdmissionBinding', 'featureControls')) and
+            suspension.get('initialAdmission') == {'newWork': True, 'recovery': False} and
+            suspension.get('finalDisposition') == 'native-off-and-admission-closed' and
+            all(suspension.get(key) is False for key in ('fixtureCreationAuthorized', 'workerInvocationAuthorized', 'automaticReplayAllowed', 'releaseAccepted')),
+            'P2_PROFILED_CERTIFICATION_SOURCE_SUSPENSION_REQUIRED')
+    suspension_hash = _sha(_canonical(suspension))
+    if mode in BROWSER_MODES:
+        require(suspension_hash == plan['browserPlanSha256'] and
+                (suspension['actionId'] == plan['certificationActionId']) == (mode == 'browser-pending'),
+                'P2_PROFILED_CERTIFICATION_BROWSER_SUSPENSION_CHANGED')
+        return
+    worker = plan['workerPlan']
+    vercel.require_record_profile(expected, worker)
+    require(set(worker) == WORKER_PLAN_FIELDS and worker.get('environment') == 'staging' and
+            plan['workerPlanSha256'] == _sha(_canonical(worker)) and worker.get('suspensionPlanSha256') == suspension_hash and
+            worker.get('actionId') == plan['certificationActionId'] != suspension['actionId'] and
+            worker.get('profile') == 'direct-known-suspension-v1' and worker.get('nativePlanSha256') == native_plan['planSha256'] and
+            worker.get('configurationSha256') == plan['configurationCanonicalSha256'] and
+            all(worker.get(key) == plan[key] for key in ('candidateSha256', 'candidateObjectSha256', 'sourceCommit', 'targetSha256',
+                'gatewayProcessSha256', 'gatewayConfigurationSha256')) and
+            len(native_plan['commandWitnesses']) == 1 and native_plan['commandWitnesses'][0].get('action') == 'suspend' and
+            worker.get('commandIndex') == 0 and worker.get('workerInvocations') == 1 and
+            worker['invocationClass'] == 'direct-source-authenticated-cron' and
+            worker['requiredPrivateInputs'] == ['FRONTEND_STAGING_CRON_SECRET', 'providerContext.frontendRuntimeDatabaseUrl'] and
+            worker['finalDisposition'] == 'native-off-and-admission-closed' and
+            all(_profiled_digest(worker[key]) for key in ('pendingRecordSha256', 'canonicalCommandSha256', 'denialProgramSha256')) and
+            all(worker[key] == initial['sourceSha256'].get(path) for key, path in (
+                ('sourceProgramSha256', 'ops/platform/p2-lifecycle-worker-evidence.mjs'),
+                ('hostProgramSha256', 'ops/platform/host/p2_lifecycle_worker_evidence.py'),
+                ('denialSourceSha256', 'ops/platform/p2-lifecycle-receiver-denial.mjs'))) and
+            all(worker.get(key) is False for key in ('automaticRetryAllowed', 'nativeInvocationQualified', 'releaseAccepted')),
+            'P2_PROFILED_CERTIFICATION_SOURCE_WORKER_REQUIRED')
 
 
 def _profiled_ready_receipts(initial, plan, selected, expected):
@@ -349,6 +438,7 @@ def prepare_profiled_current_certification_input(initial, source):
                 'producerSha256': producer_hash, 'sourceCommit': initial['sourceCommit'], 'roleName': target['runtimeRole']},
             'P2_PROFILED_CERTIFICATION_NATIVE_BINDING_REQUIRED')
     _profiled_ready_receipts(initial, plan, selected, expected)
+    _profiled_suspension_plan(initial, plan, expected)
     terminal_sha, plan_hash_verified = _profiled_original_terminal(initial, plan, selected, results, expected)
     return {'version': 2, 'qualificationTargetProfile': expected, 'status': 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED',
             'environment': 'staging', 'releaseId': selected['releaseId'], 'certificationActionId': initial['certificationActionId'],

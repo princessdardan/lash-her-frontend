@@ -15,6 +15,8 @@ import { prepareP2ProfiledCurrentRelease, runP2ProfiledCurrentRelease, p2Profile
   openP2ProfiledCurrentSource, readP2ProfiledCurrentSource, P2_PROFILED_CURRENT_CONFIGURATION_FILES } from './p2-profiled-current-release.mjs';
 import { prepareP2ProfiledCertificationOperator, runP2BoundedCertification } from './p2-certification.mjs';
 import { nativeSourceCommit } from './harness/p2-native-unit-fixture.mjs';
+import { p2NativeHash } from './p2-lifecycle-native.mjs';
+import { p2LifecyclePersistenceTargetSha256, prepareP2LifecyclePersistencePlan } from './p2-lifecycle-persistence-probe.mjs';
 import { resolveQualificationTargetProfile, STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from './qualification-target-profile.mjs';
 
 const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
@@ -56,7 +58,7 @@ function fixture(sourceCommit = 'a'.repeat(40)) {
     schemaVersion: 2, qualificationTargetProfile: profile, kind: 'operator-migration', operator: 'Dardan', environment, releaseId,
     sourceCommit: sources[name].commit, ...phase2, contractSha256: artifact.contractManifestSha256.slice(7),
     migrationImageDigest: artifacts[name + 'Migration'].image.split('@')[1], runtimeImageDigest: artifacts[name + 'Runtime'].image.split('@')[1], runtimeRole: `${name}_runtime`,
-    target: { schemaVersion: 2, qualificationTargetProfile: profile, environment, service: `lash-her-${name}-api`, host: `${name}.owned.invalid`, port: 5432, database: name, user: `${name}_migration` },
+    target: { schemaVersion: 2, qualificationTargetProfile: profile, environment, service: `lash-her-${name}-api`, host: `${name}.owned.invalid`, port: 5432, database: name, user: `${name}_migration`, serverMajor: 18 },
   }]));
   for (const [name, apiJob] of Object.entries(apiJobs)) write(join(bundle, 'jobs', name + '.json'), apiJob);
   const source = frontendWriterInventory(root), targetSha256 = frontendAdmissionTargetSha256(environment, target), producerSha256 = 'a'.repeat(64);
@@ -210,6 +212,56 @@ test('fixed current certification plan joins the original release plan, terminal
     assert.equal(output.originalReleasePlanSha256, hash(plan));
     assert.equal(output.originalReleaseReceiptSha256, rawHash(readFileSync(terminalPath)));
     await assert.rejects(runP2BoundedCertification(output, {}), /P2_CERTIFICATION_PARENT_REFUSED/);
+
+    const targets = Object.fromEntries(Object.entries({ frontend: migration.job, ...f.apiJobs }).map(([service, job]) => {
+      const { host, port, database, serverMajor } = job.target;
+      const target = { qualificationTargetProfile: profile, host, port, database, serverMajor,
+        runtimeRole: service === 'frontend' ? job.target.runtimeRole : job.runtimeRole,
+        runtimeRoleOid: service === 'frontend' ? inventory.producers[0].role.oid : '102' };
+      return [service, { ...target, targetSha256: p2LifecyclePersistenceTargetSha256(service, target, profile) }];
+    }));
+    const persistencePlan = prepareP2LifecyclePersistencePlan({ version: 2, qualificationTargetProfile: profile,
+      environment: 'staging', releaseId: plan.releaseId, hostMachineId: plan.hostMachineId,
+      candidateSha256: plan.candidateSha256, configurationSha256: p2NativeHash(plan.configurationSha256),
+      sources: Object.fromEntries(Object.entries(plan.sources).map(([service, source]) => [service, source.commit])), targets,
+      containerImages: Object.fromEntries(['course', 'community'].map(service => [service, migration.candidate.artifacts[service + 'Runtime'].image])),
+      operatorSourceSha256: settings.certification.operatorSourceClosureSha256,
+      frontendDeploymentSha256: readyReceiptSha256['frontend-promotion-outcome.json'],
+      originalReleaseSha256: rawHash(readFileSync(terminalPath)), expectedMigrations: { frontend: 83, course: 22, community: 11 } }, profile);
+    const suspension = { version: 2, qualificationTargetProfile: profile, actionId: 'owned-browser', candidateSha256: plan.candidateSha256,
+      persistencePlan, deployment: { deploymentId, deploymentUrl, configurationRecordSha256, featureControls: inventory.certification.featureControls,
+        writerAdmissionBinding: plan.writerAdmissionBinding },
+      target: { ...Object.fromEntries(['host', 'port', 'database', 'user', 'serverMajor'].map(key => [key, migration.job.target[key]])),
+        qualificationTargetProfile: profile },
+      owner: inventory.owner, producer: inventory.producers[0],
+      resources: { userId: '10000000-0000-4000-8000-000000000001', courseId: '10000000-0000-4000-8000-000000000002',
+        lessonId: '10000000-0000-4000-8000-000000000003' },
+      windowSeconds: 840, drainSeconds: 15, operatorSourceCommit: plan.sourceCommit };
+    const browserSettings = { ...settings, browser: { input: suspension },
+      authPreparation: { certificationActionId: 'owned-auth', initialEpoch: '1', startState: 'already-closed' },
+      certification: { ...settings.certification, mode: 'browser-pending', certificationActionId: 'owned-browser', initialEpoch: '3',
+        native: { ...settings.certification.native, commandWitnesses: [] } } };
+    const browser = prepareP2ProfiledCertificationOperator(browserSettings);
+    assert.equal(browser.authentication.maximumSeconds, 300);
+    assert.equal(browser.browser.initialEpoch, '3');
+    assert.equal(browser.browser.browserPlanSha256, browser.authentication.browserPlanSha256);
+    assert.equal(browser.browser.nativePlan.commandWitnesses.length, 0);
+    assert.ok(!JSON.stringify(browser).includes(suspension.resources.userId));
+    assert.throws(() => prepareP2ProfiledCertificationOperator({ ...browserSettings,
+      authPreparation: { ...browserSettings.authPreparation, initialEpoch: '2' } }));
+    assert.throws(() => prepareP2ProfiledCertificationOperator({ ...browserSettings, browser: { input: { ...suspension,
+      persistencePlan: { ...persistencePlan, originalReleaseSha256: '6'.repeat(64) } } } }));
+
+    const worker = prepareP2ProfiledCertificationOperator({ ...settings, worker: { suspensionInput: suspension },
+      certification: { ...settings.certification, mode: 'direct-worker', certificationActionId: 'owned-worker', initialEpoch: '5',
+        worker: { input: { version: 2, qualificationTargetProfile: profile, actionId: 'owned-worker', commandIndex: 0,
+          pendingRecordSha256: '1'.repeat(64), canonicalCommandSha256: '2'.repeat(64),
+          gatewayProcessSha256: settings.certification.gatewayProcessSha256, gatewayConfigurationSha256: settings.certification.gatewayConfigurationSha256,
+          denialProgramSha256: '3'.repeat(64) } } } });
+    assert.equal(worker.workerPlan.suspensionPlanSha256, browser.browser.browserPlanSha256);
+    assert.equal(worker.workerPlan.nativeInvocationQualified, false);
+    assert.equal(worker.nativePlan.initialEpoch, '6');
+    await assert.rejects(runP2BoundedCertification(worker, {}), /P2_CERTIFICATION_PARENT_REFUSED/);
 
     assert.throws(() => prepareP2ProfiledCertificationOperator({ ...settings, certification: { ...settings.certification, startState: 'qualified-ready' } }));
     write(terminalPath, { ...terminal, frontendWorkloadReceiptSha256: '5'.repeat(64) });
