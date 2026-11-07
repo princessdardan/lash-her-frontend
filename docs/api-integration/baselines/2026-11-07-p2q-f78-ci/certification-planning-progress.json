@@ -928,5 +928,108 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveOwnerCurriculumReorderAndStale": {
+    "frontendSourceCommit": "0c35337d7ffacb63d090577357c156185199a57d",
+    "normalAuthoringBrowser": {
+      "passed": 7,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "moduleAndLessonTwoTabKeyboardOrdersVerified": true,
+      "archiveAndStaleConflictRequestReferenceVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "1f34945ed71885f00f534be8e85d32e9877b940bdb01ea01084ea19ac214588b",
+      "logSha256": "035c7eed315fdc08845d64ad4b7fddc8afb9210c42f39aaee847f8fb9aff62c3"
+    },
+    "frontendUnitNode24": {
+      "sourcePassed": 2537,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "f6d019091ebbd2ba1f109a0dc6067750dcdbdc70bb33606a44208f1929d014e3"
+    },
+    "certificationPlatformNode24": {
+      "passed": 102,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "5e5474c586fc0dc0158508abd71d05742251cdcfe6801c5fb258339fcdaafca9",
+      "ownedChromiumCases": 10,
+      "keyboardMouseSyntheticAndWrongControlDistinguished": true,
+      "nodeAndPythonPlanAndPermitAgree": true
+    },
+    "host": {
+      "passed": 121,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "9623bd67a57f56405767fd28dccacf32d8fdae9f8057a768ef249a89a366bb61"
+    },
+    "loopbackGateway": {
+      "passed": 70,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "cd03e20b6b674510fda222ccb0c53f68505c1d70131c9793094798a4c4c9b6eb",
+      "acknowledgementRequestIndexes": [
+        0,
+        0,
+        1,
+        0,
+        2
+      ],
+      "upstreamStatuses": [
+        200,
+        200,
+        200,
+        200,
+        409
+      ]
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "0c35337d7ffacb63d090577357c156185199a57d",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndDraftWitnessChecks": 19,
+      "bothReorderKindsAndArchivedSiblingIdentityVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "501f16662ccd087f79ee8130bd5aa540d09c4074c78f26c653a02173a3be68ec",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "cc667b46e3cb2c6fd2732ef1ed225353509924e4a32a2ea01ad548d47d1b0266"
+      },
+      "logSha256": "2037b0952dc45eaa80af8f7e13e1903c8b2d39cfd8e0b73c31b0f3d11fa1619d"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42953818,
+      "expandedBytes": 57351295,
+      "wireBytes": 18673495,
+      "wireSha256": "1b41df3413e336adcf9d89216fa8165458009c49bb5ff66bd024e7af072d8e2c",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "403157c825d773fe93dc4d0f594bbcc3f57ce4ce518f319bea9be0e58bfc087c"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "nativePlanSourcePolicyAccepted": true,
+    "checksLogSha256": "c72b491ddc0c300292de0d1ba32fc1574786d4f60145471ddc2940578a955437",
+    "moduleAndLessonReorderOperatorActionsImplemented": true,
+    "remainingS04GuardedActionsImplemented": false,
+    "exactPublishedCiQualified": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
