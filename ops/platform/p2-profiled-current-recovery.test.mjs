@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { prepareP2ProfiledCurrentRecovery, runP2ProfiledCurrentRecovery, p2ProfiledCurrentRecoveryOperator } from "./p2-profiled-current-recovery.mjs";
@@ -9,19 +10,25 @@ function fixture(disposition = "restore-current-runtime") {
   const target = { qualificationTargetProfile: profile, host: "db.example.com", port: 5432, database: "lash_staging", user: "migration_admin",
     runtimeRole: "frontend_runtime", serverMajor: 18, allowEmptyBootstrap: false, approvedPendingTags: [] };
   const job = service => ({ ...(service === "frontend" ? { version: 2 } : { schemaVersion: 2 }), qualificationTargetProfile: profile, service, operator: "Dardan", environment: "staging", releaseId: "owned-release",
-    sourceCommit: service === "frontend" ? "a".repeat(40) : (service === "course" ? "b" : "c").repeat(40), target });
+    sourceCommit: service === "frontend" ? "a".repeat(40) : (service === "course" ? "b" : "c").repeat(40),
+    target: { ...target, approvedPendingTags: disposition === "resume-approved-api-suffix" && service !== "frontend"
+      ? [service === "course" ? "0012_owned" : "0009_owned"] : [] } });
   const candidate = { version: 3, qualificationTargetProfile: profile, environment: "staging", releaseId: "owned-release",
+    contractPhase: "p2", phase2ContractManifestSha256: "sha256:" + "8".repeat(64),
     sources: { frontend: { commit: "a".repeat(40) } }, frontendMigration: { qualificationTargetProfile: profile } };
   const configurationSha256 = Object.fromEntries(["runtime.json", "gateway.json", "course-tls.json", "community-tls.json", "tls/ca.pem",
     "tls/gateway/ca.pem", "tls/gateway/key.pem", "tls/gateway/cert.pem", "tls/course/key.pem", "tls/course/cert.pem",
     "tls/community/key.pem", "tls/community/cert.pem", "course-api.env", "course-publisher.env", "course-snapshot.env", "community-api.env",
     "community-worker.env", "course-media.env", "course-export-cleanup.env"].map((name, index) => [name, "abcdef"[index % 6].repeat(64)]));
+  const inventory = { qualificationTargetProfile: profile, admissionMode: "existing" };
   return { version: 2, qualificationTargetProfile: profile, mode: "p2-profiled-current-recovery", environment: "staging",
     recoveryActionId: "owned-recovery", originalReleaseId: "owned-release", sourceCommit: "a".repeat(40), candidateSha256: "d".repeat(64),
-    configurationSha256, targetSha256: "f".repeat(64), inventorySha256: "9".repeat(64),
+    configurationSha256, targetSha256: "f".repeat(64),
+    inventorySha256: createHash("sha256").update(JSON.stringify(inventory)).digest("hex"), inventory,
     apiJobSha256: { course: "b".repeat(64), community: "c".repeat(64) }, owner: { name: "migration_owner", oid: "12345" }, disposition,
     originalReceiptSha256: Object.fromEntries(["candidate", "frontendDatabase", "frontendContinuationStarted", "apiMigrationOutcome", "apiRuntimeOutcome",
-      "frontendBuildOutcome", "frontendPromotionStarted", "frontendWorkloadOutcome"].map((name, index) => [name, "12345678"[index].repeat(64)])),
+      "frontendBuildOutcome", "frontendPromotionStarted", "frontendWorkloadOutcome"]
+      .slice(0, disposition === "resume-approved-api-suffix" ? 3 : 8).map((name, index) => [name, "12345678"[index].repeat(64)])),
     frontendMigration: { qualificationTargetProfile: profile, candidate, job: job("frontend"), baseline: { version: 1 }, artifact: { version: 1 } },
     courseJob: job("course"), communityJob: job("community"),
     ...(disposition === "resume-approved-api-suffix" ? { approvedApiSuffix: { course: ["0012_owned"], community: ["0009_owned"] } } : {}) };

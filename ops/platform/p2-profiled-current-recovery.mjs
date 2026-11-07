@@ -15,6 +15,7 @@ const preparedValues = new WeakMap();
 const runAuthorities = new WeakMap();
 const demand = value => { if (!value) throw new Error("P2_PROFILED_CURRENT_RECOVERY_REFUSED"); };
 const digest = value => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value) && !/^0+$/u.test(value);
+const contractDigest = value => typeof value === "string" && /^sha256:[a-f0-9]{64}$/u.test(value) && !/^sha256:0+$/u.test(value);
 const action = value => typeof value === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(value);
 const configurationNames = Object.freeze(["runtime.json", "gateway.json", "course-tls.json", "community-tls.json", "tls/ca.pem",
   "tls/gateway/ca.pem", "tls/gateway/key.pem", "tls/gateway/cert.pem", "tls/course/key.pem", "tls/course/cert.pem",
@@ -24,15 +25,22 @@ const configuration = value => value && !Array.isArray(value)
   && isDeepStrictEqual(Object.keys(value).sort(), [...configurationNames].sort()) && Object.values(value).every(digest);
 const originalReceiptNames = Object.freeze(["candidate", "frontendDatabase", "frontendContinuationStarted", "apiMigrationOutcome",
   "apiRuntimeOutcome", "frontendBuildOutcome", "frontendPromotionStarted", "frontendWorkloadOutcome"]);
-const originalReceipts = value => value && !Array.isArray(value)
-  && isDeepStrictEqual(Object.keys(value).sort(), [...originalReceiptNames].sort()) && Object.values(value).every(digest);
+const originalReceipts = (value, disposition) => {
+  if (!value || Array.isArray(value) || !Object.values(value).every(digest)) return false;
+  const names = Object.keys(value), prefix = originalReceiptNames.slice(0, names.length);
+  if (!isDeepStrictEqual(names, prefix)) return false;
+  return disposition === "resume-approved-api-suffix" ? names.length >= 3 && names.length <= 4 : names.length === originalReceiptNames.length;
+};
 
-function requireOriginalReceipts(results, releaseId, expected) {
-  demand(originalReceipts(expected));
+function requireOriginalReceipts(results, releaseId, expected, disposition) {
+  demand(originalReceipts(expected, disposition));
   const actionDirectory = join(frontendPrivateReceiptDirectory(results), releaseId);
   frontendPrivateReceiptDirectory(actionDirectory);
   const frontend = join(actionDirectory, "frontend"), vercel = join(frontend, "vercel");
-  frontendPrivateReceiptDirectory(frontend); frontendPrivateReceiptDirectory(vercel);
+  frontendPrivateReceiptDirectory(frontend);
+  if (Object.keys(expected).some(name => ["frontendBuildOutcome", "frontendPromotionStarted", "frontendWorkloadOutcome"].includes(name))) {
+    frontendPrivateReceiptDirectory(vercel);
+  }
   const files = {
     candidate: [actionDirectory, "release.candidate.json"],
     frontendDatabase: [frontend, "database-receipt.json"],
@@ -43,12 +51,15 @@ function requireOriginalReceipts(results, releaseId, expected) {
     frontendPromotionStarted: [vercel, "frontend-promotion-started.json"],
     frontendWorkloadOutcome: [vercel, "frontend-workload-outcome.json"],
   };
-  for (const name of originalReceiptNames) demand(hash(readFrontendReleaseEvidence(...files[name])) === expected[name]);
+  for (const name of Object.keys(expected)) demand(hash(readFrontendReleaseEvidence(...files[name])) === expected[name]);
   return Object.freeze({ actionDirectory, frontendDirectory: frontend });
 }
 const freeze = value => { if (value && typeof value === "object" && !Object.isFrozen(value)) { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
 const clone = value => structuredClone(value);
 const hash = value => createHash("sha256").update(Buffer.isBuffer(value) || typeof value === "string" ? value : JSON.stringify(value)).digest("hex");
+const jobHash = value => hash(Buffer.from(JSON.stringify(value) + "\n"));
+const isSuffix = (chain, suffix) => Array.isArray(chain) && suffix.length <= chain.length
+  && isDeepStrictEqual(chain.slice(chain.length - suffix.length), suffix);
 
 function readSettings(path) {
   const absolute = resolve(path); demand(realpathSync(absolute) === absolute); frontendPrivateReceiptDirectory(dirname(absolute));
@@ -70,11 +81,14 @@ function validateSettings(settings) {
     && digest(settings.candidateSha256) && configuration(settings.configurationSha256) && digest(settings.targetSha256) && digest(settings.inventorySha256)
     && settings.apiJobSha256 && isDeepStrictEqual(Object.keys(settings.apiJobSha256).sort(), ["community", "course"])
     && Object.values(settings.apiJobSha256).every(digest)
+    && settings.inventory && hash(settings.inventory) === settings.inventorySha256
     && ["restore-current-runtime", "reconcile-frontend-get-first", "resume-approved-api-suffix"].includes(settings.disposition));
   const migration = settings.frontendMigration;
   requireQualificationTargetProfile(current, settings, migration, migration?.candidate, migration?.candidate?.frontendMigration,
-    migration?.job, migration?.job?.target, settings.courseJob, settings.courseJob?.target, settings.communityJob, settings.communityJob?.target);
+    migration?.job, migration?.job?.target, settings.courseJob, settings.courseJob?.target, settings.communityJob, settings.communityJob?.target,
+    settings.inventory);
   demand(migration.candidate.version === 3 && migration.candidate.environment === "staging"
+    && migration.candidate.contractPhase === "p2" && contractDigest(migration.candidate.phase2ContractManifestSha256)
     && migration.candidate.releaseId === settings.originalReleaseId
     && migration.candidate.sources?.frontend?.commit === settings.sourceCommit
     && migration.job.version === 2 && migration.job.environment === "staging" && migration.job.releaseId === settings.originalReleaseId
@@ -84,26 +98,36 @@ function validateSettings(settings) {
     && settings.courseJob.releaseId === settings.originalReleaseId && settings.communityJob.releaseId === settings.originalReleaseId);
   demand(settings.owner && Object.keys(settings.owner).sort().join(",") === "name,oid"
     && /^[a-z][a-z0-9_]{0,62}$/u.test(settings.owner.name ?? "") && /^[1-9][0-9]{0,9}$/u.test(settings.owner.oid ?? ""));
-  demand(originalReceipts(settings.originalReceiptSha256));
+  demand(originalReceipts(settings.originalReceiptSha256, settings.disposition));
   if (settings.disposition === "resume-approved-api-suffix") {
     demand(settings.approvedApiSuffix && !Array.isArray(settings.approvedApiSuffix)
       && ["course", "community"].every(service => Array.isArray(settings.approvedApiSuffix[service]))
       && Object.keys(settings.approvedApiSuffix).length === 2
       && Object.values(settings.approvedApiSuffix).flat().length > 0
-      && Object.values(settings.approvedApiSuffix).flat().every(tag => typeof tag === "string" && /^\d{4}_[a-z0-9_]+$/u.test(tag)));
+      && Object.values(settings.approvedApiSuffix).flat().every(tag => typeof tag === "string" && /^\d{4}_[a-z0-9_]+$/u.test(tag))
+      && ["course", "community"].every(service => settings[service + "Job"].target.allowEmptyBootstrap === false
+        && isSuffix(settings[service + "Job"].target.approvedPendingTags, settings.approvedApiSuffix[service])));
   } else demand(settings.approvedApiSuffix === undefined);
   return settings;
 }
 
 export function prepareP2ProfiledCurrentRecovery(settings) {
   const selected = clone(validateSettings(settings));
-  selected.originalReceiptSha256 = Object.fromEntries(originalReceiptNames.map(name => [name, selected.originalReceiptSha256[name]]));
+  selected.originalReceiptSha256 = Object.fromEntries(Object.keys(selected.originalReceiptSha256)
+    .map(name => [name, selected.originalReceiptSha256[name]]));
+  const recoveryApiJobSha256 = selected.approvedApiSuffix ? Object.fromEntries(["course", "community"].map(service => {
+    const derived = clone(selected[service + "Job"]); derived.target.approvedPendingTags = clone(selected.approvedApiSuffix[service]);
+    derived.target.allowEmptyBootstrap = false; return [service, jobHash(derived)];
+  })) : undefined;
   const plan = freeze({ version: 2, qualificationTargetProfile: clone(current), mode: "p2-profiled-current-recovery",
     environment: "staging", recoveryActionId: selected.recoveryActionId, originalReleaseId: selected.originalReleaseId,
+    releaseId: selected.originalReleaseId, contractPhase: "p2",
+    phase2ContractManifestSha256: selected.frontendMigration.candidate.phase2ContractManifestSha256,
     sourceCommit: selected.sourceCommit, candidateSha256: selected.candidateSha256, configurationSha256: selected.configurationSha256,
     targetSha256: selected.targetSha256, inventorySha256: selected.inventorySha256, apiJobSha256: clone(selected.apiJobSha256), owner: clone(selected.owner),
     disposition: selected.disposition, originalReceiptSha256: clone(selected.originalReceiptSha256),
     ...(selected.approvedApiSuffix ? { approvedApiSuffix: clone(selected.approvedApiSuffix) } : {}),
+    ...(recoveryApiJobSha256 ? { recoveryApiJobSha256 } : {}),
     frontendSqlApplied: false, rolePreparationAuthorized: false, historicalProviderClosureClaimed: false,
     historicalLoginsRestored: false, oldP200Qualified: false, nativeSchedulesEnabled: false, trafficAuthorized: false,
     releaseAccepted: false, pendingFrontendSqlResolved: false });
@@ -124,12 +148,13 @@ export async function runP2ProfiledCurrentRecovery(prepared, authority) {
   const deps = requireRunDependencies(runAuthorities.get(authority)), { settings, plan } = retained;
   demand(authority && deps); runAuthorities.delete(authority);
   demand(deps.confirmation === `staging/${settings.recoveryActionId}`); deps.assertSource(settings.sourceCommit);
-  const [{ createP2ProfiledCurrentProbe }, { readP2ProfiledCurrentFrontendReceipt }, frontendAdapters] = await Promise.all([
+  const [{ createP2ProfiledCurrentProbe }, { readP2ProfiledCurrentFrontendReceipt }, frontendAdapters, releaseSource] = await Promise.all([
     import("./p2-profiled-current-probe.mjs"), import("./p2-profiled-current-transport.mjs"),
-    import("./p2-profiled-current-frontend-adapters.mjs"),
+    import("./p2-profiled-current-frontend-adapters.mjs"), import("./p2-profiled-current-release.mjs"),
   ]);
   demand(typeof createP2ProfiledCurrentProbe === "function" && typeof readP2ProfiledCurrentFrontendReceipt === "function"
     && typeof frontendAdapters.observeProfiledCurrentFrontend === "function" && typeof frontendAdapters.readProfiledCurrentWorkloadReceipt === "function");
+  demand(typeof releaseSource.verifyP2ProfiledCurrentWriterBoundary === "function");
   const store = frontendReleaseReceiptStore(deps.directory); let databaseClient, closePrepared = false;
   const base = freeze({ ...clone(plan), status: "P2_PROFILED_CURRENT_RECOVERY_STARTED", phase: "source-preflight" });
   await store.record("p2-profiled-current-recovery-started.json", base);
@@ -138,24 +163,33 @@ export async function runP2ProfiledCurrentRecovery(prepared, authority) {
       const result = await runFrontendMigration(settings.frontendMigration, {
         confirmation: `staging/${settings.originalReleaseId}`, getUrl: deps.getUrl, assertSource: () => deps.assertSource(settings.sourceCommit),
         record: store.record,
-        async beforeDatabasePreflight(context) { databaseClient = context.client; await context.verifySession(); await verifyEnvironment(); },
+        async beforeDatabasePreflight(context) {
+          databaseClient = context.client; await context.verifySession(); await verifyEnvironment();
+          await releaseSource.verifyP2ProfiledCurrentWriterBoundary(databaseClient, settings.frontendMigration,
+            settings.inventory, context.verifySession);
+        },
         async afterDatabaseVerified(database, verifySession) {
           demand(databaseClient && !environmentSignal.aborted); await verifySession(); await verifyEnvironment();
           const continuationStarted = readP2ProfiledCurrentFrontendReceipt(deps.directory, "continuation-started", settings.frontendMigration);
           const probe = await createP2ProfiledCurrentProbe(settings.frontendMigration, plan, databaseClient, verifySession, database);
           const armed = await runtime.armRecovery({ receipt: database, continuationStarted: continuationStarted.record, probe });
-          await verifySession(); await runtime.preparePriorGateway(); await armed.apiReady; await verifySession();
-          const providerContext = await deps.getProviderContext();
-          const observed = await frontendAdapters.observeProfiledCurrentFrontend({ plan, migration: settings.frontendMigration,
-            originalReceiptSha256: settings.originalReceiptSha256, providerContext, environmentSignal, verifyEnvironment, verifySession });
-          demand(observed?.status === "P2_PROFILED_CURRENT_FRONTEND_CURRENT" && observed.getFirst === true
-            && observed.newProviderPost === false && observed.ambiguous === false
-            && observed.originalEffectReconciled === (settings.disposition === "reconcile-frontend-get-first")
-            && observed.proof?.status === "P2_PROFILED_CURRENT_FRONTEND_VERIFIED");
-          const workload = await frontendAdapters.readProfiledCurrentWorkloadReceipt({ plan, migration: settings.frontendMigration,
-            originalReceiptSha256: settings.originalReceiptSha256, providerContext }, observed);
-          demand(Buffer.isBuffer(workload) && workload.length > 0 && workload.length <= 2_000_000);
-          await runtime.reconcileFrontend(observed, observed.proof, workload);
+          await verifySession();
+          if (settings.disposition !== "resume-approved-api-suffix") await runtime.verifyCurrentApis();
+          else await runtime.prepareApiSuffix();
+          await runtime.preparePriorGateway(); await armed.apiReady; await verifySession();
+          if (Object.keys(settings.originalReceiptSha256).length === originalReceiptNames.length) {
+            const providerContext = await deps.getProviderContext();
+            const observed = await frontendAdapters.observeProfiledCurrentFrontend({ plan, migration: settings.frontendMigration,
+              originalReceiptSha256: settings.originalReceiptSha256, providerContext, environmentSignal, verifyEnvironment, verifySession });
+            demand(observed?.status === "P2_PROFILED_CURRENT_FRONTEND_CURRENT" && observed.getFirst === true
+              && observed.newProviderPost === false && observed.ambiguous === false
+              && observed.originalEffectReconciled === (settings.disposition === "reconcile-frontend-get-first")
+              && observed.proof?.status === "P2_PROFILED_CURRENT_FRONTEND_VERIFIED");
+            const workload = await frontendAdapters.readProfiledCurrentWorkloadReceipt({ plan, migration: settings.frontendMigration,
+              originalReceiptSha256: settings.originalReceiptSha256, providerContext }, observed);
+            demand(Buffer.isBuffer(workload) && workload.length > 0 && workload.length <= 2_000_000);
+            await runtime.reconcileFrontend(observed, observed.proof, workload);
+          } else demand(settings.disposition === "resume-approved-api-suffix");
           if (settings.disposition === "resume-approved-api-suffix") {
             await runtime.resumeApprovedApiSuffix();
           }
@@ -173,7 +207,9 @@ export async function runP2ProfiledCurrentRecovery(prepared, authority) {
         frontendTerminalSha256: terminal.sha256, frontendContinuationCompletedSha256: continuation.sha256,
         ...(digest(sessionClosed.sha256) ? { sessionClosedSha256: sessionClosed.sha256 } : {}),
         runtimeCurrent: true, apiSuffixResumed: settings.disposition === "resume-approved-api-suffix",
-        frontendEffectReconciled: settings.disposition === "reconcile-frontend-get-first", frontendSqlApplied: false,
+        frontendEffectReconciled: settings.disposition === "reconcile-frontend-get-first",
+        frontendCurrentVerified: Object.keys(settings.originalReceiptSha256).length === originalReceiptNames.length,
+        frontendActionPending: Object.keys(settings.originalReceiptSha256).length < originalReceiptNames.length, frontendSqlApplied: false,
         rolePreparationAuthorized: false, historicalLoginsRestored: false, nativeSchedulesEnabled: false, trafficAuthorized: false, releaseAccepted: false });
       await store.record("p2-profiled-current-recovery-held.json", outcome);
       await runtime.finish({ terminal: terminal.record, continuationCompleted: continuation.record, recoveryOutcome: outcome });
@@ -203,11 +239,13 @@ export async function p2ProfiledCurrentRecoveryOperator(settings, { apply = fals
     apiJobSha256: release.plan.apiJobSha256, owner: release.inventory.owner,
     disposition: request.disposition, originalReceiptSha256: request.originalReceiptSha256,
     ...(request.approvedApiSuffix ? { approvedApiSuffix: request.approvedApiSuffix } : {}),
-    frontendMigration: release.migration, courseJob: release.apiJobs.course, communityJob: release.apiJobs.community };
+    frontendMigration: release.migration, courseJob: release.apiJobs.course, communityJob: release.apiJobs.community,
+    inventory: release.inventory };
   const prepared = prepareP2ProfiledCurrentRecovery(materialized);
   if (!apply) return prepared.plan;
   demand(confirmation === `staging/${prepared.plan.recoveryActionId}`);
-  const original = requireOriginalReceipts(settings.release.results, release.plan.releaseId, prepared.plan.originalReceiptSha256);
+  const original = requireOriginalReceipts(settings.release.results, release.plan.releaseId,
+    prepared.plan.originalReceiptSha256, prepared.plan.disposition);
   const sourceHandle = await releaseSource.openP2ProfiledCurrentSource(release,
     { actionId: prepared.plan.recoveryActionId, confirmation });
   const custody = releaseSource.readP2ProfiledCurrentSource(sourceHandle, release, prepared.plan.recoveryActionId);
@@ -216,7 +254,8 @@ export async function p2ProfiledCurrentRecoveryOperator(settings, { apply = fals
     reviewedPlanSha256: hash(prepared.plan), recoveryActionId: prepared.plan.recoveryActionId,
     originalReleaseId: prepared.plan.originalReleaseId, disposition: prepared.plan.disposition,
     originalReceiptSha256: prepared.plan.originalReceiptSha256,
-    ...(prepared.plan.approvedApiSuffix ? { approvedApiSuffix: prepared.plan.approvedApiSuffix } : {}) };
+    ...(prepared.plan.approvedApiSuffix ? { approvedApiSuffix: prepared.plan.approvedApiSuffix,
+      recoveryApiJobSha256: prepared.plan.recoveryApiJobSha256 } : {}) };
   const transportModule = await import("./p2-profiled-current-recovery-transport.mjs");
   const transportHandle = transportModule.p2ProfiledCurrentRecoveryEnvironmentLock(settings.release, initial, custody.frontendDirectory);
   const authority = Object.freeze({});

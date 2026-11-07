@@ -49,15 +49,19 @@ function validateInitial(initial) {
     && initial.frontendJob.target.allowEmptyBootstrap === false
     && initial.owner && Object.keys(initial.owner).sort().join(",") === "name,oid"
     && /^[a-z][a-z0-9_]{0,62}$/u.test(initial.owner.name ?? "") && /^[1-9][0-9]{0,9}$/u.test(initial.owner.oid ?? ""));
-  demand(initial.originalReceiptSha256 && !Array.isArray(initial.originalReceiptSha256)
-    && isDeepStrictEqual(Object.keys(initial.originalReceiptSha256), [...originalReceiptNames])
-    && Object.values(initial.originalReceiptSha256).every(digest));
+  const receiptNames = Object.keys(initial.originalReceiptSha256 ?? {});
+  demand(!Array.isArray(initial.originalReceiptSha256) && Object.values(initial.originalReceiptSha256 ?? {}).every(digest)
+    && isDeepStrictEqual(receiptNames, originalReceiptNames.slice(0, receiptNames.length))
+    && (initial.disposition === "resume-approved-api-suffix"
+      ? receiptNames.length >= 3 && receiptNames.length <= 4 : receiptNames.length === originalReceiptNames.length));
   const suffix = initial.approvedApiSuffix;
   if (initial.disposition === "resume-approved-api-suffix") {
     demand(suffix && !Array.isArray(suffix) && isDeepStrictEqual(Object.keys(suffix).sort(), ["community", "course"])
       && Object.values(suffix).every(value => Array.isArray(value)) && Object.values(suffix).flat().length > 0
-      && Object.values(suffix).flat().every(tag => typeof tag === "string" && /^\d{4}_[a-z0-9_]+$/u.test(tag)));
-  } else demand(suffix === undefined);
+      && Object.values(suffix).flat().every(tag => typeof tag === "string" && /^\d{4}_[a-z0-9_]+$/u.test(tag))
+      && initial.recoveryApiJobSha256 && isDeepStrictEqual(Object.keys(initial.recoveryApiJobSha256).sort(), ["community", "course"])
+      && Object.values(initial.recoveryApiJobSha256).every(digest));
+  } else demand(suffix === undefined && initial.recoveryApiJobSha256 === undefined);
   return initial;
 }
 
@@ -120,7 +124,7 @@ function environmentLock(settings, initial, directory, launch) {
       pending.set(0, { statuses: ["LOCKED"], index: 0, resolves: [value => { clearTimeout(timer); resolve(value); }], rejects: [reject], timer });
     });
     const rawInitial = JSON.stringify(initial); demand(Buffer.byteLength(rawInitial) <= MAXIMUM); child.stdin.write(rawInitial + "\n");
-    let result, error;
+    let error;
     try {
       await locked;
       const check = async () => { await single("check", "HELD", {}, 15_000); };
@@ -141,18 +145,38 @@ function environmentLock(settings, initial, directory, launch) {
           const [armedResponse, readyResponse] = request("profiled-current-recovery-arm", ["PROFILED_CURRENT_RECOVERY_ARMED", "PROFILED_CURRENT_RECOVERY_API_READY"], {
             receipt: receiptBytes.toString("base64"), continuationStarted: continuationBytes.toString("base64"), probe,
           }, 900_000);
+          void readyResponse.catch(() => {});
           await armedResponse; armedProbe = structuredClone(probe); armed = true;
-          return { apiReady: readyResponse.then(value => { apiReady = true;
+          const ready = readyResponse.then(value => { apiReady = true;
             requireQualificationTargetProfile(current, value.receipt);
             demand(value.receipt?.status === "API_RUNTIME_READY" && value.receipt.environment === "staging"
               && value.receipt.releaseId === initial.originalReleaseId && value.receipt.trafficAuthorized === false);
             return value.receipt;
-          }) };
+          });
+          void ready.catch(() => {}); return { apiReady: ready };
         },
         async preparePriorGateway() {
           demand(armed && !priorGatewayPrepared && !apiReady && !closePrepared);
           const receipt = await single("profiled-current-recovery-prepare-prior-gateway", "PROFILED_CURRENT_RECOVERY_PRIOR_GATEWAY_PREPARED", {}, 300_000);
           demand(receipt?.status === "PRIOR_GATEWAY_CLOSED_ZERO"); priorGatewayPrepared = true; return receipt;
+        },
+        async verifyCurrentApis() {
+          demand(armed && !priorGatewayPrepared && !apiReady && !closePrepared
+            && initial.disposition !== "resume-approved-api-suffix");
+          const receipt = await single("profiled-current-recovery-verify-api-current",
+            "PROFILED_CURRENT_RECOVERY_API_CURRENT_VERIFIED", {}, 900_000);
+          demand(receipt?.status === "CURRENT_DATABASES_READ_ONLY_VERIFIED" && receipt.migrationsExecuted === false
+            && receipt.trafficAuthorized === false);
+          return receipt;
+        },
+        async prepareApiSuffix() {
+          demand(armed && !priorGatewayPrepared && !apiReady && !closePrepared
+            && initial.disposition === "resume-approved-api-suffix");
+          const receipt = await single("profiled-current-recovery-prepare-api-suffix",
+            "PROFILED_CURRENT_RECOVERY_API_SUFFIX_PREPARED", {}, 900_000);
+          demand(receipt?.status === "P2_PROFILED_CURRENT_API_SUFFIX_PREPARED"
+            && receipt.migrationsExecuted === false && receipt.trafficAuthorized === false);
+          return receipt;
         },
         async reconcileFrontend(observation, proof, workload) {
           demand(armed && priorGatewayPrepared && apiReady && !closePrepared);
@@ -212,8 +236,9 @@ function environmentLock(settings, initial, directory, launch) {
           demand(receipt?.status === "P2_PROFILED_CURRENT_RECOVERED_FENCED"); joined = receipt; return receipt;
         },
       });
-      await check(); result = await task(check, signal.signal, host); await check(); demand(joined && sessionClosed && !failed);
+      await check(); await task(check, signal.signal, host); await check(); demand(joined && sessionClosed && !failed);
       const committed = await single("commit", "COMMITTED", {}, 120_000); demand(!active && same(committed, joined));
+      clearInterval(heartbeat); heartbeat = undefined; child.stdin.end();
       await reaped; demand(exited === 0 && !failed);
       writeFrontendReceipt(directory, "p2-profiled-current-recovery-host-outcome.json", committed);
     } catch { error = new Error("P2_PROFILED_CURRENT_RECOVERY_FAILED_REQUIRES_REVIEW"); fail(); }
@@ -227,7 +252,7 @@ function environmentLock(settings, initial, directory, launch) {
       if (exited !== 0) error ??= new Error("P2_PROFILED_CURRENT_RECOVERY_HOST_CLEANUP_UNCERTAIN");
       if (error && diagnostics.length) writeFileSync(join(directory, "p2-profiled-current-recovery-private-stderr.bin"), diagnostics, { mode: 0o600, flag: "wx" });
     }
-    if (error) throw error; return result;
+    if (error) throw error; return joined;
   });
   return handle;
 }

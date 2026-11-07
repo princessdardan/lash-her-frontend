@@ -28,6 +28,8 @@ for raw in sys.stdin:
   print(json.dumps(value),flush=True)
   if sys.argv[2]=='death':os._exit(37)
   print(json.dumps({'id':arm,'status':'PROFILED_CURRENT_RECOVERY_API_READY','receipt':{'version':2,'qualificationTargetProfile':initial['qualificationTargetProfile'],'status':'API_RUNTIME_READY','environment':'staging','releaseId':'original-release','trafficAuthorized':False}}),flush=True);continue
+ elif op=='profiled-current-recovery-verify-api-current':
+  value.update(status='PROFILED_CURRENT_RECOVERY_API_CURRENT_VERIFIED',receipt={'status':'CURRENT_DATABASES_READ_ONLY_VERIFIED','migrationsExecuted':False,'trafficAuthorized':False})
  elif op=='profiled-current-recovery-reconcile-frontend':
   assert p['observation']['status']=='P2_PROFILED_CURRENT_FRONTEND_CURRENT';assert p['proof']['status']=='P2_PROFILED_CURRENT_FRONTEND_VERIFIED';assert json.loads(base64.b64decode(p['workload']))['status']=='FRONTEND_VERIFIED'
   value.update(status='PROFILED_CURRENT_RECOVERY_FRONTEND_RECONCILED',receipt={'status':'GET_FIRST_UNIQUE_EFFECT_RECONCILED'})
@@ -43,6 +45,7 @@ for raw in sys.stdin:
  elif op=='commit':
   value.update(status='COMMITTED',receipt=terminal);print(json.dumps(value),flush=True)
   if sys.argv[2]=='ack-exit':os._exit(34)
+  if sys.argv[2]=='wait-eof':sys.stdin.read()
   break
  else:os._exit(38)
  print(json.dumps(value),flush=True)
@@ -95,8 +98,8 @@ function fixture(mode = "ready") {
     captured: () => captured, cleanup: () => rmSync(directory, { recursive: true, force: true }) };
 }
 
-test("actual child pipe keeps the host flock and enforces arm-before-mutation plus the late terminal join", async () => {
-  const f = fixture();
+test("actual child pipe keeps the host flock and waits for EOF-driven child reaping before publishing success", async () => {
+  const f = fixture("wait-eof");
   try {
     const result = await withP2ProfiledCurrentRecoveryTransport(f.handle, async (check, signal, host) => {
       await check(); assert.equal(signal.aborted, false);
@@ -104,12 +107,12 @@ test("actual child pipe keeps the host flock and enforces arm-before-mutation pl
       assert.notEqual(contender.status, 0);
       await assert.rejects(host.preparePriorGateway());
       const { apiReady } = await host.armRecovery({ receipt: f.receipt, continuationStarted: f.continuationStarted, probe: f.probe });
-      assert.equal(host.active(), true); await host.preparePriorGateway(); await apiReady;
+      assert.equal(host.active(), true); await host.verifyCurrentApis(); await host.preparePriorGateway(); await apiReady;
       await host.reconcileFrontend(f.observation, f.proof, f.workload); await host.runtimeRestored(); await host.prepareClose(); await host.frontendSessionClosed();
       await host.finish({ terminal: f.terminal, continuationCompleted: f.continuationCompleted, recoveryOutcome: f.recoveryOutcome });
       return "joined";
     });
-    assert.equal(result, "joined");
+    assert.deepEqual(result, f.recoveryOutcome);
     assert.deepEqual(JSON.parse(readFileSync(join(f.directory, "p2-profiled-current-recovery-host-outcome.json"))), f.recoveryOutcome);
     assert.equal(JSON.stringify(f.captured()).includes("NEVER_IN_ARGS_OR_ENV"), false);
     assert.equal(f.captured().executable, "/usr/bin/ssh"); assert.match(f.captured().args.at(-1), /p2_profiled_current_recovery\.py/u);
@@ -121,7 +124,7 @@ test("a host death after the prior-gateway stage rejects the outstanding origina
   try {
     await assert.rejects(withP2ProfiledCurrentRecoveryTransport(f.handle, async (_check, signal, host) => {
       const { apiReady } = await host.armRecovery({ receipt: f.receipt, continuationStarted: f.continuationStarted, probe: f.probe });
-      await host.preparePriorGateway(); await apiReady; assert.equal(signal.aborted, false);
+      await host.verifyCurrentApis(); await host.preparePriorGateway(); await apiReady; assert.equal(signal.aborted, false);
     }));
     assert.equal(existsSync(join(f.directory, "p2-profiled-current-recovery-host-outcome.json")), false);
   } finally { f.cleanup(); }
@@ -132,7 +135,7 @@ test("a committed acknowledgement followed by a nonzero child exit publishes no 
   try {
     await assert.rejects(withP2ProfiledCurrentRecoveryTransport(f.handle, async (_check, _signal, host) => {
       const { apiReady } = await host.armRecovery({ receipt: f.receipt, continuationStarted: f.continuationStarted, probe: f.probe });
-      await host.preparePriorGateway(); await apiReady;
+      await host.verifyCurrentApis(); await host.preparePriorGateway(); await apiReady;
       await host.reconcileFrontend(f.observation, f.proof, f.workload); await host.runtimeRestored();
       await host.prepareClose(); await host.frontendSessionClosed();
       await host.finish({ terminal: f.terminal, continuationCompleted: f.continuationCompleted, recoveryOutcome: f.recoveryOutcome });
