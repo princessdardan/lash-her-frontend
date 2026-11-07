@@ -28,6 +28,12 @@ const configuration = value => value && !Array.isArray(value)
   && isDeepStrictEqual(Object.keys(value).sort(), [...configurationNames].sort()) && Object.values(value).every(digest);
 const originalReceiptNames = Object.freeze(["candidate", "frontendDatabase", "frontendContinuationStarted", "apiMigrationOutcome",
   "apiRuntimeOutcome", "frontendBuildOutcome", "frontendPromotionStarted", "frontendWorkloadOutcome"]);
+const lostBuildReceiptNames = Object.freeze(["deployStarted", "buildStarted", "buildIntent"]);
+const validLostBuildPins = value => value && !Array.isArray(value)
+  && [lostBuildReceiptNames, [...lostBuildReceiptNames, "buildOutcome"]].some(keys => isDeepStrictEqual(Object.keys(value), keys))
+  && Object.values(value).every(digest);
+const pinsHash = value => hash(Buffer.from(JSON.stringify(Object.fromEntries(
+  Object.entries(value).sort(([left], [right]) => left.localeCompare(right))))));
 
 function validateInitial(initial) {
   demand(initial?.version === 2 && initial.mode === "p2-profiled-current-recovery" && initial.environment === "staging"
@@ -36,7 +42,8 @@ function validateInitial(initial) {
     && digest(initial.candidateSha256) && configuration(initial.configurationSha256) && digest(initial.targetSha256) && digest(initial.inventorySha256)
     && initial.apiJobSha256 && isDeepStrictEqual(Object.keys(initial.apiJobSha256).sort(), ["community", "course"])
     && Object.values(initial.apiJobSha256).every(digest)
-    && ["restore-current-runtime", "reconcile-frontend-get-first", "resume-approved-api-suffix"].includes(initial.disposition));
+    && ["restore-current-runtime", "reconcile-frontend-get-first", "reconcile-frontend-lost-build-get-first",
+      "resume-approved-api-suffix"].includes(initial.disposition));
   requireQualificationTargetProfile(current, initial, initial.candidate, initial.frontendJob, initial.frontendJob?.target,
     initial.inventory);
   demand(initial.candidate.version === 3 && initial.candidate.environment === "staging"
@@ -56,6 +63,8 @@ function validateInitial(initial) {
       ? [3, 4, originalReceiptNames.length].includes(receiptNames.length)
       : initial.disposition === "restore-current-runtime"
         ? [3, 4, 5, originalReceiptNames.length].includes(receiptNames.length)
+        : initial.disposition === "reconcile-frontend-lost-build-get-first"
+          ? receiptNames.length === 5
         : receiptNames.length === originalReceiptNames.length));
   const suffix = initial.approvedApiSuffix;
   if (initial.disposition === "resume-approved-api-suffix") {
@@ -65,6 +74,8 @@ function validateInitial(initial) {
       && initial.recoveryApiJobSha256 && isDeepStrictEqual(Object.keys(initial.recoveryApiJobSha256).sort(), ["community", "course"])
       && Object.values(initial.recoveryApiJobSha256).every(digest));
   } else demand(suffix === undefined && initial.recoveryApiJobSha256 === undefined);
+  if (initial.disposition === "reconcile-frontend-lost-build-get-first") demand(validLostBuildPins(initial.lostBuildReceiptSha256));
+  else demand(initial.lostBuildReceiptSha256 === undefined);
   return initial;
 }
 
@@ -208,6 +219,39 @@ function environmentLock(settings, initial, directory, launch) {
             .filter(([key]) => !["evidence", "evidenceSha256", "proof"].includes(key))), proof: safeProof };
           return single("profiled-current-recovery-reconcile-frontend", "PROFILED_CURRENT_RECOVERY_FRONTEND_RECONCILED",
             { observation: safeObservation, proof: safeProof, workload: workload.toString("base64") }, 300_000);
+        },
+        async observeLostBuild(observation) {
+          demand(armed && priorGatewayPrepared && apiReady && !closePrepared
+            && initial.disposition === "reconcile-frontend-lost-build-get-first");
+          requireQualificationTargetProfile(current, observation);
+          const fields = ["version", "qualificationTargetProfile", "status", "environment", "actionId", "releaseId", "sourceCommit",
+            "candidateSha256", "configurationSha256", "targetSha256", "projectId", "deploymentId", "previousDeploymentId",
+            "lostBuildReceiptSha256", "deployStartedSha256", "buildStartedSha256", "buildIntentSha256",
+            ...(Object.hasOwn(initial.lostBuildReceiptSha256, "buildOutcome") ? ["buildOutcomeSha256"] : []),
+            "getFirst", "newProviderPost", "ambiguous", "deploymentEffectObserved", "frontendActionPending",
+            "originalBuildAckObserved", "providerMutationReplayed", "buildReadyVerified", "workloadVerified",
+            "aliasQualificationVerified", "promotionVerified", "cronQualificationVerified", "trafficAuthorized", "releaseAccepted"];
+          demand(isDeepStrictEqual(Object.keys(observation).sort(), fields.sort()) && observation.version === 2
+            && observation.status === "P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED" && observation.environment === "staging"
+            && observation.actionId === initial.originalReleaseId && observation.releaseId === initial.originalReleaseId
+            && observation.sourceCommit === initial.sourceCommit && observation.candidateSha256 === initial.candidateSha256
+            && isDeepStrictEqual(observation.configurationSha256, initial.configurationSha256)
+            && observation.targetSha256 === initial.targetSha256 && observation.projectId === initial.candidate.workload?.projectId
+            && /^dpl_[A-Za-z0-9]+$/u.test(observation.deploymentId ?? "")
+            && (observation.previousDeploymentId === null || /^dpl_[A-Za-z0-9]+$/u.test(observation.previousDeploymentId ?? ""))
+            && observation.lostBuildReceiptSha256 === pinsHash(initial.lostBuildReceiptSha256)
+            && observation.deployStartedSha256 === initial.lostBuildReceiptSha256.deployStarted
+            && observation.buildStartedSha256 === initial.lostBuildReceiptSha256.buildStarted
+            && observation.buildIntentSha256 === initial.lostBuildReceiptSha256.buildIntent
+            && (!Object.hasOwn(initial.lostBuildReceiptSha256, "buildOutcome")
+              || observation.buildOutcomeSha256 === initial.lostBuildReceiptSha256.buildOutcome)
+            && observation.getFirst === true && observation.newProviderPost === false && observation.ambiguous === false
+            && observation.deploymentEffectObserved === true && observation.frontendActionPending === true
+            && ["originalBuildAckObserved", "providerMutationReplayed", "buildReadyVerified", "workloadVerified",
+              "aliasQualificationVerified", "promotionVerified", "cronQualificationVerified", "trafficAuthorized", "releaseAccepted"]
+              .every(key => observation[key] === false));
+          return single("profiled-current-recovery-observe-lost-build", "PROFILED_CURRENT_RECOVERY_LOST_BUILD_OBSERVED",
+            { observation }, 300_000);
         },
         async resumeApprovedApiSuffix() {
           demand(armed && priorGatewayPrepared && apiReady && !closePrepared);

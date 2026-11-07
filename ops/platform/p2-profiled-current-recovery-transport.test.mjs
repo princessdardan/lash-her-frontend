@@ -33,6 +33,9 @@ for raw in sys.stdin:
  elif op=='profiled-current-recovery-reconcile-frontend':
   assert p['observation']['status']=='P2_PROFILED_CURRENT_FRONTEND_CURRENT';assert p['proof']['status']=='P2_PROFILED_CURRENT_FRONTEND_VERIFIED';assert json.loads(base64.b64decode(p['workload']))['status']=='FRONTEND_VERIFIED'
   value.update(status='PROFILED_CURRENT_RECOVERY_FRONTEND_RECONCILED',receipt={'status':'GET_FIRST_UNIQUE_EFFECT_RECONCILED'})
+ elif op=='profiled-current-recovery-observe-lost-build':
+  assert p['observation']['status']=='P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED'
+  value.update(status='PROFILED_CURRENT_RECOVERY_LOST_BUILD_OBSERVED',receipt={'status':'P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_RETAINED','observationSha256':'7'*64})
  elif op=='profiled-current-recovery-resume-api-suffix':value.update(status='PROFILED_CURRENT_RECOVERY_API_SUFFIX_RESUMED',receipt={'status':'EXACT_APPROVED_SUFFIX_RESUMED'})
  elif op=='profiled-current-recovery-runtime-restored':value.update(status='PROFILED_CURRENT_RECOVERY_RUNTIME_RESTORED',receipt={'status':'ALL_THREE_CURRENT'})
  elif op=='profiled-current-recovery-prepare-close':value.update(status='PROFILED_CURRENT_RECOVERY_CLOSE_PREPARED',receipt={'status':'CLOSE_PREPARED'})
@@ -53,7 +56,7 @@ for raw in sys.stdin:
 os.close(fd)
 `;
 
-function fixture(mode = "ready") {
+function fixture(mode = "ready", disposition = "reconcile-frontend-get-first") {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "p2-profile-current-recovery-"))); chmodSync(directory, 0o700);
   const target = { qualificationTargetProfile: profile, approvedPendingTags: [], allowEmptyBootstrap: false };
   const job = service => ({ ...(service === "frontend" ? { version: 2 } : { schemaVersion: 2 }), qualificationTargetProfile: profile, service, environment: "staging", releaseId: "original-release", sourceCommit: "a".repeat(40), target });
@@ -64,10 +67,11 @@ function fixture(mode = "ready") {
   const initial = { version: 2, qualificationTargetProfile: profile, mode: "p2-profiled-current-recovery", environment: "staging",
     sourceCommit: "a".repeat(40), recoveryActionId: "recover-owned", originalReleaseId: "original-release",
     candidateSha256: "b".repeat(64), configurationSha256, targetSha256: "d".repeat(64), inventorySha256: "9".repeat(64),
-    apiJobSha256: { course: "e".repeat(64), community: "f".repeat(64) }, owner: { name: "migration_owner", oid: "12345" }, disposition: "reconcile-frontend-get-first",
+    apiJobSha256: { course: "e".repeat(64), community: "f".repeat(64) }, owner: { name: "migration_owner", oid: "12345" }, disposition,
     originalReceiptSha256: Object.fromEntries(["candidate", "frontendDatabase", "frontendContinuationStarted", "apiMigrationOutcome", "apiRuntimeOutcome",
       "frontendBuildOutcome", "frontendPromotionStarted", "frontendWorkloadOutcome"].map((name, index) => [name, "12345678"[index].repeat(64)])),
-    candidate: { version: 3, qualificationTargetProfile: profile, environment: "staging", releaseId: "original-release", sources: { frontend: { commit: "a".repeat(40) } } },
+    candidate: { version: 3, qualificationTargetProfile: profile, environment: "staging", releaseId: "original-release",
+      sources: { frontend: { commit: "a".repeat(40) } }, workload: { projectId: "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM" } },
     frontendJob: job("frontend"), inventory: { qualificationTargetProfile: profile }, credentials: { private: "NEVER_IN_ARGS_OR_ENV" } };
   const receipt = { version: 2, qualificationTargetProfile: profile, status: "DATABASE_VERIFIED", migrationMode: "verify-current-only", readOnlyVerified: true,
     applied: [], service: "frontend", environment: "staging", releaseId: "original-release", sourceCommit: "a".repeat(40) };
@@ -83,6 +87,24 @@ function fixture(mode = "ready") {
     originalReceiptSha256, workloadReceiptSha256: createHash("sha256").update(workload).digest("hex") };
   const proof = { ...observation, status: "P2_PROFILED_CURRENT_FRONTEND_VERIFIED" };
   observation.proof = proof;
+  let lostBuildObservation;
+  if (disposition === "reconcile-frontend-lost-build-get-first") {
+    initial.originalReceiptSha256 = Object.fromEntries(Object.entries(initial.originalReceiptSha256).slice(0, 5));
+    initial.lostBuildReceiptSha256 = { deployStarted: "1".repeat(64), buildStarted: "2".repeat(64), buildIntent: "3".repeat(64) };
+    const lostPinsSha = createHash("sha256").update(JSON.stringify(Object.fromEntries(
+      Object.entries(initial.lostBuildReceiptSha256).sort(([left], [right]) => left.localeCompare(right))))).digest("hex");
+    lostBuildObservation = { version: 2, qualificationTargetProfile: profile,
+      status: "P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED", environment: "staging", actionId: "original-release",
+      releaseId: "original-release", sourceCommit: initial.sourceCommit, candidateSha256: initial.candidateSha256,
+      configurationSha256: initial.configurationSha256, targetSha256: initial.targetSha256,
+      projectId: initial.candidate.workload.projectId, deploymentId: "dpl_owned", previousDeploymentId: "dpl_previous",
+      lostBuildReceiptSha256: lostPinsSha, deployStartedSha256: initial.lostBuildReceiptSha256.deployStarted,
+      buildStartedSha256: initial.lostBuildReceiptSha256.buildStarted, buildIntentSha256: initial.lostBuildReceiptSha256.buildIntent,
+      getFirst: true, newProviderPost: false, ambiguous: false, deploymentEffectObserved: true, frontendActionPending: true,
+      originalBuildAckObserved: false, providerMutationReplayed: false, buildReadyVerified: false, workloadVerified: false,
+      aliasQualificationVerified: false, promotionVerified: false, cronQualificationVerified: false,
+      trafficAuthorized: false, releaseAccepted: false };
+  }
   const recoveryOutcome = { status: "P2_PROFILED_CURRENT_RECOVERED_FENCED", trafficAuthorized: false, nativeSchedulesEnabled: false };
   for (const [name, value] of [["database-receipt.json", receipt], ["frontend-continuation-started.json", continuationStarted],
     ["frontend-continuation-completed.json", continuationCompleted], ["job-outcome.json", terminal], ["p2-profiled-current-recovery-held.json", recoveryOutcome]]) {
@@ -95,7 +117,8 @@ function fixture(mode = "ready") {
   const handle = P2_PROFILED_CURRENT_RECOVERY_OWNED_FIXTURE.environmentLock(
     { knownHosts: "/owned/known-hosts", sshKey: "/owned/key" }, initial, directory,
     (executable, args, options) => { captured = { executable, args, options }; return spawn("python3", ["-I", "-u", "-c", program, lock, mode], options); });
-  return { directory, initial, receipt, continuationStarted, continuationCompleted, terminal, workload, observation, proof, recoveryOutcome, probe, lock, handle,
+  return { directory, initial, receipt, continuationStarted, continuationCompleted, terminal, workload, observation, proof, lostBuildObservation,
+    recoveryOutcome, probe, lock, handle,
     captured: () => captured, cleanup: () => rmSync(directory, { recursive: true, force: true }) };
 }
 
@@ -117,6 +140,21 @@ test("actual child pipe keeps the host flock and waits for EOF-driven child reap
     assert.deepEqual(JSON.parse(readFileSync(join(f.directory, "p2-profiled-current-recovery-host-outcome.json"))), f.recoveryOutcome);
     assert.equal(JSON.stringify(f.captured()).includes("NEVER_IN_ARGS_OR_ENV"), false);
     assert.equal(f.captured().executable, "/usr/bin/ssh"); assert.match(f.captured().args.at(-1), /p2_profiled_current_recovery\.py/u);
+  } finally { f.cleanup(); }
+});
+
+test("lost build recovery transports only the source-observed GET-first effect and no workload proof", async () => {
+  const f = fixture("wait-eof", "reconcile-frontend-lost-build-get-first");
+  try {
+    await withP2ProfiledCurrentRecoveryTransport(f.handle, async (_check, _signal, host) => {
+      const { apiReady } = await host.armRecovery({ receipt: f.receipt, continuationStarted: f.continuationStarted, probe: f.probe });
+      await host.verifyCurrentApis(); await host.preparePriorGateway(); await apiReady;
+      const retained = await host.observeLostBuild(f.lostBuildObservation);
+      assert.equal(retained.status, "P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_RETAINED");
+      await host.runtimeRestored(); await host.prepareClose(); await host.frontendSessionClosed();
+      await host.finish({ terminal: f.terminal, continuationCompleted: f.continuationCompleted, recoveryOutcome: f.recoveryOutcome });
+    });
+    assert.equal(existsSync(join(f.directory, "p2-profiled-current-recovery-host-outcome.json")), true);
   } finally { f.cleanup(); }
 });
 

@@ -25,12 +25,17 @@ const configuration = value => value && !Array.isArray(value)
   && isDeepStrictEqual(Object.keys(value).sort(), [...configurationNames].sort()) && Object.values(value).every(digest);
 const originalReceiptNames = Object.freeze(["candidate", "frontendDatabase", "frontendContinuationStarted", "apiMigrationOutcome",
   "apiRuntimeOutcome", "frontendBuildOutcome", "frontendPromotionStarted", "frontendWorkloadOutcome"]);
+const lostBuildReceiptNames = Object.freeze(["deployStarted", "buildStarted", "buildIntent"]);
+const lostBuildReceipts = value => value && !Array.isArray(value)
+  && [lostBuildReceiptNames, [...lostBuildReceiptNames, "buildOutcome"]].some(keys => isDeepStrictEqual(Object.keys(value), keys))
+  && Object.values(value).every(digest);
 const originalReceipts = (value, disposition) => {
   if (!value || Array.isArray(value) || !Object.values(value).every(digest)) return false;
   const names = Object.keys(value), prefix = originalReceiptNames.slice(0, names.length);
   if (!isDeepStrictEqual(names, prefix)) return false;
   if (disposition === "resume-approved-api-suffix") return [3, 4, originalReceiptNames.length].includes(names.length);
   if (disposition === "restore-current-runtime") return [3, 4, 5, originalReceiptNames.length].includes(names.length);
+  if (disposition === "reconcile-frontend-lost-build-get-first") return names.length === 5;
   return disposition === "reconcile-frontend-get-first" && names.length === originalReceiptNames.length;
 };
 
@@ -84,7 +89,8 @@ function validateSettings(settings) {
     && settings.apiJobSha256 && isDeepStrictEqual(Object.keys(settings.apiJobSha256).sort(), ["community", "course"])
     && Object.values(settings.apiJobSha256).every(digest)
     && settings.inventory && hash(settings.inventory) === settings.inventorySha256
-    && ["restore-current-runtime", "reconcile-frontend-get-first", "resume-approved-api-suffix"].includes(settings.disposition));
+    && ["restore-current-runtime", "reconcile-frontend-get-first", "reconcile-frontend-lost-build-get-first",
+      "resume-approved-api-suffix"].includes(settings.disposition));
   const migration = settings.frontendMigration;
   requireQualificationTargetProfile(current, settings, migration, migration?.candidate, migration?.candidate?.frontendMigration,
     migration?.job, migration?.job?.target, settings.courseJob, settings.courseJob?.target, settings.communityJob, settings.communityJob?.target,
@@ -110,6 +116,8 @@ function validateSettings(settings) {
       && ["course", "community"].every(service => settings[service + "Job"].target.allowEmptyBootstrap === false
         && isSuffix(settings[service + "Job"].target.approvedPendingTags, settings.approvedApiSuffix[service])));
   } else demand(settings.approvedApiSuffix === undefined);
+  if (settings.disposition === "reconcile-frontend-lost-build-get-first") demand(lostBuildReceipts(settings.lostBuildReceiptSha256));
+  else demand(settings.lostBuildReceiptSha256 === undefined);
   return settings;
 }
 
@@ -128,6 +136,7 @@ export function prepareP2ProfiledCurrentRecovery(settings) {
     sourceCommit: selected.sourceCommit, candidateSha256: selected.candidateSha256, configurationSha256: selected.configurationSha256,
     targetSha256: selected.targetSha256, inventorySha256: selected.inventorySha256, apiJobSha256: clone(selected.apiJobSha256), owner: clone(selected.owner),
     disposition: selected.disposition, originalReceiptSha256: clone(selected.originalReceiptSha256),
+    ...(selected.lostBuildReceiptSha256 ? { lostBuildReceiptSha256: clone(selected.lostBuildReceiptSha256) } : {}),
     ...(selected.approvedApiSuffix ? { approvedApiSuffix: clone(selected.approvedApiSuffix) } : {}),
     ...(recoveryApiJobSha256 ? { recoveryApiJobSha256 } : {}),
     frontendSqlApplied: false, rolePreparationAuthorized: false, historicalProviderClosureClaimed: false,
@@ -157,7 +166,7 @@ export async function runP2ProfiledCurrentRecovery(prepared, authority) {
   demand(typeof createP2ProfiledCurrentProbe === "function" && typeof readP2ProfiledCurrentFrontendReceipt === "function"
     && typeof frontendAdapters.observeProfiledCurrentFrontend === "function" && typeof frontendAdapters.readProfiledCurrentWorkloadReceipt === "function");
   demand(typeof releaseSource.verifyP2ProfiledCurrentWriterBoundary === "function");
-  const store = frontendReleaseReceiptStore(deps.directory); let databaseClient, closePrepared = false;
+  const store = frontendReleaseReceiptStore(deps.directory); let databaseClient, closePrepared = false, lostBuildObservation;
   const base = freeze({ ...clone(plan), status: "P2_PROFILED_CURRENT_RECOVERY_STARTED", phase: "source-preflight" });
   await store.record("p2-profiled-current-recovery-started.json", base);
   try {
@@ -179,7 +188,17 @@ export async function runP2ProfiledCurrentRecovery(prepared, authority) {
           if (settings.disposition !== "resume-approved-api-suffix") await runtime.verifyCurrentApis();
           else await runtime.prepareApiSuffix();
           await runtime.preparePriorGateway(); await armed.apiReady; await verifySession();
-          if (Object.keys(settings.originalReceiptSha256).length === originalReceiptNames.length) {
+          if (settings.disposition === "reconcile-frontend-lost-build-get-first") {
+            const providerContext = await deps.getProviderContext();
+            const observed = await frontendAdapters.observeProfiledCurrentFrontend({ plan, migration: settings.frontendMigration,
+              lostBuildReceiptSha256: settings.lostBuildReceiptSha256, providerContext, environmentSignal, verifyEnvironment, verifySession });
+            demand(observed?.status === "P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED"
+              && Buffer.isBuffer(observed.evidence) && observed.evidence.length > 0 && observed.evidence.length <= 2_000_000
+              && observed.evidenceSha256 === hash(observed.evidence));
+            const safe = Object.fromEntries(Object.entries(observed).filter(([key]) => !["evidence", "evidenceSha256"].includes(key)));
+            lostBuildObservation = await runtime.observeLostBuild(safe);
+            await store.record("p2-profiled-current-lost-build-observation.json", safe);
+          } else if (Object.keys(settings.originalReceiptSha256).length === originalReceiptNames.length) {
             const providerContext = await deps.getProviderContext();
             const observed = await frontendAdapters.observeProfiledCurrentFrontend({ plan, migration: settings.frontendMigration,
               originalReceiptSha256: settings.originalReceiptSha256, providerContext, environmentSignal, verifyEnvironment, verifySession });
@@ -210,6 +229,8 @@ export async function runP2ProfiledCurrentRecovery(prepared, authority) {
         ...(digest(sessionClosed.sha256) ? { sessionClosedSha256: sessionClosed.sha256 } : {}),
         runtimeCurrent: true, apiSuffixResumed: settings.disposition === "resume-approved-api-suffix",
         frontendEffectReconciled: settings.disposition === "reconcile-frontend-get-first",
+        frontendBuildEffectObserved: settings.disposition === "reconcile-frontend-lost-build-get-first",
+        ...(lostBuildObservation ? { frontendBuildEffectObservationSha256: lostBuildObservation.observationSha256 } : {}),
         frontendCurrentVerified: Object.keys(settings.originalReceiptSha256).length === originalReceiptNames.length,
         frontendActionPending: Object.keys(settings.originalReceiptSha256).length < originalReceiptNames.length, frontendSqlApplied: false,
         rolePreparationAuthorized: false, historicalLoginsRestored: false, nativeSchedulesEnabled: false, trafficAuthorized: false, releaseAccepted: false });
@@ -232,7 +253,7 @@ export async function p2ProfiledCurrentRecoveryOperator(settings, { apply = fals
   const release = releaseSource.prepareP2ProfiledCurrentRelease(settings.release);
   const request = settings.recovery;
   demand(request.version === 2 && request.environment === "staging"
-    && Object.keys(request).sort().join(",") === ["approvedApiSuffix", "disposition", "environment", "originalReceiptSha256",
+    && Object.keys(request).sort().join(",") === ["approvedApiSuffix", "disposition", "environment", "lostBuildReceiptSha256", "originalReceiptSha256",
       "qualificationTargetProfile", "recoveryActionId", "version"].filter(key => request[key] !== undefined).sort().join(","));
   const materialized = { version: 2, qualificationTargetProfile: current, mode: "p2-profiled-current-recovery", environment: "staging",
     recoveryActionId: request.recoveryActionId, originalReleaseId: release.plan.releaseId, sourceCommit: release.plan.sourceCommit,
@@ -240,6 +261,7 @@ export async function p2ProfiledCurrentRecoveryOperator(settings, { apply = fals
     targetSha256: release.plan.targetSha256, inventorySha256: release.plan.inventorySha256,
     apiJobSha256: release.plan.apiJobSha256, owner: release.inventory.owner,
     disposition: request.disposition, originalReceiptSha256: request.originalReceiptSha256,
+    ...(request.lostBuildReceiptSha256 ? { lostBuildReceiptSha256: request.lostBuildReceiptSha256 } : {}),
     ...(request.approvedApiSuffix ? { approvedApiSuffix: request.approvedApiSuffix } : {}),
     frontendMigration: release.migration, courseJob: release.apiJobs.course, communityJob: release.apiJobs.community,
     inventory: release.inventory };
@@ -256,6 +278,7 @@ export async function p2ProfiledCurrentRecoveryOperator(settings, { apply = fals
     reviewedPlanSha256: hash(prepared.plan), recoveryActionId: prepared.plan.recoveryActionId,
     originalReleaseId: prepared.plan.originalReleaseId, disposition: prepared.plan.disposition,
     originalReceiptSha256: prepared.plan.originalReceiptSha256,
+    ...(prepared.plan.lostBuildReceiptSha256 ? { lostBuildReceiptSha256: prepared.plan.lostBuildReceiptSha256 } : {}),
     ...(prepared.plan.approvedApiSuffix ? { approvedApiSuffix: prepared.plan.approvedApiSuffix,
       recoveryApiJobSha256: prepared.plan.recoveryApiJobSha256 } : {}) };
   const transportModule = await import("./p2-profiled-current-recovery-transport.mjs");

@@ -28,6 +28,10 @@ def initial(disposition='restore-current-runtime'):
     if disposition == 'resume-approved-api-suffix':
         value['approvedApiSuffix'] = {'course': ['0012_owned'], 'community': ['0009_owned']}
         value['recoveryApiJobSha256'] = {'course': 'c' * 64, 'community': 'd' * 64}
+    if disposition == 'reconcile-frontend-lost-build-get-first':
+        value['originalReceiptSha256'] = dict(list(value['originalReceiptSha256'].items())[:5])
+        value['lostBuildReceiptSha256'] = {'deployStarted': 'a' * 64, 'buildStarted': 'b' * 64,
+                                           'buildIntent': 'c' * 64}
     return value
 
 
@@ -81,6 +85,8 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
             self.assertEqual(broker.select_release(suffix), selected_inputs(suffix))
             promoted_suffix = initial('resume-approved-api-suffix')
             self.assertEqual(broker.select_release(promoted_suffix), selected_inputs(promoted_suffix))
+            lost_build = initial('reconcile-frontend-lost-build-get-first')
+            self.assertEqual(broker.select_release(lost_build), selected_inputs(lost_build))
             early_current = initial('restore-current-runtime')
             early_current['originalReceiptSha256'] = dict(list(early_current['originalReceiptSha256'].items())[:3])
             self.assertEqual(broker.select_release(early_current), selected_inputs(early_current))
@@ -355,6 +361,47 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
         changed = copy.deepcopy(observation); changed['proof']['status'] = 'FORGED'
         with self.assertRaises(Exception):
             broker.reconcile_frontend({'observation': changed, 'proof': proof, 'workload': workload})
+
+    def test_lost_build_observation_is_retained_without_frontend_current_or_replay_claims(self):
+        broker = object.__new__(recovery.P2ProfiledCurrentRecoveryBroker)
+        broker.initial = {**initial('reconcile-frontend-lost-build-get-first'), 'sourceCommit': 'a' * 40,
+                          'candidateSha256': 'b' * 64, 'configurationSha256': {'runtime.json': 'c' * 64},
+                          'targetSha256': 'd' * 64}
+        broker.selected = {**selected(), 'workload': {'projectId': 'prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM'}}
+        broker.promoted, broker.closing_at = None, None
+        broker._require_current_api = lambda: ({}, {})
+        broker.record_base = lambda status: {'status': status}
+        retained = []
+        broker.retain = lambda name, raw: retained.append((name, raw))
+        pins = broker.initial['lostBuildReceiptSha256']
+        observation = {'version': 2, 'qualificationTargetProfile': copy.deepcopy(recovery.PROFILE),
+            'status': 'P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED', 'environment': 'staging',
+            'actionId': 'original-release', 'releaseId': 'original-release', 'sourceCommit': 'a' * 40,
+            'candidateSha256': 'b' * 64, 'configurationSha256': {'runtime.json': 'c' * 64},
+            'targetSha256': 'd' * 64, 'projectId': 'prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM',
+            'deploymentId': 'dpl_owned', 'previousDeploymentId': 'dpl_previous',
+            'lostBuildReceiptSha256': recovery.sha(recovery.encoded(dict(sorted(pins.items())))),
+            'deployStartedSha256': pins['deployStarted'], 'buildStartedSha256': pins['buildStarted'],
+            'buildIntentSha256': pins['buildIntent'], 'getFirst': True, 'newProviderPost': False,
+            'ambiguous': False, 'deploymentEffectObserved': True, 'frontendActionPending': True,
+            'originalBuildAckObserved': False, 'providerMutationReplayed': False, 'buildReadyVerified': False,
+            'workloadVerified': False, 'aliasQualificationVerified': False, 'promotionVerified': False,
+            'cronQualificationVerified': False, 'trafficAuthorized': False, 'releaseAccepted': False}
+        receipt = broker.observe_lost_build(observation)
+        self.assertEqual(receipt['status'], 'P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_RETAINED')
+        self.assertEqual(receipt['observationSha256'], recovery.sha(recovery.encoded(observation)))
+        self.assertEqual(retained[0][0], 'frontend-lost-build-observation.json')
+        broker.check = lambda: None; broker.vercel = object()
+        with patch.object(recovery.vercel, 'project_state', return_value={
+                'projectId': 'prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM',
+                'productionDeploymentId': 'dpl_changed', 'cronsEnabled': False}):
+            with self.assertRaises(Exception):
+                broker._require_native_schedules_off()
+        del broker.lost_build_observation
+        del broker.lost_build_observation_sha256
+        changed = copy.deepcopy(observation); changed['providerMutationReplayed'] = True
+        with self.assertRaises(Exception):
+            broker.observe_lost_build(changed)
 
     def test_protocol_has_no_sql_replay_path_or_caller_fields_on_field_free_operations(self):
         broker = object.__new__(recovery.P2ProfiledCurrentRecoveryBroker)

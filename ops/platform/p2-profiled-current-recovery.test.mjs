@@ -54,6 +54,17 @@ test("closed recovery dispositions require exact matching carriers and only the 
   const promotedSuffix = fixture("resume-approved-api-suffix");
   promotedSuffix.originalReceiptSha256 = fixture().originalReceiptSha256;
   assert.equal(Object.keys(prepareP2ProfiledCurrentRecovery(promotedSuffix).plan.originalReceiptSha256).length, 8);
+  const lostBuild = fixture("restore-current-runtime");
+  lostBuild.disposition = "reconcile-frontend-lost-build-get-first";
+  lostBuild.originalReceiptSha256 = Object.fromEntries(Object.entries(lostBuild.originalReceiptSha256).slice(0, 5));
+  lostBuild.lostBuildReceiptSha256 = { deployStarted: "a".repeat(64), buildStarted: "b".repeat(64), buildIntent: "c".repeat(64) };
+  const lostPlan = prepareP2ProfiledCurrentRecovery(lostBuild).plan;
+  assert.equal(lostPlan.disposition, "reconcile-frontend-lost-build-get-first");
+  assert.deepEqual(lostPlan.lostBuildReceiptSha256, lostBuild.lostBuildReceiptSha256);
+  const missingLostPin = structuredClone(lostBuild); delete missingLostPin.lostBuildReceiptSha256.buildIntent;
+  const extraLostPin = structuredClone(lostBuild); extraLostPin.lostBuildReceiptSha256.unreviewed = "d".repeat(64);
+  assert.throws(() => prepareP2ProfiledCurrentRecovery(missingLostPin));
+  assert.throws(() => prepareP2ProfiledCurrentRecovery(extraLostPin));
   const oneService = fixture("resume-approved-api-suffix"); oneService.approvedApiSuffix.community = [];
   const oneServicePlan = prepareP2ProfiledCurrentRecovery(oneService).plan;
   assert.deepEqual(oneServicePlan.approvedApiSuffix.community, []);

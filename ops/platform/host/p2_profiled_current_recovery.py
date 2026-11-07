@@ -42,9 +42,11 @@ OP = 'profiled-current-recovery'
 STATUS = 'PROFILED_CURRENT_RECOVERY'
 TERMINAL = 'P2_PROFILED_CURRENT_RECOVERED_FENCED'
 TERMINAL_NAME = 'p2-profiled-current-recovery-outcome.json'
-DISPOSITIONS = frozenset(('restore-current-runtime', 'reconcile-frontend-get-first', 'resume-approved-api-suffix'))
+DISPOSITIONS = frozenset(('restore-current-runtime', 'reconcile-frontend-get-first',
+                          'reconcile-frontend-lost-build-get-first', 'resume-approved-api-suffix'))
 ORIGINAL_NAMES = ('candidate', 'frontendDatabase', 'frontendContinuationStarted', 'apiMigrationOutcome',
                   'apiRuntimeOutcome', 'frontendBuildOutcome', 'frontendPromotionStarted', 'frontendWorkloadOutcome')
+LOST_BUILD_NAMES = ('deployStarted', 'buildStarted', 'buildIntent')
 LAYOUT = {'actionIdKey': 'recoveryActionId', 'receiptPrefix': PREFIX,
           'runtimePrefix': 'runtime-profiled-current-recovery-',
           'migrationPrefix': 'migration-profiled-current-recovery-',
@@ -64,7 +66,7 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
     MODE, PREFIX, OP, STATUS, TERMINAL, TERMINAL_NAME = MODE, PREFIX, OP, STATUS, TERMINAL, TERMINAL_NAME
     EXTRA_REQUIRED_INITIAL_FIELDS = frozenset((
         'recoveryActionId', 'originalReleaseId', 'disposition', 'originalReceiptSha256', 'apiJobSha256'))
-    EXTRA_OPTIONAL_INITIAL_FIELDS = frozenset(('approvedApiSuffix', 'recoveryApiJobSha256'))
+    EXTRA_OPTIONAL_INITIAL_FIELDS = frozenset(('approvedApiSuffix', 'recoveryApiJobSha256', 'lostBuildReceiptSha256'))
 
     def action_id(self):
         return self.initial['recoveryActionId']
@@ -109,6 +111,11 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                     all(sha(migrate.read_input(self.original_bundle / 'jobs', service + '.json')) ==
                         self.initial['apiJobSha256'][service] for service in ('course', 'community')),
                     'P2_PROFILED_CURRENT_RECOVERY_JOB_BYTES_CHANGED')
+        if hasattr(self, 'lost_build_observation'):
+            raw = migrate.read_input(self.directory, 'frontend-lost-build-observation.json')
+            require(sha(raw) == self.lost_build_observation_sha256 and
+                    decode_qualification_target_json(raw, 'carrier') == self.lost_build_observation,
+                    'P2_PROFILED_CURRENT_LOST_BUILD_OBSERVATION_CHANGED')
 
     def record_base(self, status):
         value = super().record_base(status)
@@ -118,6 +125,8 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                      originalReceiptSha256=copy.deepcopy(self.initial['originalReceiptSha256']))
         if self.initial['disposition'] == 'resume-approved-api-suffix':
             value['recoveryApiJobSha256'] = copy.deepcopy(self.initial['recoveryApiJobSha256'])
+        if self.initial['disposition'] == 'reconcile-frontend-lost-build-get-first':
+            value['lostBuildReceiptSha256'] = copy.deepcopy(self.initial['lostBuildReceiptSha256'])
         return value
 
     def select_release(self, initial):
@@ -136,6 +145,7 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                   len(receipts) in (3, 4, len(ORIGINAL_NAMES))) or
                  (initial.get('disposition') == 'restore-current-runtime' and
                   len(receipts) in (3, 4, 5, len(ORIGINAL_NAMES))) or
+                 (initial.get('disposition') == 'reconcile-frontend-lost-build-get-first' and len(receipts) == 5) or
                  (initial.get('disposition') == 'reconcile-frontend-get-first' and
                   len(receipts) == len(ORIGINAL_NAMES))) and
                 all(valid_digest(value) for value in receipts.values()),
@@ -157,6 +167,13 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                     'P2_PROFILED_CURRENT_API_SUFFIX_JOB_MISMATCH')
         else:
             require(suffix is None and recovery_hashes is None, 'P2_PROFILED_CURRENT_API_SUFFIX_REFUSED')
+        lost = initial.get('lostBuildReceiptSha256')
+        if initial['disposition'] == 'reconcile-frontend-lost-build-get-first':
+            require(type(lost) is dict and tuple(lost) in (LOST_BUILD_NAMES, (*LOST_BUILD_NAMES, 'buildOutcome')) and
+                    all(valid_digest(value) for value in lost.values()),
+                    'P2_PROFILED_CURRENT_LOST_BUILD_RECEIPTS_REQUIRED')
+        else:
+            require(lost is None, 'P2_PROFILED_CURRENT_LOST_BUILD_RECEIPTS_REFUSED')
         return selected, jobs, plan, compose
 
     def create_scope(self, receipt):
@@ -338,7 +355,9 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         require(not self.failed.is_set() and
                 (self.promoted is not None if not frontend_pending else
                  getattr(self, 'api_suffix_resumed', False) if self.initial['disposition'] == 'resume-approved-api-suffix'
-                 else self.initial['disposition'] == 'restore-current-runtime' and getattr(self, 'runtime_current', False)),
+                 else self.initial['disposition'] == 'restore-current-runtime' and getattr(self, 'runtime_current', False)
+                 or self.initial['disposition'] == 'reconcile-frontend-lost-build-get-first' and
+                 getattr(self, 'runtime_current', False) and hasattr(self, 'lost_build_observation')),
                 'P2_PROFILED_CURRENT_FRONTEND_REQUIRED')
 
     def _require_current_api(self):
@@ -385,6 +404,50 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         self.recovery_frontend_observation = copy.deepcopy(observation)
         return self.record_base('P2_PROFILED_CURRENT_FRONTEND_CURRENT')
 
+    def observe_lost_build(self, observation):
+        self._require_current_api()
+        require(self.initial['disposition'] == 'reconcile-frontend-lost-build-get-first' and
+                self.promoted is None and self.closing_at is None and not hasattr(self, 'lost_build_observation'),
+                'P2_PROFILED_CURRENT_LOST_BUILD_STAGE_REFUSED')
+        require_profiled(observation)
+        optional = ('buildOutcomeSha256',) if 'buildOutcome' in self.initial['lostBuildReceiptSha256'] else ()
+        fields = {'version', 'qualificationTargetProfile', 'status', 'environment', 'actionId', 'releaseId', 'sourceCommit',
+                  'candidateSha256', 'configurationSha256', 'targetSha256', 'projectId', 'deploymentId', 'previousDeploymentId',
+                  'lostBuildReceiptSha256', 'deployStartedSha256', 'buildStartedSha256', 'buildIntentSha256', *optional,
+                  'getFirst', 'newProviderPost', 'ambiguous', 'deploymentEffectObserved', 'frontendActionPending',
+                  'originalBuildAckObserved', 'providerMutationReplayed', 'buildReadyVerified', 'workloadVerified',
+                  'aliasQualificationVerified', 'promotionVerified', 'cronQualificationVerified', 'trafficAuthorized',
+                  'releaseAccepted'}
+        pins = self.initial['lostBuildReceiptSha256']
+        require(set(observation) == fields and observation.get('status') == 'P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED' and
+                observation.get('environment') == 'staging' and observation.get('actionId') == self.selected['releaseId'] and
+                observation.get('releaseId') == self.selected['releaseId'] and observation.get('sourceCommit') == self.initial['sourceCommit'] and
+                observation.get('candidateSha256') == self.initial['candidateSha256'] and
+                observation.get('configurationSha256') == self.initial['configurationSha256'] and
+                observation.get('targetSha256') == self.initial['targetSha256'] and
+                observation.get('projectId') == self.selected['workload']['projectId'] and
+                type(observation.get('deploymentId')) is str and re.fullmatch(r'dpl_[A-Za-z0-9]+', observation['deploymentId']) and
+                (observation.get('previousDeploymentId') is None or type(observation['previousDeploymentId']) is str and
+                 re.fullmatch(r'dpl_[A-Za-z0-9]+', observation['previousDeploymentId'])) and
+                observation.get('lostBuildReceiptSha256') == sha(encoded(dict(sorted(pins.items())))) and
+                observation.get('deployStartedSha256') == pins['deployStarted'] and
+                observation.get('buildStartedSha256') == pins['buildStarted'] and
+                observation.get('buildIntentSha256') == pins['buildIntent'] and
+                ('buildOutcome' not in pins or observation.get('buildOutcomeSha256') == pins['buildOutcome']) and
+                observation.get('getFirst') is True and observation.get('newProviderPost') is False and
+                observation.get('ambiguous') is False and observation.get('deploymentEffectObserved') is True and
+                observation.get('frontendActionPending') is True and
+                all(observation.get(key) is False for key in ('originalBuildAckObserved', 'providerMutationReplayed',
+                    'buildReadyVerified', 'workloadVerified', 'aliasQualificationVerified', 'promotionVerified',
+                    'cronQualificationVerified', 'trafficAuthorized', 'releaseAccepted')),
+                'P2_PROFILED_CURRENT_LOST_BUILD_OBSERVATION_REFUSED')
+        raw = encoded(observation)
+        self.retain('frontend-lost-build-observation.json', raw)
+        self.lost_build_observation = copy.deepcopy(observation)
+        self.lost_build_observation_sha256 = sha(raw)
+        return {**self.record_base('P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_RETAINED'),
+                'observationSha256': self.lost_build_observation_sha256}
+
     def resume_api_suffix(self):
         require(self.initial['disposition'] == 'resume-approved-api-suffix',
                 'P2_PROFILED_CURRENT_API_SUFFIX_REFUSED')
@@ -419,7 +482,9 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         self._runtime_readback()
         self.runtime_current = True
         if (len(self.initial['originalReceiptSha256']) < len(ORIGINAL_NAMES) and
-                self.initial['disposition'] == 'restore-current-runtime'):
+                self.initial['disposition'] in ('restore-current-runtime', 'reconcile-frontend-lost-build-get-first')):
+            if self.initial['disposition'] == 'reconcile-frontend-lost-build-get-first':
+                require(hasattr(self, 'lost_build_observation'), 'P2_PROFILED_CURRENT_LOST_BUILD_OBSERVATION_REQUIRED')
             self._require_native_schedules_off()
             self.runtime_released.set()
         return {**self.record_base('P2_PROFILED_CURRENT_RUNTIME_RESTORED'),
@@ -446,6 +511,9 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                           'productionDeploymentId': state.get('productionDeploymentId'),
                           'cronsEnabled': False},
                 'P2_PROFILED_CURRENT_NATIVE_SCHEDULES_NOT_CLOSED')
+        if hasattr(self, 'lost_build_observation'):
+            require(state['productionDeploymentId'] == self.lost_build_observation['previousDeploymentId'],
+                    'P2_PROFILED_CURRENT_LOST_BUILD_PRIOR_TARGET_CHANGED')
 
     def prepare_close(self):
         if self.promoted is not None:
@@ -453,7 +521,9 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         self.check()
         require(len(self.initial['originalReceiptSha256']) < len(ORIGINAL_NAMES) and
                 ((self.initial['disposition'] == 'resume-approved-api-suffix' and getattr(self, 'api_suffix_resumed', False)) or
-                 self.initial['disposition'] == 'restore-current-runtime') and getattr(self, 'runtime_current', False) and
+                 self.initial['disposition'] == 'restore-current-runtime' or
+                 self.initial['disposition'] == 'reconcile-frontend-lost-build-get-first' and hasattr(self, 'lost_build_observation')) and
+                getattr(self, 'runtime_current', False) and
                 self.closing_at is None and self.session_closed_proof is None,
                 'P2_PROFILED_CURRENT_FRONTEND_ACTION_PENDING_REQUIRED')
         self._require_native_schedules_off()
@@ -470,7 +540,8 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                 getattr(self, 'runtime_current', False) and
                 (self.promoted is not None or len(self.initial['originalReceiptSha256']) < len(ORIGINAL_NAMES) and
                  ((self.initial['disposition'] == 'resume-approved-api-suffix' and getattr(self, 'api_suffix_resumed', False)) or
-                  self.initial['disposition'] == 'restore-current-runtime')),
+                  self.initial['disposition'] == 'restore-current-runtime' or
+                  self.initial['disposition'] == 'reconcile-frontend-lost-build-get-first' and hasattr(self, 'lost_build_observation'))),
                 'P2_PROFILED_CURRENT_RECOVERY_SESSION_CLOSURE_REQUIRED')
         terminal_raw, terminal = decode_profiled(value['terminal'])
         completed_raw, completed = decode_profiled(value['continuationCompleted'])
@@ -493,6 +564,10 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                 outcome.get('apiSuffixResumed') is (self.initial['disposition'] == 'resume-approved-api-suffix') and
                 outcome.get('frontendEffectReconciled') is
                 (self.initial['disposition'] == 'reconcile-frontend-get-first') and
+                outcome.get('frontendBuildEffectObserved') is
+                (self.initial['disposition'] == 'reconcile-frontend-lost-build-get-first') and
+                (self.initial['disposition'] != 'reconcile-frontend-lost-build-get-first' or
+                 outcome.get('frontendBuildEffectObservationSha256') == self.lost_build_observation_sha256) and
                 all(outcome.get(key) is False for key in
                     ('frontendSqlApplied', 'rolePreparationAuthorized', 'historicalLoginsRestored',
                      'nativeSchedulesEnabled', 'trafficAuthorized', 'releaseAccepted')),
@@ -520,6 +595,9 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
             'runtimeCurrent': True,
             'apiSuffixResumed': self.initial['disposition'] == 'resume-approved-api-suffix',
             'frontendEffectReconciled': self.initial['disposition'] == 'reconcile-frontend-get-first',
+            'frontendBuildEffectObserved': self.initial['disposition'] == 'reconcile-frontend-lost-build-get-first',
+            **({'frontendBuildEffectObservationSha256': self.lost_build_observation_sha256}
+               if self.initial['disposition'] == 'reconcile-frontend-lost-build-get-first' else {}),
             'frontendCurrentVerified': not frontend_pending, 'frontendActionPending': frontend_pending}
         self.finished = True
         return copy.deepcopy(self.outcome)
@@ -530,7 +608,8 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         suffix = operation.removeprefix(self.OP + '-') if type(operation) is str and operation.startswith(self.OP + '-') else operation
         fields = {'check': (), 'prepare-prior-gateway': (), 'verify-api-current': (), 'prepare-api-suffix': (),
             'arm': ('receipt', 'continuationStarted', 'probe'),
-            'reconcile-frontend': ('observation', 'proof', 'workload'), 'resume-api-suffix': (), 'runtime-restored': (), 'prepare-close': (),
+            'reconcile-frontend': ('observation', 'proof', 'workload'), 'observe-lost-build': ('observation',),
+            'resume-api-suffix': (), 'runtime-restored': (), 'prepare-close': (),
             'session-closed': (), 'finish': ('terminal', 'continuationCompleted', 'recovery'), 'commit': ()}
         require(suffix in fields and (operation in ('check', 'commit') or operation == self.OP + '-' + suffix) and
                 set(value) == {'id', 'operation', *fields[suffix]}, 'P2_PROFILED_CURRENT_RECOVERY_PROTOCOL_REFUSED')
@@ -553,6 +632,8 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                 self.send(identity, self.STATUS + '_API_SUFFIX_PREPARED', receipt=self.prepare_api_suffix())
             elif suffix == 'reconcile-frontend':
                 self.send(identity, self.STATUS + '_FRONTEND_RECONCILED', receipt=self.reconcile_frontend(value))
+            elif suffix == 'observe-lost-build':
+                self.send(identity, self.STATUS + '_LOST_BUILD_OBSERVED', receipt=self.observe_lost_build(value['observation']))
             elif suffix == 'resume-api-suffix':
                 self.send(identity, self.STATUS + '_API_SUFFIX_RESUMED', receipt=self.resume_api_suffix())
             elif suffix == 'runtime-restored':
