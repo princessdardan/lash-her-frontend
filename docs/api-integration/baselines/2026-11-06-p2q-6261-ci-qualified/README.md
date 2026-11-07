@@ -1,0 +1,7 @@
+# Exact 6261 source CI qualification
+
+Frontend `6261ff5c92031312e7de8f119a583ba944a628ea` passed all ten jobs in CI run [42324175311](https://github.com/princessdardan/lash-her-frontend/actions/runs/42324175311), attempt 1. Browser results are 582 expected, 159 skipped, zero unexpected, zero flaky and zero reporter errors across Chromium, Firefox and WebKit. This verifies the integrated checkout-response synchronization change in the actual application suite. The prior Firefox retry-pass remains preserved in its original report; these results make no general absence-of-flakes claim.
+
+The original report records seven selected artifact IDs, GitHub/local ZIP digests and bounded extraction results, plus three critical original log digests. The private packet retains those original files and SHA256SUMS. Two unrelated Docker build-record artifacts are not claimed. Owned PostgreSQL18 checks include 83 frontend migrations, 29 role/18 release/9 native/10 certificate cases, 19 identity/lifecycle cases, and seven interrupted-restoration negatives with all three journals unchanged. No provider or staging system was touched by this CI.
+
+Both frontend and gateway images are PATCHED_RUNTIME_VERIFIED. Each raw scan has two HIGH, 35 MEDIUM and eight LOW findings; qualified scans have zero findings. Raw-zero is not claimed. API pins remain the qualified 0bb/859 baseline and must be synchronized to final current API main heads before candidate publication. No registry candidate, deployment or live P2/G2-Q acceptance follows from these source results.
