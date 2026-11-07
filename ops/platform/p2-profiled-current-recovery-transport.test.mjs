@@ -1,0 +1,134 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { p2ProfiledCurrentRecoveryEnvironmentLock, withP2ProfiledCurrentRecoveryTransport } from "./p2-profiled-current-recovery-transport.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
+
+const program = String.raw`
+import base64,fcntl,json,os,sys
+fd=os.open(sys.argv[1],os.O_CREAT|os.O_RDWR,0o600);fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+initial=json.loads(sys.stdin.readline());assert initial['mode']=='p2-profiled-current-recovery'
+print(json.dumps({'id':0,'status':'LOCKED'}),flush=True)
+terminal={'status':'P2_PROFILED_CURRENT_RECOVERED_FENCED','trafficAuthorized':False,'nativeSchedulesEnabled':False}
+arm=None
+for raw in sys.stdin:
+ p=json.loads(raw);op=p['operation'];value={'id':p['id']}
+ if op=='check':value['status']='HELD'
+ elif op=='profiled-current-recovery-arm':
+  assert not arm;arm=p['id'];assert json.loads(base64.b64decode(p['receipt']))['status']=='DATABASE_VERIFIED'
+  assert json.loads(base64.b64decode(p['continuationStarted']))['status']=='FRONTEND_CONTINUATION_STARTED'
+  value.update(status='PROFILED_CURRENT_RECOVERY_ARMED')
+ elif op=='profiled-current-recovery-prepare-prior-gateway':
+  assert set(p)=={'id','operation'}
+  value.update(status='PROFILED_CURRENT_RECOVERY_PRIOR_GATEWAY_PREPARED',receipt={'status':'PRIOR_GATEWAY_CLOSED_ZERO'})
+  print(json.dumps(value),flush=True)
+  if sys.argv[2]=='death':os._exit(37)
+  print(json.dumps({'id':arm,'status':'PROFILED_CURRENT_RECOVERY_API_READY','receipt':{'version':2,'qualificationTargetProfile':initial['qualificationTargetProfile'],'status':'API_RUNTIME_READY','environment':'staging','releaseId':'original-release','trafficAuthorized':False}}),flush=True);continue
+ elif op=='profiled-current-recovery-reconcile-frontend':
+  assert p['observation']['status']=='P2_PROFILED_CURRENT_FRONTEND_CURRENT';assert p['proof']['status']=='P2_PROFILED_CURRENT_FRONTEND_VERIFIED';assert json.loads(base64.b64decode(p['workload']))['status']=='FRONTEND_VERIFIED'
+  value.update(status='PROFILED_CURRENT_RECOVERY_FRONTEND_RECONCILED',receipt={'status':'GET_FIRST_UNIQUE_EFFECT_RECONCILED'})
+ elif op=='profiled-current-recovery-resume-api-suffix':value.update(status='PROFILED_CURRENT_RECOVERY_API_SUFFIX_RESUMED',receipt={'status':'EXACT_APPROVED_SUFFIX_RESUMED'})
+ elif op=='profiled-current-recovery-runtime-restored':value.update(status='PROFILED_CURRENT_RECOVERY_RUNTIME_RESTORED',receipt={'status':'ALL_THREE_CURRENT'})
+ elif op=='profiled-current-recovery-prepare-close':value.update(status='PROFILED_CURRENT_RECOVERY_CLOSE_PREPARED',receipt={'status':'CLOSE_PREPARED'})
+ elif op=='profiled-current-recovery-session-closed':value.update(status='PROFILED_CURRENT_RECOVERY_SESSION_CLOSED',receipt={'status':'P2_PROFILED_CURRENT_SESSION_CLOSED','backendAbsent':True,'migrationLockReleased':True,'nonceLockReleased':True,'admission':{'epoch':9,'newWork':False,'recovery':False,'active':0,'uncertain':0}})
+ elif op=='profiled-current-recovery-finish':
+  assert json.loads(base64.b64decode(p['terminal']))['phase']=='completed'
+  assert json.loads(base64.b64decode(p['continuationCompleted']))['status']=='FRONTEND_CONTINUATION_COMPLETED'
+  assert json.loads(base64.b64decode(p['recovery']))==terminal
+  value.update(status='PROFILED_CURRENT_RECOVERY_JOINED',receipt=terminal)
+ elif op=='commit':
+  value.update(status='COMMITTED',receipt=terminal);print(json.dumps(value),flush=True);break
+ else:os._exit(38)
+ print(json.dumps(value),flush=True)
+os.close(fd)
+`;
+
+function fixture(mode = "ready") {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "p2-profile-current-recovery-"))); chmodSync(directory, 0o700);
+  const target = { qualificationTargetProfile: profile, approvedPendingTags: [], allowEmptyBootstrap: false };
+  const job = service => ({ ...(service === "frontend" ? { version: 2 } : { schemaVersion: 2 }), qualificationTargetProfile: profile, service, environment: "staging", releaseId: "original-release", sourceCommit: "a".repeat(40), target });
+  const configurationSha256 = Object.fromEntries(["runtime.json", "gateway.json", "course-tls.json", "community-tls.json", "tls/ca.pem",
+    "tls/gateway/ca.pem", "tls/gateway/key.pem", "tls/gateway/cert.pem", "tls/course/key.pem", "tls/course/cert.pem",
+    "tls/community/key.pem", "tls/community/cert.pem", "course-api.env", "course-publisher.env", "course-snapshot.env", "community-api.env",
+    "community-worker.env", "course-media.env", "course-export-cleanup.env"].map((name, index) => [name, "abcdef"[index % 6].repeat(64)]));
+  const initial = { version: 2, qualificationTargetProfile: profile, mode: "p2-profiled-current-recovery", environment: "staging",
+    sourceCommit: "a".repeat(40), recoveryActionId: "recover-owned", originalReleaseId: "original-release",
+    candidateSha256: "b".repeat(64), configurationSha256, targetSha256: "d".repeat(64), inventorySha256: "9".repeat(64), owner: { name: "migration_owner", oid: "12345" }, disposition: "reconcile-frontend-get-first",
+    originalReceiptSha256: Object.fromEntries(["candidate", "frontendDatabase", "frontendContinuationStarted", "apiMigrationOutcome", "apiRuntimeOutcome",
+      "frontendBuildOutcome", "frontendPromotionStarted", "frontendWorkloadOutcome"].map((name, index) => [name, "12345678"[index].repeat(64)])),
+    candidate: { version: 3, qualificationTargetProfile: profile, environment: "staging", releaseId: "original-release", sources: { frontend: { commit: "a".repeat(40) } } },
+    frontendJob: job("frontend"), inventory: { qualificationTargetProfile: profile }, credentials: { private: "NEVER_IN_ARGS_OR_ENV" } };
+  const receipt = { version: 2, qualificationTargetProfile: profile, status: "DATABASE_VERIFIED", migrationMode: "verify-current-only", readOnlyVerified: true,
+    applied: [], service: "frontend", environment: "staging", releaseId: "original-release", sourceCommit: "a".repeat(40) };
+  const continuationStarted = { version: 2, qualificationTargetProfile: profile, status: "FRONTEND_CONTINUATION_STARTED", service: "frontend",
+    environment: "staging", releaseId: "original-release", sourceCommit: "a".repeat(40) };
+  const continuationCompleted = { ...continuationStarted, status: "FRONTEND_CONTINUATION_COMPLETED" };
+  const terminal = { ...receipt, phase: "completed" };
+  const workload = Buffer.from(JSON.stringify({ version: 2, qualificationTargetProfile: profile, status: "FRONTEND_VERIFIED" }));
+  const originalReceiptSha256 = createHash("sha256").update(JSON.stringify(Object.fromEntries(
+    Object.entries(initial.originalReceiptSha256).sort(([left], [right]) => left.localeCompare(right))))).digest("hex");
+  const observation = { version: 2, qualificationTargetProfile: profile, status: "P2_PROFILED_CURRENT_FRONTEND_CURRENT", releaseId: "original-release",
+    sourceCommit: "a".repeat(40), getFirst: true, newProviderPost: false, ambiguous: false, originalEffectReconciled: true,
+    originalReceiptSha256, workloadReceiptSha256: createHash("sha256").update(workload).digest("hex") };
+  const proof = { ...observation, status: "P2_PROFILED_CURRENT_FRONTEND_VERIFIED" };
+  observation.proof = proof;
+  const recoveryOutcome = { status: "P2_PROFILED_CURRENT_RECOVERED_FENCED", trafficAuthorized: false, nativeSchedulesEnabled: false };
+  for (const [name, value] of [["database-receipt.json", receipt], ["frontend-continuation-started.json", continuationStarted],
+    ["frontend-continuation-completed.json", continuationCompleted], ["job-outcome.json", terminal], ["p2-profiled-current-recovery-held.json", recoveryOutcome]]) {
+    writeFileSync(join(directory, name), JSON.stringify(value) + "\n", { mode: 0o600 });
+  }
+  const probe = { version: 2, qualificationTargetProfile: profile, operation: "verify-schema", job: initial.frontendJob, receipt };
+  const lock = join(directory, "host.lock"); let captured;
+  const handle = p2ProfiledCurrentRecoveryEnvironmentLock({ knownHosts: "/owned/known-hosts", sshKey: "/owned/key" }, initial, directory,
+    { launch(executable, args, options) { captured = { executable, args, options }; return spawn("python3", ["-I", "-u", "-c", program, lock, mode], options); } });
+  return { directory, initial, receipt, continuationStarted, continuationCompleted, terminal, workload, observation, proof, recoveryOutcome, probe, lock, handle,
+    captured: () => captured, cleanup: () => rmSync(directory, { recursive: true, force: true }) };
+}
+
+test("actual child pipe keeps the host flock and enforces arm-before-mutation plus the late terminal join", async () => {
+  const f = fixture();
+  try {
+    const result = await withP2ProfiledCurrentRecoveryTransport(f.handle, async (check, signal, host) => {
+      await check(); assert.equal(signal.aborted, false);
+      const contender = spawnSync("python3", ["-I", "-c", "import fcntl,os,sys;f=os.open(sys.argv[1],os.O_RDWR);fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)", f.lock]);
+      assert.notEqual(contender.status, 0);
+      await assert.rejects(host.preparePriorGateway());
+      const { apiReady } = await host.armRecovery({ receipt: f.receipt, continuationStarted: f.continuationStarted, probe: f.probe });
+      assert.equal(host.active(), true); await host.preparePriorGateway(); await apiReady;
+      await host.reconcileFrontend(f.observation, f.proof, f.workload); await host.runtimeRestored(); await host.prepareClose(); await host.frontendSessionClosed();
+      await host.finish({ terminal: f.terminal, continuationCompleted: f.continuationCompleted, recoveryOutcome: f.recoveryOutcome });
+      return "joined";
+    });
+    assert.equal(result, "joined");
+    assert.deepEqual(JSON.parse(readFileSync(join(f.directory, "p2-profiled-current-recovery-host-outcome.json"))), f.recoveryOutcome);
+    assert.equal(JSON.stringify(f.captured()).includes("NEVER_IN_ARGS_OR_ENV"), false);
+    assert.equal(f.captured().executable, "/usr/bin/ssh"); assert.match(f.captured().args.at(-1), /p2_release_supervisor\.py/u);
+  } finally { f.cleanup(); }
+});
+
+test("a host death after the prior-gateway stage rejects the outstanding original arm request and cannot mint a terminal", async () => {
+  const f = fixture("death");
+  try {
+    await assert.rejects(withP2ProfiledCurrentRecoveryTransport(f.handle, async (_check, signal, host) => {
+      const { apiReady } = await host.armRecovery({ receipt: f.receipt, continuationStarted: f.continuationStarted, probe: f.probe });
+      await host.preparePriorGateway(); await apiReady; assert.equal(signal.aborted, false);
+    }));
+    assert.equal(existsSync(join(f.directory, "p2-profiled-current-recovery-host-outcome.json")), false);
+  } finally { f.cleanup(); }
+});
+
+test("profile, current-only and distinct-action requirements are checked before process launch", () => {
+  const f = fixture();
+  try {
+    for (const mutate of [value => { value.qualificationTargetProfile = { ...profile, sha256: "1".repeat(64) }; },
+      value => { value.frontendJob.target.approvedPendingTags = ["0084_pending"]; }, value => { value.recoveryActionId = value.originalReleaseId; },
+      value => { value.originalReceiptSha256 = {}; }, value => { value.disposition = "retry-sql"; }]) {
+      const changed = structuredClone(f.initial); mutate(changed);
+      assert.throws(() => p2ProfiledCurrentRecoveryEnvironmentLock({ knownHosts: "x", sshKey: "y" }, changed, f.directory));
+    }
+  } finally { f.cleanup(); }
+});
