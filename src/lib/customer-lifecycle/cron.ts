@@ -2,7 +2,7 @@ import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import { createAccountLifecycleClient } from "@/lib/api-integration/account-lifecycle-client";
 import { mintLifecycleServiceToken } from "@/lib/api-integration/lifecycle-service-jwt";
-import { resolveApplicationEnvironment } from "@/lib/env/application-environment.mjs";
+import { resolveApplicationEnvironment, VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
 import { currentWriterOperationIdentity } from "@/lib/writer-admission/context";
 import { runAccountWriter } from "./context";
 import { createAccountLifecycleStore } from "./store";
@@ -29,13 +29,24 @@ async function runProductionLifecycleRecovery(onAdmitted?: (operationId: string)
   });
 }
 
-async function runProductionScopedExportCleanup(commandId: string, onAdmitted?: (operationId: string) => void) {
-  return runAccountWriter("recovery", () => {
+export function createScopedExportCleanupRunner(dependencies: {
+  expireExport?: (commandId: string) => ReturnType<ReturnType<typeof createAccountLifecycleStore>["expireExport"]>;
+  trace?: () => void;
+} = {}) {
+  return async (commandId: string, onAdmitted?: (operationId: string) => void) => runAccountWriter("recovery", () => {
     const identity = currentWriterOperationIdentity();
-    if (identity?.kind === "recovery" && OPERATION_ID.test(identity.operationId)) onAdmitted?.(identity.operationId);
-    traceLifecycleCronAdmission();
-    return createAccountLifecycleStore().expireExport(commandId);
+    if (identity?.kind !== "recovery" || !OPERATION_ID.test(identity.operationId)) throw new Error("SCOPED_EXPORT_CLEANUP_REQUIRES_RECOVERY_ADMISSION");
+    onAdmitted?.(identity.operationId);
+    (dependencies.trace ?? traceLifecycleCronAdmission)();
+    return (dependencies.expireExport ?? (selected => createAccountLifecycleStore().expireExport(selected)))(commandId);
   });
+}
+const runProductionScopedExportCleanup = createScopedExportCleanupRunner();
+
+function isDedicatedStagingProductionRuntime(env: Record<string, string | undefined>): boolean {
+  return resolveApplicationEnvironment(env) === "staging" && env.VERCEL === "1" && env.APP_ENV === "staging" &&
+    env.VERCEL_ENV === "production" && env.VERCEL_TARGET_ENV === "production" &&
+    env.VERCEL_PROJECT_ID === VERCEL_PROJECT_BINDINGS.stagingProjectId;
 }
 
 export function createAccountLifecycleCron(dependencies: {
@@ -43,7 +54,7 @@ export function createAccountLifecycleCron(dependencies: {
   secret?: () => string | undefined;
   run?: typeof runProductionLifecycleRecovery;
   runScoped?: typeof runProductionScopedExportCleanup;
-  environment?: () => "local" | "staging" | "production";
+  environment?: () => Record<string, string | undefined>;
 } = {}) {
   return async (request: Request): Promise<Response> => {
     const headers = { "cache-control": "private, no-store", "retry-after": "30" };
@@ -56,8 +67,9 @@ export function createAccountLifecycleCron(dependencies: {
     const scopedMatch = EXPIRE_EXPORT_SELECTOR.exec(url.search);
     if (url.search && !scopedMatch) return Response.json({ error: "unavailable" }, { status: 404, headers });
     if (scopedMatch) {
+      if (request.method !== "GET") return Response.json({ error: "unavailable" }, { status: 404, headers });
       try {
-        if ((dependencies.environment ?? (() => resolveApplicationEnvironment(process.env)))() !== "staging") {
+        if (!isDedicatedStagingProductionRuntime((dependencies.environment ?? (() => process.env))())) {
           return Response.json({ error: "unavailable" }, { status: 404, headers });
         }
       } catch { return Response.json({ error: "unavailable" }, { status: 404, headers }); }

@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
 import { currentWriterOperationIdentity, withWriterOperationContext, type WriterOperationIdentity } from "@/lib/writer-admission/context";
-import { createAccountLifecycleCron } from "./cron";
+import { createAccountLifecycleCron, createScopedExportCleanupRunner } from "./cron";
 import { AccountLifecycleError } from "./policy";
 
 const identity = (operationId: string): WriterOperationIdentity => ({ operationId, kind: "recovery", epoch: "7",
   producerSha256: "a".repeat(64), sourceCommit: "b".repeat(40), targetSha256: "c".repeat(64) });
+const stagingProductionEnvironment = () => ({ VERCEL: "1", APP_ENV: "staging", VERCEL_ENV: "production", VERCEL_TARGET_ENV: "production",
+  APP_VERCEL_TEAM_ID: VERCEL_PROJECT_BINDINGS.teamId, VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.stagingProjectId! });
 
 test("lifecycle recovery is independently disabled and authenticated before any database or receiver work", async () => {
   let calls = 0;
@@ -91,7 +94,7 @@ test("admitted retryable responses retain the actual operation UUID while no-con
 test("scoped export cleanup accepts only the canonical selector and staging policy before admission", async () => {
   const commandId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   let scopedCalls = 0, ordinaryCalls = 0;
-  const handler = createAccountLifecycleCron({ enabled: () => true, secret: () => "owned", environment: () => "staging",
+  const handler = createAccountLifecycleCron({ enabled: () => true, secret: () => "owned", environment: stagingProductionEnvironment,
     run: async () => { ordinaryCalls++; return { acknowledged: 0, retrying: 0, blocked: 0, exportsReady: 0, expired: 0 }; },
     runScoped: async () => { scopedCalls++; throw new Error("must not run"); },
   });
@@ -109,7 +112,13 @@ test("scoped export cleanup accepts only the canonical selector and staging poli
     assert.equal(response.status, 404); assert.deepEqual(await response.json(), { error: "unavailable" });
     assert.equal(response.headers.get("x-request-id"), null);
   }
-  for (const environment of ["local", "production"] as const) {
+  const environments = [
+    {},
+    { ...stagingProductionEnvironment(), APP_ENV: "production", VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.productionProjectId },
+    { ...stagingProductionEnvironment(), VERCEL_ENV: "preview", VERCEL_TARGET_ENV: "preview" },
+    { ...stagingProductionEnvironment(), VERCEL: undefined },
+  ];
+  for (const environment of environments) {
     const unavailable = createAccountLifecycleCron({ enabled: () => true, secret: () => "owned", environment: () => environment,
       runScoped: async () => { scopedCalls++; throw new Error("must not run"); } });
     const response = await unavailable(new Request(`https://staging.example.com/api/cron/account-lifecycle?operation=expire-export&commandId=${commandId}`,
@@ -121,14 +130,35 @@ test("scoped export cleanup accepts only the canonical selector and staging poli
   const invalidResponse = await invalidPolicy(new Request(`https://staging.example.com/api/cron/account-lifecycle?operation=expire-export&commandId=${commandId}`,
     { headers: { authorization: "Bearer owned" } }));
   assert.equal(invalidResponse.status, 404); assert.equal((await invalidResponse.text()).includes("private binding"), false);
+  const head = await handler(new Request(`https://staging.example.com/api/cron/account-lifecycle?operation=expire-export&commandId=${commandId}`,
+    { method: "HEAD", headers: { authorization: "Bearer owned" } }));
+  assert.equal(head.status, 404); assert.equal(head.headers.get("x-request-id"), null);
   assert.equal(scopedCalls, 0); assert.equal(ordinaryCalls, 0);
+});
+
+test("production scoped cleanup refuses missing or non-recovery ledger identity before trace and store", async () => {
+  const commandId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  let traces = 0, stores = 0, admissions = 0;
+  const runner = createScopedExportCleanupRunner({ trace: () => { traces++; }, expireExport: async selected => {
+    stores++; return { operation: "expire-export", commandId: selected, outcome: "scrubbed", status: "expired", dataCleared: true, frontendCleared: true };
+  } });
+  await assert.rejects(() => runner(commandId, () => { admissions++; }), /SCOPED_EXPORT_CLEANUP_REQUIRES_RECOVERY_ADMISSION/u);
+  await assert.rejects(() => withWriterOperationContext(() => runner(commandId, () => { admissions++; }), { ...identity("11111111-1111-4111-8111-111111111111"), kind: "new-work" }),
+    /SCOPED_EXPORT_CLEANUP_REQUIRES_RECOVERY_ADMISSION/u);
+  assert.deepEqual({ traces, stores, admissions }, { traces: 0, stores: 0, admissions: 0 });
+  const admittedIdentity = identity("22222222-2222-4222-8222-222222222222");
+  const result = await withWriterOperationContext(() => runner(commandId, operationId => {
+    admissions++; assert.equal(operationId, admittedIdentity.operationId);
+  }), admittedIdentity);
+  assert.equal(result.commandId, commandId);
+  assert.deepEqual({ traces, stores, admissions }, { traces: 1, stores: 1, admissions: 1 });
 });
 
 test("scoped export cleanup binds the exact command, cleanup outcome and admitted request identity without ordinary lifecycle work", async () => {
   const commandId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const operationId = "22222222-2222-4222-8222-222222222222";
   let ordinaryCalls = 0, selectedCommand: string | undefined;
-  const handler = createAccountLifecycleCron({ enabled: () => true, secret: () => "owned", environment: () => "staging",
+  const handler = createAccountLifecycleCron({ enabled: () => true, secret: () => "owned", environment: stagingProductionEnvironment,
     run: async () => { ordinaryCalls++; return { acknowledged: 0, retrying: 0, blocked: 0, exportsReady: 0, expired: 0 }; },
     runScoped: async (selected, onAdmitted) => withWriterOperationContext(async () => {
       selectedCommand = selected; onAdmitted?.(currentWriterOperationIdentity()!.operationId);
@@ -148,7 +178,7 @@ test("scoped export cleanup returns settled domain refusals and sanitizes uncert
   const commandId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const operationIds = ["44444444-4444-4444-8444-444444444444", "55555555-5555-4555-8555-555555555555"];
   for (const [index, failure] of [new AccountLifecycleError(409, "export_not_expired"), new Error("private export bytes")].entries()) {
-    const handler = createAccountLifecycleCron({ enabled: () => true, secret: () => "owned", environment: () => "staging",
+    const handler = createAccountLifecycleCron({ enabled: () => true, secret: () => "owned", environment: stagingProductionEnvironment,
       runScoped: async (_selected, onAdmitted) => withWriterOperationContext(async () => {
         onAdmitted?.(currentWriterOperationIdentity()!.operationId); throw failure;
       }, identity(operationIds[index])),
