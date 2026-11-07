@@ -1701,5 +1701,126 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveOwnerPaidArchive": {
+    "frontendSourceCommit": "37a614adc887d7b79a107a0824a98f761837cdbe",
+    "implementationCommit": "ded3acccc34eef2f6b10bc06b2c8250654290795",
+    "normalOwnerAndLearnerBrowser": {
+      "passed": 8,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "existingOrderlessGrantPreservedAcrossArchiveAndRepublish": true,
+      "warningCancelAndSingleArchiveVerified": true,
+      "protectedLessonAndProgressWriteReturned410": true,
+      "invalidPublicationBlockedAndValidatedRepublishRestoredAccess": true,
+      "mobileWarningWidth": 390,
+      "gatewayWorkloadVerification": "fixture",
+      "evidenceSha256": "86dca65985369090ce73ecd53e2c7ef9624d7b3cff2a406fd6859e362d0986ac",
+      "outcomeSha256": "f123e8624ab5c82f26dec4d53ff4a2438f74a016874582005b38f2f658a5fc85",
+      "logSha256": "1aa843c994e55de5dd023c585e3fd26b93ab4ea9752cc1ce67ce636bd3e95445",
+      "mobileWarningScreenshotSha256": "8ce1c84e910f0e2e5e8db13c190e945ba453e06977e28115f81c28b81b4c2051"
+    },
+    "priorBrowserFixtureFindings": [
+      {
+        "testedCommit": "ded3acccc34eef2f6b10bc06b2c8250654290795",
+        "finding": "Development reload interrupted the archive warning before confirmation.",
+        "logSha256": "c5a1e91627cd3ea6c4f0457e6cc952d29aefc0459282ccf7c680a64ed122a857"
+      },
+      {
+        "testedCommit": "82ed37529c0b0489beef1994ab54d76c52ec95f8",
+        "finding": "The functional assertions passed. Development reload interrupted the final layout evaluation after public-route compilation.",
+        "logSha256": "87bea21e16bc01556039f8b58779bbac3302e06e9d6f03410b128df99932130d"
+      }
+    ],
+    "frontendUnitNode24": {
+      "testedCommit": "05bf8509b7fc7e413540d138b445781c585f4e86",
+      "passed": 2601,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "f573aab0a834bc43c6c906ee647e6635dcea9b228074b0f864f397bfd021543c"
+    },
+    "certificationPlatformNode24": {
+      "passed": 161,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "53d4f6bae56e90e9afe9f43481a11b00349f5e4baf215a60240cd253aa8b8d3d",
+      "exactOwnerPermitAndWarningCancelConfirmVerified": true,
+      "nodeAndPythonPlanAndPermitAgree": true,
+      "reviewedArchiveAcknowledgementIndexes": [
+        0,
+        1,
+        0
+      ],
+      "reviewedArchiveUpstreamStatuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    "host": {
+      "passed": 144,
+      "failed": 0,
+      "logSha256": "4206e232526f3130ebd767cb9d27452cbbb9409bf56d7e1a449e28256c0ed5ac"
+    },
+    "loopbackGateway": {
+      "passed": 79,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "19b2f41fd85c75f4fac5eee6aa65d1a5e83677af52bfd05686c1395fb9bf4962"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "37a614adc887d7b79a107a0824a98f761837cdbe",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 32,
+      "courseEffectiveAccessDeniedAndIndependentCourseEligibilityPreserved": true,
+      "courseHistoryAndStoredFinancialReferencesPreserved": true,
+      "courseStreamAndCanonicalOutboxIdentityPreserved": true,
+      "maximumRowsPerDigestedResult": 1000,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "10fd46ad4713977439cbcb016e6d884f8db44ed44e3805018e6db37369b17345",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "4ec824f6fb8be557c37f657273f83f5ea2883ccb66f0fc3cd3da79f1e1af9202"
+      },
+      "logSha256": "fedbcec5664625470525b7eed260d9fd4ebaa89bb51fd41b36b9490eb75a6981"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43326301,
+      "expandedBytes": 57847939,
+      "wireBytes": 18815427,
+      "wireSha256": "5f0982c6dc8e4fe6a0cbd0d0db9b662a47e8e6a2017a72dac481543c479bbb7f",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "23712bd078dfd2539637f4d9ac9a700768aef6fd6a09bdcc182462768070c396"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "7cb5489512b93c8e5adf01e901cf706da8290d6f7121b5caba0f65c84e1c6907",
+    "guardedOwnerArchiveActionImplemented": true,
+    "guardedRepublishActionImplemented": false,
+    "actualDeployedArchiveVerified": false,
+    "actualDeployedCustomerAccessVerified": false,
+    "communityReceiverVerified": false,
+    "exactPublishedCiQualified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
