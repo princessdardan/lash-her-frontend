@@ -46,6 +46,10 @@ test("preparation is source-profiled, immutable and does not claim SQL, history,
 
 test("closed recovery dispositions require exact matching carriers and only the approved API suffix has a suffix", () => {
   assert.equal(prepareP2ProfiledCurrentRecovery(fixture("resume-approved-api-suffix")).plan.approvedApiSuffix.course[0], "0012_owned");
+  const oneService = fixture("resume-approved-api-suffix"); oneService.approvedApiSuffix.community = [];
+  const oneServicePlan = prepareP2ProfiledCurrentRecovery(oneService).plan;
+  assert.deepEqual(oneServicePlan.approvedApiSuffix.community, []);
+  assert.match(oneServicePlan.recoveryApiJobSha256.community, /^[a-f0-9]{64}$/u);
   for (const mutate of [value => { value.frontendMigration.job.version = 1; }, value => { delete value.frontendMigration.job.target.qualificationTargetProfile; },
     value => { value.communityJob.qualificationTargetProfile = { ...profile, sha256: "9".repeat(64) }; }, value => { value.disposition = "replay-frontend-sql"; },
     value => { value.frontendMigration.job.target.approvedPendingTags = ["0084_pending"]; }, value => { value.originalReceiptSha256 = {}; },

@@ -188,17 +188,24 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
             require(sha(raw) == self.initial['recoveryApiJobSha256'][service],
                     'P2_PROFILED_CURRENT_API_SUFFIX_JOB_HASH_MISMATCH')
             derived_jobs[service]['job'] = job
+            lineage_input = self.directory / ('api-suffix-' + service + '-input')
+            lineage_input.mkdir(mode=0o700)
+            migrate.write_exact_bytes(lineage_input, 'target.json', encoded(job['target']) + b'\n')
+            if os.geteuid() == 0:
+                os.chown(lineage_input / 'target.json', 65532, 65532); os.chown(lineage_input, 65532, 65532)
             container = 'lash-p2-profiled-current-api-check-' + service + '-' + uuid4().hex
             env = dict(runtime.SAFE_ENV)
-            env.update(DATABASE_TARGET='staging', STAGING_DATABASE_URL=os.environ[service.upper() + '_STAGING_DATABASE_URL'])
+            env.update(DATABASE_TARGET='staging', STAGING_DATABASE_URL=os.environ[service.upper() + '_STAGING_DATABASE_URL'],
+                       PGOPTIONS='-c search_path=pg_catalog,public')
             args = ['docker', 'run', '--rm', '--pull', 'never', '--platform', 'linux/amd64', '--name', container,
                     '--network', 'bridge', '--interactive', '--read-only', '--cap-drop', 'ALL',
                     '--security-opt', 'no-new-privileges:true', '--user', '65532:65532', '--memory', '256m',
-                    '--cpus', '0.5', '--pids-limit', '64', '--mount',
-                    'type=bind,src=' + str((derived_bundle / 'jobs').resolve()) + ',dst=/check/input,readonly',
+                    '--cpus', '0.5', '--pids-limit', '64', '--env', 'DATABASE_TARGET', '--env', 'STAGING_DATABASE_URL',
+                    '--env', 'PGOPTIONS', '--mount',
+                    'type=bind,src=' + str(lineage_input.resolve()) + ',dst=/check/input,readonly',
                     '--entrypoint', 'node', derived_jobs[service]['image'],
                     'dist-migration/scripts/check-migration-lineage.js', '--target-file-profiled-current',
-                    '/check/input/' + service + '.json']
+                    '/check/input/target.json']
             try:
                 result = self.scope.run(args, env=env, capture_output=True, timeout=120)
                 require(result.returncode == 0, 'P2_PROFILED_CURRENT_API_SUFFIX_LINEAGE_REFUSED')
@@ -223,7 +230,8 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         old_scope = self.scope; old_scope.revoke()
         require(not getattr(old_scope, 'cleanup_uncertain', False), 'P2_PROFILED_CURRENT_API_SUFFIX_SCOPE_REVOKE_REFUSED')
         self.original_bundle, self.original_jobs = original_bundle, original_jobs
-        self.bundle, self.jobs, self.derived_bundle = derived_bundle, derived_jobs, derived_bundle
+        self.jobs, self.derived_bundle = derived_jobs, derived_bundle
+        self.derived_api_job_sha256 = copy.deepcopy(self.initial['recoveryApiJobSha256'])
         self.scope = self.create_scope(old_scope.receipt)
         self.scope.bind_runtime_parent(self)
         self.api_suffix_lineage_sha256 = proofs
@@ -238,7 +246,7 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         def worker():
             try:
                 if self.initial['disposition'] == 'resume-approved-api-suffix':
-                    result = runtime.execute(self.bundle, self.configuration, self.results,
+                    result = runtime.execute(self.derived_bundle, self.configuration, self.results,
                         self.source / 'ops/platform/compose.yaml', True,
                         'staging/' + self.selected['releaseId'], LOCK,
                         expected_profile=PROFILE, _profiled_current_scope=self.scope)

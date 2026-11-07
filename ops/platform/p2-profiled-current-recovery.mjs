@@ -59,7 +59,7 @@ const clone = value => structuredClone(value);
 const hash = value => createHash("sha256").update(Buffer.isBuffer(value) || typeof value === "string" ? value : JSON.stringify(value)).digest("hex");
 const jobHash = value => hash(Buffer.from(JSON.stringify(value) + "\n"));
 const isSuffix = (chain, suffix) => Array.isArray(chain) && suffix.length <= chain.length
-  && isDeepStrictEqual(chain.slice(chain.length - suffix.length), suffix);
+  && (suffix.length === 0 || isDeepStrictEqual(chain.slice(chain.length - suffix.length), suffix));
 
 function readSettings(path) {
   const absolute = resolve(path); demand(realpathSync(absolute) === absolute); frontendPrivateReceiptDirectory(dirname(absolute));

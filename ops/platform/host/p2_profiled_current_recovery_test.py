@@ -5,6 +5,7 @@ import tempfile
 import threading
 import unittest
 import os
+import subprocess
 from unittest.mock import patch
 
 import p2_profiled_current_recovery as recovery
@@ -118,6 +119,7 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
         broker.scope, broker.prior_gateway, broker.worker = object(), object(), None
         broker.initial = initial('resume-approved-api-suffix')
         broker.bundle, broker.configuration, broker.results = Path('/owned/bundle'), Path('/owned/configuration'), Path('/owned/results')
+        broker.derived_bundle = broker.bundle
         broker.source, broker.selected = Path('/owned/source'), selected()
         broker.runtime_released, broker.failed, broker.worker_done = threading.Event(), threading.Event(), threading.Event()
         broker.runtime_released.set(); sent = []
@@ -188,6 +190,56 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
             self.assertEqual(receipt['status'], 'CURRENT_DATABASES_READ_ONLY_VERIFIED')
             self.assertEqual(captured['credentials'], {'course': 'course', 'community': 'community'})
             self.assertIs(captured['kwargs']['_profiled_current_scope'], broker.scope)
+
+    def test_suffix_preflight_derives_only_remaining_jobs_and_replaces_the_readonly_scope_before_mutation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); bundle = root / 'bundle'; configuration = root / 'configuration'; directory = root / 'recovery'
+            for path in (bundle / 'jobs', bundle / 'schema', configuration, directory): path.mkdir(parents=True, mode=0o700)
+            for relative in ('release.candidate.json', 'jobs/frontend.json', 'schema/frontend.json', 'schema/course.json', 'schema/community.json'):
+                path = bundle / relative; path.write_text('{"owned":true}\n'); path.chmod(0o600)
+            jobs = {}
+            suffix = {'course': ['0012_owned'], 'community': []}
+            for service, original in (('course', ['0011_done', '0012_owned']), ('community', ['0009_owned'])):
+                job = {'version': 2, 'qualificationTargetProfile': copy.deepcopy(recovery.PROFILE),
+                       'target': {'approvedPendingTags': original, 'allowEmptyBootstrap': False}}
+                jobs[service] = {'job': job, 'image': 'owned-' + service, 'service': 'lash-her-' + service + '-api'}
+                (bundle / 'jobs' / (service + '.json')).write_bytes(recovery.encoded(job) + b'\n')
+            jobs['frontend'] = {'job': {'target': {'approvedPendingTags': []}}, 'image': 'owned-frontend', 'service': 'frontend'}
+            derived = copy.deepcopy(jobs)
+            hashes = {}
+            for service in ('course', 'community'):
+                derived[service]['job']['target']['approvedPendingTags'] = suffix[service]
+                hashes[service] = recovery.sha(recovery.encoded(derived[service]['job']) + b'\n')
+            class Scope:
+                receipt = {'status': 'DATABASE_VERIFIED'}
+                cleanup_uncertain = False
+                def __init__(self): self.revoked = False
+                def run(self, args, **_kwargs):
+                    if args[1] == 'run':
+                        service = 'course' if 'owned-course' in args else 'community'
+                        proof = {'version': 2, 'qualificationTargetProfile': copy.deepcopy(recovery.PROFILE),
+                                 'service': derived[service]['service'], 'environment': 'staging',
+                                 'pendingTags': suffix[service], 'appliedCount': 10}
+                        return subprocess.CompletedProcess(args, 0, recovery.encoded(proof), b'')
+                    return subprocess.CompletedProcess(args, 0, b'', b'')
+                def revoke(self): self.revoked = True
+            old_scope, new_scope = Scope(), Scope(); new_scope.bind_runtime_parent = lambda parent: setattr(new_scope, 'parent', parent)
+            broker = object.__new__(recovery.P2ProfiledCurrentRecoveryBroker)
+            broker.initial = {**initial('resume-approved-api-suffix'), 'approvedApiSuffix': suffix,
+                              'recoveryApiJobSha256': hashes}
+            broker.scope, broker.prior_gateway, broker.worker = old_scope, None, None
+            broker.bundle, broker.configuration, broker.directory = bundle, configuration, directory
+            broker.source, broker.selected, broker.jobs = root / 'source', selected(), jobs
+            broker.check = lambda: None; broker.create_scope = lambda _receipt: new_scope
+            broker.record_base = lambda status: {'status': status}
+            with patch.dict(os.environ, {'COURSE_STAGING_DATABASE_URL': 'course', 'COMMUNITY_STAGING_DATABASE_URL': 'community'}), \
+                    patch.object(recovery.runtime, 'make_plan', return_value=(broker.selected, derived, {}, {})):
+                receipt = broker.prepare_api_suffix()
+            self.assertTrue(old_scope.revoked); self.assertIs(broker.scope, new_scope); self.assertIs(new_scope.parent, broker)
+            self.assertEqual(receipt['status'], 'P2_PROFILED_CURRENT_API_SUFFIX_PREPARED')
+            self.assertEqual(broker.jobs['course']['job']['target']['approvedPendingTags'], ['0012_owned'])
+            self.assertEqual(broker.jobs['community']['job']['target']['approvedPendingTags'], [])
+            self.assertEqual(recovery.sha((broker.derived_bundle / 'jobs/course.json').read_bytes()), hashes['course'])
 
     def test_api_suffix_is_source_disposition_bound_and_never_claims_frontend_sql_replay(self):
         broker = object.__new__(recovery.P2ProfiledCurrentRecoveryBroker)
