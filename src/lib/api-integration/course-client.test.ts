@@ -169,6 +169,49 @@ test("lesson entry binds the active customer, exact reads and first progress wri
     [...expected.keys()].map(path => path === progressTarget ? ["POST", path, token, startBody] : ["GET", path, token, undefined]));
 });
 
+test("lesson denial binds the selected customer and returns only safe protected read denials", async () => {
+  const courseId = adminId, token = "scoped.denied.jwt", requestId = "44444444-4444-4444-8444-444444444444";
+  const selected = { actorId: customerId, courseId, lessonId };
+  let issued = { customerId: adminId, token }, issuances = 0;
+  const calls: GatewayRequest[] = [];
+  const client = createCourseClient({ enabled: allowed, getLessonDenial: async () => selected,
+    issueCustomerToken: async () => { issuances++; return issued; },
+    run: async () => assert.fail("denial scope entered write admission"),
+    getTransport: () => async request => {
+      calls.push(request);
+      return Response.json({ error: { code: "ACTIVE_ENROLLMENT_REQUIRED", message: "private upstream detail" } },
+        { status: 403, headers: { "x-request-id": requestId } });
+    },
+  });
+  const forbidden = { code: "forbidden", status: 403 };
+  await assert.rejects(client.getMyCourse(courseId), forbidden);
+  assert.equal(issuances, 1);
+  issued = { customerId, token };
+  for (const call of [() => client.getMyCourse(customerId), () => client.getLesson(courseId),
+    () => client.listMyCourses(), () => client.listCourseLessons(courseId), () => client.listProgress(),
+    () => client.listProgress({ courseId }), () => client.listProgress({ lessonId: courseId }),
+    () => client.recordProgress(lessonId, { event: "lesson_started", expectedProgressRevision: 0 }),
+    () => client.enrollFree(courseId, { idempotencyKey: requestId }),
+  ]) await assert.rejects(call(), forbidden);
+  assert.equal(issuances, 1);
+  assert.deepEqual(calls, []);
+  await assert.rejects(client.getMyCourse(courseId), { code: "access_required", status: 403, requestId });
+  const lesson = `/api/academy/lessons/${lessonId}`;
+  for (const [operation, target] of [["lesson", lesson], ["playback", `${lesson}/playback`],
+    ["progress", `/api/academy/progress?lessonId=${lessonId}`], ["quiz", `${lesson}/quiz`], ["quiz-attempts", `${lesson}/quiz/attempts`]] as const) {
+    const handler = createAcademyHandler(operation, { client: () => client });
+    const response = await handler(new Request("https://site.example.com" + target), operation === "progress" ? {} : { lessonId });
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+    assert.equal(response.headers.get("x-request-id"), requestId);
+    assert.deepEqual(await response.json(), { error: { code: "access_required", message: "Course access is required." }, requestId });
+  }
+  assert.deepEqual(calls.map(({ method, path, applicationToken, body, idempotencyKey }) => [method, path, applicationToken, body, idempotencyKey]), [
+    `/v1/student/courses/${courseId}`, `/v1/student/lessons/${lessonId}`, `/v1/student/lessons/${lessonId}/playback`,
+    `/v1/student/progress?lessonId=${lessonId}`, `/v1/student/lessons/${lessonId}/quiz`, `/v1/student/lessons/${lessonId}/quiz/attempts`,
+  ].map(path => ["GET", path, token, undefined, undefined]));
+});
+
 test("request/response validation rejects unknown fields and accepts composed learner curriculum objects", () => {
   assert.throws(() => validateCandidateRequest("course", "/v1/student/lessons/{lessonId}/progress", "post", { params: { lessonId }, body: { event: "lesson_started", userId: adminId } }));
   assert.throws(() => validateCandidateResponse("course", "/v1/courses", "get", 200, { courses: [], nextCursor: null, privateToken: "must-not-leak" }));

@@ -205,9 +205,17 @@ export function createGateway(input, options = {}) {
               });
             }
             if (interactiveSelection) {
-              if (!scopedInteractiveAcknowledged(route, req.url, reply.statusCode, reply.headers["content-type"], buffered)) markUncertain();
-              else interactiveEvidence.acknowledged.push({ requestId, proofRequestId: interactiveSelection.requestId,
-                requestIndex: interactiveSelection.requestIndex, upstreamStatus: reply.statusCode });
+              const stage = interactiveAdmission.interactive.stage;
+              if (!scopedInteractiveAcknowledged(route, req.url, reply.statusCode, reply.headers["content-type"], buffered, stage)) {
+                markUncertain();
+                if (stage === "lesson-denial") {
+                  refuse(502, "upstream_unavailable");
+                  return resolve();
+                }
+              } else {
+                interactiveEvidence.acknowledged.push({ requestId, proofRequestId: interactiveSelection.requestId,
+                  requestIndex: interactiveSelection.requestIndex, upstreamStatus: reply.statusCode });
+              }
             }
             // The complete upstream ACK must be checked before any downstream
             // status, headers or bytes. A deliberate drop retains uncertainty

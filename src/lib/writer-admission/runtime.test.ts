@@ -460,6 +460,43 @@ test("lesson-entry v2 binds all three canonical UUIDs and only normal Academy en
     issue(selector.slice(0, 64) + "0".repeat(32))]) assert.equal(attest("GET", page, invalid), null);
 });
 
+test("lesson denial v2 signs only the selected document and exact read-only BFF targets", () => {
+  const now = 1_794_009_600;
+  const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
+  const actorId = selectedCustomerId, lessonId = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
+  const courseId = "10000000-0000-4000-8000-000000000001";
+  const selector = [actorId, courseId, lessonId].map(value => value.replaceAll("-", "")).join("");
+  const issue = (selection: string, stage = "lesson-denial") => {
+    const body = ["v2", "9".repeat(18), stage, now, now + 120, "ab".repeat(16), selection].join(".");
+    const mac = createHmac("sha256", env.CRON_SECRET)
+      .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex");
+    return `${body}.${mac}`;
+  };
+  const cookie = issue(selector), page = `/academy/courses/${courseId}/lessons/${lessonId}`;
+  const api = `/api/academy/lessons/${lessonId}`, progress = "/api/academy/progress", query = `?lessonId=${lessonId}`;
+  const attest = (method: string, path: string, search = "", permit = cookie) =>
+    attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, search, cookie: permit }, env, now);
+  assert.ok(cookie.length <= 256);
+  for (const [path, search] of [[page, ""], [api, ""], [`${api}/playback`, ""], [progress, query], [`${api}/quiz`, ""], [`${api}/quiz/attempts`, ""]]) {
+    const proof = attest("GET", path, search);
+    assert.ok(proof);
+    assert.equal(Buffer.from(proof.split(".")[1], "base64url").toString(), `GET ${path}${search}`);
+    const verified = readInteractiveRequest(proof, cookie, env, now);
+    assert.deepEqual(verified?.lessonDenial, { actorId, courseId, lessonId });
+    assert.equal(verified?.lessonEntry, undefined);
+    assert.equal(readInteractiveRequest(proof, issue(courseId.replaceAll("-", "") + selector.slice(32)), env, now), null);
+    assert.equal(readInteractiveRequest(proof, issue(selector, "lesson-entry"), env, now), null);
+  }
+  for (const [method, path, search] of [
+    ["GET", page, "?course=preview"], ["GET", page.replace(courseId, actorId)], ["GET", page.replace(lessonId, actorId)],
+    ["GET", `/academy/courses/${courseId}`], ["GET", api.replace(lessonId, actorId)], ["GET", `${api}/quiz`, "?limit=2"],
+    ["GET", progress], ["GET", progress, `?courseId=${courseId}`], ["GET", progress, `?lessonId=${actorId}`],
+    ["GET", progress, `${query}&lessonId=${lessonId}`], ["GET", progress, `?%6CessonId=${lessonId}`],
+    ["GET", progress, `${query}&extra=1`], ["HEAD", page], ["POST", `${api}/progress`], ["POST", `${api}/quiz/attempts`],
+  ]) assert.equal(attest(method, path, search), null);
+  assert.equal(attest("GET", page, "", issue(selector.slice(32))), null);
+});
+
 test("paid grant and revoke v2 permit only their fresh mutation and owner page, and clear owner scope", async () => {
   const now = 1_794_009_600;
   const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };

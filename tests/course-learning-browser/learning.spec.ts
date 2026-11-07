@@ -186,16 +186,16 @@ const lessonPath = (
   value: Scenario,
   mode: "practice" | "graded" = "practice",
 ) => `/academy/courses/${value.courseId}/lessons/${value.lessonIds[mode]}`;
+const readOwnedGatewayJournal = () => readFileSync(owned().gatewayJournal, "utf8").trim().split("\n").filter(Boolean)
+  .map(line => JSON.parse(line) as { method: string; target: string; status: number });
 async function enroll(page: Page, value: Scenario) {
-  const requests = () => readFileSync(owned().gatewayJournal, "utf8").trim().split("\n").filter(Boolean)
-    .map(line => JSON.parse(line) as { method: string; target: string; status: number });
-  const start = requests().length;
+  const start = readOwnedGatewayJournal().length;
   const catalog = `/course/v1/courses/${value.slug}`;
   const student = `/course/v1/student/courses/${value.courseId}`;
   await page.goto(`/courses/${value.slug}`);
   const button = page.getByRole("button", { name: "Enroll for free", exact: true });
   await expect(button).toBeVisible();
-  expect(requests().slice(start).filter(row => row.target === catalog || row.target === student)).toEqual([
+  expect(readOwnedGatewayJournal().slice(start).filter(row => row.target === catalog || row.target === student)).toEqual([
     { method: "GET", target: catalog, status: 200 },
     { method: "GET", target: student, status: 403 },
   ]);
@@ -208,7 +208,7 @@ async function enroll(page: Page, value: Scenario) {
   const first = await response.json();
   expect(first).toMatchObject({ courseId: value.courseId, source: "free", status: "active", idempotentReplay: false });
   await expect(page.getByRole("link", { name: "Course overview", exact: true })).toHaveAttribute("href", `/courses/${value.slug}`);
-  expect(requests().slice(start)).toEqual(expect.arrayContaining([
+  expect(readOwnedGatewayJournal().slice(start)).toEqual(expect.arrayContaining([
     { method: "POST", target: student + "/enrollments", status: 201 },
     { method: "GET", target: student, status: 200 },
     { method: "GET", target: `/course/v1/student/progress?courseId=${value.courseId}`, status: 200 },
@@ -229,7 +229,7 @@ async function enroll(page: Page, value: Scenario) {
     return { status: response.status, cache: response.headers.get("cache-control"), body: await response.json() };
   }, { courseId: value.courseId, body: requestBody });
   expect(replay).toEqual({ status: 200, cache: "private, no-store", body: { ...first, idempotentReplay: true } });
-  expect(requests().slice(start).filter(row => row.method === "POST" && row.target === student + "/enrollments")).toEqual([
+  expect(readOwnedGatewayJournal().slice(start).filter(row => row.method === "POST" && row.target === student + "/enrollments")).toEqual([
     { method: "POST", target: student + "/enrollments", status: 201 },
     { method: "POST", target: student + "/enrollments", status: 200 },
   ]);
@@ -321,6 +321,128 @@ async function revoke(value: Scenario) {
   expect(response.ok).toBe(true);
 }
 
+async function verifyProductionLessonDenial(browser: Browser, value: Scenario) {
+  const pathname = lessonPath(value);
+  const lessonId = value.lessonIds.practice;
+  const lessonApi = `/api/academy/lessons/${lessonId}`;
+  const targets = [
+    lessonApi,
+    `${lessonApi}/playback`,
+    `/api/academy/progress?lessonId=${lessonId}`,
+    `${lessonApi}/quiz`,
+    `${lessonApi}/quiz/attempts`,
+  ];
+  const lessonUpstream = `/course/v1/student/lessons/${lessonId}`;
+  const upstream = [
+    `/course/v1/student/courses/${value.courseId}`,
+    lessonUpstream,
+    `/course/v1/student/progress?lessonId=${lessonId}`,
+    `${lessonUpstream}/quiz`,
+    `${lessonUpstream}/quiz/attempts`,
+    `${lessonUpstream}/playback`,
+  ];
+  const readState = async () => (await coursePool!.query(
+    `select
+       (select jsonb_agg(to_jsonb(g) order by g.id) from entitlement_grants g where g.course_id=$1) as grants,
+       (select jsonb_agg(to_jsonb(e) order by e.id) from enrollments e where e.course_id=$1) as enrollments,
+       (select jsonb_agg(to_jsonb(p) order by p.id) from lesson_progress p where p.lesson_id=$2) as progress,
+       (select jsonb_agg(to_jsonb(a) order by a.id) from quiz_attempts a where a.lesson_id=$2) as attempts,
+       (select jsonb_agg(to_jsonb(v) order by v.id) from video_assets v where v.lesson_id=$2) as media`,
+    [value.courseId, lessonId],
+  )).rows[0];
+  const before = await readState();
+  expect(before.grants).toEqual([expect.objectContaining({ user_id: value.users.learner.id, status: "active", grant_reason: "free" })]);
+  expect(before.enrollments).toEqual([expect.objectContaining({ user_id: value.users.learner.id, status: "active" })]);
+  expect(before.progress).toEqual([expect.objectContaining({ user_id: value.users.learner.id, revision: 1 })]);
+  expect(before.attempts).toBeNull();
+  expect(before.media).toEqual([expect.objectContaining({
+    status: "ready", managed_by_course: true, is_current: true, last_token_expires_at: expect.any(String),
+  })]);
+
+  const context = await contextFor(browser, value.users.other.storage);
+  const page = await context.newPage();
+  const gatewayOffset = readOwnedGatewayJournal().length;
+  const academyWrites: string[] = [];
+  const mediaRequests: string[] = [];
+  page.on("request", request => {
+    const url = new URL(request.url());
+    if (url.origin === owned().origin && url.pathname.startsWith("/api/academy/") && request.method() !== "GET")
+      academyWrites.push(request.method());
+    if (["stream.mux.com", "image.mux.com", "learning-media.example.invalid"].includes(url.hostname))
+      mediaRequests.push(url.hostname);
+  });
+  try {
+    const document = await page.goto(pathname);
+    expect(document?.status()).toBe(200);
+    expect(document?.headers()["content-type"]).toMatch(/^text\/html(?:;|$)/u);
+    expect(document?.headers()["cache-control"]).toMatch(/\bprivate\b.*\bno-store\b/u);
+    await expect(page.getByRole("heading", { name: "Enrollment required", exact: true })).toBeVisible();
+    await expect(page.locator("mux-player")).toHaveCount(0);
+
+    const evidence = await page.evaluate(async ({ pathname, targets }) => {
+      const request = (path: string, headers?: HeadersInit) => fetch(path, {
+        headers, credentials: "same-origin", redirect: "error", signal: AbortSignal.timeout(10_000),
+      });
+      // Next 16 uses a bare _rsc cache key when no router-state or prefetch headers are supplied.
+      const flight = await request(`${pathname}?_rsc`, { RSC: "1" });
+      const flightBody = await flight.text();
+      const reads = [];
+      for (const target of targets) {
+        const response = await request(target);
+        reads.push({
+          status: response.status,
+          cache: response.headers.get("cache-control"),
+          requestId: response.headers.get("x-request-id"),
+          body: await response.json(),
+        });
+      }
+      return {
+        documentBody: window.document.documentElement.textContent ?? "",
+        flight: {
+          status: flight.status,
+          type: flight.headers.get("content-type"),
+          cache: flight.headers.get("cache-control"),
+          vary: flight.headers.get("vary"),
+          body: flightBody,
+        },
+        reads,
+      };
+    }, { pathname, targets });
+    expect(evidence.flight).toMatchObject({
+      status: 200,
+      type: expect.stringMatching(/^text\/x-component(?:;|$)/u),
+      cache: expect.stringMatching(/\bprivate\b.*\bno-store\b/u),
+      vary: expect.stringMatching(/(?:^|,\s*)rsc(?:,|$)/iu),
+    });
+    expect(evidence.flight.body).toContain("Enrollment required");
+    for (const body of [evidence.documentBody, evidence.flight.body]) {
+      for (const privateText of ["Private actual practice lesson content.", "A gentle approach protects the natural lash.",
+        "Which approach protects the natural lash?", before.media[0].mux_playback_id])
+        expect(body).not.toContain(privateText);
+    }
+    const reads = evidence.reads.map(({ status, cache, requestId, body }) => {
+      expect(status).toBe(403);
+      expect(cache).toBe("private, no-store");
+      expect(requestId).toMatch(/^[a-f0-9-]{36}$/u);
+      expect(body).toEqual({ error: { code: "access_required", message: "Course access is required." }, requestId });
+      return { status, code: body.error.code, requestId };
+    });
+    expect(new Set(reads.map(read => read.requestId)).size).toBe(targets.length);
+    expect(academyWrites).toEqual([]);
+    expect(mediaRequests).toEqual([]);
+    const gatewayRows = readOwnedGatewayJournal().slice(gatewayOffset).filter(row => upstream.includes(row.target));
+    expect(gatewayRows).toHaveLength(15);
+    expect(gatewayRows.every(row => row.method === "GET" && row.status === 403)).toBe(true);
+    const indexes = gatewayRows.map(row => upstream.indexOf(row.target));
+    for (const start of [0, 5]) expect(indexes.slice(start, start + 5).sort()).toEqual([0, 1, 2, 3, 4]);
+    expect(indexes.slice(10)).toEqual([1, 5, 2, 3, 4]);
+    expect(await readState()).toEqual(before);
+    return { documentStatus: document?.status(), flightStatus: evidence.flight.status, reads, gatewayIndexes: indexes, unchanged: true };
+  } finally {
+    await close(context);
+  }
+}
+
 test("production Academy lesson Flight and first progress write", async ({ browser }, info) => {
   test.skip(!production, "Requires the owned Next production build.");
   const value = scenario(info.project.name, "flight");
@@ -403,6 +525,8 @@ test("production Academy lesson Flight and first progress write", async ({ brows
   } finally {
     await close(context);
   }
+  const denial = await verifyProductionLessonDenial(browser, value);
+  await writeFile(info.outputPath("lesson-denial.json"), JSON.stringify(denial, null, 2) + "\n", { mode: 0o600 });
 });
 
 test("actual free enrollment, locally signed media, resume and both assessment modes persist", async ({

@@ -5,7 +5,7 @@ import { AdminAuthError } from "@/lib/admin/types";
 import type { AdminPermissionAction } from "@/lib/admin/permissions";
 import { getCustomerActor, issueCustomerApplicationToken } from "@/lib/customer-auth/session";
 import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
-import { permitsLessonEntryCourseRequest, readInteractiveBrowserRequest, type LearnerAccessSelection, type LessonEntrySelection } from "@/lib/writer-admission/interactive-proof";
+import { permitsLessonDenialCourseRequest, permitsLessonEntryCourseRequest, readInteractiveBrowserRequest, type LearnerAccessSelection, type LessonSelection } from "@/lib/writer-admission/interactive-proof";
 import { runWriterAdmission, type WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 import { mintApplicationToken, type ApplicationPrincipal } from "./application-jwt";
 import { type CandidateBody, type CandidateQuery, type CandidateSuccess, validateCandidateRequest, validateCandidateResponse } from "./candidate-validation";
@@ -29,7 +29,8 @@ export function createCourseClient(dependencies: {
   getCustomer?: typeof getCustomerActor;
   issueCustomerToken?: () => ReturnType<typeof issueCustomerApplicationToken>;
   getLearnerAccess?: () => Promise<LearnerAccessSelection | undefined>;
-  getLessonEntry?: () => Promise<LessonEntrySelection | undefined>;
+  getLessonEntry?: () => Promise<LessonSelection | undefined>;
+  getLessonDenial?: () => Promise<LessonSelection | undefined>;
   getAdmin?: typeof requirePermission;
   mintToken?: (principal: ApplicationPrincipal) => string;
   enabled?: (feature: IntegrationFeature) => boolean;
@@ -56,6 +57,7 @@ export function createCourseClient(dependencies: {
     const signedScope = access === "learner" ? await readInteractiveBrowserRequest() : null;
     const selectedLearner = access === "learner" && dependencies.getLearnerAccess ? await dependencies.getLearnerAccess() : signedScope?.learnerAccess;
     const lessonEntry = access === "learner" && dependencies.getLessonEntry ? await dependencies.getLessonEntry() : signedScope?.lessonEntry;
+    const lessonDenial = access === "learner" && dependencies.getLessonDenial ? await dependencies.getLessonDenial() : signedScope?.lessonDenial;
     if (selectedLearner && (method !== "get" || input.params?.lessonId !== undefined && input.params.lessonId !== selectedLearner.lessonId)) {
       throw new IntegrationServiceError("forbidden", 403);
     }
@@ -64,10 +66,14 @@ export function createCourseClient(dependencies: {
     const pathname = path.replace(/\{([^}]+)\}/gu, (_match, name: string) => input.params![name]);
     const target = `${pathname}${query.size ? `?${query}` : ""}`;
     const requestMethod = method.toUpperCase() as GatewayRequest["method"];
-    const scopedBody = lessonEntry && input.body !== undefined ? JSON.stringify(input.body) : undefined;
-    if (lessonEntry && !permitsLessonEntryCourseRequest(lessonEntry, {
+    const scopedBody = (lessonEntry || lessonDenial) && input.body !== undefined ? JSON.stringify(input.body) : undefined;
+    const scopedRequest = {
       method: requestMethod, target: `/course${target}`, body: scopedBody, idempotencyKey: input.idempotencyKey,
-    })) throw new IntegrationServiceError("forbidden", 403);
+    };
+    if ((lessonEntry && !permitsLessonEntryCourseRequest(lessonEntry, scopedRequest)) ||
+      (lessonDenial && !permitsLessonDenialCourseRequest(lessonDenial, scopedRequest))) {
+      throw new IntegrationServiceError("forbidden", 403);
+    }
     const execute = async (): Promise<{ value: Success<P, M> } | { failure: IntegrationServiceError }> => {
       let outboundStarted = false;
       let requestId: string | undefined;
@@ -80,7 +86,7 @@ export function createCourseClient(dependencies: {
         if (access === "learner") {
           const issued = await issueCustomerToken();
           if (!issued) throw new IntegrationServiceError("sign_in_required", 401);
-          const selectedActor = lessonEntry?.actorId ?? selectedLearner?.actorId;
+          const selectedActor = lessonDenial?.actorId ?? lessonEntry?.actorId ?? selectedLearner?.actorId;
           if (selectedActor !== undefined && issued.customerId !== selectedActor) throw new IntegrationServiceError("forbidden", 403);
           customerId = issued.customerId;
           applicationToken = issued.token;

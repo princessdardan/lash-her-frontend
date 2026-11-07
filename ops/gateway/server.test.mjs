@@ -723,6 +723,89 @@ test("scoped lesson entry acknowledges the normal reads, playback and one first-
   assert.equal(new Set(acknowledged.flat().map(row => row.proofRequestId)).size, 9);
 });
 
+function lessonDenialFixtureRequests() {
+  const courseId = "20000000-0000-4000-8000-000000000001";
+  const lessonId = "20000000-0000-4000-8000-000000000002";
+  const foreignId = "20000000-0000-4000-8000-000000000003";
+  const course = `/course/v1/student/courses/${courseId}`, lesson = `/course/v1/student/lessons/${lessonId}`;
+  const progress = "/course/v1/student/progress";
+  const targets = [course, lesson, `${progress}?lessonId=${lessonId}`, `${lesson}/quiz`, `${lesson}/quiz/attempts`, `${lesson}/playback`];
+  const requests = targets.map((target, index) => ({ method: "GET", target, bodySha256: certificationHash(""), uses: [2, 3, 3, 3, 3, 1][index] }));
+  return { courseId, lessonId, foreignId, course, lesson, progress, targets, requests };
+}
+
+test("scoped lesson denial binds one course, lesson and customer to fifteen exact denied reads", async t => {
+  const { courseId, lessonId, foreignId, course, lesson, progress, targets, requests } = lessonDenialFixtureRequests();
+  const denial = { error: { code: "ACTIVE_ENROLLMENT_REQUIRED", message: "Active enrollment required" } };
+  const forwarded = [];
+  const f = await interactiveFixture(t, requests, (req, res) => {
+    forwarded.push({ method: req.method, target: `/course${req.url}`, proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+    res.writeHead(403, { "content-type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(denial));
+  }, "lesson-denial");
+  for (const rows of [
+    requests.slice(0, 5), [requests[1], requests[0], ...requests.slice(2)],
+    requests.map((row, index) => index === 2 ? { ...row, target: row.target.replace(lessonId, foreignId) } : row),
+    requests.map((row, index) => index === 3 ? { ...row, uses: 4 } : row),
+    requests.map((row, index) => index === 5 ? { ...row, target: `${progress}?courseId=${courseId}` } : row),
+    requests.map((row, index) => index === 5 ? { ...row, target: `${lesson}/progress`, method: "POST" } : row),
+  ]) {
+    f.save({ ...f.state, interactive: { ...f.state.interactive, requests: rows } });
+    const admission = createAdmissionReader(f.staging, f.options)();
+    assert.equal(admission.valid, false);
+    assert.equal(admission.interactive, undefined);
+  }
+  f.save(f.state);
+  for (const input of [
+    f.signed({ path: course, actor: foreignId }), f.signed({ path: course.replace(courseId, foreignId) }),
+    f.signed({ path: lesson.replace(lessonId, foreignId) }), f.signed({ path: `${progress}?lessonId=${foreignId}` }),
+    f.signed({ path: `${progress}?courseId=${courseId}` }), f.signed({ path: `${progress}?lessonId=${lessonId}&limit=1` }),
+    f.signed({ path: `${lesson}/playback?limit=1` }), f.signed({ path: `${lesson}/quiz`, idempotency: foreignId }),
+    f.signed({ method: "POST", path: `${lesson}/progress`, body: '{"event":"lesson_started","expectedProgressRevision":0}' }),
+    f.signed({ method: "POST", path: `${lesson}/quiz/attempts`, body: "{}" }),
+  ]) assert.equal((await f.send(input)).status, 503);
+  const acknowledged = [];
+  for (const requestIndex of [0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 1, 5, 2, 3, 4]) {
+    const input = f.signed({ path: targets[requestIndex] });
+    const result = await f.send(input);
+    assert.equal(result.status, 403);
+    assert.deepEqual(JSON.parse(result.body), denial);
+    acknowledged.push({ requestIndex, requestId: result.headers["x-request-id"],
+      proofRequestId: input.headers["x-request-id"], upstreamStatus: 403 });
+    assert.equal((await f.send(input)).status, 503);
+  }
+  for (const path of targets) assert.equal((await f.send(f.signed({ path }))).status, 503);
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.interactiveEvidence, { admitted: 15, acknowledged });
+  assert.equal(new Set(acknowledged.map(row => row.requestId)).size, 15);
+  assert.deepEqual(forwarded, acknowledged.map(({ requestIndex }) => ({ method: "GET", target: targets[requestIndex], proof: undefined })));
+});
+
+test("scoped lesson denial fences unexpected upstream success and wrong-code denial without exposing their bodies", async t => {
+  const { targets, requests } = lessonDenialFixtureRequests();
+  for (const [name, status, body] of [["unexpected success", 200, { lesson: { transcript: "private fixture detail" } }],
+    ["wrong-code denial", 403, { error: { code: "ENTITLEMENT_REVOKED", message: "private fixture detail" } }]]) {
+    await t.test(name, async testContext => {
+      const f = await interactiveFixture(testContext, requests, (_req, res) => {
+        res.writeHead(status, { "content-type": "application/json", "retry-after": "10" });
+        res.end(JSON.stringify(body));
+      }, "lesson-denial");
+      const output = await f.send(f.signed({ path: targets[1] }));
+      assert.equal(output.status, 502);
+      assert.equal(output.headers["retry-after"], undefined);
+      assert.deepEqual(JSON.parse(output.body), { error: { code: "upstream_unavailable", message: "upstream unavailable" },
+        requestId: output.headers["x-request-id"] });
+      assert.equal((await f.send(f.signed({ path: targets[5] }))).status, 503);
+      const observed = f.admissionState();
+      assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+      assert.deepEqual(observed.uncertain, { newWork: 1, recovery: 0 });
+      assert.deepEqual(observed.interactiveEvidence, { admitted: 1, acknowledged: [] });
+    });
+  }
+});
+
 test("scoped paid grant acknowledges the reviewed owner mutation and exact command and grant readbacks", async t => {
   const fixtureId = number => `20000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
   const [courseId, userId, key, commandId, grantId, enrollmentId, foreignId] = [1, 2, 3, 4, 5, 6, 7].map(fixtureId);

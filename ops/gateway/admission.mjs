@@ -15,7 +15,7 @@ const INTERACTIVE_TARGET = /^\/course\/v1\/[A-Za-z0-9/_-]+(?:\?[!$%&'()*+,./:;=?
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
 const PROVIDER_ID = /^[A-Za-z0-9_-]{1,255}$/u;
 const SHA = /^[a-f0-9]{64}$/u;
-const INTERACTIVE_STAGES = new Set(["authoring", "media", "learning", "learner-access", "lesson-entry", "paid-grant", "paid-revoke"]);
+const INTERACTIVE_STAGES = new Set(["authoring", "media", "learning", "learner-access", "lesson-entry", "lesson-denial", "paid-grant", "paid-revoke"]);
 const EMPTY_SHA = createHash("sha256").update("").digest("hex");
 const INITIAL_LESSON_PROGRESS = Buffer.from('{"event":"lesson_started","expectedProgressRevision":0}');
 const MAX_ORDINARY_STATE = 4096;
@@ -100,6 +100,25 @@ function interactiveScope(value, config, info, processBinding, storageAuthority,
     if (tuples.has(tuple)) throw new Error();
     tuples.add(tuple);
   }
+  if (value.stage === "lesson-denial") requireLessonDenialRequests(value.requests);
+}
+
+function requireLessonDenialRequests(requests) {
+  const student = "/course/v1/student", coursePrefix = `${student}/courses/`, lessonPrefix = `${student}/lessons/`;
+  const [course, lesson] = requests;
+  if (!course?.target.startsWith(coursePrefix) || !matches(UUID, course.target.slice(coursePrefix.length)) ||
+      !lesson?.target.startsWith(lessonPrefix) || !matches(UUID, lesson.target.slice(lessonPrefix.length))) throw new Error();
+  const lessonId = lesson.target.slice(lessonPrefix.length);
+  const expected = [
+    [course.target, 2],
+    [lesson.target, 3],
+    [`${student}/progress?lessonId=${lessonId}`, 3],
+    [`${lesson.target}/quiz`, 3],
+    [`${lesson.target}/quiz/attempts`, 3],
+    [`${lesson.target}/playback`, 1],
+  ];
+  if (requests.length !== expected.length || expected.some(([target, uses], index) =>
+    requests[index].target !== target || requests[index].uses !== uses)) throw new Error();
 }
 
 function hasInteractiveActor(token, actorId) {
@@ -148,7 +167,8 @@ export function selectScopedInteractiveRequest(scope, { method, target, body, he
   const requestIndex = scope.requests.findIndex(row => row.method === method && row.target === target && row.bodySha256 === bodySha256);
   if (requestIndex < 0) return null;
   if (scope.stage === "paid-revoke" && method === "POST" && !scopedPaidRevocation(body, idempotency)) return null;
-  if (scope.stage === "lesson-entry" && (idempotency !== "" || (method === "POST" && !body.equals(INITIAL_LESSON_PROGRESS)))) return null;
+  if (scope.stage === "lesson-entry" && (idempotency !== "" || (method === "POST" && !body.equals(INITIAL_LESSON_PROGRESS))) ||
+      scope.stage === "lesson-denial" && idempotency !== "") return null;
   const message = ["lash-her:p2q:interactive:gateway-request:v1", issued, requestId, method, target, bodySha256,
     digest(applicationToken), digest(idempotency)].join("\n");
   const expected = createHmac("sha256", Buffer.from(scope.key, "hex")).update(message).digest();
@@ -166,8 +186,9 @@ function acknowledgedMediaRefresh(target, value) {
       typeof track.closedCaptions === "boolean" && [track.id, track.label, track.language, track.status].every(field => typeof field === "string"));
 }
 
-export function scopedInteractiveAcknowledged(route, target, status, contentType, body) {
+export function scopedInteractiveAcknowledged(route, target, status, contentType, body, stage) {
   const refresh = route.method === "POST" && route.path === "/v1/admin/lessons/{lessonId}/video/{videoAssetId}/refresh";
+  if (stage === "lesson-denial" && status !== 403) return false;
   if (status === 204) return !refresh && body.length === 0;
   if (!((status >= 200 && status < 300) || (status >= 400 && status < 500)) ||
       typeof contentType !== "string" || contentType.split(";", 1)[0] !== "application/json" || !isUtf8(body)) return false;
@@ -176,6 +197,7 @@ export function scopedInteractiveAcknowledged(route, target, status, contentType
     if (status >= 400) {
       return keys(value) === "error" && keys(value.error) === "code,message" &&
         matches(/^[A-Z][A-Z0-9_]{0,127}$/u, value.error.code) && typeof value.error.message === "string" &&
+        (stage !== "lesson-denial" || value.error.code === "ACTIVE_ENROLLMENT_REQUIRED") &&
         !UNCERTAIN_MEDIA_ERRORS.has(value.error.code);
     }
     if (refresh) return status === 200 && acknowledgedMediaRefresh(target, value);

@@ -209,6 +209,16 @@ const reviewedLessonEntryDependencies = {
   "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "c22f7041c8f1dd6d98cfc4c2a678403fba3e9a54179fe4e8ed8aa00d5acc74a1",
   "src/app/api/academy/lessons/[lessonId]/progress/route.ts": "87d879299cb039985b7b49e9f2d0f9e0b70f233d8d357fd85ebc3f40c0610cfd"
 };
+const reviewedLessonDenialDependencies = {
+  ...reviewedLessonEntryDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "8c4d47bf14055c277d707682bcf076c0b22e2decfe2bb9eb738fc8cf6ef74d44",
+  "src/lib/api-integration/course-client.ts": "19357858a655194c17fd512ad50edb96b09a0acf60357c2f0ed8bb2b12e3339b",
+  "src/app/api/academy/lessons/[lessonId]/route.ts": "710e3add0bf5b8ca0fd53a7269fb3de1f015136c903b0615dc2a1ee781026c30",
+  "src/app/api/academy/lessons/[lessonId]/playback/route.ts": "65e137ec1e7e1ce51a6fb8115eb1e7fa39e867ee15cc327e93fc16a42c711952",
+  "src/app/api/academy/lessons/[lessonId]/quiz/route.ts": "7bc6347d9166e42e4107c10ed4f20f09fd9ee317996583e551a1ab2d4e70b382",
+  "src/app/api/academy/lessons/[lessonId]/quiz/attempts/route.ts": "a19b5ee06ce7e8ac8f8aaf8944b7efc0875c174956709f9df98a4a574ae6b75b",
+  "src/app/api/academy/progress/route.ts": "aedbc6fe8c366c6c9c5dcf466cb9c18022920105a7df13fe7244d95c48e3fc32"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -239,7 +249,7 @@ function sourcePolicy(sourceCommit) {
     [reviewedPaidGrantSource, [reviewedPaidGrantDependencies]],
     [reviewedPaidArchiveSource, [reviewedPaidArchiveDependencies]],
     [reviewedPaidRepublishSource, [reviewedPaidRepublishDependencies, reviewedPaidLearnerAccessDependencies]],
-    [reviewedPaidRevokeSource, [reviewedPaidRevokeDependencies, reviewedLessonEntryDependencies]]]
+    [reviewedPaidRevokeSource, [reviewedPaidRevokeDependencies, reviewedLessonEntryDependencies, reviewedLessonDenialDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

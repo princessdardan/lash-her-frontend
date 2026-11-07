@@ -12,7 +12,7 @@ export const INTERACTIVE_COOKIE = "__Host-lash-p2q-window";
 export const INTERACTIVE_HEADER = "x-lash-internal-interactive-admission";
 export const INTERACTIVE_GATEWAY_PROOF_HEADER = "x-lash-certification-interactive";
 
-const stages = ["identity", "authoring", "media", "learning", "learner-access", "lesson-entry", "paid-grant", "paid-revoke", "lifecycle"] as const;
+const stages = ["identity", "authoring", "media", "learning", "learner-access", "lesson-entry", "lesson-denial", "paid-grant", "paid-revoke", "lifecycle"] as const;
 type Stage = (typeof stages)[number];
 const adminIdentitySelector = createHash("sha256").update(JSON.stringify(["identity", "admin"])).digest("hex");
 const customerIdentityPrefix = "7032712d637573746f6d65722d763100";
@@ -27,22 +27,22 @@ const authoringArchivePaidActorPrefix = "7032712d617574682d6172632d763100";
 const authoringRepublishPaidActorPrefix = "7032712d617574682d7265702d763100";
 const authoringReviewPaidRestorationActorPrefix = "7032712d617574682d72626c2d763100";
 type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; identityEnrollment?: WriterIdentityEnrollment;
-  authoringOperation?: WriterAuthoringOperation; learnerAccess?: LearnerAccessSelection; lessonEntry?: LessonEntrySelection };
+  authoringOperation?: WriterAuthoringOperation; learnerAccess?: LearnerAccessSelection; lessonEntry?: LessonSelection; lessonDenial?: LessonSelection };
 export type LearningEnrollmentSelection = Readonly<{ actorId: string; idempotencyKey: string }>;
 export type PaidGrantSelection = Readonly<{ actorId: string; idempotencyKey: string }>;
 export type PaidRevokeSelection = Readonly<{ actorId: string; idempotencyKey: string }>;
 export type LearnerAccessSelection = Readonly<{ actorId: string; lessonId: string }>;
-export type LessonEntrySelection = Readonly<{ actorId: string; courseId: string; lessonId: string }>;
+export type LessonSelection = Readonly<{ actorId: string; courseId: string; lessonId: string }>;
 type BrowserPermit = BrowserScope & { epoch: string; nonce: string; lifecycleSelectionSha256?: string; identityCustomerId?: string;
   authoringActorId?: string; learningEnrollment?: LearningEnrollmentSelection; paidGrant?: PaidGrantSelection; paidRevoke?: PaidRevokeSelection };
 type Binding = { key: string; deploymentHost: string; source: string; target: string };
 const gatewayOrigin = "https://api-staging.lashher.com";
-const gatewayStages = new Set<Stage>(["authoring", "media", "learning", "learner-access", "lesson-entry", "paid-grant", "paid-revoke"]);
+const gatewayStages = new Set<Stage>(["authoring", "media", "learning", "learner-access", "lesson-entry", "lesson-denial", "paid-grant", "paid-revoke"]);
 const uuid = "[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}";
 const at = (pattern: string) => new RegExp(`^(?:${pattern})$`, "u");
 const canonicalUuid = at(uuid);
 const signedDigest = /^[a-f0-9]{64}$/u;
-const lessonEntrySelector = /^[a-f0-9]{96}$/u;
+const lessonSelector = /^[a-f0-9]{96}$/u;
 const initialLessonProgress = '{"event":"lesson_started","expectedProgressRevision":0}';
 const epochPattern = /^[1-9][0-9]{0,17}$/u;
 const maxLeaseSeconds = 600;
@@ -114,7 +114,7 @@ function permitsCustomerAuth(method: string, path: string, provider?: WriterIden
   return provider === undefined ? path === prefix + "google" || path === prefix + "resend" : path === prefix + provider;
 }
 
-function permits({ stage, identityActorKind, identityEnrollment, authoringOperation, learnerAccess, lessonEntry }: BrowserScope, method: string, path: string): boolean {
+function permits({ stage, identityActorKind, identityEnrollment, authoringOperation, learnerAccess, lessonEntry, lessonDenial }: BrowserScope, method: string, path: string): boolean {
   switch (stage) {
     case "identity":
       if (identityActorKind === "admin") return matches(staffAuth, method, path);
@@ -139,6 +139,13 @@ function permits({ stage, identityActorKind, identityEnrollment, authoringOperat
       const lesson = `/api/academy/lessons/${lessonEntry.lessonId}`;
       return method === "GET" && [course, `${course}/lessons/${lessonEntry.lessonId}`, `${lesson}/playback`].includes(path) ||
         method === "POST" && path === `${lesson}/progress`;
+    }
+    case "lesson-denial": {
+      if (!lessonDenial || method !== "GET") return false;
+      const { courseId, lessonId } = lessonDenial;
+      const api = `/api/academy/lessons/${lessonId}`;
+      return [`/academy/courses/${courseId}/lessons/${lessonId}`, api, `${api}/playback`,
+        `/api/academy/progress?lessonId=${lessonId}`, `${api}/quiz`, `${api}/quiz/attempts`].includes(path);
     }
     case "paid-grant": return matches(paidGrant, method, path);
     case "paid-revoke": return matches(paidRevoke, method, path);
@@ -189,9 +196,10 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
   if (cookie.length > 256) return null;
   const fields = cookie.split(".");
   const [version, epoch, stage, started, expires, nonce, selection] = fields;
-  const hasSelection = stage === "lifecycle" || stage === "identity" || stage === "authoring" || stage === "learning" ||
-    stage === "learner-access" || stage === "lesson-entry" || stage === "paid-grant" || stage === "paid-revoke";
-  const selectorShape = stage === "lesson-entry" ? lessonEntrySelector : signedDigest;
+  const lessonStage = stage === "lesson-entry" || stage === "lesson-denial";
+  const hasSelection = lessonStage || stage === "lifecycle" || stage === "identity" || stage === "authoring" || stage === "learning" ||
+    stage === "learner-access" || stage === "paid-grant" || stage === "paid-revoke";
+  const selectorShape = lessonStage ? lessonSelector : signedDigest;
   if ((hasSelection ? version !== "v2" || fields.length !== 8 || !selectorShape.test(selection ?? "")
     : version !== "v1" || fields.length !== 7) ||
     !epochPattern.test(epoch ?? "") || !stages.includes(stage as Stage) ||
@@ -199,11 +207,13 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
     Number(started) > now || Number(expires) <= now || Number(expires) - Number(started) > maxLeaseSeconds ||
     !authentic(fields.at(-1), signature(authority, "browser", fields.slice(0, -1).join(".")))) return null;
   const permit = { epoch, stage: stage as Stage, nonce };
-  if (stage === "lesson-entry") {
+  if (lessonStage) {
     const actorId = decodeCompactUuid(selection.slice(0, 32));
     const courseId = decodeCompactUuid(selection.slice(32, 64));
     const lessonId = decodeCompactUuid(selection.slice(64));
-    return actorId && courseId && lessonId ? { ...permit, lessonEntry: { actorId, courseId, lessonId } } : null;
+    if (!actorId || !courseId || !lessonId) return null;
+    const selected = { actorId, courseId, lessonId };
+    return stage === "lesson-entry" ? { ...permit, lessonEntry: selected } : { ...permit, lessonDenial: selected };
   }
   if (stage === "learner-access") {
     const actorId = decodeCompactUuid(selection.slice(0, 32));
@@ -258,8 +268,12 @@ export function attestInteractiveRequest(request: { origin: string; method: stri
   if (request.origin !== INTERACTIVE_ORIGIN || request.path.length > 512) return null;
   const authority = binding(env);
   const browser = authority && browserProof(authority, request.cookie, now);
-  if (!authority || !browser || !permits(browser, request.method, request.path) || (browser.stage === "lesson-entry" && request.search)) return null;
-  const route = Buffer.from(`${request.method} ${request.path}`).toString("base64url");
+  if (!authority || !browser || (browser.stage === "lesson-entry" && request.search)) return null;
+  // Next strips its internal Flight key before proxy runs. Retain the exact
+  // remaining search string for the selected progress read.
+  const target = browser.stage === "lesson-denial" ? request.path + (request.search ?? "") : request.path;
+  if (!permits(browser, request.method, target)) return null;
+  const route = Buffer.from(`${request.method} ${target}`).toString("base64url");
   const value = `${now}.${route}`;
   return `${value}.${signature(authority, "request", `${request.cookie}\n${value}`)}`;
 }
@@ -294,7 +308,8 @@ export function readInteractiveRequest(proof: string, cookie: string, env: Recor
   now = Math.floor(Date.now() / 1000)): { epoch: string; producerSha256: string; source: string; target: string;
     lifecycleSelectionSha256?: string; identityCustomerId?: string; identityEnrollment?: WriterIdentityEnrollment;
     authoringActorId?: string; authoringOperation?: WriterAuthoringOperation; learningEnrollment?: LearningEnrollmentSelection;
-    paidGrant?: PaidGrantSelection; paidRevoke?: PaidRevokeSelection; learnerAccess?: LearnerAccessSelection; lessonEntry?: LessonEntrySelection } | null {
+    paidGrant?: PaidGrantSelection; paidRevoke?: PaidRevokeSelection; learnerAccess?: LearnerAccessSelection;
+    lessonEntry?: LessonSelection; lessonDenial?: LessonSelection } | null {
   const authority = binding(env);
   const browser = authority && verifiedInteractiveRequest(authority, proof, cookie, now);
   if (!authority || !browser) return null;
@@ -309,7 +324,8 @@ export function readInteractiveRequest(proof: string, cookie: string, env: Recor
     ...(browser.paidGrant ? { paidGrant: browser.paidGrant } : {}),
     ...(browser.paidRevoke ? { paidRevoke: browser.paidRevoke } : {}),
     ...(browser.learnerAccess ? { learnerAccess: browser.learnerAccess } : {}),
-    ...(browser.lessonEntry ? { lessonEntry: browser.lessonEntry } : {}) };
+    ...(browser.lessonEntry ? { lessonEntry: browser.lessonEntry } : {}),
+    ...(browser.lessonDenial ? { lessonDenial: browser.lessonDenial } : {}) };
 }
 
 export async function readInteractiveBrowserRequest(): Promise<ReturnType<typeof readInteractiveRequest>> {
@@ -323,17 +339,24 @@ export async function readInteractiveBrowserRequest(): Promise<ReturnType<typeof
   } catch { return null; }
 }
 
-export function permitsLessonEntryCourseRequest(selection: LessonEntrySelection, request: {
-  method: string; target: string; body?: string; idempotencyKey?: string;
-}): boolean {
+type ScopedCourseRequest = { method: string; target: string; body?: string; idempotencyKey?: string };
+
+export function permitsLessonDenialCourseRequest({ courseId, lessonId }: LessonSelection, request: ScopedCourseRequest): boolean {
+  const student = "/course/v1/student", lesson = `${student}/lessons/${lessonId}`;
+  return request.method === "GET" && request.body === undefined && request.idempotencyKey === undefined && [
+    `${student}/courses/${courseId}`, lesson, `${student}/progress?lessonId=${lessonId}`,
+    `${lesson}/quiz`, `${lesson}/quiz/attempts`, `${lesson}/playback`,
+  ].includes(request.target);
+}
+
+export function permitsLessonEntryCourseRequest(selection: LessonSelection, request: ScopedCourseRequest): boolean {
   const student = "/course/v1/student";
   const lesson = `${student}/lessons/${selection.lessonId}`;
   if (request.idempotencyKey !== undefined) return false;
   if (request.method === "POST") return request.target === `${lesson}/progress` && request.body === initialLessonProgress;
-  return request.method === "GET" && request.body === undefined && [
-    `${student}/courses/${selection.courseId}`, `${student}/progress?courseId=${selection.courseId}`,
-    lesson, `${student}/progress?lessonId=${selection.lessonId}`, `${lesson}/quiz`, `${lesson}/quiz/attempts`, `${lesson}/playback`,
-  ].includes(request.target);
+  return permitsLessonDenialCourseRequest(selection, request) || (
+    request.method === "GET" && request.body === undefined && request.target === `${student}/progress?courseId=${selection.courseId}`
+  );
 }
 
 export async function interactiveCourseGatewayProof(request: {
@@ -355,7 +378,9 @@ export async function interactiveCourseGatewayProof(request: {
     const permits = (await cookies()).getAll(INTERACTIVE_COOKIE);
     const issued = Math.floor(Date.now() / 1000);
     const browser = permits.length === 1 && verifiedInteractiveRequest(authority, proof, permits[0].value, issued);
-    if (!browser || !gatewayStages.has(browser.stage) || (browser.lessonEntry && !permitsLessonEntryCourseRequest(browser.lessonEntry, { ...request, target }))) return null;
+    if (!browser || !gatewayStages.has(browser.stage) ||
+      (browser.lessonEntry && !permitsLessonEntryCourseRequest(browser.lessonEntry, { ...request, target })) ||
+      (browser.lessonDenial && !permitsLessonDenialCourseRequest(browser.lessonDenial, { ...request, target }))) return null;
     const { deploymentHost, source, target: frontendTarget } = authority;
     const { epoch, stage, nonce } = browser;
     // This window key stays local. Only the MAC over this exact outbound

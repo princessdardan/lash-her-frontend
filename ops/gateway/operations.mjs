@@ -59,6 +59,7 @@ const interactiveCourseParameters = {
 const courseUuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u;
 const learnerAccessPath = /^\/course\/v1\/student\/(?:courses\/[^/]+|lessons\/[^/]+(?:\/(?:playback|quiz(?:\/attempts)?))?)$/u;
 const learnerAccessProgress = /^\/course\/v1\/student\/progress\?(?:courseId|lessonId)=([a-f0-9-]+)$/u;
+const lessonDenialProgress = /^\/course\/v1\/student\/progress\?lessonId=([a-f0-9-]+)$/u;
 const lessonEntryProgress = /^\/course\/v1\/student\/lessons\/[^/]+\/progress$/u;
 const authoringCourseDetail = /^\/course\/v1\/admin\/courses\/[^/]+$/u;
 const paidRevokeCommands = /^\/course\/v1\/admin\/entitlements\/commands\?idempotencyKey=owner-paid-revoke%3A([a-f0-9-]+)&limit=2$/u;
@@ -95,6 +96,10 @@ export function interactiveCourseStagePermits(stage, method, target) {
   if (method !== "GET") return false;
   if (stage === "media") return group === "authoring";
   if (stage === "learning") return group === "catalog";
+  if (stage === "lesson-denial" && group === "learning") {
+    const lessonId = lessonDenialProgress.exec(target)?.[1];
+    return path === target && learnerAccessPath.test(path) || lessonId !== undefined && courseUuid.test(lessonId);
+  }
   if ((stage === "learner-access" || stage === "lesson-entry") && group === "learning") {
     const progressId = learnerAccessProgress.exec(target)?.[1];
     return path === target && learnerAccessPath.test(path) || progressId !== undefined && courseUuid.test(progressId);
