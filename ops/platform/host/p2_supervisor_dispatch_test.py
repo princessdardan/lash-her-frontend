@@ -132,18 +132,37 @@ class FixedDispatchTests(unittest.TestCase):
                 supervisor.require_profiled_interrupted_frontend_closed(initial, probe)
 
     def test_profiled_interrupted_mount_selection_accepts_only_original_b_or_c(self):
+        import p2_known_ack_interrupted_restoration as interrupted
         with TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             initial = self.profiled_interrupted(root)
             initial.update(configuration=str(root / 'configuration'), configurationSha256={'runtime.json': '1' * 64},
                            interruptedRestoration={'originalRecoveryActionId': 'replacement-b'})
-            (root / 'p2-profiled-known-ack-restoration-restoration-2').mkdir(mode=0o700)
-            with patch.object(supervisor.p2_prior_gateway, 'ROOT', root):
-                allowed = supervisor._profiled_interrupted_allowed_configurations(initial)
-                self.assertEqual(allowed[0], root / 'configuration')
-                self.assertEqual(allowed[1], root / 'p2-profiled-known-ack-replacement-b' / 'runtime-known-ack' / 'configuration')
-                self.assertEqual(allowed[2], root / 'p2-profiled-known-ack-restoration-restoration-2' /
-                                 'runtime-interrupted' / 'configuration')
+            initial['candidate']['runtime'] = {'composeSha256': 'sha256:' + '2' * 64}
+            input_directory = root / 'configuration'
+            old = root / 'original-mounted'
+            prior = root / 'p2-profiled-known-ack-replacement-b' / 'runtime-known-ack' / 'configuration'
+            action_directory = root / 'p2-profiled-known-ack-restoration-restoration-2'
+            action_directory.mkdir(mode=0o700)
+            current = action_directory / 'runtime-interrupted' / 'configuration'
+            for directory in (input_directory, old, prior, current):
+                directory.mkdir(parents=True, mode=0o700)
+            selection = {'originalCertificationActionId': 'certification-a',
+                         'originalRecoveryActionId': 'replacement-b', 'causalReceiptSha256': {}}
+            with patch.object(interrupted, 'ROOT', root), \
+                 patch.object(interrupted, '_profiled_selection', return_value=selection), \
+                 patch.object(interrupted, '_profiled_files', return_value={}), \
+                 patch.object(interrupted, '_profiled_causal', return_value=(None, None, {
+                     'binding': {'configurationDirectory': str(old)}})), \
+                 patch.object(interrupted, 'root_path', side_effect=lambda value: Path(value)), \
+                 patch.object(supervisor, 'verify_guard_boundary'), \
+                 patch.object(supervisor.staging_state, 'configuration_hashes', return_value=initial['configurationSha256']), \
+                 patch.object(supervisor.migrate, 'read_input', return_value=b'compose'), \
+                 patch.object(supervisor.migrate, 'file_hash', return_value='2' * 64):
+                allowed = supervisor._profiled_interrupted_allowed_configurations(initial, root)
+            self.assertEqual(allowed, (old, prior, current))
+            self.assertNotIn(input_directory, allowed)
+            with patch.object(supervisor, '_profiled_interrupted_allowed_configurations', return_value=allowed):
                 with patch.object(supervisor, 'verify_guard_boundary'), \
                      patch.object(supervisor.p2_prior_gateway, '_inventory', return_value=['a' * 64]), \
                      patch.object(supervisor.p2_prior_gateway, '_mounted_configuration', return_value=root / 'foreign'), \
@@ -155,33 +174,45 @@ class FixedDispatchTests(unittest.TestCase):
                     if args[1:3] == ['container', 'ls']:
                         return 'a' * 12 + '|gateway\n' + 'b' * 12 + '|course-api\n'
                     identity = args[-1]
-                    directory = root / ('configuration' if identity == 'a' * 12 else 'foreign')
+                    directory = old if identity == 'a' * 12 else root / 'foreign'
                     service = 'gateway' if identity == 'a' * 12 else 'course-api'
                     return f'{directory}|{directory / "compose.yaml"}|{service}'
                 with patch.object(supervisor, 'verify_guard_boundary'), \
                      patch.object(supervisor.runtime, 'command', side_effect=command), \
+                     patch.object(supervisor.p2_prior_gateway, '_mounted_configuration', return_value=old), \
                      patch.object(supervisor.staging_state, 'configuration_hashes', return_value=initial['configurationSha256']):
                     with self.assertRaisesRegex(ValueError, 'GUARD_MOUNT_REFUSED'):
                         supervisor._profiled_interrupted_runtime_inventory(initial, root)
-                result, original = {}, root / 'configuration'
-                with patch.object(supervisor, '_profiled_interrupted_gateway_mount', return_value=original), \
-                     patch.object(supervisor, '_profiled_interrupted_runtime_inventory', return_value={
-                         'gateway': {'containerId': 'a' * 12, 'configuration': str(original)}}), \
+                def no_gateway(args, *_):
+                    if args[1:3] == ['container', 'ls']:
+                        return 'b' * 12 + '|course-api\n'
+                    return f'{current}|{current / "compose.yaml"}|course-api'
+                with patch.object(supervisor, 'verify_guard_boundary'), \
+                     patch.object(supervisor.runtime, 'command', side_effect=no_gateway), \
+                     patch.object(supervisor.staging_state, 'configuration_hashes', return_value=initial['configurationSha256']):
+                    without_gateway = supervisor._profiled_interrupted_runtime_inventory(initial, root)
+                self.assertEqual(without_gateway, {
+                    'course-api': {'containerId': 'b' * 12, 'configuration': str(current)}})
+                result = {}
+                with patch.object(supervisor, '_profiled_interrupted_runtime_inventory', return_value={
+                         'gateway': {'containerId': 'a' * 12, 'configuration': str(old)}}), \
                      patch.object(supervisor, '_profiled_interrupted_running_ids', return_value=[]), \
                      patch.object(supervisor, 'verify_guard_boundary'), \
                      patch.object(supervisor.migrate, 'suspend_runtime') as suspend:
                     supervisor._stop_profiled_interrupted_runtime(initial, root, result)
                 suspend.assert_called_once_with('staging', supervisor.runtime.SAFE_ENV)
                 self.assertIs(result['runtimeStopped'], True)
-                self.assertEqual(result['selectedRuntimeConfiguration'], str(original))
+                self.assertEqual(result['selectedRuntimeConfiguration'], str(old))
                 result = {}
                 with patch.object(supervisor, '_profiled_interrupted_runtime_inventory', return_value={
-                         'course-api': {'containerId': 'b' * 12, 'configuration': str(original)}}), \
-                     patch.object(supervisor, '_profiled_interrupted_gateway_mount', return_value=None), \
-                     patch.object(supervisor.migrate, 'suspend_runtime', side_effect=AssertionError('incomplete runtime stop')):
+                         'course-api': {'containerId': 'b' * 12, 'configuration': str(current)}}), \
+                     patch.object(supervisor, '_profiled_interrupted_running_ids', return_value=[]), \
+                     patch.object(supervisor, 'verify_guard_boundary'), \
+                     patch.object(supervisor.migrate, 'suspend_runtime') as suspend:
                     supervisor._stop_profiled_interrupted_runtime(initial, root, result)
-                self.assertIs(result['runtimeStopUncertain'], True)
-                self.assertNotIn('runtimeStopped', result)
+                suspend.assert_called_once_with('staging', supervisor.runtime.SAFE_ENV)
+                self.assertIs(result['runtimeStopped'], True)
+                self.assertEqual(result['selectedRuntimeConfigurations'], [str(current)])
 
     def test_profiled_interrupted_containment_runs_only_after_reap_and_keeps_failed_frontend_unknown(self):
         with TemporaryDirectory() as temporary:
@@ -220,6 +251,20 @@ class FixedDispatchTests(unittest.TestCase):
             retained = (root / 'p2-profiled-known-ack-restoration-restoration-2' /
                         'p2-independent-guard-outcome.json').read_text()
             self.assertNotIn('private frontend readback failed', retained)
+            direct = {'workerProcessesQuiesced': True}
+            with patch.object(supervisor, 'verify_guard_boundary'), \
+                 patch.object(supervisor, 'cleanup_profiled_certification_containers'), \
+                 patch.object(supervisor, '_stop_profiled_interrupted_runtime'), \
+                 patch.object(supervisor, 'require_profiled_interrupted_guard_arm'), \
+                 patch.object(supervisor, 'capture_gateway_before_stop', side_effect=AssertionError('ordinary gate selected')):
+                supervisor.contain_profiled_interrupted_after_reap(
+                    initial, armed, root, direct,
+                    lambda *_: (_ for _ in ()).throw(RuntimeError('native failed')),
+                    lambda *_: (_ for _ in ()).throw(RuntimeError('frontend failed')))
+            self.assertIsNone(direct['nativeDisabled'])
+            self.assertIsNone(direct['frontendAdmissionClosed'])
+            self.assertIs(direct['nativeContainmentUncertain'], True)
+            self.assertIs(direct['frontendContainmentUncertain'], True)
 
     def test_profiled_interrupted_terminal_is_the_verbatim_runtime_receipt(self):
         with TemporaryDirectory() as temporary:

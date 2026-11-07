@@ -606,13 +606,36 @@ def _profiled_known_ack_gateway_mount(initial, source):
     return configuration
 
 
-def _profiled_interrupted_allowed_configurations(initial):
-    selection = initial['interruptedRestoration']
-    original = Path(initial['configuration'])
-    prior = p2_prior_gateway.ROOT / ('p2-profiled-known-ack-' + selection['originalRecoveryActionId']) / \
+def _profiled_interrupted_allowed_configurations(initial, source):
+    """Recover exact old/B/C configuration roots without live stop selection."""
+    from p2_known_ack_interrupted_restoration import (_profiled_causal, _profiled_files,
+        _profiled_selection, ROOT as INTERRUPTED_ROOT, root_path)
+    expected, selected = _guard_profile(initial), initial['candidate']
+    verify_guard_boundary(initial, source)
+    selection = _profiled_selection(initial, selected, expected)
+    certification = selection['originalCertificationActionId']
+    causal = INTERRUPTED_ROOT / ('p2-known-ack-loss-' + certification)
+    values = _profiled_files(causal, selection['causalReceiptSha256'], expected)
+    _plan, _reviewed, original = _profiled_causal(initial, selection, selected, values, expected)
+    old = root_path(original['binding']['configurationDirectory'])
+    prior = INTERRUPTED_ROOT / ('p2-profiled-known-ack-' + selection['originalRecoveryActionId']) / \
         'runtime-known-ack' / 'configuration'
     current = _profiled_interrupted_directory(initial) / 'runtime-interrupted' / 'configuration'
-    return original, prior, current
+    input_directory = root_path(initial['configuration'])
+    require(len({input_directory, old, prior, current}) == 4 and old.is_dir(),
+            'P2_PROFILED_INTERRUPTED_GUARD_CONFIGURATION_LINEAGE_REFUSED')
+    allowed = [old]
+    for configuration in (old, prior, current):
+        if configuration == old or configuration.exists() or configuration.is_symlink():
+            require(configuration == configuration.resolve() and configuration.is_dir() and
+                    staging_state.configuration_hashes(configuration) == initial['configurationSha256'] and
+                    'sha256:' + migrate.file_hash(migrate.read_input(configuration, 'compose.yaml')) ==
+                        selected['runtime']['composeSha256'],
+                    'P2_PROFILED_INTERRUPTED_GUARD_CONFIGURATION_CHANGED')
+            if configuration != old:
+                allowed.append(configuration)
+    verify_guard_boundary(initial, source)
+    return tuple(allowed)
 
 
 def _profiled_interrupted_gateway_mount(initial, source):
@@ -622,7 +645,7 @@ def _profiled_interrupted_gateway_mount(initial, source):
     if not ids:
         return None
     configuration = p2_prior_gateway._mounted_configuration(ids[0], runtime.command, verify)
-    require(configuration in _profiled_interrupted_allowed_configurations(initial) and
+    require(configuration in _profiled_interrupted_allowed_configurations(initial, source) and
             staging_state.configuration_hashes(configuration) == initial['configurationSha256'],
             'P2_PROFILED_INTERRUPTED_GUARD_MOUNT_REFUSED')
     return configuration
@@ -638,7 +661,7 @@ def _profiled_interrupted_runtime_inventory(initial, source):
         'label=com.docker.compose.project=lash-her-staging', '--format',
         '{{.ID}}|{{.Label "com.docker.compose.service"}}']).splitlines()
     services, observed = set(runtime.SERVICES), {}
-    allowed = _profiled_interrupted_allowed_configurations(initial)
+    allowed = _profiled_interrupted_allowed_configurations(initial, source)
     for row in rows:
         fields = row.split('|')
         require(len(fields) == 2 and re.fullmatch(r'[a-f0-9]{12,64}', fields[0]) and
@@ -654,6 +677,11 @@ def _profiled_interrupted_runtime_inventory(initial, source):
         require(configuration in allowed and labels[1] == str(configuration / 'compose.yaml') and
                 staging_state.configuration_hashes(configuration) == initial['configurationSha256'],
                 'P2_PROFILED_INTERRUPTED_GUARD_MOUNT_REFUSED')
+        if fields[1] == 'gateway':
+            mounted = p2_prior_gateway._mounted_configuration(fields[0], runtime.command,
+                                                               lambda: verify_guard_boundary(initial, source))
+            require(mounted == configuration,
+                    'P2_PROFILED_INTERRUPTED_GATEWAY_RUNTIME_CHANGED')
         observed[fields[1]] = {'containerId': fields[0], 'configuration': str(configuration)}
     return observed
 
@@ -674,15 +702,17 @@ def _stop_profiled_interrupted_runtime(initial, source, result):
         if not containers:
             result.update(runtimeStopAttempted=False, runtimeStopped=True, runtimeAlreadyAbsent=True)
             return
-        mounted = _profiled_interrupted_gateway_mount(initial, source)
-        require(mounted is not None and containers.get('gateway', {}).get('configuration') == str(mounted),
-                'P2_PROFILED_INTERRUPTED_GATEWAY_RUNTIME_CHANGED')
-        result['selectedRuntimeConfiguration'] = str(mounted)
+        configurations = sorted({row['configuration'] for row in containers.values()})
+        result['selectedRuntimeConfigurations'] = configurations
+        if len(configurations) == 1:
+            result['selectedRuntimeConfiguration'] = configurations[0]
         result['selectedRuntimeContainers'] = containers
         verify_guard_boundary(initial, source)
         result['runtimeStopAttempted'] = True
         migrate.suspend_runtime('staging', runtime.SAFE_ENV)
         verify_guard_boundary(initial, source)
+        require(_profiled_interrupted_runtime_inventory(initial, source) == containers,
+                'P2_PROFILED_INTERRUPTED_RUNTIME_CHANGED_DURING_STOP')
         require(not _profiled_interrupted_running_ids(initial, source),
                 'P2_PROFILED_INTERRUPTED_RUNTIME_REMAINS')
         result['runtimeStopped'] = True
@@ -801,6 +831,12 @@ def contain_profiled_interrupted_after_reap(initial, armed, source, result,
     """Fixed fallback after the independent broker process tree is absent."""
     require(result.get('workerProcessesQuiesced') is True,
             'P2_PROFILED_INTERRUPTED_BROKER_REAP_REQUIRED')
+    result.setdefault('nativeDisabled', None)
+    result.setdefault('nativeDisableAttempted', False)
+    result.setdefault('frontendAdmissionClosed', None)
+    result.setdefault('frontendCloseAttempted', False)
+    result.setdefault('runtimeStopped', None)
+    result.setdefault('runtimeStopAttempted', False)
     try:
         require_profiled_interrupted_guard_arm(initial, armed)
         result['profiledInterruptedArmReceiptVerified'] = True
