@@ -135,8 +135,21 @@ class CurrentDatabasesTests(unittest.TestCase):
         scope.api_job_bytes = Mock(side_effect=lambda name: original_jobs[name])
         scope.run = Mock(side_effect=lambda args, *, env, input=None, capture_output=True, timeout=120:
                          self.run_child(args, env, input, timeout))
-        proof = self.execute(credentials={name: self.credentials[name] for name in original_jobs},
-                             expected_profile=ref, _profiled_current_scope=scope)
+        # Project Linux root's ownership decisions while running the same host
+        # producer on an unprivileged development machine.
+        changed_owners = set()
+        original_write = migrate.write_exact_bytes
+        def retain(directory, name, raw):
+            self.assertNotIn(directory, changed_owners, "host receipt directory was given to a container")
+            original_write(directory, name, raw)
+        linux_os = Mock(wraps=checks.os)
+        linux_os.getuid.return_value = 0
+        linux_os.chown.side_effect = lambda path, *_: changed_owners.add(path)
+        with patch.object(checks, "os", linux_os), \
+                patch.object(migrate, "write_exact_bytes", side_effect=retain):
+            proof = self.execute(credentials={name: self.credentials[name] for name in original_jobs},
+                                 expected_profile=ref, _profiled_current_scope=scope)
+        self.assertTrue({self.output / f"{name}-input" for name in original_jobs}.issubset(changed_owners))
         path, result = checks.read_profiled_current_proof(proof, scope, self.selected, self.jobs, expected_profile=ref)
         self.assertEqual(path, self.output)
         self.assertFalse(result["migrationsExecuted"])

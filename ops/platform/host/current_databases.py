@@ -165,7 +165,9 @@ def check_all(selected, jobs, output, credentials, checker, checker_sha256, envi
                 if os.getuid() == 0:
                     os.chown(file, uid, gid)
             if os.getuid() == 0:
-                os.chown(inputs, uid, gid); os.chown(receipts, uid, gid)
+                os.chown(inputs, uid, gid)
+                if _profiled_current_scope is None:
+                    os.chown(receipts, uid, gid)
             prefix = "lash-current-" if _profiled_current_scope is None else "lash-p2-profiled-current-api-check-"
             container = prefix + name + "-" + uuid4().hex
             environment = dict(base)

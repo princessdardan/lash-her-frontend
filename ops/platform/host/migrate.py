@@ -532,16 +532,27 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                 outcome["phase"] = f"image-preflight-{name}"
                 inputs, receipts = attempt / f"{name}-input", attempt / name
                 inputs.mkdir(mode=0o700); receipts.mkdir(mode=0o700)
-                write_json(inputs, "job.json", info["job"])
-                if info.get("frontend"):
-                    write_json(inputs, "candidate.json", release)
+                if _profiled_current_scope is None:
+                    write_json(inputs, "job.json", info["job"])
+                    if info.get("frontend"):
+                        write_json(inputs, "candidate.json", release)
+                elif name == "frontend":
+                    write_exact_bytes(inputs, "job.json", read_input(bundle, "jobs/frontend.json"))
+                    write_exact_bytes(inputs, "candidate.json", original_candidate)
+                else:
+                    raw_job = active_scope.api_job_bytes(name)
+                    demand(raw_job == read_input(bundle, f"jobs/{name}.json"),
+                           "PROFILED_CURRENT_API_JOB_BYTES_CHANGED")
+                    write_exact_bytes(inputs, "job.json", raw_job)
                 (inputs / "schema.json").write_bytes(info["schema"])
                 for file in inputs.iterdir():
                     file.chmod(0o400)
                     if os.getuid() == 0:
                         os.chown(file, uid, gid)
                 if os.getuid() == 0:
-                    os.chown(inputs, uid, gid); os.chown(receipts, uid, gid)
+                    os.chown(inputs, uid, gid)
+                    if _profiled_current_scope is None or name != "frontend":
+                        os.chown(receipts, uid, gid)
                 prepared.append((name, info, inputs, receipts))
                 runner = active_scope.run if active_scope is not None else subprocess.run
                 runner(["docker", "pull", info["image"]], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=base_env, timeout=180)
@@ -615,6 +626,9 @@ def execute(bundle, results, apply=False, confirmation=None, lock_path=Path("/ru
                         write_json(receipts, "frontend-continuation-open.json", continuation)
                         continue
                 outcome["phase"] = f"apply-{name}"
+                if _profiled_current_scope is not None:
+                    demand(read_input(inputs, "job.json") == active_scope.api_job_bytes(name),
+                           "PROFILED_CURRENT_API_JOB_BYTES_CHANGED")
                 env = {**base_env, credential_names(name, environment)[1]: credentials[name],
                        **({} if info.get("frontend") else {"DATABASE_TARGET": environment})}
                 action = profiled_current_action_id(_profiled_current_scope, release) if _profiled_current_scope is not None else release_id
