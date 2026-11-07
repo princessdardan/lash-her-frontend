@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { prepareP2ProfiledCurrentRecovery, p2ProfiledCurrentRecoveryOperator } from "./p2-profiled-current-recovery.mjs";
+import { prepareP2ProfiledCurrentRecovery, runP2ProfiledCurrentRecovery, p2ProfiledCurrentRecoveryOperator } from "./p2-profiled-current-recovery.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
 function fixture(disposition = "restore-current-runtime") {
@@ -54,6 +54,8 @@ test("a materialized leaf plan cannot be submitted as the source operator settin
   const settings = fixture("reconcile-frontend-get-first");
   await assert.rejects(p2ProfiledCurrentRecoveryOperator(settings));
   await assert.rejects(p2ProfiledCurrentRecoveryOperator(settings, { apply: true, confirmation: "staging/owned-recovery" }));
+  const prepared = prepareP2ProfiledCurrentRecovery(settings);
+  await assert.rejects(runP2ProfiledCurrentRecovery(prepared, { directory: "/private/tmp", getUrl() {}, assertSource() {}, getProviderContext() {} }));
 });
 
 test("the source CLI rejects unknown operations before settings or provider access", () => {

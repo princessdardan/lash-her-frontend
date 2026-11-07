@@ -12,6 +12,7 @@ import { requireQualificationTargetProfile, resolveQualificationTargetProfile,
 import { withP2ProfiledCurrentRecoveryTransport } from "./p2-profiled-current-recovery-transport.mjs";
 
 const preparedValues = new WeakMap();
+const runAuthorities = new WeakMap();
 const demand = value => { if (!value) throw new Error("P2_PROFILED_CURRENT_RECOVERY_REFUSED"); };
 const digest = value => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value) && !/^0+$/u.test(value);
 const action = value => typeof value === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(value);
@@ -118,9 +119,10 @@ function requireRunDependencies(dependencies) {
   return dependencies;
 }
 
-export async function runP2ProfiledCurrentRecovery(prepared, dependencies) {
+export async function runP2ProfiledCurrentRecovery(prepared, authority) {
   const retained = preparedValues.get(prepared?.handle); demand(retained && prepared.plan === retained.plan); preparedValues.delete(prepared.handle);
-  const deps = requireRunDependencies(dependencies), { settings, plan } = retained;
+  const deps = requireRunDependencies(runAuthorities.get(authority)), { settings, plan } = retained;
+  demand(authority && deps); runAuthorities.delete(authority);
   demand(deps.confirmation === `staging/${settings.recoveryActionId}`); deps.assertSource(settings.sourceCommit);
   const [{ createP2ProfiledCurrentProbe }, { readP2ProfiledCurrentFrontendReceipt }, frontendAdapters] = await Promise.all([
     import("./p2-profiled-current-probe.mjs"), import("./p2-profiled-current-transport.mjs"),
@@ -217,10 +219,12 @@ export async function p2ProfiledCurrentRecoveryOperator(settings, { apply = fals
     ...(prepared.plan.approvedApiSuffix ? { approvedApiSuffix: prepared.plan.approvedApiSuffix } : {}) };
   const transportModule = await import("./p2-profiled-current-recovery-transport.mjs");
   const transportHandle = transportModule.p2ProfiledCurrentRecoveryEnvironmentLock(settings.release, initial, custody.frontendDirectory);
-  return runP2ProfiledCurrentRecovery(prepared, { confirmation, directory: custody.frontendDirectory, transportHandle,
+  const authority = Object.freeze({});
+  runAuthorities.set(authority, Object.freeze({ confirmation, directory: custody.frontendDirectory, transportHandle,
     getUrl: () => custody.credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
     getProviderContext: async () => Object.freeze({ ...custody.context, originalDirectory: original.frontendDirectory }),
-    assertSource: custody.assertSource });
+    assertSource: custody.assertSource }));
+  return runP2ProfiledCurrentRecovery(prepared, authority);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

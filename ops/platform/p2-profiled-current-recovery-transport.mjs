@@ -4,8 +4,9 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { writeFileSync } from "node:fs";
+import { realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { sshCommand } from "./recreation_ssh.mjs";
 import { readFrontendReleaseEvidence } from "./frontend-release-receipts.mjs";
 import { writeFrontendReceipt } from "./frontend-migration.mjs";
@@ -66,7 +67,7 @@ function retained(directory, name, value) {
   return bytes;
 }
 
-export function p2ProfiledCurrentRecoveryEnvironmentLock(settings, initial, directory, { launch = spawn } = {}) {
+function environmentLock(settings, initial, directory, launch) {
   validateInitial(initial);
   const handle = Object.freeze({});
   handles.set(handle, async task => {
@@ -81,7 +82,7 @@ export function p2ProfiledCurrentRecoveryEnvironmentLock(settings, initial, dire
     const pending = new Map();
     const signal = new AbortController();
     let sequence = 0, failed = false, active = true, exited, heartbeat, armed = false, priorGatewayPrepared = false;
-    let apiReady = false, closePrepared = false, sessionClosed = false, joined, diagnostics = Buffer.alloc(0);
+    let apiReady = false, closePrepared = false, sessionClosed = false, joined, armedProbe, diagnostics = Buffer.alloc(0);
     const fail = () => {
       if (failed) return;
       failed = true; active = false; signal.abort();
@@ -104,6 +105,7 @@ export function p2ProfiledCurrentRecoveryEnvironmentLock(settings, initial, dire
     });
     child.stderr.on("error", fail); child.on("error", fail); child.stdin.on("error", fail);
     child.on("exit", code => { exited = code; if (active || code !== 0) fail(); });
+    const reaped = new Promise(resolve => child.once("close", resolve));
     const request = (operation, statuses, data = {}, timeout = 120_000) => {
       demand(active && !failed && Array.isArray(statuses) && statuses.length > 0);
       const id = ++sequence, raw = JSON.stringify({ id, operation, ...data }); demand(Buffer.byteLength(raw) <= MAXIMUM);
@@ -133,11 +135,13 @@ export function p2ProfiledCurrentRecoveryEnvironmentLock(settings, initial, dire
           requireQualificationTargetProfile(current, receipt, continuationStarted, probe, probe.job, probe.job?.target);
           demand(receipt.version === 2 && receipt.status === "DATABASE_VERIFIED" && receipt.migrationMode === "verify-current-only"
             && receipt.readOnlyVerified === true && Array.isArray(receipt.applied) && receipt.applied.length === 0
-            && probe.version === 2 && probe.operation === "verify-schema" && same(probe.receipt, receipt));
+            && probe.version === 2 && probe.operation === "verify-schema" && same(probe.receipt, receipt)
+            && probe.targetSha256 === initial.targetSha256 && Number.isSafeInteger(probe.backendPid) && probe.backendPid > 0
+            && typeof probe.backendStart === "string" && probe.backendStart.length > 0 && probe.backendStart.length <= 128);
           const [armedResponse, readyResponse] = request("profiled-current-recovery-arm", ["PROFILED_CURRENT_RECOVERY_ARMED", "PROFILED_CURRENT_RECOVERY_API_READY"], {
             receipt: receiptBytes.toString("base64"), continuationStarted: continuationBytes.toString("base64"), probe,
           }, 900_000);
-          await armedResponse; armed = true;
+          await armedResponse; armedProbe = structuredClone(probe); armed = true;
           return { apiReady: readyResponse.then(value => { apiReady = true;
             requireQualificationTargetProfile(current, value.receipt);
             demand(value.receipt?.status === "API_RUNTIME_READY" && value.receipt.environment === "staging"
@@ -189,6 +193,10 @@ export function p2ProfiledCurrentRecoveryEnvironmentLock(settings, initial, dire
           const receipt = await single("profiled-current-recovery-session-closed", "PROFILED_CURRENT_RECOVERY_SESSION_CLOSED", {}, 120_000);
           demand(receipt?.status === "P2_PROFILED_CURRENT_SESSION_CLOSED" && receipt.backendAbsent === true
             && receipt.migrationLockReleased === true && receipt.nonceLockReleased === true
+            && receipt.version === 2 && isDeepStrictEqual(receipt.qualificationTargetProfile, current)
+            && receipt.environment === "staging" && receipt.releaseId === initial.originalReleaseId
+            && receipt.sourceCommit === initial.sourceCommit && receipt.targetSha256 === initial.targetSha256
+            && receipt.originalBackendPid === armedProbe?.backendPid && receipt.originalBackendStart === armedProbe?.backendStart
             && receipt.admission?.newWork === false && receipt.admission.recovery === false
             && receipt.admission.active === 0 && receipt.admission.uncertain === 0);
           sessionClosed = true; return receipt;
@@ -206,7 +214,8 @@ export function p2ProfiledCurrentRecoveryEnvironmentLock(settings, initial, dire
       });
       await check(); result = await task(check, signal.signal, host); await check(); demand(joined && sessionClosed && !failed);
       const committed = await single("commit", "COMMITTED", {}, 120_000); demand(!active && same(committed, joined));
-      writeFrontendReceipt(directory, "p2-profiled-current-recovery-host-outcome.json", committed); active = false;
+      await reaped; demand(exited === 0 && !failed);
+      writeFrontendReceipt(directory, "p2-profiled-current-recovery-host-outcome.json", committed);
     } catch { error = new Error("P2_PROFILED_CURRENT_RECOVERY_FAILED_REQUIRES_REVIEW"); fail(); }
     finally {
       clearInterval(heartbeat); child.stdin.end();
@@ -222,6 +231,18 @@ export function p2ProfiledCurrentRecoveryEnvironmentLock(settings, initial, dire
   });
   return handle;
 }
+
+export function p2ProfiledCurrentRecoveryEnvironmentLock(settings, initial, directory) {
+  return environmentLock(settings, initial, directory, spawn);
+}
+
+export const P2_PROFILED_CURRENT_RECOVERY_OWNED_FIXTURE = Object.freeze({
+  environmentLock(settings, initial, directory, launch) {
+    const root = realpathSync(tmpdir());
+    demand(typeof launch === "function" && (directory === root || directory.startsWith(root + "/")));
+    return environmentLock(settings, initial, directory, launch);
+  },
+});
 
 export async function withP2ProfiledCurrentRecoveryTransport(handle, task) {
   const factory = handles.get(handle); demand(factory && typeof task === "function"); handles.delete(handle); return factory(task);

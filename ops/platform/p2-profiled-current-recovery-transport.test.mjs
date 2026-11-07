@@ -5,7 +5,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { p2ProfiledCurrentRecoveryEnvironmentLock, withP2ProfiledCurrentRecoveryTransport } from "./p2-profiled-current-recovery-transport.mjs";
+import { P2_PROFILED_CURRENT_RECOVERY_OWNED_FIXTURE, withP2ProfiledCurrentRecoveryTransport } from "./p2-profiled-current-recovery-transport.mjs";
 import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
 
 const program = String.raw`
@@ -34,14 +34,16 @@ for raw in sys.stdin:
  elif op=='profiled-current-recovery-resume-api-suffix':value.update(status='PROFILED_CURRENT_RECOVERY_API_SUFFIX_RESUMED',receipt={'status':'EXACT_APPROVED_SUFFIX_RESUMED'})
  elif op=='profiled-current-recovery-runtime-restored':value.update(status='PROFILED_CURRENT_RECOVERY_RUNTIME_RESTORED',receipt={'status':'ALL_THREE_CURRENT'})
  elif op=='profiled-current-recovery-prepare-close':value.update(status='PROFILED_CURRENT_RECOVERY_CLOSE_PREPARED',receipt={'status':'CLOSE_PREPARED'})
- elif op=='profiled-current-recovery-session-closed':value.update(status='PROFILED_CURRENT_RECOVERY_SESSION_CLOSED',receipt={'status':'P2_PROFILED_CURRENT_SESSION_CLOSED','backendAbsent':True,'migrationLockReleased':True,'nonceLockReleased':True,'admission':{'epoch':9,'newWork':False,'recovery':False,'active':0,'uncertain':0}})
+ elif op=='profiled-current-recovery-session-closed':value.update(status='PROFILED_CURRENT_RECOVERY_SESSION_CLOSED',receipt={'version':2,'qualificationTargetProfile':initial['qualificationTargetProfile'],'status':'P2_PROFILED_CURRENT_SESSION_CLOSED','environment':'staging','releaseId':'original-release','sourceCommit':initial['sourceCommit'],'targetSha256':initial['targetSha256'],'originalBackendPid':12345,'originalBackendStart':'2026-11-06 01:02:03+00','backendAbsent':True,'migrationLockReleased':True,'nonceLockReleased':True,'admission':{'epoch':9,'newWork':False,'recovery':False,'active':0,'uncertain':0}})
  elif op=='profiled-current-recovery-finish':
   assert json.loads(base64.b64decode(p['terminal']))['phase']=='completed'
   assert json.loads(base64.b64decode(p['continuationCompleted']))['status']=='FRONTEND_CONTINUATION_COMPLETED'
   assert json.loads(base64.b64decode(p['recovery']))==terminal
   value.update(status='PROFILED_CURRENT_RECOVERY_JOINED',receipt=terminal)
  elif op=='commit':
-  value.update(status='COMMITTED',receipt=terminal);print(json.dumps(value),flush=True);break
+  value.update(status='COMMITTED',receipt=terminal);print(json.dumps(value),flush=True)
+  if sys.argv[2]=='ack-exit':os._exit(34)
+  break
  else:os._exit(38)
  print(json.dumps(value),flush=True)
 os.close(fd)
@@ -82,10 +84,13 @@ function fixture(mode = "ready") {
     ["frontend-continuation-completed.json", continuationCompleted], ["job-outcome.json", terminal], ["p2-profiled-current-recovery-held.json", recoveryOutcome]]) {
     writeFileSync(join(directory, name), JSON.stringify(value) + "\n", { mode: 0o600 });
   }
-  const probe = { version: 2, qualificationTargetProfile: profile, operation: "verify-schema", job: initial.frontendJob, receipt };
+  const probe = { version: 2, qualificationTargetProfile: profile, operation: "verify-schema", marker: "7".repeat(64), backendPid: 12345,
+    backendStart: "2026-11-06 01:02:03+00", job: initial.frontendJob, receipt, baseline: { catalog: {} }, targetSha256: initial.targetSha256,
+    owner: initial.owner };
   const lock = join(directory, "host.lock"); let captured;
-  const handle = p2ProfiledCurrentRecoveryEnvironmentLock({ knownHosts: "/owned/known-hosts", sshKey: "/owned/key" }, initial, directory,
-    { launch(executable, args, options) { captured = { executable, args, options }; return spawn("python3", ["-I", "-u", "-c", program, lock, mode], options); } });
+  const handle = P2_PROFILED_CURRENT_RECOVERY_OWNED_FIXTURE.environmentLock(
+    { knownHosts: "/owned/known-hosts", sshKey: "/owned/key" }, initial, directory,
+    (executable, args, options) => { captured = { executable, args, options }; return spawn("python3", ["-I", "-u", "-c", program, lock, mode], options); });
   return { directory, initial, receipt, continuationStarted, continuationCompleted, terminal, workload, observation, proof, recoveryOutcome, probe, lock, handle,
     captured: () => captured, cleanup: () => rmSync(directory, { recursive: true, force: true }) };
 }
@@ -122,6 +127,20 @@ test("a host death after the prior-gateway stage rejects the outstanding origina
   } finally { f.cleanup(); }
 });
 
+test("a committed acknowledgement followed by a nonzero child exit publishes no local success", async () => {
+  const f = fixture("ack-exit");
+  try {
+    await assert.rejects(withP2ProfiledCurrentRecoveryTransport(f.handle, async (_check, _signal, host) => {
+      const { apiReady } = await host.armRecovery({ receipt: f.receipt, continuationStarted: f.continuationStarted, probe: f.probe });
+      await host.preparePriorGateway(); await apiReady;
+      await host.reconcileFrontend(f.observation, f.proof, f.workload); await host.runtimeRestored();
+      await host.prepareClose(); await host.frontendSessionClosed();
+      await host.finish({ terminal: f.terminal, continuationCompleted: f.continuationCompleted, recoveryOutcome: f.recoveryOutcome });
+    }));
+    assert.equal(existsSync(join(f.directory, "p2-profiled-current-recovery-host-outcome.json")), false);
+  } finally { f.cleanup(); }
+});
+
 test("profile, current-only and distinct-action requirements are checked before process launch", () => {
   const f = fixture();
   try {
@@ -129,7 +148,8 @@ test("profile, current-only and distinct-action requirements are checked before 
       value => { value.frontendJob.target.approvedPendingTags = ["0084_pending"]; }, value => { value.recoveryActionId = value.originalReleaseId; },
       value => { value.originalReceiptSha256 = {}; }, value => { value.disposition = "retry-sql"; }]) {
       const changed = structuredClone(f.initial); mutate(changed);
-      assert.throws(() => p2ProfiledCurrentRecoveryEnvironmentLock({ knownHosts: "x", sshKey: "y" }, changed, f.directory));
+      assert.throws(() => P2_PROFILED_CURRENT_RECOVERY_OWNED_FIXTURE.environmentLock(
+        { knownHosts: "x", sshKey: "y" }, changed, f.directory, () => assert.fail("process launched")));
     }
   } finally { f.cleanup(); }
 });
