@@ -342,10 +342,15 @@ test("production Academy native playback, rewind and separate-session resume", a
     };
   };
   const receipt = (response: Response, expected: number) => receiptFor(response, response.request(), expected);
-  const samplePlayer = (player: Awaited<ReturnType<typeof readyPlayer>>) => player.evaluate((element: HTMLElement & {
-    currentTime: number; duration: number; paused: boolean; readyState: number; seeking: boolean;
-  }) => ({ currentTime: element.currentTime, duration: element.duration, paused: element.paused, readyState: element.readyState,
-    seeking: element.seeking }));
+  const samplePlayer = (player: Awaited<ReturnType<typeof readyPlayer>>) => player.evaluate(element => {
+    const mux = element.shadowRoot?.querySelector("mux-video");
+    const videos = [...(mux?.querySelectorAll(":scope > video") ?? []), ...(mux?.shadowRoot?.querySelectorAll("video") ?? [])];
+    if (videos.length !== 1 || !(videos[0] instanceof HTMLVideoElement) || !videos[0].isConnected)
+      throw new Error("Expected one native video element in the owned Mux player");
+    const native = videos[0];
+    return { currentTime: native.currentTime, duration: native.duration, paused: native.paused, readyState: native.readyState,
+      seeking: native.seeking };
+  });
   const seek = (player: Awaited<ReturnType<typeof readyPlayer>>, direction: "ArrowLeft" | "ArrowRight") =>
     player.getByRole("button", { name: "play", exact: true }).filter({ visible: true }).first().press(direction);
   const verifyGateway = (offset: number, playback: Response, writes: Awaited<ReturnType<typeof receipt>>[]) => {
