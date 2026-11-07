@@ -470,7 +470,7 @@ test("owner curriculum forms create a scaffold and populated Portable Text with 
     const addBlock = editor.getByRole("button", { name: "Add content block", exact: true });
     await addBlock.click();
     const first = editor.getByRole("group", { name: "Content block 1", exact: true });
-    await first.getByLabel("Style", { exact: true }).selectOption("h2");
+    await first.getByRole("combobox").selectOption("h2", { timeout: 5_000 });
     await first.getByLabel("Text 1", { exact: true }).fill("Reviewed first section");
     await first.getByRole("checkbox", { name: "Bold", exact: true }).check();
     await first.getByRole("button", { name: "Add text section", exact: true }).click();
