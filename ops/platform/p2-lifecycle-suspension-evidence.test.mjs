@@ -12,12 +12,12 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession,
   p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringQuizPath, p2AuthoringReorderPath,
-  p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LearningEnrollmentPaths, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
+  p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LearningEnrollmentPaths, p2LifecycleMutationTarget, p2PaidGrantPaths, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
   validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt, validateP2AuthoringReorderResponses,
   validateP2InteractiveIdentityReceipt, validateP2LearningEnrollmentReceipt, validateP2LifecycleBrowserInput,
-  validateP2LifecycleMutationReceipt, watchP2AuthoringEdits, watchP2AuthoringMutation, watchP2LearningEnrollment,
-  watchP2LifecycleMutation } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2LifecycleMutationReceipt, validateP2PaidGrantReceipt, watchP2AuthoringEdits, watchP2AuthoringMutation, watchP2LearningEnrollment,
+  watchP2LifecycleMutation, watchP2PaidGrant } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
 import { launchP2InteractiveBrowserRecorder, launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
 import { nativeSourceCommit } from "./harness/p2-native-unit-fixture.mjs";
@@ -236,6 +236,7 @@ function interactivePermit(input) {
   else if (input.stage === "identity") selector = input.identity.actorKind === "admin" ? identityHash(["identity", "admin"])
     : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "");
   else if (input.stage === "learning") selector = (input.learning.actorId + input.learning.idempotencyKey).replaceAll("-", "");
+  else if (input.stage === "paid-grant") selector = (input.paidGrant.actorId + input.paidGrant.idempotencyKey).replaceAll("-", "");
   else if (input.authoring?.operation === "save-quiz-revision") selector = authoringQuizSelector(input.authoring.actorId);
   else if (input.stage === "authoring") selector = input.authoring.operation === "edit-and-stale-draft"
     ? authoringEditSelector(input.authoring.actorId) : input.authoring.operation === "reorder-and-stale-curriculum"
@@ -283,6 +284,48 @@ test("learning enrollment input, v2 permit and compact receipt bind exact learne
   for (const body of [{ courseId: randomUUID() }, { source: "paid" }, { status: "revoked" }, { enrollmentId: null }, { idempotentReplay: true },
     { idempotencyKey: target.idempotencyKey }]) {
     assert.throws(() => validateP2LearningEnrollmentReceipt({ ...receipt, body: { ...receipt.body, ...body } }, target));
+  }
+});
+
+function ownedPaidGrant() {
+  const reason = "Private owner support reason", grantId = randomUUID(), commandId = randomUUID();
+  const target = { actorId: adminId, operation: "grant-paid-access", courseId: ownedCourseId, userId, revision: 4, idempotencyKey: randomUUID(),
+    reasonSha256: createHash("sha256").update(reason).digest("hex") };
+  const input = interactiveInput({ stage: "paid-grant", paidGrant: target }), { pathname, pagePath } = p2PaidGrantPaths(target);
+  const submitted = { userId, reason: ` ${reason} `, expectedCourseRevision: target.revision, idempotencyKey: target.idempotencyKey };
+  const grant = { grantId, userId, courseId: target.courseId, status: "active", grantReason: "manual", orderId: null, externalPaymentId: null, provider: null };
+  const command = { commandId, action: "grant", scope: "userCourse", outcome: "applied", actorUserId: target.actorId, userId, courseId: target.courseId,
+    targetGrantId: null, reason: `[paid-course revision ${target.revision}] ${reason}`, effectiveAt: at, affectedGrantCount: 1,
+    effects: [{ grantId, effectType: "grant_created", previousStatus: null, resultingStatus: "active" }], createdAt: at,
+    idempotencyKey: "owner-paid:" + target.idempotencyKey };
+  const response = { state: "confirmed", idempotencyKey: target.idempotencyKey, command, grant, courseRevision: target.revision,
+    mutationRetried: false, communityDeliveryVerified: false };
+  const receipt = { method: "POST", pathname, status: 200, requestId: randomUUID(),
+    body: { courseId: target.courseId, userId, commandId, grantId, courseRevision: target.revision } };
+  return { target, input, pagePath, pathname, submitted, response, receipt };
+}
+
+test("paid-grant v2 permit and compact receipt bind exact owner, key, course and customer", () => {
+  const { target, input, pagePath, receipt } = ownedPaidGrant(), permit = interactivePermit(input);
+  assert.equal(validateP2InteractiveBrowserInput(input), input);
+  assert.equal(p2InteractiveBrowserEntryPath(input, "owner"), pagePath);
+  assert.throws(() => p2InteractiveBrowserEntryPath(input, "learner"));
+  assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+  const parts = permit.cookie.split(".");
+  assert.equal(parts[6], (target.actorId + target.idempotencyKey).replaceAll("-", ""));
+  for (const change of [{ actorId: randomUUID() }, { idempotencyKey: randomUUID() }]) {
+    assert.throws(() => validateP2InteractiveBrowserPermit(interactivePermit({ ...input, paidGrant: { ...target, ...change } }), input));
+  }
+  parts[0] = "v1";
+  parts.splice(6, 1);
+  assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: parts.join(".") }, input));
+  assert.doesNotThrow(() => validateP2InteractiveBrowserInput({ ...input, paidGrant: { ...target, revision: 2_147_483_647 } }));
+  for (const change of [{ revision: 2_147_483_648 }, { userId: "unknown" }, { reasonSha256: "unknown" }, { reason: "Private" }]) {
+    assert.throws(() => validateP2InteractiveBrowserInput({ ...input, paidGrant: { ...target, ...change } }));
+  }
+  assert.deepEqual(validateP2PaidGrantReceipt(receipt, target), receipt);
+  for (const change of [{ userId: randomUUID() }, { courseId: randomUUID() }, { courseRevision: target.revision + 1 }, { reason: "Private" }]) {
+    assert.throws(() => validateP2PaidGrantReceipt({ ...receipt, body: { ...receipt.body, ...change } }, target));
   }
 });
 
@@ -1571,6 +1614,78 @@ test("owned Chromium free enrollment qualifies the exact grant and canonical pro
           const expires = ["wrong-link", "wrong-api-path"].includes(scenario) ? Math.floor(Date.now() / 1000) + 2 : rejected.expires;
           await assert.rejects(rejected.watch.wait(expires), /LEARNING_RESPONSE_REFUSED/u);
           assert.throws(() => rejected.watch.finish(), /LEARNING_RESPONSE_REFUSED/u);
+        } finally { await rejected.close(); }
+      }
+    } finally { await browser.close(); }
+  });
+
+test("owned Chromium paid-grant capture binds approved request, audit, grant and visible confirmation",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const { target, input, pathname, submitted, response, receipt } = ownedPaidGrant();
+    const headers = { "content-type": "application/json", "cache-control": "private, no-store", "x-request-id": receipt.requestId };
+    const feedback = "Manual grant and audit confirmed. Community access has not been verified yet.";
+    const document = `<!doctype html><section aria-label="Manual course access"><p>Selected published paid course revision: ${target.revision}.</p>
+      <form><label>Customer UUID<input name="userId"></label><label>Grant reason<textarea name="reason"></textarea></label>
+      <button>Grant manual access</button></form><button id="confirm" hidden>Show confirmation</button><p role="status"></p></section><script>
+      const confirm = document.querySelector('#confirm');
+      document.querySelector('form').onsubmit = async event => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        const result = await fetch(${JSON.stringify(pathname)}, {method:'POST', headers:{'content-type':'application/json'},
+          body:JSON.stringify({userId:form.get('userId'),reason:form.get('reason'),expectedCourseRevision:${target.revision},
+            idempotencyKey:${JSON.stringify(target.idempotencyKey)}})});
+        await result.json();
+        confirm.hidden = false;
+      };
+      confirm.onclick = () => { document.querySelector('[role="status"]').textContent = ${JSON.stringify(feedback)}; };
+      </script>`;
+    const open = (body = response, status = 200, html) => ownedMutationPage(browser, input, pathname, "owner",
+      { status, headers, body: JSON.stringify(body) }, watchP2PaidGrant, html);
+    try {
+      const owner = await open(response, 200, document);
+      try {
+        await owner.page.getByRole("textbox", { name: "Customer UUID", exact: true }).fill(submitted.userId);
+        await owner.page.getByRole("textbox", { name: "Grant reason", exact: true }).fill(submitted.reason);
+        await owner.page.getByRole("button", { name: "Grant manual access", exact: true }).click();
+        const confirmation = owner.page.getByRole("button", { name: "Show confirmation", exact: true });
+        await confirmation.waitFor({ state: "visible" });
+        assert.throws(() => owner.watch.finish(), /PAID_GRANT_RESPONSE_REFUSED/u);
+        await confirmation.click();
+        await owner.watch.wait(owner.expires);
+        assert.deepEqual(owner.watch.finish(), receipt);
+        const serialized = JSON.stringify(owner.watch.finish());
+        assert.equal(serialized.includes(submitted.reason.trim()), false);
+        assert.equal(serialized.includes(target.idempotencyKey), false);
+        await owner.post(pathname, submitted);
+        assert.throws(() => owner.watch.finish(), /PAID_GRANT_RESPONSE_REFUSED/u);
+      } finally { await owner.close(); }
+
+      for (const scenario of [
+        { submitted: { ...submitted, reason: "Different reason" } },
+        { submitted: { ...submitted, expectedCourseRevision: target.revision + 1 } },
+        { submitted: { ...submitted, userId: randomUUID() } },
+        { submitted: { ...submitted, idempotencyKey: randomUUID() } },
+        { source: "/admin/courses/" + randomUUID() + "/manual-grants" },
+        { pathname: pathname + "?unexpected=1" },
+        { body: { ...response, command: { ...response.command, reason: "Different reason" } } },
+        { body: { ...response, command: { ...response.command, actorUserId: randomUUID() } } },
+        { body: { ...response, command: { ...response.command, effects: [{ ...response.command.effects[0], grantId: randomUUID() }] } } },
+        { body: { ...response, grant: { ...response.grant, orderId: randomUUID() } } },
+        { body: { ...response, grant: { ...response.grant, externalPaymentId: "payment", provider: "square" } } },
+        { body: { ...response, mutationRetried: true } },
+        { body: { ...response, communityDeliveryVerified: true } },
+        { body: { ...response, state: "accepted-needs-review" }, status: 202 },
+        { unconfirmed: true },
+      ]) {
+        const rejected = await open(scenario.body, scenario.status);
+        try {
+          if (scenario.source) await rejected.page.goto(input.browserOrigin + scenario.source);
+          await rejected.post(scenario.pathname ?? pathname, scenario.submitted ?? submitted);
+          const expires = scenario.unconfirmed ? Math.floor(Date.now() / 1000) + 2 : rejected.expires;
+          await assert.rejects(rejected.watch.wait(expires), /PAID_GRANT_RESPONSE_REFUSED/u);
+          assert.throws(() => rejected.watch.finish(), /PAID_GRANT_RESPONSE_REFUSED/u);
         } finally { await rejected.close(); }
       }
     } finally { await browser.close(); }

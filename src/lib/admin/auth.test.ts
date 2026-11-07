@@ -117,11 +117,13 @@ test("owner bootstrap is limited to verified allowlisted identities", async () =
   );
 });
 
-test("scoped authoring refreshes only the exact active owner with an established provider binding", async () => {
+test("scoped authoring and paid grants refresh only the exact active owner with an established provider binding", async () => {
   const selectedOwnerId = "8e2280dc-0389-4248-b21c-f87427f9e85c";
   const owner = { ...employee, id: selectedOwnerId, role: "owner" as const };
   const withinAuthoring = <T>(work: () => Promise<T>) =>
     withWriterOperationContext(work, undefined, undefined, undefined, undefined, selectedOwnerId);
+  const withinPaidGrant = <T>(work: () => Promise<T>) =>
+    withWriterOperationContext(work, undefined, undefined, undefined, undefined, undefined, undefined, selectedOwnerId);
   const cases = [
     { rows: [owner], refreshes: 1 },
     { rows: [{ ...owner, id: "wrong-owner" }], code: "forbidden" },
@@ -140,13 +142,18 @@ test("scoped authoring refreshes only the exact active owner with an established
       userStore: {
         ...store,
         async recordSignIn(input) { refreshes++; return store.recordSignIn(input); },
-        async bindIdentity() { assert.fail("scoped authoring cannot bind an admin identity"); },
-        async createBootstrapOwner() { assert.fail("scoped authoring cannot bootstrap an owner"); },
+        async bindIdentity() { assert.fail("scoped owner cannot bind an admin identity"); },
+        async createBootstrapOwner() { assert.fail("scoped owner cannot bootstrap an owner"); },
       },
     });
-    if ("code" in entry) await rejectsWithCode(() => withinAuthoring(() => auth.requireActor()), entry.code);
-    else assert.equal((await withinAuthoring(() => auth.requirePermission("courses:edit"))).user.id, selectedOwnerId);
-    assert.equal(refreshes, "refreshes" in entry ? entry.refreshes : 0);
+    if ("code" in entry) {
+      await rejectsWithCode(() => withinAuthoring(() => auth.requireActor()), entry.code);
+      await rejectsWithCode(() => withinPaidGrant(() => auth.requireActor()), entry.code);
+    } else {
+      assert.equal((await withinAuthoring(() => auth.requirePermission("courses:edit"))).user.id, selectedOwnerId);
+      assert.equal((await withinPaidGrant(() => auth.requirePermission("courses:support"))).user.id, selectedOwnerId);
+    }
+    assert.equal(refreshes, "refreshes" in entry ? 2 * entry.refreshes : 0);
   }
 });
 

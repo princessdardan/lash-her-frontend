@@ -42,6 +42,7 @@ _QUIZ_PATH = re.compile(rf"/api/admin/lessons/{_COURSE_ID}/quiz")
 _COURSE_SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 _PUBLIC_COURSE_PATH = re.compile(rf"/courses/{_COURSE_SLUG}")
 _LEARNER_COURSE_PATH = re.compile(rf"/academy/courses/{_COURSE_ID}")
+_PAID_GRANT_PATH = re.compile(rf"/admin/courses/{_COURSE_ID}/manual-grants")
 
 
 def _digest(value):
@@ -79,7 +80,8 @@ class UnauthenticatedIngressClient:
                "P2_INTERACTIVE_INGRESS_ORIGIN_REFUSED")
         demand(type(path) is str and (path in _BROWSER_PATHS + _AUTHORING_PATHS or _AUTHORING_DETAIL_PATH.fullmatch(path) or
                                      _PUBLICATION_READINESS_PATH.fullmatch(path) or _QUIZ_PATH.fullmatch(path) or
-                                     len(path) <= 129 and _PUBLIC_COURSE_PATH.fullmatch(path) or _LEARNER_COURSE_PATH.fullmatch(path)),
+                                     len(path) <= 129 and _PUBLIC_COURSE_PATH.fullmatch(path) or _LEARNER_COURSE_PATH.fullmatch(path) or
+                                     _PAID_GRANT_PATH.fullmatch(path)),
                "P2_INTERACTIVE_INGRESS_PATH_REFUSED")
         url = origin + path
         request = urllib.request.Request(url, method="GET", headers={
@@ -190,6 +192,12 @@ def observe_learning_protection(context, client, *, expected_profile, course_id,
            len(slug) <= 120 and re.fullmatch(_COURSE_SLUG, slug), "P2_INTERACTIVE_LEARNING_COURSE_REQUIRED")
     return _observe_selected_protection(context, client, expected_profile, browser=True,
                                         paths=(f"/courses/{slug}", f"/academy/courses/{course_id}"))
+
+
+def observe_paid_grant_protection(context, client, *, expected_profile, course_id):
+    demand(type(course_id) is str and re.fullmatch(_COURSE_ID, course_id), "P2_INTERACTIVE_PAID_GRANT_COURSE_REQUIRED")
+    return _observe_selected_protection(context, client, expected_profile, browser=True,
+                                        paths=(f"/admin/courses/{course_id}/manual-grants",))
 
 
 def _observe_selected_protection(context, client, expected_profile, *, browser, paths=None):

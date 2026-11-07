@@ -155,8 +155,9 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   await inBrowser(enrollment.cookie, enrollment.proxyProof, () => send({ method: "POST", path: enrollmentPath, applicationToken,
     body: enrollmentBody, idempotencyKey: enrollmentKey }), enrollmentRoute);
   const grantRoute = "POST /api/admin/courses/12345678-1234-4123-8123-123456789abc/manual-grants";
-  const grant = evidence("paid-grant", grantRoute);
-  const body = '{"label":"café"}\n', idempotencyKey = "owned:grant.1";
+  const grant = evidence("paid-grant", grantRoute, issued, "8e2280dc03894248b21cf87427f9e85c8284af5b324d45d9b460f97dc59b6d9b");
+  const idempotencyKey = `owner-paid:${enrollmentKey}`;
+  const body = JSON.stringify({ userId: learnerCourse, courseId: learnerCourse, reason: "[paid-course revision 3] Owner café", idempotencyKey });
   await inBrowser(grant.cookie, grant.proxyProof, () => send({
     method: "POST", path: "/v1/admin/entitlements/grants", body, idempotencyKey, applicationToken: "owned.admin.jwt",
   }), grantRoute);
@@ -235,6 +236,8 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   await inBrowser(learning.cookie, `${learning.proxyProof}x`, request);
   await inBrowser(stale.cookie, stale.proxyProof, request);
   await inBrowser(legacy.cookie, legacy.proxyProof, request, learningRoute);
+  const legacyGrant = evidence("paid-grant", grantRoute);
+  await inBrowser(legacyGrant.cookie, legacyGrant.proxyProof, request, grantRoute);
   await inBrowser(learning.cookie, identity.proxyProof, request);
   await inBrowser(identity.cookie, identity.proxyProof, request);
   await inBrowser(learning.cookie, learning.proxyProof, () => transport("https://foreign.example.test")({ method: "GET", path: "/v1/courses" }));
@@ -247,6 +250,6 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   process.env.VERCEL_URL = deployment;
   process.env.API_GATEWAY_STAGING_ORIGIN = "https://different.example.test";
   await inBrowser(learning.cookie, learning.proxyProof, request);
-  assert.equal(captured.length, 21);
+  assert.equal(captured.length, 22);
   assert.ok(captured.slice(9).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
 });

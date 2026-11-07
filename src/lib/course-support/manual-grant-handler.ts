@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import { eq } from "drizzle-orm";
 import { requirePermission } from "@/lib/admin/auth";
 import { AdminAuthError } from "@/lib/admin/types";
-import { getCourseClient } from "@/lib/api-integration/course-client";
+import { createCourseClient } from "@/lib/api-integration/course-client";
 import { runCourseAdminOperation } from "@/lib/api-integration/course-admin-operation";
 import { isIntegrationFeatureEnabled } from "@/lib/api-integration/rollout-flags";
 import { readSameOriginJson } from "@/lib/api-integration/same-origin-json";
@@ -12,10 +12,11 @@ import { IntegrationServiceError, integrationErrorResponse } from "@/lib/api-int
 import { customerUsers } from "@/lib/customer-auth/schema";
 import { getPrivateDb } from "@/lib/private-db/client";
 import { markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { readInteractiveBrowserRequest, type PaidGrantSelection } from "@/lib/writer-admission/interactive-proof";
 import type { WriterAdmissionRunner } from "@/lib/writer-admission/runtime";
 
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u;
-type Client = ReturnType<typeof getCourseClient>;
+type Client = ReturnType<typeof createCourseClient>;
 type Input = { userId: string; expectedCourseRevision: number; reason: string; idempotencyKey: string };
 type Command = Awaited<ReturnType<Client["grantAccess"]>>;
 const fail = (code: "invalid_request" | "forbidden" | "conflict", status: number): never => { throw new IntegrationServiceError(code, status); };
@@ -35,9 +36,11 @@ async function activeCustomer(userId: string) {
 const headers = { "cache-control": "private, no-store", "x-content-type-options": "nosniff" };
 
 export function createManualCourseGrantHandler(dependencies: {
-  client?: () => Client; authorize?: typeof requirePermission; activeCustomer?: typeof activeCustomer;
+  client?: (onResponse: (requestId: string) => void) => Client; authorize?: typeof requirePermission; activeCustomer?: typeof activeCustomer;
   run?: WriterAdmissionRunner; origin?: () => string | undefined; enabled?: () => boolean;
+  getPaidGrantSelection?: () => Promise<PaidGrantSelection | undefined>;
 } = {}) {
+  const getPaidGrantSelection = dependencies.getPaidGrantSelection ?? (async () => (await readInteractiveBrowserRequest())?.paidGrant);
   return async (request: Request, courseId: string): Promise<Response> => {
     let retained: Command | undefined;
     let retainedAttempt: string | undefined;
@@ -56,26 +59,36 @@ export function createManualCourseGrantHandler(dependencies: {
         if (query.size !== 1 || !uuid.test(query.get("idempotencyKey") ?? "")) return fail("invalid_request", 400);
         attempt = query.get("idempotencyKey")!;
       }
+      const selectedGrant = await getPaidGrantSelection();
+      if (selectedGrant && (!submitted || attempt !== selectedGrant.idempotencyKey)) return fail("invalid_request", 400);
       retainedAttempt = attempt;
       return await runCourseAdminOperation(async () => {
         try {
           const actor = await (dependencies.authorize ?? requirePermission)("courses:support");
-          if (actor.user.role !== "owner" || actor.user.status !== "active" || actor.developerMode) return fail("forbidden", 403);
-          const client = (dependencies.client ?? getCourseClient)();
-          const known = await client.listEntitlementCommands({ idempotencyKey: key(attempt), limit: 2 });
+          if (actor.user.role !== "owner" || actor.user.status !== "active" || actor.developerMode ||
+            selectedGrant && actor.user.id !== selectedGrant.actorId) return fail("forbidden", 403);
+          let receivedRequestId: string | undefined;
+          const onResponse = (requestId: string) => { receivedRequestId = requestId; };
+          const client = dependencies.client?.(onResponse) ?? createCourseClient({ onResponse });
+          const commandQuery = { idempotencyKey: key(attempt), limit: 2 };
+          const known = await client.listEntitlementCommands(commandQuery);
           if (known.nextCursor || known.commands.length > 1) return fail("conflict", 409);
+          if (known.commands[0] && (selectedGrant || known.commands[0].idempotencyKey !== commandQuery.idempotencyKey)) return fail("conflict", 409);
           let command: Command | undefined = known.commands[0];
           if (command && (command.courseId !== courseId || command.actorUserId !== actor.user.id || command.action !== "grant" || command.scope !== "userCourse" ||
             !/^\[paid-course revision [1-9][0-9]*\] /u.test(command.reason) || submitted && (command.userId !== submitted.userId || command.reason !== reason(submitted.expectedCourseRevision, submitted.reason)))) return fail("conflict", 409);
           if (!command && !submitted) return Response.json({ state: "not-observed", idempotencyKey: attempt, mutationRetried: false }, { status: 202, headers });
           let accepted = false;
+          let grantRequestId: string | undefined;
           try {
             if (!command) {
               const selected = submitted!;
               const before = (await client.getAdminCourse(courseId)).course;
               if (before.id !== courseId || before.status !== "published" || before.accessMode !== "paid" || before.currency !== "CAD" || before.priceCents <= 0 || before.revision !== selected.expectedCourseRevision) return fail("conflict", 409);
               if (!(await (dependencies.activeCustomer ?? activeCustomer)(selected.userId))) return fail("invalid_request", 400);
+              receivedRequestId = undefined;
               const actual = await client.grantAccess({ userId: selected.userId, courseId, reason: reason(selected.expectedCourseRevision, selected.reason), idempotencyKey: key(attempt) });
+              grantRequestId = receivedRequestId;
               // The receiver retains the immutable command and its effects even
               // if a later read fails. Never hide or automatically undo it.
               accepted = true;
@@ -83,8 +96,8 @@ export function createManualCourseGrantHandler(dependencies: {
               command = actual;
             }
             retained = command;
-            const saved = await client.listEntitlementCommands({ commandId: command.commandId, idempotencyKey: key(attempt), limit: 2 });
-            if (saved.nextCursor || saved.commands.length !== 1 || saved.commands[0].commandId !== command.commandId || saved.commands[0].courseId !== courseId || saved.commands[0].userId !== command.userId || saved.commands[0].actorUserId !== actor.user.id || saved.commands[0].reason !== command.reason || saved.commands[0].action !== "grant" || saved.commands[0].scope !== command.scope || saved.commands[0].outcome !== command.outcome || saved.commands[0].affectedGrantCount !== command.affectedGrantCount || !isDeepStrictEqual(saved.commands[0].effects, command.effects)) throw new Error("GRANT_AUDIT_READBACK_MISMATCH");
+            const saved = await client.listEntitlementCommands(commandQuery);
+            if (saved.nextCursor || saved.commands.length !== 1 || saved.commands[0].idempotencyKey !== commandQuery.idempotencyKey || saved.commands[0].commandId !== command.commandId || saved.commands[0].courseId !== courseId || saved.commands[0].userId !== command.userId || saved.commands[0].actorUserId !== actor.user.id || saved.commands[0].reason !== command.reason || saved.commands[0].action !== "grant" || saved.commands[0].scope !== command.scope || saved.commands[0].outcome !== command.outcome || saved.commands[0].affectedGrantCount !== command.affectedGrantCount || !isDeepStrictEqual(saved.commands[0].effects, command.effects)) throw new Error("GRANT_AUDIT_READBACK_MISMATCH");
             command = saved.commands[0];
             retained = command;
             const grants = await client.listGrants({ userId: command.userId, courseId, idempotencyKey: key(attempt), limit: 2 });
@@ -99,7 +112,8 @@ export function createManualCourseGrantHandler(dependencies: {
             return Response.json({ state: confirmed ? "confirmed" : "accepted-needs-review", idempotencyKey: attempt, command,
               grant: grant ? { grantId: grant.grantId, userId: grant.userId, courseId: grant.courseId, status: grant.status, grantReason: grant.grantReason,
                 orderId: grant.orderId, externalPaymentId: grant.externalPaymentId, provider: grant.provider } : null,
-              courseRevision: after.revision, mutationRetried: false, communityDeliveryVerified: false }, { status: confirmed ? 200 : 202, headers });
+              courseRevision: after.revision, mutationRetried: false, communityDeliveryVerified: false }, { status: confirmed ? 200 : 202,
+              headers: confirmed && grantRequestId ? { ...headers, "x-request-id": grantRequestId } : headers });
           } catch (error) {
             if (!command && !accepted) throw error;
             markWriterOperationUncertain();

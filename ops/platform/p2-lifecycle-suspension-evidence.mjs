@@ -16,7 +16,7 @@ import { isP2InteractiveAuthoringDetail, isP2InteractiveAuthoringPair, p2Authori
   p2InteractiveIdentityContext, p2LifecycleMutationTarget, validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt,
   validateP2AuthoringReorderResponses, validateP2InteractiveBrowserInput,
   validateP2InteractiveBrowserPermit, validateP2InteractiveIdentityReceipt, validateP2LearningEnrollmentReceipt,
-  validateP2LifecycleMutationReceipt } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2LifecycleMutationReceipt, validateP2PaidGrantReceipt } from "./p2-lifecycle-browser-recorder.mjs";
 import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
   resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
 
@@ -211,7 +211,7 @@ async function reviewedInteractiveInput(plan, challenge) {
     && process.versions.node.split(".")[0] === "24" && plan.sourceCommit === plan.operatorSourceCommit
     && commit() === plan.sourceCommit && /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
   const action = plan.scopedAction;
-  let authoring, learning;
+  let authoring, learning, paidGrant;
   if (action.stage === "authoring") {
     const selected = action.authoringAction, [, first, second] = action.requests;
     if (["edit-and-stale-draft", "reorder-and-stale-curriculum"].includes(selected?.operation)) {
@@ -254,6 +254,20 @@ async function reviewedInteractiveInput(plan, challenge) {
     ]));
     learning = { actorId: action.actorId, ...selected };
   }
+  if (action.stage === "paid-grant") {
+    const selected = action.paidGrantAction;
+    demand(selected?.operation === "grant-paid-access" && action.requests.length === 4);
+    const [detail, command, write, grants] = action.requests, empty = hash(""), key = "owner-paid%3A" + selected.idempotencyKey;
+    const grantTarget = "/course/v1/admin/entitlements/grants";
+    demand(isDeepStrictEqual(detail, { method: "GET", target: "/course/v1/admin/courses/" + selected.courseId, bodySha256: empty, uses: 3 })
+      && isDeepStrictEqual(command, { method: "GET", target: "/course/v1/admin/entitlements/commands?idempotencyKey=" + key + "&limit=2",
+        bodySha256: empty, uses: 2 })
+      && closed(write, ["method", "target", "bodySha256", "uses"]) && write.method === "POST" && write.target === grantTarget
+      && sha(write.bodySha256) && write.bodySha256 !== empty && write.uses === 1
+      && isDeepStrictEqual(grants, { method: "GET", target: `${grantTarget}?userId=${selected.userId}&courseId=${selected.courseId}&idempotencyKey=${key}&limit=2`,
+        bodySha256: empty, uses: 1 }));
+    paidGrant = { actorId: action.actorId, ...selected };
+  }
   return validateP2InteractiveBrowserInput({ version: 2, environment: "staging", actionId: plan.certificationActionId,
     challenge, bindingSha256: plan.planSha256, stage: action.stage, epoch: (BigInt(plan.initialEpoch) + 1n).toString(),
     sourceCommit: plan.sourceCommit, deploymentId: plan.nativePlan.deploymentId, deploymentUrl: plan.nativePlan.deploymentUrl,
@@ -261,7 +275,7 @@ async function reviewedInteractiveInput(plan, challenge) {
     ...(action.stage === "identity" ? Object.hasOwn(action, "identityEnrollment")
       ? { identityEnrollment: action.identityEnrollment } : { identity: action.identityActor } : {}),
     ...(action.stage === "lifecycle" ? { lifecycle: p2LifecycleMutationTarget(action.frontendAction) } : {}),
-    ...(authoring ? { authoring } : {}), ...(learning ? { learning } : {}) });
+    ...(authoring ? { authoring } : {}), ...(learning ? { learning } : {}), ...(paidGrant ? { paidGrant } : {}) });
 }
 
 // A dedicated stdin pipe carries one permit per reviewed phase. All IPC data
@@ -302,21 +316,23 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       const lifecycle = pending?.type === "interactive-lifecycle-captured";
       const authoring = pending?.type === "interactive-authoring-captured";
       const learning = pending?.type === "interactive-learning-captured";
+      const paidGrant = pending?.type === "interactive-paid-grant-captured";
       const edit = pending?.type === "interactive-authoring-edit-captured";
       const identity = pending?.type === "interactive-identity-captured";
       demand(pending && !failed && closed(message, ["type", ...Object.keys(pending.binding), ...Object.keys(pending.selection),
         ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : []),
-        ...(lifecycle || authoring || learning ? ["response"] : edit ? ["responses"] : identity ? ["identity"] : [])])
+        ...(lifecycle || authoring || learning || paidGrant ? ["response"] : edit ? ["responses"] : identity ? ["identity"] : [])])
         && message.type === pending.type
         && Object.entries({ ...pending.binding, ...pending.selection }).every(([key, value]) => message[key] === value));
       if (pending.type === "interactive-page-opened") {
         demand(message.path === p2InteractiveBrowserEntryPath(input, pending.selection.context)
           && Number.isInteger(message.httpStatus) && message.httpStatus >= 100 && message.httpStatus <= 599
-          && (!(isP2InteractiveAuthoringDetail(input) || input.stage === "learning") || message.httpStatus === 200));
+          && (!(isP2InteractiveAuthoringDetail(input) || ["learning", "paid-grant"].includes(input.stage)) || message.httpStatus === 200));
       }
       if (lifecycle) validateP2LifecycleMutationReceipt(message.response, input.lifecycle);
       if (authoring) validateP2AuthoringMutationReceipt(message.response, input.authoring);
       if (learning) validateP2LearningEnrollmentReceipt(message.response, input.learning);
+      if (paidGrant) validateP2PaidGrantReceipt(message.response, input.paidGrant);
       if (edit) {
         if (input.authoring.operation === "reorder-and-stale-curriculum") validateP2AuthoringReorderResponses(message.responses, input.authoring);
         else validateP2AuthoringEditResponses(message.responses, input.authoring);
@@ -407,6 +423,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
     captureAuthoringResponse: context => captureMutation(context, "authoring", "owner"),
     captureAuthoringResponses: context => captureMutation(context, "authoring", "owner", true),
     captureLearningResponse: context => captureMutation(context, "learning", "learner"),
+    capturePaidGrantResponse: context => captureMutation(context, "paid-grant", "owner"),
     async captureIdentity(context, ownerSubjectSha256) {
       const selection = requireSelection(context);
       const remaining = selection.expires * 1000 - Date.now();
@@ -440,11 +457,11 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
         demand(["candidateSha256", "originalReleaseId", "targetSha256", "sourceCommit"].every(key => nextPlan[key] === plan[key])
           && ["deploymentId", "deploymentUrl", "configurationRecordSha256"].every(key => nextPlan.nativePlan[key] === plan.nativePlan[key])
           && !actions.has(next.actionId) && next.bindingSha256 !== input.bindingSha256 && BigInt(next.epoch) > BigInt(input.epoch));
-        if (input.stage === "identity" || next.stage === "authoring" || next.stage === "learning") {
+        if (input.stage === "identity" || ["authoring", "learning", "paid-grant"].includes(next.stage)) {
           demand(input.stage === "identity" && verifiedIdentity?.sessionVerified === true
             && nextPlan.scopedAction.actorId === verifiedIdentity.actorId && BigInt(next.epoch) === BigInt(input.epoch) + 2n
             && (next.stage === "lifecycle" && nextPlan.scopedAction.frontendAction.actorKind === verifiedIdentity.actorKind
-              || next.stage === "authoring" && verifiedIdentity.actorKind === "admin"
+              || ["authoring", "paid-grant"].includes(next.stage) && verifiedIdentity.actorKind === "admin"
               || next.stage === "learning" && verifiedIdentity.actorKind === "customer"));
         }
         const receipt = await command("interactive-select", { ...binding, next }, "interactive-selected", {}, 30_000, nextBinding);

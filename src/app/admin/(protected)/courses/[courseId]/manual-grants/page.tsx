@@ -8,6 +8,7 @@ import { runCourseAdminOperation } from "@/lib/api-integration/course-admin-oper
 import { isIntegrationFeatureEnabled } from "@/lib/api-integration/rollout-flags";
 import { IntegrationServiceError } from "@/lib/api-integration/service-errors";
 import { WriterAdmissionError } from "@/lib/writer-admission/config";
+import { readInteractiveBrowserRequest } from "@/lib/writer-admission/interactive-proof";
 
 async function loadManualGrantCourse(courseId: string) {
   try {
@@ -16,7 +17,7 @@ async function loadManualGrantCourse(courseId: string) {
         const actor = await requirePermission("courses:support");
         if (actor.user.role !== "owner" || actor.user.status !== "active" || actor.developerMode)
           return { kind: "not-found" } as const;
-        return { kind: "loaded", course: (await getCourseClient().getAdminCourse(courseId)).course } as const;
+        return { kind: "loaded", course: (await getCourseClient().getAdminCourse(courseId)).course, actorId: actor.user.id } as const;
       } catch (error) {
         // Authentication may persist an identity or denial audit. Settle known
         // denials/read failures before invoking Next's throwing navigation.
@@ -46,9 +47,12 @@ export default async function ManualGrantPage({ params }: { params: Promise<{ co
     <Link className="underline" href="/admin/courses">All courses</Link>
   </main>;
   const { course } = loaded;
+  const paidGrant = (await readInteractiveBrowserRequest())?.paidGrant;
+  const reviewedIdempotencyKey = paidGrant?.actorId === loaded.actorId ? paidGrant.idempotencyKey : undefined;
   return <main className="space-y-6 p-6"><h1 className="font-heading text-3xl">Manual access: {course.title}</h1>
     <Link className="underline" href={`/admin/courses/${courseId}`}>Back to course</Link>
     {!(course.status === "published" && course.accessMode === "paid") && <p role="alert">Manual access requires a published paid course. You can still check an existing request below.</p>}
-    <ManualGrantForm courseId={courseId} revision={course.revision} eligible={course.status === "published" && course.accessMode === "paid"} />
+    <ManualGrantForm courseId={courseId} revision={course.revision} eligible={course.status === "published" && course.accessMode === "paid"}
+      reviewedIdempotencyKey={reviewedIdempotencyKey} />
   </main>;
 }

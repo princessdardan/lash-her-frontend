@@ -38,7 +38,7 @@ _MAX_STATE = 16_384
 _GATEWAY_GID = 65532
 _ZERO = {"newWork": 0, "recovery": 0}
 CLOSED_BROWSER_STAGES = frozenset(("identity", "lifecycle"))
-SCOPED_GATEWAY_BROWSER_STAGES = frozenset(("authoring", "learning"))
+SCOPED_GATEWAY_BROWSER_STAGES = frozenset(("authoring", "learning", "paid-grant"))
 EXECUTABLE_BROWSER_STAGES = CLOSED_BROWSER_STAGES | SCOPED_GATEWAY_BROWSER_STAGES
 _CREATE_DRAFT = "create-draft"
 _EDIT_DRAFT = "edit-and-stale-draft"
@@ -100,7 +100,8 @@ def browser_evidence_limit(plan):
 
 
 def browser_status(plan, disposition):
-    return f"P2_INTERACTIVE_{_browser_stage(plan).upper()}_{disposition}"
+    stage = _browser_stage(plan).upper().replace("-", "_")
+    return f"P2_INTERACTIVE_{stage}_{disposition}"
 
 
 def verify_browser_controller(initial, source):
@@ -130,6 +131,8 @@ def browser_case_evidence(plan, evidence, *, gateway_artifact=None):
         return _authoring_case_evidence(plan, action, evidence, gateway_artifact)
     if stage == "learning":
         return _learning_case_evidence(plan, action, evidence, gateway_artifact)
+    if stage == "paid-grant":
+        return _paid_grant_case_evidence(plan, action, evidence, gateway_artifact)
     if stage == "lifecycle":
         return _lifecycle_case_evidence(action, evidence)
     demand(_closed_fields(evidence, "browserIdentity identityWitness"), "P2_INTERACTIVE_IDENTITY_EVIDENCE_REQUIRED")
@@ -185,9 +188,12 @@ def _authoring_requests(action):
 
 
 def _gateway_sequences(plan):
-    if plan["scopedAction"]["stage"] == "learning":
+    stage = plan["scopedAction"]["stage"]
+    if stage == "learning":
         prefix = ((0, 200), (1, 403), (2, 201))
         return (prefix + ((1, 200), (3, 200)), prefix + ((3, 200), (1, 200)))
+    if stage == "paid-grant":
+        return (((0, 200), (1, 200), (0, 200), (2, 201), (1, 200), (3, 200), (0, 200)),)
     selected = plan["scopedAction"]["authoringAction"]
     requests = _authoring_requests(selected)
     order = {
@@ -243,6 +249,32 @@ def _learning_case_evidence(plan, action, evidence, gateway_artifact):
            all(witness[key] == value for key, value in body.items()), "P2_INTERACTIVE_LEARNING_COURSE_WITNESS_REQUIRED")
     return {**{key: body[key] for key in ("courseId", "grantId", "enrollmentId")}, "slug": selected["slug"],
             "actorId": action["actorId"], "transitionId": witness["transitionId"], "gatewayPostRequestId": post_id,
+            "browserResponseSha256": _receipt_sha(browser), "courseWitnessSha256": _receipt_sha(witness),
+            "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
+
+
+def _paid_grant_case_evidence(plan, action, evidence, gateway_artifact):
+    selected = action["paidGrantAction"]
+    demand(_closed_fields(evidence, "browserResponse courseWitness"), "P2_INTERACTIVE_PAID_GRANT_EVIDENCE_REQUIRED")
+    gateway = browser_gateway_receipt(plan, gateway_artifact)
+    post_id = gateway["gatewayAcknowledgements"][3]["requestId"]
+    browser, witness = evidence["browserResponse"], evidence["courseWitness"]
+    pathname = f'/api/admin/courses/{selected["courseId"]}/manual-grants'
+    demand(_closed_fields(browser, "method pathname status requestId body") and browser["method"] == "POST" and
+           browser["pathname"] == pathname and type(browser["status"]) is int and browser["status"] == 200 and
+           browser["requestId"] == post_id, "P2_INTERACTIVE_PAID_GRANT_RESPONSE_REQUIRED")
+    body = browser["body"]
+    fields = "courseId userId commandId grantId courseRevision"
+    demand(_closed_fields(body, fields) and all(body[key] == selected[key] for key in ("courseId", "userId")) and
+           all(_matches(_UUID, body[key]) for key in ("commandId", "grantId")) and
+           type(body["courseRevision"]) is int and body["courseRevision"] == selected["revision"],
+           "P2_INTERACTIVE_PAID_GRANT_BODY_REQUIRED")
+    demand(_closed_fields(witness, f"{fields} enrollmentId transitionId readOnly") and witness["readOnly"] is True and
+           all(_matches(_UUID, witness[key]) for key in ("enrollmentId", "transitionId")) and
+           type(witness["courseRevision"]) is int and all(witness[key] == value for key, value in body.items()),
+           "P2_INTERACTIVE_PAID_GRANT_COURSE_WITNESS_REQUIRED")
+    return {**body, "actorId": action["actorId"], "enrollmentId": witness["enrollmentId"],
+            "transitionId": witness["transitionId"], "gatewayPostRequestId": post_id,
             "browserResponseSha256": _receipt_sha(browser), "courseWitnessSha256": _receipt_sha(witness),
             "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
@@ -479,6 +511,7 @@ def validate_interactive_action(action):
     identity = type(action) is dict and action.get("stage") == "identity"
     authoring = type(action) is dict and action.get("stage") == "authoring"
     learning = type(action) is dict and action.get("stage") == "learning"
+    paid_grant = type(action) is dict and action.get("stage") == "paid-grant"
     fields = {"stage", "actorId", "requests", "windowSeconds"}
     if lifecycle:
         fields.add("frontendAction")
@@ -486,6 +519,8 @@ def validate_interactive_action(action):
         fields.add("authoringAction")
     if learning:
         fields.add("learningAction")
+    if paid_grant:
+        fields.add("paidGrantAction")
     enrollment = identity and "identityEnrollment" in action
     if identity:
         fields.add("identityEnrollment" if enrollment else "identityActor")
@@ -592,12 +627,33 @@ def validate_interactive_action(action):
              "bodySha256": _EMPTY, "uses": 1},
         ]
         demand(requests == expected, "P2_INTERACTIVE_LEARNING_ENROLLMENT_REQUESTS_REQUIRED")
+    if paid_grant:
+        selection = action["paidGrantAction"]
+        demand(_closed_fields(selection, "operation courseId userId revision idempotencyKey reasonSha256") and
+               selection["operation"] == "grant-paid-access" and
+               all(_matches(_UUID, selection[key]) for key in ("courseId", "userId", "idempotencyKey")) and
+               type(selection["revision"]) is int and 1 <= selection["revision"] <= 2_147_483_647 and
+               _digest(selection["reasonSha256"]) and selection["reasonSha256"] != _EMPTY,
+               "P2_INTERACTIVE_PAID_GRANT_SELECTION_REQUIRED")
+        entitlements = "/course/v1/admin/entitlements"
+        query = f'idempotencyKey=owner-paid%3A{selection["idempotencyKey"]}&limit=2'
+        grants_query = f'userId={selection["userId"]}&courseId={selection["courseId"]}&{query}'
+        expected = (
+            ("GET", f'/course/v1/admin/courses/{selection["courseId"]}', 3),
+            ("GET", f"{entitlements}/commands?{query}", 2),
+            ("POST", f"{entitlements}/grants", 1),
+            ("GET", f"{entitlements}/grants?{grants_query}", 1),
+        )
+        demand(tuple((row["method"], row["target"], row["uses"]) for row in requests) == expected and
+               _digest(requests[2]["bodySha256"]) and requests[2]["bodySha256"] != _EMPTY,
+               "P2_INTERACTIVE_PAID_GRANT_REQUESTS_REQUIRED")
     return copy.deepcopy(action)
 
 
 def _selection_sha(action):
-    if action["stage"] == "learning":
-        return (action["actorId"] + action["learningAction"]["idempotencyKey"]).replace("-", "")
+    key_field = {"learning": "learningAction", "paid-grant": "paidGrantAction"}.get(action["stage"])
+    if key_field:
+        return (action["actorId"] + action[key_field]["idempotencyKey"]).replace("-", "")
     if action["stage"] == "authoring":
         authoring = action["authoringAction"]
         prefix = {
@@ -752,11 +808,15 @@ class P2InteractiveWindow:
                             "active": 0, "uncertain": 0}, "P2_INTERACTIVE_FRONTEND_START_REQUIRED")
         authoring = self.action.get("authoringAction")
         learning = self.action.get("learningAction")
+        paid_grant = self.action.get("paidGrantAction")
         protect = ingress.observe_authoring_protection if authoring else ingress.observe_browser_protection
         paths = {"course_id": authoring["courseId"]} if authoring and authoring["operation"] != _CREATE_DRAFT else {}
         if learning:
             protect = ingress.observe_learning_protection
             paths = {"course_id": learning["courseId"], "slug": learning["slug"]}
+        if paid_grant:
+            protect = ingress.observe_paid_grant_protection
+            paths = {"course_id": paid_grant["courseId"]}
         if authoring and authoring["operation"] == _QUALIFY_PUBLICATION:
             paths["publication_readiness"] = True
         if authoring and authoring["operation"] == _SAVE_QUIZ_REVISION:

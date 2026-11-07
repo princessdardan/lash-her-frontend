@@ -32,6 +32,7 @@ const authoringCreateCurriculumOperation='create-curriculum';
 const authoringPublicationOperation='qualify-publication';
 const authoringQuizOperation='save-quiz-revision';
 const learningEnrollmentOperation='enroll-free-course';
+const paidGrantOperation='grant-paid-access';
 const authoringPairedOperation=operation=>operation==='edit-and-stale-draft'||operation===authoringReorderOperation;
 const emptyBodySha256=p2NativeHash(Buffer.alloc(0));
 const interactiveGatewayKeys=['epoch','gatewayStateSha256','gatewayAcknowledgements','gatewayActive','gatewayUncertain','gatewayEvidenceSha256'];
@@ -137,21 +138,41 @@ function reviewedLearningAction(action){
   return {selection:{...learning,actorKind:'customer'},learning};
 }
 
+function reviewedPaidGrantAction(action){
+  const selected=action.paidGrantAction;
+  demand(canonicalUuid(action.actorId)&&exact(selected,['operation','courseId','userId','revision','idempotencyKey','reasonSha256'])&&
+    selected.operation===paidGrantOperation&&[selected.courseId,selected.userId,selected.idempotencyKey].every(canonicalUuid)&&
+    Number.isInteger(selected.revision)&&selected.revision>=1&&selected.revision<=2_147_483_647&&
+    nonzeroSha256(selected.reasonSha256)&&selected.reasonSha256!==emptyBodySha256);
+  const {courseId,userId,idempotencyKey}=selected,grant=action.requests[2];
+  const grants='/course/v1/admin/entitlements/grants',key='owner-paid%3A'+idempotencyKey;
+  demand(reviewedWriteRequest(grant,'POST',grants)&&isDeepStrictEqual(action.requests,[
+    {method:'GET',target:authoringCourseTarget+'/'+courseId,bodySha256:emptyBodySha256,uses:3},
+    {method:'GET',target:'/course/v1/admin/entitlements/commands?idempotencyKey='+key+'&limit=2',bodySha256:emptyBodySha256,uses:2},
+    grant,
+    {method:'GET',target:grants+'?userId='+userId+'&courseId='+courseId+'&idempotencyKey='+key+'&limit=2',bodySha256:emptyBodySha256,uses:1},
+  ]));
+  const paidGrant={actorId:action.actorId,...selected};
+  return {selection:{...paidGrant,actorKind:'admin'},paidGrant};
+}
+
 function reviewedInteractivePlan(plan,initial){
   const action=plan.scopedAction,binding=initial.interactiveController;
   const identity=action?.stage==='identity',authoring=action?.stage==='authoring',learning=action?.stage==='learning';
+  const paidGrant=action?.stage==='paid-grant',gatewayScoped=authoring||learning||paidGrant;
   const enrollment=identity&&Object.hasOwn(action,'identityEnrollment');
   demand(plan.environment==='staging'&&plan.sourceCommit===initial.sourceCommit&&plan.operatorSourceCommit===initial.sourceCommit&&
     plan.maximumSeconds===300&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
     (BigInt(plan.initialEpoch)+2n).toString().length<=18&&sha256(plan.planSha256)&&
-    (identity||authoring||learning||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',
-      enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':learning?'learningAction':'frontendAction'])&&
-    Array.isArray(action.requests)&&(authoring||learning||action.requests.length===0)&&
+    (identity||gatewayScoped||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',
+      enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':learning?'learningAction':paidGrant?'paidGrantAction':'frontendAction'])&&
+    Array.isArray(action.requests)&&(gatewayScoped||action.requests.length===0)&&
     Number.isInteger(action.windowSeconds)&&action.windowSeconds>=30&&action.windowSeconds<=300&&
     exact(binding,['challenge','bindingSha256','browserProgramSha256'])&&sha256(binding.challenge)&&
     binding.bindingSha256===plan.planSha256&&sha256(binding.browserProgramSha256));
   if(authoring)return reviewedAuthoringAction(action);
   if(learning)return reviewedLearningAction(action);
+  if(paidGrant)return reviewedPaidGrantAction(action);
   if(enrollment){
     const selected=action.identityEnrollment;
     demand(action.actorId===null&&exact(selected,['provider','emailSha256','nonce'])&&
@@ -226,6 +247,8 @@ function requireInteractiveGatewayObservation(receipt,epoch,{operation,outcome,q
   const sequences=learning?[
     [[0,200],[1,403],[2,201],[1,200],[3,200]],
     [[0,200],[1,403],[2,201],[3,200],[1,200]],
+  ]:operation===paidGrantOperation?[
+    [[0,200],[1,200],[0,200],[2,201],[1,200],[3,200],[0,200]],
   ]:[indices.map(index=>[index,statuses[index]])];
   demand(receipt.epoch===epoch&&nonzeroSha256(receipt.gatewayStateSha256)&&receipt.gatewayActive===0&&receipt.gatewayUncertain===0&&
     Array.isArray(acks)&&acks.length===sequences[0].length&&acks.every(row=>exact(row,['requestId','proofRequestId','requestIndex','upstreamStatus'])&&
@@ -246,6 +269,19 @@ function learningJoinedEvidence(evidence,selected,observed){
     isDeepStrictEqual(response,{method:'POST',pathname:'/api'+academyPath+'/enrollments',status:200,requestId:gatewayPostRequestId,academyPath,body})&&
     isDeepStrictEqual(witness,{...body,transitionId,readOnly:true}));
   return {actorId,courseId,slug,grantId,enrollmentId,transitionId,browserResponseSha256:p2NativeHash(response),
+    courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256:observed.gatewayEvidenceSha256,gatewayPostRequestId};
+}
+
+function paidGrantJoinedEvidence(evidence,selected,observed){
+  demand(exact(evidence,['browserResponse','courseWitness']));
+  const {browserResponse:response,courseWitness:witness}=evidence;
+  const {actorId,courseId,userId,revision:courseRevision}=selected,{commandId,grantId}=response?.body??{};
+  const {enrollmentId,transitionId}=witness??{},gatewayPostRequestId=observed.gatewayAcknowledgements[3].requestId;
+  const body={courseId,userId,commandId,grantId,courseRevision};
+  demand([commandId,grantId,enrollmentId,transitionId].every(canonicalUuid)&&
+    isDeepStrictEqual(response,{method:'POST',pathname:'/api/admin/courses/'+courseId+'/manual-grants',status:200,requestId:gatewayPostRequestId,body})&&
+    isDeepStrictEqual(witness,{...body,enrollmentId,transitionId,readOnly:true}));
+  return {actorId,...body,enrollmentId,transitionId,browserResponseSha256:p2NativeHash(response),
     courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256:observed.gatewayEvidenceSha256,gatewayPostRequestId};
 }
 
@@ -410,12 +446,13 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           requireRecorder();
           const controllerChallenge=binding.challenge,epoch=(BigInt(snapshot.initialEpoch)+1n).toString();
           const stage=snapshot.scopedAction.stage,identity=stage==='identity',authoring=stage==='authoring',learning=stage==='learning';
-          const gatewayScoped=authoring||learning;
-          const {selection,enrollment,authoring:authoringPermit,learning:learningPermit}=selectedInteractive;
+          const stageLabel=stage.toUpperCase().replaceAll('-','_');
+          const paidGrant=stage==='paid-grant',gatewayScoped=authoring||learning||paidGrant;
+          const {selection,enrollment,authoring:authoringPermit,learning:learningPermit,paidGrant:paidGrantPermit}=selectedInteractive;
           const paired=authoringPairedOperation(selection.operation);
           const context=selection.actorKind==='admin'?'owner':'learner';
           const permitInput={stage,epoch,windowSeconds:snapshot.scopedAction.windowSeconds,
-            ...(authoring?{authoring:authoringPermit}:learning?{learning:learningPermit}:
+            ...(authoring?{authoring:authoringPermit}:learning?{learning:learningPermit}:paidGrant?{paidGrant:paidGrantPermit}:
               enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
           let phase='new',expiresAt,installed=false,gatewayObservation;
           const call=async(operation,disposition,extraKeys,data={},timeout=120_000)=>{
@@ -424,7 +461,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
             const receipt=packet.receipt;
             demand(exact(packet,['id','status','receipt'])&&exact(receipt,[...interactiveReceiptKeys,...extraKeys]));
             requireQualificationTargetProfile(currentProfile,receipt);
-            demand(receipt.version===2&&receipt.status===`P2_INTERACTIVE_${stage.toUpperCase()}_${disposition}`&&
+            demand(receipt.version===2&&receipt.status===`P2_INTERACTIVE_${stageLabel}_${disposition}`&&
               receipt.certificationActionId===initial.certificationActionId&&receipt.planSha256===snapshot.planSha256&&receipt.stage===stage);
             return receipt;
           };
@@ -465,7 +502,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                   const receipt=await call('interactive-observe','GATEWAY_OBSERVED',interactiveGatewayKeys);
                   requireInteractiveGatewayObservation(receipt,epoch,selection);
                   gatewayObservation=structuredClone(receipt);phase='observed';return receipt;
-                }catch{phase='observe-failed';throw new Error(`P2_CERTIFICATION_INTERACTIVE_${stage.toUpperCase()}_OBSERVE_FAILED`);}
+                }catch{phase='observe-failed';throw new Error(`P2_CERTIFICATION_INTERACTIVE_${stageLabel}_OBSERVE_FAILED`);}
               },
             }:{}),
             async fence(){
@@ -479,6 +516,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               demand(phase==='fenced'&&installed&&(!gatewayScoped||gatewayObservation));requireRecorder();
               const evidence=structuredClone(caseEvidence);
               const expected=learning?learningJoinedEvidence(evidence,selection,gatewayObservation):
+                paidGrant?paidGrantJoinedEvidence(evidence,selection,gatewayObservation):
                 paired?authoringChangeJoinedEvidence(evidence,selection,gatewayObservation,authoringPermit.winnerBodySha256):
                 selection.operation===authoringQuizOperation?authoringQuizJoinedEvidence(evidence,selection,gatewayObservation):
                 selection.operation===authoringPublicationOperation?authoringPublicationJoinedEvidence(evidence,selection,gatewayObservation):

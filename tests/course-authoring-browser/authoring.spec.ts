@@ -73,11 +73,26 @@ test("owner manual access uses real auth/Course SQL audit and explicit lost-ack 
     await expect(page.getByRole("heading", { name: "Manual access: Manual support course" })).toBeVisible();
     await page.getByLabel("Customer UUID").fill(states.manualGrantCustomerIds[0]);
     await page.getByLabel("Grant reason").fill("Owned normal owner support");
+    const pendingGrant = page.waitForResponse(response => response.request().method() === "POST" &&
+      new URL(response.url()).pathname === `/api/admin/courses/${id}/manual-grants`);
     await page.getByRole("button", { name: "Grant manual access", exact: true }).click();
+    const grantResponse = await pendingGrant;
+    expect(grantResponse.status()).toBe(200);
+    expect(await grantResponse.headerValue("cache-control")).toBe("private, no-store");
+    expect(await grantResponse.headerValue("x-request-id")).toMatch(/^[a-f0-9-]{36}$/u);
+    const form = grantResponse.request().postDataJSON();
+    expect(form).toMatchObject({ userId: states.manualGrantCustomerIds[0], reason: "Owned normal owner support", expectedCourseRevision: 4 });
+    expect(form.idempotencyKey).toMatch(/^[a-f0-9-]{36}$/u);
+    const confirmed = await grantResponse.json();
+    expect(confirmed).toMatchObject({ state: "confirmed", idempotencyKey: form.idempotencyKey, courseRevision: 4,
+      mutationRetried: false, communityDeliveryVerified: false,
+      grant: { courseId: id, status: "active", grantReason: "manual", orderId: null, externalPaymentId: null, provider: null } });
     await expect(page.getByRole("region", { name: "Manual course access" }).getByRole("status")).toContainText("Manual grant and audit confirmed");
     await expect(page.getByRole("button", { name: "Grant manual access", exact: true })).toBeDisabled();
     const rows = (await sql.query("select g.id,g.external_order_id,g.external_payment_id,g.provider,g.grant_reason,c.id command_id,c.effect_count,e.effect_type from entitlement_grants g join admin_entitlement_commands c on c.idempotency_key=g.idempotency_key join admin_entitlement_command_effects e on e.command_id=c.id where g.user_id=$1 and g.course_id=$2", [states.manualGrantCustomerIds[0], id])).rows;
     expect(rows).toHaveLength(1); expect(rows[0]).toMatchObject({ external_order_id: null, external_payment_id: null, provider: null, grant_reason: "manual", effect_count: 1, effect_type: "grant_created" });
+    expect(confirmed.command.commandId).toBe(rows[0].command_id);
+    expect(confirmed.grant.grantId).toBe(rows[0].id);
     const events = (await sql.query("select o.canonical_body,o.state,o.attempts_in_cycle from community_enrollment_outbox o join community_enrollment_streams s on s.id=o.stream_id where s.user_id=$1 and s.course_id=$2", [states.manualGrantCustomerIds[0], id])).rows;
     expect(events).toHaveLength(1); expect(events[0]).toMatchObject({ state: "pending", attempts_in_cycle: 0 });
     expect(JSON.parse(events[0].canonical_body)).toMatchObject({ eventType: "enrollment.activated", data: { userId: states.manualGrantCustomerIds[0], courseId: id, state: "active" } });

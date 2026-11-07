@@ -226,12 +226,21 @@ test('fixed current certification plan joins the original release plan, terminal
       environmentId: 'owned-environment', assetId: null, uploadId: 'owned-upload', eventType: 'video.upload.asset_created' };
     const selectedPersistence = { stage: 'verify-delete', subjectBindingSha256: 'a'.repeat(64) };
     const courseId = '10000000-0000-4000-8000-000000000002';
-    const selectedInteractive = { stage: 'paid-grant', actorId: '10000000-0000-4000-8000-000000000003', windowSeconds: 90,
-      requests: [
-        { method: 'GET', target: '/course/v1/admin/courses/' + courseId, bodySha256: rawHash(Buffer.alloc(0)), uses: 1 },
-        { method: 'POST', target: '/course/v1/admin/entitlements/grants', bodySha256: 'a'.repeat(64), uses: 1 },
-      ] };
     const userId = '10000000-0000-4000-8000-000000000004';
+    const paidKey = '10000000-0000-4000-8000-000000000006';
+    const paidReason = 'Owned controlled access';
+    const emptyBodySha256 = rawHash(Buffer.alloc(0));
+    const paidQuery = 'idempotencyKey=owner-paid%3A' + paidKey + '&limit=2';
+    const selectedInteractive = { stage: 'paid-grant', actorId: '10000000-0000-4000-8000-000000000003', windowSeconds: 90,
+      paidGrantAction: { operation: 'grant-paid-access', courseId, userId, revision: 1, idempotencyKey: paidKey, reasonSha256: rawHash(paidReason) },
+      requests: [
+        { method: 'GET', target: '/course/v1/admin/courses/' + courseId, bodySha256: emptyBodySha256, uses: 3 },
+        { method: 'GET', target: '/course/v1/admin/entitlements/commands?' + paidQuery, bodySha256: emptyBodySha256, uses: 2 },
+        { method: 'POST', target: '/course/v1/admin/entitlements/grants', uses: 1,
+          bodySha256: rawHash(JSON.stringify({ userId, courseId, reason: '[paid-course revision 1] ' + paidReason, idempotencyKey: 'owner-paid:' + paidKey })) },
+        { method: 'GET', target: `/course/v1/admin/entitlements/grants?userId=${userId}&courseId=${courseId}&${paidQuery}`,
+          bodySha256: emptyBodySha256, uses: 1 },
+      ] };
     const selectedLifecycle = { stage: 'lifecycle', actorId: selectedInteractive.actorId, requests: [], windowSeconds: 90,
       frontendAction: { actorKind: 'admin', userId, operation: 'suspend' } };
     const authoringDraft = { title: 'Owned reviewed draft', slug: 'owned-reviewed-draft', description: null, introduction: null,
@@ -247,11 +256,31 @@ test('fixed current certification plan joins the original release plan, terminal
     };
     const scopedVerifier = 'import json,sys;sys.path.insert(0,sys.argv[1]);import p2_certification_parent as p;' +
       'packet=json.load(sys.stdin);p._require_profiled_scoped_action(packet["mode"],packet["scopedAction"])';
+    const paidSettings = paired(selectedInteractive), paidPair = prepareP2ProfiledCertificationOperator(paidSettings);
+    assert.equal(paidPair.status, 'P2_INTERACTIVE_PAID_GRANT_ACTIONS_PLANNED');
+    assert.deepEqual(paidPair['paid-grant'].scopedAction, selectedInteractive);
+    assert.deepEqual(paidPair.identity.scopedAction.identityActor, { actorKind: 'admin', actorId: selectedInteractive.actorId });
+    assert.equal(JSON.stringify(paidPair).includes(paidReason), false);
+    const paidHostPlan = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+      { input: JSON.stringify(paidPair['paid-grant']), encoding: 'utf8' });
+    assert.equal(paidHostPlan.status, 0, paidHostPlan.stderr);
+    const paidConfirmation = { confirmation: 'staging/owned-scoped-action' };
+    await assert.rejects(p2ProfiledCertificationOperator({ ...paidSettings, execution: { reason: paidReason } }, paidConfirmation), { code: 'ENOENT' });
+    for (const execution of [undefined, { reason: 'unreviewed' }, { reason: ' ' + paidReason }, { reason: paidReason, extra: true }])
+      await assert.rejects(p2ProfiledCertificationOperator({ ...paidSettings, execution }, paidConfirmation), /P2_CERTIFICATION_PARENT_REFUSED/);
+    const [paidDetail, paidCommands, paidWrite, paidReadback] = selectedInteractive.requests;
+    for (const requests of [[paidDetail, paidWrite], [paidCommands, paidDetail, paidWrite, paidReadback],
+      [paidDetail, { ...paidCommands, uses: 1 }, paidWrite, paidReadback],
+      [paidDetail, paidCommands, paidWrite, { ...paidReadback, target: paidReadback.target.replace('%3A', '%3a') }]])
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedInteractive, requests })));
+    await assert.rejects(p2ProfiledCertificationOperator({
+      ...paired({ ...selectedInteractive, requests: [paidDetail, paidCommands, { ...paidWrite, bodySha256: '1'.repeat(64) }, paidReadback] }),
+      execution: { reason: paidReason },
+    }, paidConfirmation), /P2_CERTIFICATION_PARENT_REFUSED/);
     const selectedFree = { stage: 'learning', actorId: userId, windowSeconds: 90,
       learningAction: { operation: 'enroll-free-course', courseId, slug: 'owned-free-course',
         idempotencyKey: '10000000-0000-4000-8000-000000000005' } };
     const freeCourse = '/course/v1/student/courses/' + courseId;
-    const emptyBodySha256 = rawHash(Buffer.alloc(0));
     selectedFree.requests = [
       { method: 'GET', target: '/course/v1/courses/owned-free-course', bodySha256: emptyBodySha256, uses: 1 },
       { method: 'GET', target: freeCourse, bodySha256: emptyBodySha256, uses: 2 },
@@ -473,7 +502,7 @@ test('fixed current certification plan joins the original release plan, terminal
       return { stage: 'identity', actorId: null, requests: [], windowSeconds: 240, identityEnrollment: { provider, emailSha256, nonce } };
     });
     for (const [mode, selected] of [['export-cleanup', selectedCommand], ['mux-callback-recovery', selectedMux],
-      ['lifecycle-persistence', selectedPersistence], ['interactive-browser', selectedInteractive],
+      ['lifecycle-persistence', selectedPersistence],
       ...firstEnrollments.map(selected => ['interactive-browser', selected])]) {
       const preparedScope = prepareP2ProfiledCertificationOperator(scoped(mode, selected));
       assert.deepEqual(preparedScope.scopedAction, selected);
@@ -508,12 +537,8 @@ test('fixed current certification plan joins the original release plan, terminal
       { confirmation: 'staging/owned-scoped-action' }), { code: 'ENOENT' });
     assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('interactive-browser', { ...firstEnrollments[0],
       identityActor: { actorKind: 'customer', actorId: userId } })));
-    for (const requests of [
-      [...selectedInteractive.requests, selectedInteractive.requests[0]],
-      [{ ...selectedInteractive.requests[0], bodySha256: 'b'.repeat(64) }],
-      [{ ...selectedInteractive.requests[1], target: '/course/v1/internal/accounts/commands' }],
-      [{ ...selectedInteractive.requests[1], target: '/course/v1/admin/courses/' + courseId + '/modules' }],
-    ]) assert.throws(() => prepareP2ProfiledCertificationOperator(scoped('interactive-browser', { ...selectedInteractive, requests })));
+    const { paidGrantAction: _legacy, ...unscopedPaid } = selectedInteractive;
+    assert.throws(() => prepareP2ProfiledCertificationOperator(paired(unscopedPaid)));
     for (const frontendAction of [
       undefined,
       { actorKind: 'customer', userId, operation: 'export' },
@@ -550,7 +575,7 @@ test('fixed current certification plan joins the original release plan, terminal
     await assert.rejects(p2ProfiledCertificationOperator(paired(preferenceScope), { confirmation: 'staging/owned-scoped-action' }),
       { code: 'ENOENT' });
     const material = ['owned-interoperability-fixture-key', 'https://owned.vercel.app', 'a'.repeat(40), 'b'.repeat(64),
-      '14', 'paid-grant', 1794009600, 90, 'c'.repeat(32)];
+      '14', 'media', 1794009600, 90, 'c'.repeat(32)];
     const privateFixture = spawnSync('python3', ['-B', '-c',
       'import json,sys;sys.path.insert(0,sys.argv[1]);from p2_interactive_window import _material;print(json.dumps(_material(*json.load(sys.stdin))))',
       join(root, 'ops/platform/host')], { input: JSON.stringify(material), encoding: 'utf8' });
@@ -573,6 +598,7 @@ test('fixed current certification plan joins the original release plan, terminal
         ? '7032712d617574682d7075622d763100' : '7032712d617574682d7264792d763100') + selection.actorId.replaceAll('-', '')]),
       ...selectedQuizzes.map(selection => [selection, '7032712d617574682d7175697a2d7631' + selection.actorId.replaceAll('-', '')]),
       [selectedFree, (selectedFree.actorId + selectedFree.learningAction.idempotencyKey).replaceAll('-', '')],
+      [selectedInteractive, (selectedInteractive.actorId + paidKey).replaceAll('-', '')],
       [prepareP2ProfiledCertificationOperator(paired(selectedLifecycle)).identity.scopedAction, rawHash(JSON.stringify(['identity', 'admin']))],
       [prepareP2ProfiledCertificationOperator(paired(preferenceScope)).identity.scopedAction, '7032712d637573746f6d65722d763100' + userId.replaceAll('-', '')],
       ...firstEnrollments.map(({ identityEnrollment, ...selection }) => [{ ...selection, identityEnrollment },
@@ -587,7 +613,7 @@ test('fixed current certification plan joins the original release plan, terminal
         join(root, 'ops/platform/host')], { input: JSON.stringify({ material: scopedMaterial, action: selection }), encoding: 'utf8' });
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
       const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
-      const selectedGatewayKey = ['authoring', 'learning'].includes(selection.stage)
+      const selectedGatewayKey = ['authoring', 'learning', 'paid-grant'].includes(selection.stage)
         ? sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${selection.stage}\n${scopedNonce}`) : null;
       assert.deepEqual(JSON.parse(frontendFixture.stdout), [
         `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`, selectedGatewayKey, host, expires,

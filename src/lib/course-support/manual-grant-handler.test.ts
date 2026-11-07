@@ -8,8 +8,34 @@ test("owner grant uses one semantic admission, canonical support client, immutab
   assert.equal(response.status, 200); assert.equal(receipt.state, "confirmed"); assert.equal(receipt.command.userId, userId); assert.equal(receipt.communityDeliveryVerified, false);
   assert.deepEqual([receipt.grant.orderId, receipt.grant.externalPaymentId, receipt.grant.provider], [null, null, null]);
   assert.equal(state.post, 1); assert.equal(state.admissions, 1); assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.equal(response.headers.get("x-request-id"), state.postRequestId);
+  assert.notEqual(response.headers.get("x-request-id"), state.readRequestId);
+  const commandTarget = `/v1/admin/entitlements/commands?idempotencyKey=owner-paid%3A${input.idempotencyKey}&limit=2`;
+  assert.deepEqual(state.paths.filter(path => path.startsWith("/v1/admin/entitlements/commands")), [commandTarget, commandTarget]);
   assert.equal((await call(input)).status, 200); assert.equal((await call(input, "GET")).status, 200); assert.equal(state.post, 1, "even explicit repeated POST reads the known command rather than replaying it");
   assert.equal((await call({ ...input, userId: otherId })).status, 409); assert.equal(state.post, 1);
+});
+test("scoped manual paid grant requires the signed fresh attempt and exact owner", async () => {
+  const { state, call } = fixture();
+  const input = body();
+  state.selectedPaidGrant = { actorId: actor.user.id, idempotencyKey: input.idempotencyKey };
+  assert.equal((await call(input, "GET")).status, 400);
+  assert.equal((await call({ ...input, idempotencyKey: otherId })).status, 400);
+  assert.equal(state.admissions, 0);
+  state.actor = { ...actor, user: { ...actor.user, id: otherId } };
+  assert.equal((await call(input)).status, 403);
+  assert.equal(state.calls, 0);
+  state.actor = actor;
+  const fresh = await call(input);
+  assert.equal(fresh.status, 200);
+  assert.equal(fresh.headers.get("x-request-id"), state.postRequestId);
+  assert.equal((await call(input)).status, 409);
+  assert.equal(state.post, 1);
+  state.selectedPaidGrant = undefined;
+  const recovered = await call(input, "GET");
+  assert.equal(recovered.status, 200);
+  assert.equal(recovered.headers.get("x-request-id"), null);
+  assert.equal(state.post, 1);
 });
 test("CSRF/origin/content/extra fields refuse before auth or outbound work", async () => {
   for (const headers of [{ origin: "https://foreign.invalid" }, { "x-lash-csrf": "" }, { "sec-fetch-site": "cross-site" }]) {
@@ -39,7 +65,7 @@ test("accepted course race preserves actual receipt, including after changed-cou
   assert.equal((await call(input, "GET")).status, 202); assert.equal(state.post, 1);
 });
 test("post-accept readback failure or mismatched audit poisons admission and retains receiver command", async () => {
-  for (const flag of ["failReadback", "tamperAudit"] as const) {
+  for (const flag of ["failReadback", "tamperAudit", "tamperCommandId", "duplicateAudit"] as const) {
     const { state, call } = fixture(); state[flag] = true; const response = await call(body());
     assert.equal(response.status, 202); assert.equal((await response.json()).command.commandId, state.commands[0].commandId); assert.equal(state.post, 1);
   }

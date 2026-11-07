@@ -146,6 +146,19 @@ const reviewedFreeEnrollmentDependencies = {
   "src/components/learning/free-enrollment.tsx": "3988dd35931612f3152c438f59cd210693f8d13e02739bed404cc307b2363175",
   "src/app/(site)/courses/[slug]/page.tsx": "e130fd52c62c86740fa20a5cb180c2a4833b42e637d6b577af1937de152c53e8"
 };
+const reviewedPaidGrantSource = {
+  ...reviewedQuizAuthoringSource,
+  "src/lib/writer-admission/context.ts": "90d5478af92d5e465837f7fd0a3eda27773b0fb5e51d8e2260f3bcdf8bd6191b",
+  "src/lib/writer-admission/runtime.ts": "4c66800a1dd4b79f3dccc643c68a9ba9842fe7eb5add34b1e924f42f85f5aa1c"
+};
+const reviewedPaidGrantDependencies = {
+  ...reviewedFreeEnrollmentDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "42765835c788358b6ae36055fb6e5b99e2df19da8b6c235b8559d044c92a5f22",
+  "src/lib/admin/auth-service.ts": "66d21e9eefaa2704ea01874cf76954873d8afbfa816ae043567b6c55a608dfc6",
+  "src/lib/course-support/manual-grant-handler.ts": "59969113a31bc2e610b3422dfdebbbc41dde430c1b406516a74f6983553020fc",
+  "src/components/admin/course-authoring/manual-grant-form.tsx": "6812f6409c734b46aa268aa3d6c060b5a99853e422ac1b5fb5790d49732472e8",
+  "src/app/admin/(protected)/courses/[courseId]/manual-grants/page.tsx": "296b9483cea98346c4e761a36a7ec6fe99b0b32204bfa10fed2e81eac996ec5d"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -172,7 +185,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedAuthoringSource, [reviewedAuthoringDependencies, reviewedDraftEditDependencies,
       reviewedCurriculumReorderDependencies, reviewedCurriculumCreateDependencies]],
     [reviewedPublicationSource, [reviewedPublicationDependencies, reviewedPortableTextDependencies]],
-    [reviewedQuizAuthoringSource, [reviewedQuizAuthoringDependencies, reviewedFreeEnrollmentDependencies]]]
+    [reviewedQuizAuthoringSource, [reviewedQuizAuthoringDependencies, reviewedFreeEnrollmentDependencies]],
+    [reviewedPaidGrantSource, [reviewedPaidGrantDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

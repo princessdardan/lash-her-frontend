@@ -347,6 +347,21 @@ class InteractiveIngressTests(unittest.TestCase):
         self.assertEqual(urls, [origin + path for path in paths for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
         self.assertEqual(self.fixture.responses, [])
 
+    def test_paid_grant_probes_only_exact_reviewed_owner_page_on_both_origins(self):
+        course = "10000000-0000-4000-8000-000000000001"
+        path = f"/admin/courses/{course}/manual-grants"
+        self.enqueue_selected_protection((path,))
+        requester, urls = self.owned_unauthenticated_requester()
+        with patch.object(ingress, "UnauthenticatedIngressClient", return_value=requester):
+            with self.assertRaisesRegex(ValueError, "PAID_GRANT_COURSE_REQUIRED"):
+                ingress.observe_paid_grant_protection(self.base.context, self.fixture.client, course_id=course + "/foreign",
+                                                       expected_profile=self.profile)
+            receipt = ingress.observe_paid_grant_protection(self.base.context, self.fixture.client, course_id=course,
+                                                             expected_profile=self.profile)
+        self.assertEqual([row["path"] for row in receipt["endpointDenials"]], [path])
+        self.assertEqual(urls, [origin + path for origin in (canonical.ORIGIN, self.base.plan["deploymentUrl"])])
+        self.assertEqual(self.fixture.responses, [])
+
     def test_browser_matrix_refuses_alias_drift_after_denials(self):
         self.enqueue_selected_protection(ingress._BROWSER_PATHS,
                                          final_alias={**self.alias(), "deploymentId": "dpl_foreign"})
@@ -377,6 +392,43 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
+    def test_paid_grant_plan_binds_reviewed_reason_revision_and_exact_encoded_targets(self):
+        owner = "10000000-0000-4000-8000-000000000001"
+        course = "10000000-0000-4000-8000-000000000002"
+        user = "10000000-0000-4000-8000-000000000003"
+        key = "10000000-0000-4000-8000-000000000004"
+        entitlements = "/course/v1/admin/entitlements"
+        query = f"idempotencyKey=owner-paid%3A{key}&limit=2"
+        requests = [
+            {"method": "GET", "target": f"/course/v1/admin/courses/{course}", "bodySha256": window._EMPTY, "uses": 3},
+            {"method": "GET", "target": f"{entitlements}/commands?{query}", "bodySha256": window._EMPTY, "uses": 2},
+            {"method": "POST", "target": f"{entitlements}/grants", "bodySha256": "b" * 64, "uses": 1},
+            {"method": "GET", "target": f"{entitlements}/grants?userId={user}&courseId={course}&{query}", "bodySha256": window._EMPTY, "uses": 1}]
+        selection = {"operation": "grant-paid-access", "courseId": course, "userId": user, "revision": 2_147_483_647,
+                     "idempotencyKey": key, "reasonSha256": "d" * 64}
+        action = {"stage": "paid-grant", "actorId": owner, "windowSeconds": 60, "requests": requests, "paidGrantAction": selection}
+        self.assertEqual(window.validate_interactive_action(action), action)
+        selector = window._selection_sha(action)
+        self.assertEqual(selector, (owner + key).replace("-", ""))
+        cookie, gateway_key, _, _ = window._material("fixture" * 8, "https://owned.vercel.app", "a" * 40, "b" * 64,
+                                                       "8", "paid-grant", 1_794_009_600, 60, "c" * 32, selector)
+        self.assertEqual(cookie.split(".")[:3], ["v2", "8", "paid-grant"])
+        self.assertEqual(cookie.split(".")[6], selector)
+        self.assertEqual(len(gateway_key), 64)
+        with self.assertRaisesRegex(ValueError, "INTERACTIVE_ACTION_REQUIRED"):
+            window.validate_interactive_action({name: value for name, value in action.items() if name != "paidGrantAction"})
+        for change in ({"reasonSha256": window._EMPTY}, {"reasonSha256": "0" * 64}, {"revision": 0},
+                       {"revision": True}, {"revision": 2_147_483_648}, {"userId": "wrong"}):
+            with self.subTest(selection=change), self.assertRaisesRegex(ValueError, "PAID_GRANT_SELECTION_REQUIRED"):
+                window.validate_interactive_action({**action, "paidGrantAction": {**selection, **change}})
+        for index, change in ((0, {"uses": 2}), (1, {"target": requests[1]["target"].replace("%3A", "%3a")}),
+                              (1, {"target": requests[1]["target"] + f"&commandId={course}"}),
+                              (2, {"bodySha256": window._EMPTY}), (3, {"target": requests[3]["target"].replace(user, owner)})):
+            changed = [*requests]
+            changed[index] = {**changed[index], **change}
+            with self.subTest(request=change), self.assertRaisesRegex(ValueError, "PAID_GRANT_REQUESTS_REQUIRED"):
+                window.validate_interactive_action({**action, "requests": changed})
+
     def test_quiz_plan_binds_revision_lesson_document_and_exact_routes(self):
         owner = "10000000-0000-4000-8000-000000000001"
         course = "10000000-0000-4000-8000-000000000002"

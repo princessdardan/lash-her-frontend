@@ -10,7 +10,9 @@ function subscribeReference(listener: () => void) {
   window.addEventListener("storage", listener);
   return () => { window.removeEventListener("owner-grant-reference", listener); window.removeEventListener("storage", listener); };
 }
-export function ManualGrantForm({ courseId, revision, eligible }: { courseId: string; revision: number; eligible: boolean }) {
+export function ManualGrantForm({ courseId, revision, eligible, reviewedIdempotencyKey }: {
+  courseId: string; revision: number; eligible: boolean; reviewedIdempotencyKey?: string;
+}) {
   const [userId, setUserId] = useState(""), [reason, setReason] = useState("");
   const [pending, setPending] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null), [message, setMessage] = useState("");
@@ -42,7 +44,7 @@ export function ManualGrantForm({ courseId, revision, eligible }: { courseId: st
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!eligible || !ready || pending || attempt) return;
-    const id = crypto.randomUUID();
+    const id = reviewedIdempotencyKey ?? crypto.randomUUID();
     try { if (sessionStorage.getItem(storageKey)) return; sessionStorage.setItem(storageKey, id); } catch { setMessage("The request reference could not be retained. No grant was submitted."); return; }
     window.dispatchEvent(new Event("owner-grant-reference"));
     await request("POST", id);

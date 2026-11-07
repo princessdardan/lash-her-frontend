@@ -526,6 +526,107 @@ test("scoped learning acknowledges free enrollment after access denial and confi
   assert.deepEqual(observed.interactiveEvidence.acknowledged.slice(3).sort((a, b) => a.requestIndex - b.requestIndex), acknowledged.slice(3));
 });
 
+test("scoped paid grant acknowledges the reviewed owner mutation and exact command and grant readbacks", async t => {
+  const fixtureId = number => `20000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
+  const [courseId, userId, key, commandId, grantId, enrollmentId, foreignId] = [1, 2, 3, 4, 5, 6, 7].map(fixtureId);
+  const actorUserId = "10000000-0000-4000-8000-000000000001";
+  const idempotencyKey = `owner-paid:${key}`;
+  const encodedKey = `owner-paid%3A${key}`;
+  const revision = 7;
+  const reason = `[paid-course revision ${revision}] Reviewed manual access`;
+  const courseTarget = `/course/v1/admin/courses/${courseId}`;
+  const commandsPath = "/course/v1/admin/entitlements/commands";
+  const commandsTarget = `${commandsPath}?idempotencyKey=${encodedKey}&limit=2`;
+  const grantTarget = "/course/v1/admin/entitlements/grants";
+  const grantReadback = `${grantTarget}?userId=${userId}&courseId=${courseId}&idempotencyKey=${encodedKey}&limit=2`;
+  const body = JSON.stringify({ userId, courseId, reason, idempotencyKey });
+  const requests = [
+    { method: "GET", target: courseTarget, bodySha256: certificationHash(""), uses: 3 },
+    { method: "GET", target: commandsTarget, bodySha256: certificationHash(""), uses: 2 },
+    { method: "POST", target: grantTarget, bodySha256: certificationHash(body), uses: 1 },
+    { method: "GET", target: grantReadback, bodySha256: certificationHash(""), uses: 1 },
+  ];
+  const course = { course: { id: courseId, slug: "p2q-paid-course", title: "P2Q paid course", description: null, introduction: null,
+    status: "published", currency: "CAD", accessMode: "paid", priceCents: 3900, taxClassification: "p2q-reviewed-tax-fixture",
+    cover: null, seo: null, revision, modules: [] } };
+  const at = "2026-11-07T16:00:00.000Z";
+  const command = { commandId, action: "grant", scope: "userCourse", outcome: "applied", actorUserId, userId, courseId, targetGrantId: null,
+    reason, effectiveAt: at, affectedGrantCount: 1, effects: [{ grantId, effectType: "grant_created", previousStatus: null, resultingStatus: "active" }] };
+  const commandsBefore = { commands: [], nextCursor: null };
+  const commandsAfter = { commands: [{ ...command, idempotencyKey, createdAt: at }], nextCursor: null };
+  const grant = { grants: [{ grantId, enrollmentId, userId, userEmail: null, courseId, courseSlug: course.course.slug, courseTitle: course.course.title,
+    orderId: null, externalPaymentId: null, provider: null, idempotencyKey, grantReason: "manual", revokeReason: null,
+    grantedAt: at, revokedAt: null, expiresAt: null, status: "active", revokeIdempotencyKey: null, createdAt: at, updatedAt: at }],
+  nextCursor: null, emailLookup: { source: "local_users_projection", complete: false } };
+  const forwarded = [];
+  let granted = false;
+  const f = await interactiveFixture(t, requests, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const payload = Buffer.concat(chunks).toString();
+    forwarded.push({ method: req.method, target: req.url, body: payload, requestId: req.headers["x-request-id"],
+      proof: req.headers[SCOPED_INTERACTIVE_HEADER], authorization: req.headers.authorization, idempotency: req.headers["x-idempotency-key"] });
+    let status = 200, value = course;
+    if (req.method === "POST") {
+      if (JSON.parse(payload).idempotencyKey !== req.headers["x-idempotency-key"]) {
+        status = 400;
+        value = { error: { code: "BAD_REQUEST", message: "Invalid request" } };
+      } else { granted = true; status = 201; value = command; }
+    } else if (req.url === commandsTarget.slice("/course".length)) value = granted ? commandsAfter : commandsBefore;
+    else if (req.url === grantReadback.slice("/course".length)) value = granted ? grant : { ...grant, grants: [] };
+    res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(value));
+  }, "paid-grant");
+
+  const post = () => f.signed({ method: "POST", path: grantTarget, body, idempotency: idempotencyKey });
+  const grantInput = post();
+  for (const input of [f.signed({ path: courseTarget, actor: foreignId }),
+    f.signed({ path: `${commandsPath}?idempotencyKey=${idempotencyKey}&limit=2` }),
+    f.signed({ path: `${commandsPath}?limit=2&idempotencyKey=${encodedKey}` }),
+    f.signed({ path: grantReadback.replace(userId, foreignId) }),
+    f.signed({ method: "POST", path: grantTarget, body, idempotency: idempotencyKey, actor: foreignId }),
+    f.signed({ method: "POST", path: grantTarget, body: JSON.stringify({ userId, courseId, reason: "Unreviewed reason", idempotencyKey }), idempotency: idempotencyKey }),
+    { ...grantInput, headers: { ...grantInput.headers, "x-idempotency-key": `owner-paid:${foreignId}` } }]) {
+    assert.equal((await f.send(input)).status, 503);
+  }
+  const steps = [
+    { input: f.signed({ path: courseTarget }), requestIndex: 0, status: 200, value: course },
+    { input: f.signed({ path: commandsTarget }), requestIndex: 1, status: 200, value: commandsBefore },
+    { input: f.signed({ path: courseTarget }), requestIndex: 0, status: 200, value: course },
+    { input: grantInput, requestIndex: 2, status: 201, value: command },
+    { input: f.signed({ path: commandsTarget }), requestIndex: 1, status: 200, value: commandsAfter },
+    { input: f.signed({ path: grantReadback }), requestIndex: 3, status: 200, value: grant },
+    { input: f.signed({ path: courseTarget }), requestIndex: 0, status: 200, value: course },
+  ];
+  const acknowledged = [];
+  for (const { input, requestIndex, status, value } of steps) {
+    const output = await f.send(input);
+    assert.equal(output.status, status);
+    assert.deepEqual(JSON.parse(output.body), value);
+    const requestId = output.headers["x-request-id"], proofRequestId = input.headers["x-request-id"];
+    assert.match(requestId, /^[a-f0-9-]{36}$/u);
+    assert.notEqual(requestId, proofRequestId);
+    acknowledged.push({ requestId, proofRequestId, requestIndex, upstreamStatus: status });
+    assert.equal((await f.send(input)).status, 503);
+    if (requestIndex === 2) {
+      const unreviewed = f.signed({ path: `${commandsPath}?commandId=${commandId}&idempotencyKey=${encodedKey}&limit=2` });
+      assert.equal((await f.send(unreviewed)).status, 503);
+    }
+  }
+  for (const input of [f.signed({ path: courseTarget }), f.signed({ path: commandsTarget }), post(), f.signed({ path: grantReadback })]) {
+    assert.equal((await f.send(input)).status, 503);
+  }
+  assert.equal(new Set(acknowledged.map(row => row.requestId)).size, steps.length);
+  assert.equal(new Set(acknowledged.map(row => row.proofRequestId)).size, steps.length);
+  assert.deepEqual(forwarded, steps.map(({ input }, index) => ({ method: input.method, target: input.path.slice("/course".length),
+    body: input.body ?? "", requestId: acknowledged[index].requestId, proof: undefined,
+    authorization: input.headers.authorization, idempotency: input.headers["x-idempotency-key"] })));
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.interactiveEvidence, { admitted: steps.length, acknowledged });
+});
+
 test("scoped authoring acknowledges the catalog page and draft create under their returned gateway request IDs", async t => {
   const createTarget = "/course/v1/admin/courses";
   const listTarget = `${createTarget}?limit=100`;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { currentWriterAuthoringActorId, currentWriterAuthoringOperation, currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, currentWriterLifecycleSelection, currentWriterOperationIdentity, markWriterOperationUncertain, matchesWriterIdentityEnrollment } from "./context";
+import { currentWriterAuthoringActorId, currentWriterAuthoringOperation, currentWriterIdentityCustomerId, currentWriterIdentityEnrollment, currentWriterLifecycleSelection, currentWriterOperationIdentity, currentWriterPaidGrantActorId, markWriterOperationUncertain, matchesWriterIdentityEnrollment } from "./context";
 import { authorizeCaptureSquarePayment } from "@/lib/payments/square/square-payment-charge";
 import { createHash, createHmac } from "node:crypto";
 import { createWriterAdmissionRunner } from "./runtime";
@@ -144,12 +144,6 @@ test("interactive browser proof binds its exact stage, request, deployment, epoc
     cookie.replace(customerIdentitySelector, selector("admin"))]) {
     assert.equal(attestInteractiveRequest({ ...google, cookie: invalid }, env, now), null);
   }
-  const paidCookie = cookieFor("paid-grant"), course = "10000000-0000-4000-8000-000000000001";
-  const paid = { ...google, cookie: paidCookie, method: "POST", path: `/api/admin/courses/${course}/manual-grants` };
-  assert.ok(attestInteractiveRequest(paid, env, now));
-  assert.equal(attestInteractiveRequest({ ...paid, method: "PATCH", path: `/api/admin/courses/${course}` }, env, now), null);
-  assert.equal(attestInteractiveRequest({ ...paid, cookie: cookieFor("learning") }, env, now), null);
-
   const f = fixture();
   f.state.epoch = "12";
   const run = createWriterAdmissionRunner({
@@ -359,6 +353,53 @@ test("learning enrollment permits bind canonical customer and idempotency UUIDs 
   }
   for (const invalid of [issue(), issue("0".repeat(32) + selected.slice(32)), issue(selected.slice(0, 32) + "0".repeat(32)),
     issue(selected.toUpperCase()), issue(selected.slice(1))]) assert.equal(attest("POST", enroll, invalid), null);
+});
+
+test("paid-grant v2 permits only the fresh mutation and selected owner page, and clears owner scope", async () => {
+  const now = 1_794_009_600;
+  const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
+  const actorId = "8e2280dc-0389-4248-b21c-f87427f9e85c", idempotencyKey = "8284af5b-324d-45d9-b460-f97dc59b6d9b";
+  const selector = actorId.replaceAll("-", "") + idempotencyKey.replaceAll("-", "");
+  const courseId = "10000000-0000-4000-8000-000000000001";
+  const issue = (selection?: string, stage = "paid-grant") => {
+    const body = [selection ? "v2" : "v1", "12", stage, now, now + 120, "ab".repeat(16), ...(selection ? [selection] : [])].join(".");
+    const mac = createHmac("sha256", env.CRON_SECRET)
+      .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex");
+    return `${body}.${mac}`;
+  };
+  const cookie = issue(selector), page = `/admin/courses/${courseId}/manual-grants`, api = "/api" + page;
+  const attest = (method: string, path: string, permit = cookie) =>
+    attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, cookie: permit }, env, now);
+  const getProof = attest("GET", page), postProof = attest("POST", api);
+  assert.ok(getProof && postProof);
+  assert.deepEqual(readInteractiveRequest(getProof, cookie, env, now)?.paidGrant, { actorId, idempotencyKey });
+  const verified = readInteractiveRequest(postProof, cookie, env, now);
+  assert.deepEqual(verified?.paidGrant, { actorId, idempotencyKey });
+  assert.equal(verified?.learningEnrollment, undefined);
+  for (const [method, path] of [["GET", api], ["GET", `/admin/courses/${courseId}`], ["GET", "/admin/courses"], ["POST", page],
+    ["POST", `/api/academy/courses/${courseId}/enrollments`], ["PATCH", api], ["POST", api + "/"]]) assert.equal(attest(method, path), null);
+  for (const invalid of [issue(), issue(selector.slice(32)), issue(selector.slice(0, 32) + "0".repeat(32)), issue(selector, "learning")]) {
+    assert.equal(attest("POST", api, invalid), null);
+  }
+  assert.equal(readInteractiveRequest(postProof, issue(selector.slice(32) + selector.slice(0, 32)), env, now), null);
+
+  const f = fixture();
+  f.state.epoch = "12";
+  const run = createWriterAdmissionRunner({
+    getConfiguration: () => resolveWriterAdmissionConfiguration(environment()),
+    createClient: () => f.client,
+    getInteractiveWriter: async () => verified,
+  });
+  let releaseObservation!: () => void;
+  let afterAdmission: Promise<string | undefined> | undefined;
+  await run("new-work", async () => {
+    assert.equal(currentWriterPaidGrantActorId(), actorId);
+    assert.equal(currentWriterAuthoringActorId(), undefined);
+    afterAdmission = new Promise<void>(resolve => { releaseObservation = resolve; }).then(currentWriterPaidGrantActorId);
+  });
+  releaseObservation();
+  assert.equal(await afterAdmission, undefined);
+  assert.equal(JSON.stringify(f.calls).includes(actorId), false);
 });
 
 test("first-time identity permits bind the selected provider, normalized email and operation context", async () => {

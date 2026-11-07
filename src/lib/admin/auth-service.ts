@@ -1,4 +1,4 @@
-import { currentWriterAuthoringActorId, markWriterOperationUncertain } from "@/lib/writer-admission/context";
+import { currentWriterAuthoringActorId, currentWriterPaidGrantActorId, markWriterOperationUncertain } from "@/lib/writer-admission/context";
 import { settleWriterEffects } from "@/lib/writer-admission/settle";
 import type { AdminUserStore } from "./admin-user-store";
 import { canAdmin, type AdminPermissionAction } from "./permissions";
@@ -56,8 +56,8 @@ export function createAdminAuth(
       throw new AdminAuthError("identity_conflict");
     }
 
-    const authoringActorId = currentWriterAuthoringActorId();
-    if (authoringActorId && (providerUser?.id !== authoringActorId || providerUser.role !== "owner" || emailUser?.id !== authoringActorId)) {
+    const scopedOwnerId = currentWriterAuthoringActorId() ?? currentWriterPaidGrantActorId();
+    if (scopedOwnerId && (providerUser?.id !== scopedOwnerId || providerUser.role !== "owner" || emailUser?.id !== scopedOwnerId)) {
       throw new AdminAuthError("forbidden");
     }
 

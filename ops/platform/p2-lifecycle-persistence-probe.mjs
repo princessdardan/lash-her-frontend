@@ -152,20 +152,20 @@ const SQL = Object.freeze({
       FROM public.quiz_revisions WHERE lesson_id=$1::uuid AND revision=$2::int`,
     freeEnrollmentCourse: `SELECT id::text AS course_id,slug FROM public.courses WHERE slug=$1::text
       AND status='published' AND access_mode='free' AND currency='CAD' AND price_cents=0`,
-    freeEnrollmentGrant: `SELECT id::text AS grant_id,enrollment_id::text,granted_at::text,
-      (grant_reason='free' AND status='active' AND idempotency_key=$3::text AND request_hash=$4::text
+    enrollmentGrant: `SELECT id::text AS grant_id,enrollment_id::text,granted_at::text,
+      (grant_reason=$5::text AND status='active' AND idempotency_key=$3::text AND request_hash=$4::text
         AND external_order_id IS NULL AND external_payment_id IS NULL AND provider IS NULL AND expires_at IS NULL
         AND revoked_at IS NULL AND revoke_reason IS NULL AND revoke_idempotency_key IS NULL AND revoke_request_hash IS NULL) AS fields_match
       FROM public.entitlement_grants WHERE user_id=$1::uuid AND course_id=$2::uuid LIMIT 2`,
-    freeEnrollmentRecord: `SELECT id::text AS enrollment_id,granted_at::text,
-      (status='active' AND source='free' AND revoked_at IS NULL AND refunded_at IS NULL) AS fields_match
+    enrollmentRecord: `SELECT id::text AS enrollment_id,granted_at::text,
+      (status='active' AND source=$3::text AND revoked_at IS NULL AND refunded_at IS NULL) AS fields_match
       FROM public.enrollments WHERE user_id=$1::uuid AND course_id=$2::uuid LIMIT 2`,
-    freeEnrollmentKey: `SELECT (command_type='free_grant' AND request_hash=$2::text) AS fields_match
+    enrollmentKey: `SELECT (command_type=$3::text AND request_hash=$2::text) AS fields_match
       FROM public.entitlement_idempotency_keys WHERE idempotency_key=$1::text`,
-    freeEnrollmentStream: `SELECT id::text AS stream_id,effective_at::text,
+    enrollmentStream: `SELECT id::text AS stream_id,effective_at::text,
       (version=1 AND state='active' AND effective_at=pg_catalog.date_trunc('milliseconds',effective_at)) AS fields_match
       FROM public.community_enrollment_streams WHERE user_id=$1::uuid AND course_id=$2::uuid LIMIT 2`,
-    freeEnrollmentOutbox: `SELECT o.event_id::text,o.canonical_digest,
+    enrollmentOutbox: `SELECT o.event_id::text,o.canonical_digest,
       (o.stream_version=1 AND o.state='pending' AND o.attempts_in_cycle=0 AND o.replay_cycle=0
         AND o.lease_owner IS NULL AND o.lease_expires_at IS NULL AND o.last_attempt_at IS NULL
         AND o.delivered_at IS NULL AND o.dead_lettered_at IS NULL AND o.last_failure_code IS NULL AND o.last_failure_detail IS NULL
@@ -173,10 +173,20 @@ const SQL = Object.freeze({
         AND o.canonical_digest=pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(o.canonical_body,'UTF8')),'hex')) AS fields_match
       FROM public.community_enrollment_outbox o JOIN public.community_enrollment_streams s ON s.id=o.stream_id
       WHERE o.stream_id=$1::uuid LIMIT 2`,
-    freeEnrollmentProgress: `SELECT NOT EXISTS(SELECT 1 FROM public.lesson_progress p
+    enrollmentProgress: `SELECT NOT EXISTS(SELECT 1 FROM public.lesson_progress p
       JOIN public.lessons l ON l.id=p.lesson_id JOIN public.modules m ON m.id=l.module_id
       LEFT JOIN public.enrollments e ON e.id=p.enrollment_id
       WHERE p.user_id=$1::uuid AND (m.course_id=$2::uuid OR (e.user_id=$1::uuid AND e.course_id=$2::uuid))) AS absent`,
+    paidGrantCourse: `SELECT id::text AS course_id,revision FROM public.courses WHERE id=$1::uuid
+      AND status='published' AND access_mode='paid' AND currency='CAD' AND price_cents>0`,
+    paidGrantCommand: `SELECT id::text AS command_id,effective_at::text,
+      (action='grant' AND scope='userCourse' AND actor_user_id=$2::text AND target_user_id=$3::uuid
+        AND target_course_id=$4::uuid AND target_grant_id IS NULL AND reason=$5::text
+        AND request_hash=$6::text AND outcome='applied' AND effect_count=1) AS fields_match
+      FROM public.admin_entitlement_commands WHERE idempotency_key=$1::text LIMIT 2`,
+    paidGrantEffect: `SELECT (command_id=$1::uuid AND entitlement_grant_id=$2::uuid
+      AND effect_type='grant_created' AND previous_status IS NULL AND resulting_status='active') AS fields_match
+      FROM public.admin_entitlement_command_effects WHERE command_id=$1::uuid OR entitlement_grant_id=$2::uuid LIMIT 2`,
     draft: `SELECT id::text AS course_id,slug,revision,status,
       (title=$2::text AND description IS NOT DISTINCT FROM $3::text AND introduction IS NOT DISTINCT FROM $4::text
         AND currency=$5::text AND access_mode=$6::text AND price_cents=$7::int
@@ -436,6 +446,7 @@ const curriculumCreateBaselines = new WeakMap();
 const publicationBaselines = new WeakMap();
 const quizSaveBaselines = new WeakMap();
 const freeEnrollmentBaselines = new WeakMap();
+const paidGrantBaselines = new WeakMap();
 const draftFormFields = ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification"];
 const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
 const draftSlug = value => typeof value === "string" && value.length <= 120 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
@@ -976,19 +987,45 @@ function selectedFreeEnrollment(value) {
   return Object.freeze({ ...value });
 }
 
+async function readEnrollmentPair(client, { userId, courseId, idempotencyKey, requestHash, grantReason, enrollmentSource, commandType }, check) {
+  const pair = [userId, courseId];
+  const progress = await read(client, "course", "enrollmentProgress", pair);
+  demand(progress.length === 1 && progress[0].absent === true, `${check}-progress`);
+  return {
+    grants: await read(client, "course", "enrollmentGrant", [...pair, idempotencyKey, requestHash, grantReason]),
+    enrollments: await read(client, "course", "enrollmentRecord", [...pair, enrollmentSource]),
+    keys: await read(client, "course", "enrollmentKey", [idempotencyKey, requestHash, commandType]),
+    streams: await read(client, "course", "enrollmentStream", pair),
+  };
+}
+
 async function readFreeEnrollmentPair(client, selection) {
   const { actorId, courseId, slug, idempotencyKey } = selection;
   const courses = await read(client, "course", "freeEnrollmentCourse", [slug]);
   demand(courses.length === 1 && courses[0].course_id === courseId && courses[0].slug === slug, "course-free-enrollment-eligibility");
-  const pair = [actorId, courseId], requestHash = sha(JSON.stringify({ command: "free_grant", userId: actorId, courseId }));
-  const progress = await read(client, "course", "freeEnrollmentProgress", pair);
-  demand(progress.length === 1 && progress[0].absent === true, "course-free-enrollment-progress");
-  return {
-    grants: await read(client, "course", "freeEnrollmentGrant", [...pair, idempotencyKey, requestHash]),
-    enrollments: await read(client, "course", "freeEnrollmentRecord", pair),
-    keys: await read(client, "course", "freeEnrollmentKey", [idempotencyKey, requestHash]),
-    streams: await read(client, "course", "freeEnrollmentStream", pair),
-  };
+  const requestHash = sha(JSON.stringify({ command: "free_grant", userId: actorId, courseId }));
+  return readEnrollmentPair(client, { userId: actorId, courseId, idempotencyKey, requestHash, grantReason: "free",
+    enrollmentSource: "free", commandType: "free_grant" }, "course-free-enrollment");
+}
+
+function requireJoinedEnrollment(pair, grantId, check) {
+  demand(Object.values(pair).every(rows => rows.length === 1 && rows[0].fields_match === true), `${check}-persistence`);
+  const grant = pair.grants[0], enrollment = pair.enrollments[0], stream = pair.streams[0];
+  demand(grant.grant_id === grantId && courseUuid(enrollment.enrollment_id) && grant.enrollment_id === enrollment.enrollment_id
+    && uuidV4(stream.stream_id) && grant.granted_at === enrollment.granted_at && stream.effective_at === grant.granted_at,
+  `${check}-persistence`);
+  return { enrollmentId: enrollment.enrollment_id, grantedAt: grant.granted_at, stream };
+}
+
+async function observeEnrollmentActivation(client, { courseId, userId }, stream, check) {
+  const outbox = await read(client, "course", "enrollmentOutbox", [stream.stream_id]);
+  const event = outbox[0];
+  demand(outbox.length === 1 && event.fields_match === true && uuidV4(event.event_id), `${check}-outbox`);
+  const effectiveAt = date(stream.effective_at);
+  const expected = { eventId: event.event_id, eventType: "enrollment.activated", schemaVersion: 1, producer: "lash-her-course-api",
+    occurredAt: effectiveAt, stream: { id: stream.stream_id, version: 1 }, data: { userId, courseId, state: "active", effectiveAt } };
+  demand(event.canonical_digest === sha(canonicalAsciiJson(expected)), `${check}-outbox`);
+  return event.event_id;
 }
 
 export async function captureP2InteractiveFreeEnrollmentBaseline(courseJob, selection, dependencies) {
@@ -1015,22 +1052,67 @@ export async function observeP2InteractiveFreeEnrollmentCase(courseJob, selectio
   const { courseId, actorId } = saved.selected;
   const { grantId, enrollmentId } = browserBody;
   const { result: transitionId } = await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
-    const pair = await readFreeEnrollmentPair(client, saved.selected);
-    demand(Object.values(pair).every(rows => rows.length === 1 && rows[0].fields_match === true), "course-free-enrollment-persistence");
-    const grant = pair.grants[0], enrollment = pair.enrollments[0], stream = pair.streams[0];
-    demand(grant.grant_id === grantId && grant.enrollment_id === enrollmentId && enrollment.enrollment_id === enrollmentId
-      && uuidV4(stream.stream_id) && grant.granted_at === enrollment.granted_at && stream.effective_at === grant.granted_at,
-    "course-free-enrollment-persistence");
-    const outbox = await read(client, "course", "freeEnrollmentOutbox", [stream.stream_id]);
-    const event = outbox[0];
-    demand(outbox.length === 1 && event.fields_match === true && uuidV4(event.event_id), "course-free-enrollment-outbox");
-    const effectiveAt = date(stream.effective_at);
-    const expected = { eventId: event.event_id, eventType: "enrollment.activated", schemaVersion: 1, producer: "lash-her-course-api",
-      occurredAt: effectiveAt, stream: { id: stream.stream_id, version: 1 }, data: { userId: actorId, courseId, state: "active", effectiveAt } };
-    demand(event.canonical_digest === sha(canonicalAsciiJson(expected)), "course-free-enrollment-outbox");
-    return event.event_id;
+    const joined = requireJoinedEnrollment(await readFreeEnrollmentPair(client, saved.selected), grantId, "course-free-enrollment");
+    demand(joined.enrollmentId === enrollmentId, "course-free-enrollment-persistence");
+    return observeEnrollmentActivation(client, { courseId, userId: actorId }, joined.stream, "course-free-enrollment");
   });
   return { courseId, grantId, enrollmentId, source: "free", status: "active", idempotentReplay: false, transitionId, readOnly: true };
+}
+
+const paidGrantSelectionFields = ["actorId", "courseId", "userId", "revision", "idempotencyKey", "reason"];
+const paidGrantBrowserFields = ["courseId", "userId", "commandId", "grantId", "courseRevision"];
+
+function selectedPaidGrant(value) {
+  demand(closed(value, paidGrantSelectionFields) && [value.actorId, value.courseId, value.userId, value.idempotencyKey].every(courseUuid)
+    && Number.isInteger(value.revision) && value.revision >= 1 && value.revision <= 2_147_483_647
+    && draftText(value.reason, 1800), "course-paid-grant-selection");
+  return Object.freeze({ ...value });
+}
+
+async function readPaidGrantPair(client, selected) {
+  const { actorId, courseId, userId, revision } = selected;
+  const courses = await read(client, "course", "paidGrantCourse", [courseId]);
+  demand(courses.length === 1 && courses[0].course_id === courseId && courses[0].revision === revision, "course-paid-grant-eligibility");
+  const idempotencyKey = `owner-paid:${selected.idempotencyKey}`, reason = `[paid-course revision ${revision}] ${selected.reason}`;
+  const requestHash = sha(canonicalAsciiJson({ action: "grant", scope: "userCourse", actorUserId: actorId, target: { userId, courseId }, reason }));
+  const pair = await readEnrollmentPair(client, { userId, courseId, idempotencyKey, requestHash, grantReason: "manual",
+    enrollmentSource: "admin", commandType: "admin_grant" }, "course-paid-grant");
+  const commands = await read(client, "course", "paidGrantCommand", [idempotencyKey, actorId, userId, courseId, reason, requestHash]);
+  return { pair, commands };
+}
+
+export async function captureP2InteractivePaidGrantBaseline(courseJob, selection, dependencies) {
+  const selected = selectedPaidGrant(selection), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
+    const { pair, commands } = await readPaidGrantPair(client, selected);
+    demand(commands.length === 0 && Object.values(pair).every(rows => rows.length === 0), "course-paid-grant-baseline");
+  });
+  const baseline = Object.freeze({});
+  paidGrantBaselines.set(baseline, { selected, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractivePaidGrantCase(courseJob, selection, baseline, browserBody, dependencies) {
+  const selected = selectedPaidGrant(selection), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const saved = paidGrantBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+    && saved.verifySession === dependencies?.verifySession && paidGrantSelectionFields.every(key => selected[key] === saved.selected[key])
+    && closed(browserBody, paidGrantBrowserFields) && browserBody.courseId === selected.courseId && browserBody.userId === selected.userId
+    && browserBody.courseRevision === selected.revision && [browserBody.commandId, browserBody.grantId].every(courseUuid), "course-paid-grant-receipt");
+  paidGrantBaselines.delete(baseline);
+  const { courseId, userId, revision: courseRevision } = saved.selected, { commandId, grantId } = browserBody;
+  const { result } = await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
+    const { pair, commands } = await readPaidGrantPair(client, saved.selected);
+    const { enrollmentId, grantedAt, stream } = requireJoinedEnrollment(pair, grantId, "course-paid-grant");
+    demand(commands.length === 1 && commands[0].command_id === commandId && commands[0].fields_match === true
+      && commands[0].effective_at === grantedAt, "course-paid-grant-command");
+    const effects = await read(client, "course", "paidGrantEffect", [commandId, grantId]);
+    demand(effects.length === 1 && effects[0].fields_match === true, "course-paid-grant-effect");
+    const transitionId = await observeEnrollmentActivation(client, { courseId, userId }, stream, "course-paid-grant");
+    return { enrollmentId, transitionId };
+  });
+  return { courseId, userId, commandId, grantId, courseRevision, ...result, readOnly: true };
 }
 
 export async function runPrivatePersistenceProbeFromStdin(expectedProfile = undefined) {
