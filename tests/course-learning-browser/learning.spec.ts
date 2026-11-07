@@ -1,6 +1,8 @@
-import { createHash, createHmac, randomUUID, verify as verifySignature } from "node:crypto";
+import { createHash, createHmac, randomUUID, verify as verifySignature, X509Certificate } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
+import type { IncomingMessage } from "node:http";
+import { request as httpsRequest } from "node:https";
 import path from "node:path";
 import { Pool } from "pg";
 import type { QuizAttempt } from "@/lib/learning/types";
@@ -342,6 +344,45 @@ test("production Academy native playback, rewind and separate-session resume", a
     };
   };
   const receipt = (response: Response, expected: number) => receiptFor(response, response.request(), expected);
+  const forwardOwnedProgress = async (request: Request) => {
+    expect(request.url()).toBe(writeUrl);
+    expect(request.method()).toBe("POST");
+    const body = request.postDataBuffer();
+    const caPath = process.env.COURSE_LEARNING_BROWSER_CA_PATH;
+    if (!body?.length || body.length > 4096 || !caPath) throw new Error("Owned progress request or CA unavailable");
+    const ca = readFileSync(caPath);
+    const spki = createHash("sha256").update(new X509Certificate(ca).publicKey.export({ format: "der", type: "spki" })).digest("base64");
+    expect(spki).toBe(owned().browserCertificateSpki);
+    const headers = await request.allHeaders();
+    const response = await new Promise<IncomingMessage>((resolve, reject) => {
+      // Preserve HTTPS localhost authority and pin its connection to the owned IPv4 TLS listener.
+      const forwarded = httpsRequest(writeUrl, {
+        method: request.method(),
+        headers: { ...headers, "accept-encoding": "identity" },
+        ca,
+        rejectUnauthorized: true,
+        agent: false,
+        family: 4,
+        lookup: (_hostname, _options, done) => done(null, "127.0.0.1", 4),
+        signal: AbortSignal.timeout(10_000),
+      }, resolve);
+      forwarded.once("error", reject);
+      forwarded.end(body);
+    });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of response) {
+      size += chunk.length;
+      if (size > 65_536) throw new Error("Owned progress response exceeds bounds");
+      chunks.push(chunk);
+    }
+    return {
+      status: () => response.statusCode ?? 0,
+      headers: () => ({ "cache-control": response.headers["cache-control"] ?? "",
+        "x-request-id": String(response.headers["x-request-id"] ?? "") }),
+      json: async () => JSON.parse(Buffer.concat(chunks, size).toString("utf8")),
+    };
+  };
   const samplePlayer = (player: Awaited<ReturnType<typeof readyPlayer>>) => player.evaluate(element => {
     const mux = element.shadowRoot?.querySelector("mux-video");
     const videos = [...(mux?.querySelectorAll(":scope > video") ?? []), ...(mux?.shadowRoot?.querySelectorAll("video") ?? [])];
@@ -546,14 +587,12 @@ test("production Academy native playback, rewind and separate-session resume", a
     let committed: Awaited<ReturnType<typeof receipt>> | undefined;
     await page.route(writeUrl, async route => {
       const request = route.request();
-      expect(request.method()).toBe("POST");
-      const response = await route.fetch({ maxRedirects: 0, maxRetries: 0 });
       try {
+        const response = await forwardOwnedProgress(request);
         committed = await receiptFor(response, request, 9);
         expect(committed.progress.resumePositionSeconds).toBe(rewound.progress.resumePositionSeconds);
         await assertPersisted(committed.progress);
       } finally {
-        await response.dispose();
         await route.abort("connectionreset");
       }
     }, { times: 1 });
