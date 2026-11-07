@@ -70,6 +70,27 @@ class LifecycleNativeControlTests(unittest.TestCase):
                 "sourceCommit": "a" * 40, "gatewayOrigin": "https://gateway.owned.invalid", "contractPhase": "p2", "checks": ["gateway-course-catalog-p2"],
                 "featureControls": self.plan["featureControls"], "writerAdmissionBinding": self.plan["writerAdmissionBinding"]}
 
+    def profiled(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        ref = copy.deepcopy(dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE))
+        self.release["version"] = 3
+        self.release["qualificationTargetProfile"] = copy.deepcopy(ref)
+        self.release["sourceApproval"] = {"qualificationTargetProfile": copy.deepcopy(ref)}
+        self.release["integration"] = {"qualificationTargetProfile": copy.deepcopy(ref)}
+        self.release["approval"] = {"qualificationTargetProfile": copy.deepcopy(ref)}
+        self.release["frontendMigration"] = {"qualificationTargetProfile": copy.deepcopy(ref)}
+        self.release["workload"]["qualificationTargetProfile"] = copy.deepcopy(ref)
+        self.release["sources"]["frontend"]["qualificationTargetProfile"] = copy.deepcopy(ref)
+        self.release["sources"]["course"] = {"qualificationTargetProfile": copy.deepcopy(ref)}
+        self.release["sources"]["community"] = {"qualificationTargetProfile": copy.deepcopy(ref)}
+        self.plan.update(version=2, qualificationTargetProfile=copy.deepcopy(ref),
+                         candidateSha256=native._candidate_hash(self.release),
+                         target={"qualificationTargetProfile": copy.deepcopy(ref)})
+        private = migrate.read_json(self.private, frontend_probe.PRIVATE_FILE)
+        private.update(version=2, qualificationTargetProfile=copy.deepcopy(ref))
+        (self.private / frontend_probe.PRIVATE_FILE).write_text(json.dumps(private))
+        return ref
+
     def enqueue_metadata(self, enabled=False):
         self.fixture.enqueue(self.fixture.deployment(), self.project(enabled))
 
@@ -81,6 +102,9 @@ class LifecycleNativeControlTests(unittest.TestCase):
     def test_actual_https_p2_profile_observes_ten_controls_and_immutable_writer_binding(self):
         self.enqueue_observe()
         result = native.observe(self.context, self.fixture.client, self.probe)
+        self.assertEqual(set(result), {"projectId", "deploymentId", "sourceCommit", "deploymentUrl", "schedule",
+            "nativeEnabled", "providerQueuedInvocations", "providerActiveInvocations", "cancellationVerified",
+            "configurationRecordSha256", "featureControls", "writerAdmissionBinding"})
         self.assertFalse(result["nativeEnabled"])
         self.assertEqual(result["featureControls"], self.plan["featureControls"])
         self.assertEqual(result["writerAdmissionBinding"], self.plan["writerAdmissionBinding"])
@@ -88,6 +112,31 @@ class LifecycleNativeControlTests(unittest.TestCase):
         for secret in ("fixture-private-token", "fixture-private-bypass", "f" * 64, "provider-secret-must-not-escape"):
             self.assertNotIn(secret, serialized)
         self.assertEqual(self.fixture.calls[-1]["path"], "/api/internal/release-probe")
+
+    def test_profiled_observation_binds_candidate_plan_and_private_probe_without_changing_http_envelope(self):
+        ref = self.profiled()
+        self.enqueue_observe()
+        result = native.observe(self.context, self.fixture.client, self.probe, expected_profile=ref)
+        self.assertEqual(result["version"], 2)
+        self.assertEqual(result["qualificationTargetProfile"], ref)
+        self.assertEqual(result["environment"], "staging")
+        self.assertEqual(result["releaseId"], self.release["releaseId"])
+        self.assertEqual(result["candidateSha256"], self.plan["candidateSha256"])
+        self.assertEqual(result["phase2ContractManifestSha256"], self.release["phase2ContractManifestSha256"])
+        # The application probe protocol remains its existing domain-v1 packet.
+        self.assertEqual(self.response()["version"], 1)
+
+    def test_profiled_ref_or_candidate_drift_refuses_before_provider_access(self):
+        ref = self.profiled()
+        self.plan["candidateSha256"] = "9" * 64
+        with self.assertRaisesRegex(ValueError, "P2_NATIVE_PLAN_REFUSED"):
+            native.observe(self.context, self.fixture.client, self.probe, expected_profile=ref)
+        self.assertEqual(self.fixture.calls, [])
+        self.plan["candidateSha256"] = native._candidate_hash(self.release)
+        self.plan["target"].pop("qualificationTargetProfile")
+        with self.assertRaisesRegex(ValueError, "QUALIFICATION_TARGET_PROFILE_REQUIRED"):
+            native.observe_metadata(self.context, self.fixture.client, expected_profile=ref)
+        self.assertEqual(self.fixture.calls, [])
 
     def test_production_and_wrong_schedule_are_refused(self):
         self.context["candidate"]["environment"] = "production"
@@ -123,6 +172,21 @@ class LifecycleNativeControlTests(unittest.TestCase):
         self.assertEqual([call["body"] for call in toggles], [{"enabled": True}])
         self.assertEqual(toggles[0]["path"], f'/v1/projects/{vercel.PROJECTS["staging"]}/crons?teamId={vercel.TEAM}')
         self.assertTrue((self.fixture.attempt / "p2-native-enable-intent.json").exists())
+
+    def test_profiled_toggle_preserves_existing_source_owned_setter_and_profile_receipts(self):
+        ref = self.profiled()
+        self.enqueue_observe(False)
+        self.fixture.enqueue({})
+        self.enqueue_observe(True)
+        result = native.set_enabled(self.context, self.fixture.client, True, self.fixture.attempt,
+                                    lambda: None, self.probe, expected_profile=ref)
+        intent = migrate.read_json(self.fixture.attempt, "p2-native-enable-intent.json", expected_profile=ref)
+        self.assertEqual(intent["version"], 2)
+        self.assertEqual(intent["qualificationTargetProfile"], ref)
+        self.assertEqual(intent["candidateSha256"], self.plan["candidateSha256"])
+        self.assertEqual(result["observation"]["releaseId"], self.release["releaseId"])
+        self.assertEqual([call["body"] for call in self.fixture.calls if call["method"] == "PATCH"],
+                         [{"enabled": True}])
 
     def test_disable_is_metadata_only_and_does_not_depend_on_probe_or_cron_secret(self):
         self.enqueue_metadata(True)

@@ -71,15 +71,20 @@ def _alias(client, plan):
         "redirect": False, "deleted": False, "microfrontends": False}
 
 
-def observe(context, client, probe=None):
-    plan = native.identity(context)
+def observe(context, client, probe=None, *, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
+    plan = native.identity(context, expected_profile=expected)
+    candidate = context["candidate"]
     demand(plan["projectId"] == PROJECT and context.get("configurationRecordSha256") == plan["configurationRecordSha256"],
         "P2_CANONICAL_REVIEWED_CONFIGURATION_REQUIRED")
-    before = native.observe_metadata(context, client)
+    before = native.observe_metadata(context, client, expected_profile=expected)
     demand(before.get("nativeEnabled") is False, "P2_CANONICAL_NATIVE_MUST_BE_DISABLED")
     alias = _alias(client, plan)
-    private = frontend_probe._private_input(Path(context["privateProbeDirectory"]), {
-        "environment": "staging", "projectId": PROJECT, "sourceCommit": plan["sourceCommit"], "releaseId": plan["actionId"]})
+    private_identity = {**vercel.profile_fields(candidate, expected), "environment": "staging",
+                        "projectId": PROJECT, "sourceCommit": plan["sourceCommit"],
+                        "releaseId": plan["actionId"]}
+    private = frontend_probe._private_input(Path(context["privateProbeDirectory"]), private_identity,
+                                            expected_profile=expected)
     project = vercel._project(client, PROJECT)
     challenge = secrets.token_hex(32)
     result = (probe or CanonicalBrowserProbeClient()).request(ORIGIN, private["secret"], frontend_probe._automation_bypass(project), challenge)
@@ -92,12 +97,18 @@ def observe(context, client, probe=None):
         and frontend_probe.valid_feature_controls(result.get("featureControls")) and result["featureControls"] == plan["featureControls"]
         and frontend_probe.valid_writer_admission_binding(result.get("writerAdmissionBinding")) and result["writerAdmissionBinding"] == plan["writerAdmissionBinding"],
         "P2_CANONICAL_WORKLOAD_BINDING_REFUSED")
-    demand(_alias(client, plan) == alias and native.observe_metadata(context, client) == before, "P2_CANONICAL_PROVIDER_CHANGED")
+    demand(_alias(client, plan) == alias
+           and native.observe_metadata(context, client, expected_profile=expected) == before,
+           "P2_CANONICAL_PROVIDER_CHANGED")
     # Re-read the existing private input at the final boundary; never extend it.
-    final_private = frontend_probe._private_input(Path(context["privateProbeDirectory"]), {
-        "environment": "staging", "projectId": PROJECT, "sourceCommit": plan["sourceCommit"], "releaseId": plan["actionId"]})
+    final_private = frontend_probe._private_input(Path(context["privateProbeDirectory"]), private_identity,
+                                                  expected_profile=expected)
     demand(final_private == private, "P2_CANONICAL_PRIVATE_INPUT_CHANGED")
-    return {"version": 1, "status": "P2_CANONICAL_BROWSER_ORIGIN_VERIFIED", "environment": "staging", "browserOrigin": ORIGIN,
+    profile_fields = ({} if expected is None else
+                      {**vercel.profile_fields(candidate, expected), "candidateSha256": plan["candidateSha256"],
+                       "phase2ContractManifestSha256": candidate["phase2ContractManifestSha256"]})
+    return {**profile_fields, "version": 2 if expected is not None else 1,
+        "status": "P2_CANONICAL_BROWSER_ORIGIN_VERIFIED", "environment": "staging", "browserOrigin": ORIGIN,
         "projectId": PROJECT, "deploymentId": plan["deploymentId"], "deploymentUrl": plan["deploymentUrl"], "sourceCommit": plan["sourceCommit"],
         "releaseId": plan["actionId"], "configurationRecordSha256": plan["configurationRecordSha256"],
         "featureControls": result["featureControls"], "writerAdmissionBinding": result["writerAdmissionBinding"],

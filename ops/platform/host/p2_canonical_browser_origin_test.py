@@ -50,6 +50,10 @@ class CanonicalBrowserOriginTests(unittest.TestCase):
     def test_owned_actual_https_brackets_exact_alias_and_immutable_ready_deployment(self):
         self.enqueue()
         result = origin.observe(self.context, self.fixture.client, self.probe)
+        self.assertEqual(result["version"], 1)
+        self.assertNotIn("qualificationTargetProfile", result)
+        self.assertNotIn("candidateSha256", result)
+        self.assertNotIn("phase2ContractManifestSha256", result)
         self.assertEqual(result["browserOrigin"], "https://staging.lashher.com")
         self.assertEqual(result["deploymentUrl"], "https://owned-fixture.vercel.app")
         paths = [call["path"] for call in self.fixture.calls]
@@ -58,6 +62,27 @@ class CanonicalBrowserOriginTests(unittest.TestCase):
         self.assertEqual(paths[4], "/api/internal/release-probe")
         for value in ("fixture-private-token", "fixture-private-bypass", "f"*64):
             self.assertNotIn(value, json.dumps(result))
+
+    def test_profiled_canonical_observation_binds_candidate_and_keeps_browser_http_v1(self):
+        ref = self.base.profiled()
+        self.enqueue()
+        result = origin.observe(self.context, self.fixture.client, self.probe, expected_profile=ref)
+        self.assertEqual(result["version"], 2)
+        self.assertEqual(result["qualificationTargetProfile"], ref)
+        self.assertEqual(result["candidateSha256"], self.base.plan["candidateSha256"])
+        self.assertEqual(result["phase2ContractManifestSha256"], self.base.release["phase2ContractManifestSha256"])
+        self.assertEqual(result["browserOrigin"], origin.ORIGIN)
+        self.assertEqual(self.base.response()["version"], 1)
+
+    def test_profiled_canonical_reader_refuses_missing_private_profile_before_https(self):
+        ref = self.base.profiled()
+        private = json.loads((self.base.private / frontend_probe.PRIVATE_FILE).read_bytes())
+        private.pop("qualificationTargetProfile")
+        (self.base.private / frontend_probe.PRIVATE_FILE).write_text(json.dumps(private))
+        self.base.enqueue_metadata(); self.fixture.enqueue(self.alias())
+        with self.assertRaisesRegex(ValueError, "QUALIFICATION_TARGET_PROFILE_REQUIRED"):
+            origin.observe(self.context, self.fixture.client, self.probe, expected_profile=ref)
+        self.assertTrue(all(call["path"] != "/api/internal/release-probe" for call in self.fixture.calls))
 
     def test_fixed_probe_refuses_arbitrary_origin_before_any_network(self):
         with patch.object(self.probe._opener, "open", side_effect=AssertionError("network forbidden")):
