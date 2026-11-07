@@ -49,25 +49,7 @@ PROFILED_CURRENT_SOURCE_ONLY = frozenset({
     'ops/platform/p2-profiled-current-transport.mjs',
     'ops/platform/p2-profiled-current-transport.test.mjs',
 })
-LEGACY_FIXTURE_ONLY_OMISSIONS = frozenset({
-    'ops/platform/host/current_databases_test.py',
-    'ops/platform/host/p2_certification_parent_test.py',
-    'ops/platform/host/p2_certification_fault_test.py',
-    'ops/platform/host/p2_known_ack_loss_test.py',
-    'ops/platform/host/p2_known_ack_interrupted_restoration_test.py',
-    'ops/platform/host/p2_prior_gateway_test.py',
-    'ops/platform/host/p2_supervisor_dispatch_test.py',
-    'ops/platform/host/p2_lifecycle_authority_timing_test.py',
-    'ops/platform/host/p2_lifecycle_persistence_probe_test.py',
-    'ops/platform/p2-lifecycle-suspension-evidence.test.mjs',
-    'ops/platform/p2-lifecycle-worker-evidence.test.mjs',
-    'ops/platform/prepare-p2-identity-probe-fixtures.test.mjs',
-    'ops/platform/p2-certification.test.mjs',
-    'ops/platform/p2-lifecycle-native.test.mjs',
-})
-
-
-def tracked_source_fixture(source, destination, *, exclude=frozenset()):
+def tracked_source_fixture(source, destination, *, exclude=frozenset(), include_tests=True):
     """Mirror readOperatorSourceFiles' tracked public ops selection, not npm output."""
     environment={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C',
         'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':os.devnull,'GIT_NO_REPLACE_OBJECTS':'1'}
@@ -76,7 +58,8 @@ def tracked_source_fixture(source, destination, *, exclude=frozenset()):
     selected={name for name in result.stdout.decode('utf-8').split('\0') if name and Path(name).suffix in TYPES}
     if not exclude.issubset(selected):
         raise ValueError('OWNED_TRACKED_SOURCE_PROJECTION_REQUIRED')
-    names=sorted(selected-exclude)
+    names=sorted(name for name in selected-exclude if include_tests or name in REQUIRED or
+                 not name.endswith(('_test.py', '.test.mjs', '.test.ts', '.test.mts')))
     for name in names:
         path=Path(name)
         if path.is_absolute() or '..' in path.parts or path.parts[0]!='ops' or (source/path).is_symlink():
@@ -88,7 +71,7 @@ def tracked_source_fixture(source, destination, *, exclude=frozenset()):
 
 def legacy_source_fixture(source, destination):
     """Install the v1 fixture with all production and required source files."""
-    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_ONLY_OMISSIONS)
+    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY, include_tests=False)
     if len(names) > 512 or sum((destination / name).stat().st_size for name in names) > 41_000_000:
         raise ValueError('LEGACY_SOURCE_FIXTURE_BOUNDS_REQUIRED')
     return names

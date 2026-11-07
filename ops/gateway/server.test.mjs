@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { mkdtempSync, readFileSync, rmSync, renameSync, writeFileSync, symlinkSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, renameSync, statSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -10,6 +10,7 @@ import { createGateway } from "./server.mjs";
 import { createPrivateTlsProxy } from "./private-tls.mjs";
 import { createHash } from "node:crypto";
 import { createP2CertificationFault, p2GatewayProcessBinding } from "./p2-certification-fault.mjs";
+import { scopedMuxTarget, SCOPED_MUX_HEADER } from "./admission.mjs";
 
 let folder, key, cert, keyFile, certFile, wrongCertFile;
 before(() => {
@@ -96,6 +97,118 @@ async function certificationFixture(t, handler, mode = "drop-after-ack", profile
   return { ...f, effects, command, record, saveAdmission, input: { method: "POST", path: "/course/v1/internal/accounts/commands",
     headers: { authorization: "Bearer owned.lifecycle.jwt", "x-idempotency-key": command.commandId }, body: JSON.stringify(command) } };
 }
+
+test("scoped Mux admission forwards only the selected managed callback and mints its own target header", async t => {
+  const directory = mkdtempSync(join(folder, "mux-admission-"));
+  const file = join(directory, "state.json"), identity = statSync(directory, { bigint: true });
+  const admission = { file, releaseId: "owned-certification", candidateSha256: "a".repeat(64) };
+  const attemptId = "00000000-0000-4000-8000-000000000003";
+  const start = Date.now(), processSha = "b".repeat(64);
+  const scope = { gatewayProcessSha256: processSha, mountDevice: String(identity.dev), mountInode: String(identity.ino),
+    issuedAt: new Date(start - 1000).toISOString(), expiresAt: new Date(start + 30_000).toISOString(),
+    environmentId: "owned-environment", attemptId, generation: 2, assetId: "owned-asset", uploadId: "owned-upload",
+    eventType: "video.asset.track.ready" };
+  const state = { version: 2, environment: "staging", releaseId: admission.releaseId, candidateSha256: admission.candidateSha256,
+    actionId: "owned-mux-window", newWork: false, recovery: false, muxCallback: scope };
+  const save = value => writeFileSync(file, certificationCanonical(value) + "\n", { mode: 0o644 });
+  save(state);
+  const forwarded = [];
+  let processReads = 0, driftOnRecheck = false, dropCourseResponse = false;
+  const backend = createHttpServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    forwarded.push({ path: request.url, target: request.headers[SCOPED_MUX_HEADER],
+      signature: request.headers["mux-signature"], body: Buffer.concat(chunks).toString() });
+    if (dropCourseResponse) {
+      response.destroy();
+      return;
+    }
+    response.end(JSON.stringify({ videoAsset: { id: attemptId,
+      lessonId: "00000000-0000-4000-8000-000000000004", status: "processing" } }));
+  });
+  await new Promise(resolve => backend.listen(0, "127.0.0.1", resolve));
+  const proxy = createPrivateTlsProxy({ keyFile, certFile, upstream: `http://127.0.0.1:${backend.address().port}`,
+    peers: [{ address: "127.0.0.1", routes: [{ method: "POST", path: "/v1/webhooks/mux" }] }] });
+  await new Promise(resolve => proxy.listen(0, "127.0.0.1", resolve));
+  t.after(() => Promise.all([proxy, backend].map(server => new Promise(resolve => {
+    server.close(resolve); server.closeAllConnections();
+  }))));
+  const f = await fixture(t, (_request, response) => response.end(), {
+    admission, publicHost: "api-staging.lashher.com", ownerId: "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+    projectId: "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM", courseOrigin: `https://127.0.0.1:${proxy.address().port}`,
+  }, {
+    scopedMuxProcessBinding() {
+      processReads++;
+      return driftOnRecheck && processReads % 2 === 0 ? "c".repeat(64) : processSha;
+    },
+  });
+  const data = { id: "owned-track", asset_id: scope.assetId,
+    passthrough: `lash-her-course:${scope.environmentId}:${attemptId}` };
+  const event = { id: "owned-event", type: scope.eventType, environment: { id: scope.environmentId }, data };
+  const signature = "owned-provider-signature";
+  const input = { method: "POST", path: "/course/v1/webhooks/mux",
+    headers: { "mux-signature": signature, [SCOPED_MUX_HEADER]: "foreign:1" }, body: JSON.stringify(event) };
+  assert.equal((await f.send(input)).status, 200);
+  assert.deepEqual(forwarded, [{ path: "/v1/webhooks/mux", target: `${attemptId}:2`, signature, body: input.body }]);
+  for (const changed of [
+    { ...event, environment: { id: "foreign-environment" } },
+    { ...event, type: "video.asset.track.deleted" },
+    { ...event, data: { ...data, asset_id: "foreign-asset" } },
+    { ...event, data: { ...data, passthrough: "foreign-attempt" } },
+  ]) {
+    assert.equal((await f.send({ ...input, body: JSON.stringify(changed) })).status, 503);
+  }
+  assert.equal((await f.send({ ...input, body: "{}" })).status, 503);
+  assert.equal((await f.send({ ...input, headers: { "mux-signature": "" } })).status, 503);
+  assert.equal((await f.send({ ...input, body: "x".repeat(65_537) })).status, 413);
+  assert.equal((await f.send({ method: "POST", path: "/course/v1/internal/accounts/commands",
+    headers: { authorization: "Bearer owned.lifecycle.jwt" }, body: "{}" })).status, 503);
+  assert.equal((await f.send({ ...input, path: input.path + "?foreign=1" })).status, 503);
+  for (const muxCallback of [
+    { ...scope, mountInode: String(identity.ino + 1n) },
+    { ...scope, gatewayProcessSha256: "c".repeat(64) },
+    { ...scope, expiresAt: new Date(start - 1).toISOString() },
+  ]) {
+    save({ ...state, muxCallback });
+    assert.equal((await f.send(input)).status, 503);
+  }
+  const canonical = certificationCanonical(state) + "\n";
+  writeFileSync(file, canonical.replace('"version":2', '"version":2,"version":2'));
+  assert.equal((await f.send(input)).status, 503);
+  save(state); processReads = 0; driftOnRecheck = true;
+  assert.equal((await f.send(input)).status, 503);
+  driftOnRecheck = false;
+  assert.equal(f.admissionState().muxCallbackActive, true);
+  assert.equal(Object.hasOwn(f.admissionState(), "muxCallback"), false);
+  assert.deepEqual(f.admissionState().uncertain, { newWork: 0, recovery: 0 });
+  save({ version: 1, environment: "staging", releaseId: admission.releaseId, candidateSha256: admission.candidateSha256,
+    actionId: "owned-mux-closed", newWork: false, recovery: false });
+  assert.equal((await f.send(input)).status, 503);
+  assert.equal(forwarded.length, 1);
+  save({ version: 1, environment: "staging", releaseId: admission.releaseId, candidateSha256: admission.candidateSha256,
+    actionId: "owned-recovery", newWork: false, recovery: true });
+  assert.equal((await f.send(input)).status, 200);
+  assert.deepEqual(forwarded[1], { path: "/v1/webhooks/mux", target: undefined, signature, body: input.body });
+  save(state); dropCourseResponse = true;
+  assert.equal((await f.send(input)).status, 502);
+  assert.equal(forwarded[2].target, `${attemptId}:2`);
+  assert.deepEqual(f.admissionState().active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(f.admissionState().uncertain, { newWork: 0, recovery: 1 });
+});
+
+test("scoped Mux selection binds upload IDs and requires a managed marker for an unknown asset", () => {
+  const attemptId = "00000000-0000-4000-8000-000000000003";
+  const environmentId = "owned-environment", signature = "owned-provider-signature";
+  const marker = `lash-her-course:${environmentId}:${attemptId}`;
+  const scope = { attemptId, environmentId, generation: 2, uploadId: "owned-upload", assetId: null };
+  const event = { id: "owned-event", environment: { id: environmentId } };
+  const check = (eventType, data) => scopedMuxTarget({ ...scope, eventType },
+    Buffer.from(JSON.stringify({ ...event, type: eventType, data })), signature);
+  assert.equal(check("video.upload.asset_created", { id: scope.uploadId, asset_id: "owned-asset" }), `${attemptId}:2`);
+  assert.equal(check("video.upload.asset_created", { id: "foreign-upload", asset_id: "owned-asset" }), null);
+  assert.equal(check("video.asset.ready", { id: "owned-asset" }), null);
+  assert.equal(check("video.asset.ready", { id: "owned-asset", passthrough: marker }), `${attemptId}:2`);
+});
 
 test("certification503 runs only after actual auth/admission and before any TLS upstream effect", async t => {
   let calls = 0;

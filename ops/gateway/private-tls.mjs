@@ -5,6 +5,7 @@ import { isIP } from "node:net";
 import { pathToFileURL } from "node:url";
 import { X509Certificate } from "node:crypto";
 import { createOperationsServer } from "./operations.mjs";
+import { SCOPED_MUX_HEADER } from "./admission.mjs";
 
 // Each application is on a two-peer backend network with this TLS terminator.
 // The application trusts only this proxy's address, never the whole mesh CIDR.
@@ -35,6 +36,10 @@ export function createPrivateTlsProxy(config) {
     for (const name of ["accept", "authorization", "content-type", "x-idempotency-key", "mux-signature", "x-request-id"]) {
       const value = req.headers[name];
       if (typeof value === "string") headers[name] = value;
+    }
+    const muxTarget = req.headers[SCOPED_MUX_HEADER];
+    if (req.method === "POST" && req.url === "/v1/webhooks/mux" && typeof muxTarget === "string") {
+      headers[SCOPED_MUX_HEADER] = muxTarget;
     }
     // Reframe the body locally; no untrusted hop-by-hop/framing headers survive.
     const call = request(upstream, { agent, method: req.method, path: req.url, headers, timeout: 5000 }, (reply) => {

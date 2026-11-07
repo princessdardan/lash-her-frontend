@@ -5,7 +5,10 @@ import { pathToFileURL } from "node:url";
 import { createWorkloadVerifier } from "./oidc.mjs";
 import { matchRoute, MinuteBudget, validateConfig } from "./policy.mjs";
 import { createOperationsServer } from "./operations.mjs";
-import { admissionClass, readAdmission } from "./admission.mjs";
+import {
+  admissionClass, isScopedMuxRoute, readAdmission, scopedMuxAcknowledged, scopedMuxTarget,
+  SCOPED_MUX_BODY_LIMIT, SCOPED_MUX_HEADER,
+} from "./admission.mjs";
 import { createP2CertificationFault } from "./p2-certification-fault.mjs";
 
 const MAX_BODY = 1024 * 1024;
@@ -17,6 +20,7 @@ export function createGateway(input, options = {}) {
   const config = validateConfig(input);
   const verify = options.verify ?? createWorkloadVerifier(config);
   const certification = (options.certificationFault ?? createP2CertificationFault)(config);
+  const currentAdmission = () => readAdmission(config, { processBinding: options.scopedMuxProcessBinding });
   const budgets = new MinuteBudget(options.limits ?? {
     preauth: 2400, webhook: 600, workload: 1200, service: 600,
   });
@@ -56,6 +60,17 @@ export function createGateway(input, options = {}) {
       res.writeHead(status, { "content-type": "application/json", connection: "close" });
       res.end(JSON.stringify({ error: { code, message: code.replaceAll("_", " ") }, requestId }));
     }
+
+    function accountAdmission(category) {
+      admitted[category]++;
+      admissionCategory = category;
+      res.once("close", () => {
+        admitted[category]--;
+        // A dropped response does not prove the upstream transaction stopped.
+        if (!res.writableFinished) markUncertain();
+      });
+    }
+
     async function handle() {
       // Reject repeats before Node's normalized header map can discard them.
       const names = new Set();
@@ -80,32 +95,36 @@ export function createGateway(input, options = {}) {
         if (retry) return refuse(429, "rate_limit_exceeded", retry);
       }
       const category = admissionClass(route);
+      let muxAdmission;
       if (category && config.admission !== undefined) {
-        if (!readAdmission(config)[category]) return refuse(503, "release_maintenance", 30);
-        // No await between reading the fence and accounting for admission.
-        // The 12s request bound includes body upload and upstream work.
-        admitted[category]++;
-        admissionCategory = category;
-        res.once("close", () => {
-          admitted[category]--;
-          // A dropped response does not prove the upstream transaction stopped.
-          // Preserve that uncertainty; an empty transport count cannot certify
-          // business drain after a canceled or timed-out mutation.
-          if (!res.writableFinished) markUncertain();
-        });
+        const admission = currentAdmission();
+        if (admission[category]) accountAdmission(category);
+        else if (category === "recovery" && admission.muxCallback && isScopedMuxRoute(route, req.url)) muxAdmission = admission;
+        else return refuse(503, "release_maintenance", 30);
       } else if (config.admission === undefined && config.maintenance === true && req.method !== "GET" && route.auth !== "webhook") {
         return refuse(503, "release_maintenance", 30);
       }
       // Raw bytes are buffered only within a fixed bound; Mux signs these bytes.
+      const bodyLimit = muxAdmission ? SCOPED_MUX_BODY_LIMIT : MAX_BODY;
       const chunks = [];
       let bytes = 0;
       for await (const chunk of req) {
         bytes += chunk.length;
-        if (bytes > MAX_BODY) return refuse(413, "body_too_large");
+        if (bytes > bodyLimit) return refuse(413, "body_too_large");
         chunks.push(chunk);
       }
       const body = Buffer.concat(chunks);
       if ((req.method === "GET" || req.method === "HEAD") && body.length) return refuse(400, "body_not_allowed");
+      let muxTarget;
+      if (muxAdmission) {
+        const current = currentAdmission();
+        if (res.destroyed || current.sha256 !== muxAdmission.sha256) return refuse(503, "release_maintenance", 30);
+        muxTarget = scopedMuxTarget(current.muxCallback, body, req.headers["mux-signature"]);
+        if (!muxTarget) return refuse(503, "release_maintenance", 30);
+        // Recheck the exact state after the body await. Account only a selected
+        // upstream operation, so rejecting a foreign callback cannot dirty drain.
+        accountAdmission("recovery");
+      }
       const fault = certification.select({ route, method: req.method, target: req.url, headers: req.headers, body });
       if (certification.beforeUpstream(fault, res, () => refuse(503, "upstream_unavailable", 1))) return;
       const headers = { "x-request-id": requestId, "content-length": String(body.length) };
@@ -114,6 +133,7 @@ export function createGateway(input, options = {}) {
       }
       if (route.auth !== "webhook") delete headers["mux-signature"];
       else delete headers.authorization;
+      if (muxTarget) headers[SCOPED_MUX_HEADER] = muxTarget;
       const upstream = new URL(upstreamOrigin);
       await new Promise((resolve) => {
         const call = httpsRequest(upstream, {
@@ -130,6 +150,7 @@ export function createGateway(input, options = {}) {
           reply.once("end", () => {
             if (res.destroyed) return resolve();
             const buffered = Buffer.concat(result);
+            if (muxAdmission && !scopedMuxAcknowledged(muxAdmission.muxCallback, reply.statusCode, buffered)) markUncertain();
             // The complete upstream ACK must be checked before any downstream
             // status, headers or bytes. A deliberate drop retains uncertainty
             // through the existing admitted-request close accounting.
@@ -168,11 +189,11 @@ export function createGateway(input, options = {}) {
   server.on("checkContinue", (_req, res) => { res.writeHead(417, { connection: "close" }); res.end(); });
   server.on("upgrade", (_req, socket) => socket.destroy());
   server.on("close", () => agent.destroy());
-  return { server, counters, admissionState: () => ({
-    ...(config.admission === undefined ? { valid: false, newWork: false, recovery: false } : readAdmission(config)),
-    active: { ...admitted },
-    uncertain: { ...uncertain },
-  }) };
+  return { server, counters, admissionState: () => {
+    const { muxCallback, ...state } = config.admission === undefined
+      ? { valid: false, newWork: false, recovery: false } : currentAdmission();
+    return { ...state, ...(muxCallback ? { muxCallbackActive: true } : {}), active: { ...admitted }, uncertain: { ...uncertain } };
+  } };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
