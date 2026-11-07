@@ -42,6 +42,52 @@ ROTATION_LAYOUT = {'actionIdKey': 'rotationActionId', 'receiptPrefix': 'p2-ident
                    'terminalStatus': 'P2_IDENTITY_KEY_ROTATION_QUALIFIED'}
 C_LAYOUT = {**RECOVERY_LAYOUT, 'terminalName': 'p2-known-ack-interrupted-restoration-outcome.json',
             'terminalStatus': 'P2_KNOWN_ACK_INTERRUPTED_RUNTIME_RESTORED_FENCED'}
+PROFILED_CURRENT_LAYOUT = {'actionIdKey': 'releaseId', 'receiptPrefix': 'p2-profiled-current-',
+                          'runtimePrefix': 'runtime-', 'terminalName': 'p2-profiled-current-outcome.json',
+                          'terminalStatus': 'P2_PROFILED_CURRENT_READY_FOR_CERTIFICATION'}
+PROFILED_CURRENT_RECOVERY_LAYOUT = {'actionIdKey': 'recoveryActionId', 'receiptPrefix': 'p2-profiled-current-recovery-',
+                                   'runtimePrefix': 'runtime-profiled-current-recovery-',
+                                   'migrationPrefix': 'migration-profiled-current-recovery-',
+                                   'terminalName': 'p2-profiled-current-recovery-outcome.json',
+                                   'terminalStatus': 'P2_PROFILED_CURRENT_RECOVERED_FENCED'}
+
+
+def _guard_profile(initial):
+    # The supervisor replaces this layout from its fixed source argument.
+    if fixed_layout(initial) not in (PROFILED_CURRENT_LAYOUT, PROFILED_CURRENT_RECOVERY_LAYOUT):
+        return None
+    from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+    return migrate.profile_context(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+
+
+def _profile_kwargs(initial):
+    expected = _guard_profile(initial)
+    return {} if expected is None else {'expected_profile': expected}
+
+
+def cleanup_profiled_current_readonly_containers():
+    pattern = '^/lash-p2-profiled-current-observer-[a-f0-9]{32}$'
+    query = ['docker', 'container', 'ls', '--all', '--filter', 'name=' + pattern, '--format', '{{.ID}}']
+    failed = None
+    try:
+        for identity in runtime.command(query, runtime.SAFE_ENV, 15).splitlines():
+            if not re.fullmatch(r'[a-f0-9]{12,64}', identity):
+                failed = 'P2_GUARD_PROFILED_CURRENT_CONTAINER_ID_REFUSED'
+                continue
+            try:
+                runtime.command(['docker', 'rm', '--force', identity], runtime.SAFE_ENV, 30)
+            except BaseException:
+                failed = 'P2_GUARD_PROFILED_CURRENT_CLEANUP_UNKNOWN'
+    except BaseException:
+        failed = 'P2_GUARD_PROFILED_CURRENT_CLEANUP_UNKNOWN'
+    try:
+        if runtime.command(query, runtime.SAFE_ENV, 15):
+            failed = 'P2_GUARD_PROFILED_CURRENT_CONTAINER_REMAINS'
+    except BaseException:
+        failed = 'P2_GUARD_PROFILED_CURRENT_CLEANUP_UNKNOWN'
+    if failed:
+        raise ValueError(failed)
+
 
 
 def fixed_layout(initial):
@@ -210,7 +256,8 @@ def verify_guard_boundary(initial, source):
 
 
 def capture_gateway_before_stop(initial, selected, directory, source):
-    return p2_prior_gateway.capture_before_stop(initial,selected,directory,lambda:verify_guard_boundary(initial,source))
+    return p2_prior_gateway.capture_before_stop(initial,selected,directory,lambda:verify_guard_boundary(initial,source),
+                                                **_profile_kwargs(initial))
 
 
 def fail_closed(initial, armed, source, *, group=None, record_name='p2-independent-guard-outcome.json', observer_type=None,
@@ -218,6 +265,13 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
     result = {'status': 'P2_INDEPENDENT_GUARD_FAILED_CLOSED_REQUIRES_REVIEW', 'trafficAuthorized': None,
               'sqlReplayAuthorized': False, 'releaseAccepted': False, 'g2Accepted': False,
               'workerProcessesQuiesced': False, 'runtimeStopped': None, 'frontendAdmissionClosed': None}
+    expected = _guard_profile(initial)
+    if expected is not None:
+        result.update(version=2, qualificationTargetProfile=expected, environment='staging',
+                      releaseId=initial['candidate']['releaseId'], sourceCommit=initial['sourceCommit'],
+                      candidateSha256=initial['candidateSha256'], frontendSqlApplied=False,
+                      historicalProviderClosureClaimed=False, oldP200Qualified=False)
+
     if group is not None:
         try:
             result['workerProcessesQuiesced'] = stop_group(group)
@@ -230,6 +284,16 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
                   else 'P2_GUARD_REFUSED_BEFORE_ROTATION_STAGE' if fixed_layout(initial) == ROTATION_LAYOUT
                   else 'P2_GUARD_REFUSED_BEFORE_API_STAGE')
         result.update(status=status, runtimeStopAttempted=False)
+        if expected is not None:
+            # A first readonly observer may have outlived its Docker CLI.
+            # There is no authority to stop the prior runtime before arming.
+            if result['workerProcessesQuiesced']:
+                try:
+                    cleanup_profiled_current_readonly_containers()
+                except BaseException:
+                    result['profiledCurrentReadonlyCleanupUncertain'] = True
+            else:
+                result['profiledCurrentReadonlyCleanupUncertain'] = True
         return result
     # These values were verified before forking. Mutable input loss is not a
     # reason to skip closure of an already-running release.
@@ -291,7 +355,7 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
     # The only processes allowed to start containers have been revoked/reaped.
     # Close known migration containers first, then stop all API/runtime services.
     for name in ('course', 'community'):
-        container = 'lash-migrate-' + name + '-' + selected['releaseId']
+        container = 'lash-migrate-' + name + '-' + (identity if expected is not None else selected['releaseId'])
         try:
             query = ['docker', 'container', 'ls', '--all', '--filter', 'name=^/' + container + '$', '--format', '{{.ID}}']
             if runtime.command(query, runtime.SAFE_ENV, 15):
@@ -304,6 +368,16 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
             cleanup_recovery_current_containers()
         except BaseException:
             result['recoveryCurrentContainerCleanupUncertain'] = True
+    if expected is not None:
+        # Never remove an observer while the source worker can still launch it.
+        # finish_failure_cleanup retains the flock and retries after actual reap.
+        if result['workerProcessesQuiesced']:
+            try:
+                cleanup_profiled_current_readonly_containers()
+            except BaseException:
+                result['profiledCurrentReadonlyCleanupUncertain'] = True
+        else:
+            result['profiledCurrentReadonlyCleanupUncertain'] = True
     if layout == ROTATION_LAYOUT:
         try:
             cleanup_rotation_readonly_containers()
@@ -316,7 +390,7 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
         pass
     if prior is not None:
         try:
-            stopped = p2_prior_gateway.retain_ordered_stop(prior,gateway_directory,lambda:verify_guard_boundary(initial,source))
+            stopped = p2_prior_gateway.retain_ordered_stop(prior,gateway_directory,lambda:verify_guard_boundary(initial,source), **_profile_kwargs(initial))
             result['priorGatewayOrderedStop'] = stopped
             result['priorGatewayStopReceiptDirectory'] = str(gateway_directory)
             result['priorGatewayStopReceiptSha256'] = migrate.file_hash(migrate.read_input(gateway_directory,p2_prior_gateway.STOPPED))
@@ -332,7 +406,7 @@ def fail_closed(initial, armed, source, *, group=None, record_name='p2-independe
 
 def finish_failure_cleanup(initial, armed, source, child, *, observer_type=None, native_containment=None):
     failed = fail_closed(initial, armed, source, group=child, observer_type=observer_type, native_containment=native_containment)
-    if armed is not None and not failed['workerProcessesQuiesced']:
+    if (armed is not None or _guard_profile(initial) is not None) and not failed['workerProcessesQuiesced']:
         # Admissions have already been closed/stopped as far as can be
         # observed. Keep the actual flock while an unreaped mutator survives.
         while not stop_group(child):
@@ -351,6 +425,17 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
     if layout == ROTATION_LAYOUT:
         from p2_identity_key_rotation_parent import P2IdentityRotationBroker, P2IdentityRotationPhysicalObserver
         rotation_types = (P2IdentityRotationBroker, P2IdentityRotationPhysicalObserver)
+    profiled = False
+    if layout == PROFILED_CURRENT_LAYOUT:
+        from p2_profiled_current_parent import P2ProfiledCurrentBroker, P2ProfiledCurrentPhysicalObserver
+        profiled = (broker_type is P2ProfiledCurrentBroker and observer_type is P2ProfiledCurrentPhysicalObserver
+                    and initial.get('mode') == 'p2-profiled-current-release')
+    elif layout == PROFILED_CURRENT_RECOVERY_LAYOUT:
+        from p2_profiled_current_recovery import P2ProfiledCurrentRecoveryBroker, P2ProfiledCurrentRecoveryPhysicalObserver
+        profiled = (broker_type is P2ProfiledCurrentRecoveryBroker and observer_type is P2ProfiledCurrentRecoveryPhysicalObserver
+                    and initial.get('mode') == 'p2-profiled-current-recovery')
+    profiled = (profiled and observer_source == 'ops/platform/p2-profiled-current-probe.mjs'
+                and native_containment is None)
     interrupted = False
     if initial.get('mode') == 'known-ack-interrupted-restoration':
         from p2_known_ack_interrupted_restoration import InterruptedKnownAckRestorationBroker, InterruptedRestorationPhysicalObserver, contain_interrupted_native
@@ -365,15 +450,19 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
              and observer_source == 'ops/platform/p2-certification-current-probe.mjs' and callable(native_containment)) or
             (layout == ROTATION_LAYOUT and initial.get('mode') == 'p2-identity-key-rotation'
              and rotation_types == (broker_type, observer_type)
-             and observer_source == 'ops/platform/p2-recovery-current-probe.mjs' and native_containment is None) or interrupted,
+             and observer_source == 'ops/platform/p2-recovery-current-probe.mjs' and native_containment is None) or interrupted or profiled,
             'P2_FIXED_SOURCE_DISPATCH_REQUIRED')
     initial['_guardLayout'], initial['_guardObserverSource'] = layout, observer_source
+    expected = _guard_profile(initial)
+    if expected is not None:
+        require(profiled and initial.get('version') == 2, 'PROFILED_CURRENT_FIXED_SOURCE_DISPATCH_REQUIRED')
+        migrate.require_profile(expected, initial)
     identity = action_id(initial)
     require(os.geteuid() == 0 and sys.platform == 'linux' and initial.get('environment') == 'staging', 'P2_LINUX_ROOT_GUARD_REQUIRED')
     source = Path(__file__).resolve().parents[3]
     require(migrate.source_commit(initial.get('sourceCommit')) and str(source) == '/opt/lash-her/operators/' + initial['sourceCommit'],
             'P2_INSTALLED_GUARD_SOURCE_REQUIRED')
-    selected, verified_jobs = migrate.make_plan(Path(initial['bundle']))
+    selected, verified_jobs = migrate.make_plan(Path(initial['bundle']), **_profile_kwargs(initial))
     require(selected == initial['candidate'] and migrate.file_hash(migrate.read_input(Path(initial['bundle']), 'release.candidate.json')) == initial.get('candidateSha256'),
             'P2_GUARD_CANDIDATE_BINDING_REFUSED')
     verify_source_closure(initial, source)
@@ -404,7 +493,11 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                 if not raw:
                     break
                 require(len(raw) <= MAXIMUM and raw.endswith(b'\n'), 'P2_PROTOCOL_INPUT_REFUSED')
-                value = json.loads(raw)
+                if expected is None:
+                    value = json.loads(raw)
+                else:
+                    from qualification_target_profile import decode_qualification_target_json
+                    value = decode_qualification_target_json(raw, 'private-packet')
                 if value.get('operation') == 'check':
                     broker.command(value)
                 else:
@@ -439,7 +532,15 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
                     and probe['baseline'] == json.loads(verified_jobs['frontend']['schema']), 'P2_SAFETY_SCOPE_REFUSED')
         committed = watch_broker(child, safety_read, health_write, arm)
         result = migrate.read_input(Path(initial['results']) / (layout['receiptPrefix'] + identity), layout['terminalName'])
-        require(migrate.file_hash(result) == committed and json.loads(result).get('status') == layout['terminalStatus'],
+        terminal = json.loads(result)
+        if expected is not None:
+            migrate.require_profile(expected, terminal)
+            require(terminal.get('version') == 2 and terminal.get('environment') == 'staging'
+                    and terminal.get('releaseId') == selected['releaseId']
+                    and terminal.get('candidateSha256') == initial['candidateSha256']
+                    and terminal.get('frontendSqlApplied') is False and terminal.get('trafficAuthorized') is False
+                    and terminal.get('releaseAccepted') is False, 'PROFILED_CURRENT_GUARD_TERMINAL_REFUSED')
+        require(migrate.file_hash(result) == committed and terminal.get('status') == layout['terminalStatus'],
                 'P2_GUARD_TERMINAL_RECEIPT_REQUIRED')
     except BaseException:
         with sticky_cleanup_signals():

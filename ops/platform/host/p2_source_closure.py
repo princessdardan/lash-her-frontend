@@ -16,9 +16,17 @@ REQUIRED = {
 }
 
 
+PROFILED_CURRENT_REQUIRED = {
+    'ops/platform/host/p2_profiled_current_scope.py', 'ops/platform/host/p2_profiled_current_parent.py',
+    'ops/platform/host/p2_profiled_current_recovery.py', 'ops/platform/p2-profiled-current-probe.mjs',
+}
+
+
 def verify_source_closure(initial, root):
     manifest = initial.get('sourceSha256')
-    if not isinstance(manifest, dict) or not 1 <= len(manifest) <= 512 or not REQUIRED.issubset(manifest):
+    required = REQUIRED | PROFILED_CURRENT_REQUIRED if initial.get('mode') in (
+        'p2-profiled-current-release', 'p2-profiled-current-recovery') else REQUIRED
+    if not isinstance(manifest, dict) or not 1 <= len(manifest) <= 512 or not required.issubset(manifest):
         raise ValueError('P2_CLOSED_OPERATOR_SOURCE_REQUIRED')
     digest = hashlib.sha256(json.dumps(sorted(manifest.items()), separators=(',', ':')).encode()).hexdigest()
     if digest != initial.get('sourceClosureSha256'):
@@ -49,10 +57,16 @@ def private_observer_program(initial, directory):
     # never selected from the private operator input packet.
     source_name = initial.get('_guardObserverSource', 'ops/platform/p2-frontend-live-probe.mjs')
     if source_name not in {'ops/platform/p2-frontend-live-probe.mjs', 'ops/platform/p2-recovery-current-probe.mjs',
-                           'ops/platform/p2-certification-current-probe.mjs'}:
+                           'ops/platform/p2-certification-current-probe.mjs', 'ops/platform/p2-profiled-current-probe.mjs'}:
         raise ValueError('P2_FIXED_OBSERVER_SOURCE_REQUIRED')
     if source_name == 'ops/platform/p2-certification-current-probe.mjs' and initial.get('mode') != 'p2-bounded-certification':
         raise ValueError('P2_FIXED_CERTIFICATION_OBSERVER_REQUIRED')
+    if source_name == 'ops/platform/p2-profiled-current-probe.mjs':
+        import migrate
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        if initial.get('mode') not in ('p2-profiled-current-release', 'p2-profiled-current-recovery'):
+            raise ValueError('PROFILED_CURRENT_FIXED_OBSERVER_REQUIRED')
+        migrate.require_profile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, initial)
     expected = initial['sourceSha256'][source_name]
     if hashlib.sha256(raw).hexdigest() != expected:
         raise ValueError('P2_OBSERVER_SOURCE_CHANGED')

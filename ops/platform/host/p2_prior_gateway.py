@@ -26,6 +26,16 @@ STOPPED = 'prior-gateway-stopped.json'
 PROTOCOL = 'p2-prior-gateway-v1'
 
 
+def _profile_kwargs(expected):
+    return {} if expected is None else {'expected_profile': expected}
+
+
+def _action_directories(action, expected=None):
+    legacy = ('p2-'+action, 'p2-recovery-'+action, 'p2-certification-'+action)
+    return legacy if expected is None else (*legacy, 'p2-profiled-current-'+action, 'p2-profiled-current-recovery-'+action)
+
+
+
 def _lineage_path():
     return ROOT / '.p2-gateway-lineage.json'
 
@@ -158,14 +168,17 @@ class PriorGatewayObservationError(ValueError):
         self.partial = partial
 
 
-def _reference(initial, selected, configuration, identity):
-    target = migrate.read_json(configuration, 'runtime.json')
+def _reference(initial, selected, configuration, identity, *, expected_profile=None):
+    expected_profile = migrate.profile_context(expected_profile)
+    migrate.candidate_profile(selected, expected_profile)
+    target = migrate.read_json(configuration, 'runtime.json', **_profile_kwargs(expected_profile))
     gateway = migrate.read_json(configuration, 'gateway.json')
     admission = gateway.get('admission')
     require(isinstance(admission, dict), 'PRIOR_GATEWAY_ADMISSION_PROTOCOL_REQUIRED')
     selected_hash = initial['candidateSha256']
     if admission.get('candidateSha256') == selected_hash and admission.get('releaseId') == selected['releaseId']:
         prior = selected
+        prior_profile = expected_profile
         expected_hashes = initial['configurationSha256']
         require(all(migrate.file_hash(migrate.read_input(configuration, name)) == expected_hashes[name] for name in ('runtime.json', 'gateway.json')),
             'PRIOR_GATEWAY_SELECTED_CONFIGURATION_CHANGED')
@@ -178,7 +191,12 @@ def _reference(initial, selected, configuration, identity):
         bundle, retained, receipt_directory = (_path(ref[name]) for name in ('candidateDirectory', 'configurationDirectory', 'runtimeReceiptDirectory'))
         # Validate the retained candidate against ITS pinned Compose/config.
         # No current ten-service/P2 schema requirement is imposed on a P1 prior.
-        prior, _jobs, retained_plan, _compose = runtime.make_plan(bundle,retained,retained/'compose.yaml')
+        retained_candidate = migrate.read_json(bundle, 'release.candidate.json', **_profile_kwargs(expected_profile))
+        prior_profile = expected_profile if 'qualificationTargetProfile' in retained_candidate else None
+        # The new source path may retain an actual legacy predecessor. It never
+        # downcasts a profiled predecessor or selects an unregistered policy.
+        migrate.candidate_profile(retained_candidate, prior_profile)
+        prior, _jobs, retained_plan, _compose = runtime.make_plan(bundle,retained,retained/'compose.yaml', **_profile_kwargs(prior_profile))
         require(retained_plan['hostMachineId'] == initial['hostMachineId'], 'PRIOR_GATEWAY_RETAINED_HOST_REQUIRED')
         raw = migrate.read_input(bundle, 'release.candidate.json')
         require(migrate.file_hash(raw) == ref['candidateSha256'] == admission.get('candidateSha256') and prior['releaseId'] == admission.get('releaseId') and
@@ -191,6 +209,8 @@ def _reference(initial, selected, configuration, identity):
             receipt.get('candidateSha256') == ref['candidateSha256'] and receipt.get('releaseId') == prior['releaseId'] and
             any(row.get('service') == 'gateway' and row.get('containerId') == identity and row.get('image') == prior['artifacts']['gateway']['image']
                 for row in receipt.get('containers', [])), 'PRIOR_GATEWAY_RETAINED_RUNTIME_REQUIRED')
+    if expected_profile is not None:
+        runtime._runtime_target_profile(target, prior, prior_profile)
     require(target.get('environment') == gateway.get('appEnv') == 'staging' and target.get('releaseId') == prior['releaseId'] and
         target.get('hostMachineId') == initial['hostMachineId'] and gateway.get('projectId') == prior['workload']['projectId'] and
         admission == {'file':'/admission/state.json','releaseId':prior['releaseId'],'candidateSha256':admission['candidateSha256']},
@@ -200,8 +220,10 @@ def _reference(initial, selected, configuration, identity):
         'gatewayConfigurationSha256': migrate.file_hash(migrate.read_input(configuration,'gateway.json')), 'configurationDirectory': str(configuration)}
 
 
-def observe_prior_gateway(initial, selected, verify, command=None, assert_host=None):
+def observe_prior_gateway(initial, selected, verify, command=None, assert_host=None, *, expected_profile=None):
     """Actual read-only observer, also usable by the separate known-ACK binder."""
+    expected_profile = migrate.profile_context(expected_profile)
+    migrate.candidate_profile(selected, expected_profile)
     command = command or _command
     _validate_reference(initial)
     ids = _inventory(command, verify)
@@ -209,7 +231,7 @@ def observe_prior_gateway(initial, selected, verify, command=None, assert_host=N
     process = _process(ids[0], command, verify)
     require(process['running'] and process['pid'] > 0, 'PRIOR_GATEWAY_STOPPED_PROOF_REQUIRED')
     configuration = _mounted_configuration(ids[0], command, verify)
-    binding = _reference(initial, selected, configuration, ids[0])
+    binding = _reference(initial, selected, configuration, ids[0], **_profile_kwargs(expected_profile))
     reviewed = {key: value for key, value in binding.items() if key != 'configurationDirectory'}
     try:
         actual = frontend_gateway_observation.observe(configuration, reviewed, verify, command, assert_host or _assert_host)
@@ -232,15 +254,15 @@ def _zero(observation):
     return _closed_observed(observation) and all(value == 0 for field in ('active','uncertain') for value in observation['admission'][field].values())
 
 
-def _close(initial, selected, verify, command, assert_host, clock, progress=None):
-    before = observe_prior_gateway(initial, selected, verify, command, assert_host)
+def _close(initial, selected, verify, command, assert_host, clock, progress=None, *, expected_profile=None):
+    before = observe_prior_gateway(initial, selected, verify, command, assert_host, **_profile_kwargs(expected_profile))
     if progress is not None: progress(before)
     binding = before['binding']
     digest = staging_admission.persist_state(Path(binding['configurationDirectory']), binding,
         'p2-prior-' + initial.get('recoveryActionId', selected['releaseId']), new_work=False, recovery=False)
     deadline = clock.monotonic() + staging_admission.DRAIN_SECONDS
     while True:
-        actual = observe_prior_gateway(initial, selected, verify, command, assert_host)
+        actual = observe_prior_gateway(initial, selected, verify, command, assert_host, **_profile_kwargs(expected_profile))
         if progress is not None: progress(actual)
         require(actual['process'] == before['process'] and actual['binding'] == binding and actual['admission']['sha256'] == digest,
             'PRIOR_GATEWAY_CLOSE_ACK_CHANGED')
@@ -257,8 +279,10 @@ def _source_sha256():
     return migrate.file_hash(Path(__file__).read_bytes())
 
 
-def observe_stopped_prior_gateway(initial, selected, verify, command=None):
+def observe_stopped_prior_gateway(initial, selected, verify, command=None, *, expected_profile=None):
     """Read-only retained counters, not an authorization or zero inference."""
+    expected_profile = migrate.profile_context(expected_profile)
+    migrate.candidate_profile(selected, expected_profile)
     command = command or _command
     _validate_reference(initial)
     ref = initial.get('priorGatewayReference')
@@ -280,12 +304,12 @@ def observe_stopped_prior_gateway(initial, selected, verify, command=None):
         isinstance(before.get('candidateSha256'),str) and re.fullmatch(r'[a-f0-9]{64}',before['candidateSha256']) and
         (ref['kind'] == 'retained-runtime' or before['candidateSha256'] == initial['candidateSha256']) and
         stopped.get('actionId') == before.get('actionId') and isinstance(before.get('actionId'), str) and
-        (directory.name in ('p2-'+before['actionId'],'p2-recovery-'+before['actionId'],'p2-certification-'+before['actionId']) or
-         directory.name in ('prior-gateway-after-quiescence','prior-gateway-broker-fallback','prior-gateway-api-suspension') and directory.parent.name in ('p2-'+before['actionId'],'p2-recovery-'+before['actionId'],'p2-certification-'+before['actionId'])) and
+        (directory.name in _action_directories(before['actionId'], expected_profile) or
+         directory.name in ('prior-gateway-after-quiescence','prior-gateway-broker-fallback','prior-gateway-api-suspension') and directory.parent.name in _action_directories(before['actionId'], expected_profile)) and
         stopped.get('status') == 'PRIOR_GATEWAY_ORDERED_STOP_OBSERVED' and before.get('status') == 'PRIOR_GATEWAY_PRESTOP_OBSERVED' and
         _closed_observed(before.get('observation') or {}), 'PRIOR_GATEWAY_STOP_PROOF_REQUIRED')
     observation = before['observation']
-    require(_reference(initial, selected, _path(observation['binding']['configurationDirectory']), observation['process']['containerId']) == observation['binding'],
+    require(_reference(initial, selected, _path(observation['binding']['configurationDirectory']), observation['process']['containerId'], **_profile_kwargs(expected_profile)) == observation['binding'],
         'PRIOR_GATEWAY_STOP_BINDING_CHANGED')
     ids = _inventory(command, verify)
     require(not ids or ids == [observation['process']['containerId']], 'PRIOR_GATEWAY_STOPPED_INVENTORY_CHANGED')
@@ -303,16 +327,18 @@ def observe_stopped_prior_gateway(initial, selected, verify, command=None):
     return observation
 
 
-def _stopped_observation(initial,selected,verify,command):
-    observation=observe_stopped_prior_gateway(initial,selected,verify,command)
+def _stopped_observation(initial,selected,verify,command, *, expected_profile=None):
+    observation=observe_stopped_prior_gateway(initial,selected,verify,command, **_profile_kwargs(expected_profile))
     require(_zero(observation),'PRIOR_GATEWAY_STOP_PROOF_REQUIRES_ZERO')
     return observation
 
 
 class PriorGatewayBoundary:
-    def __init__(self, authority, initial, selected, verify, command, assert_host, observation, stopped=False, *, output=None):
+    def __init__(self, authority, initial, selected, verify, command, assert_host, observation, stopped=False, *, output=None, expected_profile=None):
         require(authority is _AUTHORITY, 'PRIOR_GATEWAY_SOURCE_AUTHORITY_REQUIRED')
         # Never retain credentials or mutable caller state in the authority.
+        self.expected_profile = migrate.profile_context(expected_profile)
+        migrate.candidate_profile(selected, self.expected_profile)
         self.initial = copy.deepcopy({key:initial[key] for key in ('candidateSha256','hostMachineId','configurationSha256','priorGatewayReference','recoveryActionId','certificationActionId') if key in initial})
         self.initial.setdefault('recoveryActionId', initial.get('certificationActionId',selected['releaseId']))
         self.selected, self.verify_session = copy.deepcopy(selected), verify
@@ -328,12 +354,12 @@ class PriorGatewayBoundary:
         if self.replacement_started and not self.replacement_finished:
             self.verify_session();return  # Only the fixed gateway-last command owns this transition.
         if self.replacement_finished:
-            actual = observe_prior_gateway(self.initial,self.selected,self.verify_session,self.command,self.assert_host)
+            actual = observe_prior_gateway(self.initial,self.selected,self.verify_session,self.command,self.assert_host, **_profile_kwargs(self.expected_profile))
             require(actual['process'] == self.current['process'] and actual['binding'] == self.current['binding'], 'PRIOR_GATEWAY_REPLACED_PROCESS_CHANGED')
         elif self.stopped:
-            _stopped_observation(self.initial,self.selected,self.verify_session,self.command)
+            _stopped_observation(self.initial,self.selected,self.verify_session,self.command, **_profile_kwargs(self.expected_profile))
         else:
-            actual = observe_prior_gateway(self.initial,self.selected,self.verify_session,self.command,self.assert_host)
+            actual = observe_prior_gateway(self.initial,self.selected,self.verify_session,self.command,self.assert_host, **_profile_kwargs(self.expected_profile))
             require(actual['process'] == self.observation['process'] and actual['binding'] == self.observation['binding'] and _zero(actual),
                 'PRIOR_GATEWAY_BOUNDARY_CHANGED')
 
@@ -341,13 +367,13 @@ class PriorGatewayBoundary:
         require(not self.api_suspension_started and self.stage_index == 0 and self.stage_active is None and
             not self.replacement_started and self.output is not None, 'PRIOR_GATEWAY_API_SUSPENSION_STAGE_REQUIRED')
         action = self.initial['recoveryActionId']
-        require(self.output.name in ('p2-'+action,'p2-recovery-'+action,'p2-certification-'+action),
+        require(self.output.name in _action_directories(action, self.expected_profile),
             'PRIOR_GATEWAY_API_SUSPENSION_DIRECTORY_REQUIRED')
         self._verify_old()
         self.api_suspension_started = True
         self.api_suspension_directory = self.output / 'prior-gateway-api-suspension'
         self.api_suspension_directory.mkdir(mode=0o700)
-        before = capture_before_stop(self.initial,self.selected,self.api_suspension_directory,self.verify_session,self.command,self.assert_host)
+        before = capture_before_stop(self.initial,self.selected,self.api_suspension_directory,self.verify_session,self.command,self.assert_host, **_profile_kwargs(self.expected_profile))
         require(before['status'] == 'PRIOR_GATEWAY_PRESTOP_OBSERVED' and _zero(before.get('observation') or {}) and
             before['observation']['process'] == self.observation['process'] and before['observation']['binding'] == self.observation['binding'],
             'PRIOR_GATEWAY_API_PRESTOP_ZERO_REQUIRED')
@@ -356,7 +382,7 @@ class PriorGatewayBoundary:
     def after_api_suspension(self):
         require(self.api_suspension_started and not self.api_suspension_finished and hasattr(self,'api_suspension_before'),
             'PRIOR_GATEWAY_API_SUSPENSION_NOT_STARTED')
-        record = retain_ordered_stop(self.api_suspension_before,self.api_suspension_directory,self.verify_session,self.command)
+        record = retain_ordered_stop(self.api_suspension_before,self.api_suspension_directory,self.verify_session,self.command, **_profile_kwargs(self.expected_profile))
         require(record['status'] == 'PRIOR_GATEWAY_ORDERED_STOP_OBSERVED', 'PRIOR_GATEWAY_API_STOP_UNVERIFIED')
         stop = {'stopReceiptDirectory':str(self.api_suspension_directory),
             'stopReceiptSha256':migrate.file_hash(migrate.read_input(self.api_suspension_directory,STOPPED))}
@@ -366,7 +392,7 @@ class PriorGatewayBoundary:
             reference = {**self.initial['priorGatewayReference'],**stop}
             require(reference.get('kind') == 'retained-runtime', 'PRIOR_GATEWAY_RETAINED_REFERENCE_REQUIRED')
         initial = {**self.initial,'priorGatewayReference':reference}
-        actual = _stopped_observation(initial,self.selected,self.verify_session,self.command)
+        actual = _stopped_observation(initial,self.selected,self.verify_session,self.command, **_profile_kwargs(self.expected_profile))
         require(actual['process'] == self.observation['process'] and actual['binding'] == self.observation['binding'],
             'PRIOR_GATEWAY_API_STOP_BINDING_CHANGED')
         self.initial, self.observation = initial, actual
@@ -384,9 +410,9 @@ class PriorGatewayBoundary:
 
     def _verify_old(self):
         if self.stopped:
-            actual = _stopped_observation(self.initial, self.selected, self.verify_session, self.command)
+            actual = _stopped_observation(self.initial, self.selected, self.verify_session, self.command, **_profile_kwargs(self.expected_profile))
         else:
-            actual = observe_prior_gateway(self.initial, self.selected, self.verify_session, self.command, self.assert_host)
+            actual = observe_prior_gateway(self.initial, self.selected, self.verify_session, self.command, self.assert_host, **_profile_kwargs(self.expected_profile))
         require(actual['process'] == self.observation['process'] and actual['binding'] == self.observation['binding'] and _zero(actual),
             'PRIOR_GATEWAY_BOUNDARY_CHANGED')
 
@@ -397,7 +423,7 @@ class PriorGatewayBoundary:
             self.stage_active = None; self.stage_index += 1
             return
         require(self.replacement_started and not self.replacement_finished, 'PRIOR_GATEWAY_REPLACEMENT_NOT_STARTED')
-        actual = observe_prior_gateway(self.initial, self.selected, self.verify_session, self.command, self.assert_host)
+        actual = observe_prior_gateway(self.initial, self.selected, self.verify_session, self.command, self.assert_host, **_profile_kwargs(self.expected_profile))
         require(actual['binding']['candidateSha256'] == self.initial['candidateSha256'] and _zero(actual), 'PRIOR_GATEWAY_NEW_BOUNDARY_REQUIRED')
         require(actual['process']['containerId'] != self.observation['process']['containerId'],
             'PRIOR_GATEWAY_REPLACEMENT_NEW_CONTAINER_REQUIRED')
@@ -407,33 +433,39 @@ class PriorGatewayBoundary:
         self.stage_active = None; self.stage_index += 1
 
 
-def preflight_prior_gateway(initial, selected, verify, command=None, assert_host=None):
+def preflight_prior_gateway(initial, selected, verify, command=None, assert_host=None, *, expected_profile=None):
     """No state/pointer writes. Eligible FE recovery is not closed here."""
+    expected_profile = migrate.profile_context(expected_profile)
+    migrate.candidate_profile(selected, expected_profile)
     command = command or _command
     _validate_reference(initial)
     ids = _inventory(command,verify)
     if ids and _process(ids[0],command,verify)['running']:
-        return observe_prior_gateway(initial,selected,verify,command,assert_host)
-    return _stopped_observation(initial,selected,verify,command)
+        return observe_prior_gateway(initial,selected,verify,command,assert_host, **_profile_kwargs(expected_profile))
+    return _stopped_observation(initial,selected,verify,command, **_profile_kwargs(expected_profile))
 
 
-def prepare_prior_gateway(initial, selected, output, verify, command=None, assert_host=None, clock=time):
+def prepare_prior_gateway(initial, selected, output, verify, command=None, assert_host=None, clock=time, *, expected_profile=None):
+    expected_profile = migrate.profile_context(expected_profile)
+    migrate.candidate_profile(selected, expected_profile)
     command = command or _command
     migrate.private_directory(output)
     outcome = {'protocol':PROTOCOL,'status':'PRIOR_GATEWAY_REPLACEMENT_REFUSED','candidateSha256':initial['candidateSha256'],
         'actionId':initial.get('recoveryActionId',selected['releaseId']),'observation':None}
+    if expected_profile is not None:
+        outcome.update(version=2, qualificationTargetProfile=migrate.profile_context(expected_profile))
     try:
         _validate_reference(initial)
         ids = _inventory(command, verify)
         stopped = not ids or not _process(ids[0], command, verify)['running']
-        actual = _stopped_observation(initial, selected, verify, command) if stopped else _close(initial, selected, verify, command, assert_host, clock, lambda value:outcome.update(observation=value))
+        actual = _stopped_observation(initial, selected, verify, command, **_profile_kwargs(expected_profile)) if stopped else _close(initial, selected, verify, command, assert_host, clock, lambda value:outcome.update(observation=value), **_profile_kwargs(expected_profile))
         outcome['observation'] = actual
         _remember(initial,actual, 'stopped-observed' if stopped else 'running-observed',
             **({'stopReceiptDirectory':initial['priorGatewayReference']['stopReceiptDirectory'],
                 'stopReceiptSha256':initial['priorGatewayReference']['stopReceiptSha256']} if stopped else {}))
         require(_zero(actual), 'PRIOR_GATEWAY_UNCERTAIN_REQUIRES_RECONCILIATION')
         outcome['status'] = 'PRIOR_GATEWAY_CLOSED_ZERO'
-        return PriorGatewayBoundary(_AUTHORITY, initial, selected, verify, command, assert_host, actual, stopped, output=output)
+        return PriorGatewayBoundary(_AUTHORITY, initial, selected, verify, command, assert_host, actual, stopped, output=output, **_profile_kwargs(expected_profile))
     except BaseException as error:
         if outcome['observation'] is None and isinstance(error,PriorGatewayObservationError):outcome['observation']=error.partial
         try: _remember(initial,outcome['observation'],'preparation-refused')
@@ -443,9 +475,9 @@ def prepare_prior_gateway(initial, selected, output, verify, command=None, asser
         migrate.write_json(output,'prior-gateway-boundary.json',outcome)
 
 
-def _stopped_for_containment(initial, selected, verify, command):
+def _stopped_for_containment(initial, selected, verify, command, *, expected_profile=None):
     try:
-        return observe_stopped_prior_gateway(initial,selected,verify,command)
+        return observe_stopped_prior_gateway(initial,selected,verify,command, **_profile_kwargs(expected_profile))
     except (ValueError,OSError):
         # A source stop in this action may postdate the original forked input.
         # Only containment can discover that fixed-root latest receipt; ordinary
@@ -462,20 +494,24 @@ def _stopped_for_containment(initial, selected, verify, command):
             require(prior.get('kind') == 'retained-runtime' and prior.get('candidateSha256') == pointer['binding'].get('candidateSha256') and
                 prior.get('configurationDirectory') == pointer['binding'].get('configurationDirectory'), 'PRIOR_GATEWAY_CONTAINMENT_PRIOR_REQUIRED')
             reference = {**prior,**stop}
-        return observe_stopped_prior_gateway({**initial,'priorGatewayReference':reference},selected,verify,command)
+        return observe_stopped_prior_gateway({**initial,'priorGatewayReference':reference},selected,verify,command, **_profile_kwargs(expected_profile))
 
 
-def capture_before_stop(initial, selected, output, verify, command=None, assert_host=None, clock=time):
+def capture_before_stop(initial, selected, output, verify, command=None, assert_host=None, clock=time, *, expected_profile=None):
     """Containment never requires successful drain; retain unknown/nonzero."""
+    expected_profile = migrate.profile_context(expected_profile)
+    migrate.candidate_profile(selected, expected_profile)
     command = command or _command
     record = {'protocol':PROTOCOL,'sourceModuleSha256':_source_sha256(),'status':'PRIOR_GATEWAY_PRESTOP_UNKNOWN','candidateSha256':initial['candidateSha256'],
         'actionId':initial.get('recoveryActionId',initial.get('certificationActionId',selected['releaseId'])),'observation':None}
+    if expected_profile is not None:
+        record.update(version=2, qualificationTargetProfile=migrate.profile_context(expected_profile))
     try:
         ids = _inventory(command,verify)
         if not ids or not _process(ids[0],command,verify)['running']:
-            record['observation'] = _stopped_for_containment(initial,selected,verify,command)
+            record['observation'] = _stopped_for_containment(initial,selected,verify,command, **_profile_kwargs(expected_profile))
         else:
-            record['observation'] = _close(initial, selected, verify, command, assert_host, clock, lambda value:record.update(observation=value))
+            record['observation'] = _close(initial, selected, verify, command, assert_host, clock, lambda value:record.update(observation=value), **_profile_kwargs(expected_profile))
         record['status'] = 'PRIOR_GATEWAY_PRESTOP_OBSERVED'
         _remember(initial,record['observation'])
     except BaseException as error:
@@ -486,7 +522,7 @@ def capture_before_stop(initial, selected, output, verify, command=None, assert_
                 require(len(ids)==1,'PRIOR_GATEWAY_EXACT_PROCESS_REQUIRED')
                 process=_process(ids[0],command,verify)
                 configuration=_mounted_configuration(ids[0],command,verify)
-                binding=_reference(initial,selected,configuration,ids[0])
+                binding=_reference(initial,selected,configuration,ids[0], **_profile_kwargs(expected_profile))
                 record['observation']={'status':'PRIOR_GATEWAY_OBSERVATION_UNKNOWN','process':process,'binding':binding,'admission':None}
             except BaseException:pass
         try:_remember(initial,record['observation'],'prestop-unknown')
@@ -495,11 +531,13 @@ def capture_before_stop(initial, selected, output, verify, command=None, assert_
     return record
 
 
-def retain_ordered_stop(before, output, verify, command=None):
+def retain_ordered_stop(before, output, verify, command=None, *, expected_profile=None):
     command = command or _command
     observed = before.get('observation')
     record = {'protocol':PROTOCOL,'sourceModuleSha256':_source_sha256(),'status':'PRIOR_GATEWAY_STOP_UNKNOWN','beforeSha256':migrate.file_hash(migrate.read_input(output,BEFORE_STOP)),
         'candidateSha256':before['candidateSha256'],'actionId':before['actionId'],'stoppedProcess':None}
+    if expected_profile is not None:
+        record.update(version=2, qualificationTargetProfile=migrate.profile_context(expected_profile))
     if observed is not None:
         try:
             process = _process(observed['process']['containerId'],command,verify)

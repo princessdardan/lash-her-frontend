@@ -19,6 +19,14 @@ import migrate
 import docker_inspect
 
 _command_scope = contextvars.ContextVar("p2_runtime_command_scope", default=None)
+_profiled_current_migration = contextvars.ContextVar("profiled_current_migration_continuation", default=None)
+
+
+def profiled_current_migration_continuation(scope):
+    """Only the fixed runtime parent installs this in-process continuation."""
+    selected = _profiled_current_migration.get()
+    return selected[1] if selected is not None and selected[0] is scope else None
+
 
 STAGES = [("community-api", "course-api"), ("community-tls", "course-tls"),
           ("course-snapshot", "community-worker", "course-media", "course-export-cleanup"), ("course-publisher",), ("gateway",)]
@@ -124,7 +132,11 @@ def assert_host(target):
     demand(command(["docker", "version", "--format", "{{.Server.Os}}/{{.Server.Arch}}"], SAFE_ENV) == "linux/amd64", "AMD64_LINUX_ENGINE_REQUIRED")
 
 
-def environment_values(raw, environment, service, jobs):
+def environment_values(raw, environment, service, jobs, *, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
+    if expected is not None:
+        for info in jobs.values():
+            migrate.require_job_profile(expected, info["job"], frontend=info.get("frontend", False))
     text = raw.decode("utf8")
     demand("\x00" not in text and "\r" not in text, "RAW_ENV_FILE_REQUIRED")
     values = {}
@@ -177,7 +189,7 @@ def validate_snapshot_source(source, release, jobs, *, expected_profile=None):
         if relative.endswith((".env", "key.pem")):
             demand(info.st_mode & 0o077 == 0, "PRIVATE_CREDENTIAL_FILE_REQUIRED")
         if relative.endswith(".env"):
-            environment_values(raw, release["environment"], relative[:-4], jobs)
+            environment_values(raw, release["environment"], relative[:-4], jobs, expected_profile=expected)
 
 
 def snapshot_configuration(source, destination, release, jobs, compose, *, expected_profile=None):
@@ -194,7 +206,7 @@ def snapshot_configuration(source, destination, release, jobs, compose, *, expec
         if relative.endswith((".env", "key.pem")):
             demand(info.st_mode & 0o077 == 0, "PRIVATE_CREDENTIAL_FILE_REQUIRED")
         if relative.endswith(".env"):
-            environment_values(raw, release["environment"], relative[:-4], jobs)
+            environment_values(raw, release["environment"], relative[:-4], jobs, expected_profile=expected)
         file = destination / relative
         file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         file.write_bytes(raw)
@@ -225,11 +237,17 @@ def snapshot_bundle(source, destination, release, jobs, *, expected_profile=None
         for info in jobs.values():
             migrate.require_job_profile(expected, info["job"], frontend=info.get("frontend", False))
     destination.mkdir(mode=0o700)
-    migrate.write_json(destination, "release.candidate.json", release)
+    if expected is None:
+        migrate.write_json(destination, "release.candidate.json", release)
+    else:
+        migrate.write_exact_bytes(destination, "release.candidate.json", migrate.read_input(source, "release.candidate.json"))
     for name, info in jobs.items():
         (destination / "jobs").mkdir(mode=0o700, exist_ok=True)
         (destination / "schema").mkdir(mode=0o700, exist_ok=True)
-        migrate.write_json(destination / "jobs", f"{name}.json", info["job"])
+        if expected is None:
+            migrate.write_json(destination / "jobs", f"{name}.json", info["job"])
+        else:
+            migrate.write_exact_bytes(destination / "jobs", f"{name}.json", migrate.read_input(source, f"jobs/{name}.json"))
         path = destination / f"schema/{name}.json"
         path.write_bytes(info["schema"]); path.chmod(0o600)
     if release["environment"] == "production":
@@ -246,7 +264,8 @@ def compose_command(snapshot, environment):
             "--project-name", f"lash-her-{environment}", "-f", str(snapshot / "compose.yaml")]
 
 
-def runtime_environment(release, snapshot):
+def runtime_environment(release, snapshot, *, expected_profile=None):
+    migrate.candidate_profile(release, expected_profile)
     return {**SAFE_ENV, "APP_ENV": release["environment"], "RELEASE_DIR": str(snapshot),
             **{key: release["artifacts"][artifact]["image"] for key, artifact in (
                 ("GATEWAY_IMAGE", "gateway"), ("COURSE_RUNTIME_IMAGE", "courseRuntime"), ("COURSE_MIGRATION_IMAGE", "courseMigration"),
@@ -263,9 +282,13 @@ def configuration_container(arguments):
         demand(not remaining, "CONFIGURATION_CONTAINER_CLEANUP_UNVERIFIED")
 
 
-def preflight(release, snapshot, jobs, pull=True):
+def preflight(release, snapshot, jobs, pull=True, *, expected_profile=None):
+    expected = migrate.candidate_profile(release, expected_profile)
+    if expected is not None:
+        for info in jobs.values():
+            migrate.require_job_profile(expected, info["job"], frontend=info.get("frontend", False))
     demand(type(pull) is bool, "EXPLICIT_IMAGE_PREFLIGHT_MODE_REQUIRED")
-    env = runtime_environment(release, snapshot)
+    env = runtime_environment(release, snapshot, expected_profile=expected)
     for key in ("gateway", "courseRuntime", "communityRuntime"):
         image = release["artifacts"][key]["image"]
         if pull:
@@ -281,10 +304,10 @@ def preflight(release, snapshot, jobs, pull=True):
         demand(model["services"][service].get("image") == release["artifacts"][IMAGE_KEYS[service]]["image"], "COMPOSE_IMAGE_MISMATCH")
     for service in ENV_FILES:
         if service in ("course-media", "course-export-cleanup"):
-            expected = {"NODE_ENV": "production", "PORT": "4003" if service == "course-media" else "4004", "NODE_OPTIONS": "--max-old-space-size=128"}
-            demand(model["services"][service].get("environment") == expected, "WORKER_PUBLIC_OVERRIDES_REFUSED")
+            public_overrides = {"NODE_ENV": "production", "PORT": "4003" if service == "course-media" else "4004", "NODE_OPTIONS": "--max-old-space-size=128"}
+            demand(model["services"][service].get("environment") == public_overrides, "WORKER_PUBLIC_OVERRIDES_REFUSED")
         values = {**environment_values(migrate.read_input(snapshot, f"{service}.env", 65_536), release["environment"], service,
-                                      jobs),
+                                      jobs, expected_profile=expected),
                   **model["services"][service]["environment"]}
         demand(isinstance(values, dict) and all(isinstance(value, str) and "\n" not in value and "\x00" not in value for value in values.values()), "RESOLVED_ENVIRONMENT_REFUSED")
         file = snapshot / f"{service}.resolved.env"
@@ -307,8 +330,8 @@ def preflight(release, snapshot, jobs, pull=True):
 
 
 def check_containers(release, snapshot, *, expected_profile=None):
-    migrate.candidate_profile(release, expected_profile)
-    env = runtime_environment(release, snapshot)
+    expected = migrate.candidate_profile(release, expected_profile)
+    env = runtime_environment(release, snapshot, expected_profile=expected)
     prefix = compose_command(snapshot, release["environment"])
     metadata = []
     for service in SERVICES:
@@ -325,17 +348,38 @@ def check_containers(release, snapshot, *, expected_profile=None):
     return metadata
 
 
-def _execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None, *, expected_profile=None):
-    expected = migrate.profile_context(expected_profile)
-    demand(not apply or expected is None, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
-    demand(expected is None or _p2_scope is None and before_frontend_migration is None and after_runtime_ready is None,
+
+def _runtime_scope(expected, apply, legacy_scope, profiled_scope, before, after):
+    if expected is None:
+        demand(profiled_scope is None, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+        return legacy_scope
+    demand(legacy_scope is None and before is None and after is None,
            "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+    if not apply:
+        demand(profiled_scope is None, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+        return None
+    demand(profiled_scope is not None, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
+    from p2_profiled_current_scope import P2ProfiledCurrentScope
+    demand(type(profiled_scope) is P2ProfiledCurrentScope, "PROFILED_CURRENT_PROCESS_LOCAL_SCOPE_REQUIRED")
+    profiled_scope.verify()
+    return profiled_scope
+
+
+def _execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None, *, expected_profile=None, _profiled_current_scope=None):
+    expected = migrate.profile_context(expected_profile)
+    active_scope = _runtime_scope(expected, apply, _p2_scope, _profiled_current_scope,
+                                  before_frontend_migration, after_runtime_ready)
     release, jobs, plan, compose = make_plan(bundle, configuration, compose_file, expected_profile=expected)
-    if _p2_scope is not None:
-        _p2_scope.require_release(release, jobs)
-        _p2_scope.require_configuration(configuration)
+    if active_scope is not None:
+        active_scope.require_release(release, jobs)
+        active_scope.require_configuration(configuration)
     if not apply:
         return plan
+    if _profiled_current_scope is not None:
+        demand("frontend" in jobs and jobs["frontend"]["job"]["target"]["approvedPendingTags"] == [],
+               "PROFILED_CURRENT_FRONTEND_CURRENT_ONLY_REQUIRED")
+        active_scope.require_frontend(release, jobs["frontend"])
+        after_runtime_ready = active_scope.runtime_ready
     demand(confirmation == f'{release["environment"]}/{release["releaseId"]}', "EXPLICIT_OPERATOR_CONFIRMATION_REQUIRED")
     demand(after_runtime_ready is None or callable(after_runtime_ready), "RUNTIME_CONTINUATION_REQUIRED")
     assert_host(plan)
@@ -343,7 +387,8 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
     for directory in (results.resolve(), configuration.resolve(), bundle.resolve()):
         demand(not any((parent / ".git").exists() for parent in (directory, *directory.parents)), "PRIVATE_RUNTIME_OUTSIDE_CHECKOUT_REQUIRED")
         demand("," not in str(directory), "MOUNT_PATH_REFUSED")
-    attempt = results / f'runtime-{release["releaseId"]}'
+    attempt = (migrate.profiled_current_attempt(_profiled_current_scope, results, release, "runtime")
+               if _profiled_current_scope is not None else results / f'runtime-{release["releaseId"]}')
     attempt.mkdir(mode=0o700)
     migrate.write_json(attempt, "started.json", plan)
     snapshot = attempt / "configuration"
@@ -351,32 +396,44 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
                "trafficAuthorized": False, "frontendPromotionAuthorized": False, "releaseAccepted": False,
                "realVercelOidcVerified": False, "externalIngressVerified": False, "phase": "configuration-preflight"}
     outcome.update(migrate.contract_identity(release))
+    if _profiled_current_scope is not None:
+        outcome.update(version=2, qualificationTargetProfile=expected, frontendSqlApplied=False,
+                       sourceCommit=release["sources"]["frontend"]["commit"],
+                       candidateSha256=migrate.file_hash(migrate.read_input(bundle, "release.candidate.json")),
+                       configurationSha256=copy.deepcopy(active_scope.configuration_sha256),
+                       historicalProviderClosureClaimed=False, oldP200Qualified=False, nativeSchedulesEnabled=False)
 
     def start_runtime(migration_attempt, verified_release, database_outcome):
         # Invoked only after durable database success, while migrate.execute
         # holds the release/watchdog lock. No second approval step is needed.
         try:
-            expected_database_status = ("API_DATABASES_VERIFIED_FRONTEND_CONTINUATION_OPEN" if _p2_scope is not None else "DATABASES_VERIFIED")
-            if _p2_scope is not None:
-                _p2_scope.require_frontend(release, jobs["frontend"])
+            expected_database_status = ("API_DATABASES_VERIFIED_FRONTEND_CONTINUATION_OPEN" if active_scope is not None else "DATABASES_VERIFIED")
+            if active_scope is not None:
+                active_scope.require_frontend(release, jobs["frontend"])
             demand(verified_release == release and database_outcome.get("status") == expected_database_status, "DATABASE_STAGE_BINDING_REFUSED")
             migrate.require_contract_identity(release, database_outcome)
+            migrate.require_profile(expected, database_outcome)
+            if _profiled_current_scope is not None:
+                demand(database_outcome.get("candidateSha256") == outcome["candidateSha256"]
+                       and database_outcome.get("frontendReadOnlyVerified") is True
+                       and database_outcome.get("frontendSqlApplied") is False,
+                       "PROFILED_CURRENT_DURABLE_DATABASE_STAGE_REQUIRED")
             outcome["phase"] = "runtime-startup"
-            prefix, env = compose_command(snapshot, release["environment"]), runtime_environment(release, snapshot)
+            prefix, env = compose_command(snapshot, release["environment"]), runtime_environment(release, snapshot, expected_profile=expected)
             for stage in STAGES:
-                if _p2_scope is not None:
-                    _p2_scope.before_runtime_stage(stage)
+                if active_scope is not None:
+                    active_scope.before_runtime_stage(stage)
                 outcome["phase"] = "start-" + "+".join(stage)
                 command([*prefix, "up", "--detach", "--no-deps", "--pull", "never", "--force-recreate", "--wait", "--wait-timeout", "90", *stage], env, 120)
-                if _p2_scope is not None:
-                    _p2_scope.after_runtime_stage(stage)
+                if active_scope is not None:
+                    active_scope.after_runtime_stage(stage)
             outcome["phase"] = "runtime-boundary-probes"
             probe = json.loads(command([*prefix, "exec", "-T", "gateway", "node", "release-probe.mjs"], env, 30))
             demand(probe.get("status") == "API_RUNTIME_BOUNDARIES_PASS" and isinstance(probe.get("checks"), list)
                    and len(probe["checks"]) == 5 and set(probe["checks"]) == PROBE_CHECKS, "RUNTIME_BOUNDARY_CHECKS_REQUIRED")
-            outcome["containers"] = check_containers(release, snapshot)
-            if _p2_scope is not None:
-                _p2_scope.verify()
+            outcome["containers"] = check_containers(release, snapshot, expected_profile=expected)
+            if active_scope is not None:
+                active_scope.verify()
             outcome["boundaryChecks"] = probe["checks"]
             outcome["migrationOutcomeSha256"] = migrate.file_hash(migrate.read_input(migration_attempt, "migration-outcome.json"))
             outcome["candidateSha256"] = database_outcome["candidateSha256"]
@@ -406,18 +463,27 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
 
     try:
         immutable_bundle = attempt / "migration-input"
-        snapshot_bundle(bundle, immutable_bundle, release, jobs)
-        snapshot_configuration(configuration, snapshot, release, jobs, compose)
-        if _p2_scope is not None:
-            _p2_scope.require_release(release, jobs)
-            _p2_scope.require_configuration(snapshot)
-            _p2_scope.initialize_runtime(snapshot, release)
-        checked_release, checked_jobs, checked_plan, _ = make_plan(immutable_bundle, snapshot, snapshot / "compose.yaml")
+        snapshot_bundle(bundle, immutable_bundle, release, jobs, expected_profile=expected)
+        if _profiled_current_scope is not None:
+            demand(migrate.file_hash(migrate.read_input(immutable_bundle, "release.candidate.json")) == active_scope.candidate_sha256,
+                   "PROFILED_CURRENT_ORIGINAL_CANDIDATE_CHANGED")
+        snapshot_configuration(configuration, snapshot, release, jobs, compose, expected_profile=expected)
+        if active_scope is not None:
+            active_scope.require_release(release, jobs)
+            active_scope.require_configuration(snapshot)
+            active_scope.initialize_runtime(snapshot, release)
+        checked_release, checked_jobs, checked_plan, _ = make_plan(immutable_bundle, snapshot, snapshot / "compose.yaml", expected_profile=expected)
         demand(checked_release == release and checked_jobs == jobs and checked_plan == plan, "RUNTIME_CONFIGURATION_CHANGED")
-        preflight(release, snapshot, jobs)
+        preflight(release, snapshot, jobs, expected_profile=expected)
         outcome["phase"] = "migrations"
-        return migrate.execute(immutable_bundle, results, True, confirmation, lock_path, after_migrations=start_runtime, docker_env=SAFE_ENV,
-                               before_frontend_migration=before_frontend_migration, _p2_scope=_p2_scope)
+        continuation_token = _profiled_current_migration.set((_profiled_current_scope, start_runtime)) if _profiled_current_scope is not None else None
+        try:
+            return migrate.execute(immutable_bundle, results, True, confirmation, lock_path, after_migrations=start_runtime, docker_env=SAFE_ENV,
+                                   before_frontend_migration=before_frontend_migration, _p2_scope=_p2_scope,
+                                   expected_profile=expected, _profiled_current_scope=_profiled_current_scope)
+        finally:
+            if continuation_token is not None:
+                _profiled_current_migration.reset(continuation_token)
     except BaseException as error:
         outcome["status"] = "FAILED_REQUIRES_REVIEW"
         code = str(error)
@@ -426,15 +492,15 @@ def _execute(bundle, configuration, results, compose_file, apply=False, confirma
         raise
 
 
-def execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None, *, expected_profile=None):
+def execute(bundle, configuration, results, compose_file, apply=False, confirmation=None, lock_path=Path("/run/lock/lash-her-release.lock"), before_frontend_migration=None, after_runtime_ready=None, _p2_scope=None, *, expected_profile=None, _profiled_current_scope=None):
     expected = migrate.profile_context(expected_profile)
-    demand(not apply or expected is None, "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
-    demand(expected is None or _p2_scope is None and before_frontend_migration is None and after_runtime_ready is None,
-           "QUALIFICATION_TARGET_PROFILE_POLICY_REFUSED")
-    token = _command_scope.set(_p2_scope)
+    active_scope = _runtime_scope(expected, apply, _p2_scope, _profiled_current_scope,
+                                  before_frontend_migration, after_runtime_ready)
+    token = _command_scope.set(active_scope)
     try:
         return _execute(bundle, configuration, results, compose_file, apply, confirmation, lock_path,
-                        before_frontend_migration, after_runtime_ready, _p2_scope, expected_profile=expected)
+                        before_frontend_migration, after_runtime_ready, _p2_scope, expected_profile=expected,
+                        _profiled_current_scope=_profiled_current_scope)
     finally:
         _command_scope.reset(token)
 

@@ -97,6 +97,18 @@ class RuntimeReleaseTests(unittest.TestCase):
         self.assertNotIn(b"qualificationTargetProfile", gateway)
         self.assertEqual((self.configuration / "gateway.json").read_bytes(), gateway)
         selected, jobs, _, compose = release.make_plan(self.bundle, self.configuration, self.compose, expected_profile=ref)
+        # The release hash binds original bytes, including their serialization.
+        # Normalizing a valid reviewed candidate here would break the host join.
+        candidate_raw = (json.dumps(selected, indent=2) + "\n").encode()
+        (self.bundle / "release.candidate.json").write_bytes(candidate_raw)
+        raw_jobs = {name: (json.dumps(info["job"], indent=2) + "\n").encode() for name, info in jobs.items()}
+        for name, raw in raw_jobs.items():
+            (self.bundle / f"jobs/{name}.json").write_bytes(raw)
+        migration_snapshot = self.root / "profiled-migration-snapshot"
+        release.snapshot_bundle(self.bundle, migration_snapshot, selected, jobs, expected_profile=ref)
+        self.assertEqual((migration_snapshot / "release.candidate.json").read_bytes(), candidate_raw)
+        for name, raw in raw_jobs.items():
+            self.assertEqual((migration_snapshot / f"jobs/{name}.json").read_bytes(), raw)
         snapshot = self.root / "profiled-snapshot"
         release.snapshot_configuration(self.configuration, snapshot, selected, jobs, compose, expected_profile=ref)
         for name in original_files:
