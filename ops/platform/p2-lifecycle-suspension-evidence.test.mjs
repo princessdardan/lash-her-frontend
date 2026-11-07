@@ -268,6 +268,16 @@ function ownedLearning() {
   return { target, input, receipt, ...paths };
 }
 
+function ownedLearningReplay() {
+  const fresh = ownedLearning();
+  const { grantId, enrollmentId } = fresh.receipt.body;
+  const target = { ...fresh.target, operation: "replay-free-enrollment",
+    prior: { grantId, enrollmentId, eventId: randomUUID(), streamId: randomUUID(), canonicalDigest: "a".repeat(64) } };
+  const input = { ...fresh.input, learning: target };
+  const receipt = { ...fresh.receipt, body: { ...fresh.receipt.body, idempotentReplay: true } };
+  return { ...fresh, target, input, receipt };
+}
+
 test("learning enrollment input, v2 permit and compact receipt bind exact learner and course", () => {
   const { input, target, receipt, coursePath } = ownedLearning(), permit = interactivePermit(input);
   assert.equal(validateP2InteractiveBrowserInput(input), input);
@@ -291,6 +301,24 @@ test("learning enrollment input, v2 permit and compact receipt bind exact learne
   for (const body of [{ courseId: randomUUID() }, { source: "paid" }, { status: "revoked" }, { enrollmentId: null }, { idempotentReplay: true },
     { idempotencyKey: target.idempotencyKey }]) {
     assert.throws(() => validateP2LearningEnrollmentReceipt({ ...receipt, body: { ...receipt.body, ...body } }, target));
+  }
+});
+
+test("free-enrollment replay permit, entry and receipt bind the original grant and enrollment", () => {
+  const { input, target, receipt, academyPath } = ownedLearningReplay(), permit = interactivePermit(input);
+  assert.equal(validateP2InteractiveBrowserInput(input), input);
+  assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+  assert.equal(p2InteractiveBrowserEntryPath(input, "learner"), academyPath);
+  assert.deepEqual(validateP2LearningEnrollmentReceipt(receipt, target), receipt);
+  const differentActor = { ...input, learning: { ...target, actorId: randomUUID() } };
+  assert.throws(() => validateP2InteractiveBrowserPermit(interactivePermit(differentActor), input));
+  for (const prior of [undefined, { ...target.prior, eventId: "wrong" }, { ...target.prior, streamId: "wrong" },
+    { ...target.prior, canonicalDigest: "0".repeat(64) }, { ...target.prior, other: true }]) {
+    assert.throws(() => validateP2InteractiveBrowserInput({ ...input, learning: { ...target, prior } }));
+  }
+  for (const change of [{ grantId: randomUUID() }, { enrollmentId: randomUUID() }, { courseId: randomUUID() },
+    { idempotentReplay: false }, { idempotencyKey: target.idempotencyKey }, { source: "paid" }]) {
+    assert.throws(() => validateP2LearningEnrollmentReceipt({ ...receipt, body: { ...receipt.body, ...change } }, target));
   }
 });
 
@@ -1851,6 +1879,78 @@ test("owned Chromium free enrollment qualifies the exact grant and canonical pro
           await rejected.enroll.click();
           const expires = ["wrong-link", "wrong-api-path"].includes(scenario) ? Math.floor(Date.now() / 1000) + 2 : rejected.expires;
           await assert.rejects(rejected.watch.wait(expires), /LEARNING_RESPONSE_REFUSED/u);
+          assert.throws(() => rejected.watch.finish(), /LEARNING_RESPONSE_REFUSED/u);
+        } finally { await rejected.close(); }
+      }
+    } finally { await browser.close(); }
+  });
+
+test("owned Chromium free-enrollment replay sends one scoped POST from the unchanged academy page",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    const open = async scenario => {
+      const fixture = ownedLearningReplay(), { input, target, receipt, coursePath, academyPath, pathname } = fixture;
+      const context = await browser.newContext(), effects = [];
+      const selectedActor = scenario === "wrong-actor" ? randomUUID() : target.actorId;
+      await context.addCookies([{ name: "owned-customer", value: selectedActor, url: input.browserOrigin + "/" }]);
+      await context.route("**/*", async route => {
+        const request = route.request(), url = new URL(request.url()), method = request.method();
+        if (url.origin !== input.browserOrigin) return route.abort();
+        if (request.isNavigationRequest()) {
+          effects.push({ method, target: url.pathname });
+          return route.fulfill({ status: 200, contentType: "text/html", body: `<!doctype html><h1>Owned enrolled course</h1>
+            <a href="${scenario === "wrong-overview" ? "/courses/wrong" : coursePath}">Course overview</a>
+            <script>const fetchOriginal = window.fetch; window.fetch = (target, options) => {
+              if (target === ${JSON.stringify(pathname)} && options?.method === 'POST') throw new Error('Owned main-world wrapper');
+              return fetchOriginal(target, options);
+            };</script>` });
+        }
+        if (!url.pathname.startsWith("/api/")) return route.fulfill({ status: 200, body: "" });
+        effects.push({ method, target: url.pathname + url.search });
+        if (url.pathname !== pathname || method !== "POST") return route.fulfill({ status: 404, body: "" });
+        const sameActor = (await request.headerValue("cookie"))?.includes(`owned-customer=${target.actorId}`) === true;
+        Object.assign(effects.at(-1), { sameActor, key: request.postData(), csrf: await request.headerValue("x-lash-csrf") });
+        if (scenario === "redirect") return route.fulfill({ status: 302, headers: { location: "/api/academy/other" } });
+        const changes = scenario === "new-grant" ? { grantId: randomUUID() } : scenario === "new-enrollment" ? { enrollmentId: randomUUID() }
+          : scenario === "fresh-body" ? { idempotentReplay: false } : scenario === "extra-body" ? { idempotencyKey: target.idempotencyKey } : {};
+        return route.fulfill({ status: sameActor ? 200 : 403, body: JSON.stringify({ ...receipt.body, ...changes }), headers: {
+          "content-type": "application/json", "cache-control": scenario === "public-cache" ? "public" : "private, no-store",
+          "x-request-id": scenario === "wrong-id" ? "not-a-gateway-id" : receipt.requestId,
+        } });
+      });
+      const page = await context.newPage(), watch = watchP2LearningEnrollment(context, page, input);
+      return { ...fixture, page, watch, effects, expires: Math.floor(Date.now() / 1000) + 60,
+        close: async () => { watch.close(); await context.close(); } };
+    };
+    try {
+      const owned = await open("success");
+      try {
+        await owned.watch.open(owned.expires);
+        const navigation = { method: "GET", target: owned.academyPath };
+        assert.deepEqual(owned.effects, [navigation]);
+        assert.throws(() => owned.watch.finish(), /LEARNING_RESPONSE_REFUSED/u);
+        await owned.watch.wait(owned.expires);
+        assert.deepEqual(owned.watch.finish(), owned.receipt);
+        assert.equal(owned.page.url(), owned.input.browserOrigin + owned.academyPath);
+        assert.deepEqual(owned.effects, [navigation, { method: "POST", target: owned.pathname, sameActor: true,
+          key: JSON.stringify({ idempotencyKey: owned.target.idempotencyKey }), csrf: "1" }]);
+        assert.equal(JSON.stringify(owned.watch.finish()).includes(owned.target.idempotencyKey), false);
+        await owned.page.evaluate(() => fetch("/api/academy/alternate"));
+        assert.throws(() => owned.watch.finish(), /LEARNING_RESPONSE_REFUSED/u);
+      } finally { await owned.close(); }
+      for (const scenario of ["wrong-actor", "new-grant", "new-enrollment", "fresh-body", "extra-body", "public-cache", "wrong-id", "redirect", "wrong-overview", "unexpected-api"]) {
+        const rejected = await open(scenario);
+        try {
+          if (scenario === "wrong-overview") {
+            await assert.rejects(rejected.watch.open(Math.floor(Date.now() / 1000) + 2), /LEARNING_RESPONSE_REFUSED/u);
+          } else {
+            await rejected.watch.open(rejected.expires);
+            if (scenario === "unexpected-api") await rejected.page.evaluate(() => fetch("/api/academy/alternate", { method: "POST" }));
+            await assert.rejects(rejected.watch.wait(rejected.expires), /LEARNING_RESPONSE_REFUSED/u);
+          }
+          assert.equal(rejected.effects.filter(effect => effect.target === rejected.pathname).length,
+            ["wrong-overview", "unexpected-api"].includes(scenario) ? 0 : 1);
           assert.throws(() => rejected.watch.finish(), /LEARNING_RESPONSE_REFUSED/u);
         } finally { await rejected.close(); }
       }

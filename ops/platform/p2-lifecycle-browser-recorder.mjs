@@ -117,7 +117,10 @@ function authoringSelector(input) {
 
 export function p2InteractiveBrowserEntryPath(input, context) {
   const path = p2InteractiveBrowserPath(input.stage, context);
-  if (input.stage === "learning") return p2LearningEnrollmentPaths(input.learning).coursePath;
+  if (input.stage === "learning") {
+    const { coursePath, academyPath } = p2LearningEnrollmentPaths(input.learning);
+    return learningEnrollmentReplay(input.learning) ? academyPath : coursePath;
+  }
   if (input.stage === "learner-access") return p2PaidLearnerAccessPaths(input.learnerAccess).pagePath;
   if (input.stage === "paid-grant") return p2PaidGrantPaths(input.paidGrant).pagePath;
   if (input.stage === "paid-revoke") return p2PaidRevokePaths(input.paidRevoke).pagePath;
@@ -128,6 +131,8 @@ export function p2LearningEnrollmentPaths({ courseId, slug }) {
   const academyPath = "/academy/courses/" + courseId;
   return { coursePath: "/courses/" + slug, academyPath, pathname: "/api" + academyPath + "/enrollments" };
 }
+
+const learningEnrollmentReplay = target => target?.operation === "replay-free-enrollment";
 
 export function p2PaidLearnerAccessPaths({ courseId, lessonId }) {
   const pagePath = "/academy/courses/" + courseId;
@@ -166,10 +171,13 @@ export function validateP2InteractiveBrowserInput(input) {
     && Number.isSafeInteger(input.windowSeconds) && input.windowSeconds >= 30 && input.windowSeconds <= 300);
   if (input.stage === "lifecycle") validateLifecycleTarget(input.lifecycle);
   if (input.stage === "learning") {
-    const selected = input.learning;
-    demand(closed(selected, ["actorId", "operation", "courseId", "slug", "idempotencyKey"])
-      && selected.operation === "enroll-free-course" && uuid(selected.actorId) && uuid(selected.courseId) && uuid(selected.idempotencyKey)
+    const selected = input.learning, replay = learningEnrollmentReplay(selected);
+    demand(closed(selected, ["actorId", "operation", "courseId", "slug", "idempotencyKey", ...(replay ? ["prior"] : [])])
+      && (replay || selected.operation === "enroll-free-course") && uuid(selected.actorId) && uuid(selected.courseId) && uuid(selected.idempotencyKey)
       && matches(selected.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u) && selected.slug.length <= 120);
+    if (replay) demand(closed(selected.prior, ["grantId", "enrollmentId", "eventId", "streamId", "canonicalDigest"])
+      && [selected.prior.grantId, selected.prior.enrollmentId, selected.prior.eventId, selected.prior.streamId].every(uuid)
+      && sha(selected.prior.canonicalDigest) && selected.prior.canonicalDigest !== "0".repeat(64));
   }
   if (input.stage === "learner-access") {
     const selected = input.learnerAccess;
@@ -406,12 +414,13 @@ function validateAuthoringCourseReceipt(receipt, target, edit = false) {
 }
 
 export function validateP2LearningEnrollmentReceipt(receipt, target) {
-  const { academyPath, pathname } = p2LearningEnrollmentPaths(target);
+  const { academyPath, pathname } = p2LearningEnrollmentPaths(target), replay = learningEnrollmentReplay(target);
   demand(closed(receipt, ["method", "pathname", "status", "requestId", "academyPath", "body"]) && receipt.method === "POST"
     && receipt.pathname === pathname && receipt.status === 200 && uuid(receipt.requestId) && receipt.academyPath === academyPath
     && closed(receipt.body, ["courseId", "grantId", "enrollmentId", "source", "status", "idempotentReplay"])
     && receipt.body.courseId === target.courseId && uuid(receipt.body.grantId) && uuid(receipt.body.enrollmentId)
-    && receipt.body.source === "free" && receipt.body.status === "active" && receipt.body.idempotentReplay === false);
+    && receipt.body.source === "free" && receipt.body.status === "active" && receipt.body.idempotentReplay === replay
+    && (!replay || receipt.body.grantId === target.prior?.grantId && receipt.body.enrollmentId === target.prior?.enrollmentId));
   return receipt;
 }
 
@@ -831,7 +840,7 @@ export function watchP2LifecycleMutation(context, page, input) {
 
 export function watchP2LearningEnrollment(context, page, input) {
   demand(input.stage === "learning");
-  return watchMutation(context, page, input);
+  return learningEnrollmentReplay(input.learning) ? watchP2LearningEnrollmentReplay(context, page, input) : watchMutation(context, page, input);
 }
 
 export function watchP2PaidGrant(context, page, input) {
@@ -909,12 +918,15 @@ function validatePaidLearnerQuiz(body, lessonId) {
 }
 
 // Executed only in a Chromium isolated world for the selected main frame.
-async function capturePaidLearnerFetch({ source, target, timeout, maximum }) {
-  if (location.href !== source) throw new Error("P2_LEARNER_ACCESS_FRAME_CHANGED");
-  const response = await fetch(target, { method: "GET", mode: "same-origin", credentials: "same-origin", redirect: "error",
-    cache: "no-store", headers: { accept: "application/json" }, signal: AbortSignal.timeout(timeout) });
+async function captureInteractiveFetch({ source, target, timeout, maximum, idempotencyKey }) {
+  if (location.href !== source) throw new Error("P2_INTERACTIVE_FETCH_FRAME_CHANGED");
+  const headers = { accept: "application/json" };
+  const post = idempotencyKey !== undefined;
+  if (post) Object.assign(headers, { "content-type": "application/json", "x-lash-csrf": "1" });
+  const response = await fetch(target, { method: post ? "POST" : "GET", mode: "same-origin", credentials: "same-origin", redirect: "error",
+    cache: "no-store", headers, signal: AbortSignal.timeout(timeout), ...(post ? { body: JSON.stringify({ idempotencyKey }) } : {}) });
   const reader = response.body?.getReader();
-  if (!reader) throw new Error("P2_LEARNER_ACCESS_BODY_MISSING");
+  if (!reader) throw new Error("P2_INTERACTIVE_FETCH_BODY_MISSING");
   const bytes = new Uint8Array(maximum);
   let size = 0;
   try {
@@ -922,7 +934,7 @@ async function capturePaidLearnerFetch({ source, target, timeout, maximum }) {
       const chunk = await reader.read();
       if (chunk.done) break;
       try {
-        if (chunk.value.byteLength > maximum - size) throw new Error("P2_LEARNER_ACCESS_BODY_LIMIT");
+        if (chunk.value.byteLength > maximum - size) throw new Error("P2_INTERACTIVE_FETCH_BODY_LIMIT");
         bytes.set(chunk.value, size);
         size += chunk.value.byteLength;
       } finally { chunk.value.fill(0); }
@@ -936,6 +948,140 @@ async function capturePaidLearnerFetch({ source, target, timeout, maximum }) {
     bytes.fill(0);
     reader.releaseLock();
   }
+}
+
+async function isolatedMainFrame(session, source) {
+  const { frameTree: { frame } } = await session.send("Page.getFrameTree");
+  demand(frame.url === source && frame.securityOrigin === new URL(source).origin && !frame.parentId);
+  const { executionContextId } = await session.send("Page.createIsolatedWorld", { frameId: frame.id, grantUniveralAccess: false });
+  demand(Number.isSafeInteger(executionContextId) && executionContextId > 0);
+  return executionContextId;
+}
+
+async function readIsolatedFetch({ session, executionContextId, page, slot, source, status, maximum, timeout, idempotencyKey }) {
+  const origin = new URL(source).origin, method = idempotencyKey === undefined ? "GET" : "POST";
+  const observed = page.waitForResponse(candidate => candidate.request() === slot.request, { timeout });
+  // Chromium can discard its DevTools copy after the renderer drains Fetch.
+  // Read the actual stream once and join it to the independent network record.
+  const captured = session.send("Runtime.callFunctionOn", { executionContextId, functionDeclaration: captureInteractiveFetch.toString(),
+    arguments: [{ value: { source, target: slot.target, timeout, maximum, idempotencyKey } }], awaitPromise: true, returnByValue: true, silent: true })
+    .then(({ result, exceptionDetails }) => { demand(!exceptionDetails); return result.value; });
+  try {
+    const [response, payload] = await Promise.all([observed, captured]);
+    demand(closed(payload, ["body", "size", "url", "status", "redirected", "requestId", "contentType", "cacheControl"]));
+    const head = await readBrowserResponseHead(response, slot.request, origin, slot.target, method, status);
+    const [{ identity, declared }, contentType, cacheControl] = await Promise.all([
+      readBrowserResponseBounds(response, slot.request, maximum, true), response.headerValue("content-type"), response.headerValue("cache-control"),
+    ]);
+    demand(payload.url === response.url() && payload.status === head.status && payload.redirected === false
+      && payload.requestId === head.requestId && payload.contentType === contentType && payload.cacheControl === cacheControl
+      && Number.isSafeInteger(payload.size) && payload.size > 0 && payload.size <= maximum
+      && typeof payload.body === "string" && payload.body.length === 4 * Math.ceil(payload.size / 3)
+      && (!identity || declared === undefined || payload.size === declared));
+    const bytes = Buffer.from(payload.body, "base64");
+    payload.body = "";
+    try {
+      demand(bytes.byteLength === payload.size);
+      return { response, head, body: exactBrowserJson(bytes, maximum) };
+    } finally { bytes.fill(0); }
+  } finally {
+    const payload = await captured.catch(() => undefined);
+    if (payload && typeof payload === "object") payload.body = "";
+  }
+}
+
+function watchP2LearningEnrollmentReplay(context, page, input) {
+  validateP2InteractiveBrowserInput(input);
+  demand(input.stage === "learning" && learningEnrollmentReplay(input.learning) && page.context() === context);
+  const target = input.learning, { coursePath, academyPath, pathname } = p2LearningEnrollmentPaths(target);
+  const origin = input.browserOrigin, source = origin + academyPath;
+  const refusal = () => new Error("P2_INTERACTIVE_LEARNING_RESPONSE_REFUSED");
+  let navigation, slot, receipt, opened = false, ready = false, failed = false;
+  const fail = () => { failed = true; };
+  const remaining = expires => {
+    const timeout = expires * 1000 - Date.now();
+    if (failed || timeout <= 0 || timeout > input.windowSeconds * 1000) throw refusal();
+    return timeout;
+  };
+  const onRequest = request => {
+    const url = URL.parse(request.url()), method = request.method();
+    try {
+      if (request.isNavigationRequest()) {
+        demand(opened && !navigation && request.url() === source && method === "GET"
+          && request.frame() === page.mainFrame() && request.redirectedFrom() === null);
+        navigation = request;
+      } else if (url?.origin === origin) {
+        if (!url.pathname.startsWith("/api/")) { demand(["GET", "HEAD", "OPTIONS"].includes(method)); return; }
+        demand(slot && !slot.request && request.url() === origin + pathname && method === "POST"
+          && request.frame() === page.mainFrame() && request.frame().url() === source && request.resourceType() === "fetch"
+          && request.redirectedFrom() === null);
+        slot.request = request;
+        const recorded = request.postDataBuffer(), bytes = recorded && Buffer.from(recorded);
+        try {
+          const body = exactBrowserJson(bytes);
+          demand(closed(body, ["idempotencyKey"]) && body.idempotencyKey === target.idempotencyKey);
+        } finally { bytes?.fill(0); }
+      }
+    } catch { fail(); }
+  };
+  const onFailure = request => { if (request === navigation || request === slot?.request) fail(); };
+  const onNavigation = frame => { if (frame === page.mainFrame() && navigation && frame.url() !== source) fail(); };
+  context.on("request", onRequest);
+  context.on("requestfailed", onFailure);
+  page.on("framenavigated", onNavigation);
+
+  const verifyPage = async expires => {
+    demand(page.url() === source);
+    const overview = page.getByRole("link", { name: "Course overview", exact: true }).and(page.locator(`a[href="${coursePath}"]`));
+    await overview.waitFor({ state: "visible", timeout: remaining(expires) });
+    demand(page.url() === source && remaining(expires) > 0);
+  };
+
+  return {
+    async open(expires) {
+      try {
+        demand(!opened);
+        opened = true;
+        const response = await page.goto(source, { waitUntil: "domcontentloaded", timeout: Math.min(30_000, remaining(expires)) });
+        demand(navigation && response?.request() === navigation && response.status() === 200 && response.url() === source
+          && !response.fromServiceWorker() && navigation.redirectedTo() === null);
+        await verifyPage(expires);
+        ready = true;
+      } catch { fail(); throw refusal(); }
+    },
+    async wait(expires) {
+      let session;
+      try {
+        demand(ready && !slot);
+        await verifyPage(expires);
+        session = await context.newCDPSession(page);
+        const executionContextId = await isolatedMainFrame(session, source);
+        const timeout = Math.min(8000, remaining(expires));
+        slot = { target: pathname };
+        const { head, body } = await readIsolatedFetch({ session, executionContextId, page, slot, source, status: 200,
+          maximum: maxLifecycleBody, timeout, idempotencyKey: target.idempotencyKey });
+        const [requestOrigin, fetchSite, contentType, csrf] = await Promise.all(["origin", "sec-fetch-site", "content-type", "x-lash-csrf"]
+          .map(name => slot.request.headerValue(name)));
+        demand(requestOrigin === origin && (fetchSite === null || fetchSite === "same-origin")
+          && contentType === "application/json" && csrf === "1" && !slot.request.failure());
+        await verifyPage(expires);
+        receipt = validateP2LearningEnrollmentReceipt({ ...head, academyPath, body }, target);
+      } catch {
+        fail();
+        throw refusal();
+      } finally { await session?.detach().catch(() => {}); }
+    },
+    finish() {
+      if (failed || !receipt || context.serviceWorkers().length) throw refusal();
+      return receipt;
+    },
+    close() {
+      context.off("request", onRequest);
+      context.off("requestfailed", onFailure);
+      page.off("framenavigated", onNavigation);
+      fail();
+    },
+  };
 }
 
 export function watchP2PaidLearnerAccess(context, page, input) {
@@ -996,33 +1142,9 @@ export function watchP2PaidLearnerAccess(context, page, input) {
   const read = async (session, executionContextId, path, index, expires) => {
     const slot = activeRead = { target: path }, maximum = allowed ? maxAuthoringBody : maxLifecycleBody;
     const timeout = Math.min(8000, remaining(expires));
-    let captured;
     try {
-      const observed = page.waitForResponse(candidate => candidate.request() === slot.request, { timeout });
-      // Chromium can discard its DevTools copy after the renderer drains Fetch.
-      // Read the actual browser stream once and retain its bytes only until they
-      // can be joined to the independently observed network response.
-      captured = session.send("Runtime.callFunctionOn", { executionContextId, functionDeclaration: capturePaidLearnerFetch.toString(),
-        arguments: [{ value: { source, target: path, timeout, maximum } }], awaitPromise: true, returnByValue: true, silent: true })
-        .then(({ result, exceptionDetails }) => { demand(!exceptionDetails); return result.value; });
-      const [response, payload] = await Promise.all([observed, captured]);
-      demand(closed(payload, ["body", "size", "url", "status", "redirected", "requestId", "contentType", "cacheControl"]));
-      const head = await readBrowserResponseHead(response, slot.request, origin, path, "GET", expected.status);
-      const [{ identity, declared }, contentType, cacheControl] = await Promise.all([
-        readBrowserResponseBounds(response, slot.request, maximum, true), response.headerValue("content-type"), response.headerValue("cache-control"),
-      ]);
-      demand(payload.url === response.url() && payload.status === head.status && payload.redirected === false
-        && payload.requestId === head.requestId && payload.contentType === contentType && payload.cacheControl === cacheControl
-        && Number.isSafeInteger(payload.size) && payload.size > 0 && payload.size <= maximum
-        && typeof payload.body === "string" && payload.body.length === 4 * Math.ceil(payload.size / 3)
-        && (!identity || declared === undefined || payload.size === declared));
-      const bytes = Buffer.from(payload.body, "base64");
-      payload.body = "";
-      let body;
-      try {
-        demand(bytes.byteLength === payload.size);
-        body = exactBrowserJson(bytes, maximum);
-      } finally { bytes.fill(0); }
+      const { response, head, body } = await readIsolatedFetch({ session, executionContextId, page, slot, source,
+        status: expected.status, maximum, timeout });
       let code = null;
       if (!allowed) {
         demand(closed(body, ["error", "requestId"]) && body.requestId === head.requestId && closed(body.error, ["code", "message"])
@@ -1048,12 +1170,7 @@ export function watchP2PaidLearnerAccess(context, page, input) {
       demand(!failure || failure.errorText === "net::ERR_ABORTED");
       remaining(expires);
       return { target: path, status: head.status, requestId: head.requestId, code };
-    } finally {
-      try {
-        const payload = await captured?.catch(() => undefined);
-        if (payload && typeof payload === "object") payload.body = "";
-      } finally { activeRead = undefined; }
-    }
+    } finally { activeRead = undefined; }
   };
 
   return {
@@ -1073,10 +1190,7 @@ export function watchP2PaidLearnerAccess(context, page, input) {
         demand(pageProof && !capturing);
         capturing = true;
         session = await context.newCDPSession(page);
-        const { frameTree: { frame } } = await session.send("Page.getFrameTree");
-        demand(frame.url === source && frame.securityOrigin === origin && !frame.parentId);
-        const { executionContextId } = await session.send("Page.createIsolatedWorld", { frameId: frame.id, grantUniveralAccess: false });
-        demand(Number.isSafeInteger(executionContextId) && executionContextId > 0);
+        const executionContextId = await isolatedMainFrame(session, source);
         const reads = [];
         for (const [index, path] of targets.entries()) reads.push(await read(session, executionContextId, path, index, expires));
         const final = await verifyPage(expires);
@@ -1624,6 +1738,10 @@ async function runInteractiveBrowser(first) {
           httpStatus = 200;
         } else if (binding.stage === "learner-access") {
           mutationWatch = watchP2PaidLearnerAccess(context, page, input);
+          await mutationWatch.open(selection.expires);
+          httpStatus = 200;
+        } else if (binding.stage === "learning" && learningEnrollmentReplay(input.learning)) {
+          mutationWatch = watchP2LearningEnrollment(context, page, input);
           await mutationWatch.open(selection.expires);
           httpStatus = 200;
         } else {
