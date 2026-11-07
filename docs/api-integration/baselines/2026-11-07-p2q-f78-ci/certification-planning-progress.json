@@ -1131,5 +1131,117 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveOwnerPublication": {
+    "frontendSourceCommit": "dcc2090936e544e70ff3b66162a11bc082be68da",
+    "implementationCommit": "39040cb742e3155418491ed908ff24400632e9d5",
+    "finalCommitChangesOnlyOwnedRecorderFixtureCharset": true,
+    "normalAuthoringBrowser": {
+      "testedCommit": "39040cb742e3155418491ed908ff24400632e9d5",
+      "passed": 8,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "invalidContentAfterReadyAtSameRevisionRefusedByCourse": true,
+      "successfulPublishAfterRestorationVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "b606a1af0a299130592cbba1815bdc8c1877c8a9b80be546f8ae535dd6c60639",
+      "logSha256": "2bbbc2a82356dce9c02304cbb03d840b5c5be6df1e5116feae1b9aa027e84816"
+    },
+    "frontendUnitNode24": {
+      "testedCommit": "39040cb742e3155418491ed908ff24400632e9d5",
+      "sourcePassed": 2539,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "91bc313654506e3795f6ffa36bdcc9db123d44e5b93e7b03559a8b5b9fb5f493"
+    },
+    "certificationPlatformNode24": {
+      "passed": 121,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "07d7a43ae0d07cf806a719f25e8f09ba0db851e7baee8e89a392fcd941a6baf5",
+      "ownedChromiumCases": 12,
+      "blockedAndPublishedPermitReceiptsAndVisibleOutcomesVerified": true,
+      "nodeAndPythonPlanAndPermitAgree": true
+    },
+    "priorPlatformRun": {
+      "sourceCommitAtStart": "39040cb742e3155418491ed908ff24400632e9d5",
+      "logSha256": "4775d133350b3340da5f19c3354124a2b469630183d994690051367ceeebc967",
+      "fixtureFailure": "Intercepted HTML lacked UTF-8 for the revision label.",
+      "planFailure": "The first run crossed the follow-up commit. Its suspension input required the original worktree HEAD."
+    },
+    "host": {
+      "passed": 124,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "2cd42dd5f1f3d848946475e6a4bd956717f61572f8563ea128de5b9120b9e3b3"
+    },
+    "loopbackGateway": {
+      "passed": 74,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "c7b629432e0ed81ae0408a5f23ce06434126fef6f3a9a67691027abb02b51043",
+      "publishedAcknowledgementRequestIndexes": [
+        0,
+        1,
+        2,
+        0
+      ],
+      "blockedAcknowledgementRequestIndexes": [
+        0,
+        1
+      ],
+      "allUpstreamStatuses": 200
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "dcc2090936e544e70ff3b66162a11bc082be68da",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndAuthoringWitnessChecks": 23,
+      "statusRevisionUnchangedMetadataAndCatalogPredicateVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "ae3e97179830eafea9fbe368a87d6d751aa2c053d7f66b9525d2376057869ee8",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "d27bb328431b61807a4f42d75bce9661439c49a6f906348d9cdd3bf67454baf6"
+      },
+      "logSha256": "582f03dfacaaa6a3c8cb7582a41063a6ae025732b46ecf9f8d016287bb79760f"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43066043,
+      "expandedBytes": 57500923,
+      "wireBytes": 18716267,
+      "wireSha256": "e10caff6f45d8dbe471add0463155def4263bfc6c743ec50411abea505d92bea",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "5d03a9b9851684d03a8fca0de15e621c412603c68d1e8b45d439d8cf7a82c40c"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "e5f12256cbc04d43d067d65e5ced672883d23f80f1d72ddf02227a97242c33c2",
+    "blockedReadinessAndSuccessfulPublicationActionsImplemented": true,
+    "deployedPostReadinessInvalidationVerified": false,
+    "remainingS04GuardedActionsImplemented": false,
+    "exactPublishedCiQualified": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
