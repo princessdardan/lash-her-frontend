@@ -66,9 +66,25 @@ class Client:
             raise ValueError("VERCEL_REQUEST_FAILED_REQUIRES_REVIEW") from None
 
 
-def release_identity(release):
+def profile_fields(release, expected_profile=None):
+    """Only an explicit fixed source argument selects the current profile."""
+    expected = migrate.profile_context(expected_profile)
+    migrate.candidate_profile(release, expected)
+    return {} if expected is None else {"version": 2, "qualificationTargetProfile": expected}
+
+
+def require_record_profile(expected_profile, *records):
+    expected = migrate.profile_context(expected_profile)
+    migrate.require_profile(expected, *records)
+    if expected is not None:
+        demand(all(type(row.get("version")) is int and row["version"] == 2 for row in records),
+               "QUALIFICATION_TARGET_PROFILE_REQUIRED")
+
+
+def release_identity(release, *, expected_profile=None):
+    fields = profile_fields(release, expected_profile)
     environment = release.get("environment")
-    demand(environment in PROJECTS and release.get("version") == 2
+    demand(environment in PROJECTS and release.get("version") == (3 if fields else 2)
            and release.get("workload", {}).get("projectId") == PROJECTS[environment]
            and release.get("workload", {}).get("environment") == "production", "VERCEL_RELEASE_TARGET_REFUSED")
     source = release.get("sources", {}).get("frontend", {})
@@ -112,8 +128,8 @@ def project_state(client, project_id):
             "cronsEnabled": disabled is None}
 
 
-def disable_schedules(client, release):
-    environment, project_id, _commit = release_identity(release)
+def disable_schedules(client, release, *, expected_profile=None):
+    environment, project_id, _commit = release_identity(release, expected_profile=expected_profile)
     before = project_state(client, project_id)
     if before["cronsEnabled"]:
         client.request("PATCH", f"/v1/projects/{project_id}/crons", {"enabled": False})
@@ -122,7 +138,7 @@ def disable_schedules(client, release):
            "VERCEL_CRON_DISABLE_UNVERIFIED")
     # Cancelling future schedules does not establish termination/draining of
     # running invocations, callbacks, old deployment URLs or other writers.
-    return {"status": "NATIVE_SCHEDULES_DISABLED", "environment": environment, "projectId": project_id,
+    return {**profile_fields(release, expected_profile), "status": "NATIVE_SCHEDULES_DISABLED", "environment": environment, "projectId": project_id,
             "previouslyEnabled": before["cronsEnabled"], "frontendQuiescenceVerified": False}
 
 
@@ -143,19 +159,19 @@ def deployment_state(client, deployment_id, project_id, commit, release_id):
             "url": "https://" + url, "readyState": state}
 
 
-def stage_frontend(client, release, attempt, timeout=900):
+def stage_frontend(client, release, attempt, timeout=900, *, expected_profile=None):
     """Remote build from pinned Git source; preserve the current production target.
 
     Call only after the parent's locked migrations/runtime checks. This is an
     in-process component, not an independently approved deployment entrypoint.
     A failed or ambiguous POST is never automatically repeated.
     """
-    environment, project_id, commit = release_identity(release)
+    environment, project_id, commit = release_identity(release, expected_profile=expected_profile)
     demand(type(timeout) is int and 1 <= timeout <= 1800, "VERCEL_BUILD_TIMEOUT_REFUSED")
     migrate.private_directory(attempt)
     before = project_state(client, project_id)
     demand(before["cronsEnabled"] is False, "VERCEL_SCHEDULE_SUSPENSION_REQUIRED")
-    intent = {"environment": environment, "projectId": project_id, "sourceCommit": commit,
+    intent = {**profile_fields(release, expected_profile), "environment": environment, "projectId": project_id, "sourceCommit": commit,
               "releaseId": release["releaseId"], "previousDeploymentId": before["productionDeploymentId"],
               "trafficAuthorized": False, "promotionAuthorized": False}
     # Exclusive durable intent precedes the network mutation. A timeout or
@@ -217,9 +233,10 @@ def promotion_state(client, project_id):
             "aliasJob": None if job is None else {key: job[key] for key in ("jobStatus", "requestedAt", "toDeploymentId", "type")}}
 
 
-def _staged_identity(release, attempt):
-    environment, project_id, commit = release_identity(release)
+def _staged_identity(release, attempt, *, expected_profile=None):
+    environment, project_id, commit = release_identity(release, expected_profile=expected_profile)
     staged = migrate.read_json(attempt, "frontend-build-outcome.json")
+    require_record_profile(expected_profile, staged)
     demand(isinstance(staged, dict) and staged.get("status") == "FRONTEND_STAGED" and staged.get("readyState") == "READY"
            and staged.get("environment") == environment and staged.get("projectId") == project_id
            and staged.get("sourceCommit") == commit and staged.get("releaseId") == release["releaseId"]
@@ -229,10 +246,13 @@ def _staged_identity(release, attempt):
            and (staged.get("previousDeploymentId") is None or isinstance(staged["previousDeploymentId"], str)
                 and re.fullmatch(r"dpl_[A-Za-z0-9]+", staged["previousDeploymentId"]))
            and staged["deploymentId"] != staged.get("previousDeploymentId"), "VERCEL_STAGED_BUILD_REQUIRED")
-    return {key: staged.get(key) for key in ("environment", "projectId", "sourceCommit", "releaseId", "deploymentId", "previousDeploymentId")}
+    return {**profile_fields(release, expected_profile),
+            **{key: staged.get(key) for key in ("environment", "projectId", "sourceCommit", "releaseId", "deploymentId", "previousDeploymentId")}}
 
 
-def _observe_promotion(client, release, attempt, intent, timeout):
+def _observe_promotion(client, release, attempt, intent, timeout, *, expected_profile=None):
+    release_identity(release, expected_profile=expected_profile)
+    require_record_profile(expected_profile, intent)
     outcome = {**intent, "status": "FRONTEND_PROMOTION_REQUIRES_REVIEW", "phase": "observe",
                "trafficAuthorized": False, "gatewayTrafficAuthorized": False, "frontendDomainsPromoted": None}
     try:
@@ -268,20 +288,21 @@ def _observe_promotion(client, release, attempt, intent, timeout):
         migrate.write_json(attempt, f"frontend-promotion-observation-{sequence}.json", outcome)
 
 
-def observe_frontend_promotion(client, release, attempt, timeout=180):
+def observe_frontend_promotion(client, release, attempt, timeout=180, *, expected_profile=None):
     """Read-only continuation after a timeout or uncertain promotion response."""
     demand(type(timeout) is int and 1 <= timeout <= 1800, "VERCEL_PROMOTION_TIMEOUT_REFUSED")
     migrate.private_directory(attempt)
-    identity = _staged_identity(release, attempt)
+    identity = _staged_identity(release, attempt, expected_profile=expected_profile)
     stored = migrate.read_json(attempt, "frontend-promotion-started.json")
+    require_record_profile(expected_profile, stored)
     demand(isinstance(stored, dict) and all(stored.get(key) == value for key, value in identity.items())
            and type(stored.get("previousAliasRequestedAt")) is int and stored["previousAliasRequestedAt"] >= 0,
            "VERCEL_PROMOTION_INTENT_REFUSED")
     intent = {**identity, "previousAliasRequestedAt": stored["previousAliasRequestedAt"]}
-    return _observe_promotion(client, release, attempt, intent, timeout)
+    return _observe_promotion(client, release, attempt, intent, timeout, expected_profile=expected_profile)
 
 
-def promote_frontend(client, release, attempt, verify_frontend, timeout=180):
+def promote_frontend(client, release, attempt, verify_frontend, timeout=180, *, expected_profile=None):
     """Promote the staged Production build after the parent's live verification.
 
     The full coordinator retains the release lock, producer suspension and
@@ -291,7 +312,7 @@ def promote_frontend(client, release, attempt, verify_frontend, timeout=180):
     demand(type(timeout) is int and 1 <= timeout <= 1800, "VERCEL_PROMOTION_TIMEOUT_REFUSED")
     demand(callable(verify_frontend), "FRONTEND_LIVE_VERIFICATION_REQUIRED")
     migrate.private_directory(attempt)
-    identity = _staged_identity(release, attempt)
+    identity = _staged_identity(release, attempt, expected_profile=expected_profile)
     before = promotion_state(client, identity["projectId"])
     demand(before["cronsEnabled"] is False, "VERCEL_SCHEDULE_SUSPENSION_REQUIRED")
     demand(before["productionDeploymentId"] == identity["previousDeploymentId"], "VERCEL_PROJECT_CHANGED_BEFORE_PROMOTION")
@@ -303,6 +324,7 @@ def promote_frontend(client, release, attempt, verify_frontend, timeout=180):
         verified = verify_frontend(release, deployment)
     except BaseException:
         raise ValueError("FRONTEND_LIVE_VERIFICATION_FAILED") from None
+    require_record_profile(expected_profile, verified)
     demand(isinstance(verified, dict) and verified.get("status") == "FRONTEND_VERIFIED"
            and all(verified.get(key) == identity[key] for key in ("environment", "projectId", "sourceCommit", "releaseId", "deploymentId")),
            "FRONTEND_LIVE_VERIFICATION_REQUIRED")
@@ -315,7 +337,7 @@ def promote_frontend(client, release, attempt, verify_frontend, timeout=180):
     try:
         client.request("POST", f"/v10/projects/{identity['projectId']}/promote/{identity['deploymentId']}", {})
         outcome["phase"] = "observe"
-        outcome = _observe_promotion(client, release, attempt, intent, timeout)
+        outcome = _observe_promotion(client, release, attempt, intent, timeout, expected_profile=expected_profile)
         return outcome
     except BaseException as error:
         code = str(error)

@@ -41,14 +41,14 @@ def _private_configuration(directory):
            "PRIVATE_PROBE_OUTSIDE_CHECKOUT_REQUIRED")
 
 
-def prepare(client, release, private_configuration, attempt, gateway_host, scheduler_qualification=False):
+def prepare(client, release, private_configuration, attempt, gateway_host, scheduler_qualification=False, *, expected_profile=None):
     """Called by the locked parent before its pinned frontend build.
 
     Use the existing project, not an additional secret service or operator
     credential. Keep the generated value in private configuration only. The
     provider and common outcome contain separate scoped metadata.
     """
-    environment, project_id, commit = vercel.release_identity(release)
+    environment, project_id, commit = vercel.release_identity(release, expected_profile=expected_profile)
     demand(type(scheduler_qualification) is bool and (not scheduler_qualification or environment == "staging"),
            "SCHEDULER_QUALIFICATION_REQUIRES_STAGING")
     demand(isinstance(gateway_host, str) and re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+", gateway_host), "FRONTEND_PROBE_GATEWAY_REFUSED")
@@ -57,7 +57,8 @@ def prepare(client, release, private_configuration, attempt, gateway_host, sched
     demand(private_configuration.resolve() != attempt.resolve(), "SEPARATE_PRIVATE_PROBE_CONFIGURATION_REQUIRED")
     before = vercel.project_state(client, project_id)
     demand(before["cronsEnabled"] is False, "VERCEL_SCHEDULE_SUSPENSION_REQUIRED")
-    identity = {"environment": environment, "projectId": project_id, "sourceCommit": commit, "releaseId": release["releaseId"]}
+    identity = {**vercel.profile_fields(release, expected_profile), "environment": environment,
+                "projectId": project_id, "sourceCommit": commit, "releaseId": release["releaseId"]}
     expires = int(time.time() * 1000) + LIFETIME_MS
     private = {**identity, "secret": secrets.token_hex(32), "expiresAt": expires, "gatewayOrigin": "https://" + gateway_host}
     outcome = {**identity, "status": "FRONTEND_PROBE_PREPARATION_REQUIRES_REVIEW", "phase": "private-input",
@@ -92,11 +93,13 @@ def prepare(client, release, private_configuration, attempt, gateway_host, sched
         migrate.write_json(attempt, "frontend-probe-preparation.json", outcome)
 
 
-def _private_input(directory, identity):
+def _private_input(directory, identity, *, expected_profile=None):
+    vercel.require_record_profile(expected_profile, identity)
     _private_configuration(directory)
     info = (directory / PRIVATE_FILE).lstat()
     demand(info.st_uid == os.getuid() and info.st_mode & 0o077 == 0, "PRIVATE_PROBE_CREDENTIAL_REQUIRED")
     value = json.loads(migrate.read_input(directory, PRIVATE_FILE, 8192))
+    vercel.require_record_profile(expected_profile, value)
     now = int(time.time() * 1000)
     demand(isinstance(value, dict) and all(value.get(key) == identity[key] for key in ("environment", "projectId", "sourceCommit", "releaseId"))
            and isinstance(value.get("secret"), str) and re.fullmatch(r"[a-f0-9]{64}", value["secret"])
@@ -144,14 +147,14 @@ def _automation_bypass(project):
     return bypass
 
 
-def verify(client, release, attempt, private_configuration, probe_client=None, expected_feature_controls=None, expected_writer_admission_binding=None):
+def verify(client, release, attempt, private_configuration, probe_client=None, expected_feature_controls=None, expected_writer_admission_binding=None, *, expected_profile=None):
     """A real HTTP callback for promote_frontend, not a success-file input.
 
     The selected deployment must execute its server-only SDK transport and
     validate the gateway's Course catalog response. Native scheduling and full
     release acceptance remain independent checks.
     """
-    identity = vercel._staged_identity(release, attempt)
+    identity = vercel._staged_identity(release, attempt, expected_profile=expected_profile)
     outcome = {**identity, "status": "FRONTEND_VERIFICATION_REQUIRES_REVIEW", "phase": "deployment-binding",
                "trafficAuthorized": False, "nativeSchedulerVerified": False}
     try:
@@ -168,7 +171,7 @@ def verify(client, release, attempt, private_configuration, probe_client=None, e
                and identity["environment"] == "staging"), "FRONTEND_PHASE2_PROBE_BINDING_REQUIRED")
         state = vercel.deployment_state(client, identity["deploymentId"], identity["projectId"], identity["sourceCommit"], identity["releaseId"])
         demand(state["readyState"] == "READY", "VERCEL_PROMOTION_DEPLOYMENT_NOT_READY")
-        private = _private_input(private_configuration, identity)
+        private = _private_input(private_configuration, identity, expected_profile=expected_profile)
         project = vercel._project(client, identity["projectId"])
         demand((project.get("targets") or {}).get("production", {}).get("id") == identity["previousDeploymentId"]
                and (project.get("crons") or {}).get("disabledAt") is not None, "FRONTEND_PROBE_PROJECT_CHANGED")
