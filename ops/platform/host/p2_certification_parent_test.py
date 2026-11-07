@@ -2,6 +2,8 @@
 import base64
 import copy
 import fcntl
+import hashlib
+import io
 import json
 import os
 import re
@@ -11,9 +13,11 @@ import sys
 import tempfile
 import threading
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import migrate
+import release_test
 import p2_release_scope_test as scope_fixture
 import p2_certification_parent as parent
 import p2_release_supervisor as supervisor
@@ -42,6 +46,10 @@ PROFILED_CURRENT_SOURCE_ONLY = frozenset({
     'ops/platform/p2-profiled-current-transport.mjs',
     'ops/platform/p2-profiled-current-transport.test.mjs',
 })
+LEGACY_FIXTURE_ONLY_OMISSIONS = frozenset({
+    'ops/platform/host/p2_certification_parent_test.py',
+    'ops/platform/host/p2_certification_fault_test.py',
+})
 
 
 def tracked_source_fixture(source, destination, *, exclude=frozenset()):
@@ -64,8 +72,8 @@ def tracked_source_fixture(source, destination, *, exclude=frozenset()):
 
 
 def legacy_source_fixture(source, destination):
-    """Install only the v1 fixture tree; preserve the strict production bounds."""
-    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY)
+    """Install the v1 fixture with all production and required source files."""
+    names = tracked_source_fixture(source, destination, exclude=PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_ONLY_OMISSIONS)
     if len(names) > 512 or sum((destination / name).stat().st_size for name in names) > 41_000_000:
         raise ValueError('LEGACY_SOURCE_FIXTURE_BOUNDS_REQUIRED')
     return names
@@ -412,6 +420,296 @@ class ActualCertificationEntryTests(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):tracked_source_fixture(source,destination)
             self.assertEqual(list(destination.iterdir()),[])
             self.assertEqual(command.call_args.args[0],['git','-c','safe.directory='+str(source),'-C',str(source),'ls-files','-z','--','ops'])
+
+
+class ProfiledCertificationInputTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        temporary = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(temporary.cleanup)
+        cls.operators = Path(temporary.name).resolve()
+        cls.commit = 'a' * 40
+        cls.source = cls.operators / cls.commit
+        names = tracked_source_fixture(Path(__file__).resolve().parents[3], cls.source)
+        cls.files = {name: hashlib.sha256((cls.source / name).read_bytes()).hexdigest() for name in names}
+        cls.closure = cls.hash(sorted(cls.files.items()))
+
+    @staticmethod
+    def hash(value, *, canonical=False):
+        raw = value if isinstance(value, bytes) else json.dumps(value, separators=(',', ':'), sort_keys=canonical).encode()
+        return hashlib.sha256(raw).hexdigest()
+
+    def setUp(self):
+        runtime = release_test.RuntimeReleaseTests()
+        runtime.setUp()
+        self.addCleanup(runtime.tearDown)
+        fixture = runtime.fixture
+        fixture.add_frontend()
+        phase = {'contractPhase': 'p2', 'phase2ContractManifestSha256': 'sha256:' + 'b' * 64}
+        for carrier in (fixture.release, fixture.release['frontendMigration'], *fixture.jobs.values()):
+            carrier.update(phase)
+        fixture.jobs['frontend']['target'].update(approvedPendingTags=[], allowEmptyBootstrap=False)
+        fixture.release['runtime']['composeSha256'] = 'sha256:' + self.files['ops/platform/compose.yaml']
+        self.profile = fixture.profiled()
+        runtime.target.update(version=2, qualificationTargetProfile=self.profile)
+        runtime.gateway.update(ownerId=parent.vercel.TEAM, projectId=parent.vercel.PROJECTS['staging'],
+                               publicHost='api-staging.lashher.com')
+        runtime.save('runtime.json', runtime.target)
+        runtime.save('gateway.json', runtime.gateway)
+        root = runtime.root.resolve()
+        bundle, configuration, results = (path.resolve() for path in (runtime.bundle, runtime.configuration, runtime.results))
+        self.bundle, self.configuration = bundle, configuration
+        machine = root / 'machine-id'
+        machine.write_text(runtime.target['hostMachineId'] + '\n')
+        for key, value in {'PROFILED_RELEASE_ROOT': root, 'PROFILED_OPERATOR_ROOT': self.operators,
+                           'PROFILED_MACHINE_ID': machine}.items():
+            guard = patch.object(parent, key, value)
+            guard.start()
+            self.addCleanup(guard.stop)
+
+        release, job = fixture.release, fixture.jobs['frontend']
+        self.release_id = release['releaseId']
+        self.original = results / ('p2-profiled-current-' + self.release_id)
+        self.original.mkdir(mode=0o700)
+        self.frontend = root / 'frontend'
+        self.frontend.mkdir(mode=0o700)
+        config = parent.staging_state.configuration_hashes(configuration)
+        target = parent.frontend_target_sha256(job['target'])
+        owner = {'name': 'owner_role', 'oid': '11111'}
+        producer = {'producerSha256': '3' * 64, 'role': {'name': job['target']['runtimeRole'], 'oid': '22222'}}
+        binding = {'mode': 'enforce', 'targetSha256': target, 'producerSha256': producer['producerSha256'],
+                   'sourceCommit': self.commit, 'roleName': job['target']['runtimeRole']}
+        from p2_certification_profile import PROFILE
+        certification = copy.deepcopy(PROFILE)
+        profiled = {'version': 2, 'qualificationTargetProfile': self.profile}
+        inventory = {**profiled, 'environment': 'staging', 'actionId': self.release_id, 'sourceCommit': self.commit,
+                     'targetSha256': target, 'owner': owner, 'producers': [producer], 'admissionMode': 'existing',
+                     'runtimeProducerSha256': producer['producerSha256'], 'certification': certification,
+                     'restoration': {**profiled, 'newWork': False, 'recovery': False, 'nativeSchedulesEnabled': False,
+                                     'providerIngress': 'keep-retired', 'gatewayBindingSha256': '8' * 64}}
+        ready = self.produce_ready(release, root, certification['featureControls'], binding)
+        ready_hashes = {name: self.hash(raw) for name, raw in ready.items()}
+        candidate_hash = self.hash((bundle / 'release.candidate.json').read_bytes())
+        candidate_object_hash = self.hash(release, canonical=True)
+        job_hashes = {name: self.hash((bundle / 'jobs' / (name + '.json')).read_bytes()) for name in ('course', 'community')}
+        inventory_hash = self.hash(inventory)
+        workload_hash = ready_hashes['frontend-workload-outcome.json']
+        native = {**profiled, 'environment': 'staging', 'actionId': self.release_id, 'projectId': release['workload']['projectId'],
+                  'sourceCommit': self.commit, 'candidateSha256': candidate_object_hash,
+                  'phase2ContractManifestSha256': phase['phase2ContractManifestSha256'], 'sourcePolicy': {},
+                  'deploymentId': 'dpl_new', 'deploymentUrl': 'https://owned-fixture.vercel.app',
+                  'configurationRecordSha256': workload_hash, 'featureControls': certification['featureControls'],
+                  'targetSha256': target, 'target': {key: job['target'][key] for key in parent.NATIVE_TARGET_FIELDS},
+                  'owner': owner, 'producer': producer, 'initialEpoch': '1',
+                  'schedule': {'path': parent.native.PATH, 'schedule': parent.native.SCHEDULE}, 'windowSeconds': 60, 'drainSeconds': 15,
+                  'commandWitnesses': [{'commandId': 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', 'accountVersion': '1', 'action': 'suspend'}],
+                  'writerAdmissionBinding': binding, 'finalDisposition': 'disabled-and-admission-closed', 'providerQueuedInventory': None,
+                  'automaticReplayAllowed': False, 'migrationAuthorized': False, 'wholeReleaseAccepted': False}
+        native['planSha256'] = self.hash(native, canonical=True)
+        action = 'owned-certification'
+        base = {**profiled, **phase, 'environment': 'staging', 'sourceCommit': self.commit, 'candidateSha256': candidate_hash,
+                'targetSha256': target, 'inventorySha256': inventory_hash}
+        release_record = {**base, 'releaseId': self.release_id, 'configurationSha256': config,
+                          **dict.fromkeys(parent.TERMINAL_FALSE_FIELDS, False)}
+        self.started = {**release_record, 'status': 'P2_PROFILED_CURRENT_FAILED_REQUIRES_REVIEW', 'apiJobSha256': job_hashes}
+        self.terminal = {**release_record, 'status': 'P2_PROFILED_CURRENT_READY_FOR_CERTIFICATION',
+                         **dict.fromkeys(parent.TERMINAL_HASH_FIELDS, '7' * 64), 'frontendWorkloadReceiptSha256': workload_hash}
+        self.write_host('p2-profiled-current-started.json', self.started)
+        self.write_host('p2-profiled-current-outcome.json', self.terminal)
+        local = json.dumps(self.terminal, separators=(',', ':')).encode() + b'\n'
+        self.plan = {**base, 'certificationActionId': action, 'originalReleaseId': self.release_id, 'operatorSourceCommit': self.commit,
+                     'candidateObjectSha256': candidate_object_hash, 'configurationSha256': self.hash(config),
+                     'mode': 'contain-native', 'startState': 'already-closed', 'initialEpoch': '1',
+                     'browserPlanSha256': None, 'workerPlan': None, 'workerPlanSha256': None,
+                     'configurationCanonicalSha256': self.hash(config, canonical=True), 'runtimeInventorySha256': '4' * 64,
+                     'gatewayProcessSha256': '5' * 64, 'gatewayConfigurationSha256': config['gateway.json'],
+                     'operatorSourceClosureSha256': self.closure, 'nativePlan': native, 'persistenceReaderEligible': True,
+                     'requestEvidenceDescriptorSha256': None, 'faultSelection': None, 'readyReceiptSha256': ready_hashes,
+                     'maximumSeconds': 900, 'finalDisposition': 'native-disabled-and-both-admissions-closed',
+                     'apiJobSha256': job_hashes, 'originalReleaseReceiptSha256': self.hash(local),
+                     'originalReleasePlanSha256': '6' * 64, **dict.fromkeys(parent.PROFILED_PLAN_FALSE, False)}
+        self.initial = {**profiled, 'mode': parent.PROFILED_CERTIFICATION_MODE, 'environment': 'staging',
+                        'sourceCommit': self.commit, 'sourceSha256': self.files, 'sourceClosureSha256': self.closure,
+                        'hostMachineId': runtime.target['hostMachineId'], 'bundle': str(bundle), 'configuration': str(configuration),
+                        'results': str(results), 'candidate': release, 'candidateSha256': candidate_hash, 'configurationSha256': config,
+                        'apiJobSha256': job_hashes, 'frontendJob': job, 'frontendBaseline': json.loads((bundle / 'schema/frontend.json').read_bytes()),
+                        'targetSha256': target, 'owner': owner, 'inventory': inventory, 'inventorySha256': inventory_hash,
+                        'certification': certification, 'expectedWriterAdmissionBinding': binding, 'certificationActionId': action,
+                        'certificationPlan': self.plan, 'originalReleaseReceipt': base64.b64encode(local).decode(),
+                        'readyReceipts': {name: base64.b64encode(raw).decode() for name, raw in ready.items()}}
+        self.rehash()
+
+    def produce_ready(self, release, root, controls, binding):
+        """Run the real receipt writers with owned projected Vercel/probe responses."""
+        vercel, frontend = parent.vercel, parent.frontend_probe
+        project_id = release['workload']['projectId']
+        identity = {'version': 2, 'qualificationTargetProfile': self.profile, 'environment': 'staging',
+                    'projectId': project_id, 'sourceCommit': self.commit, 'releaseId': self.release_id}
+        promoted = False
+        def request(method, path, _body=None):
+            nonlocal promoted
+            if (method, path) == ('POST', '/v13/deployments'):
+                return {'id': 'dpl_new'}
+            if (method, path) == ('POST', f'/v10/projects/{project_id}/promote/dpl_new'):
+                promoted = True
+                return {}
+            if (method, path) == ('GET', '/v13/deployments/dpl_new?withGitRepoInfo=true'):
+                return {'id': 'dpl_new', 'projectId': project_id, 'target': 'production', 'url': 'owned-fixture.vercel.app',
+                        'readyState': 'READY', 'gitSource': {'type': 'github', 'repoId': vercel.REPOSITORY_ID, 'sha': self.commit},
+                        'meta': {'lashReleaseId': self.release_id}}
+            if method == 'GET' and path in (f'/v9/projects/{project_id}', f'/v9/projects/{project_id}?rollbackInfo=true'):
+                return {'id': project_id, 'accountId': vercel.TEAM, 'link': {'type': 'github', 'repoId': vercel.REPOSITORY_ID},
+                        'targets': {'production': {'id': 'dpl_new' if promoted else 'dpl_old'}}, 'crons': {'disabledAt': 1},
+                        'protectionBypass': {'fixture-bypass': {'scope': 'automation-bypass'}},
+                        'lastAliasRequest': {'type': 'promote', 'jobStatus': 'succeeded', 'requestedAt': 2 if promoted else 1,
+                                             'toDeploymentId': 'dpl_new' if promoted else 'dpl_old'}}
+            raise AssertionError('unexpected modeled provider route')
+        client = SimpleNamespace(request=request)
+        origin = 'https://api-staging.lashher.com'
+        private = root / 'private-probe'
+        private.mkdir(mode=0o700)
+        migrate.write_json(private, frontend.PRIVATE_FILE, {**identity, 'secret': 'e' * 64,
+                           'gatewayOrigin': origin, 'expiresAt': int(time.time() * 1000) + 60_000})
+        def probe(_url, _secret, _bypass, challenge, *, mode):
+            self.assertEqual(mode, 'phase2')
+            return {**identity, 'version': 1, 'status': 'FRONTEND_WORKLOAD_PROBE_PASS', 'challenge': challenge,
+                    'checks': ['gateway-course-catalog-p2'], 'contractPhase': 'p2', 'gatewayOrigin': origin,
+                    'featureControls': controls, 'writerAdmissionBinding': binding}
+        def verify(selected, _deployment):
+            return frontend.verify(client, selected, self.frontend, private, probe_client=SimpleNamespace(request=probe),
+                                   expected_feature_controls=controls, expected_writer_admission_binding=binding,
+                                   expected_profile=self.profile)
+        vercel.stage_frontend(client, release, self.frontend, expected_profile=self.profile)
+        vercel.promote_frontend(client, release, self.frontend, verify, expected_profile=self.profile)
+        return {name: (self.frontend / name).read_bytes() for name in parent.READY_FILES}
+
+    def write_host(self, name, record):
+        path = self.original / name
+        path.unlink(missing_ok=True)
+        migrate.write_json(self.original, name, record)
+
+    def rehash(self):
+        self.plan.pop('planSha256', None)
+        self.plan['planSha256'] = self.hash(self.plan, canonical=True)
+
+    def replace_ready(self, name, raw):
+        self.initial['readyReceipts'][name] = base64.b64encode(raw).decode()
+        self.plan['readyReceiptSha256'][name] = self.hash(raw)
+        self.rehash()
+
+    def prepare(self):
+        with patch.object(parent.subprocess, 'run', side_effect=AssertionError('unexpected child')), \
+             patch.object(migrate, 'write_json', side_effect=AssertionError('unexpected receipt write')), \
+             patch.object(parent.vercel.Client, 'request', side_effect=AssertionError('unexpected provider request')):
+            return parent.prepare_profiled_current_certification_input(self.initial, self.source)
+
+    def test_current_packet_binds_actual_sources_jobs_and_receipts_without_effects(self):
+        before = sorted(self.original.iterdir())
+        result = self.prepare()
+        self.assertEqual(result['status'], 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED')
+        self.assertEqual(result['qualificationTargetProfile'], self.profile)
+        self.assertEqual(result['originalReleaseReceiptSha256'], self.plan['originalReleaseReceiptSha256'])
+        self.assertEqual(result['hostOriginalReleaseReceiptSha256'], self.hash((self.original / 'p2-profiled-current-outcome.json').read_bytes()))
+        self.assertNotEqual(result['hostOriginalReleaseReceiptSha256'], result['originalReleaseReceiptSha256'])
+        for field in ('originalReleasePlanHashHostVerified', 'executionEligible', 'providerTouched', 'admissionChanged', 'releaseAccepted'):
+            self.assertIs(result[field], False)
+        self.assertEqual(sorted(self.original.iterdir()), before)
+        self.write_host('p2-profiled-current-started.json', {**self.started, 'reviewedPlanSha256': self.plan['originalReleasePlanSha256']})
+        self.assertIs(self.prepare()['originalReleasePlanHashHostVerified'], True)
+        self.write_host('p2-profiled-current-started.json', {**self.started, 'reviewedPlanSha256': '1' * 64})
+        with self.assertRaisesRegex(ValueError, 'ORIGINAL_PLAN_CHANGED'):
+            self.prepare()
+
+    def test_fixed_host_entry_accepts_one_complete_profiled_packet(self):
+        raw = json.dumps(self.initial).encode() + b'\n'
+        output = io.StringIO()
+        with patch.object(parent.sys, 'argv', ['p2_certification_parent.py', '--plan-profiled-current']), \
+             patch.object(parent.sys, 'platform', 'linux'), patch.object(parent.os, 'geteuid', return_value=0), \
+             patch.object(parent, '__file__', str(self.source / 'ops/platform/host/p2_certification_parent.py')), \
+             patch.object(parent.sys, 'stdout', output), \
+             patch.object(parent.subprocess, 'run', side_effect=AssertionError('unexpected child')), \
+             patch.object(parent.vercel.Client, 'request', side_effect=AssertionError('unexpected provider request')):
+            with patch.object(parent.sys, 'stdin', SimpleNamespace(buffer=io.BytesIO(raw))):
+                parent.main()
+            with patch.object(parent.sys, 'stdin', SimpleNamespace(buffer=io.BytesIO(raw + raw))):
+                with self.assertRaisesRegex(ValueError, 'QUALIFICATION_TARGET_PROFILE_REFUSED'):
+                    parent.main()
+        lines = output.getvalue().splitlines()
+        self.assertEqual(len(lines), 1)
+        result = json.loads(lines[0])
+        self.assertEqual(result['status'], 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED')
+        self.assertIs(result['executionEligible'], False)
+
+    def test_fixed_context_rejects_legacy_and_private_fields_before_source_io(self):
+        changes = ({'version': 1}, {'qualificationTargetProfile': None}, {'credentials': {}}, {'mode': 'p2-bounded-certification'})
+        with patch.object(parent, 'verify_profiled_current_source_closure', side_effect=AssertionError('source read')):
+            for changeset in changes:
+                with self.subTest(fields=tuple(changeset)), self.assertRaises(ValueError):
+                    parent.prepare_profiled_current_certification_input({**self.initial, **changeset}, self.source)
+            self.plan['mode'] = 'browser-pending'
+            self.rehash()
+            with self.assertRaisesRegex(ValueError, 'PLAN_REQUIRED'):
+                self.prepare()
+
+    def test_profile_and_hash_are_required_on_the_nested_native_plan(self):
+        native_plan = self.plan['nativePlan']
+        native_target = native_plan['target']
+        native_plan['target'] = {key: value for key, value in native_target.items() if key != 'qualificationTargetProfile'}
+        native_plan.pop('planSha256')
+        native_plan['planSha256'] = self.hash(native_plan, canonical=True)
+        self.rehash()
+        with self.assertRaisesRegex(ValueError, 'QUALIFICATION_TARGET_PROFILE_REQUIRED'):
+            self.prepare()
+        native_plan['target'] = native_target
+        self.rehash()
+        with self.assertRaisesRegex(ValueError, 'NATIVE_PLAN_REQUIRED'):
+            self.prepare()
+
+    def test_rehashed_ready_receipts_still_require_source_shapes_and_causal_joins(self):
+        for name, changes, reason in (
+            ('frontend-build-created.json', {'qualificationTargetProfile': None}, 'QUALIFICATION_TARGET_PROFILE'),
+            ('frontend-build-outcome.json', {'previousDeploymentId': 'dpl_unrelated'}, 'STAGED_IDENTITY_REQUIRED'),
+            ('frontend-build-outcome.json', {'url': 'https://other.vercel.app'}, 'STAGED_IDENTITY_REQUIRED'),
+            ('frontend-build-started.json', {'unexpected': 'private'}, 'READY_RECEIPT_FIELDS_REQUIRED'),
+            ('frontend-promotion-outcome.json', {'aliasRequestedAt': 1}, 'PROMOTION_REQUIRED'),
+        ):
+            with self.subTest(name=name, fields=tuple(changes)):
+                raw = (self.frontend / name).read_bytes()
+                self.replace_ready(name, json.dumps({**json.loads(raw), **changes}).encode())
+                with self.assertRaisesRegex(ValueError, reason):
+                    self.prepare()
+                self.replace_ready(name, raw)
+        name = 'frontend-promotion-started.json'
+        self.replace_ready(name, (self.frontend / name).read_bytes().replace(b'"version": 2', b'"version": 2, "version": 2'))
+        with self.assertRaisesRegex(ValueError, 'QUALIFICATION_TARGET_PROFILE_REFUSED'):
+            self.prepare()
+
+    def test_original_terminal_must_exist_as_private_host_bytes_and_bind_workload(self):
+        name = 'p2-profiled-current-outcome.json'
+        path = self.original / name
+        raw = path.read_bytes()
+        path.unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.prepare()
+        local = self.original / 'local-copy.json'
+        local.write_bytes(raw)
+        local.chmod(0o600)
+        path.symlink_to(local)
+        with self.assertRaises(OSError):
+            self.prepare()
+        self.write_host(name, {**self.terminal, 'frontendWorkloadReceiptSha256': '1' * 64})
+        with self.assertRaisesRegex(ValueError, 'ORIGINAL_RELEASE_REQUIRED'):
+            self.prepare()
+
+    def test_raw_api_job_and_configuration_must_match_actual_host_files(self):
+        for path in (self.bundle / 'jobs/course.json', self.configuration / 'course-api.env'):
+            raw = path.read_bytes()
+            try:
+                path.write_bytes(raw + b'\n')
+                with self.assertRaisesRegex(ValueError, 'ACTUAL_RELEASE_INPUT_REQUIRED'):
+                    self.prepare()
+            finally:
+                path.write_bytes(raw)
 
 
 if __name__=='__main__':unittest.main()

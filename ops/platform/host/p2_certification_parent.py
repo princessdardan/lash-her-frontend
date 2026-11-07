@@ -35,7 +35,8 @@ from frontend_release_adapters import LockedClient,LockedProbe
 import p2_lifecycle_native as native
 from p2_release_broker import Broker,PhysicalObserver,LOCK,MAXIMUM,decode
 from p2_release_scope import P2ReleaseScope
-from p2_source_closure import verify_source_closure
+from p2_source_closure import verify_profiled_current_source_closure,verify_source_closure
+from p2_certification_profile import require_profile as require_certification_profile
 from p2_certification_fault import P2CertificationFaultStage,GATEWAY_OBSERVER,frontend_target_sha256
 import p2_identity_negative_probe as identity_probe
 from p2_lifecycle_suspension_evidence import P2LifecycleSuspensionEvidenceStage
@@ -51,6 +52,311 @@ _core=None
 
 def _sha(raw):return hashlib.sha256(raw).hexdigest()
 def _canonical(value):return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
+
+
+PROFILED_CERTIFICATION_MODE = 'p2-bounded-certification-profiled-current'
+PROFILED_RELEASE_ROOT = Path('/var/lib/lash-her/releases/staging')
+PROFILED_OPERATOR_ROOT = Path('/opt/lash-her/operators')
+PROFILED_MACHINE_ID = Path('/etc/machine-id')
+PROFILED_INITIAL_FIELDS = frozenset((
+    'version', 'qualificationTargetProfile', 'mode', 'environment', 'sourceCommit', 'sourceSha256',
+    'sourceClosureSha256', 'hostMachineId', 'bundle', 'configuration', 'results', 'candidate',
+    'candidateSha256', 'configurationSha256', 'apiJobSha256', 'frontendJob', 'frontendBaseline',
+    'targetSha256', 'owner', 'inventory', 'inventorySha256', 'certification', 'expectedWriterAdmissionBinding',
+    'certificationActionId', 'certificationPlan', 'originalReleaseReceipt', 'readyReceipts',
+))
+READY_FILES = (
+    'frontend-build-started.json', 'frontend-build-created.json', 'frontend-build-outcome.json',
+    'frontend-workload-outcome.json', 'frontend-promotion-started.json', 'frontend-promotion-outcome.json',
+)
+PROFILED_PLAN_FALSE = (
+    'frontendSqlReplay', 'apiSqlReplay', 'rolePreparationAllowed', 'historicalLoginRestorationAllowed',
+    'buildAllowed', 'promotionAllowed', 'wholeReleaseAccepted',
+)
+PROFILED_PLAN_FIELDS = frozenset((
+    'version', 'qualificationTargetProfile', 'environment', 'certificationActionId', 'originalReleaseId',
+    'sourceCommit', 'operatorSourceCommit', 'candidateSha256', 'candidateObjectSha256', 'inventorySha256',
+    'configurationSha256', 'targetSha256', 'mode', 'startState', 'initialEpoch', 'browserPlanSha256',
+    'workerPlan', 'workerPlanSha256', 'configurationCanonicalSha256', 'runtimeInventorySha256',
+    'gatewayProcessSha256', 'gatewayConfigurationSha256', 'operatorSourceClosureSha256', 'contractPhase',
+    'phase2ContractManifestSha256', 'nativePlan', 'persistenceReaderEligible', 'requestEvidenceDescriptorSha256',
+    'faultSelection', 'readyReceiptSha256', 'maximumSeconds', 'finalDisposition', 'planSha256',
+    'apiJobSha256', 'originalReleaseReceiptSha256', 'originalReleasePlanSha256', *PROFILED_PLAN_FALSE,
+))
+PROFILED_MODES = frozenset(('native-window', 'fault-before-upstream', 'fault-drop-after-ack',
+                           'known-ack-recovery', 'contain-native'))
+NATIVE_PLAN_FIELDS = frozenset((
+    'version', 'qualificationTargetProfile', 'environment', 'actionId', 'projectId', 'sourceCommit',
+    'candidateSha256', 'phase2ContractManifestSha256', 'sourcePolicy', 'deploymentId', 'deploymentUrl',
+    'configurationRecordSha256', 'featureControls', 'targetSha256', 'target', 'owner', 'producer',
+    'initialEpoch', 'schedule', 'windowSeconds', 'drainSeconds', 'commandWitnesses', 'writerAdmissionBinding',
+    'finalDisposition', 'providerQueuedInventory', 'automaticReplayAllowed', 'migrationAuthorized',
+    'wholeReleaseAccepted', 'planSha256',
+))
+NATIVE_TARGET_FIELDS = frozenset(('host', 'port', 'database', 'user', 'serverMajor', 'qualificationTargetProfile'))
+RECEIPT_IDENTITY_FIELDS = frozenset(('version', 'qualificationTargetProfile', 'environment', 'releaseId',
+                                    'sourceCommit', 'projectId', 'previousDeploymentId'))
+READY_RECEIPT_FIELDS = (
+    {'trafficAuthorized', 'promotionAuthorized'},
+    {'trafficAuthorized', 'promotionAuthorized', 'deploymentId'},
+    {'trafficAuthorized', 'promotionAuthorized', 'deploymentId', 'status', 'phase', 'url', 'readyState'},
+    {'deploymentId', 'status', 'phase', 'trafficAuthorized', 'nativeSchedulerVerified', 'checks',
+     'contractPhase', 'phase2ContractManifestSha256', 'featureControls', 'writerAdmissionBinding'},
+    {'deploymentId', 'previousAliasRequestedAt'},
+    {'deploymentId', 'previousAliasRequestedAt', 'status', 'phase', 'trafficAuthorized', 'gatewayTrafficAuthorized',
+     'frontendDomainsPromoted', 'aliasRequestedAt'},
+)
+TERMINAL_HASH_FIELDS = frozenset((
+    'frontendDatabaseReceiptSha256', 'frontendTerminalSha256', 'frontendContinuationCompletedSha256',
+    'frontendReleaseOutcomeSha256', 'frontendSessionClosedSha256', 'frontendWorkloadReceiptSha256',
+    'apiRuntimeReceiptSha256', 'migrationOutcomeSha256',
+))
+TERMINAL_FALSE_FIELDS = (
+    'frontendSqlApplied', 'historicalProviderClosureClaimed', 'oldP200Qualified',
+    'nativeSchedulesEnabled', 'trafficAuthorized', 'releaseAccepted',
+)
+
+
+def _profiled_digest(value):
+    return type(value) is str and re.fullmatch(r'[a-f0-9]{64}', value) is not None and value != '0' * 64
+
+
+def _profiled_compact(value):
+    return json.dumps(value, separators=(',', ':'), ensure_ascii=False).encode()
+
+
+def _profiled_plan_hash(plan):
+    return _sha(_canonical({key: value for key, value in plan.items() if key != 'planSha256'}))
+
+
+def _profiled_context():
+    from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+    return migrate.profile_context(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+
+
+def _profiled_record(raw, expected):
+    from qualification_target_profile import decode_qualification_target_json
+    record = decode_qualification_target_json(raw, 'carrier')
+    require(type(record) is dict, 'P2_PROFILED_CERTIFICATION_RECEIPT_REQUIRED')
+    vercel.require_record_profile(expected, record)
+    return record
+
+
+def _profiled_wire_receipt(encoded, digest, expected):
+    require(type(encoded) is str and 0 < len(encoded) <= 87_384 and _profiled_digest(digest),
+            'P2_PROFILED_CERTIFICATION_RECEIPT_REQUIRED')
+    raw = base64.b64decode(encoded, validate=True)
+    require(0 < len(raw) <= 65_536 and base64.b64encode(raw).decode() == encoded and _sha(raw) == digest,
+            'P2_PROFILED_CERTIFICATION_RECEIPT_BYTES_CHANGED')
+    return _profiled_record(raw, expected)
+
+
+def _profiled_host_receipt(directory, name, expected):
+    migrate.private_directory(directory)
+    require(directory == directory.resolve(), 'P2_PROFILED_CERTIFICATION_ORIGINAL_DIRECTORY_REQUIRED')
+    descriptor = os.open(directory / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, 'rb') as stream:
+        before = os.fstat(stream.fileno())
+        require(stat.S_ISREG(before.st_mode) and before.st_uid == os.getuid() and before.st_nlink == 1 and
+                stat.S_IMODE(before.st_mode) == 0o600 and 0 < before.st_size <= 65_536,
+                'P2_PROFILED_CERTIFICATION_ORIGINAL_RECEIPT_REQUIRED')
+        raw = stream.read(65_537)
+        after = os.fstat(stream.fileno())
+        require(len(raw) == before.st_size and before.st_size == after.st_size and
+                before.st_mtime_ns == after.st_mtime_ns and before.st_ctime_ns == after.st_ctime_ns,
+                'P2_PROFILED_CERTIFICATION_ORIGINAL_RECEIPT_CHANGED')
+    return _profiled_record(raw, expected), _sha(raw)
+
+
+def _profiled_initial(initial, expected):
+    require(type(initial) is dict and set(initial) == PROFILED_INITIAL_FIELDS and
+            type(initial.get('version')) is int and initial['version'] == 2 and initial['environment'] == 'staging' and
+            initial['mode'] == PROFILED_CERTIFICATION_MODE and migrate.source_commit(initial['sourceCommit']) and
+            type(initial['certificationActionId']) is str and
+            re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', initial['certificationActionId']) and
+            type(initial['hostMachineId']) is str and re.fullmatch(r'[a-f0-9]{32}', initial['hostMachineId']) and
+            initial['hostMachineId'] != '0' * 32 and
+            all(_profiled_digest(initial[key]) for key in ('sourceClosureSha256', 'candidateSha256', 'targetSha256', 'inventorySha256')),
+            'P2_PROFILED_CERTIFICATION_INITIAL_REQUIRED')
+    vercel.require_record_profile(expected, initial)
+    hashes, api = initial['configurationSha256'], initial['apiJobSha256']
+    require(type(hashes) is dict and set(hashes) == set(staging_state.CONFIGURATION_FILES) and
+            type(api) is dict and set(api) == {'course', 'community'} and
+            all(_profiled_digest(value) for value in (*hashes.values(), *api.values())),
+            'P2_PROFILED_CERTIFICATION_INPUT_PINS_REQUIRED')
+    plan = initial['certificationPlan']
+    require(type(plan) is dict and type(plan.get('mode')) is str and plan['mode'] in PROFILED_MODES,
+            'P2_PROFILED_CERTIFICATION_PLAN_REQUIRED')
+    extra = {'knownAckRecovery', 'knownAckReceiverTargets', 'knownAckConfigurationInputDirectory'} if plan['mode'] == 'known-ack-recovery' else set()
+    require(set(plan) == PROFILED_PLAN_FIELDS | extra and plan['startState'] == 'already-closed' and
+            plan['environment'] == 'staging' and plan['certificationActionId'] == initial['certificationActionId'] and
+            plan['sourceCommit'] == plan['operatorSourceCommit'] == initial['sourceCommit'] and
+            all(plan[key] == initial[key] for key in ('candidateSha256', 'inventorySha256', 'targetSha256', 'apiJobSha256')) and
+            plan['operatorSourceClosureSha256'] == initial['sourceClosureSha256'] and
+            plan['configurationSha256'] == _sha(_profiled_compact(hashes)) and
+            plan['configurationCanonicalSha256'] == _sha(_canonical(hashes)) and
+            plan['gatewayConfigurationSha256'] == hashes['gateway.json'] and
+            all(_profiled_digest(plan[key]) for key in ('candidateObjectSha256', 'runtimeInventorySha256', 'gatewayProcessSha256',
+                'originalReleasePlanSha256', 'originalReleaseReceiptSha256')) and
+            type(plan['initialEpoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', plan['initialEpoch']) and
+            type(plan['maximumSeconds']) is int and plan['maximumSeconds'] == 900 and
+            all(plan[key] is None for key in ('browserPlanSha256', 'workerPlan', 'workerPlanSha256')) and
+            plan['finalDisposition'] == 'native-disabled-and-both-admissions-closed' and
+            plan['persistenceReaderEligible'] is True and all(plan[key] is False for key in PROFILED_PLAN_FALSE) and
+            plan['planSha256'] == _profiled_plan_hash(plan),
+            'P2_PROFILED_CERTIFICATION_PLAN_BINDING_REQUIRED')
+    native_plan = plan['nativePlan']
+    vercel.require_record_profile(expected, plan, native_plan)
+    migrate.require_profile(expected, native_plan.get('target'))
+    require(set(native_plan) == NATIVE_PLAN_FIELDS and set(native_plan['target']) == NATIVE_TARGET_FIELDS and
+            native_plan['planSha256'] == _profiled_plan_hash(native_plan) and
+            native_plan['candidateSha256'] == plan['candidateObjectSha256'] and
+            native_plan['schedule'] == {'path': native.PATH, 'schedule': native.SCHEDULE} and
+            native_plan['finalDisposition'] == 'disabled-and-admission-closed' and
+            native_plan['providerQueuedInventory'] is None and
+            all(native_plan[key] is False for key in ('automaticReplayAllowed', 'migrationAuthorized', 'wholeReleaseAccepted')) and
+            type(native_plan['initialEpoch']) is str and re.fullmatch(r'[1-9][0-9]{0,17}', native_plan['initialEpoch']) and
+            (plan['mode'] == 'contain-native' or native_plan['initialEpoch'] == str(int(plan['initialEpoch']) + 1)) and
+            type(native_plan['windowSeconds']) is int and 60 <= native_plan['windowSeconds'] <= 180 and
+            type(native_plan['drainSeconds']) is int and 1 <= native_plan['drainSeconds'] <= 180,
+            'P2_PROFILED_CERTIFICATION_NATIVE_PLAN_REQUIRED')
+    require(type(initial['readyReceipts']) is dict and set(initial['readyReceipts']) == set(READY_FILES) and
+            type(plan['readyReceiptSha256']) is dict and set(plan['readyReceiptSha256']) == set(READY_FILES),
+            'P2_PROFILED_CERTIFICATION_READY_RECEIPTS_REQUIRED')
+    return plan
+
+
+def _profiled_ready_receipts(initial, plan, selected, expected):
+    receipts = [_profiled_wire_receipt(initial['readyReceipts'][name], plan['readyReceiptSha256'][name], expected)
+                for name in READY_FILES]
+    require(all(set(row) == RECEIPT_IDENTITY_FIELDS | fields for row, fields in zip(receipts, READY_RECEIPT_FIELDS)),
+            'P2_PROFILED_CERTIFICATION_READY_RECEIPT_FIELDS_REQUIRED')
+    started, _created, staged, workload, promote_started, promoted = receipts
+    native_plan = plan['nativePlan']
+    identity = {'environment': 'staging', 'releaseId': selected['releaseId'], 'sourceCommit': initial['sourceCommit'],
+                'projectId': selected['workload']['projectId'], 'previousDeploymentId': started.get('previousDeploymentId')}
+    deployment, previous = native_plan.get('deploymentId'), identity['previousDeploymentId']
+    require(type(deployment) is str and re.fullmatch(r'dpl_[A-Za-z0-9]+', deployment) and deployment != previous and
+            (previous is None or type(previous) is str and re.fullmatch(r'dpl_[A-Za-z0-9]+', previous)) and
+            all(all(key in row and row[key] == value for key, value in identity.items()) for row in receipts) and
+            all(row.get('deploymentId') == deployment for row in receipts[1:]) and 'deploymentId' not in started and
+            all(row.get('trafficAuthorized') is False and row.get('promotionAuthorized') is False for row in receipts[:3]) and
+            staged.get('status') == 'FRONTEND_STAGED' and staged.get('phase') == 'completed' and staged.get('readyState') == 'READY' and
+            type(staged.get('url')) is str and re.fullmatch(r'https://[a-z0-9][a-z0-9-]*\.vercel\.app', staged['url']) and
+            staged['url'] == native_plan.get('deploymentUrl'),
+            'P2_PROFILED_CERTIFICATION_STAGED_IDENTITY_REQUIRED')
+    require(workload.get('status') == 'FRONTEND_VERIFIED' and workload.get('phase') == 'completed' and
+            workload.get('trafficAuthorized') is False and workload.get('nativeSchedulerVerified') is False and
+            workload.get('checks') == ['frontend-server-gateway-course-catalog-p2'] and
+            _canonical(workload.get('featureControls')) == _canonical(native_plan.get('featureControls')) and
+            workload.get('writerAdmissionBinding') == initial['expectedWriterAdmissionBinding'] == native_plan.get('writerAdmissionBinding') and
+            plan['readyReceiptSha256']['frontend-workload-outcome.json'] == native_plan.get('configurationRecordSha256'),
+            'P2_PROFILED_CERTIFICATION_WORKLOAD_REQUIRED')
+    migrate.require_contract_identity(selected, workload)
+    prior_time, alias_time = promote_started.get('previousAliasRequestedAt'), promoted.get('aliasRequestedAt')
+    require(promoted.get('status') == 'FRONTEND_DOMAINS_PROMOTED' and promoted.get('phase') == 'completed' and
+            promoted.get('frontendDomainsPromoted') is True and promoted.get('trafficAuthorized') is False and
+            promoted.get('gatewayTrafficAuthorized') is False and type(prior_time) is int and type(alias_time) is int and
+            0 <= prior_time < alias_time <= 2**53 - 1 and type(promoted.get('previousAliasRequestedAt')) is int and
+            promoted['previousAliasRequestedAt'] == prior_time,
+            'P2_PROFILED_CERTIFICATION_PROMOTION_REQUIRED')
+
+
+def _profiled_original_terminal(initial, plan, selected, results, expected):
+    local = _profiled_wire_receipt(initial['originalReleaseReceipt'], plan['originalReleaseReceiptSha256'], expected)
+    original = results / ('p2-profiled-current-' + selected['releaseId'])
+    terminal, terminal_sha = _profiled_host_receipt(original, 'p2-profiled-current-outcome.json', expected)
+    started, _ = _profiled_host_receipt(original, 'p2-profiled-current-started.json', expected)
+    binding = {'environment': 'staging', 'releaseId': selected['releaseId'], **migrate.contract_identity(selected),
+               **{key: initial[key] for key in ('sourceCommit', 'candidateSha256', 'configurationSha256', 'targetSha256', 'inventorySha256')}}
+    fields = {'version', 'qualificationTargetProfile', 'status', *binding, *TERMINAL_FALSE_FIELDS}
+    require(_canonical(local) == _canonical(terminal) and set(terminal) == fields | TERMINAL_HASH_FIELDS and
+            terminal['status'] == 'P2_PROFILED_CURRENT_READY_FOR_CERTIFICATION' and
+            set(started) in (fields | {'apiJobSha256'}, fields | {'apiJobSha256', 'reviewedPlanSha256'}) and
+            started['status'] == 'P2_PROFILED_CURRENT_FAILED_REQUIRES_REVIEW' and
+            started['apiJobSha256'] == initial['apiJobSha256'] and
+            all(all(row.get(key) == value for key, value in binding.items()) and
+                all(row.get(key) is False for key in TERMINAL_FALSE_FIELDS) for row in (terminal, started)) and
+            all(_profiled_digest(terminal[key]) for key in TERMINAL_HASH_FIELDS) and
+            terminal['frontendWorkloadReceiptSha256'] == plan['readyReceiptSha256']['frontend-workload-outcome.json'],
+            'P2_PROFILED_CERTIFICATION_ORIGINAL_RELEASE_REQUIRED')
+    plan_hash_verified = 'reviewedPlanSha256' in started
+    require(not plan_hash_verified or started['reviewedPlanSha256'] == plan['originalReleasePlanSha256'],
+            'P2_PROFILED_CERTIFICATION_ORIGINAL_PLAN_CHANGED')
+    return terminal_sha, plan_hash_verified
+
+
+def prepare_profiled_current_certification_input(initial, source):
+    """Fixed current-profile host input check without execution authority."""
+    from qualification_target_profile import decode_qualification_target_json
+    expected = _profiled_context()
+    plan = _profiled_initial(initial, expected)
+    source = Path(source)
+    require(source == PROFILED_OPERATOR_ROOT / initial['sourceCommit'] and source == source.resolve(),
+            'P2_PROFILED_CERTIFICATION_INSTALLED_SOURCE_REQUIRED')
+    verify_profiled_current_source_closure(initial, source)
+    require(PROFILED_MACHINE_ID.read_text().strip() == initial['hostMachineId'], 'P2_PROFILED_CERTIFICATION_HOST_REQUIRED')
+    paths = []
+    for key in ('bundle', 'configuration', 'results'):
+        require(type(initial[key]) is str, 'P2_PROFILED_CERTIFICATION_HOST_PATH_REQUIRED')
+        path = Path(initial[key])
+        require(path.is_absolute() and PROFILED_RELEASE_ROOT in path.parents and path == path.resolve() and
+                ',' not in str(path), 'P2_PROFILED_CERTIFICATION_HOST_PATH_REQUIRED')
+        staging_state.outside_checkout(path)
+        paths.append(path)
+    bundle, configuration, results = paths
+    selected, jobs, runtime_plan, _ = runtime.make_plan(bundle, configuration, source / 'ops/platform/compose.yaml',
+                                                        expected_profile=expected)
+    require(set(jobs) == {'frontend', 'course', 'community'}, 'P2_PROFILED_CERTIFICATION_THREE_TARGETS_REQUIRED')
+    frontend, inventory, native_plan = jobs['frontend']['job'], initial['inventory'], plan['nativePlan']
+    target = frontend['target']
+    require(type(inventory) is dict, 'P2_PROFILED_CERTIFICATION_FENCED_INVENTORY_REQUIRED')
+    vercel.require_record_profile(expected, inventory, inventory.get('restoration'))
+    require(_canonical(selected) == _canonical(initial['candidate']) and selected['contractPhase'] == 'p2' and
+            selected['sources']['frontend']['commit'] == initial['sourceCommit'] and
+            selected['releaseId'] == plan['originalReleaseId'] != initial['certificationActionId'] and
+            _sha(migrate.read_input(bundle, 'release.candidate.json')) == initial['candidateSha256'] and
+            _sha(_canonical(selected)) == plan['candidateObjectSha256'] and
+            migrate.profiled_current_job_hashes(bundle) == initial['apiJobSha256'] and
+            _canonical(frontend) == _canonical(initial['frontendJob']) and
+            _canonical(decode_qualification_target_json(jobs['frontend']['schema'], 'carrier')) == _canonical(initial['frontendBaseline']) and
+            target.get('approvedPendingTags') == [] and target.get('allowEmptyBootstrap') is False and
+            frontend_target_sha256(target) == initial['targetSha256'] and
+            runtime_plan['hostMachineId'] == initial['hostMachineId'] and
+            staging_state.configuration_hashes(configuration) == initial['configurationSha256'],
+            'P2_PROFILED_CERTIFICATION_ACTUAL_RELEASE_INPUT_REQUIRED')
+    migrate.require_contract_identity(selected, plan)
+    restoration = inventory['restoration']
+    require(_sha(_profiled_compact(inventory)) == initial['inventorySha256'] and inventory.get('admissionMode') == 'existing' and
+            inventory.get('actionId') == selected['releaseId'] and inventory.get('sourceCommit') == initial['sourceCommit'] and
+            inventory.get('targetSha256') == initial['targetSha256'] and inventory.get('owner') == initial['owner'] and
+            inventory.get('certification') == initial['certification'] and restoration.get('providerIngress') == 'keep-retired' and
+            all(restoration.get(key) is False for key in ('newWork', 'recovery', 'nativeSchedulesEnabled')),
+            'P2_PROFILED_CERTIFICATION_FENCED_INVENTORY_REQUIRED')
+    certification = require_certification_profile(initial['certification'])
+    producer_hash = inventory.get('runtimeProducerSha256')
+    producers = [row for row in inventory['producers'] if row['producerSha256'] == producer_hash]
+    require(len(producers) == 1 and _profiled_digest(producer_hash) and producers[0]['role']['name'] == target['runtimeRole'] and
+            native_plan.get('producer') == {'producerSha256': producer_hash, 'role': producers[0]['role']} and
+            native_plan.get('owner') == initial['owner'] and
+            all(native_plan['target'].get(key) == target[key] for key in ('host', 'port', 'database', 'user', 'serverMajor')) and
+            native_plan.get('environment') == 'staging' and native_plan.get('actionId') == selected['releaseId'] and
+            native_plan.get('projectId') == selected['workload']['projectId'] and
+            native_plan.get('sourceCommit') == initial['sourceCommit'] and native_plan.get('targetSha256') == initial['targetSha256'] and
+            native_plan.get('phase2ContractManifestSha256') == selected['phase2ContractManifestSha256'] and
+            _canonical(native_plan.get('featureControls')) == _canonical(certification['featureControls']) and
+            initial['expectedWriterAdmissionBinding'] == {'mode': 'enforce', 'targetSha256': initial['targetSha256'],
+                'producerSha256': producer_hash, 'sourceCommit': initial['sourceCommit'], 'roleName': target['runtimeRole']},
+            'P2_PROFILED_CERTIFICATION_NATIVE_BINDING_REQUIRED')
+    _profiled_ready_receipts(initial, plan, selected, expected)
+    terminal_sha, plan_hash_verified = _profiled_original_terminal(initial, plan, selected, results, expected)
+    return {'version': 2, 'qualificationTargetProfile': expected, 'status': 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED',
+            'environment': 'staging', 'releaseId': selected['releaseId'], 'certificationActionId': initial['certificationActionId'],
+            'sourceCommit': initial['sourceCommit'], 'candidateSha256': initial['candidateSha256'], 'targetSha256': initial['targetSha256'],
+            'planSha256': plan['planSha256'], 'readyReceiptSha256': plan['readyReceiptSha256'],
+            'originalReleaseReceiptSha256': plan['originalReleaseReceiptSha256'], 'hostOriginalReleaseReceiptSha256': terminal_sha,
+            'originalReleasePlanSha256': plan['originalReleasePlanSha256'], 'originalReleasePlanHashHostVerified': plan_hash_verified,
+            'executionEligible': False, 'providerTouched': False, 'admissionChanged': False, 'releaseAccepted': False}
 
 
 def _iso(value):
@@ -768,6 +1074,16 @@ class P2CertificationBroker(Broker):
 
 
 def main():
+    if sys.argv[1:] == ['--plan-profiled-current']:
+        from qualification_target_profile import decode_qualification_target_json
+        _profiled_context()
+        raw = sys.stdin.buffer.read(MAXIMUM + 1)
+        require(0 < len(raw) <= MAXIMUM and raw.endswith(b'\n'), 'P2_CERTIFICATION_PRIVATE_INPUT_REQUIRED')
+        initial = decode_qualification_target_json(raw, 'private-packet')
+        require(sys.platform == 'linux' and os.geteuid() == 0, 'P2_PROFILED_CERTIFICATION_LINUX_ROOT_REQUIRED')
+        result = prepare_profiled_current_certification_input(initial, Path(__file__).resolve().parents[3])
+        print(json.dumps(result, separators=(',', ':')), flush=True)
+        return
     require(sys.argv[1:]==['--supervisor'],'P2_CERTIFICATION_FIXED_ENTRY_REQUIRED')
     raw=sys.stdin.buffer.readline(MAXIMUM+1);require(0<len(raw)<=MAXIMUM and raw.endswith(b'\n'),'P2_CERTIFICATION_PRIVATE_INPUT_REQUIRED')
     initial=json.loads(raw);require(initial.get('mode')=='p2-bounded-certification','P2_CERTIFICATION_FIXED_MODE_REQUIRED')
