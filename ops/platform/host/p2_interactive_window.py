@@ -256,6 +256,14 @@ def browser_gateway_receipt(plan, artifact):
     return {**artifact, "gatewayEvidenceSha256": _receipt_sha(artifact)}
 
 
+def _valid_community_activation(delivery, transition_id):
+    return (_closed_fields(delivery, "streamId streamVersion eventId canonicalDigest state") and
+            all(_matches(_UUID, delivery[key]) for key in ("streamId", "eventId")) and
+            type(delivery["streamVersion"]) is int and delivery["streamVersion"] == 1 and
+            _digest(delivery["canonicalDigest"]) and delivery["state"] == "active" and
+            (transition_id is None or delivery["eventId"] == transition_id))
+
+
 def _learning_case_evidence(plan, action, evidence, gateway_artifact):
     selected = action["learningAction"]
     demand(_closed_fields(evidence, "browserResponse courseWitness"), "P2_INTERACTIVE_LEARNING_EVIDENCE_REQUIRED")
@@ -273,17 +281,21 @@ def _learning_case_evidence(plan, action, evidence, gateway_artifact):
            all(_matches(_UUID, body[key]) for key in ("grantId", "enrollmentId")) and
            body["source"] == "free" and body["status"] == "active" and body["idempotentReplay"] is False,
            "P2_INTERACTIVE_LEARNING_ENROLLMENT_BODY_REQUIRED")
-    demand(_closed_fields(witness, f"{fields} transitionId readOnly") and witness["readOnly"] is True and
+    demand(_closed_fields(witness, f"{fields} transitionId communityDelivery readOnly") and witness["readOnly"] is True and
            witness["idempotentReplay"] is False and _matches(_UUID, witness["transitionId"]) and
            all(witness[key] == value for key, value in body.items()), "P2_INTERACTIVE_LEARNING_COURSE_WITNESS_REQUIRED")
+    delivery = witness["communityDelivery"]
+    demand(_valid_community_activation(delivery, witness["transitionId"]), "P2_INTERACTIVE_LEARNING_COMMUNITY_DELIVERY_REQUIRED")
     return {**{key: body[key] for key in ("courseId", "grantId", "enrollmentId")}, "slug": selected["slug"],
-            "actorId": action["actorId"], "transitionId": witness["transitionId"], "gatewayPostRequestId": post_id,
+            "actorId": action["actorId"], "transitionId": witness["transitionId"], "communityDelivery": delivery, "gatewayPostRequestId": post_id,
             "browserResponseSha256": _receipt_sha(browser), "courseWitnessSha256": _receipt_sha(witness),
             "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
 
 def _paid_grant_case_evidence(plan, action, evidence, gateway_artifact):
     selected = action["paidGrantAction"]
+    second = "priorGrantId" in selected
+    prior = {"priorGrantId": selected["priorGrantId"]} if second else {}
     demand(_closed_fields(evidence, "browserResponse courseWitness"), "P2_INTERACTIVE_PAID_GRANT_EVIDENCE_REQUIRED")
     gateway = browser_gateway_receipt(plan, gateway_artifact)
     post_id = gateway["gatewayAcknowledgements"][3]["requestId"]
@@ -296,14 +308,20 @@ def _paid_grant_case_evidence(plan, action, evidence, gateway_artifact):
     fields = "courseId userId commandId grantId courseRevision"
     demand(_closed_fields(body, fields) and all(body[key] == selected[key] for key in ("courseId", "userId")) and
            all(_matches(_UUID, body[key]) for key in ("commandId", "grantId")) and
+           (not second or body["grantId"] != selected["priorGrantId"]) and
            type(body["courseRevision"]) is int and body["courseRevision"] == selected["revision"],
            "P2_INTERACTIVE_PAID_GRANT_BODY_REQUIRED")
-    demand(_closed_fields(witness, f"{fields} enrollmentId transitionId readOnly") and witness["readOnly"] is True and
-           all(_matches(_UUID, witness[key]) for key in ("enrollmentId", "transitionId")) and
+    witness_fields = f"{fields} enrollmentId transitionId communityDelivery readOnly" + (" priorGrantId" if second else "")
+    demand(_closed_fields(witness, witness_fields) and witness["readOnly"] is True and
+           _matches(_UUID, witness["enrollmentId"]) and
+           (witness["transitionId"] is None and witness["priorGrantId"] == selected["priorGrantId"] if second else
+            _matches(_UUID, witness["transitionId"])) and
            type(witness["courseRevision"]) is int and all(witness[key] == value for key, value in body.items()),
            "P2_INTERACTIVE_PAID_GRANT_COURSE_WITNESS_REQUIRED")
+    delivery = witness["communityDelivery"]
+    demand(_valid_community_activation(delivery, witness["transitionId"]), "P2_INTERACTIVE_PAID_GRANT_COMMUNITY_DELIVERY_REQUIRED")
     return {**body, "actorId": action["actorId"], "enrollmentId": witness["enrollmentId"],
-            "transitionId": witness["transitionId"], "gatewayPostRequestId": post_id,
+            "transitionId": witness["transitionId"], **prior, "communityDelivery": delivery, "gatewayPostRequestId": post_id,
             "browserResponseSha256": _receipt_sha(browser), "courseWitnessSha256": _receipt_sha(witness),
             "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
@@ -821,7 +839,9 @@ def validate_interactive_action(action):
         demand(requests == expected, "P2_INTERACTIVE_LEARNING_ENROLLMENT_REQUESTS_REQUIRED")
     if paid_grant:
         selection = action["paidGrantAction"]
-        demand(_closed_fields(selection, "operation courseId userId revision idempotencyKey reasonSha256") and
+        second = type(selection) is dict and "priorGrantId" in selection
+        fields = "operation courseId userId revision idempotencyKey reasonSha256" + (" priorGrantId" if second else "")
+        demand(_closed_fields(selection, fields) and (not second or _matches(_UUID, selection["priorGrantId"])) and
                selection["operation"] == "grant-paid-access" and
                all(_matches(_UUID, selection[key]) for key in ("courseId", "userId", "idempotencyKey")) and
                type(selection["revision"]) is int and 1 <= selection["revision"] <= 2_147_483_647 and

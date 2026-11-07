@@ -585,6 +585,9 @@ class InteractiveWindowTests(unittest.TestCase):
         self.assertEqual(window.validate_interactive_action(action), action)
         selector = window._selection_sha(action)
         self.assertEqual(selector, (owner + key).replace("-", ""))
+        second = {**action, "paidGrantAction": {**selection, "priorGrantId": "10000000-0000-4000-8000-000000000005"}}
+        self.assertEqual(window.validate_interactive_action(second), second)
+        self.assertEqual(window._selection_sha(second), selector)
         cookie, gateway_key, _, _ = window._material("fixture" * 8, "https://owned.vercel.app", "a" * 40, "b" * 64,
                                                        "8", "paid-grant", 1_794_009_600, 60, "c" * 32, selector)
         self.assertEqual(cookie.split(".")[:3], ["v2", "8", "paid-grant"])
@@ -592,7 +595,8 @@ class InteractiveWindowTests(unittest.TestCase):
         self.assertEqual(len(gateway_key), 64)
         with self.assertRaisesRegex(ValueError, "INTERACTIVE_ACTION_REQUIRED"):
             window.validate_interactive_action({name: value for name, value in action.items() if name != "paidGrantAction"})
-        for change in ({"reasonSha256": window._EMPTY}, {"reasonSha256": "0" * 64}, {"revision": 0},
+        for change in ({"priorGrantId": "invalid"}, {"priorGrantId": None},
+                       {"reasonSha256": window._EMPTY}, {"reasonSha256": "0" * 64}, {"revision": 0},
                        {"revision": True}, {"revision": 2_147_483_648}, {"userId": "wrong"}):
             with self.subTest(selection=change), self.assertRaisesRegex(ValueError, "PAID_GRANT_SELECTION_REQUIRED"):
                 window.validate_interactive_action({**action, "paidGrantAction": {**selection, **change}})

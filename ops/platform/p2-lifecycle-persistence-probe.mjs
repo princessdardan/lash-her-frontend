@@ -98,6 +98,7 @@ const paidArchiveDigest = (from, identity = "r.id", fields = "pg_catalog.to_json
   FROM (SELECT ${identity} AS row_id, ${jsonbSha(fields)} AS row_sha256
     ${from} ORDER BY ${identity} LIMIT ${limit + 1}) bounded`;
 const paidRevokeOutboxReceipt = `SELECT o.event_id::text,o.stream_version,o.canonical_digest,o.created_at::text,o.state,
+  ${jsonbSha("pg_catalog.to_jsonb(o)")} AS delivery_sha256,
   (o.canonical_digest=${jsonbSha("o.canonical_body")}) AS digest_matches,
   (o.last_attempt_at>=o.created_at AND o.delivered_at>=o.last_attempt_at AND o.lease_owner IS NULL AND o.lease_expires_at IS NULL
     AND o.dead_lettered_at IS NULL AND o.last_failure_code IS NULL AND o.last_failure_detail IS NULL) AS settled
@@ -177,23 +178,13 @@ const SQL = Object.freeze({
       (grant_reason=$5::text AND status='active' AND idempotency_key=$3::text AND request_hash=$4::text
         AND external_order_id IS NULL AND external_payment_id IS NULL AND provider IS NULL AND expires_at IS NULL
         AND revoked_at IS NULL AND revoke_reason IS NULL AND revoke_idempotency_key IS NULL AND revoke_request_hash IS NULL) AS fields_match
-      FROM public.entitlement_grants WHERE user_id=$1::uuid AND course_id=$2::uuid LIMIT 2`,
+      FROM public.entitlement_grants WHERE user_id=$1::uuid AND course_id=$2::uuid LIMIT 3`,
     enrollmentRecord: `SELECT id::text AS enrollment_id,granted_at::text,
       (status='active' AND source=$3::text AND revoked_at IS NULL AND refunded_at IS NULL) AS fields_match
       FROM public.enrollments WHERE user_id=$1::uuid AND course_id=$2::uuid LIMIT 2`,
     enrollmentKey: `SELECT (command_type=$3::text AND request_hash=$2::text) AS fields_match
       FROM public.entitlement_idempotency_keys WHERE idempotency_key=$1::text`,
-    enrollmentStream: `SELECT id::text AS stream_id,effective_at::text,
-      (version=1 AND state='active' AND effective_at=pg_catalog.date_trunc('milliseconds',effective_at)) AS fields_match
-      FROM public.community_enrollment_streams WHERE user_id=$1::uuid AND course_id=$2::uuid LIMIT 2`,
-    enrollmentOutbox: `SELECT o.event_id::text,o.canonical_digest,
-      (o.stream_version=1 AND o.state='pending' AND o.attempts_in_cycle=0 AND o.replay_cycle=0
-        AND o.lease_owner IS NULL AND o.lease_expires_at IS NULL AND o.last_attempt_at IS NULL
-        AND o.delivered_at IS NULL AND o.dead_lettered_at IS NULL AND o.last_failure_code IS NULL AND o.last_failure_detail IS NULL
-        AND o.available_at=s.effective_at AND o.created_at=s.effective_at AND o.updated_at=s.effective_at
-        AND o.canonical_digest=pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(o.canonical_body,'UTF8')),'hex')) AS fields_match
-      FROM public.community_enrollment_outbox o JOIN public.community_enrollment_streams s ON s.id=o.stream_id
-      WHERE o.stream_id=$1::uuid LIMIT 2`,
+    enrollmentOutbox: `${paidRevokeOutboxReceipt} LIMIT 2`,
     enrollmentProgress: `SELECT NOT EXISTS(SELECT 1 FROM public.lesson_progress p
       JOIN public.lessons l ON l.id=p.lesson_id JOIN public.modules m ON m.id=l.module_id
       LEFT JOIN public.enrollments e ON e.id=p.enrollment_id
@@ -283,6 +274,7 @@ const SQL = Object.freeze({
       AND previous_status='active' AND resulting_status='revoked') AS fields_match
       FROM public.admin_entitlement_command_effects WHERE command_id=$1::uuid LIMIT 2`,
     paidRevokeOtherGrants: paidArchiveDigest("FROM public.entitlement_grants r WHERE r.course_id=$1::uuid AND r.id<>$2::uuid"),
+    paidGrantOtherGrants: paidArchiveDigest("FROM public.entitlement_grants r WHERE r.course_id=$1::uuid AND r.idempotency_key<>$2::text"),
     paidRevokeOtherEnrollments: paidArchiveDigest("FROM public.enrollments r WHERE r.course_id=$1::uuid AND r.id<>$2::uuid"),
     paidRevokeOtherCommands: paidArchiveDigest("FROM public.admin_entitlement_commands r WHERE r.target_course_id=$1::uuid AND r.idempotency_key<>$2::text"),
     paidRevokeOtherEffects: paidArchiveDigest(`FROM public.admin_entitlement_command_effects r JOIN public.admin_entitlement_commands a
@@ -317,6 +309,8 @@ const SQL = Object.freeze({
   community: Object.freeze({
     identity: "SELECT current_database() AS database,current_user AS role,current_user::regrole::oid::text AS role_oid,(current_setting('server_version_num')::int/10000)::int AS major,current_setting('transaction_read_only') AS read_only",
     heldIdentity: "SELECT current_database() AS database,current_user AS role,session_user AS session_role,current_user::regrole::oid::text AS role_oid,(current_setting('server_version_num')::int/10000)::int AS major,current_setting('transaction_read_only') AS read_only",
+    enrollmentPairAbsent: `SELECT NOT EXISTS(SELECT 1 FROM public.course_enrollment_projections WHERE user_id=$1::uuid AND course_id=$2::uuid)
+      AND NOT EXISTS(SELECT 1 FROM public.course_enrollment_inbox WHERE user_id=$1::uuid AND course_id=$2::uuid) AS absent`,
     paidRevokeInbox: `SELECT (i.event_id=$1::uuid AND i.stream_id=$2::uuid AND i.stream_version=$3::int AND i.user_id=$4::uuid AND i.course_id=$5::uuid
       AND i.state=$6::text AND i.canonical_digest=$7::text AND i.effective_at=$8::timestamptz AND i.occurred_at=$9::timestamptz
       AND i.event_type=$10::text AND i.schema_version=1 AND i.producer='lash-her-course-api' AND i.status='applied'
@@ -1128,15 +1122,17 @@ function selectedFreeEnrollment(value) {
   return Object.freeze({ ...value });
 }
 
-async function readEnrollmentPair(client, { userId, courseId, idempotencyKey, requestHash, grantReason, enrollmentSource, commandType }, check) {
+async function readEnrollmentPair(client, { userId, courseId, idempotencyKey, requestHash, grantReason, enrollmentSource, commandType }, check, first = true) {
   const pair = [userId, courseId];
-  const progress = await read(client, "course", "enrollmentProgress", pair);
-  demand(progress.length === 1 && progress[0].absent === true, `${check}-progress`);
+  if (first) {
+    const progress = await read(client, "course", "enrollmentProgress", pair);
+    demand(progress.length === 1 && progress[0].absent === true, `${check}-progress`);
+  }
   return {
     grants: await read(client, "course", "enrollmentGrant", [...pair, idempotencyKey, requestHash, grantReason]),
     enrollments: await read(client, "course", "enrollmentRecord", [...pair, enrollmentSource]),
     keys: await read(client, "course", "enrollmentKey", [idempotencyKey, requestHash, commandType]),
-    streams: await read(client, "course", "enrollmentStream", pair),
+    streams: await read(client, "course", "paidRevokeStream", [courseId, userId]),
   };
 }
 
@@ -1149,42 +1145,75 @@ async function readFreeEnrollmentPair(client, selection) {
     enrollmentSource: "free", commandType: "free_grant" }, "course-free-enrollment");
 }
 
-function requireJoinedEnrollment(pair, grantId, check) {
-  demand(Object.values(pair).every(rows => rows.length === 1 && rows[0].fields_match === true), `${check}-persistence`);
-  const grant = pair.grants[0], enrollment = pair.enrollments[0], stream = pair.streams[0];
-  demand(grant.grant_id === grantId && courseUuid(enrollment.enrollment_id) && grant.enrollment_id === enrollment.enrollment_id
-    && uuidV4(stream.stream_id) && grant.granted_at === enrollment.granted_at && stream.effective_at === grant.granted_at,
-  `${check}-persistence`);
+function requireJoinedEnrollment(pair, grantId, check, priorGrantId) {
+  const grant = pair.grants.find(row => row.grant_id === grantId), enrollment = pair.enrollments[0], stream = pair.streams[0];
+  demand(pair.grants.length === (priorGrantId ? 2 : 1) && (!priorGrantId || (grantId !== priorGrantId
+    && pair.grants.some(row => row.grant_id === priorGrantId && row.enrollment_id === enrollment?.enrollment_id)))
+    && [pair.enrollments, pair.keys].every(rows => rows.length === 1 && rows[0].fields_match === true)
+    && pair.streams.length === 1 && grant?.fields_match === true && courseUuid(enrollment.enrollment_id)
+    && grant.enrollment_id === enrollment.enrollment_id && uuidV4(stream.stream_id) && stream.version === 1 && stream.state === "active"
+    && stream.effective_at === enrollment.granted_at && (priorGrantId || grant.granted_at === enrollment.granted_at), `${check}-persistence`);
   return { enrollmentId: enrollment.enrollment_id, grantedAt: grant.granted_at, stream };
 }
 
 async function observeEnrollmentActivation(client, { courseId, userId }, stream, check) {
   const outbox = await read(client, "course", "enrollmentOutbox", [stream.stream_id]);
-  const event = outbox[0];
-  demand(outbox.length === 1 && event.fields_match === true && uuidV4(event.event_id), `${check}-outbox`);
-  const effectiveAt = date(stream.effective_at);
-  const expected = { eventId: event.event_id, eventType: "enrollment.activated", schemaVersion: 1, producer: "lash-her-course-api",
-    occurredAt: effectiveAt, stream: { id: stream.stream_id, version: 1 }, data: { userId, courseId, state: "active", effectiveAt } };
-  demand(event.canonical_digest === sha(canonicalAsciiJson(expected)), `${check}-outbox`);
-  return event.event_id;
+  const event = enrollmentDeliveryEvent({ courseId, userId }, stream, outbox, check);
+  demand(event.state === "active" && event.streamVersion === 1 && event.occurredAt === event.effectiveAt
+    && outbox[0].created_at === stream.effective_at, `${check}-outbox`);
+  return event;
+}
+
+function selectedActivationCommunityJob(courseJob, dependencies) {
+  const community = selectedHeldApiJob(dependencies?.communityJob, "community", "community-delivery-job");
+  demand(dependencies.communityJob.releaseId === courseJob.releaseId, "community-delivery-job");
+  demand(typeof dependencies.readCommunityDatabaseUrl === "function", "community-delivery-held-session");
+  return community;
+}
+
+async function readActivationReceiverBaseline(community, dependencies, selection, event, check) {
+  const { courseId, userId } = selection;
+  const { result: receiver, roleOid: communityRoleOid } = await readHeldCommunityDelivery(community.target, dependencies, undefined, async client => {
+    if (event) return readCommunityEnrollmentEvent(client, selection, event, check);
+    const rows = await read(client, "community", "enrollmentPairAbsent", [userId, courseId]);
+    demand(rows.length === 1 && rows[0].absent === true, `${check}-baseline`);
+  });
+  return { receiver, communityRoleOid, communityJobSha256: community.jobSha256, readCommunityDatabaseUrl: dependencies.readCommunityDatabaseUrl };
+}
+
+const matchesActivationReceiverBinding = (saved, community, dependencies) => saved?.communityJobSha256 === community.jobSha256
+  && saved.readCommunityDatabaseUrl === dependencies.readCommunityDatabaseUrl;
+
+async function verifyEnrollmentDelivery(target, community, dependencies, saved, selection, source, check, receiverCheck) {
+  const event = await waitForEnrollmentDelivery(target, dependencies, saved.roleOid, selection, source.stream, source.event, check);
+  const { result: receiver } = await readHeldCommunityDelivery(community.target, dependencies, saved.communityRoleOid,
+    client => readCommunityEnrollmentEvent(client, selection, event, receiverCheck));
+  const final = await recheckEnrollmentDelivery(target, dependencies, saved.roleOid, selection, source.stream, event, undefined, check);
+  demand(final.delivered && final.deliverySha256 === event.deliverySha256, `${check}-outbox`);
+  if (saved.receiver) demand(receiver.inbox === saved.receiver.inbox && receiver.projection === saved.receiver.projection, `${receiverCheck}-projection`);
+  const { streamId, streamVersion, eventId, canonicalDigest, state } = event;
+  return { streamId, streamVersion, eventId, canonicalDigest, state };
 }
 
 export async function captureP2InteractiveFreeEnrollmentBaseline(courseJob, selection, dependencies) {
   const selected = selectedFreeEnrollment(selection), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const community = selectedActivationCommunityJob(courseJob, dependencies);
   const { roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
     const pair = await readFreeEnrollmentPair(client, selected);
     demand(Object.values(pair).every(rows => rows.length === 0), "course-free-enrollment-baseline");
   });
+  const receiver = await readActivationReceiverBaseline(community, dependencies, { ...selected, userId: selected.actorId }, undefined, "community-free-enrollment");
   const baseline = Object.freeze({});
-  freeEnrollmentBaselines.set(baseline, { selected, jobSha256, roleOid,
+  freeEnrollmentBaselines.set(baseline, { selected, jobSha256, roleOid, ...receiver,
     verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
   return baseline;
 }
 
 export async function observeP2InteractiveFreeEnrollmentCase(courseJob, selection, baseline, browserBody, dependencies) {
   const selected = selectedFreeEnrollment(selection), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const community = selectedActivationCommunityJob(courseJob, dependencies);
   const saved = freeEnrollmentBaselines.get(baseline);
-  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+  demand(saved?.jobSha256 === jobSha256 && matchesActivationReceiverBinding(saved, community, dependencies) && saved.verifyEnvironment === dependencies?.verifyEnvironment
     && saved.verifySession === dependencies?.verifySession && freeEnrollmentSelectionFields.every(key => selected[key] === saved.selected[key])
     && closed(browserBody, freeEnrollmentBrowserFields) && browserBody.courseId === selected.courseId
     && [browserBody.grantId, browserBody.enrollmentId].every(courseUuid) && browserBody.source === "free"
@@ -1192,19 +1221,24 @@ export async function observeP2InteractiveFreeEnrollmentCase(courseJob, selectio
   freeEnrollmentBaselines.delete(baseline);
   const { courseId, actorId } = saved.selected;
   const { grantId, enrollmentId } = browserBody;
-  const { result: transitionId } = await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
+  const pair = { courseId, userId: actorId };
+  const { result: source } = await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
     const joined = requireJoinedEnrollment(await readFreeEnrollmentPair(client, saved.selected), grantId, "course-free-enrollment");
     demand(joined.enrollmentId === enrollmentId, "course-free-enrollment-persistence");
-    return observeEnrollmentActivation(client, { courseId, userId: actorId }, joined.stream, "course-free-enrollment");
+    return { stream: joined.stream, event: await observeEnrollmentActivation(client, pair, joined.stream, "course-free-enrollment") };
   });
-  return { courseId, grantId, enrollmentId, source: "free", status: "active", idempotentReplay: false, transitionId, readOnly: true };
+  const communityDelivery = await verifyEnrollmentDelivery(target, community, dependencies, saved, pair, source, "course-free-enrollment", "community-free-enrollment");
+  return { courseId, grantId, enrollmentId, source: "free", status: "active", idempotentReplay: false, transitionId: communityDelivery.eventId,
+    communityDelivery, readOnly: true };
 }
 
 const paidGrantSelectionFields = ["actorId", "courseId", "userId", "revision", "idempotencyKey", "reason"];
 const paidGrantBrowserFields = ["courseId", "userId", "commandId", "grantId", "courseRevision"];
 
 function selectedPaidGrant(value) {
-  demand(closed(value, paidGrantSelectionFields) && [value.actorId, value.courseId, value.userId, value.idempotencyKey].every(courseUuid)
+  const second = value && Object.hasOwn(value, "priorGrantId");
+  demand(closed(value, second ? [...paidGrantSelectionFields, "priorGrantId"] : paidGrantSelectionFields)
+    && [value.actorId, value.courseId, value.userId, value.idempotencyKey].every(courseUuid) && (!second || courseUuid(value.priorGrantId))
     && Number.isInteger(value.revision) && value.revision >= 1 && value.revision <= 2_147_483_647
     && draftText(value.reason, 1800), "course-paid-grant-selection");
   return Object.freeze({ ...value });
@@ -1217,43 +1251,78 @@ async function readPaidGrantPair(client, selected) {
   const idempotencyKey = `owner-paid:${selected.idempotencyKey}`, reason = `[paid-course revision ${revision}] ${selected.reason}`;
   const requestHash = sha(canonicalAsciiJson({ action: "grant", scope: "userCourse", actorUserId: actorId, target: { userId, courseId }, reason }));
   const pair = await readEnrollmentPair(client, { userId, courseId, idempotencyKey, requestHash, grantReason: "manual",
-    enrollmentSource: "admin", commandType: "admin_grant" }, "course-paid-grant");
+    enrollmentSource: "admin", commandType: "admin_grant" }, "course-paid-grant", !selected.priorGrantId);
   const commands = await read(client, "course", "paidGrantCommand", [idempotencyKey, actorId, userId, courseId, reason, requestHash]);
-  return { pair, commands };
+  return { pair, commands, idempotencyKey };
+}
+
+async function readPriorPaidGrant(client, selection, { pair, idempotencyKey }) {
+  const { courseId, userId, priorGrantId } = selection, prior = pair.grants.find(row => row.grant_id === priorGrantId);
+  const enrollment = pair.enrollments[0], stream = pair.streams[0];
+  const original = await read(client, "course", "paidCourseOwnerGrant", [courseId, userId, priorGrantId]);
+  demand(original.length === 1 && original[0].active === true && prior && pair.enrollments.length === 1 && enrollment.fields_match === true
+    && courseUuid(enrollment.enrollment_id) && prior.enrollment_id === enrollment.enrollment_id && prior.granted_at === enrollment.granted_at
+    && pair.streams.length === 1 && uuidV4(stream.stream_id) && stream.version === 1 && stream.state === "active"
+    && stream.effective_at === prior.granted_at, "course-paid-grant-prior");
+  const event = await observeEnrollmentActivation(client, selection, stream, "course-paid-grant");
+  demand(event.delivered, "course-paid-grant-delivery-baseline");
+  const history = [
+    ...await readPaidArchiveDigests(client, [courseId], [...paidCourseLearningHistory, "paidArchiveEnrollments", "paidArchiveRevocations", ...paidArchiveProjection]),
+    ...await readPaidArchiveDigests(client, [courseId, idempotencyKey], ["paidGrantOtherGrants", "paidRevokeOtherCommands", "paidRevokeOtherEffects"]),
+  ];
+  return { stream, event, history };
 }
 
 export async function captureP2InteractivePaidGrantBaseline(courseJob, selection, dependencies) {
   const selected = selectedPaidGrant(selection), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
-  const { roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
-    const { pair, commands } = await readPaidGrantPair(client, selected);
-    demand(commands.length === 0 && Object.values(pair).every(rows => rows.length === 0), "course-paid-grant-baseline");
+  const community = selectedActivationCommunityJob(courseJob, dependencies);
+  const { result: prior, roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
+    const state = await readPaidGrantPair(client, selected), { pair, commands } = state;
+    demand(commands.length === 0 && (selected.priorGrantId ? pair.grants.length === 1 && pair.keys.length === 0
+      : Object.values(pair).every(rows => rows.length === 0)), "course-paid-grant-baseline");
+    if (selected.priorGrantId) return readPriorPaidGrant(client, selected, state);
   });
+  const receiver = await readActivationReceiverBaseline(community, dependencies, selected, prior?.event, "community-paid-grant");
+  if (prior) {
+    const final = await recheckEnrollmentDelivery(target, dependencies, roleOid, selected, prior.stream, prior.event, undefined, "course-paid-grant");
+    demand(final.delivered && final.deliverySha256 === prior.event.deliverySha256, "course-paid-grant-outbox");
+  }
   const baseline = Object.freeze({});
-  paidGrantBaselines.set(baseline, { selected, jobSha256, roleOid,
+  paidGrantBaselines.set(baseline, { selected, jobSha256, roleOid, prior, ...receiver,
     verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
   return baseline;
 }
 
 export async function observeP2InteractivePaidGrantCase(courseJob, selection, baseline, browserBody, dependencies) {
   const selected = selectedPaidGrant(selection), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const community = selectedActivationCommunityJob(courseJob, dependencies);
   const saved = paidGrantBaselines.get(baseline);
-  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+  demand(saved?.jobSha256 === jobSha256 && matchesActivationReceiverBinding(saved, community, dependencies) && saved.verifyEnvironment === dependencies?.verifyEnvironment
     && saved.verifySession === dependencies?.verifySession && paidGrantSelectionFields.every(key => selected[key] === saved.selected[key])
+    && selected.priorGrantId === saved.selected.priorGrantId
     && closed(browserBody, paidGrantBrowserFields) && browserBody.courseId === selected.courseId && browserBody.userId === selected.userId
     && browserBody.courseRevision === selected.revision && [browserBody.commandId, browserBody.grantId].every(courseUuid), "course-paid-grant-receipt");
   paidGrantBaselines.delete(baseline);
-  const { courseId, userId, revision: courseRevision } = saved.selected, { commandId, grantId } = browserBody;
-  const { result } = await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
-    const { pair, commands } = await readPaidGrantPair(client, saved.selected);
-    const { enrollmentId, grantedAt, stream } = requireJoinedEnrollment(pair, grantId, "course-paid-grant");
+  const { courseId, userId, revision: courseRevision, priorGrantId } = saved.selected, { commandId, grantId } = browserBody;
+  const { result: source } = await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
+    const state = await readPaidGrantPair(client, saved.selected), { pair, commands } = state;
+    const { enrollmentId, grantedAt, stream } = requireJoinedEnrollment(pair, grantId, "course-paid-grant", priorGrantId);
     demand(commands.length === 1 && commands[0].command_id === commandId && commands[0].fields_match === true
       && commands[0].effective_at === grantedAt, "course-paid-grant-command");
     const effects = await read(client, "course", "paidGrantEffect", [commandId, grantId]);
     demand(effects.length === 1 && effects[0].fields_match === true, "course-paid-grant-effect");
-    const transitionId = await observeEnrollmentActivation(client, { courseId, userId }, stream, "course-paid-grant");
-    return { enrollmentId, transitionId };
+    if (priorGrantId) {
+      const prior = await readPriorPaidGrant(client, saved.selected, state);
+      demand(sameIds(prior.history, saved.prior.history) && sha(prior.stream) === sha(saved.prior.stream)
+        && sameEnrollmentDeliveryEvent(prior.event, saved.prior.event) && prior.event.deliverySha256 === saved.prior.event.deliverySha256,
+      "course-paid-grant-history");
+      return { enrollmentId, stream, event: prior.event };
+    }
+    return { enrollmentId, stream, event: await observeEnrollmentActivation(client, saved.selected, stream, "course-paid-grant") };
   });
-  return { courseId, userId, commandId, grantId, courseRevision, ...result, readOnly: true };
+  const communityDelivery = await verifyEnrollmentDelivery(target, community, dependencies, saved, saved.selected, source, "course-paid-grant", "community-paid-grant");
+  return { courseId, userId, commandId, grantId, courseRevision, enrollmentId: source.enrollmentId,
+    ...(priorGrantId ? { priorGrantId } : {}), transitionId: priorGrantId ? null : communityDelivery.eventId, communityDelivery, readOnly: true };
 }
 
 const paidArchiveSelectionFields = ["courseId", "slug", "revision", "userId", "grantId"];
@@ -1477,25 +1546,25 @@ async function readPaidRevoke(client, selection, priorVersion) {
   return { slug, course, target, otherActive: others[0].active, stream, keys, commands, events, history };
 }
 
-function paidRevokeEvent(selection, stream, events) {
+function enrollmentDeliveryEvent(selection, stream, events, check) {
   const { courseId, userId } = selection, { state } = stream, event = events[0];
   demand(events.length === 1 && event.stream_version === stream.version && event.digest_matches === true && uuidV4(event.event_id)
-    && (event.state === "pending" || (event.state === "delivered" && event.settled === true)), "course-paid-revoke-outbox");
+    && SHA.test(event.delivery_sha256) && (event.state === "pending" || (event.state === "delivered" && event.settled === true)), `${check}-outbox`);
   const effectiveAt = date(stream.effective_at), occurredAt = date(event.created_at);
   const eventType = state === "active" ? "enrollment.activated" : "enrollment.revoked";
   const expected = { eventId: event.event_id, eventType, schemaVersion: 1, producer: "lash-her-course-api", occurredAt,
     stream: { id: stream.stream_id, version: stream.version }, data: { userId, courseId, state, effectiveAt } };
-  demand(event.canonical_digest === sha(canonicalAsciiJson(expected)), "course-paid-revoke-outbox");
+  demand(event.canonical_digest === sha(canonicalAsciiJson(expected)), `${check}-outbox`);
   return { eventId: event.event_id, streamId: stream.stream_id, streamVersion: stream.version, state, eventType, effectiveAt, occurredAt,
-    canonicalDigest: event.canonical_digest, delivered: event.state === "delivered" };
+    canonicalDigest: event.canonical_digest, delivered: event.state === "delivered", deliverySha256: event.delivery_sha256 };
 }
 
-const samePaidRevokeEvent = (left, right) => ["eventId", "streamId", "streamVersion", "state", "eventType", "effectiveAt", "occurredAt", "canonicalDigest"]
+const sameEnrollmentDeliveryEvent = (left, right) => ["eventId", "streamId", "streamVersion", "state", "eventType", "effectiveAt", "occurredAt", "canonicalDigest"]
   .every(key => left[key] === right[key]);
 
-async function readPaidRevokeCurrentEvent(client, selection, stream) {
+async function readCurrentEnrollmentEvent(client, selection, stream, check = "course-paid-revoke") {
   const rows = await read(client, "course", "paidRevokeCurrentEvent", [stream.stream_id, stream.version]);
-  return paidRevokeEvent(selection, stream, rows);
+  return enrollmentDeliveryEvent(selection, stream, rows, check);
 }
 
 function observePaidRevokeTransition(selection, previous, current, effectiveAt) {
@@ -1508,48 +1577,53 @@ function observePaidRevokeTransition(selection, previous, current, effectiveAt) 
   }
   demand(stream.state === "revoked" && stream.version === previous.version + 1 && stream.effective_at === effectiveAt
     && stream.updated_at === effectiveAt, "course-paid-revoke-stream");
-  const event = paidRevokeEvent(selection, stream, events);
+  const event = enrollmentDeliveryEvent(selection, stream, events, "course-paid-revoke");
   demand(event.occurredAt === event.effectiveAt, "course-paid-revoke-outbox");
   return event;
 }
 
-async function readPaidRevokeCommunity(client, { courseId, userId }, event, independentCourses) {
+async function readCommunityEnrollmentEvent(client, { courseId, userId }, event, check) {
   const { eventId, streamId, streamVersion, state, canonicalDigest, effectiveAt, occurredAt, eventType } = event;
   const inbox = await read(client, "community", "paidRevokeInbox", [eventId, streamId, streamVersion, userId, courseId, state,
     canonicalDigest, effectiveAt, occurredAt, eventType]);
-  demand(inbox.length === 1 && inbox[0].fields_match === true && SHA.test(inbox[0].fingerprint), "community-paid-revoke-inbox");
+  demand(inbox.length === 1 && inbox[0].fields_match === true && SHA.test(inbox[0].fingerprint), `${check}-inbox`);
   const projection = await read(client, "community", "paidRevokeProjection", [streamId, userId, courseId, streamVersion, state, eventId, effectiveAt]);
-  demand(projection.length === 1 && projection[0].fields_match === true && SHA.test(projection[0].fingerprint), "community-paid-revoke-projection");
-  const independent = await read(client, "community", "paidRevokeIndependentActive", [userId, independentCourses]), row = independent[0];
-  demand(independent.length === 1 && Number.isInteger(row.row_count) && row.row_count >= 1 && row.row_count <= independentCommunityLimit
-    && SHA.test(row.digest), "community-paid-revoke-independent");
-  return { inbox: inbox[0].fingerprint, projection: projection[0].fingerprint, independentActiveCount: row.row_count, independentActiveSha256: row.digest };
+  demand(projection.length === 1 && projection[0].fields_match === true && SHA.test(projection[0].fingerprint), `${check}-projection`);
+  return { inbox: inbox[0].fingerprint, projection: projection[0].fingerprint };
 }
 
-async function recheckPaidRevokeCourse(target, dependencies, roleOid, selection, stream, expected, independentCourses) {
+async function readPaidRevokeCommunity(client, selection, event, independentCourses) {
+  const selected = await readCommunityEnrollmentEvent(client, selection, event, "community-paid-revoke");
+  const independent = await read(client, "community", "paidRevokeIndependentActive", [selection.userId, independentCourses]), row = independent[0];
+  demand(independent.length === 1 && Number.isInteger(row.row_count) && row.row_count >= 1 && row.row_count <= independentCommunityLimit
+    && SHA.test(row.digest), "community-paid-revoke-independent");
+  return { ...selected, independentActiveCount: row.row_count, independentActiveSha256: row.digest };
+}
+
+async function recheckEnrollmentDelivery(target, dependencies, roleOid, selection, stream, expected, independentCourses, check = "course-paid-revoke") {
   const { result } = await readHeldCourseDraft(target, dependencies, roleOid, async client => {
     const rows = await read(client, "course", "paidRevokeStream", [selection.courseId, selection.userId]);
-    demand(rows.length === 1 && sha(rows[0]) === sha(stream), "course-paid-revoke-stream");
+    demand(rows.length === 1 && sha(rows[0]) === sha(stream), `${check}-stream`);
     const access = await read(client, "course", "paidCourseAccess", [selection.courseId, selection.userId]);
-    demand(access.length === 1 && access[0].eligible === (stream.state === "active"), "course-paid-revoke-access");
-    const actual = await readPaidRevokeCurrentEvent(client, selection, rows[0]);
-    demand(samePaidRevokeEvent(actual, expected), "course-paid-revoke-outbox");
+    demand(access.length === 1 && access[0].eligible === (stream.state === "active"), `${check}-access`);
+    const actual = await readCurrentEnrollmentEvent(client, selection, rows[0], check);
+    demand(sameEnrollmentDeliveryEvent(actual, expected), `${check}-outbox`);
     if (independentCourses) demand(sameIds(await paidRevokeIndependentCourses(client, selection), independentCourses), "community-paid-revoke-independent");
     return actual;
   });
   return result;
 }
 
-async function waitForPaidRevokeDelivery(target, dependencies, roleOid, selection, stream, event) {
+async function waitForEnrollmentDelivery(target, dependencies, roleOid, selection, stream, event, check = "course-paid-revoke") {
   const deadline = performance.now() + 8_000;
   while (!event.delivered) {
-    await verifyHeldApi(dependencies, "course-paid-revoke");
+    await verifyHeldApi(dependencies, check);
     const remaining = deadline - performance.now();
-    demand(remaining > 0, "course-paid-revoke-delivery-timeout");
+    demand(remaining > 0, `${check}-delivery-timeout`);
     try { await wait(Math.min(250, remaining), undefined, { signal: dependencies.signal }); }
-    catch { throw new P2LifecyclePersistenceError("course-paid-revoke-held-session"); }
-    event = await recheckPaidRevokeCourse(target, dependencies, roleOid, selection, stream, event);
-    demand(performance.now() <= deadline, "course-paid-revoke-delivery-timeout");
+    catch { throw new P2LifecyclePersistenceError(`${check}-held-session`); }
+    event = await recheckEnrollmentDelivery(target, dependencies, roleOid, selection, stream, event, undefined, check);
+    demand(performance.now() <= deadline, `${check}-delivery-timeout`);
   }
   return event;
 }
@@ -1563,13 +1637,13 @@ export async function captureP2InteractivePaidRevokeBaseline(courseJob, selectio
   const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
     const before = await readPaidRevoke(client, selected);
     demand(before.keys.length === 0 && before.commands.length === 0 && before.events.length === 0, "course-paid-revoke-baseline");
-    const event = await readPaidRevokeCurrentEvent(client, selected, before.stream);
+    const event = await readCurrentEnrollmentEvent(client, selected, before.stream);
     demand(event.delivered, "course-paid-revoke-delivery-baseline");
     return { ...before, event, independentCourses: await paidRevokeIndependentCourses(client, selected) };
   });
   const { result: receiver, roleOid: communityRoleOid } = await readHeldCommunityDelivery(community.target, dependencies, undefined,
     client => readPaidRevokeCommunity(client, selected, result.event, result.independentCourses));
-  demand((await recheckPaidRevokeCourse(target, dependencies, roleOid, selected, result.stream, result.event, result.independentCourses)).delivered,
+  demand((await recheckEnrollmentDelivery(target, dependencies, roleOid, selected, result.stream, result.event, result.independentCourses)).delivered,
     "course-paid-revoke-delivery-baseline");
   const baseline = Object.freeze({});
   paidRevokeBaselines.set(baseline, { selected, result, jobSha256, roleOid, communityJobSha256: community.jobSha256, communityRoleOid, receiver,
@@ -1610,18 +1684,18 @@ export async function observeP2InteractivePaidRevokeCase(courseJob, selection, b
       && sameIds(after.history, before.history), "course-paid-revoke-history");
     demand(sameIds(await paidRevokeIndependentCourses(client, saved.selected), before.independentCourses), "community-paid-revoke-independent");
     const transition = observePaidRevokeTransition(saved.selected, before.stream, after, effectiveAt);
-    const event = transition ?? await readPaidRevokeCurrentEvent(client, saved.selected, after.stream);
-    if (remainingAccess) demand(event.delivered && samePaidRevokeEvent(event, before.event), "course-paid-revoke-outbox");
+    const event = transition ?? await readCurrentEnrollmentEvent(client, saved.selected, after.stream);
+    if (remainingAccess) demand(event.delivered && sameEnrollmentDeliveryEvent(event, before.event), "course-paid-revoke-outbox");
     return { event, stream: after.stream };
   });
-  const event = await waitForPaidRevokeDelivery(target, dependencies, saved.roleOid, saved.selected, source.stream, source.event);
+  const event = await waitForEnrollmentDelivery(target, dependencies, saved.roleOid, saved.selected, source.stream, source.event);
   const { result: receiver } = await readHeldCommunityDelivery(community.target, dependencies, saved.communityRoleOid,
     client => readPaidRevokeCommunity(client, saved.selected, event, before.independentCourses));
   const { independentActiveCount, independentActiveSha256 } = receiver;
   demand(independentActiveCount === saved.receiver.independentActiveCount && independentActiveSha256 === saved.receiver.independentActiveSha256,
     "community-paid-revoke-independent");
   if (remainingAccess) demand(receiver.inbox === saved.receiver.inbox && receiver.projection === saved.receiver.projection, "community-paid-revoke-projection");
-  demand((await recheckPaidRevokeCourse(target, dependencies, saved.roleOid, saved.selected, source.stream, event, before.independentCourses)).delivered,
+  demand((await recheckEnrollmentDelivery(target, dependencies, saved.roleOid, saved.selected, source.stream, event, before.independentCourses)).delivered,
     "course-paid-revoke-outbox");
   const { eventId, streamId, streamVersion, canonicalDigest, state } = event;
   const communityDelivery = { streamId, streamVersion, eventId, canonicalDigest, state, independentActiveCount, independentActiveSha256 };

@@ -249,10 +249,11 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     await runOwnedCurriculumCreateWitness({ course, job, dependencies, input, create });
     await runOwnedPublicationWitness({ course, job, dependencies, input, create });
     await runOwnedQuizSaveWitness({ course, job, dependencies, input, create });
+    const settle = await ownedEnrollmentSettlement(course, community, communitySource);
     await runOwnedPaidRevokeWitness({ course, job: revokeSource ? { ...job, sourceCommit: revokeSource.revision } : job,
-      dependencies, input, create, courseSource: revokeSource?.root ?? courseSource, expiryFixed: revokeSource !== undefined, community, communitySource });
-    await runOwnedFreeEnrollmentWitness({ course, job, dependencies, input, create });
-    await runOwnedPaidGrantWitness({ course, job, dependencies, input, create });
+      dependencies, input, create, courseSource: revokeSource?.root ?? courseSource, expiryFixed: revokeSource !== undefined, community, settle });
+    await runOwnedFreeEnrollmentWitness({ course, job, dependencies, input, create, settle });
+    await runOwnedPaidGrantWitness({ course, job, dependencies, input, create, courseSource, community, settle });
     await runOwnedPaidArchiveWitness({ course, job, dependencies, input, create, courseSource });
     await runOwnedPaidRepublishWitness({ course, job, dependencies, input, create, courseSource });
     await runOwnedPaidLearnerAccessWitness({ course, job, dependencies, input, create, courseSource });
@@ -270,10 +271,11 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-publication-refuses-blocked-writes-state-metadata-and-issue-code-drift",
       "course-quiz-save-initial-and-revised-exact-document-editor-and-preserved-private-history",
       "course-quiz-save-refuses-private-shape-scope-and-database-history-drift",
-      "course-free-enrollment-orderless-grant-receipt-active-stream-and-canonical-pending-outbox",
+      "course-free-enrollment-orderless-grant-joins-settled-activation-to-actual-community-inbox",
       "course-free-enrollment-refuses-ineligible-occupied-and-persisted-outcome-drift",
-      "course-paid-grant-orderless-manual-grant-audited-effect-and-canonical-pending-outbox",
+      "course-paid-grant-orderless-audited-effect-joins-settled-activation-to-actual-community-inbox",
       "course-paid-grant-refuses-ineligible-occupied-and-persisted-outcome-drift",
+      "course-paid-second-grant-preserves-reviewed-existing-enrollment-history-and-community-activation",
       "course-paid-archive-pinned-repository-preserves-history-without-community-outbox-mutation",
       "course-paid-archive-refuses-identity-history-projection-and-independent-eligibility-drift",
       "course-paid-republish-pinned-repository-restores-only-effective-access-and-keeps-blocked-draft",
@@ -768,7 +770,7 @@ async function runOwnedQuizSaveWitness({ course, job, dependencies, input, creat
   await assert.rejects(observe(attempt, attemptBaseline), { check: "course-quiz-save-history-changed" });
 }
 
-async function runOwnedFreeEnrollmentWitness({ course, job, dependencies, input, create }) {
+async function runOwnedFreeEnrollmentWitness({ course, job, dependencies, input, create, settle }) {
   const seed = async (name, changes = {}, actorId = randomUUID()) => {
     const fixture = input(`free-enrollment-${name}`, { status: "published", accessMode: "free", priceCents: 0, ...changes });
     await create(fixture);
@@ -835,7 +837,8 @@ async function runOwnedFreeEnrollmentWitness({ course, job, dependencies, input,
   await assert.rejects(observe(test, before, { ...browser(test), idempotentReplay: true }), { check: "course-free-enrollment-receipt" });
   await assert.rejects(observeP2InteractiveFreeEnrollmentCase(job, test.selection, before, browser(test),
     { ...dependencies, verifySession: async () => {} }), { check: "course-free-enrollment-receipt" });
-  assert.deepEqual(await observe(test, before), { ...browser(test), transitionId: test.eventId, readOnly: true });
+  const [evidence, delivery] = await Promise.all([observe(test, before), wait(350).then(() => settle(test, 1))]);
+  assert.deepEqual(evidence, { ...browser(test), transitionId: test.eventId, communityDelivery: activeEnrollmentDelivery(test, delivery), readOnly: true });
   await assert.rejects(observe(test, before), { check: "course-free-enrollment-receipt" });
   await assert.rejects(capture(test), { check: "course-free-enrollment-baseline" });
   const otherKey = await seed("other-key");
@@ -851,15 +854,17 @@ async function runOwnedFreeEnrollmentWitness({ course, job, dependencies, input,
     ["missing-outbox", { outbox: "missing" }, "course-free-enrollment-outbox"],
     ["foreign-outbox", { outbox: "foreign-user" }, "course-free-enrollment-outbox"],
     ["noncanonical-outbox", { outbox: "noncanonical" }, "course-free-enrollment-outbox"],
-    ["leased-outbox", {}, "course-free-enrollment-outbox"],
+    ["dead-letter-outbox", {}, "course-free-enrollment-outbox"],
+    ["missing-inbox", {}, "community-free-enrollment-inbox"],
     ["mutated-progress", {}, "course-free-enrollment-progress"],
     ["extra-grant", {}, "course-free-enrollment-persistence"],
     ["receipt-grant", {}, "course-free-enrollment-persistence"],
   ]) {
     const selected = await seed(name), baseline = await capture(selected), at = await write(selected, options);
     if (name === "mutated-progress") await progress(selected, selected.enrollmentId);
-    if (name === "leased-outbox") await course.query(`UPDATE public.community_enrollment_outbox SET lease_owner='owned-worker',
-      lease_expires_at=pg_catalog.clock_timestamp()+interval '1 minute' WHERE event_id=$1::uuid`, [selected.eventId]);
+    if (name === "dead-letter-outbox") await course.query(`UPDATE public.community_enrollment_outbox SET state='dead_letter',
+      dead_lettered_at=pg_catalog.clock_timestamp() WHERE event_id=$1::uuid`, [selected.eventId]);
+    if (name === "missing-inbox") await settle(selected, 1, false);
     if (name === "extra-grant") {
       const duplicate = { ...selected, grantId: randomUUID(), selection: { ...selected.selection, idempotencyKey: randomUUID() } };
       await course.query("BEGIN");
@@ -920,7 +925,9 @@ function ownedPaidGrantFixtures({ course, input, create }) {
   return { seed, progress, write };
 }
 
-async function runOwnedPaidGrantWitness({ course, job, dependencies, input, create }) {
+const activeEnrollmentDelivery = ({ streamId }, delivery) => ({ streamId, streamVersion: 1, ...delivery, state: "active" });
+
+async function runOwnedPaidGrantWitness({ course, job, dependencies, input, create, courseSource, community, settle }) {
   const { seed, progress, write } = ownedPaidGrantFixtures({ course, input, create });
   const capture = ({ selection }) => captureP2InteractivePaidGrantBaseline(job, selection, dependencies);
   const browser = ({ selection, commandId, grantId }) => ({ courseId: selection.courseId, userId: selection.userId, commandId, grantId,
@@ -943,7 +950,11 @@ async function runOwnedPaidGrantWitness({ course, job, dependencies, input, crea
     { check: "course-paid-grant-receipt" });
   await assert.rejects(observeP2InteractivePaidGrantCase(job, test.selection, before, browser(test), { ...dependencies, verifySession: async () => {} }),
     { check: "course-paid-grant-receipt" });
-  assert.deepEqual(await observe(test, before), { ...browser(test), enrollmentId: test.enrollmentId, transitionId: test.eventId, readOnly: true });
+  await course.query(`UPDATE public.community_enrollment_outbox SET lease_owner='owned-worker',
+    lease_expires_at=pg_catalog.clock_timestamp()+interval '1 minute' WHERE event_id=$1::uuid`, [test.eventId]);
+  const [evidence, delivery] = await Promise.all([observe(test, before), wait(350).then(() => settle(test, 1))]);
+  assert.deepEqual(evidence, { ...browser(test), enrollmentId: test.enrollmentId, transitionId: test.eventId,
+    communityDelivery: activeEnrollmentDelivery(test, delivery), readOnly: true });
   await assert.rejects(observe(test, before), { check: "course-paid-grant-receipt" });
   await assert.rejects(capture(test), { check: "course-paid-grant-baseline" });
   const otherKey = await seed("other-key");
@@ -955,16 +966,53 @@ async function runOwnedPaidGrantWitness({ course, job, dependencies, input, crea
 
   for (const [name, changes, check] of [["actor", { wrongActor: true }, "command"], ["reason", { wrongReason: true }, "command"],
     ["hash", { wrongHash: true }, "persistence"], ["receipt", {}, "command"],
-    ["revision", {}, "eligibility"], ["progress", {}, "progress"], ["leased", {}, "outbox"]]) {
+    ["revision", {}, "eligibility"], ["progress", {}, "progress"], ["dead-letter", {}, "outbox"]]) {
     const selected = await seed(name), baseline = await capture(selected);
     await write(selected, changes);
     if (name === "revision") await course.query("UPDATE public.courses SET revision=revision+1 WHERE id=$1::uuid", [selected.selection.courseId]);
     if (name === "progress") await progress(selected, selected.enrollmentId);
-    if (name === "leased") await course.query(`UPDATE public.community_enrollment_outbox SET lease_owner='owned-worker',
-      lease_expires_at=pg_catalog.clock_timestamp()+interval '1 minute' WHERE event_id=$1::uuid`, [selected.eventId]);
+    if (name === "dead-letter") await course.query(`UPDATE public.community_enrollment_outbox SET state='dead_letter',
+      dead_lettered_at=pg_catalog.clock_timestamp() WHERE event_id=$1::uuid`, [selected.eventId]);
     const receipt = name === "receipt" ? { ...browser(selected), commandId: randomUUID() } : browser(selected);
     await assert.rejects(observe(selected, baseline, receipt), { check: `course-paid-grant-${check}` });
     await assert.rejects(observe(selected, baseline), { check: "course-paid-grant-receipt" });
+  }
+
+  const { db, importSource } = await ownedCourseRepository(course, courseSource);
+  const [{ createDrizzleAdminEntitlementCommandRepository }] = await importOwnedAccountAwareCourseSource(importSource,
+    "src/entitlements/admin-entitlement-command.repository.ts");
+  const admin = createDrizzleAdminEntitlementCommandRepository(db);
+  const prepareSecond = async (name, settleFirst = true) => {
+    const prior = await seed(`second-${name}`);
+    await write(prior);
+    await progress(prior, prior.enrollmentId);
+    const delivery = settleFirst ? await settle(prior, 1) : undefined;
+    return { ...prior, delivery, selection: { ...prior.selection, idempotencyKey: randomUUID(), priorGrantId: prior.grantId } };
+  };
+  const grantAgain = async ({ selection }) => {
+    const result = await admin.grant({ courseId: selection.courseId, userId: selection.userId, actorUserId: selection.actorId,
+      idempotencyKey: `owner-paid:${selection.idempotencyKey}`, reason: `[paid-course revision ${selection.revision}] ${selection.reason}` });
+    assert.equal(result.isReplay, false);
+    assert.equal(result.effects.length, 1);
+    return { commandId: result.command.id, grantId: result.effects[0].entitlementGrantId };
+  };
+  const second = await prepareSecond("unchanged");
+  await assert.rejects(capture({ ...second, selection: { ...second.selection, priorGrantId: randomUUID() } }), { check: "course-paid-grant-prior" });
+  await assert.rejects(capture(await prepareSecond("pending", false)), { check: "course-paid-grant-delivery-baseline" });
+  const secondBaseline = await capture(second);
+  const secondReceipt = { ...browser(second), ...await grantAgain(second) };
+  await assert.rejects(observe(second, secondBaseline, { ...secondReceipt, priorGrantId: second.grantId }), { check: "course-paid-grant-receipt" });
+  assert.deepEqual(await observe(second, secondBaseline, secondReceipt), { ...secondReceipt, enrollmentId: second.enrollmentId,
+    priorGrantId: second.grantId, transitionId: null, communityDelivery: activeEnrollmentDelivery(second, second.delivery), readOnly: true });
+
+  for (const [name, check] of [["third-grant", "course-paid-grant-persistence"], ["progress-drift", "course-paid-grant-history"],
+    ["receiver-drift", "community-paid-grant-projection"], ["outbox-drift", "course-paid-grant-history"]]) {
+    const candidate = await prepareSecond(name), baseline = await capture(candidate), receipt = { ...browser(candidate), ...await grantAgain(candidate) };
+    if (name === "third-grant") await grantAgain({ selection: { ...candidate.selection, idempotencyKey: randomUUID() } });
+    if (name === "progress-drift") await course.query("UPDATE public.lesson_progress SET resume_position_seconds=3 WHERE lesson_id=$1::uuid", [candidate.lessonId]);
+    if (name === "receiver-drift") await community.query("UPDATE public.course_enrollment_projections SET updated_at=pg_catalog.clock_timestamp() WHERE stream_id=$1::uuid", [candidate.streamId]);
+    if (name === "outbox-drift") await course.query("UPDATE public.community_enrollment_outbox SET updated_at=pg_catalog.clock_timestamp() WHERE event_id=$1::uuid", [candidate.eventId]);
+    await assert.rejects(observe(candidate, baseline, receipt), { check });
   }
 }
 
@@ -1308,19 +1356,14 @@ async function runOwnedPaidLearnerAccessWitness({ course, job, dependencies, inp
   }
 }
 
-async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, create, courseSource, expiryFixed, community, communitySource }) {
-  const { seed, progress, write } = ownedPaidGrantFixtures({ course, input, create });
-  const { db, importSource } = await ownedCourseRepository(course, courseSource);
-  const [{ createDrizzleAdminEntitlementCommandRepository }] =
-    await importOwnedAccountAwareCourseSource(importSource, "src/entitlements/admin-entitlement-command.repository.ts");
-  const admin = createDrizzleAdminEntitlementCommandRepository(db);
+async function ownedEnrollmentSettlement(course, community, communitySource) {
   const { tsImport } = createRequire(import.meta.url)("tsx/esm/api");
   const importCommunity = path => tsImport(pathToFileURL(join(communitySource, "src/integrations/course", path)).href, import.meta.url);
   const { createDrizzleCourseEnrollmentReceiptRepository } = await importCommunity("inbox/course-enrollment-receipt.repository.ts");
   const { canonicalizeEnrollmentEvent } = await importCommunity("contracts/enrollment-event.ts");
   const { drizzle } = createRequire(join(communitySource, "package.json"))("drizzle-orm/node-postgres");
   const receiver = createDrizzleCourseEnrollmentReceiptRepository(drizzle(community));
-  const settle = async ({ streamId }, version, apply = true) => {
+  return async ({ streamId }, version, apply = true) => {
     const { rows: [event] } = await course.query(`SELECT event_id::text,canonical_body,canonical_digest FROM public.community_enrollment_outbox
       WHERE stream_id=$1::uuid AND stream_version=$2::int AND state='pending'`, [streamId, version]);
     const canonical = canonicalizeEnrollmentEvent(JSON.parse(event.canonical_body));
@@ -1331,6 +1374,14 @@ async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, cre
       lease_owner=NULL,lease_expires_at=NULL,updated_at=pg_catalog.clock_timestamp() WHERE event_id=$1::uuid`, [event.event_id]);
     return { eventId: event.event_id, canonicalDigest: canonical.digest };
   };
+}
+
+async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, create, courseSource, expiryFixed, community, settle }) {
+  const { seed, progress, write } = ownedPaidGrantFixtures({ course, input, create });
+  const { db, importSource } = await ownedCourseRepository(course, courseSource);
+  const [{ createDrizzleAdminEntitlementCommandRepository }] =
+    await importOwnedAccountAwareCourseSource(importSource, "src/entitlements/admin-entitlement-command.repository.ts");
+  const admin = createDrizzleAdminEntitlementCommandRepository(db);
   const independent = ({ selected: { userId, courseId, actorId } }) => admin.grant({ userId, courseId, actorUserId: actorId,
     idempotencyKey: randomUUID(), reason: "Owned independent manual access" });
   const datedGrant = async ({ selection: { userId, courseId }, enrollmentId }, expiresInSeconds) => {

@@ -65,6 +65,7 @@ const assetEvents=new Set(['video.asset.created','video.asset.ready','video.asse
 const trackEvents=new Set(['video.asset.track.ready','video.asset.track.deleted']);
 const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(value);
 const courseBackedBrowserStages=new Set(['authoring','learning','paid-grant','learner-access','paid-revoke']);
+const communityBackedBrowserStages=new Set(['learning','paid-grant','paid-revoke']);
 const pairedBrowserStages=new Set(['lifecycle',...courseBackedBrowserStages]);
 const emptyRequestSha256=rawHash(Buffer.alloc(0));
 const authoringCases=new Map([
@@ -168,8 +169,10 @@ function learnerAccessSelection({actorId,learnerAccessAction:{operation:_operati
   return {...selected,actorId};
 }
 function paidGrantActionValid(selected,requests){
-  if(!exactKeys(selected,['operation','courseId','userId','revision','idempotencyKey','reasonSha256'])||
+  const secondGrant=selected&&Object.hasOwn(selected,'priorGrantId');
+  if(!exactKeys(selected,['operation','courseId','userId','revision','idempotencyKey','reasonSha256',...(secondGrant?['priorGrantId']:[])])||
     selected.operation!=='grant-paid-access'||![selected.courseId,selected.userId,selected.idempotencyKey].every(uuid)||
+    (secondGrant&&!uuid(selected.priorGrantId))||
     !Number.isInteger(selected.revision)||selected.revision<1||selected.revision>2_147_483_647||
     !sha(selected.reasonSha256)||selected.reasonSha256===emptyRequestSha256||requests.length!==4)return false;
   const key='owner-paid%3A'+selected.idempotencyKey;
@@ -566,11 +569,12 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
   const learning=action.stage==='learning',paidGrant=action.stage==='paid-grant',courseBacked=courseBackedBrowserStages.has(action.stage);
   const learnerAccess=action.stage==='learner-access';
   const paidRevoke=action.stage==='paid-revoke';
+  const communityBacked=communityBackedBrowserStages.has(action.stage);
   const authoringCase=authoring?authoringCases.get(action.authoringAction.operation):undefined;
   if(courseBacked)demand(courseDraft?.job&&(!authoringCase?.field||courseDraft.draft)&&typeof courseDraft.readCourseDatabaseUrl==='function');
   if(paidGrant)demand(typeof courseDraft.paidGrantReason==='string');
-  if(paidRevoke)demand(typeof courseDraft.paidRevokeReason==='string'&&courseDraft.communityJob&&
-    typeof courseDraft.readCommunityDatabaseUrl==='function');
+  if(paidRevoke)demand(typeof courseDraft.paidRevokeReason==='string');
+  if(communityBacked)demand(courseDraft.communityJob&&typeof courseDraft.readCommunityDatabaseUrl==='function');
   const statusPrefix=`P2_INTERACTIVE_${action.stage.toUpperCase().replaceAll('-','_')}`;
   const expectedOpen=(BigInt(plan.initialEpoch)+1n).toString(),expectedClosed=(BigInt(plan.initialEpoch)+2n).toString();
   const {operation:_learningOperation,...learningSelection}=action.learningAction??{};
@@ -588,7 +592,7 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
     interactiveProducer:{producerSha256,role:runtimeProducer.role}};
   const observations={verifySession,verifyEnvironment};
   const courseObservations=courseBacked?{...observations,readCourseDatabaseUrl:courseDraft.readCourseDatabaseUrl,
-    ...(paidRevoke?{communityJob:courseDraft.communityJob,readCommunityDatabaseUrl:courseDraft.readCommunityDatabaseUrl,signal}:{})}:undefined;
+    ...(communityBacked?{communityJob:courseDraft.communityJob,readCommunityDatabaseUrl:courseDraft.readCommunityDatabaseUrl,signal}:{})}:undefined;
   const cancelBrowser=()=>{void Promise.resolve().then(()=>controller.close()).catch(()=>{});};
   signal?.addEventListener('abort',cancelBrowser,{once:true});
   try{
@@ -1145,7 +1149,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
       interactiveController,...(enrollment?{identityEnrollmentEmail}:{}),
       ...(courseBackedBrowserStages.has(action.scopedAction?.stage)?{courseDraft:{job:original.apiJobs.course,draft:authoringDraft,paidGrantReason,paidRevokeReason,
         readCourseDatabaseUrl:()=>credentials.COURSE_STAGING_DATABASE_URL,
-        ...(action.scopedAction.stage==='paid-revoke'?{communityJob:original.apiJobs.community,
+        ...(communityBackedBrowserStages.has(action.scopedAction.stage)?{communityJob:original.apiJobs.community,
           readCommunityDatabaseUrl:()=>credentials.COMMUNITY_STAGING_DATABASE_URL}:{})}}:{}),
       getUrl:()=>credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
       ...(action.mode==='direct-worker'?{workerPrivateResolvers:createP2LifecycleWorkerPrivateResolvers(()=>provider)}:{}),

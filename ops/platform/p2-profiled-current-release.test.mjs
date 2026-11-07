@@ -264,6 +264,17 @@ test('fixed current certification plan joins the original release plan, terminal
     const paidHostPlan = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
       { input: JSON.stringify(paidPair['paid-grant']), encoding: 'utf8' });
     assert.equal(paidHostPlan.status, 0, paidHostPlan.stderr);
+    const secondGrant = { ...selectedInteractive, paidGrantAction: { ...selectedInteractive.paidGrantAction,
+      priorGrantId: '10000000-0000-4000-8000-000000000009' } };
+    const secondPair = prepareP2ProfiledCertificationOperator(paired(secondGrant));
+    assert.deepEqual(secondPair['paid-grant'].scopedAction, secondGrant);
+    assert.notEqual(secondPair['paid-grant'].planSha256, paidPair['paid-grant'].planSha256);
+    assert.equal(spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+      { input: JSON.stringify(secondPair['paid-grant']), encoding: 'utf8' }).status, 0);
+    for (const priorGrantId of [null, [], 'unreviewed-prior-grant']) {
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...secondGrant,
+        paidGrantAction: { ...secondGrant.paidGrantAction, priorGrantId } })));
+    }
     const paidConfirmation = { confirmation: 'staging/owned-scoped-action' };
     await assert.rejects(p2ProfiledCertificationOperator({ ...paidSettings, execution: { reason: paidReason } }, paidConfirmation), { code: 'ENOENT' });
     for (const execution of [undefined, { reason: 'unreviewed' }, { reason: ' ' + paidReason }, { reason: paidReason, extra: true }])

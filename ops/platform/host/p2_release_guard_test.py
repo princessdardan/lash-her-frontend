@@ -168,6 +168,7 @@ class IndependentGuardTests(unittest.TestCase):
         for stage, actor_kind, provider in cases:
             with self.subTest(stage=stage, actor_kind=actor_kind, provider=provider):
                 self.check_profiled_interactive_terminal(stage, actor_kind, provider)
+        self.check_profiled_interactive_terminal('paid-grant', 'admin', None, second_paid=True)
         for remaining in (False, True):
             with self.subTest(remaining_access=remaining):
                 self.check_profiled_interactive_terminal('paid-revoke', 'admin', None, remaining_access=remaining)
@@ -199,7 +200,7 @@ class IndependentGuardTests(unittest.TestCase):
     def check_profiled_interactive_terminal(self, stage_name, actor_kind, provider, *, editing=False, reorder_kind=None,
                                             create_kind=None, publication_outcome=None, quiz_revision=None,
                                             progress_first=False, archiving=False, republish_outcome=None, expected_access=None,
-                                            learner_outcome=None, remaining_access=None):
+                                            learner_outcome=None, remaining_access=None, second_paid=False):
         import p2_interactive_window as window
         from p2_certification_parent import P2ProfiledCertificationBroker
 
@@ -217,6 +218,8 @@ class IndependentGuardTests(unittest.TestCase):
             variant = learner_outcome
         if remaining_access is not None:
             variant = 'remaining' if remaining_access else 'removed'
+        if second_paid:
+            variant = 'second-grant'
         initial, directory = self.profiled_certification(f'owned-{stage_name}-{variant}')
         plan = initial['certificationPlan']
         ids = [f'10000000-0000-4000-8000-00000000000{index}' for index in range(1, 8)]
@@ -262,6 +265,8 @@ class IndependentGuardTests(unittest.TestCase):
         elif paid_grant:
             action['paidGrantAction'] = {'operation': 'grant-paid-access', 'courseId': command, 'userId': user,
                                           'revision': 4, 'idempotencyKey': ledger_ids[0], 'reasonSha256': '8' * 64}
+            prior_grant = {'priorGrantId': '70000000-0000-4000-8000-000000000003'} if second_paid else {}
+            action['paidGrantAction'].update(prior_grant)
             entitlements = '/course/v1/admin/entitlements'
             query = f'idempotencyKey=owner-paid%3A{ledger_ids[0]}&limit=2'
             action['requests'] = [
@@ -410,7 +415,11 @@ class IndependentGuardTests(unittest.TestCase):
                         'source': 'free', 'status': 'active', 'idempotentReplay': False}
             browser = {'method': 'POST', 'pathname': f'/api{academy}/enrollments', 'status': 200, 'requestId': request,
                        'academyPath': academy, 'body': enrolled}
-            domain = {**enrolled, 'transitionId': ledger_ids[2], 'readOnly': True}
+            community_delivery = {
+                'streamId': '70000000-0000-4000-8000-000000000001', 'streamVersion': 1, 'eventId': ledger_ids[2],
+                'canonicalDigest': '5' * 64, 'state': 'active',
+            }
+            domain = {**enrolled, 'transitionId': ledger_ids[2], 'communityDelivery': community_delivery, 'readOnly': True}
             browser_key, domain_key = 'browserResponse', 'courseWitness'
             observed_indices = (0, 1, 2, 3, 1) if progress_first else (0, 1, 2, 1, 3)
             proofs = [f'40000000-0000-4000-8000-{index:012d}' for index in range(1, 6)]
@@ -424,7 +433,13 @@ class IndependentGuardTests(unittest.TestCase):
             pathname = f'/api/admin/courses/{command}/manual-grants'
             browser = {'method': 'POST', 'pathname': pathname, 'status': 200, 'requestId': request, 'body': granted}
             proofs = [f'50000000-0000-4000-8000-{index:012d}' for index in range(1, 8)]
-            domain = {**granted, 'enrollmentId': ledger_ids[2], 'transitionId': proofs[0], 'readOnly': True}
+            community_delivery = {
+                'streamId': '70000000-0000-4000-8000-000000000001', 'streamVersion': 1,
+                'eventId': '70000000-0000-4000-8000-000000000002' if second_paid else proofs[0],
+                'canonicalDigest': '5' * 64, 'state': 'active',
+            }
+            domain = {**granted, 'enrollmentId': ledger_ids[2], 'transitionId': None if second_paid else proofs[0],
+                      **prior_grant, 'communityDelivery': community_delivery, 'readOnly': True}
             browser_key, domain_key = 'browserResponse', 'courseWitness'
             acknowledgements = [
                 {'requestId': identity, 'proofRequestId': proof, 'requestIndex': index, 'upstreamStatus': status}
@@ -611,10 +626,29 @@ class IndependentGuardTests(unittest.TestCase):
                 wrong = {**browser, 'body': {**granted, **change}}
                 with self.subTest(body=change), self.assertRaisesRegex(ValueError, 'PAID_GRANT_BODY_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
-            for change in ({'commandId': user}, {'transitionId': 'invalid'}, {'communityDeliveryVerified': True}):
+            for change in ({'commandId': user}, {'transitionId': 'invalid'}, {'communityDeliveryVerified': True},
+                           {'priorGrantId': user}, {'transitionId': user if second_paid else None}):
                 with self.subTest(witness=change), self.assertRaisesRegex(ValueError, 'PAID_GRANT_COURSE_WITNESS_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
+            if second_paid:
+                wrong = {**browser, 'body': {**granted, 'grantId': prior_grant['priorGrantId']}}
+                with self.assertRaisesRegex(ValueError, 'PAID_GRANT_BODY_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+        if learning or paid_grant:
+            invalid = [
+                None, {}, {**community_delivery, 'streamId': 'invalid'}, {**community_delivery, 'eventId': 'invalid'},
+                {**community_delivery, 'streamVersion': 0}, {**community_delivery, 'streamVersion': 2},
+                {**community_delivery, 'streamVersion': True}, {**community_delivery, 'canonicalDigest': '0' * 64},
+                {**community_delivery, 'canonicalDigest': 'A' * 64}, {**community_delivery, 'state': 'revoked'},
+                {**community_delivery, 'rawPayload': {}},
+            ]
+            if not second_paid:
+                invalid.append({**community_delivery, 'eventId': user})
+            for delivery in invalid:
+                with self.subTest(delivery=delivery), self.assertRaisesRegex(ValueError, f'{stage_status}_COMMUNITY_DELIVERY_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain',
+                                    'caseEvidence': {**evidence, domain_key: {**domain, 'communityDelivery': delivery}}})
         if paid_revoke:
             for change in ({'requestId': user}, {'pathname': pathname.removesuffix('/revoke')}, {'status': 202}):
                 with self.subTest(browser=change), self.assertRaisesRegex(ValueError, 'PAID_REVOKE_RESPONSE_REQUIRED'):
@@ -770,6 +804,7 @@ class IndependentGuardTests(unittest.TestCase):
                              {'grantId': ledger_ids[0], 'enrollmentId': ledger_ids[1], 'transitionId': ledger_ids[2],
                               'gatewayPostRequestId': request})
             self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
+            self.assertEqual(case['communityDelivery'], community_delivery)
         if learner_access:
             self.assertEqual({key: case[key] for key in observed}, observed)
             self.assertIs(case['effectiveAccess'], allowed)
@@ -779,6 +814,12 @@ class IndependentGuardTests(unittest.TestCase):
             self.assertEqual({key: case[key] for key in granted}, granted)
             self.assertEqual(case['gatewayPostRequestId'], request)
             self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
+            self.assertEqual(case['communityDelivery'], community_delivery)
+            self.assertEqual(case['transitionId'], domain['transitionId'])
+            if second_paid:
+                self.assertEqual(case['priorGrantId'], prior_grant['priorGrantId'])
+            else:
+                self.assertNotIn('priorGrantId', case)
         if paid_revoke:
             self.assertEqual(case['status'], 'P2_INTERACTIVE_PAID_REVOKE_JOINED')
             self.assertEqual({key: case[key] for key in revoked}, revoked)
@@ -842,7 +883,7 @@ class IndependentGuardTests(unittest.TestCase):
             return supervisor._require_profiled_certification_terminal(initial, raw, migrate.file_hash(raw), source=source)
 
         self.assertEqual(guard(terminal), terminal)
-        if paid_revoke:
+        if paid_revoke or paid_grant or learning:
             evidence_path = directory / window.browser_artifact(plan, 'evidence')
             substituted = {**domain, 'communityDelivery': {**community_delivery, 'canonicalDigest': '6' * 64}}
             evidence_path.write_text(json.dumps({**evidence, domain_key: substituted}))

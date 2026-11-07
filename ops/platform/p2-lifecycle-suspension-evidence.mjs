@@ -276,7 +276,8 @@ async function reviewedInteractiveInput(plan, challenge) {
       && sha(write.bodySha256) && write.bodySha256 !== empty && write.uses === 1
       && isDeepStrictEqual(grants, { method: "GET", target: `${grantTarget}?userId=${selected.userId}&courseId=${selected.courseId}&idempotencyKey=${key}&limit=2`,
         bodySha256: empty, uses: 1 }));
-    paidGrant = { actorId: action.actorId, ...selected };
+    const { operation, courseId, userId, revision, idempotencyKey, reasonSha256 } = selected;
+    paidGrant = { actorId: action.actorId, operation, courseId, userId, revision, idempotencyKey, reasonSha256 };
   }
   if (action.stage === "learner-access") {
     const selected = action.learnerAccessAction;
