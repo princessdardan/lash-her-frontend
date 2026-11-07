@@ -104,11 +104,13 @@ async function main() {
         result[table] = (await operator.query(`SELECT to_jsonb(t) AS row FROM ${table} t ORDER BY to_jsonb(t)::text`)).rows;
       return createHash("sha256").update(JSON.stringify(result)).digest("hex");
     };
+    const stateDigest = async rows => createHash("sha256")
+      .update(JSON.stringify({ operations: rows, business: await fingerprint(), providerCalls })).digest("hex");
     const reconcile = async () => {
       await Promise.allSettled(requests); await change(false);
       const rows = await operations(), unresolved = rows.filter(row => row.state !== "completed");
       if (unresolved.length) { assert.equal((await drain()).ledgerDrained, false); await assert.rejects(change(true)); }
-      const digest = createHash("sha256").update(JSON.stringify({ operations: rows, business: await fingerprint(), providerCalls })).digest("hex");
+      const digest = await stateDigest(rows);
       evidence.push(digest);
       for (const row of unresolved) await reconcileFrontendOperation(operator, target, epoch, row.id, digest);
       assert.equal((await drain()).ledgerDrained, true);
@@ -441,6 +443,7 @@ async function main() {
       assert.equal(sessionCookie(await scopedGoogle(customerPermit, otherSubject, otherEmail, foreignSession)), undefined);
       assert.equal(sessionCookie(await scopedGoogle(customerPermit, "owned-unlinked-google-subject", "owned@example.invalid", foreignSession)), undefined);
       await entries(before, Array(6).fill("completed")); await verifyUnchanged(3, 2);
+      evidence.push(await stateDigest(await operations()));
       const scopedGoogleSession = sessionCookie(await scopedGoogle(customerPermit, originalSubject, "owned@example.invalid", foreignSession));
       assert.ok(scopedGoogleSession);
       assert.equal(JSON.parse((await request("/api/customer-auth/session", { cookie: cookieJoin(customerPermit, scopedGoogleSession) })).text).user.id, selectedCustomer);
@@ -452,6 +455,7 @@ async function main() {
       await verifyUnchanged(5, 2);
       const admitted = (await operator.query("SELECT state,producer_sha256 FROM frontend_admission.operations WHERE epoch=$1", [epoch])).rows;
       assert.ok(admitted.length > 0 && admitted.every(row => row.state === "completed" && row.producer_sha256 === scopedProducer));
+      evidence.push(await stateDigest(await operations()));
     } finally {
       googleSubject = originalSubject; googleEmail = "owned@example.invalid";
       const closed = await closeFrontendInteractiveAdmission(operator, scopedTarget, epoch, scope);
