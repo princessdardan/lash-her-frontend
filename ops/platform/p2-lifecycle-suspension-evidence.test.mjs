@@ -1890,7 +1890,7 @@ test("owned Chromium free-enrollment replay sends one scoped POST from the uncha
     const { chromium } = await import("playwright");
     const browser = await chromium.launch();
     const open = async scenario => {
-      const fixture = ownedLearningReplay(), { input, target, receipt, coursePath, academyPath, pathname } = fixture;
+      const fixture = ownedLearningReplay(), { input, target, receipt, coursePath, pathname } = fixture;
       const context = await browser.newContext(), effects = [];
       const selectedActor = scenario === "wrong-actor" ? randomUUID() : target.actorId;
       await context.addCookies([{ name: "owned-customer", value: selectedActor, url: input.browserOrigin + "/" }]);
