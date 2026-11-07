@@ -1,0 +1,318 @@
+// The harness owns all three loopback clusters and their short-lived credentials.
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Client } from "pg";
+import { frontendAdmissionTargetSha256 } from "./frontend-admission-bootstrap.mjs";
+import { withFrontendEnvironmentLock } from "./frontend-environment-lock.mjs";
+import { FRONTEND_MIGRATION_LOCK, frontendMigrationArtifact, prepareFrontendMigration, runFrontendMigration, runOwnedFrontendReplacementBootstrap } from "./frontend-migration.mjs";
+import { FRONTEND_PREPARATION_ROLES as roles } from "./frontend-role-preparation.mjs";
+import { readMigrationCatalog } from "./frontend-schema.mjs";
+import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./qualification-target-profile.mjs";
+
+const source = fileURLToPath(new URL("../..", import.meta.url));
+const self = fileURLToPath(import.meta.url);
+const gate = "FRONTEND_REPLACEMENT_BOOTSTRAP_LOCAL_TEST";
+const ownedUrl = "FRONTEND_REPLACEMENT_BOOTSTRAP_LOCAL_URL";
+const host = "127.0.0.1", migrationUser = "owned_frontend_migration", oldUser = "owned_frontend_previous_migration";
+const predecessorDatabase = "owned_frontend_predecessor", oldRuntime = "owned_frontend_previous_runtime";
+const producerSha256 = "a".repeat(64), inventorySha256 = "b".repeat(64);
+const digest = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const run = (program, args, options) => execFileSync(program, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
+const privateDir = directory => { mkdirSync(directory, { mode: 0o700 }); return directory; };
+const readJson = (directory, name) => JSON.parse(readFileSync(join(directory, name), "utf8"));
+let phase = "setup";
+
+async function loopbackPort() {
+  const listener = createServer();
+  await new Promise((done, fail) => listener.once("error", fail).listen(0, host, done));
+  const { port } = listener.address();
+  await new Promise((done, fail) => listener.close(error => error ? fail(error) : done()));
+  return port;
+}
+
+async function openCluster(directory, pgBin, user, key, cert) {
+  const data = join(directory, "data"), port = await loopbackPort();
+  run(join(pgBin, "initdb"), ["-D", data, "-A", "trust", "-U", user, "-E", "UTF8", "--locale=C"]);
+  writeFileSync(join(data, "postgresql.conf"), `listen_addresses='${host}'\nport=${port}\nunix_socket_directories=''\nssl=on\nssl_cert_file='${cert}'\nssl_key_file='${key}'\npassword_encryption='scram-sha-256'\n`);
+  writeFileSync(join(data, "pg_hba.conf"), `hostssl all ${user} ${host}/32 trust\nhostssl all all ${host}/32 scram-sha-256\n`);
+  run(join(pgBin, "pg_ctl"), ["-D", data, "-l", join(directory, "postgres.log"), "-w", "start"]);
+  const ssl = { rejectUnauthorized: true, ca: readFileSync(cert, "utf8") };
+  return {
+    port,
+    async connect(database, login = user, password) {
+      const client = new Client({ host, port, database, user: login, password, ssl });
+      try {
+        await client.connect();
+        assert.equal(client.connection.stream.authorized, true);
+        return client;
+      } catch (error) { await client.end(); throw error; }
+    },
+    stop: () => run(join(pgBin, "pg_ctl"), ["-D", data, "-m", "immediate", "-w", "stop"]),
+  };
+}
+
+async function withDatabase(cluster, database, task) {
+  const client = await cluster.connect(database);
+  try { return await task(client); }
+  finally { await client.end(); }
+}
+
+async function createDatabase(cluster, database) {
+  await withDatabase(cluster, "postgres", async client => {
+    await client.query(`create database ${database}`);
+    await client.query(`revoke all on database ${database} from public`);
+  });
+  await withDatabase(cluster, database, client => client.query("revoke create on schema public from public"));
+}
+
+async function referenceBaseline(cluster, artifact, serverMajor) {
+  const database = "owned_frontend_baseline";
+  await createDatabase(cluster, database);
+  return withDatabase(cluster, database, async client => {
+    for (const migration of artifact.migrations) {
+      await client.query("begin");
+      try {
+        for (const statement of migration.sql) await client.query(statement);
+        await client.query("commit");
+      } catch (error) { await client.query("rollback"); throw error; }
+    }
+    return { version: 1, serverMajor, sqlArtifactSha256: artifact.sqlArtifactSha256, catalog: await readMigrationCatalog(client) };
+  });
+}
+
+function plan(sourceCommit, artifact, baseline, target, predecessorTarget, releaseId) {
+  const migrationImageDigest = "sha256:" + "c".repeat(64), schemaBaselineSha256 = digest(baseline);
+  const contract = { contractPhase: artifact.contractPhase, contractManifestSha256: artifact.contractManifestSha256,
+    phase2ContractManifestSha256: artifact.phase2ContractManifestSha256 };
+  const frontendMigration = { sourceCommit, sqlArtifactSha256: artifact.sqlArtifactSha256,
+    schemaBaselines: { [target.serverMajor]: schemaBaselineSha256 }, ...contract, qualificationTargetProfile: profile };
+  const candidate = { version: 3, qualificationTargetProfile: profile, environment: "staging", releaseId,
+    integration: { state: "passed" }, sourceApproval: { mode: "single-operator-dispatch", operatorGithubUserId: "8996309" },
+    sources: { frontend: { repository: "https://github.com/princessdardan/lash-her-frontend.git", commit: sourceCommit, requiredChecks: "passed" } },
+    artifacts: { frontendMigration: { image: `ghcr.io/princessdardan/lash-her-platform-frontend-migration@${migrationImageDigest}` } },
+    ...contract, frontendMigration };
+  const job = { version: 2, qualificationTargetProfile: profile, operator: "Dardan", environment: "staging", releaseId, sourceCommit,
+    ...contract, migrationImageDigest, sqlArtifactSha256: artifact.sqlArtifactSha256, schemaBaselineSha256,
+    recoveryRef: "owned/frontend-replacement", target: { ...target, qualificationTargetProfile: profile,
+      allowEmptyBootstrap: true, approvedPendingTags: artifact.migrations.map(({ tag }) => tag) } };
+  return { version: 1, qualificationTargetProfile: profile, candidate, job, baseline, predecessorTarget,
+    administrativeLogins: [], producerSha256, inventorySha256 };
+}
+
+function invoke(directory, name, input, cert, success, { mode = "--apply", confirmation } = {}) {
+  phase = name;
+  const results = privateDir(join(directory, name));
+  const outputs = { directory: privateDir(join(results, "release")), rolesDirectory: privateDir(join(results, "roles")),
+    privateDirectory: privateDir(join(results, "credentials")) };
+  const { host: selectedHost, port, user, database } = input.job.target;
+  const password = randomUUID(), url = `postgresql://${user}:${password}@${selectedHost}:${port}/${database}?sslmode=verify-full`;
+  const child = spawnSync(process.execPath, [self, mode], {
+    cwd: source, encoding: "utf8", timeout: 120_000,
+    env: { PATH: process.env.PATH, TMPDIR: realpathSync(tmpdir()), LANG: "C", LC_ALL: "C", NODE_EXTRA_CA_CERTS: cert, [gate]: "true", [ownedUrl]: url },
+    input: JSON.stringify({ input, dependencies: { ...outputs, confirmation: confirmation ?? `owned-frontend-bootstrap/${input.job.releaseId}` } }),
+  });
+  assert.equal(((child.stdout ?? "") + (child.stderr ?? "")).includes(password), false);
+  assert.equal(child.error, undefined);
+  const outcomeFile = join(outputs.directory, "job-outcome.json");
+  const outcome = existsSync(outcomeFile) ? readJson(outputs.directory, "job-outcome.json") : undefined;
+  const replacementOutcomeFile = join(outputs.directory, "replacement-bootstrap-outcome.json");
+  const replacementOutcome = existsSync(replacementOutcomeFile) ? readJson(outputs.directory, "replacement-bootstrap-outcome.json") : undefined;
+  assert.equal(child.status, success ? 0 : 1, `${name}: ${outcome?.phase ?? replacementOutcome?.phase ?? "no outcome"}`);
+  for (const evidenceDirectory of [outputs.directory, outputs.rolesDirectory])
+    for (const file of readdirSync(evidenceDirectory))
+      assert.equal(readFileSync(join(evidenceDirectory, file), "utf8").includes(password), false);
+  return { ...outputs, outcome, replacementOutcome };
+}
+
+const journalSql = "select hash,created_at from drizzle.__drizzle_migrations order by created_at,id";
+const journalExists = async client => (await client.query("select to_regclass('drizzle.__drizzle_migrations') is not null as present")).rows[0].present;
+
+async function assertPristine(cluster, database) {
+  await withDatabase(cluster, database, async client => {
+    assert.equal(await journalExists(client), false);
+    assert.equal((await client.query("select to_regnamespace('frontend_admission') is null as absent")).rows[0].absent, true);
+    assert.equal((await client.query("select count(*)::int as count from pg_roles where rolname=any($1::text[])", [Object.values(roles)])).rows[0].count, 0);
+  });
+}
+
+async function verifyApplied(cluster, input, artifact, outputs) {
+  const { target, sourceCommit } = input.job;
+  const targetSha256 = frontendAdmissionTargetSha256("staging", target);
+  const applied = artifact.migrations.map(row => ({ hash: row.hash, created_at: String(row.folderMillis) }));
+  await withDatabase(cluster, target.database, async client => {
+    assert.deepEqual((await client.query(journalSql)).rows, applied);
+    assert.deepEqual((await client.query("select environment,target_sha256,epoch::text,new_work,recovery from frontend_admission.control")).rows,
+      [{ environment: "staging", target_sha256: targetSha256, epoch: "1", new_work: false, recovery: false }]);
+    const registered = (await client.query(`select producer_sha256,source_sha,database_role::regrole::text as role,enabled
+      from frontend_admission.producers`)).rows;
+    assert.deepEqual(registered, [{ producer_sha256: producerSha256, source_sha: sourceCommit, role: roles.runtime, enabled: true }]);
+    assert.equal((await client.query("select count(*)::int as count from frontend_admission.operations")).rows[0].count, 0);
+  });
+  const credentialFile = join(outputs.privateDirectory, "frontend-role-credentials.json");
+  assert.equal(statSync(credentialFile).mode & 0o077, 0);
+  const credential = readJson(outputs.privateDirectory, "frontend-role-credentials.json");
+  assert.ok(typeof credential.password === "string" && credential.password.length >= 64);
+  for (const evidenceDirectory of [outputs.directory, outputs.rolesDirectory])
+    for (const file of readdirSync(evidenceDirectory))
+      assert.equal(readFileSync(join(evidenceDirectory, file), "utf8").includes(credential.password), false);
+  const runtime = await cluster.connect(target.database, roles.runtime, credential.password);
+  try {
+    const policy = await runtime.query("select * from frontend_admission.current_policy($1,$2,$3,$4)",
+      ["staging", targetSha256, producerSha256, sourceCommit]);
+    assert.deepEqual(policy.rows, [{ epoch: "1", new_work: false, recovery: false }]);
+    for (const kind of ["new-work", "recovery"]) await assert.rejects(runtime.query(
+      "call frontend_admission.begin_operation($1,$2,$3,$4,$5,$6,$7)",
+      [randomUUID(), kind, "staging", targetSha256, "1", producerSha256, sourceCommit]), { message: "FRONTEND_ADMISSION_REFUSED" });
+    await assert.rejects(runtime.query(journalSql), { code: "42501" });
+  } finally { await runtime.end(); }
+  return applied;
+}
+
+async function fixture() {
+  assert.equal(process.env[gate], "true");
+  assert.equal(process.versions.node.split(".")[0], "24");
+  const pgBin = process.env.PG_BIN;
+  assert.ok(pgBin?.startsWith("/"));
+  const serverMajor = Number(/PostgreSQL\) (16|18)\./u.exec(run(join(pgBin, "postgres"), ["--version"]))?.[1]);
+  assert.ok([16, 18].includes(serverMajor));
+  const sourceCommit = run("git", ["rev-parse", "HEAD"], { cwd: source }).trim();
+  assert.equal(run("git", ["status", "--porcelain"], { cwd: source }), "");
+  const directory = mkdtempSync(join(realpathSync(tmpdir()), "frontend-replacement-owned-"));
+  const key = join(directory, "server.key"), cert = join(directory, "server.crt"), clusters = [];
+  const artifact = frontendMigrationArtifact(source);
+  assert.equal(artifact.migrations.length, 83);
+  let result;
+  try {
+    run("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost",
+      "-addext", `subjectAltName=DNS:localhost,IP:${host}`, "-keyout", key, "-out", cert]);
+    chmodSync(key, 0o600);
+    const start = async (label, user) => {
+      const cluster = await openCluster(privateDir(join(directory, label)), pgBin, user, key, cert);
+      clusters.push(cluster);
+      return cluster;
+    };
+    const predecessor = await start("predecessor", oldUser);
+    await createDatabase(predecessor, predecessorDatabase);
+    const predecessorTarget = { host, port: predecessor.port, database: predecessorDatabase, user: oldUser, runtimeRole: oldRuntime, serverMajor };
+    await withDatabase(predecessor, predecessorDatabase, async client => {
+      await client.query(`create role ${oldRuntime} login;`);
+      await client.query("create table public.preserved_history(value text primary key)");
+      await client.query("insert into public.preserved_history values('retained')");
+    });
+    const replacement = await start("replacement", migrationUser);
+    const target = { host, port: replacement.port, database: "owned_frontend_replacement", user: migrationUser, runtimeRole: roles.runtime, serverMajor };
+    await createDatabase(replacement, target.database);
+    const baseline = await referenceBaseline(replacement, artifact, serverMajor);
+    const selected = plan(sourceCommit, artifact, baseline, target, predecessorTarget, "owned-frontend-replacement");
+    invoke(directory, "wrong-confirmation", selected, cert, false, { confirmation: "wrong" });
+    invoke(directory, "same-target", { ...selected, predecessorTarget: target }, cert, false);
+    invoke(directory, "ordinary-write", selected, cert, false, { mode: "--ordinary" });
+    await withFrontendEnvironmentLock(async () => {
+      const blocked = invoke(directory, "environment-lock-contended", selected, cert, false);
+      assert.equal(blocked.replacementOutcome?.phase, "environment-lock");
+      assert.equal(blocked.replacementOutcome?.intentRetained, false);
+    });
+    await withDatabase(replacement, target.database, async client => {
+      await client.query("select pg_advisory_lock(hashtext($1))", [FRONTEND_MIGRATION_LOCK]);
+      try {
+        const blocked = invoke(directory, "database-lock-contended", selected, cert, false);
+        assert.equal(blocked.outcome?.phase, "database-lock");
+        assert.equal(blocked.replacementOutcome?.intentRetained, false);
+      } finally { await client.query("select pg_advisory_unlock(hashtext($1))", [FRONTEND_MIGRATION_LOCK]); }
+    });
+    await assertPristine(replacement, target.database);
+    await withDatabase(replacement, target.database, client => client.query("create table public.unreviewed_existing_data(value text)"));
+    invoke(directory, "nonempty", selected, cert, false);
+    await assertPristine(replacement, target.database);
+    await withDatabase(replacement, target.database, client => client.query("drop table public.unreviewed_existing_data"));
+    await withDatabase(replacement, "postgres", client => client.query(`create role ${oldRuntime} nologin`));
+    invoke(directory, "shared-predecessor-role", selected, cert, false);
+    await assertPristine(replacement, target.database);
+    await withDatabase(replacement, "postgres", client => client.query(`drop role ${oldRuntime}`));
+    const applied = invoke(directory, "apply", selected, cert, true);
+    assert.equal(applied.replacementOutcome?.status, "OWNED_FRONTEND_REPLACEMENT_DATABASE_VERIFIED");
+    assert.equal(applied.replacementOutcome?.deploymentAuthorized, false);
+    assert.equal(applied.replacementOutcome?.automaticReplayAllowed, false);
+    assert.equal(applied.replacementOutcome?.migrationCount, artifact.migrations.length);
+    const closedReceipt = readJson(applied.directory, "replacement-closed-after-sql.json");
+    assert.equal(closedReceipt.status, "OWNED_FRONTEND_REPLACEMENT_CLOSED_AFTER_SQL");
+    assert.equal(closedReceipt.newWork, false);
+    assert.equal(closedReceipt.recovery, false);
+    assert.equal(readJson(applied.directory, "replacement-bootstrap-started.json").status, "OWNED_FRONTEND_REPLACEMENT_BOOTSTRAP_STARTED");
+    const appliedRows = await verifyApplied(replacement, selected, artifact, applied);
+    const databaseReceipt = readJson(applied.directory, "database-receipt.json");
+    assert.equal(databaseReceipt.status, "DATABASE_VERIFIED");
+    assert.deepEqual(databaseReceipt.before, []);
+    assert.deepEqual(databaseReceipt.after, appliedRows);
+    assert.deepEqual(databaseReceipt.applied, artifact.migrations.map(({ tag, hash }) => ({ tag, hash })));
+    assert.equal(databaseReceipt.trafficAuthorized, false);
+    assert.deepEqual(await withDatabase(replacement, target.database, readMigrationCatalog), baseline.catalog);
+    const successReceipt = readFileSync(join(applied.directory, "database-receipt.json"));
+    invoke(directory, "fresh-directory-replay", selected, cert, false);
+    assert.deepEqual(readFileSync(join(applied.directory, "database-receipt.json")), successReceipt);
+    assert.deepEqual(await withDatabase(replacement, target.database, async client => (await client.query(journalSql)).rows), appliedRows);
+
+    const late = await start("late", migrationUser);
+    const lateTarget = { ...target, port: late.port, database: "owned_frontend_late_failure" };
+    await createDatabase(late, lateTarget.database);
+    const mismatchedBaseline = structuredClone(baseline);
+    mismatchedBaseline.catalog.relations.push({ relname: "owned_frontend_intentionally_missing" });
+    const latePlan = plan(sourceCommit, artifact, mismatchedBaseline, lateTarget, predecessorTarget, "owned-frontend-late-failure");
+    const failure = invoke(directory, "late-schema-mismatch", latePlan, cert, false);
+    assert.equal(failure.outcome?.status, "FAILED_REQUIRES_REVIEW");
+    assert.equal(failure.outcome?.phase, "postflight");
+    assert.equal(failure.replacementOutcome?.intentRetained, true);
+    assert.equal(failure.replacementOutcome?.automaticReplayAllowed, false);
+    assert.equal(existsSync(join(failure.directory, "database-receipt.json")), false);
+    await verifyApplied(late, latePlan, artifact, failure);
+    const failureReceipt = readFileSync(join(failure.directory, "job-outcome.json"));
+    invoke(directory, "late-schema-mismatch-replay", latePlan, cert, false);
+    assert.deepEqual(readFileSync(join(failure.directory, "job-outcome.json")), failureReceipt);
+    assert.deepEqual(await withDatabase(late, lateTarget.database, async client => (await client.query(journalSql)).rows), appliedRows);
+    await withDatabase(predecessor, predecessorDatabase, async client => {
+      assert.deepEqual((await client.query("select value from public.preserved_history")).rows, [{ value: "retained" }]);
+      assert.equal(await journalExists(client), false);
+      assert.equal((await client.query("select to_regnamespace('frontend_admission') is null as absent")).rows[0].absent, true);
+    });
+    result = { status: "OWNED_FRONTEND_REPLACEMENT_BOOTSTRAP_PASSED", sourceCommit, serverMajor,
+      sqlArtifactSha256: artifact.sqlArtifactSha256, appliedMigrationCount: appliedRows.length, trafficAuthorized: false,
+      checks: ["explicit-confirmation", "distinct-predecessor", "ordinary-profiled-write-refused", "environment-lock-contention",
+        "database-lock-contention", "nonempty-target-refused", "predecessor-role-refused", "full-migration-lineage",
+        "exact-schema", "closed-runtime-admission", "predecessor-preserved",
+        "fresh-directory-replay-refused", "late-schema-drift-retains-commits-and-refuses-replay"] };
+  } finally {
+    let allStopped = true;
+    for (const cluster of clusters.reverse()) {
+      try { cluster.stop(); } catch { allStopped = false; }
+    }
+    if (allStopped) rmSync(directory, { recursive: true, force: true });
+    else throw new Error("OWNED_FRONTEND_REPLACEMENT_CLUSTER_CLEANUP_UNVERIFIED");
+  }
+  console.log(JSON.stringify(result));
+}
+
+async function child(mode) {
+  assert.equal(process.env[gate], "true");
+  const { input, dependencies } = JSON.parse(readFileSync(0, "utf8"));
+  const getUrl = async () => process.env[ownedUrl];
+  if (mode === "--ordinary") {
+    const prepared = prepareFrontendMigration(input.candidate, input.job, input.baseline, undefined, profile);
+    await runFrontendMigration(prepared, { confirmation: `staging/${input.job.releaseId}`, getUrl }, profile);
+  } else await runOwnedFrontendReplacementBootstrap(input, { ...dependencies, getUrl });
+}
+
+try {
+  if (["--apply", "--ordinary"].includes(process.argv[2])) await child(process.argv[2]);
+  else await fixture();
+} catch (error) {
+  // Only the trusted fixture's own assertion names and fixed codes are needed.
+  console.error(JSON.stringify({ status: "OWNED_FRONTEND_REPLACEMENT_BOOTSTRAP_REFUSED", phase,
+    ...(error?.code === "ERR_ASSERTION" ? { assertion: error.stack?.split("\n").find(line => line.includes(self))?.trim() } : {}) }));
+  process.exitCode = 1;
+}
