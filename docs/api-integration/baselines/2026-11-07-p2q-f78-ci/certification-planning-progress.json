@@ -588,5 +588,67 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveIdentityBootstrap": {
+    "frontendSourceCommit": "92c461cc77068159000147059e00de5e3184b2c5",
+    "frontendSourceUnitsNode24": {
+      "passed": 2525,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "01aa804ff11887797ce0cdd157222924c8ffa761afdcfa81bd769d99867e2adc"
+    },
+    "certificationPlatformNode24": {
+      "passed": 61,
+      "failed": 0,
+      "skipped": 0,
+      "ownedChromiumCases": 5,
+      "actualChromiumContextCookiesThroughLoopbackTls": true,
+      "pythonAndNodePermitVectorsMatched": true,
+      "logSha256": "1051060044f4ec80301c9714c4fcdd7fa413df8527131d79e8225293e3417238"
+    },
+    "host": {
+      "passed": 116,
+      "failed": 0,
+      "ownedFixtures": true,
+      "identityTerminalAndClosedLedgerChecked": true,
+      "logSha256": "4cfdf8fe67e13410311226464bb82ca3e37199c221a7feab0f6d68b1204e7b21"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "migrations": 83,
+      "actualTls": true,
+      "certificationPhysicalChecks": 19,
+      "lifecycleAndIdentityWitnessChecks": 13,
+      "projectedBrowserAndHostBoundaries": true,
+      "composedOwnerIdentityHeldMappingAndCleanFences": true,
+      "witnessSourceSha256": "013fe08a9c1ec81987322aaf01caf15630275e45303ceb69df8244a8233cbf79",
+      "certificationLogSha256": "fb3b276d4c46f61cd3028797760979cca1a34249d67e663497681b0529d1aa52",
+      "witnessLogSha256": "a6d097d6d3408a0c617209ab815ae6500d392ae6242b1643b1f4bbaf92137ede"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42726755,
+      "expandedBytes": 57048555,
+      "wireBytes": 18565199,
+      "wireSha256": "86bc16bac43d6e3a6fca10251a21c233c23488c93965fbb5e51ba6756ebc14e2",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "githubReadback": {
+      "coursePolicyPr": {"number": 10, "state": "open", "merged": false, "head": "1334f668e6ee59abad9efe822a3b91fa29ca15b3"},
+      "communityPolicyPr": {"number": 9, "state": "open", "merged": false, "head": "929fdeb13e0e5f5e25454a457961d6ed965dedff"},
+      "frontendPr": {"number": 93, "state": "open", "draft": true, "head": "f78cf3af38665acca73d111fe1241e0a3d99bfe0"}
+    },
+    "ownerIdentityAndLifecycleOperatorPairImplemented": true,
+    "customerInteractiveApplyEligible": false,
+    "customerPreWriteIdentityBindingImplemented": false,
+    "actualGoogleOrResendSignInVerified": false,
+    "installedStagingHostVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
