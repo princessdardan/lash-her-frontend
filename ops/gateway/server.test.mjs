@@ -954,8 +954,8 @@ function lessonResumeFixtureRequests() {
   return { courseId, lessonId, actorId, write, start, targets, requests, reads };
 }
 
-function resumeFixturePlayback(wall, { foreignThumbnail = false } = {}) {
-  const playbackId = "owned-playback", expiry = Math.floor(wall / 1000) + 600;
+function resumeFixturePlayback(wall, { foreignThumbnail = false, playbackId = "owned-playback" } = {}) {
+  const expiry = Math.floor(wall / 1000) + 600;
   const expiresAt = new Date(expiry * 1000).toISOString();
   const token = (aud, sub) => [
     Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url"),
@@ -1192,6 +1192,145 @@ for (const failure of ["prior-position", "prior-actor", "start-enrollment", "pos
         sanitized(await send(write, position));
       }
     }
+    assert.deepEqual(f.admissionState().uncertain, { newWork: 1, recovery: 0 });
+  });
+}
+
+function lessonAckLossFixture() {
+  const { courseId, lessonId, write, targets, reads, requests, prior } = lessonRestoreFixture();
+  const bodies = [
+    '{"event":"lesson_started","expectedProgressRevision":6}',
+    '{"resumePositionSeconds":4,"maxPositionSeconds":14,"expectedProgressRevision":7}',
+    '{"resumePositionSeconds":14,"maxPositionSeconds":14,"expectedProgressRevision":8}',
+    '{"event":"lesson_started","expectedProgressRevision":9}',
+    '{"resumePositionSeconds":14,"maxPositionSeconds":14,"expectedProgressRevision":10}',
+  ];
+  return { courseId, lessonId, write, targets, reads, bodies, prior: { ...prior, revision: 6 },
+    requests: [...requests.slice(0, 6).map((row, index) => ({ ...row, uses: index === 2 ? 3 : 2 })),
+      ...bodies.map(body => ({ method: "POST", target: write, bodySha256: certificationHash(body), uses: 1 }))] };
+}
+
+async function lessonAckLossGateway(t, failure) {
+  const fixture = lessonAckLossFixture();
+  const { requests, targets, bodies, reads, prior, write } = fixture;
+  const authorityEntered = Promise.withResolvers(), authorityAck = Promise.withResolvers();
+  let current = prior, progressReads = 0, playbacks = 0;
+  const forwarded = [];
+  const f = await interactiveFixture(t, requests, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = Buffer.concat(chunks).toString(), target = `/course${req.url}`, readIndex = targets.indexOf(target);
+    forwarded.push({ target, body, proof: req.headers[SCOPED_INTERACTIVE_HEADER] });
+    let response = reads[readIndex];
+    if (req.method === "POST" && target === write) {
+      const index = bodies.indexOf(body);
+      current = { ...current, revision: 7 + index, resumePositionSeconds: index < 2 ? 4 : 14 };
+      response = { progress: failure === "committed-position" && index === 2 ? { ...current, resumePositionSeconds: 4 } : current };
+    } else if (readIndex === 2) {
+      progressReads++;
+      if (progressReads === 2 && !failure) {
+        authorityEntered.resolve();
+        await authorityAck.promise;
+      }
+      response = { progress: [failure === "authority-revision" && progressReads === 2 ? { ...current, revision: 8 } : current] };
+    } else if (readIndex === 5) {
+      playbacks++;
+      response = resumeFixturePlayback(f.start, { playbackId: failure === "reload-playback" && playbacks === 2 ? "foreign-playback" : "owned-playback" });
+    }
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "public", "x-private-upstream-value": "sensitive" });
+    res.end(JSON.stringify(response));
+  }, "lesson-ack-loss");
+  t.after(authorityAck.resolve);
+  const read = index => f.send(f.signed({ path: targets[index] }));
+  const sendWrite = (index, options = {}) => f.send(f.signed({ method: "POST", path: write, body: bodies[index - 6], ...options }));
+  const accepted = async promise => {
+    const response = await promise;
+    assert.equal(response.status, 200);
+    assert.equal(response.headers["cache-control"], "private, no-store");
+    assert.equal(response.headers["x-private-upstream-value"], undefined);
+    return JSON.parse(response.body);
+  };
+  const hydrate = async () => Promise.all([4, 2, 0, 3, 1].map(index => accepted(read(index))));
+  return { ...fixture, f, read, sendWrite, accepted, hydrate, forwarded, authorityEntered, authorityAck };
+}
+
+test("scoped acknowledgement loss requires exactly one committed seek and the authoritative read before reload", async t => {
+  const { f, requests, courseId, bodies, write, read, sendWrite, accepted, hydrate, forwarded, authorityEntered, authorityAck } =
+    await lessonAckLossGateway(t);
+  for (const changed of [
+    requests.slice(0, -1), requests.map((row, index) => index === 2 ? { ...row, uses: 2 } : row),
+    requests.map((row, index) => index === 8 ? { ...row,
+      bodySha256: certificationHash('{"resumePositionSeconds":15,"maxPositionSeconds":15,"expectedProgressRevision":8}') } : row),
+  ]) {
+    f.save({ ...f.state, interactive: { ...f.state.interactive, requests: changed } });
+    assert.equal(createAdmissionReader(f.staging, f.options)().valid, false);
+  }
+  f.save(f.state);
+  const refused = async promise => assert.equal((await promise).status, 503);
+  await refused(sendWrite(6));
+  await hydrate();
+  await refused(read(2));
+  await Promise.all([accepted(read(5)), accepted(sendWrite(6))]);
+  await refused(sendWrite(8));
+  await refused(sendWrite(7, { body: bodies[1].replace('"maxPositionSeconds":14', '"maxPositionSeconds":13') }));
+  await refused(sendWrite(7, { actor: courseId }));
+  await refused(sendWrite(7, { idempotency: "owned" }));
+  assert.equal((await accepted(sendWrite(7))).progress.revision, 8);
+  assert.equal((await accepted(sendWrite(8))).progress.revision, 9);
+  await refused(sendWrite(8));
+  await refused(read(0));
+  const recovered = accepted(read(2));
+  await authorityEntered.promise;
+  try {
+    await refused(read(2));
+    await refused(sendWrite(9));
+  } finally {
+    authorityAck.resolve();
+  }
+  assert.deepEqual((await recovered).progress.map(row => [row.revision, row.resumePositionSeconds, row.maxPositionSeconds]), [[9, 14, 14]]);
+  await hydrate();
+  await Promise.all([accepted(sendWrite(9)), accepted(read(5))]);
+  assert.equal((await accepted(sendWrite(10))).progress.revision, 11);
+  await refused(read(2));
+  await refused(sendWrite(10));
+  const observed = f.admissionState();
+  assert.deepEqual(observed.active, { newWork: 0, recovery: 0 });
+  assert.deepEqual(observed.uncertain, { newWork: 0, recovery: 0 });
+  assert.equal(observed.interactiveEvidence.admitted, 18);
+  const indices = observed.interactiveEvidence.acknowledged.map(row => row.requestIndex);
+  assert.deepEqual(indices.slice(0, 5).sort(), [0, 1, 2, 3, 4]);
+  assert.deepEqual(indices.slice(5, 7).sort(), [5, 6]);
+  assert.deepEqual(indices.slice(7, 10), [7, 8, 2]);
+  assert.deepEqual(indices.slice(10, 15).sort(), [0, 1, 2, 3, 4]);
+  assert.deepEqual(indices.slice(15, 17).sort(), [5, 9]);
+  assert.deepEqual(indices.slice(17), [10]);
+  assert.deepEqual(forwarded.filter(row => row.target === write).map(row => row.body), bodies);
+  assert.ok(forwarded.every(row => row.proof === undefined));
+});
+
+for (const failure of ["committed-position", "authority-revision", "reload-playback"]) {
+  test(`scoped acknowledgement loss withholds a mismatched ${failure} response`, async t => {
+    const { f, prior, read, sendWrite, accepted, hydrate } = await lessonAckLossGateway(t, failure);
+    const sanitized = async promise => {
+      const response = await promise;
+      assert.equal(response.status, 502);
+      assert.equal(response.headers["x-private-upstream-value"], undefined);
+      assert.ok(!response.body.includes(prior.id));
+    };
+    await hydrate();
+    await Promise.all([accepted(read(5)), accepted(sendWrite(6))]);
+    await accepted(sendWrite(7));
+    if (failure === "committed-position") await sanitized(sendWrite(8));
+    else {
+      await accepted(sendWrite(8));
+      if (failure === "authority-revision") await sanitized(read(2));
+      else {
+        await accepted(read(2));
+        await hydrate();
+        await sanitized(read(5));
+      }
+    }
+    assert.equal((await sendWrite(10)).status, 503);
     assert.deepEqual(f.admissionState().uncertain, { newWork: 1, recovery: 0 });
   });
 }

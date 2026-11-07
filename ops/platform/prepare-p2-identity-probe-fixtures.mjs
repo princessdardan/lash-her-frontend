@@ -142,6 +142,8 @@ export const P2_LIFECYCLE_PERSISTENCE_OWNED_CHECKS = Object.freeze([
   "course-lesson-resume-refuses-stale-cas-foreign-receipts-and-persistence-drift",
   "course-lesson-restore-pinned-revision-four-to-six-with-unchanged-positions-and-managed-playback",
   "course-lesson-restore-refuses-ineligible-prior-receipts-and-persistence-drift",
+  "course-lesson-ack-loss-pinned-revision-six-to-eleven-without-replay-and-managed-playback",
+  "course-lesson-ack-loss-refuses-ineligible-receipts-and-persistence-drift",
   "course-lesson-denial-pinned-repositories-preserve-foreign-learning-and-media-without-access-or-writes",
   "course-lesson-denial-refuses-ineligible-fixtures-foreign-receipts-and-history-drift",
   "course-assessment-pinned-fail-then-pass-attempts-and-progress-revisions",

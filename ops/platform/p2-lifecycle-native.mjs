@@ -265,6 +265,17 @@ const reviewedProgressRecoveryDependencies = {
   "src/components/learning/lesson-experience.tsx": "f0392cf4c1b5d99f7e9ec99fd90982b173e284fd64a16d2aa06c68b478077901",
   "src/lib/learning/progress-sync.ts": "d8a78da44bb811a6abad052d50a56f7e104c3f32af152716f06234f8990a6d3f"
 };
+const reviewedLessonAckLossSource = {
+  ...reviewedLessonRestoreSource,
+  "src/lib/writer-admission/runtime.ts": "7700229d6a4188f1eaea8bd413c89383533b4be9d9fc497a7835c8cd2813fe58"
+};
+const reviewedLessonAckLossDependencies = {
+  ...reviewedProgressRecoveryDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "40ddede935b9f46db8f0df310ec858c1502b6d294a23abdb5306deca79bc3d01",
+  "src/lib/api-integration/course-client.ts": "401e1ef0be9feb4422fb15d7ba326d3db2feb9db430f6b3bee52a885ba983b9b",
+  "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "bbb2ef6498541ad7499d5ec3b8c173d87f30c73ff1bef455a7587fbe1f2cc906",
+  "ops/gateway/lesson-resume-position.mjs": "0e9a391326d0d9bf432a676ec3e0d00db6659693bc192b54039306db9238873e"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -299,7 +310,8 @@ function sourcePolicy(sourceCommit) {
     [reviewedLessonDenialSource, [reviewedLessonDenialDependencies]],
     [reviewedLessonAssessmentSource, [reviewedLessonAssessmentDependencies]],
     [reviewedLessonResumeSource, [reviewedLessonResumeDependencies]],
-    [reviewedLessonRestoreSource, [reviewedLessonRestoreDependencies, reviewedProgressRecoveryDependencies]]]
+    [reviewedLessonRestoreSource, [reviewedLessonRestoreDependencies, reviewedProgressRecoveryDependencies]],
+    [reviewedLessonAckLossSource, [reviewedLessonAckLossDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

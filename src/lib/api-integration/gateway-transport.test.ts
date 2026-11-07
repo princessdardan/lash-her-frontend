@@ -240,6 +240,13 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
     () => send({ method: "GET", path: denialProgress, applicationToken }), lessonEntryRoute);
   await inBrowser(restoreWrite.cookie, restoreWrite.proxyProof,
     () => send({ method: "POST", path: lessonProgress, body: restorePosition, applicationToken }), startRoute);
+  const ackLossRead = evidence("lesson-ack-loss", denialRoute, issued, lessonSelector);
+  const ackLossWrite = evidence("lesson-ack-loss", startRoute, issued, lessonSelector);
+  const ackLossPosition = '{"resumePositionSeconds":14,"maxPositionSeconds":14,"expectedProgressRevision":8}';
+  await inBrowser(ackLossRead.cookie, ackLossRead.proxyProof,
+    () => send({ method: "GET", path: denialProgress, applicationToken }), denialRoute);
+  await inBrowser(ackLossWrite.cookie, ackLossWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: ackLossPosition, applicationToken }), startRoute);
   const expected = [
     { stage: "learning", method: "GET", target: "/course/v1/student/courses?cursor=caf%C3%A9&kind=%27", bytes: ["", applicationToken, ""] },
     { stage: "learning", method: "POST", target: "/course" + enrollmentPath, bytes: [enrollmentBody, applicationToken, enrollmentKey] },
@@ -260,6 +267,8 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
     { stage: "lesson-resume", method: "POST", target: "/course" + lessonProgress, bytes: [positionBody, applicationToken, ""] },
     { stage: "lesson-restore", method: "GET", target: "/course" + denialProgress, bytes: ["", applicationToken, ""] },
     { stage: "lesson-restore", method: "POST", target: "/course" + lessonProgress, bytes: [restorePosition, applicationToken, ""] },
+    { stage: "lesson-ack-loss", method: "GET", target: "/course" + denialProgress, bytes: ["", applicationToken, ""] },
+    { stage: "lesson-ack-loss", method: "POST", target: "/course" + lessonProgress, bytes: [ackLossPosition, applicationToken, ""] },
   ];
   for (const [index, { stage, method, target, bytes }] of expected.entries()) {
     const { url, headers } = captured[index];
@@ -312,6 +321,12 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
     () => send({ method: "POST", path: lessonProgress, body: positionBody, applicationToken }), startRoute);
   await inBrowser(restoreWrite.cookie, restoreWrite.proxyProof,
     () => send({ method: "POST", path: lessonProgress, body: restorePosition.replace('"maxPositionSeconds":14', '"maxPositionSeconds":13'), applicationToken }), startRoute);
+  await inBrowser(ackLossRead.cookie, ackLossRead.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: ackLossPosition, applicationToken }), denialRoute);
+  await inBrowser(ackLossRead.cookie, ackLossRead.proxyProof,
+    () => send({ method: "GET", path: selectedLesson, applicationToken }), denialRoute);
+  await inBrowser(ackLossWrite.cookie, ackLossWrite.proxyProof,
+    () => send({ method: "POST", path: lessonProgress, body: restorePosition, applicationToken }), startRoute);
   await request();
   await inBrowser(learning.cookie, undefined, request);
   await inBrowser(learning.cookie, `${learning.proxyProof}x`, request);
@@ -331,6 +346,6 @@ test("the ordinary transport signs exact staging Course bytes only with a verifi
   process.env.VERCEL_URL = deployment;
   process.env.API_GATEWAY_STAGING_ORIGIN = "https://different.example.test";
   await inBrowser(learning.cookie, learning.proxyProof, request);
-  assert.equal(captured.length, expected.length + 28);
+  assert.equal(captured.length, expected.length + 31);
   assert.ok(captured.slice(expected.length).every(({ headers }) => !headers.has(INTERACTIVE_GATEWAY_PROOF_HEADER)));
 });

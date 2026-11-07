@@ -1,5 +1,5 @@
-// Fixed browser child. No request interception, injected session, clock control,
-// arbitrary URL, test endpoint, token export, or product implementation control.
+// Fixed browser child. The reviewed lost-ack case can drop delivery after one
+// exact progress request succeeds. All other stages passively observe requests.
 import { performance } from "node:perf_hooks";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -17,7 +17,7 @@ const privateNoStore = headers => /(?:^|,)\s*private\s*(?:,|$)/iu.test(headers["
 const interactiveOrigin = "https://staging.lashher.com";
 const permitName = "__Host-lash-p2q-window";
 const authoringPath = "/api/admin/courses";
-const heldLessonStages = ["lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore"];
+const heldLessonStages = ["lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume", "lesson-restore", "lesson-ack-loss"];
 const learnerScopedStages = ["learning", "learner-access", ...heldLessonStages];
 const interactivePages = {
   identity: { owner: "/admin/sign-in", learner: "/sign-in" },
@@ -30,6 +30,7 @@ const interactivePages = {
   "lesson-assessment": { learner: "/academy/courses" },
   "lesson-resume": { learner: "/academy/courses" },
   "lesson-restore": { learner: "/academy/courses" },
+  "lesson-ack-loss": { learner: "/academy/courses" },
   "paid-grant": { owner: "/admin/courses" },
   "paid-revoke": { owner: "/admin/courses" },
   lifecycle: { owner: "/admin/customer-accounts", learner: "/account" },
@@ -134,6 +135,7 @@ export function p2InteractiveBrowserEntryPath(input, context) {
   if (input.stage === "lesson-assessment") return p2LessonAssessmentPaths(input.assessment).lessonPath;
   if (input.stage === "lesson-resume") return p2LessonResumePaths(input.resume).lessonPath;
   if (input.stage === "lesson-restore") return p2LessonResumePaths(input.restore).lessonPath;
+  if (input.stage === "lesson-ack-loss") return p2LessonResumePaths(input.ackLoss).lessonPath;
   if (input.stage === "paid-grant") return p2PaidGrantPaths(input.paidGrant).pagePath;
   if (input.stage === "paid-revoke") return p2PaidRevokePaths(input.paidRevoke).pagePath;
   return isP2InteractiveAuthoringDetail(input) ? path + "/" + input.authoring.courseId : path;
@@ -207,7 +209,7 @@ export function validateP2InteractiveBrowserInput(input) {
       : input?.stage === "identity" ? [enrollment ? "identityEnrollment" : "identity"] : input?.stage === "paid-grant" ? ["paidGrant"]
         : input?.stage === "learner-access" ? ["learnerAccess"] : input?.stage === "lesson-entry" ? ["lessonEntry"]
           : input?.stage === "lesson-denial" ? ["lessonDenial"] : input?.stage === "lesson-assessment" ? ["assessment"]
-          : input?.stage === "lesson-resume" ? ["resume"] : input?.stage === "lesson-restore" ? ["restore"]
+          : input?.stage === "lesson-resume" ? ["resume"] : input?.stage === "lesson-restore" ? ["restore"] : input?.stage === "lesson-ack-loss" ? ["ackLoss"]
           : input?.stage === "paid-revoke" ? ["paidRevoke"] : [])])
     && input.version === 2 && input.environment === "staging" && matches(input.actionId, /^[a-z0-9][a-z0-9-]{0,63}$/u)
     && sha(input.challenge) && sha(input.bindingSha256) && matches(input.sourceCommit, /^[a-f0-9]{40}$/u)
@@ -261,6 +263,7 @@ export function validateP2InteractiveBrowserInput(input) {
     validateLessonRestoreTarget(input.restore);
     demand(input.restore.prior.actionId !== input.actionId);
   }
+  if (input.stage === "lesson-ack-loss") validateLessonAckLossTarget(input.ackLoss);
   if (["paid-grant", "paid-revoke"].includes(input.stage)) {
     const revoke = input.stage === "paid-revoke", selected = input.paidGrant ?? input.paidRevoke;
     demand(closed(selected, ["actorId", "operation", "courseId", "userId", "revision", "idempotencyKey", "reasonSha256",
@@ -318,7 +321,7 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
   if (["learning", "paid-grant", "paid-revoke"].includes(stage)) demand(parts[6] === actorAttemptSelector(input.learning ?? input.paidGrant ?? input.paidRevoke));
   if (stage === "learner-access") demand(parts[6] === (input.learnerAccess.actorId + input.learnerAccess.lessonId).replaceAll("-", ""));
   if (heldLessonStages.includes(stage)) {
-    const { actorId, courseId, lessonId } = input.lessonEntry ?? input.lessonDenial ?? input.assessment ?? input.resume ?? input.restore;
+    const { actorId, courseId, lessonId } = input.lessonEntry ?? input.lessonDenial ?? input.assessment ?? input.resume ?? input.restore ?? input.ackLoss;
     demand(parts[6] === (actorId + courseId + lessonId).replaceAll("-", ""));
   }
   return permit;
@@ -604,6 +607,39 @@ export function validateP2LessonRestoreReceipt(receipt, target) {
     && closed(media, ["durationSeconds", "videoWidth", "restoredSeconds", "paused", "manifestObserved", "segmentObserved"])
     && integerBetween(media.durationSeconds, 22, Number.MAX_SAFE_INTEGER) && integerBetween(media.videoWidth, 1, Number.MAX_SAFE_INTEGER)
     && media.restoredSeconds === prior.resumePositionSeconds && media.paused === true && media.manifestObserved === true && media.segmentObserved === true);
+  return receipt;
+}
+
+function validateLessonAckLossTarget(target) {
+  demand(closed(target, ["actorId", "operation", "courseId", "lessonId", "grantId", "progressId", "enrollmentId", "resumePositionSeconds",
+    "maxPositionSeconds", "playbackIdSha256"]) && target.operation === "commit-drop-recover"
+    && [target.actorId, target.courseId, target.lessonId, target.grantId, target.progressId, target.enrollmentId].every(uuid)
+    && integerBetween(target.resumePositionSeconds, 3, 6) && target.maxPositionSeconds === target.resumePositionSeconds + 10
+    && sha(target.playbackIdSha256) && !/^0+$/u.test(target.playbackIdSha256));
+}
+
+const ackLossProgressFields = ["requestId", "progressId", "enrollmentId", "revision", "resumePositionSeconds", "maxPositionSeconds"];
+
+export function validateP2LessonAckLossReceipt(receipt, target) {
+  validateLessonAckLossTarget(target);
+  const { page, playback, writes, recovery, media } = receipt ?? {};
+  const { lessonPath } = p2LessonResumePaths(target), { resumePositionSeconds: resume, maxPositionSeconds: maximum } = target;
+  const progressMatches = (row, revision, position) => uuid(row.requestId) && row.progressId === target.progressId
+    && row.enrollmentId === target.enrollmentId && row.revision === revision
+    && row.resumePositionSeconds === position && row.maxPositionSeconds === maximum;
+  demand(closed(receipt, ["page", "playback", "writes", "recovery", "media"])
+    && closed(page, ["pathname", "status"]) && page.pathname === lessonPath && page.status === 200
+    && Array.isArray(playback) && playback.length === 2 && playback.every(row =>
+      validResumePlayback(row) && row.playbackIdSha256 === target.playbackIdSha256)
+    && Array.isArray(writes) && writes.length === 5 && writes.every((row, index) =>
+      closed(row, ackLossProgressFields) && progressMatches(row, index + 7, index < 2 ? resume : maximum))
+    && closed(recovery, [...ackLossProgressFields, "browserFailure", "unconfirmedObserved", "noReplay"])
+    && progressMatches(recovery, 9, maximum) && recovery.browserFailure === "connectionreset"
+    && recovery.unconfirmedObserved === true && recovery.noReplay === true
+    && new Set([...playback, ...writes, recovery].map(row => row.requestId)).size === 8
+    && closed(media, ["beforeSeconds", "afterSeconds", "paused", "manifestObserved", "segmentObserved"])
+    && media.beforeSeconds === resume && media.afterSeconds === maximum && media.paused === true
+    && media.manifestObserved === true && media.segmentObserved === true);
   return receipt;
 }
 
@@ -2233,6 +2269,255 @@ export function watchP2LessonRestore(context, page, input) {
   return watchLessonPosition(context, page, input, "lesson-restore");
 }
 
+export function watchP2LessonAckLoss(context, page, input) {
+  validateP2InteractiveBrowserInput(input);
+  demand(input.stage === "lesson-ack-loss" && page.context() === context);
+  const target = input.ackLoss, origin = input.browserOrigin;
+  const { lessonPath, playbackPath, progressPath, latestPath } = p2LessonAssessmentPaths(target);
+  const source = origin + lessonPath, progressUrl = origin + progressPath;
+  const { resumePositionSeconds: resume, maxPositionSeconds: maximum } = target;
+  const player = page.getByRole("main").locator("mux-player");
+  const started = revision => ({ event: "lesson_started", expectedProgressRevision: revision });
+  const position = (revision, resumePositionSeconds) => ({ resumePositionSeconds, maxPositionSeconds: maximum, expectedProgressRevision: revision });
+  const get = path => ({ path, method: "GET" });
+  const post = body => ({ path: progressPath, method: "POST", body: JSON.stringify(body) });
+  const playback = [get(playbackPath), get(playbackPath)], latest = get(latestPath);
+  const writes = [post(started(6)), post(position(7, resume)), post(position(8, maximum)), post(started(9)), post(position(10, maximum))];
+  const [firstStart, firstPosition, dropped, nextStart, nextPosition] = writes;
+  const normalWrites = [firstStart, firstPosition, nextStart, nextPosition];
+  const slots = new Map([[playbackPath, playback], [progressPath, normalWrites], [latestPath, latest]]);
+  const refusal = () => new Error("P2_INTERACTIVE_LESSON_ACK_LOSS_RESPONSE_REFUSED");
+  let active, session, executionContextId, stopNetwork, navigation, navigationAllowed = false, opened = false, failed = false;
+  let initial, completed, finalPermit, forwarding, forwarded, dropRoute, rejectFailure, acceptDrop;
+  const failure = new Promise((_, reject) => { rejectFailure = reject; });
+  failure.catch(() => {});
+  const dropObserved = new Promise(resolve => { acceptDrop = resolve; });
+  const fail = () => { if (!failed) { failed = true; rejectFailure(refusal()); } };
+  let media = watchResumeMedia(context, page, fail);
+  const remaining = expires => {
+    const timeout = expires * 1000 - Date.now();
+    if (failed || timeout <= 0 || timeout > input.windowSeconds * 1000) throw refusal();
+    return timeout;
+  };
+  const onRequest = request => {
+    const url = URL.parse(request.url()), method = request.method(), headers = request.headers();
+    try {
+      if (request.isNavigationRequest()) {
+        demand(navigationAllowed && !navigation && request.url() === source && method === "GET" && headers.rsc === undefined
+          && request.frame() === page.mainFrame() && request.redirectedFrom() === null);
+        navigation = request;
+        navigationAllowed = false;
+        return;
+      }
+      if (request.resourceType() === "media") demand(muxHttps(url) || url?.protocol === "blob:" && url.origin === origin);
+      if (url?.origin === origin && url.pathname.startsWith("/api/")) {
+        const slot = active?.find(candidate => url.pathname + url.search === candidate.path && method === candidate.method && !candidate.request);
+        demand(slot && !url.hash && request.frame() === page.mainFrame() && request.frame().url() === source
+          && request.resourceType() === "fetch" && request.redirectedFrom() === null && headers.rsc === undefined);
+        const predecessor = slot === firstPosition ? [playback[0], firstStart] : slot === nextPosition ? [playback[1], nextStart] : [];
+        demand(predecessor.every(row => row.gatewayId));
+        const bytes = request.postDataBuffer();
+        demand(method === "GET" ? bytes === null : bytes?.toString("utf8") === slot.body);
+        slot.request = request;
+        return;
+      }
+      demand(["GET", "HEAD", "OPTIONS"].includes(method));
+      if (url?.origin === origin && headers.rsc !== undefined) {
+        demand(!url.pathname.startsWith("/academy/courses/") && (headers["next-router-prefetch"] !== undefined
+          || headers["next-router-segment-prefetch"] !== undefined) && request.frame() === page.mainFrame() && request.redirectedFrom() === null);
+      }
+    } catch { fail(); }
+  };
+  const onFailure = request => {
+    if (request === dropped.request && forwarded && request.failure()?.errorText === "net::ERR_CONNECTION_RESET") acceptDrop(forwarded);
+    else if (request === navigation || [...playback, ...writes, latest].some(slot => slot.request === request)) fail();
+  };
+  const onNavigation = frame => { if (frame === page.mainFrame() && frame.url() !== source) fail(); };
+  context.on("request", onRequest);
+  context.on("requestfailed", onFailure);
+  page.on("framenavigated", onNavigation);
+
+  const bounded = async (operation, expires) => {
+    let timer;
+    try {
+      return await Promise.race([operation, failure, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(refusal()), remaining(expires));
+      })]);
+    } finally { clearTimeout(timer); }
+  };
+  const checkPostHeaders = async request => {
+    const [csrf, requestOrigin, fetchSite, contentType, idempotency] = await Promise.all([
+      "x-lash-csrf", "origin", "sec-fetch-site", "content-type", "x-idempotency-key",
+    ].map(name => request.headerValue(name)));
+    demand(csrf === "1" && requestOrigin === origin && (fetchSite === null || fetchSite === "same-origin")
+      && contentType === "application/json" && idempotency === null);
+  };
+  const observe = async (slot, expires) => {
+    const response = await page.waitForResponse(candidate => candidate.request() === slot.request, { timeout: remaining(expires) });
+    const [head, bounds, native] = await Promise.all([readBrowserResponseHead(response, slot.request, origin, slot.path, slot.method, 200),
+      readBrowserResponseBounds(response, slot.request, maxLifecycleBody, true), slot.native]);
+    demand(slot.gatewayId === head.requestId && (!bounds.identity || bounds.declared === undefined || native.size === bounds.declared)
+      && !slot.request.failure());
+    if (slot.method === "POST") await checkPostHeaders(slot.request);
+    return { requestId: head.requestId, body: native.body, response };
+  };
+  const progressReceipt = (result, revision, positionSeconds) => {
+    const row = resumeProgress(result.body, target, revision, positionSeconds, maximum);
+    demand(row.id === target.progressId && row.enrollmentId === target.enrollmentId);
+    return { requestId: result.requestId, progressId: row.id, enrollmentId: row.enrollmentId, revision: row.revision,
+      resumePositionSeconds: row.resumePositionSeconds, maxPositionSeconds: row.maxPositionSeconds };
+  };
+  const sample = async (positionSeconds, permit, expires) => bounded(until(async () => {
+    const { result, exceptionDetails } = await session.send("Runtime.callFunctionOn", { executionContextId,
+      functionDeclaration: sampleNativeResumeMedia.toString(), arguments: [{ value: { source, playbackIdSha256: permit.playbackIdSha256 } }],
+      awaitPromise: true, returnByValue: true, silent: true });
+    demand(!exceptionDetails);
+    const value = result.value;
+    return value && value.paused && !value.seeking && !value.ended && value.ready >= 2 && Math.floor(value.position) === positionSeconds
+      && integerBetween(Math.floor(value.duration), 22, Number.MAX_SAFE_INTEGER) && integerBetween(value.width, 1, Number.MAX_SAFE_INTEGER);
+  }, performance.now() + remaining(expires)), expires);
+  const hydrate = async (index, expires, navigate) => {
+    const [mediaSlot, start, restored, revision, positionSeconds] = index === 0
+      ? [playback[0], firstStart, firstPosition, 7, resume] : [playback[1], nextStart, nextPosition, 10, maximum];
+    active = [mediaSlot, start, restored];
+    navigation = undefined;
+    navigationAllowed = true;
+    const [mediaResult, startedResult, restoredResult, document] = await bounded(Promise.all([
+      observe(mediaSlot, expires), observe(start, expires), observe(restored, expires), navigate(),
+    ]), expires);
+    demand(navigation && document?.request() === navigation && document.status() === 200 && document.url() === source
+      && !document.fromServiceWorker() && navigation.redirectedTo() === null && page.url() === source);
+    const [types, cache, dates] = await Promise.all([document.headerValues("content-type"), document.headerValues("cache-control"),
+      mediaResult.response.headerValues("date")]);
+    demand(types.length === 1 && /^text\/html(?:;.*)?$/iu.test(types[0]) && cache.length === 1
+      && privateNoStore({ "cache-control": cache[0] }) && dates.length === 1);
+    const authorization = mediaResult.body;
+    let permit, playbackReceipt;
+    try {
+      const { expiresAt, thumbnailExpiresAt, lifetimeMs } = parseP2PlaybackObservation(200,
+        { "cache-control": "private, no-store", date: dates[0] }, authorization, true);
+      demand(matches(authorization.playbackId, /^[A-Za-z0-9_-]{1,255}$/u) && authorization.thumbnailToken.length > 20
+        && resumeDigest(authorization.playbackId) === target.playbackIdSha256);
+      permit = { playbackIdSha256: target.playbackIdSha256, tokenSha256: resumeDigest(authorization.playbackToken) };
+      playbackReceipt = { requestId: mediaResult.requestId, expiresAt, thumbnailExpiresAt, lifetimeMs, playbackIdSha256: permit.playbackIdSha256 };
+    } finally { authorization.playbackId = authorization.playbackToken = authorization.thumbnailToken = ""; }
+    const progressWrites = [progressReceipt(startedResult, revision, positionSeconds), progressReceipt(restoredResult, revision + 1, positionSeconds)];
+    active = undefined;
+    await bounded(Promise.all([player.waitFor({ state: "visible", timeout: remaining(expires) }),
+      page.getByText("Progress saved to your account.", { exact: true }).waitFor({ state: "visible", timeout: remaining(expires) })]), expires);
+    demand(await player.count() === 1);
+    executionContextId = await isolatedMainFrame(session, source);
+    await Promise.all([sample(positionSeconds, permit, expires),
+      bounded(until(() => media.verified(permit), performance.now() + remaining(expires)), expires)]);
+    return { permit, playbackReceipt, progressWrites };
+  };
+  const drop = async (route, expires) => {
+    let response;
+    try {
+      const request = route.request();
+      demand(!forwarding && !failed && request === dropped.request && request.url() === progressUrl && request.method() === "POST");
+      forwarding = true;
+      await checkPostHeaders(request);
+      remaining(expires);
+      // Forward the browser's one reviewed request without changing URL, headers or body.
+      response = await route.fetch({ maxRedirects: 0, maxRetries: 0, timeout: Math.min(10_000, remaining(expires)) });
+      demand(response.url() === progressUrl && response.status() === 200);
+      const values = name => response.headersArray().filter(row => row.name.toLowerCase() === name).map(row => row.value);
+      const [ids, types, cache, lengths] = ["x-request-id", "content-type", "cache-control", "content-length"].map(values);
+      demand(ids.length === 1 && uuid(ids[0]) && types.length === 1 && /^application\/json(?:;\s*charset=utf-8)?$/iu.test(types[0])
+        && cache.length === 1 && privateNoStore({ "cache-control": cache[0] }) && values("set-cookie").length === 0
+        && lengths.length <= 1 && (!lengths.length || matches(lengths[0], /^[1-9][0-9]{0,6}$/u) && Number(lengths[0]) <= maxLifecycleBody));
+      const bytes = await response.body();
+      try { forwarded = progressReceipt({ body: exactBrowserJson(bytes), requestId: ids[0] }, 9, maximum); }
+      finally { bytes.fill(0); }
+      remaining(expires);
+    } catch { fail(); }
+    finally {
+      try { await response?.dispose(); }
+      catch { fail(); }
+      try { await route.abort("connectionreset"); }
+      catch { fail(); }
+    }
+  };
+  const unroute = async () => {
+    if (dropRoute) {
+      await page.unroute(progressUrl, dropRoute);
+      dropRoute = undefined;
+    }
+  };
+
+  return {
+    async open(expires) {
+      try {
+        demand(!opened);
+        opened = true;
+        session = await context.newCDPSession(page);
+        const { frameTree: { frame } } = await session.send("Page.getFrameTree");
+        demand(!frame.parentId);
+        const buffers = { maxTotalBufferSize: 256 * 1024, maxResourceBufferSize: 8192 };
+        await session.send("Network.configureDurableMessages", buffers);
+        await session.send("Network.enable", { ...buffers, maxPostDataSize: 0 });
+        stopNetwork = watchLessonNetworkBodies(session, frame.id, slots, origin, fail);
+        initial = await hydrate(0, expires, () => page.goto(source, { waitUntil: "domcontentloaded", timeout: Math.min(30_000, remaining(expires)) }));
+      } catch { fail(); throw refusal(); }
+    },
+    async wait(expires) {
+      try {
+        demand(initial && !completed && !active && page.url() === source);
+        dropRoute = route => drop(route, expires);
+        await page.route(progressUrl, dropRoute);
+        active = [dropped];
+        const control = player.getByRole("button", { name: "play", exact: true }).filter({ visible: true }).first();
+        const [committed] = await bounded(Promise.all([dropObserved, sample(maximum, initial.permit, expires),
+          control.press("ArrowRight", { timeout: remaining(expires) })]), expires);
+        active = undefined;
+        await unroute();
+        const unconfirmed = page.getByRole("alert").filter({ hasText: "Progress has not been confirmed." });
+        await bounded(unconfirmed.waitFor({ state: "visible", timeout: remaining(expires) }), expires);
+        active = [latest];
+        const [read] = await bounded(Promise.all([observe(latest, expires),
+          unconfirmed.getByRole("button", { name: "Retry saving progress", exact: true }).click({ timeout: remaining(expires) })]), expires);
+        demand(closed(read.body, ["progress"]) && Array.isArray(read.body.progress) && read.body.progress.length === 1);
+        const recovered = progressReceipt({ requestId: read.requestId, body: { progress: read.body.progress[0] } }, 9, maximum);
+        active = undefined;
+        const reload = page.getByRole("alert").getByRole("button", { name: "Load latest progress", exact: true });
+        await bounded(reload.waitFor({ state: "visible", timeout: remaining(expires) }), expires);
+        media.close();
+        media = watchResumeMedia(context, page, fail);
+        const next = await hydrate(1, expires, async () => {
+          const [response] = await Promise.all([page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: remaining(expires) }),
+            reload.click({ timeout: remaining(expires) })]);
+          return response;
+        });
+        finalPermit = next.permit;
+        remaining(expires);
+        completed = validateP2LessonAckLossReceipt({ page: { pathname: lessonPath, status: 200 },
+          playback: [initial.playbackReceipt, next.playbackReceipt], writes: [...initial.progressWrites, committed, ...next.progressWrites],
+          recovery: { ...recovered, browserFailure: "connectionreset", unconfirmedObserved: true, noReplay: true },
+          media: { beforeSeconds: resume, afterSeconds: maximum, paused: true, manifestObserved: true, segmentObserved: true } }, target);
+      } catch { fail(); throw refusal(); }
+      finally {
+        try { await unroute(); }
+        catch { fail(); throw refusal(); }
+      }
+    },
+    finish() {
+      if (failed || !completed || context.serviceWorkers().length || !media.verified(finalPermit)) throw refusal();
+      return completed;
+    },
+    async close() {
+      fail();
+      await unroute().catch(() => {});
+      context.off("request", onRequest);
+      context.off("requestfailed", onFailure);
+      page.off("framenavigated", onNavigation);
+      media.close();
+      stopNetwork?.();
+      await session?.detach().catch(() => {});
+    },
+  };
+}
+
 function watchLessonPosition(context, page, input, stage) {
   validateP2InteractiveBrowserInput(input);
   demand(input.stage === stage && page.context() === context);
@@ -2930,7 +3215,7 @@ async function runInteractiveBrowser(first) {
           && verifiedIdentity.actorId === (selectedInput.authoring ?? selectedInput.paidGrant ?? selectedInput.paidRevoke).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         if (learnerScopedStages.includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "customer"
-          && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial ?? selectedInput.assessment ?? selectedInput.resume ?? selectedInput.restore).actorId
+          && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial ?? selectedInput.assessment ?? selectedInput.resume ?? selectedInput.restore ?? selectedInput.ackLoss).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         actions.add(selectedInput.actionId);
         input = selectedInput;
@@ -3003,6 +3288,10 @@ async function runInteractiveBrowser(first) {
           httpStatus = 200;
         } else if (binding.stage === "lesson-restore") {
           mutationWatch = watchP2LessonRestore(context, page, input);
+          await mutationWatch.open(selection.expires);
+          httpStatus = 200;
+        } else if (binding.stage === "lesson-ack-loss") {
+          mutationWatch = watchP2LessonAckLoss(context, page, input);
           await mutationWatch.open(selection.expires);
           httpStatus = 200;
         } else if (binding.stage === "learning" && learningEnrollmentReplay(input.learning)) {

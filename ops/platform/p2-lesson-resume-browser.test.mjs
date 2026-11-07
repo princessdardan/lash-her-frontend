@@ -9,13 +9,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { p2InteractiveBrowserEntryPath, p2LessonResumePaths, validateP2InteractiveBrowserInput,
-  validateP2InteractiveBrowserPermit, validateP2LessonRestoreReceipt, validateP2LessonResumeReceipt,
-  watchP2LessonRestore, watchP2LessonResume } from "./p2-lifecycle-browser-recorder.mjs";
+  validateP2InteractiveBrowserPermit, validateP2LessonAckLossReceipt, validateP2LessonRestoreReceipt, validateP2LessonResumeReceipt,
+  watchP2LessonAckLoss, watchP2LessonRestore, watchP2LessonResume } from "./p2-lifecycle-browser-recorder.mjs";
 
 const origin = "https://staging.lashher.com", mediaHost = "stream.mux.com";
 const cache = { "cache-control": "private, no-store" };
 const refused = /P2_INTERACTIVE_LESSON_RESUME_RESPONSE_REFUSED/u;
 const restoreRefused = /P2_INTERACTIVE_LESSON_RESTORE_RESPONSE_REFUSED/u;
+const ackLossRefused = /P2_INTERACTIVE_LESSON_ACK_LOSS_RESPONSE_REFUSED/u;
 
 function selection(restoring = false) {
   const target = { actorId: randomUUID(), operation: "play-and-rewind", courseId: randomUUID(), lessonId: randomUUID(), grantId: randomUUID() };
@@ -50,6 +51,22 @@ function selection(restoring = false) {
           manifestObserved: true, segmentObserved: true } } };
   }
   return { input: { ...input, resume: target }, target, paths, receipt, authorization, date };
+}
+
+function ackLossSelection() {
+  const fixture = selection(true), { prior, ...existing } = fixture.target;
+  const input = { ...fixture.input };
+  delete input.restore;
+  const { progressId, enrollmentId, resumePositionSeconds, maxPositionSeconds, playbackIdSha256 } = prior;
+  const target = { ...existing, operation: "commit-drop-recover", progressId, enrollmentId, resumePositionSeconds, maxPositionSeconds, playbackIdSha256 };
+  const row = (revision, resumePositionSeconds) => ({ requestId: randomUUID(), progressId, enrollmentId, revision, resumePositionSeconds, maxPositionSeconds });
+  const playback = [fixture.receipt.playback, { ...fixture.receipt.playback, requestId: randomUUID() }];
+  const writes = [row(7, resumePositionSeconds), row(8, resumePositionSeconds), row(9, maxPositionSeconds), row(10, maxPositionSeconds),
+    row(11, maxPositionSeconds)];
+  const recovery = { ...row(9, maxPositionSeconds), browserFailure: "connectionreset", unconfirmedObserved: true, noReplay: true };
+  return { ...fixture, target, input: { ...input, actionId: "owned-lesson-ack-loss", stage: "lesson-ack-loss", ackLoss: target },
+    receipt: { page: fixture.receipt.page, playback, writes, recovery, media: { beforeSeconds: resumePositionSeconds,
+      afterSeconds: maxPositionSeconds, paused: true, manifestObserved: true, segmentObserved: true } } };
 }
 
 test("resume permit and receipt bind the learner, media identity and monotonic CAS sequence", () => {
@@ -108,6 +125,35 @@ test("restore permit and receipt require the accepted prior row, media and exact
     { ...receipt, media: { ...receipt.media, paused: false } },
     { ...receipt, media: { ...receipt.media, segmentObserved: false } },
   ]) assert.throws(() => validateP2LessonRestoreReceipt(invalid, target));
+});
+
+test("lost acknowledgement requires a fixed permit, committed row, authoritative read and reload", () => {
+  const { input, target, paths, receipt } = ackLossSelection(), issued = Math.floor(Date.now() / 1000), expires = issued + 60;
+  const selector = (target.actorId + target.courseId + target.lessonId).replaceAll("-", "");
+  const cookie = ["v2", input.epoch, input.stage, issued, expires, "a".repeat(32), selector, "b".repeat(64)].join(".");
+  const permit = { stage: input.stage, epoch: input.epoch, expires, cookie };
+  assert.equal(validateP2InteractiveBrowserInput(input), input);
+  assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+  assert.equal(p2InteractiveBrowserEntryPath(input, "learner"), paths.lessonPath);
+  assert.throws(() => p2InteractiveBrowserEntryPath(input, "owner"));
+  for (const field of ["actorId", "courseId", "lessonId"]) {
+    assert.throws(() => validateP2InteractiveBrowserPermit(permit, { ...input, ackLoss: { ...target, [field]: randomUUID() } }));
+  }
+  for (const invalid of [{ operation: "restore-resume" }, { resumePositionSeconds: 2 }, { maxPositionSeconds: 13 }, { playbackIdSha256: "0".repeat(64) }]) {
+    assert.throws(() => validateP2InteractiveBrowserInput({ ...input, ackLoss: { ...target, ...invalid } }));
+  }
+  assert.equal(validateP2LessonAckLossReceipt(receipt, target), receipt);
+  const [start, restore, committed, reload, resumed] = receipt.writes;
+  for (const invalid of [
+    { ...receipt, writes: [start, restore, { ...committed, revision: 8 }, reload, resumed] },
+    { ...receipt, writes: [start, restore, committed, reload, { ...resumed, maxPositionSeconds: 4 }] },
+    { ...receipt, playback: [receipt.playback[0], { ...receipt.playback[1], playbackIdSha256: "e".repeat(64) }] },
+    { ...receipt, recovery: { ...receipt.recovery, progressId: randomUUID() } },
+    { ...receipt, recovery: { ...receipt.recovery, requestId: committed.requestId } },
+    { ...receipt, recovery: { ...receipt.recovery, noReplay: false } },
+    { ...receipt, recovery: { ...receipt.recovery, unconfirmedObserved: false } },
+    { ...receipt, media: { ...receipt.media, afterSeconds: 4 } },
+  ]) assert.throws(() => validateP2LessonAckLossReceipt(invalid, target));
 });
 
 function ownedLesson(paths, scenario, prior) {
@@ -173,7 +219,59 @@ function ownedLesson(paths, scenario, prior) {
   </script>`;
 }
 
-test("owned Chromium plays and rewinds bundled Mux media, then restores a saved position in a fresh context", {
+function ownedAckLossLesson(paths, target, revision, replay) {
+  const lesson = { playbackPath: paths.playbackPath, progressPath: paths.progressPath, latestPath: "/api/academy/progress?lessonId=" + target.lessonId,
+    initialPosition: revision === 6 ? target.resumePositionSeconds : target.maxPositionSeconds, revision, maximum: target.maxPositionSeconds, replay };
+  return `<!doctype html><main><h1>Owned lesson</h1><p id="progress">Saving progress…</p><div role="alert" hidden></div></main>
+  <script src="/owned-mux-player.js"></script><script>
+    const lesson = ${JSON.stringify(lesson)};
+    const post = body => fetch(lesson.progressPath, {method:'POST',headers:{'content-type':'application/json','x-lash-csrf':'1'},body:JSON.stringify(body)});
+    const status = document.querySelector('#progress'), alert = document.querySelector('[role=alert]');
+    let revision = lesson.revision;
+    const start = post({event:'lesson_started',expectedProgressRevision:revision}).then(response => response.json()).then(({progress}) => {
+      revision = progress.revision;
+      status.textContent = 'Progress saved to your account.';
+    });
+    void fetch(lesson.playbackPath).then(response => response.json()).then(authorization => {
+      const player = document.createElement('mux-player');
+      player.style.cssText = 'display:block;width:640px;height:360px';
+      player.playbackId = authorization.playbackId;
+      player.tokens = {playback:authorization.playbackToken,thumbnail:authorization.thumbnailToken};
+      player.preload = 'metadata';
+      player.streamType = 'on-demand';
+      player.disableTracking = true;
+      player.disableCookies = true;
+      player.storyboardSrc = '';
+      player.addEventListener('loadedmetadata', () => { player.currentTime = lesson.initialPosition; }, {once:true});
+      player.addEventListener('seeked', async () => {
+        await start;
+        const body = {resumePositionSeconds:Math.floor(player.currentTime),maxPositionSeconds:lesson.maximum,expectedProgressRevision:revision};
+        try {
+          const response = await post(body), {progress} = await response.json();
+          revision = progress.revision;
+        } catch {
+          alert.textContent = 'Progress has not been confirmed.';
+          alert.hidden = false;
+          const retry = document.createElement('button');
+          retry.textContent = 'Retry saving progress';
+          alert.append(retry);
+          retry.onclick = async () => {
+            if (lesson.replay) await post(body);
+            const {progress} = await fetch(lesson.latestPath).then(response => response.json());
+            if (progress.length !== 1) return;
+            const reload = document.createElement('button');
+            reload.textContent = 'Load latest progress';
+            reload.onclick = () => location.reload();
+            alert.replaceChildren(reload);
+          };
+        }
+      });
+      document.querySelector('main').append(player);
+    });
+  </script>`;
+}
+
+test("owned Chromium plays and restores Mux media and recovers after a committed save loses its response", {
   skip: process.env.P2_INTERACTIVE_BROWSER_OWNED_TEST !== "true",
 }, async () => {
   const { chromium } = await import("playwright"), root = mkdtempSync(join(tmpdir(), "owned-p2-resume-"));
@@ -212,11 +310,18 @@ test("owned Chromium plays and rewinds bundled Mux media, then restores a saved 
     });
     const proxyPort = await bind(proxy);
     browser = await chromium.launch();
-    for (const scenario of ["normal", "duplicate", "restore", "restore-row-drift", "restore-native-drift", "restore-extra"]) {
+    for (const scenario of ["normal", "duplicate", "restore", "restore-row-drift", "restore-native-drift", "restore-extra",
+      "ack-loss", "ack-loss-forward-drift", "ack-loss-read-drift", "ack-loss-replay"]) {
       const restoring = scenario.startsWith("restore");
-      const { input, target, paths, receipt, authorization, date } = selection(restoring), bodies = [];
+      const ackLoss = scenario.startsWith("ack-loss");
+      const { input, target, paths, receipt, authorization, date } = ackLoss ? ackLossSelection() : selection(restoring), bodies = [];
       const context = await browser.newContext({ proxy: { server: `http://127.0.0.1:${proxyPort}` }, ignoreHTTPSErrors: true });
-      let revision = restoring ? 4 : 0, maxPositionSeconds = target.prior?.maxPositionSeconds ?? 0;
+      if (ackLoss) await context.addCookies([{ name: "__Host-owned-ack-loss", value: "verified", url: origin, secure: true, httpOnly: true }]);
+      let revision = ackLoss ? 6 : restoring ? 4 : 0, maxPositionSeconds = target.prior?.maxPositionSeconds ?? 0;
+      let playbackCount = 0, documentCount = 0, authoritativeReads = 0;
+      const ackRow = (position, revision) => ({ id: target.progressId, userId: target.actorId, lessonId: target.lessonId,
+        enrollmentId: target.enrollmentId, resumePositionSeconds: position, maxPositionSeconds: target.maxPositionSeconds, revision,
+        completedQuizRevision: null, completedAt: null, lastWatchedAt: date.toISOString(), createdAt: date.toISOString(), updatedAt: date.toISOString() });
       serve = async (request, response) => {
         const send = (status, type, value, headers = {}) => {
           const body = Buffer.isBuffer(value) ? value : Buffer.from(typeof value === "string" ? value : JSON.stringify(value));
@@ -233,15 +338,33 @@ test("owned Chromium plays and rewinds bundled Mux media, then restores a saved 
           return send(404, "text/plain", "", cors);
         }
         if (request.headers.host !== host) return send(404, "text/plain", "");
-        if (request.url === paths.lessonPath) return send(200, "text/html", ownedLesson(paths, scenario, target.prior), cache);
+        if (request.url === paths.lessonPath) {
+          documentCount++;
+          return send(200, "text/html", ackLoss ? ownedAckLossLesson(paths, target, revision, scenario === "ack-loss-replay")
+            : ownedLesson(paths, scenario, target.prior), cache);
+        }
         if (request.url === "/owned-mux-player.js") return send(200, "application/javascript", bundle);
         if (request.url === paths.playbackPath) return send(200, "application/json", authorization,
-          { ...cache, date: date.toUTCString(), "x-request-id": receipt.playback.requestId });
+          { ...cache, date: date.toUTCString(), "x-request-id": ackLoss ? receipt.playback[playbackCount++].requestId : receipt.playback.requestId });
+        if (ackLoss && request.url === "/api/academy/progress?lessonId=" + target.lessonId) {
+          authoritativeReads++;
+          return send(200, "application/json", { progress: [ackRow(target.maxPositionSeconds, scenario === "ack-loss-read-drift" ? 8 : revision)] },
+            { ...cache, "x-request-id": receipt.recovery.requestId });
+        }
         if (request.url === paths.progressPath) {
           const chunks = [];
           for await (const chunk of request) chunks.push(chunk);
           const body = JSON.parse(Buffer.concat(chunks).toString());
           bodies.push(body);
+          if (ackLoss) {
+            if (request.headers.origin !== origin || request.headers.cookie !== "__Host-owned-ack-loss=verified"
+              || request.headers["x-lash-csrf"] !== "1") return send(403, "application/json", {}, cache);
+            if (body.expectedProgressRevision !== revision || revision >= 11) return send(409, "application/json", {}, cache);
+            const observed = receipt.writes[revision++ - 6];
+            const drift = scenario === "ack-loss-forward-drift" && revision === 9;
+            return send(200, "application/json", { progress: ackRow(observed.resumePositionSeconds, drift ? 8 : revision) },
+              { ...cache, "x-request-id": observed.requestId });
+          }
           if (body.expectedProgressRevision !== revision || revision >= (restoring ? 6 : 4)) return send(409, "application/json", {}, cache);
           const { resumePositionSeconds = target.prior?.resumePositionSeconds ?? 0, maxPositionSeconds: submitted = 0 } = body;
           maxPositionSeconds = Math.max(maxPositionSeconds, submitted, resumePositionSeconds);
@@ -255,12 +378,30 @@ test("owned Chromium plays and rewinds bundled Mux media, then restores a saved 
         }
         return send(404, "text/plain", "");
       };
-      const page = await context.newPage(), recorder = (restoring ? watchP2LessonRestore : watchP2LessonResume)(context, page, input);
+      const page = await context.newPage(), recorder = (ackLoss ? watchP2LessonAckLoss : restoring ? watchP2LessonRestore : watchP2LessonResume)(context, page, input);
       const expires = Math.floor(Date.now() / 1000) + 35;
       try {
         if (scenario === "duplicate") await assert.rejects(recorder.open(expires), refused);
         else if (scenario === "restore-row-drift") await assert.rejects(recorder.open(expires), restoreRefused);
-        else if (restoring) {
+        else if (ackLoss) {
+          await recorder.open(expires);
+          if (scenario === "ack-loss") {
+            await recorder.wait(expires).catch(error => {
+              throw new Error(`Owned lost acknowledgement failed after ${bodies.length} progress requests and ${authoritativeReads} reads`, { cause: error });
+            });
+            assert.deepEqual(recorder.finish(), receipt);
+            assert.deepEqual(bodies.map(body => body.expectedProgressRevision), [6, 7, 8, 9, 10]);
+            assert.equal(authoritativeReads, 1);
+            assert.equal(documentCount, 2);
+            assert.equal(revision, 11);
+          } else {
+            await assert.rejects(recorder.wait(expires), ackLossRefused);
+            assert.throws(() => recorder.finish(), ackLossRefused);
+            assert.equal(documentCount, 1);
+            assert.equal(revision, 9);
+            assert.equal(authoritativeReads, scenario === "ack-loss-read-drift" ? 1 : 0);
+          }
+        } else if (restoring) {
           await recorder.open(expires);
           if (scenario === "restore-native-drift") {
             await assert.rejects(recorder.wait(Math.floor(Date.now() / 1000) + 4), restoreRefused);

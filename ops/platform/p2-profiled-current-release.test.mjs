@@ -550,6 +550,40 @@ test('fixed current certification plan joins the original release plan, terminal
       /P2_LESSON_RESTORE_PRIOR_REFUSED/);
     assert.throws(() => prepareP2ProfiledCertificationOperator(restoreSettings({ ...restoreScope,
       requests: restoreRequests.map((row, index) => index === 7 ? { ...row, bodySha256: resumeRows[7].bodySha256 } : row) })));
+    const { progressId, enrollmentId, resumePositionSeconds, maxPositionSeconds, playbackIdSha256 } = restorePrior;
+    const ackLossAction = { ...resumeAction, operation: 'commit-drop-recover', progressId, enrollmentId,
+      resumePositionSeconds, maxPositionSeconds, playbackIdSha256 };
+    const ackLossRequests = [
+      ...resumeRows.slice(0, 6).map((row, index) => ({ ...row, uses: index === 2 ? 3 : 2 })),
+      ...[
+        { event: 'lesson_started', expectedProgressRevision: 6 },
+        { resumePositionSeconds, maxPositionSeconds, expectedProgressRevision: 7 },
+        { resumePositionSeconds: maxPositionSeconds, maxPositionSeconds, expectedProgressRevision: 8 },
+        { event: 'lesson_started', expectedProgressRevision: 9 },
+        { resumePositionSeconds: maxPositionSeconds, maxPositionSeconds, expectedProgressRevision: 10 },
+      ].map(body => ({ method: 'POST', target: lesson + '/progress', bodySha256: rawHash(JSON.stringify(body)), uses: 1 })),
+    ];
+    const ackLossScope = { stage: 'lesson-ack-loss', actorId: userId, windowSeconds: 90, ackLossAction, requests: ackLossRequests };
+    const ackLossSettings = paired(ackLossScope), ackLossPair = prepareP2ProfiledCertificationOperator(ackLossSettings);
+    const ackLossPlan = ackLossPair['lesson-ack-loss'];
+    assert.equal(ackLossPair.status, 'P2_INTERACTIVE_LESSON_ACK_LOSS_ACTIONS_PLANNED');
+    assert.deepEqual(ackLossPlan.scopedAction, ackLossScope);
+    assert.deepEqual(ackLossPair.identity.scopedAction.identityActor, { actorKind: 'customer', actorId: userId });
+    assert.equal(BigInt(ackLossPlan.initialEpoch) - BigInt(ackLossPair.identity.initialEpoch), 2n);
+    const ackLossHost = restoreHost(ackLossPlan);
+    assert.equal(ackLossHost.status, 0, ackLossHost.stderr);
+    await assert.rejects(p2ProfiledCertificationOperator(ackLossSettings, accessConfirmation), { code: 'ENOENT' });
+    await assert.rejects(p2ProfiledCertificationOperator({ ...ackLossSettings, execution: {} }, accessConfirmation),
+      error => error.code !== 'ENOENT');
+    assert.throws(() => prepareP2ProfiledCertificationOperator({ ...ackLossSettings, interactiveIdentity: undefined }));
+    for (const badScope of [
+      { ...ackLossScope, ackLossAction: { ...ackLossAction, maxPositionSeconds: maxPositionSeconds - 1 } },
+      { ...ackLossScope, requests: ackLossRequests.map((row, index) => index === 2 ? { ...row, uses: 2 } : row) },
+      { ...ackLossScope, requests: ackLossRequests.map((row, index) => index === 8 ? { ...row, bodySha256: ackLossRequests[7].bodySha256 } : row) },
+    ]) {
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired(badScope)));
+      assert.notEqual(restoreHost({ ...ackLossPlan, scopedAction: badScope }).status, 0);
+    }
     const draftPair = prepareP2ProfiledCertificationOperator(paired(selectedAuthoring));
     assert.equal(draftPair.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
     assert.deepEqual(draftPair.authoring.scopedAction, selectedAuthoring);
@@ -896,6 +930,7 @@ test('fixed current certification plan joins the original release plan, terminal
       [selectedFree, (selectedFree.actorId + selectedFree.learningAction.idempotencyKey).replaceAll('-', '')],
       [selectedLessonEntry, (userId + courseId + accessLessonId).replaceAll('-', '')],
       [selectedLessonDenial, (userId + courseId + accessLessonId).replaceAll('-', '')],
+      [ackLossScope, (userId + courseId + accessLessonId).replaceAll('-', '')],
       [selectedInteractive, (selectedInteractive.actorId + paidKey).replaceAll('-', '')],
       [selectedAccess, (selectedAccess.actorId + accessLessonId).replaceAll('-', '')],
       [selectedRevoke, (selectedRevoke.actorId + revokeKey).replaceAll('-', '')],
@@ -913,7 +948,8 @@ test('fixed current certification plan joins the original release plan, terminal
         join(root, 'ops/platform/host')], { input: JSON.stringify({ material: scopedMaterial, action: selection }), encoding: 'utf8' });
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
       const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
-      const selectedGatewayKey = ['authoring', 'learning', 'lesson-entry', 'lesson-denial', 'lesson-assessment', 'lesson-resume', 'lesson-restore', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
+      const selectedGatewayKey = ['authoring', 'learning', 'lesson-entry', 'lesson-denial', 'lesson-assessment', 'lesson-resume', 'lesson-restore',
+        'lesson-ack-loss', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
         ? sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${selection.stage}\n${scopedNonce}`) : null;
       assert.deepEqual(JSON.parse(frontendFixture.stdout), [
         `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`, selectedGatewayKey, host, expires,

@@ -458,7 +458,7 @@ class ProfiledCertificationInputTests(unittest.TestCase):
         cls.operators = Path(temporary.name).resolve()
         cls.commit = 'a' * 40
         cls.source = cls.operators / cls.commit
-        names = tracked_source_fixture(Path(__file__).resolve().parents[3], cls.source)
+        names = tracked_source_fixture(Path(__file__).resolve().parents[3], cls.source, include_tests=False)
         cls.files = {name: hashlib.sha256((cls.source / name).read_bytes()).hexdigest() for name in names}
         cls.closure = cls.hash(sorted(cls.files.items()))
 

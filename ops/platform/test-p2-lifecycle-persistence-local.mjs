@@ -22,6 +22,7 @@ import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraf
   captureP2InteractiveLessonEntryBaseline, observeP2InteractiveLessonEntryCase,
   captureP2InteractiveResumeBaseline, observeP2InteractiveResumeCase,
   captureP2InteractiveRestoreBaseline, observeP2InteractiveRestoreCase,
+  captureP2InteractiveAckLossBaseline, observeP2InteractiveAckLossCase,
   captureP2InteractiveLessonDenialBaseline, observeP2InteractiveLessonDenialCase,
   captureP2InteractiveAssessmentBaseline, observeP2InteractiveAssessmentCase,
   captureP2InteractivePaidRevokeBaseline, observeP2InteractivePaidRevokeCase, validateP2InteractivePaidRevoke,
@@ -297,6 +298,8 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-lesson-resume-refuses-stale-cas-foreign-receipts-and-persistence-drift",
       "course-lesson-restore-pinned-revision-four-to-six-with-unchanged-positions-and-managed-playback",
       "course-lesson-restore-refuses-ineligible-prior-receipts-and-persistence-drift",
+      "course-lesson-ack-loss-pinned-revision-six-to-eleven-without-replay-and-managed-playback",
+      "course-lesson-ack-loss-refuses-ineligible-receipts-and-persistence-drift",
       "course-lesson-denial-pinned-repositories-preserve-foreign-learning-and-media-without-access-or-writes",
       "course-lesson-denial-refuses-ineligible-fixtures-foreign-receipts-and-history-drift",
       "course-assessment-pinned-fail-then-pass-attempts-and-progress-revisions",
@@ -1726,6 +1729,109 @@ async function runOwnedLessonRestoreWitness({ course, job, dependencies, seed, r
     if (name === "metadata") await course.query("UPDATE public.courses SET description='different' WHERE id=$1::uuid", [selection.courseId]);
     await assert.rejects(observe(selection, baseline, receipt), { check });
     await assert.rejects(observe(selection, baseline, receipt), { check: "course-lesson-restore-receipt" });
+  }
+
+  const prepareRestored = async (name, options) => {
+    const test = await prepare(`ack-loss-${name}`, options), baseline = await capture(test.selection);
+    const { actorId, courseId, lessonId, grantId, progressId, enrollmentId, resumePositionSeconds, maxPositionSeconds, playbackIdSha256 } =
+      await observe(test.selection, baseline, await restore(test));
+    return { ...test, selection: { actorId, courseId, lessonId, grantId, progressId, enrollmentId,
+      resumePositionSeconds, maxPositionSeconds, playbackIdSha256 } };
+  };
+  await runOwnedLessonAckLossWitness({ course, job, dependencies, prepareRestored, authorize, progress, write });
+}
+
+async function runOwnedLessonAckLossWitness({ course, job, dependencies, prepareRestored, authorize, progress, write }) {
+  const capture = selection => captureP2InteractiveAckLossBaseline(job, selection, dependencies);
+  const observe = (selection, baseline, receipt) => observeP2InteractiveAckLossCase(job, selection, baseline, receipt, dependencies);
+  const playbackExpiry = receipt => new Date(Math.max(...receipt.playback.flatMap(
+    item => [Date.parse(item.expiresAt), Date.parse(item.thumbnailExpiresAt)]))).toISOString();
+  const runRecovery = async test => {
+    const { actorId: userId, courseId, lessonId, progressId, enrollmentId, resumePositionSeconds, maxPositionSeconds, playbackIdSha256 } = test.selection;
+    const identify = result => {
+      assert.equal(result.completedAt, null);
+      assert.equal(result.completedQuizRevision, null);
+      const { id, enrollmentId, revision, resumePositionSeconds, maxPositionSeconds } = result;
+      return { progressId: id, enrollmentId, revision, resumePositionSeconds, maxPositionSeconds };
+    };
+    const started = revision => progress.recordProgress({ userId, courseId, lessonId, enrollmentId,
+      expectedProgressRevision: revision, markStarted: true });
+    const sign = async () => ({ ...await authorize(test), playbackIdSha256 });
+    const initialPlayback = await sign();
+    const initialStart = await started(6);
+    const restore = await write(test, 7, resumePositionSeconds, maxPositionSeconds);
+    const committed = await write(test, 8, maxPositionSeconds, maxPositionSeconds);
+    const [authoritative, ...duplicates] = await progress.listProgress({ userId, courseId, lessonId });
+    assert.equal(duplicates.length, 0);
+    assert.deepEqual(authoritative, committed);
+    await wait(2);
+    const reloadedPlayback = await sign();
+    const reloadStart = await started(9);
+    const reload = await write(test, 10, maxPositionSeconds, maxPositionSeconds);
+    const writes = [initialStart, restore, committed, reloadStart, reload].map((result, index) => {
+      const stored = identify(result);
+      assert.deepEqual(stored, { progressId, enrollmentId, revision: index + 7,
+        resumePositionSeconds: index < 2 ? resumePositionSeconds : maxPositionSeconds, maxPositionSeconds });
+      return { requestId: randomUUID(), ...stored };
+    });
+    return { page: { pathname: `/academy/courses/${courseId}/lessons/${lessonId}`, status: 200 },
+      playback: [initialPlayback, reloadedPlayback], writes,
+      recovery: { requestId: randomUUID(), ...identify(authoritative), browserFailure: "connectionreset", unconfirmedObserved: true, noReplay: true },
+      media: { beforeSeconds: resumePositionSeconds, afterSeconds: maxPositionSeconds, paused: true,
+        manifestObserved: true, segmentObserved: true } };
+  };
+
+  for (const name of ["fresh-expiry", "prior-longer-expiry"]) {
+    const priorExpiry = name === "prior-longer-expiry" ? new Date(Date.now() + 900_000).toISOString() : null;
+    const test = await prepareRestored(name, { priorExpiry }), { selection } = test;
+    for (const patch of [{ progressId: randomUUID() }, { enrollmentId: randomUUID() }, { resumePositionSeconds: 5, maxPositionSeconds: 15 }]) {
+      await assert.rejects(capture({ ...selection, ...patch }), { check: "course-lesson-ack-loss-progress" });
+    }
+    await assert.rejects(capture({ ...selection, grantId: randomUUID() }), { check: "course-lesson-ack-loss-grant" });
+    await assert.rejects(capture({ ...selection, playbackIdSha256: hash("foreign-playback") }), { check: "course-lesson-ack-loss-media" });
+    for (const patch of [{ playbackIdSha256: "0".repeat(64) }, { maxPositionSeconds: 13 }, { revision: 6 }]) {
+      await assert.rejects(capture({ ...selection, ...patch }), { check: "course-lesson-ack-loss-selection" });
+    }
+    const baseline = await capture(selection);
+    assert.equal(JSON.stringify(baseline), "{}");
+    const receipt = await runRecovery(test);
+    await assert.rejects(observe(selection, {}, receipt), { check: "course-lesson-ack-loss-receipt" });
+    await assert.rejects(observe({ ...selection, progressId: randomUUID() }, baseline, receipt), { check: "course-lesson-ack-loss-receipt" });
+    await assert.rejects(observeP2InteractiveAckLossCase(job, selection, baseline, receipt, { ...dependencies, verifySession: async () => {} }),
+      { check: "course-lesson-ack-loss-receipt" });
+    for (const mutate of [
+      ({ page }) => { page.status = 204; },
+      ({ playback }) => { playback[0].playbackIdSha256 = hash("foreign-playback"); },
+      ({ playback }) => { playback[1].lifetimeMs = 601_000; },
+      ({ playback }) => { playback[1].token = "owned-private-value"; },
+      ({ writes }) => { writes[0].resumePositionSeconds = 14; },
+      ({ writes }) => { writes[4].revision = 12; },
+      ({ recovery }) => { recovery.revision = 8; },
+      ({ recovery }) => { recovery.noReplay = false; },
+      ({ recovery }) => { recovery.unconfirmedObserved = false; },
+      ({ recovery, writes }) => { recovery.requestId = writes[2].requestId; },
+      ({ media }) => { media.segmentObserved = false; },
+    ]) {
+      const malformed = structuredClone(receipt);
+      mutate(malformed);
+      await assert.rejects(observe(selection, baseline, malformed), { check: "course-lesson-ack-loss-receipt" });
+    }
+    assert.deepEqual(await observe(selection, baseline, receipt), { ...selection, revision: 11,
+      resumePositionSeconds: 14, playbackExpiresAt: playbackExpiry(receipt), readOnly: true });
+    await assert.rejects(write(test, 8, 14, 14), { name: "ProgressRevisionConflictError" });
+    await assert.rejects(observe(selection, baseline, receipt), { check: "course-lesson-ack-loss-receipt" });
+    await assert.rejects(capture(selection), { check: "course-lesson-ack-loss-progress" });
+  }
+
+  for (const [name, check] of [["position", "course-lesson-ack-loss-progress"], ["duration", "course-lesson-ack-loss-media"],
+    ["expiry", "course-lesson-ack-loss-media"], ["metadata", "course-lesson-ack-loss-history"]]) {
+    const test = await prepareRestored(name), { selection } = test, baseline = await capture(selection), receipt = await runRecovery(test);
+    if (name === "position") await write(test, 11, 13, 14);
+    if (name === "duration") await course.query("UPDATE public.video_assets SET duration_seconds=31 WHERE id=$1::uuid", [test.assetId]);
+    if (name === "expiry") receipt.playback[1].thumbnailExpiresAt = new Date(Date.parse(receipt.playback[1].thumbnailExpiresAt) + 500).toISOString();
+    if (name === "metadata") await course.query("UPDATE public.courses SET description='different' WHERE id=$1::uuid", [selection.courseId]);
+    await assert.rejects(observe(selection, baseline, receipt), { check });
+    await assert.rejects(observe(selection, baseline, receipt), { check: "course-lesson-ack-loss-receipt" });
   }
 }
 

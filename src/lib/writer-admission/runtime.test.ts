@@ -564,7 +564,11 @@ test("lesson assessment v2 admits only scoped progress and quiz writes and exact
   assert.equal(f.calls.filter(call => call.sql.includes("finish_operation")).length, 1);
 });
 
-for (const stage of ["lesson-resume", "lesson-restore"] as const) {
+for (const [stage, selectionKey, writeKey] of [
+  ["lesson-resume", "lessonResume", "lessonResumeWrite"],
+  ["lesson-restore", "lessonRestore", "lessonRestoreWrite"],
+  ["lesson-ack-loss", "lessonAckLoss", "lessonAckLossWrite"],
+] as const) {
   test(`${stage} v2 grants write admission only on the exact selected progress POST`, async () => {
     const now = 1_794_009_600;
     const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
@@ -578,17 +582,23 @@ for (const stage of ["lesson-resume", "lesson-restore"] as const) {
     const page = `/academy/courses/${courseId}/lessons/${lessonId}`, api = `/api/academy/lessons/${lessonId}`;
     const attest = (method: string, path: string, search = "") =>
       attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method, path, search, cookie }, env, now);
-    for (const [method, path] of [["GET", page], ["GET", `${api}/playback`], ["POST", `${api}/progress`]]) {
-      const proof = attest(method, path);
+    const recovery = ["GET", "/api/academy/progress", `?lessonId=${lessonId}`];
+    const allowed = [["GET", page], ["GET", `${api}/playback`], ["POST", `${api}/progress`]];
+    if (stage === "lesson-ack-loss") allowed.push(recovery);
+    for (const [method, path, query] of allowed) {
+      const proof = attest(method, path, query);
       assert.ok(proof);
       const verified = readInteractiveRequest(proof, cookie, env, now);
-      assert.deepEqual(stage === "lesson-restore" ? verified?.lessonRestore : verified?.lessonResume, { actorId, courseId, lessonId });
-      assert.equal(stage === "lesson-restore" ? verified?.lessonRestoreWrite : verified?.lessonResumeWrite, method === "POST");
+      assert.deepEqual(verified?.[selectionKey], { actorId, courseId, lessonId });
+      assert.equal(verified?.[writeKey], method === "POST");
     }
-    for (const [method, path, query] of [["GET", page, "?course=preview"], ["HEAD", page], ["GET", page.replace(courseId, actorId)],
-      ["GET", `${api}/playback`, "?x=1"], ["GET", `${api}/progress`], ["GET", "/api/academy/progress", `?lessonId=${lessonId}`],
+    const forbidden = [["GET", page, "?course=preview"], ["HEAD", page], ["GET", page.replace(courseId, actorId)],
+      ["GET", `${api}/playback`, "?x=1"], ["GET", `${api}/progress`],
+      ["GET", recovery[1], `${recovery[2]}&limit=1`], ["GET", recovery[1], `?lessonId=${actorId}`],
       ["POST", `${api}/quiz/attempts`], ["POST", `${api}/progress`, "?retry=1"],
-      ["POST", `${api.replace(lessonId, actorId)}/progress`]]) assert.equal(attest(method, path, query), null);
+      ["POST", `${api.replace(lessonId, actorId)}/progress`]];
+    if (stage !== "lesson-ack-loss") forbidden.push(recovery);
+    for (const [method, path, query] of forbidden) assert.equal(attest(method, path, query), null);
     const getProof = attest("GET", page), postProof = attest("POST", `${api}/progress`);
     assert.ok(getProof && postProof);
     const f = fixture();

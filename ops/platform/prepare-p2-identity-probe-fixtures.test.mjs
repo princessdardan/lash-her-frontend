@@ -480,7 +480,7 @@ test("lifecycle mode sends one internally built exact source manifest to an isol
     assert.equal(result.lifecyclePersistence.status, "P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES18_PASS");
     assert.equal(result.lifecyclePersistence.postgresMajor, 18); assert.equal(result.lifecyclePersistence.frontendMigrations, 83);
     assert.equal(result.lifecyclePersistence.courseMigrations, 22); assert.equal(result.lifecyclePersistence.communityMigrations, 11);
-    assert.equal(result.lifecyclePersistence.checks.length, 52); assert.equal(result.lifecyclePersistence.skipped, 0);
+    assert.equal(result.lifecyclePersistence.checks.length, 54); assert.equal(result.lifecyclePersistence.skipped, 0);
     assert.equal(result.lifecyclePersistence.sourceMode, "parent-issued-manifest-and-mounted-readback");
     assert.match(result.lifecyclePersistence.parentProofSha256, /^[a-f0-9]{64}$/u);
     assert.match(result.lifecyclePersistence.sourceManifestSha256, /^[a-f0-9]{64}$/u);

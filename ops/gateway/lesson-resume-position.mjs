@@ -1,4 +1,6 @@
 export const RESTORE_LESSON_STARTED = '{"event":"lesson_started","expectedProgressRevision":4}';
+const ACK_LOSS_LESSON_STARTED = [6, 9].map(expectedProgressRevision =>
+  JSON.stringify({ event: "lesson_started", expectedProgressRevision }));
 
 /** @param {string} body */
 function parseLessonPosition(body) {
@@ -37,4 +39,29 @@ export function parseLessonRestorePosition(body) {
   if (!position) return null;
   const { resumePositionSeconds: resume, maxPositionSeconds: maximum, expectedProgressRevision } = position;
   return expectedProgressRevision === 5 && resume >= 3 && resume <= 6 && maximum === resume + 10 ? position : null;
+}
+
+/** @param {number} resumePositionSeconds */
+export function lessonAckLossBodies(resumePositionSeconds) {
+  const maxPositionSeconds = resumePositionSeconds + 10;
+  const position = (resume, expectedProgressRevision) =>
+    JSON.stringify({ resumePositionSeconds: resume, maxPositionSeconds, expectedProgressRevision });
+  return [
+    ACK_LOSS_LESSON_STARTED[0],
+    position(resumePositionSeconds, 7),
+    position(maxPositionSeconds, 8),
+    ACK_LOSS_LESSON_STARTED[1],
+    position(maxPositionSeconds, 10),
+  ];
+}
+
+/** @param {string} body */
+export function permitsLessonAckLossBody(body) {
+  if (ACK_LOSS_LESSON_STARTED.includes(body)) return true;
+  const position = parseLessonPosition(body);
+  if (!position) return false;
+  const { resumePositionSeconds: resume, maxPositionSeconds: maximum, expectedProgressRevision } = position;
+  if (maximum < 13 || maximum > 16) return false;
+  return expectedProgressRevision === 7 ? resume === maximum - 10 :
+    (expectedProgressRevision === 8 || expectedProgressRevision === 10) && resume === maximum;
 }
