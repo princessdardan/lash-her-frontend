@@ -133,8 +133,9 @@ async function read(client, service, name, values = []) {
   return (await client.query(statement, values)).rows;
 }
 
-export async function observePersistenceDomain(service, input, target, client) {
-  demand(["frontend", "course", "community"].includes(service), "service"); validatePersistenceWitnessInput(input, input.stage); validateTarget(service, target);
+export async function observePersistenceDomain(service, input, target, client, expectedProfile = undefined) {
+  const profile = profileContext(expectedProfile, target);
+  demand(["frontend", "course", "community"].includes(service), "service"); validatePersistenceWitnessInput(input, input.stage); validateTarget(service, target, profile);
   let begun = false;
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"); begun = true;
@@ -336,29 +337,31 @@ async function clientFromInput(input) {
   delete input.connectionUrl; return client;
 }
 
-export async function runPrivatePersistenceProbeFromStdin() {
+export async function runPrivatePersistenceProbeFromStdin(expectedProfile = undefined) {
   let size = 0; const chunks = [];
   try {
+    if (expectedProfile !== undefined) parseQualificationTargetProfileRef(expectedProfile);
     for await (const chunk of process.stdin) { size += chunk.length; demand(size <= 262_144, "private-input-bound"); chunks.push(chunk); }
     const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    if (closed(input, ["version", "mode", "environment", "plan", "witness", "observations", "priorCapture"]) && input.mode === "combine") {
-      demand(input.version === 1 && input.environment === "staging", "private-combine-mode");
+    const inputProfile = profileContext(expectedProfile, input, ...(input.mode === "combine" ? [input.plan] : [input.target]));
+    if (closed(input, ["version", ...(inputProfile ? ["qualificationTargetProfile"] : []), "mode", "environment", "plan", "witness", "observations", "priorCapture"]) && input.mode === "combine") {
+      demand(input.version === (inputProfile ? 2 : 1) && input.environment === "staging", "private-combine-mode");
       const witness = buildP2LifecycleStateWitness(input.plan, input.witness, input.observations);
       const priorWitness = input.priorCapture?.witness ?? null, priorEvidence = input.priorCapture?.privateEvidence ?? null;
       const receipt = input.witness.stage === "lifecycle-account"
         ? { ...lifecycleWitnessPublicReceipt(witness), status: "P2_LIFECYCLE_ACCOUNT_STATE_WITNESSED", providerTouched: false, releaseAccepted: false }
         : qualifyPersistenceStage(input.witness, input.observations, witness, priorWitness, priorEvidence);
       const privateEvidence = input.witness.stage === "lifecycle-account" ? null : persistencePrivateStageEvidence(input.witness, input.observations, priorEvidence);
-      process.stdout.write(JSON.stringify({ version: 1, status: "P2_LIFECYCLE_PERSISTENCE_PRIVATE_COMBINED", witness, privateEvidence, receipt, readOnly: true }) + "\n");
+      process.stdout.write(JSON.stringify({ version: inputProfile ? 2 : 1, ...(inputProfile ? { qualificationTargetProfile: inputProfile } : {}), status: "P2_LIFECYCLE_PERSISTENCE_PRIVATE_COMBINED", witness, privateEvidence, receipt, readOnly: true }) + "\n");
       return;
     }
-    demand(closed(input, ["version", "mode", "environment", "target", "witness", "connectionUrl"]) && input.version === 1 && input.environment === "staging"
+    demand(closed(input, ["version", ...(inputProfile ? ["qualificationTargetProfile"] : []), "mode", "environment", "target", "witness", "connectionUrl"]) && input.version === (inputProfile ? 2 : 1) && input.environment === "staging"
       && ["frontend", "course", "community"].includes(input.mode), "private-child-mode");
     const client = await clientFromInput(input); let result;
     try { await client.connect(); demand(client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true, "verified-node-tls");
-      result = await observePersistenceDomain(input.mode, input.witness, input.target, client); }
+      result = await observePersistenceDomain(input.mode, input.witness, input.target, client, inputProfile); }
     finally { await client.end(); }
-    process.stdout.write(JSON.stringify({ version: 1, status: "P2_LIFECYCLE_PERSISTENCE_PRIVATE_OBSERVATION", service: input.mode, observation: result, readOnly: true }) + "\n");
+    process.stdout.write(JSON.stringify({ version: inputProfile ? 2 : 1, ...(inputProfile ? { qualificationTargetProfile: inputProfile } : {}), status: "P2_LIFECYCLE_PERSISTENCE_PRIVATE_OBSERVATION", service: input.mode, observation: result, readOnly: true }) + "\n");
   } catch (error) {
     const check = error instanceof P2LifecyclePersistenceError && /^[a-z0-9.-]{1,120}$/u.test(error.check) ? error.check : "private-observation-failed";
     process.stdout.write(JSON.stringify({ version: 1, status: "P2_LIFECYCLE_PERSISTENCE_PRIVATE_REFUSED", check, readOnly: true }) + "\n"); process.exitCode = 1;

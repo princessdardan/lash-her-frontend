@@ -14,6 +14,7 @@ import migrate
 import release as runtime
 import staging_state
 import p2_identity_negative_probe as identity_probe
+import current_databases
 from p2_lifecycle_persistence_scope import CurrentLifecyclePersistenceScope
 
 ROOT = Path("/var/lib/lash-her/releases/staging")
@@ -53,24 +54,31 @@ def operator_hashes(source):
     return {name: _hash(_read(source, name)) for name in PROGRAM_FILES}
 
 
-def private_program(source):
+def private_program(source, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
     witness = base64.b64encode(_read(source, PROGRAM_FILES[0])).decode()
     probe = _read(source, PROGRAM_FILES[1]).decode().replace("./p2-lifecycle-state-witness.mjs", "data:text/javascript;base64," + witness)
     module = base64.b64encode(probe.encode()).decode()
+    argument = "" if expected is None else json.dumps(expected, sort_keys=True, separators=(",", ":"))
     return (f'import("data:text/javascript;base64,{module}")'
-        '.then(module=>module.runPrivatePersistenceProbeFromStdin())'
+        f'.then(module=>module.runPrivatePersistenceProbeFromStdin({argument}))'
         '.catch(()=>{process.stdout.write(JSON.stringify({version:1,status:"P2_LIFECYCLE_PERSISTENCE_PRIVATE_REFUSED",check:"private-observation-failed",readOnly:true})+"\\n");process.exitCode=1})').encode()
 
 
-def _reviewed(value):
-    demand(_closed(value, ("version", "environment", "probeId", "plan", "containers", "operatorSourceFiles", "programSha256", "privateDirectory"))
-        and value["version"] == 1 and value["environment"] == "staging" and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", value["probeId"]),
+def _reviewed(value, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
+    migrate.require_profile(expected, value, value.get("plan") if isinstance(value, dict) else None,
+        *(value.get("plan", {}).get("targets", {}).values() if isinstance(value, dict) and isinstance(value.get("plan"), dict)
+          and isinstance(value["plan"].get("targets"), dict) else ()))
+    profile_fields = ("qualificationTargetProfile",) if expected is not None else ()
+    demand(_closed(value, ("version", *profile_fields, "environment", "probeId", "plan", "containers", "operatorSourceFiles", "programSha256", "privateDirectory"))
+        and value["version"] == (2 if expected is not None else 1) and value["environment"] == "staging" and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", value["probeId"]),
         "P2_PERSISTENCE_REVIEWED_INPUT_REQUIRED")
     plan = value["plan"]
-    plan_fields = ("version", "environment", "releaseId", "hostMachineId", "candidateSha256", "configurationSha256", "sources", "targets", "containerImages",
+    plan_fields = ("version", *profile_fields, "environment", "releaseId", "hostMachineId", "candidateSha256", "configurationSha256", "sources", "targets", "containerImages",
         "operatorSourceSha256", "frontendDeploymentSha256", "originalReleaseSha256", "expectedMigrations", "operation", "stages", "finalDisposition",
         "mutationsAuthorized", "credentialsRead", "networkCalled")
-    demand(_closed(plan, plan_fields) and plan["version"] == 1 and plan["environment"] == "staging"
+    demand(_closed(plan, plan_fields) and plan["version"] == (2 if expected is not None else 1) and plan["environment"] == "staging"
         and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", plan["releaseId"])
         and re.fullmatch(r"[a-f0-9]{32}", plan["hostMachineId"]) and plan["hostMachineId"] != "0" * 32
         and all(SHA.fullmatch(plan.get(name, "")) for name in ("candidateSha256", "configurationSha256", "operatorSourceSha256", "frontendDeploymentSha256", "originalReleaseSha256"))
@@ -103,14 +111,21 @@ def _target_hash(service, target):
     return _hash(_canonical({"version": 1, "environment": "staging", "service": service, **fields}))
 
 
-def _join_selected(reviewed, selected, jobs, runtime_plan):
+def _join_selected(reviewed, selected, jobs, runtime_plan, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
     plan = reviewed["plan"]
+    if expected is not None:
+        migrate.candidate_profile(selected, expected)
+        migrate.require_profile(expected, runtime_plan)
+        for info in jobs.values():
+            migrate.require_job_profile(expected, info["job"], frontend=info.get("frontend", False))
     demand(selected.get("environment") == "staging" and selected.get("contractPhase") == "p2" and selected.get("releaseId") == plan["releaseId"]
         and set(jobs) == {"frontend", "course", "community"} and runtime_plan.get("hostMachineId") == plan["hostMachineId"]
         and all(selected["sources"][name]["commit"] == commit for name, commit in plan["sources"].items()), "P2_PERSISTENCE_RELEASE_CHANGED")
     for service in ("frontend", "course", "community"):
         target, job = plan["targets"][service], jobs[service]["job"]
-        demand(_closed(target, ("targetSha256", "host", "port", "database", "runtimeRole", "runtimeRoleOid", "serverMajor"))
+        demand(_closed(target, ("targetSha256", "host", "port", "database", "runtimeRole", "runtimeRoleOid", "serverMajor",
+            *(("qualificationTargetProfile",) if expected is not None else ())))
             and target["targetSha256"] == _target_hash(service, target), "P2_PERSISTENCE_TARGET_BINDING_REQUIRED")
         selected_target = job["target"]
         selected_role = selected_target.get("runtimeRole") if service == "frontend" else job.get("runtimeRole")
@@ -123,12 +138,13 @@ def _join_selected(reviewed, selected, jobs, runtime_plan):
     demand(all(row["image"] == expected[row["service"]] for row in reviewed["containers"]), "P2_PERSISTENCE_IMAGE_BINDING_REQUIRED")
 
 
-def _make_plan_details(bundle, configuration, reviewed, source):
-    reviewed = _reviewed(reviewed)
+def _make_plan_details(bundle, configuration, reviewed, source, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
+    reviewed = _reviewed(reviewed, expected)
     demand(source == OPERATOR_ROOT / reviewed["plan"]["sources"]["frontend"] and identity_probe.source_closure(source) == reviewed["operatorSourceFiles"]
-        and _hash(private_program(source)) == reviewed["programSha256"], "P2_PERSISTENCE_OPERATOR_SOURCE_CHANGED")
-    selected, jobs, runtime_plan, _compose = runtime.make_plan(Path(bundle), Path(configuration), source / "ops/platform/compose.yaml")
-    _join_selected(reviewed, selected, jobs, runtime_plan)
+        and _hash(private_program(source, expected)) == reviewed["programSha256"], "P2_PERSISTENCE_OPERATOR_SOURCE_CHANGED")
+    selected, jobs, runtime_plan, _compose = runtime.make_plan(Path(bundle), Path(configuration), source / "ops/platform/compose.yaml", expected_profile=expected)
+    _join_selected(reviewed, selected, jobs, runtime_plan, expected)
     demand(_hash(_read(Path(bundle), "release.candidate.json")) == reviewed["plan"]["candidateSha256"]
         and identity_probe._configuration_hash(Path(configuration)) == reviewed["plan"]["configurationSha256"],
         "P2_PERSISTENCE_RELEASE_BINDING_CHANGED")
@@ -136,7 +152,8 @@ def _make_plan_details(bundle, configuration, reviewed, source):
         staging_state.outside_checkout(path)
         demand(path.is_absolute() and path.is_relative_to(ROOT) and path.resolve() == path
             and not any(item.is_symlink() for item in (path, *path.parents)), "P2_PERSISTENCE_RUNTIME_PATH_REQUIRED")
-    return {"version": 1, "status": "P2_LIFECYCLE_PERSISTENCE_PLAN", "environment": "staging", "probeId": reviewed["probeId"],
+    return {"version": 2 if expected is not None else 1, **({"qualificationTargetProfile": expected} if expected is not None else {}),
+        "status": "P2_LIFECYCLE_PERSISTENCE_PLAN", "environment": "staging", "probeId": reviewed["probeId"],
         "candidateSha256": reviewed["plan"]["candidateSha256"], "configurationSha256": reviewed["plan"]["configurationSha256"],
         "programSha256": reviewed["programSha256"], "stages": ["capture-export-ready", "capture-delete-baseline", "verify-delete", "lifecycle-account"],
         "credentialsRead": False, "networkCalled": False, "readOnly": True, "releaseAccepted": False}, selected, jobs, runtime_plan
@@ -161,10 +178,13 @@ def _subject_binding(witness):
     return _hash(json.dumps({name: witness[name] for name in names}, sort_keys=True, separators=(",", ":")))
 
 
-def _parse_child(result, expected_status):
+def _parse_child(result, expected_status, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
     demand(result.returncode == 0 and not result.stderr and len(result.stdout) <= 65_536, "P2_PERSISTENCE_PRIVATE_CHILD_REFUSED")
     value = json.loads(result.stdout)
-    demand(value.get("status") == expected_status and value.get("readOnly") is True, "P2_PERSISTENCE_PRIVATE_CHILD_REFUSED")
+    migrate.require_profile(expected, value)
+    demand(value.get("version") == (2 if expected is not None else 1)
+        and value.get("status") == expected_status and value.get("readOnly") is True, "P2_PERSISTENCE_PRIVATE_CHILD_REFUSED")
     return value
 
 
@@ -200,7 +220,8 @@ def _retain(directory, stage, record):
     return _hash(body)
 
 
-def _load_record(directory, stage):
+def _load_record(directory, stage, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
     _private_directory(directory)
     descriptor = os.open(directory / (stage + ".json"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
@@ -212,8 +233,9 @@ def _load_record(directory, stage):
         os.close(descriptor)
     demand(len(raw) == info.st_size, "P2_PERSISTENCE_PRIOR_RECORD_REQUIRED")
     record = json.loads(raw)
-    demand(_closed(record, ("version", "stage", "subjectBindingSha256", "contextSha256", "witness", "privateEvidence", "receipt", "priorRecordSha256"))
-        and record["version"] == 1 and record["stage"] == stage and SHA.fullmatch(record["subjectBindingSha256"])
+    migrate.require_profile(expected, record)
+    demand(_closed(record, ("version", *(("qualificationTargetProfile",) if expected is not None else ()), "stage", "subjectBindingSha256", "contextSha256", "witness", "privateEvidence", "receipt", "priorRecordSha256"))
+        and record["version"] == (2 if expected is not None else 1) and record["stage"] == stage and SHA.fullmatch(record["subjectBindingSha256"])
         and SHA.fullmatch(record["contextSha256"]) and (record["priorRecordSha256"] is None or SHA.fullmatch(record["priorRecordSha256"])),
         "P2_PERSISTENCE_PRIOR_RECORD_REQUIRED")
     return record, _hash(raw)
@@ -223,21 +245,25 @@ def _context_binding(plan):
     return _hash(_canonical(plan))
 
 
-def load_retained_capture(reviewed_plan, private_directory, stage, expected_subject_binding_sha256=None):
+def load_retained_capture(reviewed_plan, private_directory, stage, expected_subject_binding_sha256=None, *, expected_profile=None):
     """Private in-process adapter for S12/S13; never emits record bytes."""
     demand(isinstance(reviewed_plan, dict) and stage in ("capture-export-ready", "capture-delete-baseline", "verify-delete", "lifecycle-account")
         and (expected_subject_binding_sha256 is None or SHA.fullmatch(expected_subject_binding_sha256)),
         "P2_PERSISTENCE_RETAINED_CAPTURE_REQUIRED")
-    record, record_sha256 = _load_record(Path(private_directory), stage)
+    expected = migrate.profile_context(expected_profile)
+    migrate.require_profile(expected, reviewed_plan)
+    record, record_sha256 = _load_record(Path(private_directory), stage, expected)
     demand(record["contextSha256"] == _context_binding(reviewed_plan)
         and (expected_subject_binding_sha256 is None or record["subjectBindingSha256"] == expected_subject_binding_sha256),
         "P2_PERSISTENCE_RETAINED_CAPTURE_REQUIRED")
     return {"record": record, "recordSha256": record_sha256}
 
 
-def observe_with_scope(reviewed_plan, private_witness, scope, frontend_runtime_database_url, prior_witness=None, prior_capture=None):
+def observe_with_scope(reviewed_plan, private_witness, scope, frontend_runtime_database_url, prior_witness=None, prior_capture=None, *, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
     demand(isinstance(scope, CurrentLifecyclePersistenceScope) and isinstance(reviewed_plan, dict)
         and isinstance(private_witness, dict) and isinstance(frontend_runtime_database_url, str), "P2_PERSISTENCE_OWNED_SCOPE_REQUIRED")
+    migrate.require_profile(expected, reviewed_plan, *reviewed_plan.get("targets", {}).values())
     demand(not (prior_witness is not None and prior_capture is not None), "P2_PERSISTENCE_PRIOR_CAPTURE_REQUIRED")
     if prior_witness is not None:
         prior_capture = {"witness": prior_witness, "privateEvidence": None}
@@ -250,24 +276,27 @@ def observe_with_scope(reviewed_plan, private_witness, scope, frontend_runtime_d
     try:
         for service in ("frontend", "course", "community"):
             scope.verify()
-            payload = {"version": 1, "mode": service, "environment": "staging", "target": reviewed_plan["targets"][service],
+            payload = {"version": 2 if expected is not None else 1, **({"qualificationTargetProfile": expected} if expected is not None else {}),
+                "mode": service, "environment": "staging", "target": reviewed_plan["targets"][service],
                 "witness": private_witness, "connectionUrl": credential if service == "frontend" else None}
-            value = _parse_child(scope.run_persistence(service, payload), "P2_LIFECYCLE_PERSISTENCE_PRIVATE_OBSERVATION")
+            value = _parse_child(scope.run_persistence(service, payload), "P2_LIFECYCLE_PERSISTENCE_PRIVATE_OBSERVATION", expected)
             demand(value.get("service") == service and isinstance(value.get("observation"), dict), "P2_PERSISTENCE_OBSERVATION_REQUIRED")
             observations[service] = value["observation"]
             scope.verify()
         # Bound the two receiver snapshots by an unchanged frontend read. The
         # database clock is intentionally excluded; every selected state row,
         # delivery, export and count must remain identical.
-        payload = {"version": 1, "mode": "frontend", "environment": "staging", "target": reviewed_plan["targets"]["frontend"],
+        payload = {"version": 2 if expected is not None else 1, **({"qualificationTargetProfile": expected} if expected is not None else {}),
+            "mode": "frontend", "environment": "staging", "target": reviewed_plan["targets"]["frontend"],
             "witness": private_witness, "connectionUrl": credential}
-        final_frontend = _parse_child(scope.run_persistence("frontend", payload), "P2_LIFECYCLE_PERSISTENCE_PRIVATE_OBSERVATION")
+        final_frontend = _parse_child(scope.run_persistence("frontend", payload), "P2_LIFECYCLE_PERSISTENCE_PRIVATE_OBSERVATION", expected)
         demand(final_frontend.get("service") == "frontend" and _stable_observation(final_frontend.get("observation", {})) == _stable_observation(observations["frontend"]),
             "P2_PERSISTENCE_FRONTEND_CHANGED_DURING_READ")
         scope.verify()
-        combined = _parse_child(scope.run_persistence("combine", {"version": 1, "mode": "combine", "environment": "staging",
+        combined = _parse_child(scope.run_persistence("combine", {"version": 2 if expected is not None else 1,
+            **({"qualificationTargetProfile": expected} if expected is not None else {}), "mode": "combine", "environment": "staging",
             "plan": reviewed_plan, "witness": private_witness, "observations": observations, "priorCapture": prior_capture}),
-            "P2_LIFECYCLE_PERSISTENCE_PRIVATE_COMBINED")
+            "P2_LIFECYCLE_PERSISTENCE_PRIVATE_COMBINED", expected)
         # Observations remain private in-process for the S12 owner to prove its
         # freshly generated command IDs absent. Standalone persistence records
         # intentionally retain only the exact witness and sanitized receipt.
@@ -277,16 +306,95 @@ def observe_with_scope(reviewed_plan, private_witness, scope, frontend_runtime_d
         scope.verify_runtime()
 
 
-def execute(bundle, configuration, reviewed, source, private, release_evidence):
-    reviewed = _reviewed(reviewed); operation = private["witness"].get("stage"); _private(private, operation)
-    plan_receipt, selected, jobs, runtime_plan = _make_plan_details(bundle, configuration, reviewed, source)
+def _release_evidence(reviewed, release_evidence, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
     demand(_closed(release_evidence, ("originalReleaseReceipt", "frontendDeploymentRecord")), "P2_PERSISTENCE_RELEASE_EVIDENCE_REQUIRED")
     evidence = {}
     for name, encoded in release_evidence.items():
         raw = base64.b64decode(encoded, validate=True)
-        expected = reviewed["plan"]["originalReleaseSha256" if name == "originalReleaseReceipt" else "frontendDeploymentSha256"]
-        demand(0 < len(raw) <= 65_536 and _hash(raw) == expected and isinstance(json.loads(raw), dict), "P2_PERSISTENCE_RELEASE_EVIDENCE_CHANGED")
+        expected_sha = reviewed["plan"]["originalReleaseSha256" if name == "originalReleaseReceipt" else "frontendDeploymentSha256"]
+        demand(0 < len(raw) <= 65_536 and _hash(raw) == expected_sha, "P2_PERSISTENCE_RELEASE_EVIDENCE_CHANGED")
+        if expected is None:
+            value = json.loads(raw)
+        else:
+            from qualification_target_profile import decode_qualification_target_json
+            value = decode_qualification_target_json(raw, "carrier")
+            migrate.require_profile(expected, value)
+            demand(value.get("version") == 2, "P2_PERSISTENCE_RELEASE_EVIDENCE_CHANGED")
+            plan = reviewed["plan"]
+            common = value.get("environment") == "staging" and value.get("releaseId") == plan["releaseId"] \
+                and value.get("sourceCommit") == plan["sources"]["frontend"]
+            if name == "originalReleaseReceipt":
+                demand(common and value.get("status") == "P2_PROFILED_CURRENT_READY_FOR_CERTIFICATION"
+                    and value.get("candidateSha256") == plan["candidateSha256"]
+                    and SHA.fullmatch(value.get("frontendWorkloadReceiptSha256", ""))
+                    and value.get("trafficAuthorized") is False and value.get("releaseAccepted") is False,
+                    "P2_PERSISTENCE_ORIGINAL_RELEASE_RECEIPT_REQUIRED")
+            else:
+                demand(common and value.get("status") == "FRONTEND_DOMAINS_PROMOTED" and value.get("phase") == "completed"
+                    and value.get("frontendDomainsPromoted") is True and value.get("trafficAuthorized") is False,
+                    "P2_PERSISTENCE_FRONTEND_PROMOTION_RECEIPT_REQUIRED")
+        demand(isinstance(value, dict), "P2_PERSISTENCE_RELEASE_EVIDENCE_CHANGED")
         evidence[name] = raw
+    if expected is not None:
+        demand(reviewed["plan"]["originalReleaseSha256"] != reviewed["plan"]["frontendDeploymentSha256"],
+            "P2_PERSISTENCE_RELEASE_EVIDENCE_IDENTITIES_REQUIRED")
+    return evidence
+
+
+class HeldCertificationPersistenceScope(CurrentLifecyclePersistenceScope):
+    """Fixed reader under the original certification scope; owns no lock."""
+    def __init__(self, parent, selected, jobs, reviewed, configuration, source, database_proof, expected_profile, verify_inputs):
+        from p2_certification_parent import P2CertificationScope
+        expected = migrate.profile_context(expected_profile)
+        demand(expected is not None and type(parent) is P2CertificationScope, "P2_PERSISTENCE_CERTIFICATION_SCOPE_REQUIRED")
+        self.parent, self.selected, self.jobs = parent, selected, jobs
+        self.reviewed, self.configuration = reviewed, Path(configuration)
+        self.expected_profile, self.database_proof = expected, database_proof
+        self.verify_inputs = verify_inputs
+        self.program = self.persistence_program = private_program(source, expected)
+        self.runtime_bound = False
+        self.ids = {row["containerId"] for row in reviewed["containers"]}
+        self.verify()
+
+    def verify(self):
+        self.parent.require_release(self.selected, self.jobs)
+        self.parent.require_frontend(self.selected, self.jobs["frontend"])
+        self.parent.require_configuration(self.configuration)
+        current_databases.read_certification_api_proof(self.database_proof, self.parent, self.selected, self.jobs,
+            expected_profile=self.expected_profile)
+        self.verify_inputs()
+
+    def _actual_runtime(self):
+        self.verify()
+        token = runtime._command_scope.set(self.parent)
+        try:
+            actual = runtime.check_containers(self.selected, self.configuration, expected_profile=self.expected_profile)
+        finally:
+            runtime._command_scope.reset(token)
+        demand(actual == self.reviewed["containers"], "P2_PERSISTENCE_RUNTIME_CHANGED")
+        self.verify()
+
+    def run(self, args, *, timeout, input=None, env=None, capture_output=True, check=False, text=False):
+        demand(capture_output is True and check is False and text is False and 0 < timeout <= 30,
+            "P2_PERSISTENCE_FIXED_READER_CHILD_REQUIRED")
+        self.verify(); self._allowed(args, input, env)
+        result = self.parent.run(args, timeout=timeout, input=input, env=env, capture_output=True)
+        demand(len(result.stdout or b"") <= 65_536 and len(result.stderr or b"") <= 8192,
+            "P2_PERSISTENCE_PRIVATE_CHILD_REFUSED")
+        self.verify(); return result
+
+    def close(self):
+        raise ValueError("P2_PERSISTENCE_PARENT_LOCK_NOT_OWNED_BY_READER")
+
+    def revoke(self):
+        raise ValueError("P2_PERSISTENCE_PARENT_LOCK_NOT_OWNED_BY_READER")
+
+
+def execute(bundle, configuration, reviewed, source, private, release_evidence):
+    reviewed = _reviewed(reviewed); operation = private["witness"].get("stage"); _private(private, operation)
+    plan_receipt, selected, jobs, runtime_plan = _make_plan_details(bundle, configuration, reviewed, source)
+    _release_evidence(reviewed, release_evidence)
     runtime.assert_host(runtime_plan)
     program = private_program(source)
     def verify_inputs():
@@ -330,6 +438,95 @@ def execute(bundle, configuration, reviewed, source, private, release_evidence):
         private["frontendRuntimeDatabaseUrl"] = ""
         if not scope.closed:
             scope.close()
+
+
+def _execute_profiled(bundle, configuration, reviewed, source, private, release_evidence,
+                      certification_scope, database_proof, *, expected_profile):
+    """Read through the existing certification scope; never acquires or closes authority."""
+    expected = migrate.profile_context(expected_profile)
+    demand(expected is not None, "P2_PERSISTENCE_PROFILE_REQUIRED")
+    reviewed = _reviewed(reviewed, expected); operation = private["witness"].get("stage"); _private(private, operation)
+    credential = private["frontendRuntimeDatabaseUrl"]
+    private["frontendRuntimeDatabaseUrl"] = ""
+    _plan_receipt, selected, jobs, runtime_plan = _make_plan_details(bundle, configuration, reviewed, source, expected)
+    _release_evidence(reviewed, release_evidence, expected)
+    certification_scope.require_release(selected, jobs)
+    certification_scope.require_frontend(selected, jobs["frontend"])
+    certification_scope.require_configuration(Path(configuration))
+    current_databases.read_certification_api_proof(database_proof, certification_scope, selected, jobs,
+        expected_profile=expected)
+    runtime.assert_host(runtime_plan)
+    program = private_program(source, expected)
+
+    def verify_inputs():
+        certification_scope.require_release(selected, jobs)
+        certification_scope.require_frontend(selected, jobs["frontend"])
+        certification_scope.require_configuration(Path(configuration))
+        current_databases.read_certification_api_proof(database_proof, certification_scope, selected, jobs,
+            expected_profile=expected)
+        demand(Path("/etc/machine-id").read_text().strip() == reviewed["plan"]["hostMachineId"]
+            and identity_probe.source_closure(source) == reviewed["operatorSourceFiles"]
+            and _hash(private_program(source, expected)) == reviewed["programSha256"],
+            "P2_PERSISTENCE_OPERATOR_SOURCE_CHANGED")
+        demand(identity_probe._configuration_hash(Path(configuration)) == reviewed["plan"]["configurationSha256"],
+            "P2_PERSISTENCE_CONFIGURATION_CHANGED")
+        _receipt, fresh, fresh_jobs, fresh_runtime = _make_plan_details(bundle, configuration, reviewed, source, expected)
+        demand(fresh == selected and fresh_jobs == jobs and fresh_runtime == runtime_plan, "P2_PERSISTENCE_RELEASE_CHANGED")
+
+    scope = HeldCertificationPersistenceScope(certification_scope, selected, jobs, reviewed, configuration, source,
+        database_proof, expected, verify_inputs)
+    try:
+        scope.bind_runtime(); verify_inputs()
+        directory, prior_capture, prior_sha = Path(reviewed["privateDirectory"]), None, None
+        subject_binding = _subject_binding(private["witness"])
+        if operation == "capture-delete-baseline":
+            retained = load_retained_capture(reviewed["plan"], directory, "capture-export-ready", subject_binding,
+                expected_profile=expected)
+            prior_record, prior_sha = retained["record"], retained["recordSha256"]
+            prior_capture = {"witness": prior_record["witness"], "privateEvidence": prior_record["privateEvidence"]}
+        elif operation == "verify-delete":
+            retained = load_retained_capture(reviewed["plan"], directory, "capture-delete-baseline", subject_binding,
+                expected_profile=expected)
+            prior_record, prior_sha = retained["record"], retained["recordSha256"]
+            ready = load_retained_capture(reviewed["plan"], directory, "capture-export-ready", subject_binding,
+                expected_profile=expected)
+            ready_sha = ready["recordSha256"]
+            demand(prior_record["priorRecordSha256"] == ready_sha, "P2_PERSISTENCE_PRIOR_CHAIN_REQUIRED")
+            prior_capture = {"witness": prior_record["witness"], "privateEvidence": prior_record["privateEvidence"]}
+        if prior_capture is not None:
+            demand(prior_record["subjectBindingSha256"] == subject_binding, "P2_PERSISTENCE_PRIOR_RECORD_REQUIRED")
+        combined = observe_with_scope(reviewed["plan"], private["witness"], scope, credential,
+            prior_capture=prior_capture, expected_profile=expected)
+        record = {"version": 2, "qualificationTargetProfile": expected, "stage": operation,
+            "subjectBindingSha256": subject_binding, "contextSha256": _context_binding(reviewed["plan"]),
+            "witness": combined["witness"], "privateEvidence": combined["privateEvidence"],
+            "receipt": combined["receipt"], "priorRecordSha256": prior_sha}
+        private_sha = _retain(directory, operation, record)
+        result = dict(combined["receipt"]); result.update({"version": 2, "qualificationTargetProfile": expected,
+            "privateRecordSha256": private_sha, "operatorProgramSha256": reviewed["programSha256"],
+            "readOnly": True, "providerTouched": False, "releaseAccepted": False})
+        original_email = private["witness"].get("originalEmail")
+        demand(original_email is None or original_email not in json.dumps(result), "P2_PERSISTENCE_PRIVATE_OUTPUT_REFUSED")
+        scope.verify_runtime(); verify_inputs()
+        return result
+    except BaseException:
+        raise PersistenceFailure("persistence-profiled-current-stage-refused") from None
+    finally:
+        private["frontendRuntimeDatabaseUrl"] = ""
+
+
+def execute_profiled(bundle, configuration, reviewed, source, private, release_evidence,
+                     certification_scope, database_proof, *, expected_profile):
+    try:
+        return _execute_profiled(bundle, configuration, reviewed, source, private, release_evidence,
+            certification_scope, database_proof, expected_profile=expected_profile)
+    except PersistenceFailure:
+        raise
+    except BaseException:
+        raise PersistenceFailure("persistence-profiled-current-stage-refused") from None
+    finally:
+        if isinstance(private, dict) and "frontendRuntimeDatabaseUrl" in private:
+            private["frontendRuntimeDatabaseUrl"] = ""
 
 
 def main():
