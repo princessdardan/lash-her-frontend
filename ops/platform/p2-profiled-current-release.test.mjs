@@ -304,7 +304,7 @@ test('fixed current certification plan joins the original release plan, terminal
       const checked = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
         { input: JSON.stringify(prepared['paid-revoke']), encoding: 'utf8' });
       assert.equal(checked.status, 0, checked.stderr);
-      await assert.rejects(p2ProfiledCertificationOperator({ ...settings, execution: { reason: revokeReason } }, paidConfirmation), { code: 'ENOENT' });
+      await assert.rejects(p2ProfiledCertificationOperator({ ...settings, execution: { reason: revokeReason } }, paidConfirmation), /P2_PAID_REVOKE_COURSE_SOURCE_REQUIRED/u);
     }
     const revokeSettings = paired(selectedRevoke);
     for (const execution of [undefined, { reason: 'unreviewed' }, { reason: ' ' + revokeReason }, { reason: revokeReason + '\n' },

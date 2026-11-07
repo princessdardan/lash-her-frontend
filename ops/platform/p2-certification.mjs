@@ -60,6 +60,7 @@ const scopedPlanningModes=new Set([...scopedModes,'interactive-browser']);
 const persistenceModes=new Set(['export-cleanup','lifecycle-persistence']);
 // This exact Course source enforces managed-only callbacks after signature verification.
 const scopedMuxCourseSource='b21e25cf900458eb6cbbd993582d7e1bbac36c4b';
+const paidRevokeCourseSource='54fd289a5a8579bfbe343afb07482f406b56ad5b';
 const assetEvents=new Set(['video.asset.created','video.asset.ready','video.asset.errored','video.asset.deleted']);
 const trackEvents=new Set(['video.asset.track.ready','video.asset.track.deleted']);
 const providerId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,255}$/u.test(value);
@@ -1046,7 +1047,10 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   if(interactive&&plan.scopedAction.stage==='learner-access')validateP2InteractivePaidLearnerAccess(learnerAccessSelection(plan.scopedAction),undefined);
   const paidGrantReason=paidGrant?reviewedPaidCourseReason(plan.scopedAction,execution):undefined;
   const paidRevokeReason=paidRevoke?reviewedPaidCourseReason(plan.scopedAction,execution):undefined;
-  if(paidRevoke)validateP2InteractivePaidRevoke(paidRevokeSelection(plan.scopedAction,paidRevokeReason),undefined);
+  if(paidRevoke){
+    validateP2InteractivePaidRevoke(paidRevokeSelection(plan.scopedAction,paidRevokeReason),undefined);
+    if(original.migration.candidate.sources.course.commit!==paidRevokeCourseSource)throw new Error('P2_PAID_REVOKE_COURSE_SOURCE_REQUIRED');
+  }
   const enrollment=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='identity'&&plan.scopedAction.identityEnrollment;
   const scoped=scopedModes.has(plan.mode)||interactive||!!enrollment;
   demand(confirmation==='staging/'+plan.certificationActionId&&
@@ -1061,7 +1065,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
     demand(field?exactKeys(execution,[field]):execution===undefined);
     authoringDraft=validate(authoringSelection(plan.scopedAction),field?execution[field]:undefined);
   }
-  demand(plan.mode!=='mux-callback-recovery'||original.migration.candidate.sources.course.commit===scopedMuxCourseSource);
+  demand(plan.mode!=='mux-callback-recovery'||[scopedMuxCourseSource,paidRevokeCourseSource].includes(original.migration.candidate.sources.course.commit));
   const releaseSettings=selection.releaseSettings;
   const directory=releaseSettings.results;
   frontendPrivateReceiptDirectory(directory);

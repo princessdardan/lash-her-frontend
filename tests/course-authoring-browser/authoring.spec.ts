@@ -1304,9 +1304,9 @@ test("paid learner reads follow archive, restoration and exact manual revocation
     expect(firstReceipt).toMatchObject({ state: "confirmed", courseRevision: 8,
       grant: { grantId: grantIds[0], status: "revoked", orderId: null, externalPaymentId: null, provider: null } });
     await expect(form.getByRole("status")).toHaveText(confirmed);
+    await form.getByRole("button", { name: "Prepare another revocation", exact: true }).click();
     await observe(200);
 
-    await form.getByRole("button", { name: "Prepare another revocation", exact: true }).click();
     await fill(grantIds[1]);
     let posts = 0;
     await page.route(`**${revokePath}*`, async route => {

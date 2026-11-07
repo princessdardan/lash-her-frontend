@@ -92,6 +92,7 @@ PERSISTENCE_MODES = frozenset(('export-cleanup', 'lifecycle-persistence'))
 SCOPED_MODES = PERSISTENCE_MODES | {'mux-callback-recovery', 'interactive-browser'}
 # Exact Course source with signed, managed-only callback processing.
 SCOPED_MUX_COURSE_SOURCE = 'b21e25cf900458eb6cbbd993582d7e1bbac36c4b'
+PAID_REVOKE_COURSE_SOURCE = '54fd289a5a8579bfbe343afb07482f406b56ad5b'
 PROFILED_MODES = SUSPENSION_MODES | SCOPED_MODES | {'native-window', 'fault-before-upstream', 'fault-drop-after-ack',
                                     'known-ack-recovery', 'contain-native'}
 NATIVE_PLAN_FIELDS = frozenset((
@@ -1720,8 +1721,11 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.bundle, self.configuration, self.results = (Path(initial[key]) for key in ('bundle', 'configuration', 'results'))
         self.selected, self.jobs, self.plan, _ = runtime.make_plan(self.bundle, self.configuration,
             self.source / 'ops/platform/compose.yaml', **self.profile_arguments())
-        require(mode != 'mux-callback-recovery' or self.selected['sources']['course']['commit'] == SCOPED_MUX_COURSE_SOURCE,
+        course_source = self.selected['sources']['course']['commit']
+        require(mode != 'mux-callback-recovery' or course_source in (SCOPED_MUX_COURSE_SOURCE, PAID_REVOKE_COURSE_SOURCE),
                 'P2_SCOPED_MUX_MANAGED_COURSE_SOURCE_REQUIRED')
+        require(mode != 'interactive-browser' or plan['scopedAction']['stage'] != 'paid-revoke' or
+                course_source == PAID_REVOKE_COURSE_SOURCE, 'P2_PAID_REVOKE_COURSE_SOURCE_REQUIRED')
         runtime.assert_host(self.plan)
         self.lock_fd = self.shared_lock_fd
         self.lock_info = os.fstat(self.lock_fd)

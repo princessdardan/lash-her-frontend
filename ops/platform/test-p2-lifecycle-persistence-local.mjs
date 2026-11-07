@@ -28,7 +28,7 @@ import { STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile } from "./quali
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const apiPins = { course: "0bb054d5a04db71c481a8b3d182db6df19782cdc", community: "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4" };
-const courseRevokeFixedPin = null;
+const courseRevokeFixedPin = "54fd289a5a8579bfbe343afb07482f406b56ad5b";
 const hash = value => createHash("sha256").update(value).digest("hex");
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
 let phase = "preflight";
@@ -69,7 +69,7 @@ async function main() {
   let revokeSource;
   const fixedRevokeRoot = process.env.P2_COURSE_REVOKE_FIXED_SOURCE_ROOT;
   if (fixedRevokeRoot !== undefined) {
-    assert.ok(!containerMode && courseRevokeFixedPin && fixedRevokeRoot.startsWith("/"), "Fixed Course revoke fixture requires its native exact source pin");
+    assert.ok(!containerMode && fixedRevokeRoot.startsWith("/"), "Fixed Course revoke fixture requires its native exact source pin");
     const cwd = resolve(fixedRevokeRoot);
     const git = (...args) => run("git", args, { cwd }).trim();
     assert.equal(git("rev-parse", "HEAD"), courseRevokeFixedPin);
@@ -1305,11 +1305,18 @@ async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, cre
   const datedGrant = async ({ selection: { userId, courseId }, enrollmentId }, expiresInSeconds) => {
     const key = randomUUID(), digest = hash(`owned-legacy-${key}`);
     // Current Course grants reject expiry input. Exercise retained historical rows on the disposable database.
-    await course.query("INSERT INTO public.entitlement_idempotency_keys(idempotency_key,command_type,request_hash) VALUES($1,'internal_grant',$2)", [key, digest]);
-    await course.query(`INSERT INTO public.entitlement_grants(user_id,course_id,enrollment_id,idempotency_key,request_hash,grant_reason,
-      external_order_id,external_payment_id,provider,granted_at,expires_at) VALUES($1,$2,$3,$4,$5,'purchase',$6,$7,'square',
-      pg_catalog.clock_timestamp()-interval '2 minutes',pg_catalog.clock_timestamp()+$8::int*interval '1 second')`,
-    [userId, courseId, enrollmentId, key, digest, `owned-order-${randomUUID()}`, `owned-payment-${randomUUID()}`, expiresInSeconds]);
+    await course.query("BEGIN");
+    try {
+      await course.query("INSERT INTO public.entitlement_idempotency_keys(idempotency_key,command_type,request_hash) VALUES($1,'internal_grant',$2)", [key, digest]);
+      await course.query(`INSERT INTO public.entitlement_grants(user_id,course_id,enrollment_id,idempotency_key,request_hash,grant_reason,
+        external_order_id,external_payment_id,provider,granted_at,expires_at) VALUES($1,$2,$3,$4,$5,'purchase',$6,$7,'square',
+        pg_catalog.clock_timestamp()-interval '2 minutes',pg_catalog.clock_timestamp()+$8::int*interval '1 second')`,
+      [userId, courseId, enrollmentId, key, digest, `owned-order-${randomUUID()}`, `owned-payment-${randomUUID()}`, expiresInSeconds]);
+      await course.query("COMMIT");
+    } catch (error) {
+      await course.query("ROLLBACK");
+      throw error;
+    }
   };
   const prepare = async (name, kind = "last") => {
     const test = await seed(`revoke-${name}`), { courseId, userId, actorId, revision } = test.selection;
@@ -1358,10 +1365,10 @@ async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, cre
     await assert.rejects(capture(test), { check: "course-paid-revoke-grant" });
   }
 
-  const occupied = await prepare("occupied");
-  await course.query("INSERT INTO public.entitlement_idempotency_keys(idempotency_key,command_type,request_hash) VALUES($1,'admin_revoke',$2)",
-    [`owner-paid-revoke:${occupied.selected.idempotencyKey}`, hash("foreign revoke")]);
-  await assert.rejects(capture(occupied), { check: "course-paid-revoke-baseline" });
+  const occupied = await prepare("occupied"), owner = await prepare("occupied-foreign");
+  await command(owner);
+  await assert.rejects(capture({ ...occupied, selected: { ...occupied.selected, idempotencyKey: owner.selected.idempotencyKey } }),
+    { check: "course-paid-revoke-baseline" });
 
   for (const [name, check] of [["reason", "course-paid-revoke-command"], ["actor", "course-paid-revoke-command"],
     ["command-id", "course-paid-revoke-command"], ["revision", "course-publication-state"], ["progress", "course-paid-revoke-history"],
