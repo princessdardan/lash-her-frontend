@@ -162,5 +162,49 @@
     "liveApplyExecuted": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "profiledKnownAckReplacement": {
+    "sourceCommit": "608b383dca741933cb97b2ffbbb547eb707e7150",
+    "profiledBoundsCommit": "f06d7592",
+    "compressedInstallerCommit": "cee0dc65",
+    "reviewedPlanCommit": "cb6b292e",
+    "replacementKernelCommit": "8e78ab65",
+    "stopReceiptReaderCommits": ["6c470782", "e881d802"],
+    "guardedBrokerJoinCommit": "5fea06f6",
+    "node": {
+      "passed": 69,
+      "logSha256": "2fe43325c4895feda381477b47da0919b5109edf07886b0a2141d4b3f6accd6f"
+    },
+    "host": {
+      "passed": 235,
+      "logSha256": "2dc638eccb5392680fbca48c6cecd7e7bf667f2592772ec5f0049ce64fc89c8f"
+    },
+    "crossLanguage": {
+      "modes": ["known-ack-recovery", "fault-before-upstream", "contain-native", "auth-preparation", "browser-pending", "direct-worker"],
+      "logSha256": "d28c15feff398f9cf021198b243f94cf25608459f72625f01a92e064013414b8"
+    },
+    "fullLocalInstaller": {
+      "sourceFiles": 532,
+      "historyFiles": 33,
+      "decodedBytes": 41983567,
+      "expandedBytes": 56055879,
+      "compressedBytes": 13663888,
+      "wireBytes": 18218559,
+      "wireSha256": "5fe81244962968ad6b10bc9bb3dbf95656e9cf2d49d13dd06005f2b280dcc209",
+      "logSha256": "8b2b02c1c173f04ee88649667fb6d6c9c804eee8e9c321d495b3400d4d85aa4d",
+      "exactFilesAndExistingInstallVerified": true,
+      "rootIdentityAndInstallPathProjected": true
+    },
+    "replacementProof": {
+      "oldGatewayUncertaintyRetained": true,
+      "freshGatewayClosedZeroRequired": true,
+      "originalAndJoinedRuntimeReceiptBytesRequired": true,
+      "dockerAndProviderIOProjected": true
+    },
+    "operatorApplyEligible": false,
+    "interruptedRestorationQualified": false,
+    "liveApplyExecuted": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
