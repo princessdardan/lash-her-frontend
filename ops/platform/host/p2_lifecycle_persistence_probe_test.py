@@ -419,6 +419,190 @@ class PersistenceProbeTests(unittest.TestCase):
         self.assertEqual(failure.exception.public_receipt['check'], 'persistence-profiled-current-stage-refused')
         self.assertEqual(private['frontendRuntimeDatabaseUrl'], '')
 
+    def scoped_persistence_fixture(self, directory, stage):
+        from p2_certification_parent import (
+            P2CertificationScope, P2ProfiledCertificationBroker, _canonical, _profiled_plan_hash,
+        )
+        ref, reviewed = self.profiled_reviewed()
+        reviewed['privateDirectory'] = str(directory / 'private')
+        plan = reviewed['plan']
+        source = plan['sources']['frontend']
+        release_id = plan['releaseId']
+        selected = {'releaseId': release_id}
+        witness = {'stage': stage, 'userId': '00000000-0000-4000-8000-000000000001',
+            'originalEmail': 'owned-private@example.invalid', 'exportCommand': {'commandId': 'owned-export'},
+            'attemptIds': [], 'grantIds': [], 'streamIds': [], 'inboxEventIds': []}
+        private = {'frontendRuntimeDatabaseUrl': 'postgresql://owned-private-canary', 'witness': witness}
+        identity = {'version': 2, 'qualificationTargetProfile': ref, 'environment': 'staging',
+            'releaseId': release_id, 'sourceCommit': source}
+        original = {**identity, 'status': 'P2_PROFILED_CURRENT_READY_FOR_CERTIFICATION',
+            'candidateSha256': plan['candidateSha256'], 'frontendWorkloadReceiptSha256': 'c' * 64,
+            'trafficAuthorized': False, 'releaseAccepted': False}
+        promotion = {**identity, 'status': 'FRONTEND_DOMAINS_PROMOTED', 'phase': 'completed',
+            'frontendDomainsPromoted': True, 'trafficAuthorized': False}
+        original_raw, promotion_raw = (json.dumps(value).encode() + b'\n' for value in (original, promotion))
+        plan.update(originalReleaseSha256=probe._hash(original_raw), frontendDeploymentSha256=probe._hash(promotion_raw))
+        cert = {'mode': 'lifecycle-persistence', 'startState': 'already-closed', 'initialEpoch': '3',
+            'scopedAction': {'stage': stage, 'subjectBindingSha256': probe._subject_binding(witness)},
+            'persistenceReaderEligible': True, 'persistenceReviewedSha256': probe._hash(_canonical(reviewed)),
+            'sourceCommit': source, 'operatorSourceCommit': source, 'candidateSha256': plan['candidateSha256'],
+            'configurationCanonicalSha256': plan['configurationSha256'], 'originalReleaseId': release_id,
+            'operatorSourceClosureSha256': plan['operatorSourceSha256'], 'certificationActionId': 'owned-certification',
+            'runtimeInventorySha256': probe._hash(_canonical(reviewed['containers'])),
+            'originalReleaseReceiptSha256': plan['originalReleaseSha256'],
+            'readyReceiptSha256': {'frontend-promotion-outcome.json': plan['frontendDeploymentSha256']}}
+        jobs = {name: {'job': {'target': {'serverMajor': target['serverMajor']}}, 'image': 'owned-' + name}
+                for name, target in plan['targets'].items()}
+        output = directory / 'api'
+        output.mkdir()
+        databases, job_hashes = {}, {}
+        for name in ('course', 'community'):
+            path = output / (name + '-input')
+            path.mkdir()
+            raw_job = json.dumps(jobs[name]['job']).encode()
+            (path / 'job.json').write_bytes(raw_job)
+            job_hashes[name] = probe._hash(raw_job)
+            path = output / name
+            path.mkdir()
+            migrate.write_json(path, 'database-receipt.json', {**identity, 'manifestSha256': job_hashes[name]})
+            databases[name] = {'image': jobs[name]['image'], 'jobSha256': job_hashes[name],
+                'receiptSha256': probe._hash((path / 'database-receipt.json').read_bytes())}
+        cert['apiJobSha256'] = job_hashes
+        cert['planSha256'] = _profiled_plan_hash(cert)
+        scope = object.__new__(P2CertificationScope)
+        scope._expected_profile, scope.certification_plan, scope.candidate_sha256 = ref, cert, plan['candidateSha256']
+        scope.require_release, scope.require_configuration, scope.verify = mock.Mock(), mock.Mock(), mock.Mock()
+        target = plan['targets']['frontend']
+        scope.require_frontend = mock.Mock(return_value={'runtime': {'name': target['runtimeRole'], 'oid': target['runtimeRoleOid']}})
+        frontend = {'epoch': '3', 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0}
+        gateway = {'faultLeasePresent': False, 'admission': {'valid': True, 'newWork': False, 'recovery': False,
+            'active': {'newWork': 0, 'recovery': 0}, 'uncertain': {'newWork': 0, 'recovery': 0}}}
+        scope._physical_observer = mock.Mock()
+        scope._physical_observer.probe.return_value = {'admission': frontend}
+        outcome = {**identity, 'status': 'P2_CERTIFICATION_API_DATABASES_READ_ONLY_VERIFIED', 'phase': 'completed',
+            'migrationsExecuted': False, 'frontendSqlApplied': False, 'trafficAuthorized': False,
+            'candidateSha256': plan['candidateSha256'], 'certificationActionId': cert['certificationActionId'], 'databases': databases}
+        migrate.write_json(output, 'certification-current-databases-outcome.json', outcome)
+        proof = probe.current_databases.CertificationCurrentDatabaseProof(probe.current_databases._CERTIFICATION_PROOF_AUTHORITY,
+            scope, selected, jobs, output, outcome)
+        broker = object.__new__(P2ProfiledCertificationBroker)
+        broker.scope, broker.observer, broker.api_proof = scope, scope._physical_observer, proof
+        broker.guard_arm_verified = broker.external_armed = True
+        broker.bundle, broker.configuration, broker.source = directory / 'bundle', directory / 'configuration', self.source
+        broker.selected, broker.jobs, broker.runtime_current = selected, jobs, copy.deepcopy(reviewed['containers'])
+        broker.check, broker.require_scoped_native_off = mock.Mock(), mock.Mock()
+        broker._gateway_current = mock.Mock(return_value=gateway)
+        broker.initial = {'persistenceReviewed': reviewed, 'persistencePrivate': private, 'certificationPlan': copy.deepcopy(cert),
+            'sourceClosureSha256': plan['operatorSourceSha256'], 'sourceSha256': reviewed['operatorSourceFiles'],
+            'candidateSha256': plan['candidateSha256'], 'hostMachineId': plan['hostMachineId'],
+            'originalReleaseReceipt': base64.b64encode(original_raw).decode(),
+            'readyReceipts': {'frontend-promotion-outcome.json': base64.b64encode(promotion_raw).decode()}}
+        return broker, private, frontend, gateway, output
+
+    def test_scoped_stage_uses_exact_broker_scope_proof_and_retained_bytes_once(self):
+        for stage, status in probe.SCOPED_PERSISTENCE_STATUS.items():
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as temp:
+                directory = Path(temp).resolve()
+                with mock.patch.object(probe, 'ROOT', directory):
+                    broker, private, _frontend, _gateway, _output = self.scoped_persistence_fixture(directory, stage)
+                    component = probe.P2ScopedLifecyclePersistenceStage(broker)
+                    result = {'version': 2, 'qualificationTargetProfile': broker.scope._expected_profile,
+                        'status': status, 'readOnly': True, 'providerTouched': False, 'releaseAccepted': False}
+                    def execute(*args, **options):
+                        self.assertIs(args[4], private)
+                        self.assertIn('owned-private-canary', private['frontendRuntimeDatabaseUrl'])
+                        self.assertEqual(args[5], {'originalReleaseReceipt': broker.initial['originalReleaseReceipt'],
+                            'frontendDeploymentRecord': broker.initial['readyReceipts']['frontend-promotion-outcome.json']})
+                        self.assertIs(args[6], broker.scope)
+                        self.assertIs(args[7], broker.api_proof)
+                        self.assertEqual(options, {'expected_profile': broker.scope._expected_profile, '_scoped_stage': component})
+                        component._require_closed(broker.scope)
+                        return result
+                    with mock.patch.object(probe, 'execute_profiled', side_effect=execute) as reader:
+                        self.assertIs(component.observe(), result)
+                        with self.assertRaisesRegex(probe.PersistenceFailure, 'already-attempted'):
+                            component.observe()
+                        reader.assert_called_once()
+                    self.assertEqual(private, {})
+                    self.assertNotIn('persistencePrivate', broker.initial)
+                    self.assertEqual(broker.require_scoped_native_off.call_count, 2)
+                    self.assertNotIn('owned-private', json.dumps(result))
+
+    def test_scoped_stage_refuses_drift_and_burns_private_input_before_any_reader(self):
+        changes = {
+            'witness-subject': lambda broker, private, _fe, _gw, _path: private['witness'].update(originalEmail='different@example.invalid'),
+            'witness-stage': lambda broker, private, _fe, _gw, _path: private['witness'].update(stage='verify-delete'),
+            'unarmed': lambda broker, _private, _fe, _gw, _path: setattr(broker, 'guard_arm_verified', False),
+            'reviewed-carrier': lambda broker, _private, _fe, _gw, _path: broker.initial['persistenceReviewed'].update(probeId='other-review'),
+            'scope-plan': lambda broker, _private, _fe, _gw, _path: broker.scope.certification_plan.update(initialEpoch='4'),
+            'promotion-bytes': lambda broker, _private, _fe, _gw, _path: broker.initial['readyReceipts'].update(
+                {'frontend-promotion-outcome.json': base64.b64encode(b'{}').decode()}),
+            'api-proof-copy': lambda broker, _private, _fe, _gw, _path: setattr(broker, 'api_proof', {'status': 'copied'}),
+            'api-proof-bytes': lambda broker, _private, _fe, _gw, path: (path / 'course/database-receipt.json').write_bytes(b'{}'),
+            'frontend-recovery': lambda broker, _private, fe, _gw, _path: fe.update(recovery=True),
+            'frontend-uncertain': lambda broker, _private, fe, _gw, _path: fe.update(uncertain=1),
+            'gateway-active': lambda broker, _private, _fe, gw, _path: gw['admission']['active'].update(recovery=1),
+            'gateway-counter-type': lambda broker, _private, _fe, gw, _path: gw['admission']['uncertain'].update(newWork=False),
+            'gateway-fault-lease': lambda broker, _private, _fe, gw, _path: gw.update(faultLeasePresent=True),
+            'native-state-unknown': lambda broker, _private, _fe, _gw, _path: setattr(
+                broker.require_scoped_native_off, 'side_effect', ValueError('owned-private-native-error')),
+        }
+        for name, change in changes.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as temp:
+                directory = Path(temp).resolve()
+                with mock.patch.object(probe, 'ROOT', directory), mock.patch.object(probe, 'execute_profiled') as reader:
+                    fixture = self.scoped_persistence_fixture(directory, 'capture-export-ready')
+                    broker, private = fixture[:2]
+                    component = probe.P2ScopedLifecyclePersistenceStage(broker)
+                    change(*fixture)
+                    with self.assertRaises(probe.PersistenceFailure) as refusal:
+                        component.observe()
+                    self.assertNotIn('owned-private', str(refusal.exception.public_receipt))
+                    with self.assertRaisesRegex(probe.PersistenceFailure, 'already-attempted'):
+                        component.observe()
+                    self.assertNotIn('persistencePrivate', broker.initial)
+                    self.assertEqual(private, {})
+                    reader.assert_not_called()
+
+    def test_scoped_stage_disallows_legacy_or_unreviewed_actions(self):
+        from types import SimpleNamespace
+        from p2_certification_parent import P2CertificationBroker
+        for broker in (SimpleNamespace(), object.__new__(P2CertificationBroker)):
+            with self.assertRaisesRegex(ValueError, 'SCOPED_PARENT_REQUIRED'):
+                probe.P2ScopedLifecyclePersistenceStage(broker)
+        with tempfile.TemporaryDirectory() as temp:
+            broker, *_ = self.scoped_persistence_fixture(Path(temp).resolve(), 'capture-export-ready')
+            broker.scope.certification_plan['scopedAction']['stage'] = 'lifecycle-account'
+            with self.assertRaisesRegex(ValueError, 'SCOPED_ACTION_REQUIRED'):
+                probe.P2ScopedLifecyclePersistenceStage(broker)
+
+    def test_scoped_stage_rechecks_gateway_before_publishing_private_record(self):
+        original_read_text = Path.read_text
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(probe, 'ROOT', Path(temp).resolve()):
+            directory = Path(temp).resolve()
+            broker, private, _frontend, gateway, _output = self.scoped_persistence_fixture(directory, 'capture-export-ready')
+            reviewed = broker.initial['persistenceReviewed']
+            def read_text(path, *args, **kwargs):
+                return reviewed['plan']['hostMachineId'] if str(path) == '/etc/machine-id' else original_read_text(path, *args, **kwargs)
+            def observe(*_args, **_kwargs):
+                gateway['admission']['uncertain']['recovery'] = 1
+                return {'receipt': {}, 'witness': {}, 'privateEvidence': None}
+            with mock.patch.object(Path, 'read_text', read_text), \
+                    mock.patch.object(probe, '_make_plan_details', return_value=({}, broker.selected, broker.jobs, {})), \
+                    mock.patch.object(probe, '_source_closure', return_value=reviewed['operatorSourceFiles']), \
+                    mock.patch.object(probe.identity_probe, '_configuration_hash', return_value=reviewed['plan']['configurationSha256']), \
+                    mock.patch.object(runtime, 'assert_host'), \
+                    mock.patch.object(runtime, 'check_containers', return_value=reviewed['containers']), \
+                    mock.patch.object(probe, 'observe_with_scope', side_effect=observe) as reader, \
+                    mock.patch.object(probe, '_retain') as retain:
+                component = probe.P2ScopedLifecyclePersistenceStage(broker)
+                with self.assertRaisesRegex(probe.PersistenceFailure, 'scoped-stage-refused'):
+                    component.observe()
+                reader.assert_called_once()
+                retain.assert_not_called()
+            self.assertEqual(private, {})
+            self.assertFalse((directory / 'private').exists())
+
     def test_exclusive_private_records_chain_from_retained_bytes(self):
         with tempfile.TemporaryDirectory() as parent:
             os.chmod(parent, 0o700)

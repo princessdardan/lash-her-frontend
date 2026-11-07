@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import stat
 import sys
+import threading
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import migrate
@@ -23,6 +24,11 @@ UUID = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-
 SHA = re.compile(r"^[a-f0-9]{64}$")
 PROGRAM_FILES = ("ops/platform/p2-lifecycle-state-witness.mjs", "ops/platform/p2-lifecycle-persistence-probe.mjs",
     "ops/platform/host/p2_lifecycle_persistence_scope.py", "ops/platform/host/p2_lifecycle_persistence_probe.py")
+SCOPED_PERSISTENCE_STATUS = {
+    "capture-export-ready": "P2_LIFECYCLE_EXPORT_READY_CAPTURED",
+    "capture-delete-baseline": "P2_LIFECYCLE_EXPORT_SCRUBBED_DELETE_BASELINE_CAPTURED",
+    "verify-delete": "P2_LIFECYCLE_DELETE_PERSISTENCE_VERIFIED",
+}
 demand = migrate.demand
 
 
@@ -422,6 +428,129 @@ class HeldCertificationPersistenceScope(CurrentLifecyclePersistenceScope):
         raise ValueError("P2_PERSISTENCE_PARENT_LOCK_NOT_OWNED_BY_READER")
 
 
+class P2ScopedLifecyclePersistenceStage:
+    """One source-selected persistence observation under the armed certification parent."""
+    def __init__(self, broker):
+        from p2_certification_parent import P2CertificationScope, P2ProfiledCertificationBroker
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+
+        expected = migrate.profile_context(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+        demand(type(broker) is P2ProfiledCertificationBroker and type(broker.scope) is P2CertificationScope
+            and broker.scope._expected_profile == expected, "P2_PERSISTENCE_SCOPED_PARENT_REQUIRED")
+        self._broker, self._scope, self._expected = broker, broker.scope, expected
+        self._plan = self._scope.certification_plan
+        self._plan_hash = self._plan.get("planSha256")
+        action = self._plan.get("scopedAction")
+        demand(self._plan.get("mode") == "lifecycle-persistence" and self._plan.get("startState") == "already-closed"
+            and _closed(action, ("stage", "subjectBindingSha256")) and isinstance(action["stage"], str)
+            and action["stage"] in SCOPED_PERSISTENCE_STATUS
+            and isinstance(action["subjectBindingSha256"], str) and SHA.fullmatch(action["subjectBindingSha256"])
+            and action["subjectBindingSha256"] != "0" * 64, "P2_PERSISTENCE_SCOPED_ACTION_REQUIRED")
+        self._stage, self._subject = action["stage"], action["subjectBindingSha256"]
+        self._lock = threading.Lock()
+        self._attempted = self._observing = False
+
+    def _verify_binding(self, scope):
+        from p2_certification_parent import _profiled_plan_hash
+
+        broker = self._broker
+        demand(self._observing and broker.external_armed is True and broker.guard_arm_verified is True
+            and scope is broker.scope is self._scope and broker.observer is scope._physical_observer
+            and broker.initial.get("certificationPlan") == self._plan == scope.certification_plan
+            and self._plan_hash == _profiled_plan_hash(self._plan), "P2_PERSISTENCE_SCOPED_PARENT_CHANGED")
+
+    def _require_scope(self, scope):
+        self._verify_binding(scope)
+        broker = self._broker
+        broker.check()
+        scope.require_release(broker.selected, broker.jobs)
+        scope.require_configuration(broker.configuration)
+        return scope.require_frontend(broker.selected, broker.jobs["frontend"])
+
+    def _require_closed(self, scope):
+        self._require_scope(scope)
+        broker = self._broker
+        frontend = broker.observer.probe("observe")["admission"]
+        gateway = broker._gateway_current()
+        admission = gateway["admission"]
+        demand(frontend.get("epoch") == self._plan["initialEpoch"]
+            and all(value.get("newWork") is False and value.get("recovery") is False for value in (frontend, admission))
+            and all(type(frontend.get(key)) is int and frontend[key] == 0 for key in ("active", "uncertain"))
+            and all(_closed(admission.get(key), ("newWork", "recovery"))
+                and all(type(value) is int and value == 0 for value in admission[key].values())
+                for key in ("active", "uncertain"))
+            and admission.get("valid") is True and gateway.get("faultLeasePresent") is False,
+            "P2_PERSISTENCE_SCOPED_CLOSED_ZERO_REQUIRED")
+        broker.require_scoped_native_off()
+        self._require_scope(scope)
+
+    def _review(self):
+        from p2_certification_parent import _canonical as canonical_certification
+
+        broker, cert = self._broker, self._plan
+        expected = self._expected
+        initial = broker.initial
+        reviewed = _reviewed(initial["persistenceReviewed"], expected)
+        plan = reviewed["plan"]
+        current = self._require_scope(self._scope)
+        source = plan["sources"]["frontend"]
+        demand(cert["persistenceReaderEligible"] is True and cert["persistenceReviewedSha256"] == _hash(canonical_certification(reviewed))
+            and cert["sourceCommit"] == cert["operatorSourceCommit"] == source
+            and initial["sourceClosureSha256"] == cert["operatorSourceClosureSha256"] == plan["operatorSourceSha256"]
+            and initial["sourceSha256"] == reviewed["operatorSourceFiles"]
+            and initial["candidateSha256"] == cert["candidateSha256"] == self._scope.candidate_sha256 == plan["candidateSha256"]
+            and cert["configurationCanonicalSha256"] == plan["configurationSha256"]
+            and cert["originalReleaseId"] == plan["releaseId"]
+            and initial["hostMachineId"] == plan["hostMachineId"]
+            and broker.runtime_current == reviewed["containers"]
+            and _hash(canonical_certification(reviewed["containers"])) == cert["runtimeInventorySha256"]
+            and all(target["serverMajor"] == broker.jobs[name]["job"]["target"]["serverMajor"]
+                for name, target in plan["targets"].items())
+            and current["runtime"] == {"name": plan["targets"]["frontend"]["runtimeRole"],
+                "oid": plan["targets"]["frontend"]["runtimeRoleOid"]},
+            "P2_PERSISTENCE_SCOPED_REVIEW_CHANGED")
+        promotion_name = "frontend-promotion-outcome.json"
+        demand(cert["originalReleaseReceiptSha256"] == plan["originalReleaseSha256"]
+            and cert["readyReceiptSha256"][promotion_name] == plan["frontendDeploymentSha256"],
+            "P2_PERSISTENCE_SCOPED_RELEASE_PINS_CHANGED")
+        evidence = {"originalReleaseReceipt": initial["originalReleaseReceipt"],
+            "frontendDeploymentRecord": initial["readyReceipts"][promotion_name]}
+        _release_evidence(reviewed, evidence, expected)
+        return reviewed, evidence
+
+    def observe(self):
+        with self._lock:
+            if self._attempted:
+                raise PersistenceFailure("persistence-scoped-stage-already-attempted")
+            self._attempted = True
+            private = self._broker.initial.pop("persistencePrivate", None)
+        self._observing = True
+        try:
+            _private(private, self._stage)
+            demand(bool(private["frontendRuntimeDatabaseUrl"]) and _subject_binding(private["witness"]) == self._subject,
+                "P2_PERSISTENCE_SCOPED_SUBJECT_REQUIRED")
+            reviewed, evidence = self._review()
+            self._require_closed(self._scope)
+            broker = self._broker
+            proof = broker.api_proof
+            current_databases.read_certification_api_proof(proof, self._scope, broker.selected, broker.jobs,
+                expected_profile=self._expected)
+            result = execute_profiled(broker.bundle, broker.configuration, reviewed, broker.source, private, evidence,
+                self._scope, proof, expected_profile=self._expected, _scoped_stage=self)
+            migrate.require_profile(self._expected, result)
+            demand(type(result["version"]) is int and result["version"] == 2
+                and result["status"] == SCOPED_PERSISTENCE_STATUS[self._stage] and result["readOnly"] is True
+                and result["providerTouched"] is False and result["releaseAccepted"] is False,
+                "P2_PERSISTENCE_SCOPED_RESULT_REQUIRED")
+            return result
+        except Exception:
+            raise PersistenceFailure("persistence-scoped-stage-refused") from None
+        finally:
+            self._observing = False
+            if isinstance(private, dict):
+                private.clear()
+
+
 def execute(bundle, configuration, reviewed, source, private, release_evidence):
     reviewed = _reviewed(reviewed); operation = private["witness"].get("stage"); _private(private, operation)
     plan_receipt, selected, jobs, runtime_plan = _make_plan_details(bundle, configuration, reviewed, source)
@@ -472,10 +601,14 @@ def execute(bundle, configuration, reviewed, source, private, release_evidence):
 
 
 def _execute_profiled(bundle, configuration, reviewed, source, private, release_evidence,
-                      certification_scope, database_proof, *, expected_profile):
+                      certification_scope, database_proof, *, expected_profile, _scoped_stage=None):
     """Read through the existing certification scope; never acquires or closes authority."""
     expected = migrate.profile_context(expected_profile)
     demand(expected is not None, "P2_PERSISTENCE_PROFILE_REQUIRED")
+    if _scoped_stage is not None:
+        demand(type(_scoped_stage) is P2ScopedLifecyclePersistenceStage and _scoped_stage._expected == expected,
+            "P2_PERSISTENCE_SCOPED_PARENT_REQUIRED")
+        _scoped_stage._verify_binding(certification_scope)
     reviewed = _reviewed(reviewed, expected); operation = private["witness"].get("stage"); _private(private, operation)
     credential = private["frontendRuntimeDatabaseUrl"]
     private["frontendRuntimeDatabaseUrl"] = ""
@@ -490,6 +623,8 @@ def _execute_profiled(bundle, configuration, reviewed, source, private, release_
     program = private_program(source, expected)
 
     def verify_inputs():
+        if _scoped_stage is not None:
+            _scoped_stage._verify_binding(certification_scope)
         certification_scope.require_release(selected, jobs)
         certification_scope.require_frontend(selected, jobs["frontend"])
         certification_scope.require_configuration(Path(configuration))
@@ -528,6 +663,8 @@ def _execute_profiled(bundle, configuration, reviewed, source, private, release_
             demand(prior_record["subjectBindingSha256"] == subject_binding, "P2_PERSISTENCE_PRIOR_RECORD_REQUIRED")
         combined = observe_with_scope(reviewed["plan"], private["witness"], scope, credential,
             prior_capture=prior_capture, expected_profile=expected)
+        if _scoped_stage is not None:
+            _scoped_stage._require_closed(certification_scope)
         record = {"version": 2, "qualificationTargetProfile": expected, "stage": operation,
             "subjectBindingSha256": subject_binding, "contextSha256": _context_binding(reviewed["plan"]),
             "witness": combined["witness"], "privateEvidence": combined["privateEvidence"],
@@ -547,10 +684,10 @@ def _execute_profiled(bundle, configuration, reviewed, source, private, release_
 
 
 def execute_profiled(bundle, configuration, reviewed, source, private, release_evidence,
-                     certification_scope, database_proof, *, expected_profile):
+                     certification_scope, database_proof, *, expected_profile, _scoped_stage=None):
     try:
         return _execute_profiled(bundle, configuration, reviewed, source, private, release_evidence,
-            certification_scope, database_proof, expected_profile=expected_profile)
+            certification_scope, database_proof, expected_profile=expected_profile, _scoped_stage=_scoped_stage)
     except PersistenceFailure:
         raise
     except BaseException:
