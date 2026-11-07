@@ -181,7 +181,7 @@ class ParentProtocolTests(unittest.TestCase):
                                        st_ino=actual.st_ino, st_dev=actual.st_dev)
         self.patches = [patch.object(parent, 'LOCK', self.path), patch.object(p2_release_broker, 'LOCK', self.path),
             patch.object(p2_release_broker, 'os', OwnedBrokerOs()),
-            patch.object(p2_release_broker, 'verify_source_closure', return_value='owned-source-projection'),
+            patch.object(p2_release_broker, 'verify_profiled_current_source_closure', return_value='owned-source-projection'),
             patch.object(staging_state, 'configuration_hashes', return_value=initial['configurationSha256']),
             patch.object(parent.P2ProfiledCurrentPhysicalObserver, 'start', lambda observer, failed: self.observer_start(observer, failed)),
             patch.object(parent.P2ProfiledCurrentPhysicalObserver, 'probe', lambda _, operation: self.observer_probe(operation)),
@@ -391,13 +391,17 @@ class ParentProtocolTests(unittest.TestCase):
             def stopped(*_):
                 self.assertTrue(all(item.poll() is not None for item in children))
                 self.events.append('runtime-containment-projection')
-            with patch.object(p2_prior_gateway, 'capture_before_stop', side_effect=ValueError('OWNED_GATEWAY_UNKNOWN')), \
+            with patch.object(p2_prior_gateway, 'capture_before_stop', side_effect=ValueError('OWNED_GATEWAY_UNKNOWN')) as capture, \
                     patch.object(migrate, 'suspend_runtime', side_effect=stopped), \
-                    patch.object(p2_release_broker.subprocess, 'run', return_value=SimpleNamespace(returncode=0)):
+                    patch.object(p2_release_broker.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), \
+                    patch.object(parent.runtime, 'command', return_value=''):
                 with self.assertRaisesRegex(ValueError, 'GUARD_DIED|BROKER_FAILED'):
                     self.broker.command({'id': 3, 'operation': 'profiled-current-prepare-close'})
                 self.broker.abort()
                 self.assertTrue(self.broker.worker_done.wait(3))
+                self.broker.abort()
+                capture.assert_called_once()
+                self.assertEqual(capture.call_args.kwargs.get('expected_profile'), PROFILE)
             thread.join(3)
             self.assertFalse(thread.is_alive())
             self.assertTrue(failures)
@@ -414,6 +418,105 @@ class ParentProtocolTests(unittest.TestCase):
         finally:
             if guard.poll() is None:
                 guard.kill(); guard.wait(timeout=3)
+
+    def test_guard_death_after_delegation_allows_one_fixed_fallback_only(self):
+        self.arm()
+        with patch.object(p2_release_broker.Broker, 'contain_failure_without_guard') as fallback:
+            self.broker.abort()
+            self.assertTrue(self.broker.failed.is_set())
+            self.assertIn(b'"operation":"abort"', os.read(self.safety_read, 8192))
+            fallback.assert_not_called()
+            self.broker.guard_alive = False
+            self.broker.abort()
+            self.broker.abort()
+            fallback.assert_called_once_with()
+            self.assertTrue(self.broker.outcome['workerProcessesQuiesced'])
+
+    def test_guard_dead_unarmed_scope_cannot_stop_runtime(self):
+        with patch.object(parent.P2ProfiledCurrentPhysicalObserver, 'start', side_effect=ValueError('OWNED_NO_PHYSICAL_PROOF')):
+            with self.assertRaisesRegex(ValueError, 'OWNED_NO_PHYSICAL_PROOF'):
+                self.arm()
+        self.broker.guard_alive = False
+        with patch.object(p2_prior_gateway, 'capture_before_stop') as capture, \
+                patch.object(migrate, 'suspend_runtime') as stop, patch.object(parent.runtime, 'command', return_value=''):
+            self.broker.abort()
+            capture.assert_not_called()
+            stop.assert_not_called()
+        self.assertIsNone(self.broker.observer)
+        self.assertIsNone(self.broker.armed_probe)
+        self.assertFalse((self.root / self.broker.terminal_filename()).exists())
+
+    def test_observer_abort_can_finish_while_a_survivor_waits_outside_cleanup_lock(self):
+        self.arm()
+        self.broker.guard_alive = False
+        observer = self.broker.observer
+        signal_failure = threading.Event()
+        def observer_failure():
+            if signal_failure.wait(3):
+                self.broker.abort()
+        def stop(value):
+            signal_failure.set()
+            return p2_release_broker.PhysicalObserver.stop(value)
+        observer.thread = threading.Thread(target=observer_failure, daemon=True)
+        observer.thread.start()
+        survivor = threading.Thread(target=self.broker.abort, daemon=True)
+        with patch.object(p2_release_broker.Broker, 'contain_failure_without_guard', return_value=True) as fallback, \
+                patch.object(parent.P2ProfiledCurrentPhysicalObserver, 'stop', stop):
+            survivor.start()
+            survivor.join(3)
+            self.assertFalse(survivor.is_alive())
+            self.assertFalse(observer.thread.is_alive())
+            fallback.assert_called_once_with()
+
+    def test_concurrent_close_retains_actual_flock_until_registered_child_reaps(self):
+        self.arm()
+        child = subprocess.Popen([sys.executable, '-I', '-c', 'import time;time.sleep(60)'])
+        with self.broker.scope.mutations:
+            self.broker.scope.processes.add(child)
+        self.broker.guard_alive = False
+        attempted = threading.Event()
+        errors = []
+        def closed():
+            try:
+                self.broker.close()
+            except BaseException as error:
+                errors.append(error)
+        def reap_unknown():
+            attempted.set()
+            raise TimeoutError('owned wait failure')
+        def fixed_fallback():
+            self.assertIsNotNone(child.poll())
+            self.assertIsNotNone(self.broker.lock_fd)
+        thread = threading.Thread(target=closed)
+        try:
+            # Keep a real process alive while modeling only the failed reap;
+            # actual child exit and wait allow exactly one source fallback.
+            with patch.object(self.broker.scope, 'revoke', side_effect=reap_unknown), \
+                    patch.object(p2_release_broker.Broker, 'contain_failure_without_guard', side_effect=fixed_fallback) as fallback:
+                thread.start()
+                self.assertTrue(attempted.wait(3))
+                self.broker.abort()
+                self.assertTrue(thread.is_alive())
+                fallback.assert_not_called()
+                contender = os.open(self.path, os.O_RDWR)
+                try:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    child.kill(); child.wait(timeout=3)
+                    thread.join(3)
+                    self.assertFalse(thread.is_alive())
+                    self.assertEqual(errors, [])
+                    fallback.assert_called_once_with()
+                    self.assertIsNone(self.broker.lock_fd)
+                    self.fd = None
+                    fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                finally:
+                    os.close(contender)
+        finally:
+            if child.poll() is None:
+                child.kill(); child.wait(timeout=3)
+            if thread.is_alive():
+                thread.join(3)
 
     def test_retained_original_byte_tamper_and_duplicate_prior_stage_refuse(self):
         self.ready()

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fixed, fenced current-profile parent. No frontend SQL or admission opening."""
 import base64
+from contextlib import nullcontext
 import copy
 import fcntl
 import hashlib
@@ -31,7 +32,7 @@ import vercel
 from p2_certification_profile import require_profile, RUNTIME_FLAGS
 from p2_release_broker import Broker, PhysicalObserver, LOCK, MAXIMUM
 from p2_profiled_current_scope import P2ProfiledCurrentScope, PROFILE, COMMON, require_profiled
-from p2_source_closure import verify_source_closure, private_observer_program
+from p2_source_closure import private_observer_program
 from qualification_target_profile import decode_qualification_target_json
 
 require = migrate.demand
@@ -173,6 +174,8 @@ class P2ProfiledCurrentBroker(Broker):
         self.armed_probe = self.arm_identity = self.session_closed_proof = None
         self.raw_pins = {}
         self.api_job_sha256 = None
+        self.failure_lock = threading.RLock()
+        self.fallback_started = False
         self.outcome.update(version=2, qualificationTargetProfile=copy.deepcopy(PROFILE),
                             **{key: False for key in FALSE_FIELDS})
 
@@ -181,6 +184,95 @@ class P2ProfiledCurrentBroker(Broker):
 
     def terminal_filename(self):
         return self.TERMINAL_NAME
+
+    def failure_profile(self):
+        return copy.deepcopy(PROFILE)
+
+    def registered_children_quiesced(self):
+        if self.scope is None:
+            return True
+        try:
+            with self.scope.mutations:
+                return all(process.poll() is not None for process in self.scope.processes)
+        except BaseException:
+            return False
+
+    def contain_failure_without_guard(self):
+        with self.failure_lock:
+            if self.fallback_started:
+                return
+            thread = self.observer.thread if self.observer is not None else None
+            if thread is not None and thread is not threading.current_thread() and thread.is_alive():
+                # The observer may be entering abort itself. Never join it
+                # under the same lock it needs in order to finish.
+                return
+            if self.scope is not None:
+                try:
+                    self.scope.revoke()
+                except BaseException:
+                    self.outcome['workerProcessCleanupUncertain'] = True
+            if not self.registered_children_quiesced():
+                self.outcome.update(workerProcessCleanupUncertain=True, workerProcessesQuiesced=False,
+                                    runtimeStopped=None)
+                return
+            self.fallback_started = True
+            # This is the fixed source cleanup after revocation, not a runtime
+            # command through the revoked frontend session or mutation scope.
+            token = runtime._command_scope.set(None)
+            try:
+                result = super().contain_failure_without_guard()
+                if result is False:
+                    # The shared helper guarantees no mutation before False.
+                    self.fallback_started = False
+                else:
+                    self.outcome['workerProcessesQuiesced'] = True
+            except BaseException:
+                self.outcome['profiledCurrentContainmentUncertain'] = True
+            finally:
+                runtime._command_scope.reset(token)
+
+    def abort(self):
+        with self.failure_lock:
+            if self.observer is not None:
+                self.observer.stop_event.set()
+            try:
+                super().abort()
+            finally:
+                self.runtime_released.set()
+        # The first abort may have delegated to a then-healthy guard. If the
+        # observer was still alive, wait outside the lock before the only pass.
+        if not self.guard_alive:
+            if self.observer is not None:
+                try:
+                    self.observer.stop()
+                except BaseException:
+                    self.outcome['profiledCurrentReadonlyCleanupUncertain'] = True
+            self.contain_failure_without_guard()
+
+    def close(self, committed=False):
+        from p2_release_supervisor import sticky_cleanup_signals
+        signals = sticky_cleanup_signals() if threading.current_thread() is threading.main_thread() else nullcontext()
+        with signals:
+            if not committed:
+                self.abort()
+            # Do not hold failure_lock while waiting on workers that may be
+            # unwinding through abort(). The actual host flock stays open.
+            while (self.operation_active.locked() or not self.registered_children_quiesced() or
+                   self.worker is not None and not self.worker_done.is_set()):
+                if not committed and not self.guard_alive:
+                    self.abort()
+                time.sleep(0.1)
+            if self.observer is not None:
+                self.observer.stop_event.set()
+                thread = self.observer.thread
+                if thread is not None and thread is not threading.current_thread():
+                    while thread.is_alive():
+                        thread.join(0.1)
+            with self.failure_lock:
+                if not committed and not self.guard_alive:
+                    self.contain_failure_without_guard()
+                require(self.registered_children_quiesced(), 'P2_PROFILED_CURRENT_CHILD_CLEANUP_UNVERIFIED')
+                super().close(committed)
 
     def send(self, identity, status, **data):
         require(len(encoded({'id': identity, 'status': status, **data})) <= MAXIMUM,
@@ -243,7 +335,7 @@ class P2ProfiledCurrentBroker(Broker):
         require(os.geteuid() == 0 and migrate.source_commit(p['sourceCommit']), 'P2_SELECTED_ROOT_HOST_REQUIRED')
         self.source = Path(__file__).resolve().parents[3]
         require(str(self.source) == '/opt/lash-her/operators/' + p['sourceCommit'], 'P2_INSTALLED_SOURCE_REQUIRED')
-        verify_source_closure(p, self.source)
+        self.require_source_closure(p)
         self.start_guard_health()
         require(self.guard_pulsed.wait(5) and self.guard_alive, 'P2_INDEPENDENT_GUARD_HANDSHAKE_REQUIRED')
         for key in ('bundle', 'configuration', 'results'):
