@@ -505,7 +505,8 @@ def cache_certification_core(initial,source,*,expected_profile=None):
         verify_source_closure(initial,source)
     else:
         expected = _profiled_context()
-        require(migrate.profile_context(expected_profile) == expected and initial.get('mode') == PROFILED_CERTIFICATION_MODE,
+        require(migrate.profile_context(expected_profile) == expected and initial.get('mode') in
+                (PROFILED_CERTIFICATION_MODE, PROFILED_INTERRUPTED_MODE),
                 'P2_PROFILED_CERTIFICATION_SOURCE_CONTEXT_REQUIRED')
         vercel.require_record_profile(expected, initial)
         verify_profiled_current_source_closure(initial,source)

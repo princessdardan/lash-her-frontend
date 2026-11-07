@@ -1,4 +1,5 @@
 """C source/receipt and single-use regressions. No cloud/provider requests."""
+import base64
 import copy
 import json
 from pathlib import Path
@@ -6,11 +7,88 @@ import subprocess
 import threading
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import p2_known_ack_interrupted_restoration as c
 import p2_known_ack_loss_test as b
 import release_test
 from p2_source_closure import REQUIRED, PROFILED_CURRENT_REQUIRED, PROFILED_CERTIFICATION_REQUIRED
+import p2_profiled_known_ack_restoration_parent as profiled_c
+
+
+class ProfiledInterruptedBrokerTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.sent, self.safety = [], []
+        self.broker = profiled_c.P2ProfiledInterruptedKnownAckBroker(
+            {'restorationActionId': 'restore-owned', 'candidateSha256': 'a' * 64}, self.sent.append,
+        )
+        self.broker.directory = Path(temp.name)
+        self.broker.authority = None
+        self.broker.runtime_attempted = False
+        self.broker.prepared_terminal = None
+        self.broker.ready = {'status': 'P2_PROFILED_INTERRUPTED_RUNTIME_RESTORED_FENCED',
+                             'candidateSha256': 'a' * 64}
+        self.broker.safety = self.safety.append
+        for method in ('check', 'verify_original', 'require_native_off', 'verify_prepared'):
+            item = patch.object(self.broker, method)
+            item.start()
+            self.addCleanup(item.stop)
+
+    def test_restoration_authority_is_exact_one_use_and_poisoned_before_verification(self):
+        broker = self.broker
+        broker.retained = {'frontier': 'original-stopped-one', 'selection': {
+            'priorGatewayReference': {'stopReceiptSha256': 'b' * 64},
+            'causalReceiptSha256': {'settlement.json': 'c' * 64},
+        }}
+        first = broker.prepare()
+        self.assertEqual(first['status'], 'P2_PROFILED_INTERRUPTED_NEW_TYPED_BOUNDARY_PREPARED')
+        authority = broker.authority
+        broker.runtime_attempted = True
+        with self.assertRaisesRegex(ValueError, 'ONE_USE_AUTHORITY'):
+            profiled_c.consume_profiled_interrupted_runtime_authority(authority.record, broker)
+        broker.verify_prepared.side_effect = ValueError('fresh scope changed')
+        with self.assertRaisesRegex(ValueError, 'fresh scope changed'):
+            profiled_c.consume_profiled_interrupted_runtime_authority(authority, broker)
+        with self.assertRaisesRegex(ValueError, 'ONE_USE_AUTHORITY'):
+            profiled_c.consume_profiled_interrupted_runtime_authority(authority, broker)
+
+    def test_commit_follows_independent_closed_database_observation_and_matching_join(self):
+        from p2_profiled_known_ack_runtime import OUTCOME
+        broker = self.broker
+        broker.runtime_transition = Mock()
+        broker.observer = Mock()
+        output = broker.directory / 'runtime-interrupted'
+        output.mkdir()
+        profiled_c.migrate.write_json(output, OUTCOME, broker.ready)
+        observed = {'status': 'P2_CERTIFICATION_FRONTEND_SESSION_CLOSED'}
+        broker.observer.probe.return_value = observed
+        broker.command({'id': 1, 'operation': 'prepare-close'})
+        broker.observer.stop.assert_called_once_with()
+        self.assertEqual(self.sent[-1]['status'], 'INTERRUPTED_CLOSE_PREPARED')
+        broker.command({'id': 2, 'operation': 'check'})
+        self.assertEqual(self.sent[-1], {'id': 2, 'status': 'HELD'})
+        with self.assertRaisesRegex(ValueError, 'JOIN_REQUIRED'):
+            broker.command({'id': 3, 'operation': 'commit'})
+        with self.assertRaisesRegex(ValueError, 'PREPARED_TERMINAL'):
+            broker.command({'id': 4, 'operation': 'finish', 'restoration': 'e30='})
+        broker.observer.probe.assert_not_called()
+        encoded = base64.b64encode(json.dumps(broker.ready).encode()).decode()
+        request = {'id': 5, 'operation': 'finish', 'restoration': encoded}
+        broker.observer.probe.side_effect = ValueError('frontend lease remains')
+        with self.assertRaisesRegex(ValueError, 'frontend lease remains'):
+            broker.command(request)
+        self.assertFalse((broker.directory / profiled_c.SESSION_CLOSED).exists())
+        self.assertFalse((broker.directory / profiled_c.TERMINAL).exists())
+        broker.observer.probe.side_effect = None
+        broker.command(request)
+        self.assertEqual(self.sent[-1]['receipt'], broker.ready)
+        self.assertEqual(json.loads((broker.directory / profiled_c.SESSION_CLOSED).read_bytes()), observed)
+        broker.command({'id': 6, 'operation': 'commit'})
+        raw = (broker.directory / profiled_c.TERMINAL).read_bytes()
+        self.assertEqual(self.safety, [{'operation': 'committed', 'sha256': profiled_c._sha(raw)}])
+        self.assertEqual(json.loads(raw), self.sent[-1]['receipt'])
+        self.assertTrue(broker.committed.is_set())
 
 
 def selection():
