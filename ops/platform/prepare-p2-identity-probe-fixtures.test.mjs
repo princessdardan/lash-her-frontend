@@ -28,14 +28,10 @@ test("current lifecycle producers match the actual selected candidate API revisi
   const selected = Object.fromEntries(["course", "community"].map(service => [service, manifest.artifacts[service].revision]));
   assert.deepEqual(P2_LIFECYCLE_OWNED_API_REVISIONS, revisions);
   assert.deepEqual(selectP2LifecycleOwnedApiPair(selected), { ...selected, expiryFixed: selected.course === rehearsalRevisions.course });
-  for (const [file, selector] of Object.entries({
-    "test-p2-lifecycle-persistence-local.mjs": "readP2LifecycleOwnedContractSelection",
-    "test-p2-lifecycle-receivers-local.mjs": "selectP2LifecycleOwnedApiPair",
-    "test-p2-known-ack-loss-local.mjs": "readP2LifecycleOwnedContractSelection",
-    "test-p2-lifecycle-worker-local.mjs": "selectP2LifecycleOwnedApiPair",
-  })) {
+  for (const file of ["test-p2-lifecycle-persistence-local.mjs", "test-p2-lifecycle-receivers-local.mjs",
+    "test-p2-known-ack-loss-local.mjs", "test-p2-lifecycle-worker-local.mjs"]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
-    assert.ok(source.includes(selector), `${file} must qualify the selected immutable API source`);
+    assert.ok(source.includes("readP2LifecycleOwnedContractSelection"), `${file} must qualify the selected immutable API source`);
   }
 });
 
