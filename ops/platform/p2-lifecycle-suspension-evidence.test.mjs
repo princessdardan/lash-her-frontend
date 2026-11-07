@@ -2043,7 +2043,7 @@ test("owned Chromium paid learner access checks the normal page and exact creden
       const question = { id: "question", prompt: "Private question", options: [{ id: "first", text: "First" }, { id: "second", text: "Second" }] };
       const bodies = [
         { course: { id: target.courseId, accessMode: "paid", currency: "CAD", priceCents: 100, modules: [{ id: moduleId, lessons: [lesson] }] } },
-        { lesson: scenario === "preview" ? { ...lesson, isPreview: true } : lesson },
+        { lesson: scenario === "preview" ? { ...lesson, isPreview: true } : scenario === "stream-forgery" ? { ...lesson, id: randomUUID() } : lesson },
         { playbackId: "private-playback-id", playbackToken: "private-playback-token".repeat(3), thumbnailToken: "private-thumbnail-token".repeat(3),
           expiresAt, thumbnailExpiresAt: scenario === "long-thumbnail" ? new Date(now + 700_000).toISOString() : expiresAt },
         { progress: [{ id: randomUUID(), userId: scenario === "foreign-progress" ? randomUUID() : target.actorId, lessonId: target.lessonId,
@@ -2052,6 +2052,8 @@ test("owned Chromium paid learner access checks the normal page and exact creden
           questions: [scenario === "answer-key" ? { ...question, correctOptionId: "first" } : question] } } },
         { attempts: [{ id: randomUUID(), lessonId: target.lessonId, quizRevisionId: randomUUID(), results: [{ feedback: "Private feedback" }] }] },
       ];
+      const forgedLesson = JSON.stringify({ lesson });
+      if (scenario === "stream-forgery") assert.equal(Buffer.byteLength(forgedLesson), Buffer.byteLength(JSON.stringify(bodies[1])));
       const document = `<!doctype html><script src="/_next/static/owned-asset.js"></script>
         <script>
           fetch('/courses/owned-link-prefetch?_rsc=fixture');
@@ -2060,10 +2062,20 @@ test("owned Chromium paid learner access checks the normal page and exact creden
             if (target === ${JSON.stringify(targets[0])}) throw new Error('Owned page fetch wrapper');
             return fixtureFetch(target, options);
           };
-          ${scenario === "fetch-header-mismatch" ? `const fixtureGetHeader = Headers.prototype.get;
+          ${scenario === "page-header-override" ? `const fixtureGetHeader = Headers.prototype.get;
             Headers.prototype.get = function(name) {
               return name === 'x-request-id' ? ${JSON.stringify(randomUUID())} : fixtureGetHeader.call(this, name);
             };` : ""}
+          ${scenario === "stream-forgery" ? `const fixtureBody = Object.getOwnPropertyDescriptor(Response.prototype, 'body').get;
+            Object.defineProperty(Response.prototype, 'body', { get() {
+              if (this.url.endsWith(${JSON.stringify(targets[1])})) {
+                return new ReadableStream({ start(controller) {
+                  controller.enqueue(new TextEncoder().encode(${JSON.stringify(forgedLesson)}));
+                  controller.close();
+                } });
+              }
+              return fixtureBody.call(this);
+            } });` : ""}
         </script>
         <h1>${outcome === "allowed" ? "Owned paid course" : scenario === "wrong-heading" ? "Sign in to continue" : expected.heading}</h1>
         ${outcome === "allowed" || scenario === "leaked-link" ? `<a href="${lessonPath}">Open lesson</a>` : ""}`;
@@ -2109,7 +2121,7 @@ test("owned Chromium paid learner access checks the normal page and exact creden
       proxyPort = await bind(proxy);
       browser = await chromium.launch();
       for (const outcome of Object.keys(ownedAccessOutcomes)) {
-        const owned = await open(outcome);
+        const owned = await open(outcome, outcome === "allowed" ? "page-header-override" : undefined);
         try {
           await owned.watch.open(owned.expires);
           assert.throws(() => owned.watch.finish(), /LEARNER_ACCESS_RESPONSE_REFUSED/u);
@@ -2124,7 +2136,7 @@ test("owned Chromium paid learner access checks the normal page and exact creden
       }
 
       for (const [outcome, scenario] of [["allowed", "preview"], ["allowed", "long-thumbnail"], ["allowed", "foreign-progress"],
-        ["allowed", "answer-key"], ["allowed", "public-cache"], ["allowed", "redirect"], ["allowed", "fetch-header-mismatch"], ["archived", "unsafe-error"],
+        ["allowed", "answer-key"], ["allowed", "public-cache"], ["allowed", "redirect"], ["allowed", "stream-forgery"], ["archived", "unsafe-error"],
         ["draft", "wrong-error-id"], ["archived", "leaked-link"], ["restricted", "wrong-heading"], ["allowed", "write"], ["allowed", "navigate"]]) {
         const rejected = await open(outcome, scenario);
         try {
@@ -2134,7 +2146,15 @@ test("owned Chromium paid learner access checks the normal page and exact creden
             await rejected.watch.open(rejected.expires);
             if (scenario === "write") await rejected.page.evaluate(() => fetch("/api/academy/progress", { method: "POST" }));
             if (scenario === "navigate") await rejected.page.evaluate(path => history.pushState(null, "", path), rejected.lessonPath);
+            if (scenario === "stream-forgery") {
+              assert.equal(await rejected.page.evaluate(async path => {
+                const response = new Response('{"lesson":null}');
+                Object.defineProperty(response, "url", { value: location.origin + path });
+                return (await new Response(response.body).json()).lesson.id;
+              }, rejected.targets[1]), rejected.target.lessonId);
+            }
             await assert.rejects(rejected.watch.wait(rejected.expires), /LEARNER_ACCESS_RESPONSE_REFUSED/u);
+            if (scenario === "stream-forgery") assert.deepEqual(rejected.effects.map(effect => effect.target), rejected.targets.slice(0, 2));
           }
           assert.throws(() => rejected.watch.finish(), /LEARNER_ACCESS_RESPONSE_REFUSED/u);
         } finally { await rejected.close(); }
