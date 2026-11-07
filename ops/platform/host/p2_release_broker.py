@@ -26,7 +26,7 @@ import staging_state
 import vercel
 import frontend_gateway_observation
 from p2_certification_profile import require_profile, RUNTIME_FLAGS
-from p2_source_closure import verify_source_closure, private_observer_program
+from p2_source_closure import verify_source_closure, verify_profiled_current_source_closure, private_observer_program
 
 MAXIMUM = 4_000_000
 LOCK = Path('/run/lock/lash-her-release.lock')
@@ -191,7 +191,7 @@ class Broker:
         require(migrate.source_commit(commit), 'P2_EXACT_SOURCE_REQUIRED')
         self.source = Path(__file__).resolve().parents[3]
         require(str(self.source) == '/opt/lash-her/operators/' + commit, 'P2_INSTALLED_SOURCE_REQUIRED')
-        verify_source_closure(p, self.source)
+        self.require_source_closure(p)
         for key in ('bundle', 'configuration', 'results'):
             value = Path(p[key])
             require(value.is_absolute() and str(value.resolve()) == str(value) and
@@ -249,7 +249,7 @@ class Broker:
 
     def check(self):
         require(not self.failed.is_set(), 'P2_BROKER_FAILED')
-        verify_source_closure(self.initial, self.source)
+        self.require_source_closure()
         try:
             pulse = os.read(self.guard_read, 65536)
             require(pulse, 'P2_INDEPENDENT_GUARD_DIED')
@@ -373,6 +373,15 @@ class Broker:
             'status': 'P2_CERTIFICATION_GATEWAY_ADMITTED', 'admissionStateSha256': acknowledged,
             'profile': self.initial['certification'], 'g2Accepted': False, 'nativeSchedulesEnabled': False})
 
+    def failure_profile(self):
+        # Fixed source subclasses may select a profile; packet fields cannot.
+        return None
+
+    def require_source_closure(self, initial=None):
+        checker = (verify_profiled_current_source_closure if self.failure_profile() is not None
+                   else verify_source_closure)
+        return checker(self.initial if initial is None else initial, self.source)
+
     def abort(self):
         if self.failed.is_set():
             return
@@ -388,6 +397,12 @@ class Broker:
                 return  # the independent guard reaps this entire worker group
             except BaseException:
                 self.guard_alive = False
+        self.contain_failure_without_guard()
+
+    def contain_failure_without_guard(self):
+        """Fixed survivor path; a profiled broker serializes one actual pass."""
+        expected = migrate.profile_context(self.failure_profile())
+        profile_args = {} if expected is None else {'expected_profile': expected}
         if self.scope:
             try:
                 self.scope.revoke()
@@ -395,6 +410,17 @@ class Broker:
                     self.outcome['workerProcessCleanupUncertain'] = True
             except BaseException:
                 self.outcome['workerProcessCleanupUncertain'] = True
+            if expected is not None:
+                with self.scope.mutations:
+                    if any(process.poll() is None for process in self.scope.processes):
+                        self.outcome['workerProcessCleanupUncertain'] = True
+                        return False  # No containment mutation has started; retain the flock.
+        if expected is not None and self.observer:
+            try:
+                self.observer.stop()
+            except BaseException:
+                self.outcome['profiledCurrentReadonlyCleanupUncertain'] = True
+                return False
         # Closing on loss is allowed; reopening, replay and automatic deployment
         # recovery are never attempted. Failures remain explicit uncertainty.
         if self.observer:
@@ -414,10 +440,10 @@ class Broker:
                     require(stat.S_ISREG(current.st_mode) and current.st_uid == os.getuid() and not current.st_mode & 0o077 and
                         (current.st_dev,current.st_ino) == (opened.st_dev,opened.st_ino), 'P2_FALLBACK_LOCK_CHANGED')
                     fcntl.flock(self.lock_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
-                    verify_source_closure(self.initial,self.source)
+                    self.require_source_closure()
                 gateway_directory = self.directory / 'prior-gateway-broker-fallback'
                 gateway_directory.mkdir(mode=0o700)
-                prior = p2_prior_gateway.capture_before_stop(self.initial,self.selected,gateway_directory,containment_verify)
+                prior = p2_prior_gateway.capture_before_stop(self.initial,self.selected,gateway_directory,containment_verify, **profile_args)
                 self.outcome['priorGatewayBeforeStop'] = prior
             except BaseException:
                 self.outcome['priorGatewayBeforeStopUnknown'] = True
@@ -428,15 +454,22 @@ class Broker:
                 self.outcome['runtimeStopped'] = None
             if prior is not None:
                 try:
-                    self.outcome['priorGatewayOrderedStop'] = p2_prior_gateway.retain_ordered_stop(prior,gateway_directory,containment_verify)
+                    self.outcome['priorGatewayOrderedStop'] = p2_prior_gateway.retain_ordered_stop(prior,gateway_directory,containment_verify, **profile_args)
                 except BaseException:
                     self.outcome['priorGatewayOrderedStopUnknown'] = True
         if getattr(self, 'selected', None) and self.worker:
             for name in ('course', 'community'):
-                container = 'lash-migrate-' + name + '-' + self.selected['releaseId']
+                container = 'lash-migrate-' + name + '-' + (self.action_id() if expected is not None else self.selected['releaseId'])
                 try:
-                    subprocess.run(['docker', 'rm', '--force', container], env=runtime.SAFE_ENV,
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
+                    if expected is None:
+                        subprocess.run(['docker', 'rm', '--force', container], env=runtime.SAFE_ENV,
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
+                    else:
+                        query = ['docker', 'container', 'ls', '--all', '--filter', 'name=^/' + container + '$', '--format', '{{.ID}}']
+                        if runtime.command(query, runtime.SAFE_ENV, 15):
+                            runtime.command(['docker', 'rm', '--force', container], runtime.SAFE_ENV, 30)
+                        require(not runtime.command(query, runtime.SAFE_ENV, 15),
+                                'PROFILED_CURRENT_FALLBACK_MIGRATION_CONTAINER_REMAINS')
                 except BaseException:
                     self.outcome['migrationContainerCleanupUncertain'] = True
             if self.observer_source == 'ops/platform/p2-recovery-current-probe.mjs':
@@ -445,6 +478,13 @@ class Broker:
                     cleanup_recovery_current_containers()
                 except BaseException:
                     self.outcome['recoveryCurrentContainerCleanupUncertain'] = True
+        if expected is not None:
+            try:
+                from p2_release_supervisor import cleanup_profiled_current_readonly_containers
+                cleanup_profiled_current_readonly_containers()
+            except BaseException:
+                self.outcome['profiledCurrentReadonlyCleanupUncertain'] = True
+        return True  # The bounded pass ran once; unknown effects require review.
 
     def command(self, value):
         identity, operation = value.get('id'), value.get('operation')

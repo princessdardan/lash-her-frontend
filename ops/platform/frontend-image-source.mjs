@@ -10,6 +10,7 @@ const demand = (ok) => { if (!ok) throw new Error("FRONTEND_PACKAGED_SOURCE_REFU
 const fixed = ["package.json", "package-lock.json", "src/lib/private-db/migration-lineage.ts", "contracts/api-integration/v1/manifest.json",
   "scripts/api-contract-tools.mjs", "scripts/api-contract-compatibility-review.mjs",
   "ops/platform/qualification-target-profile.mjs", "ops/platform/qualification-target-profiles.json",
+  "ops/platform/p2-profiled-current-probe.mjs", "ops/platform/p2-recovery-current-probe.mjs",
   ...["frontend-migration", "frontend-schema", "frontend-image", "frontend-image-source", "source-checkout", "release-inputs", "source-policy", "release"].map((name) => `ops/platform/${name}.mjs`),
   "drizzle/meta/_journal.json",
   ...["manifest.json", "course-api.json", "community-api.json", "enrollment-event.schema.json", "boundary-contracts.json", "README.md"]

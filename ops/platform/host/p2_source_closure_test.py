@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from p2_source_closure import REQUIRED, verify_source_closure, private_observer_program
+from p2_source_closure import REQUIRED, PROFILED_CURRENT_REQUIRED, verify_source_closure, verify_profiled_current_source_closure, private_observer_program
 
 
 class SourceClosureTests(unittest.TestCase):
@@ -50,6 +50,31 @@ class SourceClosureTests(unittest.TestCase):
         manifest[name] = hashlib.sha256((self.root / name).read_bytes()).hexdigest()
         with self.assertRaises(ValueError):
             verify_source_closure(self.make(manifest), self.root)
+
+    def test_fixed_profiled_source_bound_and_unmanifested_test_refusal(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        manifest = dict(self.manifest)
+        names = sorted(PROFILED_CURRENT_REQUIRED - set(manifest))
+        names += [f'ops/platform/harness/profiled-{index}.mjs' for index in range(544-len(manifest)-len(names))]
+        for name in names:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'owned profiled source')
+            manifest[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        selected = {**self.make(manifest), 'mode': 'p2-profiled-current-release',
+                    'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)}
+        self.assertEqual(len(manifest), 544)
+        self.assertEqual(verify_profiled_current_source_closure(selected, self.root), selected['sourceClosureSha256'])
+        with self.assertRaises(ValueError):
+            verify_source_closure(selected, self.root)
+        injected = 'ops/platform/harness/unmanifested.test.mjs'
+        (self.root / injected).write_bytes(b'unreviewed')
+        with self.assertRaisesRegex(ValueError, 'CLOSURE_INCOMPLETE'):
+            verify_profiled_current_source_closure(selected, self.root)
+        manifest[injected] = hashlib.sha256((self.root / injected).read_bytes()).hexdigest()
+        oversized = {**selected, **self.make(manifest)}
+        with self.assertRaisesRegex(ValueError, 'CLOSED_OPERATOR_SOURCE_REQUIRED'):
+            verify_profiled_current_source_closure(oversized, self.root)
 
     def test_guard_observer_uses_exact_cached_source_when_original_is_lost(self):
         raw = (self.root / 'ops/platform/p2-frontend-live-probe.mjs').read_bytes()

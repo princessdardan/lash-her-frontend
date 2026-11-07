@@ -14,7 +14,7 @@ import { assertSourceCheckout } from './source-checkout.mjs';
 import { validatePlatformRelease } from './release.mjs';
 import { validateP2HostSettings, validateP2PriorGatewayReference } from './p2-release.mjs';
 import { prepareP2CertificationProfile, P2_CERTIFICATION_RUNTIME_FLAGS } from './p2-certification-profile.mjs';
-import { committedOperatorSource, verifyOperatorCi } from './recreation_source.mjs';
+import { committedProfiledCurrentOperatorSource, verifyOperatorCi } from './recreation_source.mjs';
 import { githubSourceApi } from './release-inputs.mjs';
 import { recreationSsh } from './recreation_ssh.mjs';
 import { createP2ProfiledCurrentProbe } from './p2-profiled-current-probe.mjs';
@@ -150,7 +150,8 @@ function verifyConfiguration(prepared, settings) {
   }
 }
 
-async function closedBoundary(client, migration, inventory, verify) {
+export async function verifyP2ProfiledCurrentWriterBoundary(client, migration, inventory, verify) {
+  demand(/^[a-z][a-z0-9_]{0,62}$/u.test(inventory?.owner?.name ?? ""));
   await verify(); await client.query('BEGIN READ ONLY');
   try {
     const retired = inventory.historicalLogins.retiredLogins;
@@ -224,13 +225,13 @@ async function runProfiledCurrentContinuation(prepared, deps) {
             const verify = async () => { await guard(); await verifySession(); };
             await verify(); phase = 'current-physical-arm';
             const probe = await createP2ProfiledCurrentProbe(migration, inventory, client, verify, database);
-            await closedBoundary(client, migration, inventory, verify);
+            await verifyP2ProfiledCurrentWriterBoundary(client, migration, inventory, verify);
             const receipt = readP2ProfiledCurrentFrontendReceipt(deps.directory, 'database', migration);
             const started = readP2ProfiledCurrentFrontendReceipt(deps.directory, 'continuation-started', migration);
             const { apiReady } = await host.armCurrent({ receipt: receipt.bytes, continuationStarted: started.bytes, probe });
             phase = 'prior-gateway-and-api-runtime';
             await host.preparePriorGateway(); await apiReady; await verify();
-            const admission = await closedBoundary(client, migration, inventory, verify);
+            const admission = await verifyP2ProfiledCurrentWriterBoundary(client, migration, inventory, verify);
             const context = { qualificationTargetProfile: profile, plan: inventory, inventorySha256: plan.inventorySha256,
               candidate: migration.candidate, candidateSha256: plan.candidateSha256, job: migration.job,
               configurationSha256: plan.configurationSha256, directory: deps.directory, getProviderContext: deps.getProviderContext,
@@ -243,7 +244,7 @@ async function runProfiledCurrentContinuation(prepared, deps) {
             const actual = await observeProfiledCurrentFrontend(context), proof = deploymentProof(prepared, actual);
             await verify(); const workload = await readProfiledCurrentWorkloadReceipt(context, actual);
             demand(Buffer.isBuffer(workload) && hash(workload) === proof.workloadReceiptSha256);
-            await host.frontendVerified(proof, workload); await closedBoundary(client, migration, inventory, verify);
+            await host.frontendVerified(proof, workload); await verifyP2ProfiledCurrentWriterBoundary(client, migration, inventory, verify);
             outcome = { ...base, status: 'P2_PROFILED_CURRENT_FRONTEND_VERIFIED', deploymentProofSha256: hash(proof) };
             await store.record('p2-profiled-current-release-outcome.json', outcome);
             phase = 'late-terminal-close'; await verify(); await host.prepareClose();
@@ -274,7 +275,7 @@ export async function openP2ProfiledCurrentSource(prepared, { actionId, confirma
     confirmation === `staging/${actionId}`);
   verifyConfiguration(prepared, settings);
   demand(hash(bytes(join(root, 'ops/platform/p2-profiled-current-frontend-adapters.mjs'), false)) === prepared.inventory.adaptersSha256);
-  const committed = committedOperatorSource(root, settings.sourceCommit);
+  const committed = committedProfiledCurrentOperatorSource(root, settings.sourceCommit);
   const ci = await verifyOperatorCi({ api: githubSourceApi(process.env.PLATFORM_SOURCE_READ_TOKEN), sourceCommit: settings.sourceCommit,
     branch: committed.branch, workflowBytes: committed.workflowBytes });
   frontendPrivateReceiptDirectory(settings.results);
@@ -296,7 +297,7 @@ export async function openP2ProfiledCurrentSource(prepared, { actionId, confirma
     hash(context.bindings?.gatewayObservation) === prepared.inventory.restoration.gatewayBindingSha256);
   const ssh = await recreationSsh({ knownHosts: settings.knownHosts, keyFile: settings.sshKey, diagnostics });
   demand((await ssh.machine()).machineId === settings.host.machineId);
-  const installed = await ssh.installSource({ commit: settings.sourceCommit, files: committed.files });
+  const installed = await ssh.installProfiledCurrentSource({ commit: settings.sourceCommit, files: committed.files });
   demand(installed.status === 'EXACT_OPERATOR_SOURCE_INSTALLED' && installed.commit === settings.sourceCommit);
   const initialBase = { version: 2, qualificationTargetProfile: profile, environment: 'staging', sourceCommit: settings.sourceCommit,
     sourceSha256: Object.fromEntries(committed.files.map(file => [file.path, file.sha256])),

@@ -148,9 +148,58 @@ class PriorGatewayTests(unittest.TestCase):
             self.assertEqual(boundary.observation['binding']['candidateSha256'],candidate_sha)
             self.assertEqual(len(json.loads((receipt_directory/'runtime-outcome.json').read_bytes())['containers']),8)
             self.assertNotIn('contractPhase',fixture.fixture.release)
+            # A selected profiled release may retain this actual legacy
+            # predecessor without converting its original candidate/receipt.
+            prior_bytes = (bundle/'release.candidate.json').read_bytes()
+            prior_runtime_bytes = (receipt_directory/'runtime-outcome.json').read_bytes()
+            ref = fixture.fixture.profiled()
+            profiled = copy.deepcopy(fixture.fixture.release)
+            profiled['releaseId'] = self.selected['releaseId']
+            profiled['approval']['releaseId'] = self.selected['releaseId']
+            actual = gate.preflight_prior_gateway(self.initial, profiled, self.verify, self.command,
+                                                  lambda _: None, expected_profile=ref)
+            self.assertEqual(actual['binding']['candidateSha256'], candidate_sha)
+            self.assertTrue(gate._zero(actual))
+            self.assertEqual((bundle/'release.candidate.json').read_bytes(), prior_bytes)
+            self.assertEqual((receipt_directory/'runtime-outcome.json').read_bytes(), prior_runtime_bytes)
             del self.initial['priorGatewayReference']
             with self.assertRaisesRegex(ValueError,'RETAINED_REFERENCE_REQUIRED'):self.observe()
         finally:fixture.tearDown()
+
+    def test_profiled_current_observes_the_actual_mounted_version2_runtime(self):
+        from migrate_test import MigrationDriverTests
+        fixture = MigrationDriverTests()
+        fixture.setUp()
+        try:
+            ref = fixture.profiled()
+            selected = copy.deepcopy(fixture.release)
+            selected['releaseId'] = self.selected['releaseId']
+            selected['approval']['releaseId'] = selected['releaseId']
+            selected['artifacts']['gateway'] = {'image': self.image}
+            target = {'version': 2, 'qualificationTargetProfile': ref, 'environment': 'staging',
+                      'releaseId': selected['releaseId'], 'hostMachineId': self.initial['hostMachineId'],
+                      'previousReleaseRef': 'owned/prior', 'maintenanceRef': 'owned/maintenance'}
+            gateway = json.loads((self.configuration/'gateway.json').read_bytes())
+            gateway['projectId'] = selected['workload']['projectId']
+            for name, value in [('runtime.json', target), ('gateway.json', gateway)]:
+                (self.configuration/name).write_text(json.dumps(value))
+                self.initial['configurationSha256'][name] = migrate.file_hash((self.configuration/name).read_bytes())
+            self.initial.pop('recoveryActionId')
+            output = self.root/('p2-profiled-current-'+selected['releaseId'])
+            output.mkdir(mode=0o700)
+            with self.assertRaisesRegex(ValueError, 'PROFILE_POLICY_REFUSED'):
+                gate.prepare_prior_gateway(self.initial, selected, output, self.verify, self.command, lambda _: None)
+            self.assertEqual(self.commands, [])
+            boundary = gate.prepare_prior_gateway(self.initial, selected, output, self.verify, self.command,
+                                                 lambda _: None, expected_profile=ref)
+            boundary.verify()
+            self.assertTrue(gate._zero(boundary.observation))
+            record = json.loads((output/'prior-gateway-boundary.json').read_bytes())
+            self.assertEqual(record['qualificationTargetProfile'], ref)
+            self.assertEqual(record['status'], 'PRIOR_GATEWAY_CLOSED_ZERO')
+            self.assertFalse(self.control({})['newWork'])
+        finally:
+            fixture.tearDown()
 
     def stop_proof(self):
         before=gate.capture_before_stop(self.initial,self.selected,self.output,self.verify,self.command,lambda _:None)

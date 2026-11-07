@@ -14,7 +14,7 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), "frontend-image-source-"));
   for (const directory of ["ops/platform", "scripts", "src/lib/private-db", "contracts/api-integration/v1"]) mkdirSync(join(root, directory), { recursive: true });
   for (const file of ["api-contract-tools.mjs", "api-contract-compatibility-review.mjs"]) copyFileSync(join(source, "scripts", file), join(root, "scripts", file));
-  for (const name of ["frontend-migration", "frontend-schema", "frontend-image", "frontend-image-source", "source-checkout", "release-inputs", "source-policy", "release"])
+  for (const name of ["frontend-migration", "frontend-schema", "frontend-image", "frontend-image-source", "source-checkout", "release-inputs", "source-policy", "release", "p2-profiled-current-probe", "p2-recovery-current-probe"])
     copyFileSync(join(source, `ops/platform/${name}.mjs`), join(root, `ops/platform/${name}.mjs`));
   for (const name of ["qualification-target-profile.mjs", "qualification-target-profiles.json"])
     copyFileSync(join(source, "ops/platform", name), join(root, "ops/platform", name));
@@ -36,6 +36,20 @@ test("packaged source binds the migration executable, SQL, lineage and minimal d
     assert.throws(() => verifyPackagedFrontendSource(root, "b".repeat(40)));
     assert.throws(() => writePackagedFrontendSource("a".repeat(40), root));
     writeFileSync(join(root, "ops/platform/frontend-migration.mjs"), "changed");
+    assert.throws(() => verifyPackagedFrontendSource(root));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("packaged profiled physical probe binds its actual role and grants verifier", () => {
+  const root = fixture();
+  try {
+    const manifest = writePackagedFrontendSource("a".repeat(40), root);
+    for (const name of ["p2-profiled-current-probe", "p2-recovery-current-probe"]) {
+      const path = `ops/platform/${name}.mjs`;
+      assert.equal(manifest.files[path], sha256(readFileSync(join(source, path))));
+    }
+    assert.doesNotThrow(() => verifyPackagedFrontendSource(root));
+    writeFileSync(join(root, "ops/platform/p2-recovery-current-probe.mjs"), "modified role/grants policy\n");
     assert.throws(() => verifyPackagedFrontendSource(root));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -98,6 +98,12 @@ exec(compile(code,'<owned-fixed-source-installer>','exec'))
   assert.equal((await f.ssh.installSource(payload(small))).files,512);
   await assert.rejects(f.ssh.installSource(payload([...small,file(512,Buffer.from("owned"))])));
   assert.match(outcomes.at(-1),/SOURCE_FILES_REQUIRED/u);
+  const profiled=Array.from({length:544},(_,index)=>file(index,Buffer.from("owned")));
+  assert.equal((await f.ssh.installProfiledCurrentSource(payload(profiled))).files,544);
+  await assert.rejects(f.ssh.installProfiledCurrentSource(payload([...profiled,file(544,Buffer.from("owned"))])));
+  assert.match(outcomes.at(-1),/SOURCE_FILES_REQUIRED/u);
+  await assert.rejects(f.ssh.installProfiledCurrentSource(payload([file(0,Buffer.alloc(2_000_001,120))])));
+  assert.match(outcomes.at(-1),/SOURCE_HASH_REFUSED/u);
   await assert.rejects(f.ssh.installSource(payload([file(0,Buffer.alloc(2_000_001,120))])));
   assert.match(outcomes.at(-1),/SOURCE_HASH_REFUSED/u);
   const large=Array.from({length:20},(_,index)=>file(index,Buffer.alloc(2_000_000,120)));
@@ -105,6 +111,11 @@ exec(compile(code,'<owned-fixed-source-installer>','exec'))
   assert.equal((await f.ssh.installSource(payload(large))).files,21);
   large[20]=file(20,Buffer.alloc(1_000_001,120));
   await assert.rejects(f.ssh.installSource(payload(large)));
+  assert.match(outcomes.at(-1),/SOURCE_HASH_REFUSED/u);
+  large[20]=file(20,Buffer.alloc(1_500_000,120));
+  assert.equal((await f.ssh.installProfiledCurrentSource(payload(large))).files,21);
+  large[20]=file(20,Buffer.alloc(1_500_001,120));
+  await assert.rejects(f.ssh.installProfiledCurrentSource(payload(large)));
   assert.match(outcomes.at(-1),/SOURCE_HASH_REFUSED/u);
 });
 test("public 56 MB and private 24 MB transport limits refuse overflow before execution",async t=> {
@@ -117,6 +128,7 @@ test("public 56 MB and private 24 MB transport limits refuse overflow before exe
   await f.ssh.installSource(sized({},56_000_000));
   assert.equal(calls,1);
   await assert.rejects(f.ssh.installSource(sized({},56_000_001)),/Bounded SSH input required/u);
+  await assert.rejects(f.ssh.installProfiledCurrentSource(sized({},56_000_001)),/Bounded SSH input required/u);
   await f.ssh.phase("a".repeat(40),sized({operation:"rollback"},24_000_000));
   assert.equal(calls,2);
   await assert.rejects(f.ssh.phase("a".repeat(40),sized({operation:"rollback"},24_000_001)),/Bounded SSH input required/u);

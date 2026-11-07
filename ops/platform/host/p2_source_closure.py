@@ -18,15 +18,30 @@ REQUIRED = {
 
 PROFILED_CURRENT_REQUIRED = {
     'ops/platform/host/p2_profiled_current_scope.py', 'ops/platform/host/p2_profiled_current_parent.py',
-    'ops/platform/host/p2_profiled_current_recovery.py', 'ops/platform/p2-profiled-current-probe.mjs',
+    'ops/platform/host/p2_profiled_current_recovery.py', 'ops/platform/host/p2_profiled_current_frontend.py',
+    'ops/platform/p2-profiled-current-probe.mjs', 'ops/platform/p2-recovery-current-probe.mjs',
+    'ops/platform/p2-profiled-current-release.mjs', 'ops/platform/p2-profiled-current-transport.mjs',
+    'ops/platform/p2-profiled-current-recovery.mjs', 'ops/platform/p2-profiled-current-recovery-transport.mjs',
+    'ops/platform/p2-profiled-current-frontend-adapters.mjs',
 }
 
 
 def verify_source_closure(initial, root):
+    return _verify_source_closure(initial, root, REQUIRED, 512, 41_000_000)
+
+
+def verify_profiled_current_source_closure(initial, root):
+    import migrate
+    from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+    if initial.get('mode') not in ('p2-profiled-current-release', 'p2-profiled-current-recovery'):
+        raise ValueError('PROFILED_CURRENT_FIXED_SOURCE_DISPATCH_REQUIRED')
+    migrate.require_profile(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE, initial)
+    return _verify_source_closure(initial, root, REQUIRED | PROFILED_CURRENT_REQUIRED, 544, 41_500_000)
+
+
+def _verify_source_closure(initial, root, required, max_files, max_bytes):
     manifest = initial.get('sourceSha256')
-    required = REQUIRED | PROFILED_CURRENT_REQUIRED if initial.get('mode') in (
-        'p2-profiled-current-release', 'p2-profiled-current-recovery') else REQUIRED
-    if not isinstance(manifest, dict) or not 1 <= len(manifest) <= 512 or not required.issubset(manifest):
+    if not isinstance(manifest, dict) or not 1 <= len(manifest) <= max_files or not required.issubset(manifest):
         raise ValueError('P2_CLOSED_OPERATOR_SOURCE_REQUIRED')
     digest = hashlib.sha256(json.dumps(sorted(manifest.items()), separators=(',', ':')).encode()).hexdigest()
     if digest != initial.get('sourceClosureSha256'):
@@ -46,7 +61,7 @@ def verify_source_closure(initial, root):
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022 or not 0 < info.st_size <= 2_000_000:
             raise ValueError('P2_SOURCE_PERMISSIONS_REFUSED')
         raw = path.read_bytes(); total += len(raw)
-        if hashlib.sha256(raw).hexdigest() != expected or total > 41_000_000:
+        if hashlib.sha256(raw).hexdigest() != expected or total > max_bytes:
             raise ValueError('P2_SOURCE_CONTENT_CHANGED')
     return digest
 

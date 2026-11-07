@@ -26,7 +26,7 @@ import release as runtime
 import staging_admission
 import p2_prior_gateway
 from p2_release_broker import Broker, PhysicalObserver, MAXIMUM, LOCK
-from p2_source_closure import verify_source_closure, private_observer_program
+from p2_source_closure import verify_source_closure, verify_profiled_current_source_closure, private_observer_program
 
 require = migrate.demand
 
@@ -58,6 +58,11 @@ def _guard_profile(initial):
         return None
     from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
     return migrate.profile_context(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+
+
+def _verify_guard_source(initial, source):
+    checker = verify_profiled_current_source_closure if _guard_profile(initial) is not None else verify_source_closure
+    return checker(initial, source)
 
 
 def _profile_kwargs(initial):
@@ -252,7 +257,7 @@ def verify_guard_boundary(initial, source):
     require(stat.S_ISREG(current.st_mode) and current.st_uid == 0 and not current.st_mode & 0o077 and
         (current.st_dev,current.st_ino) == (opened.st_dev,opened.st_ino), 'P2_GUARD_BOUNDARY_LOCK_CHANGED')
     fcntl.flock(descriptor,fcntl.LOCK_EX|fcntl.LOCK_NB)
-    verify_source_closure(initial,source)
+    _verify_guard_source(initial,source)
 
 
 def capture_gateway_before_stop(initial, selected, directory, source):
@@ -465,7 +470,10 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
     selected, verified_jobs = migrate.make_plan(Path(initial['bundle']), **_profile_kwargs(initial))
     require(selected == initial['candidate'] and migrate.file_hash(migrate.read_input(Path(initial['bundle']), 'release.candidate.json')) == initial.get('candidateSha256'),
             'P2_GUARD_CANDIDATE_BINDING_REFUSED')
-    verify_source_closure(initial, source)
+    if expected is not None:
+        require(initial.get('apiJobSha256') == migrate.profiled_current_job_hashes(Path(initial['bundle'])),
+                'PROFILED_CURRENT_GUARD_API_JOB_BYTES_REFUSED')
+    _verify_guard_source(initial, source)
     require(observer_source in initial['sourceSha256'], 'P2_FIXED_OBSERVER_CLOSURE_REQUIRED')
     initial['_guardObserverProgram'] = migrate.read_input(source, observer_source)
     # Linux subreaper adoption prevents orphaned mutating Docker CLI workers

@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync,mkdtempSync,mkdirSync,writeFileSync,rmSync} from "node:fs";
+import {readFileSync,mkdtempSync,mkdirSync,writeFileSync,rmSync,symlinkSync} from "node:fs";
 import {execFileSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {verifyOperatorCi,verifyExactHeadWorkflow,readOperatorSourceFiles} from "./recreation_source.mjs";
+import {verifyOperatorCi,verifyExactHeadWorkflow,readOperatorSourceFiles,readProfiledCurrentOperatorSourceFiles} from "./recreation_source.mjs";
 import {REQUIRED_SOURCE_JOBS} from "./source-policy.mjs";
 
 function fixture() {
@@ -60,7 +60,7 @@ test("real CI workflow pins every checkout to exact PR source and never persists
 test("the complete committed operator source fits the real public installation envelope",()=> {
   const root=fileURLToPath(new URL("../..",import.meta.url));
   const sourceCommit=execFileSync("git",["-C",root,"rev-parse","HEAD"],{encoding:"utf8"}).trim();
-  const files=readOperatorSourceFiles(root);
+  const files=readProfiledCurrentOperatorSourceFiles(root);
   assert.equal(files.filter(file=>file.path.startsWith("ops/platform/profiles/frontend-historical-sources/")).length,33);
   assert.ok(Buffer.byteLength(JSON.stringify({commit:sourceCommit,files}))<=56_000_000);
 });
@@ -73,7 +73,13 @@ test("actual Git source handoff accepts 512 files and refuses 513 with the per-f
     git(["add","ops"]);assert.equal(readOperatorSourceFiles(directory).length,512);
     writeFileSync(join(directory,"ops/overflow.mjs"),"// owned source\n");git(["add","ops/overflow.mjs"]);
     assert.throws(()=>readOperatorSourceFiles(directory));
-    git(["rm","--cached","ops/overflow.mjs"]);
+    assert.equal(readProfiledCurrentOperatorSourceFiles(directory).length,513);
+    const additions=Array.from({length:31},(_,index)=>`ops/profiled-${index}.mjs`);
+    for(const name of additions)writeFileSync(join(directory,name),"// owned source\n");
+    git(["add","ops"]);assert.equal(readProfiledCurrentOperatorSourceFiles(directory).length,544);
+    writeFileSync(join(directory,"ops/profiled-overflow.mjs"),"// owned source\n");git(["add","ops"]);
+    assert.throws(()=>readProfiledCurrentOperatorSourceFiles(directory));
+    git(["rm","--cached","ops/overflow.mjs","ops/profiled-overflow.mjs",...additions]);
     writeFileSync(join(directory,"ops/owned-0.mjs"),Buffer.alloc(2_000_001));
     assert.throws(()=>readOperatorSourceFiles(directory));
   } finally {rmSync(directory,{recursive:true,force:true});}
@@ -91,5 +97,23 @@ test("actual Git source handoff accepts exactly 41 MB and refuses one extra deco
     assert.ok(Buffer.byteLength(JSON.stringify({commit:"a".repeat(40),files}))<=56_000_000);
     writeFileSync(last,Buffer.alloc(1_000_001,120));
     assert.throws(()=>readOperatorSourceFiles(directory));
+    writeFileSync(last,Buffer.alloc(1_500_000,120));
+    const profiled=readProfiledCurrentOperatorSourceFiles(directory);
+    assert.equal(profiled.reduce((total,file)=>total+Buffer.from(file.data,"base64").length,0),41_500_000);
+    assert.ok(Buffer.byteLength(JSON.stringify({commit:"a".repeat(40),files:profiled}))<=56_000_000);
+    writeFileSync(last,Buffer.alloc(1_500_001,120));
+    assert.throws(()=>readProfiledCurrentOperatorSourceFiles(directory));
+  } finally {rmSync(directory,{recursive:true,force:true});}
+});
+
+test("operator source refuses a tracked symlink into a private file",()=> {
+  const directory=mkdtempSync(join(tmpdir(),"p2-source-symlink-"));
+  const git=args=>execFileSync("git",["-C",directory,...args],{stdio:["ignore","pipe","pipe"]});
+  try {
+    git(["init","--quiet"]);mkdirSync(join(directory,"ops"));
+    writeFileSync(join(directory,"owned-private.txt"),"owned fixture only\n",{mode:0o600});
+    symlinkSync("../owned-private.txt",join(directory,"ops/link.mjs"));git(["add","ops"]);
+    assert.throws(()=>readOperatorSourceFiles(directory),/symlink refused/u);
+    assert.throws(()=>readProfiledCurrentOperatorSourceFiles(directory),/symlink refused/u);
   } finally {rmSync(directory,{recursive:true,force:true});}
 });

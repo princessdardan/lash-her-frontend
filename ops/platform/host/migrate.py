@@ -437,6 +437,11 @@ def profiled_current_action_id(scope, selected):
     return recovery
 
 
+def profiled_current_job_hashes(bundle):
+    """Bind reviewed API pending chains to the actual raw host job files."""
+    return {name: file_hash(read_input(bundle, f"jobs/{name}.json")) for name in SERVICES}
+
+
 def profiled_current_attempt(scope, results, selected, kind):
     action = profiled_current_action_id(scope, selected)
     demand(kind in ("migration", "runtime"), "PROFILED_CURRENT_ATTEMPT_KIND_REFUSED")
