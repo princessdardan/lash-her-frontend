@@ -98,13 +98,19 @@ test("stale CAS reloads newer cross-device progress and never replays queued loc
   assert.equal(states.at(-1), "conflict");
 });
 
-test("network failure retains the latest queued position for explicit retry without an automatic retry loop", async () => {
-  let calls = 0;
+test("an offline write is retried only after Course reports the same revision", async () => {
+  const calls: string[] = [];
+  const attempts: { revision: number; keepalive: boolean }[] = [];
   const sync = createProgressSync({
     initial: row,
-    latest: async () => row,
-    write: async (body) => {
-      if (++calls === 1) throw new TypeError("offline");
+    latest: async () => {
+      calls.push("read");
+      return row;
+    },
+    write: async (body, keepalive) => {
+      calls.push("write");
+      attempts.push({ revision: body.expectedProgressRevision, keepalive });
+      if (calls.length === 1) throw new TypeError("offline");
       return {
         ...row,
         revision: 2,
@@ -113,11 +119,15 @@ test("network failure retains the latest queued position for explicit retry with
       };
     },
   });
-  await sync.queue({ resumePositionSeconds: 15, maxPositionSeconds: 15 });
+  await sync.queue({ resumePositionSeconds: 15, maxPositionSeconds: 15 }, true);
   await sync.queue({ resumePositionSeconds: 4, maxPositionSeconds: 8 });
-  assert.equal(calls, 1);
+  assert.deepEqual(calls, ["write"]);
   await sync.retry();
-  assert.equal(calls, 2);
+  assert.deepEqual(calls, ["write", "read", "write"]);
+  assert.deepEqual(attempts, [
+    { revision: 1, keepalive: true },
+    { revision: 1, keepalive: true },
+  ]);
   assert.equal(sync.snapshot()?.resumePositionSeconds, 4);
   assert.equal(sync.snapshot()?.maxPositionSeconds, 15);
 });
@@ -334,17 +344,19 @@ test("explicit server refresh waits for pending resume writes and refuses to dis
     release = resolve;
   });
   let fail = false;
+  let committed = row;
   const sync = createProgressSync({
     initial: row,
-    latest: async () => row,
+    latest: async () => committed,
     write: async (body) => {
       await hold;
       if (fail) throw new TypeError("offline");
-      return {
+      committed = {
         ...row,
-        revision: 2,
+        revision: body.expectedProgressRevision + 1,
         resumePositionSeconds: body.resumePositionSeconds!,
       };
+      return committed;
     },
   });
   const pending = sync.queue({ resumePositionSeconds: 9 });
@@ -363,6 +375,7 @@ test("explicit server refresh waits for pending resume writes and refuses to dis
   fail = false;
   await sync.retry();
   assert.equal(await sync.prepareRefresh(), true);
+  assert.equal(sync.snapshot()?.resumePositionSeconds, 10);
 });
 
 test("an explicit server refresh can adopt authoritative conflict state after stale local work was discarded", async () => {
@@ -381,15 +394,20 @@ test("an explicit server refresh can adopt authoritative conflict state after st
 
 test("lost acknowledgements block refresh until revision recovery adopts the committed state without replay", async () => {
   let committed = row;
-  const calls: Array<ProgressUpdate & { expectedProgressRevision: number }> =
-    [];
+  const calls: string[] = [];
+  const states: string[] = [];
   const sync = createProgressSync({
     initial: row,
-    latest: async () => committed,
+    latest: async () => {
+      calls.push("read");
+      return committed;
+    },
     write: async (body) => {
-      calls.push(body);
-      if (body.expectedProgressRevision !== committed.revision)
-        throw new LearningRequestError("conflict", 409);
+      calls.push("write");
+      assert.deepEqual(body, {
+        resumePositionSeconds: 12,
+        expectedProgressRevision: 1,
+      });
       committed = {
         ...row,
         revision: 2,
@@ -397,16 +415,105 @@ test("lost acknowledgements block refresh until revision recovery adopts the com
       };
       throw new TypeError("Acknowledgement was lost after commit");
     },
+    changed: (_progress, status) => states.push(status),
   });
   await sync.queue({ resumePositionSeconds: 12 });
   await sync.queue({ resumePositionSeconds: 3 });
   assert.equal(await sync.prepareRefresh(), false);
-  assert.equal(calls.length, 1);
+  assert.deepEqual(calls, ["write"]);
   await sync.retry();
   assert.equal(await sync.prepareRefresh(), true);
-  assert.equal(sync.snapshot()?.resumePositionSeconds, 12);
-  assert.deepEqual(calls, [
-    { resumePositionSeconds: 12, expectedProgressRevision: 1 },
-    { resumePositionSeconds: 3, expectedProgressRevision: 1 },
-  ]);
+  await sync.queue({ resumePositionSeconds: 3 });
+  await sync.retry();
+  assert.equal(sync.snapshot(), committed);
+  assert.deepEqual(calls, ["write", "read"]);
+  assert.deepEqual(states, ["saving", "error", "conflict"]);
+});
+
+test("retry discards local positions and events if a peer committed a newer revision during the outage", async () => {
+  const peer = {
+    ...row,
+    revision: 3,
+    resumePositionSeconds: 40,
+    maxPositionSeconds: 50,
+  };
+  let writes = 0;
+  const sync = createProgressSync({
+    initial: row,
+    latest: async () => peer,
+    write: async () => {
+      writes++;
+      throw new TypeError("offline");
+    },
+  });
+  await sync.queue({ resumePositionSeconds: 15 });
+  await sync.queue({ resumePositionSeconds: 2, event: "lesson_completed" }, true);
+  await sync.retry();
+  await sync.flush(true);
+  assert.equal(writes, 1);
+  assert.equal(sync.snapshot(), peer);
+  assert.equal(await sync.prepareRefresh(), true);
+});
+
+test("a failed read during uncertain write recovery keeps the write blocked until a later read succeeds", async () => {
+  const calls: string[] = [];
+  const states: string[] = [];
+  const sync = createProgressSync({
+    initial: row,
+    latest: async () => {
+      calls.push("read");
+      if (calls.length === 2) throw new TypeError("still offline");
+      return row;
+    },
+    write: async (body) => {
+      calls.push("write");
+      if (calls.length === 1) throw new TypeError("offline");
+      assert.deepEqual(body, {
+        resumePositionSeconds: 7,
+        expectedProgressRevision: 1,
+      });
+      return { ...row, revision: 2, resumePositionSeconds: 7 };
+    },
+    changed: (_progress, status) => states.push(status),
+  });
+  await sync.queue({ resumePositionSeconds: 15 });
+  await sync.retry();
+  await sync.queue({ resumePositionSeconds: 7 });
+  await sync.refresh();
+  assert.deepEqual(calls, ["write", "read"]);
+  assert.equal(await sync.prepareRefresh(), false);
+  await sync.retry();
+  assert.deepEqual(calls, ["write", "read", "read", "write"]);
+  assert.deepEqual(states, ["saving", "error", "error", "saving", "saved"]);
+  assert.equal(await sync.prepareRefresh(), true);
+});
+
+test("a peer write after the recovery read still conflicts and adopts the authoritative position without replay", async () => {
+  const calls: string[] = [];
+  const peer = {
+    ...row,
+    revision: 2,
+    resumePositionSeconds: 42,
+    maxPositionSeconds: 50,
+  };
+  const sync = createProgressSync({
+    initial: row,
+    latest: async () => {
+      calls.push("read");
+      return calls.length === 2 ? row : peer;
+    },
+    write: async (body) => {
+      calls.push("write");
+      assert.equal(body.expectedProgressRevision, 1);
+      if (calls.length === 1) throw new TypeError("offline");
+      throw new LearningRequestError("conflict", 409);
+    },
+  });
+  await sync.queue({ resumePositionSeconds: 15 });
+  await sync.retry();
+  await sync.queue({ resumePositionSeconds: 7 });
+  await sync.retry();
+  assert.deepEqual(calls, ["write", "read", "write", "read"]);
+  assert.equal(sync.snapshot(), peer);
+  assert.equal(await sync.prepareRefresh(), true);
 });

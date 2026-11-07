@@ -63,6 +63,8 @@ if (process.env.COURSE_LEARNING_BROWSER_FIXTURE === "1") {
             '{"error":{"code":"ACTIVE_ENROLLMENT_REQUIRED","message":"Active enrollment required"}}' } : {}),
           ...(response.status === 404 && url.pathname.endsWith("/playback") ? { canonicalNoMedia: (await response.clone().text()) ===
             '{"error":{"code":"LESSON_NOT_FOUND","message":"Lesson not found"}}' } : {}),
+          ...(response.status === 409 && url.pathname.endsWith("/progress") ? { canonicalProgressConflict: (await response.clone().text()) ===
+            '{"error":{"code":"CONFLICT","message":"Progress revision is stale; reload before updating"}}' } : {}),
         } : {};
         appendFileSync(journal, JSON.stringify({
           method: options?.method ?? "GET", target: url.pathname + url.search, status: response.status, ...receipt,

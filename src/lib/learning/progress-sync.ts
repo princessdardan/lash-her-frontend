@@ -53,10 +53,19 @@ export function createProgressSync(dependencies: {
   let pendingKeepalive = false;
   let pendingRead = false;
   let readBeforeWrites = false;
+  let uncertainRevision: number | undefined;
   let disposed = false;
   const changed = (status: ProgressSyncStatus, error?: unknown) => {
     if (!disposed) dependencies.changed?.(progress, status, error);
   };
+  function blockOnConflict() {
+    pending = null;
+    pendingRead = false;
+    pendingKeepalive = false;
+    readBeforeWrites = false;
+    uncertainRevision = undefined;
+    blocked = "conflict";
+  }
   async function drain() {
     while ((pending || pendingRead) && !blocked) {
       if (pendingRead && (!pending || readBeforeWrites)) {
@@ -64,10 +73,16 @@ export function createProgressSync(dependencies: {
           progress = await dependencies.latest();
           pendingRead = false;
           readBeforeWrites = false;
-          changed("saved");
+          if (uncertainRevision === undefined) {
+            changed("saved");
+          } else if ((progress?.revision ?? 0) !== uncertainRevision) {
+            blockOnConflict();
+            changed("conflict");
+          } else {
+            uncertainRevision = undefined;
+          }
         } catch (error) {
-          // A saved assessment may have changed the progress revision. Retry
-          // this read before sending any positions collected while unavailable.
+          // Resolve the authoritative read before sending queued positions.
           readBeforeWrites = true;
           blocked = "error";
           changed("error", error);
@@ -78,6 +93,7 @@ export function createProgressSync(dependencies: {
       const keepalive = pendingKeepalive;
       pendingKeepalive = false;
       const current = pending;
+      const expectedProgressRevision = progress?.revision ?? 0;
       pending = null;
       changed("saving");
       try {
@@ -92,7 +108,7 @@ export function createProgressSync(dependencies: {
                     current.maxPositionSeconds,
                   ),
                 }),
-            expectedProgressRevision: progress?.revision ?? 0,
+            expectedProgressRevision,
           },
           keepalive,
         );
@@ -101,11 +117,7 @@ export function createProgressSync(dependencies: {
         if (error instanceof LearningRequestError && error.status === 409) {
           // Discard local positions/events queued against a stale revision.
           // A reload resumes the latest device position, without silent replay.
-          pending = null;
-          pendingRead = false;
-          pendingKeepalive = false;
-          readBeforeWrites = false;
-          blocked = "conflict";
+          blockOnConflict();
           try {
             progress = await dependencies.latest();
           } catch {
@@ -115,6 +127,11 @@ export function createProgressSync(dependencies: {
         } else {
           pending = merge(current, pending);
           pendingKeepalive ||= keepalive;
+          // The write may have committed even if the response was lost.
+          // A retry may send these updates only against the same revision.
+          uncertainRevision = expectedProgressRevision;
+          pendingRead = true;
+          readBeforeWrites = true;
           blocked = "error";
           changed("error", error);
         }

@@ -193,7 +193,8 @@ const lessonPath = (
 ) => `/academy/courses/${value.courseId}/lessons/${value.lessonIds[mode]}`;
 const readOwnedGatewayJournal = () => readFileSync(owned().gatewayJournal, "utf8").trim().split("\n").filter(Boolean)
   .map(line => JSON.parse(line) as {
-    method: string; target: string; status: number; requestId?: string; canonicalDenial?: boolean; canonicalNoMedia?: boolean;
+    method: string; target: string; status: number; requestId?: string; canonicalDenial?: boolean;
+    canonicalNoMedia?: boolean; canonicalProgressConflict?: boolean;
   });
 async function enroll(page: Page, value: Scenario) {
   const start = readOwnedGatewayJournal().length;
@@ -281,6 +282,8 @@ test("production Academy native playback, rewind and separate-session resume", a
   const pathname = lessonPath(value);
   const api = `/api/academy/lessons/${lessonId}`;
   const upstream = `/course/v1/student/lessons/${lessonId}`;
+  const writeUrl = owned().origin + api + "/progress";
+  const latestUrl = owned().origin + `/api/academy/progress?lessonId=${lessonId}`;
   const upstreamReads = [
     `/course/v1/student/courses/${value.courseId}`, upstream,
     `/course/v1/student/progress?lessonId=${lessonId}`, upstream + "/quiz", upstream + "/quiz/attempts", upstream + "/playback",
@@ -301,7 +304,7 @@ test("production Academy native playback, rewind and separate-session resume", a
     const requests: Request[] = [];
     const media = new Set<string>();
     page.on("request", request => {
-      if (request.method() === "POST" && request.url() === owned().origin + api + "/progress") requests.push(request);
+      if (request.method() === "POST" && request.url() === writeUrl) requests.push(request);
     });
     page.on("response", response => {
       const url = new URL(response.url());
@@ -312,23 +315,24 @@ test("production Academy native playback, rewind and separate-session resume", a
     });
     return {
       requests, media,
-      write: (expected: number) => page.waitForResponse(response => response.url() === owned().origin + api + "/progress" &&
+      write: (expected: number) => page.waitForResponse(response => response.url() === writeUrl &&
         response.request().method() === "POST" && response.request().postDataJSON()?.expectedProgressRevision === expected,
       { timeout: 20_000 }),
+      latest: () => page.waitForResponse(response => response.url() === latestUrl && response.request().method() === "GET"),
       playback: () => page.waitForResponse(response => response.url() === owned().origin + api + "/playback" &&
         response.request().method() === "GET"),
     };
   };
-  const receipt = async (response: Response, expected: number) => {
+  const receiptFor = async (response: Pick<Response, "status" | "headers" | "json">, request: Request, expected: number) => {
     expect(response.status()).toBe(200);
     expect(response.headers()["cache-control"]).toBe("private, no-store");
     const progress = (await response.json()).progress as ResumeProgress;
     const requestId = response.headers()["x-request-id"];
-    const body = response.request().postDataJSON();
+    const body = request.postDataJSON();
     const canonical = body.event === "lesson_started" ?
       { event: body.event, expectedProgressRevision: expected } :
       { resumePositionSeconds: body.resumePositionSeconds, maxPositionSeconds: body.maxPositionSeconds, expectedProgressRevision: expected };
-    expect(response.request().postData()).toBe(JSON.stringify(canonical));
+    expect(request.postData()).toBe(JSON.stringify(canonical));
     expect(requestId).toMatch(/^[0-9a-f-]{36}$/u);
     expect(progress).toMatchObject({ revision: expected + 1, completedAt: null });
     return {
@@ -337,6 +341,13 @@ test("production Academy native playback, rewind and separate-session resume", a
       progress,
     };
   };
+  const receipt = (response: Response, expected: number) => receiptFor(response, response.request(), expected);
+  const samplePlayer = (player: Awaited<ReturnType<typeof readyPlayer>>) => player.evaluate((element: HTMLElement & {
+    currentTime: number; duration: number; paused: boolean; readyState: number; seeking: boolean;
+  }) => ({ currentTime: element.currentTime, duration: element.duration, paused: element.paused, readyState: element.readyState,
+    seeking: element.seeking }));
+  const seek = (player: Awaited<ReturnType<typeof readyPlayer>>, direction: "ArrowLeft" | "ArrowRight") =>
+    player.getByRole("button", { name: "play", exact: true }).filter({ visible: true }).first().press(direction);
   const verifyGateway = (offset: number, playback: Response, writes: Awaited<ReturnType<typeof receipt>>[]) => {
     const rows = readOwnedGatewayJournal().slice(offset).filter(row =>
       upstreamReads.includes(row.target) || row.target === upstream + "/progress");
@@ -452,6 +463,130 @@ test("production Academy native playback, rewind and separate-session resume", a
       syntheticHls: true, distinctDatabaseSessions: true,
       deviceOne: { writes: firstWrites.map(compact), gatewayIndexes: firstIndexes, pauseSample, rewindSample },
       deviceTwo: { writes: restoreWrites.map(compact), gatewayIndexes: restoreIndexes, restoredSample },
+    }, null, 2) + "\n", { mode: 0o600 });
+
+    const assertPersisted = async (progress: ResumeProgress) => {
+      expect(progress).toMatchObject({ id: rewound.progress.id, enrollmentId: rewound.progress.enrollmentId,
+        maxPositionSeconds: rewound.progress.maxPositionSeconds, completedAt: null });
+      expect(await persisted()).toEqual([{
+        id: rewound.progress.id, enrollment_id: rewound.progress.enrollmentId, revision: progress.revision,
+        resume_position_seconds: progress.resumePositionSeconds, max_position_seconds: rewound.progress.maxPositionSeconds,
+        completed_at: null,
+      }]);
+    };
+    const authoritativeRead = async (response: Response, progress: ResumeProgress) => {
+      expect(response.status()).toBe(200);
+      expect(response.headers()["cache-control"]).toBe("private, no-store");
+      expect((await response.json()).progress).toEqual([progress]);
+      const requestId = response.headers()["x-request-id"];
+      expect(requestId).toMatch(/^[0-9a-f-]{36}$/u);
+      return requestId;
+    };
+    const conflict = page.getByRole("button", { name: "Load latest progress", exact: true });
+    const reloadProgress = async (expected: ResumeProgress) => {
+      const offset = readOwnedGatewayJournal().length;
+      const [start, authorized, restored, document] = await Promise.all([
+        observed.write(expected.revision), observed.playback(), observed.write(expected.revision + 1),
+        page.waitForNavigation({ waitUntil: "domcontentloaded" }), conflict.click(),
+      ]);
+      expect(document?.status()).toBe(200);
+      const writes = [await receipt(start, expected.revision), await receipt(restored, expected.revision + 1)];
+      expect(writes[0].body).toEqual({ event: "lesson_started", expectedProgressRevision: expected.revision });
+      for (const write of writes) {
+        expect(write.progress).toMatchObject({ id: expected.id, enrollmentId: expected.enrollmentId,
+          resumePositionSeconds: expected.resumePositionSeconds, maxPositionSeconds: expected.maxPositionSeconds });
+      }
+      const reloadedPlayer = await readyPlayer(page);
+      const sample = await samplePlayer(reloadedPlayer);
+      expect(sample.paused).toBe(true);
+      expect(sample.currentTime).toBeCloseTo(expected.resumePositionSeconds, 1);
+      await assertPersisted(writes[1].progress);
+      return { player: reloadedPlayer, sample, writes, gatewayIndexes: verifyGateway(offset, authorized, writes) };
+    };
+
+    // Device two wins a write while device one's paused document still holds revision four.
+    const staleOffset = readOwnedGatewayJournal().length;
+    const [winnerResponse] = await Promise.all([resumed.write(6), seek(restoredPlayer, "ArrowRight")]);
+    const winner = await receipt(winnerResponse, 6);
+    expect(winner.progress.resumePositionSeconds).toBe(restored.progress.resumePositionSeconds + 10);
+    await assertPersisted(winner.progress);
+    const [staleResponse, currentResponse] = await Promise.all([
+      observed.write(4), observed.latest(), seek(player, "ArrowLeft"),
+    ]);
+    const staleRequestId = staleResponse.headers()["x-request-id"];
+    const staleBody = staleResponse.request().postDataJSON();
+    expect(staleBody).toEqual({ resumePositionSeconds: 0, maxPositionSeconds: rewound.progress.maxPositionSeconds,
+      expectedProgressRevision: 4 });
+    expect(staleResponse.status()).toBe(409);
+    expect(staleResponse.headers()["cache-control"]).toBe("private, no-store");
+    expect(await staleResponse.json()).toEqual({ error: { code: "conflict",
+      message: "This operation conflicts with the current state. Refresh and try again." }, requestId: staleRequestId });
+    expect(staleRequestId).toMatch(/^[0-9a-f-]{36}$/u);
+    const staleReadRequestId = await authoritativeRead(currentResponse, winner.progress);
+    await expect(conflict).toBeVisible();
+    await seek(player, "ArrowRight");
+    await expect.poll(() => samplePlayer(player)).toMatchObject({ currentTime: 10, paused: true, seeking: false });
+    expect(observed.requests).toHaveLength(5);
+    await assertPersisted(winner.progress);
+    expect(readOwnedGatewayJournal().slice(staleOffset)).toEqual([
+      { method: "POST", target: upstream + "/progress", status: 200, requestId: winner.requestId },
+      { method: "POST", target: upstream + "/progress", status: 409, requestId: staleRequestId, canonicalProgressConflict: true },
+      { method: "GET", target: upstreamReads[2], status: 200, requestId: staleReadRequestId },
+    ]);
+    const reloaded = await reloadProgress(winner.progress);
+
+    // Forward one genuine progress request and drop its browser response after the database commit.
+    const lossOffset = readOwnedGatewayJournal().length;
+    const beforeLoss = observed.requests.length;
+    let committed: Awaited<ReturnType<typeof receipt>> | undefined;
+    await page.route(writeUrl, async route => {
+      const request = route.request();
+      expect(request.method()).toBe("POST");
+      const response = await route.fetch({ maxRedirects: 0, maxRetries: 0 });
+      try {
+        committed = await receiptFor(response, request, 9);
+        expect(committed.progress.resumePositionSeconds).toBe(rewound.progress.resumePositionSeconds);
+        await assertPersisted(committed.progress);
+      } finally {
+        await response.dispose();
+        await route.abort("connectionreset");
+      }
+    }, { times: 1 });
+    const [failed] = await Promise.all([
+      page.waitForEvent("requestfailed", request => request.method() === "POST" && request.url() === writeUrl),
+      seek(reloaded.player, "ArrowLeft"),
+    ]);
+    expect(failed.failure()?.errorText).toBe("net::ERR_CONNECTION_RESET");
+    if (!committed) throw new Error("The progress acknowledgement was dropped without proof of commit");
+    await expect(page.getByRole("alert").filter({ hasText: "Progress has not been confirmed." })).toBeVisible();
+    await seek(reloaded.player, "ArrowRight");
+    await expect.poll(() => samplePlayer(reloaded.player)).toMatchObject({
+      currentTime: winner.progress.resumePositionSeconds, paused: true, seeking: false,
+    });
+    const committedRow = { method: "POST", target: upstream + "/progress", status: 200, requestId: committed.requestId };
+    expect(readOwnedGatewayJournal().slice(lossOffset)).toEqual([committedRow]);
+    expect(observed.requests).toHaveLength(beforeLoss + 1);
+    const [recoveredResponse] = await Promise.all([
+      observed.latest(), page.getByRole("button", { name: "Retry saving progress", exact: true }).click(),
+    ]);
+    const recoveredRequestId = await authoritativeRead(recoveredResponse, committed.progress);
+    await expect(conflict).toBeVisible();
+    expect(observed.requests).toHaveLength(beforeLoss + 1);
+    expect(readOwnedGatewayJournal().slice(lossOffset)).toEqual([
+      committedRow, { method: "GET", target: upstreamReads[2], status: 200, requestId: recoveredRequestId },
+    ]);
+    await assertPersisted(committed.progress);
+    const recovered = await reloadProgress(committed.progress);
+    expect(observed.requests).toHaveLength(beforeLoss + 3);
+    expect(resumed.requests).toHaveLength(3);
+
+    await writeFile(info.outputPath("progress-recovery.json"), JSON.stringify({
+      syntheticHls: true, distinctDatabaseSessions: true, progressRowPreserved: true,
+      stale: { winner: compact(winner), status: 409, staleBody, staleRequestId, authoritativeRequestId: staleReadRequestId,
+        replayed: false, reloaded: { sample: reloaded.sample, writes: reloaded.writes.map(compact), gatewayIndexes: reloaded.gatewayIndexes } },
+      lostAcknowledgement: { committed: compact(committed), browserFailure: "connectionreset", unknownStateObserved: true,
+        authoritativeRequestId: recoveredRequestId, replayed: false,
+        reloaded: { sample: recovered.sample, writes: recovered.writes.map(compact), gatewayIndexes: recovered.gatewayIndexes } },
     }, null, 2) + "\n", { mode: 0o600 });
   } finally {
     await close(first, second);

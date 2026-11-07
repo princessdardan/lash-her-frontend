@@ -134,7 +134,7 @@ export function LessonExperience({
       {!preview && status === "conflict" ? (
         <div role="alert" className="mt-6 border border-lh-primary/20 p-5">
           <p>
-            Another session updated this lesson. Reload to use your latest saved
+            Saved progress changed. Reload to use your latest saved
             position before continuing.
           </p>
           <button

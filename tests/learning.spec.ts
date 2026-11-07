@@ -290,7 +290,7 @@ test("stale progress reloads the other device revision and never silently overwr
       },
     );
   await expect(
-    page.getByText("Another session updated this lesson.", { exact: false }),
+    page.getByText("Saved progress changed.", { exact: false }),
   ).toBeVisible();
   const stored = (
     await (

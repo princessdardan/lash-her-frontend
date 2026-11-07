@@ -260,6 +260,11 @@ const reviewedLessonRestoreDependencies = {
   "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "d67057267b8ab62309d141af0a7ff7788bd6ab57166f1ee5ad2122543a5b7076",
   "ops/gateway/lesson-resume-position.mjs": "18f0d916229f4ba401d0437d3cc957214fe8bb46584b492d21b4fc31ee6227fd"
 };
+const reviewedProgressRecoveryDependencies = {
+  ...reviewedLessonRestoreDependencies,
+  "src/components/learning/lesson-experience.tsx": "f0392cf4c1b5d99f7e9ec99fd90982b173e284fd64a16d2aa06c68b478077901",
+  "src/lib/learning/progress-sync.ts": "d8a78da44bb811a6abad052d50a56f7e104c3f32af152716f06234f8990a6d3f"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -294,7 +299,7 @@ function sourcePolicy(sourceCommit) {
     [reviewedLessonDenialSource, [reviewedLessonDenialDependencies]],
     [reviewedLessonAssessmentSource, [reviewedLessonAssessmentDependencies]],
     [reviewedLessonResumeSource, [reviewedLessonResumeDependencies]],
-    [reviewedLessonRestoreSource, [reviewedLessonRestoreDependencies]]]
+    [reviewedLessonRestoreSource, [reviewedLessonRestoreDependencies, reviewedProgressRecoveryDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

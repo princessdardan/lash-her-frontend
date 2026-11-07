@@ -558,6 +558,7 @@ try {
   await ready(`http://${production ? "[::1]" : "localhost"}:${frontendPort}/courses`, 180_000);
   const testEnvironment = {
     ...common,
+    ...(frontendTls ? { NODE_EXTRA_CA_CERTS: frontendTls.certPath } : {}),
     COURSE_LEARNING_BROWSER_FIXTURE: "1",
     COURSE_LEARNING_BROWSER_MODE: mode,
     COURSE_LEARNING_BROWSER_ORIGIN: origin,
