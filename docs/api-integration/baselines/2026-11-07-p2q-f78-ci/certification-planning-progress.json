@@ -347,5 +347,37 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "guardedScopedCertification": {
+    "frontendSourceCommit": "85130cdc9b3064265da4b8e2131bfa8733d8befa",
+    "courseSourceRequiredForScopedMux": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+    "modes": ["export-cleanup", "mux-callback-recovery", "lifecycle-persistence"],
+    "node24": {"passed": 54, "failed": 0, "skipped": 0},
+    "frontendRouteNode24": {"passed": 18, "failed": 0, "skipped": 0},
+    "host": {"passed": 113, "failed": 0, "ownedFixtures": true},
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "passed": 14,
+      "migrations": 83,
+      "actualTls": true,
+      "scopedChecks": "One exact completed export operation across closed/recovery-only/closed epochs; Mux and persistence reject frontend admission drift"
+    },
+    "profiledSourceInstaller": {
+      "files": 543,
+      "decodedBytes": 42437784,
+      "expandedBytes": 56663103,
+      "wireBytes": 18425479,
+      "wireSha256": "f3f7187e9e069ca5b5b18ed9f3f27b67083e7ea2653c5475699cccaa61b35daf",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "composedInstalledLinuxActionVerified": false,
+    "normalInteractiveWindowImplemented": false,
+    "googleOAuthClientOwnerConfirmed": true,
+    "stagingIdentityBound": false,
+    "deployedProviderEvidence": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
