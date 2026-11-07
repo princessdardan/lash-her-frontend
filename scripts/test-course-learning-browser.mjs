@@ -29,6 +29,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import pg from "pg";
+import { createOwnedProgressIngressObserver } from "./course-learning-progress-ingress.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const mode = process.env.COURSE_LEARNING_BROWSER_MODE ?? "development";
@@ -449,6 +450,10 @@ try {
   } finally {
     await mediaClient.end();
   }
+  frontendTls?.progressIngress.selectLessons({
+    chromium: fixture.scenarios.chromium.resume.lessonIds.practice,
+    mobile: fixture.scenarios.mobile.resume.lessonIds.practice,
+  });
   const storagePath = join(temporary, "fixture.json");
   const gatewayJournal = join(temporary, "gateway-requests.jsonl");
   await writeFile(gatewayJournal, "", { mode: 0o600 });
@@ -713,6 +718,14 @@ try {
     );
   }
   if (postgresStopped) await rm(temporary, { recursive: true, force: true });
+  if (resultDirectory && frontendTls) {
+    try {
+      await writeFile(join(resultDirectory, "progress-ingress.json"),
+        JSON.stringify(await frontendTls.progressIngress.report(resultDirectory), null, 2) + "\n", { mode: 0o600 });
+    } catch {
+      process.stderr.write("Owned progress ingress evidence could not be saved\n");
+    }
+  }
   if (cleanupError) throw cleanupError;
 }
 function start(command, args, cwd, env, log) {
@@ -804,6 +817,7 @@ async function loopbackTlsProxy() {
   const spki = createHash("sha256")
     .update(new X509Certificate(cert).publicKey.export({ format: "der", type: "spki" }))
     .digest("base64");
+  const progressIngress = createOwnedProgressIngressObserver();
   const server = createHttpsServer({ key, cert }, (request, response) => {
     const port = server.address().port;
     const host = `localhost:${port}`;
@@ -828,12 +842,13 @@ async function loopbackTlsProxy() {
     });
     response.once("close", () => upstream.destroy());
     request.pipe(upstream);
+    progressIngress.observe(request, upstream, response);
   });
   await new Promise((resolveListen, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolveListen);
   });
-  return { server, origin: `https://localhost:${server.address().port}`, certPath, spki };
+  return { server, origin: `https://localhost:${server.address().port}`, certPath, spki, progressIngress };
 }
 async function ready(url, budget = 60_000) {
   const deadline = Date.now() + budget;

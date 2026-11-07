@@ -748,12 +748,17 @@ test("production Academy native playback, rewind and separate-session resume", a
       maxPositionSeconds: beforeExit.maxPositionSeconds,
       expectedProgressRevision: beforeExit.revision,
     });
-    expect(exitRequest.postData()).toBe(JSON.stringify({
+    const exactExitBody = JSON.stringify({
       resumePositionSeconds: exitBody.resumePositionSeconds,
       maxPositionSeconds: exitBody.maxPositionSeconds,
       expectedProgressRevision: beforeExit.revision,
-    }));
+    });
+    expect(exitRequest.postData()).toBe(exactExitBody);
     assertExitPosition(exitBody.resumePositionSeconds, exitSample, beforeExit);
+    await writeFile(info.outputPath("document-exit-outgoing.json"), JSON.stringify({
+      bodyBytes: Buffer.byteLength(exactExitBody),
+      bodySha256: createHash("sha256").update(exactExitBody).digest("hex"),
+    }) + "\n", { mode: 0o600 });
     const exitProgress = {
       ...beforeExit, revision: beforeExit.revision + 1, resumePositionSeconds: exitBody.resumePositionSeconds,
     };
