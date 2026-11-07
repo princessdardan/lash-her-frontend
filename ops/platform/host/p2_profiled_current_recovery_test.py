@@ -71,6 +71,11 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
             empty = initial('resume-approved-api-suffix'); empty['approvedApiSuffix'] = {'course': [], 'community': []}
             with self.assertRaises(Exception):
                 broker.select_release(empty)
+        broker.initial, broker.selected = initial(), selected()
+        with patch.object(recovery.P2ProfiledCurrentBroker, 'record_base', return_value={'status': 'OWNED'}):
+            receipt = broker.record_base('OWNED')
+        self.assertEqual(receipt['apiJobSha256'], broker.initial['apiJobSha256'])
+        self.assertEqual(receipt['originalReceiptSha256'], broker.initial['originalReceiptSha256'])
 
     def test_scope_is_constructed_only_with_the_source_recovery_action(self):
         broker = object.__new__(recovery.P2ProfiledCurrentRecoveryBroker)

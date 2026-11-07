@@ -82,6 +82,7 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         value = super().record_base(status)
         value.update(recoveryActionId=self.action_id(), originalReleaseId=self.selected['releaseId'],
                      disposition=self.initial['disposition'],
+                     apiJobSha256=copy.deepcopy(self.initial['apiJobSha256']),
                      originalReceiptSha256=copy.deepcopy(self.initial['originalReceiptSha256']))
         return value
 
