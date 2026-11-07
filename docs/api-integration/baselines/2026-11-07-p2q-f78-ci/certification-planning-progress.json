@@ -1031,5 +1031,105 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveOwnerCurriculumCreation": {
+    "frontendSourceCommit": "41a72cf3bfc707013841b712f9a51c7fd73ccfde",
+    "normalAuthoringBrowser": {
+      "passed": 8,
+      "failed": 0,
+      "courseSourceCommit": "b21e25cf900458eb6cbbd993582d7e1bbac36c4b",
+      "courseContractSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+      "actualLocalNextCourseAndPostgres": true,
+      "exactModuleAndScaffoldFormBytesAndSavedReadbackVerified": true,
+      "gatewayWorkloadVerification": false,
+      "evidenceSha256": "d8aed8ef64248a97443ace072b1428ba580f425af05fd3f3692d2b54105b97c6",
+      "logSha256": "57de9654e032f2fa10d7766d46e5dfae9bf7cf7aded60850d832a3344796c3d6"
+    },
+    "frontendUnitNode24": {
+      "sourcePassed": 2538,
+      "scriptAndDependencyPassed": 56,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "49efbd8eb3ed5e6591f923e8f28791ce44f14618247b7507fb9c904eb4c80dfc"
+    },
+    "certificationPlatformNode24": {
+      "passed": 111,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "b8c551ad2e774ca41c6a623a80be3c9c27de88025f931ef6bf5f397c9d340e44",
+      "ownedChromiumCases": 11,
+      "singleReceiptRequiresVisibleSavedStatusAndExactRequest": true,
+      "nodeAndPythonPlanAndPermitAgree": true
+    },
+    "host": {
+      "passed": 122,
+      "failed": 0,
+      "ownedFixtures": true,
+      "logSha256": "810d85f9bfc51f2f240f0a8e367a582970caa645f15e66ce167fef5dd0f3a00f"
+    },
+    "loopbackGateway": {
+      "passed": 72,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "3d322d551a7c4ad37973165a0e9240f9b7626cd0d2d8a3fa7c0903810b9b81ad",
+      "acknowledgementRequestIndexes": [
+        0,
+        1,
+        0
+      ],
+      "upstreamStatuses": [
+        200,
+        201,
+        200
+      ]
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "actualTls": true,
+      "migrations": {
+        "frontend": 83,
+        "course": 22,
+        "community": 11
+      },
+      "sourceCommits": {
+        "frontend": "41a72cf3bfc707013841b712f9a51c7fd73ccfde",
+        "course": "0bb054d5a04db71c481a8b3d182db6df19782cdc",
+        "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"
+      },
+      "heldLifecycleAndDraftWitnessChecks": 21,
+      "oneNewRowWithExactFieldsAndPreservedSiblingsVerified": true,
+      "sourceSha256": {
+        "p2-lifecycle-state-witness.mjs": "6c008dc53d9ac442cce54d41849467c3091afd7e646c5d6ed01125f5e079b358",
+        "p2-lifecycle-persistence-probe.mjs": "de8345a211bc63d55c852bf5cc3845918a5d16534ecc16e116760d0470a56c1d",
+        "p2-lifecycle-owned-source-manifest.mjs": "01f0b8ffba2a71ef4553903098af567bd8486d3b6e23f90299b4b2076d92cda8",
+        "harness/owned-p2-lifecycle-persistence.mjs": "24211db456d090830d9f764bc46ed122aaa54d43a23d07daa9292d340b287c79",
+        "test-p2-lifecycle-persistence-local.mjs": "f5153d68c4709d36123b796d7fa7b6bc6b2d6fdeef33c4b97b9369279270734d"
+      },
+      "logSha256": "c505056550300394bf864f360c97924e01a9a897ad63402c28f2c5c9aefa208d"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 43003656,
+      "expandedBytes": 57417739,
+      "wireBytes": 18691327,
+      "wireSha256": "e6f8aadb89cbc48c857387d7aefa2bc24b7b3efb0b0f301e5e58b13147b79a7d",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true,
+      "logSha256": "2ac037edd24cb1b0567c8f81ae2176a257ffa7b80a6bf4aec40dbdb3a77f4915"
+    },
+    "typeCheckPassed": true,
+    "focusedLintPassed": true,
+    "p2ContractCheckPassed": true,
+    "staticChecksLogSha256": "dbeae9c2e8d339f1c1f1671fcf22e8ed19e4a5288e6d05775711c060a8e17351",
+    "nativePlanSourcePolicyAccepted": true,
+    "nativePlanLogSha256": "f8b5f34451484c0a72b74233116ef6439d6a2fce64e37513db82979be035f350",
+    "moduleAndLessonScaffoldOperatorActionsImplemented": true,
+    "populatedPortableTextOperatorActionImplemented": false,
+    "remainingS04GuardedActionsImplemented": false,
+    "exactPublishedCiQualified": false,
+    "actualDeployedAuthoringVerified": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
