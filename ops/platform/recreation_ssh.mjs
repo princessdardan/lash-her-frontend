@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {spawn} from "node:child_process";
 import {lstat, realpath, writeFile} from "node:fs/promises";
 import {isAbsolute, dirname, join} from "node:path";
+import {gzipSync} from "node:zlib";
 import { LEGACY_OPERATOR_SOURCE_BOUNDS, PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS } from "./recreation_source.mjs";
 
 const quote = value => "'" + value.replace(/'/gu, "'\"'\"'") + "'";
@@ -23,10 +24,50 @@ new=root/'p1-recreate-access-20261103-c3'
 if any(p.exists() or p.is_symlink() for p in (old,new)) or shutil.which('docker') is not None: raise ValueError('BARE_RUNTIME_RESTORE_REQUIRED')
 print(json.dumps({'status':'BARE_RUNTIME_RESTORE_VERIFIED','hostMachineId':pathlib.Path('/etc/machine-id').read_text().strip(),'failedActionInputsPresent':False,'newActionPresent':False,'dockerInstalled':False,'readOnly':True}))
 `;
-const sourceInstall = bounds => header + `
+const PUBLIC_SOURCE_WIRE_BYTES = 56_000_000;
+const PROFILED_SOURCE_EXPANDED_BYTES = 65_000_000;
+const PROFILED_SOURCE_ENCODING = "gzip-base64-v1";
+
+const profiledSourceRead = `import zlib
+def unique_fields(items):
+ result={}
+ for key,value in items:
+  if key in result: raise ValueError('DUPLICATE_SOURCE_FIELD')
+  result[key]=value
+ return result
+wire=sys.stdin.buffer.read(${PUBLIC_SOURCE_WIRE_BYTES + 1})
+if len(wire)>${PUBLIC_SOURCE_WIRE_BYTES}: raise ValueError('PROFILED_SOURCE_WIRE_BOUND_REFUSED')
+try:
+ wrapper=json.loads(wire.decode('utf-8'),object_pairs_hook=unique_fields)
+ if type(wrapper) is not dict or set(wrapper)!={'encoding','data'} or wrapper['encoding']!='${PROFILED_SOURCE_ENCODING}' or type(wrapper['data']) is not str:
+  raise ValueError()
+ encoded=wrapper['data'].encode('ascii')
+ compressed=base64.b64decode(encoded,validate=True)
+ if not compressed or base64.b64encode(compressed)!=encoded: raise ValueError()
+except (ValueError,RecursionError): raise ValueError('PROFILED_SOURCE_WRAPPER_REFUSED') from None
+del wire,wrapper,encoded
+inflater=zlib.decompressobj(16+zlib.MAX_WBITS)
+try: expanded=inflater.decompress(compressed,${PROFILED_SOURCE_EXPANDED_BYTES + 1})
+except zlib.error: raise ValueError('PROFILED_SOURCE_GZIP_REFUSED') from None
+if len(expanded)>${PROFILED_SOURCE_EXPANDED_BYTES}: raise ValueError('PROFILED_SOURCE_EXPANDED_BOUND_REFUSED')
+if not inflater.eof or inflater.unused_data or inflater.unconsumed_tail: raise ValueError('PROFILED_SOURCE_GZIP_REFUSED')
+del compressed,inflater
+try:
+ p=json.loads(expanded.decode('utf-8'),object_pairs_hook=unique_fields)
+ if type(p) is not dict or set(p)!={'commit','files'}: raise ValueError()
+except (ValueError,RecursionError): raise ValueError('PROFILED_SOURCE_PAYLOAD_REFUSED') from None
+del expanded`;
+
+function profiledSourcePayload(payload) {
+  const expanded = Buffer.from(JSON.stringify(payload));
+  assert.ok(expanded.length <= PROFILED_SOURCE_EXPANDED_BYTES, "Bounded profiled source expansion required");
+  return {encoding: PROFILED_SOURCE_ENCODING, data: gzipSync(expanded, {level: 6}).toString("base64")};
+}
+
+const sourceInstall = (bounds, readPayload = "p=json.load(sys.stdin)") => header + `
 import base64,hashlib
 if os.geteuid()!=0: raise ValueError('ROOT_REQUIRED')
-p=json.load(sys.stdin)
+${readPayload}
 commit=p['commit']
 if len(commit)!=40 or any(c not in '0123456789abcdef' for c in commit): raise ValueError('SOURCE_COMMIT_REQUIRED')
 root=pathlib.Path('/opt/lash-her/operators')/commit
@@ -143,7 +184,8 @@ export async function recreationSsh({knownHosts,keyFile,diagnostics,environment=
     // Fixed named source modes. Neither payload can select its own cap.
     // Public encoded and private-action transport limits remain unchanged.
     installSource:payload=>run(["sudo","-n","/usr/bin/python3","-c",sourceInstall(LEGACY_OPERATOR_SOURCE_BOUNDS)],payload,120_000,4_000_000,false,56_000_000),
-    installProfiledCurrentSource:payload=>run(["sudo","-n","/usr/bin/python3","-c",sourceInstall(PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS)],payload,120_000,4_000_000,false,56_000_000),
+    installProfiledCurrentSource:async payload=>run(["sudo","-n","/usr/bin/python3","-c",sourceInstall(PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS,profiledSourceRead)],
+      profiledSourcePayload(payload),120_000,4_000_000,false,PUBLIC_SOURCE_WIRE_BYTES),
     phase:(commit,payload)=> {
       assert.match(commit,/^[a-f0-9]{40}$/u);
       assert.ok(["rollback","retire","restore"].includes(payload.operation));
