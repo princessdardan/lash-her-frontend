@@ -540,5 +540,53 @@
     "candidatePublished": false,
     "stagingTouched": false,
     "releaseAccepted": false
+  },
+  "interactiveLifecycleController": {
+    "frontendSourceCommit": "40fc039d16da27eaa7816c381239ee10334f42c9",
+    "certificationPlatformNode24": {
+      "passed": 53,
+      "failed": 0,
+      "skipped": 0,
+      "ownedChromiumCases": 4,
+      "actualBrowserInterception": true,
+      "actualVercelResponseTransport": false,
+      "logSha256": "3dfe9c6fda4b8c8c4b60290d012d8aae6d63dd87d23bc0023010725a0688960f"
+    },
+    "host": {
+      "passed": 115,
+      "failed": 0,
+      "ownedFixtures": true,
+      "independentTerminalReceiptAndLedgerChecked": true,
+      "installedStagingHostVerified": false,
+      "logSha256": "0921e5dddc7203cca16a0c8eacf6fa19c9f142d325b2ecfb29f9b114ce632821"
+    },
+    "disposablePostgres": {
+      "serverMajor": 16,
+      "migrations": 83,
+      "actualTls": true,
+      "certificationPhysicalChecks": 18,
+      "projectedBrowserAndHostBoundaries": true,
+      "preferenceEffectAfterDrain": true,
+      "lostBrowserResponseAndUncertainWriteRefused": true,
+      "logSha256": "51af62c62b3f3fd721d65e3ddeca3ab6bd9af3421b9cb026cdeae1057d18db9e"
+    },
+    "profiledSourceInstaller": {
+      "files": 544,
+      "decodedBytes": 42679054,
+      "expandedBytes": 56984939,
+      "wireBytes": 18542879,
+      "wireSha256": "164115c1130bd49ef50d023da481a7814ee1e7caa5a46775c82938e8b0927288",
+      "exactExistingSourceVerified": true,
+      "rootAndInstallPathProjected": true
+    },
+    "p2ContractCheckPassed": true,
+    "actualBrowserMutationResponseCaptureImplemented": true,
+    "fixedHostLifecycleTransportImplemented": true,
+    "heldLifecycleWitnessJoinedAfterFrontendClosure": true,
+    "verifiedBrowserIdentityBootstrapImplemented": false,
+    "interactiveApplyEligible": false,
+    "candidatePublished": false,
+    "stagingTouched": false,
+    "releaseAccepted": false
   }
 }
