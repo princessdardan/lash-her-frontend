@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
+import { connect } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, p2InteractiveBrowserPath, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
+import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession, p2InteractiveBrowserPath, p2LifecycleMutationTarget, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
   validateP2LifecycleBrowserInput, validateP2LifecycleMutationReceipt, watchP2LifecycleMutation } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
@@ -189,13 +194,16 @@ function interactiveInput(overrides = {}) {
   if (value.stage === "lifecycle" && !Object.hasOwn(value, "lifecycle")) {
     value.lifecycle = p2LifecycleMutationTarget({ actorKind: "admin", userId, operation: "suspend" });
   }
+  if (value.stage === "identity" && !Object.hasOwn(value, "identity")) value.identity = { actorKind: "admin", actorId: adminId };
   return value;
 }
+const identityHash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 function interactivePermit(input) {
   const issued = Math.floor(Date.now() / 1000), expires = issued + 60;
-  const lifecycle = input.stage === "lifecycle";
-  const cookie = [lifecycle ? "v2" : "v1", input.epoch, input.stage, issued, expires, "3".repeat(32),
-    ...(lifecycle ? ["4".repeat(64)] : []), "5".repeat(64)].join(".");
+  const selector = input.stage === "identity" ? identityHash(["identity", input.identity.actorKind])
+    : input.stage === "lifecycle" ? "4".repeat(64) : undefined;
+  const cookie = [selector ? "v2" : "v1", input.epoch, input.stage, issued, expires, "3".repeat(32),
+    ...(selector ? [selector] : []), "5".repeat(64)].join(".");
   return { stage: input.stage, epoch: input.epoch, expires, cookie };
 }
 const binding = input => ({ challenge: input.challenge, bindingSha256: input.bindingSha256, stage: input.stage, epoch: input.epoch });
@@ -275,7 +283,139 @@ test("actual interactive child refuses secret-bearing IPC before browser launch 
   } finally { await runner.close(); }
 });
 
+test("identity permit requires the reviewed actor family and the actual child refuses the other context", async () => {
+  const input = interactiveInput(), permit = interactivePermit(input), runner = interactiveChild();
+  const learner = interactiveInput({ identity: { actorKind: "customer", actorId: userId } });
+  assert.throws(() => validateP2InteractiveBrowserPermit(permit, learner));
+  assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: permit.cookie.replace(/^v2/u, "v1") }, input));
+  assert.throws(() => validateP2InteractiveBrowserInput(interactiveInput({ identity: { actorKind: "owner", actorId: adminId } })));
+  try {
+    assert.equal((await runner.command("initialize-interactive", input)).type, "interactive-initialized");
+    assert.deepEqual(await runner.command("interactive-install", { ...binding(input), context: "learner", expires: permit.expires }), { type: "failed" });
+    assert.deepEqual(await runner.exited, [1, null]);
+    assert.deepEqual(runner.output, []);
+  } finally { await runner.close(); }
+});
+
+const ownedGoogleSubject = "owned-private-google-subject";
+function ownerSession(subject = ownedGoogleSubject, authenticatedAt = Math.floor(Date.now() / 1000)) {
+  return { expires: new Date(Date.now() + 3_600_000).toISOString(),
+    user: { providerUserId: subject, authenticatedAt, isEmailVerified: true, email: "owned-owner@example.invalid" } };
+}
+const customerSession = (id = userId) => ({ expires: new Date(Date.now() + 3_600_000).toISOString(),
+  user: { id, email: "owned-customer@example.invalid", name: null, image: null } });
+const ownerSubject = input => identityHash(["p2q-interactive-owner-v1", input.challenge, input.identity.actorId, ownedGoogleSubject]);
+
+test("identity session refuses wrong or expired identity and waits for a newly authenticated verified owner", async () => {
+  const owner = interactiveInput(), learner = interactiveInput({ identity: { actorKind: "customer", actorId: userId } });
+  const selection = { context: "owner", ownerSubjectSha256: ownerSubject(owner), openedAt: Date.now(), expires: Math.floor(Date.now() / 1000) + 60 };
+  let requests = 0, disposed = 0;
+  const page = (body, expected = "/api/auth/session") => ({
+    url: () => owner.browserOrigin + "/admin/sign-in",
+    request: { get: async (url, options) => {
+      requests++;
+      assert.equal(url, owner.browserOrigin + expected);
+      assert.equal(options.maxRedirects, 0);
+      return { url: () => url, status: () => 200, headersArray: () => [
+        { name: "Content-Type", value: "application/json" }, { name: "Cache-Control", value: "private, no-cache, no-store" },
+      ], body: async () => Buffer.from(JSON.stringify(body)), dispose: async () => { disposed++; } };
+    } },
+  });
+  const observed = await observeP2InteractiveIdentitySession(page(ownerSession()), owner, selection);
+  assert.deepEqual(observed, { actorKind: "admin", actorId: adminId, sessionVerified: true });
+  assert.equal(JSON.stringify(observed).includes(ownedGoogleSubject), false);
+  assert.equal(await observeP2InteractiveIdentitySession(page(ownerSession(ownedGoogleSubject, Math.floor(selection.openedAt / 1000) - 5)), owner, selection), null);
+  await assert.rejects(observeP2InteractiveIdentitySession(page(ownerSession("other-owned-subject")), owner, selection), /IDENTITY_SESSION_REFUSED/u);
+  await assert.rejects(observeP2InteractiveIdentitySession(page(ownerSession()), owner, { ...selection, context: "learner" }), /IDENTITY_SESSION_REFUSED/u);
+  const customerSelection = { context: "learner", openedAt: selection.openedAt, expires: selection.expires };
+  assert.deepEqual(await observeP2InteractiveIdentitySession(page(customerSession(), "/api/customer-auth/session"), learner, customerSelection),
+    { actorKind: "customer", actorId: userId, sessionVerified: true });
+  await assert.rejects(observeP2InteractiveIdentitySession(page(customerSession(randomUUID()), "/api/customer-auth/session"), learner, customerSelection),
+    /IDENTITY_SESSION_REFUSED/u);
+  await assert.rejects(observeP2InteractiveIdentitySession(page(ownerSession()), owner, { ...selection, expires: Math.floor(Date.now() / 1000) }),
+    /IDENTITY_SESSION_REFUSED/u);
+  assert.equal(requests, 5);
+  assert.equal(disposed, requests);
+});
+
 const ownedInteractiveBrowser = process.env.P2_INTERACTIVE_BROWSER_OWNED_TEST === "true";
+test("owned Chromium identity reads the fixed normal session endpoint with only its own browser context cookies",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const root = mkdtempSync(join(tmpdir(), "owned-p2-identity-tls-"));
+    const sockets = new Set(), hits = [];
+    const bind = async server => {
+      server.on("connection", socket => {
+        sockets.add(socket);
+        socket.once("close", () => sockets.delete(socket));
+      });
+      server.listen(0, "127.0.0.1");
+      await once(server, "listening");
+      return server.address().port;
+    };
+    const key = join(root, "key.pem"), cert = join(root, "cert.pem");
+    let browser, https, proxy;
+    try {
+      assert.equal(spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+        "-subj", "/CN=staging.lashher.com", "-keyout", key, "-out", cert], { stdio: "ignore" }).status, 0);
+      https = createHttpsServer({ key: readFileSync(key), cert: readFileSync(cert) }, (request, response) => {
+        if (request.method === "GET" && ["/sign-in", "/admin/sign-in"].includes(request.url)) {
+          response.writeHead(200, { "content-type": "text/html" }).end("<!doctype html><main>Owned identity</main>");
+          return;
+        }
+        const owner = request.url === "/api/auth/session", customer = request.url === "/api/customer-auth/session";
+        if (request.method !== "GET" || (!owner && !customer)) return response.writeHead(404).end();
+        const cookies = request.headers.cookie ?? "";
+        const ownerCookie = cookies.includes("owned-owner=fixture"), customerCookie = cookies.includes("owned-customer=fixture");
+        hits.push({ path: request.url, ownerCookie, customerCookie, permitCookie: cookies.includes("__Host-lash-p2q-window=") });
+        const value = owner ? ownerCookie && !customerCookie ? ownerSession() : null : customerCookie && !ownerCookie ? customerSession() : null;
+        const body = JSON.stringify(value);
+        response.writeHead(200, { "content-type": "application/json", "cache-control": "private, no-cache, no-store",
+          "content-length": Buffer.byteLength(body) }).end(body);
+      });
+      const tlsPort = await bind(https);
+      proxy = createHttpServer((_request, response) => response.writeHead(403).end());
+      proxy.on("connect", (request, socket, head) => {
+        if (request.url !== "staging.lashher.com:443") { socket.destroy(); return; }
+        const target = connect(tlsPort, "127.0.0.1");
+        sockets.add(target);
+        target.once("close", () => sockets.delete(target));
+        target.once("error", () => socket.destroy());
+        socket.once("error", () => target.destroy());
+        target.once("connect", () => {
+          socket.write("HTTP/1.1 200 Connection established\r\n\r\n");
+          if (head.length) target.write(head);
+          socket.pipe(target).pipe(socket);
+        });
+      });
+      const proxyPort = await bind(proxy), { chromium } = await import("playwright");
+      browser = await chromium.launch();
+      for (const [context, input, options] of [
+        ["owner", interactiveInput(), { ownerSubjectSha256: ownerSubject(interactiveInput()) }],
+        ["learner", interactiveInput({ identity: { actorKind: "customer", actorId: userId } }), {}],
+      ]) {
+        const owned = await browser.newContext({ proxy: { server: `http://127.0.0.1:${proxyPort}` }, ignoreHTTPSErrors: true });
+        try {
+          const permit = interactivePermit(input);
+          await owned.addCookies([{ name: context === "owner" ? "owned-owner" : "owned-customer", value: "fixture", url: input.browserOrigin + "/" }]);
+          await installP2InteractiveBrowserCookie(owned, permit, input);
+          const openedAt = Date.now(), page = await owned.newPage();
+          await page.goto(input.browserOrigin + p2InteractiveBrowserPath("identity", context));
+          assert.deepEqual(await observeP2InteractiveIdentitySession(page, input, { context, openedAt, expires: permit.expires, ...options }),
+            { ...input.identity, sessionVerified: true });
+        } finally { await owned.close(); }
+      }
+      assert.deepEqual(hits, [
+        { path: "/api/auth/session", ownerCookie: true, customerCookie: false, permitCookie: true },
+        { path: "/api/customer-auth/session", ownerCookie: false, customerCookie: true, permitCookie: true },
+      ]);
+    } finally {
+      await browser?.close();
+      for (const socket of sockets) socket.destroy();
+      await Promise.all([proxy, https].filter(server => server?.listening).map(server => new Promise(done => server.close(done))));
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
 test("owned Chromium installs the exact host-only permit and expires it without disturbing the other context or cookies",
   { skip: !ownedInteractiveBrowser }, async () => {
     const { chromium } = await import("playwright");

@@ -148,7 +148,7 @@ function interactiveResponse(value, selection, before) {
 
 const interactiveTarget = ({ host, port, user, database, serverMajor }) => ({ host, port, user, database, serverMajor });
 
-async function readInteractiveLifecycle(client, target, selection, response, { verifyEnvironment, verifySession }, backend) {
+async function readHeldInteractiveSnapshot(client, target, { verifyEnvironment, verifySession }, backend, select) {
   demand(client instanceof Client && typeof verifyEnvironment === "function" && typeof verifySession === "function"
     && client.connection?.stream?.encrypted === true && client.connection.stream.authorized === true
     && client.connectionParameters?.host === target.host && Number(client.connectionParameters.port) === target.port);
@@ -170,6 +170,17 @@ async function readInteractiveLifecycle(client, target, selection, response, { v
   await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
   try {
     demand((await requireBound(initial.pid)).read_only === "on");
+    const observation = await select(read);
+    demand((await requireBound(initial.pid)).read_only === "on");
+    return { backend: initial.pid, ...observation };
+  } finally {
+    await client.query("ROLLBACK");
+    await requireBound(initial.pid);
+  }
+}
+
+function readInteractiveLifecycle(client, target, selection, response, dependencies, backend) {
+  return readHeldInteractiveSnapshot(client, target, dependencies, backend, async read => {
     const states = await read(INTERACTIVE_LIFECYCLE_SQL.state, [selection.userId]);
     const state = states[0];
     demand(states.length === 1 && state.id === selection.userId && ["active", "suspended", "deleted"].includes(state.status)
@@ -188,12 +199,8 @@ async function readInteractiveLifecycle(client, target, selection, response, { v
     const pendingExport = commandId && selection.operation === "export"
       ? await read(INTERACTIVE_LIFECYCLE_SQL.pendingExport, [commandId]) : [];
     const [{ now }] = await read(P2_LIFECYCLE_PENDING_SQL.now);
-    demand((await requireBound(initial.pid)).read_only === "on");
-    return { backend: initial.pid, state, command, deliveries, pendingExport, observedAt: date(now) };
-  } finally {
-    await client.query("ROLLBACK");
-    await requireBound(initial.pid);
-  }
+    return { state, command, deliveries, pendingExport, observedAt: date(now) };
+  });
 }
 
 export async function captureP2InteractiveLifecycleBaseline(client, target, selection, dependencies) {
@@ -248,4 +255,79 @@ export async function observeP2InteractiveLifecycleCase(client, target, selectio
     commandId: checked.body.commandId ?? null, deliveries: deliveries.map(({ receiver, status, attempts }) => ({ receiver, status, attempts })),
     pendingOrDeliveringCount: after.outstanding, observedAt, readOnly: true,
   };
+}
+
+const INTERACTIVE_IDENTITY_SQL = Object.freeze({
+  // JSON tokens are joined without inter-token whitespace so PostgreSQL and
+  // the browser's JSON.stringify produce the same challenge-bound bytes.
+  owner: `SELECT id::text,role::text,status::text,
+    CASE WHEN length(provider_user_id) BETWEEN 1 AND 255 AND left(provider_user_id,8)<>'pending:' THEN
+      pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(
+        '["p2q-interactive-owner-v1",'||pg_catalog.to_json($2::text)::text||','||
+        pg_catalog.to_json(id::text)::text||','||pg_catalog.to_json(provider_user_id)::text||']','UTF8')),'hex')
+      END AS owner_subject_sha256
+    FROM public.admin_users WHERE id=$1::uuid`,
+  customer: `WITH observed AS MATERIALIZED (SELECT pg_catalog.clock_timestamp() AS at)
+    SELECT u.id::text,u.status,observed.at::text AS observed_at,live.total,live.fresh
+    FROM public.customer_users u CROSS JOIN observed
+    CROSS JOIN LATERAL (SELECT count(*)::text AS total,count(*) FILTER (WHERE s.created_at>$2::timestamptz)::text AS fresh
+      FROM public.customer_sessions s WHERE s.user_id=u.id AND s.expires>observed.at AND s.created_at<=observed.at) live
+    WHERE u.id=$1::uuid`,
+});
+const identityBaselines = new WeakMap();
+const identityDigest = value => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
+
+function identitySelection(value) {
+  demand(closed(value, ["actorKind", "actorId"]) && ["admin", "customer"].includes(value.actorKind) && uuid(value.actorId));
+  return Object.freeze({ ...value });
+}
+
+function identitySessionCount(value) {
+  demand(typeof value === "string" && /^(0|[1-9][0-9]*)$/u.test(value) && Number.isSafeInteger(Number(value)));
+  return Number(value);
+}
+
+function readInteractiveIdentity(client, target, selection, challenge, cutoff, dependencies, backend) {
+  return readHeldInteractiveSnapshot(client, target, dependencies, backend, async read => {
+    const admin = selection.actorKind === "admin";
+    const rows = await read(admin ? INTERACTIVE_IDENTITY_SQL.owner : INTERACTIVE_IDENTITY_SQL.customer,
+      [selection.actorId, admin ? challenge : cutoff]);
+    const row = rows[0];
+    demand(rows.length === 1 && row.id === selection.actorId && row.status === "active");
+    if (admin) {
+      demand(row.role === "owner" && identityDigest(row.owner_subject_sha256));
+      return { ownerSubjectSha256: row.owner_subject_sha256 };
+    }
+    const liveSessionCount = identitySessionCount(row.total), freshSessionCount = identitySessionCount(row.fresh);
+    demand(typeof row.observed_at === "string" && freshSessionCount <= liveSessionCount);
+    return { cutoff: row.observed_at, liveSessionCount, freshSessionCount };
+  });
+}
+
+export async function captureP2InteractiveIdentityBaseline(client, target, selection, challenge, dependencies) {
+  const selected = identitySelection(selection), binding = interactiveTarget(target);
+  demand(identityDigest(challenge));
+  const state = await readInteractiveIdentity(client, binding, selected, challenge, null, dependencies);
+  const baseline = {};
+  if (selected.actorKind === "admin") {
+    Object.defineProperty(baseline, "ownerSubjectSha256", { value: state.ownerSubjectSha256, enumerable: false });
+  }
+  identityBaselines.set(baseline, { client, binding, selected, challenge, state });
+  return Object.freeze(baseline);
+}
+
+export async function observeP2InteractiveIdentityCase(client, target, selection, baseline, browserIdentity, dependencies) {
+  const selected = identitySelection(selection), saved = identityBaselines.get(baseline);
+  demand(saved?.client === client && isDeepStrictEqual(saved.binding, interactiveTarget(target)) && isDeepStrictEqual(saved.selected, selected)
+    && closed(browserIdentity, ["actorKind", "actorId", "sessionVerified"]) && browserIdentity.actorKind === selected.actorKind
+    && browserIdentity.actorId === selected.actorId && browserIdentity.sessionVerified === true);
+  identityBaselines.delete(baseline);
+  const observed = await readInteractiveIdentity(client, saved.binding, selected, saved.challenge,
+    saved.state.cutoff ?? null, dependencies, saved.state.backend);
+  if (selected.actorKind === "admin") {
+    demand(observed.ownerSubjectSha256 === saved.state.ownerSubjectSha256);
+    return { ...selected, actorActive: true, ownerMappingVerified: true };
+  }
+  demand(observed.freshSessionCount > 0);
+  return { ...selected, actorActive: true, liveSessionCount: observed.liveSessionCount };
 }

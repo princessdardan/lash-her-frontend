@@ -9,7 +9,7 @@ import {randomUUID,createHash} from 'node:crypto';
 import {Client} from 'pg';
 import {frontendMigrationArtifact} from './frontend-migration.mjs';
 import {readMigrationCatalog} from './frontend-schema.mjs';
-import {runP2InteractiveLifecycleCase} from './p2-certification.mjs';
+import {runP2InteractiveFrontendCase} from './p2-certification.mjs';
 import {frontendAdmissionTargetSha256} from './frontend-admission-bootstrap.mjs';
 import {changeFrontendAdmission,closeFrontendInteractiveAdmission,openFrontendInteractiveAdmission,prepareFrontendInteractiveProducer,reconcileFrontendOperation,
   restoreFencedFrontendInteractiveProducers,runFrontendWriterOperation} from './frontend-admission.mjs';
@@ -241,6 +241,7 @@ async function child(){
     checks.push('actual-interactive-producer-swap-same-role-denial-drain-and-independent-fence-recovery');
     checks.push('actual-interactive-physical-window-witness-and-independent-closure');
     checks.push('actual-composed-lifecycle-preference-and-clean-fences','actual-composed-browser-loss-and-ledger-uncertainty');
+    checks.push('actual-composed-owner-identity-held-mapping-and-clean-fences');
     assert.equal(hash((await admin.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY id')).rows),journal);
     return{version:1,status:'P2_CERTIFICATION_CURRENT_OWNED_PASS',serverMajor:input.major,frontendMigrations:83,checks,skipped:0,actualTlsPostgres:true,noSqlReplay:true,providerTouched:false,
       actualHostDocker:false,browserQualified:false,nativeInvocationQualified:false,fixtureOnly:true};
@@ -422,12 +423,50 @@ async function proveInteractiveProducerSwap({admin,profiled,scoped,deps,url,targ
     }finally{await admin.query('SELECT pg_catalog.pg_advisory_unlock_all()');}
     assert.deepEqual(await actual(),{control:{epoch:'14',new_work:false,recovery:false},enabled:ordinaryProducers.map(row=>row.producerSha256)});
 
+    const actorId=randomUUID(),subject='owned-identity-subject',challenge='b'.repeat(64);
+    await admin.query(`INSERT INTO public.admin_users(id,provider_user_id,email,email_normalized,role)
+      VALUES($1,$2,'owned-identity-owner@example.invalid','owned-identity-owner@example.invalid','owner')`,[actorId,subject]);
+    const identity={...actionPlan('14','owned-composed-identity'),maximumSeconds:300,scopedAction:{stage:'identity',actorId:null,requests:[],
+      windowSeconds:60,identityActor:{actorKind:'admin',actorId}}};
+    const identityProbe=await withP2CertificationFrontendSession(current,identity,deps,async({client,verify,probe})=>{
+      const stage={
+        async prepare(){return{status:'P2_INTERACTIVE_IDENTITY_PREPARED'};},
+        async open(){return{status:'P2_INTERACTIVE_IDENTITY_OPENED'};},
+        async installPermit(){return{context:'owner',epoch:'15',stage:'identity'};},
+        async fence(){assert.equal((await witness(probe)).admission.epoch,'15');return{status:'P2_INTERACTIVE_IDENTITY_FENCED'};},
+        async retain({browserIdentity,identityWitness}){
+          assert.deepEqual(browserIdentity,{actorKind:'admin',actorId,sessionVerified:true});
+          assert.deepEqual(identityWitness,{actorKind:'admin',actorId,actorActive:true,ownerMappingVerified:true});
+          const retained=await witness(probe);
+          assert.deepEqual(retained.admission,{epoch:'16',newWork:false,recovery:false,active:0,uncertain:0});
+          assert.deepEqual(retained.witness.operations.map(row=>[row.kind,row.state]),[['new-work','completed']]);
+          return{status:'P2_INTERACTIVE_IDENTITY_JOINED'};
+        },
+      };
+      const controller={
+        async open(context){assert.equal(context,'owner');},
+        async captureIdentity(context,digest){
+          assert.equal(context,'owner');
+          assert.equal(digest,createHash('sha256').update(JSON.stringify(['p2q-interactive-owner-v1',challenge,actorId,subject])).digest('hex'));
+          await run(runtime,interactiveSha256,'new-work','15',randomUUID(),async()=>{});
+          return{actorKind:'admin',actorId,sessionVerified:true};
+        },
+        async close(){assert.fail('successful identity keeps its authenticated context');},
+      };
+      const joined=await runP2InteractiveFrontendCase(identity,{stage,controller,client,controllerChallenge:challenge,
+        withOwner:work=>withOwner(client,work),verifyEnvironment:deps.verifyEnvironment,verifySession:verify,
+        target:current.migration.job.target,ordinaryProducers});
+      assert.equal(joined.status,'P2_INTERACTIVE_IDENTITY_JOINED');
+      return probe;
+    },profile);
+    assert.equal((await verifyClosed(identityProbe)).admission.epoch,'16');
+
     const customerId=randomUUID();
     await admin.query("INSERT INTO public.customer_users(id,email) VALUES($1,'owned-interactive-coordinator@example.invalid')",[customerId]);
     await admin.query("INSERT INTO public.customer_sessions(token_hash,user_id,expires) VALUES($1,$2,pg_catalog.clock_timestamp()+interval '1 hour')",
       [randomUUID(),customerId]);
     for(const [epoch,operation,scenario] of [
-      ['14','preferences-on','success'],['16','preferences-off','browser-loss'],['18','preferences-on','uncertain-write'],
+      ['16','preferences-on','success'],['18','preferences-off','browser-loss'],['20','preferences-on','uncertain-write'],
     ]){
       const plan={...actionPlan(epoch,'owned-composed-'+scenario),maximumSeconds:300,scopedAction:{
         stage:'lifecycle',actorId:customerId,requests:[],windowSeconds:60,frontendAction:{actorKind:'customer',userId:customerId,operation}}};
@@ -469,7 +508,7 @@ async function proveInteractiveProducerSwap({admin,profiled,scoped,deps,url,targ
           },
           async close(){events.push('browser-close');},
         };
-        const execution=runP2InteractiveLifecycleCase(plan,{stage,controller,client,
+        const execution=runP2InteractiveFrontendCase(plan,{stage,controller,client,
           withOwner:work=>withOwner(client,work),verifyEnvironment:deps.verifyEnvironment,verifySession:verify,
           target:current.migration.job.target,ordinaryProducers,record:(name,receipt)=>{
             records[name]=receipt;

@@ -50,12 +50,12 @@ class IndependentGuardTests(unittest.TestCase):
             time.sleep(0.01)
         return path
 
-    def profiled_certification(self):
+    def profiled_certification(self, certification_id='owned-case'):
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
         profile = {'version': 2, 'qualificationTargetProfile': dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)}
         phase = {'contractPhase': 'p2', 'phase2ContractManifestSha256': 'sha256:' + 'a' * 64}
         candidate = {**profile, **phase, 'version': 3, 'releaseId': 'original', 'environment': 'staging'}
-        plan = {**profile, **phase, 'certificationActionId': 'owned-case', 'environment': 'staging', 'originalReleaseId': 'original',
+        plan = {**profile, **phase, 'certificationActionId': certification_id, 'environment': 'staging', 'originalReleaseId': 'original',
                 'sourceCommit': 'b' * 40, 'candidateSha256': 'c' * 64, 'configurationSha256': 'd' * 64, 'targetSha256': 'e' * 64,
                 'planSha256': 'f' * 64, 'mode': 'native-window', 'initialEpoch': '1'}
         initial = {**profile, 'mode': supervisor.PROFILED_CERTIFICATION_MODE, 'candidate': candidate,
@@ -162,16 +162,24 @@ class IndependentGuardTests(unittest.TestCase):
                 supervisor._require_profiled_certification_terminal(initial, raw, migrate.file_hash(raw))
 
     def test_profiled_interactive_terminal_joins_private_dispatch_and_physical_ledger(self):
+        for stage, actor_kind in (('lifecycle', 'admin'), ('identity', 'admin'), ('identity', 'customer')):
+            with self.subTest(stage=stage, actor_kind=actor_kind):
+                self.check_profiled_interactive_terminal(stage, actor_kind)
+
+    def check_profiled_interactive_terminal(self, stage_name, actor_kind):
         import p2_interactive_window as window
         from p2_certification_parent import P2ProfiledCertificationBroker
 
-        initial, directory = self.profiled_certification()
+        initial, directory = self.profiled_certification(f'owned-{stage_name}-{actor_kind}')
         plan = initial['certificationPlan']
         ids = [f'10000000-0000-4000-8000-00000000000{index}' for index in range(1, 8)]
         actor, user, request, command, *ledger_ids = ids
-        selection = {'actorKind': 'admin', 'userId': user, 'operation': 'delete'}
-        plan.update(mode='interactive-browser', scopedAction={'stage': 'lifecycle', 'actorId': actor, 'requests': [],
-                    'windowSeconds': 60, 'frontendAction': selection}, nativePlan={'producer': {'role': {'oid': '22222'}}})
+        identity = stage_name == 'identity'
+        reviewed = {'actorKind': actor_kind, 'actorId': actor}
+        selection = {'actorKind': actor_kind, 'userId': user, 'operation': 'delete'}
+        action = {'stage': stage_name, 'actorId': None if identity else actor, 'requests': [], 'windowSeconds': 60,
+                  **({'identityActor': reviewed} if identity else {'frontendAction': selection})}
+        plan.update(mode='interactive-browser', scopedAction=action, nativePlan={'producer': {'role': {'oid': '22222'}}})
         source = Path(__file__).resolve().parents[3]
         recorder = migrate.read_input(source, window._BROWSER_SOURCE)
         initial.update(sourceSha256={window._BROWSER_SOURCE: migrate.file_hash(recorder)}, interactiveController={
@@ -190,7 +198,14 @@ class IndependentGuardTests(unittest.TestCase):
                   'accountVersion': 2, 'sessionsBefore': 1, 'sessionsAfter': 0, 'learningUpdates': False, 'commandId': command,
                   'deliveries': [{'receiver': receiver, 'status': 'pending', 'attempts': 0} for receiver in ('course', 'community')],
                   'pendingOrDeliveringCount': 2, 'observedAt': '2026-11-07T00:00:02.000Z', 'readOnly': True}
-        evidence = {'browserResponse': browser, 'lifecycleWitness': domain}
+        if identity:
+            browser = {**reviewed, 'sessionVerified': True}
+            domain = {**reviewed, 'actorActive': True, **({'ownerMappingVerified': True} if actor_kind == 'admin'
+                      else {'liveSessionCount': 1})}
+            browser_key, domain_key = 'browserIdentity', 'identityWitness'
+        else:
+            browser_key, domain_key = 'browserResponse', 'lifecycleWitness'
+        evidence = {browser_key: browser, domain_key: domain}
         closed = {'epoch': '3', 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0}
         gateway_fence = {'gatewayAdmissionClosed': True, 'gatewayActive': 0, 'gatewayUncertain': 0}
         broker = P2ProfiledCertificationBroker.__new__(P2ProfiledCertificationBroker)
@@ -204,7 +219,7 @@ class IndependentGuardTests(unittest.TestCase):
         broker.observer = SimpleNamespace(probe=lambda _: {'admission': closed, 'witness': ledger})
         calls = []
         broker.send = lambda identity, status, **data: calls.append({'id': identity, 'status': status, **data})
-        permit = {'stage': 'lifecycle', 'epoch': '2', 'expires': 1794009630, 'cookie': 'private-fixture-only'}
+        permit = {'stage': stage_name, 'epoch': '2', 'expires': 1794009630, 'cookie': 'private-fixture-only'}
         stage.take_private_browser_permit = lambda: permit
         envelope = {'id': 1, 'controllerChallenge': initial['interactiveController']['challenge']}
         with self.assertRaisesRegex(ValueError, 'FIXED_CONTROLLER_OPERATION_REQUIRED'):
@@ -213,12 +228,19 @@ class IndependentGuardTests(unittest.TestCase):
             broker.command({**envelope, 'operation': 'interactive-permit', 'controllerChallenge': 'wrong'})
         broker.command({**envelope, 'operation': 'interactive-permit'})
         self.assertEqual(calls.pop(), {'id': 1, 'status': 'CERTIFICATION_INTERACTIVE_PRIVATE', 'permit': permit})
-        with self.assertRaisesRegex(ValueError, 'LIFECYCLE_PERMIT_REQUIRED'):
+        with self.assertRaisesRegex(ValueError, f'{stage_name.upper()}_PERMIT_REQUIRED'):
             broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
         stage._permit_issued = True
-        with self.assertRaisesRegex(ValueError, 'LIFECYCLE_WITNESS_REQUIRED'):
+        with self.assertRaisesRegex(ValueError, f'{stage_name.upper()}_WITNESS_REQUIRED'):
             broker.command({**envelope, 'operation': 'interactive-retain',
-                            'caseEvidence': {**evidence, 'lifecycleWitness': {**domain, 'actorId': user}}})
+                            'caseEvidence': {**evidence, domain_key: {**domain, 'actorId': user}}})
+        if identity:
+            with self.assertRaisesRegex(ValueError, 'IDENTITY_SESSION_REQUIRED'):
+                broker.command({**envelope, 'operation': 'interactive-retain',
+                                'caseEvidence': {**evidence, browser_key: {**browser, 'actorId': user}}})
+            with self.assertRaisesRegex(ValueError, 'IDENTITY_WITNESS_REQUIRED'):
+                broker.command({**envelope, 'operation': 'interactive-retain',
+                                'caseEvidence': {**evidence, domain_key: {**domain, 'providerSubject': 'fixture'}}})
         with patch.object(stage, 'verify_gateway_fenced', side_effect=ValueError('P2_INTERACTIVE_FENCE_REQUIRED')):
             with self.assertRaisesRegex(ValueError, 'FENCE_REQUIRED'):
                 broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
@@ -232,13 +254,17 @@ class IndependentGuardTests(unittest.TestCase):
         case = broker.scoped_case
         self.assertEqual(calls.pop(), {'id': 1, 'status': 'CERTIFICATION_INTERACTIVE_OBSERVED', 'receipt': case})
         self.assertEqual(case['frontendOperationCount'], 3)
+        if identity:
+            self.assertEqual(case['context'], 'owner' if actor_kind == 'admin' else 'learner')
+            self.assertEqual(case['browserIdentitySha256'], supervisor._canonical_sha(browser))
+            self.assertEqual(case['identityWitnessSha256'], supervisor._canonical_sha(domain))
         with self.assertRaisesRegex(ValueError, 'FIXED_CONTROLLER_OPERATION_REQUIRED'):
             broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
         for retained in directory.iterdir():
             self.assertNotIn(permit['cookie'], retained.read_text())
             self.assertNotIn(envelope['controllerChallenge'], retained.read_text())
         terminal = {**plan, 'status': supervisor.PROFILED_CERTIFICATION_LAYOUT['terminalStatus'], 'releaseId': 'original',
-                    'configurationSha256': initial['configurationSha256'], 'caseStatus': window.LIFECYCLE_JOINED,
+                    'configurationSha256': initial['configurationSha256'], 'caseStatus': f'P2_INTERACTIVE_{stage_name.upper()}_JOINED',
                     'caseOutcomeSha256': supervisor._canonical_sha(case), 'frontendAdmission': closed,
                     'witnessSha256': migrate.file_hash(json.dumps(ledger, separators=(',', ':')).encode()),
                     'gatewayAdmission': {'version': 1, 'valid': True, 'releaseId': 'original', 'candidateSha256': initial['candidateSha256'],
@@ -256,9 +282,12 @@ class IndependentGuardTests(unittest.TestCase):
             guard({**terminal, 'frontendAdmission': {**closed, 'epoch': '2'}})
         with self.assertRaisesRegex(ValueError, 'INTERACTIVE_CASE_REFUSED'):
             guard({**terminal, 'witnessSha256': '0' * 64})
-        (directory / window.LIFECYCLE_EVIDENCE).write_text(json.dumps({**evidence, 'lifecycleWitness': {
-            **domain, 'baselineSha256': '3' * 64}}))
-        with self.assertRaisesRegex(ValueError, 'INTERACTIVE_CASE_REFUSED'):
+        change = {'baselineSha256': '3' * 64}
+        if identity:
+            change = {'ownerMappingVerified': False} if actor_kind == 'admin' else {'liveSessionCount': 0}
+        changed = {**domain, **change}
+        (directory / window.browser_artifact(plan, 'evidence')).write_text(json.dumps({**evidence, domain_key: changed}))
+        with self.assertRaisesRegex(ValueError, 'IDENTITY_WITNESS_REQUIRED' if identity else 'INTERACTIVE_CASE_REFUSED'):
             guard(terminal)
 
     def test_profiled_arm_constructs_interactive_leaf_after_guard_and_current_checks(self):

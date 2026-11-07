@@ -61,6 +61,10 @@ const reviewedLifecyclePermitDependencies = {
   "src/lib/customer-lifecycle/handler.ts": "88f53c68378e5931123026d0f245a629a5a052b06fbec50cf303b60ddf047c1d",
   "src/app/(site)/account/page.tsx": "e159f2ceb622a9b56bc31afcdb09e2afdf8d2e91c7ebacfa1455c43c51e075c0"
 };
+const reviewedIdentityPermitDependencies = {
+  ...reviewedLifecyclePermitDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "f66a93e2e154704d84e4527f9f7909609531bceab1a4830cc72697ab9d351721"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -84,7 +88,7 @@ function sourcePolicy(sourceCommit) {
   if (same(selected, reviewedSource) || same(selected, reviewedScopedSource)) return selected;
   if (same(selected, reviewedLifecyclePermitSource)) {
     const dependencies = Object.fromEntries(Object.keys(reviewedLifecyclePermitDependencies).map(file => [file, readSourceHash(file)]));
-    demand(same(dependencies, reviewedLifecyclePermitDependencies));
+    demand(same(dependencies, reviewedLifecyclePermitDependencies) || same(dependencies, reviewedIdentityPermitDependencies));
     return { ...selected, ...dependencies };
   }
   demand(same(selected, reviewedInteractiveSource));

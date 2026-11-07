@@ -1,5 +1,6 @@
 """Owned provider/TLS fixtures; no staging or credential access."""
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -295,6 +296,49 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
+    def test_identity_permit_selects_authentication_family_with_no_gateway_write(self):
+        actor_id = "10000000-0000-4000-8000-000000000001"
+        raw = b'closed gateway fixture'
+        gateway = {"version": 1, "valid": True, "newWork": False, "recovery": False, "active": window._ZERO,
+                   "uncertain": window._ZERO, "releaseId": "owned", "candidateSha256": "a" * 64, "sha256": window._hash(raw)}
+        for actor_kind in ("admin", "customer"):
+            with self.subTest(actor_kind=actor_kind):
+                action = {"stage": "identity", "actorId": None, "identityActor": {"actorKind": actor_kind, "actorId": actor_id},
+                          "windowSeconds": 60, "requests": []}
+                for changed in ({**action, "actorId": actor_id}, {**action, "identityActor": {"actorKind": "owner", "actorId": actor_id}},
+                                {**action, "identityActor": {"actorKind": actor_kind, "actorId": actor_id, "other": True}}):
+                    with self.assertRaises(ValueError):
+                        window.validate_interactive_action(changed)
+                stage = window.P2InteractiveWindow.__new__(window.P2InteractiveWindow)
+                stage.action = window.validate_interactive_action(action)
+                stage.plan = {"initialEpoch": "7", "maximumSeconds": 300, "sourceCommit": "b" * 40, "targetSha256": "c" * 64,
+                              "nativePlan": {"deploymentUrl": "https://owned.vercel.app"}}
+                frontend = {"epoch": "7", "newWork": False, "recovery": False, "active": 0, "uncertain": 0}
+                stage.broker = SimpleNamespace(initial={"candidateSha256": "a" * 64, "scopedCronSecret": "fixture" * 8},
+                    selected={"releaseId": "owned"}, certification_started=time.monotonic(), vercel=object(),
+                    check=lambda: None, _native_context=lambda: {}, profile_arguments=lambda: {},
+                    observer=SimpleNamespace(probe=lambda _: {"admission": frontend}))
+                stage._check = lambda: None
+                stage._state, stage._original, stage._scoped_sha = "prepared", (raw, 0o644, 0), None
+                stage._read = lambda: stage._original
+                stage._gateway = lambda: gateway
+                with patch.object(stage, "_replace") as replace, \
+                     patch.object(window.native, "observe_metadata", return_value={"nativeEnabled": False}), \
+                     patch.object(window.time, "time", return_value=1_794_009_600):
+                    self.assertEqual(stage.open_gateway(), {"stage": "identity", "epoch": "8",
+                                     "expiresAt": "2026-11-07T00:01:00.000Z", "gatewayScoped": False})
+                    with self.assertRaisesRegex(ValueError, "FRONTEND_WINDOW"):
+                        stage.take_private_browser_permit()
+                    frontend.update(epoch="8", newWork=True, recovery=True)
+                    cookie = stage.take_private_browser_permit()["cookie"].split(".")
+                    self.assertEqual(cookie[:5], ["v2", "8", "identity", "1794009600", "1794009660"])
+                    selector = hashlib.sha256(f'["identity","{actor_kind}"]'.encode()).hexdigest()
+                    self.assertEqual(cookie[6], selector)
+                    self.assertEqual(len(cookie), 8)
+                    stage.fence_gateway()
+                    self.assertTrue(stage.verify_gateway_fenced()["gatewayAdmissionClosed"])
+                    replace.assert_not_called()
+
     def test_guarded_private_permit_and_exact_gateway_fence(self):
         from p2_certification_parent import P2CertificationScope, P2ProfiledCertificationBroker
 

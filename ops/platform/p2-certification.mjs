@@ -23,11 +23,13 @@ import {committedOperatorSource,committedProfiledCurrentOperatorSource,verifyOpe
 import {githubSourceApi} from './release-inputs.mjs';
 import {recreationSsh} from './recreation_ssh.mjs';
 import {p2CertificationEnvironmentLock,readP2CertificationInteractiveStage,readP2CertificationKnownAckStage} from './p2-certification-transport.mjs';
-import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,
+import {prepareP2LifecycleSuspensionPlan,launchP2LifecycleBrowserRecorder,launchP2InteractiveBrowserRecorder,readP2InteractiveBrowserControllerBinding,
+  readP2LifecycleBrowserControllerBinding,readP2LifecycleBrowserAuthentication,
   captureP2SuspensionControlledAuthority,observeP2SuspensionControlledAuthority,captureP2SuspensionPending} from './p2-lifecycle-suspension-evidence.mjs';
 import {validateP2CanonicalBrowserObservation} from './p2-canonical-browser-origin.mjs';
 import {interactiveCourseStagePermits} from '../gateway/operations.mjs';
-import {captureP2InteractiveLifecycleBaseline,observeP2InteractiveLifecycleCase} from './p2-lifecycle-pending-probe.mjs';
+import {captureP2InteractiveIdentityBaseline,observeP2InteractiveIdentityCase,
+  captureP2InteractiveLifecycleBaseline,observeP2InteractiveLifecycleCase} from './p2-lifecycle-pending-probe.mjs';
 import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,readP2LifecycleWorkerCronSecret,preflightP2DirectLifecycleWorker,
   invokeP2DirectLifecycleWorker,joinP2DirectLifecycleWorker,readP2DirectWorkerSourceArtifact} from './p2-lifecycle-worker-evidence.mjs';
 
@@ -52,8 +54,8 @@ export const P2_CERTIFICATION_READY_FILES=Object.freeze(['frontend-build-started
   'frontend-workload-outcome.json','frontend-promotion-started.json','frontend-promotion-outcome.json']);
 
 function interactiveActionValid(value){
-  const lifecycle=value?.stage==='lifecycle';
-  if(!exactKeys(value,['stage','actorId','requests','windowSeconds',...(lifecycle?['frontendAction']:[])])||
+  const lifecycle=value?.stage==='lifecycle',identity=value?.stage==='identity';
+  if(!exactKeys(value,['stage','actorId','requests','windowSeconds',...(lifecycle?['frontendAction']:identity?['identityActor']:[])])||
      !['identity','authoring','media','learning','paid-grant','lifecycle'].includes(value.stage)||
      !(value.stage==='identity'?value.actorId===null:uuid(value.actorId))||
      !Number.isInteger(value.windowSeconds)||value.windowSeconds<30||value.windowSeconds>300||
@@ -65,7 +67,11 @@ function interactiveActionValid(value){
         selected.actorKind==='customer'&&selected.userId===value.actorId&&
         ['export','delete','preferences-on','preferences-off'].includes(selected.operation));
   }
-  if(value.stage==='identity')return value.requests.length===0;
+  if(identity){
+    const selected=value.identityActor;
+    return value.requests.length===0&&exactKeys(selected,['actorKind','actorId'])&&
+      ['admin','customer'].includes(selected.actorKind)&&uuid(selected.actorId);
+  }
   if(!value.requests.length||value.requests.length>16)return false;
   const selected=new Set(), empty=rawHash(Buffer.alloc(0));
   for(const row of value.requests){
@@ -151,7 +157,8 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     isDeepStrictEqual(input.native.featureControls,inventory.certification.featureControls)&&input.native.targetSha256===inventory.targetSha256&&
     ['host','port','database','user','serverMajor'].every(key=>input.native.target[key]===job.target[key]));
   const closedOffset=input.startState==='qualified-ready'?1n:0n;
-  if(input.mode==='interactive-browser')demand((BigInt(input.initialEpoch)+2n).toString().length<=18);
+  if(input.mode==='interactive-browser')demand(input.startState==='already-closed'&&input.operatorSourceCommit===job.sourceCommit&&
+    (BigInt(input.initialEpoch)+2n).toString().length<=18);
   if(['native-window','fault-before-upstream','fault-drop-after-ack','known-ack-recovery'].includes(input.mode)){
     demand(input.requestEvidence?.kind==='operator-recorded-request-details'&&typeof input.requestEvidence.path==='string'&&resolve(input.requestEvidence.path)===input.requestEvidence.path);
     frontendPrivateReceiptDirectory(dirname(input.requestEvidence.path));
@@ -350,14 +357,16 @@ async function runScopedCertificationCase(plan,{host,withOwner,verify,observe,cl
   return closed;
 }
 
-export async function runP2InteractiveLifecycleCase(plan,{stage,controller,client,withOwner,verifySession,verifyEnvironment,
-  target,ordinaryProducers,signal,record=()=>{}}){
+export async function runP2InteractiveFrontendCase(plan,{stage,controller,client,withOwner,verifySession,verifyEnvironment,
+  target,ordinaryProducers,signal,controllerChallenge,record=()=>{}}){
   const action=plan.scopedAction;
-  demand(plan.mode==='interactive-browser'&&action?.stage==='lifecycle'&&interactiveActionValid(action)&&
+  demand(plan.mode==='interactive-browser'&&['identity','lifecycle'].includes(action?.stage)&&interactiveActionValid(action)&&
     plan.startState==='already-closed'&&plan.maximumSeconds===300&&plan.sourceCommit===plan.operatorSourceCommit&&
     /^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch));
+  const identity=action.stage==='identity',statusPrefix=identity?'P2_INTERACTIVE_IDENTITY':'P2_INTERACTIVE_LIFECYCLE';
   const expectedOpen=(BigInt(plan.initialEpoch)+1n).toString(),expectedClosed=(BigInt(plan.initialEpoch)+2n).toString();
-  const selection={...action.frontendAction,actorId:action.actorId},context=selection.actorKind==='admin'?'owner':'learner';
+  const selection=identity?action.identityActor:{...action.frontendAction,actorId:action.actorId};
+  const context=selection.actorKind==='admin'?'owner':'learner';
   const policy={environment:'staging',targetSha256:plan.targetSha256,runtimeRole:target.runtimeRole};
   const runtimeProducer=plan.nativePlan.producer;
   const producerSha256=rawHash(`lash-her:p2q:interactive-producer:v1\n${plan.sourceCommit}\n${plan.targetSha256}`);
@@ -369,49 +378,53 @@ export async function runP2InteractiveLifecycleCase(plan,{stage,controller,clien
   try{
     signal?.throwIfAborted();
     const prepared=await stage.prepare();
-    demand(prepared.status==='P2_INTERACTIVE_LIFECYCLE_PREPARED');
-    const baseline=await captureP2InteractiveLifecycleBaseline(client,target,selection,observations);
-    record('p2-interactive-lifecycle-baseline.json',baseline);
+    demand(prepared.status===statusPrefix+'_PREPARED');
+    const baseline=identity?await captureP2InteractiveIdentityBaseline(client,target,selection,controllerChallenge,observations):
+      await captureP2InteractiveLifecycleBaseline(client,target,selection,observations);
+    if(!identity)record('p2-interactive-lifecycle-baseline.json',baseline);
     const registered=await withOwner(()=>prepareFrontendInteractiveProducer(client,policy,plan.initialEpoch,reviewed));
     demand(registered.epoch===plan.initialEpoch&&registered.producerSha256===producerSha256&&
       registered.newWork===false&&registered.recovery===false);
-    let gatewayOpened=false,frontendOpened,browserResponse,closureFailed=false;
+    let gatewayOpened=false,frontendOpened,browserEvidence,closureFailed=false;
     try{
       const opened=await stage.open();
       gatewayOpened=true;
-      demand(opened.status==='P2_INTERACTIVE_LIFECYCLE_OPENED');
+      demand(opened.status===statusPrefix+'_OPENED');
       frontendOpened=await withOwner(()=>openFrontendInteractiveAdmission(client,policy,plan.initialEpoch,reviewed));
       demand(frontendOpened.epoch===expectedOpen&&frontendOpened.newWork===true&&frontendOpened.recovery===true);
       const installed=await stage.installPermit();
-      demand(installed.context===context&&installed.epoch===expectedOpen&&installed.stage==='lifecycle');
+      demand(installed.context===context&&installed.epoch===expectedOpen&&installed.stage===action.stage);
       await controller.open(context);
-      browserResponse=await controller.captureLifecycleResponse(context);
-      record('p2-interactive-lifecycle-browser.json',browserResponse);
+      browserEvidence=identity?await controller.captureIdentity(context,baseline.ownerSubjectSha256):
+        await controller.captureLifecycleResponse(context);
+      record(`p2-interactive-${action.stage}-browser.json`,browserEvidence);
     }finally{
       if(gatewayOpened)try{
         const fenced=await stage.fence();
-        demand(fenced.status==='P2_INTERACTIVE_LIFECYCLE_FENCED');
+        demand(fenced.status===statusPrefix+'_FENCED');
       }catch{closureFailed=true;}
       if(frontendOpened)try{
         const closed=await withOwner(()=>closeFrontendInteractiveAdmission(client,policy,expectedOpen,reviewed));
-        record('p2-interactive-lifecycle-frontend-closed.json',closed);
+        record(`p2-interactive-${action.stage}-frontend-closed.json`,closed);
         let drained=closed;
         const deadline=performance.now()+10_000;
         while(drained.active>0&&drained.uncertain===0&&performance.now()<deadline){
           await pause(250);
           drained=await withOwner(()=>observeFrontendDrain(client,policy,expectedClosed));
         }
-        if(drained!==closed)record('p2-interactive-lifecycle-frontend-drained.json',drained);
+        if(drained!==closed)record(`p2-interactive-${action.stage}-frontend-drained.json`,drained);
         demand(drained.epoch===expectedClosed&&drained.newWork===false&&drained.recovery===false&&
           drained.active===0&&drained.uncertain===0&&drained.ledgerDrained===true);
       }catch{closureFailed=true;}
-      if(closureFailed)throw new Error('P2_INTERACTIVE_LIFECYCLE_CLOSURE_REQUIRES_REVIEW');
+      if(closureFailed)throw new Error(statusPrefix+'_CLOSURE_REQUIRES_REVIEW');
     }
     signal?.throwIfAborted();
-    const lifecycleWitness=await observeP2InteractiveLifecycleCase(client,target,selection,baseline,browserResponse,observations);
-    record('p2-interactive-lifecycle-witness.json',lifecycleWitness);
-    const joined=await stage.retain({browserResponse,lifecycleWitness});
-    demand(joined.status==='P2_INTERACTIVE_LIFECYCLE_JOINED');
+    const witness=identity?await observeP2InteractiveIdentityCase(client,target,selection,baseline,browserEvidence,observations):
+      await observeP2InteractiveLifecycleCase(client,target,selection,baseline,browserEvidence,observations);
+    record(`p2-interactive-${action.stage}-witness.json`,witness);
+    const joined=await stage.retain(identity?{browserIdentity:browserEvidence,identityWitness:witness}:
+      {browserResponse:browserEvidence,lifecycleWitness:witness});
+    demand(joined.status===statusPrefix+'_JOINED');
     return joined;
   }catch(error){
     // Keep the original domain/fence failure. A dying child may separately
@@ -430,7 +443,7 @@ async function runBoundedCertification(plan,dependencies,profile){
   if(profile)requireQualificationTargetProfile(currentProfile,plan);
   const context=p2CertificationParentContext(plan),{prepared}=context;
   demand(dependencies.confirmation==='staging/'+plan.certificationActionId&&typeof dependencies.withEnvironmentLock==='function'&&typeof dependencies.getUrl==='function');
-  if(plan.mode==='interactive-browser')demand(profile&&plan.scopedAction.stage==='lifecycle'&&dependencies.interactiveController);
+  if(plan.mode==='interactive-browser')demand(profile&&['identity','lifecycle'].includes(plan.scopedAction.stage)&&dependencies.interactiveController);
   const store=frontendReleaseReceiptStore(dependencies.directory);store.record('p2-certification-started.json',plan);
   if(dependencies.sourceCi)store.record('operator-source-ci.json',dependencies.sourceCi);
   bindP2CertificationReadyReceipts(context.frontendReceipts,plan);
@@ -447,10 +460,11 @@ async function runBoundedCertification(plan,dependencies,profile){
       const current=await host.arm({receipt,probe});demand(current.status==='P2_CERTIFICATION_CURRENT_READY'&&current.runtimeReplaced===false&&current.sqlReplayed===false&&current.containers?.length===10);
       store.record('p2-certification-host-current.json',current);
       if(plan.mode==='interactive-browser'){
-        phase='interactive-lifecycle-held-browser-and-database';
+        phase=`interactive-${plan.scopedAction.stage}-held-browser-and-database`;
         const controller=dependencies.interactiveController;
+        const {challenge}=readP2InteractiveBrowserControllerBinding(plan,controller);
         const stage=readP2CertificationInteractiveStage(await host.interactiveStage(controller),plan);
-        const joined=await runP2InteractiveLifecycleCase(plan,{stage,controller,client,withOwner,
+        const joined=await runP2InteractiveFrontendCase(plan,{stage,controller,client,withOwner,controllerChallenge:challenge,
           verifySession:verify,verifyEnvironment:environment,target:prepared.migration.job.target,
           ordinaryProducers:prepared.plan.producers,signal,record:(name,receipt)=>store.record(name,receipt)});
         requireQualificationTargetProfile(currentProfile,joined);
@@ -634,7 +648,8 @@ function privateObject(path,maximum){const value=JSON.parse(privateBytes(path,ma
 
 function prepareProfiledCertification(settings){
   const extra=settings?.certification?.mode==='browser-pending'?['browser','authPreparation']
-    :settings?.certification?.mode==='direct-worker'?['worker']:[];
+    :settings?.certification?.mode==='direct-worker'?['worker']
+      :settings?.certification?.mode==='interactive-browser'&&settings.certification.scopedAction?.stage==='lifecycle'?['interactiveIdentity']:[];
   demand(exactKeys(settings,['version','environment','qualificationTargetProfile','operatorSourceCommit','releaseSettings','certification',...extra])&&
     settings.version===2&&settings.environment==='staging');
   requireQualificationTargetProfile(currentProfile,settings);
@@ -668,14 +683,15 @@ function prepareProfiledCertification(settings){
 }
 
 export function prepareP2ProfiledCertificationOperator(settings){
-  const {plan,authPlan}=prepareProfiledCertification(settings);
-  return authPlan?{version:2,qualificationTargetProfile:currentProfile,status:'P2_BROWSER_CERTIFICATION_ACTIONS_PLANNED',
-    authentication:authPlan,browser:plan}:plan;
+  const {plan,authPlan,identityPlan}=prepareProfiledCertification(settings);
+  if(identityPlan)return {version:2,qualificationTargetProfile:currentProfile,status:'P2_INTERACTIVE_LIFECYCLE_ACTIONS_PLANNED',
+    identity:identityPlan,lifecycle:plan};
+  return authPlan?{version:2,qualificationTargetProfile:currentProfile,status:'P2_BROWSER_CERTIFICATION_ACTIONS_PLANNED',authentication:authPlan,browser:plan}:plan;
 }
 
 function profiledCertificationHostPlan(settings,authentication=false){
   const checked=prepareProfiledCertification(settings);
-  const plan=authentication?checked.authPlan:checked.plan;
+  const plan=authentication?(checked.authPlan??checked.identityPlan):checked.plan;
   demand(plan);
   const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
   const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit);
@@ -706,7 +722,7 @@ function bindProfiledCertificationHostPlan(settings,checked,source,plan){
 
 function prepareCertificationStages(prepared,input,candidateBytes,settings,options,profile){
   const {candidate,job}=prepared.migration;
-  let suspensionPlan,authPlan;
+  let suspensionPlan,authPlan,identityPlan;
   const prepareSuspension=source=>{
     const selected=prepareP2LifecycleSuspensionPlan(candidate,source,profile);
     if(profile){
@@ -747,7 +763,17 @@ function prepareCertificationStages(prepared,input,candidateBytes,settings,optio
     authPlan=prepareP2BoundedCertification(prepared,{...input,...auth,mode:'auth-preparation'},candidateBytes,options);
   }else demand(input.mode!=='auth-preparation');
   const plan=prepareP2BoundedCertification(prepared,input,candidateBytes,options);
-  return {plan,authPlan,suspensionPlan};
+  if(input.mode==='interactive-browser'&&input.scopedAction.stage==='lifecycle'){
+    const identity=settings.interactiveIdentity;
+    demand(profile&&exactKeys(identity,['certificationActionId','initialEpoch','windowSeconds'])&&
+      typeof identity.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(identity.initialEpoch)&&
+      BigInt(identity.initialEpoch)+2n===BigInt(plan.initialEpoch)&&identity.certificationActionId!==plan.certificationActionId&&
+      settings.authPreparation===undefined&&settings.browser===undefined&&settings.worker===undefined);
+    const {actorId,frontendAction:{actorKind}}=input.scopedAction;
+    identityPlan=prepareP2BoundedCertification(prepared,{...input,certificationActionId:identity.certificationActionId,initialEpoch:identity.initialEpoch,
+      scopedAction:{stage:'identity',actorId:null,requests:[],windowSeconds:identity.windowSeconds,identityActor:{actorKind,actorId}}},candidateBytes,options);
+  }else demand(settings.interactiveIdentity===undefined);
+  return {plan,authPlan,identityPlan,suspensionPlan};
 }
 
 export function prepareP2CertificationOperator(settings){
@@ -767,15 +793,18 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   demand(process.versions.node.split('.')[0]==='24');
   const {execution,...selection}=settings;
   const checked=prepareProfiledCertification(selection);
-  const {plan,authPlan,suspensionPlan,original}=checked;
-  const scoped=scopedModes.has(plan.mode);
+  const {plan,authPlan,identityPlan,suspensionPlan,original}=checked;
+  const interactive=plan.mode==='interactive-browser'&&plan.scopedAction.stage==='lifecycle'&&identityPlan!==undefined;
+  // Customer callbacks can create accounts before the browser can verify the selected UUID.
+  if(interactive)demand(identityPlan.scopedAction.identityActor.actorKind==='admin');
+  const scoped=scopedModes.has(plan.mode)||interactive;
   demand(confirmation==='staging/'+plan.certificationActionId&&
     (scoped||['contain-native','native-window','browser-pending','direct-worker','fault-before-upstream'].includes(plan.mode)));
   demand(plan.mode!=='mux-callback-recovery'||original.migration.candidate.sources.course.commit===scopedMuxCourseSource);
   const releaseSettings=selection.releaseSettings;
   const directory=releaseSettings.results;
   frontendPrivateReceiptDirectory(directory);
-  for(const action of [plan,...(authPlan?[authPlan]:[])]){
+  for(const action of [plan,authPlan,identityPlan].filter(Boolean)){
     demand(lstatSync(join(directory,action.certificationActionId),{throwIfNoEntry:false})===undefined);
   }
   verifyP2ProfiledCurrentReleaseConfiguration(original);
@@ -783,6 +812,7 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   const source=committedProfiledCurrentOperatorSource(root,plan.operatorSourceCommit);
   const packet=bindProfiledCertificationHostPlan(selection,checked,source,plan);
   const authPacket=authPlan?bindProfiledCertificationHostPlan(selection,checked,source,authPlan):null;
+  const identityPacket=identityPlan?bindProfiledCertificationHostPlan(selection,checked,source,identityPlan):null;
   const needsPersistence=['browser-pending','direct-worker'].includes(plan.mode)||persistenceModes.has(plan.mode);
   let persistenceReviewed;
   if(needsPersistence){
@@ -832,11 +862,12 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
   demand((await ssh.machine()).machineId===releaseSettings.host.machineId);
   const installed=await ssh.installProfiledCurrentSource({commit:plan.operatorSourceCommit,files:source.files});
   demand(installed.status==='EXACT_OPERATOR_SOURCE_INSTALLED'&&installed.commit===plan.operatorSourceCommit);
-  const execute=async(action,reviewedPacket,browserSource)=>{
+  const execute=async(action,reviewedPacket,browserSource,interactiveController)=>{
     const results=join(directory,action.certificationActionId);mkdirSync(results,{mode:0o700});
     const actionConfirmation='staging/'+action.certificationActionId;
     const initial={...reviewedPacket,confirmation:actionConfirmation,credentials,vercelToken:provider.vercelToken,
       ...(privateProbe?{privateProbe}:{}),...(browserSource?{sourceParentChallenge:browserSource.challenge}:{}),
+      ...(interactiveController?{interactiveController:readP2InteractiveBrowserControllerBinding(action,interactiveController)}:{}),
       ...(scoped?{scopedCronSecret}:{}),
       ...(action.mode==='browser-pending'?{persistenceReviewed,browserResources:selection.browser.input.resources}:{}),
       ...(action.mode==='direct-worker'||persistenceModes.has(action.mode)?{persistenceReviewed}:{}),
@@ -844,11 +875,24 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
         frontendRuntimeDatabaseUrl:provider.frontendRuntimeDatabaseUrl,witness:execution.persistenceWitness,
       }}:{})};
     return runBoundedCertification(action,{directory:results,confirmation:actionConfirmation,sourceCi,browserSession:browserSource?.handle,
+      interactiveController,
       getUrl:()=>credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
       ...(action.mode==='direct-worker'?{workerPrivateResolvers:createP2LifecycleWorkerPrivateResolvers(()=>provider)}:{}),
       assertSource:()=>assertSourceCheckout(root,plan.operatorSourceCommit),
       withEnvironmentLock:p2CertificationEnvironmentLock(releaseSettings,initial,results,{expectedProfile:currentProfile})},currentProfile);
   };
+  if(interactive){
+    const controller=await launchP2InteractiveBrowserRecorder(identityPlan);
+    try{
+      await controller.initialized();
+      const authenticated=await execute(identityPlan,identityPacket,undefined,controller);
+      const admission=authenticated.frontendAdmission;
+      demand(authenticated.caseStatus==='P2_INTERACTIVE_IDENTITY_JOINED'&&admission.epoch===plan.initialEpoch&&
+        admission.active===0&&admission.uncertain===0&&admission.newWork===false&&admission.recovery===false);
+      await controller.selectPlan(plan);
+      return await execute(plan,packet,undefined,controller);
+    }finally{await controller.close();}
+  }
   if(!authPlan)return execute(plan,packet);
   const browserDirectory=join(directory,plan.certificationActionId+'-browser-source');mkdirSync(browserDirectory,{mode:0o700});
   const controller=launchP2LifecycleBrowserRecorder(suspensionPlan,browserDirectory),binding=readP2LifecycleBrowserControllerBinding(suspensionPlan,controller);

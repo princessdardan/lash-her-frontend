@@ -40,21 +40,30 @@ export function readP2CertificationInteractiveStage(handle,plan){
   return selected.methods;
 }
 
-function reviewedLifecyclePlan(plan,initial){
-  const action=plan.scopedAction,selected=action?.frontendAction,binding=initial.interactiveController;
+function reviewedInteractivePlan(plan,initial){
+  const action=plan.scopedAction,binding=initial.interactiveController;
+  const identity=action?.stage==='identity';
   demand(plan.environment==='staging'&&plan.sourceCommit===initial.sourceCommit&&plan.operatorSourceCommit===initial.sourceCommit&&
     plan.maximumSeconds===300&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
-    (BigInt(plan.initialEpoch)+2n).toString().length<=18&&sha256(plan.planSha256)&&action?.stage==='lifecycle'&&uuid(action.actorId)&&
+    (BigInt(plan.initialEpoch)+2n).toString().length<=18&&sha256(plan.planSha256)&&
+    (identity||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',identity?'identityActor':'frontendAction'])&&
     Array.isArray(action.requests)&&action.requests.length===0&&Number.isInteger(action.windowSeconds)&&action.windowSeconds>=30&&action.windowSeconds<=300&&
-    exact(selected,['actorKind','userId','operation'])&&uuid(selected.userId)&&
-    (selected.actorKind==='admin'?['suspend','restore','export','delete'].includes(selected.operation):
-      selected.actorKind==='customer'&&action.actorId===selected.userId&&['export','delete','preferences-on','preferences-off'].includes(selected.operation))&&
     exact(binding,['challenge','bindingSha256','browserProgramSha256'])&&sha256(binding.challenge)&&
     binding.bindingSha256===plan.planSha256&&sha256(binding.browserProgramSha256));
+  if(identity){
+    const actor=action.identityActor;
+    demand(action.actorId===null&&exact(actor,['actorKind','actorId'])&&['admin','customer'].includes(actor.actorKind)&&
+      typeof actor.actorId==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(actor.actorId));
+    return {...actor};
+  }
+  const selected=action.frontendAction;
+  demand(uuid(action.actorId)&&exact(selected,['actorKind','userId','operation'])&&uuid(selected.userId)&&
+    (selected.actorKind==='admin'?['suspend','restore','export','delete'].includes(selected.operation):
+      selected.actorKind==='customer'&&action.actorId===selected.userId&&['export','delete','preferences-on','preferences-off'].includes(selected.operation)));
   return {...selected,actorId:action.actorId};
 }
 
-function requireLifecycleEvidence(evidence,selected){
+function lifecycleJoinedEvidence(evidence,selected){
   demand(exact(evidence,['browserResponse','lifecycleWitness']));
   const {browserResponse:response,lifecycleWitness:witness}=evidence;
   const preferences=selected.operation.startsWith('preferences-'),status=preferences?200:202;
@@ -77,6 +86,18 @@ function requireLifecycleEvidence(evidence,selected){
       witness.commandId===response.body.commandId&&witness.accountVersion===response.body.accountVersion&&
       witness.deliveries.length===2&&witness.deliveries.every((row,index)=>exact(row,['receiver','status','attempts'])&&
         row.receiver===['course','community'][index]&&row.status==='pending'&&row.attempts===0)));
+  return {...selected,browserResponseSha256:p2NativeHash(response),lifecycleWitnessSha256:p2NativeHash(witness)};
+}
+
+function identityJoinedEvidence(evidence,selected,context){
+  demand(exact(evidence,['browserIdentity','identityWitness']));
+  const {browserIdentity:identity,identityWitness:witness}=evidence;
+  const owner=context==='owner',field=owner?'ownerMappingVerified':'liveSessionCount';
+  demand(exact(identity,['actorKind','actorId','sessionVerified'])&&identity.sessionVerified===true&&
+    exact(witness,['actorKind','actorId','actorActive',field])&&witness.actorActive===true&&
+    Object.entries(selected).every(([key,value])=>identity[key]===value&&witness[key]===value)&&
+    (owner?witness.ownerMappingVerified===true:Number.isSafeInteger(witness.liveSessionCount)&&witness.liveSessionCount>0));
+  return {...selected,context,browserIdentitySha256:p2NativeHash(identity),identityWitnessSha256:p2NativeHash(witness)};
 }
 
 export function readP2CertificationWorkerStage(handle,plan){
@@ -105,7 +126,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
       initial.certificationPlan.certificationActionId===initial.certificationActionId);
   }else demand(!Object.hasOwn(initial,'qualificationTargetProfile'));
   const interactivePlan=profiled&&initial.certificationPlan.mode==='interactive-browser'?initial.certificationPlan:null;
-  const selectedLifecycle=interactivePlan?reviewedLifecyclePlan(interactivePlan,initial):null;
+  const selectedInteractive=interactivePlan?reviewedInteractivePlan(interactivePlan,initial):null;
   if(!interactivePlan)demand(!Object.hasOwn(initial,'interactiveController')&&initial.certificationPlan?.mode!=='interactive-browser');
   const command=['sudo','-n','/usr/bin/python3','-I','-u',`/opt/lash-her/operators/${initial.sourceCommit}/ops/platform/host/p2_certification_parent.py`,
     profiled?'--supervisor-profiled-current':'--supervisor'];
@@ -156,27 +177,29 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           const requireRecorder=()=>demand(alive()&&isDeepStrictEqual(readP2InteractiveBrowserControllerBinding(interactivePlan,browserController),binding));
           requireRecorder();
           const controllerChallenge=binding.challenge,epoch=(BigInt(snapshot.initialEpoch)+1n).toString();
-          const context=selectedLifecycle.actorKind==='admin'?'owner':'learner';
+          const stage=snapshot.scopedAction.stage,identity=stage==='identity';
+          const context=selectedInteractive.actorKind==='admin'?'owner':'learner';
+          const permitInput={stage,epoch,windowSeconds:snapshot.scopedAction.windowSeconds,...(identity?{identity:selectedInteractive}:{})};
           let phase='new',expiresAt,installed=false;
-          const call=async(operation,status,extraKeys,data={},timeout=120_000)=>{
+          const call=async(operation,disposition,extraKeys,data={},timeout=120_000)=>{
             demand(alive());
             const packet=await request(operation,'CERTIFICATION_INTERACTIVE_OBSERVED',{controllerChallenge,...data},timeout);
             const receipt=packet.receipt;
             demand(exact(packet,['id','status','receipt'])&&exact(receipt,[...interactiveReceiptKeys,...extraKeys]));
             requireQualificationTargetProfile(currentProfile,receipt);
-            demand(receipt.version===2&&receipt.status===status&&receipt.certificationActionId===initial.certificationActionId&&
-              receipt.planSha256===snapshot.planSha256&&receipt.stage==='lifecycle');
+            demand(receipt.version===2&&receipt.status===`P2_INTERACTIVE_${stage.toUpperCase()}_${disposition}`&&
+              receipt.certificationActionId===initial.certificationActionId&&receipt.planSha256===snapshot.planSha256&&receipt.stage===stage);
             return receipt;
           };
           const methods=Object.freeze({
             async prepare(){
               demand(phase==='new');requireRecorder();phase='preparing';
-              const receipt=await call('interactive-prepare','P2_INTERACTIVE_LIFECYCLE_PREPARED',['ingressSha256'],{},240_000);
+              const receipt=await call('interactive-prepare','PREPARED',['ingressSha256'],{},240_000);
               demand(sha256(receipt.ingressSha256));phase='prepared';return receipt;
             },
             async open(){
               demand(phase==='prepared');requireRecorder();phase='opening';
-              const receipt=await call('interactive-open','P2_INTERACTIVE_LIFECYCLE_OPENED',['epoch','expiresAt','gatewayScoped']);
+              const receipt=await call('interactive-open','OPENED',['epoch','expiresAt','gatewayScoped']);
               demand(receipt.epoch===epoch&&utc(receipt.expiresAt)&&receipt.gatewayScoped===false);
               expiresAt=Date.parse(receipt.expiresAt);phase='opened';return receipt;
             },
@@ -186,13 +209,13 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               try{
                 packet=await request('interactive-permit','CERTIFICATION_INTERACTIVE_PRIVATE',{controllerChallenge});
                 demand(exact(packet,['id','status','permit']));
-                const permit=validateP2InteractiveBrowserPermit(packet.permit,{stage:'lifecycle',epoch,windowSeconds:snapshot.scopedAction.windowSeconds});
+                const permit=validateP2InteractiveBrowserPermit(packet.permit,permitInput);
                 demand(permit.expires*1000===expiresAt);
                 requireRecorder();
                 const ack=await browserController.installPermit(permit,context);
                 requireRecorder();
                 const expected={type:'interactive-permit-installed',challenge:controllerChallenge,bindingSha256:binding.bindingSha256,
-                  stage:'lifecycle',epoch,context,expires:expiresAt/1000};
+                  stage,epoch,context,expires:expiresAt/1000};
                 demand(isDeepStrictEqual(ack,expected));
                 installed=true;phase='installed';return Object.freeze(expected);
               }catch{phase='install-failed';throw new Error('P2_CERTIFICATION_INTERACTIVE_PERMIT_INSTALL_FAILED');}
@@ -202,19 +225,18 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
               // The gateway fence must remain available when the recorder dies
               // or refuses the permit after the host has opened the stage.
               demand(['opened','installed','install-failed'].includes(phase));phase='fencing';
-              const receipt=await call('interactive-fence','P2_INTERACTIVE_LIFECYCLE_FENCED',gatewayFenceKeys);
+              const receipt=await call('interactive-fence','FENCED',gatewayFenceKeys);
               demand(closedGateway(receipt));phase='fenced';return receipt;
             },
             async retain(caseEvidence){
               demand(phase==='fenced'&&installed);requireRecorder();
-              requireLifecycleEvidence(caseEvidence,selectedLifecycle);
-              const evidence=structuredClone(caseEvidence);phase='retaining';
-              const receipt=await call('interactive-retain','P2_INTERACTIVE_LIFECYCLE_JOINED',
-                ['browserResponseSha256','lifecycleWitnessSha256','browserProgramSha256',...Object.keys(selectedLifecycle),
+              const evidence=structuredClone(caseEvidence);
+              const expected=identity?identityJoinedEvidence(evidence,selectedInteractive,context):lifecycleJoinedEvidence(evidence,selectedInteractive);
+              phase='retaining';
+              const receipt=await call('interactive-retain','JOINED',
+                ['browserProgramSha256',...Object.keys(expected),
                   'frontendAdmission','frontendOperationCount',...gatewayFenceKeys],{caseEvidence:evidence});
-              demand(receipt.browserResponseSha256===p2NativeHash(evidence.browserResponse)&&
-                receipt.lifecycleWitnessSha256===p2NativeHash(evidence.lifecycleWitness)&&receipt.browserProgramSha256===binding.browserProgramSha256&&
-                Object.entries(selectedLifecycle).every(([key,value])=>receipt[key]===value)&&
+              demand(receipt.browserProgramSha256===binding.browserProgramSha256&&Object.entries(expected).every(([key,value])=>receipt[key]===value)&&
                 isDeepStrictEqual(receipt.frontendAdmission,{epoch:(BigInt(epoch)+1n).toString(),newWork:false,recovery:false,active:0,uncertain:0})&&
                 Number.isSafeInteger(receipt.frontendOperationCount)&&receipt.frontendOperationCount>0&&closedGateway(receipt));
               interactiveRetained=structuredClone(receipt);phase='retained';return receipt;

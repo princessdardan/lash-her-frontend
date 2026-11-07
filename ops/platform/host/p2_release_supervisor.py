@@ -1155,13 +1155,16 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
     scoped_status = {
         'export-cleanup': 'P2_SCOPED_EXPORT_CLEANUP_JOINED',
         'mux-callback-recovery': 'P2_SCOPED_MUX_CLOSED',
-        'interactive-browser': 'P2_INTERACTIVE_LIFECYCLE_JOINED',
         'lifecycle-persistence': {
             'capture-export-ready': 'P2_LIFECYCLE_EXPORT_READY_CAPTURED',
             'capture-delete-baseline': 'P2_LIFECYCLE_EXPORT_SCRUBBED_DELETE_BASELINE_CAPTURED',
             'verify-delete': 'P2_LIFECYCLE_DELETE_PERSISTENCE_VERIFIED',
         }.get(plan.get('scopedAction', {}).get('stage')),
     }.get(plan['mode'])
+    if plan['mode'] == 'interactive-browser':
+        from p2_interactive_window import (browser_artifact, browser_case_evidence, browser_receipt, browser_status,
+                                            require_browser_ledger, verify_browser_controller)
+        scoped_status = browser_status(plan, 'JOINED')
     if scoped_status is not None:
         directory = _profiled_certification_directory(initial)
         retained = migrate.read_input(directory, 'p2-scoped-case-joined.json')
@@ -1175,13 +1178,11 @@ def _require_profiled_certification_terminal(initial, raw, committed, *, source=
                 frontend['epoch'] == str(epoch),
                 'P2_PROFILED_CERTIFICATION_GUARD_SCOPED_CASE_REFUSED')
         if plan['mode'] == 'interactive-browser':
-            from p2_interactive_window import (LIFECYCLE_EVIDENCE, LIFECYCLE_LEDGER, lifecycle_case_evidence,
-                                                lifecycle_receipt, require_lifecycle_ledger, verify_lifecycle_controller)
-            program_sha = verify_lifecycle_controller(initial, source or Path(__file__).resolve().parents[3])
-            evidence = decode_qualification_target_json(migrate.read_input(directory, LIFECYCLE_EVIDENCE, 8192), 'carrier')
-            witness = decode_qualification_target_json(migrate.read_input(directory, LIFECYCLE_LEDGER), 'carrier')
-            operation_count = require_lifecycle_ledger(plan, witness)
-            expected_case = {**lifecycle_receipt(plan, scoped_status), **lifecycle_case_evidence(plan['scopedAction'], evidence),
+            program_sha = verify_browser_controller(initial, source or Path(__file__).resolve().parents[3])
+            evidence = decode_qualification_target_json(migrate.read_input(directory, browser_artifact(plan, 'evidence'), 8192), 'carrier')
+            witness = decode_qualification_target_json(migrate.read_input(directory, browser_artifact(plan, 'ledger')), 'carrier')
+            operation_count = require_browser_ledger(plan, witness)
+            expected_case = {**browser_receipt(plan, 'JOINED'), **browser_case_evidence(plan, evidence),
                              'browserProgramSha256': program_sha, 'frontendAdmission': frontend,
                              'frontendOperationCount': operation_count, 'gatewayAdmissionClosed': True,
                              'gatewayActive': 0, 'gatewayUncertain': 0}

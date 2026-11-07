@@ -1,7 +1,7 @@
 // Explicit owned PostgreSQL 16/18 fixture. No external database or provider.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -9,7 +9,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { frontendMigrationArtifact } from "./frontend-migration.mjs";
-import { captureP2InteractiveLifecycleBaseline, observeP2InteractiveLifecycleCase, observeP2SuspensionPending,
+import { captureP2InteractiveIdentityBaseline, captureP2InteractiveLifecycleBaseline, observeP2InteractiveIdentityCase,
+  observeP2InteractiveLifecycleCase, observeP2SuspensionPending,
   p2SuspensionEvidenceSha256 } from "./p2-lifecycle-pending-probe.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -77,6 +78,8 @@ async function main() {
     checks.push("actual-wrong-session-identity-refused");
     phase = "actual-interactive-lifecycle-before-after";
     checks.push(...await checkInteractiveLifecycle(client, contender, target, dependencies, adminId));
+    phase = "actual-interactive-identity-before-after";
+    checks.push(...await checkInteractiveIdentity(client, contender, target, dependencies));
     await client.query("SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext($1))", ["lash-her:private-db:migrations"]);
     await assert.rejects(observeP2SuspensionPending(client, target, selection, dependencies));
     await assert.rejects(captureP2InteractiveLifecycleBaseline(client, target, {
@@ -92,6 +95,67 @@ async function main() {
     if (started) try { run(join(pgBin, "pg_ctl"), ["-D", data, "-m", "immediate", "-w", "stop"]); } catch {}
     rmSync(directory, { recursive: true, force: true });
   }
+}
+
+async function checkInteractiveIdentity(client, runtime, target, dependencies) {
+  const admin = { actorKind: "admin", actorId: randomUUID() }, customer = { actorKind: "customer", actorId: randomUUID() };
+  const otherCustomer = { actorKind: "customer", actorId: randomUUID() };
+  const challenge = createHash("sha256").update(randomUUID()).digest("hex");
+  const provider = 'owned-actor-"\\é';
+  const baseline = selection => captureP2InteractiveIdentityBaseline(client, target, selection, challenge, dependencies);
+  const browser = selection => ({ ...selection, sessionVerified: true });
+  const observe = (selection, before, receipt = browser(selection)) =>
+    observeP2InteractiveIdentityCase(client, target, selection, before, receipt, dependencies);
+  const refused = /P2_LIFECYCLE_PENDING_REFUSED/u;
+  await runtime.query("INSERT INTO public.admin_users(id,provider_user_id,email,email_normalized,role,status) VALUES($1,$2,'owned-identity@example.invalid','owned-identity@example.invalid','owner','active')",
+    [admin.actorId, provider]);
+  for (const { actorId } of [customer, otherCustomer]) {
+    await runtime.query("INSERT INTO public.customer_users(id,email) VALUES($1,$2)", [actorId, `${actorId}@example.invalid`]);
+  }
+  const addSession = (actorId, expiresIn) => runtime.query(`INSERT INTO public.customer_sessions(token_hash,user_id,expires)
+    VALUES($1,$2,pg_catalog.clock_timestamp()+$3::interval)`, [randomUUID(), actorId, expiresIn]);
+  await addSession(customer.actorId, "1 hour");
+
+  await assert.rejects(captureP2InteractiveIdentityBaseline(client, target, admin, "foreign-challenge", dependencies), refused);
+  await assert.rejects(captureP2InteractiveIdentityBaseline(runtime, target, admin, challenge, { ...dependencies, verifySession: async () => {} }), refused);
+  const beforeOwner = await baseline(admin);
+  const digest = createHash("sha256").update(JSON.stringify(["p2q-interactive-owner-v1", challenge, admin.actorId, provider])).digest("hex");
+  assert.equal(beforeOwner.ownerSubjectSha256, digest);
+  assert.deepEqual(Object.keys(beforeOwner), []);
+  assert.equal(JSON.stringify(beforeOwner), "{}");
+  await assert.rejects(observe(admin, {}, browser(admin)), refused);
+  await assert.rejects(observe(admin, beforeOwner, { ...browser(admin), actorId: randomUUID() }), refused);
+  await assert.rejects(observe(admin, beforeOwner, { ...browser(admin), providerUserId: provider }), refused);
+  await assert.rejects(observeP2InteractiveIdentityCase(runtime, target, admin, beforeOwner, browser(admin), dependencies), refused);
+  assert.deepEqual(await observe(admin, beforeOwner), { ...admin, actorActive: true, ownerMappingVerified: true });
+  await assert.rejects(observe(admin, beforeOwner), refused);
+  const oldBinding = await baseline(admin);
+  await runtime.query("UPDATE public.admin_users SET provider_user_id=$2 WHERE id=$1", [admin.actorId, "different-provider"]);
+  await assert.rejects(observe(admin, oldBinding), refused);
+  await runtime.query("UPDATE public.admin_users SET provider_user_id=$2 WHERE id=$1", [admin.actorId, "pending:owned"]);
+  await assert.rejects(baseline(admin), refused);
+  await runtime.query("UPDATE public.admin_users SET provider_user_id=$2,role='admin' WHERE id=$1", [admin.actorId, provider]);
+  await assert.rejects(baseline(admin), refused);
+  await runtime.query("UPDATE public.admin_users SET role='owner',status='disabled' WHERE id=$1", [admin.actorId]);
+  await assert.rejects(baseline(admin), refused);
+
+  const oldCustomer = await baseline(customer);
+  assert.equal(Object.hasOwn(oldCustomer, "ownerSubjectSha256"), false);
+  assert.equal(JSON.stringify(oldCustomer), "{}");
+  await addSession(otherCustomer.actorId, "1 hour");
+  await addSession(customer.actorId, "-1 hour");
+  await assert.rejects(observe(customer, oldCustomer), refused);
+  const beforeCustomer = await baseline(customer);
+  await addSession(customer.actorId, "1 hour");
+  await assert.rejects(observe(customer, beforeCustomer, { ...browser(customer), sessionVerified: false }), refused);
+  await assert.rejects(observe(customer, beforeCustomer, browser(otherCustomer)), refused);
+  assert.deepEqual(await observe(customer, beforeCustomer), { ...customer, actorActive: true, liveSessionCount: 2 });
+  const beforeSuspension = await baseline(customer);
+  await addSession(customer.actorId, "1 hour");
+  await runtime.query("UPDATE public.customer_users SET status='suspended' WHERE id=$1", [customer.actorId]);
+  await assert.rejects(observe(customer, beforeSuspension), refused);
+  assert.equal((await client.query("SHOW transaction_read_only")).rows[0].transaction_read_only, "off");
+  return ["interactive-identity-owner-private-challenge-binding-role-and-drift", "interactive-identity-customer-fresh-live-session-selected-uuid"];
 }
 
 async function checkInteractiveLifecycle(client, runtime, target, dependencies, adminId) {

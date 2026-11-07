@@ -1526,10 +1526,10 @@ class P2CertificationBroker(Broker):
             require(case == self.scoped_case and admission['epoch'] == str(expected_epoch) and admission['uncertain'] == 0,
                     'P2_CERTIFICATION_SCOPED_CASE_OUTCOME_REQUIRED')
         if cert['mode'] == 'interactive-browser':
-            from p2_interactive_window import LIFECYCLE_LEDGER
-            retained = json.loads(migrate.read_input(self.directory, LIFECYCLE_LEDGER))
+            from p2_interactive_window import browser_artifact
+            retained = json.loads(migrate.read_input(self.directory, browser_artifact(cert, 'ledger')))
             require(case['frontendAdmission'] == admission and _sha(_profiled_compact(retained)) == physical['witnessSha256'],
-                    'P2_INTERACTIVE_LIFECYCLE_TERMINAL_WITNESS_CHANGED')
+                    'P2_INTERACTIVE_TERMINAL_WITNESS_CHANGED')
         if cert['mode']=='fault-before-upstream' and self.certification_profile() is not None:
             self._require_profiled_before_upstream(case,evidence)
         if cert['mode']=='known-ack-recovery':
@@ -1673,8 +1673,9 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         require(mode in SUSPENSION_MODES | SCOPED_MODES | {'native-window', 'contain-native', 'fault-before-upstream'},
                 'P2_PROFILED_CERTIFICATION_EXECUTION_MODE_UNQUALIFIED')
         if mode == 'interactive-browser':
-            require(plan.get('scopedAction', {}).get('stage') == 'lifecycle',
-                    'P2_PROFILED_INTERACTIVE_EXECUTION_STAGE_UNQUALIFIED')
+            from p2_interactive_window import CLOSED_BROWSER_STAGES
+            stage = plan.get('scopedAction', {}).get('stage')
+            require(type(stage) is str and stage in CLOSED_BROWSER_STAGES, 'P2_PROFILED_INTERACTIVE_EXECUTION_STAGE_UNQUALIFIED')
         review_fields = PROFILED_INITIAL_FIELDS | ({'sourceSuspensionPlan'} if mode in SUSPENSION_MODES else set())
         private_fields = {'confirmation', 'credentials', 'vercelToken'}
         if mode in SCOPED_MODES:
@@ -1710,8 +1711,8 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                     re.fullmatch(r'[!-~]+', secret) is not None,
                     'P2_CERTIFICATION_SCOPED_CRON_CREDENTIAL_REQUIRED')
         if mode == 'interactive-browser':
-            from p2_interactive_window import verify_lifecycle_controller
-            verify_lifecycle_controller(initial, self.source)
+            from p2_interactive_window import verify_browser_controller
+            verify_browser_controller(initial, self.source)
         if mode in PERSISTENCE_MODES:
             require(_sha(_canonical(initial['persistenceReviewed'])) == plan['persistenceReviewedSha256'],
                     'P2_PROFILED_PERSISTENCE_REVIEW_CHANGED')
@@ -1836,36 +1837,37 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                 release_evidence=self._release_evidence(),**self.profile_arguments())
 
     def interactive_operation(self, operation, value):
-        from p2_interactive_window import LIFECYCLE_EVIDENCE, LIFECYCLE_JOINED, P2InteractiveWindow, lifecycle_case_evidence, lifecycle_receipt
+        from p2_interactive_window import CLOSED_BROWSER_STAGES, P2InteractiveWindow, browser_artifact, browser_case_evidence, browser_receipt
         self.check()
         plan, stage = self.initial['certificationPlan'], self.scoped_stage
         fields = {'id', 'operation', 'controllerChallenge'}
         if operation == 'interactive-retain':
             fields.add('caseEvidence')
         require(plan['mode'] == 'interactive-browser' and type(stage) is P2InteractiveWindow and
-                stage.action['stage'] == 'lifecycle' and self.external_armed and self.guard_arm_verified and
+                stage.action['stage'] in CLOSED_BROWSER_STAGES and stage.action == plan['scopedAction'] and
+                self.external_armed and self.guard_arm_verified and
                 self.scoped_case is None and self.closing_at is None and set(value) == fields and
                 value['controllerChallenge'] == self.initial['interactiveController']['challenge'],
                 'P2_INTERACTIVE_FIXED_CONTROLLER_OPERATION_REQUIRED')
         if operation == 'interactive-prepare':
             ingress = stage.prepare()
-            migrate.write_json(self.directory, 'p2-interactive-lifecycle-ingress.json', ingress)
-            return {**lifecycle_receipt(plan, 'P2_INTERACTIVE_LIFECYCLE_PREPARED'), 'ingressSha256': _sha(_canonical(ingress))}
+            migrate.write_json(self.directory, browser_artifact(plan, 'ingress'), ingress)
+            return {**browser_receipt(plan, 'PREPARED'), 'ingressSha256': _sha(_canonical(ingress))}
         if operation == 'interactive-open':
             opened = stage.open_gateway()
-            return {**lifecycle_receipt(plan, 'P2_INTERACTIVE_LIFECYCLE_OPENED'), **opened}
+            return {**browser_receipt(plan, 'OPENED'), **opened}
         if operation == 'interactive-permit':
             return stage.take_private_browser_permit()
         if operation == 'interactive-fence':
             stage.fence_gateway()
-            return {**lifecycle_receipt(plan, 'P2_INTERACTIVE_LIFECYCLE_FENCED'), **stage.verify_gateway_fenced()}
+            return {**browser_receipt(plan, 'FENCED'), **stage.verify_gateway_fenced()}
         require(operation == 'interactive-retain', 'P2_INTERACTIVE_FIXED_OPERATION_REQUIRED')
         evidence = value['caseEvidence']
-        bindings = lifecycle_case_evidence(plan['scopedAction'], evidence)
-        fenced = stage.verify_fenced(lifecycle=True)
-        result = {**lifecycle_receipt(plan, LIFECYCLE_JOINED), **bindings, **fenced,
+        bindings = browser_case_evidence(plan, evidence)
+        fenced = stage.verify_fenced(retain=True)
+        result = {**browser_receipt(plan, 'JOINED'), **bindings, **fenced,
                   'browserProgramSha256': self.initial['interactiveController']['browserProgramSha256']}
-        migrate.write_json(self.directory, LIFECYCLE_EVIDENCE, evidence)
+        migrate.write_json(self.directory, browser_artifact(plan, 'evidence'), evidence)
         migrate.write_json(self.directory, 'p2-scoped-case-joined.json', result)
         self.scoped_case = copy.deepcopy(result)
         return result

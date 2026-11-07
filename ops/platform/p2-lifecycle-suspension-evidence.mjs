@@ -210,6 +210,7 @@ async function reviewedInteractiveInput(plan, challenge) {
     challenge, bindingSha256: plan.planSha256, stage: plan.scopedAction.stage, epoch: (BigInt(plan.initialEpoch) + 1n).toString(),
     sourceCommit: plan.sourceCommit, deploymentId: plan.nativePlan.deploymentId, deploymentUrl: plan.nativePlan.deploymentUrl,
     browserOrigin: P2_CANONICAL_BROWSER_ORIGIN, windowSeconds: plan.scopedAction.windowSeconds,
+    ...(plan.scopedAction.stage === "identity" ? { identity: plan.scopedAction.identityActor } : {}),
     ...(plan.scopedAction.stage === "lifecycle" ? { lifecycle: p2LifecycleMutationTarget(plan.scopedAction.frontendAction) } : {}) });
 }
 
@@ -224,7 +225,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
   const child = spawn(process.execPath, ["--input-type=module", "--eval", program.toString("utf8")], { cwd: sourceRoot,
     stdio: ["pipe", "ignore", "ignore", "ipc"],
     env: Object.fromEntries(["PATH", "HOME", "LANG", "TMPDIR"].filter(name => process.env[name] !== undefined).map(name => [name, process.env[name]])) });
-  let activePlan = plan, pending, selected, phaseTimer, force, closePromise;
+  let activePlan = plan, pending, selected, phaseTimer, force, closePromise, verifiedIdentity;
   let ended = false, failed = false, closing = false, phase = "initializing";
   const failure = () => new Error("P2_INTERACTIVE_BROWSER_CHILD_FAILED");
   const fail = () => {
@@ -249,8 +250,9 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
   child.on("message", message => {
     try {
       const capture = pending?.type === "interactive-lifecycle-captured";
+      const identity = pending?.type === "interactive-identity-captured";
       demand(pending && !failed && closed(message, ["type", ...Object.keys(pending.binding), ...Object.keys(pending.selection),
-        ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : []), ...(capture ? ["response"] : [])])
+        ...(pending.type === "interactive-page-opened" ? ["path", "httpStatus"] : []), ...(capture ? ["response"] : identity ? ["identity"] : [])])
         && message.type === pending.type
         && Object.entries({ ...pending.binding, ...pending.selection }).every(([key, value]) => message[key] === value));
       if (pending.type === "interactive-page-opened") {
@@ -258,6 +260,7 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
           && Number.isInteger(message.httpStatus) && message.httpStatus >= 100 && message.httpStatus <= 599);
       }
       if (capture) validateP2LifecycleMutationReceipt(message.response, input.lifecycle);
+      if (identity) demand(isDeepStrictEqual(message.identity, { ...input.identity, sessionVerified: true }));
       const waiter = pending;
       pending = undefined;
       clearTimeout(waiter.timer);
@@ -298,6 +301,11 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       try {
         p2InteractiveBrowserPath(binding.stage, context);
         validateP2InteractiveBrowserPermit(permit, input);
+        if (binding.stage === "identity") {
+          const { actorKind } = input.identity;
+          demand(context === (actorKind === "admin" ? "owner" : "learner")
+            && permit.cookie.split(".")[6] === hash(JSON.stringify(["identity", actorKind])));
+        }
         if (binding.stage === "lifecycle") {
           const { actorId, frontendAction: { actorKind, userId, operation } } = activePlan.scopedAction;
           demand(context === (actorKind === "admin" ? "owner" : "learner")
@@ -335,6 +343,21 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
       clearTimeout(phaseTimer);
       return receipt.response;
     },
+    async captureIdentity(context, ownerSubjectSha256) {
+      const selection = requireSelection(context);
+      const remaining = selection.expires * 1000 - Date.now();
+      demand(phase === "opened" && !closing && binding.stage === "identity"
+        && context === (input.identity.actorKind === "admin" ? "owner" : "learner")
+        && (context === "owner" ? sha(ownerSubjectSha256) : ownerSubjectSha256 === undefined)
+        && remaining > 0 && remaining <= input.windowSeconds * 1000);
+      phase = "capturing";
+      const packet = { ...binding, ...selection, ...(context === "owner" ? { ownerSubjectSha256 } : {}) };
+      const receipt = await command("interactive-capture-identity", packet, "interactive-identity-captured", selection, remaining + 5000);
+      verifiedIdentity = receipt.identity;
+      phase = "cleared";
+      clearTimeout(phaseTimer);
+      return verifiedIdentity;
+    },
     async clearPermit(context) {
       const selection = requireSelection(context);
       demand((phase === "installed" || phase === "opened") && !closing);
@@ -352,6 +375,9 @@ export async function launchP2InteractiveBrowserRecorder(plan) {
         demand(["candidateSha256", "originalReleaseId", "targetSha256", "sourceCommit"].every(key => nextPlan[key] === plan[key])
           && ["deploymentId", "deploymentUrl", "configurationRecordSha256"].every(key => nextPlan.nativePlan[key] === plan.nativePlan[key])
           && !actions.has(next.actionId) && next.bindingSha256 !== input.bindingSha256 && BigInt(next.epoch) > BigInt(input.epoch));
+        if (input.stage === "identity") demand(verifiedIdentity?.sessionVerified === true && next.stage === "lifecycle"
+          && nextPlan.scopedAction.actorId === verifiedIdentity.actorId && nextPlan.scopedAction.frontendAction.actorKind === verifiedIdentity.actorKind
+          && BigInt(next.epoch) === BigInt(input.epoch) + 2n);
         const receipt = await command("interactive-select", { ...binding, next }, "interactive-selected", {}, 30_000, nextBinding);
         actions.add(next.actionId);
         activePlan = nextPlan;

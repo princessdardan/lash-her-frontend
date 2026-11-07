@@ -79,13 +79,15 @@ test("interactive browser proof binds its exact stage, request, deployment, epoc
   const now = 1_794_009_600;
   const env = { ...environment(), VERCEL_URL: "owned.vercel.app", CRON_SECRET: "owned-staging-cron-test-key-only".repeat(2) };
   const source = env.VERCEL_GIT_COMMIT_SHA, target = "a".repeat(64);
-  const cookieFor = (stage: string) => {
-    const body = `v1.12.${stage}.${now}.${now + 120}.${"a".repeat(32)}`;
+  const cookieFor = (stage: string, selection?: string) => {
+    const body = `${selection === undefined ? "v1" : "v2"}.12.${stage}.${now}.${now + 120}.${"a".repeat(32)}${selection === undefined ? "" : "." + selection}`;
     const mac = createHmac("sha256", env.CRON_SECRET)
       .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${source}\n${target}\n${body}`).digest("hex");
     return `${body}.${mac}`;
   };
-  const cookie = cookieFor("identity");
+  const selector = (kind: string) => createHash("sha256").update(JSON.stringify(["identity", kind])).digest("hex");
+  const cookie = cookieFor("identity", selector("customer"));
+  const staffCookie = cookieFor("identity", selector("admin"));
   const google = { origin: INTERACTIVE_ORIGIN, method: "GET", path: "/api/customer-auth/callback/google", cookie };
   const attested = attestInteractiveRequest(google, env, now)!;
   const producerSha256 = createHash("sha256").update(`lash-her:p2q:interactive-producer:v1\n${source}\n${target}`).digest("hex");
@@ -102,10 +104,36 @@ test("interactive browser proof binds its exact stage, request, deployment, epoc
   assert.equal(attestInteractiveRequest(google, { ...env, VERCEL_URL: "different.vercel.app" }, now), null);
   assert.equal(attestInteractiveRequest(google, { ...env, ADMIN_DEVELOPER_MODE: "true", ADMIN_DEVELOPER_ACCESS_KEY: "x".repeat(32) }, now), null);
   assert.equal(attestInteractiveRequest(google, env, now + 120), null);
-  const admin = attestInteractiveRequest({ ...google, method: "POST", path: "/admin/sign-in" }, env, now)!;
-  assert.equal(readInteractiveRequest(admin, cookie, env, now), null);
-  assert.deepEqual(await withinInteractiveAdminGoogleAction(async () => readInteractiveRequest(admin, cookie, env, now)),
+  const admin = attestInteractiveRequest({ ...google, method: "POST", path: "/admin/sign-in", cookie: staffCookie }, env, now)!;
+  assert.equal(readInteractiveRequest(admin, staffCookie, env, now), null);
+  assert.deepEqual(await withinInteractiveAdminGoogleAction(async () => readInteractiveRequest(admin, staffCookie, env, now)),
     { epoch: "12", producerSha256, source, target });
+  for (const [method, path, allowedCookie, wrongCookie] of [
+    ["GET", "/api/auth/callback/google", staffCookie, cookie],
+    ["GET", "/api/auth/session", staffCookie, cookie],
+    ["POST", "/api/auth/signin/google", staffCookie, cookie],
+    ["GET", "/api/customer-auth/callback/google", cookie, staffCookie],
+    ["GET", "/api/customer-auth/callback/resend", cookie, staffCookie],
+    ["POST", "/api/customer-auth/signin/resend", cookie, staffCookie],
+  ]) {
+    const input = { origin: INTERACTIVE_ORIGIN, method, path };
+    const allowedProof = attestInteractiveRequest({ ...input, cookie: allowedCookie }, env, now)!;
+    assert.ok(readInteractiveRequest(allowedProof, allowedCookie, env, now));
+    assert.equal(attestInteractiveRequest({ ...input, cookie: wrongCookie }, env, now), null);
+    // The application independently checks the route family even if given an
+    // otherwise valid internal proof over a route outside the signed scope.
+    const route = `${now}.${Buffer.from(`${method} ${path}`).toString("base64url")}`;
+    const wrongMac = createHmac("sha256", env.CRON_SECRET)
+      .update(`lash-her:p2q:interactive:request:v1\n${env.VERCEL_URL}\n${source}\n${target}\n${wrongCookie}\n${route}`).digest("hex");
+    assert.equal(readInteractiveRequest(`${route}.${wrongMac}`, wrongCookie, env, now), null);
+  }
+  for (const invalid of [cookieFor("identity"), cookieFor("identity", selector("unknown")),
+    cookie.replace(selector("customer"), selector("admin"))]) {
+    assert.equal(attestInteractiveRequest({ ...google, cookie: invalid }, env, now), null);
+  }
+  const authoring = { ...google, path: "/api/admin/courses" };
+  assert.ok(attestInteractiveRequest({ ...authoring, cookie: cookieFor("authoring") }, env, now));
+  assert.equal(attestInteractiveRequest({ ...authoring, cookie: cookieFor("authoring", selector("admin")) }, env, now), null);
   const paidCookie = cookieFor("paid-grant"), course = "10000000-0000-4000-8000-000000000001";
   const paid = { ...google, cookie: paidCookie, method: "POST", path: `/api/admin/courses/${course}/manual-grants` };
   assert.ok(attestInteractiveRequest(paid, env, now));
@@ -175,7 +203,8 @@ test("Next request handoff overwrites caller headers on selected paths and strip
   const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
   Object.assign(process.env, env);
   try {
-    const body = `v1.12.identity.${now}.${now + 120}.${"a".repeat(32)}`;
+    const selector = createHash("sha256").update(JSON.stringify(["identity", "customer"])).digest("hex");
+    const body = `v2.12.identity.${now}.${now + 120}.${"a".repeat(32)}.${selector}`;
     const mac = createHmac("sha256", env.CRON_SECRET)
       .update(`lash-her:p2q:interactive:browser:v1\n${env.VERCEL_URL}\n${env.VERCEL_GIT_COMMIT_SHA}\n${"a".repeat(64)}\n${body}`).digest("hex");
     const cookie = `${body}.${mac}`;

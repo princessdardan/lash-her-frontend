@@ -13,6 +13,11 @@ export const INTERACTIVE_GATEWAY_PROOF_HEADER = "x-lash-certification-interactiv
 
 const stages = ["identity", "authoring", "media", "learning", "paid-grant", "lifecycle"] as const;
 type Stage = (typeof stages)[number];
+const identityActorKinds = ["admin", "customer"] as const;
+type IdentityActorKind = (typeof identityActorKinds)[number];
+const identitySelectors = new Map(identityActorKinds.map(kind =>
+  [createHash("sha256").update(JSON.stringify(["identity", kind])).digest("hex"), kind] as const));
+type BrowserScope = { stage: Stage; identityActorKind?: IdentityActorKind };
 type Binding = { key: string; deploymentHost: string; source: string; target: string };
 const gatewayOrigin = "https://api-staging.lashher.com";
 const gatewayStages = new Set<Stage>(["authoring", "media", "learning", "paid-grant"]);
@@ -65,9 +70,10 @@ function matches(routes: Readonly<Partial<Record<string, RegExp>>>, method: stri
   return Object.hasOwn(routes, method) && routes[method]?.test(path) === true;
 }
 
-function permits(stage: Stage, method: string, path: string): boolean {
+function permits({ stage, identityActorKind }: BrowserScope, method: string, path: string): boolean {
   switch (stage) {
-    case "identity": return matches(customerAuth, method, path) || matches(staffAuth, method, path);
+    case "identity": return identityActorKind !== undefined &&
+      matches(identityActorKind === "admin" ? staffAuth : customerAuth, method, path);
     case "authoring": return matches(authoring, method, path);
     case "media": return matches(media, method, path) || (method === "GET" && matches(authoring, method, path));
     case "learning": return matches(learning, method, path) || (method === "GET" && path === "/api/customer-auth/session");
@@ -104,14 +110,19 @@ function browserProof(authority: Binding, cookie: string, now: number) {
   if (cookie.length > 256) return null;
   const fields = cookie.split(".");
   const [version, epoch, stage, started, expires, nonce, selection] = fields;
-  const lifecycle = stage === "lifecycle";
-  if ((lifecycle ? version !== "v2" || fields.length !== 8 || !signedDigest.test(selection ?? "")
+  const hasSelection = stage === "lifecycle" || stage === "identity";
+  if ((hasSelection ? version !== "v2" || fields.length !== 8 || !signedDigest.test(selection ?? "")
     : version !== "v1" || fields.length !== 7) ||
     !epochPattern.test(epoch ?? "") || !stages.includes(stage as Stage) ||
     !/^\d{10}$/u.test(started ?? "") || !/^\d{10}$/u.test(expires ?? "") || !/^[a-f0-9]{32}$/u.test(nonce ?? "") ||
     Number(started) > now || Number(expires) <= now || Number(expires) - Number(started) > maxLeaseSeconds ||
     !authentic(fields.at(-1), signature(authority, "browser", fields.slice(0, -1).join(".")))) return null;
-  return { epoch, stage: stage as Stage, nonce, lifecycleSelectionSha256: lifecycle ? selection : undefined };
+  // Identity permits select the pre-authentication route family. The held
+  // browser certification separately verifies the exact authenticated actor.
+  const identityActorKind = stage === "identity" ? identitySelectors.get(selection) : undefined;
+  if (stage === "identity" && identityActorKind === undefined) return null;
+  return { epoch, stage: stage as Stage, nonce, identityActorKind,
+    lifecycleSelectionSha256: stage === "lifecycle" ? selection : undefined };
 }
 
 // A browser cookie is accepted only on selected paths. Proxy issues a short
@@ -122,7 +133,7 @@ export function attestInteractiveRequest(request: { origin: string; method: stri
   if (request.origin !== INTERACTIVE_ORIGIN || request.path.length > 512) return null;
   const authority = binding(env);
   const browser = authority && browserProof(authority, request.cookie, now);
-  if (!authority || !browser || !permits(browser.stage, request.method, request.path)) return null;
+  if (!authority || !browser || !permits(browser, request.method, request.path)) return null;
   const route = Buffer.from(`${request.method} ${request.path}`).toString("base64url");
   const value = `${now}.${route}`;
   return `${value}.${signature(authority, "request", `${request.cookie}\n${value}`)}`;
@@ -149,7 +160,7 @@ function verifiedInteractiveRequest(authority: Binding, proof: string, cookie: s
     Number(issued) > now || now - Number(issued) >= maxRequestSeconds ||
     !authentic(mac, signature(authority, "request", `${cookie}\n${issued}.${route}`))) return null;
   const [method, path, trailing] = Buffer.from(route, "base64url").toString().split(" ");
-  if (trailing !== undefined || !method || !path || !permits(browser.stage, method, path)) return null;
+  if (trailing !== undefined || !method || !path || !permits(browser, method, path)) return null;
   if (method === "POST" && path === "/admin/sign-in" && !adminGoogleAction.getStore()) return null;
   return browser;
 }

@@ -34,9 +34,7 @@ _EMPTY = hashlib.sha256(b"").hexdigest()
 _MAX_STATE = 16_384
 _GATEWAY_GID = 65532
 _ZERO = {"newWork": 0, "recovery": 0}
-LIFECYCLE_EVIDENCE = "p2-interactive-lifecycle-evidence.json"
-LIFECYCLE_LEDGER = "p2-interactive-lifecycle-ledger.json"
-LIFECYCLE_JOINED = "P2_INTERACTIVE_LIFECYCLE_JOINED"
+CLOSED_BROWSER_STAGES = frozenset(("identity", "lifecycle"))
 _BROWSER_SOURCE = "ops/platform/p2-lifecycle-browser-recorder.mjs"
 _BROWSER_LAUNCHER = b"\nawait runP2LifecycleBrowserChild();\n"
 demand = migrate.demand
@@ -74,9 +72,24 @@ def _receipt_sha(value):
     return _hash(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode())
 
 
-def verify_lifecycle_controller(initial, source):
+def _closed_browser_stage(plan):
+    stage = plan["scopedAction"]["stage"]
+    demand(type(stage) is str and stage in CLOSED_BROWSER_STAGES, "P2_INTERACTIVE_CLOSED_BROWSER_STAGE_REQUIRED")
+    return stage
+
+
+def browser_artifact(plan, artifact):
+    return f"p2-interactive-{_closed_browser_stage(plan)}-{artifact}.json"
+
+
+def browser_status(plan, disposition):
+    return f"P2_INTERACTIVE_{_closed_browser_stage(plan).upper()}_{disposition}"
+
+
+def verify_browser_controller(initial, source):
     plan, controller = initial["certificationPlan"], initial.get("interactiveController")
-    demand(plan.get("mode") == "interactive-browser" and plan.get("scopedAction", {}).get("stage") == "lifecycle" and
+    _closed_browser_stage(plan)
+    demand(plan.get("mode") == "interactive-browser" and
            _closed_fields(controller, "challenge bindingSha256 browserProgramSha256") and
            all(_digest(value) for value in controller.values()) and controller["bindingSha256"] == plan["planSha256"],
            "P2_INTERACTIVE_CONTROLLER_BINDING_REQUIRED")
@@ -87,15 +100,32 @@ def verify_lifecycle_controller(initial, source):
     return controller["browserProgramSha256"]
 
 
-def lifecycle_receipt(plan, status):
-    return {"version": 2, "qualificationTargetProfile": plan["qualificationTargetProfile"], "status": status,
-            "certificationActionId": plan["certificationActionId"], "planSha256": plan["planSha256"], "stage": "lifecycle"}
+def browser_receipt(plan, disposition):
+    return {"version": 2, "qualificationTargetProfile": plan["qualificationTargetProfile"],
+            "status": browser_status(plan, disposition), "certificationActionId": plan["certificationActionId"],
+            "planSha256": plan["planSha256"], "stage": _closed_browser_stage(plan)}
 
 
-def lifecycle_case_evidence(action, evidence):
-    action = validate_interactive_action(action)
-    demand(action["stage"] == "lifecycle" and _closed_fields(evidence, "browserResponse lifecycleWitness"),
-           "P2_INTERACTIVE_LIFECYCLE_EVIDENCE_REQUIRED")
+def browser_case_evidence(plan, evidence):
+    action = validate_interactive_action(plan["scopedAction"])
+    if _closed_browser_stage(plan) == "lifecycle":
+        return _lifecycle_case_evidence(action, evidence)
+    demand(_closed_fields(evidence, "browserIdentity identityWitness"), "P2_INTERACTIVE_IDENTITY_EVIDENCE_REQUIRED")
+    actor = action["identityActor"]
+    identity, witness = evidence["browserIdentity"], evidence["identityWitness"]
+    owner = actor["actorKind"] == "admin"
+    demand(_closed_fields(identity, "actorKind actorId sessionVerified") and identity["sessionVerified"] is True and
+           all(identity[key] == value for key, value in actor.items()), "P2_INTERACTIVE_IDENTITY_SESSION_REQUIRED")
+    field = "ownerMappingVerified" if owner else "liveSessionCount"
+    demand(_closed_fields(witness, f"actorKind actorId actorActive {field}") and witness["actorActive"] is True and
+           all(witness[key] == value for key, value in actor.items()) and
+           (witness[field] is True if owner else _safe_integer(witness[field], 1)), "P2_INTERACTIVE_IDENTITY_WITNESS_REQUIRED")
+    return {**actor, "context": "owner" if owner else "learner", "browserIdentitySha256": _receipt_sha(identity),
+            "identityWitnessSha256": _receipt_sha(witness)}
+
+
+def _lifecycle_case_evidence(action, evidence):
+    demand(_closed_fields(evidence, "browserResponse lifecycleWitness"), "P2_INTERACTIVE_LIFECYCLE_EVIDENCE_REQUIRED")
     selection = {**action["frontendAction"], "actorId": action["actorId"]}
     actor, user, operation = (selection[key] for key in ("actorKind", "userId", "operation"))
     preferences = operation in ("preferences-on", "preferences-off")
@@ -149,11 +179,11 @@ def lifecycle_case_evidence(action, evidence):
     return {**selection, "browserResponseSha256": _receipt_sha(browser), "lifecycleWitnessSha256": _receipt_sha(witness)}
 
 
-def require_lifecycle_ledger(plan, witness):
+def require_browser_ledger(plan, witness):
     demand(_closed_fields(witness, "commands deliveries orderViolations operations") and
            witness["commands"] == witness["deliveries"] == witness["orderViolations"] == [] and
            type(witness["operations"]) is list and 0 < len(witness["operations"]) <= 4096,
-           "P2_INTERACTIVE_LIFECYCLE_LEDGER_REQUIRED")
+           browser_status(plan, "LEDGER_REQUIRED"))
     operations = witness["operations"]
     epoch = str(int(plan["initialEpoch"]) + 1)
     producer = _hash(f'lash-her:p2q:interactive-producer:v1\n{plan["sourceCommit"]}\n{plan["targetSha256"]}'.encode())
@@ -164,18 +194,23 @@ def require_lifecycle_ledger(plan, witness):
                type(row["completed_at"]) is str and row["reconciliation_sha256"] is None for row in operations) and
            len({row["id"] for row in operations}) == len(operations) and
            any(row["kind"] == "new-work" for row in operations),
-           "P2_INTERACTIVE_LIFECYCLE_COMPLETED_NEW_WORK_REQUIRED")
+           browser_status(plan, "COMPLETED_NEW_WORK_REQUIRED"))
     return len(operations)
 
 
 def validate_interactive_action(action):
     lifecycle = type(action) is dict and action.get("stage") == "lifecycle"
-    fields = {"stage", "actorId", "requests", "windowSeconds"} | ({"frontendAction"} if lifecycle else set())
+    identity = type(action) is dict and action.get("stage") == "identity"
+    fields = {"stage", "actorId", "requests", "windowSeconds"}
+    if lifecycle:
+        fields.add("frontendAction")
+    if identity:
+        fields.add("identityActor")
     demand(type(action) is dict and set(action) == fields and
            type(action["stage"]) is str and action["stage"] in _STAGES and
            type(action["windowSeconds"]) is int and 30 <= action["windowSeconds"] <= 300 and
            type(action["requests"]) is list and
-           (action["actorId"] is None if action["stage"] == "identity" else _matches(_UUID, action["actorId"])),
+           (action["actorId"] is None if identity else _matches(_UUID, action["actorId"])),
            "P2_INTERACTIVE_ACTION_REQUIRED")
     gateway = action["stage"] in _GATEWAY_STAGES
     requests = action["requests"]
@@ -188,6 +223,10 @@ def validate_interactive_action(action):
                 frontend["actorKind"] == "customer" and frontend["userId"] == action["actorId"] and
                 frontend["operation"] in ("export", "delete", "preferences-on", "preferences-off")),
                "P2_INTERACTIVE_FRONTEND_ACTION_REQUIRED")
+    if identity:
+        actor = action["identityActor"]
+        demand(_closed_fields(actor, "actorKind actorId") and actor["actorKind"] in ("admin", "customer") and
+               _matches(_UUID, actor["actorId"]), "P2_INTERACTIVE_IDENTITY_ACTOR_REQUIRED")
     selected = set()
     for row in requests:
         demand(type(row) is dict and set(row) == {"method", "target", "bodySha256", "uses"} and
@@ -202,12 +241,13 @@ def validate_interactive_action(action):
     return copy.deepcopy(action)
 
 
-def _lifecycle_selection_sha(action):
-    if action["stage"] != "lifecycle":
-        return None
-    selected = action["frontendAction"]
-    return _hash(json.dumps([selected["actorKind"], action["actorId"], selected["userId"], selected["operation"]],
-                            separators=(",", ":")).encode())
+def _selection_sha(action):
+    if action["stage"] == "identity":
+        return _receipt_sha(["identity", action["identityActor"]["actorKind"]])
+    if action["stage"] == "lifecycle":
+        selected = action["frontendAction"]
+        return _receipt_sha([selected["actorKind"], action["actorId"], selected["userId"], selected["operation"]])
+    return None
 
 
 def _material(secret, deployment, source, target, epoch, stage, starts, duration, nonce, selection_sha=None):
@@ -218,7 +258,7 @@ def _material(secret, deployment, source, target, epoch, stage, starts, duration
            type(starts) is int and 1_000_000_000 <= starts < 9_999_999_700 and
            type(duration) is int and 30 <= duration <= 300 and _matches(re.compile(r"[a-f0-9]{32}"), nonce),
            "P2_INTERACTIVE_PRIVATE_BINDING_REQUIRED")
-    demand(_matches(_SHA, selection_sha) if stage == "lifecycle" else selection_sha is None,
+    demand(_matches(_SHA, selection_sha) if stage in CLOSED_BROWSER_STAGES else selection_sha is None,
            "P2_INTERACTIVE_FRONTEND_BINDING_REQUIRED")
     host = match.group(1)
     ends = starts + duration
@@ -360,7 +400,7 @@ class P2InteractiveWindow:
         duration = min(self.action["windowSeconds"], remaining)
         cookie, key, host, expiry = _material(self.broker.initial["scopedCronSecret"], self.plan["nativePlan"]["deploymentUrl"],
             self.plan["sourceCommit"], self.plan["targetSha256"], epoch, self.action["stage"], now, duration, nonce,
-            _lifecycle_selection_sha(self.action))
+            _selection_sha(self.action))
         if self.action["stage"] in _GATEWAY_STAGES:
             _, mount = self._mount()
             interactive = {"actorId": self.action["actorId"], "stage": self.action["stage"], "epoch": epoch,
@@ -405,7 +445,7 @@ class P2InteractiveWindow:
                "P2_INTERACTIVE_FRONTEND_WINDOW_REQUIRED")
         if self._scoped_sha is not None:
             self._scoped_gateway()
-        elif self.action["stage"] == "lifecycle":
+        elif self.action["stage"] in CLOSED_BROWSER_STAGES:
             self.verify_ordinary_gateway()
         metadata = native.observe_metadata(self.broker._native_context(),
             LockedClient(self.broker.vercel, self.broker.check), **self.broker.profile_arguments())
@@ -462,7 +502,7 @@ class P2InteractiveWindow:
                "P2_INTERACTIVE_GATEWAY_DRAIN_REQUIRED")
         return {"gatewayAdmissionClosed": True, "gatewayActive": 0, "gatewayUncertain": 0}
 
-    def verify_fenced(self, *, lifecycle=False):
+    def verify_fenced(self, *, retain=False):
         gateway = self.verify_gateway_fenced()
         physical = self.broker.observer.probe("witness")
         frontend = physical["admission"]
@@ -473,8 +513,8 @@ class P2InteractiveWindow:
                                               "reconciliation_sha256" in row and row["reconciliation_sha256"] is None
                                               for row in operations),
                "P2_INTERACTIVE_FRONTEND_DRAIN_REQUIRED")
-        if lifecycle:
-            demand(self.action["stage"] == "lifecycle" and self._permit_issued, "P2_INTERACTIVE_LIFECYCLE_PERMIT_REQUIRED")
-            require_lifecycle_ledger(self.plan, physical["witness"])
-            migrate.write_json(self.broker.directory, LIFECYCLE_LEDGER, physical["witness"])
+        if retain:
+            demand(self._permit_issued, browser_status(self.plan, "PERMIT_REQUIRED"))
+            require_browser_ledger(self.plan, physical["witness"])
+            migrate.write_json(self.broker.directory, browser_artifact(self.plan, "ledger"), physical["witness"])
         return {**gateway, "frontendAdmission": copy.deepcopy(frontend), "frontendOperationCount": len(operations)}
