@@ -20,13 +20,40 @@ import p2_release_supervisor as supervisor
 from p2_source_closure import TYPES, REQUIRED, verify_source_closure
 
 
-def tracked_source_fixture(source, destination):
+PROFILED_CURRENT_SOURCE_ONLY = frozenset({
+    'ops/platform/host/p2_profiled_current_frontend.py',
+    'ops/platform/host/p2_profiled_current_frontend_test.py',
+    'ops/platform/host/p2_profiled_current_parent.py',
+    'ops/platform/host/p2_profiled_current_parent_test.py',
+    'ops/platform/host/p2_profiled_current_recovery.py',
+    'ops/platform/host/p2_profiled_current_recovery_test.py',
+    'ops/platform/host/p2_profiled_current_scope.py',
+    'ops/platform/host/p2_profiled_current_scope_test.py',
+    'ops/platform/p2-profiled-current-frontend-adapters.mjs',
+    'ops/platform/p2-profiled-current-frontend-adapters.test.mjs',
+    'ops/platform/p2-profiled-current-probe.mjs',
+    'ops/platform/p2-profiled-current-probe.test.mjs',
+    'ops/platform/p2-profiled-current-recovery-transport.mjs',
+    'ops/platform/p2-profiled-current-recovery-transport.test.mjs',
+    'ops/platform/p2-profiled-current-recovery.mjs',
+    'ops/platform/p2-profiled-current-recovery.test.mjs',
+    'ops/platform/p2-profiled-current-release.mjs',
+    'ops/platform/p2-profiled-current-release.test.mjs',
+    'ops/platform/p2-profiled-current-transport.mjs',
+    'ops/platform/p2-profiled-current-transport.test.mjs',
+})
+
+
+def tracked_source_fixture(source, destination, *, exclude=frozenset()):
     """Mirror readOperatorSourceFiles' tracked public ops selection, not npm output."""
     environment={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C',
         'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':os.devnull,'GIT_NO_REPLACE_OBJECTS':'1'}
     result=subprocess.run(['git','-c','safe.directory='+str(source),'-C',str(source),'ls-files','-z','--','ops'],
         capture_output=True,check=True,env=environment,timeout=10)
-    names=sorted(name for name in result.stdout.decode('utf-8').split('\0') if name and Path(name).suffix in TYPES)
+    selected={name for name in result.stdout.decode('utf-8').split('\0') if name and Path(name).suffix in TYPES}
+    if not exclude.issubset(selected):
+        raise ValueError('OWNED_TRACKED_SOURCE_PROJECTION_REQUIRED')
+    names=sorted(selected-exclude)
     for name in names:
         path=Path(name)
         if path.is_absolute() or '..' in path.parts or path.parts[0]!='ops' or (source/path).is_symlink():
@@ -318,7 +345,10 @@ class ActualCertificationEntryTests(unittest.TestCase):
     def setUpClass(cls):
         temporary=tempfile.TemporaryDirectory();cls.addClassCleanup(temporary.cleanup)
         cls.source=Path(temporary.name).resolve()
-        cls.source_names=tracked_source_fixture(Path(parent.__file__).resolve().parents[3],cls.source)
+        cls.source_names=tracked_source_fixture(Path(parent.__file__).resolve().parents[3],cls.source,
+            exclude=PROFILED_CURRENT_SOURCE_ONLY)
+        if len(cls.source_names)>512 or sum((cls.source/name).stat().st_size for name in cls.source_names)>41_000_000:
+            raise ValueError('LEGACY_SOURCE_FIXTURE_BOUNDS_REQUIRED')
 
     def entry(self,mode,flavor='normal'):
         root=self.source
