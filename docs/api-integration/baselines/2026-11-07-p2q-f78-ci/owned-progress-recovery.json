@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "scope": "Owned S08 two-device stale progress and committed write with lost browser acknowledgement",
+  "frontendSource": "c22d698a70bc72cfdf108c26edadaa09ae8c5772",
+  "applicationAndGuardedSourceChecks": {
+    "frontend": {
+      "sourceCommit": "cec3b684eba7525ee42c203243f1c43565e0fce1",
+      "passed": 2620,
+      "sha256": "868a969f86eebbd4415b1e8df7a8f02dd22ca2eeb2570713c711b90a64a6f755"
+    },
+    "platform": {
+      "sourceCommit": "cec3b684eba7525ee42c203243f1c43565e0fce1",
+      "passed": 26,
+      "sha256": "09417d670da4f1cb8f7f5436d2023de4c43797aae4a73e0833c9f522850cabf6"
+    }
+  },
+  "finalTestHarnessOnlyChangesSinceApplicationChecks": [
+    "scripts/test-course-learning-browser.mjs",
+    "tests/course-learning-browser/learning.spec.ts"
+  ],
+  "staticChecks": {
+    "sourceCommit": "cec3b684eba7525ee42c203243f1c43565e0fce1",
+    "typescript": "passed",
+    "contractIntegrity": "passed",
+    "lintErrors": 0,
+    "baselineLintWarnings": 23,
+    "logSha256": "2b6fea18b8fe9a746820a16c95210891ca1f0f27fcfab3aeffda28ac8b4892ac"
+  },
+  "ownedDevelopmentBrowser": {
+    "frontendSource": "37aa1109ea6842b100322eee78f276d5382a323a",
+    "passed": 8,
+    "frontendMigrations": 83,
+    "courseGatewayFixture": true,
+    "logSha256": "ed99156adbd4de3ef833ae9657231fe753ec8becf24966b0a31497d569f570ad",
+    "migrationLogSha256": "f66ede59620ea21bc5bb19091b421401e53121241bf38fc493917cad3c958b60"
+  },
+  "ownedProductionBrowser": {
+    "passed": 6,
+    "courseSource": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+    "courseArtifactSha256": "5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d",
+    "migrationsApplied": {
+      "frontend": 83,
+      "course": 22
+    },
+    "postgresMajor": 16,
+    "nextBundler": "webpack-production",
+    "syntheticHls": true,
+    "gatewayWorkloadVerification": "fixture",
+    "profiles": {
+      "chromium": {
+        "receiptSha256": "bdbcd8edd3c905cce27273721378e33eaf87e25443688fa45a2546c7c97c56a5",
+        "distinctDatabaseSessions": true,
+        "progressRowPreserved": true,
+        "stale": {
+          "status": 409,
+          "submittedRevision": 4,
+          "winningProgress": {
+            "revision": 7,
+            "resumePositionSeconds": 14,
+            "maxPositionSeconds": 14
+          },
+          "replayed": false,
+          "reloadProgress": [
+            {
+              "revision": 8,
+              "resumePositionSeconds": 14,
+              "maxPositionSeconds": 14
+            },
+            {
+              "revision": 9,
+              "resumePositionSeconds": 14,
+              "maxPositionSeconds": 14
+            }
+          ]
+        },
+        "lostAcknowledgement": {
+          "committedProgress": {
+            "revision": 10,
+            "resumePositionSeconds": 4,
+            "maxPositionSeconds": 14
+          },
+          "browserFailure": "connectionreset",
+          "unknownStateObserved": true,
+          "replayed": false,
+          "reloadProgress": [
+            {
+              "revision": 11,
+              "resumePositionSeconds": 4,
+              "maxPositionSeconds": 14
+            },
+            {
+              "revision": 12,
+              "resumePositionSeconds": 4,
+              "maxPositionSeconds": 14
+            }
+          ]
+        }
+      },
+      "mobile": {
+        "receiptSha256": "a075e4c1311c58d5c130bb74617ed30d2f78be5cc90b36a25c42b3caece5eef6",
+        "distinctDatabaseSessions": true,
+        "progressRowPreserved": true,
+        "stale": {
+          "status": 409,
+          "submittedRevision": 4,
+          "winningProgress": {
+            "revision": 7,
+            "resumePositionSeconds": 14,
+            "maxPositionSeconds": 14
+          },
+          "replayed": false,
+          "reloadProgress": [
+            {
+              "revision": 8,
+              "resumePositionSeconds": 14,
+              "maxPositionSeconds": 14
+            },
+            {
+              "revision": 9,
+              "resumePositionSeconds": 14,
+              "maxPositionSeconds": 14
+            }
+          ]
+        },
+        "lostAcknowledgement": {
+          "committedProgress": {
+            "revision": 10,
+            "resumePositionSeconds": 4,
+            "maxPositionSeconds": 14
+          },
+          "browserFailure": "connectionreset",
+          "unknownStateObserved": true,
+          "replayed": false,
+          "reloadProgress": [
+            {
+              "revision": 11,
+              "resumePositionSeconds": 4,
+              "maxPositionSeconds": 14
+            },
+            {
+              "revision": 12,
+              "resumePositionSeconds": 4,
+              "maxPositionSeconds": 14
+            }
+          ]
+        }
+      }
+    },
+    "logSha256": "9e2ba5cc57266904637f842f18abfe66fe5d226a2ef507b9d119f43a45750c6c",
+    "artifacts": {
+      "evidence.json": "8ab708674a79968e16944a2ca440722944d63eb7bcccd8b0772631addf16ef23",
+      "outcome.json": "d2a646b3aa72ef1813c5a985344f878af4da36723b96b4898283204b2c0a4ad1",
+      "persistence.json": "b899a0728f3fb3c763afde90e74e8c466420b7e85df65f1068f37771637fac19",
+      "frontend-build.log": "a0c3659853da68a9a85cda58e43389a663ca056a2b6cc23f5ab088c723f397ac"
+    }
+  },
+  "apiRepositoryChecks": {
+    "course": {
+      "sourceCommit": "54fd289a5a8579bfbe343afb07482f406b56ad5b",
+      "unitPassed": 716,
+      "verify": "passed",
+      "logSha256": "46d72562aa8734d0962dc5ab1f2165393d852e229a9726dfdbcc4f90bb5c68bb"
+    },
+    "community": {
+      "sourceCommit": "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+      "unitPassed": 383,
+      "verify": "passed",
+      "logSha256": "c0fb525cbb84ac0fb8731b281b7a81df84938ec166187c23df44a8735737f817"
+    }
+  },
+  "retainedFixtureFailures": [
+    {
+      "sourceCommit": "cec3b684eba7525ee42c203243f1c43565e0fce1",
+      "reason": "The custom player wrapper lacked the native seeking property.",
+      "outcomeSha256": "8ed22febb7dbe017c11a55eb18b5e617980803a7265286e229110002387b22e7",
+      "logSha256": "1e18cae03ce1adc5f8c129be762fa09b0d02a4ee242d553f5d3c62751168a2d2"
+    },
+    {
+      "sourceCommit": "37aa1109ea6842b100322eee78f276d5382a323a",
+      "reason": "Playwright connected to the plain IPv6 backend instead of the IPv4 TLS proxy.",
+      "outcomeSha256": "9eb5f07819a6e91b3b65e89f5b7cf082fc9513c464ebe087ab5785916c30030d",
+      "logSha256": "0527544130788df010f5c3b3ef2c0a8eeb941f606d70823a6482df13c77192c8"
+    },
+    {
+      "sourceCommit": "801c67c8e4a48dc9f66156ed8e9a73ffa05d481d",
+      "reason": "Playwright kept its IPv6-first connection ordering after the DNS option.",
+      "outcomeSha256": "e5d80bd64beec1b607aa1ed24fcfcca55b3c1129045d7ec88e30544aeaed00b0",
+      "logSha256": "30e90035be5efcfebdbd59849132fc5e15aedeaddd6ea879d84d200ed453f2ff"
+    }
+  ],
+  "stagingGuardedObservationImplemented": false,
+  "stagingCertified": false,
+  "liveProvidersCertified": false
+}
