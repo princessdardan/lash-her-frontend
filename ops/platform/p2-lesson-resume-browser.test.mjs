@@ -485,10 +485,10 @@ test("owned Chromium plays, restores and saves Mux progress through native exit 
             assert.equal(observed.exit.maxPositionSeconds, bodies.at(-1).maxPositionSeconds);
           } else {
             if (scenario === "exit-document-early-save") {
-              const delivered = page.waitForEvent("requestfinished", { timeout: 8_000, predicate: request =>
+              const detached = page.waitForEvent("requestfailed", { timeout: 8_000, predicate: request =>
                 request.url() === origin + paths.progressPath && request.method() === "POST"
-                && request.postDataJSON()?.expectedProgressRevision === 8 });
-              await Promise.all([delivered, assert.rejects(recorder.wait(expires), exitSaveRefused)]);
+                && request.postDataJSON()?.expectedProgressRevision === 8 && request.failure()?.errorText === "net::ERR_ABORTED" });
+              await Promise.all([detached, assert.rejects(recorder.wait(expires), exitSaveRefused)]);
               assert.ok(exitResponse);
               assert.equal(revision, 9);
             } else await assert.rejects(recorder.wait(expires), exitSaveRefused);

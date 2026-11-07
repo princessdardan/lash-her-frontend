@@ -2569,8 +2569,8 @@ function watchLessonPosition(context, page, input, stage) {
   const refusal = () => new Error(exitSave ? "P2_INTERACTIVE_LESSON_EXIT_SAVE_RESPONSE_REFUSED"
     : prior ? "P2_INTERACTIVE_LESSON_RESTORE_RESPONSE_REFUSED" : "P2_INTERACTIVE_LESSON_RESUME_RESPONSE_REFUSED");
   let navigation, opened = false, failed = false, initialized, restoredProgress, completed, active, session, executionContextId, stopNetwork, permit, previousMax = 0;
-  let exiting = false, destinationRequest, sourceFrame, exitNetworkId, exitAborted = false;
-  const trustedEvents = new Set(), validExitHeaders = new Set();
+  let exiting = false, destinationRequest, sourceFrame, exitNetworkId, exitRequestedAt, exitAborted = false;
+  const trustedEvents = new Map(), validExitHeaders = new Set();
   const eventBinding = "__lashP2ExitEvent";
   let rejectFailure;
   const failure = new Promise((_, reject) => { rejectFailure = reject; });
@@ -2655,12 +2655,13 @@ function watchLessonPosition(context, page, input, stage) {
       && !(exiting && frame.url() === destination)) fail();
   };
   const onFinished = request => { if (documentExit && request === exit?.request) fail(); };
-  const onExitNetworkRequest = ({ requestId, request, frameId, loaderId, documentURL, type, redirectResponse }) => {
+  const onExitNetworkRequest = ({ requestId, request, frameId, loaderId, documentURL, type, redirectResponse, wallTime }) => {
     if (!exiting || request.url !== origin + progressPath) return;
     if (exitNetworkId || type !== "Fetch" || request.method !== "POST" || frameId !== sourceFrame.id
       || loaderId !== sourceFrame.loaderId || (documentURL !== source && (documentExit || documentURL !== destination))
-      || redirectResponse) return fail();
+      || redirectResponse || !Number.isFinite(wallTime) || wallTime <= 0) return fail();
     exitNetworkId = requestId;
+    exitRequestedAt = wallTime * 1000;
   };
   const onExitNetworkHeaders = ({ requestId, headers }) => {
     if (!exiting) return;
@@ -2680,9 +2681,13 @@ function watchLessonPosition(context, page, input, stage) {
   };
   const onTrustedExitEvent = ({ name, payload, executionContextId: observedContext }) => {
     if (name !== eventBinding) return;
-    if (!documentExit || !exiting || observedContext !== executionContextId || !["pagehide", "hidden"].includes(payload)
-      || trustedEvents.has(payload)) return fail();
-    trustedEvents.add(payload);
+    try {
+      demand(documentExit && exiting && observedContext === executionContextId && typeof payload === "string" && payload.length <= 96);
+      const event = JSON.parse(payload);
+      demand(closed(event, ["kind", "at"]) && ["pagehide", "hidden"].includes(event.kind) && !trustedEvents.has(event.kind)
+        && Number.isFinite(event.at) && event.at > 0);
+      trustedEvents.set(event.kind, event.at);
+    } catch { fail(); }
   };
   context.on("request", onRequest);
   context.on("requestfailed", onFailure);
@@ -2798,11 +2803,12 @@ function watchLessonPosition(context, page, input, stage) {
             functionDeclaration: function observeNativeExit({ source, name }) {
               if (location.href !== source || document.visibilityState !== "visible") return false;
               const notify = globalThis[name];
+              const observe = (event, kind) => notify(JSON.stringify({ kind, at: performance.timeOrigin + event.timeStamp }));
               window.addEventListener("pagehide", event => {
-                if (event.isTrusted) notify(event.persisted ? "persisted" : "pagehide");
+                if (event.isTrusted) observe(event, event.persisted ? "persisted" : "pagehide");
               }, { capture: true });
               document.addEventListener("visibilitychange", event => {
-                if (event.isTrusted && document.visibilityState === "hidden") notify("hidden");
+                if (event.isTrusted && document.visibilityState === "hidden") observe(event, "hidden");
               }, { capture: true });
               return true;
             }.toString(), arguments: [{ value: { source, name: eventBinding } }], returnByValue: true, silent: true });
@@ -2851,6 +2857,9 @@ function watchLessonPosition(context, page, input, stage) {
               return exit.request && validExitHeaders.has(exitNetworkId) && (!documentExit || exitAborted && trustedEvents.size === 2);
             }, performance.now() + remaining(expires)),
           ]), expires);
+          // A request started before teardown can also lose its response.
+          // Compare Chromium's epoch clocks, allowing 2 ms for precision.
+          if (documentExit) demand(exitRequestedAt + 2 >= Math.min(...trustedEvents.values()));
           const { frameTree: { frame } } = await session.send("Page.getFrameTree");
           demand(frame.id === sourceFrame.id && frame.url === destination && await player.count() === 0);
           active = undefined;
