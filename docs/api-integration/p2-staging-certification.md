@@ -15,8 +15,8 @@ Complete these slots in the ordinary private release record before execution. Us
 | Binding | Required value / present reference |
 | --- | --- |
 | Frontend | OPEN: final clean 40-character Git SHA, branch, current required CI run/attempt and terminal results. Do not substitute `ab34cf9b` or an older local browser head. |
-| Course | Recorded exact main `a447bfde20299e12afab68a3331b3792ddd07598`; [post-merge qualification](baselines/2026-11-06-p2-api-role-main/README.md), required CI run `42162176192`, including packaged PostgreSQL18 and native qualification. Revalidate selected head/current required checks during candidate preparation. |
-| Community | Recorded exact main `939de65dd52f0b1a43993a25c7c428dce6e2bb43`; required post-merge CI `42162186353` and compatibility `42162186016` passed. Revalidate during candidate preparation. |
+| Course | Selected runtime source `0bb054d5a04db71c481a8b3d182db6df19782cdc`; [merged-source qualification](baselines/2026-11-06-p2q-source-integration/course-merged-source.json), required CI `42270559920` including packaged PostgreSQL 18 and native checks. Later documentation-only main commits do not change this artifact pin. Revalidate exact selected source/checks during candidate preparation. |
+| Community | Selected runtime source `8594d953a5c0e0849e7a2e5e0de21f03537c4dc4`; [merged-source qualification](baselines/2026-11-06-p2q-source-integration/community-merged-source.json), required CI `42272021421` and compatibility `42272021455` passed. Later documentation-only main commits do not change this artifact pin. Revalidate during candidate preparation. |
 | Contracts | Final frontend's released P2 manifest SHA256, exact compatibility-review blob/baseline, unchanged v1 manifest SHA256, and generated validators. Current Course artifact `5effaea43ac172be76f00ab2db910cd6786faed02c775380449b6d57fa37283d`; Community `0b56d1f1ba39d8a80589443c188d1c5ee29719be088e79888d96dce96c87b4c1`; enrollment event `a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e`. Verify final bytes; these hashes alone do not qualify runtime. |
 | Immutable candidate | OPEN: candidate/release ID, manifest bytes/hash, successful **Platform artifact candidate** run/attempt, six image digests, exact native proofs/scans, SBOMs, provenance and attestations. CI images are not registry publication proof. |
 | Database stages | Exact three direct targets, role names/OIDs, server major, complete applied lineage/schema hashes, reviewed pending chains, original database and terminal receipts, recovery reference. Read actual state; never infer pending tags from historical migration counts. |
@@ -58,11 +58,11 @@ The existing learner/authoring drivers run only owned local stacks, require clea
 
 ```sh
 COURSE_LEARNING_API_SOURCE=/path/to/clean/course-checkout \
-COURSE_LEARNING_API_REVISION=a447bfde20299e12afab68a3331b3792ddd07598 \
+COURSE_LEARNING_API_REVISION=0bb054d5a04db71c481a8b3d182db6df19782cdc \
 node scripts/test-course-learning-browser.mjs
 
 COURSE_AUTHORING_API_SOURCE=/path/to/clean/course-checkout \
-COURSE_AUTHORING_API_REVISION=a447bfde20299e12afab68a3331b3792ddd07598 \
+COURSE_AUTHORING_API_REVISION=0bb054d5a04db71c481a8b3d182db6df19782cdc \
 node scripts/test-course-authoring-browser.mjs
 ```
 

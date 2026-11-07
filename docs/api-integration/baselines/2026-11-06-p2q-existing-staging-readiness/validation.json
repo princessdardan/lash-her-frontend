@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "status": "INTEGRATED_PREFLIGHT_PASS_FRESH_CI_PENDING",
+  "originalSourceCommit": "b70b1084cb5e2faa7a00ff86f08a9dc37f285ae9",
+  "integratedSourceCommit": "62dfdc53ce7e7816b317d54c3237acf6d05f1054",
+  "sourceFilesMatchReviewedOriginal": true,
+  "independentReview": {
+    "agent": "provider_fencing",
+    "result": "CLEAR",
+    "focusedPass": 10,
+    "stagingReleasePass": 17,
+    "skipped": 0,
+    "lintExit": 0,
+    "diffCheckExit": 0
+  },
+  "rootIntegratedChecks": {
+    "stagingReleasePass": 17,
+    "failed": 0,
+    "skipped": 0
+  },
+  "supersedes": "Earlier policy-only audit assumption that no source correction was needed: legacy preflight still required a separate Resend account. This narrow correction removes that gate.",
+  "apiPolicyPrs": {
+    "course": {
+      "number": 10,
+      "head": "1334f668e6ee59abad9efe822a3b91fa29ca15b3",
+      "ciRun": 42318763350,
+      "ci": "SUCCESS",
+      "merge": "Not performed; automatic approval review requires explicit owner merge approval"
+    },
+    "community": {
+      "number": 9,
+      "head": "929fdeb13e0e5f5e25454a457961d6ed965dedff",
+      "ciRun": 42318757611,
+      "compatibilityRun": 42318757800,
+      "ci": "SUCCESS",
+      "merge": "Not performed; automatic approval review requires explicit owner merge approval"
+    }
+  },
+  "liveOrProviderConfigurationChanged": false,
+  "contractOrRuntimePinsChanged": false,
+  "stoppedGuardianWipIntegrated": false
+}

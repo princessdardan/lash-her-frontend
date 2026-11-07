@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 1959,
+      "sha256": "4f083ee6ef2cf1d17d48215bbbeed614fc0af292fde87c21efe7a58b7feb50c5"
+    },
+    {
+      "path": "google-current-access.json",
+      "bytes": 834,
+      "sha256": "a7f51d464eedc3768ca2cb57156e8d9efd979f319c3a2c38e70a3101bac20a94"
+    },
+    {
+      "path": "integrated-tests.log",
+      "bytes": 1157,
+      "sha256": "4a69c5b278ccdd4da2aac9490843aae0ce7ce480273f8adbd9728d43fe571055"
+    },
+    {
+      "path": "original-lint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "original-preflight-tests.log",
+      "bytes": 1085,
+      "sha256": "22b45c3e20414c7c8aaec6d6284f84da7d89977faa3f1d0e58ff142bd889dc50"
+    },
+    {
+      "path": "original-staging-release-tests.log",
+      "bytes": 1148,
+      "sha256": "1fca79998363ebfe895091c96315e3afaf88e4b653fd44d646f2c4524d629437"
+    },
+    {
+      "path": "original-validation.json",
+      "bytes": 1488,
+      "sha256": "b767b763d2c73a1752099769a2e228b77185e412498437ee320375d1c132f3f6"
+    },
+    {
+      "path": "validation.json",
+      "bytes": 1446,
+      "sha256": "edb8d7fc5b8864e019eb0c0f58dafc3f7257eb391516aeb37475dcf3a6917e00"
+    },
+    {
+      "path": "writer-inventory-summary.json",
+      "bytes": 670,
+      "sha256": "03fbc531907806f434a6e1683a85b1818a08c20c65acef0ea272336d0faac506"
+    }
+  ]
+}

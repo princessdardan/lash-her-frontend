@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "status": "SOURCE_TESTS_PASS",
+  "sourceCommit": "b70b1084cb5e2faa7a00ff86f08a9dc37f285ae9",
+  "baseCommit": "46c3e9c8c9382fc3997250b25a674b8238f5627a",
+  "nodeVersion": "v24.18.0",
+  "files": {
+    "scripts/validate-staging-release.mjs": "51f138c6120c88ec21d0d3c3663b39eefb67b71090b26abcd78ab3e3841edb8c",
+    "scripts/validate-staging-release.test.mjs": "97f2e27566ae787a3a8101a2ecb15f415fdb679bbc0efd69547bab39f481d229"
+  },
+  "checks": {
+    "preflight": {
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "command": "node --test scripts/validate-staging-release.test.mjs"
+    },
+    "stagingRelease": {
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "command": "npm run test:staging-release"
+    },
+    "focusedLint": {
+      "exitCode": 0,
+      "command": "eslint scripts/validate-staging-release.mjs scripts/validate-staging-release.test.mjs"
+    },
+    "diffCheck": {
+      "exitCode": 0,
+      "command": "git diff --check"
+    }
+  },
+  "scope": {
+    "syntheticFixturesOnly": true,
+    "providerActions": false,
+    "credentialReads": false,
+    "pushed": false,
+    "deployed": false,
+    "independentReview": "pending"
+  },
+  "logs": {
+    "lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "preflight-tests.log": "22b45c3e20414c7c8aaec6d6284f84da7d89977faa3f1d0e58ff142bd889dc50",
+    "staging-release-tests.log": "1fca79998363ebfe895091c96315e3afaf88e4b653fd44d646f2c4524d629437"
+  }
+}
