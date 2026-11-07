@@ -63,6 +63,12 @@ node ops/platform/p2-profiled-current-release.mjs --apply --settings /absolute/p
 
 The [frontend coordination](frontend-release-coordination-component.md), [restoration](frontend-release-restoration-component.md), [runtime](operator-runtime-release.md) and [worker host](course-worker-host-release-component.md) documents define the implementation boundaries. Legacy `staging_release.py` remains an already-current-frontend path; `staging_admission.py` requires the P1 six-controls-off profile. Neither replaces the P2 action. A committed-SQL failure requires a distinct reviewed current-only recovery action; never rerun the original apply or change pending tags to bypass its refusal.
 
+### Current-only certification actions still required
+
+The existing bounded certification actions cover specific suspension, receiver and worker cases. The current-only release leaves frontend and gateway admission closed. Normal authoring, learner progress, the S10 grant and account-command submission still need a guarded staging window from that state. The new-work toggle applies to all registered writers of that class, so the opening must have independently verified ingress and disabled unrelated producers. Mux needs an independently bounded path for the normal signed callback and selected upload attempt. Generic gateway recovery also admits unrelated lifecycle and entitlement operations.
+
+S14 spans two separate actions. Retain the ready artifact, its three database expiries and the exact candidate/configuration on the first day. After the real expiries, obtain fresh same-candidate runtime and database proof, verify denied access through the normal endpoint, and observe physical cleanup. The existing frontend cron can also deliver commands and assemble exports, so it does not supply a cleanup-only action. The original release's short-lived workload challenge cannot authorize the later observation. A fixed current-profile persistence entrypoint and cleanup-only action remain open. Leave admission closed and release the locks during the wait. S15 uses a fresh held persistence observation for the same approved test account after deletion and both ordered receiver acknowledgements.
+
 The existing learner/authoring drivers run only owned local stacks, require clean exact sources and accept no external database URL:
 
 ```sh

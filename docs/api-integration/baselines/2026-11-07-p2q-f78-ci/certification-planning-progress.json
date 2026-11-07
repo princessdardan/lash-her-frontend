@@ -272,5 +272,30 @@
     "liveApplyExecuted": false,
     "stagingChanged": false,
     "releaseAccepted": false
+  },
+  "profiledInterruptedRestorationGuardAndOwnedHost": {
+    "sourceCommit": "7864cc91afe69a4621824288106f773d47dd79b5",
+    "hostCompositionSourceCommit": "abb491334041e8a58a53fa469451fe0070dc7863",
+    "hostCompositionEvidence": "interrupted-restoration/host-composed.json",
+    "hostCompositionSha256": "e73076730dfac82b6025efa8a934236c5ea3942d79764aeb8c98efc36e3d208f",
+    "hostNegativeEvidence": "interrupted-restoration/host-negative.json",
+    "hostNegativeSha256": "ac3b68e3efc583c40a3cf1aba61c0fd012af340c09da89f4cf3dfe310f651bff",
+    "hostFixtureActualLock": true,
+    "hostFixtureDockerProviderDatabaseAndIndependentSupervisorProjected": true,
+    "node24": {
+      "passed": 38,
+      "skipped": 0,
+      "logSha256": "ee12fb9c1dbc8a46ad5dd8275a0b82fd8d09fc4a194b0509b85c4bbabfa0007a"
+    },
+    "expiryPredicate": {
+      "sourceCommit": "e0744faaa437b0943583dcee6873146bd5814934",
+      "passed": 5,
+      "logSha256": "7dc0ff26426b3f8afcab721704eb45b35c55d8404a6bde644f20820bde4e672e"
+    },
+    "installedLinuxSupervisorVerified": false,
+    "profiledThreeDatabaseCompositionVerified": false,
+    "operatorApplyEligible": false,
+    "stagingChanged": false,
+    "releaseAccepted": false
   }
 }
