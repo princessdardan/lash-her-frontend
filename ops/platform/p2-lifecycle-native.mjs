@@ -201,6 +201,14 @@ const reviewedPaidRevokeDependencies = {
   "src/app/admin/(protected)/courses/[courseId]/manual-grants/revoke/page.tsx": "a20086124972d021fb020f5ea0aa13f4e77a9a86502f25501067565922400818",
   "src/app/api/admin/courses/[courseId]/manual-grants/revoke/route.ts": "0e890cca7ac3b12f3dcfb21134b4ce529dd97c939d031571aeec460ec10f969c"
 };
+const reviewedLessonEntryDependencies = {
+  ...reviewedPaidRevokeDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "eb863ce486d9ed77f6426ff530ff21762ec4e0b6e4346d710c8691d93dfd17bf",
+  "src/lib/api-integration/course-client.ts": "a4de647fce510f703de6daeecd669c2d27b4ff1d50d5067199db986cdd12f351",
+  "src/app/(site)/academy/courses/[courseId]/page.tsx": "47e59a65bd51e8241446940079cff8cc901f63700c2b9be36dc1de6c33b951c7",
+  "src/app/(site)/academy/courses/[courseId]/lessons/[lessonId]/page.tsx": "c22f7041c8f1dd6d98cfc4c2a678403fba3e9a54179fe4e8ed8aa00d5acc74a1",
+  "src/app/api/academy/lessons/[lessonId]/progress/route.ts": "87d879299cb039985b7b49e9f2d0f9e0b70f233d8d357fd85ebc3f40c0610cfd"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -231,7 +239,7 @@ function sourcePolicy(sourceCommit) {
     [reviewedPaidGrantSource, [reviewedPaidGrantDependencies]],
     [reviewedPaidArchiveSource, [reviewedPaidArchiveDependencies]],
     [reviewedPaidRepublishSource, [reviewedPaidRepublishDependencies, reviewedPaidLearnerAccessDependencies]],
-    [reviewedPaidRevokeSource, [reviewedPaidRevokeDependencies]]]
+    [reviewedPaidRevokeSource, [reviewedPaidRevokeDependencies, reviewedLessonEntryDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;
