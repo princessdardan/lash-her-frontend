@@ -193,7 +193,8 @@ async function enroll(page: Page, value: Scenario) {
   const response = await pending;
   expect(response.status()).toBe(200);
   expect(await response.headerValue("cache-control")).toBe("private, no-store");
-  expect(await response.json()).toMatchObject({ courseId: value.courseId, source: "free", status: "active", idempotentReplay: false });
+  const first = await response.json();
+  expect(first).toMatchObject({ courseId: value.courseId, source: "free", status: "active", idempotentReplay: false });
   await expect(page.getByRole("link", { name: "Course overview", exact: true })).toHaveAttribute("href", `/courses/${value.slug}`);
   expect(requests().slice(start)).toEqual(expect.arrayContaining([
     { method: "POST", target: student + "/enrollments", status: 201 },
@@ -206,6 +207,20 @@ async function enroll(page: Page, value: Scenario) {
       exact: true,
     }),
   ).toBeVisible();
+  const requestBody = response.request().postDataJSON();
+  expect(requestBody).toEqual({ idempotencyKey: expect.stringMatching(/^[a-f0-9-]{36}$/u) });
+  const replay = await page.evaluate(async ({ courseId, body }) => {
+    const response = await fetch(`/api/academy/courses/${courseId}/enrollments`, {
+      method: "POST", mode: "same-origin", credentials: "same-origin", redirect: "error",
+      headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    return { status: response.status, cache: response.headers.get("cache-control"), body: await response.json() };
+  }, { courseId: value.courseId, body: requestBody });
+  expect(replay).toEqual({ status: 200, cache: "private, no-store", body: { ...first, idempotentReplay: true } });
+  expect(requests().slice(start).filter(row => row.method === "POST" && row.target === student + "/enrollments")).toEqual([
+    { method: "POST", target: student + "/enrollments", status: 201 },
+    { method: "POST", target: student + "/enrollments", status: 200 },
+  ]);
   await page
     .getByRole("link", { name: "Practice lesson Open lesson", exact: true })
     .click();

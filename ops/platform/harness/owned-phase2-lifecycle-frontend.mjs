@@ -135,6 +135,41 @@ async function journey(input) {
   await api("community", "/owned/member", { token: member() });
   checks.push("real-admin-authoring-free-ledger-grant-progress-quiz-and-Course-publisher-to-Community-receiver");
 
+  async function freeReplaySnapshot() {
+    const [source, receiver] = await Promise.all([
+      sqlPools.course.query(`select
+        (select jsonb_agg(to_jsonb(g) order by g.id) from entitlement_grants g where g.course_id=$1) as grants,
+        (select jsonb_agg(to_jsonb(e) order by e.id) from enrollments e where e.course_id=$1) as enrollments,
+        (select to_jsonb(k) from entitlement_idempotency_keys k where k.idempotency_key=$2) as original_key,
+        (select jsonb_agg(to_jsonb(s) order by s.id) from community_enrollment_streams s where s.course_id=$1) as streams,
+        (select jsonb_agg(to_jsonb(o) order by o.event_id) from community_enrollment_outbox o
+          join community_enrollment_streams s on s.id=o.stream_id where s.course_id=$1) as outbox,
+        (select jsonb_agg(to_jsonb(p) order by p.id) from lesson_progress p where p.lesson_id=$3) as progress,
+        (select jsonb_agg(to_jsonb(a) order by a.id) from quiz_attempts a where a.lesson_id=$3) as attempts`,
+      [course.id, freeKey, lesson.id]),
+      sqlPools.community.query(`select
+        (select jsonb_agg(to_jsonb(i) order by i.event_id) from course_enrollment_inbox i where i.course_id=$1) as inbox,
+        (select jsonb_agg(to_jsonb(p) order by p.stream_id) from course_enrollment_projections p where p.course_id=$1) as projections`,
+      [course.id]),
+    ]);
+    return { source: source.rows[0], receiver: receiver.rows[0] };
+  }
+  const beforeReplay = await freeReplaySnapshot();
+  const enrollmentPath = `/v1/student/courses/${course.id}/enrollments`;
+  const replay = { method: "POST", key: freeKey, body: { idempotencyKey: freeKey } };
+  const responses = await Promise.all([
+    api("course", enrollmentPath, { ...replay, token: learner() }),
+    api("course", enrollmentPath, { ...replay, token: learner() }),
+  ]);
+  for (const response of responses) assert.deepEqual(response, { ...grant, idempotentReplay: true });
+  const unrelatedLearner = applicationIssuer({ profile: "course-learner", customerId: otherId });
+  const conflict = await api("course", enrollmentPath, { ...replay, token: unrelatedLearner, expected: 409 });
+  assert.equal(conflict.error.code, "IDEMPOTENCY_CONFLICT");
+  await api("course", `/v1/student/courses/${course.id}`, { token: unrelatedLearner, expected: 403 });
+  assert.equal(await publisher.runOnce(), 0);
+  assert.deepEqual(await freeReplaySnapshot(), beforeReplay);
+  checks.push("real-exact-key-free-replay-retains-Course-and-Community-state-and-refuses-a-different-actor");
+
   const paidUser = randomUUID();
   const paidLearner = () => applicationIssuer({ profile: "course-learner", customerId: paidUser });
   const support = () => applicationIssuer({ profile: "course-admin", adminId, capabilities: ["course-support"] });
