@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "repository": "princessdardan/lash-her-frontend",
+  "pullRequest": 93,
+  "pullRequestDraft": true,
+  "headSha": "ef124dcd8357e70dbf1199cd81040a5bccd07e55",
+  "sourceDeltaFromQualified6261": "eight documentation/evidence files only; app, runtime, and test files unchanged",
+  "workflow": {"name": "CI", "runId": 42325995254, "runNumber": 287, "attempt": 1, "status": "completed", "conclusion": "success"},
+  "jobs": [
+    {"id": 128261296023, "name": "audit", "conclusion": "success"},
+    {"id": 128261296184, "name": "build", "conclusion": "success"},
+    {"id": 128261296192, "name": "database", "conclusion": "success"},
+    {"id": 128261296269, "name": "gateway-and-platform", "conclusion": "success"},
+    {"id": 128261296352, "name": "quality-and-unit", "conclusion": "success"},
+    {"id": 128261296367, "name": "frontend-operator-migrations", "conclusion": "success"},
+    {"id": 128261296388, "name": "browser (webkit)", "conclusion": "success"},
+    {"id": 128261296412, "name": "browser (firefox)", "conclusion": "success"},
+    {"id": 128261296434, "name": "browser (chromium)", "conclusion": "success"},
+    {"id": 128265301735, "name": "browser", "conclusion": "success"}
+  ],
+  "artifacts": [
+    {"id": 13555742181, "name": "frontend-operator-schema-summary", "githubDigest": "sha256:b1ee9da319fb1238ddcf851fe4dbd4631a7e3f113cd3da31e4bf7ff8acc8b293", "localSha256": "b1ee9da319fb1238ddcf851fe4dbd4631a7e3f113cd3da31e4bf7ff8acc8b293", "localZip": "artifacts/frontend-operator-schema-summary-13555742181.zip", "safeExtraction": {"status": "pass", "entries": 3, "uncompressedBytes": 60849, "unsafePaths": 0, "symlinks": 0, "directory": "extracted/frontend-operator-schema-summary-13555742181"}},
+    {"id": 13555642377, "name": "frontend-runtime-qualification", "githubDigest": "sha256:61656f688c70af27be837ac32ca92475e9efb3051e6b157cc0f9add3ea5b8601", "localSha256": "61656f688c70af27be837ac32ca92475e9efb3051e6b157cc0f9add3ea5b8601", "localZip": "artifacts/frontend-runtime-qualification-13555642377.zip", "safeExtraction": {"status": "pass", "entries": 5, "uncompressedBytes": 448495, "unsafePaths": 0, "symlinks": 0, "directory": "extracted/frontend-runtime-qualification-13555642377"}},
+    {"id": 13555028526, "name": "gateway-runtime-qualification", "githubDigest": "sha256:493cc2d26544aac2783d1e9939f8b591bf951cd0e6b694eb6b098969165e2317", "localSha256": "493cc2d26544aac2783d1e9939f8b591bf951cd0e6b694eb6b098969165e2317", "localZip": "artifacts/gateway-runtime-qualification-13555028526.zip", "safeExtraction": {"status": "pass", "entries": 5, "uncompressedBytes": 418753, "unsafePaths": 0, "symlinks": 0, "directory": "extracted/gateway-runtime-qualification-13555028526"}},
+    {"id": 13555535714, "name": "playwright-blob-chromium", "githubDigest": "sha256:fd9b93c3fcb29f127a11813c98f98def7afce07df2e4fd20ebf9966c682028f9", "localSha256": "fd9b93c3fcb29f127a11813c98f98def7afce07df2e4fd20ebf9966c682028f9", "localZip": "artifacts/playwright-blob-chromium-13555535714.zip", "safeExtraction": {"status": "pass", "entries": 1, "uncompressedBytes": 213217, "unsafePaths": 0, "symlinks": 0, "directory": "extracted/playwright-blob-chromium-13555535714"}},
+    {"id": 13555616820, "name": "playwright-blob-firefox", "githubDigest": "sha256:b87e0daa3eda97d1e8531d5e1551c6469cb4e7af9e2c1f624b9a8396979c65c3", "localSha256": "b87e0daa3eda97d1e8531d5e1551c6469cb4e7af9e2c1f624b9a8396979c65c3", "localZip": "artifacts/playwright-blob-firefox-13555616820.zip", "safeExtraction": {"status": "pass", "entries": 1, "uncompressedBytes": 216789, "unsafePaths": 0, "symlinks": 0, "directory": "extracted/playwright-blob-firefox-13555616820"}},
+    {"id": 13554974103, "name": "playwright-blob-webkit", "githubDigest": "sha256:cd3d090a3f0e24ef7cb3a673c78e14f2480940e27e886a54a9aa2873f8540089", "localSha256": "cd3d090a3f0e24ef7cb3a673c78e14f2480940e27e886a54a9aa2873f8540089", "localZip": "artifacts/playwright-blob-webkit-13554974103.zip", "safeExtraction": {"status": "pass", "entries": 1, "uncompressedBytes": 1453010, "unsafePaths": 0, "symlinks": 0, "directory": "extracted/playwright-blob-webkit-13554974103"}},
+    {"id": 13555646705, "name": "playwright-report", "githubDigest": "sha256:0a915d36ff1e2cdd6bcacae1e66c60f13cbc972c8f2567c5c014d0dbf0d67619", "localSha256": "0a915d36ff1e2cdd6bcacae1e66c60f13cbc972c8f2567c5c014d0dbf0d67619", "localZip": "artifacts/playwright-report-13555646705.zip", "safeExtraction": {"status": "pass", "entries": 22, "uncompressedBytes": 5181739, "unsafePaths": 0, "symlinks": 0, "directory": "extracted/playwright-report-13555646705"}}
+  ],
+  "criticalLogs": [
+    {"jobId": 128261296269, "job": "gateway-and-platform", "localPath": "logs/gateway-and-platform-128261296269.log", "sha256": "69315f93251f0644e235f72f8f932d5ef460317f3d79001e42fdcc97e42708e0"},
+    {"jobId": 128261296367, "job": "frontend-operator-migrations", "localPath": "logs/frontend-operator-migrations-128261296367.log", "sha256": "693485fcd65be9e4d65b34ba3e449b0d58617c7b2bafe70ed56f752a8321fa26"},
+    {"jobId": 128265301735, "job": "browser", "localPath": "logs/browser-aggregate-128265301735.log", "sha256": "0d1fef5ae50f417b89c06fa4e31bc5aef21d9596c33121aa54a26b969e5f6ecb"}
+  ],
+  "operator": {
+    "status": "FRONTEND_MIGRATION_OWNED_POSTGRES_PASS",
+    "sourceCommit": "ef124dcd8357e70dbf1199cd81040a5bccd07e55",
+    "postgresMajor": 18,
+    "frontendMigrations": 83,
+    "platformChecks": {"roles": 29, "release": 18, "native": 9, "certificate": 10},
+    "identityLifecycleTests": {"tests": 19, "pass": 19, "fail": 0, "skipped": 0},
+    "interruptedRestorationNegatives": 7,
+    "allThreeJournalsUnchanged": true,
+    "providerTouched": false,
+    "stagingTouched": false,
+    "apiPins": {"course": "0bb054d5a04db71c481a8b3d182db6df19782cdc", "community": "8594d953a5c0e0849e7a2e5e0de21f03537c4dc4"}
+  },
+  "runtimeQualification": {
+    "frontend": {"status": "PATCHED_RUNTIME_VERIFIED", "image": "sha256:ecea800a1459350e970b4ddd4351697e27bc12151fabc60fa67f1390634c1952", "rawVulnerabilities": {"total": 45, "high": 2, "medium": 35, "low": 8}, "qualifiedVulnerabilities": 0},
+    "gateway": {"status": "PATCHED_RUNTIME_VERIFIED", "image": "sha256:f363e926d2f0701861da0ff31b5e35798f77247c6ceafbc9126596afac5a7e82", "rawVulnerabilities": {"total": 45, "high": 2, "medium": 35, "low": 8}, "qualifiedVulnerabilities": 0}
+  },
+  "browser": {
+    "expected": 581,
+    "skipped": 159,
+    "unexpected": 0,
+    "flaky": 1,
+    "errors": 0,
+    "projects": ["chromium", "firefox", "webkit"],
+    "flakyCase": {"title": "existing booking confirmation and authorized staff views survive closure", "file": "tests/fresha-existing-booking.spec.ts", "assertionLine": 163, "project": "webkit", "firstAttempt": "Retained Client heading not visible within 5000ms", "firstAttemptDurationMs": 9200, "retry": "passed", "retryDurationMs": 5086, "cause": "unproven"}
+  },
+  "safeExtractionPolicy": {"maximumEntries": 10000, "maximumUncompressedBytes": 104857600, "rejectAbsolutePaths": true, "rejectParentTraversal": true, "rejectBackslashPaths": true, "rejectSymlinks": true},
+  "limitations": [
+    "The seven retained ZIPs are selected qualification artifacts; two unrelated Docker build-record artifacts are excluded.",
+    "The workflow succeeded, but the source reporter contains one WebKit retry-pass whose exact cause is unproven; no zero-flake claim is made.",
+    "The Course and Community policy pull requests remain open and unmerged; no merge, rerun, cancellation, provider action, deployment, or repository mutation is claimed."
+  ]
+}

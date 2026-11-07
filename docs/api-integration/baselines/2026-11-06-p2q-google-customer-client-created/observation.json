@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "scope": "Read-only OAuth client-list metadata after direct owner creation",
+  "project": {
+    "id": "lash-her-staging-20261022",
+    "number": "185770842371",
+    "name": "Lash Her Staging"
+  },
+  "createdBy": "owner",
+  "ownerReply": "Created",
+  "verifiedClient": {
+    "name": "Lash Her Staging Customer Identity",
+    "type": "Web application",
+    "clientId": "185770842371-v5uinfglb80lrmh7nfirl0nv3dvd93i4.apps.googleusercontent.com",
+    "listCreationDate": "2026-11-06"
+  },
+  "preparedConfiguration": {
+    "origin": "https://staging.lashher.com",
+    "redirectUri": "https://staging.lashher.com/api/customer-auth/callback/google",
+    "detailSettingsReadback": false
+  },
+  "existingClientNamesStillObserved": [
+    "Lash Her Staging Calendar",
+    "Lash Her Staging Identity"
+  ],
+  "credentialCustody": "Owner handoff instructed private CUSTOMER_AUTH_GOOGLE_ID/CUSTOMER_AUTH_GOOGLE_SECRET storage; private storage not inspected",
+  "credentialDetailsOpened": false,
+  "secretOrCredentialValueRead": false,
+  "providerConfigurationChangedByAgent": false,
+  "runtimeConfigurationChanged": false,
+  "realCustomerSignInCertified": false,
+  "supersedesPendingCreationObservation": "../2026-11-06-p2q-google-access-restored/observation.json"
+}
