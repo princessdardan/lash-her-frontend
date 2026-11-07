@@ -188,6 +188,8 @@ class IndependentGuardTests(unittest.TestCase):
                 self.check_profiled_interactive_terminal('lesson-denial', 'customer', None, progress_first=progress_first)
             with self.subTest(assessment_parallel_order=progress_first):
                 self.check_profiled_interactive_terminal('lesson-assessment', 'customer', None, progress_first=progress_first)
+            with self.subTest(resume_parallel_order=progress_first):
+                self.check_profiled_interactive_terminal('lesson-resume', 'customer', None, progress_first=progress_first)
         self.check_profiled_interactive_terminal('authoring', 'admin', None, editing=True)
         self.check_profiled_interactive_terminal('authoring', 'admin', None, archiving=True)
         for outcome, access in (('published', True), ('published', False), ('blocked', True)):
@@ -225,7 +227,7 @@ class IndependentGuardTests(unittest.TestCase):
             variant = 'progress-first' if progress_first else 'course-first'
             if replay:
                 variant = 'replay-' + variant
-        if stage_name in ('lesson-entry', 'lesson-denial', 'lesson-assessment'):
+        if stage_name in ('lesson-entry', 'lesson-denial', 'lesson-assessment', 'lesson-resume'):
             variant = 'progress-first' if progress_first else 'playback-first'
         if learner_outcome is not None:
             variant = learner_outcome
@@ -246,6 +248,7 @@ class IndependentGuardTests(unittest.TestCase):
         lesson_entry = stage_name == 'lesson-entry'
         lesson_denial = stage_name == 'lesson-denial'
         assessment = stage_name == 'lesson-assessment'
+        resume = stage_name == 'lesson-resume'
         read_only = learner_access or lesson_denial
         gateway_scoped = stage_name in window.SCOPED_GATEWAY_BROWSER_STAGES
         stage_status = stage_name.upper().replace('-', '_')
@@ -299,6 +302,19 @@ class IndependentGuardTests(unittest.TestCase):
             for answers in (fail, passed):
                 body = json.dumps({'quizRevision': 4, 'answers': answers}, separators=(',', ':')).encode()
                 action['requests'].append({'method': 'POST', 'target': f'{lesson_path}/quiz/attempts', 'bodySha256': window._hash(body), 'uses': 1})
+        elif resume:
+            lesson = ledger_ids[0]
+            action['resumeAction'] = {'operation': 'play-and-rewind', 'courseId': command, 'lessonId': lesson, 'grantId': ledger_ids[1]}
+            student = '/course/v1/student'
+            lesson_path = f'{student}/lessons/{lesson}'
+            targets = (f'{student}/courses/{command}', lesson_path, f'{student}/progress?lessonId={lesson}',
+                       f'{lesson_path}/quiz', f'{lesson_path}/quiz/attempts', f'{lesson_path}/playback')
+            action['requests'] = [{'method': 'GET', 'target': target, 'bodySha256': window._EMPTY, 'uses': 1} for target in targets]
+            progress_bodies = [{'event': 'lesson_started', 'expectedProgressRevision': 0}]
+            progress_bodies.extend({'expectedProgressRevision': revision} for revision in (1, 2, 3))
+            action['requests'].extend({'method': 'POST', 'target': f'{lesson_path}/progress', 'uses': 1,
+                                       'bodySha256': window._hash(json.dumps(body, separators=(',', ':')).encode())}
+                                      for body in progress_bodies)
         elif learner_access:
             lesson = ledger_ids[0]
             action['learnerAccessAction'] = {'operation': 'observe-paid-access', 'courseId': command, 'lessonId': lesson,
@@ -436,11 +452,13 @@ class IndependentGuardTests(unittest.TestCase):
             'challenge': '1' * 64, 'bindingSha256': plan['planSha256'],
             'browserProgramSha256': migrate.file_hash(recorder + window._BROWSER_LAUNCHER)})
         producer = migrate.file_hash(f'lash-her:p2q:interactive-producer:v1\n{plan["sourceCommit"]}\n{plan["targetSha256"]}'.encode())
+        operation_ids = [*ledger_ids, '10000000-0000-4000-8000-000000000008'] if resume else ledger_ids
+        operation_kinds = ('new-work',) * len(operation_ids) if assessment or resume else ('new-work', 'new-work', 'recovery')
         ledger = {'commands': [], 'deliveries': [], 'orderViolations': [], 'operations': [
             {'id': identity, 'epoch': '2', 'kind': kind, 'state': 'completed', 'producer_sha256': producer,
              'source_sha': plan['sourceCommit'], 'role_oid': '22222', 'completed_at': '2026-11-07T00:00:02.000Z',
              'reconciliation_sha256': None}
-            for identity, kind in zip(ledger_ids, ('new-work', 'new-work', 'new-work' if assessment else 'recovery'))]}
+            for identity, kind in zip(operation_ids, operation_kinds)]}
         if read_only:
             unexpected_operation = ledger['operations'][0]
             ledger['operations'] = []
@@ -520,6 +538,30 @@ class IndependentGuardTests(unittest.TestCase):
             domain = {'actorId': actor, 'courseId': command, 'lessonId': lesson, 'grantId': ledger_ids[1], 'quizRevision': 4,
                       'enrollmentId': user, 'progressId': ledger_ids[2], 'attemptIds': [row['attemptId'] for row in attempts],
                       'progressRevision': 3, 'readOnly': True}
+            browser_key, domain_key = 'browserResponse', 'courseWitness'
+        elif resume:
+            indices = (4, 3, 2, 1, 0, 6, 5, 7, 8, 9) if progress_first else tuple(range(10))
+            acknowledgements = [
+                {'requestId': f'70000000-0000-4000-8000-{position:012d}', 'proofRequestId': f'80000000-0000-4000-8000-{position:012d}',
+                 'requestIndex': index, 'upstreamStatus': 200}
+                for position, index in enumerate(indices, 1)]
+            requests_by_index = {row['requestIndex']: row['requestId'] for row in acknowledgements[5:]}
+            expires, thumbnail_expires = '2026-11-07T00:10:00.000Z', '2026-11-07T00:10:01.000Z'
+            playback_id_sha = window._hash(b'owned-resume-playback')
+            writes = [{'requestId': requests_by_index[7 + index], 'expectedProgressRevision': index + 1, 'revision': index + 2,
+                       'resumePositionSeconds': position, 'submittedMaxPositionSeconds': submitted,
+                       'maxPositionSeconds': max(position, submitted)}
+                      for index, (position, submitted) in enumerate(((10, 10), (14, 13), (4, 14)))]
+            browser = {'page': {'pathname': f'/academy/courses/{command}/lessons/{lesson}', 'status': 200},
+                       'playback': {'requestId': requests_by_index[5], 'expiresAt': expires, 'thumbnailExpiresAt': thumbnail_expires,
+                                    'lifetimeMs': 600_000, 'playbackIdSha256': playback_id_sha},
+                       'started': {'requestId': requests_by_index[6], 'progressId': ledger_ids[2], 'enrollmentId': user, 'revision': 1},
+                       'writes': writes, 'media': {'durationSeconds': 32, 'videoWidth': 128, 'heartbeatSeconds': 11,
+                                                  'pausedSeconds': 14, 'rewoundSeconds': 4,
+                                                  'manifestObserved': True, 'segmentObserved': True}}
+            domain = {'actorId': actor, 'courseId': command, 'lessonId': lesson, 'grantId': ledger_ids[1],
+                      'enrollmentId': user, 'progressId': ledger_ids[2], 'revision': 4, 'resumePositionSeconds': 4,
+                      'maxPositionSeconds': 14, 'playbackExpiresAt': thumbnail_expires, 'playbackIdSha256': playback_id_sha, 'readOnly': True}
             browser_key, domain_key = 'browserResponse', 'courseWitness'
         elif learner_access:
             allowed = learner_outcome == 'allowed'
@@ -768,6 +810,28 @@ class IndependentGuardTests(unittest.TestCase):
                 with self.subTest(witness=change), self.assertRaisesRegex(ValueError, 'LESSON_ASSESSMENT_COURSE_WITNESS_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
+        if resume:
+            for part, changes, error in (
+                ('playback', {'playbackIdSha256': '0' * 64}, 'PLAYBACK'),
+                ('playback', {'lifetimeMs': 601_000}, 'PLAYBACK'),
+                ('started', {'requestId': requests_by_index[5]}, 'STARTED'),
+                ('media', {'manifestObserved': False}, 'MEDIA'),
+                ('media', {'segmentObserved': False}, 'MEDIA'),
+                ('media', {'heartbeatSeconds': 12}, 'MEDIA'),
+            ):
+                wrong = {**browser, part: {**browser[part], **changes}}
+                with self.subTest(part=part, changes=changes), self.assertRaisesRegex(ValueError, f'LESSON_RESUME_{error}_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+            for change, error in (({'requestId': requests_by_index[8]}, 'WRITES'),
+                                  ({'resumePositionSeconds': 5}, 'POSITIONS'),
+                                  ({'submittedMaxPositionSeconds': 13, 'maxPositionSeconds': 13}, 'POSITIONS')):
+                wrong = {**browser, 'writes': [*writes[:2], {**writes[2], **change}]}
+                with self.subTest(write=change), self.assertRaisesRegex(ValueError, f'LESSON_RESUME_{error}_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': {**evidence, browser_key: wrong}})
+            for change in ({'playbackIdSha256': 'a' * 64}, {'revision': 3}, {'maxPositionSeconds': 13}):
+                with self.subTest(witness=change), self.assertRaisesRegex(ValueError, 'LESSON_RESUME_COURSE_WITNESS_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain',
+                                    'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
         if learner_access:
             with self.assertRaisesRegex(ValueError, 'LEARNER_ACCESS_PAGE_REQUIRED'):
                 wrong = {**browser, 'page': {**browser['page'], 'lessonLink': not allowed}}
@@ -989,10 +1053,15 @@ class IndependentGuardTests(unittest.TestCase):
                 with patch.object(broker.observer, 'probe', return_value={'admission': closed, 'witness': {**ledger, 'operations': operations}}):
                     with self.assertRaisesRegex(ValueError, 'LESSON_ASSESSMENT_THREE_NEW_WORK_REQUIRED'):
                         broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
+        if resume:
+            for operations in (ledger['operations'][:3], [*ledger['operations'][:3], {**ledger['operations'][3], 'kind': 'recovery'}]):
+                with patch.object(broker.observer, 'probe', return_value={'admission': closed, 'witness': {**ledger, 'operations': operations}}):
+                    with self.assertRaisesRegex(ValueError, 'LESSON_RESUME_FOUR_NEW_WORK_REQUIRED'):
+                        broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
         broker.command({**envelope, 'operation': 'interactive-retain', 'caseEvidence': evidence})
         case = broker.scoped_case
         self.assertEqual(calls.pop(), {'id': 1, 'status': 'CERTIFICATION_INTERACTIVE_OBSERVED', 'receipt': case})
-        self.assertEqual(case['frontendOperationCount'], 0 if read_only else 1 if lesson_entry else 3)
+        self.assertEqual(case['frontendOperationCount'], 0 if read_only else 1 if lesson_entry else 4 if resume else 3)
         if identity:
             self.assertEqual(case['context'], 'owner' if actor_kind == 'admin' else 'learner')
             self.assertEqual(case['browserIdentitySha256'], supervisor._canonical_sha(browser))
@@ -1023,6 +1092,14 @@ class IndependentGuardTests(unittest.TestCase):
             self.assertEqual({key: case[key] for key in domain if key != 'readOnly'},
                              {key: value for key, value in domain.items() if key != 'readOnly'})
             self.assertEqual(case['operation'], 'fail-then-pass')
+            self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
+        if resume:
+            self.assertEqual({key: case[key] for key in domain if key != 'readOnly'},
+                             {key: value for key, value in domain.items() if key != 'readOnly'})
+            self.assertEqual(case['operation'], 'play-and-rewind')
+            self.assertEqual(case['playbackGatewayRequestId'], requests_by_index[5])
+            self.assertEqual(case['startedGatewayRequestId'], requests_by_index[6])
+            self.assertEqual(case['positionGatewayRequestIds'], [requests_by_index[index] for index in (7, 8, 9)])
             self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
         if learner_access:
             self.assertEqual({key: case[key] for key in observed}, observed)
@@ -1127,7 +1204,7 @@ class IndependentGuardTests(unittest.TestCase):
             elif lesson_denial:
                 rows = bad['gatewayAcknowledgements']
                 rows[10], rows[11] = rows[11], rows[10]
-            elif assessment:
+            elif assessment or resume:
                 rows = bad['gatewayAcknowledgements']
                 rows[7], rows[9] = rows[9], rows[7]
             elif learner_access:

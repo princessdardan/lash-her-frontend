@@ -17,7 +17,7 @@ const privateNoStore = headers => /(?:^|,)\s*private\s*(?:,|$)/iu.test(headers["
 const interactiveOrigin = "https://staging.lashher.com";
 const permitName = "__Host-lash-p2q-window";
 const authoringPath = "/api/admin/courses";
-const heldLessonStages = ["lesson-entry", "lesson-denial", "lesson-assessment"];
+const heldLessonStages = ["lesson-entry", "lesson-denial", "lesson-assessment", "lesson-resume"];
 const learnerScopedStages = ["learning", "learner-access", ...heldLessonStages];
 const interactivePages = {
   identity: { owner: "/admin/sign-in", learner: "/sign-in" },
@@ -28,6 +28,7 @@ const interactivePages = {
   "lesson-entry": { learner: "/academy/courses" },
   "lesson-denial": { learner: "/academy/courses" },
   "lesson-assessment": { learner: "/academy/courses" },
+  "lesson-resume": { learner: "/academy/courses" },
   "paid-grant": { owner: "/admin/courses" },
   "paid-revoke": { owner: "/admin/courses" },
   lifecycle: { owner: "/admin/customer-accounts", learner: "/account" },
@@ -130,6 +131,7 @@ export function p2InteractiveBrowserEntryPath(input, context) {
   if (input.stage === "lesson-entry") return p2LessonEntryPaths(input.lessonEntry).academyPath;
   if (input.stage === "lesson-denial") return p2LessonDenialPaths(input.lessonDenial).lessonPath;
   if (input.stage === "lesson-assessment") return p2LessonAssessmentPaths(input.assessment).lessonPath;
+  if (input.stage === "lesson-resume") return p2LessonResumePaths(input.resume).lessonPath;
   if (input.stage === "paid-grant") return p2PaidGrantPaths(input.paidGrant).pagePath;
   if (input.stage === "paid-revoke") return p2PaidRevokePaths(input.paidRevoke).pagePath;
   return isP2InteractiveAuthoringDetail(input) ? path + "/" + input.authoring.courseId : path;
@@ -166,6 +168,11 @@ export function p2LessonAssessmentPaths(target) {
     attemptsPath: "/api/academy/lessons/" + target.lessonId + "/quiz/attempts" };
 }
 
+export function p2LessonResumePaths(target) {
+  const { lessonPath, playbackPath, progressPath } = p2LessonEntryPaths(target);
+  return { lessonPath, playbackPath, progressPath };
+}
+
 const assessmentKey = value => matches(value, /^[A-Za-z0-9_-][A-Za-z0-9_.:-]{0,127}$/u);
 const assessmentRequestId = value => matches(value, /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u);
 const assessmentRevision = value => Number.isSafeInteger(value) && value >= 1 && value <= 2_147_483_647;
@@ -198,6 +205,7 @@ export function validateP2InteractiveBrowserInput(input) {
       : input?.stage === "identity" ? [enrollment ? "identityEnrollment" : "identity"] : input?.stage === "paid-grant" ? ["paidGrant"]
         : input?.stage === "learner-access" ? ["learnerAccess"] : input?.stage === "lesson-entry" ? ["lessonEntry"]
           : input?.stage === "lesson-denial" ? ["lessonDenial"] : input?.stage === "lesson-assessment" ? ["assessment"]
+          : input?.stage === "lesson-resume" ? ["resume"]
           : input?.stage === "paid-revoke" ? ["paidRevoke"] : [])])
     && input.version === 2 && input.environment === "staging" && matches(input.actionId, /^[a-z0-9][a-z0-9-]{0,63}$/u)
     && sha(input.challenge) && sha(input.bindingSha256) && matches(input.sourceCommit, /^[a-f0-9]{40}$/u)
@@ -241,6 +249,11 @@ export function validateP2InteractiveBrowserInput(input) {
       && selected.failAnswers.length === selected.passAnswers.length
       && selected.failAnswers.every((answer, index) => answer.questionId === selected.passAnswers[index].questionId)
       && !sameAssessmentAnswers(selected.failAnswers, selected.passAnswers));
+  }
+  if (input.stage === "lesson-resume") {
+    const selected = input.resume;
+    demand(closed(selected, ["actorId", "operation", "courseId", "lessonId", "grantId"]) && selected.operation === "play-and-rewind"
+      && [selected.actorId, selected.courseId, selected.lessonId, selected.grantId].every(uuid));
   }
   if (["paid-grant", "paid-revoke"].includes(input.stage)) {
     const revoke = input.stage === "paid-revoke", selected = input.paidGrant ?? input.paidRevoke;
@@ -299,7 +312,7 @@ export function validateP2InteractiveBrowserPermit(permit, input, now = Math.flo
   if (["learning", "paid-grant", "paid-revoke"].includes(stage)) demand(parts[6] === actorAttemptSelector(input.learning ?? input.paidGrant ?? input.paidRevoke));
   if (stage === "learner-access") demand(parts[6] === (input.learnerAccess.actorId + input.learnerAccess.lessonId).replaceAll("-", ""));
   if (heldLessonStages.includes(stage)) {
-    const { actorId, courseId, lessonId } = input.lessonEntry ?? input.lessonDenial ?? input.assessment;
+    const { actorId, courseId, lessonId } = input.lessonEntry ?? input.lessonDenial ?? input.assessment ?? input.resume;
     demand(parts[6] === (actorId + courseId + lessonId).replaceAll("-", ""));
   }
   return permit;
@@ -514,6 +527,43 @@ export function validateP2LessonDenialReceipt(receipt, target) {
 
 const assessmentInstant = value => typeof value === "string" && Number.isFinite(Date.parse(value))
   && new Date(Date.parse(value)).toISOString() === value;
+
+const integerBetween = (value, minimum, maximum) => Number.isSafeInteger(value) && value >= minimum && value <= maximum;
+const validResumePosition = (index, resume, submittedMax, priorMax) => {
+  if (index === 0) return integerBetween(resume, 10, 12) && submittedMax === resume;
+  if (index === 1) return integerBetween(resume, Math.max(13, priorMax), 16)
+    && integerBetween(submittedMax, Math.max(priorMax, resume - 1), resume);
+  return integerBetween(resume, 3, 6) && resume === priorMax - 10 && submittedMax === priorMax;
+};
+
+export function validateP2LessonResumeReceipt(receipt, target) {
+  const { lessonPath } = p2LessonResumePaths(target), { page, playback, started, writes, media } = receipt ?? {};
+  demand(closed(receipt, ["page", "playback", "started", "writes", "media"])
+    && closed(page, ["pathname", "status"]) && page.pathname === lessonPath && page.status === 200
+    && closed(playback, ["requestId", "expiresAt", "thumbnailExpiresAt", "lifetimeMs", "playbackIdSha256"])
+    && uuid(playback.requestId) && sha(playback.playbackIdSha256) && !/^0+$/u.test(playback.playbackIdSha256)
+    && assessmentInstant(playback.expiresAt) && assessmentInstant(playback.thumbnailExpiresAt)
+    && integerBetween(playback.lifetimeMs, 590_000, 601_000)
+    && Math.abs(Date.parse(playback.expiresAt) - Date.parse(playback.thumbnailExpiresAt)) + playback.lifetimeMs <= 601_000
+    && closed(started, ["requestId", "progressId", "enrollmentId", "revision"])
+    && [started.requestId, started.progressId, started.enrollmentId].every(uuid) && started.revision === 1
+    && Array.isArray(writes) && writes.length === 3);
+  let priorMax = 0;
+  for (const [index, row] of writes.entries()) {
+    demand(closed(row, ["requestId", "expectedProgressRevision", "revision", "resumePositionSeconds", "submittedMaxPositionSeconds", "maxPositionSeconds"])
+      && uuid(row.requestId) && row.expectedProgressRevision === index + 1 && row.revision === index + 2
+      && validResumePosition(index, row.resumePositionSeconds, row.submittedMaxPositionSeconds, priorMax)
+      && row.maxPositionSeconds === Math.max(row.resumePositionSeconds, row.submittedMaxPositionSeconds));
+    priorMax = row.maxPositionSeconds;
+  }
+  demand(new Set([playback.requestId, started.requestId, ...writes.map(row => row.requestId)]).size === 5
+    && closed(media, ["durationSeconds", "videoWidth", "heartbeatSeconds", "pausedSeconds", "rewoundSeconds", "manifestObserved", "segmentObserved"])
+    && integerBetween(media.durationSeconds, 22, Number.MAX_SAFE_INTEGER) && integerBetween(media.videoWidth, 1, Number.MAX_SAFE_INTEGER)
+    && integerBetween(media.heartbeatSeconds, writes[0].resumePositionSeconds, writes[0].resumePositionSeconds + 1)
+    && media.pausedSeconds === writes[1].resumePositionSeconds && media.rewoundSeconds === writes[2].resumePositionSeconds
+    && media.manifestObserved === true && media.segmentObserved === true);
+  return receipt;
+}
 
 export function validateP2LessonAssessmentReceipt(receipt, target) {
   const { lessonPath } = p2LessonAssessmentPaths(target);
@@ -2008,6 +2058,333 @@ export function watchP2LessonAssessment(context, page, input) {
   };
 }
 
+const muxHttps = url => url?.protocol === "https:" && !url.port && !url.username && !url.password
+  && /(?:^|\.)mux\.com$/iu.test(url.hostname);
+const resumeDigest = value => createHash("sha256").update(value).digest("hex");
+
+function watchResumeMedia(context, page, fail) {
+  // Keep only digests of the signed manifest and its transitive media URLs.
+  const manifests = new Map(), segments = new Set();
+  let pending = 0, observed = 0;
+  const mediaKey = url => {
+    url.hash = "";
+    return resumeDigest(url.href);
+  };
+  const record = async response => {
+    const url = URL.parse(response.url()), mime = response.headers()["content-type"]?.split(";", 1)[0]?.toLowerCase();
+    const playlist = /\.m3u8$/iu.test(url?.pathname ?? "")
+      || /^(?:application|audio)\/(?:vnd\.apple\.mpegurl|(?:x-)?mpegurl)$/u.test(mime ?? "");
+    const segment = /^(?:video\/(?:mp2t|mp4|iso\.segment)|audio\/(?:aac|mpeg|mp4)|application\/(?:mp4|iso\.segment))$/u.test(mime ?? "")
+      || /^(?:application|binary)\/octet-stream$/u.test(mime ?? "") && /\.(?:ts|mpegts|m4s|mp4|aac)$/iu.test(url?.pathname ?? "");
+    if (!playlist && !segment) return;
+    const request = response.request(), status = response.status();
+    demand(++observed <= 256 && muxHttps(url) && request.frame() === page.mainFrame() && request.method() === "GET"
+      && ["media", "fetch", "xhr"].includes(request.resourceType()) && !response.fromServiceWorker());
+    if (status >= 300 && status <= 399) return; // Join final bytes to the original referenced URL below.
+    demand(status === 200 || !playlist && status === 206);
+    let original = request, redirects = 0;
+    while (original.redirectedFrom()) {
+      original = original.redirectedFrom();
+      demand(++redirects <= 3 && muxHttps(URL.parse(original.url())));
+    }
+    const first = URL.parse(original.url()), key = mediaKey(first);
+    if (segment && !playlist) {
+      const [completion, sizes] = await Promise.all([response.finished(), request.sizes()]);
+      demand(completion === null && integerBetween(sizes.responseBodySize, 1, 32 * 1024 * 1024));
+      segments.add(key);
+      return;
+    }
+    const limit = 256 * 1024, sizes = await request.sizes();
+    demand(sizes.responseBodySize > 0 && sizes.responseBodySize <= limit);
+    const bytes = await response.body();
+    try {
+      demand(bytes.length > 0 && bytes.length <= limit);
+      const content = bytes.toString("utf8");
+      demand(/^#EXTM3U(?:\r?\n)/u.test(content));
+      const references = new Set();
+      for (const line of content.split(/\r?\n/u)) {
+        const text = line.trim();
+        const uris = text.startsWith("#") ? [...text.matchAll(/\bURI="([^"\r\n]+)"/gu)].map(match => match[1]) : [text];
+        for (const uri of uris) {
+          if (!uri) continue;
+          const resolved = URL.parse(uri, url);
+          if (muxHttps(resolved)) references.add(mediaKey(resolved));
+          demand(references.size <= 1024);
+        }
+      }
+      const candidate = first.hostname === "stream.mux.com" && /^\/([A-Za-z0-9_-]{1,255})\.m3u8$/u.exec(first.pathname);
+      const tokens = first.searchParams.getAll("token");
+      const signed = candidate && tokens.length === 1
+        ? { playbackIdSha256: resumeDigest(candidate[1]), tokenSha256: resumeDigest(tokens[0]) } : null;
+      const previous = manifests.get(key);
+      if (previous) for (const reference of references) previous.references.add(reference);
+      else manifests.set(key, { signed, references });
+      demand(manifests.size <= 32 && (previous?.references.size ?? references.size) <= 1024);
+    } finally { bytes.fill(0); }
+  };
+  const onResponse = response => {
+    pending++;
+    void record(response).catch(fail).finally(() => { pending--; });
+  };
+  context.on("response", onResponse);
+  return {
+    verified(permit) {
+      if (pending) return false;
+      const selected = [...manifests].filter(([, entry]) => entry.signed?.playbackIdSha256 === permit.playbackIdSha256
+        && entry.signed?.tokenSha256 === permit.tokenSha256);
+      if (selected.length !== 1) return false;
+      const reachable = new Set(), pendingKeys = [selected[0][0]];
+      while (pendingKeys.length) {
+        const key = pendingKeys.pop();
+        if (reachable.has(key)) continue;
+        reachable.add(key);
+        for (const linked of manifests.get(key)?.references ?? []) if (!reachable.has(linked)) pendingKeys.push(linked);
+      }
+      return [...manifests.keys()].every(key => reachable.has(key)) && segments.size > 0
+        && [...segments].every(key => reachable.has(key));
+    },
+    close() {
+      context.off("response", onResponse);
+      manifests.clear();
+      segments.clear();
+    },
+  };
+}
+
+function resumeProgress(body, target, revision, resumePositionSeconds, maxPositionSeconds) {
+  const row = body?.progress;
+  demand(closed(body, ["progress"]) && closed(row, ["id", "userId", "lessonId", "enrollmentId", "maxPositionSeconds", "resumePositionSeconds",
+    "revision", "completedQuizRevision", "completedAt", "lastWatchedAt", "createdAt", "updatedAt"])
+    && uuid(row.id) && uuid(row.enrollmentId) && row.userId === target.actorId && row.lessonId === target.lessonId
+    && row.revision === revision && row.resumePositionSeconds === resumePositionSeconds && row.maxPositionSeconds === maxPositionSeconds
+    && row.completedAt === null && row.completedQuizRevision === null);
+  return row;
+}
+
+// Runs only in the selected frame's Chromium isolated world. The Mux wrapper
+// supplies the DOM shape, and the native media accessors supply the evidence.
+async function sampleNativeResumeMedia({ source, playbackIdSha256 }) {
+  if (location.href !== source) return null;
+  const players = document.querySelectorAll("main mux-player");
+  if (players.length !== 1) return null;
+  const player = players[0], playbackId = player.getAttribute("playback-id");
+  if (!playbackId || !/^[A-Za-z0-9_-]{1,255}$/u.test(playbackId)) return null;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(playbackId));
+  if (Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("") !== playbackIdSha256) return null;
+  const mux = player.shadowRoot?.querySelector("mux-video");
+  const videos = [...(mux?.querySelectorAll(":scope > video") ?? []), ...(mux?.shadowRoot?.querySelectorAll("video") ?? [])];
+  if (videos.length !== 1 || !(videos[0] instanceof HTMLVideoElement) || !videos[0].isConnected) return null;
+  const native = videos[0];
+  const read = (property, prototype = HTMLMediaElement.prototype) => Object.getOwnPropertyDescriptor(prototype, property).get.call(native);
+  const current = URL.parse(read("currentSrc"));
+  if (current?.protocol === "blob:" ? current.origin !== location.origin :
+    current?.protocol !== "https:" || current.hostname !== "stream.mux.com" || current.pathname !== "/" + playbackId + ".m3u8") return null;
+  return { position: read("currentTime"), duration: read("duration"), width: read("videoWidth", HTMLVideoElement.prototype),
+    ready: read("readyState"), paused: read("paused"), seeking: read("seeking"), ended: read("ended") };
+}
+
+export function watchP2LessonResume(context, page, input) {
+  validateP2InteractiveBrowserInput(input);
+  demand(input.stage === "lesson-resume" && page.context() === context);
+  const target = input.resume, { lessonPath, playbackPath, progressPath } = p2LessonResumePaths(target);
+  const origin = input.browserOrigin, source = origin + lessonPath;
+  const player = page.getByRole("main").locator("mux-player");
+  const playback = { path: playbackPath, method: "GET" }, started = { path: progressPath, method: "POST" };
+  const writes = [1, 2, 3].map(revision => ({ path: progressPath, method: "POST", revision }));
+  const slots = new Map([[playbackPath, playback], [progressPath, [started, ...writes]]]);
+  const refusal = () => new Error("P2_INTERACTIVE_LESSON_RESUME_RESPONSE_REFUSED");
+  let navigation, opened = false, failed = false, initialized, completed, active, session, executionContextId, stopNetwork, permit, previousMax = 0;
+  let rejectFailure;
+  const failure = new Promise((_, reject) => { rejectFailure = reject; });
+  failure.catch(() => {});
+  const fail = () => { if (!failed) { failed = true; rejectFailure(refusal()); } };
+  const media = watchResumeMedia(context, page, fail);
+  const remaining = expires => {
+    const timeout = expires * 1000 - Date.now();
+    if (failed || timeout <= 0 || timeout > input.windowSeconds * 1000) throw refusal();
+    return timeout;
+  };
+  const onRequest = request => {
+    const url = URL.parse(request.url()), method = request.method(), headers = request.headers();
+    try {
+      if (request.isNavigationRequest()) {
+        demand(opened && !navigation && request.url() === source && method === "GET" && headers.rsc === undefined
+          && request.frame() === page.mainFrame() && request.redirectedFrom() === null);
+        navigation = request;
+        return;
+      }
+      if (request.resourceType() === "media") demand(muxHttps(url) || url?.protocol === "blob:" && url.origin === origin);
+      if (url?.origin === origin && url.pathname.startsWith("/api/")) {
+        const slot = active?.find(candidate => candidate.path === url.pathname);
+        demand(slot && !slot.request && !url.search && !url.hash && method === slot.method
+          && request.frame() === page.mainFrame() && request.frame().url() === source && request.resourceType() === "fetch"
+          && request.redirectedFrom() === null && headers.rsc === undefined);
+        const recorded = request.postDataBuffer();
+        if (slot === playback) demand(recorded === null);
+        else {
+          const bytes = recorded && Buffer.from(recorded);
+          try {
+            const posted = exactBrowserJson(bytes);
+            if (slot === started) demand(bytes.toString("utf8") === '{"event":"lesson_started","expectedProgressRevision":0}');
+            else {
+              const { resumePositionSeconds, maxPositionSeconds, expectedProgressRevision } = posted;
+              demand(expectedProgressRevision === slot.revision && validResumePosition(slot.revision - 1, resumePositionSeconds, maxPositionSeconds, previousMax)
+                && bytes.toString("utf8") === JSON.stringify({ resumePositionSeconds, maxPositionSeconds, expectedProgressRevision }));
+              slot.posted = posted;
+            }
+          } finally { bytes?.fill(0); }
+        }
+        slot.request = request;
+        return;
+      }
+      demand(["GET", "HEAD", "OPTIONS"].includes(method));
+      if (url?.origin === origin && headers.rsc !== undefined) {
+        demand(!url.pathname.startsWith("/academy/courses/") && (headers["next-router-prefetch"] !== undefined
+          || headers["next-router-segment-prefetch"] !== undefined) && request.frame() === page.mainFrame() && request.redirectedFrom() === null);
+      }
+    } catch { fail(); }
+  };
+  const onFailure = request => { if (request === navigation || active?.some(slot => slot.request === request)) fail(); };
+  const onNavigation = frame => { if (frame === page.mainFrame() && navigation && frame.url() !== source) fail(); };
+  context.on("request", onRequest);
+  context.on("requestfailed", onFailure);
+  page.on("framenavigated", onNavigation);
+
+  const bounded = async (operation, expires) => {
+    let timer;
+    try {
+      return await Promise.race([operation, failure, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(refusal()), remaining(expires));
+      })]);
+    } finally { clearTimeout(timer); }
+  };
+  const observe = async (slot, expires) => {
+    const response = await page.waitForResponse(candidate => candidate.request() === slot.request, { timeout: remaining(expires) });
+    const [head, bounds, native] = await Promise.all([readBrowserResponseHead(response, slot.request, origin, slot.path, slot.method, 200),
+      readBrowserResponseBounds(response, slot.request, maxLifecycleBody, true), slot.native]);
+    demand(slot.gatewayId === head.requestId && (!bounds.identity || bounds.declared === undefined || native.size === bounds.declared)
+      && !slot.request.failure());
+    if (slot.method === "POST") {
+      const [csrf, requestOrigin, fetchSite, contentType, idempotency] = await Promise.all([
+        "x-lash-csrf", "origin", "sec-fetch-site", "content-type", "x-idempotency-key",
+      ].map(name => slot.request.headerValue(name)));
+      demand(csrf === "1" && requestOrigin === origin && (fetchSite === null || fetchSite === "same-origin")
+        && contentType === "application/json" && idempotency === null);
+    }
+    remaining(expires);
+    return { requestId: head.requestId, body: native.body, response };
+  };
+  const sample = async (accept, expires) => bounded(until(async () => {
+    const { result, exceptionDetails } = await session.send("Runtime.callFunctionOn", { executionContextId,
+      functionDeclaration: sampleNativeResumeMedia.toString(), arguments: [{ value: { source, playbackIdSha256: permit.playbackIdSha256 } }],
+      awaitPromise: true, returnByValue: true, silent: true });
+    demand(!exceptionDetails);
+    const value = result.value;
+    return value && Number.isFinite(value.position) && integerBetween(Math.floor(value.duration), 22, Number.MAX_SAFE_INTEGER)
+      && integerBetween(value.width, 1, Number.MAX_SAFE_INTEGER) && !value.seeking && !value.ended && accept(value) ? value : null;
+  }, performance.now() + remaining(expires)), expires);
+  const control = (name) => player.getByRole("button", { name, exact: true }).filter({ visible: true });
+  const press = async (name, expires, key) => {
+    const selected = control(name).first();
+    await selected.waitFor({ state: "visible", timeout: remaining(expires) });
+    if (key) await selected.press(key, { timeout: remaining(expires) });
+    else await selected.click({ timeout: remaining(expires) });
+  };
+  const write = async (slot, expires) => {
+    const result = await observe(slot, expires), { resumePositionSeconds, maxPositionSeconds: submittedMaxPositionSeconds } = slot.posted;
+    const maxPositionSeconds = Math.max(resumePositionSeconds, submittedMaxPositionSeconds);
+    const row = resumeProgress(result.body, target, slot.revision + 1, resumePositionSeconds, maxPositionSeconds);
+    demand(row.id === initialized.started.progressId && row.enrollmentId === initialized.started.enrollmentId);
+    previousMax = maxPositionSeconds;
+    return { requestId: result.requestId, expectedProgressRevision: slot.revision, revision: row.revision,
+      resumePositionSeconds, submittedMaxPositionSeconds, maxPositionSeconds };
+  };
+
+  return {
+    async open(expires) {
+      try {
+        demand(!opened);
+        opened = true;
+        session = await context.newCDPSession(page);
+        const { frameTree: { frame } } = await session.send("Page.getFrameTree");
+        demand(!frame.parentId);
+        const buffers = { maxTotalBufferSize: 256 * 1024, maxResourceBufferSize: 8192 };
+        await session.send("Network.configureDurableMessages", buffers);
+        await session.send("Network.enable", { ...buffers, maxPostDataSize: 0 });
+        stopNetwork = watchLessonNetworkBodies(session, frame.id, slots, origin, fail);
+        active = [playback, started];
+        const [mediaResult, saved, response] = await bounded(Promise.all([
+          observe(playback, expires), observe(started, expires),
+          page.goto(source, { waitUntil: "domcontentloaded", timeout: Math.min(30_000, remaining(expires)) }),
+        ]), expires);
+        demand(navigation && response?.request() === navigation && response.status() === 200 && response.url() === source
+          && !response.fromServiceWorker() && navigation.redirectedTo() === null && page.url() === source);
+        const [types, cache, dates] = await Promise.all([response.headerValues("content-type"), response.headerValues("cache-control"),
+          mediaResult.response.headerValues("date")]);
+        demand(types.length === 1 && /^text\/html(?:;.*)?$/iu.test(types[0]) && cache.length === 1
+          && privateNoStore({ "cache-control": cache[0] }) && dates.length === 1);
+        const row = resumeProgress(saved.body, target, 1, 0, 0);
+        try {
+          const { expiresAt, thumbnailExpiresAt, lifetimeMs } = parseP2PlaybackObservation(200,
+            { "cache-control": "private, no-store", date: dates[0] }, mediaResult.body, true);
+          demand(matches(mediaResult.body.playbackId, /^[A-Za-z0-9_-]{1,255}$/u) && mediaResult.body.thumbnailToken.length > 20);
+          permit = { playbackIdSha256: resumeDigest(mediaResult.body.playbackId), tokenSha256: resumeDigest(mediaResult.body.playbackToken) };
+          initialized = { playback: { requestId: mediaResult.requestId, expiresAt, thumbnailExpiresAt, lifetimeMs, playbackIdSha256: permit.playbackIdSha256 },
+            started: { requestId: saved.requestId, progressId: row.id, enrollmentId: row.enrollmentId, revision: 1 } };
+        } finally {
+          mediaResult.body.playbackId = mediaResult.body.playbackToken = mediaResult.body.thumbnailToken = "";
+        }
+        active = undefined;
+        await Promise.all([player.waitFor({ state: "visible", timeout: remaining(expires) }),
+          page.getByText("Progress saved to your account.", { exact: true }).waitFor({ state: "visible", timeout: remaining(expires) })]);
+        demand(await player.count() === 1);
+        executionContextId = await isolatedMainFrame(session, source);
+      } catch { fail(); throw refusal(); }
+    },
+    async wait(expires) {
+      try {
+        demand(initialized && !completed && !active && page.url() === source);
+        await sample(value => value.paused && value.ready >= 1 && value.position < 1, expires);
+        const [heartbeat, paused, rewind] = writes;
+        active = [heartbeat];
+        const [first, playing] = await bounded(Promise.all([write(heartbeat, expires),
+          sample(value => !value.paused && value.ready >= 2 && value.position >= 10, expires),
+          press("play", expires)]), expires);
+        active = undefined;
+        await sample(value => !value.paused && value.ready >= 2 && value.position >= 14 && value.position < 16, expires);
+        active = [paused];
+        const [second, stopped] = await bounded(Promise.all([write(paused, expires),
+          sample(value => value.paused && value.ready >= 2 && value.position >= 12, expires),
+          press("pause", expires, "Enter")]), expires);
+        active = [rewind];
+        const [third, rewound] = await bounded(Promise.all([write(rewind, expires),
+          sample(value => value.paused && value.ready >= 2 && value.position >= 3 && value.position < 7, expires),
+          press("play", expires, "ArrowLeft")]), expires);
+        active = undefined;
+        await page.getByText("Progress saved to your account.", { exact: true }).waitFor({ state: "visible", timeout: remaining(expires) });
+        await bounded(until(() => media.verified(permit), performance.now() + remaining(expires)), expires);
+        demand(page.url() === source && remaining(expires) > 0);
+        completed = validateP2LessonResumeReceipt({ page: { pathname: lessonPath, status: 200 }, ...initialized, writes: [first, second, third],
+          media: { durationSeconds: Math.floor(playing.duration), videoWidth: playing.width, heartbeatSeconds: Math.floor(playing.position),
+            pausedSeconds: Math.floor(stopped.position), rewoundSeconds: Math.floor(rewound.position), manifestObserved: true, segmentObserved: true } }, target);
+      } catch { fail(); throw refusal(); }
+    },
+    finish() {
+      if (failed || !completed || context.serviceWorkers().length || !media.verified(permit)) throw refusal();
+      return completed;
+    },
+    async close() {
+      context.off("request", onRequest);
+      context.off("requestfailed", onFailure);
+      page.off("framenavigated", onNavigation);
+      fail();
+      media.close();
+      stopNetwork?.();
+      await session?.detach().catch(() => {});
+    },
+  };
+}
+
 function quizDocumentHash(document) {
   demand(closed(document, ["version", "mode", "passingPercent", "questions"]) && document.version === 1
     && ["graded", "practice"].includes(document.mode) && Number.isSafeInteger(document.passingPercent)
@@ -2479,7 +2856,7 @@ async function runInteractiveBrowser(first) {
           && verifiedIdentity.actorId === (selectedInput.authoring ?? selectedInput.paidGrant ?? selectedInput.paidRevoke).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         if (learnerScopedStages.includes(selectedInput.stage)) demand(input.stage === "identity" && verifiedIdentity?.actorKind === "customer"
-          && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial ?? selectedInput.assessment).actorId
+          && verifiedIdentity.actorId === (selectedInput.learning ?? selectedInput.learnerAccess ?? selectedInput.lessonEntry ?? selectedInput.lessonDenial ?? selectedInput.assessment ?? selectedInput.resume).actorId
           && BigInt(selectedInput.epoch) === BigInt(input.epoch) + 2n);
         actions.add(selectedInput.actionId);
         input = selectedInput;
@@ -2544,6 +2921,10 @@ async function runInteractiveBrowser(first) {
           httpStatus = 200;
         } else if (binding.stage === "lesson-assessment") {
           mutationWatch = watchP2LessonAssessment(context, page, input);
+          await mutationWatch.open(selection.expires);
+          httpStatus = 200;
+        } else if (binding.stage === "lesson-resume") {
+          mutationWatch = watchP2LessonResume(context, page, input);
           await mutationWatch.open(selection.expires);
           httpStatus = 200;
         } else if (binding.stage === "learning" && learningEnrollmentReplay(input.learning)) {

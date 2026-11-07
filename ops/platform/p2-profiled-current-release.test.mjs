@@ -489,6 +489,28 @@ test('fixed current certification plan joins the original release plan, terminal
     }
     assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...assessmentScope,
       requests: assessmentRows.map((row, index) => index === 7 ? { ...row, bodySha256: assessmentRows[8].bodySha256 } : row) })));
+    const resumeAction = { operation: 'play-and-rewind', courseId, lessonId: accessLessonId, grantId: accessGrantId };
+    const resumeRows = [
+      ...assessmentRows.slice(0, 6).map(row => ({ ...row, uses: 1 })),
+      assessmentRows[6],
+      ...[1, 2, 3].map(expectedProgressRevision => ({ method: 'POST', target: lesson + '/progress',
+        bodySha256: rawHash(JSON.stringify({ expectedProgressRevision })), uses: 1 })),
+    ];
+    const resumeScope = { stage: 'lesson-resume', actorId: userId, windowSeconds: 90, resumeAction, requests: resumeRows };
+    const resumeSettings = paired(resumeScope), resumePair = prepareP2ProfiledCertificationOperator(resumeSettings);
+    assert.equal(resumePair.status, 'P2_INTERACTIVE_LESSON_RESUME_ACTIONS_PLANNED');
+    assert.deepEqual(resumePair['lesson-resume'].scopedAction, resumeScope);
+    assert.deepEqual(resumePair.identity.scopedAction.identityActor, { actorKind: 'customer', actorId: userId });
+    assert.equal(BigInt(resumePair['lesson-resume'].initialEpoch) - BigInt(resumePair.identity.initialEpoch), 2n);
+    const resumeHost = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+      { input: JSON.stringify(resumePair['lesson-resume']), encoding: 'utf8' });
+    assert.equal(resumeHost.status, 0, resumeHost.stderr);
+    await assert.rejects(p2ProfiledCertificationOperator(resumeSettings, accessConfirmation), { code: 'ENOENT' });
+    await assert.rejects(p2ProfiledCertificationOperator({ ...resumeSettings, execution: {} }, accessConfirmation), error => error.code !== 'ENOENT');
+    assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...resumeScope,
+      resumeAction: { ...resumeAction, operation: 'restore-resume' } })));
+    assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...resumeScope,
+      requests: resumeRows.map((row, index) => index === 7 ? { ...row, bodySha256: resumeRows[8].bodySha256 } : row) })));
     const draftPair = prepareP2ProfiledCertificationOperator(paired(selectedAuthoring));
     assert.equal(draftPair.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
     assert.deepEqual(draftPair.authoring.scopedAction, selectedAuthoring);
@@ -852,7 +874,7 @@ test('fixed current certification plan joins the original release plan, terminal
         join(root, 'ops/platform/host')], { input: JSON.stringify({ material: scopedMaterial, action: selection }), encoding: 'utf8' });
       assert.equal(frontendFixture.status, 0, frontendFixture.stderr);
       const frontendCookieBody = `v2.${epoch}.${selection.stage}.${issued}.${expires}.${scopedNonce}.${selector}`;
-      const selectedGatewayKey = ['authoring', 'learning', 'lesson-entry', 'lesson-denial', 'lesson-assessment', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
+      const selectedGatewayKey = ['authoring', 'learning', 'lesson-entry', 'lesson-denial', 'lesson-assessment', 'lesson-resume', 'paid-grant', 'learner-access', 'paid-revoke'].includes(selection.stage)
         ? sign(`lash-her:p2q:interactive:gateway-key:v1\n${binding}\n${epoch}\n${selection.stage}\n${scopedNonce}`) : null;
       assert.deepEqual(JSON.parse(frontendFixture.stdout), [
         `${frontendCookieBody}.${sign(`lash-her:p2q:interactive:browser:v1\n${binding}\n${frontendCookieBody}`)}`, selectedGatewayKey, host, expires,
