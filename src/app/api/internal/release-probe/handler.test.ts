@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
-import { createReleaseProbeHandler, readReleaseProbeConfiguration } from "./handler";
+import { createPhase2DayTwoWorkloadHandler, createReleaseProbeHandler, PHASE2_DAY_TWO_WORKLOAD_MODE,
+  readPhase2DayTwoWorkloadConfiguration, readReleaseProbeConfiguration } from "./handler";
 import type { FrontendBootstrapProbe } from "@/lib/writer-admission/bootstrap-probe";
 import { createFrontendGoogleBindingProbe } from "@/lib/writer-admission/google-binding-probe";
 import { RELEASE_FEATURE_CONTROL_NAMES, readReleaseFeatureControls } from "@/lib/api-integration/release-feature-controls";
@@ -17,6 +18,101 @@ function environment() {
 }
 const request = (headers: Record<string, string> = {}) => new Request("https://fixture.vercel.app/api/internal/release-probe", {
   headers: { authorization: `Bearer ${secret}`, "x-lash-release-challenge": challenge, ...headers },
+});
+const cronSecret = "synthetic-day-two-cron-credential";
+const stagingGateway = "https://api-staging.lashher.com";
+function dayTwoEnvironment() {
+  return { ...environment(), CRON_SECRET: cronSecret, LASH_RELEASE_PROBE_EXPIRES_AT: "1", API_GATEWAY_STAGING_ORIGIN: stagingGateway,
+    FRONTEND_WRITER_ADMISSION_MODE: "enforce", FRONTEND_WRITER_PRODUCER_SHA256: "b".repeat(64),
+    FRONTEND_WRITER_ADMISSION_TARGET_JSON: JSON.stringify({ environment: "staging", host: "db.owned.invalid", port: 5432,
+      database: "owned", user: "protocol_runtime", serverMajor: 18, targetSha256: "d".repeat(64) }),
+    DATABASE_URL: "postgresql://protocol_runtime:synthetic-business-key@db.owned.invalid/owned?sslmode=verify-full",
+    FRONTEND_WRITER_ADMISSION_DATABASE_URL: "postgresql://protocol_runtime:synthetic-ledger-key@db.owned.invalid/owned?sslmode=verify-full" };
+}
+function dayTwoRequest(headers: Record<string, string> = {}, method = "GET") {
+  return new Request("https://fixture.vercel.app/api/internal/release-probe", { method,
+    headers: { authorization: `Bearer ${cronSecret}`, "x-lash-release-challenge": challenge,
+      "x-lash-release-mode": PHASE2_DAY_TWO_WORKLOAD_MODE, ...headers } });
+}
+
+test("day-two configuration requires the dedicated hosted staging runtime and enforce binding without reading the old probe credential", () => {
+  const env = dayTwoEnvironment();
+  const withoutOldProbe = new Proxy(env, { get(value, key) {
+    assert.notEqual(key, "LASH_RELEASE_PROBE_SECRET"); assert.notEqual(key, "LASH_RELEASE_PROBE_EXPIRES_AT");
+    return Reflect.get(value, key);
+  } });
+  const config = readPhase2DayTwoWorkloadConfiguration(withoutOldProbe);
+  assert.ok(config);
+  assert.equal(config.sourceCommit, env.VERCEL_GIT_COMMIT_SHA);
+  assert.equal(config.writerAdmissionBinding.mode, "enforce");
+  assert.equal(readPhase2DayTwoWorkloadConfiguration({ ...env, API_GATEWAY_STAGING_ORIGIN: stagingGateway + "/" })?.gatewayOrigin, stagingGateway);
+  assert.equal(readReleaseProbeConfiguration(env, now), null);
+  for (const changed of [
+    { CRON_SECRET: "" }, { CRON_SECRET: "   " }, { VERCEL: undefined }, { VERCEL_ENV: "preview", VERCEL_TARGET_ENV: "preview" },
+    { VERCEL_TARGET_ENV: "preview" }, { APP_ENV: "production", VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.productionProjectId },
+    { APP_VERCEL_TEAM_ID: "team_other" }, { VERCEL_PROJECT_ID: "prj_other" }, { VERCEL_GIT_COMMIT_SHA: "0".repeat(40) },
+    { API_GATEWAY_STAGING_ORIGIN: "https://foreign.example.invalid" }, { FRONTEND_WRITER_ADMISSION_MODE: "off" },
+    { FRONTEND_WRITER_ADMISSION_TARGET_JSON: "{}" }, { FRONTEND_WRITER_PRODUCER_SHA256: undefined },
+    { FRONTEND_WRITER_ADMISSION_DATABASE_URL: env.FRONTEND_WRITER_ADMISSION_DATABASE_URL.replace("verify-full", "require") },
+    { DATABASE_URL: env.DATABASE_URL.replace("db.owned.invalid", "foreign.example.invalid") },
+  ]) assert.equal(readPhase2DayTwoWorkloadConfiguration({ ...env, ...changed }), null);
+});
+
+test("day-two handler only accepts GET, exact mode, cron bearer and a valid challenge before its single smoke call", async () => {
+  let calls = 0;
+  const handler = createPhase2DayTwoWorkloadHandler({ configuration: () => readPhase2DayTwoWorkloadConfiguration(dayTwoEnvironment()),
+    phase2: async origin => { assert.equal(origin, stagingGateway); calls++; throw new Error("private-smoke-failure"); } });
+  for (const method of ["HEAD", "POST"]) {
+    const denied = await handler(dayTwoRequest({}, method));
+    assert.equal(denied.status, 405); assert.equal(denied.headers.get("allow"), "GET");
+  }
+  assert.equal((await handler(dayTwoRequest({ "x-lash-release-mode": `${PHASE2_DAY_TWO_WORKLOAD_MODE}, phase2` }))).status, 400);
+  for (const auth of ["", `Basic ${cronSecret}`, `Bearer ${secret}`, `Bearer ${"x".repeat(cronSecret.length)}`]) {
+    assert.equal((await handler(dayTwoRequest({ authorization: auth }))).status, 401);
+  }
+  for (const value of ["", "short", "A".repeat(64)]) {
+    assert.equal((await handler(dayTwoRequest({ "x-lash-release-challenge": value }))).status, 400);
+  }
+  assert.equal(calls, 0);
+  const failed = await handler(dayTwoRequest());
+  assert.equal(failed.status, 503); assert.deepEqual(await failed.json(), { error: "Release probe failed" });
+  assert.equal(calls, 1);
+});
+
+test("actual route dispatch confines the cron credential to the current P2 catalog GET", async t => {
+  const { GET, HEAD } = await import("./route");
+  const exp = Math.floor(Date.now() / 1000) + 1800;
+  const token = `eyJhbGciOiJSUzI1NiJ9.${Buffer.from(JSON.stringify({ exp })).toString("base64url")}.owned`;
+  const env = { ...dayTwoEnvironment(), NODE_ENV: "test" as const, VERCEL_OIDC_TOKEN: token, CUSTOMER_AUTH_ENABLED: "true" };
+  t.mock.property(process, "env", env);
+  const outbound = t.mock.method(globalThis, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), `${stagingGateway}/course/v1/courses`);
+    assert.equal(init?.method, "GET"); assert.equal(init?.body, undefined); assert.equal(init?.cache, "no-store");
+    assert.equal(init?.redirect, "manual");
+    const headers = new Headers(init?.headers);
+    assert.equal(headers.get("x-lash-workload-token"), token);
+    assert.equal(headers.has("authorization"), false); assert.equal(headers.has("cookie"), false);
+    return Response.json({ courses: [], nextCursor: null });
+  });
+
+  assert.equal(HEAD().status, 405);
+  assert.equal((await GET(dayTwoRequest({ "x-lash-release-mode": "phase2" }))).status, 404);
+  const fresh = await GET(dayTwoRequest({ "x-lash-workload-token": "forged", cookie: "private-cookie" }));
+  assert.equal(fresh.status, 200); assert.equal(fresh.headers.get("cache-control"), "private, no-store");
+  const { durationMs, ...body } = await fresh.json();
+  assert.ok(Number.isSafeInteger(durationMs) && durationMs >= 0);
+  assert.deepEqual(body, { version: 1, status: "FRONTEND_WORKLOAD_PROBE_PASS", challenge, environment: "staging",
+    projectId: VERCEL_PROJECT_BINDINGS.stagingProjectId, sourceCommit: env.VERCEL_GIT_COMMIT_SHA, gatewayOrigin: stagingGateway,
+    checks: ["gateway-course-catalog-p2"], contractPhase: "p2", featureControls: readReleaseFeatureControls(env),
+    writerAdmissionBinding: { mode: "enforce", targetSha256: "d".repeat(64), producerSha256: "b".repeat(64),
+      sourceCommit: env.VERCEL_GIT_COMMIT_SHA, roleName: "protocol_runtime" } });
+
+  env.LASH_RELEASE_PROBE_EXPIRES_AT = String(Date.now() + 60_000);
+  for (const mode of ["", "phase2", "phase2-auth-origins", "admission-bootstrap", "google-binding", "square-binding", "resend-binding"]) {
+    assert.equal((await GET(dayTwoRequest({ "x-lash-release-mode": mode }))).status, 401);
+  }
+  assert.equal((await GET(dayTwoRequest({ authorization: `Bearer ${secret}` }))).status, 401);
+  assert.equal(outbound.mock.callCount(), 1);
 });
 
 test("release probe requires a live bounded credential and the reviewed Production-target project/source", () => {
