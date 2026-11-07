@@ -638,19 +638,6 @@ def _profiled_interrupted_allowed_configurations(initial, source):
     return tuple(allowed)
 
 
-def _profiled_interrupted_gateway_mount(initial, source):
-    def verify():
-        verify_guard_boundary(initial, source)
-    ids = p2_prior_gateway._inventory(runtime.command, verify)
-    if not ids:
-        return None
-    configuration = p2_prior_gateway._mounted_configuration(ids[0], runtime.command, verify)
-    require(configuration in _profiled_interrupted_allowed_configurations(initial, source) and
-            staging_state.configuration_hashes(configuration) == initial['configurationSha256'],
-            'P2_PROFILED_INTERRUPTED_GUARD_MOUNT_REFUSED')
-    return configuration
-
-
 def _profiled_interrupted_runtime_inventory(initial, source):
     def run(args):
         verify_guard_boundary(initial, source)
@@ -1222,6 +1209,27 @@ def _require_profiled_interrupted_terminal(initial, raw, committed):
     return terminal
 
 
+def _require_profiled_interrupted_gateway_after_reap(initial, source, terminal):
+    selected = initial['candidate']
+    expected = _guard_profile(initial)
+    context = {key: initial[key] for key in ('candidateSha256', 'hostMachineId', 'configurationSha256')}
+    context.update(version=2, qualificationTargetProfile=expected, recoveryActionId=action_id(initial))
+    def verify():
+        verify_guard_boundary(initial, source)
+
+    observed = p2_prior_gateway.observe_prior_gateway(context, selected, verify, expected_profile=expected)
+    snapshot = _profiled_interrupted_directory(initial) / 'runtime-interrupted' / 'configuration'
+    require(observed == terminal['newGateway'] and p2_prior_gateway._zero(observed) and
+            observed['binding']['configurationDirectory'] == str(snapshot) and
+            p2_prior_gateway._read_lineage() == {
+                'protocol': p2_prior_gateway.PROTOCOL, 'state': 'running-observed',
+                'actionId': action_id(initial), 'candidateSha256': initial['candidateSha256'],
+                'process': observed['process'], 'binding': observed['binding'],
+            },
+            'P2_PROFILED_INTERRUPTED_GUARD_NEW_GATEWAY_CHANGED')
+    verify()
+
+
 def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
               observer_source='ops/platform/p2-frontend-live-probe.mjs', layout=None, native_containment=None,
               frontend_containment=None):
@@ -1425,8 +1433,8 @@ def supervise(initial, *, broker_type=Broker, observer_type=PhysicalObserver,
             verify_guard_boundary(initial, source)
             require_profiled_interrupted_guard_arm(initial, armed)
             require_profiled_interrupted_frontend_closed(initial, armed)
-            _require_profiled_interrupted_terminal(initial, result, committed)
-            verify_guard_boundary(initial, source)
+            terminal = _require_profiled_interrupted_terminal(initial, result, committed)
+            _require_profiled_interrupted_gateway_after_reap(initial, source, terminal)
             return
         terminal = json.loads(result)
         if expected is not None:

@@ -163,13 +163,6 @@ class FixedDispatchTests(unittest.TestCase):
             self.assertEqual(allowed, (old, prior, current))
             self.assertNotIn(input_directory, allowed)
             with patch.object(supervisor, '_profiled_interrupted_allowed_configurations', return_value=allowed):
-                with patch.object(supervisor, 'verify_guard_boundary'), \
-                     patch.object(supervisor.p2_prior_gateway, '_inventory', return_value=['a' * 64]), \
-                     patch.object(supervisor.p2_prior_gateway, '_mounted_configuration', return_value=root / 'foreign'), \
-                     patch.object(supervisor.staging_state, 'configuration_hashes', return_value=initial['configurationSha256']), \
-                     patch.object(supervisor.migrate, 'suspend_runtime', side_effect=AssertionError('foreign runtime stop')):
-                    with self.assertRaisesRegex(ValueError, 'GUARD_MOUNT_REFUSED'):
-                        supervisor._profiled_interrupted_gateway_mount(initial, root)
                 def command(args, *_):
                     if args[1:3] == ['container', 'ls']:
                         return 'a' * 12 + '|gateway\n' + 'b' * 12 + '|course-api\n'
@@ -182,6 +175,12 @@ class FixedDispatchTests(unittest.TestCase):
                      patch.object(supervisor.p2_prior_gateway, '_mounted_configuration', return_value=old), \
                      patch.object(supervisor.staging_state, 'configuration_hashes', return_value=initial['configurationSha256']):
                     with self.assertRaisesRegex(ValueError, 'GUARD_MOUNT_REFUSED'):
+                        supervisor._profiled_interrupted_runtime_inventory(initial, root)
+                with patch.object(supervisor, 'verify_guard_boundary'), \
+                     patch.object(supervisor.runtime, 'command', side_effect=command), \
+                     patch.object(supervisor.p2_prior_gateway, '_mounted_configuration', return_value=root / 'foreign'), \
+                     patch.object(supervisor.staging_state, 'configuration_hashes', return_value=initial['configurationSha256']):
+                    with self.assertRaisesRegex(ValueError, 'GATEWAY_RUNTIME_CHANGED'):
                         supervisor._profiled_interrupted_runtime_inventory(initial, root)
                 def no_gateway(args, *_):
                     if args[1:3] == ['container', 'ls']:
@@ -298,6 +297,35 @@ class FixedDispatchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'RUNTIME_RECEIPT_CHANGED'):
                 supervisor._require_profiled_interrupted_terminal(initial, changed,
                                                                   supervisor.migrate.file_hash(changed))
+
+    def test_profiled_interrupted_terminal_rechecks_actual_gateway_and_lineage_after_reap(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            initial = self.profiled_interrupted(root)
+            initial.update(hostMachineId='1' * 32, configurationSha256={})
+            directory = root / 'p2-profiled-known-ack-restoration-restoration-2'
+            directory.mkdir(mode=0o700)
+            snapshot = directory / 'runtime-interrupted' / 'configuration'
+            zero = {'newWork': 0, 'recovery': 0}
+            gateway = {'binding': {'configurationDirectory': str(snapshot)},
+                       'process': {'containerId': 'd' * 64},
+                       'admission': {'newWork': False, 'recovery': False, 'active': zero, 'uncertain': zero}}
+            lineage = {'protocol': supervisor.p2_prior_gateway.PROTOCOL, 'state': 'running-observed',
+                       'actionId': initial['restorationActionId'], 'candidateSha256': initial['candidateSha256'],
+                       'process': gateway['process'], 'binding': gateway['binding']}
+            terminal = {'newGateway': gateway}
+            with patch.object(supervisor, 'verify_guard_boundary'), \
+                 patch.object(supervisor.p2_prior_gateway, 'observe_prior_gateway', return_value=gateway) as observe, \
+                 patch.object(supervisor.p2_prior_gateway, '_read_lineage', return_value=lineage) as retained:
+                supervisor._require_profiled_interrupted_gateway_after_reap(initial, root, terminal)
+                observe.return_value = {**gateway, 'process': {'containerId': 'e' * 64}}
+                with self.assertRaisesRegex(ValueError, 'GUARD_NEW_GATEWAY_CHANGED'):
+                    supervisor._require_profiled_interrupted_gateway_after_reap(initial, root, terminal)
+                observe.return_value = gateway
+                retained.return_value = {**lineage, 'actionId': 'older-action'}
+                with self.assertRaisesRegex(ValueError, 'GUARD_NEW_GATEWAY_CHANGED'):
+                    supervisor._require_profiled_interrupted_gateway_after_reap(initial, root, terminal)
+
     def test_profiled_fault_guard_removes_only_the_original_lease_from_the_original_mount(self):
         from p2_certification_fault import LEASE
         from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE as profile
