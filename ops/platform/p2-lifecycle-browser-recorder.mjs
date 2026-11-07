@@ -544,12 +544,12 @@ function reorderResult(body, target, submittedIds) {
 }
 
 function validateCurriculumPost(body, target) {
-  const module = target.kind === "module";
+  const createsModule = target.kind === "module";
   demand(closed(body, ["expectedCourseRevision", "title", "slug", "position",
-    ...(module ? ["description"] : ["contentDocument", "transcript", "isPreview", "captions"])])
+    ...(createsModule ? ["description"] : ["contentDocument", "transcript", "isPreview", "captions"])])
     && body.expectedCourseRevision === target.revision && typeof body.title === "string" && body.title.length > 0
     && body.slug === target.childSlug && Number.isSafeInteger(body.position) && body.position >= 1);
-  if (module) demand(body.description === null || typeof body.description === "string");
+  if (createsModule) demand(body.description === null || typeof body.description === "string");
   else demand((body.transcript === null || typeof body.transcript === "string") && typeof body.isPreview === "boolean"
     && closed(body.contentDocument, ["version", "blocks"]) && body.contentDocument.version === 1
     && Array.isArray(body.contentDocument.blocks) && body.contentDocument.blocks.length <= 500
@@ -879,12 +879,12 @@ function paidLearnerCourseModule(body, target) {
     && body.course.currency === "CAD" && Number.isSafeInteger(body.course.priceCents) && body.course.priceCents > 0
     && Array.isArray(body.course.modules));
   const matching = [];
-  for (const module of body.course.modules) {
-    demand(uuid(module?.id) && Array.isArray(module.lessons));
-    for (const lesson of module.lessons) {
+  for (const courseModule of body.course.modules) {
+    demand(uuid(courseModule?.id) && Array.isArray(courseModule.lessons));
+    for (const lesson of courseModule.lessons) {
       if (lesson?.id !== target.lessonId) continue;
-      demand(lesson.moduleId === module.id && lesson.isPreview === false);
-      matching.push(module.id);
+      demand(lesson.moduleId === courseModule.id && lesson.isPreview === false);
+      matching.push(courseModule.id);
     }
   }
   demand(matching.length === 1);

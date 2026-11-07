@@ -242,11 +242,14 @@ for raw in sys.stdin:
      'requestId':post_request,'body':body}
     assert body=={**{key:revoke_action[key] for key in ('courseId','userId','grantId')},'commandId':fixture_id(20),
      'courseRevision':revoke_action['revision']}
-    assert witness=={**body,'remainingAccess':remaining,'transitionId':transition_id,'readOnly':True}
-    joined={'actorId':action['actorId'],'operation':'revoke-paid-grant',**body,'remainingAccess':remaining,'transitionId':transition_id,
+    delivery={'streamId':fixture_id(29),'streamVersion':1 if remaining else 2,'eventId':fixture_id(28) if remaining else transition_id,
+     'canonicalDigest':'5'*64,'state':'active' if remaining else 'revoked','independentActiveCount':2,'independentActiveSha256':'7'*64}
+    assert witness=={**body,'remainingAccess':remaining,'transitionId':transition_id,'communityDelivery':delivery,'readOnly':True}
+    joined={'actorId':action['actorId'],'operation':'revoke-paid-grant',**body,'remainingAccess':remaining,'transitionId':transition_id,'communityDelivery':delivery,
      'gatewayPostRequestId':post_request,'browserResponseSha256':digest(response),'courseWitnessSha256':digest(witness),
      'gatewayEvidenceSha256':gateway_observation['gatewayEvidenceSha256']}
     if behavior=='wrong-join':joined['transitionId']=fixture_id(9) if remaining else None
+    if behavior=='wrong-community-join':joined['communityDelivery']={**delivery,'canonicalDigest':'6'*64}
    elif paid_grant:
     assert gateway_observation and set(evidence)=={'browserResponse','courseWitness'}
     response=evidence['browserResponse'];body=response['body'];witness=evidence['courseWitness']
@@ -698,6 +701,11 @@ const draftStep={method:'PATCH',pathname:coursePath,status:200,requestId};
 const publicationBody={courseId:commandId,slug,revision:authoringAction.revision+Number(published)+Number(republish),status:published?'published':'draft',issueCodes};
 const [transitionId,grantId,enrollmentId]=ids;
 const revokeTransitionId=remainingAccess?null:transitionId;
+const communityDelivery={
+ streamId:'12345678-1234-4123-8123-000000000029',streamVersion:remainingAccess?1:2,
+ eventId:remainingAccess?'12345678-1234-4123-8123-000000000028':revokeTransitionId,canonicalDigest:'5'.repeat(64),
+ state:remainingAccess?'active':'revoked',independentActiveCount:2,independentActiveSha256:'7'.repeat(64),
+};
 const history=republish?{userId:target,grantId,historyPreserved:true,effectiveAccess:published&&expectedAccess}:{};
 const quizBody={courseId:commandId,slug,lessonId,quizId,revision:authoringAction.revision+1,quizRevision:quizRevision+1,documentSha256};
 const freeBody={courseId:commandId,grantId,enrollmentId,source:'free',status:'active',idempotentReplay:false};
@@ -716,7 +724,7 @@ const evidence=learnerAccess?{browserResponse:{
 },courseWitness:{...archiveBody,userId:target,grantId,historyPreserved:true,readOnly:true}}
  :paidRevoke?{browserResponse:{
  method:'POST',pathname:coursePath+'/manual-grants/revoke',status:200,requestId,body:grantBody,
-},courseWitness:{...grantBody,remainingAccess,transitionId:revokeTransitionId,readOnly:true}}
+},courseWitness:{...grantBody,remainingAccess,transitionId:revokeTransitionId,communityDelivery,readOnly:true}}
  :paidGrant?{browserResponse:{
  method:'POST',pathname:coursePath+'/manual-grants',status:200,requestId,body:grantBody,
 },courseWitness:{...grantBody,enrollmentId,transitionId,readOnly:true}}
@@ -844,8 +852,17 @@ const result=start()(async(_verify,_signal,host)=>{
    await assert.rejects(stage.retain({browserResponse:{...evidence.browserResponse,body},courseWitness:{...evidence.courseWitness,...changed}}));
   }
   for(const changed of [{transitionId:remainingAccess?transitionId:null},{transitionId:'invalid'},{remainingAccess:!remainingAccess},
-   {readOnly:false},{commandId:target}]){
+   {readOnly:false},{commandId:target},{communityDelivery:null},{communityDelivery:undefined}]){
    await assert.rejects(stage.retain({...evidence,courseWitness:{...evidence.courseWitness,...changed}}));
+  }
+  const invalidCommunity=[
+   {streamId:'invalid'},{eventId:'DEADBEEF-0000-4000-8000-000000000001'},{streamVersion:0},{streamVersion:2_147_483_648},{streamVersion:'2'},
+   {canonicalDigest:'0'.repeat(64)},{canonicalDigest:'A'.repeat(64)},{independentActiveSha256:'0'.repeat(64)},{independentActiveSha256:'7'.repeat(63)},
+   {independentActiveCount:0},{independentActiveCount:4097},{independentActiveCount:true},{state:remainingAccess?'revoked':'active'},{rawPayload:{}},
+   ...(remainingAccess?[]:[{eventId:target}]),
+  ];
+  for(const changed of invalidCommunity){
+   await assert.rejects(stage.retain({...evidence,courseWitness:{...evidence.courseWitness,communityDelivery:{...communityDelivery,...changed}}}));
   }
   await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,pathname:coursePath+'/manual-grants'}}));
   await assert.rejects(stage.retain({...evidence,browserResponse:{...evidence.browserResponse,status:202}}));
@@ -925,7 +942,7 @@ const result=start()(async(_verify,_signal,host)=>{
    {liveSessionCount:2},
   ]) await assert.rejects(stage.retain({...evidence,identityWitness:{...evidence.identityWitness,...changed}}));
  }
- if(['wrong-join','wrong-item-join','unexpected-archive-flags','unexpected-frontend-operation'].includes(behavior)){
+ if(['wrong-join','wrong-item-join','unexpected-archive-flags','unexpected-frontend-operation','wrong-community-join'].includes(behavior)){
   await assert.rejects(stage.retain(evidence),{message:'P2_CERTIFICATION_TRANSPORT_REFUSED'});
   await assert.rejects(stage.retain(evidence));
   throw new Error('fixture-stop-after-mismatched-join');
@@ -943,8 +960,8 @@ const result=start()(async(_verify,_signal,host)=>{
  );
  if(paidRevoke) assert.deepEqual(
   [retained.actorId,retained.operation,retained.courseId,retained.userId,retained.grantId,retained.commandId,retained.courseRevision,
-   retained.remainingAccess,retained.transitionId,retained.gatewayPostRequestId],
-  [actor,'revoke-paid-grant',commandId,target,grantId,grantCommandId,grantRevision,remainingAccess,revokeTransitionId,requestId],
+   retained.remainingAccess,retained.transitionId,retained.communityDelivery,retained.gatewayPostRequestId],
+  [actor,'revoke-paid-grant',commandId,target,grantId,grantCommandId,grantRevision,remainingAccess,revokeTransitionId,communityDelivery,requestId],
  );
  if(learning) assert.deepEqual(
   [retained.actorId,retained.courseId,retained.slug,retained.grantId,retained.enrollmentId,retained.transitionId,retained.gatewayPostRequestId],
@@ -1111,6 +1128,8 @@ for(const [certificationStage,actorKind,behavior,variant] of [
  ['paid-revoke','admin','wrong-observe-ack','remaining-access'],
  ['paid-revoke','admin','wrong-join','remaining-access'],
  ['paid-revoke','admin','wrong-join','last-grant'],
+ ['paid-revoke','admin','wrong-community-join','remaining-access'],
+ ['paid-revoke','admin','wrong-community-join','last-grant'],
  ['learner-access','customer','joined','allowed'],
  ['learner-access','customer','joined','archived'],
  ['learner-access','customer','joined','draft'],

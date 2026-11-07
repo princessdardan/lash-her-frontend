@@ -434,8 +434,14 @@ class IndependentGuardTests(unittest.TestCase):
             revoked = {'courseId': command, 'userId': user, 'grantId': ledger_ids[1], 'commandId': ledger_ids[0], 'courseRevision': 4}
             pathname = f'/api/admin/courses/{command}/manual-grants/revoke'
             browser = {'method': 'POST', 'pathname': pathname, 'status': 200, 'requestId': request, 'body': revoked}
+            community_delivery = {
+                'streamId': '70000000-0000-4000-8000-000000000001', 'streamVersion': 1 if remaining_access else 2,
+                'eventId': '70000000-0000-4000-8000-000000000002' if remaining_access else ledger_ids[2],
+                'canonicalDigest': '5' * 64, 'state': 'active' if remaining_access else 'revoked',
+                'independentActiveCount': 2, 'independentActiveSha256': '7' * 64,
+            }
             domain = {**revoked, 'remainingAccess': remaining_access, 'transitionId': None if remaining_access else ledger_ids[2],
-                      'readOnly': True}
+                      'communityDelivery': community_delivery, 'readOnly': True}
             browser_key, domain_key = 'browserResponse', 'courseWitness'
             acknowledgements = [
                 {'requestId': request if index == 3 else f'80000000-0000-4000-8000-{position:012d}',
@@ -623,6 +629,22 @@ class IndependentGuardTests(unittest.TestCase):
                 with self.subTest(witness=change), self.assertRaisesRegex(ValueError, 'PAID_REVOKE_COURSE_WITNESS_REQUIRED'):
                     broker.command({**envelope, 'operation': 'interactive-retain',
                                     'caseEvidence': {**evidence, domain_key: {**domain, **change}}})
+            invalid_deliveries = [
+                None, {}, {**community_delivery, 'rawPayload': {}}, {**community_delivery, 'streamId': 'invalid'},
+                {**community_delivery, 'eventId': 'DEADBEEF-0000-4000-8000-000000000001'},
+                {**community_delivery, 'streamVersion': 0}, {**community_delivery, 'streamVersion': 2_147_483_648},
+                {**community_delivery, 'streamVersion': True}, {**community_delivery, 'canonicalDigest': '0' * 64},
+                {**community_delivery, 'canonicalDigest': 'A' * 64}, {**community_delivery, 'independentActiveSha256': '0' * 64},
+                {**community_delivery, 'independentActiveSha256': '7' * 63}, {**community_delivery, 'independentActiveCount': 0},
+                {**community_delivery, 'independentActiveCount': 4097}, {**community_delivery, 'independentActiveCount': True},
+                {**community_delivery, 'state': 'revoked' if remaining_access else 'active'},
+            ]
+            if not remaining_access:
+                invalid_deliveries.append({**community_delivery, 'eventId': user})
+            for delivery in invalid_deliveries:
+                with self.subTest(delivery=delivery), self.assertRaisesRegex(ValueError, 'PAID_REVOKE_COMMUNITY_DELIVERY_REQUIRED'):
+                    broker.command({**envelope, 'operation': 'interactive-retain',
+                                    'caseEvidence': {**evidence, domain_key: {**domain, 'communityDelivery': delivery}}})
         if identity:
             wrong_actor = 'invalid-uuid' if provider is not None else user
             with self.assertRaisesRegex(ValueError, 'IDENTITY_SESSION_REQUIRED'):
@@ -762,6 +784,7 @@ class IndependentGuardTests(unittest.TestCase):
             self.assertEqual({key: case[key] for key in revoked}, revoked)
             self.assertIs(case['remainingAccess'], remaining_access)
             self.assertEqual(case['transitionId'], domain['transitionId'])
+            self.assertEqual(case['communityDelivery'], community_delivery)
             self.assertEqual(case['gatewayPostRequestId'], request)
             self.assertEqual(case['gatewayEvidenceSha256'], supervisor._canonical_sha(gateway_artifact))
         if authoring:
@@ -819,6 +842,13 @@ class IndependentGuardTests(unittest.TestCase):
             return supervisor._require_profiled_certification_terminal(initial, raw, migrate.file_hash(raw), source=source)
 
         self.assertEqual(guard(terminal), terminal)
+        if paid_revoke:
+            evidence_path = directory / window.browser_artifact(plan, 'evidence')
+            substituted = {**domain, 'communityDelivery': {**community_delivery, 'canonicalDigest': '6' * 64}}
+            evidence_path.write_text(json.dumps({**evidence, domain_key: substituted}))
+            with self.assertRaisesRegex(ValueError, 'INTERACTIVE_CASE_REFUSED'):
+                guard(terminal)
+            evidence_path.write_text(json.dumps(evidence))
         with self.assertRaisesRegex(ValueError, 'SCOPED_CASE_REFUSED'):
             guard({**terminal, 'frontendAdmission': {**closed, 'epoch': '2'}})
         with self.assertRaisesRegex(ValueError, 'INTERACTIVE_CASE_REFUSED'):

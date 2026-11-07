@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { getCACertificates, setDefaultCACertificates } from "node:tls";
+import { setTimeout as wait } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { runOwnedPersistenceScenario } from "./harness/owned-p2-lifecycle-persistence.mjs";
@@ -130,7 +131,8 @@ async function main() {
     const result = await runOwnedPersistenceScenario({ admin, runtime, plan });
     phase = "actual-interactive-course-draft";
     const draftChecks = await runOwnedDraftWitness({ control, course: admin.course, frontend: runtime.frontend,
-      target: targets.course, sourceCommit: commits.course, courseSource: sources.course, revokeSource, ca });
+      target: targets.course, sourceCommit: commits.course, courseSource: sources.course, revokeSource, ca,
+      community: admin.community, communityTarget: targets.community, communityCommit: commits.community, communitySource: sources.community });
     const receipt = { version: 1, status: `P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES${postgresMajor}_PASS`, postgresMajor, frontendMigrations: 83,
       courseMigrations: 22, communityMigrations: 11, sourceCommits: commits, checks: [...result.checks, ...draftChecks], skipped: 0, readOnly: true,
       fixtureOnly: true, providerTouched: false, liveCertification: false, sourceMode: containerMode ? "parent-issued-manifest-and-mounted-readback" : "clean-git-checkouts",
@@ -146,7 +148,8 @@ async function main() {
   }
 }
 
-async function runOwnedDraftWitness({ control, course, frontend, target, sourceCommit, courseSource, revokeSource, ca }) {
+async function runOwnedDraftWitness({ control, course, frontend, target, sourceCommit, courseSource, revokeSource, ca,
+  community, communityTarget, communityCommit, communitySource }) {
   const user = "owned_course_draft_migration", password = randomBytes(32).toString("hex"), database = target.database;
   await control.query(`CREATE ROLE ${user} LOGIN NOINHERIT PASSWORD '${password}'`);
   await control.query(`GRANT CONNECT ON DATABASE ${database} TO ${user}`);
@@ -160,11 +163,21 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     phase2ContractManifestSha256: `sha256:${hash(readFileSync(join(root, "contracts/api-integration/p2-candidate/manifest.json")))}`,
     target: { schemaVersion: 2, qualificationTargetProfile: profile, environment: "staging", service: "lash-her-course-api",
       host: target.host, port: target.port, database, user, serverMajor: target.serverMajor } };
+  const communityUser = "owned_community_delivery_migration", communityPassword = randomBytes(32).toString("hex");
+  await control.query(`CREATE ROLE ${communityUser} LOGIN NOINHERIT PASSWORD '${communityPassword}'`);
+  await control.query(`GRANT CONNECT ON DATABASE ${communityTarget.database} TO ${communityUser}`);
+  await community.query(`GRANT USAGE ON SCHEMA public TO ${communityUser}`);
+  await community.query(`GRANT SELECT ON public.course_enrollment_inbox,public.course_enrollment_projections TO ${communityUser}`);
+  const communityJob = { ...job, sourceCommit: communityCommit, runtimeRole: communityTarget.runtimeRole, target: { ...job.target,
+    service: "lash-her-community-api", host: communityTarget.host, port: communityTarget.port, database: communityTarget.database,
+    user: communityUser, serverMajor: communityTarget.serverMajor } };
   const dependencies = {
     verifyEnvironment: async () => {},
     verifySession: async () => assert.equal((await frontend.query(`SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_locks
       WHERE pid=pg_catalog.pg_backend_pid() AND locktype='advisory' AND granted AND mode='ExclusiveLock') AS held`)).rows[0].held, true),
     readCourseDatabaseUrl: () => `postgresql://${user}:${password}@${target.host}:${target.port}/${database}?sslmode=verify-full`,
+    communityJob, readCommunityDatabaseUrl: () =>
+      `postgresql://${communityUser}:${communityPassword}@${communityTarget.host}:${communityTarget.port}/${communityTarget.database}?sslmode=verify-full`,
   };
   const input = (name, changes = {}) => {
     const draft = { title: "Owned draft é", slug: `owned-draft-${name}`, description: "Description", introduction: "Introduction",
@@ -237,7 +250,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     await runOwnedPublicationWitness({ course, job, dependencies, input, create });
     await runOwnedQuizSaveWitness({ course, job, dependencies, input, create });
     await runOwnedPaidRevokeWitness({ course, job: revokeSource ? { ...job, sourceCommit: revokeSource.revision } : job,
-      dependencies, input, create, courseSource: revokeSource?.root ?? courseSource, expiryFixed: revokeSource !== undefined });
+      dependencies, input, create, courseSource: revokeSource?.root ?? courseSource, expiryFixed: revokeSource !== undefined, community, communitySource });
     await runOwnedFreeEnrollmentWitness({ course, job, dependencies, input, create });
     await runOwnedPaidGrantWitness({ course, job, dependencies, input, create });
     await runOwnedPaidArchiveWitness({ course, job, dependencies, input, create, courseSource });
@@ -268,7 +281,8 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-paid-learner-pinned-quiz-and-playback-allow-archive-draft-and-revocation-boundaries",
       "course-paid-learner-refuses-lesson-receipt-revision-account-and-history-drift",
       "course-paid-revoke-pinned-audit-retained-grants-and-last-effective-grant-outbox",
-      "course-paid-revoke-refuses-replay-wrong-command-revision-history-and-nonpristine-outbox",
+      "course-paid-revoke-refuses-replay-wrong-command-revision-history-and-terminal-outbox",
+      "course-paid-revoke-joins-settled-delivery-to-actual-community-inbox-and-stable-independent-projection",
       revokeSource ? "course-paid-revoke-corrected-source-ignores-unrelated-future-expiry" :
         "course-paid-revoke-refuses-missing-outbox-with-pinned-foreign-expiry-predicate-defect"];
   } finally {
@@ -539,10 +553,10 @@ async function runOwnedCurriculumCreateWitness({ course, job, dependencies, inpu
     await assert.rejects(observe(test, baseline), { check });
     await assert.rejects(observe(test, baseline), { check: "course-curriculum-create-receipt" });
   }
-  const module = await seed("module", "module-drift"), before = await capture(module);
-  await write(module);
-  await course.query("UPDATE public.modules SET description='unexpected' WHERE id=$1::uuid", [module.itemId]);
-  await assert.rejects(observe(module, before), { check: "course-curriculum-create-persistence" });
+  const moduleFixture = await seed("module", "module-drift"), before = await capture(moduleFixture);
+  await write(moduleFixture);
+  await course.query("UPDATE public.modules SET description='unexpected' WHERE id=$1::uuid", [moduleFixture.itemId]);
+  await assert.rejects(observe(moduleFixture, before), { check: "course-curriculum-create-persistence" });
 
   const contentDocument = { version: 1, blocks: [
     { _type: "block", _key: "block-1-1", style: "h2", markDefs: [],
@@ -1294,12 +1308,29 @@ async function runOwnedPaidLearnerAccessWitness({ course, job, dependencies, inp
   }
 }
 
-async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, create, courseSource, expiryFixed }) {
+async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, create, courseSource, expiryFixed, community, communitySource }) {
   const { seed, progress, write } = ownedPaidGrantFixtures({ course, input, create });
   const { db, importSource } = await ownedCourseRepository(course, courseSource);
   const [{ createDrizzleAdminEntitlementCommandRepository }] =
     await importOwnedAccountAwareCourseSource(importSource, "src/entitlements/admin-entitlement-command.repository.ts");
   const admin = createDrizzleAdminEntitlementCommandRepository(db);
+  const { tsImport } = createRequire(import.meta.url)("tsx/esm/api");
+  const importCommunity = path => tsImport(pathToFileURL(join(communitySource, "src/integrations/course", path)).href, import.meta.url);
+  const { createDrizzleCourseEnrollmentReceiptRepository } = await importCommunity("inbox/course-enrollment-receipt.repository.ts");
+  const { canonicalizeEnrollmentEvent } = await importCommunity("contracts/enrollment-event.ts");
+  const { drizzle } = createRequire(join(communitySource, "package.json"))("drizzle-orm/node-postgres");
+  const receiver = createDrizzleCourseEnrollmentReceiptRepository(drizzle(community));
+  const settle = async ({ streamId }, version, apply = true) => {
+    const { rows: [event] } = await course.query(`SELECT event_id::text,canonical_body,canonical_digest FROM public.community_enrollment_outbox
+      WHERE stream_id=$1::uuid AND stream_version=$2::int AND state='pending'`, [streamId, version]);
+    const canonical = canonicalizeEnrollmentEvent(JSON.parse(event.canonical_body));
+    assert.equal(canonical.digest, event.canonical_digest);
+    await course.query("UPDATE public.community_enrollment_outbox SET last_attempt_at=pg_catalog.clock_timestamp() WHERE event_id=$1::uuid", [event.event_id]);
+    if (apply) assert.deepEqual(await receiver.receive({ canonical, receivedAt: new Date() }), { status: "accepted", disposition: "applied" });
+    await course.query(`UPDATE public.community_enrollment_outbox SET state='delivered',delivered_at=pg_catalog.clock_timestamp(),
+      lease_owner=NULL,lease_expires_at=NULL,updated_at=pg_catalog.clock_timestamp() WHERE event_id=$1::uuid`, [event.event_id]);
+    return { eventId: event.event_id, canonicalDigest: canonical.digest };
+  };
   const independent = ({ selected: { userId, courseId, actorId } }) => admin.grant({ userId, courseId, actorUserId: actorId,
     idempotencyKey: randomUUID(), reason: "Owned independent manual access" });
   const datedGrant = async ({ selection: { userId, courseId }, enrollmentId }, expiresInSeconds) => {
@@ -1318,7 +1349,7 @@ async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, cre
       throw error;
     }
   };
-  const prepare = async (name, kind = "last") => {
+  const prepare = async (name, kind = "last", { targetDelivered = true, independentDelivered = true } = {}) => {
     const test = await seed(`revoke-${name}`), { courseId, userId, actorId, revision } = test.selection;
     await write(test);
     await progress(test, test.enrollmentId);
@@ -1333,7 +1364,11 @@ async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, cre
     const fixture = { ...test, selected, attemptId };
     if (kind === "remaining") await independent(fixture);
     if (kind === "expired") await datedGrant(fixture, -60);
-    return fixture;
+    const other = await seed(`revoke-independent-${name}`, {}, userId);
+    await write(other);
+    if (independentDelivered) await settle(other, 1);
+    const delivery = targetDelivered ? await settle(test, 1) : undefined;
+    return { ...fixture, independentStreamId: other.streamId, independentCourseId: other.selection.courseId, delivery };
   };
   const capture = test => captureP2InteractivePaidRevokeBaseline(job, test.selected, dependencies);
   const command = ({ selected }, changes = {}) => admin.revoke({ scope: "grantId", grantId: selected.grantId, actorUserId: selected.actorId,
@@ -1342,10 +1377,17 @@ async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, cre
   const observe = (test, baseline, receipt) => observeP2InteractivePaidRevokeCase(job, test.selected, baseline, receipt, dependencies);
   const newEvent = async test => (await course.query(`SELECT event_id::text FROM public.community_enrollment_outbox
     WHERE stream_id=$1::uuid AND stream_version=2`, [test.streamId])).rows[0]?.event_id ?? null;
+  const assertEvidence = (test, receipt, transitionId, delivery, evidence) => {
+    const remainingAccess = test.selected.remainingAccess;
+    const { communityDelivery } = evidence;
+    assert.match(communityDelivery.independentActiveSha256, /^[0-9a-f]{64}$/u);
+    assert.deepEqual(evidence, { ...receipt, remainingAccess, transitionId, readOnly: true, communityDelivery: {
+      ...delivery, streamId: test.streamId, streamVersion: remainingAccess ? 1 : 2, state: remainingAccess ? "active" : "revoked",
+      independentActiveCount: 1, independentActiveSha256: communityDelivery.independentActiveSha256 } });
+  };
 
   for (const kind of ["last", "remaining", "expired"]) {
     const test = await prepare(kind, kind), { selected } = test;
-    await write(await seed(`revoke-other-${kind}`, {}, selected.userId));
     assert.equal(validateP2InteractivePaidRevoke(selected, undefined), undefined);
     assert.throws(() => validateP2InteractivePaidRevoke(selected, {}), { check: "course-paid-revoke-selection" });
     assert.throws(() => validateP2InteractivePaidRevoke({ ...selected, reason: ` ${selected.reason}` }, undefined), { check: "course-paid-revoke-selection" });
@@ -1360,7 +1402,15 @@ async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, cre
     await assert.rejects(observe(test, baseline, { ...receipt, courseRevision: 2 }), { check: "course-paid-revoke-receipt" });
     await assert.rejects(observeP2InteractivePaidRevokeCase(job, selected, baseline, receipt,
       { ...dependencies, verifySession: async () => {} }), { check: "course-paid-revoke-receipt" });
-    assert.deepEqual(await observe(test, baseline, receipt), { ...receipt, remainingAccess: selected.remainingAccess, transitionId, readOnly: true });
+    if (kind === "last") {
+      await course.query(`UPDATE public.community_enrollment_outbox SET lease_owner='owned-worker',
+        lease_expires_at=pg_catalog.clock_timestamp()+interval '1 minute' WHERE event_id=$1::uuid`, [transitionId]);
+      const [evidence, delivery] = await Promise.all([observe(test, baseline, receipt), wait(350).then(() => settle(test, 2))]);
+      assertEvidence(test, receipt, transitionId, delivery, evidence);
+    } else {
+      const delivery = kind === "expired" ? await settle(test, 2) : test.delivery;
+      assertEvidence(test, receipt, transitionId, delivery, await observe(test, baseline, receipt));
+    }
     await assert.rejects(observe(test, baseline, receipt), { check: "course-paid-revoke-receipt" });
     await assert.rejects(capture(test), { check: "course-paid-revoke-grant" });
   }
@@ -1369,10 +1419,22 @@ async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, cre
   await command(owner);
   await assert.rejects(capture({ ...occupied, selected: { ...occupied.selected, idempotencyKey: owner.selected.idempotencyKey } }),
     { check: "course-paid-revoke-baseline" });
+  await assert.rejects(capture(await prepare("pending-baseline", "last", { targetDelivered: false })), { check: "course-paid-revoke-delivery-baseline" });
+  await assert.rejects(capture(await prepare("missing-independent", "last", { independentDelivered: false })), { check: "community-paid-revoke-independent" });
+  const disjoint = await prepare("disjoint-independent");
+  await course.query("UPDATE public.courses SET status='archived' WHERE id=$1::uuid", [disjoint.independentCourseId]);
+  await write(await seed("revoke-disjoint-course-only", {}, disjoint.selected.userId));
+  await assert.rejects(capture(disjoint), { check: "community-paid-revoke-independent" });
+  await assert.rejects(captureP2InteractivePaidRevokeBaseline(job, occupied.selected, { ...dependencies, readCommunityDatabaseUrl: undefined }),
+    { check: "community-delivery-held-session" });
+  await assert.rejects(captureP2InteractivePaidRevokeBaseline(job, occupied.selected,
+    { ...dependencies, communityJob: { ...dependencies.communityJob, releaseId: "foreign-release" } }), { check: "community-delivery-job" });
 
   for (const [name, check] of [["reason", "course-paid-revoke-command"], ["actor", "course-paid-revoke-command"],
     ["command-id", "course-paid-revoke-command"], ["revision", "course-publication-state"], ["progress", "course-paid-revoke-history"],
-    ["attempt", "course-paid-revoke-history"], ["independent", "course-paid-revoke-history"], ["leased-outbox", "course-paid-revoke-outbox"]]) {
+    ["attempt", "course-paid-revoke-history"], ["independent", "course-paid-revoke-history"], ["dead-letter", "course-paid-revoke-outbox"],
+    ["missing-attempt", "course-paid-revoke-outbox"], ["missing-inbox", "community-paid-revoke-inbox"], ["quarantined", "community-paid-revoke-inbox"],
+    ["projection-drift", "community-paid-revoke-projection"], ["independent-drift", "community-paid-revoke-independent"]]) {
     const test = await prepare(name, name === "independent" ? "remaining" : "last"), { courseId } = test.selected;
     const baseline = await capture(test);
     const options = name === "reason" ? { reason: "Unreviewed reason" } : name === "actor" ? { actorUserId: randomUUID() } : {};
@@ -1382,8 +1444,17 @@ async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, cre
     if (name === "attempt") await course.query(`UPDATE public.quiz_attempts SET user_id=NULL,enrollment_id=NULL,request_id=NULL,request_hash=NULL,
       answers='[]'::jsonb,deidentified_at=pg_catalog.clock_timestamp() WHERE id=$1::uuid`, [test.attemptId]);
     if (name === "independent") await independent(test);
-    if (name === "leased-outbox") await course.query(`UPDATE public.community_enrollment_outbox SET lease_owner='owned-worker',
-      lease_expires_at=pg_catalog.clock_timestamp()+interval '1 minute' WHERE event_id=$1::uuid`, [await newEvent(test)]);
+    if (name === "dead-letter") await course.query(`UPDATE public.community_enrollment_outbox SET state='dead_letter',
+      dead_lettered_at=pg_catalog.clock_timestamp() WHERE event_id=$1::uuid`, [await newEvent(test)]);
+    if (["missing-attempt", "missing-inbox", "quarantined", "projection-drift", "independent-drift"].includes(name)) await settle(test, 2, name !== "missing-inbox");
+    if (name === "missing-attempt") await course.query("UPDATE public.community_enrollment_outbox SET last_attempt_at=NULL WHERE event_id=$1::uuid",
+      [await newEvent(test)]);
+    if (name === "quarantined") await community.query(`UPDATE public.course_enrollment_inbox SET status='quarantined',quarantine_code='owned-fixture'
+      WHERE event_id=$1::uuid`, [await newEvent(test)]);
+    if (name === "projection-drift") await community.query(`UPDATE public.course_enrollment_projections SET status='gapped',highest_observed_version=3
+      WHERE stream_id=$1::uuid`, [test.streamId]);
+    if (name === "independent-drift") await community.query(`UPDATE public.course_enrollment_projections SET updated_at=pg_catalog.clock_timestamp()
+      WHERE stream_id=$1::uuid`, [test.independentStreamId]);
     await assert.rejects(observe(test, baseline, receipt), { check });
     await assert.rejects(observe(test, baseline, receipt), { check: "course-paid-revoke-receipt" });
   }
@@ -1395,7 +1466,8 @@ async function runOwnedPaidRevokeWitness({ course, job, dependencies, input, cre
   const receipt = browser(test, result.command.id), transitionId = await newEvent(test);
   if (expiryFixed) {
     assert.ok(transitionId);
-    assert.deepEqual(await observe(test, baseline, receipt), { ...receipt, remainingAccess: false, transitionId, readOnly: true });
+    const delivery = await settle(test, 2);
+    assertEvidence(test, receipt, transitionId, delivery, await observe(test, baseline, receipt));
   } else {
     // The original Course pin groups the expiry OR outside the user/course/status filter.
     assert.equal(transitionId, null);

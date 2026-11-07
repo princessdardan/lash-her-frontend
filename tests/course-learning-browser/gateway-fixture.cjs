@@ -2,7 +2,7 @@
 // active. This does not certify Vercel workload verification or any live provider.
 "use strict";
 if (process.env.COURSE_LEARNING_BROWSER_FIXTURE === "1") {
-  const { appendFileSync } = require("node:fs");
+  const { appendFileSync } = process.getBuiltinModule("node:fs");
   const journal = process.env.COURSE_LEARNING_GATEWAY_JOURNAL;
   const database = new URL(process.env.DATABASE_URL || "");
   const course = new URL(process.env.COURSE_LEARNING_API_ORIGIN || "");

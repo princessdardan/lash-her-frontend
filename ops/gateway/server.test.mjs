@@ -30,7 +30,7 @@ test("interactive Course operations classify exact existing browser route and me
   const id = "10000000-0000-4000-8000-000000000001";
   const otherId = "20000000-0000-4000-8000-000000000002";
   const course = `/v1/admin/courses/${id}`;
-  const module = `/v1/admin/modules/${id}`;
+  const modulePath = `/v1/admin/modules/${id}`;
   const lesson = `/v1/admin/lessons/${id}`;
   const video = `${lesson}/video/${otherId}`;
   const learnerCourse = `/v1/student/courses/${id}`;
@@ -41,8 +41,8 @@ test("interactive Course operations classify exact existing browser route and me
     },
     authoring: {
       GET: ["/v1/admin/courses", course, `${course}/publication-readiness`, `${lesson}/quiz`],
-      POST: ["/v1/admin/courses", `${course}/modules`, `${course}/modules/reorder`, `${module}/lessons`, `${module}/lessons/reorder`],
-      PATCH: [course, module, lesson],
+      POST: ["/v1/admin/courses", `${course}/modules`, `${course}/modules/reorder`, `${modulePath}/lessons`, `${modulePath}/lessons/reorder`],
+      PATCH: [course, modulePath, lesson],
       PUT: [`${lesson}/quiz`],
     },
     media: {
@@ -490,10 +490,10 @@ test("scoped learning acknowledges free enrollment after access denial and confi
     { method: "POST", target: enrollmentTarget, bodySha256: certificationHash(body), uses: 1 },
     { method: "GET", target: progressTarget, bodySha256: certificationHash(""), uses: 1 },
   ];
-  const module = { id: moduleId, title: "Enrollment module", slug: "enrollment-module", description: null, position: 1 };
+  const courseModule = { id: moduleId, title: "Enrollment module", slug: "enrollment-module", description: null, position: 1 };
   const course = { id: courseId, slug, title: "P2Q free course", description: null, introduction: null, currency: "CAD", accessMode: "free",
-    priceCents: 0, cover: null, seo: null, modules: [{ ...module, lessons: [] }] };
-  const studentCourse = { course: { ...course, modules: [{ ...module, lessons: [{ id: lessonId, moduleId, slug: "first-lesson", title: "First lesson",
+    priceCents: 0, cover: null, seo: null, modules: [{ ...courseModule, lessons: [] }] };
+  const studentCourse = { course: { ...course, modules: [{ ...courseModule, lessons: [{ id: lessonId, moduleId, slug: "first-lesson", title: "First lesson",
     content: null, contentDocument: { version: 1, blocks: [] }, transcript: null, captions: [], isPreview: false, position: 1 }] }] } };
   const accessRequired = { error: { code: "ACTIVE_ENROLLMENT_REQUIRED", message: "Active enrollment required" } };
   const enrollment = { grantId, enrollmentId, courseId, source: "free", status: "active", idempotentReplay: false };

@@ -569,7 +569,8 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
   const authoringCase=authoring?authoringCases.get(action.authoringAction.operation):undefined;
   if(courseBacked)demand(courseDraft?.job&&(!authoringCase?.field||courseDraft.draft)&&typeof courseDraft.readCourseDatabaseUrl==='function');
   if(paidGrant)demand(typeof courseDraft.paidGrantReason==='string');
-  if(paidRevoke)demand(typeof courseDraft.paidRevokeReason==='string');
+  if(paidRevoke)demand(typeof courseDraft.paidRevokeReason==='string'&&courseDraft.communityJob&&
+    typeof courseDraft.readCommunityDatabaseUrl==='function');
   const statusPrefix=`P2_INTERACTIVE_${action.stage.toUpperCase().replaceAll('-','_')}`;
   const expectedOpen=(BigInt(plan.initialEpoch)+1n).toString(),expectedClosed=(BigInt(plan.initialEpoch)+2n).toString();
   const {operation:_learningOperation,...learningSelection}=action.learningAction??{};
@@ -586,7 +587,8 @@ export async function runP2InteractiveFrontendCase(plan,{stage,controller,client
   const reviewed={sourceCommit:plan.sourceCommit,ordinaryProducers,runtimeProducer,
     interactiveProducer:{producerSha256,role:runtimeProducer.role}};
   const observations={verifySession,verifyEnvironment};
-  const courseObservations=courseBacked?{...observations,readCourseDatabaseUrl:courseDraft.readCourseDatabaseUrl}:undefined;
+  const courseObservations=courseBacked?{...observations,readCourseDatabaseUrl:courseDraft.readCourseDatabaseUrl,
+    ...(paidRevoke?{communityJob:courseDraft.communityJob,readCommunityDatabaseUrl:courseDraft.readCommunityDatabaseUrl,signal}:{})}:undefined;
   const cancelBrowser=()=>{void Promise.resolve().then(()=>controller.close()).catch(()=>{});};
   signal?.addEventListener('abort',cancelBrowser,{once:true});
   try{
@@ -1142,7 +1144,9 @@ export async function p2ProfiledCertificationOperator(settings,{confirmation}={}
     return runBoundedCertification(action,{directory:results,confirmation:actionConfirmation,sourceCi,browserSession:browserSource?.handle,
       interactiveController,...(enrollment?{identityEnrollmentEmail}:{}),
       ...(courseBackedBrowserStages.has(action.scopedAction?.stage)?{courseDraft:{job:original.apiJobs.course,draft:authoringDraft,paidGrantReason,paidRevokeReason,
-        readCourseDatabaseUrl:()=>credentials.COURSE_STAGING_DATABASE_URL}}:{}),
+        readCourseDatabaseUrl:()=>credentials.COURSE_STAGING_DATABASE_URL,
+        ...(action.scopedAction.stage==='paid-revoke'?{communityJob:original.apiJobs.community,
+          readCommunityDatabaseUrl:()=>credentials.COMMUNITY_STAGING_DATABASE_URL}:{})}}:{}),
       getUrl:()=>credentials.FRONTEND_STAGING_MIGRATION_DATABASE_URL,
       ...(action.mode==='direct-worker'?{workerPrivateResolvers:createP2LifecycleWorkerPrivateResolvers(()=>provider)}:{}),
       assertSource:()=>assertSourceCheckout(root,plan.operatorSourceCommit),

@@ -324,13 +324,22 @@ def _paid_revoke_case_evidence(plan, action, evidence, gateway_artifact):
            _matches(_UUID, body["commandId"]) and type(body["courseRevision"]) is int and body["courseRevision"] == selected["revision"],
            "P2_INTERACTIVE_PAID_REVOKE_BODY_REQUIRED")
     remaining = selected["remainingAccess"]
-    demand(_closed_fields(witness, f"{fields} remainingAccess transitionId readOnly") and witness["readOnly"] is True and
+    demand(_closed_fields(witness, f"{fields} remainingAccess transitionId communityDelivery readOnly") and witness["readOnly"] is True and
            witness["remainingAccess"] is remaining and
            (witness["transitionId"] is None if remaining else _matches(_UUID, witness["transitionId"])) and
            type(witness["courseRevision"]) is int and all(witness[key] == value for key, value in body.items()),
            "P2_INTERACTIVE_PAID_REVOKE_COURSE_WITNESS_REQUIRED")
+    delivery = witness["communityDelivery"]
+    demand(_closed_fields(delivery, "streamId streamVersion eventId canonicalDigest state independentActiveCount independentActiveSha256") and
+           all(_matches(_UUID, delivery[key]) for key in ("streamId", "eventId")) and
+           type(delivery["streamVersion"]) is int and 1 <= delivery["streamVersion"] <= 2_147_483_647 and
+           all(_digest(delivery[key]) for key in ("canonicalDigest", "independentActiveSha256")) and
+           type(delivery["independentActiveCount"]) is int and 1 <= delivery["independentActiveCount"] <= 4096 and
+           delivery["state"] == ("active" if remaining else "revoked") and
+           (remaining or delivery["eventId"] == witness["transitionId"]),
+           "P2_INTERACTIVE_PAID_REVOKE_COMMUNITY_DELIVERY_REQUIRED")
     return {**body, "actorId": action["actorId"], "operation": selected["operation"], "remainingAccess": remaining,
-            "transitionId": witness["transitionId"], "gatewayPostRequestId": post_id,
+            "transitionId": witness["transitionId"], "communityDelivery": delivery, "gatewayPostRequestId": post_id,
             "browserResponseSha256": _receipt_sha(browser), "courseWitnessSha256": _receipt_sha(witness),
             "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 

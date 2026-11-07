@@ -375,12 +375,18 @@ function paidRevokeJoinedEvidence(evidence,selected,observed){
   demand(exact(evidence,['browserResponse','courseWitness']));
   const {browserResponse:response,courseWitness:witness}=evidence;
   const {actorId,operation,courseId,userId,grantId,revision:courseRevision,remainingAccess}=selected;
-  const commandId=response?.body?.commandId,transitionId=witness?.transitionId;
+  const commandId=response?.body?.commandId,transitionId=witness?.transitionId,communityDelivery=witness?.communityDelivery;
   const gatewayPostRequestId=observed.gatewayAcknowledgements[4].requestId,body={courseId,userId,grantId,commandId,courseRevision};
   demand(canonicalUuid(commandId)&&(remainingAccess?transitionId===null:canonicalUuid(transitionId))&&
     isDeepStrictEqual(response,{method:'POST',pathname:'/api/admin/courses/'+courseId+'/manual-grants/revoke',status:200,requestId:gatewayPostRequestId,body})&&
-    isDeepStrictEqual(witness,{...body,remainingAccess,transitionId,readOnly:true}));
-  return {actorId,operation,...body,remainingAccess,transitionId,gatewayPostRequestId,browserResponseSha256:p2NativeHash(response),
+    isDeepStrictEqual(witness,{...body,remainingAccess,transitionId,communityDelivery,readOnly:true}));
+  demand(exact(communityDelivery,['streamId','streamVersion','eventId','canonicalDigest','state','independentActiveCount','independentActiveSha256'])&&
+    canonicalUuid(communityDelivery.streamId)&&canonicalUuid(communityDelivery.eventId)&&
+    Number.isInteger(communityDelivery.streamVersion)&&communityDelivery.streamVersion>=1&&communityDelivery.streamVersion<=2_147_483_647&&
+    nonzeroSha256(communityDelivery.canonicalDigest)&&nonzeroSha256(communityDelivery.independentActiveSha256)&&
+    Number.isInteger(communityDelivery.independentActiveCount)&&communityDelivery.independentActiveCount>=1&&communityDelivery.independentActiveCount<=4096&&
+    communityDelivery.state===(remainingAccess?'active':'revoked')&&(remainingAccess||communityDelivery.eventId===transitionId));
+  return {actorId,operation,...body,remainingAccess,transitionId,communityDelivery,gatewayPostRequestId,browserResponseSha256:p2NativeHash(response),
     courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256:observed.gatewayEvidenceSha256};
 }
 

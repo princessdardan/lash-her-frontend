@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { rootCertificates } from "node:tls";
+import { setTimeout as wait } from "node:timers/promises";
 import { lifecycleWitnessPublicReceipt, p2LifecycleStateWitnessSha256, validateP2LifecycleStateWitness } from "./p2-lifecycle-state-witness.mjs";
 import { parseQualificationTargetProfileRef, QualificationTargetProfileError, requireQualificationTargetProfile,
   resolveQualificationTargetProfile } from "./qualification-target-profile.mjs";
@@ -89,16 +90,24 @@ const date = value => value instanceof Date ? value.toISOString() : new Date(val
 const count = (rows, name) => Number(rows[0]?.[name] ?? rows[0]?.count ?? 0);
 
 const paidArchiveHistoryLimit = 1000;
+const independentCommunityLimit = 4096;
 const jsonbSha = fields => `pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to((${fields})::text,'UTF8')),'hex')`;
-const paidArchiveDigest = (from, identity = "r.id", fields = "pg_catalog.to_jsonb(r)") =>
+const paidArchiveDigest = (from, identity = "r.id", fields = "pg_catalog.to_jsonb(r)", limit = paidArchiveHistoryLimit) =>
   `SELECT count(*)::int AS row_count, pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(coalesce(
     pg_catalog.string_agg(row_sha256,'' ORDER BY row_id),''),'UTF8')),'hex') AS digest
   FROM (SELECT ${identity} AS row_id, ${jsonbSha(fields)} AS row_sha256
-    ${from} ORDER BY ${identity} LIMIT ${paidArchiveHistoryLimit + 1}) bounded`;
+    ${from} ORDER BY ${identity} LIMIT ${limit + 1}) bounded`;
+const paidRevokeOutboxReceipt = `SELECT o.event_id::text,o.stream_version,o.canonical_digest,o.created_at::text,o.state,
+  (o.canonical_digest=${jsonbSha("o.canonical_body")}) AS digest_matches,
+  (o.last_attempt_at>=o.created_at AND o.delivered_at>=o.last_attempt_at AND o.lease_owner IS NULL AND o.lease_expires_at IS NULL
+    AND o.dead_lettered_at IS NULL AND o.last_failure_code IS NULL AND o.last_failure_detail IS NULL) AS settled
+  FROM public.community_enrollment_outbox o WHERE o.stream_id=$1::uuid`;
 const paidEligibleEnrollment = `FROM public.enrollments e WHERE e.user_id=$2::uuid AND e.status='active'
     AND NOT EXISTS(SELECT 1 FROM public.account_lifecycle_states a WHERE a.user_id=e.user_id AND a.status<>'active')
     AND EXISTS(SELECT 1 FROM public.entitlement_grants g WHERE g.user_id=e.user_id AND g.course_id=e.course_id
       AND g.status='active' AND (g.expires_at IS NULL OR g.expires_at>pg_catalog.transaction_timestamp()))`;
+const paidIndependentEligibility = `${paidEligibleEnrollment} AND e.course_id<>$1::uuid
+  AND EXISTS(SELECT 1 FROM public.courses c WHERE c.id=e.course_id AND c.status='published')`;
 
 const SQL = Object.freeze({
   frontend: Object.freeze({
@@ -218,9 +227,9 @@ const SQL = Object.freeze({
     paidCourseAccess: `SELECT (c.status='published' AND p.eligible) AS eligible,p.eligible AS eligible_if_published
       FROM public.courses c CROSS JOIN LATERAL (SELECT EXISTS(SELECT 1 ${paidEligibleEnrollment} AND e.course_id=c.id) AS eligible) p
       WHERE c.id=$1::uuid`,
-    paidArchiveIndependentAccess: paidArchiveDigest(`${paidEligibleEnrollment} AND e.course_id<>$1::uuid
-      AND EXISTS(SELECT 1 FROM public.courses c WHERE c.id=e.course_id AND c.status='published')`,
+    paidArchiveIndependentAccess: paidArchiveDigest(paidIndependentEligibility,
       "e.course_id", "pg_catalog.to_jsonb(e.course_id)"),
+    paidRevokeIndependentCourses: `SELECT e.course_id::text ${paidIndependentEligibility} ORDER BY e.course_id LIMIT ${independentCommunityLimit + 1}`,
     paidCourseAccount: paidArchiveDigest("FROM public.account_lifecycle_states r WHERE r.user_id=$1::uuid", "r.user_id"),
     paidLearnerActiveAccount: `SELECT NOT EXISTS(SELECT 1 FROM public.account_lifecycle_states
       WHERE user_id=$1::uuid AND status<>'active') AS active`,
@@ -284,13 +293,8 @@ const SQL = Object.freeze({
     paidRevokePriorEvents: paidArchiveDigest(`FROM public.community_enrollment_outbox r JOIN public.community_enrollment_streams s
       ON s.id=r.stream_id WHERE s.course_id=$1::uuid AND (s.user_id<>$2::uuid OR r.stream_version<=$3::int)`, "r.event_id",
     "pg_catalog.jsonb_build_array(r.event_id,r.stream_id,r.stream_version,r.canonical_body,r.canonical_digest,r.created_at)"),
-    paidRevokeNewEvents: `SELECT o.event_id::text,o.stream_version,o.canonical_digest,
-      (o.state='pending' AND o.attempts_in_cycle=0 AND o.replay_cycle=0 AND o.lease_owner IS NULL AND o.lease_expires_at IS NULL
-        AND o.last_attempt_at IS NULL AND o.delivered_at IS NULL AND o.dead_lettered_at IS NULL AND o.last_failure_code IS NULL
-        AND o.last_failure_detail IS NULL AND o.available_at=s.effective_at AND o.created_at=s.effective_at AND o.updated_at=s.effective_at
-        AND o.canonical_digest=${jsonbSha("o.canonical_body")}) AS fields_match
-      FROM public.community_enrollment_outbox o JOIN public.community_enrollment_streams s ON s.id=o.stream_id
-      WHERE o.stream_id=$1::uuid AND o.stream_version>$2::int LIMIT 2`,
+    paidRevokeCurrentEvent: `${paidRevokeOutboxReceipt} AND o.stream_version=$2::int LIMIT 2`,
+    paidRevokeNewEvents: `${paidRevokeOutboxReceipt} AND o.stream_version>$2::int LIMIT 2`,
     draft: `SELECT id::text AS course_id,slug,revision,status,
       (title=$2::text AND description IS NOT DISTINCT FROM $3::text AND introduction IS NOT DISTINCT FROM $4::text
         AND currency=$5::text AND access_mode=$6::text AND price_cents=$7::int
@@ -312,6 +316,21 @@ const SQL = Object.freeze({
   }),
   community: Object.freeze({
     identity: "SELECT current_database() AS database,current_user AS role,current_user::regrole::oid::text AS role_oid,(current_setting('server_version_num')::int/10000)::int AS major,current_setting('transaction_read_only') AS read_only",
+    heldIdentity: "SELECT current_database() AS database,current_user AS role,session_user AS session_role,current_user::regrole::oid::text AS role_oid,(current_setting('server_version_num')::int/10000)::int AS major,current_setting('transaction_read_only') AS read_only",
+    paidRevokeInbox: `SELECT (i.event_id=$1::uuid AND i.stream_id=$2::uuid AND i.stream_version=$3::int AND i.user_id=$4::uuid AND i.course_id=$5::uuid
+      AND i.state=$6::text AND i.canonical_digest=$7::text AND i.effective_at=$8::timestamptz AND i.occurred_at=$9::timestamptz
+      AND i.event_type=$10::text AND i.schema_version=1 AND i.producer='lash-her-course-api' AND i.status='applied'
+      AND i.applied_at IS NOT NULL AND i.quarantine_code IS NULL AND i.canonical_digest=${jsonbSha("i.canonical_body")}) AS fields_match,
+      ${jsonbSha("pg_catalog.to_jsonb(i)")} AS fingerprint
+      FROM public.course_enrollment_inbox i WHERE i.event_id=$1::uuid OR (i.stream_id=$2::uuid AND i.stream_version=$3::int) LIMIT 2`,
+    paidRevokeProjection: `SELECT (p.stream_id=$1::uuid AND p.user_id=$2::uuid AND p.course_id=$3::uuid AND p.applied_version=$4::int
+      AND p.highest_observed_version=$4::int AND p.state=$5::text AND p.status='current' AND p.source='event'
+      AND p.source_event_id=$6::uuid AND p.effective_at=$7::timestamptz) AS fields_match,
+      ${jsonbSha("pg_catalog.to_jsonb(p)")} AS fingerprint
+      FROM public.course_enrollment_projections p WHERE p.stream_id=$1::uuid OR (p.user_id=$2::uuid AND p.course_id=$3::uuid) LIMIT 2`,
+    paidRevokeIndependentActive: paidArchiveDigest(`FROM public.course_enrollment_projections r WHERE r.user_id=$1::uuid
+      AND r.course_id=ANY($2::uuid[]) AND r.state='active' AND r.status='current' AND r.applied_version=r.highest_observed_version`,
+    "r.stream_id", "pg_catalog.to_jsonb(r)", independentCommunityLimit),
     account: "SELECT user_id::text,status,account_version::text,updated_at FROM account_lifecycle_states WHERE user_id=$1::uuid",
     command: "SELECT command_id::text,user_id::text,account_version::text,action,canonical_digest,issued_at,accepted_at FROM account_lifecycle_commands WHERE command_id=$1::uuid AND user_id=$2::uuid",
     commands: "SELECT command_id::text,account_version::text,action,canonical_digest,issued_at,accepted_at FROM account_lifecycle_commands WHERE user_id=$1::uuid ORDER BY account_version",
@@ -606,29 +625,37 @@ export function validateP2InteractiveCourseDraftEdits(selection, edits) {
   return { winner, stale };
 }
 
-function selectedCourseDraftJob(job) {
+function selectedHeldApiJob(job, service, check) {
   const target = job?.target;
   const profile = profileContext(job?.qualificationTargetProfile, job, target);
   demand(profile && job.schemaVersion === 2 && job.kind === "operator-migration" && job.operator === "Dardan"
     && job.environment === "staging" && job.contractPhase === "p2" && COMMIT.test(job.sourceCommit)
     && typeof job.releaseId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/u.test(job.releaseId)
-    && target?.schemaVersion === 2 && target.environment === "staging" && target.service === "lash-her-course-api"
+    && target?.schemaVersion === 2 && target.environment === "staging" && target.service === `lash-her-${service}-api`
     && typeof target.host === "string" && /^[a-z0-9.-]+$/u.test(target.host) && !target.host.includes("..")
     && Number.isInteger(target.port) && target.port > 0 && target.port <= 65535 && ROLE.test(target.database)
     && ROLE.test(target.user) && ROLE.test(job.runtimeRole) && job.runtimeRole !== target.user && [16, 18].includes(target.serverMajor),
-  "course-draft-job");
+  check);
   return { target: { host: target.host, port: target.port, database: target.database, user: target.user, serverMajor: target.serverMajor },
     jobSha256: sha(job) };
 }
 
-async function readHeldCourseDraft(target, dependencies, roleOid, task) {
-  const { verifyEnvironment, verifySession, readCourseDatabaseUrl } = dependencies;
-  demand([verifyEnvironment, verifySession, readCourseDatabaseUrl].every(value => typeof value === "function"), "course-draft-held-session");
-  const verify = async () => { await verifyEnvironment(); await verifySession(); };
+const selectedCourseDraftJob = job => selectedHeldApiJob(job, "course", "course-draft-job");
+
+async function verifyHeldApi(dependencies, check) {
+  demand(!dependencies.signal?.aborted, `${check}-held-session`);
+  await dependencies.verifyEnvironment(); await dependencies.verifySession();
+  demand(!dependencies.signal?.aborted, `${check}-held-session`);
+}
+
+async function readHeldApi(target, dependencies, roleOid, task, { service, identityQuery, readDatabaseUrl, check }) {
+  const { verifyEnvironment, verifySession } = dependencies;
+  demand([verifyEnvironment, verifySession, readDatabaseUrl].every(value => typeof value === "function"), `${check}-held-session`);
+  const verify = () => verifyHeldApi(dependencies, check);
   await verify();
   let client, begun = false, lost = false;
   try {
-    const options = privateReadOnlyOptions(await readCourseDatabaseUrl(), target, target.user);
+    const options = privateReadOnlyOptions(await readDatabaseUrl(), target, target.user);
     const { Client } = await import("pg");
     client = new Client(options);
     client.on("error", () => { lost = true; });
@@ -637,7 +664,7 @@ async function readHeldCourseDraft(target, dependencies, roleOid, task) {
       && client.connection.stream.authorized === true, "verified-node-tls");
     requireTls();
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"); begun = true;
-    const [identity] = await read(client, "course", "draftIdentity");
+    const [identity] = await read(client, service, identityQuery);
     requireReadOnlyDatabaseIdentity(identity, target, target.user, roleOid);
     demand(identity.session_role === target.user && /^[1-9][0-9]{0,9}$/u.test(identity.role_oid), "database-identity");
     await verify();
@@ -649,16 +676,22 @@ async function readHeldCourseDraft(target, dependencies, roleOid, task) {
     return { result, roleOid: identity.role_oid };
   } catch (error) {
     if (error instanceof P2LifecyclePersistenceError) throw error;
-    throw new P2LifecyclePersistenceError("course-draft-observation");
+    throw new P2LifecyclePersistenceError(`${check}-observation`);
   } finally {
     if (client) {
       let closeFailed = false;
       try { if (begun) await client.query("ROLLBACK"); } catch { closeFailed = true; }
       try { await client.end(); } catch { closeFailed = true; }
-      demand(!closeFailed, "course-draft-close");
+      demand(!closeFailed, `${check}-close`);
     }
   }
 }
+
+const readHeldCourseDraft = (target, dependencies, roleOid, task) => readHeldApi(target, dependencies, roleOid, task,
+  { service: "course", identityQuery: "draftIdentity", readDatabaseUrl: dependencies.readCourseDatabaseUrl, check: "course-draft" });
+
+const readHeldCommunityDelivery = (target, dependencies, roleOid, task) => readHeldApi(target, dependencies, roleOid, task,
+  { service: "community", identityQuery: "heldIdentity", readDatabaseUrl: dependencies.readCommunityDatabaseUrl, check: "community-delivery" });
 
 export async function captureP2InteractiveCourseDraftBaseline(courseJob, selection, draft, dependencies) {
   const selected = Object.freeze({ ...selection }), expected = validateP2InteractiveCourseDraft(selected, draft);
@@ -876,11 +909,11 @@ export function validateP2InteractiveCurriculumCreate(selection, input) {
   let raw;
   try { raw = JSON.stringify(input); } catch { throw new P2LifecyclePersistenceError("course-curriculum-create-body"); }
   demand(typeof raw === "string" && Buffer.byteLength(raw) <= 1_048_576 && sha(raw) === selection.bodySha256, "course-curriculum-create-body-hash");
-  const body = JSON.parse(raw), module = selection.kind === "module";
-  demand(orderedDraftFields(body, module ? curriculumCreateModuleFields : curriculumCreateLessonFields)
+  const body = JSON.parse(raw), createsModule = selection.kind === "module";
+  demand(orderedDraftFields(body, createsModule ? curriculumCreateModuleFields : curriculumCreateLessonFields)
     && body.expectedCourseRevision === selection.revision && body.slug === selection.childSlug && draftText(body.title, 300)
     && Number.isInteger(body.position) && body.position >= 1 && body.position <= 2_147_483_647, "course-curriculum-create-body");
-  if (module) demand(body.description === null || draftText(body.description, 100_000), "course-curriculum-create-module");
+  if (createsModule) demand(body.description === null || draftText(body.description, 100_000), "course-curriculum-create-module");
   else demand(orderedDraftFields(body.contentDocument, ["version", "blocks"]) && curriculumLessonContract().validate(body)
     && Buffer.byteLength(JSON.stringify(body.contentDocument)) <= 1_000_000
     && body.contentDocument.blocks.every(block => (block.markDefs ?? []).every(link => safeCurriculumLink(link.href)))
@@ -1402,6 +1435,12 @@ export function validateP2InteractivePaidRevoke(selection, input) {
     && draftText(selection.reason, 1800) && typeof selection.remainingAccess === "boolean", "course-paid-revoke-selection");
 }
 
+async function paidRevokeIndependentCourses(client, { courseId, userId }) {
+  const rows = await read(client, "course", "paidRevokeIndependentCourses", [courseId, userId]);
+  demand(rows.length >= 1 && rows.length <= independentCommunityLimit && rows.every(row => courseUuid(row.course_id)), "community-paid-revoke-independent");
+  return rows.map(row => row.course_id);
+}
+
 async function readPaidRevoke(client, selection, priorVersion) {
   const { courseId, userId, grantId, actorId, revision, remainingAccess } = selection, initial = priorVersion === undefined;
   const paidCourses = await read(client, "course", "paidArchiveCourse", [courseId]);
@@ -1432,14 +1471,35 @@ async function readPaidRevoke(client, selection, priorVersion) {
     ...await readPaidArchiveDigests(client, [courseId, target.enrollment_id], ["paidRevokeOtherEnrollments"]),
     ...await readPaidArchiveDigests(client, [courseId, idempotencyKey], ["paidRevokeOtherCommands", "paidRevokeOtherEffects"]),
     ...await readPaidArchiveDigests(client, [userId], ["paidCourseAccount"]),
-    ...await readPaidArchiveDigests(client, [courseId, userId], ["paidArchiveIndependentAccess", "paidRevokeOtherStreams"]),
+    ...await readPaidArchiveDigests(client, [courseId, userId], ["paidRevokeOtherStreams"]),
     ...await readPaidArchiveDigests(client, [courseId, userId, reviewedVersion], ["paidRevokePriorEvents"]),
   ];
   return { slug, course, target, otherActive: others[0].active, stream, keys, commands, events, history };
 }
 
+function paidRevokeEvent(selection, stream, events) {
+  const { courseId, userId } = selection, { state } = stream, event = events[0];
+  demand(events.length === 1 && event.stream_version === stream.version && event.digest_matches === true && uuidV4(event.event_id)
+    && (event.state === "pending" || (event.state === "delivered" && event.settled === true)), "course-paid-revoke-outbox");
+  const effectiveAt = date(stream.effective_at), occurredAt = date(event.created_at);
+  const eventType = state === "active" ? "enrollment.activated" : "enrollment.revoked";
+  const expected = { eventId: event.event_id, eventType, schemaVersion: 1, producer: "lash-her-course-api", occurredAt,
+    stream: { id: stream.stream_id, version: stream.version }, data: { userId, courseId, state, effectiveAt } };
+  demand(event.canonical_digest === sha(canonicalAsciiJson(expected)), "course-paid-revoke-outbox");
+  return { eventId: event.event_id, streamId: stream.stream_id, streamVersion: stream.version, state, eventType, effectiveAt, occurredAt,
+    canonicalDigest: event.canonical_digest, delivered: event.state === "delivered" };
+}
+
+const samePaidRevokeEvent = (left, right) => ["eventId", "streamId", "streamVersion", "state", "eventType", "effectiveAt", "occurredAt", "canonicalDigest"]
+  .every(key => left[key] === right[key]);
+
+async function readPaidRevokeCurrentEvent(client, selection, stream) {
+  const rows = await read(client, "course", "paidRevokeCurrentEvent", [stream.stream_id, stream.version]);
+  return paidRevokeEvent(selection, stream, rows);
+}
+
 function observePaidRevokeTransition(selection, previous, current, effectiveAt) {
-  const { courseId, userId, remainingAccess } = selection, { stream, events } = current;
+  const { remainingAccess } = selection, { stream, events } = current;
   demand(stream.stream_id === previous.stream_id && stream.created_at === previous.created_at, "course-paid-revoke-stream");
   if (remainingAccess) {
     demand(stream.state === "active" && stream.version === previous.version && stream.effective_at === previous.effective_at
@@ -1448,26 +1508,72 @@ function observePaidRevokeTransition(selection, previous, current, effectiveAt) 
   }
   demand(stream.state === "revoked" && stream.version === previous.version + 1 && stream.effective_at === effectiveAt
     && stream.updated_at === effectiveAt, "course-paid-revoke-stream");
-  const event = events[0];
-  demand(events.length === 1 && event.stream_version === stream.version && event.fields_match === true && uuidV4(event.event_id),
-    "course-paid-revoke-outbox");
-  const at = date(effectiveAt);
-  const expected = { eventId: event.event_id, eventType: "enrollment.revoked", schemaVersion: 1, producer: "lash-her-course-api", occurredAt: at,
-    stream: { id: stream.stream_id, version: stream.version }, data: { userId, courseId, state: "revoked", effectiveAt: at } };
-  demand(event.canonical_digest === sha(canonicalAsciiJson(expected)), "course-paid-revoke-outbox");
-  return event.event_id;
+  const event = paidRevokeEvent(selection, stream, events);
+  demand(event.occurredAt === event.effectiveAt, "course-paid-revoke-outbox");
+  return event;
+}
+
+async function readPaidRevokeCommunity(client, { courseId, userId }, event, independentCourses) {
+  const { eventId, streamId, streamVersion, state, canonicalDigest, effectiveAt, occurredAt, eventType } = event;
+  const inbox = await read(client, "community", "paidRevokeInbox", [eventId, streamId, streamVersion, userId, courseId, state,
+    canonicalDigest, effectiveAt, occurredAt, eventType]);
+  demand(inbox.length === 1 && inbox[0].fields_match === true && SHA.test(inbox[0].fingerprint), "community-paid-revoke-inbox");
+  const projection = await read(client, "community", "paidRevokeProjection", [streamId, userId, courseId, streamVersion, state, eventId, effectiveAt]);
+  demand(projection.length === 1 && projection[0].fields_match === true && SHA.test(projection[0].fingerprint), "community-paid-revoke-projection");
+  const independent = await read(client, "community", "paidRevokeIndependentActive", [userId, independentCourses]), row = independent[0];
+  demand(independent.length === 1 && Number.isInteger(row.row_count) && row.row_count >= 1 && row.row_count <= independentCommunityLimit
+    && SHA.test(row.digest), "community-paid-revoke-independent");
+  return { inbox: inbox[0].fingerprint, projection: projection[0].fingerprint, independentActiveCount: row.row_count, independentActiveSha256: row.digest };
+}
+
+async function recheckPaidRevokeCourse(target, dependencies, roleOid, selection, stream, expected, independentCourses) {
+  const { result } = await readHeldCourseDraft(target, dependencies, roleOid, async client => {
+    const rows = await read(client, "course", "paidRevokeStream", [selection.courseId, selection.userId]);
+    demand(rows.length === 1 && sha(rows[0]) === sha(stream), "course-paid-revoke-stream");
+    const access = await read(client, "course", "paidCourseAccess", [selection.courseId, selection.userId]);
+    demand(access.length === 1 && access[0].eligible === (stream.state === "active"), "course-paid-revoke-access");
+    const actual = await readPaidRevokeCurrentEvent(client, selection, rows[0]);
+    demand(samePaidRevokeEvent(actual, expected), "course-paid-revoke-outbox");
+    if (independentCourses) demand(sameIds(await paidRevokeIndependentCourses(client, selection), independentCourses), "community-paid-revoke-independent");
+    return actual;
+  });
+  return result;
+}
+
+async function waitForPaidRevokeDelivery(target, dependencies, roleOid, selection, stream, event) {
+  const deadline = performance.now() + 8_000;
+  while (!event.delivered) {
+    await verifyHeldApi(dependencies, "course-paid-revoke");
+    const remaining = deadline - performance.now();
+    demand(remaining > 0, "course-paid-revoke-delivery-timeout");
+    try { await wait(Math.min(250, remaining), undefined, { signal: dependencies.signal }); }
+    catch { throw new P2LifecyclePersistenceError("course-paid-revoke-held-session"); }
+    event = await recheckPaidRevokeCourse(target, dependencies, roleOid, selection, stream, event);
+    demand(performance.now() <= deadline, "course-paid-revoke-delivery-timeout");
+  }
+  return event;
 }
 
 export async function captureP2InteractivePaidRevokeBaseline(courseJob, selection, dependencies) {
   validateP2InteractivePaidRevoke(selection, undefined);
   const selected = Object.freeze({ ...selection }), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const community = selectedHeldApiJob(dependencies?.communityJob, "community", "community-delivery-job");
+  demand(dependencies.communityJob.releaseId === courseJob.releaseId, "community-delivery-job");
+  demand(typeof dependencies.readCommunityDatabaseUrl === "function", "community-delivery-held-session");
   const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined, async client => {
     const before = await readPaidRevoke(client, selected);
     demand(before.keys.length === 0 && before.commands.length === 0 && before.events.length === 0, "course-paid-revoke-baseline");
-    return before;
+    const event = await readPaidRevokeCurrentEvent(client, selected, before.stream);
+    demand(event.delivered, "course-paid-revoke-delivery-baseline");
+    return { ...before, event, independentCourses: await paidRevokeIndependentCourses(client, selected) };
   });
+  const { result: receiver, roleOid: communityRoleOid } = await readHeldCommunityDelivery(community.target, dependencies, undefined,
+    client => readPaidRevokeCommunity(client, selected, result.event, result.independentCourses));
+  demand((await recheckPaidRevokeCourse(target, dependencies, roleOid, selected, result.stream, result.event, result.independentCourses)).delivered,
+    "course-paid-revoke-delivery-baseline");
   const baseline = Object.freeze({});
-  paidRevokeBaselines.set(baseline, { selected, result, jobSha256, roleOid,
+  paidRevokeBaselines.set(baseline, { selected, result, jobSha256, roleOid, communityJobSha256: community.jobSha256, communityRoleOid, receiver,
+    readCommunityDatabaseUrl: dependencies.readCommunityDatabaseUrl,
     verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
   return baseline;
 }
@@ -1475,15 +1581,18 @@ export async function captureP2InteractivePaidRevokeBaseline(courseJob, selectio
 export async function observeP2InteractivePaidRevokeCase(courseJob, selection, baseline, browserBody, dependencies) {
   validateP2InteractivePaidRevoke(selection, undefined);
   const { courseId, userId, grantId, remainingAccess, revision: courseRevision } = selection, { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const community = selectedHeldApiJob(dependencies?.communityJob, "community", "community-delivery-job");
+  demand(dependencies.communityJob.releaseId === courseJob.releaseId, "community-delivery-job");
   const saved = paidRevokeBaselines.get(baseline);
-  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+  demand(saved?.jobSha256 === jobSha256 && saved.communityJobSha256 === community.jobSha256
+    && saved.readCommunityDatabaseUrl === dependencies.readCommunityDatabaseUrl && saved.verifyEnvironment === dependencies?.verifyEnvironment
     && saved.verifySession === dependencies?.verifySession && paidRevokeSelectionFields.every(key => selection[key] === saved.selected[key])
     && closed(browserBody, ["courseId", "userId", "grantId", "commandId", "courseRevision"]) && browserBody.courseId === courseId
     && browserBody.userId === userId && browserBody.grantId === grantId && browserBody.courseRevision === courseRevision
     && courseUuid(browserBody.commandId), "course-paid-revoke-receipt");
   paidRevokeBaselines.delete(baseline);
   const { commandId } = browserBody, before = saved.result;
-  const { result: transitionId } = await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
+  const { result: source } = await readHeldCourseDraft(target, dependencies, saved.roleOid, async client => {
     const after = await readPaidRevoke(client, saved.selected, before.stream.version), { keys, commands } = after;
     demand(keys.length === 1 && keys[0].fields_match === true && commands.length === 1 && commands[0].command_id === commandId
       && commands[0].fields_match === true && typeof commands[0].effective_at === "string", "course-paid-revoke-command");
@@ -1499,9 +1608,24 @@ export async function observeP2InteractivePaidRevokeCase(courseJob, selection, b
         && row.enrollment_revoked_at === effectiveAt && row.enrollment_updated_at === effectiveAt), "course-paid-revoke-enrollment");
     demand(after.slug === before.slug && after.course.metadataSha256 === before.course.metadataSha256 && after.course.updatedAt === before.course.updatedAt
       && sameIds(after.history, before.history), "course-paid-revoke-history");
-    return observePaidRevokeTransition(saved.selected, before.stream, after, effectiveAt);
+    demand(sameIds(await paidRevokeIndependentCourses(client, saved.selected), before.independentCourses), "community-paid-revoke-independent");
+    const transition = observePaidRevokeTransition(saved.selected, before.stream, after, effectiveAt);
+    const event = transition ?? await readPaidRevokeCurrentEvent(client, saved.selected, after.stream);
+    if (remainingAccess) demand(event.delivered && samePaidRevokeEvent(event, before.event), "course-paid-revoke-outbox");
+    return { event, stream: after.stream };
   });
-  return { courseId, userId, grantId, commandId, courseRevision, remainingAccess, transitionId, readOnly: true };
+  const event = await waitForPaidRevokeDelivery(target, dependencies, saved.roleOid, saved.selected, source.stream, source.event);
+  const { result: receiver } = await readHeldCommunityDelivery(community.target, dependencies, saved.communityRoleOid,
+    client => readPaidRevokeCommunity(client, saved.selected, event, before.independentCourses));
+  const { independentActiveCount, independentActiveSha256 } = receiver;
+  demand(independentActiveCount === saved.receiver.independentActiveCount && independentActiveSha256 === saved.receiver.independentActiveSha256,
+    "community-paid-revoke-independent");
+  if (remainingAccess) demand(receiver.inbox === saved.receiver.inbox && receiver.projection === saved.receiver.projection, "community-paid-revoke-projection");
+  demand((await recheckPaidRevokeCourse(target, dependencies, saved.roleOid, saved.selected, source.stream, event, before.independentCourses)).delivered,
+    "course-paid-revoke-outbox");
+  const { eventId, streamId, streamVersion, canonicalDigest, state } = event;
+  const communityDelivery = { streamId, streamVersion, eventId, canonicalDigest, state, independentActiveCount, independentActiveSha256 };
+  return { courseId, userId, grantId, commandId, courseRevision, remainingAccess, transitionId: remainingAccess ? null : eventId, communityDelivery, readOnly: true };
 }
 
 export async function runPrivatePersistenceProbeFromStdin(expectedProfile = undefined) {
