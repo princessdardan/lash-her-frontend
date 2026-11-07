@@ -13,12 +13,12 @@ import test from "node:test";
 import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, installP2PaidArchiveObserver, installP2PaidRevokeObserver, observeP2InteractiveIdentitySession,
   p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringQuizPath, p2AuthoringReorderPath,
   p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LearningEnrollmentPaths, p2LifecycleMutationTarget, p2PaidGrantPaths,
-  p2PaidLearnerAccessPaths, p2PaidRevokePaths, parseP2OwnerSuspensionResponse,
+  p2LessonEntryPaths, p2PaidLearnerAccessPaths, p2PaidRevokePaths, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
   validateP2AuthoringEditResponses, validateP2AuthoringMutationReceipt, validateP2AuthoringReorderResponses,
-  validateP2InteractiveIdentityReceipt, validateP2LearningEnrollmentReceipt, validateP2LifecycleBrowserInput,
+  validateP2InteractiveIdentityReceipt, validateP2LearningEnrollmentReceipt, validateP2LessonEntryReceipt, validateP2LifecycleBrowserInput,
   validateP2LifecycleMutationReceipt, validateP2PaidGrantReceipt, validateP2PaidLearnerAccessReceipt, validateP2PaidRevokeReceipt, watchP2AuthoringEdits,
-  watchP2AuthoringMutation, watchP2LearningEnrollment, watchP2LifecycleMutation, watchP2PaidGrant, watchP2PaidLearnerAccess,
+  watchP2AuthoringMutation, watchP2LearningEnrollment, watchP2LessonEntry, watchP2LifecycleMutation, watchP2PaidGrant, watchP2PaidLearnerAccess,
   watchP2PaidRevoke } from "./p2-lifecycle-browser-recorder.mjs";
 import { qualifyP2SuspensionPending, P2_LIFECYCLE_PENDING_SQL } from "./p2-lifecycle-pending-probe.mjs";
 import { launchP2InteractiveBrowserRecorder, launchP2LifecycleBrowserRecorder, validateP2SuspensionBrowserRecord, prepareP2LifecycleSuspensionPlan, readP2LifecycleBrowserSourceArtifact, P2_LIFECYCLE_BROWSER_LAUNCHER } from "./p2-lifecycle-suspension-evidence.mjs";
@@ -240,6 +240,7 @@ function interactivePermit(input) {
     : "7032712d637573746f6d65722d763100" + input.identity.actorId.replaceAll("-", "");
   else if (input.stage === "learning") selector = (input.learning.actorId + input.learning.idempotencyKey).replaceAll("-", "");
   else if (input.stage === "learner-access") selector = (input.learnerAccess.actorId + input.learnerAccess.lessonId).replaceAll("-", "");
+  else if (input.stage === "lesson-entry") selector = (input.lessonEntry.actorId + input.lessonEntry.courseId + input.lessonEntry.lessonId).replaceAll("-", "");
   else if (input.stage === "paid-grant") selector = (input.paidGrant.actorId + input.paidGrant.idempotencyKey).replaceAll("-", "");
   else if (input.stage === "paid-revoke") selector = (input.paidRevoke.actorId + input.paidRevoke.idempotencyKey).replaceAll("-", "");
   else if (input.authoring?.operation === "save-quiz-revision") selector = authoringQuizSelector(input.authoring.actorId);
@@ -1955,6 +1956,150 @@ test("owned Chromium free-enrollment replay sends one scoped POST from the uncha
         } finally { await rejected.close(); }
       }
     } finally { await browser.close(); }
+  });
+
+function ownedLessonEntry() {
+  const target = { actorId: userId, operation: "open-lesson", courseId: ownedCourseId, lessonId: randomUUID(), grantId: randomUUID() };
+  const input = interactiveInput({ stage: "lesson-entry", lessonEntry: target });
+  const paths = p2LessonEntryPaths(target), expiresAt = "2026-11-06T12:10:00.000Z";
+  const receipt = { page: { pathname: paths.lessonPath, flight: true },
+    playback: { requestId: randomUUID(), expiresAt, thumbnailExpiresAt: expiresAt, lifetimeMs: 600_000 },
+    progress: { requestId: randomUUID(), progressId: randomUUID(), enrollmentId: randomUUID(), revision: 1 } };
+  return { target, input, receipt, ...paths };
+}
+
+test("lesson entry permit and compact receipt bind the exact actor, course, lesson and Flight arrival", () => {
+  const { target, input, receipt, academyPath } = ownedLessonEntry(), permit = interactivePermit(input);
+  assert.equal(validateP2InteractiveBrowserInput(input), input);
+  assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+  assert.equal(permit.cookie.split(".")[6], (target.actorId + target.courseId + target.lessonId).replaceAll("-", ""));
+  assert.equal(p2InteractiveBrowserEntryPath(input, "learner"), academyPath);
+  assert.throws(() => p2InteractiveBrowserEntryPath(input, "owner"));
+  assert.deepEqual(validateP2LessonEntryReceipt(receipt, target), receipt);
+  for (const name of ["actorId", "courseId", "lessonId"]) {
+    const other = { ...input, lessonEntry: { ...target, [name]: randomUUID() } };
+    assert.throws(() => validateP2InteractiveBrowserPermit(interactivePermit(other), input));
+  }
+  for (const change of [{ page: { ...receipt.page, flight: false } }, { playback: { ...receipt.playback, lifetimeMs: 601_001 } },
+    { progress: { ...receipt.progress, revision: 2 } }, { progress: { ...receipt.progress, requestId: receipt.playback.requestId } }]) {
+    assert.throws(() => validateP2LessonEntryReceipt({ ...receipt, ...change }, target));
+  }
+});
+
+test("owned Chromium lesson entry captures a trusted Flight click and native initial playback and progress",
+  { skip: !ownedInteractiveBrowser }, async () => {
+    const { chromium } = await import("playwright"), root = mkdtempSync(join(tmpdir(), "owned-p2-lesson-entry-"));
+    const host = new URL(interactiveInput().browserOrigin).hostname, key = join(root, "key.pem"), cert = join(root, "cert.pem"), sockets = new Set();
+    let browser, https, proxy, proxyPort, serve;
+    const track = socket => { sockets.add(socket); socket.once("close", () => sockets.delete(socket)); };
+    const bind = async server => {
+      server.on("connection", track);
+      server.listen(0, "127.0.0.1");
+      await once(server, "listening");
+      return server.address().port;
+    };
+    const open = async scenario => {
+      const fixture = ownedLessonEntry(), { input, target, receipt, academyPath, lessonPath, playbackPath, progressPath } = fixture;
+      const context = await browser.newContext({ proxy: { server: `http://127.0.0.1:${proxyPort}` }, ignoreHTTPSErrors: true });
+      await context.addCookies([{ name: "owned-customer", value: "fixture-session", url: input.browserOrigin + "/" }]);
+      const effects = [], date = new Date(at).toUTCString();
+      const document = `<!doctype html><main><h1>Owned academy course</h1><a href="${lessonPath}"><span>Owned lesson title</span><span>Open lesson</span></a></main>
+        <script>
+          const lesson = ${JSON.stringify(lessonPath)}, flight = lesson + '?_rsc=fixture';
+          void fetch('/courses?_rsc=other', {headers:{rsc:'1','next-router-prefetch':'1'}});
+          ${scenario === "prefetch" ? `void fetch(flight, {headers:{rsc:'1','next-router-prefetch':'1'}});` : ""}
+          document.querySelector('a').onclick = async event => {
+            if (${JSON.stringify(scenario === "document-fallback")}) return;
+            event.preventDefault();
+            const selected = await fetch(flight, {headers:{rsc:'1','next-router-state-tree':'fixture'}});
+            await selected.text();
+            history.pushState(null, '', lesson);
+            document.querySelector('main').innerHTML = '<h1>Owned lesson title</h1><div aria-live="polite"></div>';
+            const media = fetch(${JSON.stringify(playbackPath)}, {cache:'no-store'}).then(response => response.json());
+            const progress = fetch(${JSON.stringify(progressPath)}, {method:'POST',cache:'no-store',headers:{'content-type':'application/json','x-lash-csrf':'1'},
+              body:JSON.stringify({event:'lesson_started',expectedProgressRevision:${scenario === "wrong-revision" ? 1 : 0}})}).then(response => response.json());
+            await Promise.all([media, progress]);
+            document.querySelector('[aria-live]').textContent = 'Progress saved to your account.';
+            ${scenario === "missing-player" ? "" : "document.querySelector('main').append(document.createElement('mux-player'));"}
+          };
+        </script>`;
+      serve = (request, response) => {
+        const send = (status, headers, body) => response.writeHead(status, { ...headers, "content-length": Buffer.byteLength(body) }).end(body);
+        const url = new URL(request.url, input.browserOrigin);
+        if (url.pathname === academyPath) return send(200, { "content-type": "text/html",
+          "cache-control": scenario === "public-document" ? "public" : "private, no-store" }, document);
+        if (url.pathname === lessonPath) {
+          effects.push({ method: request.method, pathname: url.pathname, flight: request.headers.rsc ?? null });
+          return send(200, { "content-type": request.headers.rsc === "1" ? "text/x-component" : "text/html",
+            "cache-control": scenario === "public-flight" ? "public" : "private, no-store", vary: scenario === "wrong-vary" ? "Accept-Encoding" : "RSC" }, "owned flight");
+        }
+        const playback = url.pathname === playbackPath;
+        if (!playback && url.pathname !== progressPath) return send(404, { "content-type": "text/plain" }, "");
+        effects.push({ method: request.method, pathname: url.pathname, credentialed: request.headers.cookie?.includes("owned-customer=fixture-session") === true });
+        const body = playback ? { playbackId: "private-media-id", playbackToken: "private-media-token".repeat(3), thumbnailToken: "private-thumbnail-token".repeat(3),
+          expiresAt: receipt.playback.expiresAt, thumbnailExpiresAt: receipt.playback.thumbnailExpiresAt }
+          : { progress: { id: receipt.progress.progressId, userId: scenario === "wrong-actor" ? randomUUID() : target.actorId, lessonId: target.lessonId,
+            enrollmentId: receipt.progress.enrollmentId, maxPositionSeconds: 0, resumePositionSeconds: 0, revision: 1,
+            completedQuizRevision: null, completedAt: null, lastWatchedAt: null, createdAt: at, updatedAt: at } };
+        request.resume();
+        return send(200, { "content-type": "application/json", "cache-control": scenario === "public-cache" ? "public" : "private, no-store", date,
+          "x-request-id": playback ? receipt.playback.requestId : receipt.progress.requestId }, JSON.stringify(body));
+      };
+      const page = await context.newPage(), watch = watchP2LessonEntry(context, page, input);
+      return { ...fixture, page, watch, effects, expires: Math.floor(Date.now() / 1000) + 60,
+        close: async () => { watch.close(); await context.close(); } };
+    };
+    try {
+      assert.equal(spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+        "-subj", `/CN=${host}`, "-keyout", key, "-out", cert], { stdio: "ignore" }).status, 0);
+      https = createHttpsServer({ key: readFileSync(key), cert: readFileSync(cert) }, (request, response) => {
+        if (!serve || request.headers.host !== host) return response.writeHead(403).end();
+        serve(request, response);
+      });
+      const tlsPort = await bind(https);
+      proxy = createHttpServer((_request, response) => response.writeHead(403).end());
+      proxy.on("connect", (request, socket, head) => {
+        if (request.url !== `${host}:443`) { socket.destroy(); return; }
+        const target = connect(tlsPort, "127.0.0.1");
+        track(target);
+        target.once("error", () => socket.destroy());
+        socket.once("error", () => target.destroy());
+        target.once("connect", () => {
+          socket.write("HTTP/1.1 200 Connection established\r\n\r\n");
+          if (head.length) target.write(head);
+          socket.pipe(target).pipe(socket);
+        });
+      });
+      proxyPort = await bind(proxy);
+      browser = await chromium.launch();
+      const owned = await open("success");
+      try {
+        await owned.watch.open(owned.expires);
+        assert.deepEqual(owned.effects, []);
+        await owned.watch.wait(owned.expires);
+        assert.deepEqual(owned.watch.finish(), owned.receipt);
+        assert.equal(owned.page.url(), owned.input.browserOrigin + owned.lessonPath);
+        assert.deepEqual(owned.effects[0], { method: "GET", pathname: owned.lessonPath, flight: "1" });
+        assert.deepEqual(owned.effects.slice(1).sort((a, b) => a.pathname.localeCompare(b.pathname)), [
+          { method: "GET", pathname: owned.playbackPath, credentialed: true }, { method: "POST", pathname: owned.progressPath, credentialed: true },
+        ]);
+        assert.doesNotMatch(JSON.stringify(owned.watch.finish()), /private-media|private-thumbnail|fixture-session/u);
+        await owned.page.evaluate(() => fetch("/api/academy/alternate"));
+        assert.throws(() => owned.watch.finish(), /LESSON_ENTRY_RESPONSE_REFUSED/u);
+      } finally { await owned.close(); }
+      for (const scenario of ["prefetch", "document-fallback", "wrong-revision", "wrong-actor", "public-cache", "public-document", "public-flight", "wrong-vary", "missing-player"]) {
+        const rejected = await open(scenario), expires = Math.floor(Date.now() / 1000) + 3;
+        try {
+          await assert.rejects(async () => { await rejected.watch.open(expires); await rejected.watch.wait(expires); }, /LESSON_ENTRY_RESPONSE_REFUSED/u);
+          assert.throws(() => rejected.watch.finish(), /LESSON_ENTRY_RESPONSE_REFUSED/u);
+        } finally { await rejected.close(); }
+      }
+    } finally {
+      await browser?.close();
+      for (const socket of sockets) socket.destroy();
+      await Promise.all([proxy, https].filter(server => server?.listening).map(server => new Promise(done => server.close(done))));
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
 test("owned Chromium paid-grant capture binds approved request, audit, grant and visible confirmation",

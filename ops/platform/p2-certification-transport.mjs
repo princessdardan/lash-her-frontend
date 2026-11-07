@@ -37,6 +37,7 @@ const learningEnrollmentOperation='enroll-free-course';
 const learningReplayOperation='replay-free-enrollment';
 const paidGrantOperation='grant-paid-access';
 const learnerAccessOperation='observe-paid-access';
+const lessonEntryOperation='open-lesson';
 const paidRevokeOperation='revoke-paid-grant';
 const learnerAccessOutcomes={
   allowed:{status:200,codes:[null]},archived:{status:410,codes:['course_archived']},
@@ -203,6 +204,23 @@ function reviewedLearnerAccessAction(action){
   return {selection:{...learnerAccess,actorKind:'customer'},learnerAccess};
 }
 
+function reviewedLessonEntryAction(action){
+  const selected=action.lessonEntryAction;
+  demand(canonicalUuid(action.actorId)&&exact(selected,['operation','courseId','lessonId','grantId'])&&
+    selected.operation===lessonEntryOperation&&[selected.courseId,selected.lessonId,selected.grantId].every(canonicalUuid));
+  const {courseId,lessonId}=selected,student='/course/v1/student',lesson=student+'/lessons/'+lessonId;
+  const reads=[student+'/courses/'+courseId,student+'/progress?courseId='+courseId,lesson,
+    student+'/progress?lessonId='+lessonId,lesson+'/quiz',lesson+'/quiz/attempts',lesson+'/playback'];
+  demand(isDeepStrictEqual(action.requests,[
+    ...reads.map((target,index)=>({method:'GET',target,bodySha256:emptyBodySha256,uses:index===0?2:1})),
+    {method:'POST',target:lesson+'/progress',bodySha256:p2NativeHash(JSON.stringify({
+      event:'lesson_started',expectedProgressRevision:0,
+    })),uses:1},
+  ]));
+  const lessonEntry={actorId:action.actorId,...selected};
+  return {selection:{...lessonEntry,actorKind:'customer'},lessonEntry};
+}
+
 function reviewedPaidRevokeAction(action){
   const selected=action.paidRevokeAction;
   demand(canonicalUuid(action.actorId)&&exact(selected,['operation','courseId','userId','grantId','revision','idempotencyKey','reasonSha256','remainingAccess'])&&
@@ -225,14 +243,16 @@ function reviewedInteractivePlan(plan,initial){
   const action=plan.scopedAction,binding=initial.interactiveController;
   const identity=action?.stage==='identity',authoring=action?.stage==='authoring',learning=action?.stage==='learning';
   const paidGrant=action?.stage==='paid-grant',learnerAccess=action?.stage==='learner-access';
-  const paidRevoke=action?.stage==='paid-revoke',gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke;
+  const paidRevoke=action?.stage==='paid-revoke',lessonEntry=action?.stage==='lesson-entry';
+  const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry;
   const enrollment=identity&&Object.hasOwn(action,'identityEnrollment');
   demand(plan.environment==='staging'&&plan.sourceCommit===initial.sourceCommit&&plan.operatorSourceCommit===initial.sourceCommit&&
     plan.maximumSeconds===300&&typeof plan.initialEpoch==='string'&&/^[1-9][0-9]{0,17}$/u.test(plan.initialEpoch)&&
     (BigInt(plan.initialEpoch)+2n).toString().length<=18&&sha256(plan.planSha256)&&
     (identity||gatewayScoped||action?.stage==='lifecycle')&&exact(action,['stage','actorId','requests','windowSeconds',
       enrollment?'identityEnrollment':identity?'identityActor':authoring?'authoringAction':learning?'learningAction':
-        paidGrant?'paidGrantAction':learnerAccess?'learnerAccessAction':paidRevoke?'paidRevokeAction':'frontendAction'])&&
+        paidGrant?'paidGrantAction':learnerAccess?'learnerAccessAction':paidRevoke?'paidRevokeAction':
+          lessonEntry?'lessonEntryAction':'frontendAction'])&&
     Array.isArray(action.requests)&&(gatewayScoped||action.requests.length===0)&&
     Number.isInteger(action.windowSeconds)&&action.windowSeconds>=30&&action.windowSeconds<=300&&
     exact(binding,['challenge','bindingSha256','browserProgramSha256'])&&sha256(binding.challenge)&&
@@ -241,6 +261,7 @@ function reviewedInteractivePlan(plan,initial){
   if(learning)return reviewedLearningAction(action);
   if(paidGrant)return reviewedPaidGrantAction(action);
   if(learnerAccess)return reviewedLearnerAccessAction(action);
+  if(lessonEntry)return reviewedLessonEntryAction(action);
   if(paidRevoke)return reviewedPaidRevokeAction(action);
   if(enrollment){
     const selected=action.identityEnrollment;
@@ -328,10 +349,15 @@ function requireInteractiveGatewayObservation(receipt,epoch,{operation,outcome,q
     [0,1,0,2,3,4,5,6],[1,0,0,2,3,4,5,6],
   ].map(order=>order.map(index=>[index,learnerAccessOutcomes[outcome].status])):
     [indices.map(index=>[index,statuses[index]])];
+  const lessonEntry=operation===lessonEntryOperation;
+  const phaseMatches=(start,end,expected)=>isDeepStrictEqual(
+    acks.slice(start,end).map(row=>row.requestIndex).sort((left,right)=>left-right),expected);
   demand(receipt.epoch===epoch&&nonzeroSha256(receipt.gatewayStateSha256)&&receipt.gatewayActive===0&&receipt.gatewayUncertain===0&&
-    Array.isArray(acks)&&acks.length===sequences[0].length&&acks.every(row=>exact(row,['requestId','proofRequestId','requestIndex','upstreamStatus'])&&
+    Array.isArray(acks)&&acks.length===(lessonEntry?9:sequences[0].length)&&acks.every(row=>exact(row,['requestId','proofRequestId','requestIndex','upstreamStatus'])&&
       canonicalUuid(row.requestId)&&canonicalUuid(row.proofRequestId))&&
-    sequences.some(sequence=>acks.every((row,index)=>row.requestIndex===sequence[index][0]&&row.upstreamStatus===sequence[index][1]))&&
+    (lessonEntry?acks.every(row=>row.upstreamStatus===200)&&
+      phaseMatches(0,2,[0,1])&&phaseMatches(2,7,[0,2,3,4,5])&&phaseMatches(7,9,[6,7]):
+      sequences.some(sequence=>acks.every((row,index)=>row.requestIndex===sequence[index][0]&&row.upstreamStatus===sequence[index][1])))&&
     new Set(acks.map(row=>row.requestId)).size===acks.length&&new Set(acks.map(row=>row.proofRequestId)).size===acks.length&&
     gatewayEvidenceSha256===p2NativeHash(observed));
 }
@@ -389,6 +415,32 @@ function learnerAccessJoinedEvidence(evidence,selected,observed){
       row.requestId===observed.gatewayAcknowledgements[index+2].requestId)&&
     isDeepStrictEqual(response.body,body)&&isDeepStrictEqual(witness,{...body,actorId,grantId,revision,effectiveAccess,readOnly:true}));
   return {actorId,operation,courseId,lessonId,grantId,revision,outcome,effectiveAccess,browserResponseSha256:p2NativeHash(response),
+    courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256:observed.gatewayEvidenceSha256};
+}
+
+function lessonEntryJoinedEvidence(evidence,selected,observed){
+  demand(exact(evidence,['browserResponse','courseWitness']));
+  const {browserResponse:response,courseWitness:witness}=evidence;
+  const {actorId,operation,courseId,lessonId,grantId}=selected;
+  const acks=observed.gatewayAcknowledgements;
+  const playbackGatewayRequestId=acks.find(row=>row.requestIndex===6).requestId;
+  const progressGatewayRequestId=acks.find(row=>row.requestIndex===7).requestId;
+  demand(exact(response,['page','playback','progress'])&&isDeepStrictEqual(response.page,{
+    pathname:'/academy/courses/'+courseId+'/lessons/'+lessonId,flight:true,
+  }));
+  const {playback,progress}=response;
+  const lessonExpiry=value=>utc(value)&&value.length===24&&value.slice(0,4)!=='0000';
+  demand(exact(playback,['requestId','expiresAt','thumbnailExpiresAt','lifetimeMs'])&&
+    playback.requestId===playbackGatewayRequestId&&lessonExpiry(playback.expiresAt)&&lessonExpiry(playback.thumbnailExpiresAt)&&
+    Number.isInteger(playback.lifetimeMs)&&playback.lifetimeMs>=590_000&&
+    playback.lifetimeMs+Math.abs(Date.parse(playback.expiresAt)-Date.parse(playback.thumbnailExpiresAt))<=601_000);
+  demand(exact(progress,['requestId','progressId','enrollmentId','revision'])&&progress.requestId===progressGatewayRequestId&&
+    canonicalUuid(progress.progressId)&&canonicalUuid(progress.enrollmentId)&&progress.revision===1);
+  const playbackExpiresAt=playback.expiresAt>playback.thumbnailExpiresAt?playback.expiresAt:playback.thumbnailExpiresAt;
+  const {enrollmentId,progressId,revision}=progress;
+  const body={courseId,lessonId,grantId,actorId,enrollmentId,progressId,revision,playbackExpiresAt};
+  demand(isDeepStrictEqual(witness,{...body,readOnly:true}));
+  return {...body,operation,playbackGatewayRequestId,progressGatewayRequestId,browserResponseSha256:p2NativeHash(response),
     courseWitnessSha256:p2NativeHash(witness),gatewayEvidenceSha256:observed.gatewayEvidenceSha256};
 }
 
@@ -593,15 +645,15 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
           const stage=snapshot.scopedAction.stage,identity=stage==='identity',authoring=stage==='authoring',learning=stage==='learning';
           const stageLabel=stage.toUpperCase().replaceAll('-','_');
           const paidGrant=stage==='paid-grant',learnerAccess=stage==='learner-access',paidRevoke=stage==='paid-revoke';
-          const gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke;
+          const lessonEntry=stage==='lesson-entry',gatewayScoped=authoring||learning||paidGrant||learnerAccess||paidRevoke||lessonEntry;
           const {selection,enrollment,authoring:authoringPermit,learning:learningPermit,paidGrant:paidGrantPermit,
-            learnerAccess:learnerAccessPermit,paidRevoke:paidRevokePermit}=selectedInteractive;
+            learnerAccess:learnerAccessPermit,paidRevoke:paidRevokePermit,lessonEntry:lessonEntryPermit}=selectedInteractive;
           const paired=authoringPairedOperation(selection.operation);
           const context=selection.actorKind==='admin'?'owner':'learner';
           const permitInput={stage,epoch,windowSeconds:snapshot.scopedAction.windowSeconds,
             ...(authoring?{authoring:authoringPermit}:learning?{learning:learningPermit}:paidGrant?{paidGrant:paidGrantPermit}:
               learnerAccess?{learnerAccess:learnerAccessPermit}:paidRevoke?{paidRevoke:paidRevokePermit}:
-              enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
+              lessonEntry?{lessonEntry:lessonEntryPermit}:enrollment?{identityEnrollment:enrollment}:identity?{identity:selection}:{})};
           let phase='new',expiresAt,installed=false,gatewayObservation;
           const call=async(operation,disposition,extraKeys,data={},timeout=120_000)=>{
             demand(alive());
@@ -667,6 +719,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                 paidGrant?paidGrantJoinedEvidence(evidence,selection,gatewayObservation):
                 learnerAccess?learnerAccessJoinedEvidence(evidence,selection,gatewayObservation):
                 paidRevoke?paidRevokeJoinedEvidence(evidence,selection,gatewayObservation):
+                lessonEntry?lessonEntryJoinedEvidence(evidence,selection,gatewayObservation):
                 paired?authoringChangeJoinedEvidence(evidence,selection,gatewayObservation,authoringPermit.winnerBodySha256):
                 selection.operation===authoringQuizOperation?authoringQuizJoinedEvidence(evidence,selection,gatewayObservation):
                 selection.operation===authoringArchiveOperation?authoringArchiveJoinedEvidence(evidence,selection,gatewayObservation):
@@ -679,7 +732,7 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
                   'frontendAdmission','frontendOperationCount',...gatewayFenceKeys],{caseEvidence:evidence});
               demand(receipt.browserProgramSha256===binding.browserProgramSha256&&Object.entries(expected).every(([key,value])=>isDeepStrictEqual(receipt[key],value))&&
                 isDeepStrictEqual(receipt.frontendAdmission,{epoch:(BigInt(epoch)+1n).toString(),newWork:false,recovery:false,active:0,uncertain:0})&&
-                (learnerAccess?receipt.frontendOperationCount===0:
+                (learnerAccess?receipt.frontendOperationCount===0:lessonEntry?receipt.frontendOperationCount===1:
                   Number.isSafeInteger(receipt.frontendOperationCount)&&receipt.frontendOperationCount>0)&&closedGateway(receipt));
               interactiveRetained=structuredClone(receipt);phase='retained';return receipt;
             },
