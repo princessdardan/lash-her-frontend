@@ -46,6 +46,7 @@ _CREATE_CURRICULUM = "create-curriculum"
 _REORDER_CURRICULUM = "reorder-and-stale-curriculum"
 _QUALIFY_PUBLICATION = "qualify-publication"
 _SAVE_QUIZ_REVISION = "save-quiz-revision"
+_ARCHIVE_PAID_COURSE = "archive-paid-course"
 _CURRICULUM_OPERATIONS = (_CREATE_CURRICULUM, _REORDER_CURRICULUM)
 _BROWSER_SOURCE = "ops/platform/p2-lifecycle-browser-recorder.mjs"
 _BROWSER_LAUNCHER = b"\nawait runP2LifecycleBrowserChild();\n"
@@ -172,6 +173,8 @@ def _authoring_requests(action):
     if operation == _CREATE_DRAFT:
         return (("GET", "/course/v1/admin/courses?limit=100", 1, 200), ("POST", "/course/v1/admin/courses", 1, 201))
     course = f'/course/v1/admin/courses/{action["courseId"]}'
+    if operation == _ARCHIVE_PAID_COURSE:
+        return (("GET", course, 2, 200), ("PATCH", course, 1, 200))
     if operation == _SAVE_QUIZ_REVISION:
         quiz = f'/course/v1/admin/lessons/{action["lessonId"]}/quiz'
         prior = 404 if action["quizRevision"] == 0 else 200
@@ -203,6 +206,7 @@ def _gateway_sequences(plan):
         _REORDER_CURRICULUM: [0, 0, 1, 0, 2],
         _QUALIFY_PUBLICATION: [0, 1, 2, 0] if selected.get("outcome") == "published" else [0, 1],
         _SAVE_QUIZ_REVISION: [0, 1, 2, 0],
+        _ARCHIVE_PAID_COURSE: [0, 1, 0],
     }[selected["operation"]]
     return (tuple((index, requests[index][3]) for index in order),)
 
@@ -292,6 +296,8 @@ def _authoring_case_evidence(plan, action, evidence, gateway_artifact):
         return _publication_case_evidence(action, response, witness, gateway, mutations)
     if selected["operation"] == _SAVE_QUIZ_REVISION:
         return _quiz_case_evidence(action, response, witness, gateway, mutations)
+    if selected["operation"] == _ARCHIVE_PAID_COURSE:
+        return _archive_case_evidence(action, response, witness, gateway, mutations[0])
     if reordering:
         return _curriculum_case_evidence(action, response, witness, gateway, mutations)
     if selected["operation"] == _CREATE_CURRICULUM:
@@ -330,6 +336,28 @@ def _correlated_browser_response(item, method, pathname, status, request_id):
     return (_closed_fields(item, "method pathname status requestId") and item["method"] == method and
             item["pathname"] == pathname and type(item["status"]) is int and item["status"] == status and
             item["requestId"] == request_id)
+
+
+def _archive_case_evidence(action, response, witness, gateway, patch_id):
+    selected = action["authoringAction"]
+    pathname = f'/api/admin/courses/{selected["courseId"]}'
+    demand(_closed_fields(response, "method pathname status requestId body warningObserved cancelObservedWithoutMutation") and
+           response["method"] == "PATCH" and response["pathname"] == pathname and type(response["status"]) is int and
+           response["status"] == 200 and response["requestId"] == patch_id and
+           response["warningObserved"] is True and response["cancelObservedWithoutMutation"] is True,
+           "P2_INTERACTIVE_AUTHORING_ARCHIVE_RESPONSE_REQUIRED")
+    body = response["body"]
+    fields = "courseId slug revision status"
+    demand(_closed_fields(body, fields) and body["courseId"] == selected["courseId"] and body["slug"] == selected["slug"] and
+           type(body["revision"]) is int and body["revision"] == selected["revision"] + 1 and body["status"] == "archived",
+           "P2_INTERACTIVE_AUTHORING_ARCHIVE_BODY_REQUIRED")
+    demand(_closed_fields(witness, f"{fields} userId grantId historyPreserved readOnly") and witness["readOnly"] is True and
+           witness["historyPreserved"] is True and type(witness["revision"]) is int and
+           all(witness[key] == value for key, value in body.items()) and
+           all(witness[key] == selected[key] for key in ("userId", "grantId")), "P2_INTERACTIVE_AUTHORING_COURSE_WITNESS_REQUIRED")
+    return {**{key: selected[key] for key in ("operation", "courseId", "slug", "userId", "grantId")}, "actorId": action["actorId"],
+            "revision": body["revision"], "gatewayPatchRequestId": patch_id, "browserResponseSha256": _receipt_sha(response),
+            "courseWitnessSha256": _receipt_sha(witness), "gatewayEvidenceSha256": gateway["gatewayEvidenceSha256"]}
 
 
 def _quiz_case_evidence(action, response, witness, gateway, request_ids):
@@ -566,7 +594,7 @@ def validate_interactive_action(action):
         selected_authoring = action["authoringAction"]
         operation = selected_authoring.get("operation") if type(selected_authoring) is dict else None
         fields = "operation slug"
-        if operation in (_EDIT_DRAFT, _QUALIFY_PUBLICATION, _SAVE_QUIZ_REVISION, *_CURRICULUM_OPERATIONS):
+        if operation in (_EDIT_DRAFT, _QUALIFY_PUBLICATION, _SAVE_QUIZ_REVISION, _ARCHIVE_PAID_COURSE, *_CURRICULUM_OPERATIONS):
             fields += " courseId revision"
         if operation in _CURRICULUM_OPERATIONS:
             fields += " kind parentId"
@@ -576,8 +604,11 @@ def validate_interactive_action(action):
             fields += " outcome issueCodes"
         if operation == _SAVE_QUIZ_REVISION:
             fields += " lessonId quizRevision documentSha256"
+        if operation == _ARCHIVE_PAID_COURSE:
+            fields += " userId grantId"
         demand(_closed_fields(selected_authoring, fields) and
-               operation in (_CREATE_DRAFT, _EDIT_DRAFT, _QUALIFY_PUBLICATION, _SAVE_QUIZ_REVISION, *_CURRICULUM_OPERATIONS) and
+               operation in (_CREATE_DRAFT, _EDIT_DRAFT, _QUALIFY_PUBLICATION, _SAVE_QUIZ_REVISION,
+                             _ARCHIVE_PAID_COURSE, *_CURRICULUM_OPERATIONS) and
                _matches(_SLUG, selected_authoring["slug"]) and len(selected_authoring["slug"]) <= 120,
                "P2_INTERACTIVE_AUTHORING_DRAFT_REQUIRED")
         if operation != _CREATE_DRAFT:
@@ -601,6 +632,9 @@ def validate_interactive_action(action):
                    0 <= selected_authoring["quizRevision"] <= 2_147_483_646 and _digest(selected_authoring["documentSha256"]) and
                    selected_authoring["documentSha256"] != _EMPTY,
                    "P2_INTERACTIVE_AUTHORING_QUIZ_SELECTION_REQUIRED")
+        if operation == _ARCHIVE_PAID_COURSE:
+            demand(all(_matches(_UUID, selected_authoring[key]) for key in ("userId", "grantId")),
+                   "P2_INTERACTIVE_AUTHORING_ARCHIVE_SELECTION_REQUIRED")
         expected = _authoring_requests(selected_authoring)
         mutations = [row["bodySha256"] for row in requests if row["method"] != "GET"]
         demand(len(requests) == len(expected) and all(
@@ -611,6 +645,9 @@ def validate_interactive_action(action):
         if operation == _QUALIFY_PUBLICATION and selected_authoring["outcome"] == "published":
             reviewed_body = {"expectedRevision": selected_authoring["revision"], "status": "published"}
             demand(requests[2]["bodySha256"] == _receipt_sha(reviewed_body), "P2_INTERACTIVE_AUTHORING_PUBLICATION_DIGEST_REQUIRED")
+        if operation == _ARCHIVE_PAID_COURSE:
+            reviewed_body = {"expectedRevision": selected_authoring["revision"], "status": "archived"}
+            demand(requests[1]["bodySha256"] == _receipt_sha(reviewed_body), "P2_INTERACTIVE_AUTHORING_ARCHIVE_DIGEST_REQUIRED")
     if learning:
         selection = action["learningAction"]
         demand(_closed_fields(selection, "operation courseId slug idempotencyKey") and
@@ -664,6 +701,7 @@ def _selection_sha(action):
             _QUALIFY_PUBLICATION: ("7032712d617574682d7075622d763100" if authoring.get("outcome") == "published" else
                                    "7032712d617574682d7264792d763100"),
             _SAVE_QUIZ_REVISION: "7032712d617574682d7175697a2d7631",
+            _ARCHIVE_PAID_COURSE: "7032712d617574682d6172632d763100",
         }[authoring["operation"]]
         return prefix + action["actorId"].replace("-", "")
     if action["stage"] == "identity":

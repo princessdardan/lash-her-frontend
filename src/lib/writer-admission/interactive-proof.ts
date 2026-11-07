@@ -23,6 +23,7 @@ const authoringCreateCurriculumActorPrefix = "7032712d617574682d6e65772d763100";
 const authoringPublishActorPrefix = "7032712d617574682d7075622d763100";
 const authoringReviewPublicationActorPrefix = "7032712d617574682d7264792d763100";
 const authoringSaveQuizActorPrefix = "7032712d617574682d7175697a2d7631";
+const authoringArchivePaidActorPrefix = "7032712d617574682d6172632d763100";
 type BrowserScope = { stage: Stage; identityActorKind?: "admin" | "customer"; identityEnrollment?: WriterIdentityEnrollment;
   authoringOperation?: WriterAuthoringOperation };
 export type LearningEnrollmentSelection = Readonly<{ actorId: string; idempotencyKey: string }>;
@@ -111,7 +112,7 @@ function permits({ stage, identityActorKind, identityEnrollment, authoringOperat
       if (authoringOperation === "review-publication") return matches(authoringReviewPublication, method, path);
       if (authoringOperation === "create-curriculum") return matches(authoringCreateCurriculum, method, path);
       if (authoringOperation === "reorder-curriculum") return matches(authoringReorder, method, path);
-      if (authoringOperation === "edit-draft") return matches(authoringEdit, method, path);
+      if (authoringOperation === "edit-draft" || authoringOperation === "archive-paid-course") return matches(authoringEdit, method, path);
       return authoringOperation === "create-draft" && ((method === "GET" && path === "/admin/courses") || (method === "POST" && path === "/api/admin/courses"));
     case "media": return matches(media, method, path) || (method === "GET" && authoringReads.test(path));
     case "learning": return matches(learning, method, path);
@@ -199,7 +200,9 @@ function browserProof(authority: Binding, cookie: string, now: number): BrowserP
     const reviewActorId = decodeSelectedUuid(selection, authoringReviewPublicationActorPrefix);
     if (reviewActorId) return { ...permit, authoringActorId: reviewActorId, authoringOperation: "review-publication" };
     const quizActorId = decodeSelectedUuid(selection, authoringSaveQuizActorPrefix);
-    return quizActorId ? { ...permit, authoringActorId: quizActorId, authoringOperation: "save-quiz-revision" } : null;
+    if (quizActorId) return { ...permit, authoringActorId: quizActorId, authoringOperation: "save-quiz-revision" };
+    const archiveActorId = decodeSelectedUuid(selection, authoringArchivePaidActorPrefix);
+    return archiveActorId ? { ...permit, authoringActorId: archiveActorId, authoringOperation: "archive-paid-course" } : null;
   }
   return { ...permit, lifecycleSelectionSha256: stage === "lifecycle" ? selection : undefined };
 }

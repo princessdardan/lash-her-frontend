@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createCourseAdminHandler } from "./course-admin-handler";
 import { createCourseClient } from "./course-client";
+import { createAdminAuth } from "@/lib/admin/auth-service";
 import type { AdminActor } from "@/lib/admin/types";
 import { markWriterOperationUncertain, withWriterOperationContext, type WriterAuthoringOperation } from "@/lib/writer-admission/context";
 import { IntegrationServiceError } from "./service-errors";
@@ -79,6 +80,49 @@ test("scoped publication forwards only a revisioned publish and refuses writes u
   assert.deepEqual(updates, []);
   assert.equal((await scoped(req(path, "PATCH", publish), { courseId: id })).status, 200);
   assert.deepEqual(updates, [publish]);
+});
+
+test("scoped paid archive accepts only the revisioned status change from the reviewed owner", async () => {
+  const path = `/api/admin/courses/${id}`;
+  const archive = { expectedRevision: 3, status: "archived" };
+  let sessionOwner = { ...actor.user, id: "8e2280dc-0389-4248-b21c-f87427f9e85c" };
+  let identityRefreshes = 0;
+  const writes: string[] = [];
+  const auth = createAdminAuth({
+    getIdentity: async () => ({ displayName: null, email: sessionOwner.email, emailVerified: true, providerUserId: sessionOwner.providerUserId }),
+    getOwnerEmails: () => new Set(),
+    userStore: {
+      async findByEmailNormalized() { return sessionOwner; },
+      async findByProviderUserId() { return sessionOwner; },
+      async recordSignIn() { identityRefreshes++; return sessionOwner; },
+      async bindIdentity() { assert.fail("archive scope cannot bind an identity"); },
+      async createBootstrapOwner() { assert.fail("archive scope cannot bootstrap an owner"); },
+      async listBookingProviderResourceIds() { return []; },
+      async listBookingResourceIds() { return []; },
+    },
+  });
+  const client = createCourseClient({ enabled: () => true, getAdmin: auth.requirePermission, mintToken: () => "owner.jwt",
+    invalidateCatalog: () => {}, getTransport: () => async request => {
+      assert.equal(request.method, "PATCH");
+      assert.equal(request.path, `/v1/admin/courses/${id}`);
+      writes.push(request.body!);
+      return Response.json({ course: { id, title: "Paid course", slug: "paid-course", description: null, status: "archived", accessMode: "paid",
+        priceCents: 100, currency: "CAD", revision: 4, modules: [], introduction: null, cover: null, seo: null, taxClassification: "reviewed" } });
+    } });
+  const handler = createCourseAdminHandler("update-course", { enabled: () => true, origin: () => origin, client: () => client,
+    run: (_kind, work) => withWriterOperationContext(work, undefined, undefined, undefined, undefined, id, "archive-paid-course") });
+  for (const body of [null, {}, { expectedRevision: 3 }, { status: "archived" }, { ...archive, expectedRevision: 0 },
+    { ...archive, expectedRevision: 1.5 }, { ...archive, expectedRevision: 2_147_483_648 }, { ...archive, expectedRevision: "3" },
+    { ...archive, status: "draft" }, { ...archive, status: "published" }, { ...archive, title: "Unreviewed change" }]) {
+    assert.equal((await handler(req(path, "PATCH", body), { courseId: id })).status, 400);
+  }
+  assert.equal((await handler(req(path, "PATCH", archive), { courseId: id })).status, 403);
+  assert.equal(identityRefreshes, 0);
+  assert.deepEqual(writes, []);
+  sessionOwner = actor.user;
+  assert.equal((await handler(req(path, "PATCH", archive), { courseId: id })).status, 200);
+  assert.equal(identityRefreshes, 1);
+  assert.deepEqual(writes, [JSON.stringify(archive)]);
 });
 
 test("scoped curriculum reorders accept only a revision and unique canonical IDs before client calls", async () => {

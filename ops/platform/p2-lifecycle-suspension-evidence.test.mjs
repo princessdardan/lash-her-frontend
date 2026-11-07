@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, observeP2InteractiveIdentitySession,
+import { expireP2InteractiveBrowserCookie, installP2InteractiveBrowserCookie, installP2PaidArchiveObserver, observeP2InteractiveIdentitySession,
   p2AuthoringCurriculumPath, p2AuthoringPublicationPaths, p2AuthoringQuizPath, p2AuthoringReorderPath,
   p2InteractiveBrowserEntryPath, p2InteractiveBrowserPath, p2LearningEnrollmentPaths, p2LifecycleMutationTarget, p2PaidGrantPaths, parseP2OwnerSuspensionResponse,
   parseP2PlaybackObservation, readP2InteractiveBrowserPermit, validateP2InteractiveBrowserInput, validateP2InteractiveBrowserPermit,
@@ -215,6 +215,7 @@ const authoringCurriculumSelector = actorId => "7032712d617574682d6e65772d763100
 const authoringPublicationSelector = (actorId, outcome) => (outcome === "published" ? "7032712d617574682d7075622d763100"
   : "7032712d617574682d7264792d763100") + actorId.replaceAll("-", "");
 const authoringQuizSelector = actorId => "7032712d617574682d7175697a2d7631" + actorId.replaceAll("-", "");
+const authoringArchiveSelector = actorId => "7032712d617574682d6172632d763100" + actorId.replaceAll("-", "");
 const ownedCourseId = randomUUID();
 const ownedDraftResponse = { course: { ...ownedDraft, id: ownedCourseId, revision: 1, modules: [] } };
 const { status: ownedDraftStatus, ...ownedEditFields } = ownedDraft;
@@ -238,6 +239,7 @@ function interactivePermit(input) {
   else if (input.stage === "learning") selector = (input.learning.actorId + input.learning.idempotencyKey).replaceAll("-", "");
   else if (input.stage === "paid-grant") selector = (input.paidGrant.actorId + input.paidGrant.idempotencyKey).replaceAll("-", "");
   else if (input.authoring?.operation === "save-quiz-revision") selector = authoringQuizSelector(input.authoring.actorId);
+  else if (input.authoring?.operation === "archive-paid-course") selector = authoringArchiveSelector(input.authoring.actorId);
   else if (input.stage === "authoring") selector = input.authoring.operation === "edit-and-stale-draft"
     ? authoringEditSelector(input.authoring.actorId) : input.authoring.operation === "reorder-and-stale-curriculum"
       ? authoringReorderSelector(input.authoring.actorId) : input.authoring.operation === "create-curriculum"
@@ -566,6 +568,30 @@ test("quiz save permit and compact receipt bind owner, lesson and both revisions
     }
     assert.throws(() => validateP2AuthoringMutationReceipt({ ...receipt, prior: { ...receipt.prior, status: 403 } }, target));
   }
+});
+
+test("paid archive permit and compact receipt bind the owner and both dialog observations", () => {
+  const target = {
+    actorId: adminId, operation: "archive-paid-course", courseId: ownedCourseId, slug: ownedDraft.slug, revision: 4, userId,
+    grantId: randomUUID(), bodySha256: identityHash({ expectedRevision: 4, status: "archived" }),
+  };
+  const input = interactiveInput({ stage: "authoring", authoring: target }), permit = interactivePermit(input);
+  assert.equal(validateP2InteractiveBrowserInput(input), input);
+  assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+  assert.equal(p2InteractiveBrowserEntryPath(input, "owner"), `/admin/courses/${ownedCourseId}`);
+  const parts = permit.cookie.split(".");
+  assert.equal(parts[6], authoringArchiveSelector(adminId));
+  for (const selector of [authoringArchiveSelector(randomUUID()), authoringPublicationSelector(adminId, "published"), authoringSelector(adminId)]) {
+    parts[6] = selector;
+    assert.throws(() => validateP2InteractiveBrowserPermit({ ...permit, cookie: parts.join(".") }, input));
+  }
+  const body = { courseId: ownedCourseId, slug: target.slug, revision: target.revision + 1, status: "archived" };
+  const receipt = { method: "PATCH", pathname: `/api/admin/courses/${ownedCourseId}`, status: 200, requestId: randomUUID(), body,
+    warningObserved: true, cancelObservedWithoutMutation: true };
+  assert.deepEqual(validateP2AuthoringMutationReceipt(receipt, target), receipt);
+  for (const changed of [{ warningObserved: false }, { cancelObservedWithoutMutation: false }, { method: "POST" },
+    { body: { ...body, revision: target.revision } }, { body: { ...body, status: "published" } }])
+    assert.throws(() => validateP2AuthoringMutationReceipt({ ...receipt, ...changed }, target));
 });
 
 test("publication permit and receipt distinguish blocked and published outcomes", () => {
@@ -1757,3 +1783,131 @@ test("owned Chromium lifecycle watcher refuses a second selected success and amb
       }
     } finally { await browser.close(); }
   });
+
+{
+  const actorId = randomUUID(), courseId = randomUUID(), revision = 4, slug = "owned-paid-archive", requestId = randomUUID();
+  const posted = { expectedRevision: revision, status: "archived" };
+  const target = { actorId, operation: "archive-paid-course", courseId, slug, revision, userId: randomUUID(), grantId: randomUUID(),
+    bodySha256: createHash("sha256").update(JSON.stringify(posted)).digest("hex") };
+  const input = { version: 2, environment: "staging", actionId: "owned-paid-archive", challenge: "1".repeat(64), bindingSha256: "2".repeat(64),
+    sourceCommit: "a".repeat(40), deploymentId: "dpl_ownedArchive", deploymentUrl: "https://owned-archive.vercel.app",
+    browserOrigin: "https://staging.lashher.com", stage: "authoring", epoch: "9", windowSeconds: 120, authoring: target };
+  const entry = "/admin/courses/" + courseId, pathname = "/api" + entry;
+  const receipt = { method: "PATCH", pathname, status: 200, requestId,
+    body: { courseId, slug, revision: revision + 1, status: "archived" }, warningObserved: true, cancelObservedWithoutMutation: true };
+
+  test("paid archive browser input, permit and receipt bind the exact approved mutation", () => {
+    assert.equal(validateP2InteractiveBrowserInput(input), input);
+    assert.equal(p2InteractiveBrowserEntryPath(input, "owner"), entry);
+    assert.throws(() => p2InteractiveBrowserEntryPath(input, "learner"));
+    const issued = Math.floor(Date.now() / 1000), expires = issued + 60;
+    const cookie = ["v2", input.epoch, "authoring", issued, expires, "3".repeat(32),
+      "7032712d617574682d6172632d763100" + actorId.replaceAll("-", ""), "4".repeat(64)].join(".");
+    const permit = { stage: "authoring", epoch: input.epoch, expires, cookie };
+    assert.equal(validateP2InteractiveBrowserPermit(permit, input), permit);
+    assert.throws(() => validateP2InteractiveBrowserPermit(permit, { ...input, authoring: { ...target, actorId: randomUUID() } }));
+    for (const change of [{ bodySha256: "5".repeat(64) }, { userId: "other" }, { grantId: "other" }, { revision: 2_147_483_647 }]) {
+      assert.throws(() => validateP2InteractiveBrowserInput({ ...input, authoring: { ...target, ...change } }));
+    }
+    assert.equal(validateP2AuthoringMutationReceipt(receipt, target), receipt);
+    for (const change of [{ cancelObservedWithoutMutation: false }, { warningObserved: false }, { method: "POST" }, { customerDenied: true },
+      { body: { ...receipt.body, status: "published" } }]) {
+      assert.throws(() => validateP2AuthoringMutationReceipt({ ...receipt, ...change }, target));
+    }
+  });
+
+  const warning = `<section aria-labelledby="paid-archive-heading"><h3 id="paid-archive-heading">Before archiving this paid course</h3>
+    <p>Archiving denies protected lessons, new playback, assessments and progress updates, including access from existing purchases.
+      Already issued video access may continue for up to 600 seconds.</p>
+    <p>Course and lesson identifiers, independent grants, progress and assessment and audit history remain.
+      Community access depends on remaining eligible courses and grants.</p>
+    <p>Archiving does not issue a refund or cancel a payment. Support and refund requests follow existing applicable terms and owner review.</p>
+    <p>Restoring access requires an explicit republish that passes current publication checks.
+      Republish cannot override revoked or expired grants, suspension or account deletion.</p>
+    <button id="cancel">Cancel archive</button><button id="confirm">Archive paid course</button></section>`;
+
+  test("owned Chromium paid archive requires two genuine warnings, cancellation and normal readback",
+    { skip: process.env.P2_INTERACTIVE_BROWSER_OWNED_TEST !== "true" }, async () => {
+      const { chromium } = await import("playwright");
+      const browser = await chromium.launch();
+      const open = async scenario => {
+        const context = await browser.newContext(), page = await context.newPage(), requests = [];
+        let allowReadback;
+        const readbackAllowed = new Promise(resolve => { allowReadback = resolve; });
+        if (scenario !== "success") allowReadback();
+        const policy = scenario === "wrong-policy" ? warning.replace("600 seconds", "60 seconds") : warning;
+        const body = scenario === "wrong-patch" ? { ...posted, expectedRevision: revision - 1 } : posted;
+        const document = `<!doctype html><meta charset="utf-8"><p id="revision">published · Revision ${revision}</p>
+          <button id="archive">Archive course</button><div id="warning"></div><div role="status"><p></p></div><script>
+          const area = document.querySelector('#warning');
+          document.querySelector('#archive').onclick = () => {
+            area.innerHTML = ${JSON.stringify(policy)};
+            document.querySelector('#cancel').onclick = () => { area.replaceChildren(); };
+            document.querySelector('#confirm').onclick = async () => {
+              const result = await fetch(${JSON.stringify(pathname)}, {method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(${JSON.stringify(body)})});
+              await result.json();
+              const { course } = await (await fetch(${JSON.stringify(pathname)})).json();
+              area.replaceChildren();
+              document.querySelector('#revision').textContent = course.status + ' · Revision ' + course.revision;
+              document.querySelector('[role="status"] p').textContent = 'Course archived. Historical references remain available.';
+            };
+          };</script>`;
+        await context.route("**/*", async route => {
+          const request = route.request(), url = new URL(request.url());
+          if (url.origin !== input.browserOrigin) return route.abort();
+          if (request.isNavigationRequest()) return route.fulfill({ status: 200, contentType: "text/html", body: document });
+          requests.push(request.method() + " " + url.pathname);
+          if (request.method() === "GET") await readbackAllowed;
+          const course = { id: courseId, slug, revision: revision + 1, status: "archived", title: "Private fixture title" };
+          if (scenario === "wrong-response" && request.method() === "PATCH") course.status = "published";
+          return route.fulfill({ status: 200, body: JSON.stringify({ course }),
+            headers: { "content-type": "application/json", "cache-control": "private, no-store", "x-request-id": requestId } });
+        });
+        const watch = watchP2AuthoringMutation(context, page, input);
+        await installP2PaidArchiveObserver(page, input);
+        await page.goto(input.browserOrigin + entry);
+        return { page, watch, requests, allowReadback, expires: Math.floor(Date.now() / 1000) + 60,
+          archive: page.getByRole("button", { name: "Archive course", exact: true }), cancel: page.getByRole("button", { name: "Cancel archive", exact: true }),
+          confirm: page.getByRole("button", { name: "Archive paid course", exact: true }),
+          heading: page.getByRole("heading", { name: "Before archiving this paid course", exact: true }),
+          close: async () => { allowReadback(); watch.close(); await context.close(); } };
+      };
+      const prepare = async (owned, scenario) => {
+        await owned.archive.click();
+        await owned.heading.waitFor({ state: "visible" });
+        if (scenario === "no-cancel") return;
+        if (scenario === "synthetic-cancel") await owned.page.evaluate(() => document.querySelector("#cancel").click());
+        else await owned.cancel.click();
+        await owned.heading.waitFor({ state: "hidden" });
+        assert.deepEqual(owned.requests, []);
+        if (scenario === "alternate-write") await owned.page.evaluate(async () => { await (await fetch("/api/admin/other", { method: "POST" })).json(); });
+        await owned.archive.click();
+        await owned.heading.waitFor({ state: "visible" });
+      };
+      try {
+        const owned = await open("success");
+        try {
+          await prepare(owned, "success");
+          await Promise.all([owned.page.waitForRequest(request => request.method() === "GET" && request.url().endsWith(pathname)), owned.confirm.click()]);
+          assert.throws(() => owned.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+          owned.allowReadback();
+          await owned.watch.wait(owned.expires);
+          assert.deepEqual(owned.watch.finish(), receipt);
+          assert.deepEqual(owned.requests, ["PATCH " + pathname, "GET " + pathname]);
+          await owned.page.evaluate(async ({ pathname, posted }) => {
+            await (await fetch(pathname, { method: "PATCH", body: JSON.stringify(posted) })).json();
+          }, { pathname, posted });
+          assert.throws(() => owned.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+        } finally { await owned.close(); }
+        for (const scenario of ["no-cancel", "synthetic-cancel", "wrong-policy", "alternate-write", "wrong-patch", "wrong-response"]) {
+          const rejected = await open(scenario);
+          try {
+            await prepare(rejected, scenario);
+            await rejected.confirm.click();
+            await assert.rejects(rejected.watch.wait(rejected.expires), /AUTHORING_RESPONSE_REFUSED/u);
+            assert.throws(() => rejected.watch.finish(), /AUTHORING_RESPONSE_REFUSED/u);
+          } finally { await rejected.close(); }
+        }
+      } finally { await browser.close(); }
+    });
+}

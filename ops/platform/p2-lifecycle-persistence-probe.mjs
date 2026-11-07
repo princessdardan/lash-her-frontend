@@ -88,6 +88,19 @@ function canonicalCommandDigest(command) { return sha(command); }
 const date = value => value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 const count = (rows, name) => Number(rows[0]?.[name] ?? rows[0]?.count ?? 0);
 
+const paidArchiveHistoryLimit = 1000;
+const paidArchiveDigest = (from, identity = "r.id", fields = "pg_catalog.to_jsonb(r)") =>
+  `SELECT count(*)::int AS row_count, pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(coalesce(
+    pg_catalog.string_agg(row_sha256,'' ORDER BY row_id),''),'UTF8')),'hex') AS digest
+  FROM (SELECT ${identity} AS row_id,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to((${fields})::text,'UTF8')),'hex') AS row_sha256
+    ${from} ORDER BY ${identity} LIMIT ${paidArchiveHistoryLimit + 1}) bounded`;
+const paidArchiveEligibleAccess = `FROM public.enrollments e JOIN public.courses c ON c.id=e.course_id
+  WHERE e.user_id=$2::uuid AND e.status='active' AND c.status='published'
+    AND NOT EXISTS(SELECT 1 FROM public.account_lifecycle_states a WHERE a.user_id=e.user_id AND a.status<>'active')
+    AND EXISTS(SELECT 1 FROM public.entitlement_grants g WHERE g.user_id=e.user_id AND g.course_id=e.course_id
+      AND g.status='active' AND (g.expires_at IS NULL OR g.expires_at>pg_catalog.transaction_timestamp()))`;
+
 const SQL = Object.freeze({
   frontend: Object.freeze({
     identity: "SELECT current_database() AS database,current_user AS role,current_user::regrole::oid::text AS role_oid,(current_setting('server_version_num')::int/10000)::int AS major,current_setting('transaction_read_only') AS read_only",
@@ -187,6 +200,44 @@ const SQL = Object.freeze({
     paidGrantEffect: `SELECT (command_id=$1::uuid AND entitlement_grant_id=$2::uuid
       AND effect_type='grant_created' AND previous_status IS NULL AND resulting_status='active') AS fields_match
       FROM public.admin_entitlement_command_effects WHERE command_id=$1::uuid OR entitlement_grant_id=$2::uuid LIMIT 2`,
+    paidArchiveCourse: `SELECT 1 AS eligible FROM public.courses WHERE id=$1::uuid
+      AND access_mode='paid' AND currency='CAD' AND price_cents>0`,
+    paidArchiveGrant: `SELECT EXISTS(SELECT 1 FROM public.entitlement_grants g
+      JOIN public.enrollments e ON e.id=g.enrollment_id AND e.user_id=g.user_id AND e.course_id=g.course_id
+      JOIN public.entitlement_idempotency_keys k ON k.idempotency_key=g.idempotency_key AND k.request_hash=g.request_hash
+      JOIN public.admin_entitlement_commands a ON a.idempotency_key=g.idempotency_key AND a.request_hash=g.request_hash
+      JOIN public.admin_entitlement_command_effects f ON f.command_id=a.id AND f.entitlement_grant_id=g.id
+      WHERE g.course_id=$1::uuid AND g.user_id=$2::uuid AND g.id=$3::uuid AND g.status='active' AND g.grant_reason='manual'
+        AND g.expires_at IS NULL AND g.external_order_id IS NULL AND g.external_payment_id IS NULL AND g.provider IS NULL
+        AND e.status='active' AND e.source='admin' AND e.revoked_at IS NULL AND e.refunded_at IS NULL
+        AND k.command_type='admin_grant' AND pg_catalog.starts_with(g.idempotency_key,'owner-paid:')
+        AND a.action='grant' AND a.scope='userCourse' AND a.target_course_id=g.course_id AND a.target_user_id=g.user_id
+        AND a.target_grant_id IS NULL AND a.outcome='applied' AND a.effect_count=1
+        AND a.effective_at=g.granted_at AND pg_catalog.starts_with(a.reason,'[paid-course revision ')
+        AND f.effect_type='grant_created' AND f.previous_status IS NULL AND f.resulting_status='active') AS active`,
+    paidArchiveAccess: `SELECT EXISTS(SELECT 1 ${paidArchiveEligibleAccess} AND e.course_id=$1::uuid) AS eligible`,
+    paidArchiveIndependentAccess: paidArchiveDigest(`${paidArchiveEligibleAccess} AND e.course_id<>$1::uuid`,
+      "e.course_id", "pg_catalog.to_jsonb(e.course_id)"),
+    paidArchiveModules: paidArchiveDigest("FROM public.modules r WHERE r.course_id=$1::uuid"),
+    paidArchiveLessons: paidArchiveDigest(`FROM public.lessons r JOIN public.modules m ON m.id=r.module_id
+      WHERE m.course_id=$1::uuid`),
+    paidArchiveQuizRevisions: paidArchiveDigest(`FROM public.quiz_revisions r JOIN public.lessons l ON l.id=r.lesson_id
+      JOIN public.modules m ON m.id=l.module_id WHERE m.course_id=$1::uuid`),
+    paidArchiveAttempts: paidArchiveDigest(`FROM public.quiz_attempts r JOIN public.lessons l ON l.id=r.lesson_id
+      JOIN public.modules m ON m.id=l.module_id WHERE m.course_id=$1::uuid`),
+    paidArchiveProgress: paidArchiveDigest(`FROM public.lesson_progress r JOIN public.lessons l ON l.id=r.lesson_id
+      JOIN public.modules m ON m.id=l.module_id WHERE m.course_id=$1::uuid`),
+    paidArchiveEnrollments: paidArchiveDigest("FROM public.enrollments r WHERE r.course_id=$1::uuid"),
+    paidArchiveGrants: paidArchiveDigest("FROM public.entitlement_grants r WHERE r.course_id=$1::uuid"),
+    paidArchiveRevocations: paidArchiveDigest(`FROM public.entitlement_revocations r JOIN public.entitlement_grants g
+      ON g.id=r.entitlement_grant_id WHERE g.course_id=$1::uuid`),
+    paidArchiveCommands: paidArchiveDigest("FROM public.admin_entitlement_commands r WHERE r.target_course_id=$1::uuid"),
+    paidArchiveEffects: paidArchiveDigest(`FROM public.admin_entitlement_command_effects r JOIN public.admin_entitlement_commands a
+      ON a.id=r.command_id WHERE a.target_course_id=$1::uuid`),
+    paidArchiveStreams: paidArchiveDigest("FROM public.community_enrollment_streams r WHERE r.course_id=$1::uuid"),
+    paidArchiveEvents: paidArchiveDigest(`FROM public.community_enrollment_outbox r JOIN public.community_enrollment_streams s
+      ON s.id=r.stream_id WHERE s.course_id=$1::uuid`, "r.event_id",
+    "pg_catalog.jsonb_build_array(r.event_id,r.stream_id,r.stream_version,r.canonical_body,r.canonical_digest,r.created_at)"),
     draft: `SELECT id::text AS course_id,slug,revision,status,
       (title=$2::text AND description IS NOT DISTINCT FROM $3::text AND introduction IS NOT DISTINCT FROM $4::text
         AND currency=$5::text AND access_mode=$6::text AND price_cents=$7::int
@@ -447,6 +498,7 @@ const publicationBaselines = new WeakMap();
 const quizSaveBaselines = new WeakMap();
 const freeEnrollmentBaselines = new WeakMap();
 const paidGrantBaselines = new WeakMap();
+const paidArchiveBaselines = new WeakMap();
 const draftFormFields = ["title", "slug", "description", "introduction", "currency", "accessMode", "priceCents", "cover", "seo", "taxClassification"];
 const orderedDraftFields = (value, fields) => closed(value, fields) && Object.keys(value).every((key, index) => key === fields[index]);
 const draftSlug = value => typeof value === "string" && value.length <= 120 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
@@ -1113,6 +1165,71 @@ export async function observeP2InteractivePaidGrantCase(courseJob, selection, ba
     return { enrollmentId, transitionId };
   });
   return { courseId, userId, commandId, grantId, courseRevision, ...result, readOnly: true };
+}
+
+const paidArchiveSelectionFields = ["courseId", "slug", "revision", "userId", "grantId"];
+const paidArchiveHistory = ["paidArchiveModules", "paidArchiveLessons", "paidArchiveQuizRevisions", "paidArchiveAttempts",
+  "paidArchiveProgress", "paidArchiveEnrollments", "paidArchiveGrants", "paidArchiveRevocations", "paidArchiveCommands", "paidArchiveEffects"];
+const paidArchiveProjection = ["paidArchiveStreams", "paidArchiveEvents"];
+
+export function validateP2InteractivePaidArchive(selection, input) {
+  demand(input === undefined && closed(selection, paidArchiveSelectionFields) && draftSlug(selection.slug)
+    && [selection.courseId, selection.userId, selection.grantId].every(courseUuid) && Number.isInteger(selection.revision)
+    && selection.revision >= 1 && selection.revision <= 2_147_483_646, "course-paid-archive-selection");
+}
+
+async function readPaidArchiveDigests(client, values, queries) {
+  const digests = [];
+  for (const query of queries) {
+    const rows = await read(client, "course", query, values), row = rows[0];
+    demand(rows.length === 1 && Number.isInteger(row.row_count) && row.row_count >= 0 && row.row_count <= paidArchiveHistoryLimit
+      && SHA.test(row.digest), "course-paid-archive-history-limit");
+    digests.push(row.digest);
+  }
+  return digests;
+}
+
+async function readPaidArchive(client, selection, revision, status) {
+  const { courseId, userId, grantId } = selection;
+  const { metadataSha256 } = await readCoursePublication(client, selection, revision, status);
+  demand((await read(client, "course", "paidArchiveCourse", [courseId])).length === 1, "course-paid-archive-eligibility");
+  const grants = await read(client, "course", "paidArchiveGrant", [courseId, userId, grantId]);
+  demand(grants.length === 1 && grants[0].active === true, "course-paid-archive-grant");
+  const access = await read(client, "course", "paidArchiveAccess", [courseId, userId]);
+  demand(access.length === 1 && access[0].eligible === (status === "published"), "course-paid-archive-access");
+  return { metadataSha256,
+    history: await readPaidArchiveDigests(client, [courseId], paidArchiveHistory),
+    projection: await readPaidArchiveDigests(client, [courseId], paidArchiveProjection),
+    independentEligibility: await readPaidArchiveDigests(client, [courseId, userId], ["paidArchiveIndependentAccess"]) };
+}
+
+export async function captureP2InteractivePaidArchiveBaseline(courseJob, selection, input, dependencies) {
+  validateP2InteractivePaidArchive(selection, input);
+  const selected = Object.freeze({ ...selection }), { target, jobSha256 } = selectedCourseDraftJob(courseJob);
+  const { result, roleOid } = await readHeldCourseDraft(target, dependencies, undefined,
+    client => readPaidArchive(client, selected, selected.revision, "published"));
+  const baseline = Object.freeze({});
+  paidArchiveBaselines.set(baseline, { selected, result, jobSha256, roleOid,
+    verifyEnvironment: dependencies.verifyEnvironment, verifySession: dependencies.verifySession });
+  return baseline;
+}
+
+export async function observeP2InteractivePaidArchiveCase(courseJob, selection, baseline, browserBody, dependencies) {
+  validateP2InteractivePaidArchive(selection, undefined);
+  const { courseId, slug, userId, grantId } = selection, revision = selection.revision + 1, status = "archived";
+  const { target, jobSha256 } = selectedCourseDraftJob(courseJob), saved = paidArchiveBaselines.get(baseline);
+  demand(saved?.jobSha256 === jobSha256 && saved.verifyEnvironment === dependencies?.verifyEnvironment
+    && saved.verifySession === dependencies?.verifySession && paidArchiveSelectionFields.every(key => selection[key] === saved.selected[key])
+    && closed(browserBody, ["courseId", "slug", "revision", "status"]) && browserBody.courseId === courseId
+    && browserBody.slug === slug && browserBody.revision === revision && browserBody.status === status, "course-paid-archive-receipt");
+  paidArchiveBaselines.delete(baseline);
+  const { result } = await readHeldCourseDraft(target, dependencies, saved.roleOid,
+    client => readPaidArchive(client, saved.selected, revision, status));
+  demand(result.metadataSha256 === saved.result.metadataSha256 && sameIds(result.history, saved.result.history), "course-paid-archive-history");
+  // The pinned Course archive does not write to the Community outbox. Existing events may deliver independently.
+  demand(sameIds(result.independentEligibility, saved.result.independentEligibility) && sameIds(result.projection, saved.result.projection),
+    "course-paid-archive-community-authority");
+  return { courseId, slug, revision, status, userId, grantId, historyPreserved: true, readOnly: true };
 }
 
 export async function runPrivatePersistenceProbeFromStdin(expectedProfile = undefined) {

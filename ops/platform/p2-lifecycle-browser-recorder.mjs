@@ -71,9 +71,10 @@ const authoringReorder = input => input.stage === "authoring" && input.authoring
 const authoringCreateCurriculum = input => input.stage === "authoring" && input.authoring?.operation === "create-curriculum";
 const authoringPublication = input => input.stage === "authoring" && input.authoring?.operation === "qualify-publication";
 const authoringQuiz = input => input.stage === "authoring" && input.authoring?.operation === "save-quiz-revision";
+const authoringArchive = input => input.stage === "authoring" && input.authoring?.operation === "archive-paid-course";
 export const isP2InteractiveAuthoringPair = input => authoringEdit(input) || authoringReorder(input);
 export const isP2InteractiveAuthoringDetail = input => isP2InteractiveAuthoringPair(input) || authoringCreateCurriculum(input)
-  || authoringPublication(input) || authoringQuiz(input);
+  || authoringPublication(input) || authoringQuiz(input) || authoringArchive(input);
 const publicationIssueCode = code => matches(code, /^[A-Z][A-Z0-9_]{0,63}$/u);
 const publishedOutcome = target => target.outcome === "published";
 
@@ -97,6 +98,7 @@ export function p2AuthoringQuizPath({ lessonId }) {
 function authoringSelector(input) {
   demand(uuid(input.authoring.actorId));
   const actor = input.authoring.actorId.replaceAll("-", "");
+  if (authoringArchive(input)) return "7032712d617574682d6172632d763100" + actor;
   if (authoringQuiz(input)) return "7032712d617574682d7175697a2d7631" + actor;
   if (authoringPublication(input)) {
     return (publishedOutcome(input.authoring) ? "7032712d617574682d7075622d763100" : "7032712d617574682d7264792d763100") + actor;
@@ -158,13 +160,14 @@ export function validateP2InteractiveBrowserInput(input) {
   if (input.stage === "authoring") {
     const target = input.authoring, pair = isP2InteractiveAuthoringPair(input), create = authoringCreateCurriculum(input);
     const curriculum = authoringReorder(input) || create, publication = authoringPublication(input), quiz = authoringQuiz(input);
+    const archive = authoringArchive(input);
     demand(closed(target, ["actorId", "slug", ...(isP2InteractiveAuthoringDetail(input) ? ["operation", "courseId", "revision"] : []),
       ...(pair ? ["winnerBodySha256", "staleBodySha256"] : publication ? ["outcome", "issueCodes"] : ["bodySha256"]),
       ...(curriculum ? ["kind", "parentId"] : []), ...(quiz ? ["lessonId", "quizRevision", "documentSha256"] : []),
-      ...(create ? ["childSlug"] : [])])
+      ...(create ? ["childSlug"] : []), ...(archive ? ["userId", "grantId"] : [])])
       && uuid(target.actorId) && matches(target.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u) && target.slug.length <= 120);
     if (isP2InteractiveAuthoringDetail(input)) demand(uuid(target.courseId) && Number.isSafeInteger(target.revision)
-      && target.revision >= 1 && target.revision < (publication || quiz ? 2_147_483_647 : Number.MAX_SAFE_INTEGER));
+      && target.revision >= 1 && target.revision < (publication || quiz || archive ? 2_147_483_647 : Number.MAX_SAFE_INTEGER));
     if (pair) demand(sha(target.winnerBodySha256) && sha(target.staleBodySha256) && target.winnerBodySha256 !== target.staleBodySha256);
     else if (publication) demand(["published", "blocked"].includes(target.outcome) && Array.isArray(target.issueCodes)
       && target.issueCodes.length <= 16 && (publishedOutcome(target) ? target.issueCodes.length === 0 : target.issueCodes.length > 0)
@@ -175,6 +178,8 @@ export function validateP2InteractiveBrowserInput(input) {
     if (create) demand(matches(target.childSlug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u) && target.childSlug.length <= 120);
     if (quiz) demand(uuid(target.lessonId) && Number.isSafeInteger(target.quizRevision)
       && target.quizRevision >= 0 && target.quizRevision < 2_147_483_647 && sha(target.documentSha256));
+    if (archive) demand(uuid(target.userId) && uuid(target.grantId) && target.bodySha256 === createHash("sha256")
+      .update(JSON.stringify({ expectedRevision: target.revision, status: "archived" })).digest("hex"));
   }
   if (enrollment) enrollmentSelector(input.identityEnrollment);
   else if (input.stage === "identity") identitySelector(input.identity);
@@ -392,6 +397,14 @@ const matchesAuthoringStep = (step, method, pathname, status = 200) => closed(st
   && step.method === method && step.pathname === pathname && step.status === status && uuid(step.requestId);
 
 export function validateP2AuthoringMutationReceipt(receipt, target) {
+  if (target.operation === "archive-paid-course") {
+    demand(closed(receipt, ["method", "pathname", "status", "requestId", "body", "warningObserved", "cancelObservedWithoutMutation"])
+      && receipt.method === "PATCH" && receipt.pathname === authoringPath + "/" + target.courseId && receipt.status === 200
+      && uuid(receipt.requestId) && receipt.warningObserved === true && receipt.cancelObservedWithoutMutation === true
+      && closed(receipt.body, ["courseId", "slug", "revision", "status"]) && receipt.body.courseId === target.courseId
+      && receipt.body.slug === target.slug && receipt.body.revision === target.revision + 1 && receipt.body.status === "archived");
+    return receipt;
+  }
   if (target.operation === "save-quiz-revision") {
     const pathname = p2AuthoringQuizPath(target);
     demand(closed(receipt, ["prior", "save", "body"])
@@ -551,7 +564,7 @@ function readPaidGrantResult(body, target) {
 async function readMutationResponse(response, request, input, pathname, editRole, submittedIds) {
   const authoring = input.stage === "authoring", learning = input.stage === "learning", paidGrant = input.stage === "paid-grant";
   const maximum = authoring ? maxAuthoringBody : paidGrant ? maxPaidGrantBody : maxLifecycleBody;
-  const reorder = authoringReorder(input), method = editRole && !reorder ? "PATCH" : "POST";
+  const reorder = authoringReorder(input), archive = authoringArchive(input), method = archive || editRole && !reorder ? "PATCH" : "POST";
   const status = editRole === "stale" ? 409 : authoring || learning || paidGrant || preferences(input.lifecycle) ? 200 : 202;
   const receipt = await readBrowserResponseHead(response, request, input.browserOrigin, pathname, method, status);
   if (reorder) receipt.keyboardActivated = true;
@@ -567,6 +580,8 @@ async function readMutationResponse(response, request, input, pathname, editRole
   if (authoringCreateCurriculum(input)) {
     return validateP2AuthoringMutationReceipt({ ...receipt, body: curriculumResult(body, input.authoring) }, input.authoring);
   }
+  if (archive) return validateP2AuthoringMutationReceipt({ ...receipt, body: readCourseResult(body),
+    warningObserved: true, cancelObservedWithoutMutation: true }, input.authoring);
   return validateAuthoringCourseReceipt({ ...receipt, body: readCourseResult(body) }, input.authoring, editRole === "winner");
 }
 
@@ -575,12 +590,13 @@ async function readMutationResponse(response, request, input, pathname, editRole
 function watchMutation(context, page, input, edit) {
   validateP2InteractiveBrowserInput(input);
   const authoring = input.stage === "authoring", reorder = authoringReorder(input), create = authoringCreateCurriculum(input), target = input.lifecycle;
+  const archive = authoringArchive(input);
   const learning = input.stage === "learning" ? p2LearningEnrollmentPaths(input.learning) : undefined;
   const paidGrant = input.stage === "paid-grant" ? p2PaidGrantPaths(input.paidGrant) : undefined;
   const academyUrl = learning && input.browserOrigin + learning.academyPath;
   const pathname = reorder ? p2AuthoringReorderPath(input.authoring) : create ? p2AuthoringCurriculumPath(input.authoring)
-    : edit ? authoringPath + "/" + input.authoring.courseId : authoring ? authoringPath : (learning ?? paidGrant ?? target).pathname;
-  const method = edit && !reorder ? "PATCH" : "POST";
+    : edit || archive ? authoringPath + "/" + input.authoring.courseId : authoring ? authoringPath : (learning ?? paidGrant ?? target).pathname;
+  const method = archive || edit && !reorder ? "PATCH" : "POST";
   const refusal = () => new Error("P2_INTERACTIVE_" + input.stage.toUpperCase().replaceAll("-", "_") + "_RESPONSE_REFUSED");
   let selected, receipt, accept, reject, submittedIds, activation, failed = false, responseStarted = false, completed = false, arrived = false;
   const observed = new Promise((resolve, fail) => { accept = resolve; reject = fail; });
@@ -589,6 +605,8 @@ function watchMutation(context, page, input, edit) {
   const onRequest = request => {
     const url = URL.parse(request.url());
     if (!url) return;
+    if (archive && url.origin === input.browserOrigin && !["GET", "HEAD", "OPTIONS"].includes(request.method())
+      && (url.pathname !== pathname || request.method() !== method)) return fail();
     if (url.origin !== input.browserOrigin || url.pathname !== pathname || request.method() !== method) return;
     try {
       const frame = request.frame();
@@ -607,6 +625,12 @@ function watchMutation(context, page, input, edit) {
           activation = edit.acceptReorder(frame);
           activation.catch(fail);
         } else if (create) validateCurriculumPost(posted, input.authoring);
+        else if (archive) {
+          demand(frame.url() === input.browserOrigin + p2InteractiveBrowserEntryPath(input, "owner") && request.resourceType() === "fetch"
+            && closed(posted, ["expectedRevision", "status"]) && posted.expectedRevision === input.authoring.revision && posted.status === "archived");
+          activation = frame.evaluate(() => window.__lashP2qConsumePaidArchive?.() === true).then(demand);
+          activation.catch(fail);
+        }
         else {
           demand(posted?.slug === input.authoring.slug);
           if (edit) {
@@ -682,11 +706,22 @@ function watchMutation(context, page, input, edit) {
           if (page.url() !== input.browserOrigin + paidGrant.pagePath) throw refusal();
           completed = true;
         }
+        if (archive) {
+          const timeout = expires * 1000 - Date.now();
+          if (failed || timeout <= 0) throw refusal();
+          await Promise.all([
+            page.getByRole("status").getByText("Course archived. Historical references remain available.", { exact: true }).waitFor({ state: "visible", timeout }),
+            page.getByText("archived · Revision " + receipt.body.revision, { exact: true }).waitFor({ state: "visible", timeout }),
+            page.getByRole("heading", { name: "Before archiving this paid course", exact: true }).waitFor({ state: "hidden", timeout }),
+          ]).catch(() => { throw refusal(); });
+          if (page.url() !== input.browserOrigin + p2InteractiveBrowserEntryPath(input, "owner")) throw refusal();
+          completed = true;
+        }
         if (failed) throw refusal();
       } finally { clearTimeout(timer); }
     },
     finish() {
-      if (failed || !receipt || (create || learning || paidGrant) && !completed || context.serviceWorkers().length) throw refusal();
+      if (failed || !receipt || (create || learning || paidGrant || archive) && !completed || context.serviceWorkers().length) throw refusal();
       return receipt;
     },
     close() {
@@ -854,6 +889,58 @@ export function watchP2AuthoringMutation(context, page, input) {
   demand(input.stage === "authoring" && !isP2InteractiveAuthoringPair(input));
   if (authoringPublication(input) || authoringQuiz(input)) return watchAuthoringReadWrite(context, page, input);
   return watchMutation(context, page, input);
+}
+
+export async function installP2PaidArchiveObserver(page, input) {
+  demand(authoringArchive(input));
+  const path = p2InteractiveBrowserEntryPath(input, "owner");
+  await page.addInitScript(({ origin, path }) => {
+    const atCourse = () => location.origin === origin && location.pathname === path && !location.search && !location.hash;
+    if (window.top !== window || !atCourse()) return;
+    const warningParagraphs = [
+      "Archiving denies protected lessons, new playback, assessments and progress updates, including access from existing purchases. Already issued video access may continue for up to 600 seconds.",
+      "Course and lesson identifiers, independent grants, progress and assessment and audit history remain. Community access depends on remaining eligible courses and grants.",
+      "Archiving does not issue a refund or cancel a payment. Support and refund requests follow existing applicable terms and owner review.",
+      "Restoring access requires an explicit republish that passes current publication checks. Republish cannot override revoked or expired grants, suspension or account deletion.",
+    ];
+    const warning = () => document.querySelector('section[aria-labelledby="paid-archive-heading"]');
+    const text = element => element?.textContent?.replace(/\s+/gu, " ").trim();
+    const visible = element => element && element.getClientRects().length > 0 && !element.closest('[hidden], [aria-hidden="true"]')
+      && getComputedStyle(element).visibility === "visible" && getComputedStyle(element).opacity !== "0";
+    const completeWarning = section => {
+      const heading = section?.querySelector("h3#paid-archive-heading"), paragraphs = [...(section?.querySelectorAll("p") ?? [])];
+      return visible(section) && visible(heading) && text(heading) === "Before archiving this paid course"
+        && paragraphs.length === warningParagraphs.length
+        && paragraphs.every((paragraph, index) => visible(paragraph) && text(paragraph) === warningParagraphs[index]);
+    };
+    let step = "initial";
+    const observe = () => {
+      const section = warning();
+      if (step === "opening-first" && completeWarning(section)) step = "first-visible";
+      if (step === "canceling" && !section) step = "canceled";
+      if (step === "opening-second" && completeWarning(section)) step = "second-visible";
+    };
+    const observer = new MutationObserver(observe);
+    observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+    window.addEventListener("click", event => {
+      if (!event.isTrusted || !atCourse()) return;
+      const button = event.target instanceof Element ? event.target.closest("button") : null, label = text(button);
+      if (!button || button.disabled || !visible(button) || !["Archive course", "Cancel archive", "Archive paid course"].includes(label)) return;
+      observe();
+      const section = warning();
+      if (label === "Archive course" && !section && step === "initial") step = "opening-first";
+      else if (label === "Archive course" && !section && step === "canceled") step = "opening-second";
+      else if (label === "Cancel archive" && step === "first-visible" && completeWarning(section) && section.contains(button)) step = "canceling";
+      else if (label === "Archive paid course" && step === "second-visible" && completeWarning(section) && section.contains(button)) step = "confirming";
+      else step = "invalid";
+    }, { capture: true, passive: true });
+    Object.defineProperty(window, "__lashP2qConsumePaidArchive", { value: () => {
+      const qualified = atCourse() && step === "confirming";
+      step = "consumed";
+      observer.disconnect();
+      return qualified;
+    } });
+  }, { origin: input.browserOrigin, path });
 }
 
 const titleField = page => page.getByRole("textbox", { name: "Course title", exact: true });
@@ -1167,6 +1254,7 @@ async function runInteractiveBrowser(first) {
         } else {
           if (binding.stage === "lifecycle") mutationWatch = watchP2LifecycleMutation(context, page, input);
           if (binding.stage === "authoring") mutationWatch = watchP2AuthoringMutation(context, page, input);
+          if (authoringArchive(input)) await installP2PaidArchiveObserver(page, input);
           if (binding.stage === "learning") mutationWatch = watchP2LearningEnrollment(context, page, input);
           if (binding.stage === "paid-grant") mutationWatch = watchP2PaidGrant(context, page, input);
           const url = input.browserOrigin + path;
@@ -1192,11 +1280,13 @@ async function runInteractiveBrowser(first) {
           if (isP2InteractiveAuthoringDetail(input)) {
             const timeout = selection.expires * 1000 - Date.now();
             demand(timeout > 0 && httpStatus === 200 && response.url() === url && page.url() === url);
-            const name = authoringQuiz(input) ? "Assessment" : authoringPublication(input) ? "Review publication readiness"
+            const archive = authoringArchive(input);
+            const name = archive ? "Archive course" : authoringQuiz(input) ? "Assessment" : authoringPublication(input) ? "Review publication readiness"
               : input.authoring.kind === "module" ? "Add module" : "Add lesson";
+            const state = archive ? "published" : "draft";
             await Promise.all([
               page.getByRole("button", { name, exact: true }).and(page.locator("button:enabled")).first().waitFor({ state: "visible", timeout }),
-              page.getByText("draft · Revision " + input.authoring.revision, { exact: true }).waitFor({ state: "visible", timeout }),
+              page.getByText(state + " · Revision " + input.authoring.revision, { exact: true }).waitFor({ state: "visible", timeout }),
             ]);
           }
         }

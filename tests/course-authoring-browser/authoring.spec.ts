@@ -821,7 +821,7 @@ test("keyboard ordering, archival identity and dirty-editor cancellation remain 
   }
 });
 
-test("paid CAD catalog publication warns before archive and requires validated restoration", async ({
+test("paid archive preserves a real manual grant and validated republish restores learner access", async ({
   browser,
   baseURL,
 }) => {
@@ -829,6 +829,7 @@ test("paid CAD catalog publication warns before archive and requires validated r
     throw new Error("Owned browser fixture required");
   const states = JSON.parse(await readFile(storagePath, "utf8"));
   const context = await ownedContext(browser, states.owner);
+  const learner = await ownedContext(browser, states.manualGrantLearner);
   const page = await context.newPage();
   const headers = { origin: baseURL, "x-lash-csrf": "1" };
   try {
@@ -945,6 +946,21 @@ test("paid CAD catalog publication warns before archive and requires validated r
       priceCents: 1000,
     });
     expect(await catalog.text()).not.toContain("PRIVATE_PAID_LESSON_FIXTURE");
+    const lessonPath = `/academy/courses/${courseId}/lessons/${lessonId}`;
+    const learnerPage = await learner.newPage();
+    const privateContent = learnerPage.getByText("PRIVATE_PAID_LESSON_FIXTURE", { exact: true });
+    await learnerPage.goto(lessonPath);
+    await expect(learnerPage.getByRole("heading", { name: "Enrollment required", exact: true })).toBeVisible();
+    await expect(privateContent).toHaveCount(0);
+    const grantPage = await context.newPage();
+    await grantPage.goto(`/admin/courses/${courseId}/manual-grants`);
+    await grantPage.getByLabel("Customer UUID").fill(states.manualGrantCustomerIds[0]);
+    await grantPage.getByLabel("Grant reason").fill("Owned paid archive qualification");
+    await grantPage.getByRole("button", { name: "Grant manual access", exact: true }).click();
+    const grantStatus = grantPage.getByRole("region", { name: "Manual course access" }).getByRole("status");
+    await expect(grantStatus).toContainText("Manual grant and audit confirmed");
+    await learnerPage.reload();
+    await expect(privateContent).toBeVisible();
     await page
       .getByRole("button", { name: "Archive course", exact: true })
       .click();
@@ -976,6 +992,8 @@ test("paid CAD catalog publication warns before archive and requires validated r
     await expect(warning).toHaveCount(0);
     expect((await course()).status).toBe("published");
     expect(mutations).toHaveLength(1);
+    await learnerPage.reload();
+    await expect(privateContent).toBeVisible();
     await page
       .getByRole("button", { name: "Archive course", exact: true })
       .click();
@@ -1004,6 +1022,19 @@ test("paid CAD catalog publication warns before archive and requires validated r
     const archived = await course();
     expect(archived.modules[0].id).toBe(moduleId);
     expect(archived.modules[0].lessons[0].id).toBe(lessonId);
+    await learnerPage.reload();
+    await expect(learnerPage.getByRole("heading", { name: "This course is archived", exact: true })).toBeVisible();
+    await expect(privateContent).toHaveCount(0);
+    const protectedLesson = await learner.request.get(`/api/academy/lessons/${lessonId}`);
+    expect(protectedLesson.status()).toBe(410);
+    expect(protectedLesson.headers()["cache-control"]).toBe("private, no-store");
+    expect(await protectedLesson.json()).toMatchObject({ error: { code: "course_archived" } });
+    const progressWrite = await learner.request.post(`/api/academy/lessons/${lessonId}/progress`, {
+      headers,
+      data: { expectedProgressRevision: 0, event: "lesson_started" },
+    });
+    expect(progressWrite.status()).toBe(410);
+    expect(await progressWrite.json()).toMatchObject({ error: { code: "course_archived" } });
     expect(
       (
         await context.request.get(
@@ -1032,6 +1063,8 @@ test("paid CAD catalog publication warns before archive and requires validated r
     await expect(
       page.getByRole("button", { name: "Publish course", exact: true }),
     ).toHaveCount(0);
+    await learnerPage.reload();
+    await expect(privateContent).toHaveCount(0);
     const repaired = await context.request.patch(
       `/api/admin/lessons/${lessonId}`,
       { headers, data: { expectedCourseRevision: 7, contentDocument } },
@@ -1058,6 +1091,8 @@ test("paid CAD catalog publication warns before archive and requires validated r
       ).status(),
     ).toBe(200);
     expect((await course()).modules[0].lessons[0].id).toBe(lessonId);
+    await learnerPage.reload();
+    await expect(privateContent).toBeVisible();
     const publicPage = await context.newPage();
     await publicPage.goto("/courses/paid-browser-catalog-fixture");
     await expect(
@@ -1078,6 +1113,7 @@ test("paid CAD catalog publication warns before archive and requires validated r
       ),
     ).toBe(true);
   } finally {
+    await learner.close().catch(() => {});
     await context.close().catch(() => {});
   }
 });

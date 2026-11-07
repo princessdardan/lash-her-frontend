@@ -159,6 +159,17 @@ const reviewedPaidGrantDependencies = {
   "src/components/admin/course-authoring/manual-grant-form.tsx": "6812f6409c734b46aa268aa3d6c060b5a99853e422ac1b5fb5790d49732472e8",
   "src/app/admin/(protected)/courses/[courseId]/manual-grants/page.tsx": "296b9483cea98346c4e761a36a7ec6fe99b0b32204bfa10fed2e81eac996ec5d"
 };
+const reviewedPaidArchiveSource = {
+  ...reviewedPaidGrantSource,
+  "src/lib/writer-admission/context.ts": "d1d10fe63144d96a0acaebffdae47698b3d28103de4c79f440ee0871f943e5fc"
+};
+const reviewedPaidArchiveDependencies = {
+  ...reviewedPaidGrantDependencies,
+  "src/lib/writer-admission/interactive-proof.ts": "da92630f5cde702bd8ac6a8b7001b26512a73b78c4c6c8bfbdf7949869655bea",
+  "src/lib/api-integration/course-admin-handler.ts": "08c4adeffbe6a1bdf168e9f2baab6187a724d9ca57b6685d963a0a4956daeac8",
+  "src/components/admin/course-authoring/course-workspace.tsx": "2f53287bc00b5159eaa971b50366b8e5c13b3c57ab29eb6de6749a475a4dca11",
+  "src/app/admin/(protected)/courses/[courseId]/page.tsx": "0857b31b2dffdf6bb7ac8460d1736dcd2a3738ba5273194ae799bbe7e48360fd"
+};
 const root = realpathSync(fileURLToPath(new URL("../..", import.meta.url))), plans = new WeakSet();
 const demand = ok => { if (!ok) throw new Error("P2_LIFECYCLE_NATIVE_REFUSED"); };
 const digest = (value, length = 64) => typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "u").test(value) && !/^0+$/u.test(value);
@@ -186,7 +197,8 @@ function sourcePolicy(sourceCommit) {
       reviewedCurriculumReorderDependencies, reviewedCurriculumCreateDependencies]],
     [reviewedPublicationSource, [reviewedPublicationDependencies, reviewedPortableTextDependencies]],
     [reviewedQuizAuthoringSource, [reviewedQuizAuthoringDependencies, reviewedFreeEnrollmentDependencies]],
-    [reviewedPaidGrantSource, [reviewedPaidGrantDependencies]]]
+    [reviewedPaidGrantSource, [reviewedPaidGrantDependencies]],
+    [reviewedPaidArchiveSource, [reviewedPaidArchiveDependencies]]]
     .find(([source]) => same(selected, source));
   if (browserPolicy) {
     const [, expected] = browserPolicy;

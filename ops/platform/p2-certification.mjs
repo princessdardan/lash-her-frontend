@@ -37,6 +37,7 @@ import {captureP2InteractiveCourseDraftBaseline,observeP2InteractiveCourseDraftC
   captureP2InteractiveCurriculumCreateBaseline,observeP2InteractiveCurriculumCreateCase,validateP2InteractiveCurriculumCreate,
   captureP2InteractivePublicationBaseline,observeP2InteractivePublicationCase,validateP2InteractivePublication,
   captureP2InteractiveQuizSaveBaseline,observeP2InteractiveQuizSaveCase,validateP2InteractiveQuizSave,
+  captureP2InteractivePaidArchiveBaseline,observeP2InteractivePaidArchiveCase,validateP2InteractivePaidArchive,
   captureP2InteractiveFreeEnrollmentBaseline,observeP2InteractiveFreeEnrollmentCase,
   captureP2InteractivePaidGrantBaseline,observeP2InteractivePaidGrantCase} from './p2-lifecycle-persistence-probe.mjs';
 import {prepareP2LifecycleWorkerEvidencePlan,createP2LifecycleWorkerPrivateResolvers,readP2LifecycleWorkerCronSecret,preflightP2DirectLifecycleWorker,
@@ -75,11 +76,13 @@ const authoringCases=new Map([
     baseline:captureP2InteractivePublicationBaseline,observe:observeP2InteractivePublicationCase}],
   ['save-quiz-revision',{field:'authoringQuiz',paired:false,validate:validateP2InteractiveQuizSave,
     baseline:captureP2InteractiveQuizSaveBaseline,observe:observeP2InteractiveQuizSaveCase}],
+  ['archive-paid-course',{paired:false,validate:validateP2InteractivePaidArchive,
+    baseline:captureP2InteractivePaidArchiveBaseline,observe:observeP2InteractivePaidArchiveCase}],
 ]);
 const authoringSlug=value=>typeof value==='string'&&value.length<=120&&/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value);
 function authoringSelection({actorId,authoringAction,requests}){
   const {operation,...selection}=authoringAction;
-  if(operation==='qualify-publication')return selection;
+  if(operation==='qualify-publication'||operation==='archive-paid-course')return selection;
   if(operation==='save-quiz-revision')return {...selection,actorId,bodySha256:requests[2].bodySha256};
   return authoringCases.get(operation).paired?{...selection,winnerBodySha256:requests[1].bodySha256,staleBodySha256:requests[2].bodySha256}:
     {...selection,bodySha256:requests[1].bodySha256};
@@ -115,6 +118,16 @@ function publicationActionValid(selected,requests){
   if(published)expected.push({method:'PATCH',target:detail,uses:1,
     bodySha256:rawHash(JSON.stringify({expectedRevision:selected.revision,status:'published'}))});
   return isDeepStrictEqual(requests,expected);
+}
+function paidArchiveActionValid(selected,requests){
+  if(!exactKeys(selected,['operation','courseId','slug','revision','userId','grantId'])||
+    ![selected.courseId,selected.userId,selected.grantId].every(uuid)||!authoringSlug(selected.slug)||
+    !Number.isInteger(selected.revision)||selected.revision<1||selected.revision>=2_147_483_647)return false;
+  const target=`/course/v1/admin/courses/${selected.courseId}`;
+  return isDeepStrictEqual(requests,[
+    {method:'GET',target,bodySha256:emptyRequestSha256,uses:2},
+    {method:'PATCH',target,bodySha256:rawHash(JSON.stringify({expectedRevision:selected.revision,status:'archived'})),uses:1},
+  ]);
 }
 function learningEnrollmentActionValid(selected,requests){
   if(!exactKeys(selected,['operation','courseId','slug','idempotencyKey'])||selected.operation!=='enroll-free-course'||
@@ -190,6 +203,7 @@ function interactiveActionValid(value){
     if(!configured)return false;
     if(selected.operation==='qualify-publication')return publicationActionValid(selected,value.requests);
     if(selected.operation==='save-quiz-revision')return quizSaveActionValid(selected,value.requests);
+    if(selected.operation==='archive-paid-course')return paidArchiveActionValid(selected,value.requests);
     const {paired}=configured,reorder=selected.operation==='reorder-and-stale-curriculum',create=selected.operation==='create-curriculum';
     const detailRead=paired||create,curriculum=reorder||create;
     if(!exactKeys(selected,['operation','slug',...(detailRead?['courseId','revision']:[]),

@@ -495,6 +495,31 @@ test('fixed current certification plan joins the original release plan, terminal
       assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selected,
         authoringAction: { ...selected.authoringAction, quizRevision: -1 } })));
     }
+    const archiveGrantId = '10000000-0000-4000-8000-000000000009';
+    const selectedArchive = {
+      ...selectedEdit,
+      authoringAction: { ...selectedEdit.authoringAction, operation: 'archive-paid-course', userId, grantId: archiveGrantId },
+      requests: [
+        { ...selectedEdit.requests[0], uses: 2 },
+        { method: 'PATCH', target: editPath, uses: 1, bodySha256: rawHash(JSON.stringify({ expectedRevision: 1, status: 'archived' })) },
+      ],
+    };
+    const archiveSettings = paired(selectedArchive), archivePlan = prepareP2ProfiledCertificationOperator(archiveSettings);
+    assert.equal(archivePlan.status, 'P2_INTERACTIVE_AUTHORING_ACTIONS_PLANNED');
+    assert.deepEqual(archivePlan.authoring.scopedAction, selectedArchive);
+    assert.deepEqual(archivePlan.identity.scopedAction.identityActor, draftPair.identity.scopedAction.identityActor);
+    const archiveHost = spawnSync('python3', ['-B', '-c', scopedVerifier, join(root, 'ops/platform/host')],
+      { input: JSON.stringify(archivePlan.authoring), encoding: 'utf8' });
+    assert.equal(archiveHost.status, 0, archiveHost.stderr);
+    const archiveConfirmation = { confirmation: 'staging/owned-scoped-action' };
+    await assert.rejects(p2ProfiledCertificationOperator(archiveSettings, archiveConfirmation), { code: 'ENOENT' });
+    await assert.rejects(p2ProfiledCertificationOperator({ ...archiveSettings, execution: {} }, archiveConfirmation), error => error.code !== 'ENOENT');
+    const [archiveRead, archiveWrite] = selectedArchive.requests;
+    for (const requests of [[{ ...archiveRead, uses: 1 }, archiveWrite], [archiveRead, { ...archiveWrite, method: 'POST' }],
+      [archiveRead, archiveWrite, archiveWrite], [archiveRead, { ...archiveWrite, bodySha256: rawHash('{"status":"archived","expectedRevision":1}') }]])
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedArchive, requests })));
+    for (const changed of [{ revision: 2_147_483_647 }, { userId: 'invalid' }, { grantId: 'invalid' }, { outcome: 'archived' }])
+      assert.throws(() => prepareP2ProfiledCertificationOperator(paired({ ...selectedArchive, authoringAction: { ...selectedArchive.authoringAction, ...changed } })));
     const enrolledEmail = 'owned-enrollment@example.invalid';
     const firstEnrollments = ['google', 'resend'].map((provider, index) => {
       const nonce = String(index+1).repeat(32);

@@ -392,6 +392,36 @@ class InteractiveIngressTests(unittest.TestCase):
 
 
 class InteractiveWindowTests(unittest.TestCase):
+    def test_paid_archive_plan_binds_selected_grant_and_exact_archive_patch(self):
+        owner = "10000000-0000-4000-8000-000000000001"
+        course = "10000000-0000-4000-8000-000000000002"
+        user = "10000000-0000-4000-8000-000000000003"
+        grant = "10000000-0000-4000-8000-000000000004"
+        path = f"/course/v1/admin/courses/{course}"
+        digest = hashlib.sha256(b'{"expectedRevision":2147483646,"status":"archived"}').hexdigest()
+        read = {"method": "GET", "target": path, "bodySha256": window._EMPTY, "uses": 2}
+        patch = {"method": "PATCH", "target": path, "bodySha256": digest, "uses": 1}
+        selection = {"operation": "archive-paid-course", "courseId": course, "slug": "owned-course",
+                     "revision": 2_147_483_646, "userId": user, "grantId": grant}
+        action = {"stage": "authoring", "actorId": owner, "windowSeconds": 60, "requests": [read, patch], "authoringAction": selection}
+        self.assertEqual(window.validate_interactive_action(action), action)
+        selector = window._selection_sha(action)
+        self.assertEqual(selector, "7032712d617574682d6172632d763100" + owner.replace("-", ""))
+        cookie, gateway_key, _, _ = window._material("fixture" * 8, "https://owned.vercel.app", "a" * 40, "b" * 64,
+                                                       "8", "authoring", 1_794_009_600, 60, "c" * 32, selector)
+        self.assertEqual(cookie.split(".")[:3], ["v2", "8", "authoring"])
+        self.assertEqual(cookie.split(".")[6], selector)
+        self.assertEqual(len(gateway_key), 64)
+        for change in ({"grantId": "invalid"}, {"userId": "invalid"}, {"revision": False}, {"revision": 2_147_483_647}):
+            with self.subTest(selection=change), self.assertRaises(ValueError):
+                window.validate_interactive_action({**action, "authoringAction": {**selection, **change}})
+        for changed in ([{**read, "uses": 3}, patch], [read, {**patch, "method": "POST"}], [read, {**patch, "uses": 2}]):
+            with self.subTest(requests=changed), self.assertRaises(ValueError):
+                window.validate_interactive_action({**action, "requests": changed})
+        wrong = hashlib.sha256(b'{"expectedRevision":2147483646,"status":"published"}').hexdigest()
+        with self.assertRaisesRegex(ValueError, "ARCHIVE_DIGEST_REQUIRED"):
+            window.validate_interactive_action({**action, "requests": [read, {**patch, "bodySha256": wrong}]})
+
     def test_paid_grant_plan_binds_reviewed_reason_revision_and_exact_encoded_targets(self):
         owner = "10000000-0000-4000-8000-000000000001"
         course = "10000000-0000-4000-8000-000000000002"

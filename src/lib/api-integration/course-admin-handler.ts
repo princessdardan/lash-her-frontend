@@ -67,8 +67,9 @@ export function createCourseAdminHandler(operation: CourseAdminOperation, depend
                   throw new IntegrationServiceError("invalid_request", 400);
                 }
                 const scope = currentWriterAuthoringOperation();
-                const validUpdate = scope === "publish-course"
-                  ? input.expectedRevision <= 2_147_483_647 && input.status === "published" && Object.keys(input).length === 2
+                const selectedStatus = scope === "publish-course" ? "published" : scope === "archive-paid-course" ? "archived" : undefined;
+                const validUpdate = selectedStatus
+                  ? input.expectedRevision <= 2_147_483_647 && input.status === selectedStatus && Object.keys(input).length === 2
                   : scope === "edit-draft" && !Object.hasOwn(input, "status");
                 if (!validUpdate) throw new IntegrationServiceError("invalid_request", 400);
               }

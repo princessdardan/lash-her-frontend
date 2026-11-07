@@ -182,6 +182,8 @@ test("authoring binds the exact owner UUID and operation routes, then clears its
   const publishCookie = issue("authoring", "7032712d617574682d7075622d763100" + authoringActorId.replaceAll("-", ""));
   const reviewCookie = issue("authoring", "7032712d617574682d7264792d763100" + authoringActorId.replaceAll("-", ""));
   const quizCookie = issue("authoring", "7032712d617574682d7175697a2d7631" + authoringActorId.replaceAll("-", ""));
+  const archivePrefix = "7032712d617574682d6172632d763100";
+  const archiveCookie = issue("authoring", archivePrefix + authoringActorId.replaceAll("-", ""));
   assert.equal(attestInteractiveRequest({ origin: INTERACTIVE_ORIGIN, method: "GET", path: `/admin/courses/${authoringActorId}`,
     cookie: issue("authoring", "7032712d617574682d6e65772d7631" + authoringActorId.replaceAll("-", "")) }, env, now), null);
   const attest = (method: string, path: string, permit = cookie) =>
@@ -270,6 +272,20 @@ test("authoring binds the exact owner UUID and operation routes, then clears its
   for (const permit of [cookie, editCookie, reorderCookie, createCurriculumCookie, publishCookie, reviewCookie, issue("media")]) {
     assert.equal(attest("PUT", quizApi, permit), null);
   }
+  for (const [method, path] of [["GET", courseDetail], ["GET", courseApi], ["PATCH", courseApi]]) {
+    const archiveProof = attest(method, path, archiveCookie);
+    assert.ok(archiveProof);
+    const selected = readInteractiveRequest(archiveProof, archiveCookie, env, now);
+    assert.equal(selected?.authoringActorId, authoringActorId);
+    assert.equal(selected?.authoringOperation, "archive-paid-course");
+    for (const otherCookie of [editCookie, publishCookie, issue("authoring", archivePrefix + selectedCustomerId.replaceAll("-", ""))]) {
+      assert.equal(readInteractiveRequest(archiveProof, otherCookie, env, now), null);
+    }
+  }
+  for (const [method, path] of [["GET", readiness], ["GET", "/admin/courses"], ["GET", quizApi], ["PATCH", courseDetail],
+    ["POST", moduleCreate], ["POST", moduleReorder], ["PATCH", courseApi + "/"], ["PUT", quizApi]]) {
+    assert.equal(attest(method, path, archiveCookie), null);
+  }
   assert.ok(attest("GET", courseDetail, issue("media")));
   const wrongRoute = `${now}.${Buffer.from(`GET ${courseDetail}`).toString("base64url")}`;
   const wrongMac = createHmac("sha256", env.CRON_SECRET)
@@ -282,9 +298,10 @@ test("authoring binds the exact owner UUID and operation routes, then clears its
   const publishVerified = readInteractiveRequest(attest("PATCH", courseApi, publishCookie)!, publishCookie, env, now);
   const reviewVerified = readInteractiveRequest(attest("GET", readiness, reviewCookie)!, reviewCookie, env, now);
   const quizVerified = readInteractiveRequest(attest("PUT", quizApi, quizCookie)!, quizCookie, env, now);
+  const archiveVerified = readInteractiveRequest(attest("PATCH", courseApi, archiveCookie)!, archiveCookie, env, now);
   for (const [accepted, operation] of [[verified, "create-draft"], [editVerified, "edit-draft"], [reorderVerified, "reorder-curriculum"],
     [createCurriculumVerified, "create-curriculum"], [publishVerified, "publish-course"], [reviewVerified, "review-publication"],
-    [quizVerified, "save-quiz-revision"]] as const) {
+    [quizVerified, "save-quiz-revision"], [archiveVerified, "archive-paid-course"]] as const) {
     const f = fixture();
     f.state.epoch = "12";
     const run = createWriterAdmissionRunner({

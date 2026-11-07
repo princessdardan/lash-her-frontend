@@ -35,7 +35,8 @@ const temporary = await mkdtemp(join(tmpdir(), "lash-authoring-browser-"));
 const cluster = join(temporary, "postgres"),
   courseExport = join(temporary, "course");
 const signingKey = randomBytes(32).toString("hex"),
-  authKey = randomBytes(32).toString("hex");
+  authKey = randomBytes(32).toString("hex"),
+  learnerKey = randomBytes(32).toString("hex");
 const workload = `${Buffer.from('{"alg":"HS256"}').toString("base64url")}.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 7200 })).toString("base64url")}.fixture`;
 const common = {
   PATH: process.env.PATH,
@@ -232,6 +233,7 @@ try {
   }
   // Source-owned synthetic customers exist only in this disposable local DB.
   const customerIds = [randomUUID(), randomUUID()];
+  const learnerToken = randomUUID();
   const supportDb = new pg.Client({ connectionString: frontendUrl });
   await supportDb.connect();
   try {
@@ -239,8 +241,25 @@ try {
       "insert into customer_users(id,email,status) values($1,$2,'active')",
       [id, `manual-grant-${id}@example.test`],
     );
+    await supportDb.query(
+      "insert into customer_sessions(token_hash,user_id,expires) values($1,$2,now()+interval '1 hour')",
+      [createHash("sha256").update(learnerToken).digest("hex"), customerIds[0]],
+    );
   } finally { await supportDb.end(); }
   storage.manualGrantCustomerIds = customerIds;
+  storage.manualGrantLearner = {
+    cookies: [{
+      name: "lash-customer.session-token",
+      value: learnerToken,
+      domain: "localhost",
+      path: "/",
+      expires: Math.floor(Date.now() / 1000) + 3600,
+      httpOnly: true,
+      secure: false,
+      sameSite: "Lax",
+    }],
+    origins: [],
+  };
   const storagePath = join(temporary, "storage.json");
   await writeFile(storagePath, JSON.stringify(storage), { mode: 0o600 });
   const courseEnv = {
@@ -251,6 +270,7 @@ try {
     PORT: String(coursePort),
     HTTP_BIND_ADDRESS: "127.0.0.1",
     COURSE_ADMIN_JWT_CURRENT_SECRET: signingKey,
+    COURSE_LEARNER_JWT_CURRENT_SECRET: learnerKey,
   };
   children.push(
     start(
@@ -273,6 +293,15 @@ try {
     AUTH_GOOGLE_ID: "authoring-fixture-client",
     AUTH_GOOGLE_SECRET: randomBytes(32).toString("hex"),
     COURSE_ADMIN_JWT_CURRENT_SECRET: signingKey,
+    COURSE_LEARNER_JWT_CURRENT_SECRET: learnerKey,
+    CUSTOMER_AUTH_ENABLED: "true",
+    INTEGRATION_CUSTOMER_ACCESS_ENABLED: "true",
+    CUSTOMER_AUTH_URL: origin,
+    CUSTOMER_AUTH_SECRET: randomBytes(32).toString("hex"),
+    CUSTOMER_AUTH_GOOGLE_ID: "authoring-owned-customer-client",
+    CUSTOMER_AUTH_GOOGLE_SECRET: randomBytes(32).toString("hex"),
+    CUSTOMER_AUTH_RESEND_KEY: "re_owned_authoring_fixture",
+    CUSTOMER_AUTH_EMAIL_FROM: "Owned authoring <test@example.invalid>",
     VERCEL: "1",
     VERCEL_ENV: "preview",
     VERCEL_TARGET_ENV: "preview",

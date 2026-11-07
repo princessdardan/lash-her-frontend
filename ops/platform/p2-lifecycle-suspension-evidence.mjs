@@ -237,6 +237,10 @@ async function reviewedInteractiveInput(plan, challenge) {
       authoring = { actorId: action.actorId, operation: selected.operation, courseId: selected.courseId, slug: selected.slug,
         revision: selected.revision, lessonId: selected.lessonId, quizRevision: selected.quizRevision,
         documentSha256: selected.documentSha256, bodySha256: second.bodySha256 };
+    } else if (selected?.operation === "archive-paid-course") {
+      const target = "/course/v1/admin/courses/" + selected.courseId;
+      demand(first?.method === "PATCH" && first.target === target && second === undefined);
+      authoring = { actorId: action.actorId, ...selected, bodySha256: first.bodySha256 };
     } else {
       demand(selected?.operation === "create-draft" && first?.method === "POST" && first.target === "/course/v1/admin/courses");
       authoring = { actorId: action.actorId, slug: selected.slug, bodySha256: first.bodySha256 };

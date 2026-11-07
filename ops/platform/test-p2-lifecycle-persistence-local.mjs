@@ -15,6 +15,7 @@ import { captureP2InteractiveCourseDraftBaseline, captureP2InteractiveCourseDraf
   captureP2InteractiveCurriculumCreateBaseline, captureP2InteractivePublicationBaseline, captureP2InteractiveQuizSaveBaseline,
   captureP2InteractiveFreeEnrollmentBaseline, observeP2InteractiveFreeEnrollmentCase,
   captureP2InteractivePaidGrantBaseline, observeP2InteractivePaidGrantCase,
+  captureP2InteractivePaidArchiveBaseline, observeP2InteractivePaidArchiveCase, validateP2InteractivePaidArchive,
   observeP2InteractiveCourseDraftCase, observeP2InteractiveCourseDraftEditsCase, observeP2InteractiveCourseReorderCase,
   observeP2InteractiveCurriculumCreateCase, observeP2InteractivePublicationCase, observeP2InteractiveQuizSaveCase, p2LifecyclePersistenceTargetSha256,
   validateP2InteractiveCourseDraft, validateP2InteractiveCourseDraftEdits, validateP2InteractiveCourseReorder,
@@ -111,7 +112,7 @@ async function main() {
     const result = await runOwnedPersistenceScenario({ admin, runtime, plan });
     phase = "actual-interactive-course-draft";
     const draftChecks = await runOwnedDraftWitness({ control, course: admin.course, frontend: runtime.frontend,
-      target: targets.course, sourceCommit: commits.course, ca });
+      target: targets.course, sourceCommit: commits.course, courseSource: sources.course, ca });
     const receipt = { version: 1, status: `P2_LIFECYCLE_PERSISTENCE_OWNED_POSTGRES${postgresMajor}_PASS`, postgresMajor, frontendMigrations: 83,
       courseMigrations: 22, communityMigrations: 11, sourceCommits: commits, checks: [...result.checks, ...draftChecks], skipped: 0, readOnly: true,
       fixtureOnly: true, providerTouched: false, liveCertification: false, sourceMode: containerMode ? "parent-issued-manifest-and-mounted-readback" : "clean-git-checkouts",
@@ -126,7 +127,7 @@ async function main() {
   }
 }
 
-async function runOwnedDraftWitness({ control, course, frontend, target, sourceCommit, ca }) {
+async function runOwnedDraftWitness({ control, course, frontend, target, sourceCommit, courseSource, ca }) {
   const user = "owned_course_draft_migration", password = randomBytes(32).toString("hex"), database = target.database;
   await control.query(`CREATE ROLE ${user} LOGIN NOINHERIT PASSWORD '${password}'`);
   await control.query(`GRANT CONNECT ON DATABASE ${database} TO ${user}`);
@@ -134,7 +135,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
   await course.query(`GRANT SELECT ON public.courses, public.modules, public.lessons, public.quiz_revisions, public.quiz_attempts,
     public.entitlement_grants, public.enrollments, public.entitlement_idempotency_keys, public.community_enrollment_streams,
     public.community_enrollment_outbox, public.lesson_progress, public.admin_entitlement_commands,
-    public.admin_entitlement_command_effects TO ${user}`);
+    public.admin_entitlement_command_effects, public.entitlement_revocations, public.account_lifecycle_states TO ${user}`);
   const job = { schemaVersion: 2, qualificationTargetProfile: profile, kind: "operator-migration", operator: "Dardan",
     environment: "staging", contractPhase: "p2", releaseId: "owned-draft-read", sourceCommit, runtimeRole: target.runtimeRole,
     phase2ContractManifestSha256: `sha256:${hash(readFileSync(join(root, "contracts/api-integration/p2-candidate/manifest.json")))}`,
@@ -218,6 +219,7 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
     await runOwnedQuizSaveWitness({ course, job, dependencies, input, create });
     await runOwnedFreeEnrollmentWitness({ course, job, dependencies, input, create });
     await runOwnedPaidGrantWitness({ course, job, dependencies, input, create });
+    await runOwnedPaidArchiveWitness({ course, job, dependencies, input, create, courseSource });
     await unlock();
     try { await assert.rejects(capture(input("unheld"))); }
     finally { await lock(); }
@@ -235,7 +237,9 @@ async function runOwnedDraftWitness({ control, course, frontend, target, sourceC
       "course-free-enrollment-orderless-grant-receipt-active-stream-and-canonical-pending-outbox",
       "course-free-enrollment-refuses-ineligible-occupied-and-persisted-outcome-drift",
       "course-paid-grant-orderless-manual-grant-audited-effect-and-canonical-pending-outbox",
-      "course-paid-grant-refuses-ineligible-occupied-and-persisted-outcome-drift"];
+      "course-paid-grant-refuses-ineligible-occupied-and-persisted-outcome-drift",
+      "course-paid-archive-pinned-repository-preserves-history-without-community-outbox-mutation",
+      "course-paid-archive-refuses-identity-history-projection-and-independent-eligibility-drift"];
   } finally {
     try { await unlock(); }
     finally { setDefaultCACertificates(trust); }
@@ -823,22 +827,17 @@ async function runOwnedFreeEnrollmentWitness({ course, job, dependencies, input,
   }
 }
 
-async function runOwnedPaidGrantWitness({ course, job, dependencies, input, create }) {
-  const seed = async (name, changes = {}) => {
+function ownedPaidGrantFixtures({ course, input, create }) {
+  const seed = async (name, changes = {}, userId = randomUUID()) => {
     const fixture = input(`paid-grant-${name}`, { status: "published", ...changes });
-    const { courseId } = fixture, userId = randomUUID(), moduleId = randomUUID(), lessonId = randomUUID();
+    const { courseId, draft: { slug } } = fixture, moduleId = randomUUID(), lessonId = randomUUID();
     await create(fixture);
-    await course.query("INSERT INTO public.users(id) VALUES($1)", [userId]);
+    await course.query("INSERT INTO public.users(id) VALUES($1) ON CONFLICT DO NOTHING", [userId]);
     await course.query("INSERT INTO public.modules(id,course_id,slug,title,position) VALUES($1,$2,'module','Module',1)", [moduleId, courseId]);
     await course.query("INSERT INTO public.lessons(id,module_id,slug,title,position) VALUES($1,$2,'lesson','Lesson',1)", [lessonId, moduleId]);
     return { selection: { actorId: randomUUID(), courseId, userId, revision: 1, idempotencyKey: randomUUID(), reason: "Reviewed paid access é" },
-      lessonId, commandId: randomUUID(), grantId: randomUUID(), enrollmentId: randomUUID(), streamId: randomUUID(), eventId: randomUUID() };
+      slug, lessonId, commandId: randomUUID(), grantId: randomUUID(), enrollmentId: randomUUID(), streamId: randomUUID(), eventId: randomUUID() };
   };
-  const capture = ({ selection }) => captureP2InteractivePaidGrantBaseline(job, selection, dependencies);
-  const browser = ({ selection, commandId, grantId }) => ({ courseId: selection.courseId, userId: selection.userId, commandId, grantId,
-    courseRevision: selection.revision });
-  const observe = (test, baseline, receipt = browser(test)) =>
-    observeP2InteractivePaidGrantCase(job, test.selection, baseline, receipt, dependencies);
   const progress = (test, enrollmentId = null) =>
     course.query("INSERT INTO public.lesson_progress(user_id,lesson_id,enrollment_id) VALUES($1,$2,$3)",
       [test.selection.userId, test.lessonId, enrollmentId]);
@@ -873,6 +872,16 @@ async function runOwnedPaidGrantWitness({ course, job, dependencies, input, crea
       throw error;
     }
   };
+  return { seed, progress, write };
+}
+
+async function runOwnedPaidGrantWitness({ course, job, dependencies, input, create }) {
+  const { seed, progress, write } = ownedPaidGrantFixtures({ course, input, create });
+  const capture = ({ selection }) => captureP2InteractivePaidGrantBaseline(job, selection, dependencies);
+  const browser = ({ selection, commandId, grantId }) => ({ courseId: selection.courseId, userId: selection.userId, commandId, grantId,
+    courseRevision: selection.revision });
+  const observe = (test, baseline, receipt = browser(test)) =>
+    observeP2InteractivePaidGrantCase(job, test.selection, baseline, receipt, dependencies);
 
   for (const [name, changes] of [["draft", { status: "draft" }], ["free", { accessMode: "free", priceCents: 0 }], ["usd", { currency: "USD" }]]) {
     await assert.rejects(capture(await seed(name, changes)), { check: "course-paid-grant-eligibility" });
@@ -911,6 +920,119 @@ async function runOwnedPaidGrantWitness({ course, job, dependencies, input, crea
     const receipt = name === "receipt" ? { ...browser(selected), commandId: randomUUID() } : browser(selected);
     await assert.rejects(observe(selected, baseline, receipt), { check: `course-paid-grant-${check}` });
     await assert.rejects(observe(selected, baseline), { check: "course-paid-grant-receipt" });
+  }
+}
+
+async function runOwnedPaidArchiveWitness({ course, job, dependencies, input, create, courseSource }) {
+  const { seed, progress, write } = ownedPaidGrantFixtures({ course, input, create });
+  const { tsImport } = createRequire(import.meta.url)("tsx/esm/api");
+  const { createDrizzleCourseRepository } = await tsImport(pathToFileURL(join(courseSource, "src/courses/course.repository.ts")).href, import.meta.url);
+  const { drizzle } = createRequire(join(courseSource, "package.json"))("drizzle-orm/node-postgres");
+  const repository = createDrizzleCourseRepository(drizzle(course));
+  const selection = test => ({ courseId: test.selection.courseId, slug: test.slug, revision: 1, userId: test.selection.userId, grantId: test.grantId });
+  const browser = test => ({ courseId: test.selection.courseId, slug: test.slug, revision: 2, status: "archived" });
+  const capture = test => captureP2InteractivePaidArchiveBaseline(job, selection(test), undefined, dependencies);
+  const observe = (test, baseline, receipt = browser(test)) =>
+    observeP2InteractivePaidArchiveCase(job, selection(test), baseline, receipt, dependencies);
+  const archive = async test => {
+    const row = await repository.updateCourse(test.selection.courseId, { expectedRevision: 1, status: "archived" });
+    assert.deepEqual({ courseId: row.id, slug: row.slug, revision: row.revision, status: row.status }, browser(test));
+    assert.equal(await repository.findPublishedCourseBySlug(test.slug), null);
+  };
+  const prepared = async (name, changes) => {
+    const test = await seed(`archive-${name}`, changes);
+    await write(test);
+    return test;
+  };
+  const attempts = async test => {
+    const revisionId = randomUUID(), attemptId = randomUUID();
+    await course.query("INSERT INTO public.quiz_revisions(id,lesson_id,revision,document,created_by) VALUES($1,$2,1,$3::jsonb,$4)",
+      [revisionId, test.lessonId, { version: 1, mode: "graded", questions: [] }, test.selection.actorId]);
+    await course.query(`INSERT INTO public.quiz_attempts(id,user_id,lesson_id,quiz_revision_id,enrollment_id,request_id,request_hash,answers,
+      correct_count,total_count,passed,completed) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,1,1,true,true)`,
+    [attemptId, test.selection.userId, test.lessonId, revisionId, test.enrollmentId, randomUUID(), hash("owned-archive-attempt"),
+      JSON.stringify([{ questionId: "quiz-question", optionId: "private-choice" }])]);
+    return attemptId;
+  };
+  const purchase = async test => {
+    const userId = randomUUID(), enrollmentId = randomUUID(), key = randomUUID(), digest = hash(`owned-history-${key}`);
+    await course.query("BEGIN");
+    try {
+      await course.query("INSERT INTO public.users(id) VALUES($1)", [userId]);
+      await course.query("INSERT INTO public.enrollments(id,user_id,course_id,status,source) VALUES($1,$2,$3,'active','purchase')",
+        [enrollmentId, userId, test.selection.courseId]);
+      await course.query("INSERT INTO public.entitlement_idempotency_keys(idempotency_key,command_type,request_hash) VALUES($1,'internal_grant',$2)", [key, digest]);
+      await course.query(`INSERT INTO public.entitlement_grants(user_id,course_id,enrollment_id,idempotency_key,request_hash,grant_reason,
+        external_order_id,external_payment_id,provider) VALUES($1,$2,$3,$4,$5,'purchase','owned-order-reference','owned-payment-reference','square')`,
+      [userId, test.selection.courseId, enrollmentId, key, digest]);
+      await course.query("COMMIT");
+    } catch (error) {
+      await course.query("ROLLBACK");
+      throw error;
+    }
+    return enrollmentId;
+  };
+
+  const test = await prepared("first");
+  await write(await seed("archive-independent", {}, test.selection.userId));
+  await progress(test, test.enrollmentId);
+  await attempts(test);
+  await purchase(test);
+  const selected = selection(test);
+  assert.equal(validateP2InteractivePaidArchive(selected, undefined), undefined);
+  for (const [changed, body] of [[selected, {}], [{ ...selected, extra: true }, undefined], [{ ...selected, revision: 2_147_483_647 }, undefined]]) {
+    assert.throws(() => validateP2InteractivePaidArchive(changed, body), { check: "course-paid-archive-selection" });
+  }
+  await assert.rejects(captureP2InteractivePaidArchiveBaseline(job, { ...selected, grantId: randomUUID() }, undefined, dependencies),
+    { check: "course-paid-archive-grant" });
+  await assert.rejects(captureP2InteractivePaidArchiveBaseline(job, { ...selected, revision: 2 }, undefined, dependencies),
+    { check: "course-publication-state" });
+  const before = await capture(test);
+  assert.equal(JSON.stringify(before), "{}");
+  await archive(test);
+  await course.query(`UPDATE public.community_enrollment_outbox SET state='delivered',delivered_at=pg_catalog.clock_timestamp(),
+    updated_at=pg_catalog.clock_timestamp() WHERE event_id=$1::uuid`, [test.eventId]);
+  await assert.rejects(observe(test, {}, browser(test)), { check: "course-paid-archive-receipt" });
+  await assert.rejects(observe(test, before, { ...browser(test), status: "published" }), { check: "course-paid-archive-receipt" });
+  await assert.rejects(observeP2InteractivePaidArchiveCase(job, selected, before, browser(test), { ...dependencies, verifySession: async () => {} }),
+    { check: "course-paid-archive-receipt" });
+  assert.deepEqual(await observe(test, before), { ...browser(test), userId: selected.userId, grantId: selected.grantId, historyPreserved: true, readOnly: true });
+  await assert.rejects(observe(test, before), { check: "course-paid-archive-receipt" });
+  await assert.rejects(capture(test), { check: "course-publication-state" });
+
+  const free = await prepared("free", { accessMode: "free", priceCents: 0 });
+  await assert.rejects(capture(free), { check: "course-paid-archive-eligibility" });
+  const suspended = await prepared("suspended");
+  await course.query(`INSERT INTO public.account_lifecycle_states(user_id,account_version,status,updated_at)
+    VALUES($1,1,'suspended',pg_catalog.clock_timestamp())`, [suspended.selection.userId]);
+  await assert.rejects(capture(suspended), { check: "course-paid-archive-access" });
+  const large = await prepared("large");
+  await course.query(`INSERT INTO public.modules(course_id,slug,title,position) SELECT $1,'extra-'||n,'Extra module',n
+    FROM pg_catalog.generate_series(2,1001) n`, [large.selection.courseId]);
+  await assert.rejects(capture(large), { check: "course-paid-archive-history-limit" });
+
+  for (const [name, check] of [["revision", "course-publication-state"], ["metadata", "course-paid-archive-history"],
+    ["lesson", "course-paid-archive-history"], ["attempt", "course-paid-archive-history"], ["progress", "course-paid-archive-history"],
+    ["refund", "course-paid-archive-history"], ["stream", "course-paid-archive-community-authority"],
+    ["independent", "course-paid-archive-community-authority"]]) {
+    const changed = await prepared(name), courseId = changed.selection.courseId;
+    const attemptId = name === "attempt" ? await attempts(changed) : undefined;
+    const purchaseEnrollment = name === "refund" ? await purchase(changed) : undefined;
+    const independent = name === "independent" ? await seed("archive-other-eligibility", {}, changed.selection.userId) : undefined;
+    if (independent) await write(independent);
+    const baseline = await capture(changed);
+    await archive(changed);
+    if (name === "revision") await course.query("UPDATE public.courses SET revision=revision+1 WHERE id=$1::uuid", [courseId]);
+    if (name === "metadata") await course.query("UPDATE public.courses SET description=NULL WHERE id=$1::uuid", [courseId]);
+    if (name === "lesson") await course.query("UPDATE public.lessons SET title='Wrong title' WHERE id=$1::uuid", [changed.lessonId]);
+    if (name === "attempt") await course.query(`UPDATE public.quiz_attempts SET user_id=NULL,enrollment_id=NULL,request_id=NULL,request_hash=NULL,
+      answers='[]'::jsonb,deidentified_at=pg_catalog.clock_timestamp() WHERE id=$1::uuid`, [attemptId]);
+    if (name === "progress") await progress(changed, changed.enrollmentId);
+    if (name === "refund") await course.query("UPDATE public.enrollments SET status='refunded',refunded_at=pg_catalog.clock_timestamp() WHERE id=$1::uuid", [purchaseEnrollment]);
+    if (name === "stream") await course.query("UPDATE public.community_enrollment_streams SET version=2,state='revoked' WHERE id=$1::uuid", [changed.streamId]);
+    if (independent) await archive(independent);
+    await assert.rejects(observe(changed, baseline), { check });
+    await assert.rejects(observe(changed, baseline), { check: "course-paid-archive-receipt" });
   }
 }
 
