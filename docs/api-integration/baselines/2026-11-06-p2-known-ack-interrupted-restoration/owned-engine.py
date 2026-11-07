@@ -33,7 +33,7 @@ import p2_known_ack_interrupted_restoration as c
 import p2_release_broker as shared
 import p2_prior_gateway as prior
 import frontend_gateway_observation
-from p2_certification_parent_test import PROFILED_CURRENT_SOURCE_ONLY
+from p2_certification_parent_test import LEGACY_FIXTURE_ONLY_OMISSIONS, PROFILED_CURRENT_SOURCE_ONLY
 from p2_source_closure import TYPES
 
 
@@ -61,9 +61,9 @@ def configuration(value):
     data=value['input'];candidate=value['candidate'];candidate_hash=value['candidateSha256'];commit=data['sourceCommit'];source=operators/commit;source.mkdir()
     archive=subprocess.check_output(['git','--no-replace-objects','-c','safe.directory='+value['root'],'-C',value['root'],'archive',commit,'ops'])
     subprocess.run(['tar','-xf','-','-C',str(source)],input=archive,check=True)
-    # Both sides of this fixture exercise the original v1 installed tree.
-    # Keep its full shared code while excluding the separately installed v2 programs.
-    for name in PROFILED_CURRENT_SOURCE_ONLY:
+    # Both sides exercise the v1 fixture with the legacy source bounds.
+    # Install every shared runtime file and omit the fixed test-only selection.
+    for name in PROFILED_CURRENT_SOURCE_ONLY | LEGACY_FIXTURE_ONLY_OMISSIONS:
         path=source/name
         if path.is_symlink() or not path.is_file():
             raise ValueError('OWNED_PROFILED_SOURCE_PROJECTION_REFUSED')

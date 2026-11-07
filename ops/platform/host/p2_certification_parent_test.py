@@ -47,8 +47,12 @@ PROFILED_CURRENT_SOURCE_ONLY = frozenset({
     'ops/platform/p2-profiled-current-transport.test.mjs',
 })
 LEGACY_FIXTURE_ONLY_OMISSIONS = frozenset({
+    'ops/platform/host/current_databases_test.py',
     'ops/platform/host/p2_certification_parent_test.py',
     'ops/platform/host/p2_certification_fault_test.py',
+    'ops/platform/host/p2_lifecycle_authority_timing_test.py',
+    'ops/platform/p2-certification.test.mjs',
+    'ops/platform/p2-lifecycle-native.test.mjs',
 })
 
 
