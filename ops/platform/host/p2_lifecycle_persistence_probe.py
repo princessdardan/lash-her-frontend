@@ -58,6 +58,15 @@ def private_program(source, expected_profile=None):
     expected = migrate.profile_context(expected_profile)
     witness = base64.b64encode(_read(source, PROGRAM_FILES[0])).decode()
     probe = _read(source, PROGRAM_FILES[1]).decode().replace("./p2-lifecycle-state-witness.mjs", "data:text/javascript;base64," + witness)
+    if expected is not None:
+        profile = _read(source, "ops/platform/qualification-target-profile.mjs").decode()
+        registry = "const registry = loadSourceRegistry();"
+        demand(profile.count(registry) == 1 and probe.count('"./qualification-target-profile.mjs"') == 1,
+            "P2_PERSISTENCE_PRIVATE_PROFILE_SOURCE_REQUIRED")
+        profile = profile.replace(registry,
+            'const registry = new Map([["staging-current",Object.freeze({body:CURRENT_CANONICAL_BODY,sha256:CURRENT_SHA256})]]);')
+        profile_module = base64.b64encode(profile.encode()).decode()
+        probe = probe.replace('"./qualification-target-profile.mjs"', '"data:text/javascript;base64,' + profile_module + '"')
     module = base64.b64encode(probe.encode()).decode()
     argument = "" if expected is None else json.dumps(expected, sort_keys=True, separators=(",", ":"))
     return (f'import("data:text/javascript;base64,{module}")'
@@ -97,7 +106,8 @@ def _reviewed(value, expected_profile=None):
             and row["health"] in ("healthy", "none") for row in value["containers"])
         and len({row["containerId"] for row in value["containers"]}) == len(runtime.SERVICES), "P2_PERSISTENCE_CONTAINERS_REQUIRED")
     demand(isinstance(value["operatorSourceFiles"], dict) and identity_probe.SOURCE_ANCHORS.issubset(value["operatorSourceFiles"])
-        and 1 <= len(value["operatorSourceFiles"]) <= 512 and all(identity_probe._source_path(name) and SHA.fullmatch(item) for name, item in value["operatorSourceFiles"].items())
+        and 1 <= len(value["operatorSourceFiles"]) <= (544 if expected is not None else 512)
+        and all(identity_probe._source_path(name) and SHA.fullmatch(item) for name, item in value["operatorSourceFiles"].items())
         and _hash(_canonical(value["operatorSourceFiles"])) == plan["operatorSourceSha256"] and SHA.fullmatch(value["programSha256"]),
         "P2_PERSISTENCE_SOURCE_BINDING_REQUIRED")
     directory = Path(value["privateDirectory"])
@@ -109,6 +119,20 @@ def _reviewed(value, expected_profile=None):
 def _target_hash(service, target):
     fields = {name: target[name] for name in ("host", "port", "database", "runtimeRole", "runtimeRoleOid", "serverMajor")}
     return _hash(_canonical({"version": 1, "environment": "staging", "service": service, **fields}))
+
+
+def _source_closure(source, reviewed, expected_profile=None):
+    expected = migrate.profile_context(expected_profile)
+    if expected is None:
+        return identity_probe.source_closure(source)
+    from p2_source_closure import verify_profiled_current_source_closure
+    manifest = reviewed["operatorSourceFiles"]
+    closure = _hash(json.dumps(sorted(manifest.items()), separators=(",", ":")).encode())
+    selected = {"mode": "p2-bounded-certification-profiled-current", "qualificationTargetProfile": expected,
+        "sourceSha256": manifest, "sourceClosureSha256": closure}
+    demand(verify_profiled_current_source_closure(selected, Path(source)) == closure,
+        "P2_PERSISTENCE_PROFILED_SOURCE_CLOSURE_CHANGED")
+    return manifest
 
 
 def _join_selected(reviewed, selected, jobs, runtime_plan, expected_profile=None):
@@ -141,7 +165,7 @@ def _join_selected(reviewed, selected, jobs, runtime_plan, expected_profile=None
 def _make_plan_details(bundle, configuration, reviewed, source, expected_profile=None):
     expected = migrate.profile_context(expected_profile)
     reviewed = _reviewed(reviewed, expected)
-    demand(source == OPERATOR_ROOT / reviewed["plan"]["sources"]["frontend"] and identity_probe.source_closure(source) == reviewed["operatorSourceFiles"]
+    demand(source == OPERATOR_ROOT / reviewed["plan"]["sources"]["frontend"] and _source_closure(source, reviewed, expected) == reviewed["operatorSourceFiles"]
         and _hash(private_program(source, expected)) == reviewed["programSha256"], "P2_PERSISTENCE_OPERATOR_SOURCE_CHANGED")
     selected, jobs, runtime_plan, _compose = runtime.make_plan(Path(bundle), Path(configuration), source / "ops/platform/compose.yaml", expected_profile=expected)
     _join_selected(reviewed, selected, jobs, runtime_plan, expected)
@@ -465,7 +489,7 @@ def _execute_profiled(bundle, configuration, reviewed, source, private, release_
         current_databases.read_certification_api_proof(database_proof, certification_scope, selected, jobs,
             expected_profile=expected)
         demand(Path("/etc/machine-id").read_text().strip() == reviewed["plan"]["hostMachineId"]
-            and identity_probe.source_closure(source) == reviewed["operatorSourceFiles"]
+            and _source_closure(source, reviewed, expected) == reviewed["operatorSourceFiles"]
             and _hash(private_program(source, expected)) == reviewed["programSha256"],
             "P2_PERSISTENCE_OPERATOR_SOURCE_CHANGED")
         demand(identity_probe._configuration_hash(Path(configuration)) == reviewed["plan"]["configurationSha256"],

@@ -3,6 +3,7 @@ import base64
 import copy
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,7 +15,6 @@ import migrate
 import release as runtime
 import p2_lifecycle_persistence_probe as probe
 from p2_lifecycle_persistence_scope import CurrentLifecyclePersistenceScope
-from p2_certification_parent_test import legacy_source_fixture
 
 
 class PersistenceProbeTests(unittest.TestCase):
@@ -28,7 +28,9 @@ class PersistenceProbeTests(unittest.TestCase):
         self.assertEqual(program, probe.private_program(self.source))
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory).resolve()
-            legacy_source_fixture(self.source, destination)
+            for name in sorted(set(probe.PROGRAM_FILES) | set(probe.identity_probe.SOURCE_ANCHORS)):
+                target = destination / name; target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(self.source / name, target)
             closure = probe.identity_probe.source_closure(destination)
         self.assertIn(probe.PROGRAM_FILES[0], closure)
         self.assertIn(probe.PROGRAM_FILES[1], closure)
@@ -97,6 +99,44 @@ class PersistenceProbeTests(unittest.TestCase):
         self.assertIn(b'runPrivatePersistenceProbeFromStdin({', current)
         self.assertIn(ref['id'].encode(), current)
         self.assertEqual(current, probe.private_program(self.source, ref))
+
+    def test_profiled_private_program_is_a_self_contained_import_and_runs_the_actual_stdin_entry(self):
+        from qualification_target_profile import STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE
+        ref = dict(STAGING_CURRENT_QUALIFICATION_TARGET_PROFILE)
+        program = probe.private_program(self.source, ref)
+        encoded = program.split(b'import("data:text/javascript;base64,', 1)[1].split(b'")', 1)[0]
+        url = 'data:text/javascript;base64,' + encoded.decode()
+        imported = subprocess.run(['node', '--input-type=module', '--eval',
+            'import(process.argv[1]).then(m=>process.stdout.write(typeof m.runPrivatePersistenceProbeFromStdin)).catch(()=>process.exitCode=1)', url],
+            capture_output=True, timeout=10)
+        self.assertEqual(imported.returncode, 0, imported.stderr); self.assertEqual(imported.stdout, b'function')
+        invoked = subprocess.run(['node', '--input-type=module', '--eval', program.decode()], input=b'{}', capture_output=True, timeout=10)
+        self.assertEqual(invoked.returncode, 1, invoked.stderr)
+        self.assertEqual(json.loads(invoked.stdout)['status'], 'P2_LIFECYCLE_PERSISTENCE_PRIVATE_REFUSED')
+
+    def test_profiled_reviewed_source_accepts_544_while_legacy_stays_at_512(self):
+        ref, reviewed = self.profiled_reviewed()
+        files = reviewed['operatorSourceFiles']
+        while len(files) < 544:
+            files[f'ops/platform/harness/profiled-bound-{len(files)}.mjs'] = 'a' * 64
+        reviewed['plan']['operatorSourceSha256'] = probe._hash(probe._canonical(files))
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(probe, 'ROOT', Path(directory).resolve()):
+            reviewed['privateDirectory'] = str(Path(directory).resolve() / 'owned')
+            probe._reviewed(reviewed, ref)
+            files['ops/platform/harness/profiled-overflow.mjs'] = 'b' * 64
+            reviewed['plan']['operatorSourceSha256'] = probe._hash(probe._canonical(files))
+            with self.assertRaisesRegex(Exception, 'SOURCE_BINDING_REQUIRED'):
+                probe._reviewed(reviewed, ref)
+
+    def test_profiled_source_closure_uses_the_named_current_verifier_not_the_legacy_512_reader(self):
+        ref, reviewed = self.profiled_reviewed()
+        expected = probe._hash(json.dumps(sorted(reviewed['operatorSourceFiles'].items()), separators=(',', ':')).encode())
+        with mock.patch.object(probe.identity_probe, 'source_closure', side_effect=AssertionError('legacy closure used')), \
+                mock.patch('p2_source_closure.verify_profiled_current_source_closure', return_value=expected) as verify:
+            self.assertEqual(probe._source_closure(self.source, reviewed, ref), reviewed['operatorSourceFiles'])
+        selected, root = verify.call_args.args
+        self.assertEqual(selected['mode'], 'p2-bounded-certification-profiled-current')
+        self.assertEqual(selected['sourceClosureSha256'], expected); self.assertEqual(root, self.source)
 
     def test_reviewed_source_accepts_512_and_refuses_513_with_valid_digests(self):
         result = subprocess.run(['node', '--input-type=module', '-e',
@@ -345,7 +385,7 @@ class PersistenceProbeTests(unittest.TestCase):
                 mock.patch.object(Path, 'read_text', read_text), \
                 mock.patch.object(probe, '_make_plan_details', return_value=({}, selected, jobs, runtime_plan)), \
                 mock.patch.object(probe.current_databases, 'read_certification_api_proof') as read_proof, \
-                mock.patch.object(probe.identity_probe, 'source_closure', return_value=reviewed['operatorSourceFiles']), \
+                mock.patch.object(probe, '_source_closure', return_value=reviewed['operatorSourceFiles']), \
                 mock.patch.object(probe.identity_probe, '_configuration_hash', return_value=reviewed['plan']['configurationSha256']), \
                 mock.patch.object(runtime, 'assert_host'), \
                 mock.patch.object(runtime, 'check_containers', return_value=reviewed['containers']), \

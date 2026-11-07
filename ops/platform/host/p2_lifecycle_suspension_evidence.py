@@ -74,11 +74,14 @@ def _release_evidence(scope, reviewed, plan, release_evidence, expected_profile=
     original_raw = base64.b64decode(original, validate=True)
     demand(0 < len(original_raw) <= 262144 and digest(original_raw) == certification["originalReleaseReceiptSha256"],
         "P2_SUSPENSION_RELEASE_EVIDENCE_CHANGED")
+    original_value = decode_qualification_target_json(original_raw, "carrier")
+    migrate.require_profile(expected, original_value)
     persistence._release_evidence(reviewed, {"originalReleaseReceipt": original,
         "frontendDeploymentRecord": release_evidence["readyReceipts"]["frontend-promotion-outcome.json"]}, expected)
     workload = values["frontend-workload-outcome.json"]
     promotion = values["frontend-promotion-outcome.json"]
     demand(digest(raw["frontend-workload-outcome.json"]) == plan.get("configurationRecordSha256")
+        and original_value.get("frontendWorkloadReceiptSha256") == digest(raw["frontend-workload-outcome.json"])
         and digest(raw["frontend-promotion-outcome.json"]) == reviewed["plan"]["frontendDeploymentSha256"]
         and workload.get("status") == "FRONTEND_VERIFIED" and workload.get("deploymentId") == plan.get("deploymentId")
         and workload.get("featureControls") == plan.get("featureControls")
@@ -208,7 +211,7 @@ class P2LifecycleSuspensionEvidenceStage:
         self.scope.require_configuration(self.configuration)
         demand(Path("/etc/machine-id").read_text().strip() == self.plan["hostMachineId"]
             and identity._configuration_hash(self.configuration) == self.plan["configurationSha256"]
-            and identity.source_closure(self.source) == self.reviewed["operatorSourceFiles"]
+            and persistence._source_closure(self.source, self.reviewed, self.expected_profile) == self.reviewed["operatorSourceFiles"]
             and digest(json.dumps(self.reviewed["operatorSourceFiles"], sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode())
                 == self.reviewed["plan"]["operatorSourceSha256"]
             and digest(migrate.read_input(self.source, "ops/platform/p2-lifecycle-browser-recorder.mjs")+BROWSER_LAUNCHER) == self.plan["browserProgramSha256"]
@@ -441,7 +444,7 @@ def load_retained_suspension(scope, selected, jobs, configuration, source, plan,
         and digest(canonical(selected)) == plan.get("candidateObjectSha256")
         and identity._configuration_hash(configuration) == plan.get("configurationSha256") == reviewed["plan"]["configurationSha256"]
         and Path("/etc/machine-id").read_text().strip() == plan.get("hostMachineId")
-        and identity.source_closure(source) == reviewed["operatorSourceFiles"]
+        and persistence._source_closure(source, reviewed, expected) == reviewed["operatorSourceFiles"]
         and digest(migrate.read_input(source, "ops/platform/p2-lifecycle-browser-recorder.mjs")+BROWSER_LAUNCHER) == plan["browserProgramSha256"]
         and digest(migrate.read_input(source, "ops/platform/p2-lifecycle-pending-probe.mjs")) == plan["pendingProgramSha256"]
         and digest(migrate.read_input(source, "ops/platform/p2-lifecycle-suspension-evidence.mjs")) == plan["parentProgramSha256"]
