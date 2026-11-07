@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "status": "STAGING_PROJECT_ENV_NAMES_OBSERVED",
+  "observedAt": "2026-11-07T04:23:54.418694+00:00",
+  "project": {
+    "name": "lash-her-frontend-staging",
+    "id": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+    "businessEnvironment": "staging",
+    "vercelTarget": "production"
+  },
+  "sourceCommit": "44dd0f53dfe2e0b9a9392736479959b8240a0dcc",
+  "keyCount": 85,
+  "valuesRead": false,
+  "deployedBindingsVerified": false,
+  "groups": {
+    "customerIdentity": {
+      "present": [],
+      "missing": [
+        "CUSTOMER_AUTH_EMAIL_FROM",
+        "CUSTOMER_AUTH_GOOGLE_ID",
+        "CUSTOMER_AUTH_GOOGLE_SECRET",
+        "CUSTOMER_AUTH_RESEND_KEY",
+        "CUSTOMER_AUTH_SECRET",
+        "CUSTOMER_AUTH_URL"
+      ]
+    },
+    "learningAndLifecycleSigning": {
+      "present": [],
+      "missing": [
+        "COMMUNITY_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET",
+        "COURSE_ACCOUNT_LIFECYCLE_JWT_CURRENT_SECRET",
+        "COURSE_ADMIN_JWT_CURRENT_SECRET",
+        "COURSE_LEARNER_JWT_CURRENT_SECRET"
+      ]
+    },
+    "existingContext": {
+      "present": [
+        "API_GATEWAY_STAGING_ORIGIN",
+        "APP_ENV",
+        "DATABASE_URL",
+        "RESEND_API_KEY"
+      ],
+      "missing": [
+        "AUTH_REDIRECT_PROXY_URL",
+        "AUTH_URL",
+        "NEXTAUTH_URL"
+      ]
+    },
+    "operatorWrites": {
+      "present": [
+        "STAGING_MIGRATION_VERIFIED_COMMIT",
+        "STAGING_RELEASE_COMMIT"
+      ],
+      "missing": [
+        "FRONTEND_WRITER_ADMISSION_DATABASE_URL",
+        "FRONTEND_WRITER_ADMISSION_MODE",
+        "FRONTEND_WRITER_ADMISSION_TARGET_JSON",
+        "FRONTEND_WRITER_PRODUCER_SHA256",
+        "LASH_P2_CERTIFICATION_SCHEDULES"
+      ]
+    }
+  }
+}
