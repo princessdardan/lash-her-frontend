@@ -33,6 +33,8 @@ function validateInitial(initial) {
     && /^[a-f0-9]{40}$/u.test(initial.sourceCommit ?? "") && !/^0+$/u.test(initial.sourceCommit)
     && action(initial.recoveryActionId) && action(initial.originalReleaseId) && initial.recoveryActionId !== initial.originalReleaseId
     && digest(initial.candidateSha256) && configuration(initial.configurationSha256) && digest(initial.targetSha256) && digest(initial.inventorySha256)
+    && initial.apiJobSha256 && isDeepStrictEqual(Object.keys(initial.apiJobSha256).sort(), ["community", "course"])
+    && Object.values(initial.apiJobSha256).every(digest)
     && ["restore-current-runtime", "reconcile-frontend-get-first", "resume-approved-api-suffix"].includes(initial.disposition));
   requireQualificationTargetProfile(current, initial, initial.candidate, initial.frontendJob, initial.frontendJob?.target,
     initial.inventory);

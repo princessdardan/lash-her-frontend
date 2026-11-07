@@ -53,6 +53,8 @@ function validateSettings(settings) {
     && action(settings.recoveryActionId) && action(settings.originalReleaseId) && settings.recoveryActionId !== settings.originalReleaseId
     && /^[a-f0-9]{40}$/u.test(settings.sourceCommit ?? "") && !/^0+$/u.test(settings.sourceCommit)
     && digest(settings.candidateSha256) && configuration(settings.configurationSha256) && digest(settings.targetSha256) && digest(settings.inventorySha256)
+    && settings.apiJobSha256 && isDeepStrictEqual(Object.keys(settings.apiJobSha256).sort(), ["community", "course"])
+    && Object.values(settings.apiJobSha256).every(digest)
     && ["restore-current-runtime", "reconcile-frontend-get-first", "resume-approved-api-suffix"].includes(settings.disposition));
   const migration = settings.frontendMigration;
   requireQualificationTargetProfile(current, settings, migration, migration?.candidate, migration?.candidate?.frontendMigration,
@@ -84,7 +86,7 @@ export function prepareP2ProfiledCurrentRecovery(settings) {
   const plan = freeze({ version: 2, qualificationTargetProfile: clone(current), mode: "p2-profiled-current-recovery",
     environment: "staging", recoveryActionId: selected.recoveryActionId, originalReleaseId: selected.originalReleaseId,
     sourceCommit: selected.sourceCommit, candidateSha256: selected.candidateSha256, configurationSha256: selected.configurationSha256,
-    targetSha256: selected.targetSha256, inventorySha256: selected.inventorySha256, owner: clone(selected.owner),
+    targetSha256: selected.targetSha256, inventorySha256: selected.inventorySha256, apiJobSha256: clone(selected.apiJobSha256), owner: clone(selected.owner),
     disposition: selected.disposition, originalReceiptSha256: clone(selected.originalReceiptSha256),
     ...(selected.approvedApiSuffix ? { approvedApiSuffix: clone(selected.approvedApiSuffix) } : {}),
     frontendSqlApplied: false, rolePreparationAuthorized: false, historicalProviderClosureClaimed: false,
@@ -181,7 +183,8 @@ export async function p2ProfiledCurrentRecoveryOperator(settings, { apply = fals
   const materialized = { version: 2, qualificationTargetProfile: current, mode: "p2-profiled-current-recovery", environment: "staging",
     recoveryActionId: request.recoveryActionId, originalReleaseId: release.plan.releaseId, sourceCommit: release.plan.sourceCommit,
     candidateSha256: release.plan.candidateSha256, configurationSha256: release.plan.configurationSha256,
-    targetSha256: release.plan.targetSha256, inventorySha256: release.plan.inventorySha256, owner: release.inventory.owner,
+    targetSha256: release.plan.targetSha256, inventorySha256: release.plan.inventorySha256,
+    apiJobSha256: release.plan.apiJobSha256, owner: release.inventory.owner,
     disposition: request.disposition, originalReceiptSha256: request.originalReceiptSha256,
     ...(request.approvedApiSuffix ? { approvedApiSuffix: request.approvedApiSuffix } : {}),
     frontendMigration: release.migration, courseJob: release.apiJobs.course, communityJob: release.apiJobs.community };

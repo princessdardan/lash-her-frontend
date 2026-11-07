@@ -16,7 +16,8 @@ function fixture(disposition = "restore-current-runtime") {
     "community-worker.env", "course-media.env", "course-export-cleanup.env"].map((name, index) => [name, "abcdef"[index % 6].repeat(64)]));
   return { version: 2, qualificationTargetProfile: profile, mode: "p2-profiled-current-recovery", environment: "staging",
     recoveryActionId: "owned-recovery", originalReleaseId: "owned-release", sourceCommit: "a".repeat(40), candidateSha256: "d".repeat(64),
-    configurationSha256, targetSha256: "f".repeat(64), inventorySha256: "9".repeat(64), owner: { name: "migration_owner", oid: "12345" }, disposition,
+    configurationSha256, targetSha256: "f".repeat(64), inventorySha256: "9".repeat(64),
+    apiJobSha256: { course: "b".repeat(64), community: "c".repeat(64) }, owner: { name: "migration_owner", oid: "12345" }, disposition,
     originalReceiptSha256: Object.fromEntries(["candidate", "frontendDatabase", "frontendContinuationStarted", "apiMigrationOutcome", "apiRuntimeOutcome",
       "frontendBuildOutcome", "frontendPromotionStarted", "frontendWorkloadOutcome"].map((name, index) => [name, "12345678"[index].repeat(64)])),
     frontendMigration: { qualificationTargetProfile: profile, candidate, job: job("frontend"), baseline: { version: 1 }, artifact: { version: 1 } },
@@ -39,6 +40,7 @@ test("closed recovery dispositions require exact matching carriers and only the 
   for (const mutate of [value => { value.frontendMigration.job.version = 1; }, value => { delete value.frontendMigration.job.target.qualificationTargetProfile; },
     value => { value.communityJob.qualificationTargetProfile = { ...profile, sha256: "9".repeat(64) }; }, value => { value.disposition = "replay-frontend-sql"; },
     value => { value.frontendMigration.job.target.approvedPendingTags = ["0084_pending"]; }, value => { value.originalReceiptSha256 = {}; },
+    value => { value.apiJobSha256.course = "0".repeat(64); },
     value => { value.approvedApiSuffix = { course: [], community: [] }; }]) {
     const changed = fixture(); mutate(changed); assert.throws(() => prepareP2ProfiledCurrentRecovery(changed));
   }

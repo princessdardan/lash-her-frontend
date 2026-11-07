@@ -57,7 +57,8 @@ function fixture(mode = "ready") {
     "community-worker.env", "course-media.env", "course-export-cleanup.env"].map((name, index) => [name, "abcdef"[index % 6].repeat(64)]));
   const initial = { version: 2, qualificationTargetProfile: profile, mode: "p2-profiled-current-recovery", environment: "staging",
     sourceCommit: "a".repeat(40), recoveryActionId: "recover-owned", originalReleaseId: "original-release",
-    candidateSha256: "b".repeat(64), configurationSha256, targetSha256: "d".repeat(64), inventorySha256: "9".repeat(64), owner: { name: "migration_owner", oid: "12345" }, disposition: "reconcile-frontend-get-first",
+    candidateSha256: "b".repeat(64), configurationSha256, targetSha256: "d".repeat(64), inventorySha256: "9".repeat(64),
+    apiJobSha256: { course: "e".repeat(64), community: "f".repeat(64) }, owner: { name: "migration_owner", oid: "12345" }, disposition: "reconcile-frontend-get-first",
     originalReceiptSha256: Object.fromEntries(["candidate", "frontendDatabase", "frontendContinuationStarted", "apiMigrationOutcome", "apiRuntimeOutcome",
       "frontendBuildOutcome", "frontendPromotionStarted", "frontendWorkloadOutcome"].map((name, index) => [name, "12345678"[index].repeat(64)])),
     candidate: { version: 3, qualificationTargetProfile: profile, environment: "staging", releaseId: "original-release", sources: { frontend: { commit: "a".repeat(40) } } },

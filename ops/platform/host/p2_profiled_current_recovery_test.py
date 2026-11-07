@@ -20,7 +20,8 @@ def selected():
 
 def initial(disposition='restore-current-runtime'):
     value = {'recoveryActionId': 'owned-recovery', 'originalReleaseId': 'original-release',
-             'disposition': disposition, 'originalReceiptSha256': digests()}
+             'disposition': disposition, 'originalReceiptSha256': digests(),
+             'apiJobSha256': {'course': 'a' * 64, 'community': 'b' * 64}}
     if disposition == 'resume-approved-api-suffix':
         value['approvedApiSuffix'] = {'course': ['0012_owned'], 'community': ['0009_owned']}
     return value

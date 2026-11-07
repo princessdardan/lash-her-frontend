@@ -58,7 +58,7 @@ class P2ProfiledCurrentRecoveryPhysicalObserver(P2ProfiledCurrentPhysicalObserve
 class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
     MODE, PREFIX, OP, STATUS, TERMINAL, TERMINAL_NAME = MODE, PREFIX, OP, STATUS, TERMINAL, TERMINAL_NAME
     EXTRA_REQUIRED_INITIAL_FIELDS = frozenset((
-        'recoveryActionId', 'originalReleaseId', 'disposition', 'originalReceiptSha256'))
+        'recoveryActionId', 'originalReleaseId', 'disposition', 'originalReceiptSha256', 'apiJobSha256'))
     EXTRA_OPTIONAL_INITIAL_FIELDS = frozenset(('approvedApiSuffix',))
 
     def action_id(self):
@@ -88,11 +88,14 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
     def select_release(self, initial):
         selected, jobs, plan, compose = super().select_release(initial)
         receipts = initial.get('originalReceiptSha256')
+        api_jobs = initial.get('apiJobSha256')
         require(type(initial.get('recoveryActionId')) is str and
                 re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', initial['recoveryActionId']) and
                 initial['recoveryActionId'] != selected['releaseId'] and
                 initial.get('originalReleaseId') == selected['releaseId'] and
                 initial.get('disposition') in DISPOSITIONS and
+                type(api_jobs) is dict and tuple(sorted(api_jobs)) == ('community', 'course') and
+                all(valid_digest(value) for value in api_jobs.values()) and
                 type(receipts) is dict and tuple(receipts) == ORIGINAL_NAMES and
                 all(valid_digest(value) for value in receipts.values()),
                 'P2_PROFILED_CURRENT_RECOVERY_BINDING_REQUIRED')
