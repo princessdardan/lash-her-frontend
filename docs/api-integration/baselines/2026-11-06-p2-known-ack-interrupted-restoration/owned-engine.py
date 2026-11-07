@@ -33,6 +33,7 @@ import p2_known_ack_interrupted_restoration as c
 import p2_release_broker as shared
 import p2_prior_gateway as prior
 import frontend_gateway_observation
+from p2_certification_parent_test import PROFILED_CURRENT_SOURCE_ONLY
 from p2_source_closure import TYPES
 
 
@@ -60,6 +61,13 @@ def configuration(value):
     data=value['input'];candidate=value['candidate'];candidate_hash=value['candidateSha256'];commit=data['sourceCommit'];source=operators/commit;source.mkdir()
     archive=subprocess.check_output(['git','--no-replace-objects','-c','safe.directory='+value['root'],'-C',value['root'],'archive',commit,'ops'])
     subprocess.run(['tar','-xf','-','-C',str(source)],input=archive,check=True)
+    # Both sides of this fixture exercise the original v1 installed tree.
+    # Keep its full shared code while excluding the separately installed v2 programs.
+    for name in PROFILED_CURRENT_SOURCE_ONLY:
+        path=source/name
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('OWNED_PROFILED_SOURCE_PROJECTION_REFUSED')
+        path.unlink()
     manifest={path.relative_to(source).as_posix():c.sha(path.read_bytes()) for path in (source/'ops').rglob('*') if path.is_file() and path.suffix in TYPES}
     closure=c.sha(c.canonical(sorted(manifest.items())))
     input_directory=root/'root-owned-input';input_directory.mkdir(mode=0o700)
@@ -177,8 +185,7 @@ def prepare(value):
       'priorGatewayReference':{'kind':'stopped-current-candidate','stopReceiptDirectory':str(replacement),'stopReceiptSha256':stop_hash}}
     initial.update(interruptedRestoration=selection,priorGatewayReference=selection['priorGatewayReference'],originalReceiptSha256={**pins,**{'replacement/'+key:item for key,item in replacement_pins.items()}},
       credentials={'FRONTEND_STAGING_MIGRATION_DATABASE_URL':f'postgresql://{data["target"]["user"]}:{data["password"]}@127.0.0.1:{data["port"]}/{data["target"]["database"]}?sslmode=verify-full'})
-    current_manifest={p.relative_to(Path(value['root'])).as_posix():c.sha(p.read_bytes()) for p in (Path(value['root'])/'ops').rglob('*') if p.is_file() and p.suffix in TYPES and '__pycache__' not in p.parts and 'node_modules' not in p.parts}
-    initial.update(sourceSha256=current_manifest,sourceClosureSha256=c.sha(c.canonical(sorted(current_manifest.items()))))
+    initial.update(sourceSha256=manifest,sourceClosureSha256=closure)
     write(work,'owned-context.json',(json.dumps({'fixture':value,'initial':initial,'models':models,'oldGateway':gateway_observed,'root':str(root),'operators':str(operators),
       'settlementHash':settlement_hash,'operationId':operation_id},separators=(',',':'))+'\n').encode())
     print(json.dumps(initial))
@@ -265,7 +272,7 @@ def run_broker(initial):
         def verify(self):self.probe('observe')
         def stop(self):pass
     broker=c.InterruptedKnownAckRestorationBroker(initial,lambda value:print(json.dumps(value),flush=True),observer_type=Physical,observer_source='ops/platform/p2-recovery-current-probe.mjs')
-    broker.started_at=time.monotonic();broker.source=Path(data['root']);broker.selected=initial['candidate'];broker.jobs=jobs;broker.configuration=Path(initial['configuration']);broker.results=root
+    broker.started_at=time.monotonic();broker.source=Path(context['operators'])/initial['sourceCommit'];broker.selected=initial['candidate'];broker.jobs=jobs;broker.configuration=Path(initial['configuration']);broker.results=root
     broker.directory=root/('p2-recovery-'+initial['recoveryActionId']);broker.directory.mkdir(mode=0o700);broker.lock_fd=fd
     broker.retained=broker.reader=broker.raw_scope=broker.boundary=None;broker.restore_attempted=False;broker.prepared_terminal=None
     broker.observer_program=broker.source/'ops/platform/p2-recovery-current-probe.mjs'
