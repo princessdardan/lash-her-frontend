@@ -207,8 +207,8 @@ function lessonDenialActionValid(actorId,selected,requests){
     lesson+'/quiz/attempts',lesson+'/playback',
   ].map((target,index)=>({method:'GET',target,bodySha256:emptyRequestSha256,uses:[2,3,3,3,3,1][index]})));
 }
-function lessonDenialSelection({actorId,lessonDenialAction:{operation:_operation,...selected}}){
-  return {actorId,...selected};
+function lessonDenialSelection({actorId,lessonDenialAction:{courseId,lessonId,enrolledActorId,grantId}}){
+  return {actorId,courseId,lessonId,enrolledActorId,grantId};
 }
 function paidGrantActionValid(selected,requests){
   const secondGrant=selected&&Object.hasOwn(selected,'priorGrantId');
