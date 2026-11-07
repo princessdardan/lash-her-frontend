@@ -117,7 +117,7 @@ class ScopedMuxTests(unittest.TestCase):
         stage._managed_attempt = lambda _phase="current": managed("after")
         return stage
 
-    def marker(self, stage, *, acknowledgments):
+    def marker(self, stage, *, acknowledgments, admitted=None, active=0, uncertain=0):
         raw = (self.admission / "state.json").read_bytes()
         value = json.loads(raw)
         if value["version"] == 1:
@@ -127,9 +127,10 @@ class ScopedMuxTests(unittest.TestCase):
             admission = {"valid": False, "sha256": mux._hash(raw), "version": 2, "environment": "staging",
                          "releaseId": "release-owned", "candidateSha256": "c" * 64,
                          "actionId": "mux-owned-action", "newWork": None, "recovery": None,
-                         "muxCallbackActive": True, "active": {"newWork": 0, "recovery": 0},
-                         "uncertain": {"newWork": 0, "recovery": 0},
-                         "muxCallbackEvidence": {"admitted": len(acknowledgments), "managedAcks": acknowledgments}}
+                         "muxCallbackActive": True, "active": {"newWork": 0, "recovery": active},
+                         "uncertain": {"newWork": 0, "recovery": uncertain},
+                         "muxCallbackEvidence": {"admitted": len(acknowledgments) if admitted is None else admitted,
+                                                 "managedAcks": acknowledgments}}
         return {"status": "P2_FAULT_GATEWAY_CURRENT", "processSha256": "a" * 64,
                 "gatewayConfigurationSha256": "b" * 64,
                 "admissionDirectory": stage._mount, "admission": admission}
@@ -193,8 +194,9 @@ class ScopedMuxTests(unittest.TestCase):
             state = json.loads((self.admission / "state.json").read_bytes())
             self.assertEqual(state["muxCallback"]["expiresAt"], "2026-11-07T00:02:00.000Z")
             self.assertEqual(opened["status"], "P2_SCOPED_MUX_OPENED")
-            with self.assertRaisesRegex(ValueError, "MANAGED_ACK_COUNT"):
-                stage.observe()
+            waiting = stage.observe()
+            self.assertEqual(waiting["status"], "P2_SCOPED_MUX_WAITING")
+            self.assertFalse(waiting["effectObserved"])
             acknowledgments.append({"requestId": "request_owned", "eventId": "event_owned", "upstreamStatus": 200})
             observed = stage.observe()
             closed = stage.close()
@@ -215,6 +217,30 @@ class ScopedMuxTests(unittest.TestCase):
         self.assertEqual((self.admission / "state.json").read_bytes(), mux._canonical(self.original))
         self.assertEqual(stage._state, "closed")
 
+    def test_immediate_callback_does_not_make_open_rollback_and_inflight_poll_is_waiting(self):
+        stage = self.manual_stage()
+        acknowledgments = [{"requestId": "request_early", "eventId": "event_early", "upstreamStatus": 200}]
+        stage.broker._gateway_observation = lambda: self.marker(stage, acknowledgments=acknowledgments)
+        with patch.object(mux.time, "time", return_value=1_794_009_600.0), \
+             patch.object(mux.time, "monotonic", side_effect=[10.0, 10.0, 11.0]):
+            opened = stage.open()
+            self.assertTrue(opened["effectAlreadyVisible"])
+            self.assertEqual(opened["managedAckCount"], 1)
+            self.assertEqual(stage.observe()["status"], "P2_SCOPED_MUX_EFFECT_OBSERVED")
+        stage.close()
+
+        stage = self.manual_stage()
+        stage.broker._gateway_observation = lambda: self.marker(stage, acknowledgments=[], admitted=1, active=1)
+        with patch.object(mux.time, "time", return_value=1_794_009_600.0), \
+             patch.object(mux.time, "monotonic", side_effect=[20.0, 20.0, 21.0]):
+            opened = stage.open()
+            waiting = stage.observe()
+        self.assertEqual(opened["admitted"], 1)
+        self.assertEqual(waiting["status"], "P2_SCOPED_MUX_WAITING")
+        self.assertEqual(waiting["active"]["recovery"], 1)
+        with self.assertRaisesRegex(ValueError, "EFFECT_NOT_OBSERVED"):
+            stage.close()
+
     def test_marker_rejects_uncertainty_duplicate_ack_and_unbound_sha(self):
         stage = self.manual_stage()
         stage._scoped_sha256 = "f" * 64
@@ -227,18 +253,19 @@ class ScopedMuxTests(unittest.TestCase):
         stage.broker._gateway_observation = lambda: {"status": "P2_FAULT_GATEWAY_CURRENT",
             "processSha256": "a" * 64, "gatewayConfigurationSha256": "b" * 64,
             "admissionDirectory": stage._mount, "admission": value}
-        self.assertEqual(stage._scoped_marker(True)["muxCallbackEvidence"]["admitted"], 1)
+        marker = stage._scoped_marker()
+        self.assertEqual(marker["muxCallbackEvidence"]["admitted"], 1)
+        self.assertEqual(stage._marker_disposition(marker), "observed")
         value["uncertain"]["recovery"] = 1
-        with self.assertRaisesRegex(ValueError, "NOT_DRAINED"):
-            stage._scoped_marker(True)
+        self.assertEqual(stage._marker_disposition(stage._scoped_marker()), "uncertain")
         value["uncertain"]["recovery"] = 0
         value["muxCallbackEvidence"] = {"admitted": 2, "managedAcks": [ack, ack]}
         with self.assertRaisesRegex(ValueError, "MANAGED_ACK_REQUIRED"):
-            stage._scoped_marker(True)
+            stage._scoped_marker()
         value["muxCallbackEvidence"] = {"admitted": 1, "managedAcks": [ack]}
         value["sha256"] = "e" * 64
         with self.assertRaisesRegex(ValueError, "GATEWAY_MARKER"):
-            stage._scoped_marker(True)
+            stage._scoped_marker()
 
     def test_standalone_main_has_no_authority(self):
         source = mux._SOURCE.read_text()

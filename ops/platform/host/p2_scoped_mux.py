@@ -325,7 +325,7 @@ class P2ScopedMuxStage:
                 "ordinaryNewWorkAuthorized": False, "ordinaryRecoveryAuthorized": False,
                 "nativeSchedulesEnabled": False, "trafficAuthorized": False, "releaseAccepted": False}
 
-    def _scoped_marker(self, require_effect):
+    def _scoped_marker(self):
         gateway = self._gateway_observation()
         admission = gateway.get("admission")
         expected = {"valid", "sha256", "version", "environment", "releaseId", "candidateSha256", "actionId",
@@ -352,14 +352,21 @@ class P2ScopedMuxStage:
                      _provider(row["requestId"]) and _provider(row["eventId"]) and row["upstreamStatus"] == 200 and
                      (row["requestId"], row["eventId"]) not in seen, "P2_SCOPED_MUX_MANAGED_ACK_REQUIRED")
             seen.add((row["requestId"], row["eventId"]))
-        _require(evidence["admitted"] == len(evidence["managedAcks"]) and
-                 (not require_effect or evidence["admitted"] > 0), "P2_SCOPED_MUX_MANAGED_ACK_COUNT_REQUIRED")
-        if require_effect:
-            _require(all(value == 0 for group in ("active", "uncertain") for value in admission[group].values()),
-                     "P2_SCOPED_MUX_EFFECT_NOT_DRAINED")
-        else:
-            _require(evidence == {"admitted": 0, "managedAcks": []}, "P2_SCOPED_MUX_PREEXISTING_EFFECT_REFUSED")
+        _require(evidence["admitted"] >= len(evidence["managedAcks"]),
+                 "P2_SCOPED_MUX_MANAGED_ACK_COUNT_REQUIRED")
         return copy.deepcopy(admission)
+
+    @staticmethod
+    def _marker_disposition(marker):
+        evidence = marker["muxCallbackEvidence"]
+        active = sum(marker["active"].values())
+        uncertain = sum(marker["uncertain"].values())
+        complete = evidence["admitted"] > 0 and evidence["admitted"] == len(evidence["managedAcks"])
+        if uncertain:
+            return "uncertain"
+        if active or not complete:
+            return "waiting"
+        return "observed"
 
     def open(self):
         _require(self._state == "new", "P2_SCOPED_MUX_OPEN_ORDER_REQUIRED")
@@ -382,26 +389,41 @@ class P2ScopedMuxStage:
         self._replace_state(raw, "open")
         try:
             _require(self._read_state() == raw, "P2_SCOPED_MUX_STATE_READBACK_REQUIRED")
-            marker = self._scoped_marker(False)
+            marker = self._scoped_marker()
         except BaseException:
             self._replace_state(self._original_raw, "rollback")
             self._state = "closed"
             raise
         self._state = "open"
+        disposition = self._marker_disposition(marker)
         return {**self._base_receipt("P2_SCOPED_MUX_OPENED"), "scopedStateSha256": self._scoped_sha256,
                 "issuedAt": callback["issuedAt"], "expiresAt": callback["expiresAt"],
-                "muxCallbackActive": marker["muxCallbackActive"], "effectObserved": False}
+                "muxCallbackActive": marker["muxCallbackActive"],
+                "admitted": marker["muxCallbackEvidence"]["admitted"],
+                "managedAckCount": len(marker["muxCallbackEvidence"]["managedAcks"]),
+                "effectAlreadyVisible": disposition == "observed", "effectObserved": False}
 
     def observe(self):
-        _require(self._state == "open" and self._observed is None and time.monotonic() < self._deadline,
+        now = time.monotonic()
+        _require(self._state == "open" and self._observed is None and now < self._deadline,
                  "P2_SCOPED_MUX_OBSERVE_ORDER_REQUIRED")
         self._check()
         self._frontend_closed()
         _require(self._read_state() == self._scoped_raw, "P2_SCOPED_MUX_STATE_CHANGED")
-        marker = self._scoped_marker(True)
+        marker = self._scoped_marker()
+        disposition = self._marker_disposition(marker)
+        evidence = marker["muxCallbackEvidence"]
+        waiting = {**self._base_receipt("P2_SCOPED_MUX_WAITING" if disposition == "waiting" else
+                                       "P2_SCOPED_MUX_UNCERTAIN"),
+                   "scopedStateSha256": self._scoped_sha256, "admitted": evidence["admitted"],
+                   "managedAckCount": len(evidence["managedAcks"]),
+                   "active": copy.deepcopy(marker["active"]), "uncertain": copy.deepcopy(marker["uncertain"]),
+                   "effectObserved": False, "gatewayEffectDrained": False}
+        if disposition != "observed":
+            return waiting
         managed = self._managed_attempt("after")
         _require(managed["rowSha256"] != "0" * 64, "P2_SCOPED_MUX_MANAGED_EFFECT_REQUIRED")
-        acknowledgments = marker["muxCallbackEvidence"]["managedAcks"]
+        acknowledgments = evidence["managedAcks"]
         self._observed = {**self._base_receipt("P2_SCOPED_MUX_EFFECT_OBSERVED"),
                           "scopedStateSha256": self._scoped_sha256,
                           "managedRowSha256": managed["rowSha256"],
