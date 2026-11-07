@@ -405,9 +405,10 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
         return self.record_base('P2_PROFILED_CURRENT_FRONTEND_CURRENT')
 
     def observe_lost_build(self, observation):
-        self._require_current_api()
         require(self.initial['disposition'] == 'reconcile-frontend-lost-build-get-first' and
-                self.promoted is None and self.closing_at is None and not hasattr(self, 'lost_build_observation'),
+                self.promoted is None and self.closing_at is None and not hasattr(self, 'lost_build_observation') and
+                self.scope is not None and self.prior_gateway is None and self.worker is None and
+                getattr(self, 'current_database_proof', None) is not None,
                 'P2_PROFILED_CURRENT_LOST_BUILD_STAGE_REFUSED')
         require_profiled(observation)
         optional = ('buildOutcomeSha256',) if 'buildOutcome' in self.initial['lostBuildReceiptSha256'] else ()
@@ -443,6 +444,20 @@ class P2ProfiledCurrentRecoveryBroker(P2ProfiledCurrentBroker):
                     'buildReadyVerified', 'workloadVerified', 'aliasQualificationVerified', 'promotionVerified',
                     'cronQualificationVerified', 'trafficAuthorized', 'releaseAccepted')),
                 'P2_PROFILED_CURRENT_LOST_BUILD_OBSERVATION_REFUSED')
+        self.check()
+        deployment = vercel.deployment_state(self.vercel, observation['deploymentId'], observation['projectId'],
+                                             observation['sourceCommit'], observation['releaseId'])
+        self.check()
+        require(deployment.get('deploymentId') == observation['deploymentId'] and
+                deployment.get('projectId') == observation['projectId'] and
+                deployment.get('sourceCommit') == observation['sourceCommit'],
+                'P2_PROFILED_CURRENT_LOST_BUILD_PROVIDER_READBACK_REFUSED')
+        project = vercel.project_state(self.vercel, observation['projectId'])
+        self.check()
+        require(project == {'projectId': observation['projectId'],
+                            'productionDeploymentId': observation['previousDeploymentId'],
+                            'cronsEnabled': False},
+                'P2_PROFILED_CURRENT_LOST_BUILD_PRIOR_TARGET_CHANGED')
         raw = encoded(observation)
         self.retain('frontend-lost-build-observation.json', raw)
         self.lost_build_observation = copy.deepcopy(observation)

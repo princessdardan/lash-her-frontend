@@ -183,11 +183,7 @@ export async function runP2ProfiledCurrentRecovery(prepared, authority) {
           demand(databaseClient && !environmentSignal.aborted); await verifySession(); await verifyEnvironment();
           const continuationStarted = readP2ProfiledCurrentFrontendReceipt(deps.directory, "continuation-started", settings.frontendMigration);
           const probe = await createP2ProfiledCurrentProbe(settings.frontendMigration, plan, databaseClient, verifySession, database);
-          const armed = await runtime.armRecovery({ receipt: database, continuationStarted: continuationStarted.record, probe });
-          await verifySession();
-          if (settings.disposition !== "resume-approved-api-suffix") await runtime.verifyCurrentApis();
-          else await runtime.prepareApiSuffix();
-          await runtime.preparePriorGateway(); await armed.apiReady; await verifySession();
+          let lostBuildSourceObservation;
           if (settings.disposition === "reconcile-frontend-lost-build-get-first") {
             const providerContext = await deps.getProviderContext();
             const observed = await frontendAdapters.observeProfiledCurrentFrontend({ plan, migration: settings.frontendMigration,
@@ -195,10 +191,21 @@ export async function runP2ProfiledCurrentRecovery(prepared, authority) {
             demand(observed?.status === "P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_OBSERVED"
               && Buffer.isBuffer(observed.evidence) && observed.evidence.length > 0 && observed.evidence.length <= 2_000_000
               && observed.evidenceSha256 === hash(observed.evidence));
-            const safe = Object.fromEntries(Object.entries(observed).filter(([key]) => !["evidence", "evidenceSha256"].includes(key)));
-            lostBuildObservation = await runtime.observeLostBuild(safe);
-            await store.record("p2-profiled-current-lost-build-observation.json", safe);
-          } else if (Object.keys(settings.originalReceiptSha256).length === originalReceiptNames.length) {
+            lostBuildSourceObservation = Object.fromEntries(Object.entries(observed)
+              .filter(([key]) => !["evidence", "evidenceSha256"].includes(key)));
+          }
+          const armed = await runtime.armRecovery({ receipt: database, continuationStarted: continuationStarted.record, probe });
+          await verifySession();
+          if (settings.disposition !== "resume-approved-api-suffix") await runtime.verifyCurrentApis();
+          else await runtime.prepareApiSuffix();
+          if (settings.disposition === "reconcile-frontend-lost-build-get-first") {
+            demand(lostBuildSourceObservation);
+            lostBuildObservation = await runtime.observeLostBuild(lostBuildSourceObservation);
+            await store.record("p2-profiled-current-lost-build-observation.json", lostBuildSourceObservation);
+          }
+          await runtime.preparePriorGateway(); await armed.apiReady; await verifySession();
+          if (settings.disposition !== "reconcile-frontend-lost-build-get-first"
+              && Object.keys(settings.originalReceiptSha256).length === originalReceiptNames.length) {
             const providerContext = await deps.getProviderContext();
             const observed = await frontendAdapters.observeProfiledCurrentFrontend({ plan, migration: settings.frontendMigration,
               originalReceiptSha256: settings.originalReceiptSha256, providerContext, environmentSignal, verifyEnvironment, verifySession });
@@ -210,7 +217,8 @@ export async function runP2ProfiledCurrentRecovery(prepared, authority) {
               originalReceiptSha256: settings.originalReceiptSha256, providerContext }, observed);
             demand(Buffer.isBuffer(workload) && workload.length > 0 && workload.length <= 2_000_000);
             await runtime.reconcileFrontend(observed, observed.proof, workload);
-          } else demand(settings.disposition === "resume-approved-api-suffix" || settings.disposition === "restore-current-runtime");
+          } else demand(settings.disposition === "resume-approved-api-suffix" || settings.disposition === "restore-current-runtime"
+            || settings.disposition === "reconcile-frontend-lost-build-get-first");
           if (settings.disposition === "resume-approved-api-suffix") {
             await runtime.resumeApprovedApiSuffix();
           }

@@ -221,7 +221,7 @@ function environmentLock(settings, initial, directory, launch) {
             { observation: safeObservation, proof: safeProof, workload: workload.toString("base64") }, 300_000);
         },
         async observeLostBuild(observation) {
-          demand(armed && priorGatewayPrepared && apiReady && !closePrepared
+          demand(armed && !priorGatewayPrepared && !apiReady && !closePrepared
             && initial.disposition === "reconcile-frontend-lost-build-get-first");
           requireQualificationTargetProfile(current, observation);
           const fields = ["version", "qualificationTargetProfile", "status", "environment", "actionId", "releaseId", "sourceCommit",

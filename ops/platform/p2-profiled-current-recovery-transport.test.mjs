@@ -148,9 +148,10 @@ test("lost build recovery transports only the source-observed GET-first effect a
   try {
     await withP2ProfiledCurrentRecoveryTransport(f.handle, async (_check, _signal, host) => {
       const { apiReady } = await host.armRecovery({ receipt: f.receipt, continuationStarted: f.continuationStarted, probe: f.probe });
-      await host.verifyCurrentApis(); await host.preparePriorGateway(); await apiReady;
+      await host.verifyCurrentApis();
       const retained = await host.observeLostBuild(f.lostBuildObservation);
       assert.equal(retained.status, "P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_RETAINED");
+      await host.preparePriorGateway(); await apiReady;
       await host.runtimeRestored(); await host.prepareClose(); await host.frontendSessionClosed();
       await host.finish({ terminal: f.terminal, continuationCompleted: f.continuationCompleted, recoveryOutcome: f.recoveryOutcome });
     });

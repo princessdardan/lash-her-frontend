@@ -369,7 +369,8 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
                           'targetSha256': 'd' * 64}
         broker.selected = {**selected(), 'workload': {'projectId': 'prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM'}}
         broker.promoted, broker.closing_at = None, None
-        broker._require_current_api = lambda: ({}, {})
+        broker.scope, broker.prior_gateway, broker.worker = object(), None, None
+        broker.current_database_proof = object()
         broker.record_base = lambda status: {'status': status}
         retained = []
         broker.retain = lambda name, raw: retained.append((name, raw))
@@ -387,11 +388,17 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
             'originalBuildAckObserved': False, 'providerMutationReplayed': False, 'buildReadyVerified': False,
             'workloadVerified': False, 'aliasQualificationVerified': False, 'promotionVerified': False,
             'cronQualificationVerified': False, 'trafficAuthorized': False, 'releaseAccepted': False}
-        receipt = broker.observe_lost_build(observation)
+        deployment = {'deploymentId': 'dpl_owned', 'projectId': 'prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM',
+                      'sourceCommit': 'a' * 40, 'url': 'https://owned.vercel.app', 'readyState': 'BUILDING'}
+        project = {'projectId': 'prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM',
+                   'productionDeploymentId': 'dpl_previous', 'cronsEnabled': False}
+        broker.check = lambda: None; broker.vercel = object()
+        with patch.object(recovery.vercel, 'deployment_state', return_value=deployment), \
+                patch.object(recovery.vercel, 'project_state', return_value=project):
+            receipt = broker.observe_lost_build(observation)
         self.assertEqual(receipt['status'], 'P2_PROFILED_CURRENT_FRONTEND_BUILD_EFFECT_RETAINED')
         self.assertEqual(receipt['observationSha256'], recovery.sha(recovery.encoded(observation)))
         self.assertEqual(retained[0][0], 'frontend-lost-build-observation.json')
-        broker.check = lambda: None; broker.vercel = object()
         with patch.object(recovery.vercel, 'project_state', return_value={
                 'projectId': 'prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM',
                 'productionDeploymentId': 'dpl_changed', 'cronsEnabled': False}):
@@ -399,6 +406,12 @@ class ProfiledCurrentRecoveryTest(unittest.TestCase):
                 broker._require_native_schedules_off()
         del broker.lost_build_observation
         del broker.lost_build_observation_sha256
+        wrong_deployment = {**deployment, 'deploymentId': 'dpl_other'}
+        with patch.object(recovery.vercel, 'deployment_state', return_value=wrong_deployment), \
+                patch.object(recovery.vercel, 'project_state', return_value=project):
+            with self.assertRaises(Exception):
+                broker.observe_lost_build(observation)
+        self.assertIsNone(broker.prior_gateway); self.assertIsNone(broker.worker)
         replayed = copy.deepcopy(observation); replayed['providerMutationReplayed'] = True
         same_deployment = copy.deepcopy(observation); same_deployment['previousDeploymentId'] = same_deployment['deploymentId']
         boolean_version = copy.deepcopy(observation); boolean_version['version'] = True
