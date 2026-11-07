@@ -62,6 +62,7 @@ PROFILED_CERTIFICATION_CONTAINMENT_NAMES = (
     '^/lash-p2-certification-observer-[a-f0-9]{32}$',
     '^/lash-p2-certification-api-check-(course|community)-[a-f0-9]{32}$',
     '^/lash-p2-profiled-certification-guard-close-[a-f0-9]{32}$',
+    '^/lash-p2-profiled-certification-image-check-[a-f0-9]{32}$',
 )
 
 
@@ -450,7 +451,8 @@ def capture_gateway_before_stop(initial, selected, directory, source):
 def remove_profiled_certification_fault_lease(initial, source):
     from p2_certification_fault import LEASE
     plan, configuration = initial['certificationPlan'], Path(initial['configuration'])
-    require(plan['mode'] == 'fault-before-upstream', 'P2_PROFILED_CERTIFICATION_GUARD_FAULT_MODE_REQUIRED')
+    transport_mode = {'fault-before-upstream':'503-before-upstream','known-ack-recovery':'drop-after-ack'}.get(plan['mode'])
+    require(transport_mode is not None, 'P2_PROFILED_CERTIFICATION_GUARD_FAULT_MODE_REQUIRED')
     verify_guard_boundary(initial, source)
     require(staging_state.configuration_hashes(configuration) == initial['configurationSha256'],
             'P2_PROFILED_CERTIFICATION_GUARD_CONFIGURATION_CHANGED')
@@ -480,7 +482,7 @@ def remove_profiled_certification_fault_lease(initial, source):
                     lease['version'] == 1 and lease['stageId'] == intent['stageId'] and
                     lease['releaseId'] == initial['candidate']['releaseId'] and lease['candidateSha256'] == initial['candidateSha256'] and
                     lease['configurationSha256'] == plan['configurationCanonicalSha256'] and
-                    lease['gatewayProcessSha256'] == plan['gatewayProcessSha256'] and lease['mode'] == '503-before-upstream' and
+                    lease['gatewayProcessSha256'] == plan['gatewayProcessSha256'] and lease['mode'] == transport_mode and
                     lease['receiver'] == plan['faultSelection']['receiver'] and lease['sourceWitnessSha256'] == plan['faultSelection']['commandSha256'] and
                     len(raw) == existing.st_size and migrate.file_hash(raw) == intent['leaseSha256'] and
                     _canonical_sha(json.loads(raw)) == _canonical_sha(lease), 'P2_PROFILED_CERTIFICATION_GUARD_FOREIGN_FAULT_LEASE')
@@ -536,7 +538,7 @@ def _fail_profiled_certification(initial, armed, source, result, record_name, na
             result['profiledCertificationContainerCleanupUncertain'] = True
         if armed is not None:
             _stop_profiled_certification_runtime(initial, source, result, record_name)
-            if initial['certificationPlan'].get('mode') == 'fault-before-upstream':
+            if initial['certificationPlan'].get('mode') in ('fault-before-upstream','known-ack-recovery'):
                 result['faultLeaseDisabled'] = None
                 if result['runtimeStopped'] is True:
                     try:

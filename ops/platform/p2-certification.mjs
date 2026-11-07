@@ -135,7 +135,9 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     wholeReleaseAccepted:false};
   if(input.mode==='known-ack-recovery'){
     const recovery=input.knownAckRecovery;
-    demand(exactKeys(recovery,['version','recoveryActionId','receiverTargets','configurationInputDirectory'])&&recovery.version===1&&action(recovery.recoveryActionId)&&
+    const fields={version:input.version,...(profile?{qualificationTargetProfile:profile}:{})};
+    if(profile)requireQualificationTargetProfile(profile,recovery);
+    demand(exactKeys(recovery,[...Object.keys(fields),'recoveryActionId','receiverTargets','configurationInputDirectory'])&&recovery.version===input.version&&action(recovery.recoveryActionId)&&
       typeof recovery.configurationInputDirectory==='string'&&resolve(recovery.configurationInputDirectory)===recovery.configurationInputDirectory&&
       recovery.configurationInputDirectory.startsWith('/var/lib/lash-her/releases/staging/')&&
       ![input.certificationActionId,candidate.releaseId,input.fault?.stageId].includes(recovery.recoveryActionId)&&
@@ -143,13 +145,21 @@ export function prepareP2BoundedCertification(prepared,input,candidateBytes,{fro
     for(const target of Object.values(recovery.receiverTargets))demand(exactKeys(target,['host','port','database','user','serverMajor','roleOid'])&&
       typeof target.host==='string'&&target.host.length>0&&target.host.length<=253&&Number.isInteger(target.port)&&target.port>0&&target.port<=65535&&
       /^[a-z][a-z0-9_]{0,62}$/u.test(target.database??'')&&/^[a-z][a-z0-9_]{0,62}$/u.test(target.user??'')&&[16,18].includes(target.serverMajor)&&/^[1-9][0-9]{0,9}$/u.test(target.roleOid??''));
+    if(profile){
+      demand(!recovery.configurationInputDirectory.includes(',')&&recovery.configurationInputDirectory!==profiledRelease.configurationDirectory&&
+        nativePlan.commandWitnesses[0].action==='suspend');
+      for(const [service,target] of Object.entries(recovery.receiverTargets)){
+        const receiver=profiledRelease.apiJobs[service];
+        demand(target.user===receiver.runtimeRole&&['host','port','database','serverMajor'].every(key=>target[key]===receiver.target[key]));
+      }
+    }
     base.knownAckReceiverTargets=structuredClone(recovery.receiverTargets);
     base.knownAckConfigurationInputDirectory=recovery.configurationInputDirectory;
-    const intent={version:1,recoveryActionId:recovery.recoveryActionId,certificationActionId:base.certificationActionId,
+    const intent={...fields,recoveryActionId:recovery.recoveryActionId,certificationActionId:base.certificationActionId,
       ...Object.fromEntries(['candidateSha256','sourceCommit','operatorSourceCommit','targetSha256','configurationSha256','gatewayProcessSha256','runtimeInventorySha256','operatorSourceClosureSha256'].map(key=>[key,base[key]])),
       configurationInputDirectory:base.knownAckConfigurationInputDirectory,nativePlanSha256:nativePlan.planSha256,receiverTargetsSha256:p2NativeHash(base.knownAckReceiverTargets),profile:'known-ack-same-session-ordered-replacement-v1',runtimeReplacements:1,nativeWindowSeconds:nativePlan.windowSeconds,
       sqlReplayAllowed:false,roleChangeAllowed:false,ordinaryClosedZeroGate:false,automaticFailureRecoveryAllowed:false};
-    base.knownAckRecovery={version:1,recoveryActionId:recovery.recoveryActionId,intent,intentSha256:p2NativeHash(intent)};
+    base.knownAckRecovery={...fields,recoveryActionId:recovery.recoveryActionId,intent,intentSha256:p2NativeHash(intent)};
   }else demand(input.knownAckRecovery===undefined);
   const plan=freeze({...base,planSha256:p2NativeHash(base)});
   demand(base.browserPlanSha256===null||sha(base.browserPlanSha256));
@@ -180,12 +190,13 @@ export function deriveP2CertificationNativePlan(plan,closedAdmission){
 
 async function runKnownAckCase(plan,nativePlan,host,faultPlan,hostStage,client,verify,withOwner,directory){
   const context=p2CertificationParentContext(plan),prepared=context.prepared,policy={environment:'staging',targetSha256:plan.targetSha256};
+  const profile=plan.qualificationTargetProfile;
   const handle=await host.knownAckStage(plan),stage=readP2CertificationKnownAckStage(handle,plan);
   await stage.armFault();let barrier,enableAttempted=false,domainJoined=false,closureFailed=false;
   try{
     barrier=await withOwner(()=>changeFrontendAdmission(client,policy,nativePlan.initialEpoch,{newWork:false,recovery:true}));
     demand(barrier.epoch===(BigInt(nativePlan.initialEpoch)+1n).toString());
-    const initial=await readP2CertificationCurrent(client,prepared,plan,verify);demand(initial.admission.active===0&&initial.admission.uncertain===0&&initial.witness.operations.length===0);
+    const initial=await readP2CertificationCurrent(client,prepared,plan,verify,false,profile);demand(initial.admission.active===0&&initial.admission.uncertain===0&&initial.witness.operations.length===0);
     enableAttempted=true;await host.nativeControl.setEnabled(nativePlan,true);await stage.startWindow();
     const deadline=performance.now()+nativePlan.windowSeconds*1000;
     while(performance.now()<deadline){
@@ -204,7 +215,7 @@ async function runKnownAckCase(plan,nativePlan,host,faultPlan,hostStage,client,v
     try{demand((await hostStage.disarm(faultPlan)).faultDisabled===true);}catch{closureFailed=true;}
     if(enableAttempted){try{if((await host.nativeControl.observeMetadata(nativePlan)).nativeEnabled!==false)await host.nativeControl.setEnabled(nativePlan,false);
       demand((await host.nativeControl.observeMetadata(nativePlan)).nativeEnabled===false);}catch{closureFailed=true;}}
-    try{const actual=await readP2CertificationCurrent(client,prepared,plan,verify);
+    try{const actual=await readP2CertificationCurrent(client,prepared,plan,verify,false,profile);
       if(actual.admission.newWork||actual.admission.recovery)await withOwner(()=>changeFrontendAdmission(client,policy,actual.admission.epoch,{newWork:false,recovery:false}));
     }catch{closureFailed=true;}
     try{await host.gatewayStage('closed');}catch{closureFailed=true;}
@@ -212,6 +223,13 @@ async function runKnownAckCase(plan,nativePlan,host,faultPlan,hostStage,client,v
   demand(domainJoined&&!closureFailed&&barrier);
   const settlement=await stage.prepareSettlement();demand(/^[a-f0-9-]{36}$/u.test(settlement.operationId??'')&&sha(settlement.evidenceSha256)&&/^[1-9][0-9]*$/u.test(settlement.epoch??''));
   await withOwner(()=>reconcileFrontendOperation(client,policy,settlement.epoch,settlement.operationId,settlement.evidenceSha256));
+  if(profile){
+    const confirmed=await stage.confirmSettlement();
+    requireQualificationTargetProfile(profile,confirmed);
+    demand(confirmed.version===2&&confirmed.status==='P2_KNOWN_ACK_RECONCILIATION_OBSERVED_FENCED'&&confirmed.operationId===settlement.operationId&&
+      confirmed.settlementSha256===settlement.evidenceSha256&&sha(confirmed.reconciliationObservedSha256)&&confirmed.frontendGlobalClosedZero===true&&
+      isDeepStrictEqual(confirmed.oldGatewayUncertain,{newWork:0,recovery:1})&&confirmed.runtimeReplaced===false&&confirmed.ordinaryClosedZeroGate===false);
+  }
   const result=await stage.replace();demand(result.status==='P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED'&&result.recoveryActionId===plan.knownAckRecovery.recoveryActionId&&
     result.ordinaryClosedZeroGate===false&&result.originalGatewayUncertaintyPreserved===true&&result.runtimeReplacements===1&&result.sqlReplayed===false);
   return result;
@@ -364,7 +382,7 @@ async function runBoundedCertification(plan,dependencies,profile){
         demand(recovery.epoch===nativePlan.initialEpoch);store.record('p2-certification-recovery-only.json',recovery);await host.gatewayStage('recovery');
         const invoke=()=>qualifyP2LifecycleNative({...nativeInput,plan:nativePlan,directory:nativeDirectory,observeNativeRequests:collect});
         if(plan.mode==='known-ack-recovery'){
-          const faultPlan=prepareP2LifecycleTransportFaultPlan(nativePlan,context.faultInput),hostStage=await host.prepareFault(faultPlan);
+          const faultPlan=prepareP2LifecycleTransportFaultPlan(nativePlan,context.faultInput,profile),hostStage=await host.prepareFault(faultPlan);
           phase='reviewed-known-ack-drop-replay-settlement-replacement';
           caseOutcome=await runKnownAckCase(plan,nativePlan,host,faultPlan,hostStage,client,verify,withOwner,dependencies.directory);
         }else if(plan.mode==='native-window'){phase='bounded-actual-native-window';caseOutcome=await invoke();}
@@ -435,7 +453,8 @@ function prepareProfiledCertification(settings){
     input.readyReceiptSha256?.['frontend-workload-outcome.json']===receipt.frontendWorkloadReceiptSha256);
   const candidateBytes=readFrontendReleaseEvidence(directory,'release.candidate.json');
   demand(rawHash(candidateBytes)===release.candidateSha256);
-  const profiledRelease={receiptSha256:rawHash(raw),planSha256:rawHash(release),apiJobSha256:release.apiJobSha256,apiJobs:original.apiJobs};
+  const profiledRelease={receiptSha256:rawHash(raw),planSha256:rawHash(release),apiJobSha256:release.apiJobSha256,apiJobs:original.apiJobs,
+    configurationDirectory:settings.releaseSettings.host.configuration};
   const stages=prepareCertificationStages({migration:original.migration,plan:original.inventory},input,candidateBytes,settings,
     {frontendReceipts,configurationSha256:release.configurationSha256,profiledRelease},currentProfile);
   return {...stages,original,frontendReceipts,originalReleaseReceipt:raw};

@@ -256,17 +256,44 @@ def _profiled_initial(initial, expected):
                 type(native_plan['windowSeconds']) is int and 60 <= native_plan['windowSeconds'] <= 180 and
                 type(native_plan['drainSeconds']) is int and 1 <= native_plan['drainSeconds'] <= 180,
                 'P2_PROFILED_CERTIFICATION_NATIVE_CONTROL_REQUIRED')
-    if mode == 'fault-before-upstream':
+    if mode in ('fault-before-upstream', 'known-ack-recovery'):
         fault = plan['faultSelection']
         require(type(fault) is dict and set(fault) == {'stageId','receiver','commandIndex','commandSha256'} and
                 type(fault['stageId']) is str and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', fault['stageId']) and
                 fault['receiver'] in ('course','community') and type(fault['commandIndex']) is int and fault['commandIndex'] == 0 and
                 _profiled_digest(fault['commandSha256']) and len(native_plan['commandWitnesses']) == 1 and
                 _profiled_digest(plan['requestEvidenceDescriptorSha256']), 'P2_PROFILED_CERTIFICATION_FAULT_SELECTION_REQUIRED')
+    if mode == 'known-ack-recovery':
+        _profiled_known_ack_selection(plan, initial['configuration'], expected)
     require(type(initial['readyReceipts']) is dict and set(initial['readyReceipts']) == set(READY_FILES) and
             type(plan['readyReceiptSha256']) is dict and set(plan['readyReceiptSha256']) == set(READY_FILES),
             'P2_PROFILED_CERTIFICATION_READY_RECEIPTS_REQUIRED')
     return plan
+
+
+def _profiled_known_ack_selection(plan, mounted, expected):
+    from p2_known_ack_loss import replacement_intent
+    selection, targets = plan['knownAckRecovery'], plan['knownAckReceiverTargets']
+    require(type(selection) is dict and set(selection) == {'version','qualificationTargetProfile','recoveryActionId','intent','intentSha256'},
+            'P2_PROFILED_KNOWN_ACK_SELECTION_REQUIRED')
+    vercel.require_record_profile(expected, selection, selection['intent'])
+    action = selection['recoveryActionId']
+    path = plan['knownAckConfigurationInputDirectory']
+    require(type(action) is str and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', action) and
+            action not in (plan['certificationActionId'], plan['originalReleaseId'], plan['faultSelection']['stageId']) and
+            type(path) is str and path == str(Path(path)) and PROFILED_RELEASE_ROOT in Path(path).parents and '..' not in Path(path).parts and
+            ',' not in path and path != mounted and plan['nativePlan']['commandWitnesses'][0].get('action') == 'suspend',
+            'P2_PROFILED_KNOWN_ACK_SELECTION_REQUIRED')
+    require(type(targets) is dict and set(targets) == {'course','community'} and all(
+            type(target) is dict and set(target) == {'host','port','database','user','serverMajor','roleOid'} and
+            type(target['host']) is str and 0 < len(target['host']) <= 253 and
+            type(target['port']) is int and 0 < target['port'] <= 65535 and
+            all(type(target[key]) is str and re.fullmatch(r'[a-z][a-z0-9_]{0,62}', target[key]) for key in ('database','user')) and
+            type(target['serverMajor']) is int and target['serverMajor'] in (16,18) and
+            type(target['roleOid']) is str and re.fullmatch(r'[1-9][0-9]{0,9}', target['roleOid']) for target in targets.values()),
+            'P2_PROFILED_KNOWN_ACK_RECEIVER_TARGETS_REQUIRED')
+    require(selection['intent'] == replacement_intent(plan, action, expected_profile=expected) and
+            selection['intentSha256'] == _sha(_canonical(selection['intent'])), 'P2_PROFILED_KNOWN_ACK_INTENT_CHANGED')
 
 
 def _profiled_suspension_plan(initial, plan, expected):
@@ -449,6 +476,13 @@ def prepare_profiled_current_certification_input(initial, source):
             'P2_PROFILED_CERTIFICATION_NATIVE_BINDING_REQUIRED')
     _profiled_ready_receipts(initial, plan, selected, expected)
     _profiled_suspension_plan(initial, plan, expected)
+    if plan['mode'] == 'known-ack-recovery':
+        from p2_known_ack_loss import validate_known_configuration_input
+        require(all(row['user'] == jobs[service]['job']['runtimeRole'] and
+                    all(row[key] == jobs[service]['job']['target'][key] for key in ('host','port','database','serverMajor'))
+                    for service,row in plan['knownAckReceiverTargets'].items()), 'P2_PROFILED_KNOWN_ACK_API_JOB_CHANGED')
+        validate_known_configuration_input(plan['knownAckConfigurationInputDirectory'], configuration, selected, jobs,
+                                           initial['configurationSha256'], expected_profile=expected)
     terminal_sha, plan_hash_verified = _profiled_original_terminal(initial, plan, selected, results, expected)
     return {'version': 2, 'qualificationTargetProfile': expected, 'status': 'P2_PROFILED_CURRENT_CERTIFICATION_INPUT_VERIFIED',
             'environment': 'staging', 'releaseId': selected['releaseId'], 'certificationActionId': initial['certificationActionId'],
@@ -1091,7 +1125,7 @@ class P2CertificationBroker(Broker):
                 gateway_current=self._gateway_current();gateway=gateway_current['admission']
                 require(gateway.get('newWork') is False and gateway.get('recovery') is True and all(gateway[category][key]==0 for category in ('active','uncertain') for key in ('newWork','recovery')),
                     'P2_CERTIFICATION_NATIVE_GATEWAY_BARRIER_REQUIRED')
-                if self.certification_profile() is not None and self.initial['certificationPlan']['mode']=='fault-before-upstream':
+                if self.certification_profile() is not None and self.initial['certificationPlan']['mode'] in ('fault-before-upstream','known-ack-recovery'):
                     require(self.fault_stage is not None and self.fault_stage.lease_sha256 is not None and gateway_current['faultLeasePresent'] is True,
                         'P2_PROFILED_CERTIFICATION_NATIVE_FAULT_ARM_REQUIRED')
                 self.native_enable_attempted=True
@@ -1294,23 +1328,29 @@ class P2CertificationBroker(Broker):
 
     def known_ack_operation(self,operation,value):
         self.check();cert=self.initial['certificationPlan']
+        expected=self.certification_profile();profile_fields={} if expected is None else {'version':2,'qualificationTargetProfile':expected}
         require(self.external_armed and cert['mode']=='known-ack-recovery','P2_CERTIFICATION_FIXED_KNOWN_ACK_MODE_REQUIRED')
         import p2_known_ack_loss as known
         if operation=='known-prepare':
             require(self.known_ack_recorder is None and self.fault_stage is not None,'P2_CERTIFICATION_KNOWN_ACK_ISSUER_ALREADY_USED')
-            self.known_ack_recorder=known.P2KnownAckLossRecorder(self,cert['knownAckRecovery']['recoveryActionId'],cert['knownAckReceiverTargets'])
-            return {'status':'P2_KNOWN_ACK_SOURCE_STAGE_PREPARED','bindingSha256':cert['planSha256'],'baselineSha256':self.known_ack_recorder.baseline_sha256}
+            self.known_ack_recorder=known.P2KnownAckLossRecorder(self,cert['knownAckRecovery']['recoveryActionId'],cert['knownAckReceiverTargets'],**self.profile_arguments())
+            return {**profile_fields,'status':'P2_KNOWN_ACK_SOURCE_STAGE_PREPARED','bindingSha256':cert['planSha256'],'baselineSha256':self.known_ack_recorder.baseline_sha256}
         recorder=self.known_ack_recorder;require(recorder is not None,'P2_CERTIFICATION_KNOWN_ACK_SOURCE_ISSUER_REQUIRED')
         if operation=='known-arm':
             recorder._verify();known.validate_baseline(recorder.plan,recorder._snapshot())
             require(self._native_observe()['nativeEnabled'] is False,'P2_CERTIFICATION_KNOWN_ACK_NATIVE_OFF_BEFORE_ARM')
             observed=self.fault_stage.arm({'commandId':recorder.command['commandId'],'accountVersion':int(recorder.command['accountVersion']),'canonicalSha256':recorder.plan['commandSha256']})
             recorder._verify();return observed
-        if operation=='known-start-window':recorder.start_native_window();return {'status':'P2_KNOWN_ACK_NATIVE_WINDOW_STARTED'}
+        if operation=='known-start-window':recorder.start_native_window();return {**profile_fields,'status':'P2_KNOWN_ACK_NATIVE_WINDOW_STARTED'}
         if operation=='known-domain':return recorder.observe_domain()
         if operation=='known-requests':return recorder.retain_request_details(value.get('requestArtifact'))
         if operation=='known-settlement':return recorder.prepare_reconciliation()
+        if operation=='known-confirm-settlement':
+            require(expected is not None and self.known_ack_reconciliation is None,'P2_CERTIFICATION_PROFILED_SETTLEMENT_ALREADY_ATTEMPTED')
+            self.known_ack_reconciliation=recorder.confirm_reconciliation()
+            return copy.deepcopy(self.known_ack_reconciliation)
         if operation=='known-replace':
+            require(expected is None,'P2_CERTIFICATION_PROFILED_REPLACEMENT_UNQUALIFIED')
             require(not self.known_ack_replace_attempted and self.known_ack_boundary is None,'P2_CERTIFICATION_KNOWN_ACK_REPLACEMENT_ALREADY_ATTEMPTED')
             self.known_ack_replace_attempted=True
             authorization=recorder.authorize_replacement()
@@ -1500,6 +1540,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
     def initialize(self):
         self._initialize_certification_state()
         self.api_proof = None
+        self.known_ack_reconciliation = None
         self.authority_timing_sha256 = None
         self.guard_arm_verified = False
         self.fallback_complete = False
@@ -1701,7 +1742,7 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
                         return False
                 finally:
                     runtime._command_scope.reset(token)
-                if self.initial['certificationPlan']['mode'] == 'fault-before-upstream':
+                if self.initial['certificationPlan']['mode'] in ('fault-before-upstream','known-ack-recovery'):
                     self.outcome['faultLeaseDisabled'] = None
                     if self.outcome.get('runtimeStopped') is True:
                         try:

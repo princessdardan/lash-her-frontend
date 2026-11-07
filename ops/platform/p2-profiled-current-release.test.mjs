@@ -228,6 +228,30 @@ test('fixed current certification plan joins the original release plan, terminal
     await assert.rejects(p2ProfiledCertificationOperator({ ...faultSettings, certification: { ...faultSettings.certification,
       mode: 'fault-drop-after-ack' } }, { confirmation: 'staging/owned-fault' }), /P2_CERTIFICATION_PARENT_REFUSED/);
 
+    const knownInput = { version: 2, qualificationTargetProfile: profile, recoveryActionId: 'owned-known-replacement',
+      configurationInputDirectory: '/var/lib/lash-her/releases/staging/owned-known-input',
+      receiverTargets: Object.fromEntries(Object.entries(f.apiJobs).map(([service, job]) => {
+        const { host, port, database, serverMajor } = job.target;
+        return [service, { host, port, database, serverMajor, user: job.runtimeRole, roleOid: '102' }];
+      })) };
+    const knownSettings = { ...faultSettings, certification: { ...faultSettings.certification, mode: 'known-ack-recovery', knownAckRecovery: knownInput } };
+    const known = prepareP2ProfiledCertificationOperator(knownSettings);
+    assert.deepEqual(known.knownAckRecovery.qualificationTargetProfile, profile);
+    assert.equal(known.knownAckRecovery.intentSha256, p2NativeHash(known.knownAckRecovery.intent));
+    const select = 'import json,sys;sys.path.insert(0,sys.argv[1]);import p2_certification_parent as p;' +
+      'p._profiled_known_ack_selection(json.load(sys.stdin),sys.argv[2],p._profiled_context())';
+    const verifyKnown = value => spawnSync('python3', ['-B', '-c', select, join(root, 'ops/platform/host'), f.settings.host.configuration],
+      { input: JSON.stringify(value), encoding: 'utf8' });
+    assert.equal(verifyKnown(known).status, 0);
+    const tampered = structuredClone(known);
+    tampered.knownAckRecovery.intent.runtimeReplacements = 2;
+    tampered.knownAckRecovery.intentSha256 = p2NativeHash(tampered.knownAckRecovery.intent);
+    assert.match(verifyKnown(tampered).stderr, /P2_PROFILED_KNOWN_ACK_INTENT_CHANGED/);
+    assert.throws(() => prepareP2ProfiledCertificationOperator({ ...knownSettings, certification: { ...knownSettings.certification,
+      knownAckRecovery: { ...knownInput, receiverTargets: { ...knownInput.receiverTargets,
+        course: { ...knownInput.receiverTargets.course, database: 'wrong' } } } } }));
+    await assert.rejects(p2ProfiledCertificationOperator(knownSettings, { confirmation: 'staging/owned-fault' }), /P2_CERTIFICATION_PARENT_REFUSED/);
+
     const targets = Object.fromEntries(Object.entries({ frontend: migration.job, ...f.apiJobs }).map(([service, job]) => {
       const { host, port, database, serverMajor } = job.target;
       const target = { qualificationTargetProfile: profile, host, port, database, serverMajor,

@@ -56,6 +56,17 @@ class FixedDispatchTests(unittest.TestCase):
                 self.assertFalse(path.exists())
                 supervisor.remove_profiled_certification_fault_lease(initial, root)
                 self.assertEqual(json.loads(intent.read_bytes()), retained)
+                plan['mode'] = 'known-ack-recovery'
+                path.write_bytes(raw)
+                with self.assertRaisesRegex(ValueError, 'FOREIGN_FAULT_LEASE'):
+                    supervisor.remove_profiled_certification_fault_lease(initial, root)
+                self.assertEqual(path.read_bytes(), raw)
+                lease['mode'] = 'drop-after-ack'
+                raw = json.dumps(lease).encode() + b'\n'
+                intent.write_text(json.dumps({**retained, 'leaseSha256': supervisor.migrate.file_hash(raw)}))
+                path.write_bytes(raw)
+                supervisor.remove_profiled_certification_fault_lease(initial, root)
+                self.assertFalse(path.exists())
 
     def test_profiled_certification_requires_all_exact_source_types_and_both_callbacks(self):
         class OwnedBroker(Broker):
@@ -89,12 +100,13 @@ class FixedDispatchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'PROFILE_REQUIRED'):
                 supervise({key: value for key, value in initial.items() if key != 'qualificationTargetProfile'}, **options)
 
-    def test_profiled_certification_cleanup_only_touches_the_three_fixed_namespaces(self):
+    def test_profiled_certification_cleanup_only_touches_fixed_namespaces(self):
         inventory = {'a' * 12: '/lash-p2-certification-observer-' + '1' * 32,
                      'b' * 12: '/lash-p2-certification-api-check-course-' + '2' * 32,
                      'c' * 12: '/lash-p2-profiled-certification-guard-close-' + '3' * 32,
                      'd' * 12: '/lash-p2-profiled-certification-guard-close-' + '3' * 32 + '-foreign',
-                     'e' * 12: '/lash-p2-profiled-current-observer-' + '4' * 32}
+                     'e' * 12: '/lash-p2-profiled-current-observer-' + '4' * 32,
+                     'f' * 12: '/lash-p2-profiled-certification-image-check-' + '5' * 32}
         calls = []
         def command(args, *_):
             calls.append(args)
@@ -109,7 +121,7 @@ class FixedDispatchTests(unittest.TestCase):
             self.assertTrue(all(args[1:3] == ['container', 'ls'] for args in calls))
             supervisor.cleanup_profiled_certification_containers()
         self.assertEqual(set(inventory), {'d' * 12, 'e' * 12})
-        self.assertEqual(sum(args[1:3] == ['rm', '--force'] for args in calls), 3)
+        self.assertEqual(sum(args[1:3] == ['rm', '--force'] for args in calls), 4)
 
     def test_private_json_cannot_select_recovery_program_or_layout(self):
         initial = {'candidate': {'releaseId': 'original'}, '_guardLayout': RECOVERY_LAYOUT,

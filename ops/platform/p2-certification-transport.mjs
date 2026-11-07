@@ -134,14 +134,25 @@ export function p2CertificationEnvironmentLock(settings,initial,directory,{launc
         },
         async knownAckStage(plan){
           demand(launch===spawn&&armed&&!prepared&&initial.certificationPlan.mode==='known-ack-recovery'&&isDeepStrictEqual(plan,initial.certificationPlan));
-          const ready=(await request('known-prepare','CERTIFICATION_KNOWN_ACK_OBSERVED',{},180_000)).receipt;
+          const read=async(operation,data={},timeout=180_000)=>{
+            const receipt=(await request(operation,'CERTIFICATION_KNOWN_ACK_OBSERVED',data,timeout)).receipt;
+            if(profiled){requireQualificationTargetProfile(currentProfile,receipt);demand(receipt.version===2);}
+            return receipt;
+          };
+          const ready=await read('known-prepare');
           demand(ready.status==='P2_KNOWN_ACK_SOURCE_STAGE_PREPARED'&&ready.bindingSha256===plan.planSha256);
           const snapshot=structuredClone(plan),alive=()=>active&&!failed&&armed&&!prepared&&!controller.signal.aborted&&isDeepStrictEqual(plan,snapshot);
-          const call=async(operation,data={},timeout=180_000)=>{demand(alive());return(await request(operation,'CERTIFICATION_KNOWN_ACK_OBSERVED',data,timeout)).receipt;};
-          let replacementAttempted=false;
+          const call=(operation,data,timeout)=>{demand(alive());return read(operation,data,timeout);};
+          let replacementAttempted=false,settlementAttempted=false,settlementConfirmed=false;
           const methods=Object.freeze({armFault:()=>call('known-arm'),startWindow:()=>call('known-start-window'),observeDomain:()=>call('known-domain'),
             retainRequestDetails:bytes=>{demand(Buffer.isBuffer(bytes)&&bytes.length>0&&bytes.length<=2_000_000);return call('known-requests',{requestArtifact:bytes.toString('base64')});},
-            prepareSettlement:()=>call('known-settlement'),replace:()=>{demand(!replacementAttempted);replacementAttempted=true;return call('known-replace',{},800_000);}});
+            prepareSettlement:()=>call('known-settlement'),
+            ...(profiled?{async confirmSettlement(){
+              demand(!settlementAttempted);settlementAttempted=true;
+              const result=await call('known-confirm-settlement');demand(result.status==='P2_KNOWN_ACK_RECONCILIATION_OBSERVED_FENCED');
+              settlementConfirmed=true;return result;
+            }}:{}),
+            replace:()=>{demand(!replacementAttempted&&(!profiled||settlementConfirmed));replacementAttempted=true;return call('known-replace',{},800_000);}});
           const handle=Object.freeze({});knownAckStages.set(handle,{plan,snapshot,active:alive,methods});return handle;
         },
         async prepareFault(plan){demand(armed&&!prepared);await request('fault-initialize','CERTIFICATION_FAULT_READY',{plan});
