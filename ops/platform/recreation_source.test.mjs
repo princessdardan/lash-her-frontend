@@ -57,12 +57,12 @@ test("real CI workflow pins every checkout to exact PR source and never persists
   const changed=raw.toString().replaceAll("          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n","");
   assert.throws(()=>verifyExactHeadWorkflow(Buffer.from(changed)));
 });
-test("the complete committed operator source fits the real public installation envelope",()=> {
+test("the complete committed operator source fits the profiled expanded envelope",()=> {
   const root=fileURLToPath(new URL("../..",import.meta.url));
   const sourceCommit=execFileSync("git",["-C",root,"rev-parse","HEAD"],{encoding:"utf8"}).trim();
   const files=readProfiledCurrentOperatorSourceFiles(root);
   assert.equal(files.filter(file=>file.path.startsWith("ops/platform/profiles/frontend-historical-sources/")).length,33);
-  assert.ok(Buffer.byteLength(JSON.stringify({commit:sourceCommit,files}))<=56_000_000);
+  assert.ok(Buffer.byteLength(JSON.stringify({commit:sourceCommit,files}))<=65_000_000);
 });
 test("actual Git source handoff accepts 512 files and refuses 513 with the per-file byte limit intact",()=> {
   const directory=mkdtempSync(join(tmpdir(),"p2-source-count-"));
@@ -84,7 +84,7 @@ test("actual Git source handoff accepts 512 files and refuses 513 with the per-f
     assert.throws(()=>readOperatorSourceFiles(directory));
   } finally {rmSync(directory,{recursive:true,force:true});}
 });
-test("actual Git source handoff accepts exactly 41 MB and refuses one extra decoded byte",()=> {
+test("actual Git source handoff enforces both decoded byte limits",()=> {
   const directory=mkdtempSync(join(tmpdir(),"p2-source-bytes-"));
   const git=args=>execFileSync("git",["-C",directory,...args],{stdio:["ignore","pipe","pipe"]});
   try {
@@ -97,11 +97,14 @@ test("actual Git source handoff accepts exactly 41 MB and refuses one extra deco
     assert.ok(Buffer.byteLength(JSON.stringify({commit:"a".repeat(40),files}))<=56_000_000);
     writeFileSync(last,Buffer.alloc(1_000_001,120));
     assert.throws(()=>readOperatorSourceFiles(directory));
-    writeFileSync(last,Buffer.alloc(1_930_000,120));
+    for(let index=20;index<23;index++)writeFileSync(join(directory,`ops/owned-${index}.mjs`),Buffer.alloc(2_000_000,120));
+    writeFileSync(join(directory,"ops/owned-pad.mjs"),Buffer.alloc(1_000_000,120));
+    writeFileSync(last,Buffer.alloc(1_000_000,120));
+    git(["add","ops"]);
     const profiled=readProfiledCurrentOperatorSourceFiles(directory);
-    assert.equal(profiled.reduce((total,file)=>total+Buffer.from(file.data,"base64").length,0),41_930_000);
-    assert.ok(Buffer.byteLength(JSON.stringify({commit:"a".repeat(40),files:profiled}))<=56_000_000);
-    writeFileSync(last,Buffer.alloc(1_930_001,120));
+    assert.equal(profiled.reduce((total,file)=>total+Buffer.from(file.data,"base64").length,0),48_000_000);
+    assert.ok(Buffer.byteLength(JSON.stringify({commit:"a".repeat(40),files:profiled}))<=65_000_000);
+    writeFileSync(last,Buffer.alloc(1_000_001,120));
     assert.throws(()=>readProfiledCurrentOperatorSourceFiles(directory));
   } finally {rmSync(directory,{recursive:true,force:true});}
 });

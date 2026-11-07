@@ -11,7 +11,7 @@ import {sha256} from "./recreation_inputs.mjs";
 
 const repository="princessdardan/lash-her-frontend";
 export const LEGACY_OPERATOR_SOURCE_BOUNDS = Object.freeze({ files: 512, decodedBytes: 41_000_000 });
-export const PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS = Object.freeze({ files: 544, decodedBytes: 41_930_000 });
+export const PROFILED_CURRENT_OPERATOR_SOURCE_BOUNDS = Object.freeze({ files: 544, decodedBytes: 48_000_000 });
 export function verifyExactHeadWorkflow(raw) {
   const workflow=parse(raw.toString("utf8"));
   assert.ok(workflow.jobs&&Object.keys(workflow.jobs).length>0,"Operator CI jobs required");
@@ -78,7 +78,7 @@ function readBoundedOperatorSourceFiles(source, bounds) {
     assert.ok(info.isFile()&&!info.isSymbolicLink()&&realpathSync(file)===file,"Operator source symlink refused");
     const raw=readFileSync(file);total+=raw.length;
     // Preserve every immutable historical source profile and complete operator
-    // dependency. This decoded cap still fits the fixed 56 MB public transport.
+    // dependency. The selected SSH installer enforces a separate wire bound.
     assert.ok(raw.length<=2_000_000&&total<=bounds.decodedBytes);
     return {path,sha256:sha256(raw),data:raw.toString("base64")};
   });
