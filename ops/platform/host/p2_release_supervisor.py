@@ -448,6 +448,27 @@ def capture_gateway_before_stop(initial, selected, directory, source):
                                                 **_profile_kwargs(initial))
 
 
+def _profiled_known_ack_runtime_directory(initial):
+    action = initial['certificationPlan']['knownAckRecovery']['recoveryActionId']
+    require(type(action) is str and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', action),
+            'P2_PROFILED_KNOWN_ACK_GUARD_ACTION_REQUIRED')
+    return p2_prior_gateway.ROOT / ('p2-profiled-known-ack-' + action) / 'runtime-known-ack'
+
+
+def _profiled_known_ack_gateway_mount(initial, source):
+    def verify():
+        verify_guard_boundary(initial, source)
+    command = runtime.command
+    ids = p2_prior_gateway._inventory(command, verify)
+    if not ids:
+        return None
+    configuration = p2_prior_gateway._mounted_configuration(ids[0], command, verify)
+    require(configuration in (Path(initial['configuration']), _profiled_known_ack_runtime_directory(initial) / 'configuration') and
+            staging_state.configuration_hashes(configuration) == initial['configurationSha256'],
+            'P2_PROFILED_KNOWN_ACK_GUARD_MOUNT_REFUSED')
+    return configuration
+
+
 def remove_profiled_certification_fault_lease(initial, source):
     from p2_certification_fault import LEASE
     plan, configuration = initial['certificationPlan'], Path(initial['configuration'])
@@ -556,13 +577,22 @@ def _fail_profiled_certification(initial, armed, source, result, record_name, na
 
 def _stop_profiled_certification_runtime(initial, source, result, record_name):
     selected, configuration = initial['candidate'], Path(initial['configuration'])
+    known = initial['certificationPlan'].get('mode') == 'known-ack-recovery'
+    mounted = None
     prior = None
     try:
         directory = _profiled_certification_directory(initial)
         if record_name == 'p2-independent-guard-after-quiescence.json':
             directory = directory / 'prior-gateway-after-quiescence'
             directory.mkdir(mode=0o700)
-        prior = capture_gateway_before_stop(initial, selected, directory, source)
+        if known:
+            mounted = _profiled_known_ack_gateway_mount(initial, source)
+        observed = capture_gateway_before_stop(initial, selected, directory, source)
+        if known and observed.get('observation') is not None:
+            actual = Path(observed['observation']['binding']['configurationDirectory'])
+            require(actual in (configuration, _profiled_known_ack_runtime_directory(initial) / 'configuration') and
+                    (mounted is None or mounted == actual), 'P2_PROFILED_KNOWN_ACK_GUARD_MOUNT_REFUSED')
+        prior = observed
         result['priorGatewayBeforeStopSha256'] = migrate.file_hash(migrate.read_input(directory, p2_prior_gateway.BEFORE_STOP))
         result['priorGatewayBeforeStop'] = prior
         admission = (prior.get('observation') or {}).get('admission') or {}
@@ -574,9 +604,10 @@ def _stop_profiled_certification_runtime(initial, source, result, record_name):
     if result.get('gatewayAdmissionAcknowledged') is not True:
         try:
             verify_guard_boundary(initial, source)
-            require(staging_state.configuration_hashes(configuration) == initial['configurationSha256'],
+            selected_configuration = mounted if known else configuration
+            require(selected_configuration is not None and staging_state.configuration_hashes(selected_configuration) == initial['configurationSha256'],
                     'P2_PROFILED_CERTIFICATION_GUARD_CONFIGURATION_CHANGED')
-            result.update(close_gateway(initial, selected, configuration))
+            result.update(close_gateway(initial, selected, selected_configuration))
         except BaseException:
             result['gatewayAdmissionFileClosed'] = None
     if result['frontendAdmissionClosed'] is True and result.get('gatewayAdmissionAcknowledged') is True:
@@ -810,6 +841,26 @@ def _require_profiled_certification_terminal(initial, raw, committed):
         type(frontend.get('uncertain')) is int and frontend['uncertain'] == 0 and
         all(_canonical_sha(gateway.get(key)) == _canonical_sha({'newWork': 0, 'recovery': 0}) for key in ('active', 'uncertain')),
         'P2_PROFILED_CERTIFICATION_GUARD_TERMINAL_NOT_CLOSED')
+    if plan['mode'] == 'known-ack-recovery':
+        joined = migrate.read_input(_profiled_certification_directory(initial), 'known-ack-replacement-joined.json')
+        retained = migrate.read_input(_profiled_known_ack_runtime_directory(initial), 'known-ack-runtime-outcome.json')
+        runtime_outcome = decode_qualification_target_json(retained, 'carrier')
+        migrate.require_profile(expected, runtime_outcome)
+        migrate.require_contract_identity(initial['candidate'], runtime_outcome)
+        known = terminal['knownAckLoss']
+        require(joined == retained and terminal.get('knownAckRuntimeReceiptSha256') == migrate.file_hash(retained) and
+                terminal.get('runtimeReplaced') is True and known['replacementCompletedClosed'] is True and
+                known['ordinaryClosedZeroGate'] is False and known['oldGatewayUncertain'] == {'newWork':0,'recovery':1} and
+                type(runtime_outcome.get('version')) is int and runtime_outcome['version'] == 2 and
+                runtime_outcome['status'] == 'P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED' and
+                runtime_outcome['recoveryActionId'] == known['recoveryActionId'] == plan['knownAckRecovery']['recoveryActionId'] and
+                runtime_outcome['recoveryIntentSha256'] == plan['knownAckRecovery']['intentSha256'] and
+                runtime_outcome['candidateSha256'] == initial['candidateSha256'] and
+                runtime_outcome['frontendOperationId'] == known['operationId'] and
+                runtime_outcome['runtimeReplacements'] == 1 and all(runtime_outcome.get(key) is False for key in
+                    ('sqlReplayed','frontendSqlApplied','migrationsExecuted','trafficAuthorized')) and
+                all(gateway.get(key) == value for key,value in runtime_outcome['newGateway']['admission'].items()),
+                'P2_PROFILED_CERTIFICATION_GUARD_KNOWN_ACK_TERMINAL_REFUSED')
     return terminal
 
 

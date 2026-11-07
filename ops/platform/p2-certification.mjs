@@ -395,7 +395,7 @@ async function runBoundedCertification(plan,dependencies,profile){
             containFrontend:async()=>{const actual=await readP2CertificationCurrent(client,prepared,plan,verify,false,profile);return{frontendAdmissionClosed:actual.admission.newWork===false&&actual.admission.recovery===false};}},profile);}
           catch(error){demand(plan.mode==='fault-drop-after-ack'&&error.publicReceipt?.outstandingUncertain===1);caseOutcome=error.publicReceipt;}
         }
-        await host.gatewayStage('closed');
+        if(!profile||plan.mode!=='known-ack-recovery')await host.gatewayStage('closed');
       }
       phase='fresh-contained-terminal';await verify();
       terminal=await host.prepareClose(caseOutcome,requestArtifact);demand(terminal?.status===terminalStatus&&terminal.planSha256===plan.planSha256&&terminal.nativeDisabled===true&&terminal.sqlReplayed===false&&terminal.runtimeReplaced===(plan.mode==='known-ack-recovery'));

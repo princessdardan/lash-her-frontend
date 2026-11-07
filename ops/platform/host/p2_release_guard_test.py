@@ -124,6 +124,40 @@ class IndependentGuardTests(unittest.TestCase):
                 changed = json.dumps({**terminal, **changes}).encode()
                 supervisor._require_profiled_certification_terminal(initial, changed, migrate.file_hash(changed))
 
+    def test_known_ack_terminal_requires_the_original_replacement_receipt_bytes(self):
+        initial, directory = self.profiled_certification()
+        plan = initial['certificationPlan']
+        replacement = {'recoveryActionId': 'owned-replacement', 'intentSha256': 'a' * 64}
+        plan.update(mode='known-ack-recovery', knownAckRecovery=replacement)
+        operation = '10000000-0000-4000-8000-000000000001'
+        zero = {'newWork': 0, 'recovery': 0}
+        admission = {'newWork': False, 'recovery': False, 'active': zero, 'uncertain': zero}
+        outcome = {'version': 2, 'qualificationTargetProfile': initial['qualificationTargetProfile'],
+                   **migrate.contract_identity(initial['candidate']), 'status': 'P2_KNOWN_ACK_RUNTIME_REPLACED_CLOSED',
+                   'candidateSha256': initial['candidateSha256'], 'recoveryActionId': replacement['recoveryActionId'],
+                   'recoveryIntentSha256': replacement['intentSha256'], 'frontendOperationId': operation, 'runtimeReplacements': 1,
+                   'sqlReplayed': False, 'frontendSqlApplied': False, 'migrationsExecuted': False, 'trafficAuthorized': False,
+                   'newGateway': {'admission': admission}}
+        with patch.object(supervisor.p2_prior_gateway, 'ROOT', directory.parent):
+            runtime = supervisor._profiled_known_ack_runtime_directory(initial)
+            runtime.mkdir(parents=True, mode=0o700)
+            migrate.write_json(runtime, 'known-ack-runtime-outcome.json', outcome)
+            migrate.write_json(directory, 'known-ack-replacement-joined.json', outcome)
+            retained = migrate.read_input(runtime, 'known-ack-runtime-outcome.json')
+            terminal = {**plan, 'status': supervisor.PROFILED_CERTIFICATION_LAYOUT['terminalStatus'], 'releaseId': 'original',
+                        'configurationSha256': initial['configurationSha256'], 'frontendSqlApplied': False, 'trafficAuthorized': False,
+                        'releaseAccepted': False, 'sqlReplayed': False, 'nativeDisabled': True, 'runtimeReplaced': True,
+                        'frontendAdmission': {'epoch': '4', 'newWork': False, 'recovery': False, 'active': 0, 'uncertain': 0},
+                        'gatewayAdmission': admission, 'knownAckRuntimeReceiptSha256': migrate.file_hash(retained),
+                        'knownAckLoss': {'replacementCompletedClosed': True, 'ordinaryClosedZeroGate': False,
+                                         'oldGatewayUncertain': {'newWork': 0, 'recovery': 1}, 'operationId': operation,
+                                         'recoveryActionId': replacement['recoveryActionId']}}
+            raw = json.dumps(terminal).encode()
+            self.assertEqual(supervisor._require_profiled_certification_terminal(initial, raw, migrate.file_hash(raw)), terminal)
+            (directory / 'known-ack-replacement-joined.json').write_bytes(retained + b'\n')
+            with self.assertRaisesRegex(ValueError, 'KNOWN_ACK_TERMINAL_REFUSED'):
+                supervisor._require_profiled_certification_terminal(initial, raw, migrate.file_hash(raw))
+
     def test_profiled_cleanup_waits_for_actual_reap_and_keeps_failed_frontend_proof_unknown(self):
         initial, directory = self.profiled_certification()
         ready_r, ready_w = os.pipe()

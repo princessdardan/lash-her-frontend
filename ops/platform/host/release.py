@@ -275,10 +275,17 @@ def runtime_environment(release, snapshot, *, expected_profile=None):
 def configuration_container(arguments, *, expected_profile=None):
     scope = _command_scope.get()
     profiled = expected_profile is not None and scope is not None
+    prefix = "lash-config-"
     if profiled:
         from p2_profiled_current_scope import P2ProfiledCurrentScope
-        demand(type(scope) is P2ProfiledCurrentScope, "PROFILED_CURRENT_PROCESS_LOCAL_SCOPE_REQUIRED")
-    name = ("lash-p2-profiled-current-image-check-" if profiled else "lash-config-") + uuid4().hex
+        if type(scope) is P2ProfiledCurrentScope:
+            prefix = "lash-p2-profiled-current-image-check-"
+        else:
+            from p2_known_ack_loss import ProfiledKnownAckRecoveryScope
+            demand(type(scope) is ProfiledKnownAckRecoveryScope, "PROFILED_CURRENT_PROCESS_LOCAL_SCOPE_REQUIRED")
+            scope.verify()
+            prefix = "lash-p2-profiled-certification-image-check-"
+    name = prefix + uuid4().hex
     try:
         image_options = ["--pull", "never", "--platform", "linux/amd64"] if profiled else []
         return command([*arguments[:2], "--name", name, *image_options, *arguments[2:]], SAFE_ENV)

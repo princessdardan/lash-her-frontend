@@ -1350,15 +1350,33 @@ class P2CertificationBroker(Broker):
             self.known_ack_reconciliation=recorder.confirm_reconciliation()
             return copy.deepcopy(self.known_ack_reconciliation)
         if operation=='known-replace':
-            require(expected is None,'P2_CERTIFICATION_PROFILED_REPLACEMENT_UNQUALIFIED')
             require(not self.known_ack_replace_attempted and self.known_ack_boundary is None,'P2_CERTIFICATION_KNOWN_ACK_REPLACEMENT_ALREADY_ATTEMPTED')
             self.known_ack_replace_attempted=True
-            authorization=recorder.authorize_replacement()
-            boundary=known.issue_known_ack_loss_boundary(self,authorization);self.known_ack_boundary=boundary
-            restored=known.KnownAckRecoveryRuntime(known.KnownAckRecoveryScope(boundary));outcome=restored.restore()
+            if expected is None:
+                authorization=recorder.authorize_replacement()
+                boundary=known.issue_known_ack_loss_boundary(self,authorization)
+                self.known_ack_boundary=boundary
+                restored=known.KnownAckRecoveryRuntime(known.KnownAckRecoveryScope(boundary))
+            else:
+                require(self.known_ack_reconciliation is not None,'P2_CERTIFICATION_PROFILED_SETTLEMENT_REQUIRED')
+                authorization=recorder.authorize_profiled_replacement()
+                boundary=known.issue_profiled_known_ack_loss_boundary(self,authorization)
+                self.known_ack_boundary=boundary
+                restored=known.ProfiledKnownAckRecoveryRuntime(known.ProfiledKnownAckRecoveryScope(boundary))
+            outcome=restored.restore()
+            if expected is not None:
+                vercel.require_record_profile(expected,outcome)
+                require(outcome['recoveryIntentSha256']==cert['knownAckRecovery']['intentSha256'] and
+                    outcome['frontendOperationId']==self.known_ack_reconciliation['operationId'] and
+                    outcome['frontendJournalSha256']==self.scope.receipt['journalSha256'] and
+                    outcome['originalGatewayUncertaintyPreserved'] is True and
+                    outcome['runtimeReplacements']==1 and outcome['sqlReplayed'] is False and
+                    restored.snapshot==boundary.snapshot and boundary.finished,
+                    'P2_PROFILED_CERTIFICATION_KNOWN_ACK_OUTCOME_REQUIRED')
             self.configuration=self.runtime_snapshot=restored.snapshot;self.runtime_current=outcome['containers']
+            new_admission_fd=os.open(self.configuration/'admission',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
             if self.admission_fd is not None:os.close(self.admission_fd)
-            self.admission_fd=os.open(self.configuration/'admission',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW);self.admission_identity=os.fstat(self.admission_fd)
+            self.admission_fd=new_admission_fd;self.admission_identity=os.fstat(new_admission_fd)
             self.process_snapshot=self._runtime_processes()
             gateway=next(row for row in self.runtime_current if row['service']=='gateway')
             observed=self.scope.run(['docker','exec','--workdir','/app',gateway['containerId'],'node','--input-type=module','--eval',GATEWAY_OBSERVER],
@@ -1366,7 +1384,16 @@ class P2CertificationBroker(Broker):
             require(not observed.stderr and 0<len(observed.stdout)<=16384,'P2_CERTIFICATION_KNOWN_ACK_NEW_GATEWAY_PROOF_REQUIRED')
             actual=json.loads(observed.stdout);require(actual.get('status')=='P2_FAULT_GATEWAY_CURRENT' and re.fullmatch(r'[a-f0-9]{64}',actual.get('processSha256','')),
                 'P2_CERTIFICATION_KNOWN_ACK_NEW_PROCESS_REQUIRED')
-            self.known_ack_new_gateway_process=actual['processSha256'];self._gateway_current();self._verify_boundary()
+            self.known_ack_new_gateway_process=actual['processSha256']
+            current=self._gateway_current()
+            if expected is not None:
+                require(current['processSha256']!=cert['gatewayProcessSha256'] and current['faultLeasePresent'] is False and
+                    current['admission'].get('valid') is True and
+                    all(current['admission'].get(key)==value for key,value in outcome['newGateway']['admission'].items()) and
+                    outcome['newGateway']['process']['containerId']==gateway['containerId'] and
+                    outcome['newGateway']['binding']['configurationDirectory']==str(self.configuration),
+                    'P2_PROFILED_CERTIFICATION_KNOWN_ACK_NEW_GATEWAY_REQUIRED')
+            self._verify_boundary()
             self.known_ack_outcome=outcome
             migrate.write_json(self.directory,'known-ack-replacement-joined.json',outcome)
             return copy.deepcopy(outcome)
@@ -1673,6 +1700,8 @@ class P2ProfiledCertificationBroker(P2CertificationBroker):
         self.prepared_terminal['configurationSha256'] = self.initial['configurationSha256']
         if self.authority_timing_sha256 is not None:
             self.prepared_terminal['authorityTimingReceiptSha256'] = self.authority_timing_sha256
+        if self.initial['certificationPlan']['mode'] == 'known-ack-recovery':
+            self.prepared_terminal['knownAckRuntimeReceiptSha256'] = _sha(migrate.read_input(self.directory,'known-ack-replacement-joined.json'))
 
     def _require_profiled_before_upstream(self,case,evidence):
         expected = self.certification_profile()
