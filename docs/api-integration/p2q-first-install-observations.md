@@ -1,6 +1,8 @@
 # P2Q first-install observations
 
-These collectors observe zero counts in an explicitly scoped set of frontend core catalogs and the held host process/flock/current Docker inventory. Complete database emptiness is not proven. They do not authorize first use, role preparation, migration, deployment, provider access or admission. Full first-install composition remains OPEN. No allocated isolated profile or authentic allocation/control/credential-custody authority factory exists.
+Under the [current owner decision](decisions/2026-11-06-p2q-resource-reuse.md), these are optional empty-target collectors, not prerequisites for P2Q or reuse of existing staging resources. A selected nonempty resource uses its supported current/upgrade path. Independent administration and original creation history are not required for that path.
+
+These collectors observe zero counts in an explicitly scoped set of frontend core catalogs and the held host process/flock/current Docker inventory. Complete database emptiness is not proven. They do not authorize first use, role preparation, migration, deployment, provider access or admission. Full first-install composition remains OPEN within this optional path; its missing allocation/first-use authority is not a prerequisite for ordinary existing-staging qualification.
 
 ## Interfaces and selection
 

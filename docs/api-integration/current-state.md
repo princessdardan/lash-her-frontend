@@ -2,7 +2,7 @@
 
 Source checkpoint updated November 6, 2026 (Toronto). Accepted live admission completed November 4 at 01:27:39 UTC, with independent postflight at 01:29:33 UTC. [The tracker](../../API-INTEGRATION-EXECUTION.md) owns task status; [release policy](release-policy.md) governs future releases.
 
-Latest source position: exact frontend `434ff029` passed all ten jobs in CI 42298515803 and direct verification of seven original artifact ZIPs. Actual Linux host/operator/recovery and both native checks pass. Browser evidence discloses one WebKit retry-pass with unproven cause (581 expected / 159 skipped / 0 unexpected / 1 flaky). P2Q/G2-Q remains OPEN: independent scopes UNKNOWN; real target/first-use authority/positive execution unavailable; allocation/candidate/live release unapproved. Accepted recovery-only G1 and separately open old P2-00 are preserved.
+Latest source position: exact frontend `ad1f2abd` passed all ten jobs in CI42314923915 and seven original artifact ZIP checks; browsers582 expected/159 skipped/0 unexpected/0 flaky. P2Q/G2-Q remains OPEN. The [current owner decision](decisions/2026-11-06-p2q-resource-reuse.md) removes complete separation: existing staging accounts/projects/provider scopes/hosts/databases may be reused, including the identified staging Google administration/project. Independent administration, historical credential/recovery disjointness, new-only allocation and optional first-install factories are not prerequisites. Actual selected configuration and deployed qualification remain open; resource/provider/candidate/live actions remain unapproved. Accepted G1 and separately open old P2-00 are preserved.
 
 ## Accepted P1 state
 
@@ -283,3 +283,9 @@ SDK 592 with private maintained CPython 3.14.10 passed five offline version/help
 Exact `ad1f2abd` passed all ten jobs in CI 42314923915. Direct original-artifact checks verify seven ZIP digests, PostgreSQL 18/83 migrations and 29/18/9/10 platform checks, seven unchanged-journal restoration negatives and both patched native runtimes. Raw scans retain two HIGH findings each; qualified scans have zero active HIGH/CRITICAL. Browser results: 582 expected, 159 skipped, zero unexpected/flaky. This supersedes 434 as latest passing source evidence and does not rewrite its earlier retry. [Validation](baselines/2026-11-06-p2q-ad1-ci/validation.json).
 
 Original Google implementation Git objects, integrated source evidence and selected SDK/CPython proof files are now durably retained with exact private archive manifests. Crash-recovery implementation is underway separately; no positive authority or target is registered. Actual provider boundaries/resources, allocated-target G1, owner-approved candidate/release and deployed G2-Q evidence remain OPEN. No provider, credential, SQL, resource or live configuration change occurred.
+
+## Owner removed complete P2Q separation — November 6, 2026
+
+The [current decision](decisions/2026-11-06-p2q-resource-reuse.md) supersedes earlier independent-account/new-only eligibility requirements and the corresponding UNKNOWN administrative-boundary blockers. Use reviewed existing-staging resource selection and release/upgrade paths. Do not require new Google administration/project or original creation/custody/first-use evidence for a reused resource. Optional virgin/create-only tools remain truthful but do not gate this path; incomplete Google guardian work is stopped outside integration.
+
+Current target/configuration, production safeguards, runtime roles, actual lineage/locks, admission/drain, supported recovery and real provider/browser certification remain required. This is a scope change, not live approval or evidence of completion. Historical receipts and old P2-00/S17 claim boundaries remain unchanged.

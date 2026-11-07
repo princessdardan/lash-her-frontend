@@ -3,6 +3,7 @@
 Start with the [execution tracker](../../API-INTEGRATION-EXECUTION.md) and [current checkpoint](current-state.md). The accepted recovery-only G1 evidence remains complete; later feature certification uses its own source and deployment evidence.
 
 - [Active Phase 2 goal, boundaries and ownership](phase2-goal.md)
+- [Current P2Q resource-reuse and shared-administration decision](decisions/2026-11-06-p2q-resource-reuse.md)
 - [Implementation briefs](briefs/README.md)
 - [Approved identity and lifecycle policy](decisions/2026-11-05-p2-lifecycle-policy.md)
 - [Single-operator release policy](release-policy.md)

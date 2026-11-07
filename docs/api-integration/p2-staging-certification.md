@@ -6,6 +6,8 @@ P2-12 depends on G1, P2-00, P2-09, P2-10, and P2-11. G2 additionally requires P2
 
 Scope is staging customer identity, authoring, free learning, assessment/progress, and current account/access lifecycle receivers. Paid catalog validation and archive consequences remain in scope; paid course checkout does not. Production, Phase 3 imports/cutover/public-media retirement, new Community member pages/content/media/notifications, monitoring rollout, and billing evidence remain outside this certification. Exercise the existing Community lifecycle/entitlement receiver without enabling Community member features.
 
+The [current P2Q resource-reuse decision](decisions/2026-11-06-p2q-resource-reuse.md) allows existing staging resources and shared provider administration. It removes mandatory allocation/virgin/independent-account prerequisites, not the actual certification and release controls below.
+
 ## Release record and exact references
 
 Complete these slots in the ordinary private release record before execution. Use nonsecret IDs/hashes and references to original receipts; keep credentials, provider identities/emails, OAuth codes, cookies, JWTs, export bytes, private schema exports, and raw browser/network captures outside public evidence. A changed source, artifact, schema, provider binding, or material configuration requires affected checks to be rerun or an explicit applicability review. A predecessor's pass is not the selected candidate's pass.

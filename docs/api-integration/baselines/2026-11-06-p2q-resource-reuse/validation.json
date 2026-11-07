@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "ownerDecision": "2026-11-06 remove complete P2Q separation",
+  "changeClass": "Documentation/policy; existing-staging source eligibility unchanged",
+  "scopeSha256": "eb180fb4beaf828ebc433ad733ec35ed766c1f7eb96cd1654832bc396e437cf6",
+  "threeScopeCopiesByteIdentical": true,
+  "historicalDecisionUnchanged": true,
+  "historicalDecisionSha256": "5f7f14e7027f2ae93ebf8a7e2cab4088da4a07af63f9ca967c273c11b4fc2c0f",
+  "frontendBase": "beb2077127820fba87e9e6686ec9a64f4f2c07f1",
+  "apiDocumentationBases": [
+    {
+      "repository": "lash-her-course-api",
+      "base": "997b2f1fdd3beb4fbde4b18340983fa04c0202c9",
+      "changedFiles": [
+        "API-INTEGRATION-PLAN.md"
+      ]
+    },
+    {
+      "repository": "lash-her-community-api",
+      "base": "52492aa7d68ca6fefb444b2046976f79fd0091b4",
+      "changedFiles": [
+        "API-INTEGRATION-PLAN.md"
+      ]
+    }
+  ],
+  "runtimeOrContractOrLockfileChanges": false,
+  "independentReview": {
+    "agent": "provider_fencing",
+    "result": "CLEAR",
+    "findings": [],
+    "scope": "Actual active policy amendment and three matching scope copies; source paths audited separately"
+  },
+  "checks": [
+    "git diff --check in all three worktrees",
+    "three scope copies byte parity",
+    "source audit: ordinary existing-staging release paths do not require independent administration",
+    "historical decision/baselines unchanged"
+  ],
+  "testsRun": false,
+  "testReason": "Policy-only changes; no runtime behavior or contracts changed. Exact runtime source ad1 passed all ten CI jobs in42314923915.",
+  "providerOrResourceOrCredentialOrReleaseAction": false,
+  "stoppedWork": {
+    "branch": "codex/p2q-google-claim-recovery",
+    "status": "Incomplete, unintegrated, unpublished; preserved in its isolated worktree",
+    "requiredForReuse": false
+  }
+}
